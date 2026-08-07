@@ -1,0 +1,55 @@
+# =============================================================================
+# Service frontend dédié (Node + Vite).
+# Chargé automatiquement par Docker Compose en complément de docker-compose.yml.
+# =============================================================================
+
+services:
+
+  frontend:
+    image: node:${NODE_TAG}
+    container_name: ${COMPOSE_PROJECT_NAME}_frontend
+    restart: unless-stopped
+    working_dir: /app
+
+    # Gestion des droits, version « sans build » : le conteneur tourne
+    # directement sous l'UID/GID de l'hôte. Les fichiers générés par Vite et
+    # npm appartiennent donc au dev et sont éditables depuis l'IDE.
+    user: "${UID}:${GID}"
+
+    environment:
+      # L'utilisateur injecté n'a pas forcément de home dans l'image : on
+      # redirige HOME et le cache npm vers des chemins toujours accessibles en
+      # écriture, sinon `npm install` échoue avec EACCES.
+      HOME: /tmp
+      NPM_CONFIG_CACHE: /tmp/.npm
+      # Nécessaire dans un conteneur : le hot-reload de Vite ne reçoit pas
+      # toujours les événements inotify à travers un bind mount.
+      CHOKIDAR_USEPOLLING: "true"
+      # URL de l'API exposée par le backend, consommée par le code front.
+      VITE_API_URL: "http://localhost:${HTTP_PORT}"
+
+    volumes:
+      - ./frontend:/app
+
+    ports:
+      - "${VITE_PORT}:5173"
+
+    # stdin/tty ouverts : indispensable pour pouvoir lancer des commandes
+    # interactives (npm create vite) via `docker compose run`.
+    stdin_open: true
+    tty: true
+
+    # Au démarrage : si le projet n'existe pas encore, on l'indique clairement
+    # plutôt que de boucler en erreur. Sinon, install + serveur de dev.
+    command: >
+      sh -c "if [ ! -f package.json ]; then
+               echo 'Projet Vite absent. Lancez : make front-init';
+               sleep infinity;
+             else
+               npm install && npm run dev -- --host 0.0.0.0 --port 5173;
+             fi"
+
+    depends_on:
+      - backend
+
+    networks: [app]

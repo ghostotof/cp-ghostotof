@@ -1,0 +1,125 @@
+# =============================================================================
+# Stack de développement — généré par create-symfony-project.sh
+# La clé `version:` est volontairement absente : obsolète en Compose v2.
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # backend : PHP-FPM + symfony-cli. Contient le code Symfony.
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      # Le contexte est la racine du projet : les stages de déploiement doivent
+      # pouvoir copier ./backend. Voir .dockerignore pour ce qui est exclu.
+      context: .
+      dockerfile: docker/php/Dockerfile
+      # `target` est essentiel : sans lui, Docker construirait le dernier stage
+      # du fichier (preprod), qui exige un composer.json déjà présent.
+      target: dev
+      args:
+        # Les versions et l'identité hôte sont injectées au build depuis .env.
+        PHP_TAG: ${PHP_TAG}
+        COMPOSER_TAG: ${COMPOSER_TAG}
+        SYMFONY_CLI_VERSION: ${SYMFONY_CLI_VERSION}
+        AMQP_EXT_VERSION: ${AMQP_EXT_VERSION}
+        UID: ${UID}
+        GID: ${GID}
+    container_name: ${COMPOSE_PROJECT_NAME}_backend
+    restart: unless-stopped
+    environment:
+      # Consommées par le script init-symfony et par l'application.
+      SYMFONY_VERSION: ${SYMFONY_VERSION}
+      API_PLATFORM_VERSION: ${API_PLATFORM_VERSION}
+      BACKEND_FLAVOR: ${BACKEND_FLAVOR}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+    volumes:
+      # Bind mount : le code vit sur l'hôte, l'IDE l'édite directement.
+      - ./backend:/var/www/backend
+    depends_on:
+      database:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks: [app]
+
+  # ---------------------------------------------------------------------------
+  # web : nginx, unique point d'entrée HTTP du backend.
+  # ---------------------------------------------------------------------------
+  web:
+    image: nginx:${NGINX_TAG}
+    container_name: ${COMPOSE_PROJECT_NAME}_web
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT}:80"
+    volumes:
+      # Le code est monté en lecture seule : nginx n'a besoin que de servir
+      # les assets statiques et de connaître le chemin de public/index.php.
+      - ./backend:/var/www/backend:ro
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+    networks: [app]
+
+  # ---------------------------------------------------------------------------
+  # database : PostgreSQL
+  # ---------------------------------------------------------------------------
+  database:
+    image: postgres:${POSTGRES_TAG}
+    container_name: ${COMPOSE_PROJECT_NAME}_database
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      # Volume nommé : les données survivent aux `docker compose down`.
+      # Monté sur /var/lib/postgresql (et non .../data) : depuis Postgres 18,
+      # l'image officielle range les données dans un sous-répertoire versionné
+      # (layout pg_ctlcluster) et refuse de démarrer si le volume pointe
+      # directement sur .../data. Voir docker-library/postgres#1259.
+      - db_data:/var/lib/postgresql
+    healthcheck:
+      # Permet à `backend` d'attendre que la base accepte réellement les
+      # connexions (condition: service_healthy) plutôt que son simple démarrage.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [app]
+
+  # ---------------------------------------------------------------------------
+  # rabbitmq : broker de messages pour Symfony Messenger
+  # ---------------------------------------------------------------------------
+  rabbitmq:
+    image: rabbitmq:${RABBITMQ_TAG}
+    container_name: ${COMPOSE_PROJECT_NAME}_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "${RABBITMQ_PORT}:5672"      # protocole AMQP
+      - "${RABBITMQ_UI_PORT}:15672"  # interface d'administration web
+    volumes:
+      - mq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    networks: [app]
+
+volumes:
+  db_data:
+  mq_data:
+
+networks:
+  app:
+    driver: bridge
