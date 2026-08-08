@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import HelloWorld from './components/HelloWorld.vue'
+import LandingPage from './presentation/pages/LandingPage.vue'
 </script>
 
 <template>
-  <HelloWorld />
+  <LandingPage />
 </template>

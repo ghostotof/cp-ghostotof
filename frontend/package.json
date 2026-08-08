@@ -9,13 +9,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "bootstrap": "^5.3.8",
     "vue": "^3.5.40"
   },
   "devDependencies": {
+    "@iconify-json/lucide": "^1.2.122",
+    "@iconify-json/simple-icons": "^1.2.93",
     "@types/node": "^24.13.3",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/tsconfig": "^0.9.1",
     "typescript": "~6.0.2",
+    "unplugin-icons": "^23.0.1",
     "vite": "^8.2.0",
     "vue-tsc": "^3.3.8"
   }
