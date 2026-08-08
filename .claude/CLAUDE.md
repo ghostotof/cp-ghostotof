@@ -12,7 +12,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 6. The resulting application is fully documented with PHPDoc.
 7. The resulting application is fully linted with PHPStan.
 8. The security must be a top priority.
-9. The resulting can be shown during an interview. 
+9. In its final state, the website will have an authentication system with a generic guest user.
+   Without authentication, the site must not display any personal information that could identify me.
+   This information will be available once the user is authenticated.
+10. The resulting can be shown during an interview.
 
 ## Project state
 

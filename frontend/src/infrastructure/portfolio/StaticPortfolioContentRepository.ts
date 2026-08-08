@@ -34,7 +34,7 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
 
   getHeroContent(): HeroContent {
     return {
-      eyebrow: 'Développeur web',
+      eyebrow: 'Développeur Web Senior',
       titleLead: 'Je construis des applications',
       titleAccent: 'robustes, performantes et évolutives.',
       description:
