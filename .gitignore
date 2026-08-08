@@ -2,6 +2,10 @@
 /.env.local
 /.env.*.local
 
+# Informations personnelles locales (identité, coordonnées...) — cf. CLAUDE.md objectif n°9,
+# ne doit jamais être commité ni servir de source avant authentification.
+/.claude/CLAUDE.local.md
+
 # Dépendances et artefacts de build
 /backend/vendor/
 /backend/var/
