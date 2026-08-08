@@ -8,9 +8,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 2. The frontend is decoupled from the backend.
 3. The backend is a Symfony API-only application.
 4. The resulting application is fully deployable as a Docker Compose stack.
-5. The resulting application is fully testable with PHPUnit.
-6. The resulting application is fully documented with PHPDoc.
-7. The resulting application is fully linted with PHPStan.
+5. The resulting application is fully testable (frontend and backend).
+   - The frontend is fully testable with Vitest.
+   - The backend is fully testable with PHPUnit.
+6. The resulting application is fully documented (frontend and backend).
+   - The frontend is fully documented with Vitest.
+   - The backend is fully documented with PHPDoc.
+7. The resulting application is fully linted (frontend and backend).
+   - The frontend is fully linted with ESLint.
+   - The backend is fully linted with PHPStan.
 8. The security must be a top priority.
 9. In its final state, the website will have an authentication system with a generic guest user.
    Without authentication, the site must not display any personal information that could identify me.
@@ -79,14 +85,23 @@ Single-page app in clean-architecture layers, `PortfolioContentRepository` is th
   content); a future `HttpPortfolioContentRepository` would slot in without touching application/presentation.
 - `application/portfolio/usePortfolioContent.ts` — composable, injects the repository via an `InjectionKey`
   provided once in `main.ts` (composition root).
-- `presentation/{ui,layout,sections,pages}/` — Vue components; `pages/LandingPage.vue` assembles the sections.
+- `presentation/{ui,layout,sections,pages,router}/` — Vue components; `pages/LandingPage.vue` assembles the
+  sections, `pages/AboutPage.vue` is a standalone routed page (no `sections/` file — sections are only for
+  blocks assembled *inside* `LandingPage.vue`).
+- `presentation/layout/AppLayout.vue` — the shared chrome (`AppHeader` + `<RouterView>`), rendered once by
+  `App.vue`; it's the one place `siteIdentity`/`navigationLinks` are pulled from `usePortfolioContent()` for
+  every page, so individual pages only destructure the content they actually render.
+- `presentation/router/index.ts` — Vue Router 4 (history mode), routes are lazy-loaded (`() => import(...)`)
+  per page. `NavigationLink.to` is a router target as a plain string (e.g. `/a-propos`, `/#technologies` for
+  an in-page anchor on the landing page) — never a vue-router type, to keep the domain entity framework-free.
 
 To add a new content block: entity → repository interface method → `StaticPortfolioContentRepository`
 implementation → expose it from `usePortfolioContent` → new `presentation/sections/*.vue` → wire into
 `LandingPage.vue`.
 
-Navigation is anchor-based on a single page (`NavigationLink.href` like `#hero`, `#a-propos`,
-`NavigationLink.isEnabled` toggles it) — there is no vue-router, don't introduce one without asking.
+To add a new page: new route in `presentation/router/index.ts` → new `presentation/pages/*.vue` (its own
+`usePortfolioContent()` call for its own content) → new `NavigationLink` entry (`to` + `isEnabled`) in
+`StaticPortfolioContentRepository`. `AppHeader` derives the active nav link from `useRoute()`, not from props.
 
 Icons: domain/content only ever holds a string `iconKey`; the mapping to an actual `unplugin-icons` component
 (`~icons/lucide/...`, `~icons/simple-icons/...`) lives solely in `presentation/ui/icons.ts`.
@@ -152,6 +167,10 @@ Standard Symfony/Composer/Doctrine CLI applies: `php bin/console ...` (MakerBund
 npm test            # vitest run — one-shot, used in CI/pre-commit
 npm run test:watch  # vitest — watch mode for local development
 ```
+
+If `make sh-front` / `docker compose exec frontend` shows stale source (edits made on the host, e.g. a new
+`package.json` dependency, not reflected in the container), the container's bind-mount view has desynced —
+`docker compose restart frontend` resyncs it.
 
 ### Services and ports (dev)
 
