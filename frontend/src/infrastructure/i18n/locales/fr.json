@@ -1,0 +1,46 @@
+{
+  "nav": {
+    "home": "Accueil",
+    "skills": "Compétences",
+    "experiences": "Expériences",
+    "contact": "Contact",
+    "about": "À propos"
+  },
+  "common": {
+    "downloadCv": "Télécharger mon CV",
+    "openMenu": "Ouvrir le menu",
+    "closeMenu": "Fermer le menu"
+  },
+  "hero": {
+    "illustrationAlt": "Illustration : développeur derrière son ordinateur"
+  },
+  "technologies": {
+    "sectionTitle": "Technologies",
+    "andAlso": "ET AUSSI"
+  },
+  "quality": {
+    "sectionTitle": "Principes & qualité logicielle"
+  },
+  "localeSwitcher": {
+    "label": "Changer de langue"
+  },
+  "notFound": {
+    "heading": "Page introuvable",
+    "message": "La page que vous cherchez n'existe pas ou plus.",
+    "backHome": "Retour à l'accueil"
+  },
+  "seo": {
+    "home": {
+      "title": "Développeur Web Senior",
+      "description": "Démonstration des meilleures pratiques pour une application web moderne : Symfony, Vue.js, TypeScript, Docker."
+    },
+    "about": {
+      "title": "À propos",
+      "description": "À propos de ce site : son origine et sa conception."
+    },
+    "notFound": {
+      "title": "Page introuvable",
+      "description": "La page demandée n'existe pas."
+    }
+  }
+}

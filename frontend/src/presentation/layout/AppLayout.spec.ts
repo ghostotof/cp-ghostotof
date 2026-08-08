@@ -6,13 +6,14 @@ import LandingPage from '../pages/LandingPage.vue'
 import AboutPage from '../pages/AboutPage.vue'
 import { PORTFOLIO_CONTENT_REPOSITORY } from '../../application/portfolio/usePortfolioContent'
 import { StaticPortfolioContentRepository } from '../../infrastructure/portfolio/StaticPortfolioContentRepository'
+import { createAppI18n } from '../i18n'
 
-async function mountLayout(initialPath = '/') {
+async function mountLayout(initialPath = '/fr') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/', name: 'home', component: LandingPage },
-      { path: '/about', name: 'about', component: AboutPage },
+      { path: '/:locale(fr|en)', name: 'home', component: LandingPage },
+      { path: '/:locale(fr|en)/about', name: 'about', component: AboutPage },
     ],
   })
   await router.push(initialPath)
@@ -20,7 +21,7 @@ async function mountLayout(initialPath = '/') {
 
   return mount(AppLayout, {
     global: {
-      plugins: [router],
+      plugins: [router, createAppI18n()],
       provide: { [PORTFOLIO_CONTENT_REPOSITORY as symbol]: new StaticPortfolioContentRepository() },
     },
   })
@@ -29,18 +30,18 @@ async function mountLayout(initialPath = '/') {
 describe('AppLayout', () => {
   it("affiche l'en-tête (marque, navigation) autour de la page routée", async () => {
     const repository = new StaticPortfolioContentRepository()
-    const wrapper = await mountLayout('/')
+    const wrapper = await mountLayout('/fr')
 
-    expect(wrapper.text()).toContain(repository.getSiteIdentity().brandName)
+    expect(wrapper.text()).toContain(repository.getSiteIdentity('fr').brandName)
     expect(wrapper.find('main').exists()).toBe(true)
   })
 
-  it("rend la landing page sur '/' et la page À propos sur '/about'", async () => {
-    const homeWrapper = await mountLayout('/')
+  it("rend la landing page sur '/fr' et la page À propos sur '/fr/about'", async () => {
+    const homeWrapper = await mountLayout('/fr')
     expect(homeWrapper.find('#hero').exists()).toBe(true)
 
-    const aboutWrapper = await mountLayout('/about')
+    const aboutWrapper = await mountLayout('/fr/about')
     expect(aboutWrapper.find('#hero').exists()).toBe(false)
-    expect(aboutWrapper.text()).toContain(new StaticPortfolioContentRepository().getAboutContent().message)
+    expect(aboutWrapper.text()).toContain(new StaticPortfolioContentRepository().getAboutContent('fr').message)
   })
 })

@@ -12,7 +12,10 @@ const { siteIdentity, navigationLinks } = usePortfolioContent()
 
 <template>
   <div class="min-vh-100">
-    <AppHeader :site-identity="siteIdentity" :navigation-links="navigationLinks" />
+    <AppHeader
+      :site-identity="siteIdentity"
+      :navigation-links="navigationLinks"
+    />
     <main>
       <RouterView />
     </main>

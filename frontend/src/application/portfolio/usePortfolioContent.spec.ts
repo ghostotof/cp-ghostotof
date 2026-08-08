@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { PORTFOLIO_CONTENT_REPOSITORY, usePortfolioContent } from './usePortfolioContent'
+import { createAppI18n } from '../../presentation/i18n'
 import type { PortfolioContentRepository } from '../../domain/portfolio/repositories/PortfolioContentRepository'
 
 function createStubRepository(): PortfolioContentRepository {
   return {
     getSiteIdentity: () => ({ brandName: 'Stub', cvDownloadLabel: 'CV', cvDownloadHref: '/cv.pdf' }),
-    getNavigationLinks: () => [{ label: 'Accueil', to: '/', isEnabled: true }],
+    getNavigationLinks: () => [{ label: 'Accueil', to: '/fr', isEnabled: true }],
     getHeroContent: () => ({
       eyebrow: '',
       titleLead: '',
@@ -36,7 +37,10 @@ function mountWithComposable(repository?: PortfolioContentRepository) {
   })
 
   mount(TestComponent, {
-    global: repository ? { provide: { [PORTFOLIO_CONTENT_REPOSITORY as symbol]: repository } } : {},
+    global: {
+      plugins: [createAppI18n()],
+      provide: repository ? { [PORTFOLIO_CONTENT_REPOSITORY as symbol]: repository } : {},
+    },
   })
 
   return captured
@@ -47,14 +51,14 @@ describe('usePortfolioContent', () => {
     expect(() => mountWithComposable()).toThrow(/PortfolioContentRepository/)
   })
 
-  it('expose tout le contenu du portfolio à partir du repository injecté', () => {
+  it('expose tout le contenu du portfolio, réactif à la locale, à partir du repository injecté', () => {
     const repository = createStubRepository()
 
     const result = mountWithComposable(repository)
 
-    expect(result?.siteIdentity.brandName).toBe('Stub')
-    expect(result?.navigationLinks).toHaveLength(1)
-    expect(result?.aboutContent).toEqual(repository.getAboutContent())
-    expect(result?.heroContent).toEqual(repository.getHeroContent())
+    expect(result?.siteIdentity.value.brandName).toBe('Stub')
+    expect(result?.navigationLinks.value).toHaveLength(1)
+    expect(result?.aboutContent.value).toEqual(repository.getAboutContent('fr'))
+    expect(result?.heroContent.value).toEqual(repository.getHeroContent('fr'))
   })
 })

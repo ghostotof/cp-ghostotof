@@ -6,21 +6,24 @@ import type { Technology } from '../entities/Technology'
 import type { QualityPrinciple } from '../entities/QualityPrinciple'
 import type { QualityTrait } from '../entities/QualityTrait'
 import type { Stat } from '../entities/Stat'
+import type { Locale } from '../entities/Locale'
 
 /**
  * Abstraction (DIP) dont dépendent l'application et la présentation.
  * L'implémentation concrète (statique aujourd'hui, HTTP demain) est
  * injectée au niveau du composition root (main.ts), jamais instanciée
- * directement par un composant.
+ * directement par un composant. Chaque méthode est paramétrée par la
+ * locale courante : le site étant multilingue, le contenu n'a pas de
+ * sens indépendamment d'une langue.
  */
 export interface PortfolioContentRepository {
-  getSiteIdentity(): SiteIdentity
-  getNavigationLinks(): readonly NavigationLink[]
-  getHeroContent(): HeroContent
-  getAboutContent(): AboutContent
-  getFeaturedTechnologies(): readonly Technology[]
-  getAdditionalTechnologies(): readonly Technology[]
-  getQualityPrinciples(): readonly QualityPrinciple[]
-  getQualityTraits(): readonly QualityTrait[]
-  getStats(): readonly Stat[]
+  getSiteIdentity(locale: Locale): SiteIdentity
+  getNavigationLinks(locale: Locale): readonly NavigationLink[]
+  getHeroContent(locale: Locale): HeroContent
+  getAboutContent(locale: Locale): AboutContent
+  getFeaturedTechnologies(locale: Locale): readonly Technology[]
+  getAdditionalTechnologies(locale: Locale): readonly Technology[]
+  getQualityPrinciples(locale: Locale): readonly QualityPrinciple[]
+  getQualityTraits(locale: Locale): readonly QualityTrait[]
+  getStats(locale: Locale): readonly Stat[]
 }

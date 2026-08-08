@@ -3,19 +3,21 @@ import { mount } from '@vue/test-utils'
 import AboutPage from './AboutPage.vue'
 import { PORTFOLIO_CONTENT_REPOSITORY } from '../../application/portfolio/usePortfolioContent'
 import { StaticPortfolioContentRepository } from '../../infrastructure/portfolio/StaticPortfolioContentRepository'
+import { createAppI18n } from '../i18n'
 
 function mountAboutPage() {
   return mount(AboutPage, {
     global: {
+      plugins: [createAppI18n()],
       provide: { [PORTFOLIO_CONTENT_REPOSITORY as symbol]: new StaticPortfolioContentRepository() },
     },
   })
 }
 
 describe('AboutPage', () => {
-  it("rend l'eyebrow, le titre et le message fournis par le repository", () => {
+  it("rend l'eyebrow, le titre et le message fournis par le repository (locale par défaut)", () => {
     const repository = new StaticPortfolioContentRepository()
-    const about = repository.getAboutContent()
+    const about = repository.getAboutContent('fr')
     const wrapper = mountAboutPage()
 
     expect(wrapper.text()).toContain(about.eyebrow)

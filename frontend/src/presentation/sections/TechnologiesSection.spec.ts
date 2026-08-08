@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import TechnologiesSection from './TechnologiesSection.vue'
 import type { Technology } from '../../domain/portfolio/entities/Technology'
+import { createAppI18n } from '../i18n'
 
 const featuredTechnologies: readonly Technology[] = [
   { name: 'Symfony', description: 'Framework PHP', iconKey: 'symfony' },
@@ -15,7 +16,10 @@ const additionalTechnologies: readonly Technology[] = [
 ]
 
 function mountSection() {
-  return mount(TechnologiesSection, { props: { featuredTechnologies, additionalTechnologies } })
+  return mount(TechnologiesSection, {
+    props: { featuredTechnologies, additionalTechnologies },
+    global: { plugins: [createAppI18n()] },
+  })
 }
 
 describe('TechnologiesSection', () => {

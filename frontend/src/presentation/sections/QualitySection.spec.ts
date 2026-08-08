@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import QualitySection from './QualitySection.vue'
 import type { QualityPrinciple } from '../../domain/portfolio/entities/QualityPrinciple'
 import type { QualityTrait } from '../../domain/portfolio/entities/QualityTrait'
+import { createAppI18n } from '../i18n'
 
 const qualityPrinciples: readonly QualityPrinciple[] = [
   { title: 'DDD', description: 'Modélisation du domaine métier.', iconKey: 'boxes' },
@@ -11,9 +12,16 @@ const qualityPrinciples: readonly QualityPrinciple[] = [
 
 const qualityTraits: readonly QualityTrait[] = [{ label: 'Architecture propre' }, { label: 'Tests automatisés' }]
 
+function mountSection() {
+  return mount(QualitySection, {
+    props: { qualityPrinciples, qualityTraits },
+    global: { plugins: [createAppI18n()] },
+  })
+}
+
 describe('QualitySection', () => {
   it('rend une carte par principe de qualité', () => {
-    const wrapper = mount(QualitySection, { props: { qualityPrinciples, qualityTraits } })
+    const wrapper = mountSection()
 
     for (const principle of qualityPrinciples) {
       expect(wrapper.text()).toContain(principle.title)
@@ -22,7 +30,7 @@ describe('QualitySection', () => {
   })
 
   it('rend un badge par trait de qualité', () => {
-    const wrapper = mount(QualitySection, { props: { qualityPrinciples, qualityTraits } })
+    const wrapper = mountSection()
 
     const badges = wrapper.findAll('.badge-soft')
     expect(badges).toHaveLength(qualityTraits.length)

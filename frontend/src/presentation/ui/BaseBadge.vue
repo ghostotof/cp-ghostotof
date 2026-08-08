@@ -11,7 +11,14 @@ const icon = computed(() => resolveIcon(props.iconKey))
 
 <template>
   <span class="badge-soft">
-    <component :is="icon" v-if="icon" width="14" height="14" class="text-primary" aria-hidden="true" />
+    <component
+      :is="icon"
+      v-if="icon"
+      width="14"
+      height="14"
+      class="text-primary"
+      aria-hidden="true"
+    />
     <slot />
   </span>
 </template>

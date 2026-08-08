@@ -10,10 +10,16 @@ defineProps<{
 </script>
 
 <template>
-  <section id="hero" class="container-xl py-5 py-lg-6">
+  <section
+    id="hero"
+    class="container-xl py-5 py-lg-6"
+  >
     <div class="row align-items-center g-5">
       <div class="col-lg-6">
-        <p class="text-primary text-uppercase small fw-semibold mb-3" style="letter-spacing: 0.08em">
+        <p
+          class="text-primary text-uppercase small fw-semibold mb-3"
+          style="letter-spacing: 0.08em"
+        >
           {{ content.eyebrow }}
         </p>
 
@@ -22,7 +28,10 @@ defineProps<{
           <span class="text-gradient d-block">{{ content.titleAccent }}</span>
         </h1>
 
-        <p class="text-body-secondary mt-4" style="max-width: 34rem">
+        <p
+          class="text-body-secondary mt-4"
+          style="max-width: 34rem"
+        >
           {{ content.description }}
         </p>
 
@@ -39,8 +48,18 @@ defineProps<{
         </div>
 
         <ul class="list-unstyled d-flex flex-wrap gap-4 mt-5 mb-0 small text-body-secondary">
-          <li v-for="highlight in content.highlights" :key="highlight.label" class="d-flex align-items-center gap-2">
-            <component :is="resolveIcon(highlight.iconKey)" width="16" height="16" class="text-primary" aria-hidden="true" />
+          <li
+            v-for="highlight in content.highlights"
+            :key="highlight.label"
+            class="d-flex align-items-center gap-2"
+          >
+            <component
+              :is="resolveIcon(highlight.iconKey)"
+              width="16"
+              height="16"
+              class="text-primary"
+              aria-hidden="true"
+            />
             {{ highlight.label }}
           </li>
         </ul>

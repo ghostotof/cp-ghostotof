@@ -1,0 +1,46 @@
+{
+  "nav": {
+    "home": "Home",
+    "skills": "Skills",
+    "experiences": "Experience",
+    "contact": "Contact",
+    "about": "About"
+  },
+  "common": {
+    "downloadCv": "Download my CV",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu"
+  },
+  "hero": {
+    "illustrationAlt": "Illustration: developer behind their computer"
+  },
+  "technologies": {
+    "sectionTitle": "Technologies",
+    "andAlso": "ALSO"
+  },
+  "quality": {
+    "sectionTitle": "Principles & software quality"
+  },
+  "localeSwitcher": {
+    "label": "Change language"
+  },
+  "notFound": {
+    "heading": "Page not found",
+    "message": "The page you're looking for doesn't exist anymore.",
+    "backHome": "Back to home"
+  },
+  "seo": {
+    "home": {
+      "title": "Senior Web Developer",
+      "description": "A demonstration of modern web application best practices: Symfony, Vue.js, TypeScript, Docker."
+    },
+    "about": {
+      "title": "About",
+      "description": "About this site: its origin and design."
+    },
+    "notFound": {
+      "title": "Page not found",
+      "description": "The requested page does not exist."
+    }
+  }
+}

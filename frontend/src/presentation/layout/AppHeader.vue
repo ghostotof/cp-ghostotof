@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
 import type { NavigationLink } from '../../domain/portfolio/entities/NavigationLink'
+import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
+import LocaleSwitcher from '../ui/LocaleSwitcher.vue'
 import IconDownload from '~icons/lucide/download'
 import IconMenu from '~icons/lucide/menu'
 import IconX from '~icons/lucide/x'
@@ -14,6 +17,18 @@ defineProps<{
 
 const isMobileMenuOpen = ref(false)
 const route = useRoute()
+const { t, locale } = useI18n()
+
+/**
+ * Priorité au paramètre de route (source de vérité de l'URL) ; repli sur la locale
+ * i18n courante quand la route active n'en a pas (ex. page 404, route catch-all
+ * `/:pathMatch(.*)*` sans segment `:locale`).
+ */
+const homeLink = computed(() => {
+  const routeLocale = route.params.locale
+  const currentLocale = typeof routeLocale === 'string' && isSupportedLocale(routeLocale) ? routeLocale : (locale.value as Locale)
+  return `/${currentLocale}`
+})
 
 /**
  * Un seul lien doit apparaître actif à la fois. Priorité à la correspondance
@@ -40,12 +55,20 @@ function navLinkClass(link: NavigationLink) {
 </script>
 
 <template>
-  <header class="sticky-top border-bottom" style="background: rgba(11, 10, 20, 0.85); backdrop-filter: blur(8px)">
+  <header
+    class="sticky-top border-bottom"
+    style="background: rgba(11, 10, 20, 0.85); backdrop-filter: blur(8px)"
+  >
     <div class="container-xl d-flex align-items-center justify-content-between gap-3 py-3">
-      <RouterLink to="/" class="d-flex align-items-center gap-2 text-white text-decoration-none fw-semibold">
+      <RouterLink
+        :to="homeLink"
+        class="d-flex align-items-center gap-2 text-white text-decoration-none fw-semibold"
+      >
+        <!-- Glyphe décoratif du logo, pas du texte à traduire -->
         <span
           class="d-inline-flex align-items-center justify-content-center rounded-circle text-white small"
           style="width: 2rem; height: 2rem; background: linear-gradient(135deg, #7c3aed, #4338ca)"
+          aria-hidden="true"
         >
           &lt;/&gt;
         </span>
@@ -53,7 +76,10 @@ function navLinkClass(link: NavigationLink) {
       </RouterLink>
 
       <nav class="d-none d-md-flex align-items-center gap-4 small">
-        <template v-for="link in navigationLinks" :key="link.label">
+        <template
+          v-for="link in navigationLinks"
+          :key="link.label"
+        >
           <RouterLink
             v-if="link.isEnabled"
             :to="link.to"
@@ -63,26 +89,41 @@ function navLinkClass(link: NavigationLink) {
           >
             {{ link.label }}
           </RouterLink>
-          <a v-else class="nav-link-portfolio" :class="navLinkClass(link)" aria-disabled="true">
+          <a
+            v-else
+            class="nav-link-portfolio"
+            :class="navLinkClass(link)"
+            aria-disabled="true"
+          >
             {{ link.label }}
           </a>
         </template>
       </nav>
 
       <div class="d-flex align-items-center gap-2">
+        <LocaleSwitcher />
+
         <a
           :href="siteIdentity.cvDownloadHref"
           class="btn btn-outline-light btn-sm d-none d-sm-inline-flex align-items-center gap-2"
         >
           {{ siteIdentity.cvDownloadLabel }}
-          <IconDownload width="16" height="16" aria-hidden="true" />
+          <IconDownload
+            width="16"
+            height="16"
+            aria-hidden="true"
+          />
         </a>
         <a
           :href="siteIdentity.cvDownloadHref"
           class="btn btn-outline-light btn-sm d-sm-none d-inline-flex align-items-center"
           :aria-label="siteIdentity.cvDownloadLabel"
         >
-          <IconDownload width="16" height="16" aria-hidden="true" />
+          <IconDownload
+            width="16"
+            height="16"
+            aria-hidden="true"
+          />
         </a>
 
         <button
@@ -90,18 +131,36 @@ function navLinkClass(link: NavigationLink) {
           class="btn btn-outline-light btn-sm d-md-none d-inline-flex align-items-center justify-content-center"
           aria-controls="mobile-nav"
           :aria-expanded="isMobileMenuOpen"
-          :aria-label="isMobileMenuOpen ? 'Fermer le menu' : 'Ouvrir le menu'"
+          :aria-label="isMobileMenuOpen ? t('common.closeMenu') : t('common.openMenu')"
           @click="isMobileMenuOpen = !isMobileMenuOpen"
         >
-          <IconX v-if="isMobileMenuOpen" width="18" height="18" aria-hidden="true" />
-          <IconMenu v-else width="18" height="18" aria-hidden="true" />
+          <IconX
+            v-if="isMobileMenuOpen"
+            width="18"
+            height="18"
+            aria-hidden="true"
+          />
+          <IconMenu
+            v-else
+            width="18"
+            height="18"
+            aria-hidden="true"
+          />
         </button>
       </div>
     </div>
 
-    <nav v-if="isMobileMenuOpen" id="mobile-nav" class="d-md-none border-top" style="background: rgba(11, 10, 20, 0.95)">
+    <nav
+      v-if="isMobileMenuOpen"
+      id="mobile-nav"
+      class="d-md-none border-top"
+      style="background: rgba(11, 10, 20, 0.95)"
+    >
       <div class="container-xl d-flex flex-column py-2">
-        <template v-for="link in navigationLinks" :key="link.label">
+        <template
+          v-for="link in navigationLinks"
+          :key="link.label"
+        >
           <RouterLink
             v-if="link.isEnabled"
             :to="link.to"

@@ -7,125 +7,73 @@ import type { Technology } from '../../domain/portfolio/entities/Technology'
 import type { QualityPrinciple } from '../../domain/portfolio/entities/QualityPrinciple'
 import type { QualityTrait } from '../../domain/portfolio/entities/QualityTrait'
 import type { Stat } from '../../domain/portfolio/entities/Stat'
+import type { Locale } from '../../domain/portfolio/entities/Locale'
+import type { PortfolioLocaleContent } from './content/PortfolioLocaleContent'
+import frContent from './content/fr'
+import enContent from './content/en'
+import frMessages from '../i18n/locales/fr.json'
+import enMessages from '../i18n/locales/en.json'
+
+type UiMessages = typeof frMessages
+
+const CONTENT: Record<Locale, PortfolioLocaleContent> = { fr: frContent, en: enContent }
+const MESSAGES: Record<Locale, UiMessages> = { fr: frMessages, en: enMessages }
 
 /**
  * Source de contenu statique (contenu repris de la maquette .claude/ressources/mockup-site-perso.png).
  * Remplaçable demain par une implémentation HTTP (ex. HttpPortfolioContentRepository consommant
  * l'API Symfony) sans aucun changement côté application/présentation, grâce à l'interface
  * PortfolioContentRepository.
+ *
+ * N'importe jamais le runtime vue-i18n (`presentation/i18n`) : cette classe reste de
+ * l'infrastructure pure, elle lit directement les fichiers de messages/contenu par
+ * locale plutôt que de dépendre de la couche présentation.
  */
 export class StaticPortfolioContentRepository implements PortfolioContentRepository {
-  getSiteIdentity(): SiteIdentity {
+  getSiteIdentity(locale: Locale): SiteIdentity {
     return {
       brandName: 'CP-Ghostotof',
-      cvDownloadLabel: 'Télécharger mon CV',
+      cvDownloadLabel: MESSAGES[locale].common.downloadCv,
       cvDownloadHref: '/cv.pdf',
     }
   }
 
-  getNavigationLinks(): readonly NavigationLink[] {
+  getNavigationLinks(locale: Locale): readonly NavigationLink[] {
+    const nav = MESSAGES[locale].nav
     return [
-      { label: 'Accueil', to: '/', isEnabled: true },
-      { label: 'Compétences', to: '/#technologies', isEnabled: true },
-      { label: 'Expériences', to: '/#experiences', isEnabled: false },
-      { label: 'Contact', to: '/#contact', isEnabled: false },
-      { label: 'À propos', to: '/about', isEnabled: true },
+      { label: nav.home, to: `/${locale}`, isEnabled: true },
+      { label: nav.skills, to: `/${locale}#technologies`, isEnabled: true },
+      { label: nav.experiences, to: `/${locale}#experiences`, isEnabled: false },
+      { label: nav.contact, to: `/${locale}#contact`, isEnabled: false },
+      { label: nav.about, to: `/${locale}/about`, isEnabled: true },
     ]
   }
 
-  getHeroContent(): HeroContent {
-    return {
-      eyebrow: 'Développeur Web Senior',
-      titleLead: 'Je construis des applications',
-      titleAccent: 'robustes, performantes et évolutives.',
-      description:
-        'Développeur passionné par la création de solutions web modernes et maintenables, avec une approche orientée qualité et expérience utilisateur.',
-      callsToAction: [
-        { label: 'Découvrir mon approche', href: '#technologies', variant: 'primary', iconKey: 'arrow-right' },
-        { label: 'Me contacter', href: '#contact', variant: 'secondary', iconKey: 'message-circle' },
-      ],
-      highlights: [
-        { label: 'Code propre', iconKey: 'code' },
-        { label: 'Architecture scalable', iconKey: 'layers' },
-        { label: 'Performance', iconKey: 'zap' },
-        { label: 'Sécurité', iconKey: 'shield' },
-      ],
-    }
+  getHeroContent(locale: Locale): HeroContent {
+    return CONTENT[locale].hero
   }
 
-  getAboutContent(): AboutContent {
-    return {
-      eyebrow: 'À propos',
-      title: 'À propos de ce site',
-      // Contenu volontairement minimal tant que l'authentification (cf. CLAUDE.md,
-      // objectif n°9) n'est pas en place : aucune information personnelle identifiante
-      // n'est affichée avant qu'un utilisateur authentifié y accède.
-      message: "Site créé par moi et l'IA.",
-    }
+  getAboutContent(locale: Locale): AboutContent {
+    return CONTENT[locale].about
   }
 
-  getFeaturedTechnologies(): readonly Technology[] {
-    return [
-      { name: 'Symfony', description: 'Framework PHP', iconKey: 'symfony' },
-      { name: 'Docker', description: 'Conteneurisation', iconKey: 'docker' },
-      { name: 'PostgreSQL', description: 'Base de données', iconKey: 'postgresql' },
-      { name: 'Symfony Messenger', description: 'Communication asynchrone', iconKey: 'mail' },
-      { name: 'Vue.js', description: 'Framework JS', iconKey: 'vuejs' },
-      { name: 'TypeScript', description: 'Typage statique', iconKey: 'typescript' },
-    ]
+  getFeaturedTechnologies(locale: Locale): readonly Technology[] {
+    return CONTENT[locale].technologies.featured
   }
 
-  getAdditionalTechnologies(): readonly Technology[] {
-    return [
-      { name: 'API Platform' },
-      { name: 'Bootstrap' },
-      { name: 'Git & GitHub' },
-      { name: 'Nginx' },
-      { name: 'Linux' },
-      { name: 'CI/CD (GitHub Actions)' },
-    ]
+  getAdditionalTechnologies(locale: Locale): readonly Technology[] {
+    return CONTENT[locale].technologies.additional
   }
 
-  getQualityPrinciples(): readonly QualityPrinciple[] {
-    return [
-      {
-        title: 'DDD',
-        description:
-          'Modélisation du domaine métier pour créer des applications alignées sur les besoins réels et faciles à faire évoluer.',
-        iconKey: 'boxes',
-      },
-      {
-        title: 'SOLID',
-        description: 'Des bases solides pour un code flexible, maintenable et extensible dans le temps.',
-        iconKey: 'columns-3',
-      },
-      {
-        title: 'Design Patterns',
-        description:
-          'Utilisation de patrons de conception adaptés pour résoudre des problèmes récurrents avec élégance et efficacité.',
-        iconKey: 'puzzle',
-      },
-    ]
+  getQualityPrinciples(locale: Locale): readonly QualityPrinciple[] {
+    return CONTENT[locale].quality.principles
   }
 
-  getQualityTraits(): readonly QualityTrait[] {
-    return [
-      { label: 'Architecture propre' },
-      { label: 'Maintenabilité' },
-      { label: 'Évolutivité' },
-      { label: 'Qualité du code' },
-      { label: 'Tests automatisés' },
-      { label: 'Revues de code' },
-      { label: 'Documentation claire' },
-    ]
+  getQualityTraits(locale: Locale): readonly QualityTrait[] {
+    return CONTENT[locale].quality.traits
   }
 
-  getStats(): readonly Stat[] {
-    return [
-      { value: '+50K', label: 'Lignes de code', iconKey: 'code' },
-      { value: '10+', label: 'Technologies maîtrisées', iconKey: 'box' },
-      { value: '100%', label: 'Engagement qualité', iconKey: 'users' },
-      { value: '∞', label: 'Passion', iconKey: 'infinity' },
-    ]
+  getStats(locale: Locale): readonly Stat[] {
+    return CONTENT[locale].stats
   }
 }

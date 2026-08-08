@@ -23,6 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    This information will be available once the user is authenticated.
 10. The modifications must follow the git flow planned for this project on Gitlab (main branch "main", next release "develop", new feature "feature", etc...)
 11. The resulting can be shown during an interview.
+12. The resulting must be fully multilingual (French, English)
 
 ## Project state
 
@@ -85,30 +86,77 @@ Single-page app in clean-architecture layers, `PortfolioContentRepository` is th
   content); a future `HttpPortfolioContentRepository` would slot in without touching application/presentation.
 - `application/portfolio/usePortfolioContent.ts` — composable, injects the repository via an `InjectionKey`
   provided once in `main.ts` (composition root).
-- `presentation/{ui,layout,sections,pages,router}/` — Vue components; `pages/LandingPage.vue` assembles the
-  sections, `pages/AboutPage.vue` is a standalone routed page (no `sections/` file — sections are only for
+- `presentation/{ui,layout,sections,pages,router,i18n}/` — Vue components; `pages/LandingPage.vue` assembles
+  the sections, `pages/AboutPage.vue` is a standalone routed page (no `sections/` file — sections are only for
   blocks assembled *inside* `LandingPage.vue`).
 - `presentation/layout/AppLayout.vue` — the shared chrome (`AppHeader` + `<RouterView>`), rendered once by
   `App.vue`; it's the one place `siteIdentity`/`navigationLinks` are pulled from `usePortfolioContent()` for
   every page, so individual pages only destructure the content they actually render.
 - `presentation/router/index.ts` — Vue Router 4 (history mode), routes are lazy-loaded (`() => import(...)`)
-  per page. `NavigationLink.to` is a router target as a plain string (e.g. `/about`, `/#technologies` for
-  an in-page anchor on the landing page) — never a vue-router type, to keep the domain entity framework-free.
+  per page. `NavigationLink.to` is a router target as a plain string, locale already included
+  (e.g. `/fr/about`, `/en#technologies` for an in-page anchor on the landing page) — never a vue-router type,
+  to keep the domain entity framework-free.
 
-To add a new content block: entity → repository interface method → `StaticPortfolioContentRepository`
-implementation → expose it from `usePortfolioContent` → new `presentation/sections/*.vue` → wire into
-`LandingPage.vue`.
+To add a new content block: entity → repository interface method (with a `locale: Locale` parameter) →
+`infrastructure/portfolio/content/{fr,en}.ts` (structured content) → expose it from `usePortfolioContent` →
+new `presentation/sections/*.vue` → wire into `LandingPage.vue`.
 
-To add a new page: new route in `presentation/router/index.ts` → new `presentation/pages/*.vue` (its own
+To add a new page: new route in `presentation/router/index.ts` (nested under `/:locale(fr|en)`, with
+`meta.titleKey`/`meta.descriptionKey` for SEO — see below) → new `presentation/pages/*.vue` (its own
 `usePortfolioContent()` call for its own content) → new `NavigationLink` entry (`to` + `isEnabled`) in
 `StaticPortfolioContentRepository`. `AppHeader` derives the active nav link from `useRoute()`, not from props.
+
+#### i18n (French/English)
+
+Every route is prefixed by locale (`/fr`, `/en/about`…), the single source of truth for the active language —
+`presentation/router/index.ts`'s `beforeEach` syncs `i18n.global.locale` from `to.params.locale` on every
+navigation (also handled for the `/:pathMatch(.*)*` 404 catch-all, which has no `:locale` param: the guard
+falls back to parsing the URL's first path segment so the 404 page itself stays in the right language).
+`/` redirects to the user's previously chosen locale (`localStorage`) or their browser language, defaulting
+to `fr`.
+
+Two deliberately separate content sources, to keep `@intlify/eslint-plugin-vue-i18n`'s key-usage checks
+meaningful (see Lint below):
+- `infrastructure/i18n/locales/{fr,en}.json` — short UI-chrome strings only (nav labels, buttons, aria-labels,
+  SEO title/description per page), consumed exclusively via `useI18n()`'s `t()`/`$t()`. Wired into vue-i18n by
+  `presentation/i18n/index.ts` (`createAppI18n()` factory + an `i18n` singleton used by `main.ts` and the
+  router). Tests call `createAppI18n()` themselves for an isolated instance, the same pattern the router specs
+  already use for a fresh `createRouter(...)` per test.
+- `infrastructure/portfolio/content/{fr,en}.ts` — the structured portfolio content (hero, about, technologies,
+  quality, stats), typed against `PortfolioLocaleContent` and read directly by `StaticPortfolioContentRepository`
+  (never through vue-i18n). Keep new "content" here, not in the i18n JSON, unless it's genuinely a short UI string.
+
+`StaticPortfolioContentRepository` stays framework-free infrastructure: it reads the raw locale JSON/TS files
+directly, and never imports the vue-i18n runtime (that lives in `presentation/i18n`, which infrastructure must
+not depend on).
+
+#### SEO
+
+No SSR (plain SPA), so `presentation/router/seo.ts` (`applySeoMeta`, called from a `router.afterEach`) updates
+`document.title`, `<meta name="description">`, `<link rel="canonical">`, and `<link rel="alternate" hreflang>`
+(one per locale plus `x-default`) on every navigation — only visible to crawlers that execute JS, but Googlebot
+does. The 404 route gets `<meta name="robots" content="noindex, nofollow">` instead of canonical/hreflang.
 
 Icons: domain/content only ever holds a string `iconKey`; the mapping to an actual `unplugin-icons` component
 (`~icons/lucide/...`, `~icons/simple-icons/...`) lives solely in `presentation/ui/icons.ts`.
 
 Tests are colocated `*.spec.ts` next to the file under test (Vitest, glob `src/**/*.spec.ts` in
 `vite.config.ts`), mounted with `@vue/test-utils` and a stub/real repository injected via the same
-`InjectionKey` as `main.ts`.
+`InjectionKey` as `main.ts`. Any component using `usePortfolioContent()`, `useI18n()`, or `useRoute()`/
+`RouterLink` needs the corresponding plugin(s) in `global.plugins` when mounted in a test (`createAppI18n()`
+from `presentation/i18n`, and a locally-built `createRouter(...)` — never the app's own `router`/`i18n`
+singletons, to keep tests isolated from each other).
+
+#### Lint
+
+`npm run lint` (`eslint .`, flat config in `eslint.config.js`): `eslint-plugin-vue` (`flat/recommended`) +
+`@vue/eslint-config-typescript` (non type-checked — type errors are already caught by `vue-tsc -b` in the
+`build` script, ESLint here is style/correctness only) + `@intlify/eslint-plugin-vue-i18n` (`flat/recommended`,
+`settings['vue-i18n'].localeDir` points at `infrastructure/i18n/locales/*.json`) — this last one is why UI-chrome
+strings and portfolio content are kept in separate files (see i18n above): mixing them in would make
+`no-raw-text`/key-usage checks meaningless. `no-raw-text`'s `ignorePattern` is configured to skip strings with
+no letters at all, for purely decorative glyphs (the header logo's `</>`, the "et aussi" middle dot). `npm run
+lint:fix` for the auto-fixable (mostly formatting) rules.
 
 ### Frontend build/deploy
 
@@ -126,6 +174,11 @@ without ever silently jumping to Composer 3.
 `jsdom` (frontend devDependency, used by Vitest) is deliberately pinned to `^26.x`, not latest: `jsdom@30`
 requires Node `>=22.22`/`>=26` and fails at runtime (`webidl.util.markAsUncloneable is not a function`) on
 older Node — including any host below the project's Docker `NODE_TAG` (26.7.0). Don't let it float to latest.
+
+`vue-i18n`/`@intlify/*` (and transitively a few ESLint tooling packages) declare an `engines.node >= 22`
+requirement. `npm install`/`test`/`build` still work on an older host Node (just an `EBADENGINE` warning, not
+a hard failure) as of this writing, but don't be surprised by the warning — it's expected below Node 22,
+same root cause as the jsdom note above.
 
 ## Commands
 

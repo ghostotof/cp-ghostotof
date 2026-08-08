@@ -15,6 +15,9 @@ const { heroContent, featuredTechnologies, additionalTechnologies, qualityPrinci
     :featured-technologies="featuredTechnologies"
     :additional-technologies="additionalTechnologies"
   />
-  <QualitySection :quality-principles="qualityPrinciples" :quality-traits="qualityTraits" />
+  <QualitySection
+    :quality-principles="qualityPrinciples"
+    :quality-traits="qualityTraits"
+  />
   <StatsSection :stats="stats" />
 </template>
