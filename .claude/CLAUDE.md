@@ -15,7 +15,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 9. In its final state, the website will have an authentication system with a generic guest user.
    Without authentication, the site must not display any personal information that could identify me.
    This information will be available once the user is authenticated.
-10. The resulting can be shown during an interview.
+10. The modifications must follow the git flow planned for this project on Gitlab (main branch "main", next release "develop", new feature "feature", etc...)
+11. The resulting can be shown during an interview.
 
 ## Project state
 
