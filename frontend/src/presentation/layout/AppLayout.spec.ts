@@ -55,6 +55,6 @@ describe('AppLayout', () => {
 
     const aboutWrapper = await mountLayout('/fr/about')
     expect(aboutWrapper.find('#hero').exists()).toBe(false)
-    expect(aboutWrapper.text()).toContain(new StaticPortfolioContentRepository().getAboutContent('fr').message)
+    expect(aboutWrapper.text()).toContain(new StaticPortfolioContentRepository().getAboutContent('fr').site.eyebrow)
   })
 })

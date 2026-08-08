@@ -25,19 +25,30 @@ describe('StaticPortfolioContentRepository', () => {
     }
   })
 
-  it.each(SUPPORTED_LOCALES)('fournit un contenu "À propos" concis (eyebrow, titre, message) pour %s', (locale) => {
-    const about = repository.getAboutContent(locale)
+  it.each(SUPPORTED_LOCALES)(
+    'fournit un contenu "À propos" structuré (site + moi, chacun avec des cartes) pour %s',
+    (locale) => {
+      const about = repository.getAboutContent(locale)
 
-    expect(about.eyebrow).not.toBe('')
-    expect(about.title).not.toBe('')
-    expect(about.message).not.toBe('')
-  })
+      expect(about.site.eyebrow).not.toBe('')
+      expect(about.site.cards.length).toBeGreaterThan(0)
+
+      expect(about.me.eyebrow).not.toBe('')
+      expect(about.me.technicalCards.length).toBeGreaterThan(0)
+      expect(about.me.personalCards.length).toBeGreaterThan(0)
+    },
+  )
 
   it.each(SUPPORTED_LOCALES)(
     "ne divulgue aucune information personnelle identifiante avant authentification (%s)",
     (locale) => {
       const about = repository.getAboutContent(locale)
-      const fullText = [about.eyebrow, about.title, about.message].join(' ')
+      const allCards = [...about.site.cards, ...about.me.technicalCards, ...about.me.personalCards]
+      const fullText = [
+        about.site.eyebrow,
+        about.me.eyebrow,
+        ...allCards.map((card) => `${card.title} ${card.description}`),
+      ].join(' ')
 
       // Le site doit rester générique tant que l'utilisateur n'est pas authentifié (cf. CLAUDE.md, objectif n°9) :
       // pas d'adresse e-mail, pas d'URL externe, pas de numéro de téléphone en clair.
@@ -49,6 +60,6 @@ describe('StaticPortfolioContentRepository', () => {
 
   it('fournit un contenu différent selon la locale (pas de contenu figé en français)', () => {
     expect(repository.getHeroContent('fr').eyebrow).not.toBe(repository.getHeroContent('en').eyebrow)
-    expect(repository.getAboutContent('fr').message).not.toBe(repository.getAboutContent('en').message)
+    expect(repository.getAboutContent('fr').site.eyebrow).not.toBe(repository.getAboutContent('en').site.eyebrow)
   })
 })

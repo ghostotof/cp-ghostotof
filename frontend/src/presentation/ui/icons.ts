@@ -18,6 +18,10 @@ import IconUsers from '~icons/lucide/users'
 import IconInfinity from '~icons/lucide/infinity'
 import IconMail from '~icons/lucide/mail'
 import IconCheck from '~icons/lucide/check'
+import IconServer from '~icons/lucide/server'
+import IconSparkles from '~icons/lucide/sparkles'
+import IconLightbulb from '~icons/lucide/lightbulb'
+import IconTarget from '~icons/lucide/target'
 
 /**
  * Le domaine ne connaît que des identifiants (iconKey) sous forme de chaînes,
@@ -45,6 +49,10 @@ const iconRegistry: Record<string, Component> = {
   infinity: IconInfinity,
   mail: IconMail,
   check: IconCheck,
+  server: IconServer,
+  sparkles: IconSparkles,
+  lightbulb: IconLightbulb,
+  target: IconTarget,
 }
 
 export function resolveIcon(iconKey: string | undefined): Component | undefined {

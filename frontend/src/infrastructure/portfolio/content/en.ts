@@ -20,11 +20,79 @@ const en: PortfolioLocaleContent = {
   },
 
   about: {
-    eyebrow: 'About',
-    title: 'About this site',
-    // Content is intentionally minimal until authentication is in place
-    // (see CLAUDE.md, goal #9).
-    message: 'Site built by me and AI.',
+    site: {
+      eyebrow: 'About this site',
+      cards: [
+        {
+          title: 'Architecture',
+          description:
+            'Decoupled into two independent parts: a Symfony API on the backend and a Vue.js/TypeScript interface on the frontend, designed around DDD and clean architecture principles.',
+          iconKey: 'layers',
+        },
+        {
+          title: 'Tech stack',
+          description:
+            'Symfony, Doctrine/PostgreSQL, asynchronous messaging, Vue 3 and TypeScript, all orchestrated with Docker Compose for a reproducible environment.',
+          iconKey: 'server',
+        },
+        {
+          title: 'Privacy',
+          description:
+            'No personally identifiable information is visible without authentication: a generic guest account lets visitors explore the site with full confidentiality.',
+          iconKey: 'shield',
+        },
+        {
+          title: 'Design',
+          description:
+            'Designed and built by me, with the help of AI tools to speed up some steps while staying in control of the technical decisions.',
+          iconKey: 'sparkles',
+        },
+      ],
+    },
+    me: {
+      eyebrow: 'About me',
+      technicalSubtitle: 'Technically',
+      technicalCards: [
+        {
+          title: 'Senior PHP/Symfony developer',
+          description:
+            'Several years of experience in web development, with a strong interest in clean architectures (DDD, SOLID, Clean Architecture) and code that stays maintainable over time.',
+          iconKey: 'code',
+        },
+        {
+          title: 'Full-stack approach',
+          description:
+            'Comfortable across the whole chain: Symfony/Doctrine backend, Vue.js/TypeScript frontend, Docker containerization.',
+          iconKey: 'boxes',
+        },
+        {
+          title: 'Quality & security mindset',
+          description:
+            'Automated tests, static analysis, code reviews: quality, security, and maintainability are a priority, not an afterthought.',
+          iconKey: 'shield',
+        },
+      ],
+      personalSubtitle: 'Personally',
+      personalCards: [
+        {
+          title: 'Curious and self-taught',
+          description:
+            'Always keeping an eye on new practices and technologies, and genuinely enjoying exploring them outside of work.',
+          iconKey: 'lightbulb',
+        },
+        {
+          title: 'Thorough and a good communicator',
+          description:
+            'I like understanding the why before the how, and documenting technical decisions so they stay understandable over time.',
+          iconKey: 'target',
+        },
+        {
+          title: 'Collaborative',
+          description: 'I enjoy technical discussions, constructive challenge, and sharing knowledge within a team.',
+          iconKey: 'users',
+        },
+      ],
+    },
   },
 
   technologies: {

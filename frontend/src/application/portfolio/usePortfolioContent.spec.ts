@@ -17,7 +17,16 @@ function createStubRepository(): PortfolioContentRepository {
       callsToAction: [],
       highlights: [],
     }),
-    getAboutContent: () => ({ eyebrow: '', title: '', message: '' }),
+    getAboutContent: () => ({
+      site: { eyebrow: '', cards: [] },
+      me: {
+        eyebrow: '',
+        technicalSubtitle: '',
+        technicalCards: [],
+        personalSubtitle: '',
+        personalCards: [],
+      },
+    }),
     getFeaturedTechnologies: () => [],
     getAdditionalTechnologies: () => [],
     getQualityPrinciples: () => [],
