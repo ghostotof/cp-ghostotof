@@ -110,7 +110,8 @@ const en: PortfolioLocaleContent = {
       { name: 'Git & GitHub' },
       { name: 'Nginx' },
       { name: 'Linux' },
-      { name: 'CI/CD (GitHub Actions)' },
+      { name: 'CI/CD' },
+      { name: 'Claude' },
     ],
   },
 
