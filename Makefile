@@ -40,6 +40,10 @@ consume: ## Lance le worker Messenger (transport async)
 # Le tag par défaut reprend le SHA court du commit courant : chaque image est
 # ainsi traçable jusqu'à la révision exacte du code qu'elle contient.
 TAG ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
+# `make` ne charge pas .env comme le fait Docker Compose : il faut le lire explicitement,
+# sinon COMPOSE_PROJECT_NAME est vide et IMAGE/FRONT_IMAGE deviennent des tags invalides
+# (ex. "-backend") tant qu'on ne le passe pas soi-même en ligne de commande.
+COMPOSE_PROJECT_NAME := $(shell grep '^COMPOSE_PROJECT_NAME=' .env | cut -d= -f2)
 IMAGE ?= $(COMPOSE_PROJECT_NAME)-backend
 FLAVOR := $(shell grep '^BACKEND_FLAVOR=' .env | cut -d= -f2)
 
