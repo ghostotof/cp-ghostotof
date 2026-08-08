@@ -3,6 +3,7 @@ import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/
 import { i18n } from '../i18n'
 import { applySeoMeta } from './seo'
 import { LOCALE_STORAGE_KEY, resolvePreferredLocale } from './preferredLocale'
+import { authState } from '../../application/auth/useAuth'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -19,6 +20,7 @@ declare module 'vue-router' {
  */
 const LandingPage = () => import('../pages/LandingPage.vue')
 const AboutPage = () => import('../pages/AboutPage.vue')
+const LoginPage = () => import('../pages/LoginPage.vue')
 const NotFoundPage = () => import('../pages/NotFoundPage.vue')
 
 export const router = createRouter({
@@ -48,6 +50,18 @@ export const router = createRouter({
           name: 'about',
           component: AboutPage,
           meta: { titleKey: 'seo.about.title', descriptionKey: 'seo.about.description' },
+        },
+        {
+          path: 'login',
+          name: 'login',
+          component: LoginPage,
+          meta: { titleKey: 'seo.login.title', descriptionKey: 'seo.login.description' },
+          beforeEnter: (to) => {
+            // Déjà connecté : la page de login n'a rien à offrir de plus.
+            if (authState.user) {
+              return `/${to.params.locale}`
+            }
+          },
         },
       ],
     },

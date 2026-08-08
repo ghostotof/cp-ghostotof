@@ -17,7 +17,8 @@ import type { Locale } from '../entities/Locale'
  * sens indépendamment d'une langue.
  */
 export interface PortfolioContentRepository {
-  getSiteIdentity(locale: Locale): SiteIdentity
+  /** Ne dépend pas de la locale : le nom de marque est identique dans toutes les langues. */
+  getSiteIdentity(): SiteIdentity
   getNavigationLinks(locale: Locale): readonly NavigationLink[]
   getHeroContent(locale: Locale): HeroContent
   getAboutContent(locale: Locale): AboutContent

@@ -35,7 +35,7 @@ export function usePortfolioContent() {
   const currentLocale = computed(() => locale.value as Locale)
 
   return {
-    siteIdentity: computed(() => repository.getSiteIdentity(currentLocale.value)),
+    siteIdentity: computed(() => repository.getSiteIdentity()),
     navigationLinks: computed(() => repository.getNavigationLinks(currentLocale.value)),
     heroContent: computed(() => repository.getHeroContent(currentLocale.value)),
     aboutContent: computed(() => repository.getAboutContent(currentLocale.value)),

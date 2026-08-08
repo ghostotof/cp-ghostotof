@@ -8,6 +8,8 @@
   },
   "common": {
     "downloadCv": "Télécharger mon CV",
+    "login": "Connexion",
+    "logout": "Déconnexion",
     "openMenu": "Ouvrir le menu",
     "closeMenu": "Fermer le menu"
   },
@@ -23,6 +25,14 @@
   },
   "localeSwitcher": {
     "label": "Changer de langue"
+  },
+  "auth": {
+    "heading": "Connexion",
+    "usernameLabel": "Nom d'utilisateur",
+    "passwordLabel": "Mot de passe",
+    "submit": "Se connecter",
+    "invalidCredentials": "Nom d'utilisateur ou mot de passe incorrect.",
+    "genericError": "Une erreur est survenue, veuillez réessayer."
   },
   "notFound": {
     "heading": "Page introuvable",
@@ -41,6 +51,10 @@
     "notFound": {
       "title": "Page introuvable",
       "description": "La page demandée n'existe pas."
+    },
+    "login": {
+      "title": "Connexion",
+      "description": "Connexion à l'espace protégé."
     }
   }
 }

@@ -6,7 +6,17 @@ import LandingPage from '../pages/LandingPage.vue'
 import AboutPage from '../pages/AboutPage.vue'
 import { PORTFOLIO_CONTENT_REPOSITORY } from '../../application/portfolio/usePortfolioContent'
 import { StaticPortfolioContentRepository } from '../../infrastructure/portfolio/StaticPortfolioContentRepository'
+import { AUTH_REPOSITORY } from '../../application/auth/useAuth'
+import type { AuthRepository } from '../../domain/auth/repositories/AuthRepository'
 import { createAppI18n } from '../i18n'
+
+function createStubAuthRepository(): AuthRepository {
+  return {
+    login: async () => ({ username: 'jane' }),
+    logout: async () => undefined,
+    me: async () => null,
+  }
+}
 
 async function mountLayout(initialPath = '/fr') {
   const router = createRouter({
@@ -22,7 +32,10 @@ async function mountLayout(initialPath = '/fr') {
   return mount(AppLayout, {
     global: {
       plugins: [router, createAppI18n()],
-      provide: { [PORTFOLIO_CONTENT_REPOSITORY as symbol]: new StaticPortfolioContentRepository() },
+      provide: {
+        [PORTFOLIO_CONTENT_REPOSITORY as symbol]: new StaticPortfolioContentRepository(),
+        [AUTH_REPOSITORY as symbol]: createStubAuthRepository(),
+      },
     },
   })
 }
@@ -32,7 +45,7 @@ describe('AppLayout', () => {
     const repository = new StaticPortfolioContentRepository()
     const wrapper = await mountLayout('/fr')
 
-    expect(wrapper.text()).toContain(repository.getSiteIdentity('fr').brandName)
+    expect(wrapper.text()).toContain(repository.getSiteIdentity().brandName)
     expect(wrapper.find('main').exists()).toBe(true)
   })
 

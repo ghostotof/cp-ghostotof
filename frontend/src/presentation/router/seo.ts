@@ -43,8 +43,10 @@ export function applySeoMeta(to: RouteLocationNormalized): void {
     upsertMeta('description', i18n.global.t(descriptionKey))
   }
 
-  // Une page 404 n'a pas d'URL canonique valide à indexer.
-  upsertMeta('robots', to.name === 'not-found' ? 'noindex, nofollow' : 'index, follow')
+  // Une page 404 n'a pas d'URL canonique valide à indexer ; la page de login
+  // est un outil d'accès, pas un contenu éditorial à indexer.
+  const isNonIndexable = 'not-found' === to.name || 'login' === to.name
+  upsertMeta('robots', isNonIndexable ? 'noindex, nofollow' : 'index, follow')
 
   const locale = to.params.locale
   if (typeof locale !== 'string') {

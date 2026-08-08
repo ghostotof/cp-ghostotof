@@ -7,7 +7,7 @@ import type { PortfolioContentRepository } from '../../domain/portfolio/reposito
 
 function createStubRepository(): PortfolioContentRepository {
   return {
-    getSiteIdentity: () => ({ brandName: 'Stub', cvDownloadLabel: 'CV', cvDownloadHref: '/cv.pdf' }),
+    getSiteIdentity: () => ({ brandName: 'Stub' }),
     getNavigationLinks: () => [{ label: 'Accueil', to: '/fr', isEnabled: true }],
     getHeroContent: () => ({
       eyebrow: '',

@@ -1,16 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { defineComponent } from 'vue'
 import AppHeader from './AppHeader.vue'
 import { createAppI18n } from '../i18n'
+import { AUTH_REPOSITORY, useAuth } from '../../application/auth/useAuth'
+import type { AuthRepository } from '../../domain/auth/repositories/AuthRepository'
+import type { AuthenticatedUser } from '../../domain/auth/entities/AuthenticatedUser'
 import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
 import type { NavigationLink } from '../../domain/portfolio/entities/NavigationLink'
 
-const siteIdentity: SiteIdentity = {
-  brandName: 'CP-Ghostotof',
-  cvDownloadLabel: 'Télécharger mon CV',
-  cvDownloadHref: '/cv.pdf',
-}
+const siteIdentity: SiteIdentity = { brandName: 'CP-Ghostotof' }
 
 const navigationLinks: readonly NavigationLink[] = [
   { label: 'Accueil', to: '/fr', isEnabled: true },
@@ -20,38 +20,90 @@ const navigationLinks: readonly NavigationLink[] = [
 
 const StubPage = { template: '<div />' }
 
+function createStubAuthRepository(user: AuthenticatedUser | null): AuthRepository {
+  return {
+    login: vi.fn(async () => user ?? { username: 'jane' }),
+    logout: vi.fn(async () => undefined),
+    me: vi.fn(async () => user),
+  }
+}
+
+/**
+ * L'état d'authentification est un singleton au niveau du module (partagé
+ * entre AppHeader et LoginPage) : on le fixe explicitement avant chaque test
+ * pour isoler les cas "connecté"/"non connecté" les uns des autres.
+ */
+async function primeAuthState(user: AuthenticatedUser | null): Promise<void> {
+  const repository = createStubAuthRepository(user)
+  const Probe = defineComponent({
+    setup() {
+      return { auth: useAuth() }
+    },
+    template: '<div />',
+  })
+  const wrapper = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
+  await wrapper.vm.auth.checkAuth()
+  wrapper.unmount()
+}
+
 /**
  * AppHeader dépend de Vue Router (RouterLink + route courante pour l'état actif) et
  * de vue-i18n (locale courante, aria-labels traduits) : on lui fournit de vraies
  * instances plutôt que des stubs, pour vérifier le comportement réel.
  */
-async function mountHeader(initialPath = '/fr') {
+async function mountHeader(initialPath = '/fr', authRepository?: AuthRepository) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/:locale(fr|en)', name: 'home', component: StubPage },
       { path: '/:locale(fr|en)/about', name: 'about', component: StubPage },
+      { path: '/:locale(fr|en)/login', name: 'login', component: StubPage },
     ],
   })
   await router.push(initialPath)
   await router.isReady()
 
-  return mount(AppHeader, {
+  const wrapper = mount(AppHeader, {
     props: { siteIdentity, navigationLinks },
-    global: { plugins: [router, createAppI18n()] },
+    global: {
+      plugins: [router, createAppI18n()],
+      provide: { [AUTH_REPOSITORY as symbol]: authRepository ?? createStubAuthRepository(null) },
+    },
   })
+  await wrapper.vm.$nextTick()
+
+  return wrapper
 }
 
 describe('AppHeader', () => {
-  it("affiche le nom de marque et le lien de téléchargement du CV", async () => {
+  it('affiche le nom de marque', async () => {
+    await primeAuthState(null)
     const wrapper = await mountHeader()
 
     expect(wrapper.text()).toContain('CP-Ghostotof')
+  })
+
+  it('non authentifié : affiche un lien de connexion à la place du CV', async () => {
+    await primeAuthState(null)
+    const wrapper = await mountHeader()
+
+    expect(wrapper.get('a[href="/fr/login"]').text()).toBe('Connexion')
+    expect(wrapper.text()).not.toContain('Déconnexion')
+  })
+
+  it("authentifié : affiche le bouton CV (lien vide pour le moment) et un bouton de déconnexion, plus de lien de connexion", async () => {
+    await primeAuthState({ username: 'jane' })
+    const wrapper = await mountHeader()
+
+    expect(wrapper.find('a[href="/fr/login"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Télécharger mon CV')
-    expect(wrapper.findAll(`a[href="/cv.pdf"]`).length).toBeGreaterThan(0)
+
+    const logoutButton = wrapper.findAll('button').find((button) => 'Déconnexion' === button.text())
+    expect(logoutButton).toBeDefined()
   })
 
   it('rend un lien navigable (RouterLink) pour chaque lien de navigation actif', async () => {
+    await primeAuthState(null)
     const wrapper = await mountHeader()
 
     const activeLink = wrapper.get('a[href="/fr/about"]')
@@ -60,6 +112,7 @@ describe('AppHeader', () => {
   })
 
   it('désactive les liens de navigation non activés (pas de href, aria-disabled)', async () => {
+    await primeAuthState(null)
     const wrapper = await mountHeader()
 
     const disabledLinks = wrapper.findAll('.nav-link-portfolio--disabled')
@@ -71,6 +124,7 @@ describe('AppHeader', () => {
   })
 
   it('marque le lien Accueil comme actif sur la page d\'accueil', async () => {
+    await primeAuthState(null)
     const wrapper = await mountHeader('/fr')
 
     const homeLink = wrapper.get('nav a[href="/fr"]')
@@ -78,6 +132,7 @@ describe('AppHeader', () => {
   })
 
   it('marque le lien À propos comme actif sur la page /fr/about', async () => {
+    await primeAuthState(null)
     const wrapper = await mountHeader('/fr/about')
 
     const aboutLink = wrapper.get('nav a[href="/fr/about"]')
@@ -88,6 +143,7 @@ describe('AppHeader', () => {
   })
 
   it("le menu mobile est fermé par défaut puis s'ouvre au clic sur le bouton menu", async () => {
+    await primeAuthState(null)
     const wrapper = await mountHeader()
 
     expect(wrapper.find('#mobile-nav').exists()).toBe(false)
@@ -98,6 +154,7 @@ describe('AppHeader', () => {
   })
 
   it('le menu mobile se referme après un clic sur un lien', async () => {
+    await primeAuthState(null)
     const wrapper = await mountHeader()
 
     await wrapper.get('button[aria-controls="mobile-nav"]').trigger('click')
@@ -109,6 +166,7 @@ describe('AppHeader', () => {
   })
 
   it('rend un sélecteur de langue avec FR et EN', async () => {
+    await primeAuthState(null)
     const wrapper = await mountHeader()
 
     expect(wrapper.text()).toContain('FR')

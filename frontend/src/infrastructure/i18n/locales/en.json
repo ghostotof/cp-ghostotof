@@ -8,6 +8,8 @@
   },
   "common": {
     "downloadCv": "Download my CV",
+    "login": "Login",
+    "logout": "Logout",
     "openMenu": "Open menu",
     "closeMenu": "Close menu"
   },
@@ -23,6 +25,14 @@
   },
   "localeSwitcher": {
     "label": "Change language"
+  },
+  "auth": {
+    "heading": "Login",
+    "usernameLabel": "Username",
+    "passwordLabel": "Password",
+    "submit": "Log in",
+    "invalidCredentials": "Incorrect username or password.",
+    "genericError": "Something went wrong, please try again."
   },
   "notFound": {
     "heading": "Page not found",
@@ -41,6 +51,10 @@
     "notFound": {
       "title": "Page not found",
       "description": "The requested page does not exist."
+    },
+    "login": {
+      "title": "Login",
+      "description": "Log in to the protected area."
     }
   }
 }

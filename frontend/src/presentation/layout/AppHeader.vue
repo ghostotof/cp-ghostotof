@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
 import type { NavigationLink } from '../../domain/portfolio/entities/NavigationLink'
 import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
+import { useAuth } from '../../application/auth/useAuth'
 import LocaleSwitcher from '../ui/LocaleSwitcher.vue'
 import IconDownload from '~icons/lucide/download'
 import IconMenu from '~icons/lucide/menu'
@@ -17,7 +18,14 @@ defineProps<{
 
 const isMobileMenuOpen = ref(false)
 const route = useRoute()
+const router = useRouter()
 const { t, locale } = useI18n()
+const { isAuthenticated, isChecking, logout } = useAuth()
+
+async function handleLogout(): Promise<void> {
+  await logout()
+  await router.push(homeLink.value)
+}
 
 /**
  * Priorité au paramètre de route (source de vérité de l'URL) ; repli sur la locale
@@ -103,28 +111,48 @@ function navLinkClass(link: NavigationLink) {
       <div class="d-flex align-items-center gap-2">
         <LocaleSwitcher />
 
-        <a
-          :href="siteIdentity.cvDownloadHref"
-          class="btn btn-outline-light btn-sm d-none d-sm-inline-flex align-items-center gap-2"
-        >
-          {{ siteIdentity.cvDownloadLabel }}
-          <IconDownload
-            width="16"
-            height="16"
-            aria-hidden="true"
-          />
-        </a>
-        <a
-          :href="siteIdentity.cvDownloadHref"
-          class="btn btn-outline-light btn-sm d-sm-none d-inline-flex align-items-center"
-          :aria-label="siteIdentity.cvDownloadLabel"
-        >
-          <IconDownload
-            width="16"
-            height="16"
-            aria-hidden="true"
-          />
-        </a>
+        <template v-if="!isChecking">
+          <RouterLink
+            v-if="!isAuthenticated"
+            :to="`${homeLink}/login`"
+            class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-2"
+          >
+            {{ t('common.login') }}
+          </RouterLink>
+          <template v-else>
+            <!-- Lien vide pour le moment : le fichier réel sera servi par une ressource
+                 protégée côté backend, pas encore branchée. -->
+            <a
+              href="#"
+              class="btn btn-outline-light btn-sm d-none d-sm-inline-flex align-items-center gap-2"
+            >
+              {{ t('common.downloadCv') }}
+              <IconDownload
+                width="16"
+                height="16"
+                aria-hidden="true"
+              />
+            </a>
+            <a
+              href="#"
+              class="btn btn-outline-light btn-sm d-sm-none d-inline-flex align-items-center"
+              :aria-label="t('common.downloadCv')"
+            >
+              <IconDownload
+                width="16"
+                height="16"
+                aria-hidden="true"
+              />
+            </a>
+            <button
+              type="button"
+              class="btn btn-outline-light btn-sm d-inline-flex align-items-center"
+              @click="handleLogout"
+            >
+              {{ t('common.logout') }}
+            </button>
+          </template>
+        </template>
 
         <button
           type="button"

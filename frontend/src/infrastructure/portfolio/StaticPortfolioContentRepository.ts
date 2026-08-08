@@ -30,11 +30,9 @@ const MESSAGES: Record<Locale, UiMessages> = { fr: frMessages, en: enMessages }
  * locale plutôt que de dépendre de la couche présentation.
  */
 export class StaticPortfolioContentRepository implements PortfolioContentRepository {
-  getSiteIdentity(locale: Locale): SiteIdentity {
+  getSiteIdentity(): SiteIdentity {
     return {
       brandName: 'CP-Ghostotof',
-      cvDownloadLabel: MESSAGES[locale].common.downloadCv,
-      cvDownloadHref: '/cv.pdf',
     }
   }
 

@@ -1,0 +1,59 @@
+security:
+    # https://symfony.com/doc/current/security.html#registering-the-user-hashing-passwords
+    password_hashers:
+        App\Entity\CpgUser: auto
+
+    # https://symfony.com/doc/current/security.html#loading-the-user-the-user-provider
+    providers:
+        cpg_users:
+            entity:
+                class: App\Entity\CpgUser
+                property: username
+
+    firewalls:
+        # Ensure dev tools and static assets are always allowed
+        dev:
+            pattern: ^/(_profiler|_wdt|assets|build)/
+            security: false
+
+        # Point d'entrée du login : reçoit {"username": ..., "password": ...} en JSON et
+        # délègue la génération/pose du JWT (cookie httpOnly "BEARER") aux handlers
+        # Lexik. Stateless : aucune session n'est créée côté serveur.
+        login:
+            pattern: ^/api/login
+            stateless: true
+            provider: cpg_users
+            json_login:
+                check_path: /api/login_check
+                username_path: username
+                password_path: password
+                success_handler: lexik_jwt_authentication.handler.authentication_success
+                failure_handler: lexik_jwt_authentication.handler.authentication_failure
+
+        # Toutes les autres routes /api : authentification par JWT extrait du cookie
+        # "BEARER" (voir config/packages/lexik_jwt_authentication.yaml). "logout.path"
+        # est intercepté par le composant Security avant tout contrôleur : c'est
+        # App\Security\Jwt\CookieLogoutListener qui construit la réponse (cookies
+        # BEARER + XSRF-TOKEN expirés).
+        api:
+            pattern: ^/api
+            stateless: true
+            provider: cpg_users
+            jwt: ~
+            logout:
+                path: /api/logout
+
+    # Note: Only the *first* matching rule is applied
+    access_control:
+        - { path: ^/api/me, roles: ROLE_USER }
+
+when@test:
+    security:
+        password_hashers:
+            # Password hashers are resource-intensive by design to ensure security.
+            # In tests, it's safe to reduce their cost to improve performance.
+            App\Entity\CpgUser:
+                algorithm: auto
+                cost: 4 # Lowest possible value for bcrypt
+                time_cost: 3 # Lowest possible value for argon
+                memory_cost: 10 # Lowest possible value for argon
