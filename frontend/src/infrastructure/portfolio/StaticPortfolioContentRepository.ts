@@ -25,11 +25,11 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
 
   getNavigationLinks(): readonly NavigationLink[] {
     return [
-      { label: 'Accueil', href: '#hero', isEnabled: true },
-      { label: 'À propos', href: '#a-propos', isEnabled: true },
-      { label: 'Compétences', href: '#technologies', isEnabled: true },
-      { label: 'Expériences', href: '#experiences', isEnabled: false },
-      { label: 'Contact', href: '#contact', isEnabled: false },
+      { label: 'Accueil', to: '/', isEnabled: true },
+      { label: 'À propos', to: '/a-propos', isEnabled: true },
+      { label: 'Compétences', to: '/#technologies', isEnabled: true },
+      { label: 'Expériences', to: '/#experiences', isEnabled: false },
+      { label: 'Contact', to: '/#contact', isEnabled: false },
     ]
   }
 
@@ -56,38 +56,11 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
   getAboutContent(): AboutContent {
     return {
       eyebrow: 'À propos',
-      titleLead: 'Un développeur guidé par',
-      titleAccent: 'la rigueur et la recherche de sens.',
-      paragraphs: [
-        "Développeur web depuis plusieurs années, je me suis spécialisé dans la construction d'applications " +
-          'PHP/Symfony robustes, avant d\'élargir mon champ d\'action aux architectures frontend modernes ' +
-          'avec Vue.js et TypeScript.',
-        "Mon approche privilégie une architecture claire (DDD, SOLID, séparation des responsabilités) et une " +
-          'couverture de tests exigeante, pour livrer des applications qui restent maintenables bien après ' +
-          'leur mise en production.',
-      ],
-      values: [
-        {
-          title: 'Rigueur',
-          description: 'Une exigence de qualité à chaque étape, de la conception du code à sa mise en production.',
-          iconKey: 'shield',
-        },
-        {
-          title: 'Curiosité',
-          description: 'Une veille technologique continue pour rester aligné avec les meilleures pratiques.',
-          iconKey: 'zap',
-        },
-        {
-          title: 'Transmission',
-          description: 'Un attrait pour le partage de connaissances et la revue de code constructive.',
-          iconKey: 'users',
-        },
-        {
-          title: 'Autonomie',
-          description: "La capacité à porter un projet de bout en bout, de l'architecture au déploiement.",
-          iconKey: 'layers',
-        },
-      ],
+      title: 'À propos de ce site',
+      // Contenu volontairement minimal tant que l'authentification (cf. CLAUDE.md,
+      // objectif n°9) n'est pas en place : aucune information personnelle identifiante
+      // n'est affichée avant qu'un utilisateur authentifié y accède.
+      message: "Site créé par moi et l'IA.",
     }
   }
 

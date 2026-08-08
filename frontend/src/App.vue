@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import LandingPage from './presentation/pages/LandingPage.vue'
+import AppLayout from './presentation/layout/AppLayout.vue'
 </script>
 
 <template>
-  <LandingPage />
+  <AppLayout />
 </template>

@@ -4,27 +4,24 @@ import { StaticPortfolioContentRepository } from './StaticPortfolioContentReposi
 describe('StaticPortfolioContentRepository', () => {
   const repository = new StaticPortfolioContentRepository()
 
-  it('active le lien de navigation "À propos"', () => {
+  it('active le lien de navigation "À propos" et le fait pointer vers sa page dédiée', () => {
     const aboutLink = repository.getNavigationLinks().find((link) => link.label === 'À propos')
 
     expect(aboutLink?.isEnabled).toBe(true)
-    expect(aboutLink?.href).toBe('#a-propos')
+    expect(aboutLink?.to).toBe('/a-propos')
   })
 
-  it('fournit un contenu "À propos" complet (titre, paragraphes, valeurs)', () => {
+  it('fournit un contenu "À propos" concis (eyebrow, titre, message)', () => {
     const about = repository.getAboutContent()
 
-    expect(about.paragraphs.length).toBeGreaterThan(0)
-    expect(about.values.length).toBeGreaterThan(0)
-    for (const value of about.values) {
-      expect(value.title).not.toBe('')
-      expect(value.description).not.toBe('')
-    }
+    expect(about.eyebrow).not.toBe('')
+    expect(about.title).not.toBe('')
+    expect(about.message).not.toBe('')
   })
 
   it("ne divulgue aucune information personnelle identifiante avant authentification", () => {
     const about = repository.getAboutContent()
-    const fullText = [about.titleLead, about.titleAccent, ...about.paragraphs, ...about.values.map((v) => v.description)].join(' ')
+    const fullText = [about.eyebrow, about.title, about.message].join(' ')
 
     // Le site doit rester générique tant que l'utilisateur n'est pas authentifié (cf. CLAUDE.md, objectif n°9) :
     // pas d'adresse e-mail, pas d'URL externe, pas de numéro de téléphone en clair.

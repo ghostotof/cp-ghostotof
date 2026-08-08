@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
 import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
 import type { NavigationLink } from '../../domain/portfolio/entities/NavigationLink'
 import IconDownload from '~icons/lucide/download'
@@ -12,10 +13,27 @@ defineProps<{
 }>()
 
 const isMobileMenuOpen = ref(false)
+const route = useRoute()
+
+/**
+ * Un seul lien doit apparaître actif à la fois. Priorité à la correspondance
+ * exacte (chemin + ancre, ex. "/#technologies"). À défaut, un lien de simple
+ * page (ex. "/") n'est actif que si l'URL courante ne cible aucune ancre —
+ * sinon "Accueil" et "Compétences" s'activeraient simultanément sur la landing page.
+ */
+function isActiveLink(link: NavigationLink): boolean {
+  if (link.to === route.fullPath) {
+    return true
+  }
+  if (route.hash) {
+    return false
+  }
+  return link.to === route.path
+}
 
 function navLinkClass(link: NavigationLink) {
   return {
-    'nav-link-portfolio--active': link.isEnabled && link.href === '#hero',
+    'nav-link-portfolio--active': link.isEnabled && isActiveLink(link),
     'nav-link-portfolio--disabled': !link.isEnabled,
   }
 }
@@ -24,7 +42,7 @@ function navLinkClass(link: NavigationLink) {
 <template>
   <header class="sticky-top border-bottom" style="background: rgba(11, 10, 20, 0.85); backdrop-filter: blur(8px)">
     <div class="container-xl d-flex align-items-center justify-content-between gap-3 py-3">
-      <a href="#hero" class="d-flex align-items-center gap-2 text-white text-decoration-none fw-semibold">
+      <RouterLink to="/" class="d-flex align-items-center gap-2 text-white text-decoration-none fw-semibold">
         <span
           class="d-inline-flex align-items-center justify-content-center rounded-circle text-white small"
           style="width: 2rem; height: 2rem; background: linear-gradient(135deg, #7c3aed, #4338ca)"
@@ -32,19 +50,23 @@ function navLinkClass(link: NavigationLink) {
           &lt;/&gt;
         </span>
         {{ siteIdentity.brandName }}
-      </a>
+      </RouterLink>
 
       <nav class="d-none d-md-flex align-items-center gap-4 small">
-        <a
-          v-for="link in navigationLinks"
-          :key="link.label"
-          :href="link.isEnabled ? link.href : undefined"
-          class="nav-link-portfolio"
-          :class="navLinkClass(link)"
-          :aria-disabled="!link.isEnabled"
-        >
-          {{ link.label }}
-        </a>
+        <template v-for="link in navigationLinks" :key="link.label">
+          <RouterLink
+            v-if="link.isEnabled"
+            :to="link.to"
+            class="nav-link-portfolio"
+            :class="navLinkClass(link)"
+            aria-disabled="false"
+          >
+            {{ link.label }}
+          </RouterLink>
+          <a v-else class="nav-link-portfolio" :class="navLinkClass(link)" aria-disabled="true">
+            {{ link.label }}
+          </a>
+        </template>
       </nav>
 
       <div class="d-flex align-items-center gap-2">
@@ -79,17 +101,27 @@ function navLinkClass(link: NavigationLink) {
 
     <nav v-if="isMobileMenuOpen" id="mobile-nav" class="d-md-none border-top" style="background: rgba(11, 10, 20, 0.95)">
       <div class="container-xl d-flex flex-column py-2">
-        <a
-          v-for="link in navigationLinks"
-          :key="link.label"
-          :href="link.isEnabled ? link.href : undefined"
-          class="nav-link-portfolio d-block py-2"
-          :class="navLinkClass(link)"
-          :aria-disabled="!link.isEnabled"
-          @click="isMobileMenuOpen = false"
-        >
-          {{ link.label }}
-        </a>
+        <template v-for="link in navigationLinks" :key="link.label">
+          <RouterLink
+            v-if="link.isEnabled"
+            :to="link.to"
+            class="nav-link-portfolio d-block py-2"
+            :class="navLinkClass(link)"
+            aria-disabled="false"
+            @click="isMobileMenuOpen = false"
+          >
+            {{ link.label }}
+          </RouterLink>
+          <a
+            v-else
+            class="nav-link-portfolio d-block py-2"
+            :class="navLinkClass(link)"
+            aria-disabled="true"
+            @click="isMobileMenuOpen = false"
+          >
+            {{ link.label }}
+          </a>
+        </template>
       </div>
     </nav>
   </header>

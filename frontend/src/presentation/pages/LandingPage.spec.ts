@@ -13,21 +13,19 @@ function mountLandingPage() {
 }
 
 describe('LandingPage', () => {
-  it('assemble l\'en-tête et toutes les sections dans l\'ordre du menu de navigation', () => {
+  it('assemble les sections dans l\'ordre attendu (hero puis technologies)', () => {
     const wrapper = mountLandingPage()
 
     const sectionIds = wrapper.findAll('section').map((section) => section.attributes('id'))
 
-    expect(sectionIds.indexOf('hero')).toBeLessThan(sectionIds.indexOf('a-propos'))
-    expect(sectionIds.indexOf('a-propos')).toBeLessThan(sectionIds.indexOf('technologies'))
+    expect(sectionIds.indexOf('hero')).toBeLessThan(sectionIds.indexOf('technologies'))
   })
 
   it('affiche le contenu de chaque section fournie par le repository', () => {
     const repository = new StaticPortfolioContentRepository()
     const wrapper = mountLandingPage()
 
-    expect(wrapper.text()).toContain(repository.getSiteIdentity().brandName)
     expect(wrapper.text()).toContain(repository.getHeroContent().titleLead)
-    expect(wrapper.text()).toContain(repository.getAboutContent().titleLead)
+    expect(wrapper.text()).toContain(repository.getFeaturedTechnologies()[0]?.name)
   })
 })
