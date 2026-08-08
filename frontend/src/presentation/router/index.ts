@@ -20,6 +20,6 @@ export const router = createRouter({
   },
   routes: [
     { path: '/', name: 'home', component: LandingPage },
-    { path: '/a-propos', name: 'about', component: AboutPage },
+    { path: '/about', name: 'about', component: AboutPage },
   ],
 })

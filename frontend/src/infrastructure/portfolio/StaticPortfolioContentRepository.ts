@@ -26,10 +26,10 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
   getNavigationLinks(): readonly NavigationLink[] {
     return [
       { label: 'Accueil', to: '/', isEnabled: true },
-      { label: 'À propos', to: '/a-propos', isEnabled: true },
       { label: 'Compétences', to: '/#technologies', isEnabled: true },
       { label: 'Expériences', to: '/#experiences', isEnabled: false },
       { label: 'Contact', to: '/#contact', isEnabled: false },
+      { label: 'À propos', to: '/about', isEnabled: true },
     ]
   }
 

@@ -13,7 +13,7 @@ const siteIdentity: SiteIdentity = {
 
 const navigationLinks: readonly NavigationLink[] = [
   { label: 'Accueil', to: '/', isEnabled: true },
-  { label: 'À propos', to: '/a-propos', isEnabled: true },
+  { label: 'À propos', to: '/about', isEnabled: true },
   { label: 'Expériences', to: '/#experiences', isEnabled: false },
 ]
 
@@ -29,7 +29,7 @@ async function mountHeader(initialPath = '/') {
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'home', component: StubPage },
-      { path: '/a-propos', name: 'about', component: StubPage },
+      { path: '/about', name: 'about', component: StubPage },
     ],
   })
   await router.push(initialPath)
@@ -53,7 +53,7 @@ describe('AppHeader', () => {
   it('rend un lien navigable (RouterLink) pour chaque lien de navigation actif', async () => {
     const wrapper = await mountHeader()
 
-    const activeLink = wrapper.get('a[href="/a-propos"]')
+    const activeLink = wrapper.get('a[href="/about"]')
     expect(activeLink.text()).toBe('À propos')
     expect(activeLink.attributes('aria-disabled')).toBe('false')
   })
@@ -76,10 +76,10 @@ describe('AppHeader', () => {
     expect(homeLink.classes()).toContain('nav-link-portfolio--active')
   })
 
-  it('marque le lien À propos comme actif sur la page /a-propos', async () => {
-    const wrapper = await mountHeader('/a-propos')
+  it('marque le lien À propos comme actif sur la page /about', async () => {
+    const wrapper = await mountHeader('/about')
 
-    const aboutLink = wrapper.get('nav a[href="/a-propos"]')
+    const aboutLink = wrapper.get('nav a[href="/about"]')
     expect(aboutLink.classes()).toContain('nav-link-portfolio--active')
 
     const homeLink = wrapper.get('nav a[href="/"]')
@@ -102,7 +102,7 @@ describe('AppHeader', () => {
     await wrapper.get('button[aria-controls="mobile-nav"]').trigger('click')
     expect(wrapper.find('#mobile-nav').exists()).toBe(true)
 
-    await wrapper.get('#mobile-nav a[href="/a-propos"]').trigger('click')
+    await wrapper.get('#mobile-nav a[href="/about"]').trigger('click')
 
     expect(wrapper.find('#mobile-nav').exists()).toBe(false)
   })

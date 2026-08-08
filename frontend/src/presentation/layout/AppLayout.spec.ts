@@ -12,7 +12,7 @@ async function mountLayout(initialPath = '/') {
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'home', component: LandingPage },
-      { path: '/a-propos', name: 'about', component: AboutPage },
+      { path: '/about', name: 'about', component: AboutPage },
     ],
   })
   await router.push(initialPath)
@@ -35,11 +35,11 @@ describe('AppLayout', () => {
     expect(wrapper.find('main').exists()).toBe(true)
   })
 
-  it("rend la landing page sur '/' et la page À propos sur '/a-propos'", async () => {
+  it("rend la landing page sur '/' et la page À propos sur '/about'", async () => {
     const homeWrapper = await mountLayout('/')
     expect(homeWrapper.find('#hero').exists()).toBe(true)
 
-    const aboutWrapper = await mountLayout('/a-propos')
+    const aboutWrapper = await mountLayout('/about')
     expect(aboutWrapper.find('#hero').exists()).toBe(false)
     expect(aboutWrapper.text()).toContain(new StaticPortfolioContentRepository().getAboutContent().message)
   })

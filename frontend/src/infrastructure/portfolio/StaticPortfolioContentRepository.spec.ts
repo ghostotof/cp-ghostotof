@@ -4,11 +4,13 @@ import { StaticPortfolioContentRepository } from './StaticPortfolioContentReposi
 describe('StaticPortfolioContentRepository', () => {
   const repository = new StaticPortfolioContentRepository()
 
-  it('active le lien de navigation "À propos" et le fait pointer vers sa page dédiée', () => {
-    const aboutLink = repository.getNavigationLinks().find((link) => link.label === 'À propos')
+  it('active le lien de navigation "À propos", le fait pointer vers sa page dédiée et le place en dernier', () => {
+    const links = repository.getNavigationLinks()
+    const aboutLink = links.find((link) => link.label === 'À propos')
 
     expect(aboutLink?.isEnabled).toBe(true)
-    expect(aboutLink?.to).toBe('/a-propos')
+    expect(aboutLink?.to).toBe('/about')
+    expect(links.at(-1)?.label).toBe('À propos')
   })
 
   it('fournit un contenu "À propos" concis (eyebrow, titre, message)', () => {

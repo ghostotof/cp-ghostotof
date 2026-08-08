@@ -92,7 +92,7 @@ Single-page app in clean-architecture layers, `PortfolioContentRepository` is th
   `App.vue`; it's the one place `siteIdentity`/`navigationLinks` are pulled from `usePortfolioContent()` for
   every page, so individual pages only destructure the content they actually render.
 - `presentation/router/index.ts` — Vue Router 4 (history mode), routes are lazy-loaded (`() => import(...)`)
-  per page. `NavigationLink.to` is a router target as a plain string (e.g. `/a-propos`, `/#technologies` for
+  per page. `NavigationLink.to` is a router target as a plain string (e.g. `/about`, `/#technologies` for
   an in-page anchor on the landing page) — never a vue-router type, to keep the domain entity framework-free.
 
 To add a new content block: entity → repository interface method → `StaticPortfolioContentRepository`
