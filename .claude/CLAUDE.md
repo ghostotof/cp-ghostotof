@@ -22,9 +22,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repository is a freshly generated project skeleton (single "Init" commit). `../backend/src` contains only
 `Kernel.php` and empty placeholder directories (`ApiResource/`, `Controller/`, `Entity/`, `Repository/`) — no
-business logic, entities, or API resources exist yet. `../frontend/src` is still the default `npm create vite`
-Vue+TS scaffold. There is no PHPUnit, PHPStan, or Rector configuration in the backend yet, and no lint/test
-script in `../frontend/package.json` — set these up before/while adding real code.
+business logic, entities, or API resources exist yet. There is no PHPUnit, PHPStan, or Rector configuration in
+the backend yet — set these up before/while adding real code. The frontend has moved past the default scaffold:
+it follows a layered clean architecture (see below) and has Vitest configured with `npm test`.
 
 ## Architecture
 
@@ -68,6 +68,33 @@ prod run the identical PHP engine:
   to prod; only adds Xdebug in profiling-trigger mode (`XDEBUG_TRIGGER`, never `debug` mode) and verbose logs.
   Pipeline order is dev → preprod → prod regardless of declaration order in the Dockerfile.
 
+### Frontend architecture (`../frontend/src`)
+
+Single-page app in clean-architecture layers, `PortfolioContentRepository` is the DIP boundary:
+
+- `domain/portfolio/entities/` — plain TS interfaces (no Vue import).
+- `domain/portfolio/repositories/PortfolioContentRepository.ts` — abstraction; add a method here first when
+  exposing new content.
+- `infrastructure/portfolio/StaticPortfolioContentRepository.ts` — today's only implementation (hardcoded
+  content); a future `HttpPortfolioContentRepository` would slot in without touching application/presentation.
+- `application/portfolio/usePortfolioContent.ts` — composable, injects the repository via an `InjectionKey`
+  provided once in `main.ts` (composition root).
+- `presentation/{ui,layout,sections,pages}/` — Vue components; `pages/LandingPage.vue` assembles the sections.
+
+To add a new content block: entity → repository interface method → `StaticPortfolioContentRepository`
+implementation → expose it from `usePortfolioContent` → new `presentation/sections/*.vue` → wire into
+`LandingPage.vue`.
+
+Navigation is anchor-based on a single page (`NavigationLink.href` like `#hero`, `#a-propos`,
+`NavigationLink.isEnabled` toggles it) — there is no vue-router, don't introduce one without asking.
+
+Icons: domain/content only ever holds a string `iconKey`; the mapping to an actual `unplugin-icons` component
+(`~icons/lucide/...`, `~icons/simple-icons/...`) lives solely in `presentation/ui/icons.ts`.
+
+Tests are colocated `*.spec.ts` next to the file under test (Vitest, glob `src/**/*.spec.ts` in
+`vite.config.ts`), mounted with `@vue/test-utils` and a stub/real repository injected via the same
+`InjectionKey` as `main.ts`.
+
 ### Frontend build/deploy
 
 `../docker/node/Dockerfile` mirrors the same idea: in dev the plain `node` image runs `npm install && npm run dev`
@@ -80,6 +107,10 @@ changing the API URL means rebuilding the image, not editing an env var on a run
 All image/tool versions are pinned in `../.env` and mirrored in `versions.lock`. The only deliberate exception is
 Composer, pinned to major branch `2` only (see comments in `../.env`) so 2.x patches land on every `make build`
 without ever silently jumping to Composer 3.
+
+`jsdom` (frontend devDependency, used by Vitest) is deliberately pinned to `^26.x`, not latest: `jsdom@30`
+requires Node `>=22.22`/`>=26` and fails at runtime (`webidl.util.markAsUncloneable is not a function`) on
+older Node — including any host below the project's Docker `NODE_TAG` (26.7.0). Don't let it float to latest.
 
 ## Commands
 
@@ -114,6 +145,13 @@ make build-front-preprod API_URL=https://api-preprod.example.com TAG=1.2.3
 
 Standard Symfony/Composer/Doctrine CLI applies: `php bin/console ...` (MakerBundle is available in dev —
 `make:entity`, `make:controller`, etc.), `composer require ...`. No `phpunit`/test binary is installed yet.
+
+### Frontend day-to-day (inside `make sh-front`, or `../frontend` on the host)
+
+```bash
+npm test            # vitest run — one-shot, used in CI/pre-commit
+npm run test:watch  # vitest — watch mode for local development
+```
 
 ### Services and ports (dev)
 
