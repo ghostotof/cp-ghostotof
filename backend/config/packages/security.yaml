@@ -1,13 +1,13 @@
 security:
     # https://symfony.com/doc/current/security.html#registering-the-user-hashing-passwords
     password_hashers:
-        App\Entity\CpgUser: auto
+        App\Security\User\Domain\Entity\CpgUser: auto
 
     # https://symfony.com/doc/current/security.html#loading-the-user-the-user-provider
     providers:
         cpg_users:
             entity:
-                class: App\Entity\CpgUser
+                class: App\Security\User\Domain\Entity\CpgUser
                 property: username
 
     firewalls:
@@ -33,8 +33,8 @@ security:
         # Toutes les autres routes /api : authentification par JWT extrait du cookie
         # "BEARER" (voir config/packages/lexik_jwt_authentication.yaml). "logout.path"
         # est intercepté par le composant Security avant tout contrôleur : c'est
-        # App\Security\Jwt\CookieLogoutListener qui construit la réponse (cookies
-        # BEARER + XSRF-TOKEN expirés).
+        # App\Security\Authentication\Infrastructure\Jwt\CookieLogoutListener qui
+        # construit la réponse (cookies BEARER + XSRF-TOKEN expirés).
         api:
             pattern: ^/api
             stateless: true
@@ -52,7 +52,7 @@ when@test:
         password_hashers:
             # Password hashers are resource-intensive by design to ensure security.
             # In tests, it's safe to reduce their cost to improve performance.
-            App\Entity\CpgUser:
+            App\Security\User\Domain\Entity\CpgUser:
                 algorithm: auto
                 cost: 4 # Lowest possible value for bcrypt
                 time_cost: 3 # Lowest possible value for argon

@@ -14,11 +14,15 @@ doctrine:
             Doctrine\DBAL\Platforms\PostgreSQLPlatform: identity
         auto_mapping: true
         mappings:
+            # Structure DDD : les entités vivent dans Security/<Sous-domaine>/Domain/Entity
+            # (et non plus toutes sous un seul src/Entity), donc le mapping scanne tout
+            # src/ plutôt qu'un unique dossier. Le driver par attribut n'y retient que les
+            # classes portant #[ORM\Entity] ; le reste du code n'est jamais impacté.
             App:
                 type: attribute
                 is_bundle: false
-                dir: '%kernel.project_dir%/src/Entity'
-                prefix: 'App\Entity'
+                dir: '%kernel.project_dir%/src'
+                prefix: 'App'
                 alias: App
 
 when@test:

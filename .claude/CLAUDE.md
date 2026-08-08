@@ -27,11 +27,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-This repository is a freshly generated project skeleton (single "Init" commit). `../backend/src` contains only
-`Kernel.php` and empty placeholder directories (`ApiResource/`, `Controller/`, `Entity/`, `Repository/`) — no
-business logic, entities, or API resources exist yet. There is no PHPUnit, PHPStan, or Rector configuration in
-the backend yet — set these up before/while adding real code. The frontend has moved past the default scaffold:
-it follows a layered clean architecture (see below) and has Vitest configured with `npm test`.
+This repository started as a freshly generated project skeleton (single "Init" commit). Real backend code now
+exists (the `Security` bounded context, see Backend architecture below) and follows a DDD structure under
+`src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
+over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
+recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
+`tests/`, mirrors the `src/` bounded-context tree) and runnable via `php bin/phpunit` inside `make sh`. There is
+still no PHPStan or Rector configuration in the backend — set these up before/while adding more code. The
+frontend has moved past the default scaffold: it follows a layered clean architecture (see below) and has
+Vitest configured with `npm test`.
 
 ## Architecture
 
@@ -74,6 +78,36 @@ prod run the identical PHP engine:
 - **`preprod`** — built **`FROM production`** (not a parallel build) so its application layers are byte-identical
   to prod; only adds Xdebug in profiling-trigger mode (`XDEBUG_TRIGGER`, never `debug` mode) and verbose logs.
   Pipeline order is dev → preprod → prod regardless of declaration order in the Dockerfile.
+
+### Backend architecture (`../backend/src`)
+
+DDD structure: each bounded context is a top-level folder under `src/`, itself split into `Domain/`,
+`Application/`, `Infrastructure/`, `Presentation/` layers — only the layers a context actually needs, no empty
+ceremonial folders. `config/packages/doctrine.yaml`'s mapping scans all of `src/` (not a single `Entity/`
+folder), so entities live inside their bounded context instead of a shared top-level directory.
+
+- **`Security/User/`** — the `CpgUser` aggregate. Created only via console command (no public registration
+  form, no email stored — just a username, cf. Goal #9: nothing personally identifying before authentication).
+  - `Domain/Entity/CpgUser.php`, `Domain/Repository/CpgUserRepositoryInterface.php` (the DIP boundary —
+    `Application/` never depends on Doctrine directly, only on this interface), `Domain/Exception/UsernameAlreadyUsedException.php`.
+  - `Application/CpgUserRegistrar(Interface).php` — orchestrates user creation, depends only on
+    `CpgUserRepositoryInterface` + Symfony's `UserPasswordHasherInterface`. `CpgUserPresenter(Interface).php` —
+    maps the entity to the `/api/me` response shape.
+  - `Infrastructure/Doctrine/CpgUserRepository.php` — the sole implementation of `CpgUserRepositoryInterface`
+    (autowired automatically, single-implementation rule), also implements Symfony's `PasswordUpgraderInterface`.
+  - `Presentation/Command/CreateCpgUserCommand.php` (`app:user:create`, the *only* way to create a user) and
+    `Presentation/Controller/CurrentUserController.php` (`GET /api/me`).
+- **`Security/Authentication/`** — login/logout/JWT/CSRF mechanics, deliberately kept out of `User/`: this is
+  infrastructure wiring around Symfony Security + LexikJWTAuthenticationBundle, not a domain concept of its own.
+  - `Infrastructure/Jwt/LoginSuccessSubscriber.php` (attaches the `XSRF-TOKEN` cookie, shapes the
+    `login_check` response body) and `CookieLogoutListener.php` (expires both cookies on `/api/logout`).
+  - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
+    listener at priority 20 (must run *above* the Security firewall's priority 8 — see the class docblock).
+
+To add a new bounded context (e.g. a future `Portfolio` write side, or a second `Security` aggregate): mirror
+the same `Domain/Application/Infrastructure/Presentation` split under a new `src/<Context>/` folder, creating
+only the layers actually needed (no persistence → no `Infrastructure/Doctrine/`; no HTTP entry point → no
+`Presentation/Controller/`). Tests mirror the same tree under `tests/<Context>/`.
 
 ### Frontend architecture (`../frontend/src`)
 
