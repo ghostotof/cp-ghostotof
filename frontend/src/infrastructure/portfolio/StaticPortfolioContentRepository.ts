@@ -2,6 +2,7 @@ import type { PortfolioContentRepository } from '../../domain/portfolio/reposito
 import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
 import type { NavigationLink } from '../../domain/portfolio/entities/NavigationLink'
 import type { HeroContent } from '../../domain/portfolio/entities/HeroContent'
+import type { AboutContent } from '../../domain/portfolio/entities/AboutContent'
 import type { Technology } from '../../domain/portfolio/entities/Technology'
 import type { QualityPrinciple } from '../../domain/portfolio/entities/QualityPrinciple'
 import type { QualityTrait } from '../../domain/portfolio/entities/QualityTrait'
@@ -25,7 +26,7 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
   getNavigationLinks(): readonly NavigationLink[] {
     return [
       { label: 'Accueil', href: '#hero', isEnabled: true },
-      { label: 'À propos', href: '#a-propos', isEnabled: false },
+      { label: 'À propos', href: '#a-propos', isEnabled: true },
       { label: 'Compétences', href: '#technologies', isEnabled: true },
       { label: 'Expériences', href: '#experiences', isEnabled: false },
       { label: 'Contact', href: '#contact', isEnabled: false },
@@ -48,6 +49,44 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
         { label: 'Architecture scalable', iconKey: 'layers' },
         { label: 'Performance', iconKey: 'zap' },
         { label: 'Sécurité', iconKey: 'shield' },
+      ],
+    }
+  }
+
+  getAboutContent(): AboutContent {
+    return {
+      eyebrow: 'À propos',
+      titleLead: 'Un développeur guidé par',
+      titleAccent: 'la rigueur et la recherche de sens.',
+      paragraphs: [
+        "Développeur web depuis plusieurs années, je me suis spécialisé dans la construction d'applications " +
+          'PHP/Symfony robustes, avant d\'élargir mon champ d\'action aux architectures frontend modernes ' +
+          'avec Vue.js et TypeScript.',
+        "Mon approche privilégie une architecture claire (DDD, SOLID, séparation des responsabilités) et une " +
+          'couverture de tests exigeante, pour livrer des applications qui restent maintenables bien après ' +
+          'leur mise en production.',
+      ],
+      values: [
+        {
+          title: 'Rigueur',
+          description: 'Une exigence de qualité à chaque étape, de la conception du code à sa mise en production.',
+          iconKey: 'shield',
+        },
+        {
+          title: 'Curiosité',
+          description: 'Une veille technologique continue pour rester aligné avec les meilleures pratiques.',
+          iconKey: 'zap',
+        },
+        {
+          title: 'Transmission',
+          description: 'Un attrait pour le partage de connaissances et la revue de code constructive.',
+          iconKey: 'users',
+        },
+        {
+          title: 'Autonomie',
+          description: "La capacité à porter un projet de bout en bout, de l'architecture au déploiement.",
+          iconKey: 'layers',
+        },
       ],
     }
   }

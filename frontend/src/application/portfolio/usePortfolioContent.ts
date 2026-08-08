@@ -28,6 +28,7 @@ export function usePortfolioContent() {
     siteIdentity: repository.getSiteIdentity(),
     navigationLinks: repository.getNavigationLinks(),
     heroContent: repository.getHeroContent(),
+    aboutContent: repository.getAboutContent(),
     featuredTechnologies: repository.getFeaturedTechnologies(),
     additionalTechnologies: repository.getAdditionalTechnologies(),
     qualityPrinciples: repository.getQualityPrinciples(),

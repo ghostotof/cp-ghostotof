@@ -2,6 +2,7 @@
 import { usePortfolioContent } from '../../application/portfolio/usePortfolioContent'
 import AppHeader from '../layout/AppHeader.vue'
 import HeroSection from '../sections/HeroSection.vue'
+import AboutSection from '../sections/AboutSection.vue'
 import TechnologiesSection from '../sections/TechnologiesSection.vue'
 import QualitySection from '../sections/QualitySection.vue'
 import StatsSection from '../sections/StatsSection.vue'
@@ -10,6 +11,7 @@ const {
   siteIdentity,
   navigationLinks,
   heroContent,
+  aboutContent,
   featuredTechnologies,
   additionalTechnologies,
   qualityPrinciples,
@@ -23,6 +25,7 @@ const {
     <AppHeader :site-identity="siteIdentity" :navigation-links="navigationLinks" />
     <main>
       <HeroSection :content="heroContent" />
+      <AboutSection :content="aboutContent" />
       <TechnologiesSection
         :featured-technologies="featuredTechnologies"
         :additional-technologies="additionalTechnologies"
