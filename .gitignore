@@ -6,6 +6,12 @@
 # ne doit jamais être commité ni servir de source avant authentification.
 /.claude/CLAUDE.local.md
 
+# Ressources privées servies uniquement via une route API protégée (ex. CV,
+# cf. App\Portfolio\Cv) : jamais dans Git, déposées manuellement en local et
+# montées par l'orchestrateur en environnement déployé (jamais copiées dans
+# l'image, voir .dockerignore).
+/backend/resources/private/
+
 # Dépendances et artefacts de build
 /backend/vendor/
 /backend/var/

@@ -8,6 +8,8 @@ import { PORTFOLIO_CONTENT_REPOSITORY } from '../../../src/application/portfolio
 import { StaticPortfolioContentRepository } from '../../../src/infrastructure/portfolio/StaticPortfolioContentRepository'
 import { AUTH_REPOSITORY } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
+import { CV_REPOSITORY } from '../../../src/application/cv/useCvDownload'
+import type { CvRepository } from '../../../src/domain/cv/repositories/CvRepository'
 import { createAppI18n } from '../../../src/presentation/i18n'
 
 function createStubAuthRepository(): AuthRepository {
@@ -15,6 +17,12 @@ function createStubAuthRepository(): AuthRepository {
     login: async () => ({ username: 'jane' }),
     logout: async () => undefined,
     me: async () => null,
+  }
+}
+
+function createStubCvRepository(): CvRepository {
+  return {
+    download: async () => ({ blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }), filename: 'cv.pdf' }),
   }
 }
 
@@ -35,6 +43,7 @@ async function mountLayout(initialPath = '/fr') {
       provide: {
         [PORTFOLIO_CONTENT_REPOSITORY as symbol]: new StaticPortfolioContentRepository(),
         [AUTH_REPOSITORY as symbol]: createStubAuthRepository(),
+        [CV_REPOSITORY as symbol]: createStubCvRepository(),
       },
     },
   })

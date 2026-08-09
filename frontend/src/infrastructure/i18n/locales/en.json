@@ -8,6 +8,7 @@
   },
   "common": {
     "downloadCv": "Download my CV",
+    "downloadCvError": "The CV download failed. Please try again later.",
     "login": "Login",
     "logout": "Logout",
     "openMenu": "Open menu",

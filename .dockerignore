@@ -12,6 +12,10 @@ backend/.env.local
 backend/public/assets/
 backend/public/bundles/
 
+# Ressources privées (ex. CV) : jamais embarquées dans l'image, montées par
+# l'orchestrateur en environnement déployé. Voir .gitignore.
+backend/resources/private/
+
 frontend/node_modules/
 frontend/dist/
 

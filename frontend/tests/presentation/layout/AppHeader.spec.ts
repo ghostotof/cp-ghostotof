@@ -5,8 +5,10 @@ import { defineComponent } from 'vue'
 import AppHeader from '../../../src/presentation/layout/AppHeader.vue'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { AUTH_REPOSITORY, useAuth } from '../../../src/application/auth/useAuth'
+import { CV_REPOSITORY } from '../../../src/application/cv/useCvDownload'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
+import type { CvRepository } from '../../../src/domain/cv/repositories/CvRepository'
 import type { SiteIdentity } from '../../../src/domain/portfolio/entities/SiteIdentity'
 import type { NavigationLink } from '../../../src/domain/portfolio/entities/NavigationLink'
 
@@ -25,6 +27,13 @@ function createStubAuthRepository(user: AuthenticatedUser | null): AuthRepositor
     login: vi.fn(async () => user ?? { username: 'jane' }),
     logout: vi.fn(async () => undefined),
     me: vi.fn(async () => user),
+  }
+}
+
+function createStubCvRepository(overrides: Partial<CvRepository> = {}): CvRepository {
+  return {
+    download: vi.fn(async () => ({ blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }), filename: 'cv.pdf' })),
+    ...overrides,
   }
 }
 
@@ -51,7 +60,7 @@ async function primeAuthState(user: AuthenticatedUser | null): Promise<void> {
  * de vue-i18n (locale courante, aria-labels traduits) : on lui fournit de vraies
  * instances plutôt que des stubs, pour vérifier le comportement réel.
  */
-async function mountHeader(initialPath = '/fr', authRepository?: AuthRepository) {
+async function mountHeader(initialPath = '/fr', authRepository?: AuthRepository, cvRepository?: CvRepository) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -67,7 +76,10 @@ async function mountHeader(initialPath = '/fr', authRepository?: AuthRepository)
     props: { siteIdentity, navigationLinks },
     global: {
       plugins: [router, createAppI18n()],
-      provide: { [AUTH_REPOSITORY as symbol]: authRepository ?? createStubAuthRepository(null) },
+      provide: {
+        [AUTH_REPOSITORY as symbol]: authRepository ?? createStubAuthRepository(null),
+        [CV_REPOSITORY as symbol]: cvRepository ?? createStubCvRepository(),
+      },
     },
   })
   await wrapper.vm.$nextTick()
@@ -91,7 +103,7 @@ describe('AppHeader', () => {
     expect(wrapper.text()).not.toContain('Déconnexion')
   })
 
-  it("authentifié : affiche le bouton CV (lien vide pour le moment) et un bouton de déconnexion, plus de lien de connexion", async () => {
+  it('authentifié : affiche le bouton CV et un bouton de déconnexion, plus de lien de connexion', async () => {
     await primeAuthState({ username: 'jane' })
     const wrapper = await mountHeader()
 
@@ -100,6 +112,37 @@ describe('AppHeader', () => {
 
     const logoutButton = wrapper.findAll('button').find((button) => 'Déconnexion' === button.text())
     expect(logoutButton).toBeDefined()
+  })
+
+  it('authentifié : le clic sur le bouton CV télécharge le fichier via le repository', async () => {
+    vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:mock'), revokeObjectURL: vi.fn() })
+    await primeAuthState({ username: 'jane' })
+    const cvRepository = createStubCvRepository()
+    const wrapper = await mountHeader('/fr', undefined, cvRepository)
+
+    const downloadButton = wrapper.findAll('button').find((button) => button.text().includes('Télécharger mon CV'))
+    await downloadButton?.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(cvRepository.download).toHaveBeenCalled()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+
+    vi.unstubAllGlobals()
+  })
+
+  it('authentifié : affiche un message si le téléchargement du CV échoue', async () => {
+    vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:mock'), revokeObjectURL: vi.fn() })
+    await primeAuthState({ username: 'jane' })
+    const cvRepository = createStubCvRepository({ download: vi.fn(async () => Promise.reject(new Error('unavailable'))) })
+    const wrapper = await mountHeader('/fr', undefined, cvRepository)
+
+    const downloadButton = wrapper.findAll('button').find((button) => button.text().includes('Télécharger mon CV'))
+    await downloadButton?.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[role="alert"]').text()).toBe('Le téléchargement du CV a échoué. Réessayez plus tard.')
+
+    vi.unstubAllGlobals()
   })
 
   it('rend un lien navigable (RouterLink) pour chaque lien de navigation actif', async () => {

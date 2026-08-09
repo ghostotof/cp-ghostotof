@@ -6,6 +6,7 @@ import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
 import type { NavigationLink } from '../../domain/portfolio/entities/NavigationLink'
 import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
 import { useAuth } from '../../application/auth/useAuth'
+import { useCvDownload } from '../../application/cv/useCvDownload'
 import LocaleSwitcher from '../ui/LocaleSwitcher.vue'
 import IconDownload from '~icons/lucide/download'
 import IconMenu from '~icons/lucide/menu'
@@ -21,6 +22,7 @@ const route = useRoute()
 const router = useRouter()
 const { t, locale } = useI18n()
 const { isAuthenticated, isChecking, logout } = useAuth()
+const { isDownloading, hasError: hasCvDownloadError, downloadCv } = useCvDownload()
 
 async function handleLogout(): Promise<void> {
   await logout()
@@ -120,11 +122,11 @@ function navLinkClass(link: NavigationLink) {
             {{ t('common.login') }}
           </RouterLink>
           <template v-else>
-            <!-- Lien vide pour le moment : le fichier réel sera servi par une ressource
-                 protégée côté backend, pas encore branchée. -->
-            <a
-              href="#"
+            <button
+              type="button"
               class="btn btn-outline-light btn-sm d-none d-sm-inline-flex align-items-center gap-2"
+              :disabled="isDownloading"
+              @click="downloadCv"
             >
               {{ t('common.downloadCv') }}
               <IconDownload
@@ -132,18 +134,20 @@ function navLinkClass(link: NavigationLink) {
                 height="16"
                 aria-hidden="true"
               />
-            </a>
-            <a
-              href="#"
+            </button>
+            <button
+              type="button"
               class="btn btn-outline-light btn-sm d-sm-none d-inline-flex align-items-center"
+              :disabled="isDownloading"
               :aria-label="t('common.downloadCv')"
+              @click="downloadCv"
             >
               <IconDownload
                 width="16"
                 height="16"
                 aria-hidden="true"
               />
-            </a>
+            </button>
             <button
               type="button"
               class="btn btn-outline-light btn-sm d-inline-flex align-items-center"
@@ -177,6 +181,14 @@ function navLinkClass(link: NavigationLink) {
         </button>
       </div>
     </div>
+
+    <p
+      v-if="hasCvDownloadError"
+      class="container-xl text-danger small mb-2"
+      role="alert"
+    >
+      {{ t('common.downloadCvError') }}
+    </p>
 
     <nav
       v-if="isMobileMenuOpen"

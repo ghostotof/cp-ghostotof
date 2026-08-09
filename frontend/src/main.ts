@@ -7,6 +7,8 @@ import { PORTFOLIO_CONTENT_REPOSITORY } from './application/portfolio/usePortfol
 import { StaticPortfolioContentRepository } from './infrastructure/portfolio/StaticPortfolioContentRepository'
 import { AUTH_REPOSITORY, useAuth } from './application/auth/useAuth'
 import { HttpAuthRepository } from './infrastructure/auth/HttpAuthRepository'
+import { CV_REPOSITORY } from './application/cv/useCvDownload'
+import { HttpCvRepository } from './infrastructure/cv/HttpCvRepository'
 
 const app = createApp(App)
 
@@ -14,6 +16,7 @@ const app = createApp(App)
 // repository est instanciée et reliée à son abstraction (DIP).
 app.provide(PORTFOLIO_CONTENT_REPOSITORY, new StaticPortfolioContentRepository())
 app.provide(AUTH_REPOSITORY, new HttpAuthRepository(import.meta.env.VITE_API_URL))
+app.provide(CV_REPOSITORY, new HttpCvRepository(import.meta.env.VITE_API_URL))
 
 app.use(i18n)
 app.use(router)
