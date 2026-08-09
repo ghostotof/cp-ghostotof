@@ -42,4 +42,11 @@ describe('BaseCard', () => {
     expect(withIcon.find('svg').exists()).toBe(true)
     expect(withoutIcon.find('svg').exists()).toBe(false)
   })
+
+  it('rend un h2 quand headingLevel vaut 2, pour s\'insérer sous un h1 sans saut de niveau', () => {
+    const wrapper = mount(BaseCard, { props: { title: 'SOLID', headingLevel: 2 } })
+
+    expect(wrapper.get('h2').text()).toBe('SOLID')
+    expect(wrapper.find('h3').exists()).toBe(false)
+  })
 })

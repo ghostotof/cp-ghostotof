@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { Stat } from '../../domain/portfolio/entities/Stat'
 import { resolveIcon } from '../ui/icons'
 import IconDisc3 from '~icons/lucide/disc-3'
@@ -6,11 +7,20 @@ import IconDisc3 from '~icons/lucide/disc-3'
 defineProps<{
   stats: readonly Stat[]
 }>()
+
+const { t } = useI18n()
 </script>
 
 <template>
   <section class="container-xl pb-5">
     <div class="surface-panel p-3 p-sm-4 position-relative">
+      <!-- Titre visuellement masqué : la section n'a pas de libellé visible
+           dans la maquette, mais reste repérable par la navigation par titres
+           des lecteurs d'écran. -->
+      <h2 class="visually-hidden">
+        {{ t('stats.sectionTitle') }}
+      </h2>
+
       <!-- Easter egg discret, clin d'œil à "We Are the Champions" (Queen) sur
            une section qui affiche justement les réussites du profil. -->
       <span

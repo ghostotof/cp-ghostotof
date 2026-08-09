@@ -29,6 +29,12 @@ describe('TechnologiesSection', () => {
     expect(wrapper.get('section').attributes('id')).toBe('technologies')
   })
 
+  it('expose le titre de section comme un h2 (navigation par titres)', () => {
+    const wrapper = mountSection()
+
+    expect(wrapper.get('h2').text()).toContain('Technologies')
+  })
+
   it('rend une carte par technologie phare', () => {
     const wrapper = mountSection()
 

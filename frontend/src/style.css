@@ -25,6 +25,28 @@ body {
   min-height: 100vh;
 }
 
+/* Libellé "eyebrow" au-dessus d'un titre de section. Utilise --bs-link-color
+   (~7:1 sur le fond sombre) plutôt que --bs-primary (~3.45:1), qui échoue au
+   contraste AA (4.5:1) requis pour du texte de cette taille. */
+.text-eyebrow {
+  color: var(--bs-link-color);
+}
+
+/* Lien d'évitement ("skip link") : invisible tant qu'il n'a pas le focus
+   clavier (géré par .visually-hidden-focusable de Bootstrap), positionné et
+   contrasté une fois focusé pour rester lisible par-dessus l'en-tête. */
+.skip-link:focus {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 1080;
+  padding: 0.5rem 1rem;
+  background: #7c3aed;
+  color: #fff;
+  border-radius: 0.375rem;
+  text-decoration: none;
+}
+
 /* Panneau englobant une section (bordure + fond légèrement plus clair que le body). */
 .surface-panel {
   background: rgba(255, 255, 255, 0.02);

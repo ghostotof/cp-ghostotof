@@ -2,14 +2,22 @@
 import { computed } from 'vue'
 import { resolveIcon } from './icons'
 
-const props = defineProps<{
-  title: string
-  description?: string
-  iconKey?: string
-  highlighted?: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    title: string
+    description?: string
+    iconKey?: string
+    highlighted?: boolean
+    /** Niveau de titre HTML du nom de carte, à adapter à la hiérarchie de la page appelante. */
+    headingLevel?: 2 | 3
+  }>(),
+  {
+    headingLevel: 3,
+  },
+)
 
 const icon = computed(() => resolveIcon(props.iconKey))
+const headingTag = computed(() => `h${props.headingLevel}`)
 </script>
 
 <template>
@@ -26,9 +34,12 @@ const icon = computed(() => resolveIcon(props.iconKey))
         class="text-primary flex-shrink-0"
         aria-hidden="true"
       />
-      <h3 class="h6 mb-0 text-white">
+      <component
+        :is="headingTag"
+        class="h6 mb-0 text-white"
+      >
         {{ title }}
-      </h3>
+      </component>
     </div>
     <p
       v-if="description"

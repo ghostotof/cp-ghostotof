@@ -13,7 +13,10 @@
     "logout": "Logout",
     "openMenu": "Open menu",
     "closeMenu": "Close menu",
-    "footerCopyright": "© {year} {brand} — All rights reserved."
+    "footerCopyright": "© {year} {brand} — All rights reserved.",
+    "skipToContent": "Skip to main content",
+    "mainNavigation": "Main navigation",
+    "mobileNavigation": "Mobile navigation"
   },
   "hero": {
     "illustrationAlt": "Illustration: developer behind their computer"
@@ -24,6 +27,9 @@
   },
   "quality": {
     "sectionTitle": "Principles & software quality"
+  },
+  "stats": {
+    "sectionTitle": "Key figures"
   },
   "localeSwitcher": {
     "label": "Change language"

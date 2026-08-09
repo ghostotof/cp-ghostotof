@@ -46,4 +46,15 @@ describe('AboutPage', () => {
 
     expect(wrapper.find('h1').exists()).toBe(true)
   })
+
+  it("les cartes « À propos de ce site » sont des h2, sans saut de niveau après le h1", () => {
+    const repository = new StaticPortfolioContentRepository()
+    const about = repository.getAboutContent('fr')
+    const wrapper = mountAboutPage()
+
+    const h2Titles = wrapper.findAll('h2').map((h2) => h2.text())
+    for (const card of about.site.cards) {
+      expect(h2Titles).toContain(card.title)
+    }
+  })
 })

@@ -85,7 +85,10 @@ function navLinkClass(link: NavigationLink) {
         {{ siteIdentity.brandName }}
       </RouterLink>
 
-      <nav class="d-none d-md-flex align-items-center gap-4 small">
+      <nav
+        class="d-none d-md-flex align-items-center gap-4 small"
+        :aria-label="t('common.mainNavigation')"
+      >
         <template
           v-for="link in navigationLinks"
           :key="link.label"
@@ -96,6 +99,7 @@ function navLinkClass(link: NavigationLink) {
             class="nav-link-portfolio"
             :class="navLinkClass(link)"
             aria-disabled="false"
+            :aria-current="isActiveLink(link) ? 'page' : undefined"
           >
             {{ link.label }}
           </RouterLink>
@@ -195,6 +199,7 @@ function navLinkClass(link: NavigationLink) {
       id="mobile-nav"
       class="d-md-none border-top"
       style="background: rgba(11, 10, 20, 0.95)"
+      :aria-label="t('common.mobileNavigation')"
     >
       <div class="container-xl d-flex flex-column py-2">
         <template
@@ -207,6 +212,7 @@ function navLinkClass(link: NavigationLink) {
             class="nav-link-portfolio d-block py-2"
             :class="navLinkClass(link)"
             aria-disabled="false"
+            :aria-current="isActiveLink(link) ? 'page' : undefined"
             @click="isMobileMenuOpen = false"
           >
             {{ link.label }}

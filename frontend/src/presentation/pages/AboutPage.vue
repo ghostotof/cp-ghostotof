@@ -8,10 +8,11 @@ const { aboutContent } = usePortfolioContent()
 <template>
   <section class="container-xl py-5 d-flex flex-column gap-4">
     <div class="surface-panel p-3 p-sm-4">
-      <h1 class="d-flex align-items-center gap-2 text-primary text-uppercase small fw-semibold mb-4">
+      <h1 class="d-flex align-items-center gap-2 text-eyebrow text-uppercase small fw-semibold mb-4">
         <span
           class="rounded-circle bg-primary"
           style="width: 0.4rem; height: 0.4rem"
+          aria-hidden="true"
         />
         {{ aboutContent.site.eyebrow }}
       </h1>
@@ -26,16 +27,18 @@ const { aboutContent } = usePortfolioContent()
             :title="card.title"
             :description="card.description"
             :icon-key="card.iconKey"
+            :heading-level="2"
           />
         </div>
       </div>
     </div>
 
     <div class="surface-panel p-3 p-sm-4">
-      <h2 class="d-flex align-items-center gap-2 text-primary text-uppercase small fw-semibold mb-4">
+      <h2 class="d-flex align-items-center gap-2 text-eyebrow text-uppercase small fw-semibold mb-4">
         <span
           class="rounded-circle bg-primary"
           style="width: 0.4rem; height: 0.4rem"
+          aria-hidden="true"
         />
         {{ aboutContent.me.eyebrow }}
       </h2>

@@ -13,7 +13,10 @@
     "logout": "Déconnexion",
     "openMenu": "Ouvrir le menu",
     "closeMenu": "Fermer le menu",
-    "footerCopyright": "© {year} {brand} — Tous droits réservés."
+    "footerCopyright": "© {year} {brand} — Tous droits réservés.",
+    "skipToContent": "Aller au contenu principal",
+    "mainNavigation": "Navigation principale",
+    "mobileNavigation": "Navigation mobile"
   },
   "hero": {
     "illustrationAlt": "Illustration : développeur derrière son ordinateur"
@@ -24,6 +27,9 @@
   },
   "quality": {
     "sectionTitle": "Principes & qualité logicielle"
+  },
+  "stats": {
+    "sectionTitle": "Chiffres clés"
   },
   "localeSwitcher": {
     "label": "Changer de langue"

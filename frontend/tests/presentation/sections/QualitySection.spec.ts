@@ -20,6 +20,12 @@ function mountSection() {
 }
 
 describe('QualitySection', () => {
+  it('expose le titre de section comme un h2 (navigation par titres)', () => {
+    const wrapper = mountSection()
+
+    expect(wrapper.find('h2').exists()).toBe(true)
+  })
+
   it('rend une carte par principe de qualité', () => {
     const wrapper = mountSection()
 

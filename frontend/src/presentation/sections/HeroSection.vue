@@ -17,7 +17,7 @@ defineProps<{
     <div class="row align-items-center g-5">
       <div class="col-lg-6">
         <p
-          class="text-primary text-uppercase small fw-semibold mb-3"
+          class="text-eyebrow text-uppercase small fw-semibold mb-3"
           style="letter-spacing: 0.08em"
         >
           {{ content.eyebrow }}

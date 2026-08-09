@@ -58,6 +58,17 @@ describe('AppLayout', () => {
     expect(wrapper.find('main').exists()).toBe(true)
   })
 
+  it('expose un lien d\'évitement ciblant le contenu principal focusable', async () => {
+    const wrapper = await mountLayout('/fr')
+
+    const skipLink = wrapper.get('a.skip-link')
+    expect(skipLink.attributes('href')).toBe('#main-content')
+
+    const main = wrapper.get('main')
+    expect(main.attributes('id')).toBe('main-content')
+    expect(main.attributes('tabindex')).toBe('-1')
+  })
+
   it("rend la landing page sur '/fr' et la page À propos sur '/fr/about'", async () => {
     const homeWrapper = await mountLayout('/fr')
     expect(homeWrapper.find('#hero').exists()).toBe(true)

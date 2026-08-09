@@ -172,6 +172,27 @@ describe('AppHeader', () => {
 
     const homeLink = wrapper.get('nav a[href="/fr"]')
     expect(homeLink.classes()).toContain('nav-link-portfolio--active')
+    expect(homeLink.attributes('aria-current')).toBe('page')
+  })
+
+  it("n'ajoute pas aria-current sur les liens de navigation inactifs", async () => {
+    await primeAuthState(null)
+    const wrapper = await mountHeader('/fr')
+
+    const aboutLink = wrapper.get('nav a[href="/fr/about"]')
+    expect(aboutLink.attributes('aria-current')).toBeUndefined()
+  })
+
+  it('donne un aria-label distinct aux navigations desktop et mobile', async () => {
+    await primeAuthState(null)
+    const wrapper = await mountHeader()
+
+    const desktopNav = wrapper.get('nav.d-none.d-md-flex')
+    expect(desktopNav.attributes('aria-label')).toBe('Navigation principale')
+
+    await wrapper.get('button[aria-controls="mobile-nav"]').trigger('click')
+    const mobileNav = wrapper.get('#mobile-nav')
+    expect(mobileNav.attributes('aria-label')).toBe('Navigation mobile')
   })
 
   it('marque le lien À propos comme actif sur la page /fr/about', async () => {

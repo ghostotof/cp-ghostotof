@@ -17,13 +17,14 @@ const { t } = useI18n()
     class="container-xl py-4"
   >
     <div class="surface-panel p-3 p-sm-4">
-      <p class="d-flex align-items-center gap-2 text-primary text-uppercase small fw-semibold mb-4">
+      <h2 class="d-flex align-items-center gap-2 text-eyebrow text-uppercase small fw-semibold mb-4">
         <span
           class="rounded-circle bg-primary"
           style="width: 0.4rem; height: 0.4rem"
+          aria-hidden="true"
         />
         {{ t('technologies.sectionTitle') }}
-      </p>
+      </h2>
 
       <div class="row row-cols-2 row-cols-sm-3 row-cols-lg-6 g-3">
         <div
