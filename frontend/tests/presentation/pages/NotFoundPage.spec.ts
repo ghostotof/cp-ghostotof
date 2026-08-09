@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import NotFoundPage from './NotFoundPage.vue'
-import { createAppI18n } from '../i18n'
+import NotFoundPage from '../../../src/presentation/pages/NotFoundPage.vue'
+import { createAppI18n } from '../../../src/presentation/i18n'
 
 const StubPage = { template: '<div />' }
 

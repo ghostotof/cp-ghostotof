@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import BaseButton from './BaseButton.vue'
+import BaseButton from '../../../src/presentation/ui/BaseButton.vue'
 
 describe('BaseButton', () => {
   it('rend un lien avec le href fourni et le contenu du slot', () => {

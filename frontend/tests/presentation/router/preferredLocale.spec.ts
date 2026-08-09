@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { LOCALE_STORAGE_KEY, resolvePreferredLocale } from './preferredLocale'
+import { LOCALE_STORAGE_KEY, resolvePreferredLocale } from '../../../src/presentation/router/preferredLocale'
 
 function setBrowserLanguage(language: string): void {
   vi.spyOn(navigator, 'language', 'get').mockReturnValue(language)

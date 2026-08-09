@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import LoginPage from './LoginPage.vue'
-import { AUTH_REPOSITORY } from '../../application/auth/useAuth'
-import { InvalidCredentialsError } from '../../domain/auth/errors/InvalidCredentialsError'
-import type { AuthRepository } from '../../domain/auth/repositories/AuthRepository'
-import { createAppI18n } from '../i18n'
+import LoginPage from '../../../src/presentation/pages/LoginPage.vue'
+import { AUTH_REPOSITORY } from '../../../src/application/auth/useAuth'
+import { InvalidCredentialsError } from '../../../src/domain/auth/errors/InvalidCredentialsError'
+import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
+import { createAppI18n } from '../../../src/presentation/i18n'
 
 const StubPage = { template: '<div />' }
 

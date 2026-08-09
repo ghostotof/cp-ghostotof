@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import LocaleSwitcher from './LocaleSwitcher.vue'
-import { createAppI18n } from '../i18n'
+import LocaleSwitcher from '../../../src/presentation/ui/LocaleSwitcher.vue'
+import { createAppI18n } from '../../../src/presentation/i18n'
 
 const StubPage = { template: '<div />' }
 

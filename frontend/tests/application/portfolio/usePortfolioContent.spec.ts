@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
-import { PORTFOLIO_CONTENT_REPOSITORY, usePortfolioContent } from './usePortfolioContent'
-import { createAppI18n } from '../../presentation/i18n'
-import type { PortfolioContentRepository } from '../../domain/portfolio/repositories/PortfolioContentRepository'
+import { PORTFOLIO_CONTENT_REPOSITORY, usePortfolioContent } from '../../../src/application/portfolio/usePortfolioContent'
+import { createAppI18n } from '../../../src/presentation/i18n'
+import type { PortfolioContentRepository } from '../../../src/domain/portfolio/repositories/PortfolioContentRepository'
 
 function createStubRepository(): PortfolioContentRepository {
   return {

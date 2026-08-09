@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import TechnologiesSection from './TechnologiesSection.vue'
-import type { Technology } from '../../domain/portfolio/entities/Technology'
-import { createAppI18n } from '../i18n'
+import TechnologiesSection from '../../../src/presentation/sections/TechnologiesSection.vue'
+import type { Technology } from '../../../src/domain/portfolio/entities/Technology'
+import { createAppI18n } from '../../../src/presentation/i18n'
 
 const featuredTechnologies: readonly Technology[] = [
   { name: 'Symfony', description: 'Framework PHP', iconKey: 'symfony' },

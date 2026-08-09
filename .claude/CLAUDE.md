@@ -174,12 +174,19 @@ does. The 404 route gets `<meta name="robots" content="noindex, nofollow">` inst
 Icons: domain/content only ever holds a string `iconKey`; the mapping to an actual `unplugin-icons` component
 (`~icons/lucide/...`, `~icons/simple-icons/...`) lives solely in `presentation/ui/icons.ts`.
 
-Tests are colocated `*.spec.ts` next to the file under test (Vitest, glob `src/**/*.spec.ts` in
-`vite.config.ts`), mounted with `@vue/test-utils` and a stub/real repository injected via the same
-`InjectionKey` as `main.ts`. Any component using `usePortfolioContent()`, `useI18n()`, or `useRoute()`/
-`RouterLink` needs the corresponding plugin(s) in `global.plugins` when mounted in a test (`createAppI18n()`
-from `presentation/i18n`, and a locally-built `createRouter(...)` — never the app's own `router`/`i18n`
-singletons, to keep tests isolated from each other).
+Tests live under `tests/`, mirroring the `src/` tree rather than being colocated (e.g.
+`src/presentation/layout/AppHeader.vue` is tested by `tests/presentation/layout/AppHeader.spec.ts`, the same
+pattern the backend already uses for `tests/<BoundedContext>/`). Vitest picks them up via the
+`tests/**/*.spec.ts` glob in `vite.config.ts`; `tsconfig.app.json`'s `include` also lists `tests/**/*.ts` so
+`vue-tsc -b` (the `build` script) still type-checks them. Specs import the module under test with a relative
+path back into `src/` (e.g. `../../../src/presentation/layout/AppHeader.vue`) — there is no path alias.
+Components are mounted with `@vue/test-utils` and a stub/real repository injected via the same `InjectionKey`
+as `main.ts`. Any component using `usePortfolioContent()`, `useI18n()`, or `useRoute()`/`RouterLink` needs the
+corresponding plugin(s) in `global.plugins` when mounted in a test (`createAppI18n()` from `presentation/i18n`,
+and a locally-built `createRouter(...)` — never the app's own `router`/`i18n` singletons, to keep tests
+isolated from each other).
+
+To add a test for a new file: create it at the mirrored path under `tests/`, not next to the source file.
 
 #### Lint
 

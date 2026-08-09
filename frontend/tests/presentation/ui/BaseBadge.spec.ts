@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import BaseBadge from './BaseBadge.vue'
+import BaseBadge from '../../../src/presentation/ui/BaseBadge.vue'
 
 describe('BaseBadge', () => {
   it('rend le contenu du slot', () => {

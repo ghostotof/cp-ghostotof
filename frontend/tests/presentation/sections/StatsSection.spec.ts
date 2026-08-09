@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import StatsSection from './StatsSection.vue'
-import type { Stat } from '../../domain/portfolio/entities/Stat'
+import StatsSection from '../../../src/presentation/sections/StatsSection.vue'
+import type { Stat } from '../../../src/domain/portfolio/entities/Stat'
 
 const stats: readonly Stat[] = [
   { value: '+50K', label: 'Lignes de code', iconKey: 'code' },

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import QualitySection from './QualitySection.vue'
-import type { QualityPrinciple } from '../../domain/portfolio/entities/QualityPrinciple'
-import type { QualityTrait } from '../../domain/portfolio/entities/QualityTrait'
-import { createAppI18n } from '../i18n'
+import QualitySection from '../../../src/presentation/sections/QualitySection.vue'
+import type { QualityPrinciple } from '../../../src/domain/portfolio/entities/QualityPrinciple'
+import type { QualityTrait } from '../../../src/domain/portfolio/entities/QualityTrait'
+import { createAppI18n } from '../../../src/presentation/i18n'
 
 const qualityPrinciples: readonly QualityPrinciple[] = [
   { title: 'DDD', description: 'Modélisation du domaine métier.', iconKey: 'boxes' },

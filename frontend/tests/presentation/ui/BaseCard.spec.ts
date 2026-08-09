@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import BaseCard from './BaseCard.vue'
+import BaseCard from '../../../src/presentation/ui/BaseCard.vue'
 
 describe('BaseCard', () => {
   it('rend le titre', () => {

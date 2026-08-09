@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import IconIllustration from './IconIllustration.vue'
-import { createAppI18n } from '../i18n'
+import IconIllustration from '../../../src/presentation/ui/IconIllustration.vue'
+import { createAppI18n } from '../../../src/presentation/i18n'
 
 describe('IconIllustration', () => {
   it('rend une image avec un texte alternatif descriptif', () => {

@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import AppLayout from './AppLayout.vue'
-import LandingPage from '../pages/LandingPage.vue'
-import AboutPage from '../pages/AboutPage.vue'
-import { PORTFOLIO_CONTENT_REPOSITORY } from '../../application/portfolio/usePortfolioContent'
-import { StaticPortfolioContentRepository } from '../../infrastructure/portfolio/StaticPortfolioContentRepository'
-import { AUTH_REPOSITORY } from '../../application/auth/useAuth'
-import type { AuthRepository } from '../../domain/auth/repositories/AuthRepository'
-import { createAppI18n } from '../i18n'
+import AppLayout from '../../../src/presentation/layout/AppLayout.vue'
+import LandingPage from '../../../src/presentation/pages/LandingPage.vue'
+import AboutPage from '../../../src/presentation/pages/AboutPage.vue'
+import { PORTFOLIO_CONTENT_REPOSITORY } from '../../../src/application/portfolio/usePortfolioContent'
+import { StaticPortfolioContentRepository } from '../../../src/infrastructure/portfolio/StaticPortfolioContentRepository'
+import { AUTH_REPOSITORY } from '../../../src/application/auth/useAuth'
+import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
+import { createAppI18n } from '../../../src/presentation/i18n'
 
 function createStubAuthRepository(): AuthRepository {
   return {

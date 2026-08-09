@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import LandingPage from './LandingPage.vue'
-import { PORTFOLIO_CONTENT_REPOSITORY } from '../../application/portfolio/usePortfolioContent'
-import { StaticPortfolioContentRepository } from '../../infrastructure/portfolio/StaticPortfolioContentRepository'
-import { createAppI18n } from '../i18n'
+import LandingPage from '../../../src/presentation/pages/LandingPage.vue'
+import { PORTFOLIO_CONTENT_REPOSITORY } from '../../../src/application/portfolio/usePortfolioContent'
+import { StaticPortfolioContentRepository } from '../../../src/infrastructure/portfolio/StaticPortfolioContentRepository'
+import { createAppI18n } from '../../../src/presentation/i18n'
 
 function mountLandingPage() {
   return mount(LandingPage, {

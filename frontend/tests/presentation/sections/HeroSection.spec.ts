@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import HeroSection from './HeroSection.vue'
-import type { HeroContent } from '../../domain/portfolio/entities/HeroContent'
-import { createAppI18n } from '../i18n'
+import HeroSection from '../../../src/presentation/sections/HeroSection.vue'
+import type { HeroContent } from '../../../src/domain/portfolio/entities/HeroContent'
+import { createAppI18n } from '../../../src/presentation/i18n'
 
 const content: HeroContent = {
   eyebrow: 'Développeur Web Senior',

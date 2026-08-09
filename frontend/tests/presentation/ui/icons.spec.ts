@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveIcon } from './icons'
+import { resolveIcon } from '../../../src/presentation/ui/icons'
 
 describe('resolveIcon', () => {
   it('retourne undefined quand aucune clé n\'est fournie', () => {

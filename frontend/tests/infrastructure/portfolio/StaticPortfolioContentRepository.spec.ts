@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { StaticPortfolioContentRepository } from './StaticPortfolioContentRepository'
-import { SUPPORTED_LOCALES } from '../../domain/portfolio/entities/Locale'
+import { StaticPortfolioContentRepository } from '../../../src/infrastructure/portfolio/StaticPortfolioContentRepository'
+import { SUPPORTED_LOCALES } from '../../../src/domain/portfolio/entities/Locale'
 
 describe('StaticPortfolioContentRepository', () => {
   const repository = new StaticPortfolioContentRepository()

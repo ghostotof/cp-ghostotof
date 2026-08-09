@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
-import { AUTH_REPOSITORY, useAuth } from './useAuth'
-import type { AuthRepository } from '../../domain/auth/repositories/AuthRepository'
-import type { AuthenticatedUser } from '../../domain/auth/entities/AuthenticatedUser'
+import { AUTH_REPOSITORY, useAuth } from '../../../src/application/auth/useAuth'
+import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
+import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 
 function createStubRepository(overrides: Partial<AuthRepository> = {}): AuthRepository {
   return {
