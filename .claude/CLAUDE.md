@@ -174,6 +174,30 @@ does. The 404 route gets `<meta name="robots" content="noindex, nofollow">` inst
 Icons: domain/content only ever holds a string `iconKey`; the mapping to an actual `unplugin-icons` component
 (`~icons/lucide/...`, `~icons/simple-icons/...`) lives solely in `presentation/ui/icons.ts`.
 
+#### Accessibility (a11y)
+
+Baseline for keyboard/screen-reader users, established across `AppLayout.vue`/`AppHeader.vue`/the landing
+sections/`AboutPage.vue` — follow these conventions when adding new UI rather than reintroducing the gaps they
+fixed:
+
+- **Skip link**: `AppLayout.vue` renders a `.skip-link` (Bootstrap's `visually-hidden-focusable`, visible only
+  on keyboard focus) targeting `<main id="main-content" tabindex="-1">`, so keyboard/screen-reader users can
+  bypass the header/nav on every page.
+- **No heading-level skips**: every section title is a real `<h2>`/`<h3>`, never a styled `<p>` — screen readers
+  navigate by heading level, and a "looks like a title" paragraph is invisible to that navigation
+  (`TechnologiesSection`/`QualitySection` eyebrows, `StatsSection`'s visually-hidden `<h2>`). `BaseCard` takes a
+  `headingLevel` prop (`2 | 3`, default `3`) specifically so a card grid sitting directly under a page's `<h1>`
+  (e.g. `AboutPage.vue`'s `site.cards`) can render `<h2>` instead of skipping straight to `<h3>`.
+- **Text contrast**: use the `.text-eyebrow` class (`style.css`, `color: var(--bs-link-color)`) for actual text,
+  never Bootstrap's `text-primary` — `--bs-primary` (`#7c3aed`) is only ~3.45:1 against the dark background,
+  below the 4.5:1 AA threshold for text. `text-primary` stays fine for icons/decorative dots (non-text UI only
+  needs 3:1, and they're `aria-hidden`).
+- **Nav landmarks**: `AppHeader.vue` has two `<nav>` elements (desktop + mobile disclosure) — both need a
+  distinct `aria-label` (`common.mainNavigation` / `common.mobileNavigation`) so they aren't ambiguous to
+  assistive tech, and the active link gets `aria-current="page"` (not just a CSS class).
+- No automated a11y linting is wired in yet (no `eslint-plugin-vue-a11y`/axe) — checks today are manual
+  (keyboard Tab-through, heading outline, contrast) rather than CI-enforced.
+
 Tests live under `tests/`, mirroring the `src/` tree rather than being colocated (e.g.
 `src/presentation/layout/AppHeader.vue` is tested by `tests/presentation/layout/AppHeader.spec.ts`, the same
 pattern the backend already uses for `tests/<BoundedContext>/`). Vitest picks them up via the
