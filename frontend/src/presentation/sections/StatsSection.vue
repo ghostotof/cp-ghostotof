@@ -28,7 +28,7 @@ defineProps<{
         <div
           v-for="stat in stats"
           :key="stat.label"
-          class="col d-flex align-items-center gap-3"
+          class="col d-flex align-items-center gap-3 stat-item p-2"
         >
           <component
             :is="resolveIcon(stat.iconKey)"
