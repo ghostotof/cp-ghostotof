@@ -2,7 +2,7 @@
   "nav": {
     "home": "Home",
     "skills": "Skills",
-    "experiences": "Experience",
+    "experiences": "Experiences",
     "contact": "Contact",
     "about": "About"
   },
@@ -24,6 +24,10 @@
   "technologies": {
     "sectionTitle": "Technologies",
     "andAlso": "ALSO"
+  },
+  "experience": {
+    "loading": "Loading the technology ranking…",
+    "error": "The technology ranking could not be loaded. Please try again later."
   },
   "quality": {
     "sectionTitle": "Principles & software quality"
@@ -57,7 +61,7 @@
       "description": "About this site: its origin and design."
     },
     "experience": {
-      "title": "Experience",
+      "title": "Experiences",
       "description": "Technologies ranked by cumulative time spent on each throughout my career."
     },
     "notFound": {

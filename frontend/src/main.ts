@@ -9,6 +9,8 @@ import { AUTH_REPOSITORY, useAuth } from './application/auth/useAuth'
 import { HttpAuthRepository } from './infrastructure/auth/HttpAuthRepository'
 import { CV_REPOSITORY } from './application/cv/useCvDownload'
 import { HttpCvRepository } from './infrastructure/cv/HttpCvRepository'
+import { EXPERIENCE_TECHNOLOGY_REPOSITORY } from './application/experience/useExperienceTechnologies'
+import { HttpExperienceTechnologyRepository } from './infrastructure/experience/HttpExperienceTechnologyRepository'
 
 const app = createApp(App)
 
@@ -17,6 +19,7 @@ const app = createApp(App)
 app.provide(PORTFOLIO_CONTENT_REPOSITORY, new StaticPortfolioContentRepository())
 app.provide(AUTH_REPOSITORY, new HttpAuthRepository(import.meta.env.VITE_API_URL))
 app.provide(CV_REPOSITORY, new HttpCvRepository(import.meta.env.VITE_API_URL))
+app.provide(EXPERIENCE_TECHNOLOGY_REPOSITORY, new HttpExperienceTechnologyRepository(import.meta.env.VITE_API_URL))
 
 app.use(i18n)
 app.use(router)

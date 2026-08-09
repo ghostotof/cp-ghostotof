@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { usePortfolioContent } from '../../application/portfolio/usePortfolioContent'
+import { useExperienceTechnologies } from '../../application/experience/useExperienceTechnologies'
 import { resolveIcon } from '../ui/icons'
 
+const { t } = useI18n()
 const { experienceContent } = usePortfolioContent()
+const { technologies, isLoading, hasError } = useExperienceTechnologies()
 
-const maxYears = computed(() =>
-  experienceContent.value.technologies.reduce((max, technology) => Math.max(max, technology.years), 0),
-)
+const maxYears = computed(() => technologies.value.reduce((max, technology) => Math.max(max, technology.years), 0))
 </script>
 
 <template>
@@ -26,9 +28,27 @@ const maxYears = computed(() =>
         {{ experienceContent.description }}
       </p>
 
-      <ol class="list-unstyled d-flex flex-column gap-2 mb-0">
+      <p
+        v-if="isLoading"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('experience.loading') }}
+      </p>
+
+      <p
+        v-else-if="hasError"
+        class="text-danger mb-0"
+        role="alert"
+      >
+        {{ t('experience.error') }}
+      </p>
+
+      <ol
+        v-else
+        class="list-unstyled d-flex flex-column gap-2 mb-0"
+      >
         <li
-          v-for="(technology, index) in experienceContent.technologies"
+          v-for="(technology, index) in technologies"
           :key="technology.name"
           class="experience-item d-flex align-items-center gap-3 p-2 p-sm-3"
           :class="{ 'experience-item--top': index < 3 }"

@@ -57,12 +57,7 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
   }
 
   getExperienceContent(locale: Locale): ExperienceContent {
-    const experience = CONTENT[locale].experience
-    return {
-      ...experience,
-      // Garantit l'ordre décroissant par temps passé quel que soit l'ordre de saisie du contenu.
-      technologies: [...experience.technologies].sort((a, b) => b.years - a.years),
-    }
+    return CONTENT[locale].experience
   }
 
   getFeaturedTechnologies(locale: Locale): readonly Technology[] {

@@ -96,33 +96,9 @@ const en: PortfolioLocaleContent = {
   },
 
   experience: {
-    eyebrow: 'Experience',
+    eyebrow: 'Experiences',
     description:
       "A ranking of the main technologies I've worked with, based on the cumulative time spent on each throughout my career and my studies, from most to least experienced. Durations are estimated from my professional history and coursework (years rounded to the nearest half-year).",
-    technologies: [
-      {
-        name: 'PHP',
-        years: 13.5,
-        duration: '~13.5 years',
-        iconKey: 'php',
-        relatedTechnology: { name: 'HTML / CSS / JavaScript' },
-      },
-      { name: 'MySQL / PostgreSQL / SQL Server', years: 13.5, duration: '~13.5 years' },
-      { name: 'Symfony / Doctrine', years: 9.5, duration: '~9.5 years', iconKey: 'symfony' },
-      { name: 'Docker', years: 6.5, duration: '~6.5 years', iconKey: 'docker' },
-      { name: 'API Platform', years: 5.5, duration: '~5.5 years' },
-      { name: 'Symfony Messenger', years: 5.5, duration: '~5.5 years', iconKey: 'mail' },
-      { name: 'PHPStan', years: 4.5, duration: '~4.5 years' },
-      { name: 'AWS', years: 4.5, duration: '~4.5 years', iconKey: 'aws' },
-      { name: 'C', years: 3, duration: '~3 years', iconKey: 'c' },
-      { name: 'C++', years: 3, duration: '~3 years', iconKey: 'cpp' },
-      { name: 'OCaml', years: 2, duration: '~2 years', iconKey: 'ocaml' },
-      { name: 'Java', years: 2, duration: '~2 years', iconKey: 'java' },
-      { name: 'Cobol / SQL/DB2 / MVS / CICS', years: 1.5, duration: '~1.5 years' },
-      { name: 'R', years: 1, duration: '~1 year', iconKey: 'r' },
-      { name: 'Assembly', years: 1, duration: '~1 year' },
-      { name: 'Python', years: 0.5, duration: '~6 months', iconKey: 'python' },
-    ],
   },
 
   technologies: {

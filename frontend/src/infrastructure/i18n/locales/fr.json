@@ -25,6 +25,10 @@
     "sectionTitle": "Technologies",
     "andAlso": "ET AUSSI"
   },
+  "experience": {
+    "loading": "Chargement du classement des technologies…",
+    "error": "Le classement des technologies n'a pas pu être chargé. Réessayez plus tard."
+  },
   "quality": {
     "sectionTitle": "Principes & qualité logicielle"
   },

@@ -70,23 +70,10 @@ describe('StaticPortfolioContentRepository', () => {
   )
 
   it.each(SUPPORTED_LOCALES)(
-    'fournit les technologies "Expérience" triées par temps cumulé décroissant pour %s',
-    (locale) => {
-      const experience = repository.getExperienceContent(locale)
-
-      expect(experience.technologies.length).toBeGreaterThan(0)
-      const years = experience.technologies.map((technology) => technology.years)
-      const sortedDescending = [...years].sort((a, b) => b - a)
-      expect(years).toEqual(sortedDescending)
-    },
-  )
-
-  it.each(SUPPORTED_LOCALES)(
     "ne divulgue aucune information personnelle identifiante dans le contenu \"Expérience\" (%s)",
     (locale) => {
       const experience = repository.getExperienceContent(locale)
-      const fullText = [experience.eyebrow, experience.description, ...experience.technologies.map((t) => t.name)]
-        .join(' ')
+      const fullText = [experience.eyebrow, experience.description].join(' ')
 
       expect(fullText).not.toMatch(/[\w.-]+@[\w.-]+\.\w+/)
       expect(fullText).not.toMatch(/https?:\/\//)

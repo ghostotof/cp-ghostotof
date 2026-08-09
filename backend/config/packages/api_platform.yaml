@@ -1,6 +1,12 @@
 api_platform:
     title: Hello API Platform
     version: 1.0.0
+    # Le reste de l'API (/api/me, /api/cv, /api/login_check) répond en JSON
+    # brut, jamais en JSON-LD/Hydra : on garde ce même format pour les
+    # ApiResource, plutôt que le format jsonld activé par défaut par API
+    # Platform, pour que le frontend consomme un simple tableau/objet.
+    formats:
+        json: ['application/json']
     defaults:
         stateless: true
         cache_headers:

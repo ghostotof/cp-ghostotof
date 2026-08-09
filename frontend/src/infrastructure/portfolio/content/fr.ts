@@ -100,30 +100,6 @@ const fr: PortfolioLocaleContent = {
     eyebrow: 'Expériences',
     description:
       "Classement de mes principales technologies selon le temps cumulé passé dessus au fil de mon parcours professionnel et de mes études, de la plus expérimentée à la plus récente. Durées estimées à partir de l'historique de mes missions et de mes cursus (années arrondies au semestre).",
-    technologies: [
-      {
-        name: 'PHP',
-        years: 13.5,
-        duration: '~13,5 ans',
-        iconKey: 'php',
-        relatedTechnology: { name: 'HTML / CSS / JavaScript' },
-      },
-      { name: 'MySQL / PostgreSQL / SQL Server', years: 13.5, duration: '~13,5 ans' },
-      { name: 'Symfony / Doctrine', years: 9.5, duration: '~9,5 ans', iconKey: 'symfony' },
-      { name: 'Docker', years: 6.5, duration: '~6,5 ans', iconKey: 'docker' },
-      { name: 'API Platform', years: 5.5, duration: '~5,5 ans' },
-      { name: 'Symfony Messenger', years: 5.5, duration: '~5,5 ans', iconKey: 'mail' },
-      { name: 'PHPStan', years: 4.5, duration: '~4,5 ans' },
-      { name: 'AWS', years: 4.5, duration: '~4,5 ans', iconKey: 'aws' },
-      { name: 'C', years: 3, duration: '~3 ans', iconKey: 'c' },
-      { name: 'C++', years: 3, duration: '~3 ans', iconKey: 'cpp' },
-      { name: 'OCaml', years: 2, duration: '~2 ans', iconKey: 'ocaml' },
-      { name: 'Java', years: 2, duration: '~2 ans', iconKey: 'java' },
-      { name: 'Cobol / SQL/DB2 / MVS / CICS', years: 1.5, duration: '~1,5 ans' },
-      { name: 'R', years: 1, duration: '~1 an', iconKey: 'r' },
-      { name: 'Assembleur', years: 1, duration: '~1 an' },
-      { name: 'Python', years: 0.5, duration: '~6 mois', iconKey: 'python' },
-    ],
   },
 
   technologies: {
