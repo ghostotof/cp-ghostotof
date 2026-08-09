@@ -12,6 +12,11 @@ import IconMysql from '~icons/simple-icons/mysql'
 import IconPython from '~icons/simple-icons/python'
 import IconMicrosoftsqlserver from '~icons/simple-icons/microsoftsqlserver'
 import IconAmazonwebservices from '~icons/simple-icons/amazonwebservices'
+import IconC from '~icons/simple-icons/c'
+import IconCplusplus from '~icons/simple-icons/cplusplus'
+import IconOcaml from '~icons/simple-icons/ocaml'
+import IconOpenjdk from '~icons/simple-icons/openjdk'
+import IconR from '~icons/simple-icons/r'
 import IconCode from '~icons/lucide/code'
 import IconLayers from '~icons/lucide/layers'
 import IconZap from '~icons/lucide/zap'
@@ -51,6 +56,11 @@ const iconRegistry: Record<string, Component> = {
   python: IconPython,
   sqlserver: IconMicrosoftsqlserver,
   aws: IconAmazonwebservices,
+  c: IconC,
+  cpp: IconCplusplus,
+  ocaml: IconOcaml,
+  java: IconOpenjdk,
+  r: IconR,
   code: IconCode,
   layers: IconLayers,
   zap: IconZap,

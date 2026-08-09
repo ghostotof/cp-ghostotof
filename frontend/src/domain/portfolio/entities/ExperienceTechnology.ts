@@ -8,4 +8,13 @@ export interface ExperienceTechnology {
   readonly years: number
   readonly duration: string
   readonly iconKey?: string
+  /**
+   * A technology always used alongside this one but not ranked on its own — shown as a
+   * muted label next to it instead of its own entry (e.g. HTML/CSS/JS next to PHP).
+   */
+  readonly relatedTechnology?: ExperienceRelatedTechnology
+}
+
+export interface ExperienceRelatedTechnology {
+  readonly name: string
 }
