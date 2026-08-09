@@ -3,6 +3,7 @@ import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
 import type { NavigationLink } from '../../domain/portfolio/entities/NavigationLink'
 import type { HeroContent } from '../../domain/portfolio/entities/HeroContent'
 import type { AboutContent } from '../../domain/portfolio/entities/AboutContent'
+import type { ExperienceContent } from '../../domain/portfolio/entities/ExperienceContent'
 import type { Technology } from '../../domain/portfolio/entities/Technology'
 import type { QualityPrinciple } from '../../domain/portfolio/entities/QualityPrinciple'
 import type { QualityTrait } from '../../domain/portfolio/entities/QualityTrait'
@@ -41,7 +42,7 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
     return [
       { label: nav.home, to: `/${locale}`, isEnabled: true },
       { label: nav.skills, to: `/${locale}#technologies`, isEnabled: true },
-      { label: nav.experiences, to: `/${locale}#experiences`, isEnabled: false },
+      { label: nav.experiences, to: `/${locale}/experience`, isEnabled: true },
       { label: nav.contact, to: `/${locale}#contact`, isEnabled: false },
       { label: nav.about, to: `/${locale}/about`, isEnabled: true },
     ]
@@ -53,6 +54,15 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
 
   getAboutContent(locale: Locale): AboutContent {
     return CONTENT[locale].about
+  }
+
+  getExperienceContent(locale: Locale): ExperienceContent {
+    const experience = CONTENT[locale].experience
+    return {
+      ...experience,
+      // Garantit l'ordre décroissant par temps passé quel que soit l'ordre de saisie du contenu.
+      technologies: [...experience.technologies].sort((a, b) => b.years - a.years),
+    }
   }
 
   getFeaturedTechnologies(locale: Locale): readonly Technology[] {

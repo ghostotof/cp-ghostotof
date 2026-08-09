@@ -4,6 +4,14 @@ import IconDocker from '~icons/simple-icons/docker'
 import IconPostgresql from '~icons/simple-icons/postgresql'
 import IconVuedotjs from '~icons/simple-icons/vuedotjs'
 import IconTypescript from '~icons/simple-icons/typescript'
+import IconPhp from '~icons/simple-icons/php'
+import IconHtml5 from '~icons/simple-icons/html5'
+import IconCss3 from '~icons/simple-icons/css3'
+import IconJavascript from '~icons/simple-icons/javascript'
+import IconMysql from '~icons/simple-icons/mysql'
+import IconPython from '~icons/simple-icons/python'
+import IconMicrosoftsqlserver from '~icons/simple-icons/microsoftsqlserver'
+import IconAmazonwebservices from '~icons/simple-icons/amazonwebservices'
 import IconCode from '~icons/lucide/code'
 import IconLayers from '~icons/lucide/layers'
 import IconZap from '~icons/lucide/zap'
@@ -35,6 +43,14 @@ const iconRegistry: Record<string, Component> = {
   postgresql: IconPostgresql,
   vuejs: IconVuedotjs,
   typescript: IconTypescript,
+  php: IconPhp,
+  html5: IconHtml5,
+  css3: IconCss3,
+  javascript: IconJavascript,
+  mysql: IconMysql,
+  python: IconPython,
+  sqlserver: IconMicrosoftsqlserver,
+  aws: IconAmazonwebservices,
   code: IconCode,
   layers: IconLayers,
   zap: IconZap,

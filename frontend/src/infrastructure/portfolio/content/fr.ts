@@ -96,6 +96,33 @@ const fr: PortfolioLocaleContent = {
     },
   },
 
+  experience: {
+    eyebrow: 'Expérience',
+    description:
+      "Classement de mes principales technologies selon le temps cumulé passé dessus au fil de mon parcours professionnel, de la plus expérimentée à la plus récente. Durées estimées à partir de l'historique de mes missions (années arrondies au semestre).",
+    technologies: [
+      { name: 'PHP', years: 9.5, duration: '~9,5 ans', iconKey: 'php' },
+      { name: 'Symfony', years: 9.5, duration: '~9,5 ans', iconKey: 'symfony' },
+      { name: 'Docker', years: 7.5, duration: '~7,5 ans', iconKey: 'docker' },
+      { name: 'HTML', years: 5, duration: '~5 ans', iconKey: 'html5' },
+      { name: 'CSS', years: 5, duration: '~5 ans', iconKey: 'css3' },
+      { name: 'JavaScript', years: 5, duration: '~5 ans', iconKey: 'javascript' },
+      { name: 'MySQL', years: 5, duration: '~5 ans', iconKey: 'mysql' },
+      { name: 'Doctrine', years: 4.5, duration: '~4,5 ans' },
+      { name: 'API Platform', years: 4.5, duration: '~4,5 ans' },
+      { name: 'Symfony Messenger', years: 4.5, duration: '~4,5 ans', iconKey: 'mail' },
+      { name: 'PostgreSQL', years: 4.5, duration: '~4,5 ans', iconKey: 'postgresql' },
+      { name: 'PHPStan', years: 4.5, duration: '~4,5 ans' },
+      { name: 'AWS', years: 4.5, duration: '~4,5 ans', iconKey: 'aws' },
+      { name: 'SQL Server', years: 2, duration: '~2 ans', iconKey: 'sqlserver' },
+      { name: 'Cobol', years: 1, duration: '~1 an' },
+      { name: 'DB2', years: 1, duration: '~1 an' },
+      { name: 'MVS', years: 1, duration: '~1 an' },
+      { name: 'CICS', years: 1, duration: '~1 an' },
+      { name: 'Python', years: 0.5, duration: '~6 mois', iconKey: 'python' },
+    ],
+  },
+
   technologies: {
     featured: [
       { name: 'Symfony', description: 'Framework PHP', iconKey: 'symfony' },

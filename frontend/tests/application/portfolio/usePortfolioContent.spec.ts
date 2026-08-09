@@ -27,6 +27,7 @@ function createStubRepository(): PortfolioContentRepository {
         personalCards: [],
       },
     }),
+    getExperienceContent: () => ({ eyebrow: '', description: '', technologies: [] }),
     getFeaturedTechnologies: () => [],
     getAdditionalTechnologies: () => [],
     getQualityPrinciples: () => [],

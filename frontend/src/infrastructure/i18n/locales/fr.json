@@ -56,6 +56,10 @@
       "title": "À propos",
       "description": "À propos de ce site : son origine et sa conception."
     },
+    "experience": {
+      "title": "Expérience",
+      "description": "Technologies classées selon le temps cumulé passé sur chacune d'elles au fil de mon parcours professionnel."
+    },
     "notFound": {
       "title": "Page introuvable",
       "description": "La page demandée n'existe pas."

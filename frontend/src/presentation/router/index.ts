@@ -20,6 +20,7 @@ declare module 'vue-router' {
  */
 const LandingPage = () => import('../pages/LandingPage.vue')
 const AboutPage = () => import('../pages/AboutPage.vue')
+const ExperiencePage = () => import('../pages/ExperiencePage.vue')
 const LoginPage = () => import('../pages/LoginPage.vue')
 const NotFoundPage = () => import('../pages/NotFoundPage.vue')
 
@@ -50,6 +51,12 @@ export const router = createRouter({
           name: 'about',
           component: AboutPage,
           meta: { titleKey: 'seo.about.title', descriptionKey: 'seo.about.description' },
+        },
+        {
+          path: 'experience',
+          name: 'experience',
+          component: ExperiencePage,
+          meta: { titleKey: 'seo.experience.title', descriptionKey: 'seo.experience.description' },
         },
         {
           path: 'login',

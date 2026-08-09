@@ -17,6 +17,17 @@ describe('StaticPortfolioContentRepository', () => {
     },
   )
 
+  it.each(SUPPORTED_LOCALES)(
+    'active le lien de navigation "Expérience" pour la locale %s et le fait pointer vers sa page dédiée',
+    (locale) => {
+      const links = repository.getNavigationLinks(locale)
+      const experienceLink = links.find((link) => link.to.endsWith('/experience'))
+
+      expect(experienceLink?.isEnabled).toBe(true)
+      expect(experienceLink?.to).toBe(`/${locale}/experience`)
+    },
+  )
+
   it.each(SUPPORTED_LOCALES)('préfixe tous les liens de navigation par la locale %s', (locale) => {
     const links = repository.getNavigationLinks(locale)
 
@@ -52,6 +63,31 @@ describe('StaticPortfolioContentRepository', () => {
 
       // Le site doit rester générique tant que l'utilisateur n'est pas authentifié (cf. CLAUDE.md, objectif n°9) :
       // pas d'adresse e-mail, pas d'URL externe, pas de numéro de téléphone en clair.
+      expect(fullText).not.toMatch(/[\w.-]+@[\w.-]+\.\w+/)
+      expect(fullText).not.toMatch(/https?:\/\//)
+      expect(fullText).not.toMatch(/\b0[1-9](\s?\d{2}){4}\b/)
+    },
+  )
+
+  it.each(SUPPORTED_LOCALES)(
+    'fournit les technologies "Expérience" triées par temps cumulé décroissant pour %s',
+    (locale) => {
+      const experience = repository.getExperienceContent(locale)
+
+      expect(experience.technologies.length).toBeGreaterThan(0)
+      const years = experience.technologies.map((technology) => technology.years)
+      const sortedDescending = [...years].sort((a, b) => b - a)
+      expect(years).toEqual(sortedDescending)
+    },
+  )
+
+  it.each(SUPPORTED_LOCALES)(
+    "ne divulgue aucune information personnelle identifiante dans le contenu \"Expérience\" (%s)",
+    (locale) => {
+      const experience = repository.getExperienceContent(locale)
+      const fullText = [experience.eyebrow, experience.description, ...experience.technologies.map((t) => t.name)]
+        .join(' ')
+
       expect(fullText).not.toMatch(/[\w.-]+@[\w.-]+\.\w+/)
       expect(fullText).not.toMatch(/https?:\/\//)
       expect(fullText).not.toMatch(/\b0[1-9](\s?\d{2}){4}\b/)

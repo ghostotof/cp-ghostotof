@@ -1,5 +1,6 @@
 import type { HeroContent } from '../../../domain/portfolio/entities/HeroContent'
 import type { AboutContent } from '../../../domain/portfolio/entities/AboutContent'
+import type { ExperienceContent } from '../../../domain/portfolio/entities/ExperienceContent'
 import type { Technology } from '../../../domain/portfolio/entities/Technology'
 import type { QualityPrinciple } from '../../../domain/portfolio/entities/QualityPrinciple'
 import type { QualityTrait } from '../../../domain/portfolio/entities/QualityTrait'
@@ -15,6 +16,7 @@ import type { Stat } from '../../../domain/portfolio/entities/Stat'
 export interface PortfolioLocaleContent {
   readonly hero: HeroContent
   readonly about: AboutContent
+  readonly experience: ExperienceContent
   readonly technologies: {
     readonly featured: readonly Technology[]
     readonly additional: readonly Technology[]

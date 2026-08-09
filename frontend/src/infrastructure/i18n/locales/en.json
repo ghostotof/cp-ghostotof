@@ -56,6 +56,10 @@
       "title": "About",
       "description": "About this site: its origin and design."
     },
+    "experience": {
+      "title": "Experience",
+      "description": "Technologies ranked by cumulative time spent on each throughout my career."
+    },
     "notFound": {
       "title": "Page not found",
       "description": "The requested page does not exist."
