@@ -11,7 +11,8 @@
     "login": "Connexion",
     "logout": "Déconnexion",
     "openMenu": "Ouvrir le menu",
-    "closeMenu": "Fermer le menu"
+    "closeMenu": "Fermer le menu",
+    "footerCopyright": "© {year} {brand} — Tous droits réservés."
   },
   "hero": {
     "illustrationAlt": "Illustration : développeur derrière son ordinateur"
