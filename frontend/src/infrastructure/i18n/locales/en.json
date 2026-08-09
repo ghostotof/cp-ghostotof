@@ -11,7 +11,8 @@
     "login": "Login",
     "logout": "Logout",
     "openMenu": "Open menu",
-    "closeMenu": "Close menu"
+    "closeMenu": "Close menu",
+    "footerCopyright": "© {year} {brand} — All rights reserved."
   },
   "hero": {
     "illustrationAlt": "Illustration: developer behind their computer"

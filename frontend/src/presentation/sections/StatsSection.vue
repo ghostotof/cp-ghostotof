@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Stat } from '../../domain/portfolio/entities/Stat'
 import { resolveIcon } from '../ui/icons'
+import IconDisc3 from '~icons/lucide/disc-3'
 
 defineProps<{
   stats: readonly Stat[]
@@ -9,7 +10,20 @@ defineProps<{
 
 <template>
   <section class="container-xl pb-5">
-    <div class="surface-panel p-3 p-sm-4">
+    <div class="surface-panel p-3 p-sm-4 position-relative">
+      <!-- Easter egg discret, clin d'œil à "We Are the Champions" (Queen) sur
+           une section qui affiche justement les réussites du profil. -->
+      <span
+        class="position-absolute top-0 end-0 m-2 opacity-25"
+        aria-hidden="true"
+        title="We Are the Champions"
+      >
+        <IconDisc3
+          width="14"
+          height="14"
+        />
+      </span>
+
       <div class="row row-cols-2 row-cols-sm-4 g-4">
         <div
           v-for="stat in stats"

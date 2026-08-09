@@ -21,6 +21,6 @@ describe('StatsSection', () => {
   it('rend une icône par statistique', () => {
     const wrapper = mount(StatsSection, { props: { stats } })
 
-    expect(wrapper.findAll('svg')).toHaveLength(stats.length)
+    expect(wrapper.findAll('.col svg')).toHaveLength(stats.length)
   })
 })

@@ -23,3 +23,8 @@ app.mount('#app')
 // Le cookie httpOnly du JWT n'est pas lisible en JS : on interroge /api/me pour
 // savoir si un rechargement de page correspond toujours à une session valide.
 app.runWithContext(() => useAuth().checkAuth())
+
+console.log(
+  "%c🎸 It's a long way to the top (if you wanna rock the source code).",
+  'color:#f59e0b;font-weight:600;',
+)
