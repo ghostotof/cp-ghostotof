@@ -244,6 +244,14 @@ without ever silently jumping to Composer 3.
 requires Node `>=22.22`/`>=26` and fails at runtime (`webidl.util.markAsUncloneable is not a function`) on
 older Node — including any host below the project's Docker `NODE_TAG` (26.7.0). Don't let it float to latest.
 
+Node 26's own native (experimental) `localStorage`/`sessionStorage` globals conflict with jsdom's: without
+`--no-experimental-webstorage`, any test touching the bare `localStorage` global (not `window.localStorage`)
+before jsdom's environment fully initializes fails with `Cannot read properties of undefined (reading
+'clear')` — only reproduces on Node ≥22 with webstorage enabled (silent on older/host Node), which is why it
+only surfaced once the GitLab CI `test-frontend` job started running tests inside the pinned `node:${NODE_TAG}`
+image. Fixed by prefixing `frontend/package.json`'s `test`/`test:watch` scripts with
+`NODE_OPTIONS=--no-experimental-webstorage` — don't remove it.
+
 `vue-i18n`/`@intlify/*` (and transitively a few ESLint tooling packages) declare an `engines.node >= 22`
 requirement. `npm install`/`test`/`build` still work on an older host Node (just an `EBADENGINE` warning, not
 a hard failure) as of this writing, but don't be surprised by the warning — it's expected below Node 22,
