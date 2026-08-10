@@ -1,0 +1,19 @@
+# ClusterIssuer Let's Encrypt (prod), référencé par l'annotation
+# cert-manager.io/cluster-issuer: letsencrypt sur k8s/base/ingress.yaml.
+# Ressource cluster-scoped (pas de namespace) : un seul ClusterIssuer partagé
+# par les overlays preprod et prod, résolution HTTP-01 via ingress-nginx
+# (prérequis cluster, cf. k8s/README.md).
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: christophe.piton22@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx

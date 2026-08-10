@@ -15,6 +15,7 @@ resources:
   - rabbitmq.yaml
   - ingress.yaml
   - secretstore.yaml
+  - cluster-issuer.yaml
 
 # Placeholders remplacés par chaque overlay via `kustomize edit set image`
 # (fait par le job de déploiement CI, jamais commité en dur : le registre et
