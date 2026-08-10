@@ -28,6 +28,17 @@ describe('StaticPortfolioContentRepository', () => {
     },
   )
 
+  it.each(SUPPORTED_LOCALES)(
+    'active le lien de navigation "Contact" pour la locale %s et le fait pointer vers sa page dédiée',
+    (locale) => {
+      const links = repository.getNavigationLinks(locale)
+      const contactLink = links.find((link) => link.to.endsWith('/contact'))
+
+      expect(contactLink?.isEnabled).toBe(true)
+      expect(contactLink?.to).toBe(`/${locale}/contact`)
+    },
+  )
+
   it.each(SUPPORTED_LOCALES)('préfixe tous les liens de navigation par la locale %s', (locale) => {
     const links = repository.getNavigationLinks(locale)
 

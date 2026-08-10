@@ -9,7 +9,7 @@ const fr: PortfolioLocaleContent = {
       'Développeur passionné par la création de solutions web modernes et maintenables, avec une approche orientée qualité et expérience utilisateur.',
     callsToAction: [
       { label: 'Découvrir mon approche', href: '#technologies', variant: 'primary', iconKey: 'arrow-right' },
-      { label: 'Me contacter', href: '#contact', variant: 'secondary', iconKey: 'message-circle' },
+      { label: 'Me contacter', href: '/fr/contact', variant: 'secondary', iconKey: 'message-circle' },
     ],
     highlights: [
       { label: 'Code propre', iconKey: 'code' },

@@ -13,11 +13,11 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
  * Protection CSRF en double-submit cookie pour l'authentification par cookie
  * httpOnly (le SameSite=Lax du cookie BEARER ne suffit pas à lui seul contre
  * toutes les formes de CSRF). Pour toute méthode qui change l'état sous /api
- * (hors /api/login_check, qui n'a pas encore de cookie), le header
- * X-XSRF-TOKEN doit être présent et correspondre au cookie XSRF-TOKEN posé au
- * login (Jwt\LoginSuccessSubscriber) : un attaquant cross-site peut faire
- * envoyer le cookie automatiquement par le navigateur, mais ne peut pas le
- * lire pour le recopier dans un header (same-origin policy).
+ * (hors chemins de EXCLUDED_PATHS), le header X-XSRF-TOKEN doit être présent
+ * et correspondre au cookie XSRF-TOKEN posé au login (Jwt\LoginSuccessSubscriber) :
+ * un attaquant cross-site peut faire envoyer le cookie automatiquement par le
+ * navigateur, mais ne peut pas le lire pour le recopier dans un header
+ * (same-origin policy).
  *
  * Priorité 20, volontairement au-dessus du firewall Security (priorité 8) :
  * pour /api/logout, le LogoutListener de Symfony fixe la réponse (donc stoppe
@@ -28,7 +28,17 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 final class CsrfCookieRequestSubscriber
 {
     private const array UNSAFE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
-    private const string EXCLUDED_PATH = '/api/login_check';
+
+    /**
+     * - /api/login_check : n'a pas encore de cookie XSRF-TOKEN (posé au login,
+     *   donc après cette requête).
+     * - /api/contact : endpoint public, jamais atteint avec une session ou un
+     *   cookie BEARER à protéger (un visiteur anonyme n'a pas d'"état ambiant"
+     *   qu'un attaquant pourrait faire agir à son insu) — la protection
+     *   double-submit-cookie n'a pas de sens ici. Le spam reste un risque
+     *   distinct, traité par le honeypot de ContactMessageResource.
+     */
+    private const array EXCLUDED_PATHS = ['/api/login_check', '/api/contact'];
     private const string COOKIE_NAME = 'XSRF-TOKEN';
     private const string HEADER_NAME = 'X-XSRF-TOKEN';
 
@@ -62,6 +72,6 @@ final class CsrfCookieRequestSubscriber
             return false;
         }
 
-        return self::EXCLUDED_PATH !== $request->getPathInfo();
+        return !\in_array($request->getPathInfo(), self::EXCLUDED_PATHS, true);
     }
 }

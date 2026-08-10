@@ -46,6 +46,21 @@
     "invalidCredentials": "Incorrect username or password.",
     "genericError": "Something went wrong, please try again."
   },
+  "contact": {
+    "eyebrow": "Contact",
+    "intro": "A question, a project, an opportunity? Feel free to write to me directly at the address below or via the form.",
+    "form": {
+      "heading": "Send a message",
+      "nameLabel": "Your name",
+      "emailLabel": "Your email",
+      "messageLabel": "Your message",
+      "honeypotLabel": "Website",
+      "submit": "Send",
+      "submitting": "Sending…",
+      "success": "Your message has been sent, thank you!",
+      "error": "Sending the message failed. Please try again later."
+    }
+  },
   "notFound": {
     "heading": "Page not found",
     "message": "The page you're looking for doesn't exist anymore.",
@@ -63,6 +78,10 @@
     "experience": {
       "title": "Experiences",
       "description": "Technologies ranked by cumulative time spent on each throughout my career."
+    },
+    "contact": {
+      "title": "Contact",
+      "description": "Get in touch by email or through the contact form."
     },
     "notFound": {
       "title": "Page not found",

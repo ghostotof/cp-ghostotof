@@ -7,6 +7,18 @@ api_platform:
     # Platform, pour que le frontend consomme un simple tableau/objet.
     formats:
         json: ['application/json']
+    # Sans ceci, API Platform tente de sérialiser les erreurs (ex. échec de
+    # validation Assert sur ContactMessageResource) au format jsonld par
+    # défaut, qui n'est pas dans `formats` ci-dessus : 500 "Serialization for
+    # the format jsonld is not supported" au lieu du 422 attendu. À défaut
+    # d'une ApiResource avec opération d'écriture avant App\Contact, ce
+    # défaut de config n'avait encore jamais été exercé.
+    error_formats:
+        json: ['application/json']
+    # Sans cette entrée, ContactRateLimitExceededException remonterait en 500
+    # (exception métier non reconnue par API Platform) au lieu du 429 attendu.
+    exception_to_status:
+        App\Contact\Domain\Exception\ContactRateLimitExceededException: 429
     defaults:
         stateless: true
         cache_headers:

@@ -9,7 +9,7 @@ const en: PortfolioLocaleContent = {
       'A developer passionate about building modern, maintainable web solutions, with a focus on quality and user experience.',
     callsToAction: [
       { label: 'Discover my approach', href: '#technologies', variant: 'primary', iconKey: 'arrow-right' },
-      { label: 'Get in touch', href: '#contact', variant: 'secondary', iconKey: 'message-circle' },
+      { label: 'Get in touch', href: '/en/contact', variant: 'secondary', iconKey: 'message-circle' },
     ],
     highlights: [
       { label: 'Clean code', iconKey: 'code' },

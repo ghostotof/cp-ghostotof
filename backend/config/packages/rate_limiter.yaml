@@ -1,0 +1,11 @@
+framework:
+    rate_limiter:
+        # Anti-spam sur POST /api/contact (endpoint public, sans authentification
+        # ni CSRF — cf. App\Contact\Presentation\ApiResource\ContactMessageResource
+        # et CsrfCookieRequestSubscriber). Complète le honeypot : celui-ci ne freine
+        # que les bots naïfs, ceci borne le débit quel que soit l'émetteur.
+        # Clé de limitation : l'IP du visiteur (cf. SymfonyContactRateLimiter).
+        contact_form:
+            policy: 'sliding_window'
+            limit: 5
+            interval: '1 hour'

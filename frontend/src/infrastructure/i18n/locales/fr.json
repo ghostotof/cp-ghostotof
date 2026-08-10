@@ -46,6 +46,21 @@
     "invalidCredentials": "Nom d'utilisateur ou mot de passe incorrect.",
     "genericError": "Une erreur est survenue, veuillez réessayer."
   },
+  "contact": {
+    "eyebrow": "Contact",
+    "intro": "Une question, un projet, une opportunité ? N'hésitez pas à m'écrire directement à l'adresse ci-dessous ou via le formulaire.",
+    "form": {
+      "heading": "Envoyer un message",
+      "nameLabel": "Votre nom",
+      "emailLabel": "Votre email",
+      "messageLabel": "Votre message",
+      "honeypotLabel": "Site web",
+      "submit": "Envoyer",
+      "submitting": "Envoi en cours…",
+      "success": "Votre message a bien été envoyé, merci !",
+      "error": "L'envoi du message a échoué. Réessayez plus tard."
+    }
+  },
   "notFound": {
     "heading": "Page introuvable",
     "message": "La page que vous cherchez n'existe pas ou plus.",
@@ -63,6 +78,10 @@
     "experience": {
       "title": "Expériences",
       "description": "Technologies classées selon le temps cumulé passé sur chacune d'elles au fil de mon parcours professionnel."
+    },
+    "contact": {
+      "title": "Contact",
+      "description": "Me contacter par email ou via le formulaire de contact."
     },
     "notFound": {
       "title": "Page introuvable",
