@@ -72,7 +72,7 @@ done
 
 Les Deployments backend/frontend référencent `imagePullSecrets: [gitlab-registry]`
 (`k8s/base/{backend,frontend}-deployment.yaml`) : un Secret Kubernetes de type
-`docker-registry`, deuxième et dernier bootstrap manuel `kubectl create secret`
+`docker-registry`, deuxième bootstrap manuel `kubectl create secret`
 (même logique que `scaleway-eso-auth` ci-dessus — pas de valeur sensible à
 committer, donc pas géré par ESO ni par les overlays).
 
@@ -88,6 +88,31 @@ for NS in preprod prod; do
     --docker-username=<gitlab+deploy-token-XXXXX> \
     --docker-password=<TOKEN>
 done
+```
+
+### 1ter. CV (troisième et dernier bootstrap manuel)
+
+Le CV (`backend/resources/private/cv/cv.pdf`, jamais commité, cf.
+`backend/resources/README.md`) n'est **pas** géré par ESO : Scaleway Secret
+Manager plafonne une version de secret à 64 Ko, très en-dessous de la taille
+réelle du fichier (~416 Ko brut, ~555 Ko en base64 — testé en conditions
+réelles, la création de la version échoue avec `'data' is wrongly formatted`
+/ `Must be between 1 and 65535 bytes long`). Le Secret Kubernetes `cv-pdf`
+est donc créé directement, sans passer par Secret Manager — toujours hébergé
+en France puisqu'il vit dans le cluster Kapsule (`fr-par`), seule la brique
+Secret Manager n'est pas utilisable pour ce fichier précis. Le volume est
+monté en `optional: true` (`k8s/base/backend-deployment.yaml`) : son absence
+ne bloque que `GET /api/cv`, pas le reste de l'application.
+
+```bash
+for NS in preprod prod; do
+  kubectl create secret generic cv-pdf -n $NS \
+    --from-file=cv.pdf=/chemin/vers/cv.pdf
+done
+# Puis, si le Deployment backend tournait déjà sans ce secret (volume
+# optional vide au démarrage) :
+kubectl rollout restart deployment/backend -n preprod
+kubectl rollout restart deployment/backend -n prod
 ```
 
 ### 2. Alimenter Scaleway Secret Manager
@@ -120,13 +145,6 @@ php bin/console lexik:jwt:generate-keypair --skip-if-exists
 # preprod-jwt-private-pem / preprod-jwt-public-pem
 ```
 
-**CV** (jamais commité, cf. `backend/resources/README.md`) — contenu binaire,
-à encoder en base64 avant l'upload (`ExternalSecret` le décode via
-`decodingStrategy: Base64`) :
-```bash
-base64 -w0 /chemin/vers/cv.pdf   # → valeur du secret Scaleway preprod-cv-pdf
-```
-
 Une fois toutes les valeurs présentes dans Scaleway Secret Manager, ESO les
 synchronise automatiquement dans le cluster (`refreshInterval: 1h` sur chaque
 `ExternalSecret`) — pas d'action supplémentaire côté `kubectl apply -k`.
@@ -148,9 +166,9 @@ rechargés à chaud).
   Deployments applicatifs (backend, frontend) respectent déjà ce profil
   (`runAsNonRoot`, `readOnlyRootFilesystem`, capacités supprimées), mais
   postgres/rabbitmq utilisent leurs images officielles telles quelles.
-- Les manifests `external-secrets.yaml`/`secretstore.yaml` sont écrits d'après
-  la documentation ESO/Scaleway (`external-secrets.io/v1`) mais n'ont pas pu
-  être testés contre un cluster réel (aucun cluster provisionné à ce stade) :
-  à valider avec `kubectl explain externalsecret.spec` /
-  `kubectl get externalsecret -n preprod` une fois ESO installé, avant de s'y
-  fier en prod.
+- Trois bootstraps manuels `kubectl create secret` (hors ESO, cf. section
+  "Prérequis cluster" ci-dessus) : `scaleway-eso-auth` (auth ESO elle-même,
+  forcément hors du système qu'elle authentifie), `gitlab-registry` (pull
+  d'images, aucune valeur committable) et `cv-pdf` (dépasse la limite de 64 Ko
+  par version de Secret Manager). Les trois sont documentés, mais restent des
+  étapes manuelles à ne pas oublier lors d'un rebuild de cluster.
