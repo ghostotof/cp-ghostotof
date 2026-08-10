@@ -40,10 +40,14 @@ spec:
               mountPath: /var/lib/rabbitmq
           resources:
             requests:
-              cpu: 100m
+              cpu: 250m
               memory: 128Mi
             limits:
-              cpu: 500m
+              # 500m throttlait le broker pendant le boot de l'Erlang VM (observé
+              # à 499m/500m d'usage réel), ce qui faisait timeout
+              # rabbitmq-diagnostics ping même à 10s — la limite elle-même était
+              # le goulot d'étranglement, pas le nœud.
+              cpu: 1000m
               memory: 256Mi
           livenessProbe:
             exec:
