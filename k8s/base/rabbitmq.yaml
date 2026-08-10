@@ -48,12 +48,17 @@ spec:
           livenessProbe:
             exec:
               command: ['rabbitmq-diagnostics', '-q', 'ping']
-            initialDelaySeconds: 20
+            # timeoutSeconds par défaut (1s) est trop court : rabbitmq-diagnostics
+            # démarre son propre nœud Erlang à chaque appel, largement >1s même
+            # sans contention CPU (observé en conditions réelles sur Kapsule).
+            timeoutSeconds: 10
+            initialDelaySeconds: 30
             periodSeconds: 15
           readinessProbe:
             exec:
               command: ['rabbitmq-diagnostics', '-q', 'ping']
-            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            initialDelaySeconds: 20
             periodSeconds: 10
       volumes:
         - name: data

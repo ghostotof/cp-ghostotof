@@ -22,6 +22,10 @@ spec:
       labels:
         app.kubernetes.io/name: frontend
     spec:
+      # Deploy Token GitLab (read_registry), bootstrap manuel identique en
+      # esprit à scaleway-eso-auth : cf. k8s/README.md.
+      imagePullSecrets:
+        - name: gitlab-registry
       securityContext:
         fsGroup: 101
       initContainers:

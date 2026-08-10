@@ -20,6 +20,10 @@ spec:
       labels:
         app.kubernetes.io/name: backend
     spec:
+      # Deploy Token GitLab (read_registry), bootstrap manuel identique en
+      # esprit à scaleway-eso-auth : cf. k8s/README.md.
+      imagePullSecrets:
+        - name: gitlab-registry
       securityContext:
         fsGroup: 10001
       initContainers:
@@ -151,3 +155,8 @@ spec:
         - name: cv-pdf
           secret:
             secretName: cv-pdf
+            # optional: le CV (jamais commité, cf. backend/resources/README.md)
+            # peut ne pas encore être présent dans Secret Manager sans bloquer
+            # le démarrage du reste de l'application ; seul GET /api/cv échoue
+            # tant que le secret preprod-cv-pdf/prod-cv-pdf n'est pas alimenté.
+            optional: true

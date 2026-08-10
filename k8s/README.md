@@ -61,10 +61,32 @@ Applications). Reporter les deux valeurs obtenues :
 # dans k8s/base/secretstore.yaml (remplacer les CHANGE_ME_*).
 
 # secretKey : SEULE valeur sensible, jamais en git — un Secret bootstrap par
-# namespace (c'est la seule étape manuelle "kubectl create secret" restante) :
+# namespace :
 for NS in preprod prod; do
   kubectl create secret generic scaleway-eso-auth -n $NS \
     --from-literal=secret-key="<SCALEWAY_SECRET_KEY>"
+done
+```
+
+### 1bis. Deploy Token GitLab pour le pull d'images (registre privé)
+
+Les Deployments backend/frontend référencent `imagePullSecrets: [gitlab-registry]`
+(`k8s/base/{backend,frontend}-deployment.yaml`) : un Secret Kubernetes de type
+`docker-registry`, deuxième et dernier bootstrap manuel `kubectl create secret`
+(même logique que `scaleway-eso-auth` ci-dessus — pas de valeur sensible à
+committer, donc pas géré par ESO ni par les overlays).
+
+Créer le token dans GitLab : **Settings > Repository > Deploy tokens**, scope
+`read_registry` uniquement, sans expiration courte (le pull d'image en dépend
+en continu). Un seul token suffit pour les deux namespaces (accès en lecture
+seule au même registre) :
+
+```bash
+for NS in preprod prod; do
+  kubectl create secret docker-registry gitlab-registry -n $NS \
+    --docker-server=registry.gitlab.com \
+    --docker-username=<gitlab+deploy-token-XXXXX> \
+    --docker-password=<TOKEN>
 done
 ```
 
