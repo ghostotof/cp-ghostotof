@@ -93,6 +93,35 @@ const fr: PortfolioLocaleContent = {
           iconKey: 'users',
         },
       ],
+      hobbiesSubtitle: 'En dehors du travail',
+      hobbiesCards: [
+        {
+          title: 'Musique & guitare',
+          description:
+            "Je joue de la guitare et j'aime explorer différents styles musicaux ; je m'essaye aussi, doucement, à la MAO.",
+          iconKey: 'guitar',
+        },
+        {
+          title: 'Moto',
+          description: "Amateur de moto, j'apprécie autant la mécanique que les sorties sur route.",
+          iconKey: 'motorbike',
+        },
+        {
+          title: 'Littérature',
+          description: 'Grand lecteur, toujours un roman en cours à côté de mes lectures techniques.',
+          iconKey: 'book-open',
+        },
+        {
+          title: 'Cinéma & séries',
+          description: "Cinéphile et amateur de séries, entre grands classiques et découvertes récentes.",
+          iconKey: 'clapperboard',
+        },
+        {
+          title: 'Plongée sous-marine',
+          description: "La plongée sous-marine est une vraie passion, entre exploration et calme sous l'eau.",
+          iconKey: 'waves',
+        },
+      ],
     },
   },
 

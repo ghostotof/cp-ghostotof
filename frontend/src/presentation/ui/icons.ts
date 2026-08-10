@@ -35,6 +35,11 @@ import IconServer from '~icons/lucide/server'
 import IconSparkles from '~icons/lucide/sparkles'
 import IconLightbulb from '~icons/lucide/lightbulb'
 import IconTarget from '~icons/lucide/target'
+import IconGuitar from '~icons/lucide/guitar'
+import IconMotorbike from '~icons/lucide/motorbike'
+import IconBookOpen from '~icons/lucide/book-open'
+import IconClapperboard from '~icons/lucide/clapperboard'
+import IconWaves from '~icons/lucide/waves'
 
 /**
  * Le domaine ne connaît que des identifiants (iconKey) sous forme de chaînes,
@@ -79,6 +84,11 @@ const iconRegistry: Record<string, Component> = {
   sparkles: IconSparkles,
   lightbulb: IconLightbulb,
   target: IconTarget,
+  guitar: IconGuitar,
+  motorbike: IconMotorbike,
+  'book-open': IconBookOpen,
+  clapperboard: IconClapperboard,
+  waves: IconWaves,
 }
 
 export function resolveIcon(iconKey: string | undefined): Component | undefined {

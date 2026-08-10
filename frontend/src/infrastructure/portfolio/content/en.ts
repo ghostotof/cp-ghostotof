@@ -92,6 +92,35 @@ const en: PortfolioLocaleContent = {
           iconKey: 'users',
         },
       ],
+      hobbiesSubtitle: 'Outside of work',
+      hobbiesCards: [
+        {
+          title: 'Music & guitar',
+          description:
+            "I play the guitar and enjoy exploring different musical styles; I'm also slowly dabbling in music production.",
+          iconKey: 'guitar',
+        },
+        {
+          title: 'Motorcycling',
+          description: 'A motorcycle enthusiast, I enjoy both the mechanics and the rides.',
+          iconKey: 'motorbike',
+        },
+        {
+          title: 'Literature',
+          description: 'An avid reader, always with a novel on the go alongside technical reading.',
+          iconKey: 'book-open',
+        },
+        {
+          title: 'Movies & TV shows',
+          description: 'A film and TV buff, enjoying both classics and recent discoveries.',
+          iconKey: 'clapperboard',
+        },
+        {
+          title: 'Scuba diving',
+          description: 'Scuba diving is a real passion, between exploration and calm underwater.',
+          iconKey: 'waves',
+        },
+      ],
     },
   },
 

@@ -15,6 +15,9 @@ export interface AboutMeSection {
   readonly technicalCards: readonly AboutCard[]
   readonly personalSubtitle: string
   readonly personalCards: readonly AboutCard[]
+  /** Visible uniquement aux utilisateurs authentifiés (cf. Goal #9 : rien de personnel sans authentification). */
+  readonly hobbiesSubtitle: string
+  readonly hobbiesCards: readonly AboutCard[]
 }
 
 export interface AboutContent {

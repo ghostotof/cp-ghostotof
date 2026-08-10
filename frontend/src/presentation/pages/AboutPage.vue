@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { usePortfolioContent } from '../../application/portfolio/usePortfolioContent'
+import { useAuth } from '../../application/auth/useAuth'
 import BaseCard from '../ui/BaseCard.vue'
 
 const { aboutContent } = usePortfolioContent()
+const { isAuthenticated } = useAuth()
 </script>
 
 <template>
@@ -76,6 +78,25 @@ const { aboutContent } = usePortfolioContent()
           />
         </div>
       </div>
+
+      <template v-if="isAuthenticated">
+        <h3 class="h6 text-body-secondary text-uppercase border-top mt-4 pt-4 mb-3">
+          {{ aboutContent.me.hobbiesSubtitle }}
+        </h3>
+        <div class="row row-cols-1 row-cols-sm-3 g-3">
+          <div
+            v-for="card in aboutContent.me.hobbiesCards"
+            :key="card.title"
+            class="col"
+          >
+            <BaseCard
+              :title="card.title"
+              :description="card.description"
+              :icon-key="card.iconKey"
+            />
+          </div>
+        </div>
+      </template>
     </div>
   </section>
 </template>
