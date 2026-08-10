@@ -1,0 +1,37 @@
+# Redirection permanente www.cp-ghostotof.com -> cp-ghostotof.com (apex,
+# domaine canonique utilisé partout : CORS_ALLOW_ORIGIN, DEFAULT_URI, SEO).
+# Servir le site en double sur www casserait le CORS (Origin non whitelisté)
+# et créerait du contenu dupliqué côté SEO — une simple redirection HTTPS
+# suffit, pas besoin de dupliquer backend/frontend.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cp-ghostotof-www-redirect
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    # $request_uri (préservation du chemin) est rejeté par le webhook
+    # d'admission d'ingress-nginx (regex de validation stricte sur les
+    # valeurs d'annotation, pour empêcher l'injection de variables/directives
+    # nginx) ; configuration-snippet est carrément désactivé au niveau du
+    # contrôleur (même raison). Redirection statique vers l'accueil : le
+    # front redirige déjà "/" vers la bonne langue (localStorage/navigateur),
+    # impact limité pour un site vitrine.
+    nginx.ingress.kubernetes.io/permanent-redirect: https://cp-ghostotof.com
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [www.cp-ghostotof.com]
+      secretName: cp-ghostotof-www-tls
+  rules:
+    - host: www.cp-ghostotof.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              # Jamais atteint (la redirection intercepte avant le backend),
+              # mais un Ingress doit référencer un Service valide.
+              service:
+                name: frontend
+                port:
+                  number: 80
