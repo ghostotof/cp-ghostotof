@@ -35,6 +35,8 @@ function createStubRepository(): PortfolioContentRepository {
     getQualityPrinciples: () => [],
     getQualityTraits: () => [],
     getStats: () => [],
+    getLegalNoticeContent: () => ({ eyebrow: '', title: '', lastUpdated: '', sections: [] }),
+    getPrivacyPolicyContent: () => ({ eyebrow: '', title: '', lastUpdated: '', sections: [] }),
   }
 }
 

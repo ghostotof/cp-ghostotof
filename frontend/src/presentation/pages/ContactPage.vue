@@ -1,12 +1,22 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { useContactForm } from '../../application/contact/useContactForm'
+import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
 import BaseButton from '../ui/BaseButton.vue'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const route = useRoute()
 const { name, email, message, honeypot, isSubmitting, isSuccess, hasError, submit } = useContactForm()
 
 const CONTACT_EMAIL = 'contact@cp-ghostotof.com'
+
+/** Même repli route → i18n que AppHeader.homeLink, pour construire le lien vers la politique de confidentialité. */
+const currentLocale = computed<Locale>(() => {
+  const routeLocale = route.params.locale
+  return typeof routeLocale === 'string' && isSupportedLocale(routeLocale) ? routeLocale : (locale.value as Locale)
+})
 </script>
 
 <template>
@@ -118,6 +128,13 @@ const CONTACT_EMAIL = 'contact@cp-ghostotof.com'
             autocomplete="off"
           >
         </div>
+
+        <p class="text-body-secondary small mb-3">
+          {{ t('contact.form.privacyNoticePrefix') }}
+          <RouterLink :to="`/${currentLocale}/privacy-policy`">
+            {{ t('common.privacyPolicyLink') }}
+          </RouterLink>
+        </p>
 
         <p
           v-if="isSuccess"

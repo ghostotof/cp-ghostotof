@@ -8,6 +8,7 @@ import type { QualityPrinciple } from '../entities/QualityPrinciple'
 import type { QualityTrait } from '../entities/QualityTrait'
 import type { Stat } from '../entities/Stat'
 import type { Locale } from '../entities/Locale'
+import type { LegalPageContent } from '../entities/LegalPageContent'
 
 /**
  * Abstraction (DIP) dont dépendent l'application et la présentation.
@@ -29,4 +30,6 @@ export interface PortfolioContentRepository {
   getQualityPrinciples(locale: Locale): readonly QualityPrinciple[]
   getQualityTraits(locale: Locale): readonly QualityTrait[]
   getStats(locale: Locale): readonly Stat[]
+  getLegalNoticeContent(locale: Locale): LegalPageContent
+  getPrivacyPolicyContent(locale: Locale): LegalPageContent
 }

@@ -5,6 +5,7 @@ import type { Technology } from '../../../domain/portfolio/entities/Technology'
 import type { QualityPrinciple } from '../../../domain/portfolio/entities/QualityPrinciple'
 import type { QualityTrait } from '../../../domain/portfolio/entities/QualityTrait'
 import type { Stat } from '../../../domain/portfolio/entities/Stat'
+import type { LegalPageContent } from '../../../domain/portfolio/entities/LegalPageContent'
 
 /**
  * Contenu "riche" (structuré, pas de simples chaînes courtes) d'une locale donnée.
@@ -26,4 +27,6 @@ export interface PortfolioLocaleContent {
     readonly traits: readonly QualityTrait[]
   }
   readonly stats: readonly Stat[]
+  readonly legalNotice: LegalPageContent
+  readonly privacyPolicy: LegalPageContent
 }

@@ -9,6 +9,7 @@ import type { QualityPrinciple } from '../../domain/portfolio/entities/QualityPr
 import type { QualityTrait } from '../../domain/portfolio/entities/QualityTrait'
 import type { Stat } from '../../domain/portfolio/entities/Stat'
 import type { Locale } from '../../domain/portfolio/entities/Locale'
+import type { LegalPageContent } from '../../domain/portfolio/entities/LegalPageContent'
 import type { PortfolioLocaleContent } from './content/PortfolioLocaleContent'
 import frContent from './content/fr'
 import enContent from './content/en'
@@ -78,5 +79,13 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
 
   getStats(locale: Locale): readonly Stat[] {
     return CONTENT[locale].stats
+  }
+
+  getLegalNoticeContent(locale: Locale): LegalPageContent {
+    return CONTENT[locale].legalNotice
+  }
+
+  getPrivacyPolicyContent(locale: Locale): LegalPageContent {
+    return CONTENT[locale].privacyPolicy
   }
 }

@@ -23,6 +23,8 @@ const AboutPage = () => import('../pages/AboutPage.vue')
 const ExperiencePage = () => import('../pages/ExperiencePage.vue')
 const ContactPage = () => import('../pages/ContactPage.vue')
 const LoginPage = () => import('../pages/LoginPage.vue')
+const LegalNoticePage = () => import('../pages/LegalNoticePage.vue')
+const PrivacyPolicyPage = () => import('../pages/PrivacyPolicyPage.vue')
 const NotFoundPage = () => import('../pages/NotFoundPage.vue')
 
 export const router = createRouter({
@@ -76,6 +78,18 @@ export const router = createRouter({
               return `/${to.params.locale}`
             }
           },
+        },
+        {
+          path: 'legal-notice',
+          name: 'legal-notice',
+          component: LegalNoticePage,
+          meta: { titleKey: 'seo.legalNotice.title', descriptionKey: 'seo.legalNotice.description' },
+        },
+        {
+          path: 'privacy-policy',
+          name: 'privacy-policy',
+          component: PrivacyPolicyPage,
+          meta: { titleKey: 'seo.privacyPolicy.title', descriptionKey: 'seo.privacyPolicy.description' },
         },
       ],
     },

@@ -77,6 +77,14 @@ make build-preprod TAG=1.2.3
 Sans `TAG`, le SHA court du commit courant est utilisé : chaque image reste
 traçable jusqu'à la révision exacte du code qu'elle contient.
 
+## RGPD
+
+Le registre des traitements de données personnelles (formulaire de contact,
+authentification, logs techniques...) est tenu dans
+[`docs/rgpd/registre-traitements.md`](docs/rgpd/registre-traitements.md). Les
+pages publiques "Mentions légales" et "Politique de confidentialité" du
+frontend en sont le résumé destiné aux visiteurs.
+
 ## Versions
 
 Toutes les versions sont figées — voir `versions.lock` et le fichier `.env`.

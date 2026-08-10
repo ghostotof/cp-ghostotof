@@ -45,5 +45,7 @@ export function usePortfolioContent() {
     qualityPrinciples: computed(() => repository.getQualityPrinciples(currentLocale.value)),
     qualityTraits: computed(() => repository.getQualityTraits(currentLocale.value)),
     stats: computed(() => repository.getStats(currentLocale.value)),
+    legalNoticeContent: computed(() => repository.getLegalNoticeContent(currentLocale.value)),
+    privacyPolicyContent: computed(() => repository.getPrivacyPolicyContent(currentLocale.value)),
   }
 }

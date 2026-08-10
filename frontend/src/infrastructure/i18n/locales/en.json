@@ -16,7 +16,10 @@
     "footerCopyright": "© {year} {brand} — All rights reserved.",
     "skipToContent": "Skip to main content",
     "mainNavigation": "Main navigation",
-    "mobileNavigation": "Mobile navigation"
+    "mobileNavigation": "Mobile navigation",
+    "legalNoticeLink": "Legal notice",
+    "privacyPolicyLink": "Privacy policy",
+    "legalNavigation": "Legal navigation"
   },
   "hero": {
     "illustrationAlt": "Illustration: developer behind their computer"
@@ -58,7 +61,8 @@
       "submit": "Send",
       "submitting": "Sending…",
       "success": "Your message has been sent, thank you!",
-      "error": "Sending the message failed. Please try again later."
+      "error": "Sending the message failed. Please try again later.",
+      "privacyNoticePrefix": "Your data is only used to reply to you and is never stored."
     }
   },
   "notFound": {
@@ -90,6 +94,14 @@
     "login": {
       "title": "Login",
       "description": "Log in to the protected area."
+    },
+    "legalNotice": {
+      "title": "Legal notice",
+      "description": "Legal notice: site publisher, hosting provider and intellectual property."
+    },
+    "privacyPolicy": {
+      "title": "Privacy policy",
+      "description": "Data collected, purposes, retention periods and GDPR rights."
     }
   }
 }
