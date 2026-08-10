@@ -26,63 +26,97 @@ ces overlays sur tag Git — voir la table des stages qui y est commentée.
    Le job CI utilise ensuite `kubectl config use-context
    <chemin-projet-gitlab>:cp-ghostotof-agent` — aucun kubeconfig à stocker en
    variable CI/CD.
-5. **Créer les namespaces** — fait automatiquement par `kubectl apply -k`
+5. **Installer External Secrets Operator** (Helm) : synchronise les Secrets
+   Kubernetes depuis **Scaleway Secret Manager** (région `fr-par` — hébergement
+   France garanti), au lieu d'un `kubectl create secret` manuel non versionné.
+   ```
+   helm repo add external-secrets https://charts.external-secrets.io
+   helm upgrade --install external-secrets external-secrets/external-secrets \
+     --namespace external-secrets --create-namespace
+   ```
+6. **Créer les namespaces** — fait automatiquement par `kubectl apply -k`
    (`namespace.yaml` est dans les resources de chaque overlay), pas besoin de
    le faire à la main.
 
-## Secrets — jamais créés par CI, jamais dans git
+## Secrets — Scaleway Secret Manager, jamais dans git
 
-À lancer une fois par namespace (remplacer les valeurs), **avant** le premier
-déploiement (les Deployments referencent ces Secrets et resteront en
-`CreateContainerConfigError` tant qu'ils n'existent pas) :
+`k8s/base/secretstore.yaml` (un `SecretStore` ESO, partagé par les deux
+namespaces) et `k8s/overlays/{preprod,prod}/external-secrets.yaml` (5
+`ExternalSecret` chacun) sont **déjà commités** : ils déclarent *comment*
+chaque Secret Kubernetes (`backend-secrets`, `postgres-credentials`,
+`rabbitmq-credentials`, `jwt-keys`, `cv-pdf`) doit être rempli depuis Scaleway
+Secret Manager, mais pas les valeurs elles-mêmes. `kubectl apply -k` suffit
+donc désormais à redéployer un environnement complet — reste seulement à
+alimenter Scaleway Secret Manager, une fois, à la main.
+
+### 1. Clé d'API Scaleway dédiée à ESO (principe du moindre privilège)
+
+Créer une **IAM Application** dédiée (pas votre clé de compte principale),
+avec une policy limitée à `SecretManagerReadOnly` sur le projet concerné,
+puis générer une clé API pour cette application (console Scaleway : IAM >
+Applications). Reporter les deux valeurs obtenues :
 
 ```bash
-NS=preprod   # puis répéter pour NS=prod avec des valeurs DIFFÉRENTES
+# projectId + accessKey : pas des secrets (identifiants), à écrire en clair
+# dans k8s/base/secretstore.yaml (remplacer les CHANGE_ME_*).
 
-# --- Postgres ---
-kubectl create secret generic postgres-credentials -n $NS \
-  --from-literal=POSTGRES_DB=cp_ghostotof \
-  --from-literal=POSTGRES_USER=app \
-  --from-literal=POSTGRES_PASSWORD="$(openssl rand -base64 32)"
-
-# --- RabbitMQ ---
-kubectl create secret generic rabbitmq-credentials -n $NS \
-  --from-literal=RABBITMQ_DEFAULT_USER=app \
-  --from-literal=RABBITMQ_DEFAULT_PASS="$(openssl rand -base64 32)"
-
-# --- Backend (APP_SECRET, DATABASE_URL, MESSENGER_TRANSPORT_DSN, JWT_PASSPHRASE,
-#     MAILER_DSN, CONTACT_RECIPIENT_EMAIL) ---
-# DATABASE_URL / MESSENGER_TRANSPORT_DSN pointent sur les Services k8s "database"
-# et "rabbitmq" (cf. k8s/base/postgres.yaml et rabbitmq.yaml), avec les
-# identifiants créés ci-dessus.
-kubectl create secret generic backend-secrets -n $NS \
-  --from-literal=APP_SECRET="$(openssl rand -hex 16)" \
-  --from-literal=DATABASE_URL="postgresql://app:<POSTGRES_PASSWORD>@database:5432/cp_ghostotof?serverVersion=18&charset=utf8" \
-  --from-literal=MESSENGER_TRANSPORT_DSN="amqp://app:<RABBITMQ_PASS>@rabbitmq:5672/%2f/messages" \
-  --from-literal=JWT_PASSPHRASE="<générée localement, voir ci-dessous>" \
-  --from-literal=MAILER_DSN="null://null" \
-  --from-literal=CONTACT_RECIPIENT_EMAIL="contact@cp-ghostotof.com"
-
-# --- Clés JWT : générées en LOCAL (jamais sur le cluster), une paire par
-#     namespace (préprod et prod ne doivent PAS partager la même paire) ---
-#   make sh
-#   php bin/console lexik:jwt:generate-keypair --skip-if-exists
-kubectl create secret generic jwt-keys -n $NS \
-  --from-file=private.pem=backend/config/jwt/private.pem \
-  --from-file=public.pem=backend/config/jwt/public.pem
-
-# --- CV (jamais commité, cf. backend/resources/README.md) ---
-kubectl create secret generic cv-pdf -n $NS \
-  --from-file=cv.pdf=/chemin/vers/cv.pdf
+# secretKey : SEULE valeur sensible, jamais en git — un Secret bootstrap par
+# namespace (c'est la seule étape manuelle "kubectl create secret" restante) :
+for NS in preprod prod; do
+  kubectl create secret generic scaleway-eso-auth -n $NS \
+    --from-literal=secret-key="<SCALEWAY_SECRET_KEY>"
+done
 ```
+
+### 2. Alimenter Scaleway Secret Manager
+
+Un secret Scaleway = une valeur (pas de JSON multi-clés, cf. commentaire dans
+`external-secrets.yaml`). Nommage : `<preprod|prod>-<nom>`, exactement ce que
+référence `remoteRef.key` dans chaque `ExternalSecret`. Exemple via `scw`
+CLI (vérifier la syntaxe exacte avec `scw secret secret create --help`, elle
+évolue) — à répéter pour `preprod-*` et `prod-*` avec des valeurs
+**différentes** :
+
+```bash
+scw secret secret create name=preprod-postgres-db path=/ region=fr-par
+scw secret version create secret-id=<id> data="cp_ghostotof" region=fr-par
+# ... idem pour : preprod-postgres-user, preprod-postgres-password,
+# preprod-rabbitmq-user, preprod-rabbitmq-password, preprod-backend-app-secret,
+# preprod-backend-database-url (postgresql://app:<PASSWORD>@database:5432/cp_ghostotof?serverVersion=18&charset=utf8),
+# preprod-backend-messenger-dsn (amqp://app:<PASSWORD>@rabbitmq:5672/%2f/messages),
+# preprod-backend-jwt-passphrase, preprod-backend-mailer-dsn,
+# preprod-backend-contact-email
+```
+
+**Clés JWT** — générées en LOCAL (jamais sur le cluster ni en clair ailleurs
+qu'ici), une paire par environnement (préprod et prod ne doivent PAS partager
+la même paire) :
+```bash
+make sh
+php bin/console lexik:jwt:generate-keypair --skip-if-exists
+# puis uploader le CONTENU des .pem (texte brut, pas de base64) dans
+# preprod-jwt-private-pem / preprod-jwt-public-pem
+```
+
+**CV** (jamais commité, cf. `backend/resources/README.md`) — contenu binaire,
+à encoder en base64 avant l'upload (`ExternalSecret` le décode via
+`decodingStrategy: Base64`) :
+```bash
+base64 -w0 /chemin/vers/cv.pdf   # → valeur du secret Scaleway preprod-cv-pdf
+```
+
+Une fois toutes les valeurs présentes dans Scaleway Secret Manager, ESO les
+synchronise automatiquement dans le cluster (`refreshInterval: 1h` sur chaque
+`ExternalSecret`) — pas d'action supplémentaire côté `kubectl apply -k`.
 
 ## Rotation / mise à jour d'un Secret
 
-`kubectl create secret ... --dry-run=client -o yaml | kubectl apply -f -` (ou
-`kubectl delete secret <nom> -n $NS` puis recréer), suivi d'un
-`kubectl rollout restart deployment/backend -n $NS` pour que les pods relisent
-la nouvelle valeur (les Secrets montés en `envFrom` ne sont pas rechargés à
-chaud).
+Mettre à jour la valeur dans Scaleway Secret Manager (nouvelle version) : ESO
+la resynchronise sous 1h maximum. Pour forcer immédiatement :
+`kubectl annotate externalsecret <nom> -n $NS force-sync=$(date +%s) --overwrite`,
+suivi d'un `kubectl rollout restart deployment/backend -n $NS` pour que les
+pods relisent la nouvelle valeur (les Secrets montés en `envFrom` ne sont pas
+rechargés à chaud).
 
 ## Limites connues (acceptables pour un projet portfolio, à retravailler sinon)
 
@@ -92,3 +126,9 @@ chaud).
   Deployments applicatifs (backend, frontend) respectent déjà ce profil
   (`runAsNonRoot`, `readOnlyRootFilesystem`, capacités supprimées), mais
   postgres/rabbitmq utilisent leurs images officielles telles quelles.
+- Les manifests `external-secrets.yaml`/`secretstore.yaml` sont écrits d'après
+  la documentation ESO/Scaleway (`external-secrets.io/v1`) mais n'ont pas pu
+  être testés contre un cluster réel (aucun cluster provisionné à ce stade) :
+  à valider avec `kubectl explain externalsecret.spec` /
+  `kubectl get externalsecret -n preprod` une fois ESO installé, avant de s'y
+  fier en prod.

@@ -6,6 +6,7 @@ namespace: prod
 resources:
   - namespace.yaml
   - ../../base
+  - external-secrets.yaml
 
 configMapGenerator:
   - name: backend-config
