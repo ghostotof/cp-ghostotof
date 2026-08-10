@@ -25,7 +25,10 @@ variables:
   PHP_TAG: '8.5.9-fpm-alpine3.24'
   NODE_TAG: '26.7.0-alpine3.24'
   POSTGRES_TAG: '18.4-alpine'
-  KUBE_AGENT: cp-ghostotof-agent
+  # Nom de l'agent tel que déclaré par le dossier .gitlab/agents/cp-ghostotof/
+  # (c'est ce nom que GitLab utilise pour le contexte kubectl, PAS le nom du
+  # release Helm "cp-ghostotof-agent" utilisé lors de l'installation).
+  KUBE_AGENT: cp-ghostotof
 secret_detection:
   stage: secret-detection
 
