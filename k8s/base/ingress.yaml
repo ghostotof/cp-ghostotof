@@ -1,0 +1,32 @@
+# host et secretName TLS sont patchés par chaque overlay (domaine différent en
+# préprod/prod). ingress-nginx + cert-manager sont des prérequis cluster, cf.
+# k8s/README.md — non gérés par ce dépôt.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cp-ghostotof
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: []
+      secretName: cp-ghostotof-tls
+  rules:
+    - host: PLACEHOLDER
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

@@ -75,17 +75,17 @@ front-init: ## Crée le projet Vite en mode INTERACTIF (à lancer une seule fois
 	$(DC) run --rm frontend npm create vite@$(shell grep '^CREATE_VITE_VERSION=' .env | cut -d= -f2) .
 
 # --- Images déployables du frontend ------------------------------------------
-# API_URL est inliné dans le bundle par Vite AU BUILD : il doit donc être fourni
-# ici, et non au démarrage du conteneur.
+# L'URL de l'API n'est PLUS un --build-arg : elle est injectée au runtime via la
+# variable d'env API_URL du conteneur (docker/node/docker-entrypoint.sh). L'image
+# est donc identique quel que soit l'environnement cible, promue de la préprod
+# vers la prod sans reconstruction. Voir frontend/src/infrastructure/config/getApiUrl.ts.
 FRONT_IMAGE ?= $(COMPOSE_PROJECT_NAME)-frontend
-API_URL ?= http://localhost:8080
 
-build-front-prod: ## Construit l'image frontend de production (API_URL=... TAG=...)
+build-front-prod: ## Construit l'image frontend de production (TAG=...)
 	docker build \
 	  --target production \
 	  --build-arg NODE_TAG=$(shell grep '^NODE_TAG=' .env | cut -d= -f2) \
 	  --build-arg NGINX_TAG=$(shell grep '^NGINX_TAG=' .env | cut -d= -f2) \
-	  --build-arg VITE_API_URL=$(API_URL) \
 	  -f docker/node/Dockerfile \
 	  -t $(FRONT_IMAGE):$(TAG) .
 
@@ -94,6 +94,5 @@ build-front-preprod: ## Construit l'image frontend de préprod (= prod + source 
 	  --target preprod \
 	  --build-arg NODE_TAG=$(shell grep '^NODE_TAG=' .env | cut -d= -f2) \
 	  --build-arg NGINX_TAG=$(shell grep '^NGINX_TAG=' .env | cut -d= -f2) \
-	  --build-arg VITE_API_URL=$(API_URL) \
 	  -f docker/node/Dockerfile \
 	  -t $(FRONT_IMAGE):$(TAG)-preprod .

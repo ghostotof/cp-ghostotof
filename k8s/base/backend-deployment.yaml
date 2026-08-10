@@ -1,0 +1,153 @@
+# Pod à 2 conteneurs : `docker/nginx/default.conf` utilise `root`+`try_files`,
+# donc nginx doit voir le filesystem `public/` de Symfony (pas un simple proxy
+# FastCGI aveugle). L'initContainer copie `public/` (déjà présent dans l'image
+# backend) vers un emptyDir partagé, lu en lecture seule par le sidecar nginx.
+# Le conteneur php-fpm, lui, a tout `backend/` dans sa propre image : il n'a
+# pas besoin de ce volume.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  labels:
+    app.kubernetes.io/name: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: backend
+    spec:
+      securityContext:
+        fsGroup: 10001
+      initContainers:
+        - name: copy-public
+          image: backend
+          command: ['sh', '-c', 'cp -a /var/www/backend/public/. /shared-public/']
+          volumeMounts:
+            - name: shared-public
+              mountPath: /shared-public
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
+      containers:
+        - name: php-fpm
+          image: backend
+          ports:
+            - containerPort: 9000
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: backend-secrets
+          volumeMounts:
+            # var/cache reste en lecture seule (fourni pré-chauffé par le build,
+            # cf. Dockerfile) : seul var/log est monté inscriptible, en cas
+            # d'écriture ponctuelle (PHP loggue sur stderr par défaut, cf.
+            # docker/php/php.prod.ini, donc peu utilisé en pratique).
+            - name: var-log
+              mountPath: /var/www/backend/var/log
+            - name: jwt-keys
+              mountPath: /var/www/backend/config/jwt
+              readOnly: true
+            - name: cv-pdf
+              mountPath: /var/www/backend/resources/private/cv
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
+          # /usr/local/bin/healthcheck (déjà présent dans l'image, cf.
+          # docker/php/Dockerfile) pingue php-fpm en FastCGI direct.
+          livenessProbe:
+            exec:
+              command: ['/usr/local/bin/healthcheck']
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            exec:
+              command: ['/usr/local/bin/healthcheck']
+            initialDelaySeconds: 5
+            periodSeconds: 10
+        - name: nginx
+          image: nginx:1.30.4-alpine # garder synchronisé avec NGINX_TAG dans ../.env
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+              readOnly: true
+            - name: shared-public
+              mountPath: /var/www/backend/public
+              readOnly: true
+            - name: nginx-tmp
+              mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            # pid /var/run/nginx.pid (nginx.conf par défaut de l'image, non
+            # surchargé ici) : /var/run doit rester inscriptible malgré
+            # readOnlyRootFilesystem.
+            - name: nginx-run
+              mountPath: /var/run
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101 # utilisateur nginx de l'image officielle
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: shared-public
+          emptyDir: {}
+        - name: var-log
+          emptyDir: {}
+        - name: nginx-tmp
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
+        - name: nginx-conf
+          configMap:
+            name: backend-nginx-conf
+        - name: jwt-keys
+          secret:
+            secretName: jwt-keys
+        - name: cv-pdf
+          secret:
+            secretName: cv-pdf

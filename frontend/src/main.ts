@@ -13,16 +13,18 @@ import { EXPERIENCE_TECHNOLOGY_REPOSITORY } from './application/experience/useEx
 import { HttpExperienceTechnologyRepository } from './infrastructure/experience/HttpExperienceTechnologyRepository'
 import { CONTACT_REPOSITORY } from './application/contact/useContactForm'
 import { HttpContactRepository } from './infrastructure/contact/HttpContactRepository'
+import { getApiUrl } from './infrastructure/config/getApiUrl'
 
 const app = createApp(App)
+const apiUrl = getApiUrl()
 
 // Composition root : c'est le seul endroit où une implémentation concrète du
 // repository est instanciée et reliée à son abstraction (DIP).
 app.provide(PORTFOLIO_CONTENT_REPOSITORY, new StaticPortfolioContentRepository())
-app.provide(AUTH_REPOSITORY, new HttpAuthRepository(import.meta.env.VITE_API_URL))
-app.provide(CV_REPOSITORY, new HttpCvRepository(import.meta.env.VITE_API_URL))
-app.provide(EXPERIENCE_TECHNOLOGY_REPOSITORY, new HttpExperienceTechnologyRepository(import.meta.env.VITE_API_URL))
-app.provide(CONTACT_REPOSITORY, new HttpContactRepository(import.meta.env.VITE_API_URL))
+app.provide(AUTH_REPOSITORY, new HttpAuthRepository(apiUrl))
+app.provide(CV_REPOSITORY, new HttpCvRepository(apiUrl))
+app.provide(EXPERIENCE_TECHNOLOGY_REPOSITORY, new HttpExperienceTechnologyRepository(apiUrl))
+app.provide(CONTACT_REPOSITORY, new HttpContactRepository(apiUrl))
 
 app.use(i18n)
 app.use(router)

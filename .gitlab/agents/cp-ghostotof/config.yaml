@@ -1,0 +1,6 @@
+# Déclaration minimale du GitLab Agent for Kubernetes (agentk). Sa seule
+# fonction ici est le tunnel kubectl utilisé par le pipeline CI/CD pour
+# déployer sans kubeconfig statique — voir k8s/README.md pour l'installation
+# (Helm) et .gitlab-ci.yml pour son usage (`kubectl config use-context`).
+# Aucune configuration CI/CD (ci_access) n'est nécessaire au-delà du fichier
+# lui-même : sa seule présence à ce chemin enregistre l'agent côté GitLab.

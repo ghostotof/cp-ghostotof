@@ -226,9 +226,13 @@ lint:fix` for the auto-fixable (mostly formatting) rules.
 ### Frontend build/deploy
 
 `../docker/node/Dockerfile` mirrors the same idea: in dev the plain `node` image runs `npm install && npm run dev`
-directly (no image build). For deployable images, Vite **inlines `VITE_*` env vars into the JS bundle at build
-time** — `API_URL` is a required `make` argument for prod/preprod frontend builds, not a runtime setting;
-changing the API URL means rebuilding the image, not editing an env var on a running container.
+directly (no image build). For deployable images, the API URL is a **runtime** setting, not a build-time one:
+`docker-entrypoint.sh` runs `envsubst` on `config.template.js` using the container's `API_URL` env var, producing
+`/usr/share/nginx/html/config.js` (served no-cache, loaded by `index.html` before the app bundle) that the app reads
+via `window.__APP_CONFIG__` (`frontend/src/infrastructure/config/getApiUrl.ts`, falling back to Vite's
+`import.meta.env.VITE_API_URL` for `npm run dev`, which never serves `config.js`). This means a single frontend
+image — like the backend — is built once and promoted from preprod to prod unchanged, only the `API_URL` env var
+differs per environment; `make build-front-prod`/`build-front-preprod` no longer take an `API_URL` argument.
 
 ### Versions
 

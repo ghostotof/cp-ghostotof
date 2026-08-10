@@ -8,6 +8,11 @@
 stages:
 - test
 - secret-detection
+- build
+- deploy-preprod
+- test-preprod
+- cleanup-preprod
+- deploy-prod
 sast:
   stage: test
 include:
@@ -15,5 +20,190 @@ include:
 - template: Security/Secret-Detection.gitlab-ci.yml
 variables:
   SECRET_DETECTION_ENABLED: 'true'
+  # Gardés synchronisés manuellement avec ../.env — pas de mécanisme
+  # automatique pour charger .env dans la clé `image:` d'un job GitLab CI.
+  PHP_TAG: '8.5.9-fpm-alpine3.24'
+  NODE_TAG: '26.7.0-alpine3.24'
+  POSTGRES_TAG: '18.4-alpine'
+  KUBE_AGENT: cp-ghostotof-agent
 secret_detection:
   stage: secret-detection
+
+# =============================================================================
+# Déclenchement : uniquement sur tag Git (nouvelle release), pas sur les
+# commits de branche. Flux : test → build → deploy-preprod → test-preprod
+# (rollback en cleanup-preprod si échec) → deploy-prod (bouton manuel).
+# =============================================================================
+.only-tag:
+  rules:
+    - if: $CI_COMMIT_TAG
+
+# -----------------------------------------------------------------------------
+# test
+# -----------------------------------------------------------------------------
+test-backend:
+  extends: .only-tag
+  stage: test
+  image: php:${PHP_TAG}
+  services:
+    - name: postgres:${POSTGRES_TAG}
+      alias: database
+  variables:
+    POSTGRES_DB: cp_ghostotof
+    POSTGRES_USER: app
+    POSTGRES_PASSWORD: app
+    # Le nom de base réel utilisé par les tests est "cp_ghostotof_test" : le
+    # suffixe "_test" est ajouté par backend/config/packages/doctrine.yaml
+    # (when@test: dbname_suffix), pas ici.
+    DATABASE_URL: 'postgresql://app:app@database:5432/cp_ghostotof?serverVersion=18&charset=utf8'
+    APP_ENV: test
+    COMPOSER_ALLOW_SUPERUSER: '1'
+  before_script:
+    # Mêmes extensions que docker/php/Dockerfile (stage `base`) : à garder en
+    # phase si ce stage évolue. Une image CI dédiée (buildée une fois, réutilisée
+    # ici) éviterait cette duplication si le job devient un point de friction.
+    - apk add --no-cache icu-libs libpq libzip rabbitmq-c tzdata fcgi
+    - apk add --no-cache --virtual .build-deps $PHPIZE_DEPS icu-dev postgresql-dev libzip-dev rabbitmq-c-dev linux-headers unzip git
+    - docker-php-ext-install -j"$(nproc)" intl pdo_pgsql zip sockets
+    - pecl install amqp-2.2.0 && docker-php-ext-enable amqp
+    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+  script:
+    - cd backend
+    - composer install --no-interaction --prefer-dist
+    # Clés JWT jamais commitées (cf. .gitignore) : absentes d'un checkout CI
+    # frais, sinon le kernel échoue à démarrer sur les routes authentifiées.
+    - php bin/console lexik:jwt:generate-keypair --skip-if-exists --no-interaction
+    - php bin/console doctrine:database:create --if-not-exists
+    - php bin/console doctrine:migrations:migrate --no-interaction
+    - php bin/phpunit
+
+test-frontend:
+  extends: .only-tag
+  stage: test
+  image: node:${NODE_TAG}
+  script:
+    - cd frontend
+    - npm ci
+    - npm run lint
+    - npm test
+    - npm run build
+
+# -----------------------------------------------------------------------------
+# build — une image prod + une image preprod, backend et frontend
+# -----------------------------------------------------------------------------
+build-images:
+  extends: .only-tag
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  needs: [test-backend, test-frontend]
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: /certs
+    DOCKER_TLS_VERIFY: 1
+    DOCKER_CERT_PATH: /certs/client
+  before_script:
+    - apk add --no-cache make grep
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    # `production` puis `preprod` (= production + delta, cf. docker/php/Dockerfile
+    # et docker/node/Dockerfile) DANS CE JOB : le 2e build réutilise le cache
+    # local du 1er, quasi gratuit — c'est ce qui fournit l'image prod
+    # "gratuitement" en même temps que la préprod (cf. étape 5 du besoin initial).
+    - make build-prod           IMAGE=$CI_REGISTRY_IMAGE/backend        TAG=$CI_COMMIT_TAG
+    - make build-preprod        IMAGE=$CI_REGISTRY_IMAGE/backend        TAG=$CI_COMMIT_TAG
+    - make build-front-prod     FRONT_IMAGE=$CI_REGISTRY_IMAGE/frontend TAG=$CI_COMMIT_TAG
+    - make build-front-preprod  FRONT_IMAGE=$CI_REGISTRY_IMAGE/frontend TAG=$CI_COMMIT_TAG
+    - docker push "$CI_REGISTRY_IMAGE/backend:$CI_COMMIT_TAG"
+    - docker push "$CI_REGISTRY_IMAGE/backend:$CI_COMMIT_TAG-preprod"
+    - docker push "$CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_TAG"
+    - docker push "$CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_TAG-preprod"
+
+# -----------------------------------------------------------------------------
+# deploy-preprod
+# -----------------------------------------------------------------------------
+deploy-preprod:
+  extends: .only-tag
+  stage: deploy-preprod
+  image: alpine/k8s:1.31.2 # kubectl + kustomize
+  needs: [build-images]
+  environment:
+    name: preprod
+    url: https://preprod.cp-ghostotof.com
+    kubernetes:
+      agent: $CI_PROJECT_PATH:$KUBE_AGENT
+  script:
+    - kubectl config use-context $CI_PROJECT_PATH:$KUBE_AGENT
+    - cd k8s/overlays/preprod
+    - kustomize edit set image
+        backend=$CI_REGISTRY_IMAGE/backend:$CI_COMMIT_TAG-preprod
+        frontend=$CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_TAG-preprod
+    - kubectl apply -k .
+    - kubectl -n preprod rollout status deployment/backend --timeout=180s
+    - kubectl -n preprod rollout status deployment/frontend --timeout=180s
+    - kubectl -n preprod exec deploy/backend -c php-fpm -- php bin/console doctrine:migrations:migrate --no-interaction
+
+# -----------------------------------------------------------------------------
+# test-preprod — pas d'outil e2e dans le dépôt : smoke tests curl sur
+# l'artefact réellement déployé.
+# -----------------------------------------------------------------------------
+smoke-test-preprod:
+  extends: .only-tag
+  stage: test-preprod
+  image: curlimages/curl:8.11.0
+  needs: [deploy-preprod]
+  script:
+    - curl -fsS https://preprod.cp-ghostotof.com/healthz
+    - |
+      status=$(curl -s -o /dev/null -w '%{http_code}' https://preprod.cp-ghostotof.com/api/me)
+      if [ "$status" != "401" ]; then
+        echo "GET /api/me a répondu $status (401 attendu, non authentifié) : l'API ne semble pas avoir démarré correctement"
+        exit 1
+      fi
+
+# -----------------------------------------------------------------------------
+# cleanup-preprod — seulement si smoke-test-preprod (ou un job précédent) échoue
+# -----------------------------------------------------------------------------
+rollback-preprod:
+  stage: cleanup-preprod
+  image: alpine/k8s:1.31.2
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: on_failure
+  environment:
+    name: preprod
+    kubernetes:
+      agent: $CI_PROJECT_PATH:$KUBE_AGENT
+  script:
+    - kubectl config use-context $CI_PROJECT_PATH:$KUBE_AGENT
+    - kubectl -n preprod rollout undo deployment/backend
+    - kubectl -n preprod rollout undo deployment/frontend
+
+# -----------------------------------------------------------------------------
+# deploy-prod — bouton manuel GitLab, aucun rebuild : promeut l'image déjà
+# construite et validée en préprod (build-images), cf. Partie A/C du plan.
+# -----------------------------------------------------------------------------
+deploy-prod:
+  stage: deploy-prod
+  image: alpine/k8s:1.31.2
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: manual
+  needs: [smoke-test-preprod]
+  environment:
+    name: production
+    url: https://cp-ghostotof.com
+    action: start
+    kubernetes:
+      agent: $CI_PROJECT_PATH:$KUBE_AGENT
+  script:
+    - kubectl config use-context $CI_PROJECT_PATH:$KUBE_AGENT
+    - cd k8s/overlays/prod
+    - kustomize edit set image
+        backend=$CI_REGISTRY_IMAGE/backend:$CI_COMMIT_TAG
+        frontend=$CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_TAG
+    - kubectl apply -k .
+    - kubectl -n prod rollout status deployment/backend --timeout=180s
+    - kubectl -n prod rollout status deployment/frontend --timeout=180s
+    - kubectl -n prod exec deploy/backend -c php-fpm -- php bin/console doctrine:migrations:migrate --no-interaction
