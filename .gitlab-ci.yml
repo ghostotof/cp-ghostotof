@@ -30,19 +30,24 @@ secret_detection:
   stage: secret-detection
 
 # =============================================================================
-# Déclenchement : uniquement sur tag Git (nouvelle release), pas sur les
-# commits de branche. Flux : test → build → deploy-preprod → test-preprod
-# (rollback en cleanup-preprod si échec) → deploy-prod (bouton manuel).
+# Déclenchement : PHPUnit/Vitest (.always-tested) tournent sur CHAQUE push de
+# branche ET sur tag — retour rapide avant même de taguer une release. Le
+# reste du pipeline (.only-tag : build → deploy-preprod → test-preprod →
+# rollback si échec → deploy-prod manuel) ne tourne que sur tag Git.
 # =============================================================================
 .only-tag:
   rules:
     - if: $CI_COMMIT_TAG
 
+.always-tested:
+  rules:
+    - if: $CI_COMMIT_BRANCH || $CI_COMMIT_TAG
+
 # -----------------------------------------------------------------------------
 # test
 # -----------------------------------------------------------------------------
 test-backend:
-  extends: .only-tag
+  extends: .always-tested
   stage: test
   image: php:${PHP_TAG}
   services:
@@ -78,7 +83,7 @@ test-backend:
     - php bin/phpunit
 
 test-frontend:
-  extends: .only-tag
+  extends: .always-tested
   stage: test
   image: node:${NODE_TAG}
   script:
