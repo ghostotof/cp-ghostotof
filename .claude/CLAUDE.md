@@ -8,19 +8,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 2. The frontend is decoupled from the backend.
 3. The backend is a Symfony API-only application.
 4. The resulting application is fully deployable as a Docker Compose stack.
-5. The resulting application is fully testable with PHPUnit.
-6. The resulting application is fully documented with PHPDoc.
-7. The resulting application is fully linted with PHPStan.
+5. The resulting application is fully testable (frontend and backend).
+   - The frontend is fully testable with Vitest.
+   - The backend is fully testable with PHPUnit.
+6. The resulting application is fully documented (frontend and backend).
+   - The frontend is fully documented with Vitest.
+   - The backend is fully documented with PHPDoc.
+7. The resulting application is fully linted (frontend and backend).
+   - The frontend is fully linted with ESLint.
+   - The backend is fully linted with PHPStan.
 8. The security must be a top priority.
-9. The resulting can be shown during an interview. 
+9. In its final state, the website will have an authentication system with a generic guest user.
+   Without authentication, the site must not display any personal information that could identify me.
+   This information will be available once the user is authenticated.
+10. The modifications must follow the git flow planned for this project on Gitlab (main branch "main", next release "develop", new feature "feature", etc...)
+11. The resulting can be shown during an interview.
+12. The resulting must be fully multilingual (French, English)
 
 ## Project state
 
-This repository is a freshly generated project skeleton (single "Init" commit). `../backend/src` contains only
-`Kernel.php` and empty placeholder directories (`ApiResource/`, `Controller/`, `Entity/`, `Repository/`) — no
-business logic, entities, or API resources exist yet. `../frontend/src` is still the default `npm create vite`
-Vue+TS scaffold. There is no PHPUnit, PHPStan, or Rector configuration in the backend yet, and no lint/test
-script in `../frontend/package.json` — set these up before/while adding real code.
+This repository started as a freshly generated project skeleton (single "Init" commit). Real backend code now
+exists (the `Security` bounded context, see Backend architecture below) and follows a DDD structure under
+`src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
+over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
+recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
+`tests/`, mirrors the `src/` bounded-context tree) and runnable via `php bin/phpunit` inside `make sh`. There is
+still no PHPStan or Rector configuration in the backend — set these up before/while adding more code. The
+frontend has moved past the default scaffold: it follows a layered clean architecture (see below) and has
+Vitest configured with `npm test`.
 
 ## Architecture
 
@@ -64,18 +79,183 @@ prod run the identical PHP engine:
   to prod; only adds Xdebug in profiling-trigger mode (`XDEBUG_TRIGGER`, never `debug` mode) and verbose logs.
   Pipeline order is dev → preprod → prod regardless of declaration order in the Dockerfile.
 
+### Backend architecture (`../backend/src`)
+
+DDD structure: each bounded context is a top-level folder under `src/`, itself split into `Domain/`,
+`Application/`, `Infrastructure/`, `Presentation/` layers — only the layers a context actually needs, no empty
+ceremonial folders. `config/packages/doctrine.yaml`'s mapping scans all of `src/` (not a single `Entity/`
+folder), so entities live inside their bounded context instead of a shared top-level directory.
+
+- **`Security/User/`** — the `CpgUser` aggregate. Created only via console command (no public registration
+  form, no email stored — just a username, cf. Goal #9: nothing personally identifying before authentication).
+  - `Domain/Entity/CpgUser.php`, `Domain/Repository/CpgUserRepositoryInterface.php` (the DIP boundary —
+    `Application/` never depends on Doctrine directly, only on this interface), `Domain/Exception/UsernameAlreadyUsedException.php`.
+  - `Application/CpgUserRegistrar(Interface).php` — orchestrates user creation, depends only on
+    `CpgUserRepositoryInterface` + Symfony's `UserPasswordHasherInterface`. `CpgUserPresenter(Interface).php` —
+    maps the entity to the `/api/me` response shape.
+  - `Infrastructure/Doctrine/CpgUserRepository.php` — the sole implementation of `CpgUserRepositoryInterface`
+    (autowired automatically, single-implementation rule), also implements Symfony's `PasswordUpgraderInterface`.
+  - `Presentation/Command/CreateCpgUserCommand.php` (`app:user:create`, the *only* way to create a user) and
+    `Presentation/Controller/CurrentUserController.php` (`GET /api/me`).
+- **`Security/Authentication/`** — login/logout/JWT/CSRF mechanics, deliberately kept out of `User/`: this is
+  infrastructure wiring around Symfony Security + LexikJWTAuthenticationBundle, not a domain concept of its own.
+  - `Infrastructure/Jwt/LoginSuccessSubscriber.php` (attaches the `XSRF-TOKEN` cookie, shapes the
+    `login_check` response body) and `CookieLogoutListener.php` (expires both cookies on `/api/logout`).
+  - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
+    listener at priority 20 (must run *above* the Security firewall's priority 8 — see the class docblock).
+
+To add a new bounded context (e.g. a future `Portfolio` write side, or a second `Security` aggregate): mirror
+the same `Domain/Application/Infrastructure/Presentation` split under a new `src/<Context>/` folder, creating
+only the layers actually needed (no persistence → no `Infrastructure/Doctrine/`; no HTTP entry point → no
+`Presentation/Controller/`). Tests mirror the same tree under `tests/<Context>/`.
+
+### Frontend architecture (`../frontend/src`)
+
+Single-page app in clean-architecture layers, `PortfolioContentRepository` is the DIP boundary:
+
+- `domain/portfolio/entities/` — plain TS interfaces (no Vue import).
+- `domain/portfolio/repositories/PortfolioContentRepository.ts` — abstraction; add a method here first when
+  exposing new content.
+- `infrastructure/portfolio/StaticPortfolioContentRepository.ts` — today's only implementation (hardcoded
+  content); a future `HttpPortfolioContentRepository` would slot in without touching application/presentation.
+- `application/portfolio/usePortfolioContent.ts` — composable, injects the repository via an `InjectionKey`
+  provided once in `main.ts` (composition root).
+- `presentation/{ui,layout,sections,pages,router,i18n}/` — Vue components; `pages/LandingPage.vue` assembles
+  the sections, `pages/AboutPage.vue` is a standalone routed page (no `sections/` file — sections are only for
+  blocks assembled *inside* `LandingPage.vue`).
+- `presentation/layout/AppLayout.vue` — the shared chrome (`AppHeader` + `<RouterView>`), rendered once by
+  `App.vue`; it's the one place `siteIdentity`/`navigationLinks` are pulled from `usePortfolioContent()` for
+  every page, so individual pages only destructure the content they actually render.
+- `presentation/router/index.ts` — Vue Router 4 (history mode), routes are lazy-loaded (`() => import(...)`)
+  per page. `NavigationLink.to` is a router target as a plain string, locale already included
+  (e.g. `/fr/about`, `/en#technologies` for an in-page anchor on the landing page) — never a vue-router type,
+  to keep the domain entity framework-free.
+
+To add a new content block: entity → repository interface method (with a `locale: Locale` parameter) →
+`infrastructure/portfolio/content/{fr,en}.ts` (structured content) → expose it from `usePortfolioContent` →
+new `presentation/sections/*.vue` → wire into `LandingPage.vue`.
+
+To add a new page: new route in `presentation/router/index.ts` (nested under `/:locale(fr|en)`, with
+`meta.titleKey`/`meta.descriptionKey` for SEO — see below) → new `presentation/pages/*.vue` (its own
+`usePortfolioContent()` call for its own content) → new `NavigationLink` entry (`to` + `isEnabled`) in
+`StaticPortfolioContentRepository`. `AppHeader` derives the active nav link from `useRoute()`, not from props.
+
+#### i18n (French/English)
+
+Every route is prefixed by locale (`/fr`, `/en/about`…), the single source of truth for the active language —
+`presentation/router/index.ts`'s `beforeEach` syncs `i18n.global.locale` from `to.params.locale` on every
+navigation (also handled for the `/:pathMatch(.*)*` 404 catch-all, which has no `:locale` param: the guard
+falls back to parsing the URL's first path segment so the 404 page itself stays in the right language).
+`/` redirects to the user's previously chosen locale (`localStorage`) or their browser language, defaulting
+to `fr`.
+
+Two deliberately separate content sources, to keep `@intlify/eslint-plugin-vue-i18n`'s key-usage checks
+meaningful (see Lint below):
+- `infrastructure/i18n/locales/{fr,en}.json` — short UI-chrome strings only (nav labels, buttons, aria-labels,
+  SEO title/description per page), consumed exclusively via `useI18n()`'s `t()`/`$t()`. Wired into vue-i18n by
+  `presentation/i18n/index.ts` (`createAppI18n()` factory + an `i18n` singleton used by `main.ts` and the
+  router). Tests call `createAppI18n()` themselves for an isolated instance, the same pattern the router specs
+  already use for a fresh `createRouter(...)` per test.
+- `infrastructure/portfolio/content/{fr,en}.ts` — the structured portfolio content (hero, about, technologies,
+  quality, stats), typed against `PortfolioLocaleContent` and read directly by `StaticPortfolioContentRepository`
+  (never through vue-i18n). Keep new "content" here, not in the i18n JSON, unless it's genuinely a short UI string.
+
+`StaticPortfolioContentRepository` stays framework-free infrastructure: it reads the raw locale JSON/TS files
+directly, and never imports the vue-i18n runtime (that lives in `presentation/i18n`, which infrastructure must
+not depend on).
+
+#### SEO
+
+No SSR (plain SPA), so `presentation/router/seo.ts` (`applySeoMeta`, called from a `router.afterEach`) updates
+`document.title`, `<meta name="description">`, `<link rel="canonical">`, and `<link rel="alternate" hreflang>`
+(one per locale plus `x-default`) on every navigation — only visible to crawlers that execute JS, but Googlebot
+does. The 404 route gets `<meta name="robots" content="noindex, nofollow">` instead of canonical/hreflang.
+
+Icons: domain/content only ever holds a string `iconKey`; the mapping to an actual `unplugin-icons` component
+(`~icons/lucide/...`, `~icons/simple-icons/...`) lives solely in `presentation/ui/icons.ts`.
+
+#### Accessibility (a11y)
+
+Baseline for keyboard/screen-reader users, established across `AppLayout.vue`/`AppHeader.vue`/the landing
+sections/`AboutPage.vue` — follow these conventions when adding new UI rather than reintroducing the gaps they
+fixed:
+
+- **Skip link**: `AppLayout.vue` renders a `.skip-link` (Bootstrap's `visually-hidden-focusable`, visible only
+  on keyboard focus) targeting `<main id="main-content" tabindex="-1">`, so keyboard/screen-reader users can
+  bypass the header/nav on every page.
+- **No heading-level skips**: every section title is a real `<h2>`/`<h3>`, never a styled `<p>` — screen readers
+  navigate by heading level, and a "looks like a title" paragraph is invisible to that navigation
+  (`TechnologiesSection`/`QualitySection` eyebrows, `StatsSection`'s visually-hidden `<h2>`). `BaseCard` takes a
+  `headingLevel` prop (`2 | 3`, default `3`) specifically so a card grid sitting directly under a page's `<h1>`
+  (e.g. `AboutPage.vue`'s `site.cards`) can render `<h2>` instead of skipping straight to `<h3>`.
+- **Text contrast**: use the `.text-eyebrow` class (`style.css`, `color: var(--bs-link-color)`) for actual text,
+  never Bootstrap's `text-primary` — `--bs-primary` (`#7c3aed`) is only ~3.45:1 against the dark background,
+  below the 4.5:1 AA threshold for text. `text-primary` stays fine for icons/decorative dots (non-text UI only
+  needs 3:1, and they're `aria-hidden`).
+- **Nav landmarks**: `AppHeader.vue` has two `<nav>` elements (desktop + mobile disclosure) — both need a
+  distinct `aria-label` (`common.mainNavigation` / `common.mobileNavigation`) so they aren't ambiguous to
+  assistive tech, and the active link gets `aria-current="page"` (not just a CSS class).
+- No automated a11y linting is wired in yet (no `eslint-plugin-vue-a11y`/axe) — checks today are manual
+  (keyboard Tab-through, heading outline, contrast) rather than CI-enforced.
+
+Tests live under `tests/`, mirroring the `src/` tree rather than being colocated (e.g.
+`src/presentation/layout/AppHeader.vue` is tested by `tests/presentation/layout/AppHeader.spec.ts`, the same
+pattern the backend already uses for `tests/<BoundedContext>/`). Vitest picks them up via the
+`tests/**/*.spec.ts` glob in `vite.config.ts`; `tsconfig.app.json`'s `include` also lists `tests/**/*.ts` so
+`vue-tsc -b` (the `build` script) still type-checks them. Specs import the module under test with a relative
+path back into `src/` (e.g. `../../../src/presentation/layout/AppHeader.vue`) — there is no path alias.
+Components are mounted with `@vue/test-utils` and a stub/real repository injected via the same `InjectionKey`
+as `main.ts`. Any component using `usePortfolioContent()`, `useI18n()`, or `useRoute()`/`RouterLink` needs the
+corresponding plugin(s) in `global.plugins` when mounted in a test (`createAppI18n()` from `presentation/i18n`,
+and a locally-built `createRouter(...)` — never the app's own `router`/`i18n` singletons, to keep tests
+isolated from each other).
+
+To add a test for a new file: create it at the mirrored path under `tests/`, not next to the source file.
+
+#### Lint
+
+`npm run lint` (`eslint .`, flat config in `eslint.config.js`): `eslint-plugin-vue` (`flat/recommended`) +
+`@vue/eslint-config-typescript` (non type-checked — type errors are already caught by `vue-tsc -b` in the
+`build` script, ESLint here is style/correctness only) + `@intlify/eslint-plugin-vue-i18n` (`flat/recommended`,
+`settings['vue-i18n'].localeDir` points at `infrastructure/i18n/locales/*.json`) — this last one is why UI-chrome
+strings and portfolio content are kept in separate files (see i18n above): mixing them in would make
+`no-raw-text`/key-usage checks meaningless. `no-raw-text`'s `ignorePattern` is configured to skip strings with
+no letters at all, for purely decorative glyphs (the header logo's `</>`, the "et aussi" middle dot). `npm run
+lint:fix` for the auto-fixable (mostly formatting) rules.
+
 ### Frontend build/deploy
 
 `../docker/node/Dockerfile` mirrors the same idea: in dev the plain `node` image runs `npm install && npm run dev`
-directly (no image build). For deployable images, Vite **inlines `VITE_*` env vars into the JS bundle at build
-time** — `API_URL` is a required `make` argument for prod/preprod frontend builds, not a runtime setting;
-changing the API URL means rebuilding the image, not editing an env var on a running container.
+directly (no image build). For deployable images, the API URL is a **runtime** setting, not a build-time one:
+`docker-entrypoint.sh` runs `envsubst` on `config.template.js` using the container's `API_URL` env var, producing
+`/usr/share/nginx/html/config.js` (served no-cache, loaded by `index.html` before the app bundle) that the app reads
+via `window.__APP_CONFIG__` (`frontend/src/infrastructure/config/getApiUrl.ts`, falling back to Vite's
+`import.meta.env.VITE_API_URL` for `npm run dev`, which never serves `config.js`). This means a single frontend
+image — like the backend — is built once and promoted from preprod to prod unchanged, only the `API_URL` env var
+differs per environment; `make build-front-prod`/`build-front-preprod` no longer take an `API_URL` argument.
 
 ### Versions
 
 All image/tool versions are pinned in `../.env` and mirrored in `versions.lock`. The only deliberate exception is
 Composer, pinned to major branch `2` only (see comments in `../.env`) so 2.x patches land on every `make build`
 without ever silently jumping to Composer 3.
+
+`jsdom` (frontend devDependency, used by Vitest) is deliberately pinned to `^26.x`, not latest: `jsdom@30`
+requires Node `>=22.22`/`>=26` and fails at runtime (`webidl.util.markAsUncloneable is not a function`) on
+older Node — including any host below the project's Docker `NODE_TAG` (26.7.0). Don't let it float to latest.
+
+Node 26's own native (experimental) `localStorage`/`sessionStorage` globals conflict with jsdom's: without
+`--no-experimental-webstorage`, any test touching the bare `localStorage` global (not `window.localStorage`)
+before jsdom's environment fully initializes fails with `Cannot read properties of undefined (reading
+'clear')` — only reproduces on Node ≥22 with webstorage enabled (silent on older/host Node), which is why it
+only surfaced once the GitLab CI `test-frontend` job started running tests inside the pinned `node:${NODE_TAG}`
+image. Fixed by prefixing `frontend/package.json`'s `test`/`test:watch` scripts with
+`NODE_OPTIONS=--no-experimental-webstorage` — don't remove it.
+
+`vue-i18n`/`@intlify/*` (and transitively a few ESLint tooling packages) declare an `engines.node >= 22`
+requirement. `npm install`/`test`/`build` still work on an older host Node (just an `EBADENGINE` warning, not
+a hard failure) as of this writing, but don't be surprised by the warning — it's expected below Node 22,
+same root cause as the jsdom note above.
 
 ## Commands
 
@@ -110,6 +290,17 @@ make build-front-preprod API_URL=https://api-preprod.example.com TAG=1.2.3
 
 Standard Symfony/Composer/Doctrine CLI applies: `php bin/console ...` (MakerBundle is available in dev —
 `make:entity`, `make:controller`, etc.), `composer require ...`. No `phpunit`/test binary is installed yet.
+
+### Frontend day-to-day (inside `make sh-front`, or `../frontend` on the host)
+
+```bash
+npm test            # vitest run — one-shot, used in CI/pre-commit
+npm run test:watch  # vitest — watch mode for local development
+```
+
+If `make sh-front` / `docker compose exec frontend` shows stale source (edits made on the host, e.g. a new
+`package.json` dependency, not reflected in the container), the container's bind-mount view has desynced —
+`docker compose restart frontend` resyncs it.
 
 ### Services and ports (dev)
 

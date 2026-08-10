@@ -4,6 +4,19 @@ import IconDocker from '~icons/simple-icons/docker'
 import IconPostgresql from '~icons/simple-icons/postgresql'
 import IconVuedotjs from '~icons/simple-icons/vuedotjs'
 import IconTypescript from '~icons/simple-icons/typescript'
+import IconPhp from '~icons/simple-icons/php'
+import IconHtml5 from '~icons/simple-icons/html5'
+import IconCss3 from '~icons/simple-icons/css3'
+import IconJavascript from '~icons/simple-icons/javascript'
+import IconMysql from '~icons/simple-icons/mysql'
+import IconPython from '~icons/simple-icons/python'
+import IconMicrosoftsqlserver from '~icons/simple-icons/microsoftsqlserver'
+import IconAmazonwebservices from '~icons/simple-icons/amazonwebservices'
+import IconC from '~icons/simple-icons/c'
+import IconCplusplus from '~icons/simple-icons/cplusplus'
+import IconOcaml from '~icons/simple-icons/ocaml'
+import IconOpenjdk from '~icons/simple-icons/openjdk'
+import IconR from '~icons/simple-icons/r'
 import IconCode from '~icons/lucide/code'
 import IconLayers from '~icons/lucide/layers'
 import IconZap from '~icons/lucide/zap'
@@ -18,6 +31,15 @@ import IconUsers from '~icons/lucide/users'
 import IconInfinity from '~icons/lucide/infinity'
 import IconMail from '~icons/lucide/mail'
 import IconCheck from '~icons/lucide/check'
+import IconServer from '~icons/lucide/server'
+import IconSparkles from '~icons/lucide/sparkles'
+import IconLightbulb from '~icons/lucide/lightbulb'
+import IconTarget from '~icons/lucide/target'
+import IconGuitar from '~icons/lucide/guitar'
+import IconMotorbike from '~icons/lucide/motorbike'
+import IconBookOpen from '~icons/lucide/book-open'
+import IconClapperboard from '~icons/lucide/clapperboard'
+import IconWaves from '~icons/lucide/waves'
 
 /**
  * Le domaine ne connaît que des identifiants (iconKey) sous forme de chaînes,
@@ -31,6 +53,19 @@ const iconRegistry: Record<string, Component> = {
   postgresql: IconPostgresql,
   vuejs: IconVuedotjs,
   typescript: IconTypescript,
+  php: IconPhp,
+  html5: IconHtml5,
+  css3: IconCss3,
+  javascript: IconJavascript,
+  mysql: IconMysql,
+  python: IconPython,
+  sqlserver: IconMicrosoftsqlserver,
+  aws: IconAmazonwebservices,
+  c: IconC,
+  cpp: IconCplusplus,
+  ocaml: IconOcaml,
+  java: IconOpenjdk,
+  r: IconR,
   code: IconCode,
   layers: IconLayers,
   zap: IconZap,
@@ -45,6 +80,15 @@ const iconRegistry: Record<string, Component> = {
   infinity: IconInfinity,
   mail: IconMail,
   check: IconCheck,
+  server: IconServer,
+  sparkles: IconSparkles,
+  lightbulb: IconLightbulb,
+  target: IconTarget,
+  guitar: IconGuitar,
+  motorbike: IconMotorbike,
+  'book-open': IconBookOpen,
+  clapperboard: IconClapperboard,
+  waves: IconWaves,
 }
 
 export function resolveIcon(iconKey: string | undefined): Component | undefined {

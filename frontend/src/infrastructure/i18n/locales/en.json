@@ -1,0 +1,107 @@
+{
+  "nav": {
+    "home": "Home",
+    "skills": "Skills",
+    "experiences": "Experiences",
+    "contact": "Contact",
+    "about": "About"
+  },
+  "common": {
+    "downloadCv": "Download my CV",
+    "downloadCvError": "The CV download failed. Please try again later.",
+    "login": "Login",
+    "logout": "Logout",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "footerCopyright": "© {year} {brand} — All rights reserved.",
+    "skipToContent": "Skip to main content",
+    "mainNavigation": "Main navigation",
+    "mobileNavigation": "Mobile navigation",
+    "legalNoticeLink": "Legal notice",
+    "privacyPolicyLink": "Privacy policy",
+    "legalNavigation": "Legal navigation"
+  },
+  "hero": {
+    "illustrationAlt": "Illustration: developer behind their computer"
+  },
+  "technologies": {
+    "sectionTitle": "Technologies",
+    "andAlso": "ALSO"
+  },
+  "experience": {
+    "loading": "Loading the technology ranking…",
+    "error": "The technology ranking could not be loaded. Please try again later."
+  },
+  "quality": {
+    "sectionTitle": "Principles & software quality"
+  },
+  "stats": {
+    "sectionTitle": "Key figures"
+  },
+  "localeSwitcher": {
+    "label": "Change language"
+  },
+  "auth": {
+    "heading": "Login",
+    "usernameLabel": "Username",
+    "passwordLabel": "Password",
+    "submit": "Log in",
+    "invalidCredentials": "Incorrect username or password.",
+    "genericError": "Something went wrong, please try again."
+  },
+  "contact": {
+    "eyebrow": "Contact",
+    "intro": "A question, a project, an opportunity? Feel free to write to me directly at the address below or via the form.",
+    "form": {
+      "heading": "Send a message",
+      "nameLabel": "Your name",
+      "emailLabel": "Your email",
+      "messageLabel": "Your message",
+      "honeypotLabel": "Website",
+      "submit": "Send",
+      "submitting": "Sending…",
+      "success": "Your message has been sent, thank you!",
+      "error": "Sending the message failed. Please try again later.",
+      "privacyNoticePrefix": "Your data is only used to reply to you and is never stored."
+    }
+  },
+  "notFound": {
+    "heading": "Page not found",
+    "message": "The page you're looking for doesn't exist anymore.",
+    "backHome": "Back to home"
+  },
+  "seo": {
+    "home": {
+      "title": "Senior Web Developer",
+      "description": "A demonstration of modern web application best practices: Symfony, Vue.js, TypeScript, Docker."
+    },
+    "about": {
+      "title": "About",
+      "description": "About this site: its origin and design."
+    },
+    "experience": {
+      "title": "Experiences",
+      "description": "Technologies ranked by cumulative time spent on each throughout my career."
+    },
+    "contact": {
+      "title": "Contact",
+      "description": "Get in touch by email or through the contact form."
+    },
+    "notFound": {
+      "title": "Page not found",
+      "description": "The requested page does not exist."
+    },
+    "login": {
+      "title": "Login",
+      "description": "Log in to the protected area."
+    },
+    "legalNotice": {
+      "title": "Legal notice",
+      "description": "Legal notice: site publisher, hosting provider and intellectual property."
+    },
+    "privacyPolicy": {
+      "title": "Privacy policy",
+      "description": "Data collected, purposes, retention periods and GDPR rights."
+    }
+  }
+}

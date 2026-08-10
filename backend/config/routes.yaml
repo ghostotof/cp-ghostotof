@@ -9,3 +9,11 @@
 
 controllers:
     resource: routing.controllers
+
+# "check_path" du firewall "login" (config/packages/security.yaml) : jamais atteinte
+# par un contrôleur, le JsonLoginAuthenticator l'intercepte avant. Une route doit
+# malgré tout exister ici, sinon le RouterListener (qui s'exécute avant le firewall)
+# répond 404 avant même que l'authentification ne soit tentée.
+api_login_check:
+    path: /api/login_check
+    methods: [POST]

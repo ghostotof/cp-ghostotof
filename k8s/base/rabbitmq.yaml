@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rabbitmq-data
+spec:
+  accessModes: ['ReadWriteOnce']
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+  labels:
+    app.kubernetes.io/name: rabbitmq
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rabbitmq
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rabbitmq
+    spec:
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:4.3.4-management-alpine # garder synchronisé avec RABBITMQ_TAG dans ../.env
+          ports:
+            - containerPort: 5672
+            - containerPort: 15672
+          envFrom:
+            - secretRef:
+                name: rabbitmq-credentials
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/rabbitmq
+          resources:
+            requests:
+              cpu: 250m
+              memory: 128Mi
+            limits:
+              # 500m throttlait le broker pendant le boot de l'Erlang VM (observé
+              # à 499m/500m d'usage réel), ce qui faisait timeout
+              # rabbitmq-diagnostics ping même à 10s — la limite elle-même était
+              # le goulot d'étranglement, pas le nœud.
+              cpu: 1000m
+              memory: 256Mi
+          livenessProbe:
+            exec:
+              command: ['rabbitmq-diagnostics', '-q', 'ping']
+            # timeoutSeconds par défaut (1s) est trop court : rabbitmq-diagnostics
+            # démarre son propre nœud Erlang à chaque appel, largement >1s même
+            # sans contention CPU (observé en conditions réelles sur Kapsule).
+            timeoutSeconds: 10
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            exec:
+              command: ['rabbitmq-diagnostics', '-q', 'ping']
+            timeoutSeconds: 10
+            initialDelaySeconds: 20
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: rabbitmq-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+spec:
+  selector:
+    app.kubernetes.io/name: rabbitmq
+  ports:
+    - name: amqp
+      port: 5672
+    - name: management
+      port: 15672

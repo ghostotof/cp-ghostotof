@@ -5,18 +5,22 @@ framework:
 
         transports:
             # https://symfony.com/doc/current/messenger.html#transport-configuration
-            # async: '%env(MESSENGER_TRANSPORT_DSN)%'
+            # RabbitMQ (service "rabbitmq" du docker-compose racine), consommé par
+            # `make consume` (messenger:consume async -vv).
+            async: '%env(MESSENGER_TRANSPORT_DSN)%'
             # failed: 'doctrine://default?queue_name=failed'
             sync: 'sync://'
 
         routing:
             # Route your messages to the transports
-            # 'App\Message\YourMessage': async
+            'App\Contact\Application\Message\SendContactMessageMessage': async
 
-# when@test:
-#    framework:
-#        messenger:
-#            transports:
-#                # replace with your transport name here (e.g., my_transport: 'in-memory://')
-#                # For more Messenger testing tools, see https://github.com/zenstruck/messenger-test
-#                async: 'in-memory://'
+when@test:
+    framework:
+        messenger:
+            transports:
+                # Pas de vrai broker en test : le message est traité en mémoire,
+                # synchronement, ce qui permet aux tests d'asserter son contenu
+                # sans dépendre de RabbitMQ (cf. zenstruck/messenger-test si des
+                # assertions plus riches deviennent nécessaires).
+                async: 'in-memory://'

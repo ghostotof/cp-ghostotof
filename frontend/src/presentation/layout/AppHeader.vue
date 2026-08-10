@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
 import type { NavigationLink } from '../../domain/portfolio/entities/NavigationLink'
+import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
+import { useAuth } from '../../application/auth/useAuth'
+import { useCvDownload } from '../../application/cv/useCvDownload'
+import LocaleSwitcher from '../ui/LocaleSwitcher.vue'
 import IconDownload from '~icons/lucide/download'
 import IconMenu from '~icons/lucide/menu'
 import IconX from '~icons/lucide/x'
@@ -12,84 +18,215 @@ defineProps<{
 }>()
 
 const isMobileMenuOpen = ref(false)
+const route = useRoute()
+const router = useRouter()
+const { t, locale } = useI18n()
+const { isAuthenticated, isChecking, logout } = useAuth()
+const { isDownloading, hasError: hasCvDownloadError, downloadCv } = useCvDownload()
+
+async function handleLogout(): Promise<void> {
+  await logout()
+  await router.push(homeLink.value)
+}
+
+/**
+ * Priorité au paramètre de route (source de vérité de l'URL) ; repli sur la locale
+ * i18n courante quand la route active n'en a pas (ex. page 404, route catch-all
+ * `/:pathMatch(.*)*` sans segment `:locale`).
+ */
+const homeLink = computed(() => {
+  const routeLocale = route.params.locale
+  const currentLocale = typeof routeLocale === 'string' && isSupportedLocale(routeLocale) ? routeLocale : (locale.value as Locale)
+  return `/${currentLocale}`
+})
+
+/**
+ * Un seul lien doit apparaître actif à la fois. Priorité à la correspondance
+ * exacte (chemin + ancre, ex. "/#technologies"). À défaut, un lien de simple
+ * page (ex. "/") n'est actif que si l'URL courante ne cible aucune ancre —
+ * sinon "Accueil" et "Compétences" s'activeraient simultanément sur la landing page.
+ */
+function isActiveLink(link: NavigationLink): boolean {
+  if (link.to === route.fullPath) {
+    return true
+  }
+  if (route.hash) {
+    return false
+  }
+  return link.to === route.path
+}
 
 function navLinkClass(link: NavigationLink) {
   return {
-    'nav-link-portfolio--active': link.isEnabled && link.href === '#hero',
+    'nav-link-portfolio--active': link.isEnabled && isActiveLink(link),
     'nav-link-portfolio--disabled': !link.isEnabled,
   }
 }
 </script>
 
 <template>
-  <header class="sticky-top border-bottom" style="background: rgba(11, 10, 20, 0.85); backdrop-filter: blur(8px)">
+  <header
+    class="sticky-top border-bottom"
+    style="background: rgba(11, 10, 20, 0.85); backdrop-filter: blur(8px)"
+  >
     <div class="container-xl d-flex align-items-center justify-content-between gap-3 py-3">
-      <a href="#hero" class="d-flex align-items-center gap-2 text-white text-decoration-none fw-semibold">
+      <RouterLink
+        :to="homeLink"
+        class="d-flex align-items-center gap-2 text-white text-decoration-none fw-semibold"
+      >
+        <!-- Glyphe décoratif du logo, pas du texte à traduire -->
         <span
           class="d-inline-flex align-items-center justify-content-center rounded-circle text-white small"
           style="width: 2rem; height: 2rem; background: linear-gradient(135deg, #7c3aed, #4338ca)"
+          aria-hidden="true"
         >
           &lt;/&gt;
         </span>
         {{ siteIdentity.brandName }}
-      </a>
+      </RouterLink>
 
-      <nav class="d-none d-md-flex align-items-center gap-4 small">
-        <a
+      <nav
+        class="d-none d-md-flex align-items-center gap-4 small"
+        :aria-label="t('common.mainNavigation')"
+      >
+        <template
           v-for="link in navigationLinks"
           :key="link.label"
-          :href="link.isEnabled ? link.href : undefined"
-          class="nav-link-portfolio"
-          :class="navLinkClass(link)"
-          :aria-disabled="!link.isEnabled"
         >
-          {{ link.label }}
-        </a>
+          <RouterLink
+            v-if="link.isEnabled"
+            :to="link.to"
+            class="nav-link-portfolio"
+            :class="navLinkClass(link)"
+            aria-disabled="false"
+            :aria-current="isActiveLink(link) ? 'page' : undefined"
+          >
+            {{ link.label }}
+          </RouterLink>
+          <a
+            v-else
+            class="nav-link-portfolio"
+            :class="navLinkClass(link)"
+            aria-disabled="true"
+          >
+            {{ link.label }}
+          </a>
+        </template>
       </nav>
 
       <div class="d-flex align-items-center gap-2">
-        <a
-          :href="siteIdentity.cvDownloadHref"
-          class="btn btn-outline-light btn-sm d-none d-sm-inline-flex align-items-center gap-2"
-        >
-          {{ siteIdentity.cvDownloadLabel }}
-          <IconDownload width="16" height="16" aria-hidden="true" />
-        </a>
-        <a
-          :href="siteIdentity.cvDownloadHref"
-          class="btn btn-outline-light btn-sm d-sm-none d-inline-flex align-items-center"
-          :aria-label="siteIdentity.cvDownloadLabel"
-        >
-          <IconDownload width="16" height="16" aria-hidden="true" />
-        </a>
+        <LocaleSwitcher />
+
+        <template v-if="!isChecking">
+          <RouterLink
+            v-if="!isAuthenticated"
+            :to="`${homeLink}/login`"
+            class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-2"
+          >
+            {{ t('common.login') }}
+          </RouterLink>
+          <template v-else>
+            <button
+              type="button"
+              class="btn btn-outline-light btn-sm d-none d-sm-inline-flex align-items-center gap-2"
+              :disabled="isDownloading"
+              @click="downloadCv"
+            >
+              {{ t('common.downloadCv') }}
+              <IconDownload
+                width="16"
+                height="16"
+                aria-hidden="true"
+              />
+            </button>
+            <button
+              type="button"
+              class="btn btn-outline-light btn-sm d-sm-none d-inline-flex align-items-center"
+              :disabled="isDownloading"
+              :aria-label="t('common.downloadCv')"
+              @click="downloadCv"
+            >
+              <IconDownload
+                width="16"
+                height="16"
+                aria-hidden="true"
+              />
+            </button>
+            <button
+              type="button"
+              class="btn btn-outline-light btn-sm d-inline-flex align-items-center"
+              @click="handleLogout"
+            >
+              {{ t('common.logout') }}
+            </button>
+          </template>
+        </template>
 
         <button
           type="button"
           class="btn btn-outline-light btn-sm d-md-none d-inline-flex align-items-center justify-content-center"
           aria-controls="mobile-nav"
           :aria-expanded="isMobileMenuOpen"
-          :aria-label="isMobileMenuOpen ? 'Fermer le menu' : 'Ouvrir le menu'"
+          :aria-label="isMobileMenuOpen ? t('common.closeMenu') : t('common.openMenu')"
           @click="isMobileMenuOpen = !isMobileMenuOpen"
         >
-          <IconX v-if="isMobileMenuOpen" width="18" height="18" aria-hidden="true" />
-          <IconMenu v-else width="18" height="18" aria-hidden="true" />
+          <IconX
+            v-if="isMobileMenuOpen"
+            width="18"
+            height="18"
+            aria-hidden="true"
+          />
+          <IconMenu
+            v-else
+            width="18"
+            height="18"
+            aria-hidden="true"
+          />
         </button>
       </div>
     </div>
 
-    <nav v-if="isMobileMenuOpen" id="mobile-nav" class="d-md-none border-top" style="background: rgba(11, 10, 20, 0.95)">
+    <p
+      v-if="hasCvDownloadError"
+      class="container-xl text-danger small mb-2"
+      role="alert"
+    >
+      {{ t('common.downloadCvError') }}
+    </p>
+
+    <nav
+      v-if="isMobileMenuOpen"
+      id="mobile-nav"
+      class="d-md-none border-top"
+      style="background: rgba(11, 10, 20, 0.95)"
+      :aria-label="t('common.mobileNavigation')"
+    >
       <div class="container-xl d-flex flex-column py-2">
-        <a
+        <template
           v-for="link in navigationLinks"
           :key="link.label"
-          :href="link.isEnabled ? link.href : undefined"
-          class="nav-link-portfolio d-block py-2"
-          :class="navLinkClass(link)"
-          :aria-disabled="!link.isEnabled"
-          @click="isMobileMenuOpen = false"
         >
-          {{ link.label }}
-        </a>
+          <RouterLink
+            v-if="link.isEnabled"
+            :to="link.to"
+            class="nav-link-portfolio d-block py-2"
+            :class="navLinkClass(link)"
+            aria-disabled="false"
+            :aria-current="isActiveLink(link) ? 'page' : undefined"
+            @click="isMobileMenuOpen = false"
+          >
+            {{ link.label }}
+          </RouterLink>
+          <a
+            v-else
+            class="nav-link-portfolio d-block py-2"
+            :class="navLinkClass(link)"
+            aria-disabled="true"
+            @click="isMobileMenuOpen = false"
+          >
+            {{ link.label }}
+          </a>
+        </template>
       </div>
     </nav>
   </header>

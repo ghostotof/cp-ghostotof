@@ -38,12 +38,11 @@ FROM node:${NODE_TAG} AS build
 
 WORKDIR /app
 
-# ATTENTION : Vite inline les variables VITE_* AU MOMENT DU BUILD, dans le
-# bundle. Ce ne sont donc pas des variables d'exécution : changer l'URL de l'API
-# impose de reconstruire l'image. C'est la raison du --build-arg ci-dessous.
-ARG VITE_API_URL
-ENV VITE_API_URL=${VITE_API_URL}
-
+# Pas de VITE_API_URL ici : l'URL de l'API est injectée au RUNTIME (variable
+# d'env API_URL du conteneur, voir docker-entrypoint.sh), pas au build. Le
+# bundle produit est donc identique quel que soit l'environnement cible —
+# c'est ce qui permet de le construire une seule fois et de le promouvoir de
+# la préprod vers la prod, comme pour le backend.
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend/ ./
 
@@ -70,6 +69,14 @@ EXPOSE 8080
 COPY docker/node/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /out/app /usr/share/nginx/html
 
+# gettext fournit envsubst, utilisé par docker-entrypoint.sh pour générer
+# config.js à partir de la variable d'env API_URL au démarrage du conteneur.
+RUN apk add --no-cache gettext
+
+COPY docker/node/config.template.js /usr/share/nginx/config.template.js
+COPY docker/node/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
 # nginx a besoin d'écrire son PID et ses caches temporaires. On les redirige
 # vers /tmp afin que le reste du système de fichiers puisse rester en lecture
 # seule (readOnlyRootFilesystem).
@@ -82,6 +89,7 @@ USER nginx
 HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 \
     CMD ["wget", "-qO-", "http://127.0.0.1:8080/healthz"]
 
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["nginx", "-g", "daemon off;"]
 
 # =============================================================================

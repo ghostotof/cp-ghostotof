@@ -1,5 +1,11 @@
+/**
+ * `to` est une cible de route Vue Router au format chaîne, locale déjà incluse
+ * (ex. "/fr", "/en/about", "/fr#technologies" pour une ancre in-page sur la landing
+ * page) — jamais un objet ou un type importé de vue-router, pour que ce fichier de
+ * domaine reste indépendant de tout framework.
+ */
 export interface NavigationLink {
   readonly label: string
-  readonly href: string
+  readonly to: string
   readonly isEnabled: boolean
 }

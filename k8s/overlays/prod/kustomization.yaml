@@ -1,0 +1,49 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: prod
+
+resources:
+  - namespace.yaml
+  - ../../base
+  - external-secrets.yaml
+
+configMapGenerator:
+  - name: backend-config
+    literals:
+      - CORS_ALLOW_ORIGIN=^https://cp-ghostotof\.com$
+      - DEFAULT_URI=https://cp-ghostotof.com
+      - CV_DOWNLOAD_FILENAME=cv.pdf
+  - name: frontend-config
+    literals:
+      - API_URL=https://cp-ghostotof.com/api
+
+# newTag est un placeholder, écrasé par le job `deploy-prod` du pipeline
+# (`kustomize edit set image`) avant `kubectl apply -k .` — jamais rebuildé,
+# c'est exactement l'image déjà validée en préprod (cf. .gitlab-ci.yml).
+images:
+  - name: backend
+    newTag: unset-by-ci
+  - name: frontend
+    newTag: unset-by-ci
+
+replicas:
+  - name: backend
+    count: 2
+  - name: frontend
+    count: 2
+
+patches:
+  - target:
+      kind: Ingress
+      name: cp-ghostotof
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: cp-ghostotof.com
+      - op: replace
+        path: /spec/tls/0/hosts
+        value: [cp-ghostotof.com]
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: cp-ghostotof-prod-tls

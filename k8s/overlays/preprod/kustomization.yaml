@@ -1,0 +1,47 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: preprod
+
+resources:
+  - namespace.yaml
+  - ../../base
+  - external-secrets.yaml
+
+# CORS_ALLOW_ORIGIN est une regex (cf. backend/config/packages/nelmio_cors.yaml).
+# <domaine> est un placeholder : à remplacer une fois cp-ghostotof.com acheté
+# (cf. commentaires dans backend/.env), ici et dans les Secrets (voir README.md).
+configMapGenerator:
+  - name: backend-config
+    literals:
+      - CORS_ALLOW_ORIGIN=^https://preprod\.cp-ghostotof\.com$
+      - DEFAULT_URI=https://preprod.cp-ghostotof.com
+      - CV_DOWNLOAD_FILENAME=cv.pdf
+  - name: frontend-config
+    literals:
+      - API_URL=https://preprod.cp-ghostotof.com/api
+
+# newTag est un placeholder : le job `deploy-preprod` du pipeline lance
+# `kustomize edit set image` avec le vrai `$CI_REGISTRY_IMAGE`/tag avant
+# `kubectl apply -k .` (voir .gitlab-ci.yml). Utile seulement pour que
+# `kubectl kustomize .` reste exécutable en local sans CI.
+images:
+  - name: backend
+    newTag: unset-by-ci
+  - name: frontend
+    newTag: unset-by-ci
+
+patches:
+  - target:
+      kind: Ingress
+      name: cp-ghostotof
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: preprod.cp-ghostotof.com
+      - op: replace
+        path: /spec/tls/0/hosts
+        value: [preprod.cp-ghostotof.com]
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: cp-ghostotof-preprod-tls

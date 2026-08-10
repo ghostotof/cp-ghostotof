@@ -1,0 +1,107 @@
+{
+  "nav": {
+    "home": "Accueil",
+    "skills": "Compétences",
+    "experiences": "Expériences",
+    "contact": "Contact",
+    "about": "À propos"
+  },
+  "common": {
+    "downloadCv": "Télécharger mon CV",
+    "downloadCvError": "Le téléchargement du CV a échoué. Réessayez plus tard.",
+    "login": "Connexion",
+    "logout": "Déconnexion",
+    "openMenu": "Ouvrir le menu",
+    "closeMenu": "Fermer le menu",
+    "footerCopyright": "© {year} {brand} — Tous droits réservés.",
+    "skipToContent": "Aller au contenu principal",
+    "mainNavigation": "Navigation principale",
+    "mobileNavigation": "Navigation mobile",
+    "legalNoticeLink": "Mentions légales",
+    "privacyPolicyLink": "Politique de confidentialité",
+    "legalNavigation": "Navigation légale"
+  },
+  "hero": {
+    "illustrationAlt": "Illustration : développeur derrière son ordinateur"
+  },
+  "technologies": {
+    "sectionTitle": "Technologies",
+    "andAlso": "ET AUSSI"
+  },
+  "experience": {
+    "loading": "Chargement du classement des technologies…",
+    "error": "Le classement des technologies n'a pas pu être chargé. Réessayez plus tard."
+  },
+  "quality": {
+    "sectionTitle": "Principes & qualité logicielle"
+  },
+  "stats": {
+    "sectionTitle": "Chiffres clés"
+  },
+  "localeSwitcher": {
+    "label": "Changer de langue"
+  },
+  "auth": {
+    "heading": "Connexion",
+    "usernameLabel": "Nom d'utilisateur",
+    "passwordLabel": "Mot de passe",
+    "submit": "Se connecter",
+    "invalidCredentials": "Nom d'utilisateur ou mot de passe incorrect.",
+    "genericError": "Une erreur est survenue, veuillez réessayer."
+  },
+  "contact": {
+    "eyebrow": "Contact",
+    "intro": "Une question, un projet, une opportunité ? N'hésitez pas à m'écrire directement à l'adresse ci-dessous ou via le formulaire.",
+    "form": {
+      "heading": "Envoyer un message",
+      "nameLabel": "Votre nom",
+      "emailLabel": "Votre email",
+      "messageLabel": "Votre message",
+      "honeypotLabel": "Site web",
+      "submit": "Envoyer",
+      "submitting": "Envoi en cours…",
+      "success": "Votre message a bien été envoyé, merci !",
+      "error": "L'envoi du message a échoué. Réessayez plus tard.",
+      "privacyNoticePrefix": "Vos données ne sont utilisées que pour vous répondre et ne sont jamais stockées."
+    }
+  },
+  "notFound": {
+    "heading": "Page introuvable",
+    "message": "La page que vous cherchez n'existe pas ou plus.",
+    "backHome": "Retour à l'accueil"
+  },
+  "seo": {
+    "home": {
+      "title": "Développeur Web Senior",
+      "description": "Démonstration des meilleures pratiques pour une application web moderne : Symfony, Vue.js, TypeScript, Docker."
+    },
+    "about": {
+      "title": "À propos",
+      "description": "À propos de ce site : son origine et sa conception."
+    },
+    "experience": {
+      "title": "Expériences",
+      "description": "Technologies classées selon le temps cumulé passé sur chacune d'elles au fil de mon parcours professionnel."
+    },
+    "contact": {
+      "title": "Contact",
+      "description": "Me contacter par email ou via le formulaire de contact."
+    },
+    "notFound": {
+      "title": "Page introuvable",
+      "description": "La page demandée n'existe pas."
+    },
+    "login": {
+      "title": "Connexion",
+      "description": "Connexion à l'espace protégé."
+    },
+    "legalNotice": {
+      "title": "Mentions légales",
+      "description": "Mentions légales du site : éditeur, hébergeur et propriété intellectuelle."
+    },
+    "privacyPolicy": {
+      "title": "Politique de confidentialité",
+      "description": "Données collectées, finalités, durées de conservation et droits RGPD."
+    }
+  }
+}

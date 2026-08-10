@@ -11,6 +11,7 @@ const props = withDefaults(
   }>(),
   {
     variant: 'primary',
+    iconKey: undefined,
   },
 )
 
@@ -19,8 +20,18 @@ const buttonClass = computed(() => (props.variant === 'primary' ? 'btn-gradient'
 </script>
 
 <template>
-  <a :href="href" class="btn d-inline-flex align-items-center gap-2" :class="buttonClass">
+  <a
+    :href="href"
+    class="btn d-inline-flex align-items-center gap-2"
+    :class="buttonClass"
+  >
     <slot />
-    <component :is="icon" v-if="icon" width="16" height="16" aria-hidden="true" />
+    <component
+      :is="icon"
+      v-if="icon"
+      width="16"
+      height="16"
+      aria-hidden="true"
+    />
   </a>
 </template>

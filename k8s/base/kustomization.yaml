@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: cp-ghostotof
+
+resources:
+  - backend-deployment.yaml
+  - backend-service.yaml
+  - backend-nginx-conf.yaml
+  - frontend-deployment.yaml
+  - frontend-service.yaml
+  - postgres.yaml
+  - rabbitmq.yaml
+  - ingress.yaml
+  - secretstore.yaml
+  - cluster-issuer.yaml
+
+# Placeholders remplacés par chaque overlay via `kustomize edit set image`
+# (fait par le job de déploiement CI, jamais commité en dur : le registre et
+# le tag dépendent du pipeline). Voir k8s/README.md.
+images:
+  - name: backend
+    newName: backend
+    newTag: latest
+  - name: frontend
+    newName: frontend
+    newTag: latest

@@ -1,13 +1,41 @@
 import { createApp } from 'vue'
 import './style.css'
 import App from './App.vue'
+import { router } from './presentation/router'
+import { i18n } from './presentation/i18n'
 import { PORTFOLIO_CONTENT_REPOSITORY } from './application/portfolio/usePortfolioContent'
 import { StaticPortfolioContentRepository } from './infrastructure/portfolio/StaticPortfolioContentRepository'
+import { AUTH_REPOSITORY, useAuth } from './application/auth/useAuth'
+import { HttpAuthRepository } from './infrastructure/auth/HttpAuthRepository'
+import { CV_REPOSITORY } from './application/cv/useCvDownload'
+import { HttpCvRepository } from './infrastructure/cv/HttpCvRepository'
+import { EXPERIENCE_TECHNOLOGY_REPOSITORY } from './application/experience/useExperienceTechnologies'
+import { HttpExperienceTechnologyRepository } from './infrastructure/experience/HttpExperienceTechnologyRepository'
+import { CONTACT_REPOSITORY } from './application/contact/useContactForm'
+import { HttpContactRepository } from './infrastructure/contact/HttpContactRepository'
+import { getApiUrl } from './infrastructure/config/getApiUrl'
 
 const app = createApp(App)
+const apiUrl = getApiUrl()
 
 // Composition root : c'est le seul endroit où une implémentation concrète du
 // repository est instanciée et reliée à son abstraction (DIP).
 app.provide(PORTFOLIO_CONTENT_REPOSITORY, new StaticPortfolioContentRepository())
+app.provide(AUTH_REPOSITORY, new HttpAuthRepository(apiUrl))
+app.provide(CV_REPOSITORY, new HttpCvRepository(apiUrl))
+app.provide(EXPERIENCE_TECHNOLOGY_REPOSITORY, new HttpExperienceTechnologyRepository(apiUrl))
+app.provide(CONTACT_REPOSITORY, new HttpContactRepository(apiUrl))
+
+app.use(i18n)
+app.use(router)
 
 app.mount('#app')
+
+// Le cookie httpOnly du JWT n'est pas lisible en JS : on interroge /api/me pour
+// savoir si un rechargement de page correspond toujours à une session valide.
+app.runWithContext(() => useAuth().checkAuth())
+
+console.log(
+  "%c🎸 It's a long way to the top (if you wanna rock the source code).",
+  'color:#f59e0b;font-weight:600;',
+)

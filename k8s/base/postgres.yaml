@@ -1,0 +1,79 @@
+# Postgres en pod dans le cluster (pas de base managée) : le plus économique
+# pour un projet personnel, mais AUCUNE sauvegarde automatique — à faire
+# évoluer vers Scaleway Managed Database si la donnée devient critique.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+spec:
+  accessModes: ['ReadWriteOnce']
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres
+spec:
+  replicas: 1
+  strategy:
+    # Recreate, pas RollingUpdate : deux pods Postgres ne peuvent pas partager
+    # le même PVC ReadWriteOnce.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:18.4-alpine # garder synchronisé avec POSTGRES_TAG dans ../.env
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgres-credentials
+          volumeMounts:
+            # Cf. commentaire dans ../docker-compose.yml : depuis Postgres 18,
+            # l'image officielle range les données dans un sous-répertoire
+            # versionné (layout pg_ctlcluster) et refuse de démarrer si le
+            # volume pointe directement sur .../data.
+            - name: data
+              mountPath: /var/lib/postgresql
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command: ['sh', '-c', 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ['sh', '-c', 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: database
+spec:
+  selector:
+    app.kubernetes.io/name: postgres
+  ports:
+    - port: 5432

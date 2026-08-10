@@ -1,0 +1,33 @@
+lexik_jwt_authentication:
+    secret_key: '%env(resolve:JWT_SECRET_KEY)%'
+    public_key: '%env(resolve:JWT_PUBLIC_KEY)%'
+    pass_phrase: '%env(JWT_PASSPHRASE)%'
+    token_ttl: 3600
+
+    # Le token ne voyage jamais dans le header Authorization : uniquement dans le
+    # cookie httpOnly "BEARER" (inaccessible en JS, protégé du vol par XSS).
+    token_extractors:
+        authorization_header:
+            enabled: false
+        cookie:
+            enabled: true
+            name: BEARER
+
+    # Défaut du bundle (true) : le token n'est jamais dupliqué dans le corps JSON
+    # de la réponse de login dès lors qu'un cookie est utilisé pour le transporter.
+    remove_token_from_body_when_cookies_used: true
+
+    set_cookies:
+        BEARER:
+            lifetime: 3600
+            samesite: lax
+            path: /
+            httpOnly: true
+            # http en dev (localhost:8080 sans TLS) : passé à true en prod, voir when@prod ci-dessous.
+            secure: false
+
+when@prod:
+    lexik_jwt_authentication:
+        set_cookies:
+            BEARER:
+                secure: true
