@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 DC := docker compose
 
-.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init build-front-prod build-front-preprod
+.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init build-front-prod build-front-preprod get-secret
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -99,3 +99,38 @@ build-front-preprod: ## Construit l'image frontend de préprod (= prod + source 
 	  --build-arg NGINX_TAG=$(shell grep '^NGINX_TAG=' .env | cut -d= -f2) \
 	  -f docker/node/Dockerfile \
 	  -t $(FRONT_IMAGE):$(TAG)-preprod .
+
+# --- Secrets Kubernetes (préprod/prod) ---------------------------------------
+# Lit les Secrets déjà présents dans le cluster (remplis par External Secrets
+# Operator depuis Scaleway Secret Manager, cf. k8s/README.md) — ne fait AUCUNE
+# hypothèse sur le nommage des contextes kubectl : utilise le contexte
+# actuellement actif sur le poste (kubectl config current-context), seul le
+# namespace est forcé via -n. Un utilisateur Kubernetes sans les droits
+# `get`/`list` sur `secrets` (ex. un futur groupe "dev" restreint) se fera
+# simplement rejeter par l'API server (403 Forbidden) — aucune logique de
+# permission n'est dupliquée ici, le RBAC du cluster reste la seule source de
+# vérité.
+ENV ?= preprod
+SECRET ?=
+# Uniquement les 4 secrets applicatifs gérés par ESO (cf. k8s/overlays/*/external-secrets.yaml) :
+# cv-pdf est exclu (binaire, illisible en terminal) ainsi que les secrets
+# bootstrap scaleway-eso-auth/gitlab-registry (pas des credentials applicatifs).
+ESO_SECRETS := backend-secrets postgres-credentials rabbitmq-credentials jwt-keys
+
+get-secret: ## Affiche les secrets applicatifs en clair (ENV=preprod|prod, défaut preprod ; SECRET=nom pour n'en cibler qu'un)
+	@if [ "$(ENV)" != "preprod" ] && [ "$(ENV)" != "prod" ]; then \
+	  echo "ENV doit valoir 'preprod' ou 'prod' (reçu : '$(ENV)')" >&2; \
+	  exit 1; \
+	fi
+	@printf "Afficher en clair les secrets de l'environnement '$(ENV)' ? [y/N] "; \
+	read confirm; \
+	if [ "$$confirm" != "y" ] && [ "$$confirm" != "Y" ]; then \
+	  echo "Annulé."; \
+	  exit 1; \
+	fi
+	@for s in $(if $(SECRET),$(SECRET),$(ESO_SECRETS)); do \
+	  echo "--- $$s ($(ENV)) ---"; \
+	  kubectl -n $(ENV) get secret $$s -o go-template='{{range $$k, $$v := .data}}{{$$k}}={{$$v|base64decode}}{{"\n"}}{{end}}' \
+	    || echo "  (introuvable ou accès refusé)"; \
+	  echo; \
+	done
