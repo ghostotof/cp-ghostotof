@@ -17,7 +17,7 @@ configMapGenerator:
       - CV_DOWNLOAD_FILENAME=cv.pdf
   - name: frontend-config
     literals:
-      - API_URL=https://cp-ghostotof.com/api
+      - API_URL=https://cp-ghostotof.com
 
 # newTag est un placeholder, écrasé par le job `deploy-prod` du pipeline
 # (`kustomize edit set image`) avant `kubectl apply -k .` — jamais rebuildé,
