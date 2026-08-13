@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 DC := docker compose
 
-.PHONY: help build up down restart logs sh sh-front init db-migrate consume build-prod build-preprod front-init build-front-prod build-front-preprod
+.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init build-front-prod build-front-preprod
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -33,6 +33,9 @@ db-migrate: ## Applique les migrations Doctrine
 
 consume: ## Lance le worker Messenger (transport async)
 	$(DC) exec --user dev backend php bin/console messenger:consume async -vv
+
+audit: ## Audit boîte noire de la prod
+	@./tools/audit-prod.sh $(or $(DOMAIN),cp-ghostotof.com)
 
 # --- Images déployables ------------------------------------------------------
 # Ces cibles n'utilisent PAS Docker Compose : elles produisent un artefact
