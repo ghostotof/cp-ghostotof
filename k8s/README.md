@@ -158,6 +158,32 @@ suivi d'un `kubectl rollout restart deployment/backend -n $NS` pour que les
 pods relisent la nouvelle valeur (les Secrets montés en `envFrom` ne sont pas
 rechargés à chaud).
 
+## Administration de la base (Adminer)
+
+`k8s/base/adminer.yaml` déploie Adminer (interface web PostgreSQL) dans chaque
+namespace, mais **sans route Ingress** : c'est un Service `ClusterIP` interne
+au cluster, jamais exposé sur Internet. Accès à la demande :
+
+```bash
+kubectl port-forward svc/adminer 8081:8080 -n preprod   # ou -n prod
+```
+
+puis ouvrir `http://localhost:8081` — champ "Serveur" pré-rempli (`database`),
+identifiants à saisir à la main (`kubectl get secret postgres-credentials -n
+<preprod|prod> -o jsonpath='{.data.POSTGRES_USER}' | base64 -d`, idem pour
+`POSTGRES_PASSWORD`). L'accès est donc conditionné à la possession d'un
+kubeconfig valide sur le cluster (même niveau de confiance qu'un `kubectl
+exec`), pas d'un simple mot de passe web.
+
+⚠️ Non vérifié en conditions réelles : `securityContext.runAsUser: 1000` +
+`readOnlyRootFilesystem: true` sont appliqués par cohérence avec les autres
+Deployments (voir `backend-deployment.yaml`/`frontend-deployment.yaml`), mais
+l'image officielle `adminer:4.8.1-standalone` n'a pas été testée sous ces
+contraintes précises. Si le pod crash-loop après déploiement, vérifier les
+logs (`kubectl logs deploy/adminer -n preprod`) — cause la plus probable :
+l'entrypoint tente d'écrire ailleurs que `/tmp`, auquel cas retirer
+`readOnlyRootFilesystem` ou ajouter le chemin manquant en `emptyDir`.
+
 ## Limites connues (acceptables pour un projet portfolio, à retravailler sinon)
 
 - Postgres et RabbitMQ tournent en pod (1 réplique, PVC) plutôt que sur des
