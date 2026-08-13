@@ -118,16 +118,29 @@ done
 # ---------------------------------------------------------------------------
 # 7. Chemins sensibles Symfony/Docker : ceux-ci DOIVENT renvoyer 404 en prod.
 #    Un 200 sur /.env ou /_profiler serait une fuite critique.
+#
+#    Piège SPA (Vue Router en mode history, pas de SSR) : le fallback
+#    `try_files ... /index.html` renvoie 200 avec le shell générique de
+#    l'app pour N'IMPORTE QUELLE URL inconnue — /.env y compris — sans que
+#    le fichier existe ni ne soit lu. Un simple test de code HTTP donnerait
+#    donc un faux positif sur chaque chemin de cette liste. On compare la
+#    taille du corps à celle de la page d'accueil : taille identique = même
+#    page SPA générique renvoyée pour tout, pas une fuite ; taille
+#    différente sur un 200 = contenu réellement distinct à traiter en
+#    priorité (ex. vrai fichier .env, page phpinfo()...).
 # ---------------------------------------------------------------------------
-section "Chemins sensibles (attendu : 404 partout)"
+section "Chemins sensibles (attendu : 404, ou le même fallback SPA que /)"
+BASE_SIZE="$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{size_download}' -L "$BASE")"
 for path in /.env /.env.local /.git/config /_profiler /app_dev.php /index.php/_profiler \
             /composer.json /composer.lock /vendor/ /docker-compose.yml /phpinfo.php; do
-  code="$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code}' "${BASE}${path}")"
+  read -r code size <<< "$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code} %{size_download}' "${BASE}${path}")"
   if [ "$code" = "404" ] || [ "$code" = "403" ]; then
     printf '  \033[32m%s\033[0m  %s\n' "$code" "$path"
+  elif [ "$code" = "200" ] && [ "$size" = "$BASE_SIZE" ]; then
+    printf '  \033[33m%s\033[0m  %s   (identique à /, fallback SPA généraliste — pas une fuite)\n' "$code" "$path"
   else
     printf '  \033[31m%s\033[0m  %s   <-- à vérifier !\n' "$code" "$path"
-    FAILURES=$((FAILURES + 1))   # un chemin sensible exposé = échec bloquant
+    FAILURES=$((FAILURES + 1))   # contenu distinct sur un 200 = échec bloquant
   fi
 done
 

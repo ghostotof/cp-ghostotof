@@ -22,10 +22,19 @@ data:
         # Sonde du sidecar nginx lui-même (process vivant), distincte de la
         # sonde php-fpm (docker/php/healthcheck.sh, exec probe sur le conteneur
         # php-fpm) qui vérifie que PHP répond réellement.
+        # add_header propre à cette location : n'hérite plus d'AUCUN
+        # add_header du bloc server (pas seulement Content-Type) — nginx
+        # oblige à les redéclarer ici s'ils doivent aussi s'appliquer à
+        # cette réponse.
         location = /healthz {
             access_log off;
             return 200 "ok\n";
             add_header Content-Type text/plain;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header X-Frame-Options "DENY" always;
+            add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+            add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+            add_header Cross-Origin-Opener-Policy "same-origin" always;
         }
 
         location / {
