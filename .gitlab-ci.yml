@@ -188,7 +188,7 @@ audit-preprod:
   image: alpine:3.20
   needs: [deploy-preprod]
   before_script:
-    - apk add --no-cache curl bind-tools openssl
+    - apk add --no-cache bash curl bind-tools openssl
   script:
     - ./tools/audit-prod.sh preprod.cp-ghostotof.com
 
@@ -257,6 +257,6 @@ audit-prod:
   needs: [deploy-prod]
   allow_failure: true
   before_script:
-    - apk add --no-cache curl bind-tools openssl
+    - apk add --no-cache bash curl bind-tools openssl
   script:
     - ./tools/audit-prod.sh cp-ghostotof.com
