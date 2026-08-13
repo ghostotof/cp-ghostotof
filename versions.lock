@@ -3,6 +3,7 @@ php=8.5.9-fpm-alpine3.24
 nginx=1.30.4-alpine
 postgres=18.4-alpine
 rabbitmq=4.3.4-management-alpine
+adminer=4.8.1-standalone
 composer=2
 # Composer n'est pas figé exactement : seule la branche majeure est épinglée.
 # Version disponible à la génération (pour référence) :

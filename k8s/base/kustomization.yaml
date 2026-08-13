@@ -13,6 +13,7 @@ resources:
   - frontend-service.yaml
   - postgres.yaml
   - rabbitmq.yaml
+  - adminer.yaml
   - ingress.yaml
   - secretstore.yaml
   - cluster-issuer.yaml

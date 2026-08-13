@@ -309,6 +309,7 @@ If `make sh-front` / `docker compose exec frontend` shows stale source (edits ma
 | `web` | nginx, single HTTP entrypoint for the backend | `http://localhost:${HTTP_PORT}` (8080) |
 | `backend` | PHP-FPM + Symfony | via `make sh` |
 | `database` | PostgreSQL | `localhost:${POSTGRES_PORT}` (5432) |
+| `adminer` | Interface admin PostgreSQL (dev uniquement) | `http://localhost:${ADMINER_PORT}` (8081) |
 | `rabbitmq` | RabbitMQ + management UI | `http://localhost:${RABBITMQ_UI_PORT}` (15672) |
 | `frontend` | Node + Vite dev server | `http://localhost:${VITE_PORT}` (5173) |
 

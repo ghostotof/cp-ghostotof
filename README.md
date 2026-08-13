@@ -10,6 +10,7 @@ Mode backend : **API (API Platform) + frontend Vite dédié**
 | `web`      | nginx                   | http://localhost:8080 |
 | `backend`  | PHP-FPM + Symfony       | `make sh` |
 | `database` | PostgreSQL              | localhost:5432 |
+| `adminer`  | Interface admin PostgreSQL | http://localhost:8081 |
 | `rabbitmq` | RabbitMQ + UI           | http://localhost:15672 |
 | `frontend` | Node + Vite             | http://localhost:5173 |
 

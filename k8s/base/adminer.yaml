@@ -1,0 +1,79 @@
+# Interface d'administration de la base PostgreSQL. Volontairement AUCUNE
+# route Ingress ici : cet outil donne un accès direct aux données, la seule
+# protection fiable pour un projet perso sans VPN/IAP est de ne jamais
+# l'exposer sur Internet. Accès (préprod et prod) uniquement via :
+#   kubectl port-forward svc/adminer 8081:8080 -n <preprod|prod>
+# puis http://localhost:8081 — voir k8s/README.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adminer
+  labels:
+    app.kubernetes.io/name: adminer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: adminer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: adminer
+    spec:
+      containers:
+        - name: adminer
+          image: adminer:4.8.1-standalone # garder synchronisé avec ADMINER_TAG dans ../.env
+          ports:
+            - containerPort: 8080
+          env:
+            # Pré-remplit le champ "Serveur" du formulaire de connexion ;
+            # les identifiants restent saisis à la main à chaque session,
+            # jamais injectés dans le pod (cf. secret postgres-credentials,
+            # à consulter via `kubectl get secret postgres-credentials -o yaml`).
+            - name: ADMINER_DEFAULT_SERVER
+              value: database
+          volumeMounts:
+            # /tmp doit rester inscriptible (sessions PHP) malgré
+            # readOnlyRootFilesystem ci-dessous.
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: adminer
+spec:
+  # ClusterIP (par défaut) : jamais de type LoadBalancer/NodePort ici, sinon
+  # le service redevient joignable depuis l'extérieur du cluster sans passer
+  # par kubectl port-forward.
+  selector:
+    app.kubernetes.io/name: adminer
+  ports:
+    - port: 8080
