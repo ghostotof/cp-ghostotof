@@ -33,10 +33,16 @@ spec:
             - name: ADMINER_DEFAULT_SERVER
               value: database
           volumeMounts:
-            # /tmp doit rester inscriptible (sessions PHP) malgré
-            # readOnlyRootFilesystem ci-dessous.
+            # /tmp doit rester inscriptible malgré readOnlyRootFilesystem
+            # ci-dessous. Adminer y écrit les fichiers uploadés temporaires.
             - name: tmp
               mountPath: /tmp
+            # session.save_path réel de cette image (vérifié via `php -i`) —
+            # PAS /tmp. Sans ce volume, PHP ne peut jamais persister la
+            # session malgré un /tmp inscriptible, et Adminer répond
+            # systématiquement "Session expirée" dès la tentative de connexion.
+            - name: php-sessions
+              mountPath: /var/lib/php/sessions
           resources:
             requests:
               cpu: 20m
@@ -63,6 +69,8 @@ spec:
             periodSeconds: 10
       volumes:
         - name: tmp
+          emptyDir: {}
+        - name: php-sessions
           emptyDir: {}
 ---
 apiVersion: v1
