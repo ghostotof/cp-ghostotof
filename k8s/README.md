@@ -175,14 +175,14 @@ identifiants à saisir à la main (`kubectl get secret postgres-credentials -n
 kubeconfig valide sur le cluster (même niveau de confiance qu'un `kubectl
 exec`), pas d'un simple mot de passe web.
 
-⚠️ Non vérifié en conditions réelles : `securityContext.runAsUser: 1000` +
-`readOnlyRootFilesystem: true` sont appliqués par cohérence avec les autres
-Deployments (voir `backend-deployment.yaml`/`frontend-deployment.yaml`), mais
-l'image officielle `adminer:4.8.1-standalone` n'a pas été testée sous ces
-contraintes précises. Si le pod crash-loop après déploiement, vérifier les
-logs (`kubectl logs deploy/adminer -n preprod`) — cause la plus probable :
-l'entrypoint tente d'écrire ailleurs que `/tmp`, auquel cas retirer
-`readOnlyRootFilesystem` ou ajouter le chemin manquant en `emptyDir`.
+Testé en conditions réelles (préprod et prod) : `securityContext.runAsUser:
+1000` + `readOnlyRootFilesystem: true` fonctionnent, à une réserve près déjà
+corrigée — le `session.save_path` réel de l'image `adminer:4.8.1-standalone`
+est `/var/lib/php/sessions` (vérifié via `php -i` dans le pod), pas `/tmp`.
+Sans un `emptyDir` dédié monté sur ce chemin, PHP ne peut jamais persister la
+session malgré un `/tmp` inscriptible, et Adminer répond systématiquement
+"Session expirée" dès la tentative de connexion — `k8s/base/adminer.yaml`
+monte donc deux `emptyDir` distincts (`tmp` et `php-sessions`).
 
 ## Limites connues (acceptables pour un projet portfolio, à retravailler sinon)
 
