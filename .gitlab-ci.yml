@@ -36,8 +36,9 @@ secret_detection:
 # =============================================================================
 # Déclenchement : PHPUnit/Vitest (.always-tested) tournent sur CHAQUE push de
 # branche ET sur tag — retour rapide avant même de taguer une release. Le
-# reste du pipeline (.only-tag : build → deploy-preprod → test-preprod →
-# rollback si échec → deploy-prod manuel) ne tourne que sur tag Git.
+# reste du pipeline (.only-tag : build → deploy-preprod → test-preprod +
+# audit-preprod (gate) → rollback si échec → deploy-prod manuel →
+# audit-prod (vérification post-promotion)) ne tourne que sur tag Git.
 # =============================================================================
 .only-tag:
   rules:
@@ -172,7 +173,28 @@ smoke-test-preprod:
       fi
 
 # -----------------------------------------------------------------------------
-# cleanup-preprod — seulement si smoke-test-preprod (ou un job précédent) échoue
+# audit-preprod — audit boîte noire (tools/audit-prod.sh) de la préprod qui
+# vient d'être déployée. Contrairement à audit-prod (ci-dessous), c'est un
+# vrai gate : bloquant (pas d'allow_failure), et listé dans les `needs` de
+# deploy-prod — une régression de sécurité en préprod (en-tête manquant,
+# chemin sensible exposé, cert...) empêche donc d'atteindre le bouton de
+# promotion en prod. Un échec ici déclenche aussi rollback-preprod, au même
+# titre qu'un échec de smoke-test-preprod (même stage, cf. règle on_failure
+# de rollback-preprod).
+# -----------------------------------------------------------------------------
+audit-preprod:
+  extends: .only-tag
+  stage: test-preprod
+  image: alpine:3.20
+  needs: [deploy-preprod]
+  before_script:
+    - apk add --no-cache curl bind-tools openssl
+  script:
+    - ./tools/audit-prod.sh preprod.cp-ghostotof.com
+
+# -----------------------------------------------------------------------------
+# cleanup-preprod — seulement si smoke-test-preprod/audit-preprod (ou un job
+# précédent) échoue
 # -----------------------------------------------------------------------------
 rollback-preprod:
   stage: cleanup-preprod
@@ -192,6 +214,8 @@ rollback-preprod:
 # -----------------------------------------------------------------------------
 # deploy-prod — bouton manuel GitLab, aucun rebuild : promeut l'image déjà
 # construite et validée en préprod (build-images), cf. Partie A/C du plan.
+# needs inclut audit-preprod : le bouton n'est atteignable que si l'audit de
+# sécurité de la préprod est passé (cf. commentaire sur audit-preprod).
 # -----------------------------------------------------------------------------
 deploy-prod:
   stage: deploy-prod
@@ -199,7 +223,7 @@ deploy-prod:
   rules:
     - if: $CI_COMMIT_TAG
       when: manual
-  needs: [smoke-test-preprod]
+  needs: [smoke-test-preprod, audit-preprod]
   environment:
     name: production
     url: https://cp-ghostotof.com
@@ -218,19 +242,19 @@ deploy-prod:
     - kubectl -n prod exec deploy/backend -c php-fpm -- php bin/console doctrine:migrations:migrate --no-interaction
 
 # -----------------------------------------------------------------------------
-# audit-prod — audit boîte noire (tools/audit-prod.sh) de la prod déjà
-# déployée. Diagnostic, pas un gate de déploiement : ne dépend d'aucun autre
-# job et ne bloque jamais deploy-prod. Se déclenche soit manuellement sur un
-# pipeline de tag, soit automatiquement via un pipeline planifié (GitLab CI
-# Schedules, ciblant un tag existant) pour un audit périodique.
+# audit-prod — audit boîte noire (tools/audit-prod.sh) de la prod juste
+# promue par deploy-prod. Vérification post-promotion, pas un gate : à ce
+# stade le déploiement a déjà eu lieu et rien ici ne peut le "rembobiner"
+# (pas de rollback auto en prod, contrairement à rollback-preprod) — donc
+# allow_failure: true, en simple signal d'alerte à traiter si rouge.
+# needs: [deploy-prod] fait que ce job ne se déclenche automatiquement
+# qu'une fois deploy-prod effectivement cliqué et réussi.
 # -----------------------------------------------------------------------------
 audit-prod:
+  extends: .only-tag
   stage: audit-prod
   image: alpine:3.20
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule"
-    - if: $CI_COMMIT_TAG
-      when: manual
+  needs: [deploy-prod]
   allow_failure: true
   before_script:
     - apk add --no-cache curl bind-tools openssl
