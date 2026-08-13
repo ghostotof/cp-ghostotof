@@ -19,7 +19,7 @@ configMapGenerator:
       - CV_DOWNLOAD_FILENAME=cv.pdf
   - name: frontend-config
     literals:
-      - API_URL=https://preprod.cp-ghostotof.com/api
+      - API_URL=https://preprod.cp-ghostotof.com
 
 # newTag est un placeholder : le job `deploy-preprod` du pipeline lance
 # `kustomize edit set image` avec le vrai `$CI_REGISTRY_IMAGE`/tag avant

@@ -59,13 +59,19 @@ En déployé, Vite ne tourne pas — il a produit des fichiers statiques, servis
 nginx (`docker/node/Dockerfile`, cibles `production` et `preprod`) :
 
 ```bash
-make build-front-prod    API_URL=https://api.exemple.com TAG=1.2.3
-make build-front-preprod API_URL=https://api-preprod.exemple.com TAG=1.2.3
+make build-front-prod    TAG=1.2.3
+make build-front-preprod TAG=1.2.3
 ```
 
-`API_URL` est obligatoire au build : Vite **inline** les variables `VITE_*` dans
-le bundle. Changer l'URL de l'API impose donc de reconstruire l'image — ce n'est
-pas un réglage d'exécution.
+`API_URL` est un réglage d'**exécution**, pas de build : l'image ne l'inline pas.
+`docker/node/docker-entrypoint.sh` génère `config.js` à partir de la variable
+d'environnement `API_URL` du conteneur au démarrage (voir `config.template.js`
+et `frontend/src/infrastructure/config/getApiUrl.ts`). Une seule image est donc
+construite et promue de la préprod vers la prod sans changement, seul `API_URL`
+diffère par environnement (cf. `k8s/overlays/*/kustomization.yaml`). Attention :
+le code applicatif ajoute déjà `/api/...` à chaque appel (`Http*Repository.ts`)
+— `API_URL` doit être l'origine du domaine **sans** suffixe `/api`
+(ex. `https://cp-ghostotof.com`), sous peine de 404 en `/api/api/...`.
 
 Là encore, `preprod` est construit `FROM production` : les fichiers JS/CSS
 servis sont identiques, seules s'ajoutent les source maps.
