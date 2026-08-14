@@ -57,6 +57,7 @@ final class AuthenticationFlowTest extends WebTestCase
         $data = json_decode((string) $client->getResponse()->getContent(), true);
         self::assertArrayNotHasKey('token', $data);
         self::assertSame(self::USERNAME, $data['user']['username']);
+        self::assertSame(['ROLE_USER'], $data['user']['roles']);
 
         $bearerCookie = $client->getCookieJar()->get('BEARER');
         self::assertNotNull($bearerCookie);
@@ -71,6 +72,7 @@ final class AuthenticationFlowTest extends WebTestCase
         self::assertResponseIsSuccessful();
         $me = json_decode((string) $client->getResponse()->getContent(), true);
         self::assertSame(self::USERNAME, $me['user']['username']);
+        self::assertSame(['ROLE_USER'], $me['user']['roles']);
 
         // 5. Logout sans header CSRF => 403
         $client->request('POST', '/api/logout');

@@ -7,7 +7,7 @@ import type { AuthenticatedUser } from '../../../src/domain/auth/entities/Authen
 
 function createStubRepository(overrides: Partial<AuthRepository> = {}): AuthRepository {
   return {
-    login: vi.fn(async () => ({ username: 'jane' }) satisfies AuthenticatedUser),
+    login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER'] }) satisfies AuthenticatedUser),
     logout: vi.fn(async () => undefined),
     me: vi.fn(async () => null),
     ...overrides,
@@ -61,7 +61,7 @@ describe('useAuth', () => {
   })
 
   it('checkAuth() hydrate isAuthenticated depuis repository.me()', async () => {
-    const repository = createStubRepository({ me: vi.fn(async () => ({ username: 'jane' })) })
+    const repository = createStubRepository({ me: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER'] })) })
     const auth = mountWithComposable(repository)
 
     expect(auth.isAuthenticated.value).toBe(false)
@@ -69,7 +69,20 @@ describe('useAuth', () => {
     await auth.checkAuth()
 
     expect(auth.isAuthenticated.value).toBe(true)
-    expect(auth.user.value).toEqual({ username: 'jane' })
+    expect(auth.user.value).toEqual({ username: 'jane', roles: ['ROLE_USER'] })
+  })
+
+  it('isSuperAdmin reflète le rôle ROLE_SUPER du user courant', async () => {
+    const repository = createStubRepository({
+      me: vi.fn(async () => ({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })),
+    })
+    const auth = mountWithComposable(repository)
+
+    expect(auth.isSuperAdmin.value).toBe(false)
+
+    await auth.checkAuth()
+
+    expect(auth.isSuperAdmin.value).toBe(true)
   })
 
   it('login() authentifie et met à jour user/isAuthenticated', async () => {

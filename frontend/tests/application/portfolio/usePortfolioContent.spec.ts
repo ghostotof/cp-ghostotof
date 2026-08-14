@@ -17,24 +17,9 @@ function createStubRepository(): PortfolioContentRepository {
       callsToAction: [],
       highlights: [],
     }),
-    getAboutContent: () => ({
-      site: { eyebrow: '', cards: [] },
-      me: {
-        eyebrow: '',
-        technicalSubtitle: '',
-        technicalCards: [],
-        personalSubtitle: '',
-        personalCards: [],
-        hobbiesSubtitle: '',
-        hobbiesCards: [],
-      },
-    }),
     getExperienceContent: () => ({ eyebrow: '', description: '' }),
     getFeaturedTechnologies: () => [],
     getAdditionalTechnologies: () => [],
-    getQualityPrinciples: () => [],
-    getQualityTraits: () => [],
-    getStats: () => [],
     getLegalNoticeContent: () => ({ eyebrow: '', title: '', lastUpdated: '', sections: [] }),
     getPrivacyPolicyContent: () => ({ eyebrow: '', title: '', lastUpdated: '', sections: [] }),
   }
@@ -72,7 +57,6 @@ describe('usePortfolioContent', () => {
 
     expect(result?.siteIdentity.value.brandName).toBe('Stub')
     expect(result?.navigationLinks.value).toHaveLength(1)
-    expect(result?.aboutContent.value).toEqual(repository.getAboutContent('fr'))
     expect(result?.heroContent.value).toEqual(repository.getHeroContent('fr'))
   })
 })

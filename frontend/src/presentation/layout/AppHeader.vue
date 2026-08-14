@@ -21,7 +21,7 @@ const isMobileMenuOpen = ref(false)
 const route = useRoute()
 const router = useRouter()
 const { t, locale } = useI18n()
-const { isAuthenticated, isChecking, logout } = useAuth()
+const { isAuthenticated, isChecking, isSuperAdmin, logout } = useAuth()
 const { isDownloading, hasError: hasCvDownloadError, downloadCv } = useCvDownload()
 
 async function handleLogout(): Promise<void> {
@@ -126,6 +126,13 @@ function navLinkClass(link: NavigationLink) {
             {{ t('common.login') }}
           </RouterLink>
           <template v-else>
+            <RouterLink
+              v-if="isSuperAdmin"
+              :to="`${homeLink}/admin`"
+              class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-2"
+            >
+              {{ t('common.administration') }}
+            </RouterLink>
             <button
               type="button"
               class="btn btn-outline-light btn-sm d-none d-sm-inline-flex align-items-center gap-2"

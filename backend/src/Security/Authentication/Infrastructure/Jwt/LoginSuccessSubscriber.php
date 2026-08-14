@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Jwt;
 
+use App\Security\User\Domain\Entity\CpgUser;
 use Lexik\Bundle\JWTAuthenticationBundle\Event\AuthenticationSuccessEvent;
 use Lexik\Bundle\JWTAuthenticationBundle\Events;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -37,9 +38,13 @@ final class LoginSuccessSubscriber implements EventSubscriberInterface
 
     public function onAuthenticationSuccess(AuthenticationSuccessEvent $event): void
     {
+        /** @var CpgUser $user */
+        $user = $event->getUser();
+
         $event->setData([
             'user' => [
-                'username' => $event->getUser()->getUserIdentifier(),
+                'username' => $user->getUserIdentifier(),
+                'roles' => $user->getRoles(),
             ],
         ]);
 

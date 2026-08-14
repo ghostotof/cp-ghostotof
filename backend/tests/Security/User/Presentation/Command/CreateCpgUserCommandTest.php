@@ -60,6 +60,37 @@ final class CreateCpgUserCommandTest extends KernelTestCase
         self::assertSame(1, $exitCode);
     }
 
+    public function testCreatesUserWithRoleSuper(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute([
+            '--username' => 'super',
+            '--password' => 'SecurePassword123',
+            '--role' => ['ROLE_SUPER'],
+        ]);
+
+        self::assertSame(0, $exitCode);
+
+        $user = $this->getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('super');
+        self::assertNotNull($user);
+        self::assertContains('ROLE_SUPER', $user->getRoles());
+    }
+
+    public function testFailsOnUnknownRole(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute([
+            '--username' => 'jane',
+            '--password' => 'SecurePassword123',
+            '--role' => ['ROLE_UNKNOWN'],
+        ]);
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('inconnu', $tester->getDisplay());
+    }
+
     private function commandTester(): CommandTester
     {
         $application = new Application(self::$kernel);

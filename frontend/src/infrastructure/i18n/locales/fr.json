@@ -19,7 +19,180 @@
     "mobileNavigation": "Navigation mobile",
     "legalNoticeLink": "Mentions légales",
     "privacyPolicyLink": "Politique de confidentialité",
-    "legalNavigation": "Navigation légale"
+    "legalNavigation": "Navigation légale",
+    "administration": "Administration"
+  },
+  "admin": {
+    "heading": "Administration",
+    "navigation": "Navigation d'administration",
+    "comingSoon": "Cette section sera bientôt disponible.",
+    "localeLabel": "Langue",
+    "nav": {
+      "technologies": "Technologies",
+      "about": "À propos",
+      "quality": "Qualité",
+      "stats": "Statistiques",
+      "users": "Utilisateurs"
+    },
+    "stats": {
+      "create": "Ajouter une statistique",
+      "edit": "Modifier la statistique",
+      "editAction": "Modifier",
+      "listTitle": "Statistiques enregistrées",
+      "valueLabel": "Valeur",
+      "labelLabel": "Libellé",
+      "iconKeyLabel": "Icône",
+      "positionLabel": "Position",
+      "actions": "Actions",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "delete": "Supprimer",
+      "confirmDelete": "Supprimer la statistique « {label} » ?",
+      "empty": "Aucune statistique enregistrée pour cette langue.",
+      "loading": "Chargement des statistiques…",
+      "loadError": "Le chargement des statistiques a échoué. Réessayez plus tard.",
+      "errors": {
+        "not-found": "Cette statistique n'existe plus.",
+        "validation": "Le formulaire contient des erreurs. Vérifiez les champs.",
+        "unknown": "Une erreur est survenue. Réessayez plus tard."
+      }
+    },
+    "quality": {
+      "actions": "Actions",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "delete": "Supprimer",
+      "loading": "Chargement…",
+      "loadError": "Le chargement a échoué. Réessayez plus tard.",
+      "errors": {
+        "not-found": "Cet élément n'existe plus.",
+        "validation": "Le formulaire contient des erreurs. Vérifiez les champs.",
+        "unknown": "Une erreur est survenue. Réessayez plus tard."
+      },
+      "principle": {
+        "listTitle": "Principes de qualité",
+        "create": "Ajouter un principe",
+        "edit": "Modifier le principe",
+        "editAction": "Modifier",
+        "titleLabel": "Titre",
+        "descriptionLabel": "Description",
+        "iconKeyLabel": "Icône",
+        "positionLabel": "Position",
+        "empty": "Aucun principe enregistré pour cette langue.",
+        "confirmDelete": "Supprimer le principe « {title} » ?"
+      },
+      "trait": {
+        "listTitle": "Traits de qualité",
+        "create": "Ajouter un trait",
+        "edit": "Modifier le trait",
+        "editAction": "Modifier",
+        "labelLabel": "Libellé",
+        "positionLabel": "Position",
+        "empty": "Aucun trait enregistré pour cette langue.",
+        "confirmDelete": "Supprimer le trait « {label} » ?"
+      }
+    },
+    "about": {
+      "actions": "Actions",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "delete": "Supprimer",
+      "loading": "Chargement…",
+      "loadError": "Le chargement a échoué. Réessayez plus tard.",
+      "errors": {
+        "not-found": "Cet élément n'existe plus.",
+        "validation": "Le formulaire contient des erreurs. Vérifiez les champs.",
+        "unknown": "Une erreur est survenue. Réessayez plus tard."
+      },
+      "settings": {
+        "title": "Textes de la page À propos",
+        "siteEyebrowLabel": "Titre de section « À propos de ce site »",
+        "meEyebrowLabel": "Titre de section « À propos de moi »",
+        "technicalSubtitleLabel": "Sous-titre « Techniquement »",
+        "personalSubtitleLabel": "Sous-titre « Humainement »",
+        "hobbiesSubtitleLabel": "Sous-titre « En dehors du travail »"
+      },
+      "siteCard": {
+        "listTitle": "Cartes « À propos de ce site »",
+        "create": "Ajouter une carte",
+        "edit": "Modifier la carte",
+        "editAction": "Modifier",
+        "titleLabel": "Titre",
+        "descriptionLabel": "Description",
+        "iconKeyLabel": "Icône",
+        "positionLabel": "Position",
+        "empty": "Aucune carte enregistrée pour cette langue.",
+        "confirmDelete": "Supprimer la carte « {title} » ?"
+      },
+      "meCard": {
+        "listTitle": "Cartes « À propos de moi »",
+        "create": "Ajouter une carte",
+        "edit": "Modifier la carte",
+        "editAction": "Modifier",
+        "categoryLabel": "Catégorie",
+        "categoryTechnical": "Techniquement",
+        "categoryPersonal": "Humainement",
+        "categoryHobby": "En dehors du travail",
+        "titleLabel": "Titre",
+        "descriptionLabel": "Description",
+        "iconKeyLabel": "Icône",
+        "positionLabel": "Position",
+        "empty": "Aucune carte enregistrée pour cette langue/catégorie.",
+        "confirmDelete": "Supprimer la carte « {title} » ?"
+      }
+    },
+    "technologies": {
+      "create": "Ajouter une technologie",
+      "edit": "Modifier la technologie",
+      "editAction": "Modifier",
+      "listTitle": "Technologies enregistrées",
+      "nameLabel": "Nom",
+      "yearsLabel": "Années",
+      "iconKeyLabel": "Icône",
+      "relatedTechnologyLabel": "Technologie associée",
+      "actions": "Actions",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "delete": "Supprimer",
+      "confirmDelete": "Supprimer la technologie « {name} » ?",
+      "empty": "Aucune technologie enregistrée pour le moment.",
+      "loading": "Chargement des technologies…",
+      "loadError": "Le chargement des technologies a échoué. Réessayez plus tard.",
+      "errors": {
+        "duplicate": "Une technologie porte déjà ce nom.",
+        "not-found": "Cette technologie n'existe plus.",
+        "validation": "Le formulaire contient des erreurs. Vérifiez les champs.",
+        "unknown": "Une erreur est survenue. Réessayez plus tard."
+      }
+    },
+    "users": {
+      "listTitle": "Utilisateurs enregistrés",
+      "usernameLabel": "Nom d'utilisateur",
+      "rolesLabel": "Rôles",
+      "actions": "Actions",
+      "changePassword": "Changer le mot de passe",
+      "newPasswordLabel": "Nouveau mot de passe",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "delete": "Supprimer",
+      "confirmDelete": "Supprimer l'utilisateur « {username} » ?",
+      "cannotDeleteSelf": "Vous ne pouvez pas supprimer votre propre compte.",
+      "passwordChanged": "Mot de passe mis à jour.",
+      "empty": "Aucun utilisateur enregistré.",
+      "loading": "Chargement des utilisateurs…",
+      "loadError": "Le chargement des utilisateurs a échoué. Réessayez plus tard.",
+      "errors": {
+        "not-found": "Cet utilisateur n'existe plus.",
+        "cannot-delete-self": "Vous ne pouvez pas supprimer votre propre compte.",
+        "validation": "Le mot de passe doit contenir au moins 8 caractères.",
+        "unknown": "Une erreur est survenue. Réessayez plus tard."
+      }
+    }
+  },
+  "forbidden": {
+    "heading": "Accès refusé",
+    "message": "Vous n'avez pas les droits nécessaires pour accéder à cette page.",
+    "backHome": "Retour à l'accueil"
   },
   "hero": {
     "illustrationAlt": "Illustration : développeur derrière son ordinateur"
@@ -32,11 +205,19 @@
     "loading": "Chargement du classement des technologies…",
     "error": "Le classement des technologies n'a pas pu être chargé. Réessayez plus tard."
   },
+  "about": {
+    "loading": "Chargement du contenu…",
+    "error": "Le contenu n'a pas pu être chargé. Réessayez plus tard."
+  },
   "quality": {
-    "sectionTitle": "Principes & qualité logicielle"
+    "sectionTitle": "Principes & qualité logicielle",
+    "loading": "Chargement des principes de qualité…",
+    "error": "Les principes de qualité n'ont pas pu être chargés. Réessayez plus tard."
   },
   "stats": {
-    "sectionTitle": "Chiffres clés"
+    "sectionTitle": "Chiffres clés",
+    "loading": "Chargement des statistiques…",
+    "error": "Les statistiques n'ont pas pu être chargées. Réessayez plus tard."
   },
   "localeSwitcher": {
     "label": "Changer de langue"
@@ -102,6 +283,30 @@
     "privacyPolicy": {
       "title": "Politique de confidentialité",
       "description": "Données collectées, finalités, durées de conservation et droits RGPD."
+    },
+    "forbidden": {
+      "title": "Accès refusé",
+      "description": "Vous n'avez pas les droits nécessaires pour accéder à cette page."
+    },
+    "adminTechnologies": {
+      "title": "Administration — Technologies",
+      "description": "Gestion du classement des technologies affiché sur la page Expériences."
+    },
+    "adminAbout": {
+      "title": "Administration — À propos",
+      "description": "Gestion du contenu de la page À propos."
+    },
+    "adminQuality": {
+      "title": "Administration — Qualité",
+      "description": "Gestion des principes et qualités logicielles affichés sur la landing page."
+    },
+    "adminStats": {
+      "title": "Administration — Statistiques",
+      "description": "Gestion des statistiques clés affichées sur la landing page."
+    },
+    "adminUsers": {
+      "title": "Administration — Utilisateurs",
+      "description": "Gestion des comptes utilisateurs."
     }
   }
 }

@@ -38,13 +38,9 @@ export function usePortfolioContent() {
     siteIdentity: computed(() => repository.getSiteIdentity()),
     navigationLinks: computed(() => repository.getNavigationLinks(currentLocale.value)),
     heroContent: computed(() => repository.getHeroContent(currentLocale.value)),
-    aboutContent: computed(() => repository.getAboutContent(currentLocale.value)),
     experienceContent: computed(() => repository.getExperienceContent(currentLocale.value)),
     featuredTechnologies: computed(() => repository.getFeaturedTechnologies(currentLocale.value)),
     additionalTechnologies: computed(() => repository.getAdditionalTechnologies(currentLocale.value)),
-    qualityPrinciples: computed(() => repository.getQualityPrinciples(currentLocale.value)),
-    qualityTraits: computed(() => repository.getQualityTraits(currentLocale.value)),
-    stats: computed(() => repository.getStats(currentLocale.value)),
     legalNoticeContent: computed(() => repository.getLegalNoticeContent(currentLocale.value)),
     privacyPolicyContent: computed(() => repository.getPrivacyPolicyContent(currentLocale.value)),
   }

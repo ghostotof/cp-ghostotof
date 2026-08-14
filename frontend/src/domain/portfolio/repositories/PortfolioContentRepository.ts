@@ -1,12 +1,8 @@
 import type { SiteIdentity } from '../entities/SiteIdentity'
 import type { NavigationLink } from '../entities/NavigationLink'
 import type { HeroContent } from '../entities/HeroContent'
-import type { AboutContent } from '../entities/AboutContent'
 import type { ExperienceContent } from '../entities/ExperienceContent'
 import type { Technology } from '../entities/Technology'
-import type { QualityPrinciple } from '../entities/QualityPrinciple'
-import type { QualityTrait } from '../entities/QualityTrait'
-import type { Stat } from '../entities/Stat'
 import type { Locale } from '../entities/Locale'
 import type { LegalPageContent } from '../entities/LegalPageContent'
 
@@ -23,13 +19,9 @@ export interface PortfolioContentRepository {
   getSiteIdentity(): SiteIdentity
   getNavigationLinks(locale: Locale): readonly NavigationLink[]
   getHeroContent(locale: Locale): HeroContent
-  getAboutContent(locale: Locale): AboutContent
   getExperienceContent(locale: Locale): ExperienceContent
   getFeaturedTechnologies(locale: Locale): readonly Technology[]
   getAdditionalTechnologies(locale: Locale): readonly Technology[]
-  getQualityPrinciples(locale: Locale): readonly QualityPrinciple[]
-  getQualityTraits(locale: Locale): readonly QualityTrait[]
-  getStats(locale: Locale): readonly Stat[]
   getLegalNoticeContent(locale: Locale): LegalPageContent
   getPrivacyPolicyContent(locale: Locale): LegalPageContent
 }

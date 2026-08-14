@@ -43,9 +43,11 @@ export function applySeoMeta(to: RouteLocationNormalized): void {
     upsertMeta('description', i18n.global.t(descriptionKey))
   }
 
-  // Une page 404 n'a pas d'URL canonique valide à indexer ; la page de login
-  // est un outil d'accès, pas un contenu éditorial à indexer.
-  const isNonIndexable = 'not-found' === to.name || 'login' === to.name
+  // Une page 404 n'a pas d'URL canonique valide à indexer ; la page de login,
+  // la page d'accès refusé et tout l'espace /admin (cf. meta.requiresAuth,
+  // presentation/router/index.ts) sont des outils d'accès/administration, pas
+  // du contenu éditorial à indexer.
+  const isNonIndexable = 'not-found' === to.name || 'login' === to.name || 'forbidden' === to.name || true === to.meta.requiresAuth
   upsertMeta('robots', isNonIndexable ? 'noindex, nofollow' : 'index, follow')
 
   const locale = to.params.locale
