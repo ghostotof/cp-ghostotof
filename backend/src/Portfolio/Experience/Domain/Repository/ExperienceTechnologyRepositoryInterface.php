@@ -16,7 +16,11 @@ interface ExperienceTechnologyRepositoryInterface
 {
     public function findOneByName(string $name): ?ExperienceTechnology;
 
+    public function findOneById(int $id): ?ExperienceTechnology;
+
     public function save(ExperienceTechnology $technology): void;
+
+    public function remove(ExperienceTechnology $technology): void;
 
     /**
      * @return list<ExperienceTechnology>

@@ -36,6 +36,22 @@ final class CpgUserRegistrarTest extends TestCase
 
         self::assertSame('jane', $user->getUsername());
         self::assertSame('hashed-password', $user->getPassword());
+        self::assertSame(['ROLE_USER'], $user->getRoles());
+    }
+
+    public function testRegisterAssignsGivenRoles(): void
+    {
+        $repository = $this->createStub(CpgUserRepositoryInterface::class);
+        $repository->method('findOneByUsername')->willReturn(null);
+
+        $hasher = $this->createStub(UserPasswordHasherInterface::class);
+        $hasher->method('hashPassword')->willReturn('hashed-password');
+
+        $registrar = new CpgUserRegistrar($repository, $hasher);
+
+        $user = $registrar->register('super', 'plain-password', [CpgUser::ROLE_SUPER]);
+
+        self::assertSame([CpgUser::ROLE_SUPER, 'ROLE_USER'], $user->getRoles());
     }
 
     public function testRegisterThrowsWhenUsernameAlreadyUsed(): void

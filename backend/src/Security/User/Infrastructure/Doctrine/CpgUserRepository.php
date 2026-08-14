@@ -27,9 +27,25 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
         return $this->findOneBy(['username' => $username]);
     }
 
+    public function findOneById(int $id): ?CpgUser
+    {
+        return $this->find($id);
+    }
+
+    public function findAll(): array
+    {
+        return $this->findBy([], ['username' => 'ASC']);
+    }
+
     public function save(CpgUser $user): void
     {
         $this->getEntityManager()->persist($user);
+        $this->getEntityManager()->flush();
+    }
+
+    public function remove(CpgUser $user): void
+    {
+        $this->getEntityManager()->remove($user);
         $this->getEntityManager()->flush();
     }
 

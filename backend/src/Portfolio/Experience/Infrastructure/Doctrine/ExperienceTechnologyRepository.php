@@ -24,9 +24,20 @@ class ExperienceTechnologyRepository extends ServiceEntityRepository implements 
         return $this->findOneBy(['name' => $name]);
     }
 
+    public function findOneById(int $id): ?ExperienceTechnology
+    {
+        return $this->find($id);
+    }
+
     public function save(ExperienceTechnology $technology): void
     {
         $this->getEntityManager()->persist($technology);
+        $this->getEntityManager()->flush();
+    }
+
+    public function remove(ExperienceTechnology $technology): void
+    {
+        $this->getEntityManager()->remove($technology);
         $this->getEntityManager()->flush();
     }
 

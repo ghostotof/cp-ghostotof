@@ -19,7 +19,180 @@
     "mobileNavigation": "Mobile navigation",
     "legalNoticeLink": "Legal notice",
     "privacyPolicyLink": "Privacy policy",
-    "legalNavigation": "Legal navigation"
+    "legalNavigation": "Legal navigation",
+    "administration": "Administration"
+  },
+  "admin": {
+    "heading": "Administration",
+    "navigation": "Administration navigation",
+    "comingSoon": "This section will be available soon.",
+    "localeLabel": "Language",
+    "nav": {
+      "technologies": "Technologies",
+      "about": "About",
+      "quality": "Quality",
+      "stats": "Stats",
+      "users": "Users"
+    },
+    "stats": {
+      "create": "Add a stat",
+      "edit": "Edit stat",
+      "editAction": "Edit",
+      "listTitle": "Registered stats",
+      "valueLabel": "Value",
+      "labelLabel": "Label",
+      "iconKeyLabel": "Icon",
+      "positionLabel": "Position",
+      "actions": "Actions",
+      "save": "Save",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "confirmDelete": "Delete stat \"{label}\"?",
+      "empty": "No stat registered for this language yet.",
+      "loading": "Loading stats…",
+      "loadError": "Failed to load stats. Please try again later.",
+      "errors": {
+        "not-found": "This stat no longer exists.",
+        "validation": "The form contains errors. Please check the fields.",
+        "unknown": "Something went wrong. Please try again later."
+      }
+    },
+    "quality": {
+      "actions": "Actions",
+      "save": "Save",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "loading": "Loading…",
+      "loadError": "Loading failed. Please try again later.",
+      "errors": {
+        "not-found": "This item no longer exists.",
+        "validation": "The form contains errors. Please check the fields.",
+        "unknown": "Something went wrong. Please try again later."
+      },
+      "principle": {
+        "listTitle": "Quality principles",
+        "create": "Add a principle",
+        "edit": "Edit principle",
+        "editAction": "Edit",
+        "titleLabel": "Title",
+        "descriptionLabel": "Description",
+        "iconKeyLabel": "Icon",
+        "positionLabel": "Position",
+        "empty": "No principle registered for this language yet.",
+        "confirmDelete": "Delete principle \"{title}\"?"
+      },
+      "trait": {
+        "listTitle": "Quality traits",
+        "create": "Add a trait",
+        "edit": "Edit trait",
+        "editAction": "Edit",
+        "labelLabel": "Label",
+        "positionLabel": "Position",
+        "empty": "No trait registered for this language yet.",
+        "confirmDelete": "Delete trait \"{label}\"?"
+      }
+    },
+    "about": {
+      "actions": "Actions",
+      "save": "Save",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "loading": "Loading…",
+      "loadError": "Loading failed. Please try again later.",
+      "errors": {
+        "not-found": "This item no longer exists.",
+        "validation": "The form contains errors. Please check the fields.",
+        "unknown": "Something went wrong. Please try again later."
+      },
+      "settings": {
+        "title": "About page texts",
+        "siteEyebrowLabel": "\"About this site\" section title",
+        "meEyebrowLabel": "\"About me\" section title",
+        "technicalSubtitleLabel": "\"Technically\" subtitle",
+        "personalSubtitleLabel": "\"Personally\" subtitle",
+        "hobbiesSubtitleLabel": "\"Outside work\" subtitle"
+      },
+      "siteCard": {
+        "listTitle": "\"About this site\" cards",
+        "create": "Add a card",
+        "edit": "Edit card",
+        "editAction": "Edit",
+        "titleLabel": "Title",
+        "descriptionLabel": "Description",
+        "iconKeyLabel": "Icon",
+        "positionLabel": "Position",
+        "empty": "No card registered for this language yet.",
+        "confirmDelete": "Delete card \"{title}\"?"
+      },
+      "meCard": {
+        "listTitle": "\"About me\" cards",
+        "create": "Add a card",
+        "edit": "Edit card",
+        "editAction": "Edit",
+        "categoryLabel": "Category",
+        "categoryTechnical": "Technically",
+        "categoryPersonal": "Personally",
+        "categoryHobby": "Outside work",
+        "titleLabel": "Title",
+        "descriptionLabel": "Description",
+        "iconKeyLabel": "Icon",
+        "positionLabel": "Position",
+        "empty": "No card registered for this language/category yet.",
+        "confirmDelete": "Delete card \"{title}\"?"
+      }
+    },
+    "technologies": {
+      "create": "Add a technology",
+      "edit": "Edit technology",
+      "editAction": "Edit",
+      "listTitle": "Registered technologies",
+      "nameLabel": "Name",
+      "yearsLabel": "Years",
+      "iconKeyLabel": "Icon",
+      "relatedTechnologyLabel": "Related technology",
+      "actions": "Actions",
+      "save": "Save",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "confirmDelete": "Delete technology \"{name}\"?",
+      "empty": "No technology registered yet.",
+      "loading": "Loading technologies…",
+      "loadError": "Failed to load technologies. Please try again later.",
+      "errors": {
+        "duplicate": "A technology already has this name.",
+        "not-found": "This technology no longer exists.",
+        "validation": "The form contains errors. Please check the fields.",
+        "unknown": "Something went wrong. Please try again later."
+      }
+    },
+    "users": {
+      "listTitle": "Registered users",
+      "usernameLabel": "Username",
+      "rolesLabel": "Roles",
+      "actions": "Actions",
+      "changePassword": "Change password",
+      "newPasswordLabel": "New password",
+      "save": "Save",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "confirmDelete": "Delete user \"{username}\"?",
+      "cannotDeleteSelf": "You cannot delete your own account.",
+      "passwordChanged": "Password updated.",
+      "empty": "No user registered.",
+      "loading": "Loading users…",
+      "loadError": "Failed to load users. Please try again later.",
+      "errors": {
+        "not-found": "This user no longer exists.",
+        "cannot-delete-self": "You cannot delete your own account.",
+        "validation": "The password must be at least 8 characters long.",
+        "unknown": "Something went wrong. Please try again later."
+      }
+    }
+  },
+  "forbidden": {
+    "heading": "Access denied",
+    "message": "You don't have the required permissions to access this page.",
+    "backHome": "Back to home"
   },
   "hero": {
     "illustrationAlt": "Illustration: developer behind their computer"
@@ -32,11 +205,19 @@
     "loading": "Loading the technology ranking…",
     "error": "The technology ranking could not be loaded. Please try again later."
   },
+  "about": {
+    "loading": "Loading content…",
+    "error": "The content could not be loaded. Please try again later."
+  },
   "quality": {
-    "sectionTitle": "Principles & software quality"
+    "sectionTitle": "Principles & software quality",
+    "loading": "Loading quality principles…",
+    "error": "Quality principles could not be loaded. Please try again later."
   },
   "stats": {
-    "sectionTitle": "Key figures"
+    "sectionTitle": "Key figures",
+    "loading": "Loading stats…",
+    "error": "Stats could not be loaded. Please try again later."
   },
   "localeSwitcher": {
     "label": "Change language"
@@ -102,6 +283,30 @@
     "privacyPolicy": {
       "title": "Privacy policy",
       "description": "Data collected, purposes, retention periods and GDPR rights."
+    },
+    "forbidden": {
+      "title": "Access denied",
+      "description": "You don't have the required permissions to access this page."
+    },
+    "adminTechnologies": {
+      "title": "Administration — Technologies",
+      "description": "Manage the technology ranking displayed on the Experiences page."
+    },
+    "adminAbout": {
+      "title": "Administration — About",
+      "description": "Manage the About page content."
+    },
+    "adminQuality": {
+      "title": "Administration — Quality",
+      "description": "Manage the principles and software qualities displayed on the landing page."
+    },
+    "adminStats": {
+      "title": "Administration — Stats",
+      "description": "Manage the key figures displayed on the landing page."
+    },
+    "adminUsers": {
+      "title": "Administration — Users",
+      "description": "Manage user accounts."
     }
   }
 }

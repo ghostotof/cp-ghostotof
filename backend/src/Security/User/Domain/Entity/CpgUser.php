@@ -24,6 +24,11 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\UniqueConstraint(name: 'uniq_cpg_user_username', columns: ['username'])]
 class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
 {
+    /** Rôle réservé à l'administration du backoffice (gestion de contenu, gestion des utilisateurs). */
+    public const string ROLE_SUPER = 'ROLE_SUPER';
+
+    public const int MIN_PASSWORD_LENGTH = 8;
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]

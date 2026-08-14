@@ -1,6 +1,9 @@
-import { computed, inject, reactive, readonly, type ComputedRef, type InjectionKey } from 'vue'
+import { computed, inject, reactive, readonly, watch, type ComputedRef, type InjectionKey } from 'vue'
 import type { AuthRepository } from '../../domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../domain/auth/entities/AuthenticatedUser'
+import { hasRole } from '../../domain/auth/services/hasRole'
+
+export const ROLE_SUPER = 'ROLE_SUPER'
 
 export const AUTH_REPOSITORY: InjectionKey<AuthRepository> = Symbol('AuthRepository')
 
@@ -23,10 +26,36 @@ const state = reactive<{ user: AuthenticatedUser | null; isChecking: boolean }>(
  */
 export const authState = readonly(state)
 
+/**
+ * Au premier chargement (rechargement de page, navigation directe vers une
+ * URL protégée), le garde de route (presentation/router/index.ts) peut
+ * s'exécuter AVANT que le checkAuth() lancé par main.ts n'ait résolu :
+ * authState.isChecking vaut alors encore `true`. Sans attendre sa résolution,
+ * un utilisateur pourtant valablement connecté (cookie httpOnly toujours
+ * valide) se ferait rediriger à tort vers /login.
+ */
+export async function waitForAuthCheck(): Promise<void> {
+  if (!state.isChecking) {
+    return
+  }
+  await new Promise<void>((resolve) => {
+    const stopWatching = watch(
+      () => state.isChecking,
+      (isChecking) => {
+        if (!isChecking) {
+          stopWatching()
+          resolve()
+        }
+      },
+    )
+  })
+}
+
 export interface UseAuthResult {
   user: ComputedRef<AuthenticatedUser | null>
   isAuthenticated: ComputedRef<boolean>
   isChecking: ComputedRef<boolean>
+  isSuperAdmin: ComputedRef<boolean>
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
   checkAuth: () => Promise<void>
@@ -63,6 +92,7 @@ export function useAuth(): UseAuthResult {
     user: computed(() => state.user),
     isAuthenticated: computed(() => null !== state.user),
     isChecking: computed(() => state.isChecking),
+    isSuperAdmin: computed(() => hasRole(state.user, ROLE_SUPER)),
     login,
     logout,
     checkAuth,

@@ -11,7 +11,7 @@ const StubPage = { template: '<div />' }
 
 function createStubRepository(overrides: Partial<AuthRepository> = {}): AuthRepository {
   return {
-    login: vi.fn(async () => ({ username: 'jane' })),
+    login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER'] })),
     logout: vi.fn(async () => undefined),
     me: vi.fn(async () => null),
     ...overrides,

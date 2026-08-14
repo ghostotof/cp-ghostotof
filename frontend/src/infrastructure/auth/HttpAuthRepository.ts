@@ -4,7 +4,7 @@ import { InvalidCredentialsError } from '../../domain/auth/errors/InvalidCredent
 import { readCsrfToken } from './csrfCookie'
 
 interface UserResponseBody {
-  user: { username: string }
+  user: { username: string; roles: string[] }
 }
 
 /**
@@ -37,7 +37,7 @@ export class HttpAuthRepository implements AuthRepository {
 
     const body = (await response.json()) as UserResponseBody
 
-    return { username: body.user.username }
+    return { username: body.user.username, roles: body.user.roles }
   }
 
   async logout(): Promise<void> {
@@ -69,6 +69,6 @@ export class HttpAuthRepository implements AuthRepository {
 
     const body = (await response.json()) as UserResponseBody
 
-    return { username: body.user.username }
+    return { username: body.user.username, roles: body.user.roles }
   }
 }

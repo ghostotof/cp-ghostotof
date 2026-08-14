@@ -10,7 +10,9 @@ use App\Security\User\Domain\Exception\UsernameAlreadyUsedException;
 interface CpgUserRegistrarInterface
 {
     /**
+     * @param list<string> $roles rôles additionnels (ex. CpgUser::ROLE_SUPER) ; ROLE_USER est toujours implicite
+     *
      * @throws UsernameAlreadyUsedException si le nom d'utilisateur est déjà utilisé
      */
-    public function register(string $username, string $plainPassword): CpgUser;
+    public function register(string $username, string $plainPassword, array $roles = []): CpgUser;
 }

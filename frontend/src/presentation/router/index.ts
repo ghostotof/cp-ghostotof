@@ -1,9 +1,10 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
 import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
 import { i18n } from '../i18n'
 import { applySeoMeta } from './seo'
 import { LOCALE_STORAGE_KEY, resolvePreferredLocale } from './preferredLocale'
-import { authState } from '../../application/auth/useAuth'
+import { authState, waitForAuthCheck } from '../../application/auth/useAuth'
+import { hasRole } from '../../domain/auth/services/hasRole'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -11,6 +12,10 @@ declare module 'vue-router' {
     titleKey?: string
     /** Clé de message vue-i18n utilisée pour `<meta name="description">`. */
     descriptionKey?: string
+    /** Route réservée aux utilisateurs authentifiés (ex. espace /admin). */
+    requiresAuth?: boolean
+    /** Rôle(s) requis en plus de requiresAuth (ex. ['ROLE_SUPER']) ; au moins un doit matcher. */
+    roles?: readonly string[]
   }
 }
 
@@ -26,6 +31,16 @@ const LoginPage = () => import('../pages/LoginPage.vue')
 const LegalNoticePage = () => import('../pages/LegalNoticePage.vue')
 const PrivacyPolicyPage = () => import('../pages/PrivacyPolicyPage.vue')
 const NotFoundPage = () => import('../pages/NotFoundPage.vue')
+const ForbiddenPage = () => import('../pages/ForbiddenPage.vue')
+const AdminLayout = () => import('../layout/AdminLayout.vue')
+const AdminTechnologiesPage = () => import('../pages/admin/AdminTechnologiesPage.vue')
+const AdminAboutPage = () => import('../pages/admin/AdminAboutPage.vue')
+const AdminQualityPage = () => import('../pages/admin/AdminQualityPage.vue')
+const AdminStatsPage = () => import('../pages/admin/AdminStatsPage.vue')
+const AdminUsersPage = () => import('../pages/admin/AdminUsersPage.vue')
+
+/** Rôle requis pour accéder à l'espace /admin (cf. backend CpgUser::ROLE_SUPER). */
+const ROLE_SUPER = 'ROLE_SUPER'
 
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -91,6 +106,50 @@ export const router = createRouter({
           component: PrivacyPolicyPage,
           meta: { titleKey: 'seo.privacyPolicy.title', descriptionKey: 'seo.privacyPolicy.description' },
         },
+        {
+          path: 'forbidden',
+          name: 'forbidden',
+          component: ForbiddenPage,
+          meta: { titleKey: 'seo.forbidden.title', descriptionKey: 'seo.forbidden.description' },
+        },
+        {
+          path: 'admin',
+          component: AdminLayout,
+          meta: { requiresAuth: true, roles: [ROLE_SUPER] },
+          children: [
+            { path: '', redirect: { name: 'admin-technologies' } },
+            {
+              path: 'technologies',
+              name: 'admin-technologies',
+              component: AdminTechnologiesPage,
+              meta: { titleKey: 'seo.adminTechnologies.title', descriptionKey: 'seo.adminTechnologies.description' },
+            },
+            {
+              path: 'about',
+              name: 'admin-about',
+              component: AdminAboutPage,
+              meta: { titleKey: 'seo.adminAbout.title', descriptionKey: 'seo.adminAbout.description' },
+            },
+            {
+              path: 'quality',
+              name: 'admin-quality',
+              component: AdminQualityPage,
+              meta: { titleKey: 'seo.adminQuality.title', descriptionKey: 'seo.adminQuality.description' },
+            },
+            {
+              path: 'stats',
+              name: 'admin-stats',
+              component: AdminStatsPage,
+              meta: { titleKey: 'seo.adminStats.title', descriptionKey: 'seo.adminStats.description' },
+            },
+            {
+              path: 'users',
+              name: 'admin-users',
+              component: AdminUsersPage,
+              meta: { titleKey: 'seo.adminUsers.title', descriptionKey: 'seo.adminUsers.description' },
+            },
+          ],
+        },
       ],
     },
     {
@@ -107,6 +166,36 @@ function syncLocale(locale: Locale): void {
   localStorage.setItem(LOCALE_STORAGE_KEY, locale)
   document.documentElement.lang = locale
 }
+
+/**
+ * Locale à utiliser pour construire une redirection depuis un garde : les
+ * routes protégées (/admin/*) sont toutes nichées sous `/:locale(fr|en)`, le
+ * paramètre est donc garanti présent ici.
+ */
+function guardLocale(to: RouteLocationNormalized): Locale {
+  const routeLocale = to.params.locale
+  return typeof routeLocale === 'string' && isSupportedLocale(routeLocale) ? routeLocale : resolvePreferredLocale()
+}
+
+router.beforeEach(async (to) => {
+  if (!to.meta.requiresAuth) {
+    return
+  }
+
+  // Rechargement de page / navigation directe : le checkAuth() lancé par
+  // main.ts peut ne pas avoir résolu quand ce garde s'exécute (cf. le
+  // docblock de waitForAuthCheck).
+  await waitForAuthCheck()
+
+  if (!authState.user) {
+    return { name: 'login', params: { locale: guardLocale(to) }, query: { redirect: to.fullPath } }
+  }
+
+  const requiredRoles = to.meta.roles
+  if (requiredRoles && !requiredRoles.some((role) => hasRole(authState.user, role))) {
+    return { name: 'forbidden', params: { locale: guardLocale(to) } }
+  }
+})
 
 router.beforeEach((to) => {
   const routeLocale = to.params.locale

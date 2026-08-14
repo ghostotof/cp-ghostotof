@@ -2,12 +2,8 @@ import type { PortfolioContentRepository } from '../../domain/portfolio/reposito
 import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
 import type { NavigationLink } from '../../domain/portfolio/entities/NavigationLink'
 import type { HeroContent } from '../../domain/portfolio/entities/HeroContent'
-import type { AboutContent } from '../../domain/portfolio/entities/AboutContent'
 import type { ExperienceContent } from '../../domain/portfolio/entities/ExperienceContent'
 import type { Technology } from '../../domain/portfolio/entities/Technology'
-import type { QualityPrinciple } from '../../domain/portfolio/entities/QualityPrinciple'
-import type { QualityTrait } from '../../domain/portfolio/entities/QualityTrait'
-import type { Stat } from '../../domain/portfolio/entities/Stat'
 import type { Locale } from '../../domain/portfolio/entities/Locale'
 import type { LegalPageContent } from '../../domain/portfolio/entities/LegalPageContent'
 import type { PortfolioLocaleContent } from './content/PortfolioLocaleContent'
@@ -53,10 +49,6 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
     return CONTENT[locale].hero
   }
 
-  getAboutContent(locale: Locale): AboutContent {
-    return CONTENT[locale].about
-  }
-
   getExperienceContent(locale: Locale): ExperienceContent {
     return CONTENT[locale].experience
   }
@@ -67,18 +59,6 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
 
   getAdditionalTechnologies(locale: Locale): readonly Technology[] {
     return CONTENT[locale].technologies.additional
-  }
-
-  getQualityPrinciples(locale: Locale): readonly QualityPrinciple[] {
-    return CONTENT[locale].quality.principles
-  }
-
-  getQualityTraits(locale: Locale): readonly QualityTrait[] {
-    return CONTENT[locale].quality.traits
-  }
-
-  getStats(locale: Locale): readonly Stat[] {
-    return CONTENT[locale].stats
   }
 
   getLegalNoticeContent(locale: Locale): LegalPageContent {

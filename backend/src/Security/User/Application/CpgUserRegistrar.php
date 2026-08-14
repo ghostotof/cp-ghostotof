@@ -17,7 +17,7 @@ final readonly class CpgUserRegistrar implements CpgUserRegistrarInterface
     ) {
     }
 
-    public function register(string $username, string $plainPassword): CpgUser
+    public function register(string $username, string $plainPassword, array $roles = []): CpgUser
     {
         if (null !== $this->cpgUserRepository->findOneByUsername($username)) {
             throw UsernameAlreadyUsedException::forUsername($username);
@@ -25,6 +25,7 @@ final readonly class CpgUserRegistrar implements CpgUserRegistrarInterface
 
         $user = new CpgUser($username, '');
         $user->setPassword($this->passwordHasher->hashPassword($user, $plainPassword));
+        $user->setRoles($roles);
 
         $this->cpgUserRepository->save($user);
 

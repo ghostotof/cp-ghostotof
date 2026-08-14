@@ -10,10 +10,10 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * Une technologie du classement affiché sur la page Expériences, avec le temps
- * cumulé passé dessus (en années). Donnée de référence : créée uniquement via
- * la commande app:experience:add-technology (cf.
- * Presentation\Command\AddExperienceTechnologyCommand), pas d'édition exposée
- * pour l'instant, donc pas de setters.
+ * cumulé passé dessus (en années). Créée via la commande
+ * app:experience:add-technology (cf. Presentation\Command\AddExperienceTechnologyCommand)
+ * ou via le backoffice (ROLE_SUPER, cf. Presentation\ApiResource\BackofficeExperienceTechnologyResource),
+ * éditable/supprimable uniquement depuis ce dernier.
  */
 #[ORM\Entity(repositoryClass: ExperienceTechnologyRepository::class)]
 #[ORM\Table(name: 'experience_technology')]
@@ -28,17 +28,17 @@ class ExperienceTechnology
     #[ORM\Column(length: 180)]
     #[Assert\NotBlank]
     #[Assert\Length(max: 180)]
-    private readonly string $name;
+    private string $name;
 
     #[ORM\Column]
     #[Assert\PositiveOrZero]
-    private readonly float $years;
+    private float $years;
 
     #[ORM\Column(length: 60, nullable: true)]
-    private readonly ?string $iconKey;
+    private ?string $iconKey;
 
     #[ORM\Column(length: 180, nullable: true)]
-    private readonly ?string $relatedTechnologyName;
+    private ?string $relatedTechnologyName;
 
     public function __construct(string $name, float $years, ?string $iconKey = null, ?string $relatedTechnologyName = null)
     {
@@ -71,5 +71,13 @@ class ExperienceTechnology
     public function getRelatedTechnologyName(): ?string
     {
         return $this->relatedTechnologyName;
+    }
+
+    public function update(string $name, float $years, ?string $iconKey, ?string $relatedTechnologyName): void
+    {
+        $this->name = $name;
+        $this->years = $years;
+        $this->iconKey = $iconKey;
+        $this->relatedTechnologyName = $relatedTechnologyName;
     }
 }

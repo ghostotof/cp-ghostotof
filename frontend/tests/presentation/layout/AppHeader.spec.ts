@@ -24,7 +24,7 @@ const StubPage = { template: '<div />' }
 
 function createStubAuthRepository(user: AuthenticatedUser | null): AuthRepository {
   return {
-    login: vi.fn(async () => user ?? { username: 'jane' }),
+    login: vi.fn(async () => user ?? { username: 'jane', roles: ['ROLE_USER'] }),
     logout: vi.fn(async () => undefined),
     me: vi.fn(async () => user),
   }
@@ -67,6 +67,7 @@ async function mountHeader(initialPath = '/fr', authRepository?: AuthRepository,
       { path: '/:locale(fr|en)', name: 'home', component: StubPage },
       { path: '/:locale(fr|en)/about', name: 'about', component: StubPage },
       { path: '/:locale(fr|en)/login', name: 'login', component: StubPage },
+      { path: '/:locale(fr|en)/admin', name: 'admin-technologies', component: StubPage },
     ],
   })
   await router.push(initialPath)
@@ -104,7 +105,7 @@ describe('AppHeader', () => {
   })
 
   it('authentifié : affiche le bouton CV et un bouton de déconnexion, plus de lien de connexion', async () => {
-    await primeAuthState({ username: 'jane' })
+    await primeAuthState({ username: 'jane', roles: ['ROLE_USER'] })
     const wrapper = await mountHeader()
 
     expect(wrapper.find('a[href="/fr/login"]').exists()).toBe(false)
@@ -116,7 +117,7 @@ describe('AppHeader', () => {
 
   it('authentifié : le clic sur le bouton CV télécharge le fichier via le repository', async () => {
     vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:mock'), revokeObjectURL: vi.fn() })
-    await primeAuthState({ username: 'jane' })
+    await primeAuthState({ username: 'jane', roles: ['ROLE_USER'] })
     const cvRepository = createStubCvRepository()
     const wrapper = await mountHeader('/fr', undefined, cvRepository)
 
@@ -132,7 +133,7 @@ describe('AppHeader', () => {
 
   it('authentifié : affiche un message si le téléchargement du CV échoue', async () => {
     vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:mock'), revokeObjectURL: vi.fn() })
-    await primeAuthState({ username: 'jane' })
+    await primeAuthState({ username: 'jane', roles: ['ROLE_USER'] })
     const cvRepository = createStubCvRepository({ download: vi.fn(async () => Promise.reject(new Error('unavailable'))) })
     const wrapper = await mountHeader('/fr', undefined, cvRepository)
 
@@ -227,6 +228,20 @@ describe('AppHeader', () => {
     await wrapper.get('#mobile-nav a[href="/fr/about"]').trigger('click')
 
     expect(wrapper.find('#mobile-nav').exists()).toBe(false)
+  })
+
+  it('ROLE_SUPER : affiche un lien Administration', async () => {
+    await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
+    const wrapper = await mountHeader()
+
+    expect(wrapper.get('a[href="/fr/admin"]').text()).toBe('Administration')
+  })
+
+  it('utilisateur authentifié sans ROLE_SUPER : pas de lien Administration', async () => {
+    await primeAuthState({ username: 'jane', roles: ['ROLE_USER'] })
+    const wrapper = await mountHeader()
+
+    expect(wrapper.find('a[href="/fr/admin"]').exists()).toBe(false)
   })
 
   it('rend un sélecteur de langue avec FR et EN', async () => {

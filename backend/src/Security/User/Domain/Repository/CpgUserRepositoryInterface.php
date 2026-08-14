@@ -15,5 +15,14 @@ interface CpgUserRepositoryInterface
 {
     public function findOneByUsername(string $username): ?CpgUser;
 
+    public function findOneById(int $id): ?CpgUser;
+
+    /**
+     * @return list<CpgUser>
+     */
+    public function findAll(): array;
+
     public function save(CpgUser $user): void;
+
+    public function remove(CpgUser $user): void;
 }

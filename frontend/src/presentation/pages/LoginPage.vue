@@ -21,13 +21,28 @@ function currentLocale(): Locale {
   return typeof routeLocale === 'string' && isSupportedLocale(routeLocale) ? routeLocale : (locale.value as Locale)
 }
 
+/**
+ * Posé par le garde d'authentification (presentation/router/index.ts) quand
+ * une route protégée (ex. /admin) redirige ici faute de session : ramène
+ * l'utilisateur là où il voulait aller plutôt qu'à l'accueil. Restreint aux
+ * chemins relatifs internes (un seul "/" en tête) pour ne jamais rediriger
+ * vers une origine externe (open redirect) à partir d'un query param.
+ */
+function redirectTarget(): string {
+  const redirect = route.query.redirect
+  if ('string' === typeof redirect && redirect.startsWith('/') && !redirect.startsWith('//')) {
+    return redirect
+  }
+  return `/${currentLocale()}`
+}
+
 async function handleSubmit(): Promise<void> {
   errorMessage.value = ''
   isSubmitting.value = true
 
   try {
     await login(username.value, password.value)
-    await router.push(`/${currentLocale()}`)
+    await router.push(redirectTarget())
   } catch (error) {
     errorMessage.value = error instanceof InvalidCredentialsError ? t('auth.invalidCredentials') : t('auth.genericError')
   } finally {

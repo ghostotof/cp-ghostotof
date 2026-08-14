@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Security\User\Presentation\Command;
 
 use App\Security\User\Application\CpgUserRegistrarInterface;
+use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\UsernameAlreadyUsedException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -25,7 +26,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 )]
 final class CreateCpgUserCommand extends Command
 {
-    private const int MIN_PASSWORD_LENGTH = 8;
+    /** @var list<string> */
+    private const array ALLOWED_ROLES = [CpgUser::ROLE_SUPER];
     private const string USERNAME_PATTERN = '/^[a-zA-Z0-9_.-]{3,60}$/';
 
     public function __construct(private readonly CpgUserRegistrarInterface $cpgUserRegistrar)
@@ -38,6 +40,7 @@ final class CreateCpgUserCommand extends Command
         $this
             ->addOption('username', null, InputOption::VALUE_REQUIRED, 'Nom d\'utilisateur')
             ->addOption('password', null, InputOption::VALUE_REQUIRED, 'Mot de passe en clair (usage scripté uniquement)')
+            ->addOption('role', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, sprintf('Rôle additionnel à attribuer (répétable), parmi : %s', implode(', ', self::ALLOWED_ROLES)))
         ;
     }
 
@@ -55,14 +58,24 @@ final class CreateCpgUserCommand extends Command
 
         $plainPassword = $input->getOption('password') ?? $this->askPassword($io);
 
-        if (\strlen($plainPassword) < self::MIN_PASSWORD_LENGTH) {
-            $io->error(sprintf('Le mot de passe doit contenir au moins %d caractères.', self::MIN_PASSWORD_LENGTH));
+        if (\strlen($plainPassword) < CpgUser::MIN_PASSWORD_LENGTH) {
+            $io->error(sprintf('Le mot de passe doit contenir au moins %d caractères.', CpgUser::MIN_PASSWORD_LENGTH));
+
+            return Command::FAILURE;
+        }
+
+        /** @var list<string> $roles */
+        $roles = $input->getOption('role');
+        $unknownRoles = array_diff($roles, self::ALLOWED_ROLES);
+
+        if ([] !== $unknownRoles) {
+            $io->error(sprintf('Rôle(s) inconnu(s) : %s. Rôles autorisés : %s.', implode(', ', $unknownRoles), implode(', ', self::ALLOWED_ROLES)));
 
             return Command::FAILURE;
         }
 
         try {
-            $user = $this->cpgUserRegistrar->register($username, $plainPassword);
+            $user = $this->cpgUserRegistrar->register($username, $plainPassword, $roles);
         } catch (UsernameAlreadyUsedException $exception) {
             $io->error($exception->getMessage());
 
