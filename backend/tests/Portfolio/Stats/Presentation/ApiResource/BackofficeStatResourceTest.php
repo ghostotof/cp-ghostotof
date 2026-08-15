@@ -99,7 +99,7 @@ final class BackofficeStatResourceTest extends WebTestCase
         $client->request('PUT', sprintf('/api/backoffice/stats/%d', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['value' => '+60K', 'label' => 'Lignes de code (maj)', 'iconKey' => 'box', 'position' => 1]));
+        ], content: json_encode(['locale' => 'fr', 'value' => '+60K', 'label' => 'Lignes de code (maj)', 'iconKey' => 'box', 'position' => 1]));
         self::assertResponseIsSuccessful();
         $updated = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame('+60K', $updated['value']);

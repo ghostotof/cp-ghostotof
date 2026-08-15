@@ -52,9 +52,14 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
     {
         $client = self::createClient();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, self::OLD_PASSWORD);
-        $this->loginAs($client, self::PLAIN_USERNAME, self::OLD_PASSWORD);
+        $csrfToken = $this->loginAs($client, self::PLAIN_USERNAME, self::OLD_PASSWORD);
 
-        $client->request('PUT', '/api/backoffice/users/1/password', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode(['password' => self::NEW_PASSWORD]));
+        // Header CSRF valide fourni : ce test doit échouer sur le contrôle
+        // ROLE_SUPER, pas sur le contrôle CSRF (cf. testAnonymousRequestIsRejected).
+        $client->request('PUT', '/api/backoffice/users/1/password', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: json_encode(['password' => self::NEW_PASSWORD]));
 
         self::assertResponseStatusCodeSame(403);
     }

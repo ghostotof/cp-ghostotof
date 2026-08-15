@@ -99,7 +99,7 @@ final class BackofficeQualityTraitResourceTest extends WebTestCase
         $client->request('PUT', sprintf('/api/backoffice/quality/traits/%d', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['label' => 'Maintenabilité', 'position' => 1]));
+        ], content: json_encode(['locale' => 'fr', 'label' => 'Maintenabilité', 'position' => 1]));
         self::assertResponseIsSuccessful();
         $updated = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame('Maintenabilité', $updated['label']);

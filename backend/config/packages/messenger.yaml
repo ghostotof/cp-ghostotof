@@ -1,14 +1,17 @@
 framework:
     messenger:
-        # Uncomment this (and the failed transport below) to send failed messages to this transport for later handling.
-        # failure_transport: failed
+        # Messages épuisant leurs tentatives de retry (SMTP indisponible, etc.)
+        # sont envoyés ici plutôt que perdus silencieusement. Depuis `make sh` :
+        # `php bin/console messenger:failed:show` pour les inspecter,
+        # `php bin/console messenger:consume failed -vv` pour les rejouer.
+        failure_transport: failed
 
         transports:
             # https://symfony.com/doc/current/messenger.html#transport-configuration
             # RabbitMQ (service "rabbitmq" du docker-compose racine), consommé par
             # `make consume` (messenger:consume async -vv).
             async: '%env(MESSENGER_TRANSPORT_DSN)%'
-            # failed: 'doctrine://default?queue_name=failed'
+            failed: 'doctrine://default?queue_name=failed'
             sync: 'sync://'
 
         routing:

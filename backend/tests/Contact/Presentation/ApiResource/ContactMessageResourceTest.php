@@ -96,6 +96,23 @@ final class ContactMessageResourceTest extends WebTestCase
         self::assertCount(0, $this->asyncTransport()->getSent());
     }
 
+    public function testAWhitespaceOnlyMessageIsRejectedWithoutDispatchingAnything(): void
+    {
+        $client = $this->createClientWithFreshRateLimiter();
+
+        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+            'name' => 'Jane Doe',
+            'email' => 'jane@example.com',
+            // Uniquement des espaces : sans normalizer 'trim' sur les
+            // contraintes NotBlank/Length, ce message passait la validation
+            // puis partait vide après le trim() du Processor.
+            'message' => '              ',
+        ]));
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertCount(0, $this->asyncTransport()->getSent());
+    }
+
     public function testAFilledHoneypotIsSilentlyAcceptedWithoutDispatchingAnything(): void
     {
         $client = $this->createClientWithFreshRateLimiter();
