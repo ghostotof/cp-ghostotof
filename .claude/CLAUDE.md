@@ -28,14 +28,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project state
 
 This repository started as a freshly generated project skeleton (single "Init" commit). Real backend code now
-exists (the `Security` bounded context, see Backend architecture below) and follows a DDD structure under
+exists — the `Security` bounded context (`User` + `Authentication`) and four `Portfolio` bounded contexts
+(`Experience`, `Stats`, `Quality`, `About`, see Backend architecture below) — and follows a DDD structure under
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
 over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
 recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
 `tests/`, mirrors the `src/` bounded-context tree) and runnable via `php bin/phpunit` inside `make sh`. There is
 still no PHPStan or Rector configuration in the backend — set these up before/while adding more code. The
 frontend has moved past the default scaffold: it follows a layered clean architecture (see below) and has
-Vitest configured with `npm test`.
+Vitest configured with `npm test`. A `ROLE_SUPER`-gated backoffice (`/admin` on the frontend, `/api/backoffice/*`
+on the backend) lets an authenticated super-admin manage all of the above content plus user accounts — see the
+"Backoffice" subsections under Backend/Frontend architecture below.
 
 ## Architecture
 
@@ -90,24 +93,75 @@ folder), so entities live inside their bounded context instead of a shared top-l
   form, no email stored — just a username, cf. Goal #9: nothing personally identifying before authentication).
   - `Domain/Entity/CpgUser.php`, `Domain/Repository/CpgUserRepositoryInterface.php` (the DIP boundary —
     `Application/` never depends on Doctrine directly, only on this interface), `Domain/Exception/UsernameAlreadyUsedException.php`.
+    `CpgUser::ROLE_SUPER` is the role reserved for backoffice access (see "Backoffice" below);
+    `CpgUser::MIN_PASSWORD_LENGTH` is the single source of truth for password-length validation, reused by both
+    the CLI command and the backoffice password-change endpoint.
   - `Application/CpgUserRegistrar(Interface).php` — orchestrates user creation, depends only on
-    `CpgUserRepositoryInterface` + Symfony's `UserPasswordHasherInterface`. `CpgUserPresenter(Interface).php` —
-    maps the entity to the `/api/me` response shape.
+    `CpgUserRepositoryInterface` + Symfony's `UserPasswordHasherInterface`; `register()` takes an optional
+    `roles` array so the CLI can provision `ROLE_SUPER` accounts. `CpgUserPresenter(Interface).php` —
+    maps the entity to the `/api/me` response shape (includes `roles`).
+    `CpgUserAdministrator(Interface).php` + `CpgUserAdminPresenter(Interface).php` — the backoffice-only
+    read/delete/password-change use cases (list users, delete a user, change a password), kept separate from
+    `CpgUserRegistrar` since registration is CLI-only and administration is API-only.
   - `Infrastructure/Doctrine/CpgUserRepository.php` — the sole implementation of `CpgUserRepositoryInterface`
     (autowired automatically, single-implementation rule), also implements Symfony's `PasswordUpgraderInterface`.
-  - `Presentation/Command/CreateCpgUserCommand.php` (`app:user:create`, the *only* way to create a user) and
-    `Presentation/Controller/CurrentUserController.php` (`GET /api/me`).
+  - `Presentation/Command/CreateCpgUserCommand.php` (`app:user:create`, the *only* way to create a user; `--role`
+    accepts `ROLE_SUPER`, validated against an allow-list) and `Presentation/Controller/CurrentUserController.php`
+    (`GET /api/me`). Backoffice user management is exposed as API Platform resources instead of a controller —
+    see "Backoffice" below.
 - **`Security/Authentication/`** — login/logout/JWT/CSRF mechanics, deliberately kept out of `User/`: this is
   infrastructure wiring around Symfony Security + LexikJWTAuthenticationBundle, not a domain concept of its own.
   - `Infrastructure/Jwt/LoginSuccessSubscriber.php` (attaches the `XSRF-TOKEN` cookie, shapes the
-    `login_check` response body) and `CookieLogoutListener.php` (expires both cookies on `/api/logout`).
+    `login_check` response body — includes `roles` alongside `username`, needed by the frontend to gate `/admin`
+    without waiting for a full `checkAuth()` round-trip) and `CookieLogoutListener.php` (expires both cookies on
+    `/api/logout`).
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
     listener at priority 20 (must run *above* the Security firewall's priority 8 — see the class docblock).
+- **`Portfolio/Shared/`** — `Domain/ValueObject/Locale.php`, the `enum Locale: string { FR = 'fr'; EN = 'en' }`
+  shared by every `Portfolio/*` context (public single-resource reads take it as a `{locale}` path param,
+  mapped automatically by API Platform via `Locale::from()`; an invalid segment throws `\ValueError`, mapped to
+  404 by a global `exception_to_status` entry in `config/packages/api_platform.yaml`).
+- **`Portfolio/Experience/`**, **`Portfolio/Stats/`**, **`Portfolio/Quality/`**, **`Portfolio/About/`** — DB-backed
+  content that used to be (or, for `Experience`, always was) hardcoded in the frontend. Each follows the same
+  shape: a Doctrine entity per concept (`ExperienceTechnology`; `Stat`; `QualityPrinciple`/`QualityTrait`;
+  `AboutSettings`/`AboutSiteCard`/`AboutMeCard`, the latter with an `AboutMeCardCategory` enum), a public
+  read-only API Platform resource (`GetCollection('/stats/{locale}')`, or an aggregating `Provider` for
+  `/quality/{locale}` and `/about/{locale}` that returns `{principles, traits}` / `{settings, siteCards, meCards}`
+  in one call), and a backoffice CRUD resource (see below). Seeded via idempotent `app:{about,quality,stats}:seed`
+  console commands (purge-by-locale then recreate — safe to rerun).
 
-To add a new bounded context (e.g. a future `Portfolio` write side, or a second `Security` aggregate): mirror
+### Backoffice (`ROLE_SUPER`)
+
+Content management for all of the above, plus user administration, gated end-to-end behind `ROLE_SUPER`
+(the default role every account also has is `ROLE_USER`, cf. `CpgUser::getRoles()` — never sufficient here):
+
+- **Authorization**: a single `access_control` entry in `config/packages/security.yaml`,
+  `{ path: ^/api/backoffice, roles: ROLE_SUPER }`, which **must stay the first entry in the list** — Symfony
+  applies only the first matching rule, so a later/looser rule (e.g. `^/api/me`) would never get a chance to
+  override it, but a rule placed *before* it could accidentally widen backoffice access.
+- **API Platform pattern**, repeated identically across every backoffice resource
+  (`BackofficeExperienceTechnologyResource`, `BackofficeStatResource`, `BackofficeQuality{Principle,Trait}Resource`,
+  `Backoffice{About}{Settings,SiteCard,MeCard}Resource`, `BackofficeUserResource`,
+  `BackofficeUserPasswordResource`): a flat DTO (never the Doctrine entity itself) under
+  `Presentation/ApiResource/`, backed by a `Provider` (`GetCollection`/`Get`) and a `Processor`
+  (`Post`/`Put`/`Delete`) under `Infrastructure/ApiPlatform/`. Collection reads use a `?locale=` query filter
+  (unlike the public `{locale}` path param — collections aren't per-locale routes). **`Put`/`Delete` operations
+  need an explicit `provider:` set, not just `processor:`** — otherwise API Platform's default provider tries to
+  resolve the DTO via Doctrine directly and 404s before ever reaching the processor.
+- **`Security/User` backoffice resources** are the one exception with no `Post`/`Put` on the main resource
+  (`BackofficeUserResource`: `GetCollection`/`Delete` only — account creation stays CLI-only, cf. Goal #9) plus a
+  dedicated `BackofficeUserPasswordResource` (`Put /backoffice/users/{id}/password`, `output: false`) for
+  password changes.
+- **Exceptions**: every new Domain `NotFoundException`/`AlreadyExistsException` needs an entry in
+  `config/packages/api_platform.yaml`'s `exception_to_status` map (e.g. `ExperienceTechnologyNotFoundException`,
+  `CpgUserNotFoundException`, `CannotDeleteOwnAccountException`) — otherwise API Platform surfaces an unmapped
+  exception as a generic 500 instead of a meaningful 4xx.
+
+To add a new bounded context (e.g. a second `Security` aggregate, or a new `Portfolio` sub-context): mirror
 the same `Domain/Application/Infrastructure/Presentation` split under a new `src/<Context>/` folder, creating
 only the layers actually needed (no persistence → no `Infrastructure/Doctrine/`; no HTTP entry point → no
-`Presentation/Controller/`). Tests mirror the same tree under `tests/<Context>/`.
+`Presentation/Controller/`). Tests mirror the same tree under `tests/<Context>/`. To add a new *backoffice* CRUD
+resource for existing content: follow the API Platform pattern above rather than reinventing a controller.
 
 ### Frontend architecture (`../frontend/src`)
 
@@ -133,12 +187,52 @@ Single-page app in clean-architecture layers, `PortfolioContentRepository` is th
 
 To add a new content block: entity → repository interface method (with a `locale: Locale` parameter) →
 `infrastructure/portfolio/content/{fr,en}.ts` (structured content) → expose it from `usePortfolioContent` →
-new `presentation/sections/*.vue` → wire into `LandingPage.vue`.
+new `presentation/sections/*.vue` → wire into `LandingPage.vue`. Note: this "static content" flow only still
+applies to `hero`/`technologies` — About/Quality/Stats moved to the API-backed flow below.
 
 To add a new page: new route in `presentation/router/index.ts` (nested under `/:locale(fr|en)`, with
 `meta.titleKey`/`meta.descriptionKey` for SEO — see below) → new `presentation/pages/*.vue` (its own
 `usePortfolioContent()` call for its own content) → new `NavigationLink` entry (`to` + `isEnabled`) in
 `StaticPortfolioContentRepository`. `AppHeader` derives the active nav link from `useRoute()`, not from props.
+
+#### API-backed content (About/Quality/Stats)
+
+Unlike `PortfolioContentRepository` (hero/technologies, synchronous, hardcoded), the About/Quality/Stats content
+now lives in the backend DB and is fetched asynchronously, each with its own small vertical slice:
+`domain/{about,quality,stats}/repositories/*ContentRepository.ts` (interface) →
+`infrastructure/{about,quality,stats}/Http*ContentRepository.ts` (the implementation, calls the public
+`/api/{about,quality,stats}/{locale}` endpoints) → `application/{about,quality,stats}/use*Content.ts` (composable
+exposing `content`/`isLoading`/`hasError`, injected the same `InjectionKey` way as `usePortfolioContent`) →
+consumed by `AboutPage.vue` / `LandingPage.vue`'s Quality/Stats sections, each rendering a loading state, an
+error state (`role="alert"`), and the content. `main.ts` provides all three repositories alongside the existing
+`PortfolioContentRepository` one. Don't add new content here unless it's genuinely backend-managed (i.e. editable
+from the backoffice) — purely static content still belongs in `infrastructure/portfolio/content/{fr,en}.ts`.
+
+#### Backoffice (`/admin`, `ROLE_SUPER`)
+
+Content/user management UI, mirrored per-resource under `domain/admin/<resource>/{entities,repositories,errors}`
+→ `infrastructure/admin/<resource>/Http*Repository.ts` → `application/admin/<resource>/use*.ts` →
+`presentation/pages/admin/Admin*Page.vue` (form + Bootstrap table, `window.confirm()` for deletes — no modals).
+Existing resources: `technologies`, `stats`, `quality` (principles + traits), `about` (settings + site cards +
+me cards), `users` (list/delete/change-password only — no create form, account creation stays CLI-only;
+`AdminUsersPage.vue` disables the delete button on the current user's own row, compared by `username` via
+`useAuth()`).
+
+- `presentation/ui/{BaseTextInput,BaseTextarea,BaseNumberInput,BaseSelect}.vue` — the project's first reusable
+  form components, used by every admin form. Reach for these before writing a new raw `<input>` in `admin/*`.
+- `presentation/layout/AdminLayout.vue` — sub-navigation across the 5 admin sections, rendered for every
+  `/admin/*` route.
+- **Route protection**: `RouteMeta` carries `requiresAuth?: boolean` and `roles?: readonly string[]`; every
+  `/admin/*` route sets `{ requiresAuth: true, roles: [ROLE_SUPER] }`. A `router.beforeEach` guard in
+  `presentation/router/index.ts` checks this: unauthenticated → redirect to `login` with
+  `query: { redirect: to.fullPath }` (consumed by `LoginPage.vue`'s `redirectTarget()`, which only honors paths
+  starting with a single `/` — open-redirect protection); authenticated but missing the role → redirect to
+  `presentation/pages/ForbiddenPage.vue`.
+  **Must call `await waitForAuthCheck()`** (`application/auth/useAuth.ts`) before making that decision — on a
+  page reload/direct navigation, the guard can otherwise run before `main.ts`'s `checkAuth()` has resolved and
+  wrongly redirect an actually-authenticated user to `/login` (regression-tested in
+  `tests/presentation/router/adminGuard.spec.ts`). `hasRole(user, role)` (`domain/auth/services/hasRole.ts`) is a
+  plain function (no Vue `inject()`) so it also works inside this router guard, outside component context.
 
 #### i18n (French/English)
 
@@ -156,9 +250,11 @@ meaningful (see Lint below):
   `presentation/i18n/index.ts` (`createAppI18n()` factory + an `i18n` singleton used by `main.ts` and the
   router). Tests call `createAppI18n()` themselves for an isolated instance, the same pattern the router specs
   already use for a fresh `createRouter(...)` per test.
-- `infrastructure/portfolio/content/{fr,en}.ts` — the structured portfolio content (hero, about, technologies,
-  quality, stats), typed against `PortfolioLocaleContent` and read directly by `StaticPortfolioContentRepository`
-  (never through vue-i18n). Keep new "content" here, not in the i18n JSON, unless it's genuinely a short UI string.
+- `infrastructure/portfolio/content/{fr,en}.ts` — the structured portfolio content still hardcoded on the
+  frontend (hero, technologies — About/Quality/Stats moved to the backend DB, see "API-backed content" above),
+  typed against `PortfolioLocaleContent` and read directly by `StaticPortfolioContentRepository` (never through
+  vue-i18n). Keep new "content" here, not in the i18n JSON, unless it's genuinely a short UI string and it isn't
+  meant to be backoffice-editable.
 
 `StaticPortfolioContentRepository` stays framework-free infrastructure: it reads the raw locale JSON/TS files
 directly, and never imports the vue-i18n runtime (that lives in `presentation/i18n`, which infrastructure must
