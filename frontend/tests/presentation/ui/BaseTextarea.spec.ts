@@ -26,12 +26,4 @@ describe('BaseTextarea', () => {
 
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['Nouveau texte'])
   })
-
-  it("affiche le message d'erreur fourni avec role=alert", () => {
-    const wrapper = mount(BaseTextarea, {
-      props: { modelValue: '', label: 'Description', id: 'card-description', error: 'Ce champ est requis.' },
-    })
-
-    expect(wrapper.get('[role="alert"]').text()).toBe('Ce champ est requis.')
-  })
 })

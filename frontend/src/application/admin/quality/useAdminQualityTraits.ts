@@ -6,6 +6,7 @@ import type {
 } from '../../../domain/admin/quality/repositories/AdminQualityTraitRepository'
 import { AdminQualityError } from '../../../domain/admin/quality/errors/AdminQualityError'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
+import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
 
 export const ADMIN_QUALITY_TRAIT_REPOSITORY: InjectionKey<AdminQualityTraitRepository> = Symbol('AdminQualityTraitRepository')
 
@@ -37,19 +38,23 @@ export function useAdminQualityTraits(): UseAdminQualityTraitsResult {
   const isLoading = ref(true)
   const hasError = ref(false)
   const errorMessage = ref<AdminQualityError | null>(null)
+  const requestGuard = createStaleRequestGuard()
   let currentLocale: Locale | null = null
 
   const load = async (locale: Locale): Promise<void> => {
     currentLocale = locale
+    const token = requestGuard.begin()
     isLoading.value = true
     hasError.value = false
 
     try {
-      traits.value = await repository.list(locale)
+      const result = await repository.list(locale)
+      if (!requestGuard.isCurrent(token)) return
+      traits.value = result
     } catch {
-      hasError.value = true
+      if (requestGuard.isCurrent(token)) hasError.value = true
     } finally {
-      isLoading.value = false
+      if (requestGuard.isCurrent(token)) isLoading.value = false
     }
   }
 

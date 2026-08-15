@@ -4,12 +4,10 @@ withDefaults(
     modelValue: string
     label: string
     id: string
-    error?: string
     required?: boolean
     rows?: number
   }>(),
   {
-    error: undefined,
     required: false,
     rows: 4,
   },
@@ -34,12 +32,5 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
       :required="required"
       @input="$emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
     />
-    <p
-      v-if="error"
-      class="text-danger small mb-0 mt-1"
-      role="alert"
-    >
-      {{ error }}
-    </p>
   </div>
 </template>

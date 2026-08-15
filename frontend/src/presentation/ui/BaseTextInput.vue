@@ -5,12 +5,10 @@ withDefaults(
     label: string
     id: string
     type?: string
-    error?: string
     required?: boolean
   }>(),
   {
     type: 'text',
-    error: undefined,
     required: false,
   },
 )
@@ -34,12 +32,5 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
       :required="required"
       @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
     >
-    <p
-      v-if="error"
-      class="text-danger small mb-0 mt-1"
-      role="alert"
-    >
-      {{ error }}
-    </p>
   </div>
 </template>

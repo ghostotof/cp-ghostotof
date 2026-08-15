@@ -37,12 +37,4 @@ describe('BaseNumberInput', () => {
 
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([0])
   })
-
-  it("affiche le message d'erreur fourni avec role=alert", () => {
-    const wrapper = mount(BaseNumberInput, {
-      props: { modelValue: 0, label: 'Années', id: 'tech-years', error: 'Doit être positif.' },
-    })
-
-    expect(wrapper.get('[role="alert"]').text()).toBe('Doit être positif.')
-  })
 })

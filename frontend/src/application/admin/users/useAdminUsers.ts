@@ -2,6 +2,7 @@ import { inject, ref, type InjectionKey, type Ref } from 'vue'
 import type { AdminUser } from '../../../domain/admin/users/entities/AdminUser'
 import type { AdminUserRepository } from '../../../domain/admin/users/repositories/AdminUserRepository'
 import { AdminUserError } from '../../../domain/admin/users/errors/AdminUserError'
+import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
 
 export const ADMIN_USER_REPOSITORY: InjectionKey<AdminUserRepository> = Symbol('AdminUserRepository')
 
@@ -34,17 +35,21 @@ export function useAdminUsers(): UseAdminUsersResult {
   const isLoading = ref(true)
   const hasError = ref(false)
   const errorMessage = ref<AdminUserError | null>(null)
+  const requestGuard = createStaleRequestGuard()
 
   const load = async (): Promise<void> => {
+    const token = requestGuard.begin()
     isLoading.value = true
     hasError.value = false
 
     try {
-      users.value = await repository.list()
+      const result = await repository.list()
+      if (!requestGuard.isCurrent(token)) return
+      users.value = result
     } catch {
-      hasError.value = true
+      if (requestGuard.isCurrent(token)) hasError.value = true
     } finally {
-      isLoading.value = false
+      if (requestGuard.isCurrent(token)) isLoading.value = false
     }
   }
 

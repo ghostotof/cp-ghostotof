@@ -4,12 +4,10 @@ withDefaults(
     modelValue: number
     label: string
     id: string
-    error?: string
     required?: boolean
     step?: number
   }>(),
   {
-    error: undefined,
     required: false,
     step: 0.1,
   },
@@ -40,12 +38,5 @@ function onInput(event: Event): void {
       :required="required"
       @input="onInput"
     >
-    <p
-      v-if="error"
-      class="text-danger small mb-0 mt-1"
-      role="alert"
-    >
-      {{ error }}
-    </p>
   </div>
 </template>

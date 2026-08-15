@@ -3,6 +3,7 @@ import type { AdminStat } from '../../../domain/admin/stats/entities/AdminStat'
 import type { AdminStatInput, AdminStatsRepository } from '../../../domain/admin/stats/repositories/AdminStatsRepository'
 import { AdminStatsError } from '../../../domain/admin/stats/errors/AdminStatsError'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
+import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
 
 export const ADMIN_STATS_REPOSITORY: InjectionKey<AdminStatsRepository> = Symbol('AdminStatsRepository')
 
@@ -35,19 +36,23 @@ export function useAdminStats(): UseAdminStatsResult {
   const isLoading = ref(true)
   const hasError = ref(false)
   const errorMessage = ref<AdminStatsError | null>(null)
+  const requestGuard = createStaleRequestGuard()
   let currentLocale: Locale | null = null
 
   const load = async (locale: Locale): Promise<void> => {
     currentLocale = locale
+    const token = requestGuard.begin()
     isLoading.value = true
     hasError.value = false
 
     try {
-      stats.value = await repository.list(locale)
+      const result = await repository.list(locale)
+      if (!requestGuard.isCurrent(token)) return
+      stats.value = result
     } catch {
-      hasError.value = true
+      if (requestGuard.isCurrent(token)) hasError.value = true
     } finally {
-      isLoading.value = false
+      if (requestGuard.isCurrent(token)) isLoading.value = false
     }
   }
 

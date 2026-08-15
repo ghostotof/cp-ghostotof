@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 import type { Stat } from '../../domain/portfolio/entities/Stat'
 import type { StatsRepository } from '../../domain/stats/repositories/StatsRepository'
 import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { createStaleRequestGuard } from '../shared/staleRequestGuard'
 
 export const STATS_REPOSITORY: InjectionKey<StatsRepository> = Symbol('StatsRepository')
 
@@ -29,17 +30,21 @@ export function useStats(): UseStatsResult {
   const stats = ref<readonly Stat[]>([])
   const isLoading = ref(true)
   const hasError = ref(false)
+  const requestGuard = createStaleRequestGuard()
 
   const load = async (): Promise<void> => {
+    const token = requestGuard.begin()
     isLoading.value = true
     hasError.value = false
 
     try {
-      stats.value = await repository.list(locale.value as Locale)
+      const result = await repository.list(locale.value as Locale)
+      if (!requestGuard.isCurrent(token)) return
+      stats.value = result
     } catch {
-      hasError.value = true
+      if (requestGuard.isCurrent(token)) hasError.value = true
     } finally {
-      isLoading.value = false
+      if (requestGuard.isCurrent(token)) isLoading.value = false
     }
   }
 

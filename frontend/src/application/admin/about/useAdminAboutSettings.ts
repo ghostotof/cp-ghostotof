@@ -6,6 +6,7 @@ import type {
 } from '../../../domain/admin/about/repositories/AdminAboutSettingsRepository'
 import { AdminAboutError } from '../../../domain/admin/about/errors/AdminAboutError'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
+import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
 
 export const ADMIN_ABOUT_SETTINGS_REPOSITORY: InjectionKey<AdminAboutSettingsRepository> = Symbol('AdminAboutSettingsRepository')
 
@@ -37,17 +38,21 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
   const isLoading = ref(true)
   const hasError = ref(false)
   const errorMessage = ref<AdminAboutError | null>(null)
+  const requestGuard = createStaleRequestGuard()
 
   const load = async (locale: Locale): Promise<void> => {
+    const token = requestGuard.begin()
     isLoading.value = true
     hasError.value = false
 
     try {
-      settings.value = await repository.get(locale)
+      const result = await repository.get(locale)
+      if (!requestGuard.isCurrent(token)) return
+      settings.value = result
     } catch {
-      hasError.value = true
+      if (requestGuard.isCurrent(token)) hasError.value = true
     } finally {
-      isLoading.value = false
+      if (requestGuard.isCurrent(token)) isLoading.value = false
     }
   }
 

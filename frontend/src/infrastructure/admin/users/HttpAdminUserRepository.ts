@@ -1,7 +1,7 @@
 import type { AdminUser } from '../../../domain/admin/users/entities/AdminUser'
 import type { AdminUserRepository } from '../../../domain/admin/users/repositories/AdminUserRepository'
 import { AdminUserError, type AdminUserErrorReason } from '../../../domain/admin/users/errors/AdminUserError'
-import { readCsrfToken } from '../../auth/csrfCookie'
+import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 
 interface BackofficeUserApiResponse {
   id: number
@@ -9,32 +9,22 @@ interface BackofficeUserApiResponse {
   roles: string[]
 }
 
-/** Forme RFC7807-ish renvoyée par API Platform sur les réponses d'erreur (cf. api_platform.yaml `error_formats`). */
-interface ApiProblemBody {
-  detail?: string
-  violations?: { propertyPath: string; message: string }[]
-}
-
 const BASE_PATH = '/api/backoffice/users'
 
 /**
- * Implémentation HTTP de AdminUserRepository. Toutes les méthodes exigent le
- * cookie httpOnly BEARER (`credentials: 'include'`) et les mutations le
- * header CSRF X-XSRF-TOKEN (double-submit cookie, cf.
+ * Implémentation HTTP de AdminUserRepository, sur BackofficeHttpClient (cookie
+ * httpOnly BEARER + header CSRF sur les mutations, cf.
  * HttpAuthRepository.logout() / backend CsrfCookieRequestSubscriber).
  */
 export class HttpAdminUserRepository implements AdminUserRepository {
-  private readonly apiBaseUrl: string
+  private readonly client: BackofficeHttpClient
 
   constructor(apiBaseUrl: string) {
-    this.apiBaseUrl = apiBaseUrl
+    this.client = new BackofficeHttpClient(apiBaseUrl)
   }
 
   async list(): Promise<readonly AdminUser[]> {
-    const response = await fetch(`${this.apiBaseUrl}${BASE_PATH}`, {
-      method: 'GET',
-      credentials: 'include',
-    })
+    const response = await this.client.get(BASE_PATH)
 
     if (!response.ok) {
       throw await this.toError(response)
@@ -46,17 +36,7 @@ export class HttpAdminUserRepository implements AdminUserRepository {
   }
 
   async remove(id: number): Promise<void> {
-    const csrfToken = readCsrfToken()
-
-    const response = await fetch(`${this.apiBaseUrl}${BASE_PATH}/${id}`, {
-      method: 'DELETE',
-      credentials: 'include',
-      headers: csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {},
-    })
-
-    if (!response.ok) {
-      throw await this.toError(response)
-    }
+    await this.mutate('DELETE', `${BASE_PATH}/${id}`)
   }
 
   /**
@@ -65,25 +45,21 @@ export class HttpAdminUserRepository implements AdminUserRepository {
    * renvoyé, même haché — pas de `response.json()` à tenter ici.
    */
   async changePassword(id: number, newPassword: string): Promise<void> {
-    const csrfToken = readCsrfToken()
+    await this.mutate('PUT', `${BASE_PATH}/${id}/password`, { password: newPassword })
+  }
 
-    const response = await fetch(`${this.apiBaseUrl}${BASE_PATH}/${id}/password`, {
-      method: 'PUT',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
-      },
-      body: JSON.stringify({ password: newPassword }),
-    })
+  private async mutate(method: string, path: string, body?: unknown): Promise<Response> {
+    const response = await this.client.mutate(method, path, body)
 
     if (!response.ok) {
       throw await this.toError(response)
     }
+
+    return response
   }
 
   private async toError(response: Response): Promise<AdminUserError> {
-    const body = (await response.json().catch(() => ({}))) as ApiProblemBody
+    const body = await this.client.parseProblem(response)
 
     if (409 === response.status) {
       return new AdminUserError('cannot-delete-self', body.detail ?? 'Cannot delete own account')
@@ -93,8 +69,7 @@ export class HttpAdminUserRepository implements AdminUserRepository {
     }
     if (422 === response.status) {
       const reason: AdminUserErrorReason = 'validation'
-      const message = body.violations?.map((violation) => violation.message).join(' ') ?? body.detail ?? 'Validation failed'
-      return new AdminUserError(reason, message)
+      return new AdminUserError(reason, violationsMessage(body))
     }
 
     return new AdminUserError('unknown', `Request failed with status ${response.status}`)
