@@ -5,6 +5,7 @@ import type {
   AdminExperienceTechnologyRepository,
 } from '../../../domain/admin/technologies/repositories/AdminExperienceTechnologyRepository'
 import { AdminExperienceTechnologyError } from '../../../domain/admin/technologies/errors/AdminExperienceTechnologyError'
+import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
 
 export const ADMIN_EXPERIENCE_TECHNOLOGY_REPOSITORY: InjectionKey<AdminExperienceTechnologyRepository> = Symbol(
   'AdminExperienceTechnologyRepository',
@@ -42,17 +43,21 @@ export function useAdminExperienceTechnologies(): UseAdminExperienceTechnologies
   const isLoading = ref(true)
   const hasError = ref(false)
   const errorMessage = ref<AdminExperienceTechnologyError | null>(null)
+  const requestGuard = createStaleRequestGuard()
 
   const load = async (): Promise<void> => {
+    const token = requestGuard.begin()
     isLoading.value = true
     hasError.value = false
 
     try {
-      technologies.value = await repository.list()
+      const result = await repository.list()
+      if (!requestGuard.isCurrent(token)) return
+      technologies.value = result
     } catch {
-      hasError.value = true
+      if (requestGuard.isCurrent(token)) hasError.value = true
     } finally {
-      isLoading.value = false
+      if (requestGuard.isCurrent(token)) isLoading.value = false
     }
   }
 

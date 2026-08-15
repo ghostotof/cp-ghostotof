@@ -6,6 +6,7 @@ import type {
 } from '../../../domain/admin/quality/repositories/AdminQualityPrincipleRepository'
 import { AdminQualityError } from '../../../domain/admin/quality/errors/AdminQualityError'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
+import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
 
 export const ADMIN_QUALITY_PRINCIPLE_REPOSITORY: InjectionKey<AdminQualityPrincipleRepository> = Symbol('AdminQualityPrincipleRepository')
 
@@ -37,19 +38,23 @@ export function useAdminQualityPrinciples(): UseAdminQualityPrinciplesResult {
   const isLoading = ref(true)
   const hasError = ref(false)
   const errorMessage = ref<AdminQualityError | null>(null)
+  const requestGuard = createStaleRequestGuard()
   let currentLocale: Locale | null = null
 
   const load = async (locale: Locale): Promise<void> => {
     currentLocale = locale
+    const token = requestGuard.begin()
     isLoading.value = true
     hasError.value = false
 
     try {
-      principles.value = await repository.list(locale)
+      const result = await repository.list(locale)
+      if (!requestGuard.isCurrent(token)) return
+      principles.value = result
     } catch {
-      hasError.value = true
+      if (requestGuard.isCurrent(token)) hasError.value = true
     } finally {
-      isLoading.value = false
+      if (requestGuard.isCurrent(token)) isLoading.value = false
     }
   }
 

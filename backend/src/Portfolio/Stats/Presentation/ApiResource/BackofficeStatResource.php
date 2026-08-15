@@ -54,14 +54,19 @@ final class BackofficeStatResource
 {
     public function __construct(
         public ?int $id = null,
+        #[Assert\NotBlank]
         #[Assert\Choice(choices: ['fr', 'en'])]
         public ?string $locale = null,
         #[Assert\NotBlank]
+        #[Assert\Length(max: 30)]
         public string $value = '',
         #[Assert\NotBlank]
+        #[Assert\Length(max: 180)]
         public string $label = '',
         #[Assert\NotBlank]
+        #[Assert\Length(max: 60)]
         public string $iconKey = '',
+        #[Assert\PositiveOrZero]
         public int $position = 0,
     ) {
     }

@@ -5,11 +5,9 @@ withDefaults(
     label: string
     id: string
     options: readonly { value: string; label: string }[]
-    error?: string
     required?: boolean
   }>(),
   {
-    error: undefined,
     required: false,
   },
 )
@@ -40,12 +38,5 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
         {{ option.label }}
       </option>
     </select>
-    <p
-      v-if="error"
-      class="text-danger small mb-0 mt-1"
-      role="alert"
-    >
-      {{ error }}
-    </p>
   </div>
 </template>

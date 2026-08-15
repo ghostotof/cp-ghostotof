@@ -5,7 +5,7 @@ import type {
 } from '../../../domain/admin/about/repositories/AdminAboutSettingsRepository'
 import { AdminAboutError, type AdminAboutErrorReason } from '../../../domain/admin/about/errors/AdminAboutError'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
-import { readCsrfToken } from '../../auth/csrfCookie'
+import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 
 interface BackofficeAboutSettingsApiResponse {
   locale: string
@@ -16,31 +16,22 @@ interface BackofficeAboutSettingsApiResponse {
   hobbiesSubtitle: string
 }
 
-/** Forme RFC7807-ish renvoyée par API Platform sur les réponses d'erreur (cf. api_platform.yaml `error_formats`). */
-interface ApiProblemBody {
-  detail?: string
-  violations?: { propertyPath: string; message: string }[]
-}
-
 const BASE_PATH = '/api/backoffice/about/settings'
 
 /**
  * Implémentation HTTP de AdminAboutSettingsRepository. La locale EST
- * l'identifiant de la ressource (pas de {id} numérique), même pattern CSRF
- * que HttpAdminExperienceTechnologyRepository pour la mutation.
+ * l'identifiant de la ressource (pas de {id} numérique), même pattern
+ * BackofficeHttpClient que HttpAdminExperienceTechnologyRepository.
  */
 export class HttpAdminAboutSettingsRepository implements AdminAboutSettingsRepository {
-  private readonly apiBaseUrl: string
+  private readonly client: BackofficeHttpClient
 
   constructor(apiBaseUrl: string) {
-    this.apiBaseUrl = apiBaseUrl
+    this.client = new BackofficeHttpClient(apiBaseUrl)
   }
 
   async get(locale: Locale): Promise<AdminAboutSettings> {
-    const response = await fetch(`${this.apiBaseUrl}${BASE_PATH}/${locale}`, {
-      method: 'GET',
-      credentials: 'include',
-    })
+    const response = await this.client.get(`${BASE_PATH}/${locale}`)
 
     if (!response.ok) {
       throw await this.toError(response)
@@ -50,17 +41,7 @@ export class HttpAdminAboutSettingsRepository implements AdminAboutSettingsRepos
   }
 
   async update(locale: Locale, input: AdminAboutSettingsInput): Promise<AdminAboutSettings> {
-    const csrfToken = readCsrfToken()
-
-    const response = await fetch(`${this.apiBaseUrl}${BASE_PATH}/${locale}`, {
-      method: 'PUT',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
-      },
-      body: JSON.stringify({ locale, ...input }),
-    })
+    const response = await this.client.mutate('PUT', `${BASE_PATH}/${locale}`, { locale, ...input })
 
     if (!response.ok) {
       throw await this.toError(response)
@@ -81,15 +62,14 @@ export class HttpAdminAboutSettingsRepository implements AdminAboutSettingsRepos
   }
 
   private async toError(response: Response): Promise<AdminAboutError> {
-    const body = (await response.json().catch(() => ({}))) as ApiProblemBody
+    const body = await this.client.parseProblem(response)
 
     if (404 === response.status) {
       return new AdminAboutError('not-found', 'About settings not found')
     }
     if (422 === response.status) {
       const reason: AdminAboutErrorReason = 'validation'
-      const message = body.violations?.map((violation) => violation.message).join(' ') ?? body.detail ?? 'Validation failed'
-      return new AdminAboutError(reason, message)
+      return new AdminAboutError(reason, violationsMessage(body))
     }
 
     return new AdminAboutError('unknown', `Request failed with status ${response.status}`)

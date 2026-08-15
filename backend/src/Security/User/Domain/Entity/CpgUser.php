@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\User\Domain\Entity;
 
+use App\Security\User\Domain\Exception\InvalidUsernameException;
 use App\Security\User\Infrastructure\Doctrine\CpgUserRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
@@ -29,6 +30,9 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
 
     public const int MIN_PASSWORD_LENGTH = 8;
 
+    /** Lettres, chiffres, ".", "_" ou "-", 3 à 60 caractères. */
+    public const string USERNAME_PATTERN = '/^[a-zA-Z0-9_.-]{3,60}$/';
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
@@ -49,6 +53,10 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
 
     public function __construct(string $username, string $hashedPassword)
     {
+        if (1 !== preg_match(self::USERNAME_PATTERN, $username)) {
+            throw InvalidUsernameException::forUsername($username);
+        }
+
         $this->username = $username;
         $this->password = $hashedPassword;
     }

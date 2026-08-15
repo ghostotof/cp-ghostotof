@@ -37,14 +37,19 @@ final class BackofficeAboutSettingsResource
     public function __construct(
         public ?string $locale = null,
         #[Assert\NotBlank]
+        #[Assert\Length(max: 180)]
         public string $siteEyebrow = '',
         #[Assert\NotBlank]
+        #[Assert\Length(max: 180)]
         public string $meEyebrow = '',
         #[Assert\NotBlank]
+        #[Assert\Length(max: 180)]
         public string $technicalSubtitle = '',
         #[Assert\NotBlank]
+        #[Assert\Length(max: 180)]
         public string $personalSubtitle = '',
         #[Assert\NotBlank]
+        #[Assert\Length(max: 180)]
         public string $hobbiesSubtitle = '',
     ) {
     }

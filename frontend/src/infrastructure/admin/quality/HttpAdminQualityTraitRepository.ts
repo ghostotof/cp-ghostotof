@@ -5,7 +5,7 @@ import type {
 } from '../../../domain/admin/quality/repositories/AdminQualityTraitRepository'
 import { AdminQualityError, type AdminQualityErrorReason } from '../../../domain/admin/quality/errors/AdminQualityError'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
-import { readCsrfToken } from '../../auth/csrfCookie'
+import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 
 interface BackofficeQualityTraitApiResponse {
   id: number
@@ -14,31 +14,21 @@ interface BackofficeQualityTraitApiResponse {
   position: number
 }
 
-/** Forme RFC7807-ish renvoyée par API Platform sur les réponses d'erreur (cf. api_platform.yaml `error_formats`). */
-interface ApiProblemBody {
-  detail?: string
-  violations?: { propertyPath: string; message: string }[]
-}
-
 const BASE_PATH = '/api/backoffice/quality/traits'
 
 /**
  * Implémentation HTTP de AdminQualityTraitRepository, même pattern que
- * HttpAdminExperienceTechnologyRepository (credentials + header CSRF sur les
- * mutations).
+ * HttpAdminExperienceTechnologyRepository (BackofficeHttpClient).
  */
 export class HttpAdminQualityTraitRepository implements AdminQualityTraitRepository {
-  private readonly apiBaseUrl: string
+  private readonly client: BackofficeHttpClient
 
   constructor(apiBaseUrl: string) {
-    this.apiBaseUrl = apiBaseUrl
+    this.client = new BackofficeHttpClient(apiBaseUrl)
   }
 
   async list(locale: Locale): Promise<readonly AdminQualityTrait[]> {
-    const response = await fetch(`${this.apiBaseUrl}${BASE_PATH}?locale=${locale}`, {
-      method: 'GET',
-      credentials: 'include',
-    })
+    const response = await this.client.get(`${BASE_PATH}?${new URLSearchParams({ locale })}`)
 
     if (!response.ok) {
       throw await this.toError(response)
@@ -66,17 +56,7 @@ export class HttpAdminQualityTraitRepository implements AdminQualityTraitReposit
   }
 
   private async mutate(method: string, path: string, body?: unknown): Promise<Response> {
-    const csrfToken = readCsrfToken()
-
-    const response = await fetch(`${this.apiBaseUrl}${path}`, {
-      method,
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    })
+    const response = await this.client.mutate(method, path, body)
 
     if (!response.ok) {
       throw await this.toError(response)
@@ -95,15 +75,14 @@ export class HttpAdminQualityTraitRepository implements AdminQualityTraitReposit
   }
 
   private async toError(response: Response): Promise<AdminQualityError> {
-    const body = (await response.json().catch(() => ({}))) as ApiProblemBody
+    const body = await this.client.parseProblem(response)
 
     if (404 === response.status) {
       return new AdminQualityError('not-found', 'Quality trait not found')
     }
     if (422 === response.status) {
       const reason: AdminQualityErrorReason = 'validation'
-      const message = body.violations?.map((violation) => violation.message).join(' ') ?? body.detail ?? 'Validation failed'
-      return new AdminQualityError(reason, message)
+      return new AdminQualityError(reason, violationsMessage(body))
     }
 
     return new AdminQualityError('unknown', `Request failed with status ${response.status}`)

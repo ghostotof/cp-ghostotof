@@ -4,6 +4,7 @@ import type { QualityPrinciple } from '../../domain/portfolio/entities/QualityPr
 import type { QualityTrait } from '../../domain/portfolio/entities/QualityTrait'
 import type { QualityContentRepository } from '../../domain/quality/repositories/QualityContentRepository'
 import type { Locale } from '../../domain/portfolio/entities/Locale'
+import { createStaleRequestGuard } from '../shared/staleRequestGuard'
 
 export const QUALITY_CONTENT_REPOSITORY: InjectionKey<QualityContentRepository> = Symbol('QualityContentRepository')
 
@@ -35,19 +36,22 @@ export function useQualityContent(): UseQualityContentResult {
   const traits = ref<readonly QualityTrait[]>([])
   const isLoading = ref(true)
   const hasError = ref(false)
+  const requestGuard = createStaleRequestGuard()
 
   const load = async (): Promise<void> => {
+    const token = requestGuard.begin()
     isLoading.value = true
     hasError.value = false
 
     try {
       const content = await repository.get(locale.value as Locale)
+      if (!requestGuard.isCurrent(token)) return
       principles.value = content.principles
       traits.value = content.traits
     } catch {
-      hasError.value = true
+      if (requestGuard.isCurrent(token)) hasError.value = true
     } finally {
-      isLoading.value = false
+      if (requestGuard.isCurrent(token)) isLoading.value = false
     }
   }
 

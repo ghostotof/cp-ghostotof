@@ -34,20 +34,4 @@ describe('BaseSelect', () => {
 
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['en'])
   })
-
-  it("n'affiche pas de message d'erreur par défaut", () => {
-    const wrapper = mount(BaseSelect, {
-      props: { modelValue: 'fr', label: 'Langue', id: 'locale', options: OPTIONS },
-    })
-
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-  })
-
-  it("affiche le message d'erreur fourni avec role=alert", () => {
-    const wrapper = mount(BaseSelect, {
-      props: { modelValue: 'fr', label: 'Langue', id: 'locale', options: OPTIONS, error: 'Ce champ est requis.' },
-    })
-
-    expect(wrapper.get('[role="alert"]').text()).toBe('Ce champ est requis.')
-  })
 })

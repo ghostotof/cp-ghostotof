@@ -6,6 +6,7 @@ import type {
 } from '../../../domain/admin/about/repositories/AdminAboutSiteCardRepository'
 import { AdminAboutError } from '../../../domain/admin/about/errors/AdminAboutError'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
+import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
 
 export const ADMIN_ABOUT_SITE_CARD_REPOSITORY: InjectionKey<AdminAboutSiteCardRepository> = Symbol('AdminAboutSiteCardRepository')
 
@@ -37,19 +38,23 @@ export function useAdminAboutSiteCards(): UseAdminAboutSiteCardsResult {
   const isLoading = ref(true)
   const hasError = ref(false)
   const errorMessage = ref<AdminAboutError | null>(null)
+  const requestGuard = createStaleRequestGuard()
   let currentLocale: Locale | null = null
 
   const load = async (locale: Locale): Promise<void> => {
     currentLocale = locale
+    const token = requestGuard.begin()
     isLoading.value = true
     hasError.value = false
 
     try {
-      cards.value = await repository.list(locale)
+      const result = await repository.list(locale)
+      if (!requestGuard.isCurrent(token)) return
+      cards.value = result
     } catch {
-      hasError.value = true
+      if (requestGuard.isCurrent(token)) hasError.value = true
     } finally {
-      isLoading.value = false
+      if (requestGuard.isCurrent(token)) isLoading.value = false
     }
   }
 

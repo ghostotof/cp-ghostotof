@@ -99,7 +99,7 @@ final class BackofficeQualityPrincipleResourceTest extends WebTestCase
         $client->request('PUT', sprintf('/api/backoffice/quality/principles/%d', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['title' => 'SOLID', 'description' => 'Description mise à jour.', 'iconKey' => 'columns-3', 'position' => 1]));
+        ], content: json_encode(['locale' => 'fr', 'title' => 'SOLID', 'description' => 'Description mise à jour.', 'iconKey' => 'columns-3', 'position' => 1]));
         self::assertResponseIsSuccessful();
         $updated = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame('SOLID', $updated['title']);

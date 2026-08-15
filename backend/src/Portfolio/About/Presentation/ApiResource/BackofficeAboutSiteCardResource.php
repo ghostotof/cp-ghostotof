@@ -54,13 +54,18 @@ final class BackofficeAboutSiteCardResource
 {
     public function __construct(
         public ?int $id = null,
+        #[Assert\NotBlank]
         #[Assert\Choice(choices: ['fr', 'en'])]
         public ?string $locale = null,
         #[Assert\NotBlank]
+        #[Assert\Length(max: 180)]
         public string $title = '',
         #[Assert\NotBlank]
+        #[Assert\Length(max: 500)]
         public string $description = '',
+        #[Assert\Length(max: 60)]
         public ?string $iconKey = null,
+        #[Assert\PositiveOrZero]
         public int $position = 0,
     ) {
     }

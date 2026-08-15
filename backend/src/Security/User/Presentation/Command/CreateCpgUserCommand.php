@@ -28,7 +28,6 @@ final class CreateCpgUserCommand extends Command
 {
     /** @var list<string> */
     private const array ALLOWED_ROLES = [CpgUser::ROLE_SUPER];
-    private const string USERNAME_PATTERN = '/^[a-zA-Z0-9_.-]{3,60}$/';
 
     public function __construct(private readonly CpgUserRegistrarInterface $cpgUserRegistrar)
     {
@@ -50,7 +49,7 @@ final class CreateCpgUserCommand extends Command
 
         $username = $input->getOption('username') ?? $io->ask('Nom d\'utilisateur', validator: $this->validateUsername(...));
 
-        if (!preg_match(self::USERNAME_PATTERN, (string) $username)) {
+        if (!preg_match(CpgUser::USERNAME_PATTERN, (string) $username)) {
             $io->error('Le nom d\'utilisateur doit contenir entre 3 et 60 caractères (lettres, chiffres, ".", "_" ou "-").');
 
             return Command::FAILURE;
@@ -89,7 +88,7 @@ final class CreateCpgUserCommand extends Command
 
     private function validateUsername(?string $username): string
     {
-        if (!preg_match(self::USERNAME_PATTERN, (string) $username)) {
+        if (!preg_match(CpgUser::USERNAME_PATTERN, (string) $username)) {
             throw new \InvalidArgumentException('Le nom d\'utilisateur doit contenir entre 3 et 60 caractères (lettres, chiffres, ".", "_" ou "-").');
         }
 

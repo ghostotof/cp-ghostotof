@@ -5,7 +5,7 @@ import type {
 } from '../../../domain/admin/about/repositories/AdminAboutMeCardRepository'
 import { AdminAboutError, type AdminAboutErrorReason } from '../../../domain/admin/about/errors/AdminAboutError'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
-import { readCsrfToken } from '../../auth/csrfCookie'
+import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 
 interface BackofficeAboutMeCardApiResponse {
   id: number
@@ -17,32 +17,25 @@ interface BackofficeAboutMeCardApiResponse {
   position: number
 }
 
-/** Forme RFC7807-ish renvoyée par API Platform sur les réponses d'erreur (cf. api_platform.yaml `error_formats`). */
-interface ApiProblemBody {
-  detail?: string
-  violations?: { propertyPath: string; message: string }[]
-}
-
 const BASE_PATH = '/api/backoffice/about/me-cards'
 
 /**
  * Implémentation HTTP de AdminAboutMeCardRepository, même pattern que
- * HttpAdminExperienceTechnologyRepository (credentials + header CSRF sur les
- * mutations).
+ * HttpAdminExperienceTechnologyRepository (BackofficeHttpClient).
  */
 export class HttpAdminAboutMeCardRepository implements AdminAboutMeCardRepository {
-  private readonly apiBaseUrl: string
+  private readonly client: BackofficeHttpClient
 
   constructor(apiBaseUrl: string) {
-    this.apiBaseUrl = apiBaseUrl
+    this.client = new BackofficeHttpClient(apiBaseUrl)
   }
 
   async list(locale: Locale, category?: AdminAboutMeCardCategory): Promise<readonly AdminAboutMeCard[]> {
-    const query = category ? `?locale=${locale}&category=${category}` : `?locale=${locale}`
-    const response = await fetch(`${this.apiBaseUrl}${BASE_PATH}${query}`, {
-      method: 'GET',
-      credentials: 'include',
-    })
+    const params = new URLSearchParams({ locale })
+    if (category) {
+      params.set('category', category)
+    }
+    const response = await this.client.get(`${BASE_PATH}?${params}`)
 
     if (!response.ok) {
       throw await this.toError(response)
@@ -70,17 +63,7 @@ export class HttpAdminAboutMeCardRepository implements AdminAboutMeCardRepositor
   }
 
   private async mutate(method: string, path: string, body?: unknown): Promise<Response> {
-    const csrfToken = readCsrfToken()
-
-    const response = await fetch(`${this.apiBaseUrl}${path}`, {
-      method,
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    })
+    const response = await this.client.mutate(method, path, body)
 
     if (!response.ok) {
       throw await this.toError(response)
@@ -102,15 +85,14 @@ export class HttpAdminAboutMeCardRepository implements AdminAboutMeCardRepositor
   }
 
   private async toError(response: Response): Promise<AdminAboutError> {
-    const body = (await response.json().catch(() => ({}))) as ApiProblemBody
+    const body = await this.client.parseProblem(response)
 
     if (404 === response.status) {
       return new AdminAboutError('not-found', 'About me card not found')
     }
     if (422 === response.status) {
       const reason: AdminAboutErrorReason = 'validation'
-      const message = body.violations?.map((violation) => violation.message).join(' ') ?? body.detail ?? 'Validation failed'
-      return new AdminAboutError(reason, message)
+      return new AdminAboutError(reason, violationsMessage(body))
     }
 
     return new AdminAboutError('unknown', `Request failed with status ${response.status}`)

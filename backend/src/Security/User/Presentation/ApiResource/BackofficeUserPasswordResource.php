@@ -28,7 +28,7 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
     ],
 )]
-final class BackofficeUserPasswordResource
+final readonly class BackofficeUserPasswordResource
 {
     public function __construct(
         #[Assert\NotBlank]

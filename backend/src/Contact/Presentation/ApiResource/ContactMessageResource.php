@@ -29,16 +29,17 @@ use Symfony\Component\Validator\Constraints as Assert;
 )]
 final class ContactMessageResource
 {
-    #[Assert\NotBlank(message: 'Votre nom est requis.')]
-    #[Assert\Length(min: 2, max: 100, minMessage: 'Votre nom est trop court.', maxMessage: 'Votre nom est trop long.')]
+    #[Assert\NotBlank(message: 'Votre nom est requis.', normalizer: 'trim')]
+    #[Assert\Length(min: 2, max: 100, minMessage: 'Votre nom est trop court.', maxMessage: 'Votre nom est trop long.', normalizer: 'trim')]
     public string $name = '';
 
-    #[Assert\NotBlank(message: 'Votre email est requis.')]
-    #[Assert\Email(message: 'Cette adresse email n\'est pas valide.')]
+    #[Assert\NotBlank(message: 'Votre email est requis.', normalizer: 'trim')]
+    #[Assert\Email(message: 'Cette adresse email n\'est pas valide.', normalizer: 'trim')]
+    #[Assert\Length(max: 255, maxMessage: 'Votre email est trop long.', normalizer: 'trim')]
     public string $email = '';
 
-    #[Assert\NotBlank(message: 'Votre message est requis.')]
-    #[Assert\Length(min: 10, max: 5000, minMessage: 'Votre message est trop court.', maxMessage: 'Votre message est trop long (5000 caractères maximum).')]
+    #[Assert\NotBlank(message: 'Votre message est requis.', normalizer: 'trim')]
+    #[Assert\Length(min: 10, max: 5000, minMessage: 'Votre message est trop court.', maxMessage: 'Votre message est trop long (5000 caractères maximum).', normalizer: 'trim')]
     public string $message = '';
 
     /**
@@ -48,5 +49,6 @@ final class ContactMessageResource
      * ignore silencieusement la soumission sans révéler au bot que la
      * détection a eu lieu.
      */
+    #[Assert\Length(max: 2000)]
     public ?string $website = null;
 }

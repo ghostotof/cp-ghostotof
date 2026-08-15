@@ -108,7 +108,7 @@ final class BackofficeAboutMeCardResourceTest extends WebTestCase
         $client->request('PUT', sprintf('/api/backoffice/about/me-cards/%d', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['title' => 'Moto', 'description' => 'Description mise à jour.', 'iconKey' => 'motorbike', 'position' => 1]));
+        ], content: json_encode(['locale' => 'fr', 'category' => 'hobby', 'title' => 'Moto', 'description' => 'Description mise à jour.', 'iconKey' => 'motorbike', 'position' => 1]));
         self::assertResponseIsSuccessful();
         $updated = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame('Moto', $updated['title']);
@@ -131,6 +131,48 @@ final class BackofficeAboutMeCardResourceTest extends WebTestCase
 
         $client->request('GET', sprintf('/api/backoffice/about/me-cards/%d', $id));
         self::assertResponseStatusCodeSame(404);
+    }
+
+    public function testPostWithMissingLocaleIsRejected(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+
+        $client->request('POST', '/api/backoffice/about/me-cards', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: json_encode(['category' => 'hobby', 'title' => 'Musique', 'description' => 'Description.', 'iconKey' => 'guitar', 'position' => 0]));
+
+        self::assertResponseStatusCodeSame(422);
+    }
+
+    public function testPostWithInvalidCategoryIsRejected(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+
+        $client->request('POST', '/api/backoffice/about/me-cards', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: json_encode(['locale' => 'fr', 'category' => 'unknown', 'title' => 'Musique', 'description' => 'Description.', 'iconKey' => 'guitar', 'position' => 0]));
+
+        self::assertResponseStatusCodeSame(422);
+    }
+
+    public function testPostWithTooLongTitleIsRejected(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+
+        $client->request('POST', '/api/backoffice/about/me-cards', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: json_encode(['locale' => 'fr', 'category' => 'hobby', 'title' => str_repeat('a', 181), 'description' => 'Description.', 'iconKey' => 'guitar', 'position' => 0]));
+
+        self::assertResponseStatusCodeSame(422);
     }
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string

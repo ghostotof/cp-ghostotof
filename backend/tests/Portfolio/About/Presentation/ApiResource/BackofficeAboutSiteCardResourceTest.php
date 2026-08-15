@@ -99,7 +99,7 @@ final class BackofficeAboutSiteCardResourceTest extends WebTestCase
         $client->request('PUT', sprintf('/api/backoffice/about/site-cards/%d', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['title' => 'Stack technique', 'description' => 'Description mise à jour.', 'iconKey' => 'server', 'position' => 1]));
+        ], content: json_encode(['locale' => 'fr', 'title' => 'Stack technique', 'description' => 'Description mise à jour.', 'iconKey' => 'server', 'position' => 1]));
         self::assertResponseIsSuccessful();
         $updated = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame('Stack technique', $updated['title']);
@@ -121,6 +121,34 @@ final class BackofficeAboutSiteCardResourceTest extends WebTestCase
 
         $client->request('GET', sprintf('/api/backoffice/about/site-cards/%d', $id));
         self::assertResponseStatusCodeSame(404);
+    }
+
+    public function testPostWithMissingLocaleIsRejected(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+
+        $client->request('POST', '/api/backoffice/about/site-cards', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: json_encode(['title' => 'Architecture', 'description' => 'Description.', 'iconKey' => 'layers', 'position' => 0]));
+
+        self::assertResponseStatusCodeSame(422);
+    }
+
+    public function testPostWithTooLongDescriptionIsRejected(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+
+        $client->request('POST', '/api/backoffice/about/site-cards', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: json_encode(['locale' => 'fr', 'title' => 'Architecture', 'description' => str_repeat('a', 501), 'iconKey' => 'layers', 'position' => 0]));
+
+        self::assertResponseStatusCodeSame(422);
     }
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string

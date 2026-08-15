@@ -18,6 +18,7 @@ use Symfony\Component\Validator\Constraints as Assert;
  */
 #[ORM\Entity(repositoryClass: AboutMeCardRepository::class)]
 #[ORM\Table(name: 'about_me_card')]
+#[ORM\Index(name: 'idx_about_me_card_locale_category', columns: ['locale', 'category'])]
 class AboutMeCard
 {
     #[ORM\Id]

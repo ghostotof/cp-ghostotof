@@ -31,6 +31,7 @@ class AboutSiteCardRepository extends ServiceEntityRepository implements AboutSi
             ->andWhere('card.locale = :locale')
             ->setParameter('locale', $locale)
             ->orderBy('card.position', 'ASC')
+            ->addOrderBy('card.id', 'ASC')
             ->getQuery()
             ->getResult();
     }
@@ -40,6 +41,7 @@ class AboutSiteCardRepository extends ServiceEntityRepository implements AboutSi
         return $this->createQueryBuilder('card')
             ->orderBy('card.locale', 'ASC')
             ->addOrderBy('card.position', 'ASC')
+            ->addOrderBy('card.id', 'ASC')
             ->getQuery()
             ->getResult();
     }

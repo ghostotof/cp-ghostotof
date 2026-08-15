@@ -24,8 +24,15 @@ final readonly class BackofficeUserProcessor implements ProcessorInterface
 
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): mixed
     {
-        /** @var CpgUser $actingUser */
         $actingUser = $this->security->getUser();
+
+        // Ne devrait jamais se produire : access_control (^/api/backoffice)
+        // exige déjà une authentification en amont. Garde explicite plutôt
+        // qu'un cast PHPDoc silencieux, pour éviter un TypeError 500 opaque
+        // si cette invariante venait à être violée.
+        if (!$actingUser instanceof CpgUser) {
+            throw new \LogicException('BackofficeUserProcessor::process() appelé sans utilisateur authentifié.');
+        }
 
         $this->cpgUserAdministrator->delete((int) $uriVariables['id'], $actingUser);
 

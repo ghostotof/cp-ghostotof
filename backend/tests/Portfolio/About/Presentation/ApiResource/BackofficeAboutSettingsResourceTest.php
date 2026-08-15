@@ -121,6 +121,31 @@ final class BackofficeAboutSettingsResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
     }
 
+    public function testPutWithTooLongFieldIsRejected(): void
+    {
+        $client = self::createClient();
+        $container = $client->getContainer();
+        $container->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+
+        $container->get(AboutSettingsRepositoryInterface::class)->save(
+            new AboutSettings(Locale::FR, 'Site', 'Moi', 'Technique', 'Perso', 'Loisirs'),
+        );
+
+        $client->request('PUT', '/api/backoffice/about/settings/fr', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: json_encode([
+            'siteEyebrow' => str_repeat('a', 181),
+            'meEyebrow' => 'b',
+            'technicalSubtitle' => 'c',
+            'personalSubtitle' => 'd',
+            'hobbiesSubtitle' => 'e',
+        ]));
+
+        self::assertResponseStatusCodeSame(422);
+    }
+
     private function loginAs(KernelBrowser $client, string $username, string $password): string
     {
         $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([

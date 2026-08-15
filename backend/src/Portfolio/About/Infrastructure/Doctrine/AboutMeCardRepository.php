@@ -32,6 +32,7 @@ class AboutMeCardRepository extends ServiceEntityRepository implements AboutMeCa
             ->andWhere('card.locale = :locale')
             ->setParameter('locale', $locale)
             ->orderBy('card.position', 'ASC')
+            ->addOrderBy('card.id', 'ASC')
             ->getQuery()
             ->getResult();
     }
@@ -44,6 +45,19 @@ class AboutMeCardRepository extends ServiceEntityRepository implements AboutMeCa
             ->setParameter('locale', $locale)
             ->setParameter('category', $category)
             ->orderBy('card.position', 'ASC')
+            ->addOrderBy('card.id', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function findByCategory(AboutMeCardCategory $category): array
+    {
+        return $this->createQueryBuilder('card')
+            ->andWhere('card.category = :category')
+            ->setParameter('category', $category)
+            ->orderBy('card.locale', 'ASC')
+            ->addOrderBy('card.position', 'ASC')
+            ->addOrderBy('card.id', 'ASC')
             ->getQuery()
             ->getResult();
     }
@@ -54,6 +68,7 @@ class AboutMeCardRepository extends ServiceEntityRepository implements AboutMeCa
             ->orderBy('card.locale', 'ASC')
             ->addOrderBy('card.category', 'ASC')
             ->addOrderBy('card.position', 'ASC')
+            ->addOrderBy('card.id', 'ASC')
             ->getQuery()
             ->getResult();
     }
