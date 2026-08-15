@@ -184,6 +184,26 @@ session malgré un `/tmp` inscriptible, et Adminer répond systématiquement
 "Session expirée" dès la tentative de connexion — `k8s/base/adminer.yaml`
 monte donc deux `emptyDir` distincts (`tmp` et `php-sessions`).
 
+Pour rester connecté plus longtemps qu'une session de navigateur, cocher
+**"Permanent login"** sur le formulaire de connexion : ce n'est pas un
+réglage PHP mais une fonctionnalité native d'Adminer (`adminer.php`), qui
+pose un cookie `adminer_permanent` valable 30 jours (`2592000`s, codé en
+dur dans `cookie()`). Vérifié par lecture du code source de l'image
+`adminer:4.8.1-standalone` : le cookie de session (`adminer_sid`) est lui
+codé en dur avec une durée de vie `0` (`session_set_cookie_params`,
+paramètre `array(0, ...)`), donc **aucun réglage `session.ini` /
+`session.gc_maxlifetime` côté PHP n'a d'effet** sur cette expiration rapide
+— à ne pas retenter. Le port-forward reste bien sûr requis dans tous les
+cas, "Permanent login" ne change rien à ça, il évite seulement d'avoir à
+ressaisir les identifiants PostgreSQL à chaque nouvel onglet/navigateur.
+
+Limite à connaître : la clé de déchiffrement de ce cookie est stockée dans
+`/tmp/adminer.key`, un chemin non persisté (pas de volume dédié) — un
+redémarrage du pod (ex. OOMKill, la limite `resources.limits.memory: 128Mi`
+est basse pour parcourir une grosse table) invalide silencieusement tous les
+cookies "Permanent login" en cours ; il suffit de recocher la case à la
+prochaine connexion, aucune action corrective nécessaire.
+
 ## Limites connues (acceptables pour un projet portfolio, à retravailler sinon)
 
 - Postgres et RabbitMQ tournent en pod (1 réplique, PVC) plutôt que sur des
