@@ -57,7 +57,11 @@ final class CsrfCookieRequestSubscriber
         $cookieToken = $request->cookies->get(self::COOKIE_NAME);
         $headerToken = $request->headers->get(self::HEADER_NAME);
 
-        if (null === $cookieToken || null === $headerToken || !hash_equals($cookieToken, $headerToken)) {
+        // hash_equals('', '') vaut `true` : un cookie/header vidé (plutôt
+        // qu'absent, ex. cookie effacé côté client) ne doit pas être traité
+        // comme une correspondance valide, d'où le rejet explicite des
+        // chaînes vides en plus du cas `null`.
+        if (!\is_string($cookieToken) || !\is_string($headerToken) || '' === $cookieToken || '' === $headerToken || !hash_equals($cookieToken, $headerToken)) {
             throw new AccessDeniedHttpException('En-tête CSRF manquant ou invalide.');
         }
     }

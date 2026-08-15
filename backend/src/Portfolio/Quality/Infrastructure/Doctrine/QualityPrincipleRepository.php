@@ -31,6 +31,7 @@ class QualityPrincipleRepository extends ServiceEntityRepository implements Qual
             ->andWhere('principle.locale = :locale')
             ->setParameter('locale', $locale)
             ->orderBy('principle.position', 'ASC')
+            ->addOrderBy('principle.id', 'ASC')
             ->getQuery()
             ->getResult();
     }
@@ -40,6 +41,7 @@ class QualityPrincipleRepository extends ServiceEntityRepository implements Qual
         return $this->createQueryBuilder('principle')
             ->orderBy('principle.locale', 'ASC')
             ->addOrderBy('principle.position', 'ASC')
+            ->addOrderBy('principle.id', 'ASC')
             ->getQuery()
             ->getResult();
     }

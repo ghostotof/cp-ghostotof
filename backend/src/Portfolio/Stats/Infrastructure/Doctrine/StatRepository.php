@@ -31,6 +31,7 @@ class StatRepository extends ServiceEntityRepository implements StatRepositoryIn
             ->andWhere('stat.locale = :locale')
             ->setParameter('locale', $locale)
             ->orderBy('stat.position', 'ASC')
+            ->addOrderBy('stat.id', 'ASC')
             ->getQuery()
             ->getResult();
     }
@@ -40,6 +41,7 @@ class StatRepository extends ServiceEntityRepository implements StatRepositoryIn
         return $this->createQueryBuilder('stat')
             ->orderBy('stat.locale', 'ASC')
             ->addOrderBy('stat.position', 'ASC')
+            ->addOrderBy('stat.id', 'ASC')
             ->getQuery()
             ->getResult();
     }

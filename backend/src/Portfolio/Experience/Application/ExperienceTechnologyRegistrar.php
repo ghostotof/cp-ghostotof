@@ -7,6 +7,7 @@ namespace App\Portfolio\Experience\Application;
 use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException;
 use App\Portfolio\Experience\Domain\Repository\ExperienceTechnologyRepositoryInterface;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 
 final readonly class ExperienceTechnologyRegistrar implements ExperienceTechnologyRegistrarInterface
 {
@@ -23,7 +24,15 @@ final readonly class ExperienceTechnologyRegistrar implements ExperienceTechnolo
 
         $technology = new ExperienceTechnology($name, $years, $iconKey, $relatedTechnologyName);
 
-        $this->experienceTechnologyRepository->save($technology);
+        try {
+            $this->experienceTechnologyRepository->save($technology);
+        } catch (UniqueConstraintViolationException) {
+            // Deux requêtes concurrentes ont passé le findOneByName() ci-dessus
+            // avant que l'une des deux ne persiste : la contrainte unique en
+            // base est le dernier rempart, on la traduit en exception métier
+            // plutôt que de laisser remonter un 500 Doctrine brut.
+            throw ExperienceTechnologyAlreadyExistsException::forName($name);
+        }
 
         return $technology;
     }

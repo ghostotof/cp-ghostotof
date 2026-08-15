@@ -60,6 +60,7 @@ final class BackofficeQualityTraitResource
         #[Assert\NotBlank]
         #[Assert\Length(max: 180)]
         public string $label = '',
+        #[Assert\PositiveOrZero]
         public int $position = 0,
     ) {
     }

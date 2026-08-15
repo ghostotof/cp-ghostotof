@@ -155,6 +155,8 @@ final class ContactMessageResourceTest extends WebTestCase
         // pour la vérification du dispatch sur une requête isolée) : ce qui
         // compte ici est que cette 6e requête, rejetée, n'a rien dispatché.
         self::assertCount(0, $this->asyncTransport()->getSent());
+        self::assertTrue($client->getResponse()->headers->has('Retry-After'));
+        self::assertGreaterThan(0, (int) $client->getResponse()->headers->get('Retry-After'));
     }
 
     public function testTheEndpointIsNotSubjectToTheDoubleSubmitCookieCsrfCheck(): void

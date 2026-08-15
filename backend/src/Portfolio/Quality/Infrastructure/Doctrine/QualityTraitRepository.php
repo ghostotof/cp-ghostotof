@@ -31,6 +31,7 @@ class QualityTraitRepository extends ServiceEntityRepository implements QualityT
             ->andWhere('trait.locale = :locale')
             ->setParameter('locale', $locale)
             ->orderBy('trait.position', 'ASC')
+            ->addOrderBy('trait.id', 'ASC')
             ->getQuery()
             ->getResult();
     }
@@ -40,6 +41,7 @@ class QualityTraitRepository extends ServiceEntityRepository implements QualityT
         return $this->createQueryBuilder('trait')
             ->orderBy('trait.locale', 'ASC')
             ->addOrderBy('trait.position', 'ASC')
+            ->addOrderBy('trait.id', 'ASC')
             ->getQuery()
             ->getResult();
     }

@@ -8,6 +8,7 @@ use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException;
 use App\Portfolio\Experience\Domain\Repository\ExperienceTechnologyRepositoryInterface;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 
 final readonly class ExperienceTechnologyAdministrator implements ExperienceTechnologyAdministratorInterface
 {
@@ -31,7 +32,15 @@ final readonly class ExperienceTechnologyAdministrator implements ExperienceTech
         }
 
         $technology->update($name, $years, $iconKey, $relatedTechnologyName);
-        $this->experienceTechnologyRepository->save($technology);
+
+        try {
+            $this->experienceTechnologyRepository->save($technology);
+        } catch (UniqueConstraintViolationException) {
+            // Cf. ExperienceTechnologyRegistrar::register() : la vérification
+            // findOneByName() ci-dessus n'est pas atomique avec ce save(),
+            // la contrainte unique en base reste le dernier rempart.
+            throw ExperienceTechnologyAlreadyExistsException::forName($name);
+        }
 
         return $technology;
     }

@@ -66,6 +66,7 @@ final class BackofficeQualityPrincipleResource
         #[Assert\NotBlank]
         #[Assert\Length(max: 60)]
         public string $iconKey = '',
+        #[Assert\PositiveOrZero]
         public int $position = 0,
     ) {
     }

@@ -36,10 +36,7 @@ final readonly class BackofficeAboutMeCardProvider implements ProviderInterface
             $cards = match (true) {
                 null !== $locale && null !== $category => $this->aboutMeCardRepository->findByLocaleAndCategory($locale, $category),
                 null !== $locale => $this->aboutMeCardRepository->findByLocale($locale),
-                null !== $category => array_values(array_filter(
-                    $this->aboutMeCardRepository->findAll(),
-                    static fn (AboutMeCard $card): bool => $category === $card->getCategory(),
-                )),
+                null !== $category => $this->aboutMeCardRepository->findByCategory($category),
                 default => $this->aboutMeCardRepository->findAll(),
             };
 

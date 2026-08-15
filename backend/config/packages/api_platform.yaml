@@ -19,6 +19,11 @@ api_platform:
     # (exception métier non reconnue par API Platform) au lieu du 429 attendu.
     exception_to_status:
         App\Contact\Domain\Exception\ContactRateLimitExceededException: 429
+        # Aujourd'hui seulement levée dans SendContactMessageHandler (worker
+        # Messenger async, jamais dans la pile HTTP synchrone) : entrée
+        # défensive pour éviter un 500 générique si ce handler était un jour
+        # invoqué de façon synchrone depuis un Processor API Platform.
+        App\Contact\Domain\Exception\ContactMessageDeliveryException: 503
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException: 409
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException: 404
         # Levée par Locale::from() dans StatProvider/BackofficeStatProcessor

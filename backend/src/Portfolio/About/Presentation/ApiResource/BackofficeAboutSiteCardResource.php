@@ -65,6 +65,7 @@ final class BackofficeAboutSiteCardResource
         public string $description = '',
         #[Assert\Length(max: 60)]
         public ?string $iconKey = null,
+        #[Assert\PositiveOrZero]
         public int $position = 0,
     ) {
     }

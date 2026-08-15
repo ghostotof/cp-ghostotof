@@ -23,11 +23,17 @@ interface AboutMeCardRepositoryInterface
     public function findByLocale(Locale $locale): array;
 
     /**
-     * @return list<AboutMeCard> triées par position ASC ; utilisé par AboutContentProvider
-     *                           pour ranger chaque carte dans le bon tableau (technical/personal/hobby)
-     *                           sans filtrer côté PHP après un findByLocale complet
+     * @return list<AboutMeCard> triées par position ASC ; utilisé par
+     *                           BackofficeAboutMeCardProvider pour le filtre combiné
+     *                           ?locale=&category= (AboutContentProvider, lui, ne filtre
+     *                           que par locale puis range les cartes par catégorie en PHP)
      */
     public function findByLocaleAndCategory(Locale $locale, AboutMeCardCategory $category): array;
+
+    /**
+     * @return list<AboutMeCard> triées par locale puis position ASC
+     */
+    public function findByCategory(AboutMeCardCategory $category): array;
 
     /**
      * @return list<AboutMeCard> triées par locale puis catégorie puis position ASC
