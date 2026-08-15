@@ -133,11 +133,11 @@ async function handleDeleteSiteCard(card: AdminAboutSiteCard): Promise<void> {
 }
 
 // Cartes "à propos de moi" (technical/personal/hobby).
-const meCardCategoryOptions: readonly { value: AdminAboutMeCardCategory; label: string }[] = [
+const meCardCategoryOptions = computed<readonly { value: AdminAboutMeCardCategory; label: string }[]>(() => [
   { value: 'technical', label: t('admin.about.meCard.categoryTechnical') },
   { value: 'personal', label: t('admin.about.meCard.categoryPersonal') },
   { value: 'hobby', label: t('admin.about.meCard.categoryHobby') },
-]
+])
 
 const editingMeCardId = ref<number | null>(null)
 const meCardForm = reactive({ category: 'technical' as AdminAboutMeCardCategory, title: '', description: '', iconKey: '', position: 0 })
