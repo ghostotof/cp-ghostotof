@@ -21,12 +21,12 @@ const { t } = useI18n()
         {{ t('stats.sectionTitle') }}
       </h2>
 
-      <!-- Easter egg discret, clin d'œil à "We Are the Champions" (Queen) sur
+      <!-- Easter egg discret, clin d'œil à "Bohemian Rhapsody" (Queen) sur
            une section qui affiche justement les réussites du profil. -->
       <span
         class="position-absolute top-0 end-0 m-2 opacity-25"
         aria-hidden="true"
-        title="We Are the Champions"
+        title="Scaramouche, Scaramouche"
       >
         <IconDisc3
           width="14"
