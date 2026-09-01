@@ -10,7 +10,7 @@ metadata:
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: christophe.piton22@gmail.com
+    email: contact@cp-ghostotof.com
     privateKeySecretRef:
       name: letsencrypt-account-key
     solvers:
