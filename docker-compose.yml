@@ -77,7 +77,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "${POSTGRES_PORT}:5432"
+      # Bind localhost uniquement : ce port ne doit jamais être atteignable
+      # depuis le réseau (creds de dev triviaux, cf. .env).
+      - "127.0.0.1:${POSTGRES_PORT}:5432"
     volumes:
       # Volume nommé : les données survivent aux `docker compose down`.
       # Monté sur /var/lib/postgresql (et non .../data) : depuis Postgres 18,
@@ -109,7 +111,9 @@ services:
       # jamais injectés ici.
       ADMINER_DEFAULT_SERVER: database
     ports:
-      - "${ADMINER_PORT}:8080"
+      # Bind localhost uniquement : interface d'admin BDD, pas d'auth propre
+      # au-delà des identifiants Postgres (cf. .env).
+      - "127.0.0.1:${ADMINER_PORT}:8080"
     depends_on:
       database:
         condition: service_healthy
@@ -126,8 +130,9 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     ports:
-      - "${RABBITMQ_PORT}:5672"      # protocole AMQP
-      - "${RABBITMQ_UI_PORT}:15672"  # interface d'administration web
+      # Bind localhost uniquement : creds de dev triviaux, cf. .env.
+      - "127.0.0.1:${RABBITMQ_PORT}:5672"      # protocole AMQP
+      - "127.0.0.1:${RABBITMQ_UI_PORT}:15672"  # interface d'administration web
     volumes:
       - mq_data:/var/lib/rabbitmq
     healthcheck:
