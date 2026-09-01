@@ -1,0 +1,26 @@
+# Périmètre exact des kinds gérés par `kubectl apply -k` sur un overlay
+# (voir k8s/base/kustomization.yaml et k8s/overlays/*/kustomization.yaml) —
+# pas plus, pas de cluster-admin.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: github-actions-deployer
+rules:
+  - apiGroups: ['apps']
+    resources: ['deployments', 'replicasets']
+    verbs: ['get', 'list', 'watch', 'create', 'update', 'patch']
+  - apiGroups: ['']
+    resources: ['pods', 'pods/log']
+    verbs: ['get', 'list', 'watch']
+  - apiGroups: ['']
+    resources: ['pods/exec']
+    verbs: ['create']
+  - apiGroups: ['']
+    resources: ['services', 'configmaps', 'persistentvolumeclaims']
+    verbs: ['get', 'list', 'watch', 'create', 'update', 'patch']
+  - apiGroups: ['networking.k8s.io']
+    resources: ['ingresses']
+    verbs: ['get', 'list', 'watch', 'create', 'update', 'patch']
+  - apiGroups: ['external-secrets.io']
+    resources: ['externalsecrets', 'secretstores']
+    verbs: ['get', 'list', 'watch', 'create', 'update', 'patch']

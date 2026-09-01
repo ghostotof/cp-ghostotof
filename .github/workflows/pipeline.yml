@@ -1,0 +1,221 @@
+name: Pipeline
+
+# Portage de l'ancien .gitlab-ci.yml : tests sur chaque push (branche ou tag),
+# reste de la chaîne (build → deploy preprod → smoke-test/audit (gate) →
+# rollback auto → deploy prod (approbation manuelle) → audit post-promotion)
+# uniquement sur tag Git — voir docs/agents/ pour le contexte de la migration.
+
+on:
+  push:
+  pull_request:
+
+env:
+  IMAGE_BACKEND: ghcr.io/ghostotof/cp-ghostotof-backend
+  IMAGE_FRONTEND: ghcr.io/ghostotof/cp-ghostotof-frontend
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # test — toujours exécutés
+  # ---------------------------------------------------------------------------
+  test-backend:
+    runs-on: ubuntu-latest
+    services:
+      database:
+        image: postgres:18.4-alpine
+        env:
+          POSTGRES_DB: cp_ghostotof
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U app -d cp_ghostotof"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: 'postgresql://app:app@localhost:5432/cp_ghostotof?serverVersion=18&charset=utf8'
+      APP_ENV: test
+      COMPOSER_ALLOW_SUPERUSER: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: intl, pdo_pgsql, zip, sockets, amqp-2.2.0
+          coverage: none
+      - name: Composer install
+        working-directory: backend
+        run: composer install --no-interaction --prefer-dist
+      - name: Génère le keypair JWT (jamais commité, cf. .gitignore)
+        working-directory: backend
+        run: php bin/console lexik:jwt:generate-keypair --skip-if-exists --no-interaction
+      - name: Prépare la base de test
+        working-directory: backend
+        run: |
+          php bin/console doctrine:database:create --if-not-exists
+          php bin/console doctrine:migrations:migrate --no-interaction
+      - name: PHPUnit
+        working-directory: backend
+        run: php bin/phpunit
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26.7.0'
+      - working-directory: frontend
+        run: npm ci
+      - working-directory: frontend
+        run: npm run lint
+      - working-directory: frontend
+        run: npm test
+      - working-directory: frontend
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # build — une image prod + une image preprod, backend et frontend.
+  # Uniquement sur tag (équivalent `.only-tag` de l'ancien pipeline GitLab).
+  # ---------------------------------------------------------------------------
+  build-images:
+    needs: [test-backend, test-frontend]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build & push (prod + preprod, backend + frontend)
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          make build-prod           IMAGE=$IMAGE_BACKEND        TAG=$TAG
+          make build-preprod        IMAGE=$IMAGE_BACKEND        TAG=$TAG
+          make build-front-prod     FRONT_IMAGE=$IMAGE_FRONTEND TAG=$TAG
+          make build-front-preprod  FRONT_IMAGE=$IMAGE_FRONTEND TAG=$TAG
+          docker push "$IMAGE_BACKEND:$TAG"
+          docker push "$IMAGE_BACKEND:$TAG-preprod"
+          docker push "$IMAGE_FRONTEND:$TAG"
+          docker push "$IMAGE_FRONTEND:$TAG-preprod"
+
+  # ---------------------------------------------------------------------------
+  # deploy-preprod
+  # ---------------------------------------------------------------------------
+  deploy-preprod:
+    needs: [build-images]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    environment:
+      name: preprod
+      url: https://preprod.cp-ghostotof.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: imranismail/setup-kustomize@v2
+      - name: Configure kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_PREPROD }}" > ~/.kube/config
+      - name: Deploy
+        working-directory: k8s/overlays/preprod
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          kustomize edit set image backend=$IMAGE_BACKEND:$TAG-preprod frontend=$IMAGE_FRONTEND:$TAG-preprod
+          kubectl apply -k .
+          kubectl -n preprod rollout status deployment/backend --timeout=180s
+          kubectl -n preprod rollout status deployment/frontend --timeout=180s
+          kubectl -n preprod exec deploy/backend -c php-fpm -- php bin/console doctrine:migrations:migrate --no-interaction
+
+  # ---------------------------------------------------------------------------
+  # test-preprod — smoke tests + audit boîte noire (gate bloquant)
+  # ---------------------------------------------------------------------------
+  smoke-test-preprod:
+    needs: [deploy-preprod]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Smoke tests
+        run: |
+          curl -fsS https://preprod.cp-ghostotof.com/healthz
+          status=$(curl -s -o /dev/null -w '%{http_code}' https://preprod.cp-ghostotof.com/api/me)
+          if [ "$status" != "401" ]; then
+            echo "GET /api/me a répondu $status (401 attendu, non authentifié) : l'API ne semble pas avoir démarré correctement"
+            exit 1
+          fi
+
+  # Gate bloquant : une régression de sécurité en préprod empêche d'atteindre
+  # le gate d'approbation manuelle de deploy-prod (cf. son `needs`).
+  audit-preprod:
+    needs: [deploy-preprod]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit préprod
+        run: ./tools/audit-prod.sh preprod.cp-ghostotof.com
+
+  # ---------------------------------------------------------------------------
+  # cleanup-preprod — seulement si smoke-test-preprod/audit-preprod échoue
+  # ---------------------------------------------------------------------------
+  rollback-preprod:
+    needs: [smoke-test-preprod, audit-preprod]
+    if: failure() && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_PREPROD }}" > ~/.kube/config
+      - name: Rollback
+        run: |
+          kubectl -n preprod rollout undo deployment/backend
+          kubectl -n preprod rollout undo deployment/frontend
+
+  # ---------------------------------------------------------------------------
+  # deploy-prod — approbation manuelle (protection de l'environnement
+  # `production`, reviewer requis configuré côté GitHub), aucun rebuild :
+  # promeut l'image déjà construite et validée en préprod.
+  # ---------------------------------------------------------------------------
+  deploy-prod:
+    needs: [smoke-test-preprod, audit-preprod]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://cp-ghostotof.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: imranismail/setup-kustomize@v2
+      - name: Configure kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_PROD }}" > ~/.kube/config
+      - name: Deploy
+        working-directory: k8s/overlays/prod
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          kustomize edit set image backend=$IMAGE_BACKEND:$TAG frontend=$IMAGE_FRONTEND:$TAG
+          kubectl apply -k .
+          kubectl -n prod rollout status deployment/backend --timeout=180s
+          kubectl -n prod rollout status deployment/frontend --timeout=180s
+          kubectl -n prod exec deploy/backend -c php-fpm -- php bin/console doctrine:migrations:migrate --no-interaction
+
+  # ---------------------------------------------------------------------------
+  # audit-prod — vérification post-promotion, non bloquant (pas de rollback
+  # auto en prod, contrairement à rollback-preprod).
+  # ---------------------------------------------------------------------------
+  audit-prod:
+    needs: [deploy-prod]
+    if: startsWith(github.ref, 'refs/tags/')
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit prod
+        run: ./tools/audit-prod.sh cp-ghostotof.com

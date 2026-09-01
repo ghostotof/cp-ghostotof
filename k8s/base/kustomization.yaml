@@ -17,6 +17,7 @@ resources:
   - ingress.yaml
   - secretstore.yaml
   - cluster-issuer.yaml
+  - github-actions-rbac
 
 # Placeholders remplacés par chaque overlay via `kustomize edit set image`
 # (fait par le job de déploiement CI, jamais commité en dur : le registre et
