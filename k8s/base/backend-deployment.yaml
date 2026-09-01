@@ -20,10 +20,8 @@ spec:
       labels:
         app.kubernetes.io/name: backend
     spec:
-      # PAT GitHub (read:packages), bootstrap manuel identique en esprit à
-      # scaleway-eso-auth : cf. k8s/README.md.
-      imagePullSecrets:
-        - name: ghcr-registry
+      # Packages GHCR rendus publics (cf. k8s/README.md §1bis) : pull
+      # anonyme, plus besoin d'imagePullSecrets.
       securityContext:
         fsGroup: 10001
       initContainers:

@@ -80,25 +80,18 @@ for NS in preprod prod; do
 done
 ```
 
-### 1bis. PAT GitHub pour le pull d'images GHCR (registre privé par défaut)
+### 1bis. Packages GHCR — publics, pull anonyme (pas de bootstrap requis)
 
-Les Deployments backend/frontend référencent `imagePullSecrets: [ghcr-registry]`
-(`k8s/base/{backend,frontend}-deployment.yaml`) : un Secret Kubernetes de type
-`docker-registry`, deuxième bootstrap manuel `kubectl create secret`
-(même logique que `scaleway-eso-auth` ci-dessus — pas de valeur sensible à
-committer, donc pas géré par ESO ni par les overlays).
+Les 2 packages (`cp-ghostotof-backend`, `cp-ghostotof-frontend`) sont rendus
+**publics** sur github.com (Settings du package > Change visibility >
+Public — impossible à automatiser via API/CLI, bascule manuelle unique
+faite une fois le premier tag construit). Le pull d'image ne nécessite donc
+aucun `imagePullSecrets` ni PAT : les Deployments backend/frontend
+(`k8s/base/{backend,frontend}-deployment.yaml`) n'en référencent plus.
 
-Un package GHCR publié via `GITHUB_TOKEN` (cf. job `build-images` du pipeline)
-est **privé par défaut**, même sur un dépôt public — impossible à changer via
-API/CLI, seulement via **Settings du package sur github.com > Change
-visibility > Public** (une fois le premier tag construit). Tant que ce n'est
-pas fait (ou si vous préférez garder les images privées), ce PAT est
-nécessaire pour le pull :
-
-Créer le token sur GitHub : **Settings (compte) > Developer settings >
-Personal access tokens > Tokens (classic)**, scope `read:packages`
-uniquement, sans expiration courte (le pull d'image en dépend en continu).
-Un seul token suffit pour les deux namespaces :
+Si les packages redeviennent privés un jour, un Secret Kubernetes de type
+`docker-registry` (PAT scope `read:packages`, même logique que
+`scaleway-eso-auth` ci-dessus) redevient nécessaire :
 
 ```bash
 for NS in preprod prod; do
@@ -108,11 +101,8 @@ for NS in preprod prod; do
     --docker-password=<PAT>
 done
 ```
-
-Si les 2 packages (`cp-ghostotof-backend`, `cp-ghostotof-frontend`) sont
-rendus publics par la suite, ce secret et la ligne `imagePullSecrets`
-correspondante dans les Deployments peuvent être supprimés — le pull
-anonyme fonctionne alors directement.
+— et il faudrait alors réajouter `imagePullSecrets: [ghcr-registry]` dans
+les deux Deployments.
 
 ### 1ter. CV (troisième et dernier bootstrap manuel)
 
@@ -236,10 +226,9 @@ prochaine connexion, aucune action corrective nécessaire.
   Deployments applicatifs (backend, frontend) respectent déjà ce profil
   (`runAsNonRoot`, `readOnlyRootFilesystem`, capacités supprimées), mais
   postgres/rabbitmq utilisent leurs images officielles telles quelles.
-- Trois bootstraps manuels `kubectl create secret` (hors ESO, cf. section
+- Deux bootstraps manuels `kubectl create secret` (hors ESO, cf. section
   "Prérequis cluster" ci-dessus) : `scaleway-eso-auth` (auth ESO elle-même,
-  forcément hors du système qu'elle authentifie), `ghcr-registry` (pull
-  d'images, aucune valeur committable — évitable si les packages GHCR sont
-  publics) et `cv-pdf` (dépasse la limite de 64 Ko par version de Secret
-  Manager). Documentés, mais restent des étapes manuelles à ne pas oublier
+  forcément hors du système qu'elle authentifie) et `cv-pdf` (dépasse la
+  limite de 64 Ko par version de Secret Manager). Documentés, mais restent
+  des étapes manuelles à ne pas oublier
   lors d'un rebuild de cluster.
