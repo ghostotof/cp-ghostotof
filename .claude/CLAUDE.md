@@ -411,3 +411,13 @@ If `make sh-front` / `docker compose exec frontend` shows stale source (edits ma
 
 If another developer clones the repo, they must set `UID`/`GID` in `../.env` to their own (`id -u`/`id -g`) and
 run `make build` — these are baked into the dev image's `dev` user, not read at container start.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitLab Issues for this repo. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context layout — root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
