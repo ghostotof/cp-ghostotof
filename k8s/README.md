@@ -18,12 +18,20 @@ des jobs.
    (`ServiceAccount` + `Role`/`RoleBinding` namespaced, scope limité aux kinds
    gérés par `kubectl apply -k` ; `ClusterRole`/`ClusterRoleBinding` étroits,
    restreints par `resourceNames` aux deux namespaces `preprod`/`prod` et au
-   `ClusterIssuer` `letsencrypt` — pas de `cluster-admin`). Appliqué une fois par
-   namespace :
-   ```
-   kubectl apply -f <(kubectl kustomize k8s/overlays/preprod | \
-     yq 'select(.metadata.name == "github-actions-deployer" or .metadata.name == "github-actions-deployer-token")')
-   # idem pour prod
+   `ClusterIssuer` `letsencrypt` — pas de `cluster-admin`). Délibérément
+   **hors** de `k8s/base/kustomization.yaml` (pas réappliqué par le pipeline
+   à chaque déploiement — sinon le SA devrait pouvoir se lire/gérer
+   lui-même, un privilège qu'on ne lui donne pas). Appliqué une fois par
+   namespace, via une kustomization jetable (le champ `namespace:` doit être
+   posé par kustomize pour que les subjects des RoleBinding soient
+   correctement qualifiés — un simple `kubectl apply -n` ne suffit pas) :
+   ```bash
+   for NS in preprod prod; do
+     TMP=$(mktemp -d)
+     cp k8s/base/github-actions-rbac/*.yaml "$TMP/"
+     (cd "$TMP" && kustomize edit set namespace "$NS" && kubectl apply -k .)
+     rm -rf "$TMP"
+   done
    ```
    Puis construire un kubeconfig autonome à partir du token durable
    (`Secret` `github-actions-deployer-token`, type `kubernetes.io/service-account-token`)

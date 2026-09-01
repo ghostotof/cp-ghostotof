@@ -17,7 +17,14 @@ resources:
   - ingress.yaml
   - secretstore.yaml
   - cluster-issuer.yaml
-  - github-actions-rbac
+  # github-actions-rbac délibérément PAS ici : `kubectl apply -k .` tourne
+  # avec l'identité github-actions-deployer elle-même — si ses propres objets
+  # RBAC faisaient partie de ce qu'elle applique en routine, elle devrait
+  # pouvoir se lire/gérer elle-même (get sur serviceaccounts/roles/
+  # clusterroles/rolebindings/clusterrolebindings/le Secret token), un
+  # privilège volontairement absent de son Role (moindre privilège). Bootstrap
+  # manuel unique, cf. k8s/README.md — même principe que scaleway-eso-auth et
+  # cv-pdf, jamais réappliqué par le pipeline.
 
 # Placeholders remplacés par chaque overlay via `kustomize edit set image`
 # (fait par le job de déploiement CI, jamais commité en dur : le registre et
