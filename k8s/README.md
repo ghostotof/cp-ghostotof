@@ -1,8 +1,9 @@
 # Déploiement Kubernetes (Scaleway Kapsule)
 
 Manifests Kustomize : `base/` (commun) + `overlays/{preprod,prod}/` (namespace,
-domaine, réplicas, config). Le pipeline GitLab CI (`.gitlab-ci.yml`) applique
-ces overlays sur tag Git — voir la table des stages qui y est commentée.
+domaine, réplicas, config). Le pipeline GitHub Actions (`.github/workflows/pipeline.yml`)
+applique ces overlays sur tag Git — voir les commentaires de ce fichier pour le détail
+des jobs.
 
 ## Prérequis cluster (une fois, hors CI)
 
@@ -12,20 +13,23 @@ ces overlays sur tag Git — voir la table des stages qui y est commentée.
 3. **Installer cert-manager** + un `ClusterIssuer` nommé `letsencrypt` (référencé
    par l'annotation `cert-manager.io/cluster-issuer` de l'Ingress) : gère les
    certificats TLS Let's Encrypt automatiquement.
-4. **Installer le GitLab Agent for Kubernetes** (agentk) : déclarer l'agent dans
-   `.gitlab/agents/cp-ghostotof/config.yaml` (déjà présent dans ce dépôt), puis
-   sur le cluster :
+4. **ServiceAccount dédié au pipeline GitHub Actions** (remplace le tunnel GitLab
+   Agent for Kubernetes) : manifests sous `k8s/base/github-actions-rbac/`
+   (`ServiceAccount` + `Role`/`RoleBinding` namespaced, scope limité aux kinds
+   gérés par `kubectl apply -k` ; `ClusterRole`/`ClusterRoleBinding` étroits,
+   restreints par `resourceNames` aux deux namespaces `preprod`/`prod` et au
+   `ClusterIssuer` `letsencrypt` — pas de `cluster-admin`). Appliqué une fois par
+   namespace :
    ```
-   helm repo add gitlab https://charts.gitlab.io
-   helm upgrade --install cp-ghostotof-agent gitlab/gitlab-agent \
-     --namespace gitlab-agent --create-namespace \
-     --set image.tag=stable \
-     --set config.token=<token généré dans GitLab : Operate > Kubernetes clusters> \
-     --set config.kasAddress=wss://kas.gitlab.com
+   kubectl apply -f <(kubectl kustomize k8s/overlays/preprod | \
+     yq 'select(.metadata.name == "github-actions-deployer" or .metadata.name == "github-actions-deployer-token")')
+   # idem pour prod
    ```
-   Le job CI utilise ensuite `kubectl config use-context
-   <chemin-projet-gitlab>:cp-ghostotof-agent` — aucun kubeconfig à stocker en
-   variable CI/CD.
+   Puis construire un kubeconfig autonome à partir du token durable
+   (`Secret` `github-actions-deployer-token`, type `kubernetes.io/service-account-token`)
+   et du endpoint/CA du cluster (`kubectl config view --raw`), et le stocker
+   comme secret GitHub Actions (`KUBE_CONFIG_PREPROD` / `KUBE_CONFIG_PROD`,
+   Settings > Secrets and variables > Actions) — jamais commité.
 5. **Installer External Secrets Operator** (Helm) : synchronise les Secrets
    Kubernetes depuis **Scaleway Secret Manager** (région `fr-par` — hébergement
    France garanti), au lieu d'un `kubectl create secret` manuel non versionné.
@@ -68,27 +72,39 @@ for NS in preprod prod; do
 done
 ```
 
-### 1bis. Deploy Token GitLab pour le pull d'images (registre privé)
+### 1bis. PAT GitHub pour le pull d'images GHCR (registre privé par défaut)
 
-Les Deployments backend/frontend référencent `imagePullSecrets: [gitlab-registry]`
+Les Deployments backend/frontend référencent `imagePullSecrets: [ghcr-registry]`
 (`k8s/base/{backend,frontend}-deployment.yaml`) : un Secret Kubernetes de type
 `docker-registry`, deuxième bootstrap manuel `kubectl create secret`
 (même logique que `scaleway-eso-auth` ci-dessus — pas de valeur sensible à
 committer, donc pas géré par ESO ni par les overlays).
 
-Créer le token dans GitLab : **Settings > Repository > Deploy tokens**, scope
-`read_registry` uniquement, sans expiration courte (le pull d'image en dépend
-en continu). Un seul token suffit pour les deux namespaces (accès en lecture
-seule au même registre) :
+Un package GHCR publié via `GITHUB_TOKEN` (cf. job `build-images` du pipeline)
+est **privé par défaut**, même sur un dépôt public — impossible à changer via
+API/CLI, seulement via **Settings du package sur github.com > Change
+visibility > Public** (une fois le premier tag construit). Tant que ce n'est
+pas fait (ou si vous préférez garder les images privées), ce PAT est
+nécessaire pour le pull :
+
+Créer le token sur GitHub : **Settings (compte) > Developer settings >
+Personal access tokens > Tokens (classic)**, scope `read:packages`
+uniquement, sans expiration courte (le pull d'image en dépend en continu).
+Un seul token suffit pour les deux namespaces :
 
 ```bash
 for NS in preprod prod; do
-  kubectl create secret docker-registry gitlab-registry -n $NS \
-    --docker-server=registry.gitlab.com \
-    --docker-username=<gitlab+deploy-token-XXXXX> \
-    --docker-password=<TOKEN>
+  kubectl create secret docker-registry ghcr-registry -n $NS \
+    --docker-server=ghcr.io \
+    --docker-username=ghostotof \
+    --docker-password=<PAT>
 done
 ```
+
+Si les 2 packages (`cp-ghostotof-backend`, `cp-ghostotof-frontend`) sont
+rendus publics par la suite, ce secret et la ligne `imagePullSecrets`
+correspondante dans les Deployments peuvent être supprimés — le pull
+anonyme fonctionne alors directement.
 
 ### 1ter. CV (troisième et dernier bootstrap manuel)
 
@@ -214,7 +230,8 @@ prochaine connexion, aucune action corrective nécessaire.
   postgres/rabbitmq utilisent leurs images officielles telles quelles.
 - Trois bootstraps manuels `kubectl create secret` (hors ESO, cf. section
   "Prérequis cluster" ci-dessus) : `scaleway-eso-auth` (auth ESO elle-même,
-  forcément hors du système qu'elle authentifie), `gitlab-registry` (pull
-  d'images, aucune valeur committable) et `cv-pdf` (dépasse la limite de 64 Ko
-  par version de Secret Manager). Les trois sont documentés, mais restent des
-  étapes manuelles à ne pas oublier lors d'un rebuild de cluster.
+  forcément hors du système qu'elle authentifie), `ghcr-registry` (pull
+  d'images, aucune valeur committable — évitable si les packages GHCR sont
+  publics) et `cv-pdf` (dépasse la limite de 64 Ko par version de Secret
+  Manager). Documentés, mais restent des étapes manuelles à ne pas oublier
+  lors d'un rebuild de cluster.

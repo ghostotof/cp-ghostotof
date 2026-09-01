@@ -21,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 9. In its final state, the website will have an authentication system with a generic guest user.
    Without authentication, the site must not display any personal information that could identify me.
    This information will be available once the user is authenticated.
-10. The modifications must follow the git flow planned for this project on Gitlab (main branch "main", next release "develop", new feature "feature", etc...)
+10. The modifications must follow the git flow planned for this project on GitHub (main branch "main", next release "develop", new feature "feature", etc...)
 11. The resulting can be shown during an interview.
 12. The resulting must be fully multilingual (French, English)
 
@@ -411,3 +411,13 @@ If `make sh-front` / `docker compose exec frontend` shows stale source (edits ma
 
 If another developer clones the repo, they must set `UID`/`GID` in `../.env` to their own (`id -u`/`id -g`) and
 run `make build` — these are baked into the dev image's `dev` user, not read at container start.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for this repo. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context layout — root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
