@@ -1,0 +1,20 @@
+# Portion strictement cluster-scope nécessaire à `kubectl apply -k` : le
+# Namespace (déjà créé, mais réappliqué à chaque run) et le ClusterIssuer
+# cert-manager référencé par l'Ingress. Restreint par resourceNames — pas de
+# `cluster-admin`, pas d'accès aux autres namespaces/ClusterIssuers du
+# cluster. Objet unique, partagé par les deux overlays (comme
+# cluster-issuer.yaml) : réappliqué de façon identique et idempotente par
+# preprod et prod.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: github-actions-deployer
+rules:
+  - apiGroups: ['']
+    resources: ['namespaces']
+    resourceNames: ['preprod', 'prod']
+    verbs: ['get', 'patch']
+  - apiGroups: ['cert-manager.io']
+    resources: ['clusterissuers']
+    resourceNames: ['letsencrypt']
+    verbs: ['get', 'patch']
