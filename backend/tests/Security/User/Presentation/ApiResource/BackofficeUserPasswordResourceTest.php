@@ -108,6 +108,24 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(422);
     }
 
+    public function testPasswordTooLongIsRejected(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
+        $jane = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, self::OLD_PASSWORD);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+
+        // 4097 caractères : au-delà de CpgUser::MAX_PASSWORD_LENGTH, le hasher
+        // Symfony lèverait une exception (500). La contrainte Assert\Length
+        // doit intercepter en 422 avant d'atteindre le Processor.
+        $client->request('PUT', sprintf('/api/backoffice/users/%d/password', $jane->getId()), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: json_encode(['password' => str_repeat('a', CpgUser::MAX_PASSWORD_LENGTH + 1)]));
+
+        self::assertResponseStatusCodeSame(422);
+    }
+
     public function testUnknownIdReturnsNotFound(): void
     {
         $client = self::createClient();
