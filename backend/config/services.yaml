@@ -9,6 +9,7 @@
 parameters:
     app.cv_file_path: '%env(resolve:CV_FILE_PATH)%'
     app.cv_download_filename: '%env(CV_DOWNLOAD_FILENAME)%'
+    app.contact_sender_email: '%env(CONTACT_SENDER_EMAIL)%'
     app.contact_recipient_email: '%env(CONTACT_RECIPIENT_EMAIL)%'
 
 services:

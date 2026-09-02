@@ -23,7 +23,7 @@ mentions légales pour le détail du statut), joignable à
 | **Base légale** | Mesures précontractuelles prises à la demande de la personne concernée (art. 6-1-b RGPD) ; à défaut, intérêt légitime à pouvoir échanger avec un visiteur qui en fait la demande |
 | **Données collectées** | Nom, adresse email, message (champ libre) |
 | **Durée de conservation** | **Cas nominal : aucune persistance en base.** Le message transite par une file RabbitMQ (transport `async`) jusqu'à son envoi par email, puis est supprimé de la file. **Cas d'échec d'envoi** (SMTP indisponible, retries épuisés) : le message est routé vers le transport `failed` (`failure_transport: failed` dans `config/packages/messenger.yaml`), stocké en base dans la table `messenger_messages` — il contient alors le nom, l'email et le message du visiteur. **Rétention : 30 jours maximum**, appliquée par la commande `app:contact:purge-failed-messages` (paramètre `--older-than`, défaut `30 days`), exécutée quotidiennement par le CronJob `contact-failed-messages-purge` (03:17). L'email effectivement envoyé est par ailleurs conservé dans la boîte `contact@cp-ghostotof.com`, selon la politique du fournisseur de messagerie retenu en production. |
-| **Destinataires** | La boîte `contact@cp-ghostotof.com` (variable `CONTACT_RECIPIENT_EMAIL`) ; sous-traitant technique : le fournisseur SMTP configuré via `MAILER_DSN` en production (non déterminé à ce jour, `MAILER_DSN=null://null` en dev) |
+| **Destinataires** | L'éditeur du site, via la boîte `contact@cp-ghostotof.com` (variable `CONTACT_RECIPIENT_EMAIL`). Sous-traitants techniques : **Scaleway SAS — Transactional Email** (envoi du message de notification, `MAILER_DSN=scaleway+api://…`, infrastructure en France) et **Cloudflare, Inc. — Email Routing** (redirection de `contact@cp-ghostotof.com` vers la boîte réelle de l'éditeur, société établie aux États-Unis, cf. §7). En dev, `MAILER_DSN=null://null` (aucun envoi). |
 | **Mesures de sécurité** | Validation stricte côté API (`Assert\Email`, longueurs bornées), honeypot anti-bot, rate limiting (cf. §2), transport chiffré vers le serveur SMTP (dépend du DSN de production) |
 
 ## 2. Anti-spam / limitation de débit du formulaire de contact
@@ -85,12 +85,12 @@ l'Évêque, 75008 Paris). L'infrastructure Kubernetes, la base de données et le
 secrets (Scaleway Secret Manager) sont localisés en **France, région `fr-par`**.
 Aucun transfert hors Union européenne pour ce volet.
 
-**Fournisseur d'envoi d'emails (production)** : non encore déterminé
-(`MAILER_DSN=null://null` à ce jour). À compléter au choix du transport SMTP/API.
-Si le prestataire retenu est établi hors UE, indiquer ici la garantie encadrant
-le transfert (clauses contractuelles types de la Commission européenne, ou
-adhésion au Data Privacy Framework EU–US).
+**Envoi des emails de notification** : Scaleway SAS — Transactional Email,
+infrastructure en France (`fr-par`). Aucun transfert hors Union européenne.
 
-**Réception des messages de contact** : si un service de redirection d'emails
-tiers est utilisé pour `contact@cp-ghostotof.com` (ex. Cloudflare Email Routing,
-ImprovMX), préciser de même sa localisation et la garantie applicable.
+**Réception / redirection de `contact@cp-ghostotof.com`** : Cloudflare, Inc.
+(Email Routing), société établie aux **États-Unis**. Transfert encadré par
+l'**EU–US Data Privacy Framework** (Cloudflare y est certifié) ; à défaut, les
+clauses contractuelles types de la Commission européenne s'appliquent au titre
+du DPA Cloudflare. Le service se limite à relayer le message vers la boîte de
+l'éditeur ; aucune conservation durable côté Cloudflare au-delà du routage.

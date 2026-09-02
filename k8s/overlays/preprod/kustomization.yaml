@@ -17,6 +17,10 @@ configMapGenerator:
       - CORS_ALLOW_ORIGIN=^https://preprod\.cp-ghostotof\.com$
       - DEFAULT_URI=https://preprod.cp-ghostotof.com
       - CV_DOWNLOAD_FILENAME=cv.pdf
+      # From des notifications du formulaire de contact (non secret, adresse
+      # d'envoi dédiée du domaine validé Scaleway TEM). CONTACT_RECIPIENT_EMAIL
+      # et MAILER_DSN restent dans le Secret backend-secrets (ESO).
+      - CONTACT_SENDER_EMAIL=noreply@cp-ghostotof.com
   - name: frontend-config
     literals:
       - API_URL=https://preprod.cp-ghostotof.com

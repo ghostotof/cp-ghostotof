@@ -15,6 +15,7 @@ use Symfony\Component\Mime\Email;
 
 final class SendContactMessageHandlerTest extends TestCase
 {
+    private const string CONTACT_SENDER_EMAIL = 'noreply@cp-ghostotof.com';
     private const string CONTACT_RECIPIENT_EMAIL = 'contact@cp-ghostotof.com';
 
     public function testItSendsAnEmailToTheContactRecipientWithReplyToSetToTheVisitor(): void
@@ -23,7 +24,7 @@ final class SendContactMessageHandlerTest extends TestCase
         $mailer->expects(self::once())
             ->method('send')
             ->with(self::callback(function (Email $email): bool {
-                self::assertSame([self::CONTACT_RECIPIENT_EMAIL], array_map(
+                self::assertSame([self::CONTACT_SENDER_EMAIL], array_map(
                     static fn (Address $address): string => $address->getAddress(),
                     $email->getFrom(),
                 ));
@@ -41,7 +42,7 @@ final class SendContactMessageHandlerTest extends TestCase
                 return true;
             }));
 
-        $handler = new SendContactMessageHandler($mailer, self::CONTACT_RECIPIENT_EMAIL);
+        $handler = new SendContactMessageHandler($mailer, self::CONTACT_SENDER_EMAIL, self::CONTACT_RECIPIENT_EMAIL);
 
         $handler(new SendContactMessageMessage(
             senderName: 'Jane Doe',
@@ -56,7 +57,7 @@ final class SendContactMessageHandlerTest extends TestCase
         $transportException = new TransportException('SMTP indisponible.');
         $mailer->expects(self::once())->method('send')->willThrowException($transportException);
 
-        $handler = new SendContactMessageHandler($mailer, self::CONTACT_RECIPIENT_EMAIL);
+        $handler = new SendContactMessageHandler($mailer, self::CONTACT_SENDER_EMAIL, self::CONTACT_RECIPIENT_EMAIL);
 
         try {
             $handler(new SendContactMessageMessage(
