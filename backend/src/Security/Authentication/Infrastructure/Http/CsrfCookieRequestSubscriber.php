@@ -23,6 +23,11 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
  * pour /api/logout, le LogoutListener de Symfony fixe la réponse (donc stoppe
  * la propagation de l'événement) dès son passage. Une priorité inférieure à 8
  * ne verrait donc jamais passer cette requête.
+ *
+ * Point d'audit B1 : en plus du double-submit, la valeur du cookie doit
+ * porter une signature HMAC-APP_SECRET valide (cf. CsrfCookieTokenSigner) —
+ * sinon un cookie forgé par un attaquant (qui recopie sa propre valeur dans
+ * l'en-tête) passerait la seule comparaison cookie == header.
  */
 #[AsEventListener(event: RequestEvent::class, priority: 20)]
 final class CsrfCookieRequestSubscriber
@@ -41,6 +46,10 @@ final class CsrfCookieRequestSubscriber
     private const array EXCLUDED_PATHS = ['/api/login_check', '/api/contact'];
     private const string COOKIE_NAME = 'XSRF-TOKEN';
     private const string HEADER_NAME = 'X-XSRF-TOKEN';
+
+    public function __construct(private readonly CsrfCookieTokenSigner $csrfCookieTokenSigner)
+    {
+    }
 
     public function __invoke(RequestEvent $event): void
     {
@@ -63,6 +72,14 @@ final class CsrfCookieRequestSubscriber
         // chaînes vides en plus du cas `null`.
         if (!\is_string($cookieToken) || !\is_string($headerToken) || '' === $cookieToken || '' === $headerToken || !hash_equals($cookieToken, $headerToken)) {
             throw new AccessDeniedHttpException('En-tête CSRF manquant ou invalide.');
+        }
+
+        // Le double-submit ne prouve que « l'appelant possède le cookie » ;
+        // la signature prouve « le cookie a bien été émis par ce serveur »
+        // (point d'audit B1). Un XSRF-TOKEN forgé et recopié à l'identique
+        // dans l'en-tête passe la condition ci-dessus mais échoue ici.
+        if (!$this->csrfCookieTokenSigner->isValid($cookieToken)) {
+            throw new AccessDeniedHttpException('Jeton CSRF non signé ou signature invalide.');
         }
     }
 
