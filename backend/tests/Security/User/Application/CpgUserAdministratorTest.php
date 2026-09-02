@@ -6,6 +6,7 @@ namespace App\Tests\Security\User\Application;
 
 use App\Security\User\Application\CpgUserAdministrator;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CannotDeleteOwnAccountException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
@@ -21,6 +22,41 @@ final class CpgUserAdministratorTest extends TestCase
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
         $repository->expects(self::once())->method('findOneById')->with(2)->willReturn($targetUser);
+        // Cible sans ROLE_SUPER : la garde anti-lockout ne doit même pas
+        // interroger le dépôt sur le décompte.
+        $repository->expects(self::never())->method('countByRole');
+        $repository->expects(self::once())->method('remove')->with($targetUser);
+
+        $administrator = new CpgUserAdministrator($repository, $this->createStub(UserPasswordHasherInterface::class));
+
+        $administrator->delete(2, $actingUser);
+    }
+
+    public function testDeleteThrowsWhenTargetIsTheLastSuperAdmin(): void
+    {
+        $actingUser = $this->userWithId(1, 'super');
+        $targetUser = $this->superUserWithId(2, 'other-super');
+
+        $repository = $this->createMock(CpgUserRepositoryInterface::class);
+        $repository->expects(self::once())->method('findOneById')->with(2)->willReturn($targetUser);
+        $repository->expects(self::once())->method('countByRole')->with(CpgUser::ROLE_SUPER)->willReturn(1);
+        $repository->expects(self::never())->method('remove');
+
+        $administrator = new CpgUserAdministrator($repository, $this->createStub(UserPasswordHasherInterface::class));
+
+        $this->expectException(CannotDeleteLastSuperAdminException::class);
+
+        $administrator->delete(2, $actingUser);
+    }
+
+    public function testDeleteRemovesSuperAdminWhenAnotherSuperAdminRemains(): void
+    {
+        $actingUser = $this->userWithId(1, 'super');
+        $targetUser = $this->superUserWithId(2, 'other-super');
+
+        $repository = $this->createMock(CpgUserRepositoryInterface::class);
+        $repository->expects(self::once())->method('findOneById')->with(2)->willReturn($targetUser);
+        $repository->expects(self::once())->method('countByRole')->with(CpgUser::ROLE_SUPER)->willReturn(2);
         $repository->expects(self::once())->method('remove')->with($targetUser);
 
         $administrator = new CpgUserAdministrator($repository, $this->createStub(UserPasswordHasherInterface::class));
@@ -98,6 +134,14 @@ final class CpgUserAdministratorTest extends TestCase
 
         $reflection = new \ReflectionProperty(CpgUser::class, 'id');
         $reflection->setValue($user, $id);
+
+        return $user;
+    }
+
+    private function superUserWithId(int $id, string $username): CpgUser
+    {
+        $user = $this->userWithId($id, $username);
+        $user->setRoles([CpgUser::ROLE_SUPER]);
 
         return $user;
     }

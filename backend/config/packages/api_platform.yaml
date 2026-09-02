@@ -38,6 +38,7 @@ api_platform:
         App\Portfolio\About\Domain\Exception\AboutMeCardNotFoundException: 404
         App\Security\User\Domain\Exception\CpgUserNotFoundException: 404
         App\Security\User\Domain\Exception\CannotDeleteOwnAccountException: 409
+        App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException: 409
     defaults:
         stateless: true
         cache_headers:
