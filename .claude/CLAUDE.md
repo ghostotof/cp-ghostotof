@@ -33,11 +33,18 @@ exists — the `Security` bounded context (`User` + `Authentication`) and four `
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
 over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
 recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
-`tests/`, mirrors the `src/` bounded-context tree) and runnable via `php bin/phpunit` inside `make sh`. There is
-still no PHPStan or Rector configuration in the backend — set these up before/while adding more code. Psalm
+`tests/`, mirrors the `src/` bounded-context tree) and runnable via `php bin/phpunit` inside `make sh`.
+**PHPStan** is configured (`backend/phpstan.dist.neon`, level `max` + `phpstan-strict-rules` +
+`phpstan-symfony`/`-doctrine`/`-phpunit`/`-deprecation-rules` via `extension-installer`): run it with
+`composer phpstan` inside `make sh` (warms the dev container first), CI job `phpstan-backend` (blocking,
+`build-images` needs it). The debt existing when PHPStan was adopted (~325 findings across `src/` + `tests/`)
+is frozen in `backend/phpstan-baseline.neon` — **burn it down, don't grow it**; any rule not in the baseline
+must stay green, and new code is held to level max. `tests/object-manager.php` boots the kernel for
+`phpstan-doctrine`; `tests/bootstrap.php` is `excludePaths`-excluded (Flex-managed). Regenerate the baseline
+after fixing a batch: `composer phpstan -- --generate-baseline`. **Rector** is still not set up. Psalm
 *is* installed (`psalm/phar`, `backend/psalm.xml`) but **only** for taint analysis (`composer psalm`, CI job
-`sast-backend`, audit point M4) — `errorLevel="8"`, it is not and must not become the primary type-checker
-(that is PHPStan's job); don't reach for Psalm annotations or raise its level. The
+`sast-backend`, audit point M4) — `errorLevel="8"`, it is not and must not become a second type-checker
+alongside PHPStan; don't reach for Psalm annotations or raise its level. The
 frontend has moved past the default scaffold: it follows a layered clean architecture (see below) and has
 Vitest configured with `npm test`. A `ROLE_SUPER`-gated backoffice (`/admin` on the frontend, `/api/backoffice/*`
 on the backend) lets an authenticated super-admin manage all of the above content plus user accounts — see the
