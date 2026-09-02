@@ -48,7 +48,7 @@ const fr: PortfolioLocaleContent = {
   legalNotice: {
     eyebrow: 'Informations légales',
     title: 'Mentions légales',
-    lastUpdated: 'Dernière mise à jour : 10 août 2026',
+    lastUpdated: 'Dernière mise à jour : 2 septembre 2026',
     sections: [
       {
         heading: 'Éditeur du site',
@@ -65,7 +65,8 @@ const fr: PortfolioLocaleContent = {
       {
         heading: 'Hébergement',
         paragraphs: [
-          '[HÉBERGEUR À COMPLÉTER] — raison sociale, adresse et contact de l’hébergeur seront précisés ici dès que l’environnement de production sera défini.',
+          'Ce site est hébergé par Scaleway SAS, société immatriculée au Registre du commerce et des sociétés de Paris sous le numéro 433 115 904, dont le siège social est situé 8 rue de la Ville l’Évêque, 75008 Paris, France — téléphone : +33 (0)1 84 13 00 00.',
+          'Les données et l’application sont hébergées sur l’infrastructure Scaleway localisée en France (région fr-par).',
         ],
       },
       {

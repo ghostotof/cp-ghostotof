@@ -80,6 +80,17 @@ données collectées.
 
 ## 7. Transferts hors Union européenne
 
-Aucun transfert hors UE identifié à ce jour (hébergement et fournisseur email de
-production non encore choisis, cf. mentions légales). À mettre à jour dès que
-l'hébergement de production sera déterminé.
+**Hébergement** : Scaleway SAS (RCS Paris 433 115 904, siège 8 rue de la Ville
+l'Évêque, 75008 Paris). L'infrastructure Kubernetes, la base de données et les
+secrets (Scaleway Secret Manager) sont localisés en **France, région `fr-par`**.
+Aucun transfert hors Union européenne pour ce volet.
+
+**Fournisseur d'envoi d'emails (production)** : non encore déterminé
+(`MAILER_DSN=null://null` à ce jour). À compléter au choix du transport SMTP/API.
+Si le prestataire retenu est établi hors UE, indiquer ici la garantie encadrant
+le transfert (clauses contractuelles types de la Commission européenne, ou
+adhésion au Data Privacy Framework EU–US).
+
+**Réception des messages de contact** : si un service de redirection d'emails
+tiers est utilisé pour `contact@cp-ghostotof.com` (ex. Cloudflare Email Routing,
+ImprovMX), préciser de même sa localisation et la garantie applicable.

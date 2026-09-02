@@ -48,7 +48,7 @@ const en: PortfolioLocaleContent = {
   legalNotice: {
     eyebrow: 'Legal information',
     title: 'Legal notice',
-    lastUpdated: 'Last updated: August 10, 2026',
+    lastUpdated: 'Last updated: September 2, 2026',
     sections: [
       {
         heading: 'Site publisher',
@@ -65,7 +65,8 @@ const en: PortfolioLocaleContent = {
       {
         heading: 'Hosting',
         paragraphs: [
-          '[HOSTING PROVIDER TO BE COMPLETED] — the host’s company name, address and contact details will be added here once the production environment is set up.',
+          'This site is hosted by Scaleway SAS, a company registered with the Paris Trade and Companies Register under number 433 115 904, with its registered office at 8 rue de la Ville l’Évêque, 75008 Paris, France — phone: +33 (0)1 84 13 00 00.',
+          'Data and the application are hosted on Scaleway infrastructure located in France (fr-par region).',
         ],
       },
       {
