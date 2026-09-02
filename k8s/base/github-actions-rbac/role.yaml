@@ -19,7 +19,7 @@ rules:
     resources: ['services', 'configmaps', 'persistentvolumeclaims']
     verbs: ['get', 'list', 'watch', 'create', 'update', 'patch']
   - apiGroups: ['networking.k8s.io']
-    resources: ['ingresses']
+    resources: ['ingresses', 'networkpolicies']
     verbs: ['get', 'list', 'watch', 'create', 'update', 'patch']
   - apiGroups: ['external-secrets.io']
     resources: ['externalsecrets', 'secretstores']
