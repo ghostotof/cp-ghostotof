@@ -8,8 +8,8 @@ framework:
 
         transports:
             # https://symfony.com/doc/current/messenger.html#transport-configuration
-            # RabbitMQ (service "rabbitmq" du docker-compose racine), consommé par
-            # `make consume` (messenger:consume async -vv).
+            # RabbitMQ. Consommé par `make consume` en dev, et par le Deployment
+            # `worker` en préprod/prod (k8s/base/messenger-worker-deployment.yaml).
             async: '%env(MESSENGER_TRANSPORT_DSN)%'
             failed: 'doctrine://default?queue_name=failed'
             sync: 'sync://'
