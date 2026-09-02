@@ -44,10 +44,19 @@ spec:
 # trafic loopback intra-pod n'est jamais soumis aux NetworkPolicy, aucune
 # règle n'est donc nécessaire pour 9000.
 #
-# Postgres et RabbitMQ n'acceptent que les pods de cette application
-# (label app.kubernetes.io/part-of, posé sur tous les pods par
-# base/kustomization.yaml). Cela autorise backend, worker Messenger et Adminer
-# sans les énumérer, tout en fermant l'accès aux autres locataires du cluster.
+# Postgres et RabbitMQ n'acceptent que les pods du MÊME namespace, sur 5432 /
+# 5672. `from.podSelector: {}` (sélecteur vide) = « tous les pods de ce
+# namespace », sans dépendre d'un label applicatif.
+#
+# NB : une première version filtrait sur le label `app.kubernetes.io/part-of`,
+# mais le transformer `labels:` de kustomize (base/kustomization.yaml) ne le
+# pose PAS sur `spec.template.metadata.labels` (les pods) — seulement sur la
+# metadata des ressources. Résultat : aucun pod ne portait le label, la règle
+# n'autorisait donc rien et l'accès DB était coupé (incident release v0.4.0).
+# Le namespace étant mono-locataire (backend, worker, Adminer, datastores),
+# « tous les pods du namespace » couvre exactement l'intention de l'audit B3 :
+# `default-deny-ingress` continue de bloquer le trafic INTER-namespace (les
+# autres locataires du cluster Kapsule).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -61,9 +70,7 @@ spec:
   policyTypes: ['Ingress']
   ingress:
     - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/part-of: cp-ghostotof
+        - podSelector: {}
       ports:
         - protocol: TCP
           port: 5432
