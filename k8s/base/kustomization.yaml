@@ -9,6 +9,7 @@ resources:
   - backend-deployment.yaml
   - backend-service.yaml
   - backend-nginx-conf.yaml
+  - messenger-worker-deployment.yaml
   - messenger-purge-cronjob.yaml
   - frontend-deployment.yaml
   - frontend-service.yaml
