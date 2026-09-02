@@ -90,7 +90,7 @@ const en: PortfolioLocaleContent = {
   privacyPolicy: {
     eyebrow: 'Privacy',
     title: 'Privacy policy',
-    lastUpdated: 'Last updated: August 10, 2026',
+    lastUpdated: 'Last updated: September 2, 2026',
     sections: [
       {
         heading: 'Data controller',
@@ -111,7 +111,7 @@ const en: PortfolioLocaleContent = {
       {
         heading: "What we don't do",
         paragraphs: [
-          'No message sent through the contact form is stored in a database: it is forwarded by email with no application-level retention beyond that.',
+          'Contact form messages are not stored in a database beyond being forwarded by email, except when delivery fails (see "Retention period").',
           'The site uses no audience-measurement, advertising, or third-party tracking cookies, and performs no profiling or automated decision-making.',
         ],
       },
@@ -137,7 +137,7 @@ const en: PortfolioLocaleContent = {
       {
         heading: 'Retention period',
         paragraphs: [
-          "Contact form data is not stored beyond sending the notification email. Technical data (IP address for rate limiting, server logs) is kept for short periods, detailed in the processing register maintained by the publisher.",
+          "Contact form messages are not kept beyond sending the notification email. If delivery fails (mail server temporarily unavailable), the message is stored so it can be retried, then automatically deleted after 30 days at the latest. Technical data (IP address for rate limiting, server logs) is kept for short periods, detailed in the processing register maintained by the publisher.",
         ],
       },
       {
