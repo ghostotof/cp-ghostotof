@@ -174,12 +174,26 @@ rechargés à chaud).
 
 ## Administration de la base (Adminer)
 
-`k8s/base/adminer.yaml` déploie Adminer (interface web PostgreSQL) dans chaque
-namespace, mais **sans route Ingress** : c'est un Service `ClusterIP` interne
-au cluster, jamais exposé sur Internet. Accès à la demande :
+`k8s/base/adminer.yaml` déploie Adminer (interface web PostgreSQL) **sans
+route Ingress** : c'est un Service `ClusterIP` interne au cluster, jamais
+exposé sur Internet.
+
+**Prod (point d'audit B2)** : l'overlay `prod` met ce Deployment à
+`replicas: 0` (`k8s/overlays/prod/kustomization.yaml`) — aucun pod Adminer ne
+tourne en prod, pour ne pas garder une UI d'accès direct à la base en
+permanence. Pour une intervention ponctuelle :
 
 ```bash
-kubectl port-forward svc/adminer 8081:8080 -n preprod   # ou -n prod
+kubectl scale deploy/adminer --replicas=1 -n prod
+kubectl port-forward svc/adminer 8081:8080 -n prod
+# ... puis, une fois terminé :
+kubectl scale deploy/adminer --replicas=0 -n prod
+```
+
+**Préprod** : Adminer tourne normalement, accès à la demande :
+
+```bash
+kubectl port-forward svc/adminer 8081:8080 -n preprod
 ```
 
 puis ouvrir `http://localhost:8081` — champ "Serveur" pré-rempli (`database`),

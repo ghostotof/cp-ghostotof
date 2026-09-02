@@ -1,9 +1,14 @@
 # Interface d'administration de la base PostgreSQL. Volontairement AUCUNE
 # route Ingress ici : cet outil donne un accès direct aux données, la seule
 # protection fiable pour un projet perso sans VPN/IAP est de ne jamais
-# l'exposer sur Internet. Accès (préprod et prod) uniquement via :
-#   kubectl port-forward svc/adminer 8081:8080 -n <preprod|prod>
+# l'exposer sur Internet. Accès via :
+#   kubectl port-forward svc/adminer 8081:8080 -n preprod
 # puis http://localhost:8081 — voir k8s/README.md.
+#
+# Point d'audit B2 : en prod, l'overlay met ce Deployment à 0 replica
+# (k8s/overlays/prod/kustomization.yaml) — aucun pod Adminer ne tourne en
+# prod. Réactivation ponctuelle : `kubectl scale deploy/adminer --replicas=1
+# -n prod`, puis remise à 0 après usage.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
