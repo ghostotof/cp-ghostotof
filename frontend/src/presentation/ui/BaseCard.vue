@@ -12,6 +12,10 @@ const props = withDefaults(
     headingLevel?: 2 | 3
   }>(),
   {
+    // Props optionnelles sans valeur par défaut « métier » : `undefined`
+    // explicite pour satisfaire vue/require-default-prop.
+    description: undefined,
+    iconKey: undefined,
     headingLevel: 3,
   },
 )
