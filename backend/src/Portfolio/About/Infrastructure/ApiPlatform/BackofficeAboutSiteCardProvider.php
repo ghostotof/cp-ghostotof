@@ -11,6 +11,7 @@ use App\Portfolio\About\Domain\Entity\AboutSiteCard;
 use App\Portfolio\About\Domain\Repository\AboutSiteCardRepositoryInterface;
 use App\Portfolio\About\Presentation\ApiResource\BackofficeAboutSiteCardResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -18,18 +19,23 @@ use Symfony\Component\HttpFoundation\Request;
  */
 final readonly class BackofficeAboutSiteCardProvider implements ProviderInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private AboutSiteCardRepositoryInterface $aboutSiteCardRepository,
     ) {
     }
 
+    /**
+     * @return BackofficeAboutSiteCardResource|list<BackofficeAboutSiteCardResource>|null
+     */
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): BackofficeAboutSiteCardResource|array|null
     {
         if ($operation instanceof GetCollection) {
             $request = $context['request'] ?? null;
             \assert($request instanceof Request);
 
-            $locale = Locale::tryFrom((string) $request->query->get('locale', ''));
+            $locale = Locale::tryFrom($request->query->get('locale', ''));
 
             $cards = null !== $locale
                 ? $this->aboutSiteCardRepository->findByLocale($locale)
@@ -38,7 +44,7 @@ final readonly class BackofficeAboutSiteCardProvider implements ProviderInterfac
             return array_map($this->toResource(...), $cards);
         }
 
-        $card = $this->aboutSiteCardRepository->findOneById((int) $uriVariables['id']);
+        $card = $this->aboutSiteCardRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
 
         return null !== $card ? $this->toResource($card) : null;
     }

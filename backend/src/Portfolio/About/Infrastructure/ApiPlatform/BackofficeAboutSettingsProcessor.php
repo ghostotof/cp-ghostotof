@@ -10,12 +10,15 @@ use App\Portfolio\About\Application\AboutSettingsAdministratorInterface;
 use App\Portfolio\About\Domain\Entity\AboutSettings;
 use App\Portfolio\About\Presentation\ApiResource\BackofficeAboutSettingsResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
  * @implements ProcessorInterface<BackofficeAboutSettingsResource, BackofficeAboutSettingsResource>
  */
 final readonly class BackofficeAboutSettingsProcessor implements ProcessorInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private AboutSettingsAdministratorInterface $aboutSettingsAdministrator,
     ) {
@@ -23,10 +26,8 @@ final readonly class BackofficeAboutSettingsProcessor implements ProcessorInterf
 
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): BackofficeAboutSettingsResource
     {
-        \assert($data instanceof BackofficeAboutSettingsResource);
-
         $settings = $this->aboutSettingsAdministrator->update(
-            Locale::from((string) $uriVariables['locale']),
+            Locale::from($this->uriVariableString($uriVariables, 'locale')),
             $data->siteEyebrow,
             $data->meEyebrow,
             $data->technicalSubtitle,

@@ -13,12 +13,15 @@ use App\Portfolio\Quality\Application\QualityPrincipleAdministratorInterface;
 use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
 use App\Portfolio\Quality\Presentation\ApiResource\BackofficeQualityPrincipleResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
  * @implements ProcessorInterface<BackofficeQualityPrincipleResource, BackofficeQualityPrincipleResource|null>
  */
 final readonly class BackofficeQualityPrincipleProcessor implements ProcessorInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private QualityPrincipleAdministratorInterface $qualityPrincipleAdministrator,
     ) {
@@ -27,16 +30,14 @@ final readonly class BackofficeQualityPrincipleProcessor implements ProcessorInt
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeQualityPrincipleResource
     {
         if ($operation instanceof Delete) {
-            $this->qualityPrincipleAdministrator->delete((int) $uriVariables['id']);
+            $this->qualityPrincipleAdministrator->delete($this->uriVariableInt($uriVariables, 'id'));
 
             return null;
         }
 
-        \assert($data instanceof BackofficeQualityPrincipleResource);
-
         if ($operation instanceof Put) {
             $principle = $this->qualityPrincipleAdministrator->update(
-                (int) $uriVariables['id'],
+                $this->uriVariableInt($uriVariables, 'id'),
                 $data->title,
                 $data->description,
                 $data->iconKey,

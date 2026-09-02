@@ -8,6 +8,7 @@ use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Presentation\ApiResource\BackofficeUserPasswordResource;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
  * Sans provider explicite, le Put de BackofficeUserPasswordResource (DTO non
@@ -21,6 +22,8 @@ use App\Security\User\Presentation\ApiResource\BackofficeUserPasswordResource;
  */
 final readonly class BackofficeUserPasswordProvider implements ProviderInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private CpgUserRepositoryInterface $cpgUserRepository,
     ) {
@@ -28,7 +31,7 @@ final readonly class BackofficeUserPasswordProvider implements ProviderInterface
 
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeUserPasswordResource
     {
-        $user = $this->cpgUserRepository->findOneById((int) $uriVariables['id']);
+        $user = $this->cpgUserRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
 
         return null !== $user ? new BackofficeUserPasswordResource() : null;
     }

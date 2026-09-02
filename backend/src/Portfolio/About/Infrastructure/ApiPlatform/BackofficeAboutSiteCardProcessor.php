@@ -13,12 +13,15 @@ use App\Portfolio\About\Application\AboutSiteCardAdministratorInterface;
 use App\Portfolio\About\Domain\Entity\AboutSiteCard;
 use App\Portfolio\About\Presentation\ApiResource\BackofficeAboutSiteCardResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
  * @implements ProcessorInterface<BackofficeAboutSiteCardResource, BackofficeAboutSiteCardResource|null>
  */
 final readonly class BackofficeAboutSiteCardProcessor implements ProcessorInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private AboutSiteCardAdministratorInterface $aboutSiteCardAdministrator,
     ) {
@@ -27,16 +30,14 @@ final readonly class BackofficeAboutSiteCardProcessor implements ProcessorInterf
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeAboutSiteCardResource
     {
         if ($operation instanceof Delete) {
-            $this->aboutSiteCardAdministrator->delete((int) $uriVariables['id']);
+            $this->aboutSiteCardAdministrator->delete($this->uriVariableInt($uriVariables, 'id'));
 
             return null;
         }
 
-        \assert($data instanceof BackofficeAboutSiteCardResource);
-
         if ($operation instanceof Put) {
             $card = $this->aboutSiteCardAdministrator->update(
-                (int) $uriVariables['id'],
+                $this->uriVariableInt($uriVariables, 'id'),
                 $data->title,
                 $data->description,
                 $data->iconKey,

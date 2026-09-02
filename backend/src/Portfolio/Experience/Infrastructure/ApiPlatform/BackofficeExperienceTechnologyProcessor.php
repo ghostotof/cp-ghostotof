@@ -12,12 +12,15 @@ use ApiPlatform\State\ProcessorInterface;
 use App\Portfolio\Experience\Application\ExperienceTechnologyAdministratorInterface;
 use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
 use App\Portfolio\Experience\Presentation\ApiResource\BackofficeExperienceTechnologyResource;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
  * @implements ProcessorInterface<BackofficeExperienceTechnologyResource, BackofficeExperienceTechnologyResource|null>
  */
 final readonly class BackofficeExperienceTechnologyProcessor implements ProcessorInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private ExperienceTechnologyRegistrarInterface $experienceTechnologyRegistrar,
         private ExperienceTechnologyAdministratorInterface $experienceTechnologyAdministrator,
@@ -27,16 +30,14 @@ final readonly class BackofficeExperienceTechnologyProcessor implements Processo
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeExperienceTechnologyResource
     {
         if ($operation instanceof Delete) {
-            $this->experienceTechnologyAdministrator->delete((int) $uriVariables['id']);
+            $this->experienceTechnologyAdministrator->delete($this->uriVariableInt($uriVariables, 'id'));
 
             return null;
         }
 
-        \assert($data instanceof BackofficeExperienceTechnologyResource);
-
         if ($operation instanceof Put) {
             $technology = $this->experienceTechnologyAdministrator->update(
-                (int) $uriVariables['id'],
+                $this->uriVariableInt($uriVariables, 'id'),
                 $data->name,
                 $data->years,
                 $data->iconKey,

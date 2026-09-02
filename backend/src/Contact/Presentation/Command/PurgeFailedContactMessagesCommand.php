@@ -58,7 +58,9 @@ final class PurgeFailedContactMessagesCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
-        $olderThan = trim((string) $input->getOption('older-than'));
+        $rawOlderThan = $input->getOption('older-than');
+        \assert(\is_string($rawOlderThan));
+        $olderThan = trim($rawOlderThan);
 
         try {
             $threshold = new \DateTimeImmutable('-'.$olderThan);

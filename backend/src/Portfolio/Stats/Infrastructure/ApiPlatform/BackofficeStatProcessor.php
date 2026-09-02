@@ -13,12 +13,15 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Portfolio\Stats\Application\StatAdministratorInterface;
 use App\Portfolio\Stats\Domain\Entity\Stat;
 use App\Portfolio\Stats\Presentation\ApiResource\BackofficeStatResource;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
  * @implements ProcessorInterface<BackofficeStatResource, BackofficeStatResource|null>
  */
 final readonly class BackofficeStatProcessor implements ProcessorInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private StatAdministratorInterface $statAdministrator,
     ) {
@@ -27,16 +30,14 @@ final readonly class BackofficeStatProcessor implements ProcessorInterface
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeStatResource
     {
         if ($operation instanceof Delete) {
-            $this->statAdministrator->delete((int) $uriVariables['id']);
+            $this->statAdministrator->delete($this->uriVariableInt($uriVariables, 'id'));
 
             return null;
         }
 
-        \assert($data instanceof BackofficeStatResource);
-
         if ($operation instanceof Put) {
             $stat = $this->statAdministrator->update(
-                (int) $uriVariables['id'],
+                $this->uriVariableInt($uriVariables, 'id'),
                 $data->value,
                 $data->label,
                 $data->iconKey,

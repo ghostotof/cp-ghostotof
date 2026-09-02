@@ -31,7 +31,8 @@
         "allow-plugins": {
             "php-http/discovery": true,
             "symfony/flex": true,
-            "symfony/runtime": true
+            "symfony/runtime": true,
+            "phpstan/extension-installer": true
         },
         "bump-after-update": true,
         "sort-packages": true
@@ -71,6 +72,10 @@
         ],
         "psalm": [
             "@php vendor/bin/psalm.phar --taint-analysis --no-cache"
+        ],
+        "phpstan": [
+            "@php bin/console cache:warmup --env=dev --quiet",
+            "@php vendor/bin/phpstan analyse"
         ]
     },
     "conflict": {
@@ -83,6 +88,12 @@
         }
     },
     "require-dev": {
+        "phpstan/extension-installer": "*",
+        "phpstan/phpstan": "*",
+        "phpstan/phpstan-doctrine": "*",
+        "phpstan/phpstan-phpunit": "*",
+        "phpstan/phpstan-strict-rules": "*",
+        "phpstan/phpstan-symfony": "*",
         "phpunit/phpunit": "^13.3",
         "psalm/phar": "^6.16",
         "roave/security-advisories": "dev-latest",

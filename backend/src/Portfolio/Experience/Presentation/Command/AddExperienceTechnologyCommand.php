@@ -44,8 +44,9 @@ final class AddExperienceTechnologyCommand extends Command
         $io = new SymfonyStyle($input, $output);
 
         $name = $input->getOption('name') ?? $io->ask('Nom de la technologie', validator: $this->validateName(...));
+        \assert(\is_string($name));
 
-        if ('' === trim((string) $name)) {
+        if ('' === trim($name)) {
             $io->error('Le nom de la technologie ne peut pas être vide.');
 
             return Command::FAILURE;
@@ -53,7 +54,7 @@ final class AddExperienceTechnologyCommand extends Command
 
         $yearsInput = $input->getOption('years') ?? $io->ask('Temps cumulé (en années, ex. 13.5)', validator: $this->validateYears(...));
 
-        if (!is_numeric($yearsInput)) {
+        if (!\is_string($yearsInput) || !is_numeric($yearsInput)) {
             $io->error('Le temps cumulé doit être un nombre (ex. 13.5).');
 
             return Command::FAILURE;
@@ -64,10 +65,10 @@ final class AddExperienceTechnologyCommand extends Command
 
         try {
             $technology = $this->experienceTechnologyRegistrar->register(
-                (string) $name,
+                $name,
                 (float) $yearsInput,
-                null !== $icon && '' !== $icon ? (string) $icon : null,
-                null !== $relatedTechnology && '' !== $relatedTechnology ? (string) $relatedTechnology : null,
+                \is_string($icon) && '' !== $icon ? $icon : null,
+                \is_string($relatedTechnology) && '' !== $relatedTechnology ? $relatedTechnology : null,
             );
         } catch (ExperienceTechnologyAlreadyExistsException $exception) {
             $io->error($exception->getMessage());
@@ -80,18 +81,18 @@ final class AddExperienceTechnologyCommand extends Command
         return Command::SUCCESS;
     }
 
-    private function validateName(?string $name): string
+    private function validateName(mixed $name): string
     {
-        if (null === $name || '' === trim($name)) {
+        if (!\is_string($name) || '' === trim($name)) {
             throw new \InvalidArgumentException('Le nom de la technologie ne peut pas être vide.');
         }
 
         return $name;
     }
 
-    private function validateYears(?string $years): string
+    private function validateYears(mixed $years): string
     {
-        if (null === $years || !is_numeric($years)) {
+        if (!\is_string($years) || !is_numeric($years)) {
             throw new \InvalidArgumentException('Le temps cumulé doit être un nombre (ex. 13.5).');
         }
 

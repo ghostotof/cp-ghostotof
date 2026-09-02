@@ -11,18 +11,24 @@ use App\Security\User\Application\CpgUserAdminPresenterInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Presentation\ApiResource\BackofficeUserResource;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
  * @implements ProviderInterface<BackofficeUserResource>
  */
 final readonly class BackofficeUserProvider implements ProviderInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private CpgUserRepositoryInterface $cpgUserRepository,
         private CpgUserAdminPresenterInterface $cpgUserAdminPresenter,
     ) {
     }
 
+    /**
+     * @return BackofficeUserResource|list<BackofficeUserResource>|null
+     */
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): BackofficeUserResource|array|null
     {
         if ($operation instanceof GetCollection) {
@@ -32,7 +38,7 @@ final readonly class BackofficeUserProvider implements ProviderInterface
         // Résolution de la ressource existante avant suppression (Delete) :
         // sans provider, API Platform ne saurait pas répondre 404 nativement
         // sur un id inconnu avant même d'atteindre le processor.
-        $user = $this->cpgUserRepository->findOneById((int) $uriVariables['id']);
+        $user = $this->cpgUserRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
 
         return null !== $user ? $this->toResource($user) : null;
     }

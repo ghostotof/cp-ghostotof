@@ -113,11 +113,44 @@ jobs:
         run: vendor/bin/psalm.phar --taint-analysis --no-cache --no-progress --output-format=github
 
   # ---------------------------------------------------------------------------
+  # phpstan-backend — analyse statique PHPStan (niveau max + strict-rules +
+  # extensions Symfony/Doctrine/PHPUnit). Bloquant. La dette existante est
+  # gelée dans backend/phpstan-baseline.neon ; ce job échoue sur toute
+  # *nouvelle* erreur. Réchauffe le conteneur dev au préalable (phpstan-symfony
+  # lit var/cache/dev/App_KernelDevDebugContainer.xml) ; le keypair JWT est
+  # requis pour que tests/object-manager.php (phpstan-doctrine) boote le kernel.
+  # ---------------------------------------------------------------------------
+  phpstan-backend:
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV: dev
+      COMPOSER_ALLOW_SUPERUSER: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.5'
+          extensions: intl, pdo_pgsql
+          coverage: none
+      - name: Composer install
+        working-directory: backend
+        run: composer install --no-interaction --prefer-dist
+      - name: Génère le keypair JWT (boot du kernel par object-manager.php)
+        working-directory: backend
+        run: php bin/console lexik:jwt:generate-keypair --skip-if-exists --no-interaction
+      - name: Réchauffe le conteneur dev (phpstan-symfony)
+        working-directory: backend
+        run: php bin/console cache:warmup --env=dev
+      - name: PHPStan (niveau max, bloquant)
+        working-directory: backend
+        run: vendor/bin/phpstan analyse --no-progress --error-format=github
+
+  # ---------------------------------------------------------------------------
   # build — une image prod + une image preprod, backend et frontend.
   # Uniquement sur tag (équivalent `.only-tag` de l'ancien pipeline GitLab).
   # ---------------------------------------------------------------------------
   build-images:
-    needs: [test-backend, test-frontend, sast-backend]
+    needs: [test-backend, test-frontend, sast-backend, phpstan-backend]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
