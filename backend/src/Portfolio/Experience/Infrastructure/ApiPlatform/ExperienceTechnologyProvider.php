@@ -27,6 +27,7 @@ final readonly class ExperienceTechnologyProvider implements ProviderInterface
     ) {
     }
 
+    /** @return list<ExperienceTechnologyResource> */
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): array
     {
         return array_map(

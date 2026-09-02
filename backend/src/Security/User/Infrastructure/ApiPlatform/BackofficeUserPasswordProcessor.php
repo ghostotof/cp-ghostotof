@@ -8,12 +8,15 @@ use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProcessorInterface;
 use App\Security\User\Application\CpgUserAdministratorInterface;
 use App\Security\User\Presentation\ApiResource\BackofficeUserPasswordResource;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
  * @implements ProcessorInterface<BackofficeUserPasswordResource, null>
  */
 final readonly class BackofficeUserPasswordProcessor implements ProcessorInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private CpgUserAdministratorInterface $cpgUserAdministrator,
     ) {
@@ -21,9 +24,7 @@ final readonly class BackofficeUserPasswordProcessor implements ProcessorInterfa
 
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): mixed
     {
-        \assert($data instanceof BackofficeUserPasswordResource);
-
-        $this->cpgUserAdministrator->changePassword((int) $uriVariables['id'], $data->password);
+        $this->cpgUserAdministrator->changePassword($this->uriVariableInt($uriVariables, 'id'), $data->password);
 
         return null;
     }

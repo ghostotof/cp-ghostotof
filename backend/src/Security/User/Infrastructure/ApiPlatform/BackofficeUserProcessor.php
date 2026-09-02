@@ -9,6 +9,7 @@ use ApiPlatform\State\ProcessorInterface;
 use App\Security\User\Application\CpgUserAdministratorInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Presentation\ApiResource\BackofficeUserResource;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 use Symfony\Bundle\SecurityBundle\Security;
 
 /**
@@ -16,6 +17,8 @@ use Symfony\Bundle\SecurityBundle\Security;
  */
 final readonly class BackofficeUserProcessor implements ProcessorInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private CpgUserAdministratorInterface $cpgUserAdministrator,
         private Security $security,
@@ -34,7 +37,7 @@ final readonly class BackofficeUserProcessor implements ProcessorInterface
             throw new \LogicException('BackofficeUserProcessor::process() appelé sans utilisateur authentifié.');
         }
 
-        $this->cpgUserAdministrator->delete((int) $uriVariables['id'], $actingUser);
+        $this->cpgUserAdministrator->delete($this->uriVariableInt($uriVariables, 'id'), $actingUser);
 
         return null;
     }

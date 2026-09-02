@@ -10,12 +10,15 @@ use App\Portfolio\About\Domain\Entity\AboutSettings;
 use App\Portfolio\About\Domain\Repository\AboutSettingsRepositoryInterface;
 use App\Portfolio\About\Presentation\ApiResource\BackofficeAboutSettingsResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
  * @implements ProviderInterface<BackofficeAboutSettingsResource>
  */
 final readonly class BackofficeAboutSettingsProvider implements ProviderInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private AboutSettingsRepositoryInterface $aboutSettingsRepository,
     ) {
@@ -23,7 +26,7 @@ final readonly class BackofficeAboutSettingsProvider implements ProviderInterfac
 
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeAboutSettingsResource
     {
-        $locale = Locale::from((string) $uriVariables['locale']);
+        $locale = Locale::from($this->uriVariableString($uriVariables, 'locale'));
         $settings = $this->aboutSettingsRepository->findByLocale($locale);
 
         return null !== $settings ? $this->toResource($settings) : null;

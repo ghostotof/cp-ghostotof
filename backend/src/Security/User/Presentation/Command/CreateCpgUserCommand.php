@@ -52,14 +52,16 @@ final class CreateCpgUserCommand extends Command
         $io = new SymfonyStyle($input, $output);
 
         $username = $input->getOption('username') ?? $io->ask('Nom d\'utilisateur', validator: $this->validateUsername(...));
+        \assert(\is_string($username));
 
-        if (!preg_match(CpgUser::USERNAME_PATTERN, (string) $username)) {
+        if (1 !== preg_match(CpgUser::USERNAME_PATTERN, $username)) {
             $io->error('Le nom d\'utilisateur doit contenir entre 3 et 60 caractères (lettres, chiffres, ".", "_" ou "-").');
 
             return Command::FAILURE;
         }
 
         $plainPassword = $input->getOption('password') ?? $this->askPassword($io);
+        \assert(\is_string($plainPassword));
 
         if (\strlen($plainPassword) < CpgUser::MIN_PASSWORD_LENGTH) {
             $io->error(sprintf('Le mot de passe doit contenir au moins %d caractères.', CpgUser::MIN_PASSWORD_LENGTH));
@@ -105,9 +107,9 @@ final class CreateCpgUserCommand extends Command
         return Command::SUCCESS;
     }
 
-    private function validateUsername(?string $username): string
+    private function validateUsername(mixed $username): string
     {
-        if (!preg_match(CpgUser::USERNAME_PATTERN, (string) $username)) {
+        if (!\is_string($username) || 1 !== preg_match(CpgUser::USERNAME_PATTERN, $username)) {
             throw new \InvalidArgumentException('Le nom d\'utilisateur doit contenir entre 3 et 60 caractères (lettres, chiffres, ".", "_" ou "-").');
         }
 
@@ -119,8 +121,8 @@ final class CreateCpgUserCommand extends Command
         $question = new Question('Mot de passe');
         $question->setHidden(true);
         $question->setHiddenFallback(false);
-        $question->setValidator(function (?string $value): string {
-            if (null === $value || '' === $value) {
+        $question->setValidator(function (mixed $value): string {
+            if (!\is_string($value) || '' === $value) {
                 throw new \InvalidArgumentException('Le mot de passe ne peut pas être vide.');
             }
 
@@ -128,6 +130,7 @@ final class CreateCpgUserCommand extends Command
         });
 
         $password = $io->askQuestion($question);
+        \assert(\is_string($password));
 
         $confirmationQuestion = new Question('Confirmez le mot de passe');
         $confirmationQuestion->setHidden(true);

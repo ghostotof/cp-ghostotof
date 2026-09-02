@@ -10,17 +10,23 @@ use ApiPlatform\State\ProviderInterface;
 use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Domain\Repository\ExperienceTechnologyRepositoryInterface;
 use App\Portfolio\Experience\Presentation\ApiResource\BackofficeExperienceTechnologyResource;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
  * @implements ProviderInterface<BackofficeExperienceTechnologyResource>
  */
 final readonly class BackofficeExperienceTechnologyProvider implements ProviderInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private ExperienceTechnologyRepositoryInterface $experienceTechnologyRepository,
     ) {
     }
 
+    /**
+     * @return BackofficeExperienceTechnologyResource|list<BackofficeExperienceTechnologyResource>|null
+     */
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): BackofficeExperienceTechnologyResource|array|null
     {
         if ($operation instanceof GetCollection) {
@@ -30,7 +36,7 @@ final readonly class BackofficeExperienceTechnologyProvider implements ProviderI
             );
         }
 
-        $technology = $this->experienceTechnologyRepository->findOneById((int) $uriVariables['id']);
+        $technology = $this->experienceTechnologyRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
 
         return null !== $technology ? $this->toResource($technology) : null;
     }

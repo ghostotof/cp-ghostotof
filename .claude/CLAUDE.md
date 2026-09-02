@@ -37,11 +37,15 @@ recreate them, new code always goes under its bounded context. PHPUnit is config
 **PHPStan** is configured (`backend/phpstan.dist.neon`, level `max` + `phpstan-strict-rules` +
 `phpstan-symfony`/`-doctrine`/`-phpunit`/`-deprecation-rules` via `extension-installer`): run it with
 `composer phpstan` inside `make sh` (warms the dev container first), CI job `phpstan-backend` (blocking,
-`build-images` needs it). The debt existing when PHPStan was adopted (~325 findings across `src/` + `tests/`)
-is frozen in `backend/phpstan-baseline.neon` — **burn it down, don't grow it**; any rule not in the baseline
-must stay green, and new code is held to level max. `tests/object-manager.php` boots the kernel for
-`phpstan-doctrine`; `tests/bootstrap.php` is `excludePaths`-excluded (Flex-managed). Regenerate the baseline
-after fixing a batch: `composer phpstan -- --generate-baseline`. **Rector** is still not set up. Psalm
+`build-images` needs it). The `src/` debt has been burned down — `backend/phpstan-baseline.neon` now holds
+**231 findings, ~all in `tests/`** (2 `src/` entries left: a `Kernel::getAllowedEnvs` false positive, and a
+regex-guaranteed `non-empty-string` invariant PHPStan can't see). **Burn it down, don't grow it**; any rule
+not in the baseline must stay green, and new code — `src/` especially — is held to level max. The `$uriVariables`
+mixed-access pattern is solved by the `App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables` trait
+(`uriVariableInt`/`uriVariableString`) — reuse it in new Providers/Processors rather than casting `mixed`.
+`tests/object-manager.php` boots the kernel for `phpstan-doctrine`; `tests/bootstrap.php` is
+`excludePaths`-excluded (Flex-managed). Regenerate the baseline after fixing a batch:
+`composer phpstan -- --generate-baseline`. **Rector** is still not set up. Psalm
 *is* installed (`psalm/phar`, `backend/psalm.xml`) but **only** for taint analysis (`composer psalm`, CI job
 `sast-backend`, audit point M4) — `errorLevel="8"`, it is not and must not become a second type-checker
 alongside PHPStan; don't reach for Psalm annotations or raise its level. The

@@ -120,7 +120,7 @@ final class SeedAboutContentCommand extends Command
             $this->aboutSiteCardRepository->remove($existing);
         }
 
-        foreach (array_values($cards) as $position => $card) {
+        foreach ($cards as $position => $card) {
             $this->aboutSiteCardAdministrator->create($locale, $card['title'], $card['description'], $card['iconKey'], $position);
         }
     }
@@ -134,7 +134,7 @@ final class SeedAboutContentCommand extends Command
             $this->aboutMeCardRepository->remove($existing);
         }
 
-        foreach (array_values($cards) as $position => $card) {
+        foreach ($cards as $position => $card) {
             $this->aboutMeCardAdministrator->create($locale, $category, $card['title'], $card['description'], $card['iconKey'], $position);
         }
     }

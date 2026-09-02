@@ -30,8 +30,6 @@ final readonly class ContactMessageProcessor implements ProcessorInterface
 
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ContactMessageResource
     {
-        \assert($data instanceof ContactMessageResource);
-
         // Vérifié avant même le honeypot : borne le débit de l'endpoint quel
         // que soit l'émetteur (légitime ou bot), le honeypot ne filtrant lui
         // que les bots naïfs qui remplissent tous les champs.

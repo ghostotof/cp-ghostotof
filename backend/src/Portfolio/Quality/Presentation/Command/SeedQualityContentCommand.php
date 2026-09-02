@@ -46,14 +46,14 @@ final class SeedQualityContentCommand extends Command
             foreach ($this->qualityPrincipleRepository->findByLocale($locale) as $existing) {
                 $this->qualityPrincipleRepository->remove($existing);
             }
-            foreach (array_values($content['principles']) as $position => $principle) {
+            foreach ($content['principles'] as $position => $principle) {
                 $this->qualityPrincipleAdministrator->create($locale, $principle['title'], $principle['description'], $principle['iconKey'], $position);
             }
 
             foreach ($this->qualityTraitRepository->findByLocale($locale) as $existing) {
                 $this->qualityTraitRepository->remove($existing);
             }
-            foreach (array_values($content['traits']) as $position => $trait) {
+            foreach ($content['traits'] as $position => $trait) {
                 $this->qualityTraitAdministrator->create($locale, $trait['label'], $position);
             }
 

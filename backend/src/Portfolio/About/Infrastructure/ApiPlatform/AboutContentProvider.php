@@ -21,6 +21,7 @@ use App\Portfolio\About\Presentation\ApiResource\AboutContentResource;
 use App\Portfolio\About\Presentation\ApiResource\AboutMeSectionResource;
 use App\Portfolio\About\Presentation\ApiResource\AboutSiteSectionResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
  * Relie AboutContentResource (Presentation) au Domain, en agrégeant les
@@ -33,6 +34,8 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
  */
 final readonly class AboutContentProvider implements ProviderInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private AboutSettingsRepositoryInterface $aboutSettingsRepository,
         private AboutSettingsPresenterInterface $aboutSettingsPresenter,
@@ -45,7 +48,7 @@ final readonly class AboutContentProvider implements ProviderInterface
 
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): AboutContentResource
     {
-        $locale = Locale::from((string) $uriVariables['locale']);
+        $locale = Locale::from($this->uriVariableString($uriVariables, 'locale'));
 
         $settings = $this->aboutSettingsRepository->findByLocale($locale);
 

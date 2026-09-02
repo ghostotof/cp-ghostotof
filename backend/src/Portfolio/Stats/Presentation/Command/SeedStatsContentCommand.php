@@ -42,7 +42,7 @@ final class SeedStatsContentCommand extends Command
                 $this->statRepository->remove($existing);
             }
 
-            foreach (array_values($stats) as $position => $stat) {
+            foreach ($stats as $position => $stat) {
                 $this->statAdministrator->create($locale, $stat['value'], $stat['label'], $stat['iconKey'], $position);
             }
 

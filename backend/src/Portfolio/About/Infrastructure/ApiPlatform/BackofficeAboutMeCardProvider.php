@@ -12,6 +12,7 @@ use App\Portfolio\About\Domain\Repository\AboutMeCardRepositoryInterface;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\About\Presentation\ApiResource\BackofficeAboutMeCardResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -19,19 +20,24 @@ use Symfony\Component\HttpFoundation\Request;
  */
 final readonly class BackofficeAboutMeCardProvider implements ProviderInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private AboutMeCardRepositoryInterface $aboutMeCardRepository,
     ) {
     }
 
+    /**
+     * @return BackofficeAboutMeCardResource|list<BackofficeAboutMeCardResource>|null
+     */
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): BackofficeAboutMeCardResource|array|null
     {
         if ($operation instanceof GetCollection) {
             $request = $context['request'] ?? null;
             \assert($request instanceof Request);
 
-            $locale = Locale::tryFrom((string) $request->query->get('locale', ''));
-            $category = AboutMeCardCategory::tryFrom((string) $request->query->get('category', ''));
+            $locale = Locale::tryFrom($request->query->get('locale', ''));
+            $category = AboutMeCardCategory::tryFrom($request->query->get('category', ''));
 
             $cards = match (true) {
                 null !== $locale && null !== $category => $this->aboutMeCardRepository->findByLocaleAndCategory($locale, $category),
@@ -43,7 +49,7 @@ final readonly class BackofficeAboutMeCardProvider implements ProviderInterface
             return array_map($this->toResource(...), $cards);
         }
 
-        $card = $this->aboutMeCardRepository->findOneById((int) $uriVariables['id']);
+        $card = $this->aboutMeCardRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
 
         return null !== $card ? $this->toResource($card) : null;
     }
