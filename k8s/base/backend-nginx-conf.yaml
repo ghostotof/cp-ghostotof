@@ -35,6 +35,7 @@ data:
             add_header Referrer-Policy "strict-origin-when-cross-origin" always;
             add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
             add_header Cross-Origin-Opener-Policy "same-origin" always;
+            add_header Content-Security-Policy-Report-Only "default-src 'none'; frame-ancestors 'none'; base-uri 'none'" always;
         }
 
         location / {
@@ -62,8 +63,13 @@ data:
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
         add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
         add_header Cross-Origin-Opener-Policy "same-origin" always;
+        # API pure : aucune réponse n'est un document navigable. Report-Only le
+        # temps de valider (aucune violation attendue), puis enforce.
+        add_header Content-Security-Policy-Report-Only "default-src 'none'; frame-ancestors 'none'; base-uri 'none'" always;
 
-        client_max_body_size 32m;
+        # API JSON sans upload : 1 Mo largement suffisant, supprime la surface
+        # de DoS d'un corps de 32 Mo parsé par PHP. Aligné sur docker/nginx/default.conf.
+        client_max_body_size 1m;
         error_log  /dev/stderr;
         access_log /dev/stdout;
     }
