@@ -42,3 +42,13 @@ api_platform:
         stateless: true
         cache_headers:
             vary: ['Content-Type', 'Authorization', 'Origin']
+
+when@prod:
+    api_platform:
+        # Coupe /api/docs(.json), /api/docs.jsonld et le point d'entrée Hydra
+        # /api en production : la SPA appelle des endpoints en dur, personne
+        # d'autre n'a besoin du schéma OpenAPI, et le laisser ouvert offrait à
+        # un visiteur non authentifié la cartographie complète de l'API — y
+        # compris /api/backoffice/*. Reste actif en dev pour l'exploration.
+        enable_docs: false
+        enable_entrypoint: false

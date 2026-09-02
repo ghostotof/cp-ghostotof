@@ -32,7 +32,7 @@ final readonly class BackofficeUserPasswordResource
 {
     public function __construct(
         #[Assert\NotBlank]
-        #[Assert\Length(min: CpgUser::MIN_PASSWORD_LENGTH)]
+        #[Assert\Length(min: CpgUser::MIN_PASSWORD_LENGTH, max: CpgUser::MAX_PASSWORD_LENGTH)]
         public string $password = '',
     ) {
     }

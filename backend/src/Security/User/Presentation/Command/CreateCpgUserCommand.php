@@ -63,6 +63,12 @@ final class CreateCpgUserCommand extends Command
             return Command::FAILURE;
         }
 
+        if (\strlen($plainPassword) > CpgUser::MAX_PASSWORD_LENGTH) {
+            $io->error(sprintf('Le mot de passe ne doit pas dépasser %d caractères.', CpgUser::MAX_PASSWORD_LENGTH));
+
+            return Command::FAILURE;
+        }
+
         /** @var list<string> $roles */
         $roles = $input->getOption('role');
         $unknownRoles = array_diff($roles, self::ALLOWED_ROLES);

@@ -60,6 +60,19 @@ final class CreateCpgUserCommandTest extends KernelTestCase
         self::assertSame(1, $exitCode);
     }
 
+    public function testFailsOnPasswordTooLong(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute([
+            '--username' => 'jane',
+            '--password' => str_repeat('a', 4097),
+        ]);
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('dépasser', $tester->getDisplay());
+    }
+
     public function testCreatesUserWithRoleSuper(): void
     {
         $tester = $this->commandTester();
