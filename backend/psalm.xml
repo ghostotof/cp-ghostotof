@@ -1,28 +1,13 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0"?>
 <psalm
     errorLevel="8"
     resolveFromConfigFile="true"
+    findUnusedBaselineEntry="false"
+    findUnusedCode="false"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xmlns="https://getpsalm.org/schema/config"
     xsi:schemaLocation="https://getpsalm.org/schema/config vendor/vimeo/psalm/config.xsd"
-    findUnusedBaselineEntry="false"
-    findUnusedCode="false"
 >
-    <!--
-        Psalm n'est PAS l'analyseur statique principal du projet : ce role
-        revient a PHPStan (cf. .claude/CLAUDE.md). Psalm ne sert ici qu'a
-        l'analyse de teinte "psalm --taint-analysis" (point d'audit M4),
-        lancee par le job CI "sast-backend" : tracer une donnee externe
-        jusqu'a un puits dangereux (SQL, shell, include, en-tetes HTTP,
-        sortie HTML).
-
-        errorLevel="8" (le plus permissif) est delibere : une execution nue
-        de "psalm" ne doit pas faire doublon de typage avec PHPStan. Le plugin
-        "psalm/plugin-symfony" (qui marquerait Request::get*() comme source de
-        teinte) n'est pas ajoute : ses dependances Composer sont en conflit
-        avec les contraintes "symfony/* 8.1.*". Seules les sources et puits
-        natifs PHP sont donc couverts.
-    -->
     <projectFiles>
         <directory name="src" />
         <ignoreFiles>
