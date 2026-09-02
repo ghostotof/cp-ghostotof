@@ -114,9 +114,8 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # phpstan-backend — analyse statique PHPStan (niveau max + strict-rules +
-  # extensions Symfony/Doctrine/PHPUnit). Bloquant. La dette existante est
-  # gelée dans backend/phpstan-baseline.neon ; ce job échoue sur toute
-  # *nouvelle* erreur. Réchauffe le conteneur dev au préalable (phpstan-symfony
+  # extensions Symfony/Doctrine/PHPUnit). Bloquant, sans baseline : src/ et
+  # tests/ sont au vert. Réchauffe le conteneur dev au préalable (phpstan-symfony
   # lit var/cache/dev/App_KernelDevDebugContainer.xml) ; le keypair JWT est
   # requis pour que tests/object-manager.php (phpstan-doctrine) boote le kernel.
   # ---------------------------------------------------------------------------

@@ -37,15 +37,16 @@ recreate them, new code always goes under its bounded context. PHPUnit is config
 **PHPStan** is configured (`backend/phpstan.dist.neon`, level `max` + `phpstan-strict-rules` +
 `phpstan-symfony`/`-doctrine`/`-phpunit`/`-deprecation-rules` via `extension-installer`): run it with
 `composer phpstan` inside `make sh` (warms the dev container first), CI job `phpstan-backend` (blocking,
-`build-images` needs it). The `src/` debt has been burned down — `backend/phpstan-baseline.neon` now holds
-**231 findings, ~all in `tests/`** (2 `src/` entries left: a `Kernel::getAllowedEnvs` false positive, and a
-regex-guaranteed `non-empty-string` invariant PHPStan can't see). **Burn it down, don't grow it**; any rule
-not in the baseline must stay green, and new code — `src/` especially — is held to level max. The `$uriVariables`
-mixed-access pattern is solved by the `App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables` trait
-(`uriVariableInt`/`uriVariableString`) — reuse it in new Providers/Processors rather than casting `mixed`.
+`build-images` needs it). **No baseline** — level `max` + strict-rules is green across `src/` AND `tests/`, keep
+it that way. Two scoped `ignoreErrors` in `phpstan.dist.neon` cover functional-test JSON payloads (a decoded
+response body is `mixed`; the PHPUnit assertions are the shape check, not PHPStan) — `offsetAccess`/`foreach`
+and `argument.type … mixed given`, `path: tests/` only. `src/Kernel.php` is `excludePaths`-excluded
+(`getAllowedEnvs()` false-positive `method.unused`). The `$uriVariables` mixed-access pattern is solved by the
+`App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables` trait (`uriVariableInt`/`uriVariableString`) — reuse
+it in new Providers/Processors rather than casting `mixed`. Functional tests build request bodies via
+`App\Tests\Support\HttpJson::jsonBody()` (not raw `json_encode`, which is `string|false`).
 `tests/object-manager.php` boots the kernel for `phpstan-doctrine`; `tests/bootstrap.php` is
-`excludePaths`-excluded (Flex-managed). Regenerate the baseline after fixing a batch:
-`composer phpstan -- --generate-baseline`. **Rector** is configured (`backend/rector.php`, `withPhpSets()` +
+`excludePaths`-excluded (Flex-managed). **Rector** is configured (`backend/rector.php`, `withPhpSets()` +
 prepared sets deadCode/codeQuality/typeDeclarations/earlyReturn/instanceOf): `composer rector` shows diffs,
 `composer rector:fix` applies, CI job `rector-backend` runs `--dry-run` (blocking, `build-images` needs it).
 `rector/rector-symfony`/`-doctrine`/`-phpunit` are deliberately omitted (their deps conflict with `symfony/*

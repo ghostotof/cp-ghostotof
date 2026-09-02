@@ -76,7 +76,7 @@ final class CsrfCookieRequestSubscriberTest extends TestCase
         // Aucun cookie/header CSRF fourni : lèverait normalement une
         // AccessDeniedHttpException si c'était la requête principale.
         $this->subscriber->__invoke(new RequestEvent(
-            $this->createStub(HttpKernelInterface::class),
+            self::createStub(HttpKernelInterface::class),
             $request,
             HttpKernelInterface::SUB_REQUEST,
         ));
@@ -168,6 +168,6 @@ final class CsrfCookieRequestSubscriberTest extends TestCase
 
     private function mainRequestEvent(Request $request): RequestEvent
     {
-        return new RequestEvent($this->createStub(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
+        return new RequestEvent(self::createStub(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
     }
 }

@@ -43,7 +43,7 @@ final class QualityPrincipleAdministratorTest extends TestCase
 
     public function testUpdateThrowsWhenPrincipleNotFound(): void
     {
-        $repository = $this->createStub(QualityPrincipleRepositoryInterface::class);
+        $repository = self::createStub(QualityPrincipleRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
         $administrator = new QualityPrincipleAdministrator($repository);
@@ -68,7 +68,7 @@ final class QualityPrincipleAdministratorTest extends TestCase
 
     public function testDeleteThrowsWhenPrincipleNotFound(): void
     {
-        $repository = $this->createStub(QualityPrincipleRepositoryInterface::class);
+        $repository = self::createStub(QualityPrincipleRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
         $administrator = new QualityPrincipleAdministrator($repository);

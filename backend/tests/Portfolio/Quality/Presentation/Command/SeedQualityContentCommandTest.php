@@ -11,6 +11,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\HttpKernel\KernelInterface;
 
 final class SeedQualityContentCommandTest extends KernelTestCase
 {
@@ -34,8 +35,8 @@ final class SeedQualityContentCommandTest extends KernelTestCase
 
         self::assertSame(0, $exitCode);
 
-        $principleRepository = $this->getContainer()->get(QualityPrincipleRepositoryInterface::class);
-        $traitRepository = $this->getContainer()->get(QualityTraitRepositoryInterface::class);
+        $principleRepository = self::getContainer()->get(QualityPrincipleRepositoryInterface::class);
+        $traitRepository = self::getContainer()->get(QualityTraitRepositoryInterface::class);
 
         self::assertCount(3, $principleRepository->findByLocale(Locale::FR));
         self::assertCount(3, $principleRepository->findByLocale(Locale::EN));
@@ -53,8 +54,8 @@ final class SeedQualityContentCommandTest extends KernelTestCase
         $tester->execute([]);
         $tester->execute([]);
 
-        $principleRepository = $this->getContainer()->get(QualityPrincipleRepositoryInterface::class);
-        $traitRepository = $this->getContainer()->get(QualityTraitRepositoryInterface::class);
+        $principleRepository = self::getContainer()->get(QualityPrincipleRepositoryInterface::class);
+        $traitRepository = self::getContainer()->get(QualityTraitRepositoryInterface::class);
 
         self::assertCount(3, $principleRepository->findByLocale(Locale::FR));
         self::assertCount(7, $traitRepository->findByLocale(Locale::FR));
@@ -62,6 +63,7 @@ final class SeedQualityContentCommandTest extends KernelTestCase
 
     private function commandTester(): CommandTester
     {
+        \assert(self::$kernel instanceof KernelInterface);
         $application = new Application(self::$kernel);
 
         return new CommandTester($application->find('app:quality:seed'));
@@ -69,7 +71,7 @@ final class SeedQualityContentCommandTest extends KernelTestCase
 
     private function purge(): void
     {
-        $connection = $this->getContainer()->get(EntityManagerInterface::class)->getConnection();
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         $connection->executeStatement('DELETE FROM quality_principle');
         $connection->executeStatement('DELETE FROM quality_trait');
     }

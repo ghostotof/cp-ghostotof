@@ -43,7 +43,7 @@ final class QualityTraitAdministratorTest extends TestCase
 
     public function testUpdateThrowsWhenTraitNotFound(): void
     {
-        $repository = $this->createStub(QualityTraitRepositoryInterface::class);
+        $repository = self::createStub(QualityTraitRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
         $administrator = new QualityTraitAdministrator($repository);
@@ -68,7 +68,7 @@ final class QualityTraitAdministratorTest extends TestCase
 
     public function testDeleteThrowsWhenTraitNotFound(): void
     {
-        $repository = $this->createStub(QualityTraitRepositoryInterface::class);
+        $repository = self::createStub(QualityTraitRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
         $administrator = new QualityTraitAdministrator($repository);

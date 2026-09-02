@@ -6,6 +6,7 @@ namespace App\Tests\Portfolio\Cv\Presentation\Controller;
 
 use App\Portfolio\Cv\Presentation\Controller\DownloadCvController;
 use App\Security\User\Application\CpgUserRegistrarInterface;
+use App\Tests\Support\HttpJson;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -20,6 +21,8 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  */
 final class DownloadCvControllerTest extends WebTestCase
 {
+    use HttpJson;
+
     private const string USERNAME = 'jane';
     private const string PASSWORD = 'SecurePassword123';
     private const string FIXTURE_PATH = __DIR__.'/../../Fixtures/dummy.pdf';
@@ -49,7 +52,7 @@ final class DownloadCvControllerTest extends WebTestCase
         $client = self::createClient();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::USERNAME, self::PASSWORD);
 
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'username' => self::USERNAME,
             'password' => self::PASSWORD,
         ]));

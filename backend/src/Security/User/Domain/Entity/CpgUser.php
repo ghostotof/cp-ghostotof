@@ -80,6 +80,11 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
 
     public function getUserIdentifier(): string
     {
+        // Le constructeur garantit un username de 3 a 60 caracteres
+        // (USERNAME_PATTERN) ; l'assertion l'explicite pour l'analyse statique
+        // (UserInterface::getUserIdentifier() attend un non-empty-string).
+        \assert('' !== $this->username);
+
         return $this->username;
     }
 

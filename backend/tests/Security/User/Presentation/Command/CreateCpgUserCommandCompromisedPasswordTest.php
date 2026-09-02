@@ -30,7 +30,7 @@ final class CreateCpgUserCommandCompromisedPasswordTest extends TestCase
         $registrar = $this->createMock(CpgUserRegistrarInterface::class);
         $registrar->expects(self::never())->method('register');
 
-        $validator = $this->createStub(ValidatorInterface::class);
+        $validator = self::createStub(ValidatorInterface::class);
         $validator->method('validate')->willReturn(new ConstraintViolationList([
             new ConstraintViolation('This password has been leaked in a data breach.', null, [], '', null, 'hunter2'),
         ]));
@@ -50,7 +50,7 @@ final class CreateCpgUserCommandCompromisedPasswordTest extends TestCase
             ->method('register')
             ->willReturn(new CpgUser('jane', 'hashed'));
 
-        $validator = $this->createStub(ValidatorInterface::class);
+        $validator = self::createStub(ValidatorInterface::class);
         $validator->method('validate')->willReturn(new ConstraintViolationList());
 
         $tester = new CommandTester(new CreateCpgUserCommand($registrar, $validator));
@@ -67,7 +67,7 @@ final class CreateCpgUserCommandCompromisedPasswordTest extends TestCase
      */
     public function testValidatesAgainstNotCompromisedPasswordConstraint(): void
     {
-        $registrar = $this->createStub(CpgUserRegistrarInterface::class);
+        $registrar = self::createStub(CpgUserRegistrarInterface::class);
         $registrar->method('register')->willReturn(new CpgUser('jane', 'hashed'));
 
         $validator = $this->createMock(ValidatorInterface::class);

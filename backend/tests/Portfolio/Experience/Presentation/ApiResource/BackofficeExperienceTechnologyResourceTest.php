@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Portfolio\Experience\Presentation\ApiResource;
 
-use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Support\HttpJson;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
@@ -17,6 +18,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
 {
+    use HttpJson;
+
     private const string SUPER_USERNAME = 'super';
     private const string SUPER_PASSWORD = 'SuperSecret123';
     private const string PLAIN_USERNAME = 'jane';
@@ -76,7 +79,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         $client->request('POST', '/api/backoffice/experience/technologies', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['name' => 'PHP', 'years' => 13.5, 'iconKey' => 'php', 'relatedTechnologyName' => null]));
+        ], content: self::jsonBody(['name' => 'PHP', 'years' => 13.5, 'iconKey' => 'php', 'relatedTechnologyName' => null]));
         self::assertResponseIsSuccessful();
         $created = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame('PHP', $created['name']);
@@ -86,14 +89,14 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         $client->request('POST', '/api/backoffice/experience/technologies', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['name' => 'PHP', 'years' => 1.0]));
+        ], content: self::jsonBody(['name' => 'PHP', 'years' => 1.0]));
         self::assertResponseStatusCodeSame(409);
 
         // Put
         $client->request('PUT', sprintf('/api/backoffice/experience/technologies/%d', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['name' => 'Docker', 'years' => 7.0, 'iconKey' => 'docker', 'relatedTechnologyName' => null]));
+        ], content: self::jsonBody(['name' => 'Docker', 'years' => 7.0, 'iconKey' => 'docker', 'relatedTechnologyName' => null]));
         self::assertResponseIsSuccessful();
         $updated = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame(7.0, $updated['years']);
@@ -102,14 +105,14 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         $client->request('PUT', sprintf('/api/backoffice/experience/technologies/%d', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['name' => 'PHP', 'years' => 7.0]));
+        ], content: self::jsonBody(['name' => 'PHP', 'years' => 7.0]));
         self::assertResponseStatusCodeSame(409);
 
         // Put - id inconnu => 404
         $client->request('PUT', '/api/backoffice/experience/technologies/999999', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['name' => 'Rust', 'years' => 1.0]));
+        ], content: self::jsonBody(['name' => 'Rust', 'years' => 1.0]));
         self::assertResponseStatusCodeSame(404);
 
         // Delete - id inconnu => 404
@@ -128,7 +131,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string
     {
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'username' => $username,
             'password' => $password,
         ]));

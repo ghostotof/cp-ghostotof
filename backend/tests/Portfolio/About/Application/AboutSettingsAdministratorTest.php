@@ -30,7 +30,7 @@ final class AboutSettingsAdministratorTest extends TestCase
 
     public function testUpdateThrowsWhenLocaleHasNoSettingsYet(): void
     {
-        $repository = $this->createStub(AboutSettingsRepositoryInterface::class);
+        $repository = self::createStub(AboutSettingsRepositoryInterface::class);
         $repository->method('findByLocale')->willReturn(null);
 
         $administrator = new AboutSettingsAdministrator($repository);

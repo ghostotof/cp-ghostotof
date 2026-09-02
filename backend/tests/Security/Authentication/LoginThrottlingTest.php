@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\Authentication;
 
 use App\Security\User\Application\CpgUserRegistrarInterface;
+use App\Tests\Support\HttpJson;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -19,6 +20,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class LoginThrottlingTest extends WebTestCase
 {
+    use HttpJson;
+
     private const string PASSWORD = 'SecurePassword123';
 
     /**
@@ -68,7 +71,7 @@ final class LoginThrottlingTest extends WebTestCase
 
     private function attemptLogin(KernelBrowser $client, string $password): void
     {
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'username' => $this->username,
             'password' => $password,
         ]));

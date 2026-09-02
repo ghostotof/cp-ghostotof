@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Contact\Presentation\ApiResource;
 
 use App\Contact\Application\Message\SendContactMessageMessage;
+use App\Tests\Support\HttpJson;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
@@ -18,6 +19,8 @@ use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
  */
 final class ContactMessageResourceTest extends WebTestCase
 {
+    use HttpJson;
+
     /**
      * Le quota du rate limiter "contact_form" (config/packages/rate_limiter.yaml)
      * est stocké sur le pool de cache "cache.rate_limiter", backé par le
@@ -50,7 +53,7 @@ final class ContactMessageResourceTest extends WebTestCase
     {
         $client = $this->createClientWithFreshRateLimiter();
 
-        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'name' => 'Jane Doe',
             'email' => 'jane@example.com',
             'message' => 'Bonjour, je souhaite vous contacter pour un projet.',
@@ -72,7 +75,7 @@ final class ContactMessageResourceTest extends WebTestCase
     {
         $client = $this->createClientWithFreshRateLimiter();
 
-        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'name' => 'Jane Doe',
             'email' => 'not-an-email',
             'message' => 'Bonjour, je souhaite vous contacter pour un projet.',
@@ -86,7 +89,7 @@ final class ContactMessageResourceTest extends WebTestCase
     {
         $client = $this->createClientWithFreshRateLimiter();
 
-        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'name' => 'Jane Doe',
             'email' => 'jane@example.com',
             'message' => '',
@@ -100,7 +103,7 @@ final class ContactMessageResourceTest extends WebTestCase
     {
         $client = $this->createClientWithFreshRateLimiter();
 
-        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'name' => 'Jane Doe',
             'email' => 'jane@example.com',
             // Uniquement des espaces : sans normalizer 'trim' sur les
@@ -117,7 +120,7 @@ final class ContactMessageResourceTest extends WebTestCase
     {
         $client = $this->createClientWithFreshRateLimiter();
 
-        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'name' => 'Bot',
             'email' => 'bot@example.com',
             'message' => 'Ceci est un message envoyé par un robot de spam.',
@@ -133,7 +136,7 @@ final class ContactMessageResourceTest extends WebTestCase
     public function testASixthSubmissionFromTheSameClientWithinTheWindowIsRateLimited(): void
     {
         $client = $this->createClientWithFreshRateLimiter();
-        $payload = json_encode([
+        $payload = self::jsonBody([
             'name' => 'Jane Doe',
             'email' => 'jane@example.com',
             'message' => 'Bonjour, je souhaite vous contacter pour un projet.',
@@ -166,7 +169,7 @@ final class ContactMessageResourceTest extends WebTestCase
         // Aucun cookie XSRF-TOKEN ni header X-XSRF-TOKEN envoyés : si
         // /api/contact n'était pas exclu de CsrfCookieRequestSubscriber, la
         // requête échouerait en 403 avant même d'atteindre la validation.
-        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'name' => 'Jane Doe',
             'email' => 'jane@example.com',
             'message' => 'Bonjour, je souhaite vous contacter pour un projet.',

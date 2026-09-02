@@ -27,7 +27,7 @@ final class CpgUserAdministratorTest extends TestCase
         $repository->expects(self::never())->method('countByRole');
         $repository->expects(self::once())->method('remove')->with($targetUser);
 
-        $administrator = new CpgUserAdministrator($repository, $this->createStub(UserPasswordHasherInterface::class));
+        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class));
 
         $administrator->delete(2, $actingUser);
     }
@@ -42,7 +42,7 @@ final class CpgUserAdministratorTest extends TestCase
         $repository->expects(self::once())->method('countByRole')->with(CpgUser::ROLE_SUPER)->willReturn(1);
         $repository->expects(self::never())->method('remove');
 
-        $administrator = new CpgUserAdministrator($repository, $this->createStub(UserPasswordHasherInterface::class));
+        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class));
 
         $this->expectException(CannotDeleteLastSuperAdminException::class);
 
@@ -59,7 +59,7 @@ final class CpgUserAdministratorTest extends TestCase
         $repository->expects(self::once())->method('countByRole')->with(CpgUser::ROLE_SUPER)->willReturn(2);
         $repository->expects(self::once())->method('remove')->with($targetUser);
 
-        $administrator = new CpgUserAdministrator($repository, $this->createStub(UserPasswordHasherInterface::class));
+        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class));
 
         $administrator->delete(2, $actingUser);
     }
@@ -72,7 +72,7 @@ final class CpgUserAdministratorTest extends TestCase
         $repository->expects(self::never())->method('findOneById');
         $repository->expects(self::never())->method('remove');
 
-        $administrator = new CpgUserAdministrator($repository, $this->createStub(UserPasswordHasherInterface::class));
+        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class));
 
         $this->expectException(CannotDeleteOwnAccountException::class);
 
@@ -83,10 +83,10 @@ final class CpgUserAdministratorTest extends TestCase
     {
         $actingUser = $this->userWithId(1, 'super');
 
-        $repository = $this->createStub(CpgUserRepositoryInterface::class);
+        $repository = self::createStub(CpgUserRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
-        $administrator = new CpgUserAdministrator($repository, $this->createStub(UserPasswordHasherInterface::class));
+        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class));
 
         $this->expectException(CpgUserNotFoundException::class);
 
@@ -116,10 +116,10 @@ final class CpgUserAdministratorTest extends TestCase
 
     public function testChangePasswordThrowsWhenUserNotFound(): void
     {
-        $repository = $this->createStub(CpgUserRepositoryInterface::class);
+        $repository = self::createStub(CpgUserRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
-        $hasher = $this->createStub(UserPasswordHasherInterface::class);
+        $hasher = self::createStub(UserPasswordHasherInterface::class);
 
         $administrator = new CpgUserAdministrator($repository, $hasher);
 

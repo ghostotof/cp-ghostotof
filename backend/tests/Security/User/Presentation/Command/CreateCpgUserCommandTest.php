@@ -9,6 +9,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\HttpKernel\KernelInterface;
 
 final class CreateCpgUserCommandTest extends KernelTestCase
 {
@@ -36,7 +37,7 @@ final class CreateCpgUserCommandTest extends KernelTestCase
         self::assertSame(0, $exitCode);
         self::assertStringContainsString('jane', $tester->getDisplay());
 
-        $user = $this->getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane');
+        $user = self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane');
         self::assertNotNull($user);
     }
 
@@ -85,7 +86,7 @@ final class CreateCpgUserCommandTest extends KernelTestCase
 
         self::assertSame(0, $exitCode);
 
-        $user = $this->getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('super');
+        $user = self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('super');
         self::assertNotNull($user);
         self::assertContains('ROLE_SUPER', $user->getRoles());
     }
@@ -106,6 +107,7 @@ final class CreateCpgUserCommandTest extends KernelTestCase
 
     private function commandTester(): CommandTester
     {
+        \assert(self::$kernel instanceof KernelInterface);
         $application = new Application(self::$kernel);
 
         // find() renvoie un LazyCommand (proxy) plutôt que CreateCpgUserCommand
@@ -115,6 +117,6 @@ final class CreateCpgUserCommandTest extends KernelTestCase
 
     private function getEntityManager(): EntityManagerInterface
     {
-        return $this->getContainer()->get(EntityManagerInterface::class);
+        return self::getContainer()->get(EntityManagerInterface::class);
     }
 }
