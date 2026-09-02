@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\Authentication\Infrastructure\Http;
 
 use App\Security\Authentication\Infrastructure\Http\CsrfCookieRequestSubscriber;
+use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
@@ -15,16 +16,21 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
  * Test unitaire isolé de la protection CSRF double-submit-cookie, en
  * complément de sa vérification indirecte par AuthenticationFlowTest (test
  * fonctionnel bout-en-bout). Couvre spécifiquement les cas limites relevés
- * par la revue de code : l'exclusion de /api/contact, et le comportement de
- * hash_equals() sur deux chaînes vides.
+ * par la revue de code : l'exclusion de /api/contact, le comportement de
+ * hash_equals() sur deux chaînes vides, et le rejet d'un jeton non signé
+ * (point d'audit B1).
  */
 final class CsrfCookieRequestSubscriberTest extends TestCase
 {
+    private const string SECRET = 'test-secret-for-csrf-signing';
+
     private CsrfCookieRequestSubscriber $subscriber;
+    private CsrfCookieTokenSigner $signer;
 
     protected function setUp(): void
     {
-        $this->subscriber = new CsrfCookieRequestSubscriber();
+        $this->signer = new CsrfCookieTokenSigner(self::SECRET);
+        $this->subscriber = new CsrfCookieRequestSubscriber($this->signer);
     }
 
     public function testSafeMethodIsNeverChecked(): void
@@ -105,13 +111,43 @@ final class CsrfCookieRequestSubscriberTest extends TestCase
         $this->subscriber->__invoke($this->mainRequestEvent($request));
     }
 
-    public function testUnsafeMethodOnProtectedPathWithMatchingTokensIsAccepted(): void
+    public function testUnsafeMethodOnProtectedPathWithMatchingSignedTokensIsAccepted(): void
     {
-        $request = Request::create('/api/backoffice/stats', 'POST', server: ['HTTP_X_XSRF_TOKEN' => 'same-value'], cookies: ['XSRF-TOKEN' => 'same-value']);
+        $token = $this->signer->issue();
+        $request = Request::create('/api/backoffice/stats', 'POST', server: ['HTTP_X_XSRF_TOKEN' => $token], cookies: ['XSRF-TOKEN' => $token]);
 
         $this->subscriber->__invoke($this->mainRequestEvent($request));
 
         $this->addToAssertionCount(1);
+    }
+
+    /**
+     * Régression B1 : cookie == header (double-submit satisfait) mais valeur
+     * forgée par l'attaquant, sans signature valide. Le double-submit seul
+     * l'accepterait ; la vérification de signature doit le rejeter.
+     */
+    public function testUnsafeMethodWithMatchingButUnsignedTokensIsRejected(): void
+    {
+        $forged = 'attacker-chosen-value.attacker-chosen-signature';
+        $request = Request::create('/api/backoffice/stats', 'POST', server: ['HTTP_X_XSRF_TOKEN' => $forged], cookies: ['XSRF-TOKEN' => $forged]);
+
+        $this->expectException(AccessDeniedHttpException::class);
+
+        $this->subscriber->__invoke($this->mainRequestEvent($request));
+    }
+
+    /**
+     * Un jeton légitimement signé mais par un *autre* serveur (APP_SECRET
+     * différent) ne doit pas être accepté.
+     */
+    public function testUnsafeMethodWithTokenSignedByAnotherSecretIsRejected(): void
+    {
+        $foreignToken = (new CsrfCookieTokenSigner('a-different-secret'))->issue();
+        $request = Request::create('/api/backoffice/stats', 'POST', server: ['HTTP_X_XSRF_TOKEN' => $foreignToken], cookies: ['XSRF-TOKEN' => $foreignToken]);
+
+        $this->expectException(AccessDeniedHttpException::class);
+
+        $this->subscriber->__invoke($this->mainRequestEvent($request));
     }
 
     /**

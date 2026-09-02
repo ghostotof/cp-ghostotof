@@ -22,6 +22,13 @@ interface CpgUserRepositoryInterface
      */
     public function findAll(): array;
 
+    /**
+     * Nombre d'utilisateurs possédant le rôle donné (rôles implicites inclus,
+     * cf. CpgUser::getRoles()). Utilisé par la garde anti-lockout du dernier
+     * ROLE_SUPER (cf. CpgUserAdministrator::delete).
+     */
+    public function countByRole(string $role): int;
+
     public function save(CpgUser $user): void;
 
     public function remove(CpgUser $user): void;

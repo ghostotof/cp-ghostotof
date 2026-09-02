@@ -33,6 +33,12 @@ final readonly class BackofficeUserPasswordResource
     public function __construct(
         #[Assert\NotBlank]
         #[Assert\Length(min: CpgUser::MIN_PASSWORD_LENGTH, max: CpgUser::MAX_PASSWORD_LENGTH)]
+        // Point d'audit B8 : refuse un mot de passe présent dans les fuites
+        // connues (API k-anonymity de haveibeenpwned, aucun envoi du mot de
+        // passe en clair). Désactivé en environnement de test
+        // (config/packages/validator.yaml, when@test) pour ne pas dépendre du
+        // réseau.
+        #[Assert\NotCompromisedPassword]
         public string $password = '',
     ) {
     }

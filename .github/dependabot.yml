@@ -1,8 +1,8 @@
 # Mises à jour de sécurité automatisées. Couvre les quatre écosystèmes du
-# dépôt ; les PR groupées limitent le bruit. Point d'audit B4 : c'est aussi
-# le mécanisme qui permettra de figer les actions GitHub sur un SHA précis
-# (cible: false ci-dessous une fois les SHA en place) tout en gardant un
-# canal de mise à jour — sans lui, un pin SHA se périme en silence.
+# dépôt ; les PR groupées limitent le bruit. Point d'audit B4 : les actions
+# GitHub sont désormais figées sur un SHA (cf. .github/workflows/*.yml) ;
+# c'est ce job `github-actions` qui les fait avancer — il met à jour le SHA
+# *et* le commentaire `# vX.Y.Z` — pour qu'un pin ne se périme pas en silence.
 version: 2
 updates:
   - package-ecosystem: github-actions

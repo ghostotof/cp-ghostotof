@@ -90,7 +90,7 @@ const fr: PortfolioLocaleContent = {
   privacyPolicy: {
     eyebrow: 'Vie privée',
     title: 'Politique de confidentialité',
-    lastUpdated: 'Dernière mise à jour : 10 août 2026',
+    lastUpdated: 'Dernière mise à jour : 2 septembre 2026',
     sections: [
       {
         heading: 'Responsable du traitement',
@@ -111,7 +111,7 @@ const fr: PortfolioLocaleContent = {
       {
         heading: 'Ce que nous ne faisons pas',
         paragraphs: [
-          "Aucun message envoyé via le formulaire de contact n'est enregistré en base de données : il est transmis par email, sans conservation applicative au-delà de cet envoi.",
+          "Les messages du formulaire de contact ne sont pas conservés en base de données au-delà de leur transmission par email, sauf en cas d'échec d'envoi (voir « Durée de conservation »).",
           "Le site n'utilise aucun cookie de mesure d'audience, de publicité ou de traceur tiers, et ne réalise aucun profilage ni décision automatisée.",
         ],
       },
@@ -137,7 +137,7 @@ const fr: PortfolioLocaleContent = {
       {
         heading: 'Durée de conservation',
         paragraphs: [
-          "Les données du formulaire de contact ne sont pas stockées au-delà de l'envoi de l'email de notification. Les données techniques (adresse IP pour la limitation de débit, journaux serveur) sont conservées sur des durées courtes, détaillées dans le registre des traitements tenu par l'éditeur.",
+          "Les messages du formulaire de contact ne sont pas conservés au-delà de l'envoi de l'email de notification. En cas d'échec d'envoi (serveur de messagerie temporairement indisponible), le message est stocké pour permettre une nouvelle tentative, puis supprimé automatiquement au plus tard au bout de 30 jours. Les données techniques (adresse IP pour la limitation de débit, journaux serveur) sont conservées sur des durées courtes, détaillées dans le registre des traitements tenu par l'éditeur.",
         ],
       },
       {

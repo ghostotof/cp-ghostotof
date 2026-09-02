@@ -20,6 +20,7 @@
         "symfony/dotenv": "8.1.*",
         "symfony/flex": "^2",
         "symfony/framework-bundle": "8.1.*",
+        "symfony/http-client": "8.1.*",
         "symfony/mailer": "8.1.*",
         "symfony/messenger": "8.1.*",
         "symfony/rate-limiter": "8.1.*",
@@ -67,6 +68,9 @@
         ],
         "post-update-cmd": [
             "@auto-scripts"
+        ],
+        "psalm": [
+            "@php vendor/bin/psalm.phar --taint-analysis --no-cache"
         ]
     },
     "conflict": {
@@ -80,6 +84,8 @@
     },
     "require-dev": {
         "phpunit/phpunit": "^13.3",
+        "psalm/phar": "^6.16",
+        "roave/security-advisories": "dev-latest",
         "symfony/browser-kit": "8.1.*",
         "symfony/css-selector": "8.1.*",
         "symfony/maker-bundle": "^1.67"
