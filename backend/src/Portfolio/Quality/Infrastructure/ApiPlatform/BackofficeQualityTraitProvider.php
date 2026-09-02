@@ -11,6 +11,7 @@ use App\Portfolio\Quality\Domain\Entity\QualityTrait as QualityTraitEntity;
 use App\Portfolio\Quality\Domain\Repository\QualityTraitRepositoryInterface;
 use App\Portfolio\Quality\Presentation\ApiResource\BackofficeQualityTraitResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -18,18 +19,23 @@ use Symfony\Component\HttpFoundation\Request;
  */
 final readonly class BackofficeQualityTraitProvider implements ProviderInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private QualityTraitRepositoryInterface $qualityTraitRepository,
     ) {
     }
 
+    /**
+     * @return BackofficeQualityTraitResource|list<BackofficeQualityTraitResource>|null
+     */
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): BackofficeQualityTraitResource|array|null
     {
         if ($operation instanceof GetCollection) {
             $request = $context['request'] ?? null;
             \assert($request instanceof Request);
 
-            $locale = Locale::tryFrom((string) $request->query->get('locale', ''));
+            $locale = Locale::tryFrom($request->query->get('locale', ''));
 
             $traits = null !== $locale
                 ? $this->qualityTraitRepository->findByLocale($locale)
@@ -38,7 +44,7 @@ final readonly class BackofficeQualityTraitProvider implements ProviderInterface
             return array_map($this->toResource(...), $traits);
         }
 
-        $trait = $this->qualityTraitRepository->findOneById((int) $uriVariables['id']);
+        $trait = $this->qualityTraitRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
 
         return null !== $trait ? $this->toResource($trait) : null;
     }

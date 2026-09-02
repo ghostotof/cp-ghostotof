@@ -14,6 +14,8 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Question\Question;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Seul moyen de créer un CpgUser : il n'existe volontairement aucun
@@ -29,8 +31,10 @@ final class CreateCpgUserCommand extends Command
     /** @var list<string> */
     private const array ALLOWED_ROLES = [CpgUser::ROLE_SUPER];
 
-    public function __construct(private readonly CpgUserRegistrarInterface $cpgUserRegistrar)
-    {
+    public function __construct(
+        private readonly CpgUserRegistrarInterface $cpgUserRegistrar,
+        private readonly ValidatorInterface $validator,
+    ) {
         parent::__construct();
     }
 
@@ -48,17 +52,34 @@ final class CreateCpgUserCommand extends Command
         $io = new SymfonyStyle($input, $output);
 
         $username = $input->getOption('username') ?? $io->ask('Nom d\'utilisateur', validator: $this->validateUsername(...));
+        \assert(\is_string($username));
 
-        if (!preg_match(CpgUser::USERNAME_PATTERN, (string) $username)) {
+        if (1 !== preg_match(CpgUser::USERNAME_PATTERN, $username)) {
             $io->error('Le nom d\'utilisateur doit contenir entre 3 et 60 caractères (lettres, chiffres, ".", "_" ou "-").');
 
             return Command::FAILURE;
         }
 
         $plainPassword = $input->getOption('password') ?? $this->askPassword($io);
+        \assert(\is_string($plainPassword));
 
         if (\strlen($plainPassword) < CpgUser::MIN_PASSWORD_LENGTH) {
             $io->error(sprintf('Le mot de passe doit contenir au moins %d caractères.', CpgUser::MIN_PASSWORD_LENGTH));
+
+            return Command::FAILURE;
+        }
+
+        if (\strlen($plainPassword) > CpgUser::MAX_PASSWORD_LENGTH) {
+            $io->error(sprintf('Le mot de passe ne doit pas dépasser %d caractères.', CpgUser::MAX_PASSWORD_LENGTH));
+
+            return Command::FAILURE;
+        }
+
+        // Point d'audit B8 : même contrôle que l'endpoint backoffice
+        // (BackofficeUserPasswordResource). En environnement de test, la
+        // vérification réseau est désactivée (validator.yaml, when@test).
+        if ($this->validator->validate($plainPassword, new Assert\NotCompromisedPassword())->count() > 0) {
+            $io->error('Ce mot de passe figure dans une fuite de données connue (haveibeenpwned) : choisissez-en un autre.');
 
             return Command::FAILURE;
         }
@@ -86,9 +107,9 @@ final class CreateCpgUserCommand extends Command
         return Command::SUCCESS;
     }
 
-    private function validateUsername(?string $username): string
+    private function validateUsername(mixed $username): string
     {
-        if (!preg_match(CpgUser::USERNAME_PATTERN, (string) $username)) {
+        if (!\is_string($username) || 1 !== preg_match(CpgUser::USERNAME_PATTERN, $username)) {
             throw new \InvalidArgumentException('Le nom d\'utilisateur doit contenir entre 3 et 60 caractères (lettres, chiffres, ".", "_" ou "-").');
         }
 
@@ -100,8 +121,8 @@ final class CreateCpgUserCommand extends Command
         $question = new Question('Mot de passe');
         $question->setHidden(true);
         $question->setHiddenFallback(false);
-        $question->setValidator(function (?string $value): string {
-            if (null === $value || '' === $value) {
+        $question->setValidator(function (mixed $value): string {
+            if (!\is_string($value) || '' === $value) {
                 throw new \InvalidArgumentException('Le mot de passe ne peut pas être vide.');
             }
 
@@ -109,6 +130,7 @@ final class CreateCpgUserCommand extends Command
         });
 
         $password = $io->askQuestion($question);
+        \assert(\is_string($password));
 
         $confirmationQuestion = new Question('Confirmez le mot de passe');
         $confirmationQuestion->setHidden(true);

@@ -18,9 +18,9 @@ use Symfony\Component\Security\Http\Event\LogoutEvent;
  * posés au login (BEARER + XSRF-TOKEN, cf. LoginSuccessSubscriber) — sans lui,
  * le LogoutListener de Symfony lève une exception ("no response was set").
  */
-final class CookieLogoutListener implements EventSubscriberInterface
+final readonly class CookieLogoutListener implements EventSubscriberInterface
 {
-    public function __construct(#[Autowire('%kernel.environment%')] private readonly string $environment)
+    public function __construct(#[Autowire('%kernel.environment%')] private string $environment)
     {
     }
 

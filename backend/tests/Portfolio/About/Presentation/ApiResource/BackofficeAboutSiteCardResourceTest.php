@@ -8,6 +8,7 @@ use App\Portfolio\About\Application\AboutSiteCardAdministratorInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Support\HttpJson;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -18,6 +19,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class BackofficeAboutSiteCardResourceTest extends WebTestCase
 {
+    use HttpJson;
+
     private const string SUPER_USERNAME = 'super';
     private const string SUPER_PASSWORD = 'SuperSecret123';
     private const string PLAIN_USERNAME = 'jane';
@@ -88,7 +91,7 @@ final class BackofficeAboutSiteCardResourceTest extends WebTestCase
         $client->request('POST', '/api/backoffice/about/site-cards', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['locale' => 'fr', 'title' => 'Architecture', 'description' => 'Description.', 'iconKey' => 'layers', 'position' => 0]));
+        ], content: self::jsonBody(['locale' => 'fr', 'title' => 'Architecture', 'description' => 'Description.', 'iconKey' => 'layers', 'position' => 0]));
         self::assertResponseIsSuccessful();
         $created = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame('Architecture', $created['title']);
@@ -99,7 +102,7 @@ final class BackofficeAboutSiteCardResourceTest extends WebTestCase
         $client->request('PUT', sprintf('/api/backoffice/about/site-cards/%d', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['locale' => 'fr', 'title' => 'Stack technique', 'description' => 'Description mise à jour.', 'iconKey' => 'server', 'position' => 1]));
+        ], content: self::jsonBody(['locale' => 'fr', 'title' => 'Stack technique', 'description' => 'Description mise à jour.', 'iconKey' => 'server', 'position' => 1]));
         self::assertResponseIsSuccessful();
         $updated = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame('Stack technique', $updated['title']);
@@ -108,7 +111,7 @@ final class BackofficeAboutSiteCardResourceTest extends WebTestCase
         $client->request('PUT', '/api/backoffice/about/site-cards/999999', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['title' => 'x', 'description' => 'x', 'iconKey' => 'x', 'position' => 0]));
+        ], content: self::jsonBody(['title' => 'x', 'description' => 'x', 'iconKey' => 'x', 'position' => 0]));
         self::assertResponseStatusCodeSame(404);
 
         // Delete - id inconnu => 404
@@ -132,7 +135,7 @@ final class BackofficeAboutSiteCardResourceTest extends WebTestCase
         $client->request('POST', '/api/backoffice/about/site-cards', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['title' => 'Architecture', 'description' => 'Description.', 'iconKey' => 'layers', 'position' => 0]));
+        ], content: self::jsonBody(['title' => 'Architecture', 'description' => 'Description.', 'iconKey' => 'layers', 'position' => 0]));
 
         self::assertResponseStatusCodeSame(422);
     }
@@ -146,14 +149,14 @@ final class BackofficeAboutSiteCardResourceTest extends WebTestCase
         $client->request('POST', '/api/backoffice/about/site-cards', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['locale' => 'fr', 'title' => 'Architecture', 'description' => str_repeat('a', 501), 'iconKey' => 'layers', 'position' => 0]));
+        ], content: self::jsonBody(['locale' => 'fr', 'title' => 'Architecture', 'description' => str_repeat('a', 501), 'iconKey' => 'layers', 'position' => 0]));
 
         self::assertResponseStatusCodeSame(422);
     }
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string
     {
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'username' => $username,
             'password' => $password,
         ]));

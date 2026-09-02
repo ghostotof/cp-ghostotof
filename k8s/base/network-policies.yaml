@@ -1,0 +1,71 @@
+# Isolation réseau du namespace (point d'audit B3). Le cluster Kapsule est
+# mutualisé : sans NetworkPolicy, n'importe quel pod d'un autre namespace peut
+# ouvrir une connexion vers Postgres (5432) ou RabbitMQ (5672).
+#
+# Stratégie : deny-all en ENTRÉE pour tous les pods, puis réautorisation
+# ciblée. La SORTIE n'est volontairement pas restreinte (DNS, External Secrets
+# -> Scaleway, cert-manager -> ACME, backend -> SMTP sortant resteraient
+# sinon à énumérer). Les sondes kubelet proviennent du nœud et ne sont pas
+# filtrées par ces règles sur le CNI par défaut de Kapsule (Cilium) ; le gate
+# smoke-test-preprod + rollback automatique couvre le cas contraire.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}
+  policyTypes: ['Ingress']
+---
+# Le trafic HTTP public entre par l'ingress-nginx (namespace `ingress-nginx`,
+# label kubernetes.io/metadata.name posé automatiquement par le control-plane).
+# Seuls le frontend et le backend l'acceptent, sur leur port conteneur 8080
+# (cf. *-service.yaml : port 80 -> targetPort 8080).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-web-from-ingress-nginx
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: ['frontend', 'backend']
+  policyTypes: ['Ingress']
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# php-fpm (port 9000) n'est appelé que par le sidecar nginx DU MÊME POD : le
+# trafic loopback intra-pod n'est jamais soumis aux NetworkPolicy, aucune
+# règle n'est donc nécessaire pour 9000.
+#
+# Postgres et RabbitMQ n'acceptent que les pods de cette application
+# (label app.kubernetes.io/part-of, posé sur tous les pods par
+# base/kustomization.yaml). Cela autorise backend, worker Messenger et Adminer
+# sans les énumérer, tout en fermant l'accès aux autres locataires du cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-datastores-from-app
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: ['postgres', 'rabbitmq']
+  policyTypes: ['Ingress']
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: cp-ghostotof
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 5672

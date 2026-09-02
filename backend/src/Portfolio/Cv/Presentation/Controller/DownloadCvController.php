@@ -18,13 +18,13 @@ use Symfony\Component\Routing\Attribute\Route;
  * backend/resources/README.md) : $cvFilePath pointe vers un chemin déposé
  * localement ou monté par l'orchestrateur en environnement déployé.
  */
-final class DownloadCvController
+final readonly class DownloadCvController
 {
     public function __construct(
         #[Autowire(param: 'app.cv_file_path')]
-        private readonly string $cvFilePath,
+        private string $cvFilePath,
         #[Autowire(param: 'app.cv_download_filename')]
-        private readonly string $cvDownloadFilename,
+        private string $cvDownloadFilename,
     ) {
     }
 

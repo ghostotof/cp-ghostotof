@@ -30,6 +30,13 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
 
     public const int MIN_PASSWORD_LENGTH = 8;
 
+    /**
+     * Borne haute alignée sur PasswordHasherInterface::MAX_PASSWORD_LENGTH de
+     * Symfony : au-delà, le hasher lève une exception (défense anti-DoS sur
+     * bcrypt/argon). On valide donc en amont pour répondre 422, jamais 500.
+     */
+    public const int MAX_PASSWORD_LENGTH = 4096;
+
     /** Lettres, chiffres, ".", "_" ou "-", 3 à 60 caractères. */
     public const string USERNAME_PATTERN = '/^[a-zA-Z0-9_.-]{3,60}$/';
 
@@ -73,6 +80,11 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
 
     public function getUserIdentifier(): string
     {
+        // Le constructeur garantit un username de 3 a 60 caracteres
+        // (USERNAME_PATTERN) ; l'assertion l'explicite pour l'analyse statique
+        // (UserInterface::getUserIdentifier() attend un non-empty-string).
+        \assert('' !== $this->username);
+
         return $this->username;
     }
 

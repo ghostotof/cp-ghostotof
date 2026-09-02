@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Contact\Infrastructure\Messenger;
 
+use Symfony\Component\Mime\Address;
 use App\Contact\Application\Message\SendContactMessageMessage;
 use App\Contact\Domain\Exception\ContactMessageDeliveryException;
 use App\Contact\Infrastructure\Messenger\SendContactMessageHandler;
@@ -14,6 +15,7 @@ use Symfony\Component\Mime\Email;
 
 final class SendContactMessageHandlerTest extends TestCase
 {
+    private const string CONTACT_SENDER_EMAIL = 'noreply@cp-ghostotof.com';
     private const string CONTACT_RECIPIENT_EMAIL = 'contact@cp-ghostotof.com';
 
     public function testItSendsAnEmailToTheContactRecipientWithReplyToSetToTheVisitor(): void
@@ -22,16 +24,16 @@ final class SendContactMessageHandlerTest extends TestCase
         $mailer->expects(self::once())
             ->method('send')
             ->with(self::callback(function (Email $email): bool {
-                self::assertSame([self::CONTACT_RECIPIENT_EMAIL], array_map(
-                    static fn ($address) => $address->getAddress(),
+                self::assertSame([self::CONTACT_SENDER_EMAIL], array_map(
+                    static fn (Address $address): string => $address->getAddress(),
                     $email->getFrom(),
                 ));
                 self::assertSame([self::CONTACT_RECIPIENT_EMAIL], array_map(
-                    static fn ($address) => $address->getAddress(),
+                    static fn (Address $address): string => $address->getAddress(),
                     $email->getTo(),
                 ));
                 self::assertSame(['jane@example.com'], array_map(
-                    static fn ($address) => $address->getAddress(),
+                    static fn (Address $address): string => $address->getAddress(),
                     $email->getReplyTo(),
                 ));
                 self::assertStringContainsString('Jane Doe', (string) $email->getSubject());
@@ -40,7 +42,7 @@ final class SendContactMessageHandlerTest extends TestCase
                 return true;
             }));
 
-        $handler = new SendContactMessageHandler($mailer, self::CONTACT_RECIPIENT_EMAIL);
+        $handler = new SendContactMessageHandler($mailer, self::CONTACT_SENDER_EMAIL, self::CONTACT_RECIPIENT_EMAIL);
 
         $handler(new SendContactMessageMessage(
             senderName: 'Jane Doe',
@@ -55,7 +57,7 @@ final class SendContactMessageHandlerTest extends TestCase
         $transportException = new TransportException('SMTP indisponible.');
         $mailer->expects(self::once())->method('send')->willThrowException($transportException);
 
-        $handler = new SendContactMessageHandler($mailer, self::CONTACT_RECIPIENT_EMAIL);
+        $handler = new SendContactMessageHandler($mailer, self::CONTACT_SENDER_EMAIL, self::CONTACT_RECIPIENT_EMAIL);
 
         try {
             $handler(new SendContactMessageMessage(

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Jwt;
 
+use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
 use App\Security\User\Domain\Entity\CpgUser;
 use Lexik\Bundle\JWTAuthenticationBundle\Event\AuthenticationSuccessEvent;
 use Lexik\Bundle\JWTAuthenticationBundle\Events;
@@ -15,7 +16,8 @@ use Symfony\Component\HttpFoundation\Cookie;
  * Complète la réponse de login_check générée par Lexik (qui pose déjà le
  * cookie httpOnly "BEARER" contenant le JWT, cf. config/packages/lexik_jwt_authentication.yaml) :
  *
- * - ajoute un second cookie XSRF-TOKEN, lisible en JS, valeur aléatoire — le
+ * - ajoute un second cookie XSRF-TOKEN, lisible en JS, dont la valeur est
+ *   signée par APP_SECRET (cf. CsrfCookieTokenSigner, point d'audit B1) — le
  *   frontend le relit et le renvoie dans le header X-XSRF-TOKEN sur les
  *   requêtes qui changent l'état (double-submit cookie, cf.
  *   Authentication\Infrastructure\Http\CsrfCookieRequestSubscriber) ;
@@ -23,10 +25,12 @@ use Symfony\Component\HttpFoundation\Cookie;
  *   l'utilisateur connecté, pour que le frontend n'ait pas à refaire un appel
  *   /api/me immédiatement après un login réussi.
  */
-final class LoginSuccessSubscriber implements EventSubscriberInterface
+final readonly class LoginSuccessSubscriber implements EventSubscriberInterface
 {
-    public function __construct(#[Autowire('%kernel.environment%')] private readonly string $environment)
-    {
+    public function __construct(
+        #[Autowire('%kernel.environment%')] private string $environment,
+        private CsrfCookieTokenSigner $csrfCookieTokenSigner,
+    ) {
     }
 
     public static function getSubscribedEvents(): array
@@ -49,7 +53,7 @@ final class LoginSuccessSubscriber implements EventSubscriberInterface
         ]);
 
         $event->getResponse()->headers->setCookie(
-            Cookie::create('XSRF-TOKEN', bin2hex(random_bytes(32)))
+            Cookie::create('XSRF-TOKEN', $this->csrfCookieTokenSigner->issue())
                 ->withHttpOnly(false)
                 ->withSecure('prod' === $this->environment)
                 ->withSameSite(Cookie::SAMESITE_LAX)

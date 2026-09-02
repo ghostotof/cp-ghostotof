@@ -9,6 +9,7 @@ use App\Portfolio\About\Domain\Repository\AboutSettingsRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Support\HttpJson;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -20,6 +21,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class BackofficeAboutSettingsResourceTest extends WebTestCase
 {
+    use HttpJson;
+
     private const string SUPER_USERNAME = 'super';
     private const string SUPER_PASSWORD = 'SuperSecret123';
     private const string PLAIN_USERNAME = 'jane';
@@ -88,7 +91,7 @@ final class BackofficeAboutSettingsResourceTest extends WebTestCase
         $client->request('PUT', '/api/backoffice/about/settings/fr', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode([
+        ], content: self::jsonBody([
             'siteEyebrow' => 'Nouveau site',
             'meEyebrow' => 'Nouveau moi',
             'technicalSubtitle' => 'Nouvelle technique',
@@ -114,7 +117,7 @@ final class BackofficeAboutSettingsResourceTest extends WebTestCase
         $client->request('PUT', '/api/backoffice/about/settings/en', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode([
+        ], content: self::jsonBody([
             'siteEyebrow' => 'a', 'meEyebrow' => 'b', 'technicalSubtitle' => 'c', 'personalSubtitle' => 'd', 'hobbiesSubtitle' => 'e',
         ]));
 
@@ -135,7 +138,7 @@ final class BackofficeAboutSettingsResourceTest extends WebTestCase
         $client->request('PUT', '/api/backoffice/about/settings/fr', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode([
+        ], content: self::jsonBody([
             'siteEyebrow' => str_repeat('a', 181),
             'meEyebrow' => 'b',
             'technicalSubtitle' => 'c',
@@ -148,7 +151,7 @@ final class BackofficeAboutSettingsResourceTest extends WebTestCase
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string
     {
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'username' => $username,
             'password' => $password,
         ]));

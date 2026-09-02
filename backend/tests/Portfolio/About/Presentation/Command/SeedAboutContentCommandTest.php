@@ -12,6 +12,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\HttpKernel\KernelInterface;
 
 final class SeedAboutContentCommandTest extends KernelTestCase
 {
@@ -35,9 +36,9 @@ final class SeedAboutContentCommandTest extends KernelTestCase
 
         self::assertSame(0, $exitCode);
 
-        $siteCardRepository = $this->getContainer()->get(AboutSiteCardRepositoryInterface::class);
-        $meCardRepository = $this->getContainer()->get(AboutMeCardRepositoryInterface::class);
-        $settingsRepository = $this->getContainer()->get(AboutSettingsRepositoryInterface::class);
+        $siteCardRepository = self::getContainer()->get(AboutSiteCardRepositoryInterface::class);
+        $meCardRepository = self::getContainer()->get(AboutMeCardRepositoryInterface::class);
+        $settingsRepository = self::getContainer()->get(AboutSettingsRepositoryInterface::class);
 
         self::assertCount(4, $siteCardRepository->findByLocale(Locale::FR));
         self::assertCount(4, $siteCardRepository->findByLocale(Locale::EN));
@@ -58,8 +59,8 @@ final class SeedAboutContentCommandTest extends KernelTestCase
         $tester->execute([]);
         $tester->execute([]);
 
-        $siteCardRepository = $this->getContainer()->get(AboutSiteCardRepositoryInterface::class);
-        $meCardRepository = $this->getContainer()->get(AboutMeCardRepositoryInterface::class);
+        $siteCardRepository = self::getContainer()->get(AboutSiteCardRepositoryInterface::class);
+        $meCardRepository = self::getContainer()->get(AboutMeCardRepositoryInterface::class);
 
         self::assertCount(4, $siteCardRepository->findByLocale(Locale::FR));
         self::assertCount(4, $siteCardRepository->findByLocale(Locale::EN));
@@ -69,6 +70,7 @@ final class SeedAboutContentCommandTest extends KernelTestCase
 
     private function commandTester(): CommandTester
     {
+        \assert(self::$kernel instanceof KernelInterface);
         $application = new Application(self::$kernel);
 
         return new CommandTester($application->find('app:about:seed'));
@@ -76,7 +78,7 @@ final class SeedAboutContentCommandTest extends KernelTestCase
 
     private function purge(): void
     {
-        $connection = $this->getContainer()->get(EntityManagerInterface::class)->getConnection();
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         $connection->executeStatement('DELETE FROM about_me_card');
         $connection->executeStatement('DELETE FROM about_site_card');
         $connection->executeStatement('DELETE FROM about_settings');

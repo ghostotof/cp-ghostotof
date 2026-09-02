@@ -20,6 +20,16 @@ export default defineConfigWithVueTs(
   vueTsConfigs.recommended,
   ...pluginVueI18n.configs['flat/recommended'],
   {
+    name: 'app/tests',
+    files: ['tests/**/*.{ts,vue}'],
+    rules: {
+      // Les specs montent des composants « sonde » jetables (@vue/test-utils,
+      // `defineComponent` inline) pour exécuter un composable et observer son
+      // retour — ce n'est pas de l'organisation de composants SFC.
+      'vue/one-component-per-file': 'off',
+    },
+  },
+  {
     name: 'app/vue-i18n-settings',
     settings: {
       'vue-i18n': {

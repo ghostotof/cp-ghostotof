@@ -37,6 +37,21 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
         return $this->findBy([], ['username' => 'ASC']);
     }
 
+    /**
+     * `roles` est une colonne JSON : plutôt qu'un `WHERE` portable
+     * hasardeux sur du JSON, on filtre en PHP. La table `cpg_user` n'est
+     * alimentée que par la commande CLI (aucune inscription publique), son
+     * volume reste négligeable — le coût du chargement complet est ici sans
+     * enjeu de performance.
+     */
+    public function countByRole(string $role): int
+    {
+        return \count(array_filter(
+            $this->findAll(),
+            static fn (CpgUser $user): bool => \in_array($role, $user->getRoles(), true),
+        ));
+    }
+
     public function save(CpgUser $user): void
     {
         $this->getEntityManager()->persist($user);

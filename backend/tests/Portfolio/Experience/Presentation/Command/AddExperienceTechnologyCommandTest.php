@@ -9,6 +9,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\HttpKernel\KernelInterface;
 
 final class AddExperienceTechnologyCommandTest extends KernelTestCase
 {
@@ -38,7 +39,7 @@ final class AddExperienceTechnologyCommandTest extends KernelTestCase
         self::assertSame(0, $exitCode);
         self::assertStringContainsString('PHP', $tester->getDisplay());
 
-        $technology = $this->getContainer()->get(ExperienceTechnologyRepositoryInterface::class)->findOneByName('PHP');
+        $technology = self::getContainer()->get(ExperienceTechnologyRepositoryInterface::class)->findOneByName('PHP');
         self::assertNotNull($technology);
         self::assertSame(13.5, $technology->getYears());
         self::assertSame('php', $technology->getIconKey());
@@ -53,7 +54,7 @@ final class AddExperienceTechnologyCommandTest extends KernelTestCase
 
         self::assertSame(0, $exitCode);
 
-        $technology = $this->getContainer()->get(ExperienceTechnologyRepositoryInterface::class)->findOneByName('MySQL');
+        $technology = self::getContainer()->get(ExperienceTechnologyRepositoryInterface::class)->findOneByName('MySQL');
         self::assertNotNull($technology);
         self::assertNull($technology->getIconKey());
         self::assertNull($technology->getRelatedTechnologyName());
@@ -81,6 +82,7 @@ final class AddExperienceTechnologyCommandTest extends KernelTestCase
 
     private function commandTester(): CommandTester
     {
+        \assert(self::$kernel instanceof KernelInterface);
         $application = new Application(self::$kernel);
 
         return new CommandTester($application->find('app:experience:add-technology'));
@@ -88,6 +90,6 @@ final class AddExperienceTechnologyCommandTest extends KernelTestCase
 
     private function getEntityManager(): EntityManagerInterface
     {
-        return $this->getContainer()->get(EntityManagerInterface::class);
+        return self::getContainer()->get(EntityManagerInterface::class);
     }
 }

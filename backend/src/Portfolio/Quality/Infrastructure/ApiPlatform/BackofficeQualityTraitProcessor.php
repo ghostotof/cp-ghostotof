@@ -13,12 +13,15 @@ use App\Portfolio\Quality\Application\QualityTraitAdministratorInterface;
 use App\Portfolio\Quality\Domain\Entity\QualityTrait as QualityTraitEntity;
 use App\Portfolio\Quality\Presentation\ApiResource\BackofficeQualityTraitResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
  * @implements ProcessorInterface<BackofficeQualityTraitResource, BackofficeQualityTraitResource|null>
  */
 final readonly class BackofficeQualityTraitProcessor implements ProcessorInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private QualityTraitAdministratorInterface $qualityTraitAdministrator,
     ) {
@@ -27,16 +30,14 @@ final readonly class BackofficeQualityTraitProcessor implements ProcessorInterfa
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeQualityTraitResource
     {
         if ($operation instanceof Delete) {
-            $this->qualityTraitAdministrator->delete((int) $uriVariables['id']);
+            $this->qualityTraitAdministrator->delete($this->uriVariableInt($uriVariables, 'id'));
 
             return null;
         }
 
-        \assert($data instanceof BackofficeQualityTraitResource);
-
         if ($operation instanceof Put) {
             $trait = $this->qualityTraitAdministrator->update(
-                (int) $uriVariables['id'],
+                $this->uriVariableInt($uriVariables, 'id'),
                 $data->label,
                 $data->position,
             );

@@ -1,0 +1,57 @@
+# Applique une rétention aux messages de contact en échec (point d'audit B6).
+# Exécute quotidiennement `app:contact:purge-failed-messages` (rétention par
+# défaut : 30 jours) — voir src/Contact/Presentation/Command/PurgeFailedContactMessagesCommand.php.
+# Réutilise l'image backend et les mêmes ConfigMap/Secret que le Deployment
+# (DATABASE_URL vient de backend-secrets).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: contact-failed-messages-purge
+  labels:
+    app.kubernetes.io/name: contact-failed-messages-purge
+spec:
+  schedule: '17 3 * * *'
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: contact-failed-messages-purge
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            fsGroup: 10001
+          containers:
+            - name: purge
+              image: backend
+              command: ['php', 'bin/console', 'app:contact:purge-failed-messages', '--no-interaction']
+              envFrom:
+                - configMapRef:
+                    name: backend-config
+                - secretRef:
+                    name: backend-secrets
+              volumeMounts:
+                - name: var-log
+                  mountPath: /var/www/backend/var/log
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 64Mi
+                limits:
+                  cpu: 250m
+                  memory: 192Mi
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 10001
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ['ALL']
+          volumes:
+            - name: var-log
+              emptyDir: {}

@@ -15,6 +15,10 @@ configMapGenerator:
       - CORS_ALLOW_ORIGIN=^https://cp-ghostotof\.com$
       - DEFAULT_URI=https://cp-ghostotof.com
       - CV_DOWNLOAD_FILENAME=cv.pdf
+      # From des notifications du formulaire de contact (non secret, adresse
+      # d'envoi dédiée du domaine validé Scaleway TEM). CONTACT_RECIPIENT_EMAIL
+      # et MAILER_DSN restent dans le Secret backend-secrets (ESO).
+      - CONTACT_SENDER_EMAIL=noreply@cp-ghostotof.com
   - name: frontend-config
     literals:
       - API_URL=https://cp-ghostotof.com
@@ -33,6 +37,14 @@ replicas:
     count: 2
   - name: frontend
     count: 2
+  # Point d'audit B2 : Adminer (UI d'admin BDD, sans authentification propre
+  # au-delà des creds Postgres) est défini dans base/ pour la préprod, mais
+  # ne doit pas tourner en prod — surface d'attaque inutile même sans route
+  # Ingress. On le met à zéro replica ici (Deployment/Service conservés, aucun
+  # pod). Accès ponctuel prod : `kubectl scale deploy/adminer --replicas=1 -n
+  # prod` puis remise à 0.
+  - name: adminer
+    count: 0
 
 patches:
   - target:

@@ -48,7 +48,7 @@ const fr: PortfolioLocaleContent = {
   legalNotice: {
     eyebrow: 'Informations légales',
     title: 'Mentions légales',
-    lastUpdated: 'Dernière mise à jour : 10 août 2026',
+    lastUpdated: 'Dernière mise à jour : 2 septembre 2026',
     sections: [
       {
         heading: 'Éditeur du site',
@@ -65,7 +65,8 @@ const fr: PortfolioLocaleContent = {
       {
         heading: 'Hébergement',
         paragraphs: [
-          '[HÉBERGEUR À COMPLÉTER] — raison sociale, adresse et contact de l’hébergeur seront précisés ici dès que l’environnement de production sera défini.',
+          'Ce site est hébergé par Scaleway SAS, société immatriculée au Registre du commerce et des sociétés de Paris sous le numéro 433 115 904, dont le siège social est situé 8 rue de la Ville l’Évêque, 75008 Paris, France — téléphone : +33 (0)1 84 13 00 00.',
+          'Les données et l’application sont hébergées sur l’infrastructure Scaleway localisée en France (région fr-par).',
         ],
       },
       {
@@ -90,7 +91,7 @@ const fr: PortfolioLocaleContent = {
   privacyPolicy: {
     eyebrow: 'Vie privée',
     title: 'Politique de confidentialité',
-    lastUpdated: 'Dernière mise à jour : 10 août 2026',
+    lastUpdated: 'Dernière mise à jour : 2 septembre 2026',
     sections: [
       {
         heading: 'Responsable du traitement',
@@ -111,7 +112,7 @@ const fr: PortfolioLocaleContent = {
       {
         heading: 'Ce que nous ne faisons pas',
         paragraphs: [
-          "Aucun message envoyé via le formulaire de contact n'est enregistré en base de données : il est transmis par email, sans conservation applicative au-delà de cet envoi.",
+          "Les messages du formulaire de contact ne sont pas conservés en base de données au-delà de leur transmission par email, sauf en cas d'échec d'envoi (voir « Durée de conservation »).",
           "Le site n'utilise aucun cookie de mesure d'audience, de publicité ou de traceur tiers, et ne réalise aucun profilage ni décision automatisée.",
         ],
       },
@@ -137,7 +138,7 @@ const fr: PortfolioLocaleContent = {
       {
         heading: 'Durée de conservation',
         paragraphs: [
-          "Les données du formulaire de contact ne sont pas stockées au-delà de l'envoi de l'email de notification. Les données techniques (adresse IP pour la limitation de débit, journaux serveur) sont conservées sur des durées courtes, détaillées dans le registre des traitements tenu par l'éditeur.",
+          "Les messages du formulaire de contact ne sont pas conservés au-delà de l'envoi de l'email de notification. En cas d'échec d'envoi (serveur de messagerie temporairement indisponible), le message est stocké pour permettre une nouvelle tentative, puis supprimé automatiquement au plus tard au bout de 30 jours. Les données techniques (adresse IP pour la limitation de débit, journaux serveur) sont conservées sur des durées courtes, détaillées dans le registre des traitements tenu par l'éditeur.",
         ],
       },
       {

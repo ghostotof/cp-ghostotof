@@ -1,0 +1,42 @@
+# Mises à jour de sécurité automatisées. Couvre les quatre écosystèmes du
+# dépôt ; les PR groupées limitent le bruit. Point d'audit B4 : les actions
+# GitHub sont désormais figées sur un SHA (cf. .github/workflows/*.yml) ;
+# c'est ce job `github-actions` qui les fait avancer — il met à jour le SHA
+# *et* le commentaire `# vX.Y.Z` — pour qu'un pin ne se périme pas en silence.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: composer
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      backend-minor-patch:
+        update-types: ['minor', 'patch']
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      frontend-minor-patch:
+        update-types: ['minor', 'patch']
+
+  - package-ecosystem: docker
+    directory: /docker/php
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /docker/node
+    schedule:
+      interval: weekly

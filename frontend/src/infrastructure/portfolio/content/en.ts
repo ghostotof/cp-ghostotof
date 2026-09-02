@@ -48,7 +48,7 @@ const en: PortfolioLocaleContent = {
   legalNotice: {
     eyebrow: 'Legal information',
     title: 'Legal notice',
-    lastUpdated: 'Last updated: August 10, 2026',
+    lastUpdated: 'Last updated: September 2, 2026',
     sections: [
       {
         heading: 'Site publisher',
@@ -65,7 +65,8 @@ const en: PortfolioLocaleContent = {
       {
         heading: 'Hosting',
         paragraphs: [
-          '[HOSTING PROVIDER TO BE COMPLETED] — the host’s company name, address and contact details will be added here once the production environment is set up.',
+          'This site is hosted by Scaleway SAS, a company registered with the Paris Trade and Companies Register under number 433 115 904, with its registered office at 8 rue de la Ville l’Évêque, 75008 Paris, France — phone: +33 (0)1 84 13 00 00.',
+          'Data and the application are hosted on Scaleway infrastructure located in France (fr-par region).',
         ],
       },
       {
@@ -90,7 +91,7 @@ const en: PortfolioLocaleContent = {
   privacyPolicy: {
     eyebrow: 'Privacy',
     title: 'Privacy policy',
-    lastUpdated: 'Last updated: August 10, 2026',
+    lastUpdated: 'Last updated: September 2, 2026',
     sections: [
       {
         heading: 'Data controller',
@@ -111,7 +112,7 @@ const en: PortfolioLocaleContent = {
       {
         heading: "What we don't do",
         paragraphs: [
-          'No message sent through the contact form is stored in a database: it is forwarded by email with no application-level retention beyond that.',
+          'Contact form messages are not stored in a database beyond being forwarded by email, except when delivery fails (see "Retention period").',
           'The site uses no audience-measurement, advertising, or third-party tracking cookies, and performs no profiling or automated decision-making.',
         ],
       },
@@ -137,7 +138,7 @@ const en: PortfolioLocaleContent = {
       {
         heading: 'Retention period',
         paragraphs: [
-          "Contact form data is not stored beyond sending the notification email. Technical data (IP address for rate limiting, server logs) is kept for short periods, detailed in the processing register maintained by the publisher.",
+          "Contact form messages are not kept beyond sending the notification email. If delivery fails (mail server temporarily unavailable), the message is stored so it can be retried, then automatically deleted after 30 days at the latest. Technical data (IP address for rate limiting, server logs) is kept for short periods, detailed in the processing register maintained by the publisher.",
         ],
       },
       {

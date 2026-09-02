@@ -42,7 +42,7 @@ final class AboutSiteCardAdministratorTest extends TestCase
 
     public function testUpdateThrowsWhenCardNotFound(): void
     {
-        $repository = $this->createStub(AboutSiteCardRepositoryInterface::class);
+        $repository = self::createStub(AboutSiteCardRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
         $administrator = new AboutSiteCardAdministrator($repository);
@@ -67,7 +67,7 @@ final class AboutSiteCardAdministratorTest extends TestCase
 
     public function testDeleteThrowsWhenCardNotFound(): void
     {
-        $repository = $this->createStub(AboutSiteCardRepositoryInterface::class);
+        $repository = self::createStub(AboutSiteCardRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
         $administrator = new AboutSiteCardAdministrator($repository);

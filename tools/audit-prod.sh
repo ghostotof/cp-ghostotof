@@ -64,13 +64,12 @@ done
 section "En-têtes de sécurité"
 HEADERS="$(tr 'A-Z' 'a-z' <<< "$HEADERS_RAW")"
 
-# Bloquants : sans risque de casse fonctionnelle, doivent toujours être
-# présents en prod. content-security-policy est volontairement exclu de
-# cette liste — mal calibrée elle casse le site (scripts/appels API bloqués),
-# elle mérite un déploiement progressif en Report-Only avant de devenir un
-# gate CI ; en attendant elle reste seulement informative.
+# Bloquants : doivent toujours être présents en prod. content-security-policy
+# y est passé en mode enforce (Content-Security-Policy, plus Report-Only) sur
+# les deux nginx — c'est donc désormais un gate CI comme les autres.
 for h in strict-transport-security x-content-type-options \
-         referrer-policy permissions-policy x-frame-options cross-origin-opener-policy; do
+         referrer-policy permissions-policy x-frame-options cross-origin-opener-policy \
+         content-security-policy; do
   if grep -q "^${h}:" <<< "$HEADERS"; then
     printf '  \033[32mOK\033[0m      %s\n' "$h"
   else
@@ -79,10 +78,12 @@ for h in strict-transport-security x-content-type-options \
   fi
 done
 
-if grep -q '^content-security-policy:' <<< "$HEADERS"; then
-  printf '  \033[32mOK\033[0m      content-security-policy\n'
-else
-  printf '  \033[33mABSENT\033[0m  content-security-policy   (informatif, non bloquant)\n'
+# Un en-tête Content-Security-Policy-Report-Only résiduel (sans le CSP enforce)
+# signalerait un retour en arrière non intentionnel.
+if grep -q '^content-security-policy-report-only:' <<< "$HEADERS" \
+   && ! grep -q '^content-security-policy:' <<< "$HEADERS"; then
+  printf '  \033[31mReport-Only SEUL\033[0m  content-security-policy   <-- enforce attendu !\n'
+  FAILURES=$((FAILURES + 1))
 fi
 
 # En-têtes qui en disent trop sur la stack (à masquer côté nginx/Symfony)

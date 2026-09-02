@@ -40,20 +40,20 @@ final class SeedQualityContentCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        foreach (self::content() as $localeValue => $content) {
+        foreach ($this->content() as $localeValue => $content) {
             $locale = Locale::from($localeValue);
 
             foreach ($this->qualityPrincipleRepository->findByLocale($locale) as $existing) {
                 $this->qualityPrincipleRepository->remove($existing);
             }
-            foreach (array_values($content['principles']) as $position => $principle) {
+            foreach ($content['principles'] as $position => $principle) {
                 $this->qualityPrincipleAdministrator->create($locale, $principle['title'], $principle['description'], $principle['iconKey'], $position);
             }
 
             foreach ($this->qualityTraitRepository->findByLocale($locale) as $existing) {
                 $this->qualityTraitRepository->remove($existing);
             }
-            foreach (array_values($content['traits']) as $position => $trait) {
+            foreach ($content['traits'] as $position => $trait) {
                 $this->qualityTraitAdministrator->create($locale, $trait['label'], $position);
             }
 
@@ -74,7 +74,7 @@ final class SeedQualityContentCommand extends Command
      *     traits: list<array{label: string}>,
      * }>
      */
-    private static function content(): array
+    private function content(): array
     {
         return [
             'fr' => [

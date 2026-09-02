@@ -18,11 +18,9 @@ final class ContactMessageSenderTest extends TestCase
         $messageBus = $this->createMock(MessageBusInterface::class);
         $messageBus->expects(self::once())
             ->method('dispatch')
-            ->with(self::callback(function (SendContactMessageMessage $dispatched): bool {
-                return 'Jane Doe' === $dispatched->senderName
-                    && 'jane@example.com' === $dispatched->senderEmail
-                    && 'Bonjour, ceci est un message.' === $dispatched->body;
-            }))
+            ->with(self::callback(fn(SendContactMessageMessage $dispatched): bool => 'Jane Doe' === $dispatched->senderName
+                && 'jane@example.com' === $dispatched->senderEmail
+                && 'Bonjour, ceci est un message.' === $dispatched->body))
             ->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
 
         $sender = new ContactMessageSender($messageBus);

@@ -14,12 +14,15 @@ use App\Portfolio\About\Domain\Entity\AboutMeCard;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\About\Presentation\ApiResource\BackofficeAboutMeCardResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
  * @implements ProcessorInterface<BackofficeAboutMeCardResource, BackofficeAboutMeCardResource|null>
  */
 final readonly class BackofficeAboutMeCardProcessor implements ProcessorInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private AboutMeCardAdministratorInterface $aboutMeCardAdministrator,
     ) {
@@ -28,16 +31,14 @@ final readonly class BackofficeAboutMeCardProcessor implements ProcessorInterfac
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeAboutMeCardResource
     {
         if ($operation instanceof Delete) {
-            $this->aboutMeCardAdministrator->delete((int) $uriVariables['id']);
+            $this->aboutMeCardAdministrator->delete($this->uriVariableInt($uriVariables, 'id'));
 
             return null;
         }
 
-        \assert($data instanceof BackofficeAboutMeCardResource);
-
         if ($operation instanceof Put) {
             $card = $this->aboutMeCardAdministrator->update(
-                (int) $uriVariables['id'],
+                $this->uriVariableInt($uriVariables, 'id'),
                 $data->title,
                 $data->description,
                 $data->iconKey,

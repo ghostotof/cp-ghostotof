@@ -11,6 +11,7 @@ use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
 use App\Portfolio\Quality\Domain\Repository\QualityPrincipleRepositoryInterface;
 use App\Portfolio\Quality\Presentation\ApiResource\BackofficeQualityPrincipleResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -18,18 +19,23 @@ use Symfony\Component\HttpFoundation\Request;
  */
 final readonly class BackofficeQualityPrincipleProvider implements ProviderInterface
 {
+    use ResolvesUriVariables;
+
     public function __construct(
         private QualityPrincipleRepositoryInterface $qualityPrincipleRepository,
     ) {
     }
 
+    /**
+     * @return BackofficeQualityPrincipleResource|list<BackofficeQualityPrincipleResource>|null
+     */
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): BackofficeQualityPrincipleResource|array|null
     {
         if ($operation instanceof GetCollection) {
             $request = $context['request'] ?? null;
             \assert($request instanceof Request);
 
-            $locale = Locale::tryFrom((string) $request->query->get('locale', ''));
+            $locale = Locale::tryFrom($request->query->get('locale', ''));
 
             $principles = null !== $locale
                 ? $this->qualityPrincipleRepository->findByLocale($locale)
@@ -38,7 +44,7 @@ final readonly class BackofficeQualityPrincipleProvider implements ProviderInter
             return array_map($this->toResource(...), $principles);
         }
 
-        $principle = $this->qualityPrincipleRepository->findOneById((int) $uriVariables['id']);
+        $principle = $this->qualityPrincipleRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
 
         return null !== $principle ? $this->toResource($principle) : null;
     }

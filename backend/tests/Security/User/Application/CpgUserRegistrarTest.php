@@ -41,10 +41,10 @@ final class CpgUserRegistrarTest extends TestCase
 
     public function testRegisterAssignsGivenRoles(): void
     {
-        $repository = $this->createStub(CpgUserRepositoryInterface::class);
+        $repository = self::createStub(CpgUserRepositoryInterface::class);
         $repository->method('findOneByUsername')->willReturn(null);
 
-        $hasher = $this->createStub(UserPasswordHasherInterface::class);
+        $hasher = self::createStub(UserPasswordHasherInterface::class);
         $hasher->method('hashPassword')->willReturn('hashed-password');
 
         $registrar = new CpgUserRegistrar($repository, $hasher);

@@ -33,8 +33,29 @@ exists — the `Security` bounded context (`User` + `Authentication`) and four `
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
 over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
 recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
-`tests/`, mirrors the `src/` bounded-context tree) and runnable via `php bin/phpunit` inside `make sh`. There is
-still no PHPStan or Rector configuration in the backend — set these up before/while adding more code. The
+`tests/`, mirrors the `src/` bounded-context tree) and runnable via `php bin/phpunit` inside `make sh`.
+**PHPStan** is configured (`backend/phpstan.dist.neon`, level `max` + `phpstan-strict-rules` +
+`phpstan-symfony`/`-doctrine`/`-phpunit`/`-deprecation-rules` via `extension-installer`): run it with
+`composer phpstan` inside `make sh` (warms the dev container first), CI job `phpstan-backend` (blocking,
+`build-images` needs it). **No baseline** — level `max` + strict-rules is green across `src/` AND `tests/`, keep
+it that way. Two scoped `ignoreErrors` in `phpstan.dist.neon` cover functional-test JSON payloads (a decoded
+response body is `mixed`; the PHPUnit assertions are the shape check, not PHPStan) — `offsetAccess`/`foreach`
+and `argument.type … mixed given`, `path: tests/` only. `src/Kernel.php` is `excludePaths`-excluded
+(`getAllowedEnvs()` false-positive `method.unused`). The `$uriVariables` mixed-access pattern is solved by the
+`App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables` trait (`uriVariableInt`/`uriVariableString`) — reuse
+it in new Providers/Processors rather than casting `mixed`. Functional tests build request bodies via
+`App\Tests\Support\HttpJson::jsonBody()` (not raw `json_encode`, which is `string|false`).
+`tests/object-manager.php` boots the kernel for `phpstan-doctrine`; `tests/bootstrap.php` is
+`excludePaths`-excluded (Flex-managed). **Rector** is configured (`backend/rector.php`, `withPhpSets()` +
+prepared sets deadCode/codeQuality/typeDeclarations/earlyReturn/instanceOf): `composer rector` shows diffs,
+`composer rector:fix` applies, CI job `rector-backend` runs `--dry-run` (blocking, `build-images` needs it).
+`rector/rector-symfony`/`-doctrine`/`-phpunit` are deliberately omitted (their deps conflict with `symfony/*
+8.1.*`). Some cosmetic rules are skipped in `rector.php` (`SortAttributeNamedArgs`, `NewMethodCallWithoutParentheses`,
+`FlipTypeControlToUseExclusiveType`, `ClassPropertyAssignToConstructorPromotion` — entities keep explicit
+properties) — extend that skip list rather than fighting a rule inline. Psalm
+*is* installed (`psalm/phar`, `backend/psalm.xml`) but **only** for taint analysis (`composer psalm`, CI job
+`sast-backend`, audit point M4) — `errorLevel="8"`, it is not and must not become a second type-checker
+alongside PHPStan; don't reach for Psalm annotations or raise its level. The
 frontend has moved past the default scaffold: it follows a layered clean architecture (see below) and has
 Vitest configured with `npm test`. A `ROLE_SUPER`-gated backoffice (`/admin` on the frontend, `/api/backoffice/*`
 on the backend) lets an authenticated super-admin manage all of the above content plus user accounts — see the

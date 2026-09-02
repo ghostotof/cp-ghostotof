@@ -6,6 +6,7 @@ namespace App\Tests\Security\User\Presentation\ApiResource;
 
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Support\HttpJson;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -18,6 +19,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class BackofficeUserPasswordResourceTest extends WebTestCase
 {
+    use HttpJson;
+
     private const string SUPER_USERNAME = 'super';
     private const string SUPER_PASSWORD = 'SuperSecret123';
     private const string PLAIN_USERNAME = 'jane';
@@ -43,7 +46,7 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
         // (CsrfCookieRequestSubscriber, priorité 20) s'exécute avant même le
         // firewall Security (priorité 8) et rejette en 403 faute de cookie/
         // header XSRF-TOKEN, sans jamais atteindre la vérification d'authentification.
-        $client->request('PUT', '/api/backoffice/users/1/password', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode(['password' => self::NEW_PASSWORD]));
+        $client->request('PUT', '/api/backoffice/users/1/password', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => self::NEW_PASSWORD]));
 
         self::assertResponseStatusCodeSame(403);
     }
@@ -59,7 +62,7 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
         $client->request('PUT', '/api/backoffice/users/1/password', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['password' => self::NEW_PASSWORD]));
+        ], content: self::jsonBody(['password' => self::NEW_PASSWORD]));
 
         self::assertResponseStatusCodeSame(403);
     }
@@ -74,19 +77,19 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
         $client->request('PUT', sprintf('/api/backoffice/users/%d/password', $jane->getId()), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['password' => self::NEW_PASSWORD]));
+        ], content: self::jsonBody(['password' => self::NEW_PASSWORD]));
         self::assertResponseStatusCodeSame(204);
         self::assertSame('', (string) $client->getResponse()->getContent());
 
         // L'ancien mot de passe échoue désormais
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'username' => self::PLAIN_USERNAME,
             'password' => self::OLD_PASSWORD,
         ]));
         self::assertResponseStatusCodeSame(401);
 
         // Le nouveau mot de passe fonctionne
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'username' => self::PLAIN_USERNAME,
             'password' => self::NEW_PASSWORD,
         ]));
@@ -103,7 +106,25 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
         $client->request('PUT', sprintf('/api/backoffice/users/%d/password', $jane->getId()), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['password' => 'short']));
+        ], content: self::jsonBody(['password' => 'short']));
+
+        self::assertResponseStatusCodeSame(422);
+    }
+
+    public function testPasswordTooLongIsRejected(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
+        $jane = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, self::OLD_PASSWORD);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+
+        // 4097 caractères : au-delà de CpgUser::MAX_PASSWORD_LENGTH, le hasher
+        // Symfony lèverait une exception (500). La contrainte Assert\Length
+        // doit intercepter en 422 avant d'atteindre le Processor.
+        $client->request('PUT', sprintf('/api/backoffice/users/%d/password', $jane->getId()), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody(['password' => str_repeat('a', CpgUser::MAX_PASSWORD_LENGTH + 1)]));
 
         self::assertResponseStatusCodeSame(422);
     }
@@ -117,14 +138,14 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
         $client->request('PUT', '/api/backoffice/users/999999/password', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['password' => self::NEW_PASSWORD]));
+        ], content: self::jsonBody(['password' => self::NEW_PASSWORD]));
 
         self::assertResponseStatusCodeSame(404);
     }
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string
     {
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'username' => $username,
             'password' => $password,
         ]));

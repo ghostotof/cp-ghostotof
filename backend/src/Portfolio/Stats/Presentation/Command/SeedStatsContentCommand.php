@@ -35,14 +35,14 @@ final class SeedStatsContentCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        foreach (self::content() as $localeValue => $stats) {
+        foreach ($this->content() as $localeValue => $stats) {
             $locale = Locale::from($localeValue);
 
             foreach ($this->statRepository->findByLocale($locale) as $existing) {
                 $this->statRepository->remove($existing);
             }
 
-            foreach (array_values($stats) as $position => $stat) {
+            foreach ($stats as $position => $stat) {
                 $this->statAdministrator->create($locale, $stat['value'], $stat['label'], $stat['iconKey'], $position);
             }
 
@@ -55,7 +55,7 @@ final class SeedStatsContentCommand extends Command
     /**
      * @return array<string, list<array{value: string, label: string, iconKey: string}>>
      */
-    private static function content(): array
+    private function content(): array
     {
         return [
             'fr' => [

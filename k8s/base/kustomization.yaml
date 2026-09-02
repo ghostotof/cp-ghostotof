@@ -9,11 +9,13 @@ resources:
   - backend-deployment.yaml
   - backend-service.yaml
   - backend-nginx-conf.yaml
+  - messenger-purge-cronjob.yaml
   - frontend-deployment.yaml
   - frontend-service.yaml
   - postgres.yaml
   - rabbitmq.yaml
   - adminer.yaml
+  - network-policies.yaml
   - ingress.yaml
   - secretstore.yaml
   - cluster-issuer.yaml
