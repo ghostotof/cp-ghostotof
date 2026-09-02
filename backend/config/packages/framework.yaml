@@ -2,6 +2,18 @@
 framework:
     secret: '%env(APP_SECRET)%'
 
+    # En environnement déployé, l'application ne reçoit de trafic que via
+    # l'ingress (dev : via le service nginx "web"), tous deux sur des IP
+    # privées. `private_ranges` fait confiance aux en-têtes X-Forwarded-* de
+    # ces sauts, ce qui permet à Request::getClientIp() de retrouver l'IP
+    # réelle du visiteur — indispensable au rate limiter du formulaire de
+    # contact, qui sinon regrouperait tous les visiteurs sous l'unique IP du
+    # pod ingress. L'ingress-nginx *ajoute* l'IP source à X-Forwarded-For
+    # (comportement par défaut, `use-forwarded-headers` désactivé) : un
+    # X-Forwarded-For forgé par un client externe est donc neutralisé.
+    trusted_proxies: private_ranges
+    trusted_headers: ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-forwarded-port', 'x-forwarded-prefix']
+
     # Note that the session will be started ONLY if you read or write from it.
     session: true
 
