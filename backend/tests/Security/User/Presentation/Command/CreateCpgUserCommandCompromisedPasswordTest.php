@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\User\Presentation\Command;
 
+use App\Security\User\Domain\Entity\CpgUser;
+use Symfony\Component\Validator\Constraints\NotCompromisedPassword;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Presentation\Command\CreateCpgUserCommand;
 use PHPUnit\Framework\TestCase;
@@ -46,7 +48,7 @@ final class CreateCpgUserCommandCompromisedPasswordTest extends TestCase
         $registrar = $this->createMock(CpgUserRegistrarInterface::class);
         $registrar->expects(self::once())
             ->method('register')
-            ->willReturn(new \App\Security\User\Domain\Entity\CpgUser('jane', 'hashed'));
+            ->willReturn(new CpgUser('jane', 'hashed'));
 
         $validator = $this->createStub(ValidatorInterface::class);
         $validator->method('validate')->willReturn(new ConstraintViolationList());
@@ -66,14 +68,14 @@ final class CreateCpgUserCommandCompromisedPasswordTest extends TestCase
     public function testValidatesAgainstNotCompromisedPasswordConstraint(): void
     {
         $registrar = $this->createStub(CpgUserRegistrarInterface::class);
-        $registrar->method('register')->willReturn(new \App\Security\User\Domain\Entity\CpgUser('jane', 'hashed'));
+        $registrar->method('register')->willReturn(new CpgUser('jane', 'hashed'));
 
         $validator = $this->createMock(ValidatorInterface::class);
         $validator->expects(self::once())
             ->method('validate')
             ->with(
                 self::anything(),
-                self::callback(static fn (Constraint $constraint): bool => $constraint instanceof \Symfony\Component\Validator\Constraints\NotCompromisedPassword),
+                self::callback(static fn (Constraint $constraint): bool => $constraint instanceof NotCompromisedPassword),
             )
             ->willReturn(new ConstraintViolationList());
 

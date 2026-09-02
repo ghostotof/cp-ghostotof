@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Contact\Presentation\Command;
 
+use Doctrine\DBAL\Exception\TableNotFoundException;
 use App\Contact\Application\Message\SendContactMessageMessage;
 use Doctrine\DBAL\Connection;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -87,7 +88,7 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
     {
         try {
             $this->connection->executeStatement('DELETE FROM messenger_messages');
-        } catch (\Doctrine\DBAL\Exception\TableNotFoundException) {
+        } catch (TableNotFoundException) {
             // Table pas encore créée : rien à nettoyer.
         }
     }

@@ -16,11 +16,11 @@ use Symfony\Component\Routing\Attribute\Route;
  * après un rechargement de page, si le cookie httpOnly encore valide correspond
  * à un utilisateur connecté (impossible de le lire directement en JS).
  */
-final class CurrentUserController
+final readonly class CurrentUserController
 {
     public function __construct(
-        private readonly Security $security,
-        private readonly CpgUserPresenterInterface $cpgUserPresenter,
+        private Security $security,
+        private CpgUserPresenterInterface $cpgUserPresenter,
     ) {
     }
 

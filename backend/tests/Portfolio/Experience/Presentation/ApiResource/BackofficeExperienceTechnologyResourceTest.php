@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Portfolio\Experience\Presentation\ApiResource;
 
+use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
@@ -125,7 +126,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         self::assertSame(['PHP'], array_column($publicList, 'name'));
     }
 
-    private function loginAs(\Symfony\Bundle\FrameworkBundle\KernelBrowser $client, string $username, string $password): string
+    private function loginAs(KernelBrowser $client, string $username, string $password): string
     {
         $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
             'username' => $username,

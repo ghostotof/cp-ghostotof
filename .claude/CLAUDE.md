@@ -45,7 +45,13 @@ mixed-access pattern is solved by the `App\Shared\Infrastructure\ApiPlatform\Res
 (`uriVariableInt`/`uriVariableString`) — reuse it in new Providers/Processors rather than casting `mixed`.
 `tests/object-manager.php` boots the kernel for `phpstan-doctrine`; `tests/bootstrap.php` is
 `excludePaths`-excluded (Flex-managed). Regenerate the baseline after fixing a batch:
-`composer phpstan -- --generate-baseline`. **Rector** is still not set up. Psalm
+`composer phpstan -- --generate-baseline`. **Rector** is configured (`backend/rector.php`, `withPhpSets()` +
+prepared sets deadCode/codeQuality/typeDeclarations/earlyReturn/instanceOf): `composer rector` shows diffs,
+`composer rector:fix` applies, CI job `rector-backend` runs `--dry-run` (blocking, `build-images` needs it).
+`rector/rector-symfony`/`-doctrine`/`-phpunit` are deliberately omitted (their deps conflict with `symfony/*
+8.1.*`). Some cosmetic rules are skipped in `rector.php` (`SortAttributeNamedArgs`, `NewMethodCallWithoutParentheses`,
+`FlipTypeControlToUseExclusiveType`, `ClassPropertyAssignToConstructorPromotion` — entities keep explicit
+properties) — extend that skip list rather than fighting a rule inline. Psalm
 *is* installed (`psalm/phar`, `backend/psalm.xml`) but **only** for taint analysis (`composer psalm`, CI job
 `sast-backend`, audit point M4) — `errorLevel="8"`, it is not and must not become a second type-checker
 alongside PHPStan; don't reach for Psalm annotations or raise its level. The
