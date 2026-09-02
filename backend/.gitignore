@@ -17,3 +17,8 @@
 /phpunit.xml
 /.phpunit.cache/
 ###< phpunit/phpunit ###
+
+###> phpstan/phpstan ###
+# Surcharge locale facultative (la config versionnee est phpstan.dist.neon).
+/phpstan.neon
+###< phpstan/phpstan ###

@@ -1,0 +1,40 @@
+includes:
+    # Extensions enregistrees automatiquement par phpstan/extension-installer :
+    # phpstan-symfony, phpstan-doctrine, phpstan-phpunit, phpstan-strict-rules,
+    # phpstan-deprecation-rules.
+    #
+    # Dette technique existante au moment de l'adoption de PHPStan (niveau max +
+    # strict-rules), a resorber progressivement. Toute regle non listee ici doit
+    # rester verte. Regenerer apres correction :
+    #   composer phpstan -- --generate-baseline
+    - phpstan-baseline.neon
+
+parameters:
+    # Niveau maximal (cf. standards du projet). strict-rules et les extensions
+    # ci-dessus s'ajoutent par-dessus.
+    level: max
+
+    paths:
+        - src
+        - tests
+
+    # tests/bootstrap.php est genere et maintenu par Symfony Flex (regenerable) :
+    # on ne l'analyse pas, on ne le corrige pas.
+    excludePaths:
+        - tests/bootstrap.php
+
+    # Charge le .env pour que l'analyse voie les memes variables qu'a l'execution.
+    bootstrapFiles:
+        - tests/bootstrap.php
+
+    # phpstan-symfony : conteneur DI compile de l'env dev, pour resoudre les
+    # types des services recuperes via le conteneur, les arguments de commandes,
+    # etc. Genere par `php bin/console cache:warmup --env=dev` (fait par le job
+    # CI phpstan-backend avant l'analyse).
+    symfony:
+        containerXmlPath: var/cache/dev/App_KernelDevDebugContainer.xml
+
+    # phpstan-doctrine : comprehension fine des entites, des repositories et du
+    # DQL a partir d'un EntityManager reel (cf. tests/object-manager.php).
+    doctrine:
+        objectManagerLoader: tests/object-manager.php

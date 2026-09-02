@@ -1,0 +1,1123 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Call to function assert\(\) with true will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Contact/Infrastructure/ApiPlatform/ContactMessageProcessor.php
+
+		-
+			message: '#^Instanceof between App\\Contact\\Presentation\\ApiResource\\ContactMessageResource and App\\Contact\\Presentation\\ApiResource\\ContactMessageResource will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/Contact/Infrastructure/ApiPlatform/ContactMessageProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: src/Contact/Presentation/Command/PurgeFailedContactMessagesCommand.php
+
+		-
+			message: '#^Method App\\Kernel\:\:getAllowedEnvs\(\) is unused\.$#'
+			identifier: method.unused
+			count: 1
+			path: src/Kernel.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/AboutContentProvider.php
+
+		-
+			message: '#^Call to function assert\(\) with true will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutMeCardProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 2
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutMeCardProcessor.php
+
+		-
+			message: '#^Instanceof between App\\Portfolio\\About\\Presentation\\ApiResource\\BackofficeAboutMeCardResource and App\\Portfolio\\About\\Presentation\\ApiResource\\BackofficeAboutMeCardResource will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutMeCardProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 1
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutMeCardProvider.php
+
+		-
+			message: '#^Casting to string something that''s already string\.$#'
+			identifier: cast.useless
+			count: 2
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutMeCardProvider.php
+
+		-
+			message: '#^Method App\\Portfolio\\About\\Infrastructure\\ApiPlatform\\BackofficeAboutMeCardProvider\:\:provide\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutMeCardProvider.php
+
+		-
+			message: '#^Return type \(App\\Portfolio\\About\\Presentation\\ApiResource\\BackofficeAboutMeCardResource\|array\|null\) of method App\\Portfolio\\About\\Infrastructure\\ApiPlatform\\BackofficeAboutMeCardProvider\:\:provide\(\) should be covariant with return type \(App\\Portfolio\\About\\Presentation\\ApiResource\\BackofficeAboutMeCardResource\|iterable\<App\\Portfolio\\About\\Presentation\\ApiResource\\BackofficeAboutMeCardResource\>\|null\) of method ApiPlatform\\State\\ProviderInterface\<App\\Portfolio\\About\\Presentation\\ApiResource\\BackofficeAboutMeCardResource\>\:\:provide\(\)$#'
+			identifier: method.childReturnType
+			count: 1
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutMeCardProvider.php
+
+		-
+			message: '#^Call to function assert\(\) with true will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutSettingsProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutSettingsProcessor.php
+
+		-
+			message: '#^Instanceof between App\\Portfolio\\About\\Presentation\\ApiResource\\BackofficeAboutSettingsResource and App\\Portfolio\\About\\Presentation\\ApiResource\\BackofficeAboutSettingsResource will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutSettingsProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutSettingsProvider.php
+
+		-
+			message: '#^Call to function assert\(\) with true will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutSiteCardProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 2
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutSiteCardProcessor.php
+
+		-
+			message: '#^Instanceof between App\\Portfolio\\About\\Presentation\\ApiResource\\BackofficeAboutSiteCardResource and App\\Portfolio\\About\\Presentation\\ApiResource\\BackofficeAboutSiteCardResource will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutSiteCardProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 1
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutSiteCardProvider.php
+
+		-
+			message: '#^Casting to string something that''s already string\.$#'
+			identifier: cast.useless
+			count: 1
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutSiteCardProvider.php
+
+		-
+			message: '#^Method App\\Portfolio\\About\\Infrastructure\\ApiPlatform\\BackofficeAboutSiteCardProvider\:\:provide\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutSiteCardProvider.php
+
+		-
+			message: '#^Return type \(App\\Portfolio\\About\\Presentation\\ApiResource\\BackofficeAboutSiteCardResource\|array\|null\) of method App\\Portfolio\\About\\Infrastructure\\ApiPlatform\\BackofficeAboutSiteCardProvider\:\:provide\(\) should be covariant with return type \(App\\Portfolio\\About\\Presentation\\ApiResource\\BackofficeAboutSiteCardResource\|iterable\<App\\Portfolio\\About\\Presentation\\ApiResource\\BackofficeAboutSiteCardResource\>\|null\) of method ApiPlatform\\State\\ProviderInterface\<App\\Portfolio\\About\\Presentation\\ApiResource\\BackofficeAboutSiteCardResource\>\:\:provide\(\)$#'
+			identifier: method.childReturnType
+			count: 1
+			path: src/Portfolio/About/Infrastructure/ApiPlatform/BackofficeAboutSiteCardProvider.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<array\{title\: string, description\: string, iconKey\: string\|null\}\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 2
+			path: src/Portfolio/About/Presentation/Command/SeedAboutContentCommand.php
+
+		-
+			message: '#^Call to function assert\(\) with true will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Portfolio/Experience/Infrastructure/ApiPlatform/BackofficeExperienceTechnologyProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 2
+			path: src/Portfolio/Experience/Infrastructure/ApiPlatform/BackofficeExperienceTechnologyProcessor.php
+
+		-
+			message: '#^Instanceof between App\\Portfolio\\Experience\\Presentation\\ApiResource\\BackofficeExperienceTechnologyResource and App\\Portfolio\\Experience\\Presentation\\ApiResource\\BackofficeExperienceTechnologyResource will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/Portfolio/Experience/Infrastructure/ApiPlatform/BackofficeExperienceTechnologyProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 1
+			path: src/Portfolio/Experience/Infrastructure/ApiPlatform/BackofficeExperienceTechnologyProvider.php
+
+		-
+			message: '#^Method App\\Portfolio\\Experience\\Infrastructure\\ApiPlatform\\BackofficeExperienceTechnologyProvider\:\:provide\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Portfolio/Experience/Infrastructure/ApiPlatform/BackofficeExperienceTechnologyProvider.php
+
+		-
+			message: '#^Return type \(App\\Portfolio\\Experience\\Presentation\\ApiResource\\BackofficeExperienceTechnologyResource\|array\|null\) of method App\\Portfolio\\Experience\\Infrastructure\\ApiPlatform\\BackofficeExperienceTechnologyProvider\:\:provide\(\) should be covariant with return type \(App\\Portfolio\\Experience\\Presentation\\ApiResource\\BackofficeExperienceTechnologyResource\|iterable\<App\\Portfolio\\Experience\\Presentation\\ApiResource\\BackofficeExperienceTechnologyResource\>\|null\) of method ApiPlatform\\State\\ProviderInterface\<App\\Portfolio\\Experience\\Presentation\\ApiResource\\BackofficeExperienceTechnologyResource\>\:\:provide\(\)$#'
+			identifier: method.childReturnType
+			count: 1
+			path: src/Portfolio/Experience/Infrastructure/ApiPlatform/BackofficeExperienceTechnologyProvider.php
+
+		-
+			message: '#^Method App\\Portfolio\\Experience\\Infrastructure\\ApiPlatform\\ExperienceTechnologyProvider\:\:provide\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Portfolio/Experience/Infrastructure/ApiPlatform/ExperienceTechnologyProvider.php
+
+		-
+			message: '#^Return type \(array\) of method App\\Portfolio\\Experience\\Infrastructure\\ApiPlatform\\ExperienceTechnologyProvider\:\:provide\(\) should be covariant with return type \(App\\Portfolio\\Experience\\Presentation\\ApiResource\\ExperienceTechnologyResource\|iterable\<App\\Portfolio\\Experience\\Presentation\\ApiResource\\ExperienceTechnologyResource\>\|null\) of method ApiPlatform\\State\\ProviderInterface\<App\\Portfolio\\Experience\\Presentation\\ApiResource\\ExperienceTechnologyResource\>\:\:provide\(\)$#'
+			identifier: method.childReturnType
+			count: 1
+			path: src/Portfolio/Experience/Infrastructure/ApiPlatform/ExperienceTechnologyProvider.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 4
+			path: src/Portfolio/Experience/Presentation/Command/AddExperienceTechnologyCommand.php
+
+		-
+			message: '#^Parameter \$validator of method Symfony\\Component\\Console\\Style\\SymfonyStyle\:\:ask\(\) expects \(callable\(mixed\)\: mixed\)\|null, Closure\(string\|null\)\: string given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/Portfolio/Experience/Presentation/Command/AddExperienceTechnologyCommand.php
+
+		-
+			message: '#^Call to function assert\(\) with true will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Portfolio/Quality/Infrastructure/ApiPlatform/BackofficeQualityPrincipleProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 2
+			path: src/Portfolio/Quality/Infrastructure/ApiPlatform/BackofficeQualityPrincipleProcessor.php
+
+		-
+			message: '#^Instanceof between App\\Portfolio\\Quality\\Presentation\\ApiResource\\BackofficeQualityPrincipleResource and App\\Portfolio\\Quality\\Presentation\\ApiResource\\BackofficeQualityPrincipleResource will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/Portfolio/Quality/Infrastructure/ApiPlatform/BackofficeQualityPrincipleProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 1
+			path: src/Portfolio/Quality/Infrastructure/ApiPlatform/BackofficeQualityPrincipleProvider.php
+
+		-
+			message: '#^Casting to string something that''s already string\.$#'
+			identifier: cast.useless
+			count: 1
+			path: src/Portfolio/Quality/Infrastructure/ApiPlatform/BackofficeQualityPrincipleProvider.php
+
+		-
+			message: '#^Method App\\Portfolio\\Quality\\Infrastructure\\ApiPlatform\\BackofficeQualityPrincipleProvider\:\:provide\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Portfolio/Quality/Infrastructure/ApiPlatform/BackofficeQualityPrincipleProvider.php
+
+		-
+			message: '#^Return type \(App\\Portfolio\\Quality\\Presentation\\ApiResource\\BackofficeQualityPrincipleResource\|array\|null\) of method App\\Portfolio\\Quality\\Infrastructure\\ApiPlatform\\BackofficeQualityPrincipleProvider\:\:provide\(\) should be covariant with return type \(App\\Portfolio\\Quality\\Presentation\\ApiResource\\BackofficeQualityPrincipleResource\|iterable\<App\\Portfolio\\Quality\\Presentation\\ApiResource\\BackofficeQualityPrincipleResource\>\|null\) of method ApiPlatform\\State\\ProviderInterface\<App\\Portfolio\\Quality\\Presentation\\ApiResource\\BackofficeQualityPrincipleResource\>\:\:provide\(\)$#'
+			identifier: method.childReturnType
+			count: 1
+			path: src/Portfolio/Quality/Infrastructure/ApiPlatform/BackofficeQualityPrincipleProvider.php
+
+		-
+			message: '#^Call to function assert\(\) with true will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Portfolio/Quality/Infrastructure/ApiPlatform/BackofficeQualityTraitProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 2
+			path: src/Portfolio/Quality/Infrastructure/ApiPlatform/BackofficeQualityTraitProcessor.php
+
+		-
+			message: '#^Instanceof between App\\Portfolio\\Quality\\Presentation\\ApiResource\\BackofficeQualityTraitResource and App\\Portfolio\\Quality\\Presentation\\ApiResource\\BackofficeQualityTraitResource will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/Portfolio/Quality/Infrastructure/ApiPlatform/BackofficeQualityTraitProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 1
+			path: src/Portfolio/Quality/Infrastructure/ApiPlatform/BackofficeQualityTraitProvider.php
+
+		-
+			message: '#^Casting to string something that''s already string\.$#'
+			identifier: cast.useless
+			count: 1
+			path: src/Portfolio/Quality/Infrastructure/ApiPlatform/BackofficeQualityTraitProvider.php
+
+		-
+			message: '#^Method App\\Portfolio\\Quality\\Infrastructure\\ApiPlatform\\BackofficeQualityTraitProvider\:\:provide\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Portfolio/Quality/Infrastructure/ApiPlatform/BackofficeQualityTraitProvider.php
+
+		-
+			message: '#^Return type \(App\\Portfolio\\Quality\\Presentation\\ApiResource\\BackofficeQualityTraitResource\|array\|null\) of method App\\Portfolio\\Quality\\Infrastructure\\ApiPlatform\\BackofficeQualityTraitProvider\:\:provide\(\) should be covariant with return type \(App\\Portfolio\\Quality\\Presentation\\ApiResource\\BackofficeQualityTraitResource\|iterable\<App\\Portfolio\\Quality\\Presentation\\ApiResource\\BackofficeQualityTraitResource\>\|null\) of method ApiPlatform\\State\\ProviderInterface\<App\\Portfolio\\Quality\\Presentation\\ApiResource\\BackofficeQualityTraitResource\>\:\:provide\(\)$#'
+			identifier: method.childReturnType
+			count: 1
+			path: src/Portfolio/Quality/Infrastructure/ApiPlatform/BackofficeQualityTraitProvider.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: src/Portfolio/Quality/Infrastructure/ApiPlatform/QualityContentProvider.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<array\{label\: string\}\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: src/Portfolio/Quality/Presentation/Command/SeedQualityContentCommand.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<array\{title\: string, description\: string, iconKey\: string\}\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: src/Portfolio/Quality/Presentation/Command/SeedQualityContentCommand.php
+
+		-
+			message: '#^Call to function assert\(\) with true will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Portfolio/Stats/Infrastructure/ApiPlatform/BackofficeStatProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 2
+			path: src/Portfolio/Stats/Infrastructure/ApiPlatform/BackofficeStatProcessor.php
+
+		-
+			message: '#^Instanceof between App\\Portfolio\\Stats\\Presentation\\ApiResource\\BackofficeStatResource and App\\Portfolio\\Stats\\Presentation\\ApiResource\\BackofficeStatResource will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/Portfolio/Stats/Infrastructure/ApiPlatform/BackofficeStatProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 1
+			path: src/Portfolio/Stats/Infrastructure/ApiPlatform/BackofficeStatProvider.php
+
+		-
+			message: '#^Casting to string something that''s already string\.$#'
+			identifier: cast.useless
+			count: 1
+			path: src/Portfolio/Stats/Infrastructure/ApiPlatform/BackofficeStatProvider.php
+
+		-
+			message: '#^Method App\\Portfolio\\Stats\\Infrastructure\\ApiPlatform\\BackofficeStatProvider\:\:provide\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Portfolio/Stats/Infrastructure/ApiPlatform/BackofficeStatProvider.php
+
+		-
+			message: '#^Return type \(App\\Portfolio\\Stats\\Presentation\\ApiResource\\BackofficeStatResource\|array\|null\) of method App\\Portfolio\\Stats\\Infrastructure\\ApiPlatform\\BackofficeStatProvider\:\:provide\(\) should be covariant with return type \(App\\Portfolio\\Stats\\Presentation\\ApiResource\\BackofficeStatResource\|iterable\<App\\Portfolio\\Stats\\Presentation\\ApiResource\\BackofficeStatResource\>\|null\) of method ApiPlatform\\State\\ProviderInterface\<App\\Portfolio\\Stats\\Presentation\\ApiResource\\BackofficeStatResource\>\:\:provide\(\)$#'
+			identifier: method.childReturnType
+			count: 1
+			path: src/Portfolio/Stats/Infrastructure/ApiPlatform/BackofficeStatProvider.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: src/Portfolio/Stats/Infrastructure/ApiPlatform/StatProvider.php
+
+		-
+			message: '#^Method App\\Portfolio\\Stats\\Infrastructure\\ApiPlatform\\StatProvider\:\:provide\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Portfolio/Stats/Infrastructure/ApiPlatform/StatProvider.php
+
+		-
+			message: '#^Return type \(array\) of method App\\Portfolio\\Stats\\Infrastructure\\ApiPlatform\\StatProvider\:\:provide\(\) should be covariant with return type \(App\\Portfolio\\Stats\\Presentation\\ApiResource\\StatResource\|iterable\<App\\Portfolio\\Stats\\Presentation\\ApiResource\\StatResource\>\|null\) of method ApiPlatform\\State\\ProviderInterface\<App\\Portfolio\\Stats\\Presentation\\ApiResource\\StatResource\>\:\:provide\(\)$#'
+			identifier: method.childReturnType
+			count: 1
+			path: src/Portfolio/Stats/Infrastructure/ApiPlatform/StatProvider.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<array\{value\: string, label\: string, iconKey\: string\}\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: src/Portfolio/Stats/Presentation/Command/SeedStatsContentCommand.php
+
+		-
+			message: '#^Method App\\Security\\User\\Domain\\Entity\\CpgUser\:\:getUserIdentifier\(\) should return non\-empty\-string but returns string\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Security/User/Domain/Entity/CpgUser.php
+
+		-
+			message: '#^Call to function assert\(\) with true will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Security/User/Infrastructure/ApiPlatform/BackofficeUserPasswordProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 1
+			path: src/Security/User/Infrastructure/ApiPlatform/BackofficeUserPasswordProcessor.php
+
+		-
+			message: '#^Instanceof between App\\Security\\User\\Presentation\\ApiResource\\BackofficeUserPasswordResource and App\\Security\\User\\Presentation\\ApiResource\\BackofficeUserPasswordResource will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/Security/User/Infrastructure/ApiPlatform/BackofficeUserPasswordProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 1
+			path: src/Security/User/Infrastructure/ApiPlatform/BackofficeUserPasswordProvider.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 1
+			path: src/Security/User/Infrastructure/ApiPlatform/BackofficeUserProcessor.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 1
+			path: src/Security/User/Infrastructure/ApiPlatform/BackofficeUserProvider.php
+
+		-
+			message: '#^Method App\\Security\\User\\Infrastructure\\ApiPlatform\\BackofficeUserProvider\:\:provide\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Security/User/Infrastructure/ApiPlatform/BackofficeUserProvider.php
+
+		-
+			message: '#^Return type \(App\\Security\\User\\Presentation\\ApiResource\\BackofficeUserResource\|array\|null\) of method App\\Security\\User\\Infrastructure\\ApiPlatform\\BackofficeUserProvider\:\:provide\(\) should be covariant with return type \(App\\Security\\User\\Presentation\\ApiResource\\BackofficeUserResource\|iterable\<App\\Security\\User\\Presentation\\ApiResource\\BackofficeUserResource\>\|null\) of method ApiPlatform\\State\\ProviderInterface\<App\\Security\\User\\Presentation\\ApiResource\\BackofficeUserResource\>\:\:provide\(\)$#'
+			identifier: method.childReturnType
+			count: 1
+			path: src/Security/User/Infrastructure/ApiPlatform/BackofficeUserProvider.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 1
+			path: src/Security/User/Presentation/Command/CreateCpgUserCommand.php
+
+		-
+			message: '#^Method App\\Security\\User\\Presentation\\Command\\CreateCpgUserCommand\:\:askPassword\(\) should return string but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Security/User/Presentation/Command/CreateCpgUserCommand.php
+
+		-
+			message: '#^Method App\\Security\\User\\Presentation\\Command\\CreateCpgUserCommand\:\:validateUsername\(\) should return string but returns string\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Security/User/Presentation/Command/CreateCpgUserCommand.php
+
+		-
+			message: '#^Only booleans are allowed in a negated boolean, int\|false given\.$#'
+			identifier: booleanNot.exprNotBoolean
+			count: 2
+			path: src/Security/User/Presentation/Command/CreateCpgUserCommand.php
+
+		-
+			message: '#^Parameter \#1 \$string of function strlen expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/Security/User/Presentation/Command/CreateCpgUserCommand.php
+
+		-
+			message: '#^Parameter \#1 \$username of method App\\Security\\User\\Application\\CpgUserRegistrarInterface\:\:register\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Security/User/Presentation/Command/CreateCpgUserCommand.php
+
+		-
+			message: '#^Parameter \#1 \$validator of method Symfony\\Component\\Console\\Question\\Question\:\:setValidator\(\) expects \(callable\(mixed\)\: mixed\)\|null, Closure\(string\|null\)\: non\-empty\-string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Security/User/Presentation/Command/CreateCpgUserCommand.php
+
+		-
+			message: '#^Parameter \#2 \$plainPassword of method App\\Security\\User\\Application\\CpgUserRegistrarInterface\:\:register\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Security/User/Presentation/Command/CreateCpgUserCommand.php
+
+		-
+			message: '#^Parameter \$validator of method Symfony\\Component\\Console\\Style\\SymfonyStyle\:\:ask\(\) expects \(callable\(mixed\)\: mixed\)\|null, Closure\(string\|null\)\: string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Security/User/Presentation/Command/CreateCpgUserCommand.php
+
+		-
+			message: '#^Parameter \$content of method Symfony\\Component\\BrowserKit\\AbstractBrowser\<Symfony\\Component\\HttpFoundation\\Request,Symfony\\Component\\HttpFoundation\\Response\>\:\:request\(\) expects string\|null, string\|false given\.$#'
+			identifier: argument.type
+			count: 8
+			path: tests/Contact/Presentation/ApiResource/ContactMessageResourceTest.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 1
+			path: tests/Contact/Presentation/Command/PurgeFailedContactMessagesCommandTest.php
+
+		-
+			message: '#^Parameter \#1 \$kernel of class Symfony\\Bundle\\FrameworkBundle\\Console\\Application constructor expects Symfony\\Component\\HttpKernel\\KernelInterface, Symfony\\Component\\HttpKernel\\KernelInterface\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Contact/Presentation/Command/PurgeFailedContactMessagesCommandTest.php
+
+		-
+			message: '#^Dynamic call to static method PHPUnit\\Framework\\TestCase\:\:createStub\(\)\.$#'
+			identifier: staticMethod.dynamicCall
+			count: 2
+			path: tests/Portfolio/About/Application/AboutMeCardAdministratorTest.php
+
+		-
+			message: '#^Dynamic call to static method PHPUnit\\Framework\\TestCase\:\:createStub\(\)\.$#'
+			identifier: staticMethod.dynamicCall
+			count: 1
+			path: tests/Portfolio/About/Application/AboutSettingsAdministratorTest.php
+
+		-
+			message: '#^Dynamic call to static method PHPUnit\\Framework\\TestCase\:\:createStub\(\)\.$#'
+			identifier: staticMethod.dynamicCall
+			count: 2
+			path: tests/Portfolio/About/Application/AboutSiteCardAdministratorTest.php
+
+		-
+			message: '#^Cannot access offset ''cards'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/About/Presentation/ApiResource/AboutContentResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''eyebrow'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Portfolio/About/Presentation/ApiResource/AboutContentResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''hobbiesCards'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/About/Presentation/ApiResource/AboutContentResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''hobbiesSubtitle'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/About/Presentation/ApiResource/AboutContentResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''me'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 7
+			path: tests/Portfolio/About/Presentation/ApiResource/AboutContentResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''personalCards'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/About/Presentation/ApiResource/AboutContentResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''personalSubtitle'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/About/Presentation/ApiResource/AboutContentResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''site'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Portfolio/About/Presentation/ApiResource/AboutContentResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''technicalCards'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/About/Presentation/ApiResource/AboutContentResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''technicalSubtitle'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/About/Presentation/ApiResource/AboutContentResourceTest.php
+
+		-
+			message: '#^Parameter \#1 \$array of function array_column expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 4
+			path: tests/Portfolio/About/Presentation/ApiResource/AboutContentResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''category'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Portfolio/About/Presentation/ApiResource/BackofficeAboutMeCardResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''id'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/About/Presentation/ApiResource/BackofficeAboutMeCardResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''title'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 3
+			path: tests/Portfolio/About/Presentation/ApiResource/BackofficeAboutMeCardResourceTest.php
+
+		-
+			message: '#^Cannot access offset 0 on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/About/Presentation/ApiResource/BackofficeAboutMeCardResourceTest.php
+
+		-
+			message: '#^Parameter \#2 \$haystack of static method PHPUnit\\Framework\\Assert\:\:assertCount\(\) expects Countable\|iterable, mixed given\.$#'
+			identifier: argument.type
+			count: 3
+			path: tests/Portfolio/About/Presentation/ApiResource/BackofficeAboutMeCardResourceTest.php
+
+		-
+			message: '#^Parameter \$content of method Symfony\\Component\\BrowserKit\\AbstractBrowser\<Symfony\\Component\\HttpFoundation\\Request,Symfony\\Component\\HttpFoundation\\Response\>\:\:request\(\) expects string\|null, string\|false given\.$#'
+			identifier: argument.type
+			count: 7
+			path: tests/Portfolio/About/Presentation/ApiResource/BackofficeAboutMeCardResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''siteEyebrow'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 3
+			path: tests/Portfolio/About/Presentation/ApiResource/BackofficeAboutSettingsResourceTest.php
+
+		-
+			message: '#^Parameter \$content of method Symfony\\Component\\BrowserKit\\AbstractBrowser\<Symfony\\Component\\HttpFoundation\\Request,Symfony\\Component\\HttpFoundation\\Response\>\:\:request\(\) expects string\|null, string\|false given\.$#'
+			identifier: argument.type
+			count: 4
+			path: tests/Portfolio/About/Presentation/ApiResource/BackofficeAboutSettingsResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''id'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/About/Presentation/ApiResource/BackofficeAboutSiteCardResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''locale'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/About/Presentation/ApiResource/BackofficeAboutSiteCardResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''title'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Portfolio/About/Presentation/ApiResource/BackofficeAboutSiteCardResourceTest.php
+
+		-
+			message: '#^Cannot access offset 0 on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/About/Presentation/ApiResource/BackofficeAboutSiteCardResourceTest.php
+
+		-
+			message: '#^Parameter \#2 \$haystack of static method PHPUnit\\Framework\\Assert\:\:assertCount\(\) expects Countable\|iterable, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Portfolio/About/Presentation/ApiResource/BackofficeAboutSiteCardResourceTest.php
+
+		-
+			message: '#^Parameter \$content of method Symfony\\Component\\BrowserKit\\AbstractBrowser\<Symfony\\Component\\HttpFoundation\\Request,Symfony\\Component\\HttpFoundation\\Response\>\:\:request\(\) expects string\|null, string\|false given\.$#'
+			identifier: argument.type
+			count: 6
+			path: tests/Portfolio/About/Presentation/ApiResource/BackofficeAboutSiteCardResourceTest.php
+
+		-
+			message: '#^Dynamic call to static method Symfony\\Bundle\\FrameworkBundle\\Test\\KernelTestCase\:\:getContainer\(\)\.$#'
+			identifier: staticMethod.dynamicCall
+			count: 6
+			path: tests/Portfolio/About/Presentation/Command/SeedAboutContentCommandTest.php
+
+		-
+			message: '#^Parameter \#1 \$kernel of class Symfony\\Bundle\\FrameworkBundle\\Console\\Application constructor expects Symfony\\Component\\HttpKernel\\KernelInterface, Symfony\\Component\\HttpKernel\\KernelInterface\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Portfolio/About/Presentation/Command/SeedAboutContentCommandTest.php
+
+		-
+			message: '#^Parameter \$content of method Symfony\\Component\\BrowserKit\\AbstractBrowser\<Symfony\\Component\\HttpFoundation\\Request,Symfony\\Component\\HttpFoundation\\Response\>\:\:request\(\) expects string\|null, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Portfolio/Cv/Presentation/Controller/DownloadCvControllerTest.php
+
+		-
+			message: '#^Dynamic call to static method PHPUnit\\Framework\\TestCase\:\:createStub\(\)\.$#'
+			identifier: staticMethod.dynamicCall
+			count: 4
+			path: tests/Portfolio/Experience/Application/ExperienceTechnologyAdministratorTest.php
+
+		-
+			message: '#^Cannot access offset ''id'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Portfolio/Experience/Presentation/ApiResource/BackofficeExperienceTechnologyResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''name'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Portfolio/Experience/Presentation/ApiResource/BackofficeExperienceTechnologyResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''years'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/Experience/Presentation/ApiResource/BackofficeExperienceTechnologyResourceTest.php
+
+		-
+			message: '#^Cannot access offset 0 on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Portfolio/Experience/Presentation/ApiResource/BackofficeExperienceTechnologyResourceTest.php
+
+		-
+			message: '#^Parameter \#1 \$array of function array_column expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Portfolio/Experience/Presentation/ApiResource/BackofficeExperienceTechnologyResourceTest.php
+
+		-
+			message: '#^Parameter \#2 \$haystack of static method PHPUnit\\Framework\\Assert\:\:assertCount\(\) expects Countable\|iterable, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Portfolio/Experience/Presentation/ApiResource/BackofficeExperienceTechnologyResourceTest.php
+
+		-
+			message: '#^Parameter \$content of method Symfony\\Component\\BrowserKit\\AbstractBrowser\<Symfony\\Component\\HttpFoundation\\Request,Symfony\\Component\\HttpFoundation\\Response\>\:\:request\(\) expects string\|null, string\|false given\.$#'
+			identifier: argument.type
+			count: 6
+			path: tests/Portfolio/Experience/Presentation/ApiResource/BackofficeExperienceTechnologyResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''iconKey'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/Experience/Presentation/ApiResource/ExperienceTechnologyResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''relatedTechnology'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Portfolio/Experience/Presentation/ApiResource/ExperienceTechnologyResourceTest.php
+
+		-
+			message: '#^Cannot access offset 0 on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Portfolio/Experience/Presentation/ApiResource/ExperienceTechnologyResourceTest.php
+
+		-
+			message: '#^Cannot access offset 1 on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/Experience/Presentation/ApiResource/ExperienceTechnologyResourceTest.php
+
+		-
+			message: '#^Parameter \#1 \$array of function array_column expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Portfolio/Experience/Presentation/ApiResource/ExperienceTechnologyResourceTest.php
+
+		-
+			message: '#^Dynamic call to static method Symfony\\Bundle\\FrameworkBundle\\Test\\KernelTestCase\:\:getContainer\(\)\.$#'
+			identifier: staticMethod.dynamicCall
+			count: 3
+			path: tests/Portfolio/Experience/Presentation/Command/AddExperienceTechnologyCommandTest.php
+
+		-
+			message: '#^Parameter \#1 \$kernel of class Symfony\\Bundle\\FrameworkBundle\\Console\\Application constructor expects Symfony\\Component\\HttpKernel\\KernelInterface, Symfony\\Component\\HttpKernel\\KernelInterface\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Portfolio/Experience/Presentation/Command/AddExperienceTechnologyCommandTest.php
+
+		-
+			message: '#^Dynamic call to static method PHPUnit\\Framework\\TestCase\:\:createStub\(\)\.$#'
+			identifier: staticMethod.dynamicCall
+			count: 2
+			path: tests/Portfolio/Quality/Application/QualityPrincipleAdministratorTest.php
+
+		-
+			message: '#^Dynamic call to static method PHPUnit\\Framework\\TestCase\:\:createStub\(\)\.$#'
+			identifier: staticMethod.dynamicCall
+			count: 2
+			path: tests/Portfolio/Quality/Application/QualityTraitAdministratorTest.php
+
+		-
+			message: '#^Cannot access offset ''id'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/Quality/Presentation/ApiResource/BackofficeQualityPrincipleResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''locale'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/Quality/Presentation/ApiResource/BackofficeQualityPrincipleResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''principles'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/Quality/Presentation/ApiResource/BackofficeQualityPrincipleResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''title'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Portfolio/Quality/Presentation/ApiResource/BackofficeQualityPrincipleResourceTest.php
+
+		-
+			message: '#^Cannot access offset 0 on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/Quality/Presentation/ApiResource/BackofficeQualityPrincipleResourceTest.php
+
+		-
+			message: '#^Parameter \#2 \$haystack of static method PHPUnit\\Framework\\Assert\:\:assertCount\(\) expects Countable\|iterable, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Portfolio/Quality/Presentation/ApiResource/BackofficeQualityPrincipleResourceTest.php
+
+		-
+			message: '#^Parameter \$content of method Symfony\\Component\\BrowserKit\\AbstractBrowser\<Symfony\\Component\\HttpFoundation\\Request,Symfony\\Component\\HttpFoundation\\Response\>\:\:request\(\) expects string\|null, string\|false given\.$#'
+			identifier: argument.type
+			count: 4
+			path: tests/Portfolio/Quality/Presentation/ApiResource/BackofficeQualityPrincipleResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''id'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/Quality/Presentation/ApiResource/BackofficeQualityTraitResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''label'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Portfolio/Quality/Presentation/ApiResource/BackofficeQualityTraitResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''locale'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/Quality/Presentation/ApiResource/BackofficeQualityTraitResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''traits'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/Quality/Presentation/ApiResource/BackofficeQualityTraitResourceTest.php
+
+		-
+			message: '#^Cannot access offset 0 on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/Quality/Presentation/ApiResource/BackofficeQualityTraitResourceTest.php
+
+		-
+			message: '#^Parameter \#2 \$haystack of static method PHPUnit\\Framework\\Assert\:\:assertCount\(\) expects Countable\|iterable, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Portfolio/Quality/Presentation/ApiResource/BackofficeQualityTraitResourceTest.php
+
+		-
+			message: '#^Parameter \$content of method Symfony\\Component\\BrowserKit\\AbstractBrowser\<Symfony\\Component\\HttpFoundation\\Request,Symfony\\Component\\HttpFoundation\\Response\>\:\:request\(\) expects string\|null, string\|false given\.$#'
+			identifier: argument.type
+			count: 4
+			path: tests/Portfolio/Quality/Presentation/ApiResource/BackofficeQualityTraitResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''principles'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 3
+			path: tests/Portfolio/Quality/Presentation/ApiResource/QualityContentResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''traits'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/Quality/Presentation/ApiResource/QualityContentResourceTest.php
+
+		-
+			message: '#^Cannot access offset 0 on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Portfolio/Quality/Presentation/ApiResource/QualityContentResourceTest.php
+
+		-
+			message: '#^Parameter \#1 \$array of function array_column expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Portfolio/Quality/Presentation/ApiResource/QualityContentResourceTest.php
+
+		-
+			message: '#^Parameter \#2 \$array of static method PHPUnit\\Framework\\Assert\:\:assertArrayNotHasKey\(\) expects array\<mixed\>\|ArrayAccess\<\(int\|string\), covariant mixed\>, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Portfolio/Quality/Presentation/ApiResource/QualityContentResourceTest.php
+
+		-
+			message: '#^Dynamic call to static method Symfony\\Bundle\\FrameworkBundle\\Test\\KernelTestCase\:\:getContainer\(\)\.$#'
+			identifier: staticMethod.dynamicCall
+			count: 5
+			path: tests/Portfolio/Quality/Presentation/Command/SeedQualityContentCommandTest.php
+
+		-
+			message: '#^Parameter \#1 \$kernel of class Symfony\\Bundle\\FrameworkBundle\\Console\\Application constructor expects Symfony\\Component\\HttpKernel\\KernelInterface, Symfony\\Component\\HttpKernel\\KernelInterface\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Portfolio/Quality/Presentation/Command/SeedQualityContentCommandTest.php
+
+		-
+			message: '#^Dynamic call to static method PHPUnit\\Framework\\TestCase\:\:createStub\(\)\.$#'
+			identifier: staticMethod.dynamicCall
+			count: 2
+			path: tests/Portfolio/Stats/Application/StatAdministratorTest.php
+
+		-
+			message: '#^Cannot access offset ''id'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/Stats/Presentation/ApiResource/BackofficeStatResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''locale'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/Stats/Presentation/ApiResource/BackofficeStatResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''value'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Portfolio/Stats/Presentation/ApiResource/BackofficeStatResourceTest.php
+
+		-
+			message: '#^Cannot access offset 0 on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Portfolio/Stats/Presentation/ApiResource/BackofficeStatResourceTest.php
+
+		-
+			message: '#^Parameter \#2 \$haystack of static method PHPUnit\\Framework\\Assert\:\:assertCount\(\) expects Countable\|iterable, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Portfolio/Stats/Presentation/ApiResource/BackofficeStatResourceTest.php
+
+		-
+			message: '#^Parameter \$content of method Symfony\\Component\\BrowserKit\\AbstractBrowser\<Symfony\\Component\\HttpFoundation\\Request,Symfony\\Component\\HttpFoundation\\Response\>\:\:request\(\) expects string\|null, string\|false given\.$#'
+			identifier: argument.type
+			count: 4
+			path: tests/Portfolio/Stats/Presentation/ApiResource/BackofficeStatResourceTest.php
+
+		-
+			message: '#^Cannot access offset 0 on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 3
+			path: tests/Portfolio/Stats/Presentation/ApiResource/StatResourceTest.php
+
+		-
+			message: '#^Parameter \#1 \$array of function array_column expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Portfolio/Stats/Presentation/ApiResource/StatResourceTest.php
+
+		-
+			message: '#^Parameter \#2 \$array of static method PHPUnit\\Framework\\Assert\:\:assertArrayNotHasKey\(\) expects array\<mixed\>\|ArrayAccess\<\(int\|string\), covariant mixed\>, mixed given\.$#'
+			identifier: argument.type
+			count: 3
+			path: tests/Portfolio/Stats/Presentation/ApiResource/StatResourceTest.php
+
+		-
+			message: '#^Parameter \#2 \$haystack of static method PHPUnit\\Framework\\Assert\:\:assertCount\(\) expects Countable\|iterable, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Portfolio/Stats/Presentation/ApiResource/StatResourceTest.php
+
+		-
+			message: '#^Dynamic call to static method Symfony\\Bundle\\FrameworkBundle\\Test\\KernelTestCase\:\:getContainer\(\)\.$#'
+			identifier: staticMethod.dynamicCall
+			count: 3
+			path: tests/Portfolio/Stats/Presentation/Command/SeedStatsContentCommandTest.php
+
+		-
+			message: '#^Parameter \#1 \$kernel of class Symfony\\Bundle\\FrameworkBundle\\Console\\Application constructor expects Symfony\\Component\\HttpKernel\\KernelInterface, Symfony\\Component\\HttpKernel\\KernelInterface\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Portfolio/Stats/Presentation/Command/SeedStatsContentCommandTest.php
+
+		-
+			message: '#^Cannot access offset ''roles'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Security/Authentication/AuthenticationFlowTest.php
+
+		-
+			message: '#^Cannot access offset ''user'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 4
+			path: tests/Security/Authentication/AuthenticationFlowTest.php
+
+		-
+			message: '#^Cannot access offset ''username'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Security/Authentication/AuthenticationFlowTest.php
+
+		-
+			message: '#^Parameter \#2 \$array of static method PHPUnit\\Framework\\Assert\:\:assertArrayNotHasKey\(\) expects array\<mixed\>\|ArrayAccess\<\(int\|string\), covariant mixed\>, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Security/Authentication/AuthenticationFlowTest.php
+
+		-
+			message: '#^Parameter \$content of method Symfony\\Component\\BrowserKit\\AbstractBrowser\<Symfony\\Component\\HttpFoundation\\Request,Symfony\\Component\\HttpFoundation\\Response\>\:\:request\(\) expects string\|null, string\|false given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Security/Authentication/AuthenticationFlowTest.php
+
+		-
+			message: '#^Dynamic call to static method PHPUnit\\Framework\\TestCase\:\:createStub\(\)\.$#'
+			identifier: staticMethod.dynamicCall
+			count: 2
+			path: tests/Security/Authentication/Infrastructure/Http/CsrfCookieRequestSubscriberTest.php
+
+		-
+			message: '#^Parameter \$content of method Symfony\\Component\\BrowserKit\\AbstractBrowser\<Symfony\\Component\\HttpFoundation\\Request,Symfony\\Component\\HttpFoundation\\Response\>\:\:request\(\) expects string\|null, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Security/Authentication/LoginThrottlingTest.php
+
+		-
+			message: '#^Dynamic call to static method PHPUnit\\Framework\\TestCase\:\:createStub\(\)\.$#'
+			identifier: staticMethod.dynamicCall
+			count: 8
+			path: tests/Security/User/Application/CpgUserAdministratorTest.php
+
+		-
+			message: '#^Dynamic call to static method PHPUnit\\Framework\\TestCase\:\:createStub\(\)\.$#'
+			identifier: staticMethod.dynamicCall
+			count: 2
+			path: tests/Security/User/Application/CpgUserRegistrarTest.php
+
+		-
+			message: '#^Parameter \$content of method Symfony\\Component\\BrowserKit\\AbstractBrowser\<Symfony\\Component\\HttpFoundation\\Request,Symfony\\Component\\HttpFoundation\\Response\>\:\:request\(\) expects string\|null, string\|false given\.$#'
+			identifier: argument.type
+			count: 9
+			path: tests/Security/User/Presentation/ApiResource/BackofficeUserPasswordResourceTest.php
+
+		-
+			message: '#^Argument of an invalid type mixed supplied for foreach, only iterables are supported\.$#'
+			identifier: foreach.nonIterable
+			count: 1
+			path: tests/Security/User/Presentation/ApiResource/BackofficeUserResourceTest.php
+
+		-
+			message: '#^Cannot access offset ''id'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Security/User/Presentation/ApiResource/BackofficeUserResourceTest.php
+
+		-
+			message: '#^Parameter \#1 \$array of function array_column expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Security/User/Presentation/ApiResource/BackofficeUserResourceTest.php
+
+		-
+			message: '#^Parameter \#1 \$users of method App\\Tests\\Security\\User\\Presentation\\ApiResource\\BackofficeUserResourceTest\:\:findIdByUsername\(\) expects list\<array\{id\: int, username\: string, roles\: list\<string\>\}\>, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Security/User/Presentation/ApiResource/BackofficeUserResourceTest.php
+
+		-
+			message: '#^Parameter \#2 \$array of static method PHPUnit\\Framework\\Assert\:\:assertArrayNotHasKey\(\) expects array\<mixed\>\|ArrayAccess\<\(int\|string\), covariant mixed\>, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Security/User/Presentation/ApiResource/BackofficeUserResourceTest.php
+
+		-
+			message: '#^Parameter \#2 \$haystack of static method PHPUnit\\Framework\\Assert\:\:assertCount\(\) expects Countable\|iterable, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Security/User/Presentation/ApiResource/BackofficeUserResourceTest.php
+
+		-
+			message: '#^Parameter \$content of method Symfony\\Component\\BrowserKit\\AbstractBrowser\<Symfony\\Component\\HttpFoundation\\Request,Symfony\\Component\\HttpFoundation\\Response\>\:\:request\(\) expects string\|null, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Security/User/Presentation/ApiResource/BackofficeUserResourceTest.php
+
+		-
+			message: '#^Dynamic call to static method PHPUnit\\Framework\\TestCase\:\:createStub\(\)\.$#'
+			identifier: staticMethod.dynamicCall
+			count: 3
+			path: tests/Security/User/Presentation/Command/CreateCpgUserCommandCompromisedPasswordTest.php
+
+		-
+			message: '#^Dynamic call to static method Symfony\\Bundle\\FrameworkBundle\\Test\\KernelTestCase\:\:getContainer\(\)\.$#'
+			identifier: staticMethod.dynamicCall
+			count: 3
+			path: tests/Security/User/Presentation/Command/CreateCpgUserCommandTest.php
+
+		-
+			message: '#^Parameter \#1 \$kernel of class Symfony\\Bundle\\FrameworkBundle\\Console\\Application constructor expects Symfony\\Component\\HttpKernel\\KernelInterface, Symfony\\Component\\HttpKernel\\KernelInterface\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Security/User/Presentation/Command/CreateCpgUserCommandTest.php
+
+		-
+			message: '#^Call to function method_exists\(\) with ''Symfony\\\\Component\\\\Dotenv\\\\Dotenv'' and ''bootEnv'' will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: tests/bootstrap.php
+
+		-
+			message: '#^Only booleans are allowed in an if condition, mixed given\.$#'
+			identifier: if.condNotBoolean
+			count: 1
+			path: tests/bootstrap.php
