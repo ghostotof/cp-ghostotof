@@ -2,9 +2,9 @@ name: CodeQL
 
 # Remplace le template GitLab Security/SAST.gitlab-ci.yml (Ultimate) — gratuit
 # et natif sur un dépôt GitHub public. CodeQL ne supporte pas PHP (backend) :
-# seul le frontend (javascript-typescript) est couvert ici. Pas d'équivalent
-# CodeQL pour le backend PHP à ce stade — à retravailler séparément si un SAST
-# PHP est souhaité (ex. Psalm en mode sécurité).
+# seul le frontend (javascript-typescript) est couvert ici. Le SAST du backend
+# PHP est assuré par le job `sast-backend` de pipeline.yml (Psalm en analyse de
+# teinte, point d'audit M4).
 
 on:
   push:
