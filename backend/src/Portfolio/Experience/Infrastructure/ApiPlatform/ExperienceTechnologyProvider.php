@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Experience\Infrastructure\ApiPlatform;
 
+use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
 use App\Portfolio\Experience\Application\ExperienceTechnologyPresenterInterface;
@@ -31,7 +32,7 @@ final readonly class ExperienceTechnologyProvider implements ProviderInterface
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): array
     {
         return array_map(
-            function ($technology): ExperienceTechnologyResource {
+            function (ExperienceTechnology $technology): ExperienceTechnologyResource {
                 $presented = $this->experienceTechnologyPresenter->present($technology);
 
                 return new ExperienceTechnologyResource(

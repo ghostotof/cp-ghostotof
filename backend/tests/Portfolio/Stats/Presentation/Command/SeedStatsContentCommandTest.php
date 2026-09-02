@@ -10,6 +10,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\HttpKernel\KernelInterface;
 
 final class SeedStatsContentCommandTest extends KernelTestCase
 {
@@ -33,7 +34,7 @@ final class SeedStatsContentCommandTest extends KernelTestCase
 
         self::assertSame(0, $exitCode);
 
-        $statRepository = $this->getContainer()->get(StatRepositoryInterface::class);
+        $statRepository = self::getContainer()->get(StatRepositoryInterface::class);
 
         self::assertCount(4, $statRepository->findByLocale(Locale::FR));
         self::assertCount(4, $statRepository->findByLocale(Locale::EN));
@@ -50,7 +51,7 @@ final class SeedStatsContentCommandTest extends KernelTestCase
         $tester->execute([]);
         $tester->execute([]);
 
-        $statRepository = $this->getContainer()->get(StatRepositoryInterface::class);
+        $statRepository = self::getContainer()->get(StatRepositoryInterface::class);
 
         self::assertCount(4, $statRepository->findByLocale(Locale::FR));
         self::assertCount(4, $statRepository->findByLocale(Locale::EN));
@@ -58,6 +59,7 @@ final class SeedStatsContentCommandTest extends KernelTestCase
 
     private function commandTester(): CommandTester
     {
+        \assert(self::$kernel instanceof KernelInterface);
         $application = new Application(self::$kernel);
 
         return new CommandTester($application->find('app:stats:seed'));
@@ -65,6 +67,6 @@ final class SeedStatsContentCommandTest extends KernelTestCase
 
     private function purge(): void
     {
-        $this->getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement('DELETE FROM stat');
+        self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement('DELETE FROM stat');
     }
 }

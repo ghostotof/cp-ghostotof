@@ -32,7 +32,7 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
 
     public function testUpdateThrowsWhenIdUnknown(): void
     {
-        $repository = $this->createStub(ExperienceTechnologyRepositoryInterface::class);
+        $repository = self::createStub(ExperienceTechnologyRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
         $administrator = new ExperienceTechnologyAdministrator($repository);
@@ -47,7 +47,7 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
         $technology = $this->technologyWithId('PHP', 1);
         $otherTechnology = $this->technologyWithId('Symfony', 2);
 
-        $repository = $this->createStub(ExperienceTechnologyRepositoryInterface::class);
+        $repository = self::createStub(ExperienceTechnologyRepositoryInterface::class);
         $repository->method('findOneById')->willReturn($technology);
         $repository->method('findOneByName')->willReturn($otherTechnology);
 
@@ -62,7 +62,7 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
     {
         $technology = $this->technologyWithId('PHP', 1);
 
-        $repository = $this->createStub(ExperienceTechnologyRepositoryInterface::class);
+        $repository = self::createStub(ExperienceTechnologyRepositoryInterface::class);
         $repository->method('findOneById')->willReturn($technology);
         $repository->method('findOneByName')->willReturn($technology);
 
@@ -88,7 +88,7 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
 
     public function testDeleteThrowsWhenIdUnknown(): void
     {
-        $repository = $this->createStub(ExperienceTechnologyRepositoryInterface::class);
+        $repository = self::createStub(ExperienceTechnologyRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
         $administrator = new ExperienceTechnologyAdministrator($repository);

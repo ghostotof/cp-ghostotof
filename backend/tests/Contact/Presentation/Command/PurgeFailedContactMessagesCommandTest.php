@@ -6,9 +6,11 @@ namespace App\Tests\Contact\Presentation\Command;
 
 use App\Contact\Application\Message\SendContactMessageMessage;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\TableNotFoundException;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\TransportInterface;
 
@@ -77,23 +79,27 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
 
     private function countByRecipient(string $senderEmail): int
     {
-        return (int) $this->connection->fetchOne(
+        $count = $this->connection->fetchOne(
             'SELECT COUNT(*) FROM messenger_messages WHERE queue_name = :queue AND body LIKE :needle',
             ['queue' => 'failed', 'needle' => '%'.$senderEmail.'%'],
         );
+        \assert(is_numeric($count));
+
+        return (int) $count;
     }
 
     private function truncateMessengerTable(): void
     {
         try {
             $this->connection->executeStatement('DELETE FROM messenger_messages');
-        } catch (\Doctrine\DBAL\Exception\TableNotFoundException) {
+        } catch (TableNotFoundException) {
             // Table pas encore créée : rien à nettoyer.
         }
     }
 
     private function commandTester(): CommandTester
     {
+        \assert(self::$kernel instanceof KernelInterface);
         return new CommandTester((new Application(self::$kernel))->find('app:contact:purge-failed-messages'));
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Contact\Infrastructure\Messenger;
 
+use Symfony\Component\Mime\Address;
 use App\Contact\Application\Message\SendContactMessageMessage;
 use App\Contact\Domain\Exception\ContactMessageDeliveryException;
 use App\Contact\Infrastructure\Messenger\SendContactMessageHandler;
@@ -23,15 +24,15 @@ final class SendContactMessageHandlerTest extends TestCase
             ->method('send')
             ->with(self::callback(function (Email $email): bool {
                 self::assertSame([self::CONTACT_RECIPIENT_EMAIL], array_map(
-                    static fn ($address) => $address->getAddress(),
+                    static fn (Address $address): string => $address->getAddress(),
                     $email->getFrom(),
                 ));
                 self::assertSame([self::CONTACT_RECIPIENT_EMAIL], array_map(
-                    static fn ($address) => $address->getAddress(),
+                    static fn (Address $address): string => $address->getAddress(),
                     $email->getTo(),
                 ));
                 self::assertSame(['jane@example.com'], array_map(
-                    static fn ($address) => $address->getAddress(),
+                    static fn (Address $address): string => $address->getAddress(),
                     $email->getReplyTo(),
                 ));
                 self::assertStringContainsString('Jane Doe', (string) $email->getSubject());

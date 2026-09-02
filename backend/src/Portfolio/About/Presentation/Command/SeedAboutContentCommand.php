@@ -48,7 +48,7 @@ final class SeedAboutContentCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        foreach (self::content() as $localeValue => $content) {
+        foreach ($this->content() as $localeValue => $content) {
             $locale = Locale::from($localeValue);
 
             $this->upsertSettings($locale, $content);
@@ -153,7 +153,7 @@ final class SeedAboutContentCommand extends Command
      *     },
      * }>
      */
-    private static function content(): array
+    private function content(): array
     {
         return [
             'fr' => [

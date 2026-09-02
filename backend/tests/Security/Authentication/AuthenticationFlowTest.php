@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\Authentication;
 
 use App\Security\User\Application\CpgUserRegistrarInterface;
+use App\Tests\Support\HttpJson;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
@@ -15,6 +16,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class AuthenticationFlowTest extends WebTestCase
 {
+    use HttpJson;
+
     private const string USERNAME = 'jane';
     private const string PASSWORD = 'SecurePassword123';
 
@@ -37,7 +40,7 @@ final class AuthenticationFlowTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::USERNAME, self::PASSWORD);
 
         // 1. Mauvais mot de passe => 401
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'username' => self::USERNAME,
             'password' => 'wrong-password',
         ]));
@@ -48,7 +51,7 @@ final class AuthenticationFlowTest extends WebTestCase
         self::assertResponseStatusCodeSame(401);
 
         // 3. Login valide => 200, cookies BEARER (httpOnly) + XSRF-TOKEN posés, plus de "token" dans le corps
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'username' => self::USERNAME,
             'password' => self::PASSWORD,
         ]));

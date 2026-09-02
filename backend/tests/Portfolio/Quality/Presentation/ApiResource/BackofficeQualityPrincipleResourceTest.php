@@ -8,6 +8,7 @@ use App\Portfolio\Quality\Application\QualityPrincipleAdministratorInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Support\HttpJson;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -18,6 +19,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class BackofficeQualityPrincipleResourceTest extends WebTestCase
 {
+    use HttpJson;
+
     private const string SUPER_USERNAME = 'super';
     private const string SUPER_PASSWORD = 'SuperSecret123';
     private const string PLAIN_USERNAME = 'jane';
@@ -88,7 +91,7 @@ final class BackofficeQualityPrincipleResourceTest extends WebTestCase
         $client->request('POST', '/api/backoffice/quality/principles', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['locale' => 'fr', 'title' => 'DDD', 'description' => 'Description.', 'iconKey' => 'boxes', 'position' => 0]));
+        ], content: self::jsonBody(['locale' => 'fr', 'title' => 'DDD', 'description' => 'Description.', 'iconKey' => 'boxes', 'position' => 0]));
         self::assertResponseIsSuccessful();
         $created = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame('DDD', $created['title']);
@@ -99,7 +102,7 @@ final class BackofficeQualityPrincipleResourceTest extends WebTestCase
         $client->request('PUT', sprintf('/api/backoffice/quality/principles/%d', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['locale' => 'fr', 'title' => 'SOLID', 'description' => 'Description mise à jour.', 'iconKey' => 'columns-3', 'position' => 1]));
+        ], content: self::jsonBody(['locale' => 'fr', 'title' => 'SOLID', 'description' => 'Description mise à jour.', 'iconKey' => 'columns-3', 'position' => 1]));
         self::assertResponseIsSuccessful();
         $updated = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame('SOLID', $updated['title']);
@@ -108,7 +111,7 @@ final class BackofficeQualityPrincipleResourceTest extends WebTestCase
         $client->request('PUT', '/api/backoffice/quality/principles/999999', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: json_encode(['title' => 'x', 'description' => 'x', 'iconKey' => 'x', 'position' => 0]));
+        ], content: self::jsonBody(['title' => 'x', 'description' => 'x', 'iconKey' => 'x', 'position' => 0]));
         self::assertResponseStatusCodeSame(404);
 
         // Delete - id inconnu => 404
@@ -127,7 +130,7 @@ final class BackofficeQualityPrincipleResourceTest extends WebTestCase
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string
     {
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'username' => $username,
             'password' => $password,
         ]));

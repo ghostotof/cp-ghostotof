@@ -25,11 +25,11 @@ use Symfony\Component\HttpFoundation\Cookie;
  *   l'utilisateur connecté, pour que le frontend n'ait pas à refaire un appel
  *   /api/me immédiatement après un login réussi.
  */
-final class LoginSuccessSubscriber implements EventSubscriberInterface
+final readonly class LoginSuccessSubscriber implements EventSubscriberInterface
 {
     public function __construct(
-        #[Autowire('%kernel.environment%')] private readonly string $environment,
-        private readonly CsrfCookieTokenSigner $csrfCookieTokenSigner,
+        #[Autowire('%kernel.environment%')] private string $environment,
+        private CsrfCookieTokenSigner $csrfCookieTokenSigner,
     ) {
     }
 

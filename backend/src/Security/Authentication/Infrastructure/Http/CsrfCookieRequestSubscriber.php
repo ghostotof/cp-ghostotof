@@ -30,7 +30,7 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
  * l'en-tête) passerait la seule comparaison cookie == header.
  */
 #[AsEventListener(event: RequestEvent::class, priority: 20)]
-final class CsrfCookieRequestSubscriber
+final readonly class CsrfCookieRequestSubscriber
 {
     private const array UNSAFE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 
@@ -47,7 +47,7 @@ final class CsrfCookieRequestSubscriber
     private const string COOKIE_NAME = 'XSRF-TOKEN';
     private const string HEADER_NAME = 'X-XSRF-TOKEN';
 
-    public function __construct(private readonly CsrfCookieTokenSigner $csrfCookieTokenSigner)
+    public function __construct(private CsrfCookieTokenSigner $csrfCookieTokenSigner)
     {
     }
 

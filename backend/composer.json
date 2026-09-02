@@ -76,6 +76,12 @@
         "phpstan": [
             "@php bin/console cache:warmup --env=dev --quiet",
             "@php vendor/bin/phpstan analyse"
+        ],
+        "rector": [
+            "@php vendor/bin/rector process --dry-run"
+        ],
+        "rector:fix": [
+            "@php vendor/bin/rector process"
         ]
     },
     "conflict": {
@@ -96,6 +102,7 @@
         "phpstan/phpstan-symfony": "*",
         "phpunit/phpunit": "^13.3",
         "psalm/phar": "^6.16",
+        "rector/rector": "^2.6",
         "roave/security-advisories": "dev-latest",
         "symfony/browser-kit": "8.1.*",
         "symfony/css-selector": "8.1.*",

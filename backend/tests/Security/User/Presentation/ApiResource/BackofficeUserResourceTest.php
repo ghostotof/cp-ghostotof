@@ -6,6 +6,7 @@ namespace App\Tests\Security\User\Presentation\ApiResource;
 
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Support\HttpJson;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -16,6 +17,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class BackofficeUserResourceTest extends WebTestCase
 {
+    use HttpJson;
+
     private const string SUPER_USERNAME = 'super';
     private const string SUPER_PASSWORD = 'SuperSecret123';
     private const string PLAIN_USERNAME = 'jane';
@@ -106,7 +109,7 @@ final class BackofficeUserResourceTest extends WebTestCase
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string
     {
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'username' => $username,
             'password' => $password,
         ]));

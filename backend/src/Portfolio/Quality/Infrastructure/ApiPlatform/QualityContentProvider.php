@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Quality\Infrastructure\ApiPlatform;
 
+use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
+use App\Portfolio\Quality\Domain\Entity\QualityTrait;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
 use App\Portfolio\Quality\Application\QualityPrinciplePresenterInterface;
@@ -43,11 +45,11 @@ final readonly class QualityContentProvider implements ProviderInterface
 
         return new QualityContentResource(
             principles: array_map(
-                fn ($principle): QualityPrincipleResource => new QualityPrincipleResource(...$this->qualityPrinciplePresenter->present($principle)),
+                fn (QualityPrinciple $principle): QualityPrincipleResource => new QualityPrincipleResource(...$this->qualityPrinciplePresenter->present($principle)),
                 $this->qualityPrincipleRepository->findByLocale($locale),
             ),
             traits: array_map(
-                fn ($trait): QualityTraitResource => new QualityTraitResource(...$this->qualityTraitPresenter->present($trait)),
+                fn (QualityTrait $trait): QualityTraitResource => new QualityTraitResource(...$this->qualityTraitPresenter->present($trait)),
                 $this->qualityTraitRepository->findByLocale($locale),
             ),
         );

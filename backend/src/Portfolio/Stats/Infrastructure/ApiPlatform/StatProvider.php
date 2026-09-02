@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Stats\Infrastructure\ApiPlatform;
 
+use App\Portfolio\Stats\Domain\Entity\Stat;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -38,7 +39,7 @@ final readonly class StatProvider implements ProviderInterface
         $locale = Locale::from($this->uriVariableString($uriVariables, 'locale'));
 
         return array_map(
-            fn ($stat): StatResource => new StatResource(...$this->statPresenter->present($stat)),
+            fn (Stat $stat): StatResource => new StatResource(...$this->statPresenter->present($stat)),
             $this->statRepository->findByLocale($locale),
         );
     }

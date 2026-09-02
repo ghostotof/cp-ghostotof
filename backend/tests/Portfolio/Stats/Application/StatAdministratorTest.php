@@ -43,7 +43,7 @@ final class StatAdministratorTest extends TestCase
 
     public function testUpdateThrowsWhenStatNotFound(): void
     {
-        $repository = $this->createStub(StatRepositoryInterface::class);
+        $repository = self::createStub(StatRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
         $administrator = new StatAdministrator($repository);
@@ -68,7 +68,7 @@ final class StatAdministratorTest extends TestCase
 
     public function testDeleteThrowsWhenStatNotFound(): void
     {
-        $repository = $this->createStub(StatRepositoryInterface::class);
+        $repository = self::createStub(StatRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
         $administrator = new StatAdministrator($repository);

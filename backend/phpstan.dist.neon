@@ -1,13 +1,8 @@
-includes:
-    # Extensions enregistrees automatiquement par phpstan/extension-installer :
-    # phpstan-symfony, phpstan-doctrine, phpstan-phpunit, phpstan-strict-rules,
-    # phpstan-deprecation-rules.
-    #
-    # Dette technique existante au moment de l'adoption de PHPStan (niveau max +
-    # strict-rules), a resorber progressivement. Toute regle non listee ici doit
-    # rester verte. Regenerer apres correction :
-    #   composer phpstan -- --generate-baseline
-    - phpstan-baseline.neon
+# Extensions enregistrees automatiquement par phpstan/extension-installer :
+# phpstan-symfony, phpstan-doctrine, phpstan-phpunit, phpstan-strict-rules,
+# phpstan-deprecation-rules. Pas de baseline : niveau max + strict-rules
+# passent au vert sur src/ ET tests/ (cf. ignoreErrors scopes plus bas pour
+# les payloads JSON des tests fonctionnels). Le garder ainsi.
 
 parameters:
     # Niveau maximal (cf. standards du projet). strict-rules et les extensions
@@ -18,10 +13,13 @@ parameters:
         - src
         - tests
 
-    # tests/bootstrap.php est genere et maintenu par Symfony Flex (regenerable) :
-    # on ne l'analyse pas, on ne le corrige pas.
+    # Fichiers squelette geres par Symfony Flex (regenerables) : on ne les
+    # analyse pas. src/Kernel.php : getAllowedEnvs() est un faux positif
+    # method.unused (appele par KernelTrait de Symfony, chaine de trait que
+    # PHPStan ne suit pas).
     excludePaths:
         - tests/bootstrap.php
+        - src/Kernel.php
 
     # Charge le .env pour que l'analyse voie les memes variables qu'a l'execution.
     bootstrapFiles:
@@ -38,3 +36,20 @@ parameters:
     # DQL a partir d'un EntityManager reel (cf. tests/object-manager.php).
     doctrine:
         objectManagerLoader: tests/object-manager.php
+
+    ignoreErrors:
+        # Dans les tests fonctionnels, le payload de reponse est du `mixed`
+        # apres json_decode : ce sont les assertions PHPUnit qui valident la
+        # forme de la reponse HTTP, pas l'analyse statique. On n'inspecte donc
+        # ni l'indexation de ce `mixed`, ni sa transmission a une assertion
+        # typee — uniquement dans tests/.
+        -
+            identifier: offsetAccess.nonOffsetAccessible
+            path: tests/
+        -
+            message: '#expects .+, mixed given\.$#'
+            identifier: argument.type
+            path: tests/
+        -
+            identifier: foreach.nonIterable
+            path: tests/
