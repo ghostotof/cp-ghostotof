@@ -57,7 +57,9 @@ final class BackofficeExperienceTechnologyResource
         public string $name = '',
         #[Assert\PositiveOrZero]
         public float $years = 0.0,
+        #[Assert\Length(max: 60)]
         public ?string $iconKey = null,
+        #[Assert\Length(max: 180)]
         public ?string $relatedTechnologyName = null,
     ) {
     }
