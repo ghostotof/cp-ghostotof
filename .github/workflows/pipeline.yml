@@ -65,8 +65,10 @@ jobs:
         working-directory: backend
         run: |
           cat > .env.test.local <<EOF
+          KERNEL_CLASS='App\Kernel'
           APP_SECRET=$(openssl rand -hex 16)
           JWT_PASSPHRASE=$(openssl rand -hex 33)
+          CV_FILE_PATH=%kernel.project_dir%/tests/Portfolio/Cv/Fixtures/dummy.pdf
           EOF
       - name: Génère le keypair JWT (jamais commité, cf. .gitignore)
         working-directory: backend
