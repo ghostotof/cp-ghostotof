@@ -44,6 +44,18 @@ final readonly class CsrfCookieRequestSubscriber
      *   distinct, traité par le honeypot de ContactMessageResource.
      */
     private const array EXCLUDED_PATHS = ['/api/login_check', '/api/contact'];
+
+    /**
+     * - /api/account/password-setup/ : parcours public de définition de mot de
+     *   passe via lien e-mail. L'appelant est anonyme (le compte n'est pas
+     *   encore activé) : il n'a aucun cookie XSRF-TOKEN à double-submit, et
+     *   aucune autorité ambiante qu'un CSRF pourrait détourner — même
+     *   raisonnement que /api/contact.
+     *
+     * @var list<string>
+     */
+    private const array EXCLUDED_PATH_PREFIXES = ['/api/account/password-setup/'];
+
     private const string COOKIE_NAME = 'XSRF-TOKEN';
     private const string HEADER_NAME = 'X-XSRF-TOKEN';
 
@@ -89,10 +101,19 @@ final readonly class CsrfCookieRequestSubscriber
             return false;
         }
 
-        if (!str_starts_with($request->getPathInfo(), '/api')) {
+        $path = $request->getPathInfo();
+
+        if (!str_starts_with($path, '/api')) {
             return false;
         }
 
-        return !\in_array($request->getPathInfo(), self::EXCLUDED_PATHS, true);
+        if (\in_array($path, self::EXCLUDED_PATHS, true)) {
+            return false;
+        }
+
+        return array_all(
+            self::EXCLUDED_PATH_PREFIXES,
+            static fn (string $prefix): bool => !str_starts_with($path, $prefix),
+        );
     }
 }

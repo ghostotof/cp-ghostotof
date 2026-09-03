@@ -70,6 +70,9 @@ final class BackofficeUserResourceTest extends WebTestCase
         foreach ($users as $user) {
             self::assertArrayNotHasKey('password', $user);
             self::assertIsInt($user['id']);
+            // Comptes créés en CLI : pas d'e-mail, utilisables d'emblée.
+            self::assertNull($user['email']);
+            self::assertSame('active', $user['status']);
         }
 
         $superId = $this->findIdByUsername($users, self::SUPER_USERNAME);
@@ -94,7 +97,7 @@ final class BackofficeUserResourceTest extends WebTestCase
     }
 
     /**
-     * @param list<array{id: int, username: string, roles: list<string>}> $users
+     * @param list<array{id: int, username: string, email: string|null, roles: list<string>, status: string}> $users
      */
     private function findIdByUsername(array $users, string $username): int
     {

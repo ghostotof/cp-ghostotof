@@ -25,9 +25,11 @@
   "admin": {
     "heading": "Administration",
     "navigation": "Navigation d'administration",
+    "contentNavigation": "Navigation du contenu",
     "comingSoon": "Cette section sera bientôt disponible.",
     "localeLabel": "Langue",
     "nav": {
+      "content": "Contenu",
       "technologies": "Technologies",
       "about": "À propos",
       "quality": "Qualité",
@@ -168,22 +170,45 @@
     "users": {
       "listTitle": "Utilisateurs enregistrés",
       "usernameLabel": "Nom d'utilisateur",
+      "emailLabel": "E-mail",
       "rolesLabel": "Rôles",
+      "statusLabel": "Statut",
+      "statusPending": "En attente",
+      "statusActive": "Actif",
       "actions": "Actions",
+      "actionsFor": "Actions pour {username}",
       "changePassword": "Changer le mot de passe",
       "newPasswordLabel": "Nouveau mot de passe",
+      "promote": "Promouvoir admin",
+      "demote": "Retirer l'accès admin",
+      "resendInvitation": "Renvoyer l'invitation",
+      "resendSuccess": "Invitation renvoyée.",
       "save": "Enregistrer",
       "cancel": "Annuler",
       "delete": "Supprimer",
       "confirmDelete": "Supprimer l'utilisateur « {username} » ?",
       "cannotDeleteSelf": "Vous ne pouvez pas supprimer votre propre compte.",
+      "cannotChangeOwnRoles": "Vous ne pouvez pas modifier vos propres rôles.",
       "passwordChanged": "Mot de passe mis à jour.",
       "empty": "Aucun utilisateur enregistré.",
       "loading": "Chargement des utilisateurs…",
       "loadError": "Le chargement des utilisateurs a échoué. Réessayez plus tard.",
+      "invite": {
+        "title": "Inviter un utilisateur",
+        "emailLabel": "Adresse e-mail",
+        "localeLabel": "Langue de l'invitation",
+        "submit": "Envoyer l'invitation",
+        "sending": "Envoi…",
+        "success": "Invitation envoyée à « {username} »."
+      },
       "errors": {
         "not-found": "Cet utilisateur n'existe plus.",
         "cannot-delete-self": "Vous ne pouvez pas supprimer votre propre compte.",
+        "email-taken": "Un compte existe déjà avec cette adresse e-mail.",
+        "email-invalid": "Adresse e-mail invalide.",
+        "cannot-modify-own-roles": "Vous ne pouvez pas modifier vos propres rôles.",
+        "cannot-demote-last-super": "Impossible : c'est le dernier compte administrateur.",
+        "already-activated": "Ce compte a déjà défini son mot de passe.",
         "validation": "Le mot de passe doit contenir au moins 8 caractères.",
         "unknown": "Une erreur est survenue. Réessayez plus tard."
       }
@@ -225,6 +250,7 @@
   "auth": {
     "heading": "Connexion",
     "usernameLabel": "Nom d'utilisateur",
+      "emailLabel": "E-mail",
     "passwordLabel": "Mot de passe",
     "submit": "Se connecter",
     "invalidCredentials": "Nom d'utilisateur ou mot de passe incorrect.",
@@ -251,6 +277,30 @@
     "message": "La page que vous cherchez n'existe pas ou plus.",
     "backHome": "Retour à l'accueil"
   },
+  "account": {
+    "setPassword": {
+      "heading": "Définir mon mot de passe",
+      "checking": "Vérification du lien…",
+      "retry": "Réessayer",
+      "passwordLabel": "Mot de passe",
+      "confirmationLabel": "Confirmer le mot de passe",
+      "hint": "Au moins {min} caractères.",
+      "submit": "Définir le mot de passe",
+      "submitting": "Enregistrement…",
+      "successHeading": "Mot de passe défini",
+      "successBody": "Votre compte est prêt. Vous pouvez maintenant vous connecter.",
+      "toLogin": "Aller à la connexion",
+      "invalid": "Ce lien de définition de mot de passe n'est pas valide.",
+      "expired": "Ce lien a expiré ou a déjà été utilisé. Contactez la personne qui vous a invité pour en recevoir un nouveau.",
+      "errors": {
+        "tooShort": "Le mot de passe doit contenir au moins {min} caractères.",
+        "mismatch": "Les deux mots de passe ne correspondent pas.",
+        "weak-password": "Ce mot de passe a été refusé (trop courant ou présent dans une fuite connue). Choisissez-en un autre.",
+        "rate-limited": "Trop de tentatives. Réessayez dans quelques minutes.",
+        "unknown": "Une erreur est survenue. Réessayez plus tard."
+      }
+    }
+  },
   "seo": {
     "home": {
       "title": "Développeur Web Senior",
@@ -275,6 +325,10 @@
     "login": {
       "title": "Connexion",
       "description": "Connexion à l'espace protégé."
+    },
+    "setPassword": {
+      "title": "Définir mon mot de passe",
+      "description": "Définissez le mot de passe de votre compte via le lien reçu par e-mail."
     },
     "legalNotice": {
       "title": "Mentions légales",

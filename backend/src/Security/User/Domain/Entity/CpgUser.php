@@ -14,15 +14,22 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * Utilisateur permettant l'accès aux ressources/pages protégées du frontend
- * (ex. téléchargement du CV). Créé uniquement en ligne de commande
- * (App\Security\User\Presentation\Command\CreateCpgUserCommand) : il n'existe
- * volontairement aucun formulaire d'inscription. Identifiant de connexion :
- * un simple nom d'utilisateur (pas d'email stocké, aucune donnée personnelle
- * identifiante).
+ * (ex. téléchargement du CV). Identifiant de connexion : un simple nom
+ * d'utilisateur.
+ *
+ * Deux voies de création :
+ * - CLI (App\Security\User\Presentation\Command\CreateCpgUserCommand) :
+ *   amorçage, notamment du premier ROLE_SUPER — sans email, compte utilisable
+ *   immédiatement ;
+ * - invitation depuis le backoffice (App\Security\User\Application\CpgUserInviter) :
+ *   un email est stocké (nullable, unique, jamais exposé avant authentification —
+ *   cf. objectif n°9), le compte est créé "en attente d'activation" et la
+ *   personne définit elle-même son mot de passe via un lien reçu par email.
  */
 #[ORM\Entity(repositoryClass: CpgUserRepository::class)]
 #[ORM\Table(name: 'cpg_user')]
 #[ORM\UniqueConstraint(name: 'uniq_cpg_user_username', columns: ['username'])]
+#[ORM\UniqueConstraint(name: 'uniq_cpg_user_email', columns: ['email'])]
 class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
 {
     /** Rôle réservé à l'administration du backoffice (gestion de contenu, gestion des utilisateurs). */
@@ -50,6 +57,18 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
     #[Assert\Length(min: 3, max: 60)]
     private string $username;
 
+    /**
+     * Renseigné uniquement pour les comptes créés par invitation depuis le
+     * backoffice (les comptes CLI n'en ont pas). Sert à envoyer le lien de
+     * définition de mot de passe puis, plus tard, toute correspondance
+     * d'administration. Jamais exposé à un visiteur non authentifié.
+     */
+    #[ORM\Column(length: 180, unique: true, nullable: true)]
+    #[Assert\Email]
+    #[Assert\Length(max: 180)]
+    #[Ignore]
+    private ?string $email = null;
+
     /** @var list<string> */
     #[ORM\Column]
     private array $roles = [];
@@ -57,6 +76,21 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column]
     #[Ignore]
     private string $password;
+
+    /** Date d'envoi de l'invitation (comptes créés depuis le backoffice ; `null` pour un compte CLI). */
+    #[ORM\Column(nullable: true)]
+    #[Ignore]
+    private ?\DateTimeImmutable $invitedAt = null;
+
+    /**
+     * Date à laquelle la personne invitée a défini son mot de passe via le lien
+     * reçu. Un compte "en attente d'activation" est un compte invité mais pas
+     * encore activé (cf. isPendingActivation()) ; un compte CLI, lui, n'a ni
+     * invitation ni activation et reste utilisable d'emblée.
+     */
+    #[ORM\Column(nullable: true)]
+    #[Ignore]
+    private ?\DateTimeImmutable $activatedAt = null;
 
     public function __construct(string $username, string $hashedPassword)
     {
@@ -76,6 +110,46 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
     public function getUsername(): string
     {
         return $this->username;
+    }
+
+    public function getEmail(): ?string
+    {
+        return $this->email;
+    }
+
+    public function setEmail(string $email): void
+    {
+        $this->email = $email;
+    }
+
+    public function getInvitedAt(): ?\DateTimeImmutable
+    {
+        return $this->invitedAt;
+    }
+
+    public function getActivatedAt(): ?\DateTimeImmutable
+    {
+        return $this->activatedAt;
+    }
+
+    public function markInvited(\DateTimeImmutable $invitedAt): void
+    {
+        $this->invitedAt = $invitedAt;
+    }
+
+    public function markActivated(\DateTimeImmutable $activatedAt): void
+    {
+        $this->activatedAt = $activatedAt;
+    }
+
+    /**
+     * Compte invité depuis le backoffice mais dont le mot de passe n'a pas
+     * encore été défini via le lien reçu. Toujours faux pour un compte CLI
+     * (aucune invitation) comme pour un compte invité déjà activé.
+     */
+    public function isPendingActivation(): bool
+    {
+        return null !== $this->invitedAt && null === $this->activatedAt;
     }
 
     public function getUserIdentifier(): string

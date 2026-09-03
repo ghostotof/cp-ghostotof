@@ -1,0 +1,14 @@
+twig:
+    file_name_pattern: '*.twig'
+    # Twig n'est présent que pour composer les e-mails sortants (TemplatedEmail),
+    # jamais pour rendre des pages : le frontend reste découplé (cf. ADR
+    # docs/adr/0001-admin-user-provisioning.md). Les templates vivent dans
+    # templates/emails/.
+    globals:
+        # Nom de marque repris dans le bandeau d'en-tête de tous les e-mails
+        # (templates/emails/base.html.twig). Source : paramètre app.brand_name.
+        brand_name: '%app.brand_name%'
+
+when@test:
+    twig:
+        strict_variables: true

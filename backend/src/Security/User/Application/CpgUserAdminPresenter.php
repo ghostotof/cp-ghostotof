@@ -13,7 +13,9 @@ final class CpgUserAdminPresenter implements CpgUserAdminPresenterInterface
         return [
             'id' => (int) $user->getId(),
             'username' => $user->getUsername(),
+            'email' => $user->getEmail(),
             'roles' => $user->getRoles(),
+            'status' => $user->isPendingActivation() ? 'pending' : 'active',
         ];
     }
 }

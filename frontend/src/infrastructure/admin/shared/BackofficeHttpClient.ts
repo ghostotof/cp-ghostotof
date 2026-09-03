@@ -2,6 +2,8 @@ import { readCsrfToken } from '../../auth/csrfCookie'
 
 /** Forme RFC7807-ish renvoyée par API Platform sur les réponses d'erreur (cf. api_platform.yaml `error_formats`). */
 export interface ApiProblemBody {
+  /** Slug stable `/errors/<slug>` posé par les exceptions métier implémentant ProblemExceptionInterface — à privilégier sur `detail` (localisé, instable) pour discriminer un conflit. */
+  type?: string
   detail?: string
   violations?: { propertyPath: string; message: string }[]
 }

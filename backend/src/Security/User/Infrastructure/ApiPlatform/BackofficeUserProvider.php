@@ -51,6 +51,8 @@ final readonly class BackofficeUserProvider implements ProviderInterface
             id: $presented['id'],
             username: $presented['username'],
             roles: $presented['roles'],
+            email: $presented['email'],
+            status: $presented['status'],
         );
     }
 }

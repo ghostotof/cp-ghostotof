@@ -25,9 +25,11 @@
   "admin": {
     "heading": "Administration",
     "navigation": "Administration navigation",
+    "contentNavigation": "Content navigation",
     "comingSoon": "This section will be available soon.",
     "localeLabel": "Language",
     "nav": {
+      "content": "Content",
       "technologies": "Technologies",
       "about": "About",
       "quality": "Quality",
@@ -168,22 +170,45 @@
     "users": {
       "listTitle": "Registered users",
       "usernameLabel": "Username",
+      "emailLabel": "Email",
       "rolesLabel": "Roles",
+      "statusLabel": "Status",
+      "statusPending": "Pending",
+      "statusActive": "Active",
       "actions": "Actions",
+      "actionsFor": "Actions for {username}",
       "changePassword": "Change password",
       "newPasswordLabel": "New password",
+      "promote": "Make admin",
+      "demote": "Remove admin access",
+      "resendInvitation": "Resend invitation",
+      "resendSuccess": "Invitation resent.",
       "save": "Save",
       "cancel": "Cancel",
       "delete": "Delete",
       "confirmDelete": "Delete user \"{username}\"?",
       "cannotDeleteSelf": "You cannot delete your own account.",
+      "cannotChangeOwnRoles": "You cannot change your own roles.",
       "passwordChanged": "Password updated.",
       "empty": "No user registered.",
       "loading": "Loading users…",
       "loadError": "Failed to load users. Please try again later.",
+      "invite": {
+        "title": "Invite a user",
+        "emailLabel": "Email address",
+        "localeLabel": "Invitation language",
+        "submit": "Send invitation",
+        "sending": "Sending…",
+        "success": "Invitation sent to \"{username}\"."
+      },
       "errors": {
         "not-found": "This user no longer exists.",
         "cannot-delete-self": "You cannot delete your own account.",
+        "email-taken": "An account with this email address already exists.",
+        "email-invalid": "Invalid email address.",
+        "cannot-modify-own-roles": "You cannot change your own roles.",
+        "cannot-demote-last-super": "Not allowed: this is the last administrator account.",
+        "already-activated": "This account has already set its password.",
         "validation": "The password must be at least 8 characters long.",
         "unknown": "Something went wrong. Please try again later."
       }
@@ -225,6 +250,7 @@
   "auth": {
     "heading": "Login",
     "usernameLabel": "Username",
+      "emailLabel": "Email",
     "passwordLabel": "Password",
     "submit": "Log in",
     "invalidCredentials": "Incorrect username or password.",
@@ -251,6 +277,30 @@
     "message": "The page you're looking for doesn't exist anymore.",
     "backHome": "Back to home"
   },
+  "account": {
+    "setPassword": {
+      "heading": "Set my password",
+      "checking": "Checking the link…",
+      "retry": "Try again",
+      "passwordLabel": "Password",
+      "confirmationLabel": "Confirm password",
+      "hint": "At least {min} characters.",
+      "submit": "Set password",
+      "submitting": "Saving…",
+      "successHeading": "Password set",
+      "successBody": "Your account is ready. You can now log in.",
+      "toLogin": "Go to login",
+      "invalid": "This password setup link is not valid.",
+      "expired": "This link has expired or has already been used. Ask the person who invited you for a new one.",
+      "errors": {
+        "tooShort": "The password must be at least {min} characters long.",
+        "mismatch": "The two passwords do not match.",
+        "weak-password": "This password was rejected (too common or found in a known breach). Please choose another one.",
+        "rate-limited": "Too many attempts. Please try again in a few minutes.",
+        "unknown": "Something went wrong. Please try again later."
+      }
+    }
+  },
   "seo": {
     "home": {
       "title": "Senior Web Developer",
@@ -275,6 +325,10 @@
     "login": {
       "title": "Login",
       "description": "Log in to the protected area."
+    },
+    "setPassword": {
+      "title": "Set my password",
+      "description": "Set your account password using the link you received by email."
     },
     "legalNotice": {
       "title": "Legal notice",
