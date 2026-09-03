@@ -27,7 +27,7 @@ Git flow : brancher `feature/admin-user-provisioning` depuis `develop` avant tou
 
 ## Phase 3 — Backend : parcours public de définition du mot de passe
 
-- [ ] 3.1 `PasswordSetupService` (`validate` / `complete`) + `InvalidPasswordSetupTokenException` (404) + `PasswordSetupTokenExpiredException` (410, couvre aussi « déjà utilisé ») ; `PasswordSetupServiceTest`
+- [x] 3.1 `PasswordSetupServiceInterface`/`PasswordSetupService` (`validate` / `complete`, clock injecté) + `InvalidPasswordSetupTokenException` (→ 404) + `PasswordSetupTokenExpiredException` (→ 410, fusionne expiré + déjà utilisé, sans révéler qu'un lien a servi) ; `PasswordSetupServiceTest` (+6 : lookup par SHA-256, jeton inconnu, expiré, déjà utilisé, `complete` hache+active+consomme, `complete` sur jeton expiré ne touche rien)
 - [ ] 3.2 `GET`/`POST /api/account/password-setup/{token}` (DTO `{password}` + `Length(MIN..MAX)` + `NotCompromisedPassword`, `POST` → 204 `output:false`) + provider/processor + rate limiter `account_password_setup` (IP + `Retry-After`) + `exception_to_status` ; tests fonctionnels (GET 200/404/410 anonyme ; POST 204 + compte activé + login OK ; rejeu 410 ; mdp court 422 ; 429)
 - [ ] **CHECKPOINT 3** — gate backend vert + bout-en-bout manuel avec un vrai jeton de la Phase 2
 
