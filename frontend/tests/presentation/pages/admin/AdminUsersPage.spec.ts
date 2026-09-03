@@ -158,6 +158,17 @@ describe('AdminUsersPage', () => {
     expect(rowFor(wrapper, 'jane')?.text()).toContain('Actif')
   })
 
+  it('affiche l\'e-mail lié dans une colonne dédiée, ou un tiret quand il n\'y en a pas', async () => {
+    await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
+    const wrapper = await mountPage()
+
+    const headers = wrapper.findAll('thead th').map((th) => th.text())
+    expect(headers).toContain('E-mail')
+
+    expect(rowFor(wrapper, 'newcomer')?.text()).toContain('newcomer@example.com')
+    expect(rowFor(wrapper, 'jane')?.get('td:nth-child(2)').text()).toBe('—')
+  })
+
   it("affiche un message si le chargement échoue", async () => {
     await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
     const repository = createStubRepository({ list: vi.fn(async () => Promise.reject(new Error('unavailable'))) })

@@ -196,6 +196,9 @@ async function handleDelete(user: AdminUser): Promise<void> {
                 {{ t('admin.users.usernameLabel') }}
               </th>
               <th scope="col">
+                {{ t('admin.users.emailLabel') }}
+              </th>
+              <th scope="col">
                 {{ t('admin.users.rolesLabel') }}
               </th>
               <th scope="col">
@@ -213,6 +216,13 @@ async function handleDelete(user: AdminUser): Promise<void> {
             >
               <tr>
                 <td>{{ user.username }}</td>
+                <td>
+                  <span v-if="user.email">{{ user.email }}</span>
+                  <span
+                    v-else
+                    class="text-body-secondary"
+                  >—</span>
+                </td>
                 <td>{{ user.roles.join(', ') }}</td>
                 <td>
                   <span
@@ -260,14 +270,14 @@ async function handleDelete(user: AdminUser): Promise<void> {
               </tr>
               <tr v-if="resendSuccessForUserId === user.id">
                 <td
-                  colspan="4"
+                  colspan="5"
                   class="text-success small"
                 >
                   {{ t('admin.users.resendSuccess') }}
                 </td>
               </tr>
               <tr v-if="changingPasswordForUserId === user.id">
-                <td colspan="4">
+                <td colspan="5">
                   <form
                     novalidate
                     class="admin-user-password-form d-flex flex-column gap-2 py-2"

@@ -170,6 +170,7 @@
     "users": {
       "listTitle": "Utilisateurs enregistrés",
       "usernameLabel": "Nom d'utilisateur",
+      "emailLabel": "E-mail",
       "rolesLabel": "Rôles",
       "statusLabel": "Statut",
       "statusPending": "En attente",
@@ -247,6 +248,7 @@
   "auth": {
     "heading": "Connexion",
     "usernameLabel": "Nom d'utilisateur",
+      "emailLabel": "E-mail",
     "passwordLabel": "Mot de passe",
     "submit": "Se connecter",
     "invalidCredentials": "Nom d'utilisateur ou mot de passe incorrect.",

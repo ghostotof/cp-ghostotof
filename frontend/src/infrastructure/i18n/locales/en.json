@@ -170,6 +170,7 @@
     "users": {
       "listTitle": "Registered users",
       "usernameLabel": "Username",
+      "emailLabel": "Email",
       "rolesLabel": "Roles",
       "statusLabel": "Status",
       "statusPending": "Pending",
@@ -247,6 +248,7 @@
   "auth": {
     "heading": "Login",
     "usernameLabel": "Username",
+      "emailLabel": "Email",
     "passwordLabel": "Password",
     "submit": "Log in",
     "invalidCredentials": "Incorrect username or password.",
