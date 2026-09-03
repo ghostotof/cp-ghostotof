@@ -2,24 +2,72 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminUsers } from '../../../application/admin/users/useAdminUsers'
-import { useAuth } from '../../../application/auth/useAuth'
+import { useAuth, ROLE_SUPER } from '../../../application/auth/useAuth'
+import { SUPPORTED_LOCALES, LOCALE_NATIVE_NAMES, isSupportedLocale, type Locale } from '../../../domain/portfolio/entities/Locale'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
+import BaseSelect from '../../ui/BaseSelect.vue'
 import type { AdminUser } from '../../../domain/admin/users/entities/AdminUser'
 
 const { t } = useI18n()
-const { users, isLoading, hasError, errorMessage, remove, changePassword } = useAdminUsers()
+const { users, isLoading, hasError, errorMessage, invite, setSuperAdmin, resendInvitation, remove, changePassword } = useAdminUsers()
 const { user: currentUser } = useAuth()
 
-const changingPasswordForUserId = ref<number | null>(null)
-const newPassword = ref('')
-const isSubmittingPassword = ref(false)
-const passwordChanged = ref(false)
+// --- Invitation ---
+const inviteEmail = ref('')
+const inviteLocale = ref('fr')
+const isInviting = ref(false)
+const invitedUsername = ref<string | null>(null)
 
+const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: LOCALE_NATIVE_NAMES[locale] }))
+
+function selectedLocale(): Locale {
+  return isSupportedLocale(inviteLocale.value) ? inviteLocale.value : 'fr'
+}
+
+async function handleInvite(): Promise<void> {
+  invitedUsername.value = null
+  isInviting.value = true
+  const created = await invite(inviteEmail.value, selectedLocale())
+  isInviting.value = false
+
+  if (created) {
+    invitedUsername.value = created.username
+    inviteEmail.value = ''
+  }
+}
+
+// --- Rôles / statut ---
 const errorText = computed(() => (errorMessage.value ? t(`admin.users.errors.${errorMessage.value.reason}`) : null))
 
 function isCurrentUser(user: AdminUser): boolean {
   return user.username === currentUser.value?.username
 }
+
+function isSuperAdmin(user: AdminUser): boolean {
+  return user.roles.includes(ROLE_SUPER)
+}
+
+async function handleToggleSuperAdmin(user: AdminUser): Promise<void> {
+  await setSuperAdmin(user.id, !isSuperAdmin(user))
+}
+
+// --- Renvoi d'invitation ---
+const resendSuccessForUserId = ref<number | null>(null)
+
+async function handleResend(user: AdminUser): Promise<void> {
+  resendSuccessForUserId.value = null
+  await resendInvitation(user.id, selectedLocale())
+
+  if (!errorMessage.value) {
+    resendSuccessForUserId.value = user.id
+  }
+}
+
+// --- Changement de mot de passe ---
+const changingPasswordForUserId = ref<number | null>(null)
+const newPassword = ref('')
+const isSubmittingPassword = ref(false)
+const passwordChanged = ref(false)
 
 function startChangePassword(user: AdminUser): void {
   changingPasswordForUserId.value = user.id
@@ -63,8 +111,60 @@ async function handleDelete(user: AdminUser): Promise<void> {
   <div class="d-flex flex-column gap-4">
     <div class="surface-panel p-3 p-sm-4">
       <h2 class="h6 fw-bold text-white mb-3">
+        {{ t('admin.users.invite.title') }}
+      </h2>
+
+      <form
+        novalidate
+        class="admin-user-invite-form d-flex flex-column flex-sm-row gap-3 align-items-sm-end"
+        @submit.prevent="handleInvite"
+      >
+        <div class="flex-grow-1">
+          <BaseTextInput
+            id="admin-user-invite-email"
+            v-model="inviteEmail"
+            type="email"
+            :label="t('admin.users.invite.emailLabel')"
+            required
+          />
+        </div>
+        <div>
+          <BaseSelect
+            id="admin-user-invite-locale"
+            v-model="inviteLocale"
+            :label="t('admin.users.invite.localeLabel')"
+            :options="localeOptions"
+          />
+        </div>
+        <button
+          type="submit"
+          class="btn btn-gradient mb-3"
+          :disabled="isInviting"
+        >
+          {{ isInviting ? t('admin.users.invite.sending') : t('admin.users.invite.submit') }}
+        </button>
+      </form>
+
+      <p
+        v-if="invitedUsername"
+        class="text-success small mb-0"
+      >
+        {{ t('admin.users.invite.success', { username: invitedUsername }) }}
+      </p>
+    </div>
+
+    <div class="surface-panel p-3 p-sm-4">
+      <h2 class="h6 fw-bold text-white mb-3">
         {{ t('admin.users.listTitle') }}
       </h2>
+
+      <p
+        v-if="errorText"
+        class="text-danger"
+        role="alert"
+      >
+        {{ errorText }}
+      </p>
 
       <p
         v-if="isLoading"
@@ -99,6 +199,9 @@ async function handleDelete(user: AdminUser): Promise<void> {
                 {{ t('admin.users.rolesLabel') }}
               </th>
               <th scope="col">
+                {{ t('admin.users.statusLabel') }}
+              </th>
+              <th scope="col">
                 <span class="visually-hidden">{{ t('admin.users.actions') }}</span>
               </th>
             </tr>
@@ -111,7 +214,32 @@ async function handleDelete(user: AdminUser): Promise<void> {
               <tr>
                 <td>{{ user.username }}</td>
                 <td>{{ user.roles.join(', ') }}</td>
+                <td>
+                  <span
+                    class="badge"
+                    :class="'pending' === user.status ? 'text-bg-warning' : 'text-bg-success'"
+                  >
+                    {{ 'pending' === user.status ? t('admin.users.statusPending') : t('admin.users.statusActive') }}
+                  </span>
+                </td>
                 <td class="text-end">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-light me-2"
+                    :disabled="isCurrentUser(user)"
+                    :title="isCurrentUser(user) ? t('admin.users.cannotChangeOwnRoles') : undefined"
+                    @click="handleToggleSuperAdmin(user)"
+                  >
+                    {{ isSuperAdmin(user) ? t('admin.users.demote') : t('admin.users.promote') }}
+                  </button>
+                  <button
+                    v-if="'pending' === user.status"
+                    type="button"
+                    class="btn btn-sm btn-outline-light me-2"
+                    @click="handleResend(user)"
+                  >
+                    {{ t('admin.users.resendInvitation') }}
+                  </button>
                   <button
                     type="button"
                     class="btn btn-sm btn-outline-light me-2"
@@ -130,11 +258,19 @@ async function handleDelete(user: AdminUser): Promise<void> {
                   </button>
                 </td>
               </tr>
+              <tr v-if="resendSuccessForUserId === user.id">
+                <td
+                  colspan="4"
+                  class="text-success small"
+                >
+                  {{ t('admin.users.resendSuccess') }}
+                </td>
+              </tr>
               <tr v-if="changingPasswordForUserId === user.id">
-                <td colspan="3">
+                <td colspan="4">
                   <form
                     novalidate
-                    class="d-flex flex-column gap-2 py-2"
+                    class="admin-user-password-form d-flex flex-column gap-2 py-2"
                     @submit.prevent="handleSubmitPassword"
                   >
                     <BaseTextInput
@@ -150,13 +286,6 @@ async function handleDelete(user: AdminUser): Promise<void> {
                       class="text-success small mb-0"
                     >
                       {{ t('admin.users.passwordChanged') }}
-                    </p>
-                    <p
-                      v-if="errorText"
-                      class="text-danger small mb-0"
-                      role="alert"
-                    >
-                      {{ errorText }}
                     </p>
 
                     <div class="d-flex gap-2">

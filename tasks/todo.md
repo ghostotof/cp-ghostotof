@@ -43,8 +43,8 @@ Git flow : brancher `feature/admin-user-provisioning` depuis `develop` avant tou
 
 - [x] 5.1 `domain/admin/users` : `AdminUser` (+ `email: string|null`, `status: 'pending'|'active'`) + `AdminUserRepository` (+ `invite(email, Locale)`, `setSuperAdmin(id, grant)`, `resendInvitation(id, Locale)`) + `AdminUserError` (+ `email-taken`, `cannot-modify-own-roles`, `cannot-demote-last-super`, `already-activated`) + `HttpAdminUserRepository` (mapping 409 par opération + fragment de `detail` pour les 2 gardes de rôle) + `HttpAdminUserRepository.spec.ts` (14) ; fixtures/stubs de `useAdminUsers.spec` + `AdminUsersPage.spec` mis à jour (compilation verte)
 - [x] 5.2 `useAdminUsers` expose `invite(email, Locale)` (retourne le compte créé ou `null`, recharge) / `setSuperAdmin(id, grant)` (`runAction`, recharge) / `resendInvitation(id, Locale)` (`runAction`, pas de recharge) ; `useAdminUsers.spec` (+6)
-- [ ] 5.3 `AdminUsersPage.vue` : formulaire « Inviter » (e-mail + `BaseSelect` langue) + colonne Statut + bouton Promouvoir/Rétrograder (disabled sur sa ligne) + bouton « Renvoyer l'invitation » (si `pending`) ; i18n fr+en ; `AdminUsersPage.spec.ts`
-- [ ] **CHECKPOINT 5** — `npm run lint && npm run build && npm test` verts + revue visuelle `/fr/admin/users`
+- [x] 5.3 `AdminUsersPage.vue` : formulaire « Inviter » (`BaseTextInput` e-mail + `BaseSelect` langue, `LOCALE_NATIVE_NAMES`) + message de succès avec username + colonne Statut (badge) + bouton Promouvoir/Rétrograder (disabled + title sur sa ligne) + bouton « Renvoyer l'invitation » (lignes `pending`, succès inline) + alerte d'erreur partagée en tête de liste ; i18n fr+en (`admin.users.invite.*`, `statusPending/Active`, `promote/demote`, `resendInvitation/Success`, `errors.{email-taken,cannot-modify-own-roles,cannot-demote-last-super,already-activated}`) ; `AdminUsersPage.spec` (+6, +2 tests existants recalés sur `form.admin-user-password-form`)
+- [x] **CHECKPOINT 5** — `npm run lint && npm run build && npm test` verts (362) ✅ ; reste : revue visuelle `/fr/admin/users`
 
 ## Phase 6 — Frontend : page publique de définition du mot de passe
 

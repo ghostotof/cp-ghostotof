@@ -13,17 +13,22 @@ import { AdminUserError } from '../../../../src/domain/admin/users/errors/AdminU
 
 const SUPER: AdminUser = { id: 1, username: 'super', email: null, roles: ['ROLE_SUPER', 'ROLE_USER'], status: 'active' }
 const JANE: AdminUser = { id: 2, username: 'jane', email: null, roles: ['ROLE_USER'], status: 'active' }
+const NEWCOMER: AdminUser = { id: 3, username: 'newcomer', email: 'newcomer@example.com', roles: ['ROLE_USER'], status: 'pending' }
 
 function createStubRepository(overrides: Partial<AdminUserRepository> = {}): AdminUserRepository {
   return {
-    list: vi.fn(async () => [SUPER, JANE]),
-    invite: vi.fn(async () => JANE),
+    list: vi.fn(async () => [SUPER, JANE, NEWCOMER]),
+    invite: vi.fn(async () => NEWCOMER),
     setSuperAdmin: vi.fn(async () => undefined),
     resendInvitation: vi.fn(async () => undefined),
     remove: vi.fn(async () => undefined),
     changePassword: vi.fn(async () => undefined),
     ...overrides,
   }
+}
+
+function rowFor(wrapper: Awaited<ReturnType<typeof mountPage>>, username: string) {
+  return wrapper.findAll('tbody tr').find((row) => row.text().includes(username))
 }
 
 function createStubAuthRepository(user: AuthenticatedUser | null): AuthRepository {
@@ -81,6 +86,78 @@ describe('AdminUsersPage', () => {
     expect(wrapper.text()).toContain('ROLE_SUPER')
   })
 
+  it('le formulaire d\'invitation appelle invite avec {email, locale} et affiche le username retourné', async () => {
+    await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
+    const repository = createStubRepository()
+    const wrapper = await mountPage(repository)
+
+    await wrapper.get('#admin-user-invite-email').setValue('jean.dupont@example.com')
+    await wrapper.get('form.admin-user-invite-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(repository.invite).toHaveBeenCalledWith('jean.dupont@example.com', 'fr')
+    expect(wrapper.text()).toContain('newcomer')
+    expect(wrapper.text()).toContain('Invitation envoyée')
+  })
+
+  it('affiche un message d\'erreur si l\'invitation échoue (email déjà pris) sans casser la liste', async () => {
+    await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
+    const repository = createStubRepository({
+      invite: vi.fn(async () => Promise.reject(new AdminUserError('email-taken', 'x'))),
+    })
+    const wrapper = await mountPage(repository)
+
+    await wrapper.get('#admin-user-invite-email').setValue('x@y.fr')
+    await wrapper.get('form.admin-user-invite-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(wrapper.get('[role="alert"]').text()).toBe('Un compte existe déjà avec cette adresse e-mail.')
+    expect(wrapper.text()).toContain('jane')
+  })
+
+  it('le bouton de rôle promeut une autre ligne via setSuperAdmin(id, true)', async () => {
+    await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
+    const repository = createStubRepository()
+    const wrapper = await mountPage(repository)
+
+    const button = rowFor(wrapper, 'jane')?.findAll('button').find((b) => b.text().includes('Promouvoir'))
+    await button?.trigger('click')
+    await flushPromises()
+
+    expect(repository.setSuperAdmin).toHaveBeenCalledWith(2, true)
+  })
+
+  it('le bouton de rôle est désactivé sur sa propre ligne', async () => {
+    await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
+    const wrapper = await mountPage()
+
+    const button = rowFor(wrapper, 'super')?.findAll('button').find((b) => b.text().includes('admin'))
+    expect(button?.attributes('disabled')).toBeDefined()
+  })
+
+  it('le bouton « Renvoyer l\'invitation » n\'apparaît que pour les lignes en attente', async () => {
+    await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
+    const repository = createStubRepository()
+    const wrapper = await mountPage(repository)
+
+    const janeResend = rowFor(wrapper, 'jane')?.findAll('button').find((b) => b.text().includes('Renvoyer'))
+    expect(janeResend).toBeUndefined()
+
+    const newcomerResend = rowFor(wrapper, 'newcomer')?.findAll('button').find((b) => b.text().includes('Renvoyer'))
+    await newcomerResend?.trigger('click')
+    await flushPromises()
+
+    expect(repository.resendInvitation).toHaveBeenCalledWith(3, 'fr')
+  })
+
+  it('affiche le statut En attente / Actif', async () => {
+    await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
+    const wrapper = await mountPage()
+
+    expect(rowFor(wrapper, 'newcomer')?.text()).toContain('En attente')
+    expect(rowFor(wrapper, 'jane')?.text()).toContain('Actif')
+  })
+
   it("affiche un message si le chargement échoue", async () => {
     await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
     const repository = createStubRepository({ list: vi.fn(async () => Promise.reject(new Error('unavailable'))) })
@@ -124,7 +201,7 @@ describe('AdminUsersPage', () => {
     await changeButtons[0]?.trigger('click')
 
     await wrapper.get('input[type="password"]').setValue('NewPassword123')
-    await wrapper.get('form').trigger('submit.prevent')
+    await wrapper.get('form.admin-user-password-form').trigger('submit.prevent')
     await flushPromises()
 
     expect(repository.changePassword).toHaveBeenCalledWith(1, 'NewPassword123')
@@ -142,7 +219,7 @@ describe('AdminUsersPage', () => {
     await changeButtons[0]?.trigger('click')
 
     await wrapper.get('input[type="password"]').setValue('short')
-    await wrapper.get('form').trigger('submit.prevent')
+    await wrapper.get('form.admin-user-password-form').trigger('submit.prevent')
     await flushPromises()
 
     expect(wrapper.get('[role="alert"]').text()).toBe('Le mot de passe doit contenir au moins 8 caractères.')
