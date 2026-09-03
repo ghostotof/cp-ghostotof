@@ -48,7 +48,7 @@ Git flow : brancher `feature/admin-user-provisioning` depuis `develop` avant tou
 
 ## Phase 6 — Frontend : page publique de définition du mot de passe
 
-- [ ] 6.1 `domain/account` (`AccountRepository`, `PasswordSetupLinkError`) + `infrastructure/account/HttpAccountRepository` (`GET`/`POST /api/account/password-setup/{token}`, mapping 404/410/422/429) + spec
+- [x] 6.1 `domain/account` : `AccountRepository` (`validateSetupToken` / `completePasswordSetup`) + `PasswordSetupLinkError` (`invalid`/`expired`/`weak-password`/`rate-limited`/`unknown`) + `infrastructure/account/HttpAccountRepository` (fetch nu comme HttpContactRepository — endpoint public, pas de credentials/CSRF ; mapping 404→invalid / 410→expired / 422→weak-password / 429→rate-limited) + `HttpAccountRepository.spec` (8)
 - [ ] 6.2 `application/account/useAccountPasswordSetup` (états `checking|ready|invalid|expired|submitting|done|error`) + provide `ACCOUNT_REPOSITORY` dans `main.ts` + spec
 - [ ] 6.3 `SetPasswordPage.vue` + route publique `/:locale/set-password/:token` (pas de `requiresAuth`, `meta.noindex`) + `seo.ts` gère `noindex` + i18n `account.setPassword.*` / `seo.setPassword.*` fr+en + specs (page + router public + noindex)
 - [ ] **CHECKPOINT 6** — gate frontend vert + **démo bout-en-bout** (invite → Mailpit → set-password → login)
