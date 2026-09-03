@@ -255,6 +255,21 @@ jobs:
             echo "GET /api/me a répondu $status (401 attendu, non authentifié) : l'API ne semble pas avoir démarré correctement"
             exit 1
           fi
+      - name: Configure kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_PREPROD }}" > ~/.kube/config
+      # Incident v0.5.0 : RabbitMQ en CrashLoopBackOff (donc le worker aussi,
+      # par dépendance) n'était détecté ni par /healthz ni par /api/me — les
+      # deux endpoints HTTP démarrent très bien même sans broker AMQP
+      # fonctionnel, seule la publication d'un message (POST /api/contact)
+      # échouait réellement. `rollout status` échoue/timeout si le déploiement
+      # n'atteint jamais l'état Ready, ce qui aurait fait échouer ce job et
+      # déclenché rollback-preprod avant même d'arriver au gate deploy-prod.
+      - name: Vérifie RabbitMQ et le worker
+        run: |
+          kubectl -n preprod rollout status deployment/rabbitmq --timeout=60s
+          kubectl -n preprod rollout status deployment/worker --timeout=60s
 
   # Gate bloquant : une régression de sécurité en préprod empêche d'atteindre
   # le gate d'approbation manuelle de deploy-prod (cf. son `needs`).
