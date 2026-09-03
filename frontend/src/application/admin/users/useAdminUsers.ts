@@ -1,6 +1,7 @@
 import { inject, ref, type InjectionKey, type Ref } from 'vue'
 import type { AdminUser } from '../../../domain/admin/users/entities/AdminUser'
 import type { AdminUserRepository } from '../../../domain/admin/users/repositories/AdminUserRepository'
+import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { AdminUserError } from '../../../domain/admin/users/errors/AdminUserError'
 import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
 
@@ -12,6 +13,10 @@ export interface UseAdminUsersResult {
   hasError: Ref<boolean>
   errorMessage: Ref<AdminUserError | null>
   load: () => Promise<void>
+  /** Retourne le compte créé, ou `null` si l'invitation a échoué (errorMessage renseigné). */
+  invite: (email: string, locale: Locale) => Promise<AdminUser | null>
+  setSuperAdmin: (id: number, grant: boolean) => Promise<void>
+  resendInvitation: (id: number, locale: Locale) => Promise<void>
   remove: (id: number) => Promise<void>
   changePassword: (id: number, newPassword: string) => Promise<void>
 }
@@ -66,6 +71,27 @@ export function useAdminUsers(): UseAdminUsersResult {
     }
   }
 
+  const invite = async (email: string, locale: Locale): Promise<AdminUser | null> => {
+    errorMessage.value = null
+
+    try {
+      const created = await repository.invite(email, locale)
+      await load()
+
+      return created
+    } catch (error) {
+      errorMessage.value = error instanceof AdminUserError ? error : new AdminUserError('unknown', 'Unknown error')
+
+      return null
+    }
+  }
+
+  const setSuperAdmin = (id: number, grant: boolean): Promise<void> =>
+    runAction(() => repository.setSuperAdmin(id, grant), true)
+
+  const resendInvitation = (id: number, locale: Locale): Promise<void> =>
+    runAction(() => repository.resendInvitation(id, locale), false)
+
   const remove = (id: number): Promise<void> => runAction(() => repository.remove(id), true)
 
   const changePassword = (id: number, newPassword: string): Promise<void> =>
@@ -73,5 +99,5 @@ export function useAdminUsers(): UseAdminUsersResult {
 
   void load()
 
-  return { users, isLoading, hasError, errorMessage, load, remove, changePassword }
+  return { users, isLoading, hasError, errorMessage, load, invite, setSuperAdmin, resendInvitation, remove, changePassword }
 }

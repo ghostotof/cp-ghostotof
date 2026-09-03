@@ -42,7 +42,7 @@ Git flow : brancher `feature/admin-user-provisioning` depuis `develop` avant tou
 ## Phase 5 — Frontend : page d'administration des utilisateurs
 
 - [x] 5.1 `domain/admin/users` : `AdminUser` (+ `email: string|null`, `status: 'pending'|'active'`) + `AdminUserRepository` (+ `invite(email, Locale)`, `setSuperAdmin(id, grant)`, `resendInvitation(id, Locale)`) + `AdminUserError` (+ `email-taken`, `cannot-modify-own-roles`, `cannot-demote-last-super`, `already-activated`) + `HttpAdminUserRepository` (mapping 409 par opération + fragment de `detail` pour les 2 gardes de rôle) + `HttpAdminUserRepository.spec.ts` (14) ; fixtures/stubs de `useAdminUsers.spec` + `AdminUsersPage.spec` mis à jour (compilation verte)
-- [ ] 5.2 `useAdminUsers` expose `invite` / `setSuperAdmin` / `resendInvitation` (via `runAction`, reload liste) ; spec mise à jour
+- [x] 5.2 `useAdminUsers` expose `invite(email, Locale)` (retourne le compte créé ou `null`, recharge) / `setSuperAdmin(id, grant)` (`runAction`, recharge) / `resendInvitation(id, Locale)` (`runAction`, pas de recharge) ; `useAdminUsers.spec` (+6)
 - [ ] 5.3 `AdminUsersPage.vue` : formulaire « Inviter » (e-mail + `BaseSelect` langue) + colonne Statut + bouton Promouvoir/Rétrograder (disabled sur sa ligne) + bouton « Renvoyer l'invitation » (si `pending`) ; i18n fr+en ; `AdminUsersPage.spec.ts`
 - [ ] **CHECKPOINT 5** — `npm run lint && npm run build && npm test` verts + revue visuelle `/fr/admin/users`
 
