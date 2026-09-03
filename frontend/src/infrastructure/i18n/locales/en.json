@@ -25,9 +25,11 @@
   "admin": {
     "heading": "Administration",
     "navigation": "Administration navigation",
+    "contentNavigation": "Content navigation",
     "comingSoon": "This section will be available soon.",
     "localeLabel": "Language",
     "nav": {
+      "content": "Content",
       "technologies": "Technologies",
       "about": "About",
       "quality": "Quality",

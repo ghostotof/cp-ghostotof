@@ -1,17 +1,27 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
 const route = useRoute()
 const { t } = useI18n()
 
-const sections = [
+/**
+ * Sections d'édition de contenu, regroupées sous un seul onglet « Contenu »
+ * dans la navigation de 1er niveau. Elles gardent leurs routes (`/admin/<section>`,
+ * URL inchangées) : le regroupement est purement présentationnel, la sous-nav
+ * ci-dessous n'apparaît que lorsqu'on est déjà sur l'une de ces routes.
+ */
+const contentSections = [
   { name: 'admin-technologies', labelKey: 'admin.nav.technologies' },
   { name: 'admin-about', labelKey: 'admin.nav.about' },
   { name: 'admin-quality', labelKey: 'admin.nav.quality' },
   { name: 'admin-stats', labelKey: 'admin.nav.stats' },
-  { name: 'admin-users', labelKey: 'admin.nav.users' },
 ] as const
+
+const isContentRoute = computed(() =>
+  contentSections.some((section) => section.name === route.name),
+)
 </script>
 
 <template>
@@ -25,7 +35,30 @@ const sections = [
       :aria-label="t('admin.navigation')"
     >
       <RouterLink
-        v-for="section in sections"
+        :to="{ name: 'admin-technologies' }"
+        class="btn btn-sm"
+        :class="isContentRoute ? 'btn-gradient' : 'btn-outline-light'"
+        :aria-current="isContentRoute ? 'page' : undefined"
+      >
+        {{ t('admin.nav.content') }}
+      </RouterLink>
+      <RouterLink
+        :to="{ name: 'admin-users' }"
+        class="btn btn-sm"
+        :class="'admin-users' === route.name ? 'btn-gradient' : 'btn-outline-light'"
+        :aria-current="'admin-users' === route.name ? 'page' : undefined"
+      >
+        {{ t('admin.nav.users') }}
+      </RouterLink>
+    </nav>
+
+    <nav
+      v-if="isContentRoute"
+      class="d-flex flex-wrap gap-2"
+      :aria-label="t('admin.contentNavigation')"
+    >
+      <RouterLink
+        v-for="section in contentSections"
         :key="section.name"
         :to="{ name: section.name }"
         class="btn btn-sm"
