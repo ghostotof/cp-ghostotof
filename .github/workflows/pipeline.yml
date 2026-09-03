@@ -57,6 +57,17 @@ jobs:
         # les avis sur l'outillage de dev (phpunit, maker...) ne cassent pas le
         # pipeline mais restent à traiter via Dependabot (.github/dependabot.yml).
         run: composer audit --no-dev --no-interaction
+      - name: Génère les secrets d'environnement de test (jamais commités, cf. .gitignore)
+        # backend/.env.test n'est plus versionné (alerte GitGuardian sur sa
+        # copie .env.dev jumelle) : les valeurs sont générées à la volée,
+        # propres à chaque run, dans .env.test.local (déjà gitignored via
+        # /.env.*.local).
+        working-directory: backend
+        run: |
+          cat > .env.test.local <<EOF
+          APP_SECRET=$(openssl rand -hex 16)
+          JWT_PASSPHRASE=$(openssl rand -hex 33)
+          EOF
       - name: Génère le keypair JWT (jamais commité, cf. .gitignore)
         working-directory: backend
         run: php bin/console lexik:jwt:generate-keypair --skip-if-exists --no-interaction
