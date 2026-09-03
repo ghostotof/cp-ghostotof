@@ -49,7 +49,7 @@ Git flow : brancher `feature/admin-user-provisioning` depuis `develop` avant tou
 ## Phase 6 — Frontend : page publique de définition du mot de passe
 
 - [x] 6.1 `domain/account` : `AccountRepository` (`validateSetupToken` / `completePasswordSetup`) + `PasswordSetupLinkError` (`invalid`/`expired`/`weak-password`/`rate-limited`/`unknown`) + `infrastructure/account/HttpAccountRepository` (fetch nu comme HttpContactRepository — endpoint public, pas de credentials/CSRF ; mapping 404→invalid / 410→expired / 422→weak-password / 429→rate-limited) + `HttpAccountRepository.spec` (8)
-- [ ] 6.2 `application/account/useAccountPasswordSetup` (états `checking|ready|invalid|expired|submitting|done|error`) + provide `ACCOUNT_REPOSITORY` dans `main.ts` + spec
+- [x] 6.2 `application/account/useAccountPasswordSetup` : `state` (`checking|ready|submitting|done|invalid|expired|error`) + `errorReason` + `validate(token)` / `submit(token, password)`. `invalid`/`expired` terminaux ; échec récupérable de `submit` (weak-password, rate-limited) → retour `ready` + `errorReason`. `ACCOUNT_REPOSITORY` fourni dans `main.ts`. `useAccountPasswordSetup.spec` (9)
 - [ ] 6.3 `SetPasswordPage.vue` + route publique `/:locale/set-password/:token` (pas de `requiresAuth`, `meta.noindex`) + `seo.ts` gère `noindex` + i18n `account.setPassword.*` / `seo.setPassword.*` fr+en + specs (page + router public + noindex)
 - [ ] **CHECKPOINT 6** — gate frontend vert + **démo bout-en-bout** (invite → Mailpit → set-password → login)
 
