@@ -60,6 +60,17 @@ final class CsrfCookieRequestSubscriberTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    public function testUnsafeMethodOnAccountPasswordSetupIsExcluded(): void
+    {
+        // Endpoint public (définition de mot de passe via lien e-mail) :
+        // l'appelant est anonyme, il n'a pas de cookie XSRF-TOKEN à double-submit.
+        $request = Request::create('/api/account/password-setup/'.bin2hex(random_bytes(32)), 'POST');
+
+        $this->subscriber->__invoke($this->mainRequestEvent($request));
+
+        $this->addToAssertionCount(1);
+    }
+
     public function testUnsafeMethodOutsideApiIsNeverChecked(): void
     {
         $request = Request::create('/login', 'POST');

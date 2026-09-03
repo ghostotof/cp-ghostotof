@@ -43,6 +43,12 @@ api_platform:
         # Levée par SendAccountInvitationHandler (worker Messenger async) ;
         # entrée défensive au cas où l'envoi serait un jour synchrone.
         App\Security\User\Domain\Exception\AccountInvitationDeliveryException: 503
+        # Parcours public de définition de mot de passe (/api/account/password-setup) :
+        # jeton inconnu -> 404, expiré ou déjà consommé -> 410 (cas fusionnés
+        # pour ne pas révéler qu'un lien a servi), quota IP dépassé -> 429.
+        App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException: 404
+        App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException: 410
+        App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException: 429
     defaults:
         stateless: true
         cache_headers:
