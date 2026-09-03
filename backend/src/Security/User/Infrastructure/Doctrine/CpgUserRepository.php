@@ -27,6 +27,11 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
         return $this->findOneBy(['username' => $username]);
     }
 
+    public function findOneByEmail(string $email): ?CpgUser
+    {
+        return $this->findOneBy(['email' => $email]);
+    }
+
     public function findOneById(int $id): ?CpgUser
     {
         return $this->find($id);

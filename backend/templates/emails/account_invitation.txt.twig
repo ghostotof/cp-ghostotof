@@ -1,0 +1,18 @@
+{% extends 'emails/base.txt.twig' %}
+
+{% block preheader %}{{ strings.intro }}{% endblock %}
+
+{% block body %}
+{{ strings.heading }}
+
+{{ strings.intro }}
+
+{{ strings.usernameLabel }} : {{ username }}
+
+{{ strings.cta }} :
+{{ setupUrl }}
+
+{{ strings.expiryNote }}
+
+{{ strings.ignoreNote }}
+{% endblock %}
