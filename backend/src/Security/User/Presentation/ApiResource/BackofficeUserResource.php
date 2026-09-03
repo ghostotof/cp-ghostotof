@@ -24,6 +24,10 @@ use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserProvider;
  */
 #[ApiResource(
     shortName: 'BackofficeUser',
+    // Garde `email: null` dans la réponse (défaut API Platform : les valeurs
+    // nulles sont omises) : le frontend attend toujours la clé pour distinguer
+    // « compte sans e-mail » de « champ absent ».
+    normalizationContext: ['skip_null_values' => false],
     operations: [
         new GetCollection(
             uriTemplate: '/backoffice/users',
