@@ -66,4 +66,14 @@ DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/$
 MESSENGER_TRANSPORT_DSN="amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/%2f/messages"
 LOCALENV
 
+# .env.local n'est jamais chargé par Symfony en environnement test (comportement
+# documenté du composant Dotenv) : il faut donc son propre DATABASE_URL. Même
+# nom de base que le dev : config/packages/doctrine.yaml ajoute déjà un
+# dbname_suffix "_test" en env test (défaut Flex, pensé pour ParaTest) -> la
+# base réelle ("${POSTGRES_DB}_test") reste séparée des données du dev.
+cat > .env.test.local <<TESTENV
+# Généré automatiquement à l'initialisation du projet — non versionné.
+DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}?serverVersion=16&charset=utf8"
+TESTENV
+
 echo "✔ Projet Symfony initialisé."

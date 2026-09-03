@@ -9,6 +9,8 @@ versions.lock
 backend/vendor/
 backend/var/
 backend/.env.local
+backend/.env.dev
+backend/.env.*.local
 backend/public/assets/
 backend/public/bundles/
 
