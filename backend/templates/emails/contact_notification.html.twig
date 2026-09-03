@@ -1,0 +1,30 @@
+{#
+   Notification interne : un visiteur a envoyé un message via le formulaire de
+   contact. Le nom ET l'e-mail de l'expéditeur sont rappelés dans le corps (le
+   Reply-To ne suffit pas si le destinataire veut recontacter la personne hors
+   du fil, ex. créer un compte). Le message est échappé (nl2br échappe d'abord).
+#}
+{% extends 'emails/base.html.twig' %}
+
+{% block title %}Nouveau message de contact{% endblock %}
+
+{% block preheader %}{{ senderName }} — {{ senderEmail }}{% endblock %}
+
+{% block body %}
+    <h1 style="margin:0 0 16px; font-size:18px; font-weight:600; color:#1f2430;">Nouveau message de contact</h1>
+
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px; font-size:14px; line-height:1.6;">
+        <tr>
+            <td style="padding:2px 16px 2px 0; color:#6b7280; white-space:nowrap; vertical-align:top;">De</td>
+            <td style="padding:2px 0; color:#1f2430;">{{ senderName }}</td>
+        </tr>
+        <tr>
+            <td style="padding:2px 16px 2px 0; color:#6b7280; white-space:nowrap; vertical-align:top;">E-mail</td>
+            <td style="padding:2px 0; color:#1f2430;"><a href="mailto:{{ senderEmail }}" style="color:#7c3aed;">{{ senderEmail }}</a></td>
+        </tr>
+    </table>
+
+    <div style="padding:16px 20px; background-color:#f4f4f7; border-radius:8px; font-size:14px; line-height:1.6; color:#1f2430;">
+        {{ body|nl2br }}
+    </div>
+{% endblock %}
