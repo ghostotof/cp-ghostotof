@@ -11,12 +11,15 @@ import type { AuthRepository } from '../../../../src/domain/auth/repositories/Au
 import type { AuthenticatedUser } from '../../../../src/domain/auth/entities/AuthenticatedUser'
 import { AdminUserError } from '../../../../src/domain/admin/users/errors/AdminUserError'
 
-const SUPER: AdminUser = { id: 1, username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }
-const JANE: AdminUser = { id: 2, username: 'jane', roles: ['ROLE_USER'] }
+const SUPER: AdminUser = { id: 1, username: 'super', email: null, roles: ['ROLE_SUPER', 'ROLE_USER'], status: 'active' }
+const JANE: AdminUser = { id: 2, username: 'jane', email: null, roles: ['ROLE_USER'], status: 'active' }
 
 function createStubRepository(overrides: Partial<AdminUserRepository> = {}): AdminUserRepository {
   return {
     list: vi.fn(async () => [SUPER, JANE]),
+    invite: vi.fn(async () => JANE),
+    setSuperAdmin: vi.fn(async () => undefined),
+    resendInvitation: vi.fn(async () => undefined),
     remove: vi.fn(async () => undefined),
     changePassword: vi.fn(async () => undefined),
     ...overrides,

@@ -6,11 +6,14 @@ import type { AdminUserRepository } from '../../../../src/domain/admin/users/rep
 import type { AdminUser } from '../../../../src/domain/admin/users/entities/AdminUser'
 import { AdminUserError } from '../../../../src/domain/admin/users/errors/AdminUserError'
 
-const USER: AdminUser = { id: 1, username: 'jane', roles: ['ROLE_USER'] }
+const USER: AdminUser = { id: 1, username: 'jane', email: null, roles: ['ROLE_USER'], status: 'active' }
 
 function createStubRepository(overrides: Partial<AdminUserRepository> = {}): AdminUserRepository {
   return {
     list: vi.fn(async () => [USER]),
+    invite: vi.fn(async () => USER),
+    setSuperAdmin: vi.fn(async () => undefined),
+    resendInvitation: vi.fn(async () => undefined),
     remove: vi.fn(async () => undefined),
     changePassword: vi.fn(async () => undefined),
     ...overrides,
