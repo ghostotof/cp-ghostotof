@@ -406,7 +406,27 @@ make build-front-preprod API_URL=https://api-preprod.example.com TAG=1.2.3
 ### Backend day-to-day (inside `make sh`)
 
 Standard Symfony/Composer/Doctrine CLI applies: `php bin/console ...` (MakerBundle is available in dev —
-`make:entity`, `make:controller`, etc.), `composer require ...`. No `phpunit`/test binary is installed yet.
+`make:entity`, `make:controller`, etc.), `composer require ...`. PHPUnit is configured — `php bin/phpunit`
+runs the full suite (see "Project state" above for CI/PHPStan/Rector wiring).
+
+**No `.env.<env>` file is versioned in `backend/`** — `.env.dev` and `.env.test` used to be (Symfony's own
+default convention: `.env.$APP_ENV` is normally committed), but both were untracked after a GitGuardian alert
+flagged a disposable `JWT_PASSPHRASE` placeholder value as an exposed secret; only `backend/.env` (no real
+value, `APP_SECRET=` empty) stays tracked now. Don't re-add either file to git — extend `docker/php/init-symfony.sh`
+instead if a fresh-clone default needs to change. Locally, `init-symfony.sh` generates both `.env.local` (dev)
+and `.env.test.local` (test) with the Docker-internal `DATABASE_URL` (`database:5432`); since Symfony never
+loads `.env.local` when `APP_ENV=test`, the test env needs its own `.env.test.local` — same database name as
+dev is fine, `config/packages/doctrine.yaml`'s `dbname_suffix: '_test'` (Flex default, meant for ParaTest)
+already separates the real test DB (`<name>_test`) from dev data. `.env.dev`/`.env.test.local` also carry
+`JWT_PASSPHRASE`, which **must be identical between the two** — `lexik_jwt_authentication.yaml` doesn't split
+the keypair path per environment, so one `config/jwt/*.pem` (gitignored) is shared by both; after changing
+either passphrase, regenerate it with `php bin/console lexik:jwt:generate-keypair --overwrite`. CI
+(`.github/workflows/pipeline.yml`, job `test-backend`) doesn't use any of this — it writes its own
+`backend/.env.test.local` with fresh random secrets at the start of every run.
+
+If `make sh` / `docker compose exec backend` shows stale source (edits made on the host not reflected in the
+container — this bit a `.env.test.local` edit once), the bind-mount view has desynced — `docker compose
+restart backend` resyncs it (same symptom/fix as the frontend note below).
 
 ### Frontend day-to-day (inside `make sh-front`, or `../frontend` on the host)
 
