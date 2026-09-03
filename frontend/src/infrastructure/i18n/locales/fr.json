@@ -275,6 +275,29 @@
     "message": "La page que vous cherchez n'existe pas ou plus.",
     "backHome": "Retour à l'accueil"
   },
+  "account": {
+    "setPassword": {
+      "heading": "Définir mon mot de passe",
+      "checking": "Vérification du lien…",
+      "passwordLabel": "Mot de passe",
+      "confirmationLabel": "Confirmer le mot de passe",
+      "hint": "Au moins {min} caractères.",
+      "submit": "Définir le mot de passe",
+      "submitting": "Enregistrement…",
+      "successHeading": "Mot de passe défini",
+      "successBody": "Votre compte est prêt. Vous pouvez maintenant vous connecter.",
+      "toLogin": "Aller à la connexion",
+      "invalid": "Ce lien de définition de mot de passe n'est pas valide.",
+      "expired": "Ce lien a expiré ou a déjà été utilisé. Contactez la personne qui vous a invité pour en recevoir un nouveau.",
+      "errors": {
+        "tooShort": "Le mot de passe doit contenir au moins {min} caractères.",
+        "mismatch": "Les deux mots de passe ne correspondent pas.",
+        "weak-password": "Ce mot de passe a été refusé (trop courant ou présent dans une fuite connue). Choisissez-en un autre.",
+        "rate-limited": "Trop de tentatives. Réessayez dans quelques minutes.",
+        "unknown": "Une erreur est survenue. Réessayez plus tard."
+      }
+    }
+  },
   "seo": {
     "home": {
       "title": "Développeur Web Senior",
@@ -299,6 +322,10 @@
     "login": {
       "title": "Connexion",
       "description": "Connexion à l'espace protégé."
+    },
+    "setPassword": {
+      "title": "Définir mon mot de passe",
+      "description": "Définissez le mot de passe de votre compte via le lien reçu par e-mail."
     },
     "legalNotice": {
       "title": "Mentions légales",

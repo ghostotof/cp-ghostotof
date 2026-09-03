@@ -16,6 +16,8 @@ declare module 'vue-router' {
     requiresAuth?: boolean
     /** Rôle(s) requis en plus de requiresAuth (ex. ['ROLE_SUPER']) ; au moins un doit matcher. */
     roles?: readonly string[]
+    /** Exclut la page de l'indexation (`<meta name="robots" content="noindex, nofollow">`). */
+    noindex?: boolean
   }
 }
 
@@ -28,6 +30,7 @@ const AboutPage = () => import('../pages/AboutPage.vue')
 const ExperiencePage = () => import('../pages/ExperiencePage.vue')
 const ContactPage = () => import('../pages/ContactPage.vue')
 const LoginPage = () => import('../pages/LoginPage.vue')
+const SetPasswordPage = () => import('../pages/SetPasswordPage.vue')
 const LegalNoticePage = () => import('../pages/LegalNoticePage.vue')
 const PrivacyPolicyPage = () => import('../pages/PrivacyPolicyPage.vue')
 const NotFoundPage = () => import('../pages/NotFoundPage.vue')
@@ -93,6 +96,15 @@ export const router = createRouter({
               return `/${to.params.locale}`
             }
           },
+        },
+        {
+          // Parcours public : une personne invitée définit son mot de passe via
+          // le lien reçu par e-mail. Pas de requiresAuth (le compte n'est pas
+          // encore activé) ; noindex (lien à usage unique, rien à indexer).
+          path: 'set-password/:token',
+          name: 'set-password',
+          component: SetPasswordPage,
+          meta: { titleKey: 'seo.setPassword.title', descriptionKey: 'seo.setPassword.description', noindex: true },
         },
         {
           path: 'legal-notice',

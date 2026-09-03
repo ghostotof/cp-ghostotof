@@ -275,6 +275,29 @@
     "message": "The page you're looking for doesn't exist anymore.",
     "backHome": "Back to home"
   },
+  "account": {
+    "setPassword": {
+      "heading": "Set my password",
+      "checking": "Checking the link…",
+      "passwordLabel": "Password",
+      "confirmationLabel": "Confirm password",
+      "hint": "At least {min} characters.",
+      "submit": "Set password",
+      "submitting": "Saving…",
+      "successHeading": "Password set",
+      "successBody": "Your account is ready. You can now log in.",
+      "toLogin": "Go to login",
+      "invalid": "This password setup link is not valid.",
+      "expired": "This link has expired or has already been used. Ask the person who invited you for a new one.",
+      "errors": {
+        "tooShort": "The password must be at least {min} characters long.",
+        "mismatch": "The two passwords do not match.",
+        "weak-password": "This password was rejected (too common or found in a known breach). Please choose another one.",
+        "rate-limited": "Too many attempts. Please try again in a few minutes.",
+        "unknown": "Something went wrong. Please try again later."
+      }
+    }
+  },
   "seo": {
     "home": {
       "title": "Senior Web Developer",
@@ -299,6 +322,10 @@
     "login": {
       "title": "Login",
       "description": "Log in to the protected area."
+    },
+    "setPassword": {
+      "title": "Set my password",
+      "description": "Set your account password using the link you received by email."
     },
     "legalNotice": {
       "title": "Legal notice",

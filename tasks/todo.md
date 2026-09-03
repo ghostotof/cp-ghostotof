@@ -50,8 +50,8 @@ Git flow : brancher `feature/admin-user-provisioning` depuis `develop` avant tou
 
 - [x] 6.1 `domain/account` : `AccountRepository` (`validateSetupToken` / `completePasswordSetup`) + `PasswordSetupLinkError` (`invalid`/`expired`/`weak-password`/`rate-limited`/`unknown`) + `infrastructure/account/HttpAccountRepository` (fetch nu comme HttpContactRepository — endpoint public, pas de credentials/CSRF ; mapping 404→invalid / 410→expired / 422→weak-password / 429→rate-limited) + `HttpAccountRepository.spec` (8)
 - [x] 6.2 `application/account/useAccountPasswordSetup` : `state` (`checking|ready|submitting|done|invalid|expired|error`) + `errorReason` + `validate(token)` / `submit(token, password)`. `invalid`/`expired` terminaux ; échec récupérable de `submit` (weak-password, rate-limited) → retour `ready` + `errorReason`. `ACCOUNT_REPOSITORY` fourni dans `main.ts`. `useAccountPasswordSetup.spec` (9)
-- [ ] 6.3 `SetPasswordPage.vue` + route publique `/:locale/set-password/:token` (pas de `requiresAuth`, `meta.noindex`) + `seo.ts` gère `noindex` + i18n `account.setPassword.*` / `seo.setPassword.*` fr+en + specs (page + router public + noindex)
-- [ ] **CHECKPOINT 6** — gate frontend vert + **démo bout-en-bout** (invite → Mailpit → set-password → login)
+- [x] 6.3 `SetPasswordPage.vue` (états checking/ready/submitting/done/invalid/expired/error, garde front « ≥ 8 car. » + confirmation, écran de succès + lien /login) + route publique `/:locale/set-password/:token` (pas de `requiresAuth`, `meta.noindex`) + `RouteMeta.noindex` + `seo.ts` gère `meta.noindex` + i18n `account.setPassword.*` / `seo.setPassword.*` fr+en + `SetPasswordPage.spec` (5) + `seo.spec` (2 : noindex) + `adminGuard.spec` (+1 : route publique non bloquée)
+- [x] **CHECKPOINT 6** — gate frontend vert (388) ✅ ; reste : démo bout-en-bout (invite → Mailpit → set-password → login)
 
 ## Phase 7 — Wiring / CI / docs / smoke
 
