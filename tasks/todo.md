@@ -55,7 +55,7 @@ Git flow : brancher `feature/admin-user-provisioning` depuis `develop` avant tou
 
 ## Phase 7 — Wiring / CI / docs / smoke
 
-- [ ] 7.1 `APP_FRONTEND_BASE_URL` : `backend/.env` + `config/services.yaml` (`app.frontend_base_url`) + `docker/php/init-symfony.sh` + `.github/workflows/pipeline.yml` (writer `.env.test.local`)
+- [x] 7.1 `APP_FRONTEND_BASE_URL` : `backend/.env` + `config/services.yaml` (`app.frontend_base_url`) faits en 2.4 (couvrent dev/test/CI via le `.env` commité). Ajouté au `configMapGenerator` `backend-config` des overlays k8s **prod** (`https://cp-ghostotof.com`) et **preprod** (`https://preprod.cp-ghostotof.com`) — consommé par le backend ET le worker Messenger. `init-symfony.sh` / pipeline CI : rien à changer (URL hôte, valeur de base dans `.env`). `kubectl kustomize` des deux overlays OK.
 - [ ] 7.2 Vérifier l'empaquetage `backend/templates/` dans le stage `production` du `Dockerfile` + cache Twig sous `var/` (`make build-prod` + `cache:warmup --env=prod`)
 - [ ] 7.3 ADR `docs/adr/0001-admin-user-provisioning.md` + mise à jour `.claude/CLAUDE.md` (Security/User, Backoffice, « No Twig » nuancé, « CLI-only » / « no email stored » corrigés)
 - [ ] 7.4 Smoke test complet (`make up` + `make consume` + Mailpit) : invitation, set-password, login, promotion, suppression, e-mail contact ; tous les gates `make` verts

@@ -16,6 +16,10 @@ configMapGenerator:
     literals:
       - CORS_ALLOW_ORIGIN=^https://preprod\.cp-ghostotof\.com$
       - DEFAULT_URI=https://preprod.cp-ghostotof.com
+      # Base des liens construits dans les e-mails sortants (ex. lien de
+      # définition de mot de passe d'un utilisateur invité). Consommé par le
+      # backend ET le worker Messenger (envoi effectif des e-mails).
+      - APP_FRONTEND_BASE_URL=https://preprod.cp-ghostotof.com
       - CV_DOWNLOAD_FILENAME=cv.pdf
       # From des notifications du formulaire de contact (non secret, adresse
       # d'envoi dédiée du domaine validé Scaleway TEM). CONTACT_RECIPIENT_EMAIL
