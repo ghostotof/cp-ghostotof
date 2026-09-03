@@ -266,8 +266,13 @@ jobs:
       # échouait réellement. `rollout status` échoue/timeout si le déploiement
       # n'atteint jamais l'état Ready, ce qui aurait fait échouer ce job et
       # déclenché rollback-preprod avant même d'arriver au gate deploy-prod.
-      - name: Vérifie RabbitMQ et le worker
+      # Postgres ajouté par cohérence : /api/me ne le sollicite pas non plus
+      # (rejet 401 avant toute requête DB pour une requête non authentifiée),
+      # donc une régression équivalente sur postgres.yaml passerait tout aussi
+      # inaperçue sans cette vérification dédiée.
+      - name: Vérifie les datastores et le worker
         run: |
+          kubectl -n preprod rollout status deployment/postgres --timeout=60s
           kubectl -n preprod rollout status deployment/rabbitmq --timeout=60s
           kubectl -n preprod rollout status deployment/worker --timeout=60s
 
