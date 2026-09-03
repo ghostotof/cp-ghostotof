@@ -60,3 +60,19 @@ Git flow : brancher `feature/admin-user-provisioning` depuis `develop` avant tou
 - [x] 7.3 ADR `docs/adr/0001-admin-user-provisioning.md` (contexte, 8 décisions, conséquences, alternatives écartées) + `.claude/CLAUDE.md` : bullet Architecture (« No Twig » → « Twig only for emails »), section `Security/User/` réécrite (email, `PasswordSetupToken`, `CpgUserInviter`/`reinvite`, `UsernameGenerator`, `PasswordSetupService`, `CpgUserRoleAdministrator`, exceptions, endpoints publics `/api/account/password-setup`, exclusion CSRF), section Backoffice (`BackofficeUser` Post/roles/invitation + `skip_null_values`), section Frontend Backoffice (invite/promote/resend + slice publique `set-password`), pointeur ADR
 - [x] 7.4 Smoke test complet (Mailpit) : invitation→set-password→login + promotion + resend→409 (CHECKPOINT 6) ; `DELETE` autre compte→204, propre compte→409 ; e-mail de contact à la charte + nom/e-mail de l'expéditeur dans le corps (HTML + texte) + `Reply-To` inchangé. Gates : **245 backend + PHPStan + Rector**, **388 frontend + lint + build** — tous verts. Base dev + Mailpit remis à l'état initial.
 - [x] **CHECKPOINT 7 (final)** — branche poussée, PR #8 ouverte vers `develop` : https://github.com/ghostotof/cp-ghostotof/pull/8
+
+## Phase 8 — Suivi de la revue de code (`/code-review` sur PR #8)
+
+Revue en 9 constats. Traitement en deux lots.
+
+- [x] 8.1 Constats #1 / #4 / #5 / #8 — commit `42835f6` « Corrige 4 constats de la revue de code »
+  - #1 : un 422 sur l'invitation (adresse invalide) mappé sur son propre motif `email-invalid` (message dédié), au lieu de réutiliser `validation` (message « mot de passe ≥ 8 caractères »)
+  - #4 : `SetPasswordPage.vue` — l'état `error` (récupérable : rate-limit, réseau) propose un bouton « Réessayer » qui relance `validate`, au lieu d'un cul-de-sac
+  - #5 : `CpgUserInviter::invite()` — une violation de contrainte d'unicité concurrente (`UniqueConstraintViolationException`) est retraduite en `EmailAlreadyUsedException` (409) au lieu de remonter en 500
+  - #8 : le message « Invitation renvoyée » s'efface dès qu'une autre action de ligne est déclenchée (`clearFeedback()`)
+- [x] 8.2 Constats #2 / #3 / #6 — commit `cc2b058` « Applique les constats #2, #3, #6 de la revue de code »
+  - #3 : les deux 409 de `PUT /api/backoffice/users/{id}/roles` (auto-modification / dernier super-admin) portent un `type` stable dans le problem+json (`/errors/cannot-modify-own-roles`, `/errors/cannot-demote-last-super`) via `ProblemExceptionInterface` + trait `HasProblemType` ; `HttpAdminUserRepository.conflictReason()` lit `body.type` au lieu d'un `str_contains` sur le `detail` localisé (+ `ApiProblemBody.type` dans `BackofficeHttpClient`). Test fonctionnel : assertion sur `body['type']`
+  - #6 : `BackofficeUserRoleResource::$superAdmin` passe de `bool` à `?bool` + `#[Assert\NotNull]` → corps sans le champ = 422 (validation) au lieu de 500 (`TypeError` à la dénormalisation) ; garde `\assert` côté processor ; `testMissingSuperAdminFieldReturns422`
+  - #2 : les actions de ligne du tableau `/admin/users` (promotion, renvoi, mot de passe, suppression) regroupées derrière un bouton « ⋯ » ouvrant un menu ; un seul menu ouvert à la fois, fermeture au clic extérieur / Échap (patron CSS-only d'`AdminLayout`) ; i18n `admin.users.actionsFor` ; `AdminUsersPage.spec` réoutillé (`openRowMenu` / `rowButton` + test « un seul menu à la fois »)
+  - docs : `.claude/CLAUDE.md` (patron `HasProblemType`) + `docs/adr/0001` (section Conséquences)
+- [x] **CHECKPOINT 8** — gates verts : **247 backend** + PHPStan (level max) + Rector ; **392 frontend** + lint + build ; CI PR #8 intégralement verte. Commits poussés sur `feature/admin-user-provisioning`
