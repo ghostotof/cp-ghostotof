@@ -42,9 +42,11 @@ const apiErrorText = computed(() => {
   return t(`account.setPassword.errors.${reason}`)
 })
 
-onMounted(() => {
+function retry(): void {
   void validate(token())
-})
+}
+
+onMounted(retry)
 
 async function handleSubmit(): Promise<void> {
   localFormError.value = null
@@ -91,13 +93,21 @@ async function handleSubmit(): Promise<void> {
         {{ t('account.setPassword.expired') }}
       </p>
 
-      <p
-        v-else-if="'error' === state"
-        class="text-danger mb-0"
-        role="alert"
-      >
-        {{ apiErrorText ?? t('account.setPassword.errors.unknown') }}
-      </p>
+      <div v-else-if="'error' === state">
+        <p
+          class="text-danger"
+          role="alert"
+        >
+          {{ apiErrorText ?? t('account.setPassword.errors.unknown') }}
+        </p>
+        <button
+          type="button"
+          class="btn btn-outline-light btn-sm"
+          @click="retry"
+        >
+          {{ t('account.setPassword.retry') }}
+        </button>
+      </div>
 
       <div v-else-if="'done' === state">
         <h1 class="h3 fw-bold text-white mb-3">

@@ -17,6 +17,7 @@ const inviteEmail = ref('')
 const inviteLocale = ref('fr')
 const isInviting = ref(false)
 const invitedUsername = ref<string | null>(null)
+const resendSuccessForUserId = ref<number | null>(null)
 
 const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: LOCALE_NATIVE_NAMES[locale] }))
 
@@ -24,8 +25,14 @@ function selectedLocale(): Locale {
   return isSupportedLocale(inviteLocale.value) ? inviteLocale.value : 'fr'
 }
 
-async function handleInvite(): Promise<void> {
+/** Messages de succès ponctuels : effacés au début de toute autre action pour ne pas rester affichés. */
+function clearFeedback(): void {
   invitedUsername.value = null
+  resendSuccessForUserId.value = null
+}
+
+async function handleInvite(): Promise<void> {
+  clearFeedback()
   isInviting.value = true
   const created = await invite(inviteEmail.value, selectedLocale())
   isInviting.value = false
@@ -48,14 +55,13 @@ function isSuperAdmin(user: AdminUser): boolean {
 }
 
 async function handleToggleSuperAdmin(user: AdminUser): Promise<void> {
+  clearFeedback()
   await setSuperAdmin(user.id, !isSuperAdmin(user))
 }
 
 // --- Renvoi d'invitation ---
-const resendSuccessForUserId = ref<number | null>(null)
-
 async function handleResend(user: AdminUser): Promise<void> {
-  resendSuccessForUserId.value = null
+  clearFeedback()
   await resendInvitation(user.id, selectedLocale())
 
   if (!errorMessage.value) {
@@ -70,6 +76,7 @@ const isSubmittingPassword = ref(false)
 const passwordChanged = ref(false)
 
 function startChangePassword(user: AdminUser): void {
+  clearFeedback()
   changingPasswordForUserId.value = user.id
   newPassword.value = ''
   passwordChanged.value = false
@@ -103,6 +110,7 @@ async function handleDelete(user: AdminUser): Promise<void> {
     return
   }
 
+  clearFeedback()
   await remove(user.id)
 }
 </script>

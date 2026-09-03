@@ -59,6 +59,21 @@ describe('SetPasswordPage', () => {
     expect(wrapper.find('input[type="password"]').exists()).toBe(false)
   })
 
+  it('état d\'erreur (ex. rate-limit) : propose un bouton « Réessayer » qui relance la validation', async () => {
+    const validateSetupToken = vi.fn(async () => Promise.reject(new PasswordSetupLinkError('rate-limited', 'x')))
+    const repository = createStubRepository({ validateSetupToken })
+    const wrapper = await mountPage(repository)
+
+    expect(wrapper.find('input[type="password"]').exists()).toBe(false)
+    const retryButton = wrapper.findAll('button').find((b) => b.text().includes('Réessayer'))
+    expect(retryButton).toBeDefined()
+
+    await retryButton?.trigger('click')
+    await flushPromises()
+
+    expect(validateSetupToken).toHaveBeenCalledTimes(2)
+  })
+
   it('refuse un mot de passe trop court sans appeler le backend', async () => {
     const repository = createStubRepository()
     const wrapper = await mountPage(repository)

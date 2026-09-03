@@ -204,6 +204,7 @@
         "not-found": "Cet utilisateur n'existe plus.",
         "cannot-delete-self": "Vous ne pouvez pas supprimer votre propre compte.",
         "email-taken": "Un compte existe déjà avec cette adresse e-mail.",
+        "email-invalid": "Adresse e-mail invalide.",
         "cannot-modify-own-roles": "Vous ne pouvez pas modifier vos propres rôles.",
         "cannot-demote-last-super": "Impossible : c'est le dernier compte administrateur.",
         "already-activated": "Ce compte a déjà défini son mot de passe.",
@@ -279,6 +280,7 @@
     "setPassword": {
       "heading": "Définir mon mot de passe",
       "checking": "Vérification du lien…",
+      "retry": "Réessayer",
       "passwordLabel": "Mot de passe",
       "confirmationLabel": "Confirmer le mot de passe",
       "hint": "Au moins {min} caractères.",

@@ -97,7 +97,9 @@ export class HttpAdminUserRepository implements AdminUserRepository {
       return new AdminUserError('not-found', detail || 'User not found')
     }
     if (422 === response.status) {
-      const reason: AdminUserErrorReason = 'validation'
+      // `validation` porte, côté i18n, le message spécifique au mot de passe :
+      // un 422 sur l'invitation (adresse invalide) doit avoir son propre motif.
+      const reason: AdminUserErrorReason = 'invite' === operation ? 'email-invalid' : 'validation'
       return new AdminUserError(reason, violationsMessage(body))
     }
 

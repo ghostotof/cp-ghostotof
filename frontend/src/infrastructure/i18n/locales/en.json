@@ -204,6 +204,7 @@
         "not-found": "This user no longer exists.",
         "cannot-delete-self": "You cannot delete your own account.",
         "email-taken": "An account with this email address already exists.",
+        "email-invalid": "Invalid email address.",
         "cannot-modify-own-roles": "You cannot change your own roles.",
         "cannot-demote-last-super": "Not allowed: this is the last administrator account.",
         "already-activated": "This account has already set its password.",
@@ -279,6 +280,7 @@
     "setPassword": {
       "heading": "Set my password",
       "checking": "Checking the link…",
+      "retry": "Try again",
       "passwordLabel": "Password",
       "confirmationLabel": "Confirm password",
       "hint": "At least {min} characters.",

@@ -13,6 +13,8 @@ use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Domain\Service\UsernameGenerator;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Doctrine\DBAL\Driver\Exception as DriverException;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Messenger\Envelope;
@@ -99,5 +101,36 @@ final class CpgUserInviterTest extends TestCase
         $this->expectException(EmailAlreadyUsedException::class);
 
         $inviter->invite('taken@example.com', Locale::FR);
+    }
+
+    public function testInviteMapsAConcurrentUniqueViolationToEmailAlreadyUsed(): void
+    {
+        // La pré-vérification passe, mais un save() concurrent a déjà inséré la
+        // ligne : la contrainte unique en base lève, et on doit répondre 409,
+        // pas 500. Rien ne doit être dispatché.
+        $cpgUserRepository = self::createStub(CpgUserRepositoryInterface::class);
+        $cpgUserRepository->method('findOneByEmail')->willReturn(null);
+        $cpgUserRepository->method('findOneByUsername')->willReturn(null);
+        $cpgUserRepository->method('save')->willThrowException(
+            new UniqueConstraintViolationException(self::createStub(DriverException::class), null),
+        );
+
+        $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->expects(self::never())->method('save');
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects(self::never())->method('dispatch');
+
+        $inviter = new CpgUserInviter(
+            $cpgUserRepository,
+            new UsernameGenerator($cpgUserRepository),
+            $tokenRepository,
+            $messageBus,
+            new MockClock('2026-09-03 12:00:00'),
+        );
+
+        $this->expectException(EmailAlreadyUsedException::class);
+
+        $inviter->invite('race@example.com', Locale::FR);
     }
 }

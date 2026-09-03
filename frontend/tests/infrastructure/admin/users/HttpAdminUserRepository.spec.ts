@@ -74,12 +74,12 @@ describe('HttpAdminUserRepository', () => {
     expect((error as AdminUserError).reason).toBe('email-taken')
   })
 
-  it('invite() lève "validation" sur 422', async () => {
+  it('invite() lève "email-invalid" sur 422 (motif distinct du mot de passe)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(422, { violations: [{ propertyPath: 'email', message: 'This value is not a valid email address.' }] })))
 
     const error = await new HttpAdminUserRepository(API_BASE_URL).invite('not-an-email', 'fr').catch((caught: unknown) => caught)
 
-    expect((error as AdminUserError).reason).toBe('validation')
+    expect((error as AdminUserError).reason).toBe('email-invalid')
   })
 
   it('setSuperAdmin() envoie PUT /{id}/roles {superAdmin} avec le header CSRF', async () => {

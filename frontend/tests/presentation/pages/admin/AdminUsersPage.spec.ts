@@ -115,6 +115,20 @@ describe('AdminUsersPage', () => {
     expect(wrapper.text()).toContain('jane')
   })
 
+  it('affiche « Adresse e-mail invalide » (et pas le message mot de passe) si l\'invitation renvoie 422', async () => {
+    await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
+    const repository = createStubRepository({
+      invite: vi.fn(async () => Promise.reject(new AdminUserError('email-invalid', 'x'))),
+    })
+    const wrapper = await mountPage(repository)
+
+    await wrapper.get('#admin-user-invite-email').setValue('not-an-email')
+    await wrapper.get('form.admin-user-invite-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(wrapper.get('[role="alert"]').text()).toBe('Adresse e-mail invalide.')
+  })
+
   it('le bouton de rôle promeut une autre ligne via setSuperAdmin(id, true)', async () => {
     await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
     const repository = createStubRepository()
@@ -148,6 +162,21 @@ describe('AdminUsersPage', () => {
     await flushPromises()
 
     expect(repository.resendInvitation).toHaveBeenCalledWith(3, 'fr')
+  })
+
+  it('le message « Invitation renvoyée » disparaît dès qu\'une autre action est déclenchée', async () => {
+    await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
+    const repository = createStubRepository()
+    const wrapper = await mountPage(repository)
+
+    await rowFor(wrapper, 'newcomer')?.findAll('button').find((b) => b.text().includes('Renvoyer'))?.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Invitation renvoyée.')
+
+    await rowFor(wrapper, 'jane')?.findAll('button').find((b) => b.text().includes('Promouvoir'))?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Invitation renvoyée.')
   })
 
   it('affiche le statut En attente / Actif', async () => {

@@ -13,6 +13,7 @@ use App\Security\User\Domain\Exception\EmailAlreadyUsedException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Domain\Service\UsernameGenerator;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -41,7 +42,17 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
         $user = new CpgUser($this->usernameGenerator->generateFromEmail($email), '');
         $user->setEmail($email);
 
-        $this->issueTokenAndDispatch($user, $email, $locale);
+        try {
+            $this->issueTokenAndDispatch($user, $email, $locale);
+        } catch (UniqueConstraintViolationException) {
+            // findOneByEmail() ci-dessus n'est pas atomique avec le save() : sur
+            // deux invitations concurrentes de la même adresse (ou deux parties
+            // locales identiques), la contrainte unique en base reste le dernier
+            // rempart — même parti pris que CpgUserRegistrar::register().
+            // Le save() de l'utilisateur est la première écriture de
+            // issueTokenAndDispatch() : si elle échoue, ni jeton ni message.
+            throw EmailAlreadyUsedException::forEmail($email);
+        }
 
         return $user;
     }

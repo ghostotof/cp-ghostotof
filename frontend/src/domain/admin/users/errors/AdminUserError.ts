@@ -14,6 +14,7 @@ export type AdminUserErrorReason =
   | 'not-found'
   | 'cannot-delete-self'
   | 'email-taken'
+  | 'email-invalid'
   | 'cannot-modify-own-roles'
   | 'cannot-demote-last-super'
   | 'already-activated'
