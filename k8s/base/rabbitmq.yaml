@@ -26,13 +26,6 @@ spec:
       labels:
         app.kubernetes.io/name: rabbitmq
     spec:
-      # fsGroup 101 = groupe "rabbitmq" de l'image officielle (vérifié :
-      # `id rabbitmq` -> uid=100 gid=101) : le volume est monté déjà
-      # accessible en écriture à ce groupe, l'entrypoint (qui gère lui-même
-      # le cas non-root, cf. `id -u` = 0 check) n'a pas besoin de démarrer
-      # root.
-      securityContext:
-        fsGroup: 101
       containers:
         - name: rabbitmq
           image: rabbitmq:4.3.4-management-alpine # garder synchronisé avec RABBITMQ_TAG dans ../.env
@@ -42,12 +35,6 @@ spec:
           envFrom:
             - secretRef:
                 name: rabbitmq-credentials
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 100
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ['ALL']
           volumeMounts:
             - name: data
               mountPath: /var/lib/rabbitmq
