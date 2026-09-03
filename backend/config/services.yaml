@@ -11,6 +11,10 @@ parameters:
     app.cv_download_filename: '%env(CV_DOWNLOAD_FILENAME)%'
     app.contact_sender_email: '%env(CONTACT_SENDER_EMAIL)%'
     app.contact_recipient_email: '%env(CONTACT_RECIPIENT_EMAIL)%'
+    # Nom de marque du site, repris dans l'en-tête des e-mails sortants
+    # (Twig global brand_name, cf. config/packages/twig.yaml). Valeur littérale :
+    # elle ne change pas d'un environnement à l'autre.
+    app.brand_name: 'CP-Ghostotof'
 
 services:
     # default configuration for services in *this* file
