@@ -42,6 +42,7 @@ api_platform:
         App\Security\User\Domain\Exception\CannotModifyOwnRolesException: 409
         App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException: 409
         App\Security\User\Domain\Exception\EmailAlreadyUsedException: 409
+        App\Security\User\Domain\Exception\AccountNotAwaitingActivationException: 409
         # Levée par SendAccountInvitationHandler (worker Messenger async) ;
         # entrée défensive au cas où l'envoi serait un jour synchrone.
         App\Security\User\Domain\Exception\AccountInvitationDeliveryException: 503

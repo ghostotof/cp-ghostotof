@@ -6,6 +6,7 @@ namespace App\Security\User\Application;
 
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
 use App\Security\User\Domain\Exception\EmailAlreadyUsedException;
 
 /**
@@ -22,4 +23,13 @@ interface CpgUserInviterInterface
      * @throws EmailAlreadyUsedException si l'adresse est déjà rattachée à un compte
      */
     public function invite(string $email, Locale $locale): CpgUser;
+
+    /**
+     * Renvoie l'invitation : régénère le jeton (invalidant le précédent) et
+     * redispatch l'e-mail. Réservé aux comptes encore en attente d'activation.
+     *
+     * @throws AccountNotAwaitingActivationException si le compte est déjà activé
+     *                                               ou n'a jamais été invité
+     */
+    public function reinvite(CpgUser $user, Locale $locale): void;
 }

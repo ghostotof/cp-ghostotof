@@ -8,6 +8,7 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
+use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
 use App\Security\User\Domain\Exception\EmailAlreadyUsedException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
@@ -35,12 +36,38 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
             throw EmailAlreadyUsedException::forEmail($email);
         }
 
-        $now = $this->clock->now();
-
         // Mot de passe vide : le compte n'est utilisable qu'une fois le mot de
         // passe défini via le lien d'invitation (cf. PasswordSetupService).
         $user = new CpgUser($this->usernameGenerator->generateFromEmail($email), '');
         $user->setEmail($email);
+
+        $this->issueTokenAndDispatch($user, $email, $locale);
+
+        return $user;
+    }
+
+    public function reinvite(CpgUser $user, Locale $locale): void
+    {
+        if (!$user->isPendingActivation()) {
+            throw AccountNotAwaitingActivationException::forUsername($user->getUsername());
+        }
+
+        $email = $user->getEmail();
+        // isPendingActivation() implique invitedAt non null, donc un e-mail posé
+        // par invite() : l'assertion l'explicite pour l'analyse statique.
+        \assert(null !== $email);
+
+        $this->issueTokenAndDispatch($user, $email, $locale);
+    }
+
+    /**
+     * (Re)pose la date d'invitation, régénère l'unique jeton de définition de
+     * mot de passe et redispatch l'e-mail d'invitation.
+     */
+    private function issueTokenAndDispatch(CpgUser $user, string $email, Locale $locale): void
+    {
+        $now = $this->clock->now();
+
         $user->markInvited($now);
         $this->cpgUserRepository->save($user);
 
@@ -58,7 +85,5 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
             clearToken: $clearToken,
             locale: $locale->value,
         ));
-
-        return $user;
     }
 }
