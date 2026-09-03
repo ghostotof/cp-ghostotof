@@ -31,6 +31,13 @@ spec:
       labels:
         app.kubernetes.io/name: postgres
     spec:
+      # fsGroup 70 = groupe "postgres" de l'image officielle (vérifié :
+      # `id postgres` -> uid=70 gid=70) : le volume est monté déjà accessible
+      # en écriture à ce groupe, l'entrypoint (qui gère lui-même le cas
+      # non-root, cf. `id -u` = 0 check) n'a pas besoin de démarrer root pour
+      # chown le PGDATA.
+      securityContext:
+        fsGroup: 70
       containers:
         - name: postgres
           image: postgres:18.4-alpine # garder synchronisé avec POSTGRES_TAG dans ../.env
@@ -39,6 +46,12 @@ spec:
           envFrom:
             - secretRef:
                 name: postgres-credentials
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
           volumeMounts:
             # Cf. commentaire dans ../docker-compose.yml : depuis Postgres 18,
             # l'image officielle range les données dans un sous-répertoire
