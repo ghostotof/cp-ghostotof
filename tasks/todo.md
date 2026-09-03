@@ -34,7 +34,7 @@ Git flow : brancher `feature/admin-user-provisioning` depuis `develop` avant tou
 ## Phase 4 — Backend : rôles + presenter + renvoi d'invitation
 
 - [x] 4.1 `CpgUserRoleAdministratorInterface`/`CpgUserRoleAdministrator::setSuperAdmin(id, grant, actingUser)` (idempotent) + `CannotModifyOwnRolesException` (→ 409) + `CannotDemoteLastSuperAdminException` (→ 409, via `countByRole` `<= 1`) ; `CpgUserRoleAdministratorTest` (+7 : grant, revoke si autre super, revoke dernier super, soi-même, id inconnu, grant idempotent, revoke idempotent sans consulter la garde)
-- [ ] 4.2 `PUT /api/backoffice/users/{id}/roles` (`{superAdmin: bool}`, `output:false`, `provider` explicite pour le 404) + processor + `exception_to_status` ; test fonctionnel (promote/demote ok ; soi-même 409 ; dernier super 409 ; anonyme 401)
+- [x] 4.2 `PUT /api/backoffice/users/{id}/roles` `BackofficeUserRoleResource` (`{superAdmin: bool}`, 204 `output:false`) + `BackofficeUserRoleProvider` (404) + `BackofficeUserRoleProcessor` (acting user via `Security`) + `exception_to_status` (409) ; `BackofficeUserRoleResourceTest` (+5 : anonyme 403 via CSRF ; `ROLE_USER` 403 ; promote→GET reflète→idempotent→demote ; soi-même 409 ; id inconnu 404). « Dernier super-admin » non atteignable via l'API (l'appelant est toujours super) — couvert par le test unitaire de 4.1
 - [x] 4.3 `CpgUserAdminPresenter` + `BackofficeUserResource` : `email` (nullable) + `status` (`pending`/`active`) ; `BackofficeUserResourceTest` mis à jour — **fait dans la tâche 2.5**
 - [ ] 4.4 `POST /api/backoffice/users/{id}/invitation` (renvoi) + `CpgUserInviter::reinvite(CpgUser)` + `AccountAlreadyActivatedException` (409) + provider explicite ; test fonctionnel
 - [ ] **CHECKPOINT 4** — gate backend vert (API figée pour le front)
