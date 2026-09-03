@@ -15,7 +15,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 interface CpgUserAdminPresenterInterface
 {
     /**
-     * @return array{id: int, username: string, roles: list<string>}
+     * @return array{id: int, username: string, email: string|null, roles: list<string>, status: 'pending'|'active'}
      */
     public function present(CpgUser $user): array;
 }

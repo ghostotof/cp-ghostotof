@@ -22,8 +22,8 @@ Git flow : brancher `feature/admin-user-provisioning` depuis `develop` avant tou
 - [x] 2.2 `UsernameGenerator::generateFromEmail()` (partie locale → minuscules → filtrée `[a-z0-9_.-]` → bornée à 60 → `< 3` ⇒ complète `user` → collision ⇒ suffixe `2,3,…`, base tronquée pour rester ≤ 60) ; `UsernameGeneratorTest` (+9)
 - [x] 2.3 `PasswordSetupToken` (entité : `tokenHash` SHA-256 unique, `expiresAt`, `usedAt`, `isUsable(now)`, `markUsed()`, FK `CpgUser` `onDelete: CASCADE`) + `PasswordSetupTokenRepositoryInterface` (`save`/`remove`/`findOneByTokenHash`/`deleteForUser`) + impl Doctrine + migration `Version20260903160900` + `PasswordSetupTokenRepositoryTest` (+6, intégration base `_test`, CASCADE vérifié)
 - [x] 2.4 `CpgUserInviterInterface`/`CpgUserInviter::invite(email, Locale)` (clock injecté) + `EmailAlreadyUsedException` + `CpgUserRepositoryInterface::findOneByEmail` + `SendAccountInvitationMessage` (`{recipientEmail, username, clearToken, locale}` — pas de `userId`, inutile au handler) + `SendAccountInvitationHandler` (`TemplatedEmail` `emails/account_invitation.*`, chaînes fr/en dans le handler, CTA, lien `{APP_FRONTEND_BASE_URL}/{locale}/set-password/{token}`) + `AccountInvitationDeliveryException` + routing messenger + `app.frontend_base_url` (`APP_FRONTEND_BASE_URL` dans `backend/.env` — couvre dev/test/CI, tâche 7.1 réduite) ; `CpgUserInviterTest` + `SendAccountInvitationHandlerTest` + `AccountInvitationTemplateTest`
-- [ ] 2.5 `POST /api/backoffice/users` (invite) : opération `Post` sur `BackofficeUserResource` + DTO `{email, locale}` + `BackofficeUserInviteProcessor` + `exception_to_status` ; test fonctionnel (201 + message dispatché ; anonyme 401 ; `ROLE_USER` 403 ; e-mail pris 409 ; invalide 422)
-- [ ] **CHECKPOINT 2** — `composer phpstan && composer rector && php bin/phpunit` verts + `curl` invite manuel (Mailpit)
+- [x] 2.5 `POST /api/backoffice/users` (invite) : opération `Post` + `BackofficeUserInviteInput` `{email, locale}` + `BackofficeUserInviteProcessor` + `exception_to_status` (409/503) ; **inclut la tâche 4.3** (`email` + `status` sur `BackofficeUserResource` + presenter + `BackofficeUserProvider`) ; `BackofficeUserInviteResourceTest` (+6 : 201 + message dispatché ; anonyme 403 via CSRF ; `ROLE_USER` 403 ; e-mail pris 409 ; e-mail invalide 422 ; locale absente 422) + `BackofficeUserResourceTest` mis à jour
+- [ ] **CHECKPOINT 2** — `composer phpstan && composer rector && php bin/phpunit` verts (214) ✅ ; reste : `curl` invite manuel + rendu Mailpit (ou attendre la page admin de la phase 5)
 
 ## Phase 3 — Backend : parcours public de définition du mot de passe
 
@@ -35,7 +35,7 @@ Git flow : brancher `feature/admin-user-provisioning` depuis `develop` avant tou
 
 - [ ] 4.1 `CpgUserRoleAdministrator::setSuperAdmin(id, grant, actingUser)` + `CannotModifyOwnRolesException` (409) + `CannotDemoteLastSuperAdminException` (409, via `countByRole`) ; `CpgUserRoleAdministratorTest`
 - [ ] 4.2 `PUT /api/backoffice/users/{id}/roles` (`{superAdmin: bool}`, `output:false`, `provider` explicite pour le 404) + processor + `exception_to_status` ; test fonctionnel (promote/demote ok ; soi-même 409 ; dernier super 409 ; anonyme 401)
-- [ ] 4.3 `CpgUserAdminPresenter` + `BackofficeUserResource` : `email` (nullable) + `status` (`pending`/`active`) ; `BackofficeUserResourceTest` mis à jour
+- [x] 4.3 `CpgUserAdminPresenter` + `BackofficeUserResource` : `email` (nullable) + `status` (`pending`/`active`) ; `BackofficeUserResourceTest` mis à jour — **fait dans la tâche 2.5**
 - [ ] 4.4 `POST /api/backoffice/users/{id}/invitation` (renvoi) + `CpgUserInviter::reinvite(CpgUser)` + `AccountAlreadyActivatedException` (409) + provider explicite ; test fonctionnel
 - [ ] **CHECKPOINT 4** — gate backend vert (API figée pour le front)
 
