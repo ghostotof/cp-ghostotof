@@ -2,8 +2,9 @@
    Alternative texte brut du layout d'e-mail (cf. base.html.twig). Fournie
    systématiquement à côté de la version HTML : certains clients / passerelles
    n'affichent que le text/plain. `brand_name` est un global Twig.
+
+   Pas de bloc `preheader` ici : c'est un texte d'aperçu masqué propre au HTML.
 #}
-{% block preheader %}{% endblock %}
 {{ brand_name }}
 =========================
 
