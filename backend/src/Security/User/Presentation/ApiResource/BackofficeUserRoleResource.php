@@ -8,6 +8,7 @@ use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Put;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserRoleProcessor;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserRoleProvider;
+use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * Promotion / rétrogradation du rôle ROLE_SUPER d'un compte depuis le
@@ -31,7 +32,10 @@ use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserRoleProvider;
 final readonly class BackofficeUserRoleResource
 {
     public function __construct(
-        public bool $superAdmin = false,
+        // Nullable + NotNull : un corps sans `superAdmin` échoue en 422 plutôt
+        // que d'être interprété comme une rétrogradation implicite.
+        #[Assert\NotNull]
+        public ?bool $superAdmin = null,
     ) {
     }
 }

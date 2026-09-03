@@ -176,6 +176,7 @@
       "statusPending": "Pending",
       "statusActive": "Active",
       "actions": "Actions",
+      "actionsFor": "Actions for {username}",
       "changePassword": "Change password",
       "newPasswordLabel": "New password",
       "promote": "Make admin",

@@ -201,7 +201,12 @@ Content management for all of the above, plus user administration, gated end-to-
 - **Exceptions**: every new Domain `NotFoundException`/`AlreadyExistsException` needs an entry in
   `config/packages/api_platform.yaml`'s `exception_to_status` map (e.g. `ExperienceTechnologyNotFoundException`,
   `CpgUserNotFoundException`, `CannotDeleteOwnAccountException`) — otherwise API Platform surfaces an unmapped
-  exception as a generic 500 instead of a meaningful 4xx.
+  exception as a generic 500 instead of a meaningful 4xx. When two exceptions share a status code but the
+  frontend must tell them apart (e.g. the two `PUT …/roles` 409s: self-modification vs last-super-admin), make
+  the exception `implements ApiPlatform\Metadata\Exception\ProblemExceptionInterface` and
+  `use App\Security\User\Domain\Exception\HasProblemType` (declare `problemType()` → a stable kebab slug +
+  `problemStatus()`): API Platform then emits `type: /errors/<slug>` in the problem+json, which the client keys
+  on instead of substring-matching the localized `detail`.
 
 To add a new bounded context (e.g. a second `Security` aggregate, or a new `Portfolio` sub-context): mirror
 the same `Domain/Application/Infrastructure/Presentation` split under a new `src/<Context>/` folder, creating

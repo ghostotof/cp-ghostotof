@@ -31,6 +31,22 @@ function rowFor(wrapper: Awaited<ReturnType<typeof mountPage>>, username: string
   return wrapper.findAll('tbody tr').find((row) => row.text().includes(username))
 }
 
+/**
+ * Les actions d'une ligne (promotion, renvoi, mot de passe, suppression) sont
+ * regroupées derrière un bouton « ⋯ » : il faut ouvrir ce menu avant de
+ * pouvoir cliquer une action.
+ */
+async function openRowMenu(wrapper: Awaited<ReturnType<typeof mountPage>>, username: string): Promise<void> {
+  await rowFor(wrapper, username)?.get('button[aria-haspopup="true"]').trigger('click')
+  await flushPromises()
+}
+
+function rowButton(wrapper: Awaited<ReturnType<typeof mountPage>>, username: string, text: string) {
+  return rowFor(wrapper, username)
+    ?.findAll('button')
+    .find((button) => button.text().includes(text))
+}
+
 function createStubAuthRepository(user: AuthenticatedUser | null): AuthRepository {
   return {
     login: vi.fn(async () => user ?? { username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }),
@@ -129,36 +145,50 @@ describe('AdminUsersPage', () => {
     expect(wrapper.get('[role="alert"]').text()).toBe('Adresse e-mail invalide.')
   })
 
-  it('le bouton de rôle promeut une autre ligne via setSuperAdmin(id, true)', async () => {
+  it('le menu d\'actions n\'est ouvert que pour une ligne à la fois', async () => {
+    await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
+    const wrapper = await mountPage()
+
+    expect(wrapper.findAll('.dropdown-item')).toHaveLength(0)
+
+    await openRowMenu(wrapper, 'jane')
+    expect(rowFor(wrapper, 'jane')?.findAll('.dropdown-item').length).toBeGreaterThan(0)
+
+    await openRowMenu(wrapper, 'super')
+    expect(rowFor(wrapper, 'jane')?.findAll('.dropdown-item')).toHaveLength(0)
+    expect(rowFor(wrapper, 'super')?.findAll('.dropdown-item').length).toBeGreaterThan(0)
+  })
+
+  it('l\'action de rôle du menu promeut une autre ligne via setSuperAdmin(id, true)', async () => {
     await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
     const repository = createStubRepository()
     const wrapper = await mountPage(repository)
 
-    const button = rowFor(wrapper, 'jane')?.findAll('button').find((b) => b.text().includes('Promouvoir'))
-    await button?.trigger('click')
+    await openRowMenu(wrapper, 'jane')
+    await rowButton(wrapper, 'jane', 'Promouvoir')?.trigger('click')
     await flushPromises()
 
     expect(repository.setSuperAdmin).toHaveBeenCalledWith(2, true)
   })
 
-  it('le bouton de rôle est désactivé sur sa propre ligne', async () => {
+  it('l\'action de rôle est désactivée sur sa propre ligne', async () => {
     await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
     const wrapper = await mountPage()
 
-    const button = rowFor(wrapper, 'super')?.findAll('button').find((b) => b.text().includes('admin'))
-    expect(button?.attributes('disabled')).toBeDefined()
+    await openRowMenu(wrapper, 'super')
+    expect(rowButton(wrapper, 'super', 'admin')?.attributes('disabled')).toBeDefined()
   })
 
-  it('le bouton « Renvoyer l\'invitation » n\'apparaît que pour les lignes en attente', async () => {
+  it('l\'action « Renvoyer l\'invitation » n\'apparaît que pour les lignes en attente', async () => {
     await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
     const repository = createStubRepository()
     const wrapper = await mountPage(repository)
 
-    const janeResend = rowFor(wrapper, 'jane')?.findAll('button').find((b) => b.text().includes('Renvoyer'))
-    expect(janeResend).toBeUndefined()
+    await openRowMenu(wrapper, 'jane')
+    expect(rowButton(wrapper, 'jane', 'Renvoyer')).toBeUndefined()
 
-    const newcomerResend = rowFor(wrapper, 'newcomer')?.findAll('button').find((b) => b.text().includes('Renvoyer'))
-    await newcomerResend?.trigger('click')
+    await openRowMenu(wrapper, 'newcomer')
+    await rowButton(wrapper, 'newcomer', 'Renvoyer')?.trigger('click')
     await flushPromises()
 
     expect(repository.resendInvitation).toHaveBeenCalledWith(3, 'fr')
@@ -169,11 +199,13 @@ describe('AdminUsersPage', () => {
     const repository = createStubRepository()
     const wrapper = await mountPage(repository)
 
-    await rowFor(wrapper, 'newcomer')?.findAll('button').find((b) => b.text().includes('Renvoyer'))?.trigger('click')
+    await openRowMenu(wrapper, 'newcomer')
+    await rowButton(wrapper, 'newcomer', 'Renvoyer')?.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('Invitation renvoyée.')
 
-    await rowFor(wrapper, 'jane')?.findAll('button').find((b) => b.text().includes('Promouvoir'))?.trigger('click')
+    await openRowMenu(wrapper, 'jane')
+    await rowButton(wrapper, 'jane', 'Promouvoir')?.trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('Invitation renvoyée.')
@@ -206,15 +238,12 @@ describe('AdminUsersPage', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
   })
 
-  it('désactive le bouton Supprimer sur sa propre ligne', async () => {
+  it('désactive l\'action Supprimer sur sa propre ligne', async () => {
     await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
     const wrapper = await mountPage()
 
-    const rows = wrapper.findAll('tbody tr')
-    const superRow = rows.find((row) => row.text().includes('super'))
-    const deleteButton = superRow?.findAll('button').find((button) => 'Supprimer' === button.text())
-
-    expect(deleteButton?.attributes('disabled')).toBeDefined()
+    await openRowMenu(wrapper, 'super')
+    expect(rowButton(wrapper, 'super', 'Supprimer')?.attributes('disabled')).toBeDefined()
   })
 
   it('supprime un autre utilisateur après confirmation', async () => {
@@ -223,10 +252,8 @@ describe('AdminUsersPage', () => {
     const repository = createStubRepository()
     const wrapper = await mountPage(repository)
 
-    const rows = wrapper.findAll('tbody tr')
-    const janeRow = rows.find((row) => row.text().includes('jane'))
-    const deleteButton = janeRow?.findAll('button').find((button) => 'Supprimer' === button.text())
-    await deleteButton?.trigger('click')
+    await openRowMenu(wrapper, 'jane')
+    await rowButton(wrapper, 'jane', 'Supprimer')?.trigger('click')
     await flushPromises()
 
     expect(repository.remove).toHaveBeenCalledWith(2)
@@ -237,8 +264,8 @@ describe('AdminUsersPage', () => {
     const repository = createStubRepository()
     const wrapper = await mountPage(repository)
 
-    const changeButtons = wrapper.findAll('button').filter((button) => button.text().includes('mot de passe'))
-    await changeButtons[0]?.trigger('click')
+    await openRowMenu(wrapper, 'super')
+    await rowButton(wrapper, 'super', 'mot de passe')?.trigger('click')
 
     await wrapper.get('input[type="password"]').setValue('NewPassword123')
     await wrapper.get('form.admin-user-password-form').trigger('submit.prevent')
@@ -255,8 +282,8 @@ describe('AdminUsersPage', () => {
     })
     const wrapper = await mountPage(repository)
 
-    const changeButtons = wrapper.findAll('button').filter((button) => button.text().includes('mot de passe'))
-    await changeButtons[0]?.trigger('click')
+    await openRowMenu(wrapper, 'super')
+    await rowButton(wrapper, 'super', 'mot de passe')?.trigger('click')
 
     await wrapper.get('input[type="password"]').setValue('short')
     await wrapper.get('form.admin-user-password-form').trigger('submit.prevent')

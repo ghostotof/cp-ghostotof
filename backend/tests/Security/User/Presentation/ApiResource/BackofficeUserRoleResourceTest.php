@@ -104,6 +104,28 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
         ], content: self::jsonBody(['superAdmin' => false]));
 
         self::assertResponseStatusCodeSame(409);
+
+        // Le `type` du problem+json porte un slug stable, exploité par le
+        // frontend pour choisir le message affiché sans analyser le `detail`.
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        self::assertSame('/errors/cannot-modify-own-roles', $body['type'] ?? null);
+    }
+
+    public function testMissingSuperAdminFieldReturns422(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, self::PLAIN_PASSWORD);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $janeId = $this->findId($this->fetchUsers($client), self::PLAIN_USERNAME);
+
+        $client->request('PUT', sprintf('/api/backoffice/users/%d/roles', $janeId), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody([]));
+
+        self::assertResponseStatusCodeSame(422);
     }
 
     public function testUnknownIdReturns404(): void

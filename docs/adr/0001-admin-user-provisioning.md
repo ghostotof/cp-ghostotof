@@ -79,6 +79,14 @@ reprendre la charte graphique du site.
 - `skip_null_values: false` sur `BackofficeUserResource` pour que `email: null`
   reste présent dans la réponse (le frontend distingue « sans e-mail » de
   « champ absent »).
+- Suite à la revue de code (PR #8) : les deux 409 de `PUT …/roles`
+  (auto-modification vs dernier super-admin) portent un `type`
+  (`/errors/cannot-modify-own-roles`, `/errors/cannot-demote-last-super`) via
+  `ProblemExceptionInterface` + trait `HasProblemType`, au lieu que le frontend
+  fasse un `str_contains` sur le `detail` localisé. `superAdmin` du DTO de rôle
+  est `?bool` + `#[Assert\NotNull]` (un corps sans le champ → 422, plus 500). Les
+  actions de ligne du tableau `/admin/users` sont regroupées derrière un menu
+  « ⋯ » (un seul ouvert à la fois).
 
 ## Alternatives écartées
 

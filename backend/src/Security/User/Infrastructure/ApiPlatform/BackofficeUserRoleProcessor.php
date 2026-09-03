@@ -36,6 +36,10 @@ final readonly class BackofficeUserRoleProcessor implements ProcessorInterface
             throw new \LogicException('BackofficeUserRoleProcessor::process() appelé sans utilisateur authentifié.');
         }
 
+        // La validation (#[Assert\NotNull] sur BackofficeUserRoleResource) a déjà
+        // rejeté un corps sans `superAdmin` en 422 ; garde explicite pour l'analyse.
+        \assert(null !== $data->superAdmin);
+
         $this->cpgUserRoleAdministrator->setSuperAdmin(
             $this->uriVariableInt($uriVariables, 'id'),
             $data->superAdmin,

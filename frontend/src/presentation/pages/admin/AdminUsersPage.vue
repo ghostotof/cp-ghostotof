@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminUsers } from '../../../application/admin/users/useAdminUsers'
 import { useAuth, ROLE_SUPER } from '../../../application/auth/useAuth'
@@ -43,6 +43,52 @@ async function handleInvite(): Promise<void> {
   }
 }
 
+// --- Menu d'actions par ligne (kebab « ⋯ ») ---
+// Les actions d'une ligne (promotion, renvoi, mot de passe, suppression) étaient
+// affichées côte à côte : trop de boutons, colonne large et illisible. Elles
+// sont regroupées derrière un bouton « ⋯ » qui ouvre un menu ; un seul menu
+// ouvert à la fois (openMenuForUserId).
+const openMenuForUserId = ref<number | null>(null)
+const actionsColumnRef = ref<HTMLElement | null>(null)
+
+function toggleMenu(userId: number): void {
+  openMenuForUserId.value = openMenuForUserId.value === userId ? null : userId
+}
+
+function closeMenu(): void {
+  openMenuForUserId.value = null
+}
+
+/**
+ * Bootstrap 5 n'est chargé qu'en CSS (pas de bundle JS) : la fermeture au clic
+ * extérieur / touche Échap est gérée ici, comme le menu « Contenu » de
+ * AdminLayout. Le conteneur <tbody> sert de périmètre « intérieur ».
+ */
+function onDocumentClick(event: MouseEvent): void {
+  if (null === openMenuForUserId.value) {
+    return
+  }
+  if (null !== actionsColumnRef.value && !actionsColumnRef.value.contains(event.target as Node)) {
+    closeMenu()
+  }
+}
+
+function onDocumentKeydown(event: KeyboardEvent): void {
+  if ('Escape' === event.key) {
+    closeMenu()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick)
+  document.addEventListener('keydown', onDocumentKeydown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
+  document.removeEventListener('keydown', onDocumentKeydown)
+})
+
 // --- Rôles / statut ---
 const errorText = computed(() => (errorMessage.value ? t(`admin.users.errors.${errorMessage.value.reason}`) : null))
 
@@ -55,12 +101,14 @@ function isSuperAdmin(user: AdminUser): boolean {
 }
 
 async function handleToggleSuperAdmin(user: AdminUser): Promise<void> {
+  closeMenu()
   clearFeedback()
   await setSuperAdmin(user.id, !isSuperAdmin(user))
 }
 
 // --- Renvoi d'invitation ---
 async function handleResend(user: AdminUser): Promise<void> {
+  closeMenu()
   clearFeedback()
   await resendInvitation(user.id, selectedLocale())
 
@@ -76,6 +124,7 @@ const isSubmittingPassword = ref(false)
 const passwordChanged = ref(false)
 
 function startChangePassword(user: AdminUser): void {
+  closeMenu()
   clearFeedback()
   changingPasswordForUserId.value = user.id
   newPassword.value = ''
@@ -106,6 +155,8 @@ async function handleSubmitPassword(): Promise<void> {
 }
 
 async function handleDelete(user: AdminUser): Promise<void> {
+  closeMenu()
+
   if (!window.confirm(t('admin.users.confirmDelete', { username: user.username }))) {
     return
   }
@@ -217,7 +268,7 @@ async function handleDelete(user: AdminUser): Promise<void> {
               </th>
             </tr>
           </thead>
-          <tbody>
+          <tbody ref="actionsColumnRef">
             <template
               v-for="user in users"
               :key="user.id"
@@ -241,39 +292,68 @@ async function handleDelete(user: AdminUser): Promise<void> {
                   </span>
                 </td>
                 <td class="text-end">
-                  <button
-                    type="button"
-                    class="btn btn-sm btn-outline-light me-2"
-                    :disabled="isCurrentUser(user)"
-                    :title="isCurrentUser(user) ? t('admin.users.cannotChangeOwnRoles') : undefined"
-                    @click="handleToggleSuperAdmin(user)"
-                  >
-                    {{ isSuperAdmin(user) ? t('admin.users.demote') : t('admin.users.promote') }}
-                  </button>
-                  <button
-                    v-if="'pending' === user.status"
-                    type="button"
-                    class="btn btn-sm btn-outline-light me-2"
-                    @click="handleResend(user)"
-                  >
-                    {{ t('admin.users.resendInvitation') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-sm btn-outline-light me-2"
-                    @click="startChangePassword(user)"
-                  >
-                    {{ t('admin.users.changePassword') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-sm btn-outline-danger"
-                    :disabled="isCurrentUser(user)"
-                    :title="isCurrentUser(user) ? t('admin.users.cannotDeleteSelf') : undefined"
-                    @click="handleDelete(user)"
-                  >
-                    {{ t('admin.users.delete') }}
-                  </button>
+                  <div class="admin-user-actions">
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-light"
+                      aria-haspopup="true"
+                      :aria-expanded="openMenuForUserId === user.id"
+                      :aria-label="t('admin.users.actionsFor', { username: user.username })"
+                      @click="toggleMenu(user.id)"
+                    >
+                      <span aria-hidden="true">⋯</span>
+                    </button>
+
+                    <ul
+                      v-if="openMenuForUserId === user.id"
+                      class="dropdown-menu dropdown-menu-end show mt-1"
+                      data-bs-theme="dark"
+                    >
+                      <li>
+                        <button
+                          type="button"
+                          class="dropdown-item"
+                          :disabled="isCurrentUser(user)"
+                          :title="isCurrentUser(user) ? t('admin.users.cannotChangeOwnRoles') : undefined"
+                          @click="handleToggleSuperAdmin(user)"
+                        >
+                          {{ isSuperAdmin(user) ? t('admin.users.demote') : t('admin.users.promote') }}
+                        </button>
+                      </li>
+                      <li v-if="'pending' === user.status">
+                        <button
+                          type="button"
+                          class="dropdown-item"
+                          @click="handleResend(user)"
+                        >
+                          {{ t('admin.users.resendInvitation') }}
+                        </button>
+                      </li>
+                      <li>
+                        <button
+                          type="button"
+                          class="dropdown-item"
+                          @click="startChangePassword(user)"
+                        >
+                          {{ t('admin.users.changePassword') }}
+                        </button>
+                      </li>
+                      <li>
+                        <hr class="dropdown-divider">
+                      </li>
+                      <li>
+                        <button
+                          type="button"
+                          class="dropdown-item text-danger"
+                          :disabled="isCurrentUser(user)"
+                          :title="isCurrentUser(user) ? t('admin.users.cannotDeleteSelf') : undefined"
+                          @click="handleDelete(user)"
+                        >
+                          {{ t('admin.users.delete') }}
+                        </button>
+                      </li>
+                    </ul>
+                  </div>
                 </td>
               </tr>
               <tr v-if="resendSuccessForUserId === user.id">
@@ -332,3 +412,21 @@ async function handleDelete(user: AdminUser): Promise<void> {
     </div>
   </div>
 </template>
+
+<style scoped>
+.admin-user-actions {
+  position: relative;
+  display: inline-block;
+}
+
+/* Sans Popper (pas de bundle JS Bootstrap), on ancre le menu sous le bouton. */
+.admin-user-actions .dropdown-menu {
+  display: block;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: auto;
+  z-index: 1030;
+  min-width: 12rem;
+}
+</style>

@@ -2,7 +2,7 @@ import type { AdminUser } from '../../../domain/admin/users/entities/AdminUser'
 import type { AdminUserRepository } from '../../../domain/admin/users/repositories/AdminUserRepository'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { AdminUserError, type AdminUserErrorReason } from '../../../domain/admin/users/errors/AdminUserError'
-import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
+import { BackofficeHttpClient, violationsMessage, type ApiProblemBody } from '../shared/BackofficeHttpClient'
 
 interface BackofficeUserApiResponse {
   id: number
@@ -91,7 +91,7 @@ export class HttpAdminUserRepository implements AdminUserRepository {
     const detail = body.detail ?? ''
 
     if (409 === response.status) {
-      return new AdminUserError(this.conflictReason(operation, detail), detail || 'Conflict')
+      return new AdminUserError(this.conflictReason(operation, body), detail || 'Conflict')
     }
     if (404 === response.status) {
       return new AdminUserError('not-found', detail || 'User not found')
@@ -107,11 +107,13 @@ export class HttpAdminUserRepository implements AdminUserRepository {
   }
 
   /**
-   * Le backend renvoie 409 avec un simple `detail` textuel (pas de `type`
-   * distinct). On tranche d'abord par l'opération ; pour le changement de rôle,
-   * qui a deux gardes, on retombe sur un fragment stable du message.
+   * On tranche d'abord par l'opération ; le changement de rôle a deux gardes
+   * (auto-modification / dernier super-admin) que le backend distingue via le
+   * `type` du problem+json (`/errors/cannot-modify-own-roles` vs
+   * `/errors/cannot-demote-last-super`) — slug stable, contrairement au `detail`
+   * localisé.
    */
-  private conflictReason(operation: AdminUserOperation, detail: string): AdminUserErrorReason {
+  private conflictReason(operation: AdminUserOperation, body: ApiProblemBody): AdminUserErrorReason {
     if ('invite' === operation) {
       return 'email-taken'
     }
@@ -119,7 +121,7 @@ export class HttpAdminUserRepository implements AdminUserRepository {
       return 'already-activated'
     }
     if ('setRole' === operation) {
-      return detail.includes('propres rôles') ? 'cannot-modify-own-roles' : 'cannot-demote-last-super'
+      return body.type?.endsWith('cannot-demote-last-super') ? 'cannot-demote-last-super' : 'cannot-modify-own-roles'
     }
 
     return 'cannot-delete-self'

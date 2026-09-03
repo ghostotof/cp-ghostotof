@@ -99,12 +99,18 @@ describe('HttpAdminUserRepository', () => {
     )
   })
 
-  it('setSuperAdmin() distingue "cannot-modify-own-roles" et "cannot-demote-last-super" sur 409 selon le detail', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(409, { detail: 'L\'utilisateur "super" ne peut pas modifier ses propres rôles.' })))
+  it('setSuperAdmin() distingue "cannot-modify-own-roles" et "cannot-demote-last-super" sur 409 selon le `type` du problem+json', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(409, { type: '/errors/cannot-modify-own-roles', detail: 'peu importe, localisé' })),
+    )
     const ownRoles = await new HttpAdminUserRepository(API_BASE_URL).setSuperAdmin(1, false).catch((caught: unknown) => caught)
     expect((ownRoles as AdminUserError).reason).toBe('cannot-modify-own-roles')
 
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(409, { detail: 'Impossible de retirer le rôle ROLE_SUPER à "jane" : c\'est le dernier compte à le posséder…' })))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(409, { type: '/errors/cannot-demote-last-super', detail: 'peu importe, localisé' })),
+    )
     const lastSuper = await new HttpAdminUserRepository(API_BASE_URL).setSuperAdmin(2, false).catch((caught: unknown) => caught)
     expect((lastSuper as AdminUserError).reason).toBe('cannot-demote-last-super')
   })
