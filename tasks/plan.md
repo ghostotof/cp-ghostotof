@@ -203,27 +203,44 @@ la page les affiche tous sans authentification.
 **Priorité : moyenne-basse.** Aucune vérification cluster possible ici : on valide le
 rendu kustomize + les gates frontend, la bascule réelle est manuelle (README).
 
-- [ ] 5.1 **C4** — `k8s/base/secretstore.yaml` : `accessKey.value` → `accessKey.secretRef`
+- [x] 5.1 **C4** — `k8s/base/secretstore.yaml` : `accessKey.value` → `accessKey.secretRef`
   (`name: scaleway-eso-auth`, `key: access-key`). Commentaire mis à jour. `projectId`
   reste inline (commentaire : identifiant de projet, pas un secret). Mettre à jour
   `k8s/README.md` : le bootstrap `scaleway-eso-auth` porte désormais **deux** clés
   (`secret-key` + `access-key`).
-- [ ] 5.2 **I2** — `CORS_ALLOW_ORIGIN` : `…\.com$` → `…\.com\z` dans
+- [x] 5.2 **I2** — `CORS_ALLOW_ORIGIN` : `…\.com$` → `…\.com\z` dans
   `k8s/overlays/prod/kustomization.yaml` et `.../preprod/kustomization.yaml`.
   (Le `\n` final toléré par `$` disparaît ; nelmio utilise un PCRE, `\z` valide.)
-- [ ] 5.3 **I5** — `docker/node/nginx.conf` : `frame-ancestors 'self'` → `'none'` dans
+- [x] 5.3 **I5** — `docker/node/nginx.conf` : `frame-ancestors 'self'` → `'none'` dans
   la CSP (bloc `server` + `location = /index.html`), `X-Frame-Options "SAMEORIGIN"` →
   `"DENY"` partout. La SPA n'est jamais encadrée (vérifié : aucun `<iframe>` interne).
-- [ ] 5.4 **I6** — `securityContext: { seccompProfile: { type: RuntimeDefault } }` au
+- [x] 5.4 **I6** — `securityContext: { seccompProfile: { type: RuntimeDefault } }` au
   niveau pod de `postgres.yaml`, `rabbitmq.yaml`, `adminer.yaml`, `backend-deployment.yaml`,
   `frontend-deployment.yaml`, `messenger-worker-deployment.yaml`, `messenger-purge-cronjob.yaml`.
   (`readOnlyRootFilesystem` **non** ajouté à postgres/rabbitmq : ils écrivent hors
   volume de données — cookie Erlang, `/var/run`, `/tmp`.)
-- [ ] 5.5 Vérifications : `kubectl kustomize k8s/overlays/prod` **et** `.../preprod`
+- [x] 5.5 Vérifications : `kubectl kustomize k8s/overlays/prod` **et** `.../preprod`
   rendent sans erreur ; `npm run lint && npm run build && npm test` (frontend) verts ;
   `tools/audit-prod.sh` : la liste des en-têtes attendus est inchangée (X-Frame-Options
   toujours présent, valeur plus stricte).
-- [ ] **CHECKPOINT 5** — rendus kustomize OK, gates frontend OK, README à jour.
+- [x] **CHECKPOINT 5** — `kubectl kustomize` prod (1029 l.) et preprod (1003 l.) rendent sans erreur ;
+  les 7 charges de travail portent `seccompProfile` ; gates frontend verts (ESLint, build, Vitest 391) ;
+  backend non touché mais suite verte (276) ; `k8s/README.md` à jour (bootstrap 2 clés + procédure de migration).
+  Vérifications supplémentaires faites ici : `nginx -t` sur la conf modifiée + en-têtes réellement servis
+  (`X-Frame-Options: DENY`, `frame-ancestors 'none'` sur `/`, `/index.html`, `/healthz`) ; preuve PCRE que
+  `$` acceptait `https://cp-ghostotof.com\n` et que `\z` le refuse ; `tools/audit-prod.sh` ne teste que la
+  présence des en-têtes, donc insensible au durcissement de valeur.
+
+> **⚠ Déploiement — à ne pas promouvoir en prod sans rollout préprod réel.** Deux raisons distinctes :
+> 1. **C4** est *breaking* sur un cluster existant : le Secret `scaleway-eso-auth` ne porte que `secret-key`.
+>    Sans ajouter `access-key` AVANT d'appliquer, le SecretStore passe `NotReady` et les ExternalSecrets
+>    cessent de se rafraîchir (procédure `kubectl patch` dans `k8s/README.md`).
+> 2. **I6 sur RabbitMQ/Postgres** touche des charges à état sur PVC. Règle issue de l'incident v0.5.0
+>    (mémoire `project_rabbitmq_securitycontext_incident_v050`) : un `--dry-run=server` ne
+>    teste pas le runtime sur un volume déjà initialisé, il faut un vrai `rollout status` + logs en préprod.
+>    Ici le risque est *faible* (seccomp filtre des appels système, il ne touche ni à l'uid ni aux
+>    permissions de fichiers — la cause du crash v0.5.0 était `fsGroup` sur le cookie Erlang), mais la règle
+>    reste : observer le rollout préprod avant de promouvoir.
 
 ---
 

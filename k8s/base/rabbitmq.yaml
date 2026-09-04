@@ -26,6 +26,21 @@ spec:
       labels:
         app.kubernetes.io/name: rabbitmq
     spec:
+      # Point d'audit I6 : seccomp SEULEMENT — filtre d'appels système, il ne
+      # touche ni à l'utilisateur d'exécution ni aux permissions de fichiers.
+      #
+      # ATTENTION avant d'étoffer ce bloc : la release v0.5.0 a mis RabbitMQ en
+      # CrashLoopBackOff en prod (~15 min de POST /api/contact en 500) en y
+      # ajoutant `runAsNonRoot`/`runAsUser`/`fsGroup`. Erlang refuse de démarrer
+      # si /var/lib/rabbitmq/.erlang.cookie est accessible au groupe, et le
+      # fsGroup rendait exactement ça — le fichier restant fautif sur le PVC même
+      # après rollback du manifeste. Un vrai passage non-root ici exige de gérer
+      # explicitement ce cookie (initContainer qui le régénère/chmod), et un
+      # rollout réel en préprod : un `apply --dry-run=server` ne teste pas le
+      # runtime sur un volume déjà initialisé.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: rabbitmq
           image: rabbitmq:4.3.4-management-alpine # garder synchronisé avec RABBITMQ_TAG dans ../.env

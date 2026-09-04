@@ -41,12 +41,21 @@ k8s (si touché) `kubectl kustomize` prod **et** preprod.
 - [x] **CHECKPOINT 4** — `debug:router` conforme ; gates backend verts (PHPStan max, Rector, PHPUnit 276) ; vérif runtime curl des 404 de locale
 
 ## Phase 5 — C4 + I2 + I5 + I6 : durcissement k8s/frontend  · priorité MOYENNE-BASSE
-- [ ] 5.1 C4 : `secretstore.yaml` `accessKey` → `secretRef` (`scaleway-eso-auth`/`access-key`) ; MAJ `k8s/README.md` (bootstrap 2 clés)
-- [ ] 5.2 I2 : `CORS_ALLOW_ORIGIN` `…\.com$` → `…\.com\z` (overlays prod + preprod)
-- [ ] 5.3 I5 : `docker/node/nginx.conf` — CSP `frame-ancestors 'none'` + `X-Frame-Options "DENY"`
-- [ ] 5.4 I6 : `seccompProfile: { type: RuntimeDefault }` sur tous les pod specs (backend, frontend, worker, purge cronjob, postgres, rabbitmq, adminer)
-- [ ] 5.5 Vérifs : `kubectl kustomize` prod + preprod OK ; frontend lint+build+test OK ; en-têtes `audit-prod.sh` inchangés (X-Frame-Options plus strict)
-- [ ] **CHECKPOINT 5** — rendus kustomize + gates frontend + README
+- [x] 5.1 C4 : `secretstore.yaml` `accessKey` → `secretRef` (`scaleway-eso-auth`/`access-key`) ; `projectId` reste inline ; `k8s/README.md` à jour (bootstrap 2 clés + procédure `kubectl patch` pour un cluster existant)
+- [x] 5.2 I2 : `CORS_ALLOW_ORIGIN` `…\.com$` → `…\.com\z` (overlays prod + preprod) — écart prouvé en PCRE : `$` acceptait `https://cp-ghostotof.com\n`
+- [x] 5.3 I5 : `docker/node/nginx.conf` — CSP `frame-ancestors 'none'` (×2) + `X-Frame-Options "DENY"` (×5) ; aucun `<iframe>` dans le frontend (vérifié) ; `nginx -t` OK + en-têtes servis vérifiés
+- [x] 5.4 I6 : `seccompProfile: { type: RuntimeDefault }` sur les 7 pod specs (backend, frontend, worker, purge cronjob, postgres, rabbitmq, adminer)
+- [x] 5.5 Vérifs : `kubectl kustomize` prod + preprod OK ; frontend lint+build+test OK (391) ; backend OK (276) ; `audit-prod.sh` ne teste que la présence des en-têtes → insensible
+- [x] **CHECKPOINT 5** — rendus kustomize + gates + README
+
+> **⚠ Avant tout déploiement de cette phase :**
+> 1. **C4 est breaking sur cluster existant** — ajouter `access-key` au Secret `scaleway-eso-auth` AVANT
+>    d'appliquer, sinon SecretStore `NotReady` et ExternalSecrets figés (procédure dans `k8s/README.md`).
+> 2. **I6 touche Postgres/RabbitMQ (PVC)** — rollout préprod réel avec `rollout status` + logs avant prod,
+>    par la règle tirée de l'incident v0.5.0. Risque jugé faible (seccomp ≠ `fsGroup`, cause du crash), mais
+>    la règle s'applique quand même.
+> 3. **`accessKey` reste dans l'historique git public** — la retirer du HEAD ne la retire pas du passé.
+>    Rotation de la paire IAM ESO à envisager (à rapprocher de C5, phase 8).
 
 ## Phase 6 — C7 + I4 + I8 : plafonds secondaires + hygiène  · DIFFÉRABLE
 - [ ] 6.1 C7 : `limit_req` nginx sur `/api/contact` et `/api/account/password-setup/` (`backend-nginx-conf.yaml` + `docker/nginx/default.conf`), `limit_req_status 429` ; repli possible = limiteur Symfony à clé fixe
