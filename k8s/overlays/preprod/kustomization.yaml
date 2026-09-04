@@ -13,6 +13,20 @@ resources:
 # (cf. commentaires dans backend/.env), ici et dans les Secrets (voir README.md).
 configMapGenerator:
   - name: backend-config
+    # Incident v0.6.0 : par défaut, kustomize suffixe ce ConfigMap d'un hash de
+    # contenu (ex. backend-config-mtd9d4g46t) et réécrit automatiquement toutes
+    # les références DANS les manifests qu'il traite. Le Job de migration
+    # (k8s/base/migrate-job.yaml) est délibérément HORS des `resources:` de
+    # kustomize (cf. son en-tête, point C8) : sa référence littérale
+    # `configMapRef: name: backend-config` n'est donc jamais réécrite, et le
+    # Job échoue en CreateContainerConfigError dès que le hash change. Nom
+    # stable = seul moyen pour une ressource hors kustomize de le référencer
+    # de façon fiable. Contrepartie acceptée : un changement de ce ConfigMap
+    # seul (sans changement d'image) ne déclenche plus de rollout automatique
+    # du Deployment backend/worker — redémarrer à la main si besoin
+    # (`kubectl rollout restart`).
+    options:
+      disableNameSuffixHash: true
     literals:
       # Point d'audit I2 : ancre `\z` (fin absolue) et non `$`, qui en PCRE
       # accepte aussi la position avant un saut de ligne final — voir le
