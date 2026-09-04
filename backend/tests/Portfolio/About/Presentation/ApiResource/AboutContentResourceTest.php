@@ -66,6 +66,9 @@ final class AboutContentResourceTest extends WebTestCase
         self::assertSame(['Développeur'], array_column($payload['me']['technicalCards'], 'title'));
         self::assertSame('Humainement', $payload['me']['personalSubtitle']);
         self::assertSame(['Curieux'], array_column($payload['me']['personalCards'], 'title'));
+        // Point d'audit C3 : le filtrage par authentification a été écarté —
+        // les trois volets, "hobbies" compris, sont servis à un appelant
+        // anonyme. Cette assertion est le garde-fou de cette décision.
         self::assertSame('En dehors du travail', $payload['me']['hobbiesSubtitle']);
         self::assertSame(['Musique'], array_column($payload['me']['hobbiesCards'], 'title'));
     }

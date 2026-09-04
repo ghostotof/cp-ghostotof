@@ -25,11 +25,14 @@ k8s (si touché) `kubectl kustomize` prod **et** preprod.
 - [x] 2.4 Tests : `SendAccountInvitationHandlerTest` (jeton frais + lien = seul porteur du clair ; retry → nouveau jeton ; user absent/activé → rien ; transport KO → 503) ; `CpgUserInviterTest` (compte pending + message `{userId, locale}`, reinvite pending/activé) ; `BackofficeUserInvitation/InviteResourceTest` (message = `userId`+`locale`) ; bout-en-bout set-password vert (jeton relu dans l'e-mail via `tests/Support/InvitesUsers`)
 - [x] **CHECKPOINT 2** — gates backend verts (PHPStan max, Rector, PHPUnit 261) ; `messenger:failed:show` structurellement sans jeton (message à 2 champs). Smoke Mailpit non exécuté : aucun service `mailpit` dans le stack local (DSN `.env.local` pointe vers un hôte absent) — couvert par le test fonctionnel bout-en-bout + `AccountInvitationTemplateTest`.
 
-## Phase 3 — C3 : filtrage serveur section « moi » de /api/about/{locale}  · priorité MOYENNE
-- [ ] 3.1 `AboutContentProvider` injecte `Security` ; anonyme → `personalCards = []` + `hobbiesCards = []` (technical conservé)
-- [ ] 3.2 Tests fonctionnels : `/api/about/fr` anonyme (personal/hobbies vides, technical présent) vs `ROLE_USER` (complet) ; adapter les tests provider
-- [ ] 3.3 (opt.) note « filtre client = défense en profondeur » dans `AboutPage.vue`
-- [ ] **CHECKPOINT 3** — gates + `curl` anonyme `/api/about/{fr,en}`
+## Phase 3 — C3 : contenu « À propos » entièrement public  · D4 RÉVISÉE, clos sans correctif
+> D4 affirmait reproduire « le masquage actuel de `AboutPage.vue` » en vidant `personalCards`
+> **et** `hobbiesCards` — or le frontend ne masquait que *hobbies*. Arbitrage produit du
+> 2026-09-04 : tout le contenu « À propos » est public, on retire le filtre au lieu de l'étendre.
+- [x] 3.1 `AboutContentProvider` inchangé ; docblock de `AboutContentResource` réécrit (trois volets publics, ne pas réintroduire de filtre)
+- [x] 3.2 `AboutPage.vue` : `<template v-if="isAuthenticated">` du volet *hobbies* supprimé + import `useAuth` retiré
+- [x] 3.3 Tests : `AboutContentResourceTest` (assertions `hobbies*` = garde-fou C3) ; `AboutPage.spec.ts` (un seul test « hobbies visibles sans authentification », plumbing auth supprimé)
+- [x] **CHECKPOINT 3** — gates backend (PHPStan max, Rector, PHPUnit 261) + frontend (ESLint, build `vue-tsc`, Vitest 391) verts
 
 ## Phase 4 — C6 + I3 : nettoyage surface API  · priorité MOYENNE
 - [ ] 4.1 C6 : `Get('/backoffice/users/{id}')` explicite sur `BackofficeUserResource` (même provider que `Delete`) → `/api/backoffice_users/{id}` disparaît ; tests item `ROLE_SUPER` 200 / anonyme 401

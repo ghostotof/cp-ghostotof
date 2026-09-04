@@ -36,10 +36,16 @@ Gates à repasser à chaque checkpoint :
   transaction. Conséquence : un message routé vers le `failure_transport` doctrine ne
   contient plus aucun secret. `CpgUserInviter` ne crée plus de jeton (il crée le
   compte *pending* et publie le message).
-- **D4 — C3** : `AboutContentProvider` filtre côté **serveur** : un appelant non
-  authentifié reçoit `me.personalCards = []` et `me.hobbiesCards = []` (les
-  `technicalCards` restent publiques, comportement identique au masquage actuel de
-  `AboutPage.vue`). Le filtre frontend est conservé (défense en profondeur).
+- **D4 — C3** *(révisée le 2026-09-04, décision produit)* : **aucun filtrage**, ni
+  serveur ni client. La rédaction initiale de D4 (vider `me.personalCards` et
+  `me.hobbiesCards` pour un anonyme) reposait sur une prémisse fausse — elle
+  affirmait reproduire « le masquage actuel de `AboutPage.vue` », alors que le
+  frontend ne masquait que le volet *hobbies*, jamais *personal*. Mise devant
+  l'alternative, la personne propriétaire du contenu a tranché : tout le contenu
+  « À propos » est public. Le `v-if="isAuthenticated"` de `AboutPage.vue` est donc
+  **supprimé** et `AboutContentProvider` reste inchangé. Justification : ces cartes
+  sont éditables depuis le backoffice — c'est à la saisie qu'on décide de ce qui est
+  publié, pas à l'affichage. C3 est **clos sans correctif**.
 - **D5 — C6** : opération `Get('/backoffice/users/{id}')` **explicite** sur
   `BackofficeUserResource` (même provider que `Delete`), ce qui supprime la route
   générée par défaut `GET /api/backoffice_users/{id}`.
@@ -144,25 +150,28 @@ fonctionne toujours (smoke Mailpit en dev).
 
 ---
 
-## Phase 3 — C3 : filtrage serveur de la section « moi » de /api/about/{locale}
+## Phase 3 — C3 : contenu « À propos » entièrement public (D4 révisée)
 
-**Priorité : moyenne.** Sévérité basse (latente, objectif n°9).
+**Priorité : moyenne.** Sévérité basse (latente, objectif n°9). **Issue : pas de
+filtrage** — voir D4 révisée ci-dessus.
 
-- [ ] 3.1 `AboutContentProvider` : injecter `Symfony\Bundle\SecurityBundle\Security`.
-  `$authenticated = null !== $this->security->getUser();`
-  Construire `AboutMeSectionResource` avec `personalCards` et `hobbiesCards` à `[]`
-  quand `!$authenticated` (les `technicalCards` et les libellés restent). `/quality`,
-  `/stats`, `/experience` inchangés (contenu non identifiant, vérifié).
-- [ ] 3.2 Tests fonctionnels (`AboutContent*` / provider) : `GET /api/about/fr` anonyme
-  → `me.personalCards == []` && `me.hobbiesCards == []` && `me.technicalCards != []` ;
-  authentifié (`ROLE_USER`) → sections complètes. Adapter les tests provider existants.
-- [ ] 3.3 (Optionnel, cosmétique) note dans `AboutPage.vue` que le filtre client est
-  désormais une défense en profondeur, l'API faisant autorité.
+- [x] 3.1 `AboutContentProvider` : **inchangé** (il renvoyait déjà le contenu complet).
+  `AboutContentResource` : docblock réécrit pour acter que les trois volets
+  (`technical`, `personal`, `hobbies`) sont délibérément publics et qu'aucun filtre
+  conditionnel ne doit être réintroduit sans revoir cette décision.
+- [x] 3.2 `AboutPage.vue` : suppression du `<template v-if="isAuthenticated">` autour du
+  volet *hobbies*, ainsi que de l'import `useAuth` devenu inutile.
+- [x] 3.3 Tests : `AboutContentResourceTest::testAnonymousRequestReturnsFullContentForRequestedLocale`
+  devient le garde-fou explicite (assertions `hobbies*` commentées C3).
+  `AboutPage.spec.ts` : les deux tests « masqué si anonyme / visible si connecté »
+  fusionnent en un seul « visible sans authentification » ; le montage n'a plus besoin
+  d'`AuthRepository` (helpers `primeAuthState`/`createStubAuthRepository` supprimés).
 
-Critères d'acceptation : aucune carte « personnelle » ou « loisir » n'est renvoyée à un
-appelant non authentifié, quel que soit le contenu saisi au backoffice.
+Critères d'acceptation : `GET /api/about/{locale}` anonyme renvoie les trois volets, et
+la page les affiche tous sans authentification.
 
-- [ ] **CHECKPOINT 3** — gates backend + `curl` anonyme sur `/api/about/fr` et `/en`.
+- [x] **CHECKPOINT 3** — gates backend (PHPStan max, Rector, PHPUnit 261) **et** frontend
+  (ESLint, `vue-tsc` + build, Vitest 391) verts.
 
 ---
 
@@ -303,7 +312,7 @@ rendu kustomize + les gates frontend, la bascule réelle est manuelle (README).
 |------|----------|----------|-----------|
 | 1 | C1 | Moyenne→Élevée (dispo) | non |
 | 2 | C2 | Moyenne | non |
-| 3 | C3 | Basse (latente) | non |
+| 3 | C3 | Basse (latente) | clos sans correctif (D4 révisée) |
 | 4 | C6, I3 | Basse / info | non |
 | 5 | C4, I2, I5, I6 | Basse / info | non (peu risqué) |
 | 6 | C7, I4, I8 | Basse / info | **oui** |

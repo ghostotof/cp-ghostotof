@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { useAboutContent } from '../../application/about/useAboutContent'
-import { useAuth } from '../../application/auth/useAuth'
 import BaseCard from '../ui/BaseCard.vue'
 
+// Aucune dépendance à l'état d'authentification : le contenu de cette page est
+// public dans son intégralité, volets « Humainement » et « En dehors du
+// travail » compris (cf. audit C3 — filtrage écarté, rien ici n'est jugé
+// identifiant, et l'API renvoie de toute façon le contenu complet).
 const { t } = useI18n()
 const { aboutContent, isLoading, hasError } = useAboutContent()
-const { isAuthenticated } = useAuth()
 </script>
 
 <template>
@@ -97,24 +99,22 @@ const { isAuthenticated } = useAuth()
           </div>
         </div>
 
-        <template v-if="isAuthenticated">
-          <h3 class="h6 text-body-secondary text-uppercase border-top mt-4 pt-4 mb-3">
-            {{ aboutContent.me.hobbiesSubtitle }}
-          </h3>
-          <div class="row row-cols-1 row-cols-sm-3 g-3">
-            <div
-              v-for="card in aboutContent.me.hobbiesCards"
-              :key="card.title"
-              class="col"
-            >
-              <BaseCard
-                :title="card.title"
-                :description="card.description"
-                :icon-key="card.iconKey"
-              />
-            </div>
+        <h3 class="h6 text-body-secondary text-uppercase border-top mt-4 pt-4 mb-3">
+          {{ aboutContent.me.hobbiesSubtitle }}
+        </h3>
+        <div class="row row-cols-1 row-cols-sm-3 g-3">
+          <div
+            v-for="card in aboutContent.me.hobbiesCards"
+            :key="card.title"
+            class="col"
+          >
+            <BaseCard
+              :title="card.title"
+              :description="card.description"
+              :icon-key="card.iconKey"
+            />
           </div>
-        </template>
+        </div>
       </div>
     </template>
   </section>
