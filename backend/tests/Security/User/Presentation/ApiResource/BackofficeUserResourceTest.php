@@ -55,6 +55,53 @@ final class BackofficeUserResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(403);
     }
 
+    /**
+     * Point d'audit C6 : l'opération `Get` est déclarée explicitement sur
+     * `/backoffice/users/{id}`, ce qui supprime la route par défaut qu'API
+     * Platform générait sinon pour les IRI (`/api/backoffice_users/{id}`).
+     * On vérifie ici les deux faces : le gabarit maison répond, et l'ancien
+     * chemin parasite n'existe plus.
+     */
+    public function testItemReadIsServedOnTheExplicitTemplateOnlyForRoleSuper(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
+        $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+
+        $client->request('GET', '/api/backoffice/users');
+        self::assertResponseIsSuccessful();
+        $users = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        $superId = $this->findIdByUsername($users, self::SUPER_USERNAME);
+
+        $client->request('GET', sprintf('/api/backoffice/users/%d', $superId));
+
+        self::assertResponseIsSuccessful();
+        $user = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame($superId, $user['id']);
+        self::assertSame(self::SUPER_USERNAME, $user['username']);
+        self::assertContains(CpgUser::ROLE_SUPER, $user['roles']);
+        self::assertNull($user['email']);
+        self::assertSame('active', $user['status']);
+        self::assertArrayNotHasKey('password', $user);
+
+        // Id inconnu sur le gabarit maison : 404, pas 500.
+        $client->request('GET', '/api/backoffice/users/999999');
+        self::assertResponseStatusCodeSame(404);
+
+        // La route générée par défaut a disparu du routeur.
+        $client->request('GET', sprintf('/api/backoffice_users/%d', $superId));
+        self::assertResponseStatusCodeSame(404);
+    }
+
+    public function testAnonymousItemReadIsRejected(): void
+    {
+        $client = self::createClient();
+
+        $client->request('GET', '/api/backoffice/users/1');
+
+        self::assertResponseStatusCodeSame(401);
+    }
+
     public function testListDeleteAndSelfDeleteGuardAsRoleSuper(): void
     {
         $client = self::createClient();
