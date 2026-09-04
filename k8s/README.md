@@ -33,6 +33,21 @@ des jobs.
      rm -rf "$TMP"
    done
    ```
+   > **⚠ À rejouer après le point d'audit C8.** Le `Role` a changé :
+   > `pods/exec: create` a été **retiré** et `batch/jobs`
+   > (`get,list,watch,create,delete`) ajouté, parce que les migrations Doctrine
+   > passent désormais par le Job `k8s/base/migrate-job.yaml` au lieu d'un
+   > `kubectl exec`. Ce bootstrap n'étant jamais rejoué par le pipeline, la
+   > boucle ci-dessus **doit être relancée avant le prochain déploiement**,
+   > sinon `deploy-preprod`/`deploy-prod` échouent sur
+   > `cannot create resource "jobs"`. Vérification :
+   > ```bash
+   > kubectl -n preprod auth can-i create jobs \
+   >   --as=system:serviceaccount:preprod:github-actions-deployer   # yes attendu
+   > kubectl -n preprod auth can-i create pods/exec \
+   >   --as=system:serviceaccount:preprod:github-actions-deployer   # no attendu
+   > ```
+
    Puis construire un kubeconfig autonome à partir du token durable
    (`Secret` `github-actions-deployer-token`, type `kubernetes.io/service-account-token`)
    et du endpoint/CA du cluster (`kubectl config view --raw`), et le stocker

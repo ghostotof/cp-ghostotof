@@ -57,18 +57,26 @@ k8s (si touché) `kubectl kustomize` prod **et** preprod.
 > 3. **`accessKey` reste dans l'historique git public** — la retirer du HEAD ne la retire pas du passé.
 >    Rotation de la paire IAM ESO à envisager (à rapprocher de C5, phase 8).
 
-## Phase 6 — C7 + I4 + I8 : plafonds secondaires + hygiène  · DIFFÉRABLE
-- [ ] 6.1 C7 : `limit_req` nginx sur `/api/contact` et `/api/account/password-setup/` (`backend-nginx-conf.yaml` + `docker/nginx/default.conf`), `limit_req_status 429` ; repli possible = limiteur Symfony à clé fixe
-- [ ] 6.2 I4 : `CONTACT_*` vides dans `backend/.env`, valeurs dev via `init-symfony.sh` → `.env.local`
-- [ ] 6.3 I8 : documenter (compte invité = `ROLE_USER` = accès CV + données authentifiées ; mot de passe fort + rotation) dans `CONTEXT.md`/ADR
-- [ ] **CHECKPOINT 6** — gates + vérif `limit_req` en dev
+## Phase 6 — C7 + I4 + I8 : plafonds secondaires + hygiène  · FAIT
+- [x] 6.1 C7 : `limit_req` sur `/api/contact` (10r/m, burst 5) et `/api/account/password-setup/` (20r/m, burst 10), `limit_req_status 429`, dans les deux confs synchronisées
+  - **Ajout non prévu au plan, indispensable** : bloc `real_ip` (`set_real_ip_from` sur les plages privées + `real_ip_header X-Forwarded-For`). Sans lui, derrière l'ingress `$binary_remote_addr` vaut l'IP du pod ingress-nginx → **un seul compteur pour tout Internet**, déni de service auto-infligé. Aligné sur `trusted_proxies: private_ranges` de Symfony.
+- [x] 6.2 I4 : `CONTACT_*` vidés dans `backend/.env` ; valeurs dev via `init-symfony.sh` → `.env.local` ; **valeurs de test dans `phpunit.dist.xml`** (l'env test ne charge jamais `.env.local` — sans ça, 7 tests en erreur `RfcComplianceException`), avec `force="true"` sinon Dotenv écrase par la valeur vide du `.env`
+  - ⚠ `init-symfony.sh` sort en `exit 0` si `composer.json` existe : sur un projet déjà initialisé, ajouter les 2 variables à la main dans `.env.local` (fait sur ce poste)
+- [x] 6.3 I8 : risque du compte invité générique documenté dans `docs/adr/0001` (pas de `CONTEXT.md` dans le dépôt) — `ROLE_USER` = accès `GET /api/cv`, aucun palier intermédiaire ; hygiène (mot de passe dédié, rotation, jamais `ROLE_SUPER`) + piste `ROLE_GUEST`
+- [x] **CHECKPOINT 6** — `nginx -t` sur les 2 confs ; 429 vérifié en dev (6 puis 429 sur contact, 11 puis 429 sur set-password) ; aucun autre endpoint affecté ; PHPStan/Rector/PHPUnit 276 verts
 
-## Phase 7 — C8 : migrations via Job k8s, drop pods/exec  · DIFFÉRABLE
-- [ ] 7.1 `k8s/base/migrate-job.yaml` (hors `kustomization.yaml resources:`)
-- [ ] 7.2 `pipeline.yml` deploy-preprod + deploy-prod : `delete` + `apply -f migrate-job.yaml` + `kubectl wait --for=condition=complete` (+ logs sur échec)
-- [ ] 7.3 `role.yaml` : retirer `pods/exec: create` ; ajouter `batch/jobs` (get/list/watch/create/delete) ; garder `pods`/`pods/log` en lecture
-- [ ] 7.4 Vérifs : `kubectl kustomize` ; `kubectl apply --dry-run=client -f migrate-job.yaml` ; revue pipeline ; MAJ `k8s/README.md` + mémoire `project_networkpolicy_incident_v040`
-- [ ] **CHECKPOINT 7** — kustomize + dry-run + revue
+## Phase 7 — C8 : migrations via Job k8s, drop pods/exec  · FAIT
+- [x] 7.1 `k8s/base/migrate-job.yaml`, hors `resources:` — mêmes `securityContext`/limites que le Deployment, `backoffLimit: 1`, `ttlSecondsAfterFinished: 600`
+  - **Écart au plan** : hors kustomize, le transformateur d'images ne s'applique pas. `image: backend` serait résolu en `docker.io/library/backend` → placeholder `${BACKEND_IMAGE}` substitué par `envsubst` au moment de l'apply (idiome déjà utilisé dans `docker/node/docker-entrypoint.sh`)
+- [x] 7.2 `pipeline.yml` deploy-preprod + deploy-prod : `delete --ignore-not-found` + `envsubst | apply -f -` + `wait --for=condition=complete --timeout=180s` + dump des logs sur échec
+- [x] 7.3 `role.yaml` : `pods/exec: create` retiré ; `batch/jobs` (get/list/watch/create/**delete**, la spec d'un Job étant immuable) ajouté ; `pods`/`pods/log` conservés en lecture
+- [x] 7.4 Vérifs : les 2 overlays rendent sans erreur et **ne contiennent pas** `backend-migrate` ; `envsubst` + `kubectl apply --dry-run=client` OK ; workflow YAML valide (12 jobs, bloc migrate dans les deux) ; plus aucun `kubectl exec` ni `pods/exec` actif ; NetworkPolicy vérifiée (`allow-datastores-from-app` utilise `podSelector: {}` = tous les pods du namespace, le Job joindra Postgres)
+- [x] **CHECKPOINT 7** — kustomize + dry-run + revue pipeline + Role rendu vérifié
+
+> **⚠ Avant le prochain déploiement — bootstrap RBAC à rejouer.** Le `Role` est
+> un bootstrap manuel, jamais réappliqué par le pipeline. Sans le rejouer,
+> `deploy-preprod`/`deploy-prod` échoueront sur `cannot create resource "jobs"`.
+> Procédure et commandes `auth can-i` de vérification dans `k8s/README.md` §4.
 
 ## Phase 8 — C5 + clôture
 - [ ] 8.1 C5 : `git grep` des anciens secrets sur `HEAD` (vide) ; consigner « sans effet, ESO » + prescription vérif Scaleway ; excision d'historique = option non planifiée

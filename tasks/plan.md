@@ -248,7 +248,7 @@ rendu kustomize + les gates frontend, la bascule réelle est manuelle (README).
 
 **Priorité : basse.**
 
-- [ ] 6.1 **C7** — `limit_req` nginx sur les endpoints publics coûteux, dans
+- [x] 6.1 **C7** — `limit_req` nginx sur les endpoints publics coûteux, dans
   `k8s/base/backend-nginx-conf.yaml` **et** `docker/nginx/default.conf` (garder les
   deux synchronisés) :
   - `limit_req_zone $binary_remote_addr zone=contact:1m rate=10r/m;` +
@@ -260,15 +260,15 @@ rendu kustomize + les gates frontend, la bascule réelle est manuelle (README).
   - Note : si l'imbrication `limit_req_zone` dans la ConfigMap s'avère trop lourde,
     replier sur un limiteur Symfony à clé fixe (quota global large, ex. 200/h) sur ces
     deux chemins — même patron que les limiteurs existants.
-- [ ] 6.2 **I4** — `backend/.env` : `CONTACT_RECIPIENT_EMAIL=` / `CONTACT_SENDER_EMAIL=`
+- [x] 6.2 **I4** — `backend/.env` : `CONTACT_RECIPIENT_EMAIL=` / `CONTACT_SENDER_EMAIL=`
   laissés **vides** (comme `APP_SECRET`), valeurs dev écrites par
   `docker/php/init-symfony.sh` dans `.env.local`. Vérifier que `make consume` en dev
   après `make init` rend toujours l'e-mail de contact.
-- [ ] 6.3 **I8** — documenter dans `CONTEXT.md` (ou l'ADR 0001) : le compte invité
+- [x] 6.3 **I8** — documenter dans `CONTEXT.md` (ou l'ADR 0001) : le compte invité
   générique a `ROLE_USER` et accède donc au CV réel et à toute donnée
   `IS_AUTHENTICATED` → une fuite de ses identifiants = exposition complète des données
   personnelles ; recommandation de mot de passe fort + rotation.
-- [ ] **CHECKPOINT 6** — gates ; vérif manuelle `limit_req` en dev.
+- [x] **CHECKPOINT 6** — gates verts ; `limit_req` vérifié en dev (429 après 6 requêtes sur /api/contact, après 11 sur set-password). Écart au plan : ajout d'un bloc `real_ip` sans lequel la clé `$binary_remote_addr` aurait été l'IP du pod ingress — un compteur unique pour tout Internet.
 
 ---
 
@@ -276,13 +276,13 @@ rendu kustomize + les gates frontend, la bascule réelle est manuelle (README).
 
 **Priorité : basse.** Touche le pipeline (préprod + prod) et le RBAC.
 
-- [ ] 7.1 `k8s/base/migrate-job.yaml` : `Job` `backend-migrate` réutilisant l'image
+- [x] 7.1 `k8s/base/migrate-job.yaml` : `Job` `backend-migrate` réutilisant l'image
   `backend`, `command: ['php','bin/console','doctrine:migrations:migrate','--no-interaction']`,
   `envFrom` = `backend-config` + `backend-secrets`, mêmes `securityContext` que le
   Deployment, `backoffLimit: 1`, `ttlSecondsAfterFinished: 600`. **Pas** dans
   `kustomization.yaml` `resources:` (appliqué à la demande par le pipeline, pas à
   chaque `apply -k`).
-- [ ] 7.2 `pipeline.yml` `deploy-preprod` et `deploy-prod` : remplacer
+- [x] 7.2 `pipeline.yml` `deploy-preprod` et `deploy-prod` : remplacer
   `kubectl exec deploy/backend -c php-fpm -- php bin/console doctrine:migrations:migrate`
   par :
   ```
@@ -291,16 +291,16 @@ rendu kustomize + les gates frontend, la bascule réelle est manuelle (README).
   kubectl -n <ns> wait --for=condition=complete --timeout=180s job/backend-migrate \
     || { kubectl -n <ns> logs job/backend-migrate; exit 1; }
   ```
-- [ ] 7.3 `k8s/base/github-actions-rbac/role.yaml` : retirer la règle
+- [x] 7.3 `k8s/base/github-actions-rbac/role.yaml` : retirer la règle
   `resources: ['pods/exec'] verbs: ['create']` ; ajouter `apiGroups: ['batch']
   resources: ['jobs'] verbs: ['get','list','watch','create','delete']`. Garder
   `pods`/`pods/log` en lecture pour le diagnostic.
-- [ ] 7.4 Vérifs : `kubectl kustomize` des deux overlays OK ; `migrate-job.yaml` valide
+- [x] 7.4 Vérifs : `kubectl kustomize` des deux overlays OK ; `migrate-job.yaml` valide
   (`kubectl apply --dry-run=client`) ; relire le pipeline (pas de test réel sans
   cluster). Mettre à jour `k8s/README.md` + la mémoire
   `project_networkpolicy_incident_v040` (le rollback ne couvrait déjà pas les
   non-Deployments : le Job y ajoute peu de risque, il est idempotent via delete+apply).
-- [ ] **CHECKPOINT 7** — rendus kustomize + dry-run Job + revue pipeline.
+- [x] **CHECKPOINT 7** — overlays rendus (sans `backend-migrate`, comme voulu) ; `envsubst` + `apply --dry-run=client` OK ; workflow YAML valide ; Role rendu sans `pods/exec`, avec `batch/jobs`. Écart au plan : placeholder `${BACKEND_IMAGE}` + `envsubst`, le Job étant hors kustomize (sinon `image: backend` -> `docker.io/library/backend`). **Bootstrap RBAC à rejouer avant tout déploiement** (cf. k8s/README.md §4).
 
 ---
 

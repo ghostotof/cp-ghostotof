@@ -12,12 +12,22 @@ rules:
   - apiGroups: ['batch']
     resources: ['cronjobs']
     verbs: ['get', 'list', 'watch', 'create', 'update', 'patch']
+  # Point d'audit C8 : `jobs` remplace `pods/exec`. `delete` est nécessaire car
+  # la spec d'un Job est immuable — le pipeline supprime puis recrée
+  # `backend-migrate` à chaque déploiement (cf. k8s/base/migrate-job.yaml).
+  - apiGroups: ['batch']
+    resources: ['jobs']
+    verbs: ['get', 'list', 'watch', 'create', 'delete']
+  # Lecture seule, pour le diagnostic et `kubectl logs job/backend-migrate`.
   - apiGroups: ['']
     resources: ['pods', 'pods/log']
     verbs: ['get', 'list', 'watch']
-  - apiGroups: ['']
-    resources: ['pods/exec']
-    verbs: ['create']
+  # `pods/exec: create` RETIRÉ (point d'audit C8) : ce verbe ouvrait au compte
+  # de service de la CI un shell dans n'importe quel pod du namespace — donc
+  # l'accès à tous les secrets montés (clés JWT, identifiants Postgres, CV) et
+  # l'exécution de code arbitraire en production, bien au-delà du seul besoin
+  # « jouer les migrations ». Ne pas le réintroduire : si une commande console
+  # doit tourner au déploiement, en faire un Job déclaré, auditable en revue.
   - apiGroups: ['']
     resources: ['services', 'configmaps', 'persistentvolumeclaims']
     verbs: ['get', 'list', 'watch', 'create', 'update', 'patch']
