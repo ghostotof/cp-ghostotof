@@ -118,6 +118,51 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         self::assertResponseHasHeader('Retry-After');
     }
 
+    /**
+     * Audit C1 / décision D1 : le quota est consommé dans un listener
+     * kernel.request, donc AVANT la désérialisation et la validation du corps.
+     * Le 11e POST est rejeté en 429 même avec un corps volontairement invalide
+     * (mot de passe trop court) et un jeton inconnu : ni la résolution du jeton
+     * ni la validation (a fortiori l'appel HIBP) ne sont atteintes.
+     */
+    public function testPostBeyondTheRateLimitReturns429BeforeBodyValidation(): void
+    {
+        $client = $this->freshClient();
+        $unknown = bin2hex(random_bytes(32));
+
+        for ($i = 0; $i < 10; ++$i) {
+            $client->request('POST', '/api/account/password-setup/'.$unknown, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => self::NEW_PASSWORD]));
+            self::assertResponseStatusCodeSame(404);
+        }
+
+        $client->request('POST', '/api/account/password-setup/'.$unknown, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => 'short']));
+
+        self::assertResponseStatusCodeSame(429);
+        self::assertResponseHasHeader('Retry-After');
+    }
+
+    /**
+     * GET et POST partagent le même compteur par IP : 5 + 5 atteignent la
+     * limite de 10, le 11e appel (quelle que soit la méthode) est rejeté.
+     */
+    public function testGetAndPostShareTheSameRateLimitQuota(): void
+    {
+        $client = $this->freshClient();
+        $unknown = bin2hex(random_bytes(32));
+
+        for ($i = 0; $i < 5; ++$i) {
+            $client->request('GET', '/api/account/password-setup/'.$unknown);
+            self::assertResponseStatusCodeSame(404);
+        }
+        for ($i = 0; $i < 5; ++$i) {
+            $client->request('POST', '/api/account/password-setup/'.$unknown, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => self::NEW_PASSWORD]));
+            self::assertResponseStatusCodeSame(404);
+        }
+
+        $client->request('GET', '/api/account/password-setup/'.$unknown);
+        self::assertResponseStatusCodeSame(429);
+    }
+
     private function freshClient(): KernelBrowser
     {
         $client = self::createClient();
