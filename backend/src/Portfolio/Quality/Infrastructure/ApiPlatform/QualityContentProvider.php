@@ -15,7 +15,6 @@ use App\Portfolio\Quality\Domain\Repository\QualityTraitRepositoryInterface;
 use App\Portfolio\Quality\Presentation\ApiResource\QualityContentResource;
 use App\Portfolio\Quality\Presentation\ApiResource\QualityPrincipleResource;
 use App\Portfolio\Quality\Presentation\ApiResource\QualityTraitResource;
-use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
@@ -41,7 +40,7 @@ final readonly class QualityContentProvider implements ProviderInterface
 
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): QualityContentResource
     {
-        $locale = Locale::from($this->uriVariableString($uriVariables, 'locale'));
+        $locale = $this->uriVariableLocale($uriVariables);
 
         return new QualityContentResource(
             principles: array_map(

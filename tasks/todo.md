@@ -35,9 +35,10 @@ k8s (si touché) `kubectl kustomize` prod **et** preprod.
 - [x] **CHECKPOINT 3** — gates backend (PHPStan max, Rector, PHPUnit 261) + frontend (ESLint, build `vue-tsc`, Vitest 391) verts
 
 ## Phase 4 — C6 + I3 : nettoyage surface API  · priorité MOYENNE
-- [ ] 4.1 C6 : `Get('/backoffice/users/{id}')` explicite sur `BackofficeUserResource` (même provider que `Delete`) → `/api/backoffice_users/{id}` disparaît ; tests item `ROLE_SUPER` 200 / anonyme 401
-- [ ] 4.2 I3 : `Locale::fromString()` + `InvalidLocaleException` (→404) ; `uriVariableLocale()` dans `ResolvesUriVariables` ; retirer `ValueError: 404` d'`api_platform.yaml` ; MAJ providers `Portfolio/*` ; test `/api/about/zz` → 404
-- [ ] **CHECKPOINT 4** — `debug:router` (diff), gates backend
+- [x] 4.1 C6 : `Get('/backoffice/users/{id}')` explicite sur `BackofficeUserResource` (même provider que `Delete`) → `/api/backoffice_users/{id}` disparu ; tests item `ROLE_SUPER` 200 + DTO / id inconnu 404 / ancien chemin 404 / anonyme 401
+- [x] 4.2 I3 : `Locale::fromString()` + `InvalidLocaleException` (→404) ; `uriVariableLocale()` dans `ResolvesUriVariables` ; `ValueError: 404` retiré d'`api_platform.yaml` ; 5 sites `{locale}` migrés (About/Quality/Stats providers + `BackofficeAboutSettings` provider/processor) ; `LocaleTest` (nominal, rejets, message, hiérarchie ≠ `\ValueError`)
+  - Les champs `locale`/`category` des DTO de backoffice gardent `Locale::from()` : bornés en amont par `#[Assert\Choice]` (422 avant le processor), une `\ValueError` y signalerait un vrai bug et doit rester un 500
+- [x] **CHECKPOINT 4** — `debug:router` conforme ; gates backend verts (PHPStan max, Rector, PHPUnit 276) ; vérif runtime curl des 404 de locale
 
 ## Phase 5 — C4 + I2 + I5 + I6 : durcissement k8s/frontend  · priorité MOYENNE-BASSE
 - [ ] 5.1 C4 : `secretstore.yaml` `accessKey` → `secretRef` (`scaleway-eso-auth`/`access-key`) ; MAJ `k8s/README.md` (bootstrap 2 clés)

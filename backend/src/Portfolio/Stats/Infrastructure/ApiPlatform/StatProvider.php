@@ -7,7 +7,6 @@ namespace App\Portfolio\Stats\Infrastructure\ApiPlatform;
 use App\Portfolio\Stats\Domain\Entity\Stat;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
-use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Portfolio\Stats\Application\StatPresenterInterface;
 use App\Portfolio\Stats\Domain\Repository\StatRepositoryInterface;
 use App\Portfolio\Stats\Presentation\ApiResource\StatResource;
@@ -36,7 +35,7 @@ final readonly class StatProvider implements ProviderInterface
      */
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): array
     {
-        $locale = Locale::from($this->uriVariableString($uriVariables, 'locale'));
+        $locale = $this->uriVariableLocale($uriVariables);
 
         return array_map(
             fn (Stat $stat): StatResource => new StatResource(...$this->statPresenter->present($stat)),

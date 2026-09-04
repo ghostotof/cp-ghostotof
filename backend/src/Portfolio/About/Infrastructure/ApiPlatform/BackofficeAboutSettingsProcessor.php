@@ -9,7 +9,6 @@ use ApiPlatform\State\ProcessorInterface;
 use App\Portfolio\About\Application\AboutSettingsAdministratorInterface;
 use App\Portfolio\About\Domain\Entity\AboutSettings;
 use App\Portfolio\About\Presentation\ApiResource\BackofficeAboutSettingsResource;
-use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
@@ -27,7 +26,7 @@ final readonly class BackofficeAboutSettingsProcessor implements ProcessorInterf
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): BackofficeAboutSettingsResource
     {
         $settings = $this->aboutSettingsAdministrator->update(
-            Locale::from($this->uriVariableString($uriVariables, 'locale')),
+            $this->uriVariableLocale($uriVariables),
             $data->siteEyebrow,
             $data->meEyebrow,
             $data->technicalSubtitle,

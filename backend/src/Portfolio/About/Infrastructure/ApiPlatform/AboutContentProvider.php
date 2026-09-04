@@ -20,7 +20,6 @@ use App\Portfolio\About\Presentation\ApiResource\AboutCardResource;
 use App\Portfolio\About\Presentation\ApiResource\AboutContentResource;
 use App\Portfolio\About\Presentation\ApiResource\AboutMeSectionResource;
 use App\Portfolio\About\Presentation\ApiResource\AboutSiteSectionResource;
-use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
@@ -48,7 +47,7 @@ final readonly class AboutContentProvider implements ProviderInterface
 
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): AboutContentResource
     {
-        $locale = Locale::from($this->uriVariableString($uriVariables, 'locale'));
+        $locale = $this->uriVariableLocale($uriVariables);
 
         $settings = $this->aboutSettingsRepository->findByLocale($locale);
 

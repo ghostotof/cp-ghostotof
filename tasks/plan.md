@@ -179,13 +179,13 @@ la page les affiche tous sans authentification.
 
 **Priorité : moyenne.** Sévérités basse / informative.
 
-- [ ] 4.1 **C6** — `BackofficeUserResource` : ajouter
+- [x] 4.1 **C6** — `BackofficeUserResource` : ajouter
   `new Get(uriTemplate: '/backoffice/users/{id}', provider: <même provider que Delete>)`
   dans `operations`. Vérifier via `php bin/console debug:router` que
   `GET /api/backoffice_users/{id}` a **disparu** et que `GET /api/backoffice/users/{id}`
   existe. Test fonctionnel : lecture item en `ROLE_SUPER` → 200 + DTO attendu ;
   anonyme → 401.
-- [ ] 4.2 **I3** — `App\Portfolio\Shared\Domain\ValueObject\Locale::fromString(string $value): self`
+- [x] 4.2 **I3** — `App\Portfolio\Shared\Domain\ValueObject\Locale::fromString(string $value): self`
   (try/catch `\ValueError` → `InvalidLocaleException`, Domain, dans
   `Portfolio/Shared/Domain/Exception/`). Entrée `InvalidLocaleException: 404` dans
   `api_platform.yaml`, **suppression** de `ValueError: 404`. Ajouter
@@ -194,7 +194,7 @@ la page les affiche tous sans authentification.
   `Locale::from($this->uriVariableString(...))`. Tests : segment `/api/about/zz` → 404
   (toujours), et un `\ValueError` non lié à la locale n'est plus transformé en 404
   (test unitaire ou revue ciblée).
-- [ ] **CHECKPOINT 4** — `debug:router` (diff attendu), gates backend.
+- [x] **CHECKPOINT 4** — `debug:router` : `/api/backoffice_users/{id}` a disparu, `GET /api/backoffice/users/{id}` existe. Gates backend verts (PHPStan max, Rector, PHPUnit 276). Vérif runtime : `/api/about/zz`, `/api/quality/de`, `/api/stats/xx` -> 404 « Langue inconnue », `/api/backoffice_users/1` -> 404.
 
 ---
 

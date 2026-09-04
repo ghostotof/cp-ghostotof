@@ -9,7 +9,6 @@ use ApiPlatform\State\ProviderInterface;
 use App\Portfolio\About\Domain\Entity\AboutSettings;
 use App\Portfolio\About\Domain\Repository\AboutSettingsRepositoryInterface;
 use App\Portfolio\About\Presentation\ApiResource\BackofficeAboutSettingsResource;
-use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
@@ -26,7 +25,7 @@ final readonly class BackofficeAboutSettingsProvider implements ProviderInterfac
 
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeAboutSettingsResource
     {
-        $locale = Locale::from($this->uriVariableString($uriVariables, 'locale'));
+        $locale = $this->uriVariableLocale($uriVariables);
         $settings = $this->aboutSettingsRepository->findByLocale($locale);
 
         return null !== $settings ? $this->toResource($settings) : null;
