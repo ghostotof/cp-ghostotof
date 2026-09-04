@@ -180,6 +180,16 @@ Content management for all of the above, plus user administration, gated end-to-
   `{ path: ^/api/backoffice, roles: ROLE_SUPER }`, which **must stay the first entry in the list** — Symfony
   applies only the first matching rule, so a later/looser rule (e.g. `^/api/me`) would never get a chance to
   override it, but a rule placed *before* it could accidentally widen backoffice access.
+- **Non-negotiable rule for every new endpoint — "never send what the caller isn't entitled to"**: the API must
+  never return protected data to an unauthenticated or unauthorized caller, *even when the frontend does not
+  display it*. Hiding a field client-side is presentation, never protection — anyone can call the endpoint
+  directly. Concretely: a new route is protected by default; making it public is a deliberate act.
+  `tests/Security/ApiRouteExposureTest.php` enforces this automatically — it walks the router and asserts that
+  **every** `/api` route outside its `PUBLIC_PATHS` allow-list answers 401/403 to an anonymous caller, that no
+  `/api/backoffice*` path can ever be allow-listed, and that the whole backoffice answers 403 to an
+  authenticated account lacking `ROLE_SUPER` (authenticated ≠ authorized). Adding a public endpoint therefore
+  means adding an entry to `PUBLIC_PATHS` **with a written justification**; if you can't justify it, it isn't
+  public. Never weaken or delete that test to make a new route pass.
 - **API Platform pattern**, repeated identically across every backoffice resource
   (`BackofficeExperienceTechnologyResource`, `BackofficeStatResource`, `BackofficeQuality{Principle,Trait}Resource`,
   `Backoffice{About}{Settings,SiteCard,MeCard}Resource`, `BackofficeUserResource`,
