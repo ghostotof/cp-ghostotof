@@ -104,9 +104,9 @@ une panne HIBP ne renvoie plus 500 sur `/api/account/password-setup` ni sur
 
 **Priorité : haute.** Sévérité moyenne. Refactor contenu au contexte `Security/User`.
 
-- [ ] 2.1 `SendAccountInvitationMessage` → `readonly { public int $userId, public string $locale }`
+- [x] 2.1 `SendAccountInvitationMessage` → `readonly { public int $userId, public string $locale }`
   (suppression de `recipientEmail`, `username`, `clearToken`).
-- [ ] 2.2 `SendAccountInvitationHandler` :
+- [x] 2.2 `SendAccountInvitationHandler` :
   - charge le `CpgUser` par `userId` ; s'il est absent ou déjà activé
     (`!isPendingActivation()`) → log `warning` + `return` (pas d'exception, pas de retry
     inutile).
@@ -116,7 +116,7 @@ une panne HIBP ne renvoie plus 500 sur `/api/account/password-setup` ni sur
   - `ClockInterface` + `CpgUserRepositoryInterface` + `PasswordSetupTokenRepositoryInterface`
     + `EntityManagerInterface` (transaction) injectés.
   - `AccountInvitationDeliveryException` toujours levée sur `TransportExceptionInterface`.
-- [ ] 2.3 `CpgUserInviter` :
+- [x] 2.3 `CpgUserInviter` :
   - `invite(string $email, Locale $locale): CpgUser` — garde `findOneByEmail` + création
     du compte *pending* (`markInvited($now)`, `save`) + `messageBus->dispatch(new SendAccountInvitationMessage($user->getId(), $locale->value))`.
     **Ne crée plus** de `PasswordSetupToken` ni n'appelle `deleteForUser`.
@@ -125,7 +125,7 @@ une panne HIBP ne renvoie plus 500 sur `/api/account/password-setup` ni sur
   - `issueTokenAndDispatch()` supprimé ; `TOKEN_LIFETIME` déménage dans le handler.
   - `MessageBusInterface` reste ; `PasswordSetupTokenRepositoryInterface` et
     `ClockInterface` peuvent sortir de `CpgUserInviter` s'ils n'y servent plus.
-- [ ] 2.4 Tests :
+- [x] 2.4 Tests :
   - `SendAccountInvitationHandlerTest` (nouveau périmètre) : crée un jeton frais + envoie
     l'e-mail ; un 2ᵉ passage (retry) supprime l'ancien jeton et en crée un autre ;
     utilisateur absent/activé → aucun envoi, aucun jeton ; `TransportException` →
@@ -140,7 +140,7 @@ Critères d'acceptation : `php bin/console messenger:failed:show` sur une invita
 échec ne révèle aucun jeton exploitable ; le parcours invite→e-mail→set-password→login
 fonctionne toujours (smoke Mailpit en dev).
 
-- [ ] **CHECKPOINT 2** — gates backend + smoke Mailpit bout-en-bout.
+- [x] **CHECKPOINT 2** — gates backend verts (PHPStan/Rector/PHPUnit 261). Smoke Mailpit non exécuté (pas de service `mailpit` local) ; propriété C2 garantie structurellement + test fonctionnel bout-en-bout.
 
 ---
 

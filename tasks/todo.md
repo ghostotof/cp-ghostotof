@@ -19,11 +19,11 @@ k8s (si touché) `kubectl kustomize` prod **et** preprod.
 - [x] **CHECKPOINT 1** — gates backend verts (PHPStan max, Rector, PHPUnit 256 tests)
 
 ## Phase 2 — C2 : jeton hors du message (donc hors failure transport)  · priorité HAUTE
-- [ ] 2.1 `SendAccountInvitationMessage` → `{ userId: int, locale: string }` uniquement
-- [ ] 2.2 `SendAccountInvitationHandler` : charge l'user (absent/activé → log+return) ; transaction { `deleteForUser` + nouveau `PasswordSetupToken` (SHA-256, +48h) } ; construit `setupUrl` ; envoie ; `AccountInvitationDeliveryException` sur `TransportException`
-- [ ] 2.3 `CpgUserInviter` : `invite()`/`reinvite()` créent/gardent le compte *pending* et publient `{userId, locale}` — plus de création de jeton ; supprimer `issueTokenAndDispatch()`
-- [ ] 2.4 Tests : `SendAccountInvitationHandlerTest` (jeton frais + envoi ; retry → nouveau jeton, ancien supprimé ; user absent/activé → rien ; transport KO → 503) ; `CpgUserInviterTest` (compte pending + message, plus d'assertion jeton) ; `BackofficeUserInvitation/InviteResourceTest` (message sans `clearToken`) ; bout-en-bout set-password vert
-- [ ] **CHECKPOINT 2** — gates + smoke Mailpit invite→e-mail→set-password→login ; `messenger:failed:show` sans jeton
+- [x] 2.1 `SendAccountInvitationMessage` → `{ userId: int, locale: string }` uniquement
+- [x] 2.2 `SendAccountInvitationHandler` : charge l'user (absent/activé → log+return) ; `wrapInTransaction { deleteForUser + nouveau PasswordSetupToken (SHA-256, +48h) }` ; construit `setupUrl` ; envoie ; `AccountInvitationDeliveryException` sur `TransportException`
+- [x] 2.3 `CpgUserInviter` : `invite()`/`reinvite()` créent/gardent le compte *pending* et publient `{userId, locale}` — plus de création de jeton ; `issueTokenAndDispatch()` supprimé (`TOKEN_LIFETIME` déménagé dans le handler)
+- [x] 2.4 Tests : `SendAccountInvitationHandlerTest` (jeton frais + lien = seul porteur du clair ; retry → nouveau jeton ; user absent/activé → rien ; transport KO → 503) ; `CpgUserInviterTest` (compte pending + message `{userId, locale}`, reinvite pending/activé) ; `BackofficeUserInvitation/InviteResourceTest` (message = `userId`+`locale`) ; bout-en-bout set-password vert (jeton relu dans l'e-mail via `tests/Support/InvitesUsers`)
+- [x] **CHECKPOINT 2** — gates backend verts (PHPStan max, Rector, PHPUnit 261) ; `messenger:failed:show` structurellement sans jeton (message à 2 champs). Smoke Mailpit non exécuté : aucun service `mailpit` dans le stack local (DSN `.env.local` pointe vers un hôte absent) — couvert par le test fonctionnel bout-en-bout + `AccountInvitationTemplateTest`.
 
 ## Phase 3 — C3 : filtrage serveur section « moi » de /api/about/{locale}  · priorité MOYENNE
 - [ ] 3.1 `AboutContentProvider` injecte `Security` ; anonyme → `personalCards = []` + `hobbiesCards = []` (technical conservé)

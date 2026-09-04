@@ -5,13 +5,11 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Presentation\ApiResource;
 
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
-use App\Security\User\Application\CpgUserInviterInterface;
-use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\InvitesUsers;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
-use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 
 /**
  * Parcours public GET/POST /api/account/password-setup/{token} : aucune
@@ -21,6 +19,7 @@ use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 final class AccountPasswordSetupResourceTest extends WebTestCase
 {
     use HttpJson;
+    use InvitesUsers;
 
     private const string EMAIL = 'newcomer@example.com';
     private const string DERIVED_USERNAME = 'newcomer';
@@ -42,7 +41,7 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
     public function testGetValidatesAKnownUsableTokenWithoutAuthentication(): void
     {
         $client = $this->freshClient();
-        $token = $this->inviteAndCollectToken($client);
+        $token = $this->inviteAndCollectToken();
 
         $client->request('GET', '/api/account/password-setup/'.$token);
 
@@ -63,7 +62,7 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
     public function testGetReturns410ForAnExpiredToken(): void
     {
         $client = $this->freshClient();
-        $token = $this->inviteAndCollectToken($client);
+        $token = $this->inviteAndCollectToken();
         $this->expireAllTokens();
 
         $client->request('GET', '/api/account/password-setup/'.$token);
@@ -74,7 +73,7 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
     public function testPostSetsThePasswordActivatesTheAccountAndConsumesTheToken(): void
     {
         $client = $this->freshClient();
-        $token = $this->inviteAndCollectToken($client);
+        $token = $this->inviteAndCollectToken();
 
         $client->request('POST', '/api/account/password-setup/'.$token, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => self::NEW_PASSWORD]));
         self::assertResponseStatusCodeSame(204);
@@ -94,7 +93,7 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
     public function testPostReturns422ForATooShortPassword(): void
     {
         $client = $this->freshClient();
-        $token = $this->inviteAndCollectToken($client);
+        $token = $this->inviteAndCollectToken();
 
         $client->request('POST', '/api/account/password-setup/'.$token, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => 'short']));
 
@@ -174,34 +173,16 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         return $client;
     }
 
-    private function inviteAndCollectToken(KernelBrowser $client): string
+    private function inviteAndCollectToken(): string
     {
-        $client->getContainer()->get(CpgUserInviterInterface::class)->invite(self::EMAIL, Locale::FR);
-        // Détache les entités persistées par l'invitation : la 1re requête HTTP
-        // du test réutilise ce kernel/EM ; sans clear(), un findOneBy() ultérieur
-        // rendrait l'instance en cache d'identité (ex. expires_at non rafraîchi
-        // après un UPDATE SQL brut dans testGetReturns410ForAnExpiredToken).
-        $client->getContainer()->get(EntityManagerInterface::class)->clear();
-
-        $sent = $this->asyncTransport()->getSent();
-        self::assertCount(1, $sent);
-        $message = $sent[0]->getMessage();
-        self::assertInstanceOf(SendAccountInvitationMessage::class, $message);
-
-        return $message->clearToken;
+        // Invite + exécute le handler + relit le jeton en clair dans l'e-mail
+        // (il ne transite plus par le message Messenger, cf. audit C2 / D3).
+        return $this->inviteAndCollectSetupToken(self::EMAIL, Locale::FR);
     }
 
     private function expireAllTokens(): void
     {
         self::getContainer()->get(EntityManagerInterface::class)->getConnection()
             ->executeStatement("UPDATE password_setup_token SET expires_at = '2000-01-01 00:00:00'");
-    }
-
-    private function asyncTransport(): InMemoryTransport
-    {
-        $transport = self::getContainer()->get('messenger.transport.async');
-        self::assertInstanceOf(InMemoryTransport::class, $transport);
-
-        return $transport;
     }
 }

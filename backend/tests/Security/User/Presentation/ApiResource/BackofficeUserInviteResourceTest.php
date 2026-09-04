@@ -91,12 +91,13 @@ final class BackofficeUserInviteResourceTest extends WebTestCase
         self::assertContains('ROLE_USER', $body['roles']);
         self::assertArrayNotHasKey('password', $body);
 
+        // Le message ne porte plus que { userId, locale } (audit C2 / D3) :
+        // aucun secret, et le jeton est créé côté handler.
         $sent = $this->asyncTransport()->getSent();
         self::assertCount(1, $sent);
         $message = $sent[0]->getMessage();
         self::assertInstanceOf(SendAccountInvitationMessage::class, $message);
-        self::assertSame('jean.dupont@example.com', $message->recipientEmail);
-        self::assertSame('jean.dupont', $message->username);
+        self::assertSame($body['id'], $message->userId);
         self::assertSame('fr', $message->locale);
     }
 
