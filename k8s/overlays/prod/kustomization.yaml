@@ -11,6 +11,11 @@ resources:
 
 configMapGenerator:
   - name: backend-config
+    # Incident v0.6.0 : cf. le commentaire jumeau dans overlays/preprod — nom
+    # stable indispensable pour que k8s/base/migrate-job.yaml (hors kustomize,
+    # point C8) puisse référencer ce ConfigMap sans CreateContainerConfigError.
+    options:
+      disableNameSuffixHash: true
     literals:
       # Point d'audit I2 : ancre de fin `\z` et non `$`. En PCRE (nelmio_cors
       # compile cette valeur en regex, cf. origin_regex: true), `$` accepte
