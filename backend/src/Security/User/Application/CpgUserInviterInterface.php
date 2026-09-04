@@ -11,8 +11,9 @@ use App\Security\User\Domain\Exception\EmailAlreadyUsedException;
 
 /**
  * Cas d'usage "inviter un utilisateur depuis le backoffice" : crée un compte
- * en attente d'activation à partir d'une adresse e-mail, génère un jeton de
- * définition de mot de passe et déclenche l'envoi de l'e-mail d'invitation.
+ * en attente d'activation à partir d'une adresse e-mail et publie la demande
+ * d'envoi de l'e-mail d'invitation (le jeton de définition de mot de passe est
+ * créé côté handler, cf. SendAccountInvitationHandler / audit C2).
  * Distinct de CpgUserRegistrar (création CLI, mot de passe fourni d'emblée).
  */
 interface CpgUserInviterInterface

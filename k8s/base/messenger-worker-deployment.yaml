@@ -32,6 +32,9 @@ spec:
     spec:
       securityContext:
         fsGroup: 10001
+        # Point d'audit I6 : filtre d'appels système par défaut du runtime.
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: worker
           image: backend

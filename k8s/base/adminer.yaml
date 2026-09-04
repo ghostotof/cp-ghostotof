@@ -25,6 +25,10 @@ spec:
       labels:
         app.kubernetes.io/name: adminer
     spec:
+      # Point d'audit I6 : filtre d'appels système par défaut du runtime.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: adminer
           image: adminer:4.8.1-standalone # garder synchronisé avec ADMINER_TAG dans ../.env

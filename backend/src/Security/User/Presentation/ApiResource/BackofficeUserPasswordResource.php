@@ -38,7 +38,11 @@ final readonly class BackofficeUserPasswordResource
         // passe en clair). Désactivé en environnement de test
         // (config/packages/validator.yaml, when@test) pour ne pas dépendre du
         // réseau.
-        #[Assert\NotCompromisedPassword]
+        // skipOnError (décision D2, audit C1) : une panne de
+        // api.pwnedpasswords.com ne doit pas transformer un changement de mot
+        // de passe légitime en 500 — le contrôle est alors sauté, la longueur
+        // mini restant garantie.
+        #[Assert\NotCompromisedPassword(skipOnError: true)]
         public string $password = '',
     ) {
     }

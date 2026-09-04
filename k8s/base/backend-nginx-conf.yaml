@@ -9,6 +9,35 @@ metadata:
   name: backend-nginx-conf
 data:
   default.conf: |
+    # -----------------------------------------------------------------------
+    # Point d'audit C7 — plafonds de débit secondaires, AVANT php-fpm.
+    #
+    # Zones déclarées au niveau `http` : cette clé de ConfigMap est montée en
+    # /etc/nginx/conf.d/default.conf, inclus depuis le bloc http de nginx.conf.
+    # Elles doivent donc rester HORS du `server {}` ci-dessous.
+    #
+    # Complètent, sans les remplacer, les limiteurs métier Symfony (5/h contact,
+    # 10/h set-password) : ceux-ci comptent finement mais coûtent un boot
+    # Symfony complet. Le plafond nginx est bien plus large — il ne vise pas
+    # l'abus métier mais l'inondation qui épuiserait le pool php-fpm.
+    #
+    # real_ip est INDISPENSABLE ici : le pair TCP de ce sidecar est le pod
+    # ingress-nginx, pas le visiteur. Sans ce bloc, $binary_remote_addr serait
+    # identique pour tout Internet et les deux zones ci-dessous deviendraient un
+    # compteur global unique — un déni de service auto-infligé. Plages de
+    # confiance alignées sur `trusted_proxies: private_ranges` (framework.yaml).
+    # ingress-nginx écrase X-Forwarded-For par l'IP réelle du client
+    # (use-forwarded-headers=false par défaut), l'en-tête n'est donc pas
+    # falsifiable par l'appelant.
+    set_real_ip_from 10.0.0.0/8;
+    set_real_ip_from 172.16.0.0/12;
+    set_real_ip_from 192.168.0.0/16;
+    set_real_ip_from fc00::/7;
+    real_ip_header X-Forwarded-For;
+
+    limit_req_zone $binary_remote_addr zone=contact:1m rate=10r/m;
+    limit_req_zone $binary_remote_addr zone=pwsetup:1m rate=20r/m;
+
     server {
         # Port non privilégié : le sidecar tourne en utilisateur non-root
         # (securityContext.runAsUser, cf. backend-deployment.yaml), et binder
@@ -36,6 +65,22 @@ data:
             add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
             add_header Cross-Origin-Opener-Policy "same-origin" always;
             add_header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'" always;
+        }
+
+        # Endpoints publics et coûteux : plafonnés avant d'atteindre PHP.
+        # `^~` : préfixe prioritaire sur les locations régulières, sinon
+        # `location ~ \.php$` pourrait matcher en premier.
+        # Aligné sur docker/nginx/default.conf — garder les deux synchronisés.
+        location ^~ /api/contact {
+            limit_req zone=contact burst=5 nodelay;
+            limit_req_status 429;
+            try_files $uri /index.php$is_args$args;
+        }
+
+        location ^~ /api/account/password-setup/ {
+            limit_req zone=pwsetup burst=10 nodelay;
+            limit_req_status 429;
+            try_files $uri /index.php$is_args$args;
         }
 
         location / {

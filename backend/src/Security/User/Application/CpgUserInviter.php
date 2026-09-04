@@ -7,25 +7,26 @@ namespace App\Security\User\Application;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Entity\CpgUser;
-use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
 use App\Security\User\Domain\Exception\EmailAlreadyUsedException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
-use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Domain\Service\UsernameGenerator;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
+/**
+ * Cas d'usage "inviter un utilisateur depuis le backoffice". Depuis le point
+ * d'audit C2 (décision D3), ce service se limite à créer / marquer le compte
+ * en attente d'activation puis à publier SendAccountInvitationMessage : la
+ * création du PasswordSetupToken et l'envoi de l'e-mail vivent désormais dans
+ * SendAccountInvitationHandler, pour qu'aucun secret ne transite par Messenger.
+ */
 final readonly class CpgUserInviter implements CpgUserInviterInterface
 {
-    /** Durée de validité du jeton de définition de mot de passe. */
-    private const string TOKEN_LIFETIME = '+48 hours';
-
     public function __construct(
         private CpgUserRepositoryInterface $cpgUserRepository,
         private UsernameGenerator $usernameGenerator,
-        private PasswordSetupTokenRepositoryInterface $passwordSetupTokenRepository,
         private MessageBusInterface $messageBus,
         private ClockInterface $clock,
     ) {
@@ -41,18 +42,20 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
         // passe défini via le lien d'invitation (cf. PasswordSetupService).
         $user = new CpgUser($this->usernameGenerator->generateFromEmail($email), '');
         $user->setEmail($email);
+        $user->markInvited($this->clock->now());
 
         try {
-            $this->issueTokenAndDispatch($user, $email, $locale);
+            $this->cpgUserRepository->save($user);
         } catch (UniqueConstraintViolationException) {
             // findOneByEmail() ci-dessus n'est pas atomique avec le save() : sur
             // deux invitations concurrentes de la même adresse (ou deux parties
             // locales identiques), la contrainte unique en base reste le dernier
-            // rempart — même parti pris que CpgUserRegistrar::register().
-            // Le save() de l'utilisateur est la première écriture de
-            // issueTokenAndDispatch() : si elle échoue, ni jeton ni message.
+            // rempart — même parti pris que CpgUserRegistrar::register(). Le
+            // message n'est publié qu'après un save() réussi : sur échec, rien.
             throw EmailAlreadyUsedException::forEmail($email);
         }
+
+        $this->dispatchInvitation($user, $locale);
 
         return $user;
     }
@@ -63,38 +66,20 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
             throw AccountNotAwaitingActivationException::forUsername($user->getUsername());
         }
 
-        $email = $user->getEmail();
-        // isPendingActivation() implique invitedAt non null, donc un e-mail posé
-        // par invite() : l'assertion l'explicite pour l'analyse statique.
-        \assert(null !== $email);
-
-        $this->issueTokenAndDispatch($user, $email, $locale);
+        $this->dispatchInvitation($user, $locale);
     }
 
     /**
-     * (Re)pose la date d'invitation, régénère l'unique jeton de définition de
-     * mot de passe et redispatch l'e-mail d'invitation.
+     * Le handler régénère le jeton (invalidant le précédent) : redispatcher le
+     * message suffit à « renvoyer » l'invitation.
      */
-    private function issueTokenAndDispatch(CpgUser $user, string $email, Locale $locale): void
+    private function dispatchInvitation(CpgUser $user, Locale $locale): void
     {
-        $now = $this->clock->now();
+        $userId = $user->getId();
+        // save() (invite) a affecté l'identifiant généré ; reinvite() reçoit un
+        // compte déjà persisté. Non-null dans les deux cas.
+        \assert(null !== $userId);
 
-        $user->markInvited($now);
-        $this->cpgUserRepository->save($user);
-
-        $clearToken = bin2hex(random_bytes(32));
-        $this->passwordSetupTokenRepository->deleteForUser($user);
-        $this->passwordSetupTokenRepository->save(new PasswordSetupToken(
-            $user,
-            hash('sha256', $clearToken),
-            $now->modify(self::TOKEN_LIFETIME),
-        ));
-
-        $this->messageBus->dispatch(new SendAccountInvitationMessage(
-            recipientEmail: $email,
-            username: $user->getUsername(),
-            clearToken: $clearToken,
-            locale: $locale->value,
-        ));
+        $this->messageBus->dispatch(new SendAccountInvitationMessage($userId, $locale->value));
     }
 }

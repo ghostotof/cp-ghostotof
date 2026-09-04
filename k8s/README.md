@@ -33,6 +33,21 @@ des jobs.
      rm -rf "$TMP"
    done
    ```
+   > **⚠ À rejouer après le point d'audit C8.** Le `Role` a changé :
+   > `pods/exec: create` a été **retiré** et `batch/jobs`
+   > (`get,list,watch,create,delete`) ajouté, parce que les migrations Doctrine
+   > passent désormais par le Job `k8s/base/migrate-job.yaml` au lieu d'un
+   > `kubectl exec`. Ce bootstrap n'étant jamais rejoué par le pipeline, la
+   > boucle ci-dessus **doit être relancée avant le prochain déploiement**,
+   > sinon `deploy-preprod`/`deploy-prod` échouent sur
+   > `cannot create resource "jobs"`. Vérification :
+   > ```bash
+   > kubectl -n preprod auth can-i create jobs \
+   >   --as=system:serviceaccount:preprod:github-actions-deployer   # yes attendu
+   > kubectl -n preprod auth can-i create pods/exec \
+   >   --as=system:serviceaccount:preprod:github-actions-deployer   # no attendu
+   > ```
+
    Puis construire un kubeconfig autonome à partir du token durable
    (`Secret` `github-actions-deployer-token`, type `kubernetes.io/service-account-token`)
    et du endpoint/CA du cluster (`kubectl config view --raw`), et le stocker
@@ -69,16 +84,32 @@ puis générer une clé API pour cette application (console Scaleway : IAM >
 Applications). Reporter les deux valeurs obtenues :
 
 ```bash
-# projectId + accessKey : pas des secrets (identifiants), à écrire en clair
-# dans k8s/base/secretstore.yaml (remplacer les CHANGE_ME_*).
+# projectId : identifiant de projet, ne permet rien à lui seul — écrit en clair
+# dans k8s/base/secretstore.yaml.
 
-# secretKey : SEULE valeur sensible, jamais en git — un Secret bootstrap par
-# namespace :
+# accessKey ET secretKey : le Secret bootstrap `scaleway-eso-auth` porte
+# désormais DEUX clés (point d'audit C4). accessKey n'est pas un secret au sens
+# IAM, mais dans un dépôt public elle désigne nommément l'identité qui a accès
+# au Secret Manager : on ne la publie plus.
 for NS in preprod prod; do
   kubectl create secret generic scaleway-eso-auth -n $NS \
+    --from-literal=access-key="<SCALEWAY_ACCESS_KEY>" \
     --from-literal=secret-key="<SCALEWAY_SECRET_KEY>"
 done
 ```
+
+> **Migration depuis un cluster existant** : le Secret ne portait que
+> `secret-key`. Ajouter la clé manquante avant d'appliquer le nouveau
+> `secretstore.yaml`, sinon le SecretStore passe en `NotReady` et les
+> ExternalSecrets cessent de se rafraîchir :
+>
+> ```bash
+> for NS in preprod prod; do
+>   kubectl patch secret scaleway-eso-auth -n $NS --type merge \
+>     -p "{\"stringData\":{\"access-key\":\"<SCALEWAY_ACCESS_KEY>\"}}"
+> done
+> kubectl get secretstore scaleway-secret-manager -n prod -o jsonpath='{.status.conditions}'
+> ```
 
 ### 1bis. Packages GHCR — publics, pull anonyme (pas de bootstrap requis)
 

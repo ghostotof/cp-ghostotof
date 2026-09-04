@@ -1,78 +1,105 @@
-# TODO — Provisionnement d'utilisateurs par le super-admin
+# TODO — Remédiation de l'audit de sécurité
 
-Détail, critères d'acceptation et vérifications : voir [`plan.md`](./plan.md).
-Git flow : brancher `feature/admin-user-provisioning` depuis `develop` avant tout commit.
+Détail, décisions (D1–D8), critères d'acceptation et vérifications : voir [`plan.md`](./plan.md).
+Git flow : brancher `feature/security-audit-remediation` depuis `develop` avant tout commit.
 
-## Phase 0 — Décisions (bloquant)
+Gates par checkpoint : backend `composer phpstan && composer rector && php bin/phpunit` ;
+frontend (si touché) `npm run lint && npm run build && npm test` ;
+k8s (si touché) `kubectl kustomize` prod **et** preprod.
 
-- [ ] Valider / ajuster les décisions **D1–D11** de `plan.md` §2
-- [ ] Créer la branche `feature/admin-user-provisioning` depuis `develop`
-- [ ] **CHECKPOINT 0** — sign-off humain avant tout code
+## Phase 0 — Préparation
+- [x] 0.1 Créer `feature/security-audit-remediation` depuis `develop`
+- [x] **CHECKPOINT 0** — plan validé
 
-## Phase 1 — Fondations transverses
+## Phase 1 — C1 : rate-limit avant validation (set-password public)  · priorité HAUTE
+- [x] 1.1 `PasswordSetupRateLimitRequestListener` (`kernel.request` prio 15, préfixe `/api/account/password-setup/`, GET+POST) → `rateLimiter->consume(clientIp)`
+- [x] 1.2 Retirer `consume()` + la dépendance du `AccountPasswordSetupProvider` et `AccountPasswordSetupProcessor`
+- [x] 1.3 `#[Assert\NotCompromisedPassword(skipOnError: true)]` sur `AccountPasswordSetupResource` + `BackofficeUserPasswordResource`
+- [x] 1.4 Tests : listener unitaire (hors préfixe ignoré, GET+POST consomment, sous-requête ignorée, sans IP → clé partagée, quota → exception) ; fonctionnel 11ᵉ POST jeton bidon → 429 avant validation du corps + `Retry-After` ; GET+POST partagent le quota ; set-password nominal inchangé
+- [x] **CHECKPOINT 1** — gates backend verts (PHPStan max, Rector, PHPUnit 256 tests)
 
-- [x] 1.1 `AdminLayout.vue` : onglet « Contenu » (+ sous-nav sur routes de contenu) + onglet « Utilisateurs », sans changer d'URL — i18n `admin.nav.content` (fr+en) + `AdminLayout.spec.ts`
-- [x] 1.2 Fondation e-mail : `composer require symfony/twig-bundle` + `config/packages/twig.yaml` (global `brand_name`) + `templates/emails/base.html.twig` / `base.txt.twig` (charte : bandeau dégradé, carte blanche, pied légal) + `app.brand_name` dans `services.yaml` + `BrandedEmailRenderingTest`
-- [x] 1.3 E-mail de contact : `SendContactMessageHandler` → `TemplatedEmail` (`emails/contact_notification.*`), corps HTML **et** texte contenant `senderName` + `senderEmail` (échappés) ; `from`/`replyTo`/`subject` inchangés ; `SendContactMessageHandlerTest` mis à jour + `ContactNotificationTemplateTest`
-- [ ] **CHECKPOINT 1** — revue visuelle `/admin` (fr+en) + e-mail contact rendu dans Mailpit
+## Phase 2 — C2 : jeton hors du message (donc hors failure transport)  · priorité HAUTE
+- [x] 2.1 `SendAccountInvitationMessage` → `{ userId: int, locale: string }` uniquement
+- [x] 2.2 `SendAccountInvitationHandler` : charge l'user (absent/activé → log+return) ; `wrapInTransaction { deleteForUser + nouveau PasswordSetupToken (SHA-256, +48h) }` ; construit `setupUrl` ; envoie ; `AccountInvitationDeliveryException` sur `TransportException`
+- [x] 2.3 `CpgUserInviter` : `invite()`/`reinvite()` créent/gardent le compte *pending* et publient `{userId, locale}` — plus de création de jeton ; `issueTokenAndDispatch()` supprimé (`TOKEN_LIFETIME` déménagé dans le handler)
+- [x] 2.4 Tests : `SendAccountInvitationHandlerTest` (jeton frais + lien = seul porteur du clair ; retry → nouveau jeton ; user absent/activé → rien ; transport KO → 503) ; `CpgUserInviterTest` (compte pending + message `{userId, locale}`, reinvite pending/activé) ; `BackofficeUserInvitation/InviteResourceTest` (message = `userId`+`locale`) ; bout-en-bout set-password vert (jeton relu dans l'e-mail via `tests/Support/InvitesUsers`)
+- [x] **CHECKPOINT 2** — gates backend verts (PHPStan max, Rector, PHPUnit 261) ; `messenger:failed:show` structurellement sans jeton (message à 2 champs). Smoke Mailpit non exécuté : aucun service `mailpit` dans le stack local (DSN `.env.local` pointe vers un hôte absent) — couvert par le test fonctionnel bout-en-bout + `AccountInvitationTemplateTest`.
 
-## Phase 2 — Backend : inviter un utilisateur
+## Phase 3 — C3 : contenu « À propos » entièrement public  · D4 RÉVISÉE, clos sans correctif
+> D4 affirmait reproduire « le masquage actuel de `AboutPage.vue` » en vidant `personalCards`
+> **et** `hobbiesCards` — or le frontend ne masquait que *hobbies*. Arbitrage produit du
+> 2026-09-04 : tout le contenu « À propos » est public, on retire le filtre au lieu de l'étendre.
+- [x] 3.1 `AboutContentProvider` inchangé ; docblock de `AboutContentResource` réécrit (trois volets publics, ne pas réintroduire de filtre)
+- [x] 3.2 `AboutPage.vue` : `<template v-if="isAuthenticated">` du volet *hobbies* supprimé + import `useAuth` retiré
+- [x] 3.3 Tests : `AboutContentResourceTest` (assertions `hobbies*` = garde-fou C3) ; `AboutPage.spec.ts` (un seul test « hobbies visibles sans authentification », plumbing auth supprimé)
+- [x] **CHECKPOINT 3** — gates backend (PHPStan max, Rector, PHPUnit 261) + frontend (ESLint, build `vue-tsc`, Vitest 391) verts
 
-- [x] 2.1 `CpgUser` : `email` (nullable, unique, `#[Assert\Email]`) + `invitedAt` + `activatedAt` + `getActivatedAt()` + `isPendingActivation()` (= invité ET non activé — pas seulement `activatedAt === null`, pour ne pas marquer les comptes CLI « en attente ») ; migration `Version20260903155605` (up/down vérifiés) ; `CpgUserTest` (+4)
-- [x] 2.2 `UsernameGenerator::generateFromEmail()` (partie locale → minuscules → filtrée `[a-z0-9_.-]` → bornée à 60 → `< 3` ⇒ complète `user` → collision ⇒ suffixe `2,3,…`, base tronquée pour rester ≤ 60) ; `UsernameGeneratorTest` (+9)
-- [x] 2.3 `PasswordSetupToken` (entité : `tokenHash` SHA-256 unique, `expiresAt`, `usedAt`, `isUsable(now)`, `markUsed()`, FK `CpgUser` `onDelete: CASCADE`) + `PasswordSetupTokenRepositoryInterface` (`save`/`remove`/`findOneByTokenHash`/`deleteForUser`) + impl Doctrine + migration `Version20260903160900` + `PasswordSetupTokenRepositoryTest` (+6, intégration base `_test`, CASCADE vérifié)
-- [x] 2.4 `CpgUserInviterInterface`/`CpgUserInviter::invite(email, Locale)` (clock injecté) + `EmailAlreadyUsedException` + `CpgUserRepositoryInterface::findOneByEmail` + `SendAccountInvitationMessage` (`{recipientEmail, username, clearToken, locale}` — pas de `userId`, inutile au handler) + `SendAccountInvitationHandler` (`TemplatedEmail` `emails/account_invitation.*`, chaînes fr/en dans le handler, CTA, lien `{APP_FRONTEND_BASE_URL}/{locale}/set-password/{token}`) + `AccountInvitationDeliveryException` + routing messenger + `app.frontend_base_url` (`APP_FRONTEND_BASE_URL` dans `backend/.env` — couvre dev/test/CI, tâche 7.1 réduite) ; `CpgUserInviterTest` + `SendAccountInvitationHandlerTest` + `AccountInvitationTemplateTest`
-- [x] 2.5 `POST /api/backoffice/users` (invite) : opération `Post` + `BackofficeUserInviteInput` `{email, locale}` + `BackofficeUserInviteProcessor` + `exception_to_status` (409/503) ; **inclut la tâche 4.3** (`email` + `status` sur `BackofficeUserResource` + presenter + `BackofficeUserProvider`) ; `BackofficeUserInviteResourceTest` (+6 : 201 + message dispatché ; anonyme 403 via CSRF ; `ROLE_USER` 403 ; e-mail pris 409 ; e-mail invalide 422 ; locale absente 422) + `BackofficeUserResourceTest` mis à jour
-- [ ] **CHECKPOINT 2** — `composer phpstan && composer rector && php bin/phpunit` verts (214) ✅ ; reste : `curl` invite manuel + rendu Mailpit (ou attendre la page admin de la phase 5)
+## Phase 4 — C6 + I3 : nettoyage surface API  · priorité MOYENNE
+- [x] 4.1 C6 : `Get('/backoffice/users/{id}')` explicite sur `BackofficeUserResource` (même provider que `Delete`) → `/api/backoffice_users/{id}` disparu ; tests item `ROLE_SUPER` 200 + DTO / id inconnu 404 / ancien chemin 404 / anonyme 401
+- [x] 4.2 I3 : `Locale::fromString()` + `InvalidLocaleException` (→404) ; `uriVariableLocale()` dans `ResolvesUriVariables` ; `ValueError: 404` retiré d'`api_platform.yaml` ; 5 sites `{locale}` migrés (About/Quality/Stats providers + `BackofficeAboutSettings` provider/processor) ; `LocaleTest` (nominal, rejets, message, hiérarchie ≠ `\ValueError`)
+  - Les champs `locale`/`category` des DTO de backoffice gardent `Locale::from()` : bornés en amont par `#[Assert\Choice]` (422 avant le processor), une `\ValueError` y signalerait un vrai bug et doit rester un 500
+- [x] **CHECKPOINT 4** — `debug:router` conforme ; gates backend verts (PHPStan max, Rector, PHPUnit 276) ; vérif runtime curl des 404 de locale
 
-## Phase 3 — Backend : parcours public de définition du mot de passe
+## Phase 5 — C4 + I2 + I5 + I6 : durcissement k8s/frontend  · priorité MOYENNE-BASSE
+- [x] 5.1 C4 : `secretstore.yaml` `accessKey` → `secretRef` (`scaleway-eso-auth`/`access-key`) ; `projectId` reste inline ; `k8s/README.md` à jour (bootstrap 2 clés + procédure `kubectl patch` pour un cluster existant)
+- [x] 5.2 I2 : `CORS_ALLOW_ORIGIN` `…\.com$` → `…\.com\z` (overlays prod + preprod) — écart prouvé en PCRE : `$` acceptait `https://cp-ghostotof.com\n`
+- [x] 5.3 I5 : `docker/node/nginx.conf` — CSP `frame-ancestors 'none'` (×2) + `X-Frame-Options "DENY"` (×5) ; aucun `<iframe>` dans le frontend (vérifié) ; `nginx -t` OK + en-têtes servis vérifiés
+- [x] 5.4 I6 : `seccompProfile: { type: RuntimeDefault }` sur les 7 pod specs (backend, frontend, worker, purge cronjob, postgres, rabbitmq, adminer)
+- [x] 5.5 Vérifs : `kubectl kustomize` prod + preprod OK ; frontend lint+build+test OK (391) ; backend OK (276) ; `audit-prod.sh` ne teste que la présence des en-têtes → insensible
+- [x] **CHECKPOINT 5** — rendus kustomize + gates + README
 
-- [x] 3.1 `PasswordSetupServiceInterface`/`PasswordSetupService` (`validate` / `complete`, clock injecté) + `InvalidPasswordSetupTokenException` (→ 404) + `PasswordSetupTokenExpiredException` (→ 410, fusionne expiré + déjà utilisé, sans révéler qu'un lien a servi) ; `PasswordSetupServiceTest` (+6 : lookup par SHA-256, jeton inconnu, expiré, déjà utilisé, `complete` hache+active+consomme, `complete` sur jeton expiré ne touche rien)
-- [x] 3.2 `GET /account/password-setup/{token}` → `AccountPasswordSetupStatusResource` (`{valid:true}`) + `POST` → `AccountPasswordSetupResource` (`{password}` + `Length(MIN..MAX)` + `NotCompromisedPassword`, 204 `output:false` `read:false`) + provider/processor + rate limiter `account_password_setup` (10/h IP + `Retry-After` : interface/impl/exception/listener calqués sur Contact) + `exception_to_status` (404/410/429) + **exclusion CSRF** `/api/account/password-setup/` (`CsrfCookieRequestSubscriber` + test) ; `AccountPasswordSetupResourceTest` (+6 : GET 200/404/410 anonyme ; POST 204 + login OK ; rejeu 410 ; mdp court 422 ; 11e appel 429 + `Retry-After`)
-- [ ] **CHECKPOINT 3** — gate backend vert (227) ✅ ; bout-en-bout couvert par `AccountPasswordSetupResourceTest` (invite → jeton → POST → login) ; smoke curl optionnel
+> **⚠ Avant tout déploiement de cette phase :**
+> 1. **C4 est breaking sur cluster existant** — ajouter `access-key` au Secret `scaleway-eso-auth` AVANT
+>    d'appliquer, sinon SecretStore `NotReady` et ExternalSecrets figés (procédure dans `k8s/README.md`).
+> 2. **I6 touche Postgres/RabbitMQ (PVC)** — rollout préprod réel avec `rollout status` + logs avant prod,
+>    par la règle tirée de l'incident v0.5.0. Risque jugé faible (seccomp ≠ `fsGroup`, cause du crash), mais
+>    la règle s'applique quand même.
+> 3. **`accessKey` reste dans l'historique git public** — la retirer du HEAD ne la retire pas du passé.
+>    Rotation de la paire IAM ESO à envisager (à rapprocher de C5, phase 8).
 
-## Phase 4 — Backend : rôles + presenter + renvoi d'invitation
+## Phase 6 — C7 + I4 + I8 : plafonds secondaires + hygiène  · FAIT
+- [x] 6.1 C7 : `limit_req` sur `/api/contact` (10r/m, burst 5) et `/api/account/password-setup/` (20r/m, burst 10), `limit_req_status 429`, dans les deux confs synchronisées
+  - **Ajout non prévu au plan, indispensable** : bloc `real_ip` (`set_real_ip_from` sur les plages privées + `real_ip_header X-Forwarded-For`). Sans lui, derrière l'ingress `$binary_remote_addr` vaut l'IP du pod ingress-nginx → **un seul compteur pour tout Internet**, déni de service auto-infligé. Aligné sur `trusted_proxies: private_ranges` de Symfony.
+- [x] 6.2 I4 : `CONTACT_*` vidés dans `backend/.env` ; valeurs dev via `init-symfony.sh` → `.env.local` ; **valeurs de test dans `phpunit.dist.xml`** (l'env test ne charge jamais `.env.local` — sans ça, 7 tests en erreur `RfcComplianceException`), avec `force="true"` sinon Dotenv écrase par la valeur vide du `.env`
+  - ⚠ `init-symfony.sh` sort en `exit 0` si `composer.json` existe : sur un projet déjà initialisé, ajouter les 2 variables à la main dans `.env.local` (fait sur ce poste)
+- [x] 6.3 I8 : risque du compte invité générique documenté dans `docs/adr/0001` (pas de `CONTEXT.md` dans le dépôt) — `ROLE_USER` = accès `GET /api/cv`, aucun palier intermédiaire ; hygiène (mot de passe dédié, rotation, jamais `ROLE_SUPER`) + piste `ROLE_GUEST`
+- [x] **CHECKPOINT 6** — `nginx -t` sur les 2 confs ; 429 vérifié en dev (6 puis 429 sur contact, 11 puis 429 sur set-password) ; aucun autre endpoint affecté ; PHPStan/Rector/PHPUnit 276 verts
 
-- [x] 4.1 `CpgUserRoleAdministratorInterface`/`CpgUserRoleAdministrator::setSuperAdmin(id, grant, actingUser)` (idempotent) + `CannotModifyOwnRolesException` (→ 409) + `CannotDemoteLastSuperAdminException` (→ 409, via `countByRole` `<= 1`) ; `CpgUserRoleAdministratorTest` (+7 : grant, revoke si autre super, revoke dernier super, soi-même, id inconnu, grant idempotent, revoke idempotent sans consulter la garde)
-- [x] 4.2 `PUT /api/backoffice/users/{id}/roles` `BackofficeUserRoleResource` (`{superAdmin: bool}`, 204 `output:false`) + `BackofficeUserRoleProvider` (404) + `BackofficeUserRoleProcessor` (acting user via `Security`) + `exception_to_status` (409) ; `BackofficeUserRoleResourceTest` (+5 : anonyme 403 via CSRF ; `ROLE_USER` 403 ; promote→GET reflète→idempotent→demote ; soi-même 409 ; id inconnu 404). « Dernier super-admin » non atteignable via l'API (l'appelant est toujours super) — couvert par le test unitaire de 4.1
-- [x] 4.3 `CpgUserAdminPresenter` + `BackofficeUserResource` : `email` (nullable) + `status` (`pending`/`active`) ; `BackofficeUserResourceTest` mis à jour — **fait dans la tâche 2.5**
-- [x] 4.4 `POST /api/backoffice/users/{id}/invitation` (renvoi, 202 `output:false` `read:false`) `BackofficeUserInvitationResource` (`{locale}`) + `BackofficeUserInvitationProcessor` (404 via `CpgUserNotFoundException`) + `CpgUserInviter::reinvite(CpgUser, Locale)` (logique commune extraite dans `issueTokenAndDispatch`) + `AccountNotAwaitingActivationException` (409 — couvre « déjà activé » **et** « compte CLI non invité ») ; `BackofficeUserInvitationResourceTest` (+6 : anonyme 403 ; `ROLE_USER` 403 ; renvoi → 202 + nouveau message ; id inconnu 404 ; compte activé 409 ; locale absente 422)
-- [x] **CHECKPOINT 4** — gate backend vert (245) ✅ ; API figée pour le front
+## Phase 7 — C8 : migrations via Job k8s, drop pods/exec  · FAIT
+- [x] 7.1 `k8s/base/migrate-job.yaml`, hors `resources:` — mêmes `securityContext`/limites que le Deployment, `backoffLimit: 1`, `ttlSecondsAfterFinished: 600`
+  - **Écart au plan** : hors kustomize, le transformateur d'images ne s'applique pas. `image: backend` serait résolu en `docker.io/library/backend` → placeholder `${BACKEND_IMAGE}` substitué par `envsubst` au moment de l'apply (idiome déjà utilisé dans `docker/node/docker-entrypoint.sh`)
+- [x] 7.2 `pipeline.yml` deploy-preprod + deploy-prod : `delete --ignore-not-found` + `envsubst | apply -f -` + `wait --for=condition=complete --timeout=180s` + dump des logs sur échec
+- [x] 7.3 `role.yaml` : `pods/exec: create` retiré ; `batch/jobs` (get/list/watch/create/**delete**, la spec d'un Job étant immuable) ajouté ; `pods`/`pods/log` conservés en lecture
+- [x] 7.4 Vérifs : les 2 overlays rendent sans erreur et **ne contiennent pas** `backend-migrate` ; `envsubst` + `kubectl apply --dry-run=client` OK ; workflow YAML valide (12 jobs, bloc migrate dans les deux) ; plus aucun `kubectl exec` ni `pods/exec` actif ; NetworkPolicy vérifiée (`allow-datastores-from-app` utilise `podSelector: {}` = tous les pods du namespace, le Job joindra Postgres)
+- [x] **CHECKPOINT 7** — kustomize + dry-run + revue pipeline + Role rendu vérifié
 
-## Phase 5 — Frontend : page d'administration des utilisateurs
+> **⚠ Avant le prochain déploiement — bootstrap RBAC à rejouer.** Le `Role` est
+> un bootstrap manuel, jamais réappliqué par le pipeline. Sans le rejouer,
+> `deploy-preprod`/`deploy-prod` échoueront sur `cannot create resource "jobs"`.
+> Procédure et commandes `auth can-i` de vérification dans `k8s/README.md` §4.
 
-- [x] 5.1 `domain/admin/users` : `AdminUser` (+ `email: string|null`, `status: 'pending'|'active'`) + `AdminUserRepository` (+ `invite(email, Locale)`, `setSuperAdmin(id, grant)`, `resendInvitation(id, Locale)`) + `AdminUserError` (+ `email-taken`, `cannot-modify-own-roles`, `cannot-demote-last-super`, `already-activated`) + `HttpAdminUserRepository` (mapping 409 par opération + fragment de `detail` pour les 2 gardes de rôle) + `HttpAdminUserRepository.spec.ts` (14) ; fixtures/stubs de `useAdminUsers.spec` + `AdminUsersPage.spec` mis à jour (compilation verte)
-- [x] 5.2 `useAdminUsers` expose `invite(email, Locale)` (retourne le compte créé ou `null`, recharge) / `setSuperAdmin(id, grant)` (`runAction`, recharge) / `resendInvitation(id, Locale)` (`runAction`, pas de recharge) ; `useAdminUsers.spec` (+6)
-- [x] 5.3 `AdminUsersPage.vue` : formulaire « Inviter » (`BaseTextInput` e-mail + `BaseSelect` langue, `LOCALE_NATIVE_NAMES`) + message de succès avec username + colonne Statut (badge) + bouton Promouvoir/Rétrograder (disabled + title sur sa ligne) + bouton « Renvoyer l'invitation » (lignes `pending`, succès inline) + alerte d'erreur partagée en tête de liste ; i18n fr+en (`admin.users.invite.*`, `statusPending/Active`, `promote/demote`, `resendInvitation/Success`, `errors.{email-taken,cannot-modify-own-roles,cannot-demote-last-super,already-activated}`) ; `AdminUsersPage.spec` (+6, +2 tests existants recalés sur `form.admin-user-password-form`)
-- [x] **CHECKPOINT 5** — `npm run lint && npm run build && npm test` verts (362) ✅ ; reste : revue visuelle `/fr/admin/users`
+## Phase 8 — C5 + clôture  · FAIT (hors PR, non demandée)
+- [x] 8.1 C5 : `HEAD` vérifié propre — aucun secret, `config/jwt/` non suivi, `APP_SECRET`/`JWT_PASSPHRASE` vides.
+  **La seule occurrence restante était dans `tasks/plan.md` lui-même**, qui citait la valeur littérale dans sa
+  commande `git grep` : le plan republiait le secret qu'il visait. Remplacée par une commande qui la relit
+  depuis l'historique sans l'inscrire. Risque résiduel + prescriptions consignés dans `plan.md` §8.1.
+- [x] 8.2 Mémoire `project_security_audit_remediation_2026-09` réécrite (tableau point par point, écarts au
+  plan, 3 actions humaines) + ligne d'index `MEMORY.md` mise à jour
+- [x] 8.3 `.claude/CLAUDE.md` : objectif n°9 reformulé (périmètre = CV + `/api/me`, plus la page À propos) ;
+  jeton d'invitation créé côté handler ; listener de rate-limit set-password ; `Locale::fromString` +
+  `InvalidLocaleException` et interdiction de re-mapper `ValueError` ; `Get` explicite backoffice users ;
+  `CONTACT_*` hors `.env` ; nouvelle section « Deployment invariants » (Job de migration, `real_ip`, règle
+  Postgres/RabbitMQ)
+- [x] **CHECKPOINT 8 (final)** — gates verts. **PR volontairement non ouverte** (demande explicite).
 
-## Phase 6 — Frontend : page publique de définition du mot de passe
+## Reste à faire — actions humaines, hors périmètre de cette branche
+1. Ajouter `access-key` au Secret `scaleway-eso-auth` (préprod + prod) avant d'appliquer `secretstore.yaml`
+2. Rejouer le bootstrap RBAC (`k8s/README.md` §4) avant le prochain déploiement
+3. Rotations : paire IAM ESO, et vérifier qu'aucun secret `prod-*`/`preprod-*` ne réutilise l'ancien
+   `APP_SECRET`/`JWT_PASSPHRASE` de dev
+4. Rollout préprod réel (avec `rollout status` + logs) avant toute promotion en prod — I6 touche Postgres/RabbitMQ
+5. Ouvrir la PR vers `develop`
 
-- [x] 6.1 `domain/account` : `AccountRepository` (`validateSetupToken` / `completePasswordSetup`) + `PasswordSetupLinkError` (`invalid`/`expired`/`weak-password`/`rate-limited`/`unknown`) + `infrastructure/account/HttpAccountRepository` (fetch nu comme HttpContactRepository — endpoint public, pas de credentials/CSRF ; mapping 404→invalid / 410→expired / 422→weak-password / 429→rate-limited) + `HttpAccountRepository.spec` (8)
-- [x] 6.2 `application/account/useAccountPasswordSetup` : `state` (`checking|ready|submitting|done|invalid|expired|error`) + `errorReason` + `validate(token)` / `submit(token, password)`. `invalid`/`expired` terminaux ; échec récupérable de `submit` (weak-password, rate-limited) → retour `ready` + `errorReason`. `ACCOUNT_REPOSITORY` fourni dans `main.ts`. `useAccountPasswordSetup.spec` (9)
-- [x] 6.3 `SetPasswordPage.vue` (états checking/ready/submitting/done/invalid/expired/error, garde front « ≥ 8 car. » + confirmation, écran de succès + lien /login) + route publique `/:locale/set-password/:token` (pas de `requiresAuth`, `meta.noindex`) + `RouteMeta.noindex` + `seo.ts` gère `meta.noindex` + i18n `account.setPassword.*` / `seo.setPassword.*` fr+en + `SetPasswordPage.spec` (5) + `seo.spec` (2 : noindex) + `adminGuard.spec` (+1 : route publique non bloquée)
-- [x] **CHECKPOINT 6** — gate frontend vert (388) ✅ ; reste : démo bout-en-bout (invite → Mailpit → set-password → login)
-
-## Phase 7 — Wiring / CI / docs / smoke
-
-- [x] 7.1 `APP_FRONTEND_BASE_URL` : `backend/.env` + `config/services.yaml` (`app.frontend_base_url`) faits en 2.4 (couvrent dev/test/CI via le `.env` commité). Ajouté au `configMapGenerator` `backend-config` des overlays k8s **prod** (`https://cp-ghostotof.com`) et **preprod** (`https://preprod.cp-ghostotof.com`) — consommé par le backend ET le worker Messenger. `init-symfony.sh` / pipeline CI : rien à changer (URL hôte, valeur de base dans `.env`). `kubectl kustomize` des deux overlays OK.
-- [x] 7.2 Empaquetage Twig prod **vérifié** via `make build-prod` : les 6 `templates/emails/*.twig` sont dans l'image (`COPY backend/ ./`, non exclus par `.dockerignore` — seul `*.md` l'est) ; le `cache:clear --env=prod` du build (via `post-install-cmd`) pré-chauffe `var/cache/prod/twig/` (6 fichiers compilés référençant les templates e-mail) ; `lint:twig templates/emails --env=prod` OK sur un rootfs **read-only** (comme en k8s : seul `var/log` est monté inscriptible). Le code prod n'utilise que des templates nommés (`TemplatedEmail->htmlTemplate()`), jamais `createTemplate()` runtime (tests uniquement). Aucun changement Dockerfile/k8s nécessaire.
-- [x] 7.3 ADR `docs/adr/0001-admin-user-provisioning.md` (contexte, 8 décisions, conséquences, alternatives écartées) + `.claude/CLAUDE.md` : bullet Architecture (« No Twig » → « Twig only for emails »), section `Security/User/` réécrite (email, `PasswordSetupToken`, `CpgUserInviter`/`reinvite`, `UsernameGenerator`, `PasswordSetupService`, `CpgUserRoleAdministrator`, exceptions, endpoints publics `/api/account/password-setup`, exclusion CSRF), section Backoffice (`BackofficeUser` Post/roles/invitation + `skip_null_values`), section Frontend Backoffice (invite/promote/resend + slice publique `set-password`), pointeur ADR
-- [x] 7.4 Smoke test complet (Mailpit) : invitation→set-password→login + promotion + resend→409 (CHECKPOINT 6) ; `DELETE` autre compte→204, propre compte→409 ; e-mail de contact à la charte + nom/e-mail de l'expéditeur dans le corps (HTML + texte) + `Reply-To` inchangé. Gates : **245 backend + PHPStan + Rector**, **388 frontend + lint + build** — tous verts. Base dev + Mailpit remis à l'état initial.
-- [x] **CHECKPOINT 7 (final)** — branche poussée, PR #8 ouverte vers `develop` : https://github.com/ghostotof/cp-ghostotof/pull/8
-
-## Phase 8 — Suivi de la revue de code (`/code-review` sur PR #8)
-
-Revue en 9 constats. Traitement en deux lots.
-
-- [x] 8.1 Constats #1 / #4 / #5 / #8 — commit `42835f6` « Corrige 4 constats de la revue de code »
-  - #1 : un 422 sur l'invitation (adresse invalide) mappé sur son propre motif `email-invalid` (message dédié), au lieu de réutiliser `validation` (message « mot de passe ≥ 8 caractères »)
-  - #4 : `SetPasswordPage.vue` — l'état `error` (récupérable : rate-limit, réseau) propose un bouton « Réessayer » qui relance `validate`, au lieu d'un cul-de-sac
-  - #5 : `CpgUserInviter::invite()` — une violation de contrainte d'unicité concurrente (`UniqueConstraintViolationException`) est retraduite en `EmailAlreadyUsedException` (409) au lieu de remonter en 500
-  - #8 : le message « Invitation renvoyée » s'efface dès qu'une autre action de ligne est déclenchée (`clearFeedback()`)
-- [x] 8.2 Constats #2 / #3 / #6 — commit `cc2b058` « Applique les constats #2, #3, #6 de la revue de code »
-  - #3 : les deux 409 de `PUT /api/backoffice/users/{id}/roles` (auto-modification / dernier super-admin) portent un `type` stable dans le problem+json (`/errors/cannot-modify-own-roles`, `/errors/cannot-demote-last-super`) via `ProblemExceptionInterface` + trait `HasProblemType` ; `HttpAdminUserRepository.conflictReason()` lit `body.type` au lieu d'un `str_contains` sur le `detail` localisé (+ `ApiProblemBody.type` dans `BackofficeHttpClient`). Test fonctionnel : assertion sur `body['type']`
-  - #6 : `BackofficeUserRoleResource::$superAdmin` passe de `bool` à `?bool` + `#[Assert\NotNull]` → corps sans le champ = 422 (validation) au lieu de 500 (`TypeError` à la dénormalisation) ; garde `\assert` côté processor ; `testMissingSuperAdminFieldReturns422`
-  - #2 : les actions de ligne du tableau `/admin/users` (promotion, renvoi, mot de passe, suppression) regroupées derrière un bouton « ⋯ » ouvrant un menu ; un seul menu ouvert à la fois, fermeture au clic extérieur / Échap (patron CSS-only d'`AdminLayout`) ; i18n `admin.users.actionsFor` ; `AdminUsersPage.spec` réoutillé (`openRowMenu` / `rowButton` + test « un seul menu à la fois »)
-  - docs : `.claude/CLAUDE.md` (patron `HasProblemType`) + `docs/adr/0001` (section Conséquences)
-- [x] **CHECKPOINT 8** — gates verts : **247 backend** + PHPStan (level max) + Rector ; **392 frontend** + lint + build ; CI PR #8 intégralement verte. Commits poussés sur `feature/admin-user-provisioning`
+## Non traités (acceptés + documentés)
+- I1 — 401 vs 404 sur `/api/backoffice/*` : renvoyer 404 casserait la sémantique REST + la redirection frontend
+- I9 — en-tête `Subject` du mail de contact : Symfony l'encode (RFC 2047), pas d'injection

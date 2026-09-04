@@ -4,15 +4,14 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\User\Application;
 
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Application\CpgUserInviter;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Entity\CpgUser;
-use App\Security\User\Domain\Entity\PasswordSetupToken;
+use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
 use App\Security\User\Domain\Exception\EmailAlreadyUsedException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
-use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Domain\Service\UsernameGenerator;
-use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\DBAL\Driver\Exception as DriverException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use PHPUnit\Framework\TestCase;
@@ -20,23 +19,28 @@ use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
 
+/**
+ * Depuis l'audit C2 (décision D3), CpgUserInviter ne crée plus de jeton : il
+ * crée / marque le compte en attente d'activation et publie
+ * SendAccountInvitationMessage { userId, locale }. La création du
+ * PasswordSetupToken et l'envoi de l'e-mail sont couverts par
+ * SendAccountInvitationHandlerTest.
+ */
 final class CpgUserInviterTest extends TestCase
 {
-    public function testInviteCreatesAPendingUserWithADerivedUsernameATokenAndAnInvitationMessage(): void
+    private const int GENERATED_ID = 123;
+
+    public function testInviteCreatesAPendingUserWithADerivedUsernameAndAnInvitationMessage(): void
     {
         $clock = new MockClock('2026-09-03 12:00:00');
 
         $cpgUserRepository = $this->createMock(CpgUserRepositoryInterface::class);
         $cpgUserRepository->method('findOneByEmail')->willReturn(null);
         $cpgUserRepository->method('findOneByUsername')->willReturn(null);
-        $cpgUserRepository->expects(self::once())->method('save')->with(self::isInstanceOf(CpgUser::class));
-
-        $savedToken = null;
-        $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
-        $tokenRepository->expects(self::once())->method('deleteForUser');
-        $tokenRepository->expects(self::once())->method('save')->willReturnCallback(
-            static function (PasswordSetupToken $token) use (&$savedToken): void {
-                $savedToken = $token;
+        $cpgUserRepository->expects(self::once())->method('save')->willReturnCallback(
+            static function (CpgUser $user): void {
+                // Simule l'identifiant généré par Doctrine au flush.
+                (new \ReflectionProperty(CpgUser::class, 'id'))->setValue($user, self::GENERATED_ID);
             },
         );
 
@@ -53,7 +57,6 @@ final class CpgUserInviterTest extends TestCase
         $inviter = new CpgUserInviter(
             $cpgUserRepository,
             new UsernameGenerator($cpgUserRepository),
-            $tokenRepository,
             $messageBus,
             $clock,
         );
@@ -65,17 +68,9 @@ final class CpgUserInviterTest extends TestCase
         self::assertTrue($user->isPendingActivation());
         self::assertSame(['ROLE_USER'], $user->getRoles());
 
-        self::assertInstanceOf(PasswordSetupToken::class, $savedToken);
-        self::assertSame(64, \strlen($savedToken->getTokenHash()));
-        self::assertSame('2026-09-05 12:00:00', $savedToken->getExpiresAt()->format('Y-m-d H:i:s'));
-
         self::assertInstanceOf(SendAccountInvitationMessage::class, $dispatched);
-        self::assertSame('jean.dupont@example.com', $dispatched->recipientEmail);
-        self::assertSame('jean.dupont', $dispatched->username);
+        self::assertSame(self::GENERATED_ID, $dispatched->userId);
         self::assertSame('fr', $dispatched->locale);
-        self::assertSame(1, preg_match('/^[0-9a-f]{64}$/', $dispatched->clearToken));
-        // Le hash stocké est bien le SHA-256 du jeton en clair transmis par e-mail.
-        self::assertSame($savedToken->getTokenHash(), hash('sha256', $dispatched->clearToken));
     }
 
     public function testInviteRejectsAnAlreadyUsedEmailWithoutCreatingAnything(): void
@@ -84,16 +79,12 @@ final class CpgUserInviterTest extends TestCase
         $cpgUserRepository->method('findOneByEmail')->willReturn(new CpgUser('existing', 'hashed-password'));
         $cpgUserRepository->expects(self::never())->method('save');
 
-        $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
-        $tokenRepository->expects(self::never())->method('save');
-
         $messageBus = $this->createMock(MessageBusInterface::class);
         $messageBus->expects(self::never())->method('dispatch');
 
         $inviter = new CpgUserInviter(
             $cpgUserRepository,
             new UsernameGenerator($cpgUserRepository),
-            $tokenRepository,
             $messageBus,
             new MockClock(),
         );
@@ -115,16 +106,12 @@ final class CpgUserInviterTest extends TestCase
             new UniqueConstraintViolationException(self::createStub(DriverException::class), null),
         );
 
-        $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
-        $tokenRepository->expects(self::never())->method('save');
-
         $messageBus = $this->createMock(MessageBusInterface::class);
         $messageBus->expects(self::never())->method('dispatch');
 
         $inviter = new CpgUserInviter(
             $cpgUserRepository,
             new UsernameGenerator($cpgUserRepository),
-            $tokenRepository,
             $messageBus,
             new MockClock('2026-09-03 12:00:00'),
         );
@@ -132,5 +119,62 @@ final class CpgUserInviterTest extends TestCase
         $this->expectException(EmailAlreadyUsedException::class);
 
         $inviter->invite('race@example.com', Locale::FR);
+    }
+
+    public function testReinviteRedispatchesForAPendingAccount(): void
+    {
+        $user = new CpgUser('newcomer', '');
+        $user->setEmail('newcomer@example.com');
+        $user->markInvited(new \DateTimeImmutable('2026-09-01 09:00:00'));
+        (new \ReflectionProperty(CpgUser::class, 'id'))->setValue($user, self::GENERATED_ID);
+
+        $cpgUserRepository = self::createStub(CpgUserRepositoryInterface::class);
+
+        $dispatched = null;
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects(self::once())->method('dispatch')->willReturnCallback(
+            static function (object $message) use (&$dispatched): Envelope {
+                $dispatched = $message;
+
+                return new Envelope($message);
+            },
+        );
+
+        $inviter = new CpgUserInviter(
+            $cpgUserRepository,
+            new UsernameGenerator($cpgUserRepository),
+            $messageBus,
+            new MockClock(),
+        );
+
+        $inviter->reinvite($user, Locale::EN);
+
+        self::assertInstanceOf(SendAccountInvitationMessage::class, $dispatched);
+        self::assertSame(self::GENERATED_ID, $dispatched->userId);
+        self::assertSame('en', $dispatched->locale);
+    }
+
+    public function testReinviteRejectsAnAlreadyActivatedAccount(): void
+    {
+        $user = new CpgUser('active', 'hashed-password');
+        $user->setEmail('active@example.com');
+        $user->markInvited(new \DateTimeImmutable('2026-09-01 09:00:00'));
+        $user->markActivated(new \DateTimeImmutable('2026-09-02 10:00:00'));
+
+        $cpgUserRepository = self::createStub(CpgUserRepositoryInterface::class);
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects(self::never())->method('dispatch');
+
+        $inviter = new CpgUserInviter(
+            $cpgUserRepository,
+            new UsernameGenerator($cpgUserRepository),
+            $messageBus,
+            new MockClock(),
+        );
+
+        $this->expectException(AccountNotAwaitingActivationException::class);
+
+        $inviter->reinvite($user, Locale::FR);
     }
 }

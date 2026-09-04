@@ -38,6 +38,9 @@ spec:
       # chown le PGDATA.
       securityContext:
         fsGroup: 70
+        # Point d'audit I6 : filtre d'appels système par défaut du runtime.
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: postgres
           image: postgres:18.4-alpine # garder synchronisé avec POSTGRES_TAG dans ../.env

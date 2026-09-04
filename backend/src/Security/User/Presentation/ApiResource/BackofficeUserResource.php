@@ -6,6 +6,7 @@ namespace App\Security\User\Presentation\ApiResource;
 
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Delete;
+use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserInviteProcessor;
@@ -31,6 +32,15 @@ use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserProvider;
     operations: [
         new GetCollection(
             uriTemplate: '/backoffice/users',
+            provider: BackofficeUserProvider::class,
+        ),
+        // Point d'audit C6 : sans opération `Get` déclarée ici, API Platform en
+        // fabrique une d'office pour pouvoir construire les IRI, exposée sur son
+        // gabarit par défaut `/api/backoffice_users/{id}` — un second chemin,
+        // non voulu et non documenté, vers les mêmes données. La déclarer
+        // explicitement sur le gabarit maison supprime cette route parasite.
+        new Get(
+            uriTemplate: '/backoffice/users/{id}',
             provider: BackofficeUserProvider::class,
         ),
         new Post(

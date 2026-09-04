@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Presentation\ApiResource;
 
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
-use App\Security\User\Application\CpgUserInviterInterface;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\InvitesUsers;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -23,6 +23,7 @@ use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 final class BackofficeUserInvitationResourceTest extends WebTestCase
 {
     use HttpJson;
+    use InvitesUsers;
 
     private const string SUPER_USERNAME = 'super';
     private const string SUPER_PASSWORD = 'SuperSecret123';
@@ -71,7 +72,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
     {
         $client = self::createClient();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $this->invite($client);
+        $this->invite();
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
         $id = $this->findInviteeId($client);
 
@@ -86,7 +87,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
         self::assertCount(1, $sent);
         $message = $sent[0]->getMessage();
         self::assertInstanceOf(SendAccountInvitationMessage::class, $message);
-        self::assertSame(self::INVITEE_EMAIL, $message->recipientEmail);
+        self::assertSame($id, $message->userId);
         self::assertSame('en', $message->locale);
     }
 
@@ -112,7 +113,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
         // repart d'un quota vierge.
         self::getContainer()->get('cache.rate_limiter')->clear();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $token = $this->invite($client);
+        $token = $this->invite();
 
         // La personne définit son mot de passe -> compte activé.
         $client->request('POST', '/api/account/password-setup/'.$token, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => 'NotCompromisedPass1']));
@@ -133,7 +134,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
     {
         $client = self::createClient();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $this->invite($client);
+        $this->invite();
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
         $id = $this->findInviteeId($client);
 
@@ -146,20 +147,13 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
     }
 
     /**
-     * Invite la personne via le use case (hors requête HTTP) et renvoie le
-     * jeton en clair extrait du message dispatché.
+     * Invite la personne via le use case (hors requête HTTP), exécute le
+     * handler et renvoie le jeton de définition de mot de passe en clair
+     * (extrait de l'e-mail : il ne transite plus par le message, cf. audit C2).
      */
-    private function invite(KernelBrowser $client): string
+    private function invite(): string
     {
-        $client->getContainer()->get(CpgUserInviterInterface::class)->invite(self::INVITEE_EMAIL, Locale::FR);
-        $client->getContainer()->get(EntityManagerInterface::class)->clear();
-
-        $sent = $this->asyncTransport()->getSent();
-        self::assertCount(1, $sent);
-        $message = $sent[0]->getMessage();
-        self::assertInstanceOf(SendAccountInvitationMessage::class, $message);
-
-        return $message->clearToken;
+        return $this->inviteAndCollectSetupToken(self::INVITEE_EMAIL, Locale::FR);
     }
 
     private function findInviteeId(KernelBrowser $client): int

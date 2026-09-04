@@ -6,7 +6,13 @@ namespace App\Security\User\Infrastructure\Messenger;
 
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
+use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Exception\AccountInvitationDeliveryException;
+use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
+use Doctrine\ORM\EntityManagerInterface;
+use Psr\Clock\ClockInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Bridge\Twig\Mime\TemplatedEmail;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
@@ -14,9 +20,15 @@ use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
 /**
- * Consommé par `make consume` (messenger:consume async -vv). Construit et
- * envoie l'e-mail d'invitation à définir son mot de passe, rendu par Twig à la
- * charte du site (templates/emails/account_invitation.*.twig).
+ * Consommé par `make consume` (messenger:consume async -vv). Depuis le point
+ * d'audit C2 (décision D3), c'est ici — et non plus dans CpgUserInviter — que
+ * l'unique PasswordSetupToken du compte est (re)créé, puis l'e-mail
+ * d'invitation construit et envoyé (rendu Twig à la charte du site,
+ * templates/emails/account_invitation.*.twig).
+ *
+ * Faire naître le jeton dans le handler garantit qu'il ne transite jamais par
+ * le message Messenger (donc jamais par le failure_transport) : sa valeur en
+ * clair ne quitte ce processus que dans le lien de l'e-mail.
  *
  * Toutes les chaînes visibles par le destinataire sont localisées ici (fr/en)
  * et passées en contexte : le template reste une pure mise en page.
@@ -24,8 +36,16 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 #[AsMessageHandler]
 final readonly class SendAccountInvitationHandler
 {
+    /** Durée de validité du jeton de définition de mot de passe. */
+    private const string TOKEN_LIFETIME = '+48 hours';
+
     public function __construct(
         private MailerInterface $mailer,
+        private CpgUserRepositoryInterface $cpgUserRepository,
+        private PasswordSetupTokenRepositoryInterface $passwordSetupTokenRepository,
+        private EntityManagerInterface $entityManager,
+        private ClockInterface $clock,
+        private LoggerInterface $logger,
         #[Autowire(param: 'app.contact_sender_email')]
         private string $senderEmail,
         #[Autowire(param: 'app.frontend_base_url')]
@@ -35,23 +55,55 @@ final readonly class SendAccountInvitationHandler
 
     public function __invoke(SendAccountInvitationMessage $message): void
     {
+        $user = $this->cpgUserRepository->findOneById($message->userId);
+
+        if (null === $user || !$user->isPendingActivation()) {
+            // Compte supprimé entre le dispatch et la consommation, ou mot de
+            // passe déjà défini : rien à faire, et surtout pas de retry — on
+            // sort sans exception.
+            $this->logger->warning('Invitation ignorée : compte introuvable ou déjà activé.', [
+                'userId' => $message->userId,
+            ]);
+
+            return;
+        }
+
+        $recipientEmail = $user->getEmail();
+        // isPendingActivation() implique invitedAt non null, donc un e-mail posé
+        // par CpgUserInviter::invite() : l'assertion l'explicite pour l'analyse
+        // statique.
+        \assert(null !== $recipientEmail);
+
         $locale = Locale::from($message->locale);
+        $clearToken = bin2hex(random_bytes(32));
+
+        // Un seul jeton actif à la fois : la purge de l'ancien et l'insertion
+        // du nouveau sont atomiques (un retry qui échouerait entre les deux ne
+        // doit pas laisser le compte sans jeton).
+        $this->entityManager->wrapInTransaction(function () use ($user, $clearToken): void {
+            $this->passwordSetupTokenRepository->deleteForUser($user);
+            $this->passwordSetupTokenRepository->save(new PasswordSetupToken(
+                $user,
+                hash('sha256', $clearToken),
+                $this->clock->now()->modify(self::TOKEN_LIFETIME),
+            ));
+        });
 
         $setupUrl = sprintf(
             '%s/%s/set-password/%s',
             rtrim($this->frontendBaseUrl, '/'),
             $locale->value,
-            $message->clearToken,
+            $clearToken,
         );
 
         $email = (new TemplatedEmail())
             ->from($this->senderEmail)
-            ->to($message->recipientEmail)
+            ->to($recipientEmail)
             ->subject($this->subjectFor($locale))
             ->htmlTemplate('emails/account_invitation.html.twig')
             ->textTemplate('emails/account_invitation.txt.twig')
             ->context([
-                'username' => $message->username,
+                'username' => $user->getUsername(),
                 'setupUrl' => $setupUrl,
                 'strings' => $this->stringsFor($locale),
             ])
