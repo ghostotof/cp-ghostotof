@@ -19,8 +19,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - The backend is fully linted with PHPStan.
 8. The security must be a top priority.
 9. In its final state, the website will have an authentication system with a generic guest user.
-   Without authentication, the site must not display any personal information that could identify me.
-   This information will be available once the user is authenticated.
+   Without authentication, the site must not expose any personal information that could identify me.
+   This information becomes available once the user is authenticated.
+   - **Scope, as settled on 2026-09-04** (audit C3): this covers the **CV** (`GET /api/cv`, `ROLE_USER`) —
+     real name, employers, career history — and `GET /api/me`. It does **not** cover the About page: its
+     content is deliberately public in full, including the "hobbies" panel, because that content is authored
+     through the backoffice and what gets published is decided at authoring time. Don't reintroduce a
+     conditional filter there (see `AboutContentResource`'s docblock).
+   - "Expose", not "display": hiding a field client-side is presentation, never protection. The enforcement
+     rule and its automated guard live under "Backoffice" below.
+   - There is no tier between anonymous and full access — `ROLE_USER` opens the CV outright. Leaking the
+     shared guest account's credentials is equivalent to publishing the CV; see `docs/adr/0001` for the
+     operational hygiene that follows (dedicated password, rotation, never `ROLE_SUPER`).
 10. The modifications must follow the git flow planned for this project on GitHub (main branch "main", next release "develop", new feature "feature", etc...)
 11. The resulting can be shown during an interview.
 12. The resulting must be fully multilingual (French, English)
@@ -133,16 +143,27 @@ folder), so entities live inside their bounded context instead of a shared top-l
     (filter to `[a-z0-9_.-]`, cap 60, pad with `user` if < 3, numeric suffix on collision).
   - `Application/` use cases (each with an interface, autowired single-impl):
     `CpgUserRegistrar` (CLI creation, password provided up front) · `CpgUserInviter`
-    (`invite(email, Locale)` / `reinvite(user, Locale)`: derives username, creates the pending account, issues
-    the token, dispatches `SendAccountInvitationMessage`) · `PasswordSetupService` (`validate` / `complete` the
-    public flow) · `CpgUserAdministrator` (delete / change-password) · `CpgUserRoleAdministrator`
+    (`invite(email, Locale)` / `reinvite(user, Locale)`: derives username, creates/marks the pending account,
+    then **only** dispatches `SendAccountInvitationMessage`) · `PasswordSetupService` (`validate` / `complete`
+    the public flow) · `CpgUserAdministrator` (delete / change-password) · `CpgUserRoleAdministrator`
     (`setSuperAdmin`, idempotent, anti-lockout guards) · `PasswordSetupRateLimiterInterface` (calqued on the
     Contact rate limiter). Presenters: `CpgUserPresenter` (`/api/me`), `CpgUserAdminPresenter`
     (backoffice list — `id`, `username`, `email`, `roles`, `status`).
+  - **The invitation token is created by the Messenger handler, never by the use case** (audit C2):
+    `SendAccountInvitationMessage` carries `{userId, locale}` and nothing else, so a message parked in the
+    doctrine `failure_transport` (SMTP down…) exposes no usable secret. `SendAccountInvitationHandler` reloads
+    the user (missing or already activated → `logger->warning` + return, no retry), then in a single
+    `wrapInTransaction` purges the previous `PasswordSetupToken` and issues a fresh one. Keep it that way: do
+    not move token creation back up into `CpgUserInviter`, and never add a secret to the message.
   - `Infrastructure/` — `Doctrine/{CpgUser,PasswordSetupToken}Repository.php` (sole impls);
-    `Messenger/SendAccountInvitationHandler.php` (`TemplatedEmail` `emails/account_invitation.*`, subject +
-    localized strings built here); `RateLimiter/SymfonyPasswordSetupRateLimiter.php` +
-    `Http/PasswordSetupRateLimitRetryAfterListener.php`; the API Platform providers/processors.
+    `Messenger/SendAccountInvitationHandler.php` (creates the token — see above — then the `TemplatedEmail`
+    `emails/account_invitation.*`, subject + localized strings built here);
+    `RateLimiter/SymfonyPasswordSetupRateLimiter.php`;
+    `Http/PasswordSetupRateLimitRequestListener.php` (audit C1 — a `kernel.request` listener at priority 15
+    that consumes the per-IP quota for `GET`/`POST` on `/api/account/password-setup/` **before** API Platform
+    deserializes or validates anything; consuming it again in the Provider/Processor would halve the effective
+    quota, so don't) + `Http/PasswordSetupRateLimitRetryAfterListener.php` (adds `Retry-After` on the 429);
+    the API Platform providers/processors.
   - `Presentation/Command/CreateCpgUserCommand.php` (`app:user:create`, `--role` allow-list) and
     `Presentation/Controller/CurrentUserController.php` (`GET /api/me`). Everything else is API Platform
     resources — see "Backoffice" below for the `ROLE_SUPER` ones, plus the **public** (no auth, no CSRF,
@@ -159,9 +180,17 @@ folder), so entities live inside their bounded context instead of a shared top-l
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
     listener at priority 20 (must run *above* the Security firewall's priority 8 — see the class docblock).
 - **`Portfolio/Shared/`** — `Domain/ValueObject/Locale.php`, the `enum Locale: string { FR = 'fr'; EN = 'en' }`
-  shared by every `Portfolio/*` context (public single-resource reads take it as a `{locale}` path param,
-  mapped automatically by API Platform via `Locale::from()`; an invalid segment throws `\ValueError`, mapped to
-  404 by a global `exception_to_status` entry in `config/packages/api_platform.yaml`).
+  shared by every `Portfolio/*` context. Two entry points, and the distinction matters (audit I3):
+  - **`Locale::fromString()` for anything coming from outside** (a `{locale}` URL segment, a command
+    argument). It throws `InvalidLocaleException` (`Portfolio/Shared/Domain/Exception/`), the only thing mapped
+    to 404 in `exception_to_status`. Providers/Processors get it in one step via `uriVariableLocale()` on the
+    `ResolvesUriVariables` trait — use that rather than re-deriving it.
+  - **`Locale::from()` stays for already-validated values** (backoffice DTO fields, bounded upstream by
+    `#[Assert\Choice]`, or values read back from the DB). A `\ValueError` there is a genuine bug and must
+    surface as a 500.
+  - There used to be a blanket `ValueError: 404` mapping. It has been **removed and must not come back**: it
+    disguised *every* `ValueError` in the HTTP stack as a plausible "404 Not Found", which is exactly how a
+    real defect goes unnoticed.
 - **`Portfolio/Experience/`**, **`Portfolio/Stats/`**, **`Portfolio/Quality/`**, **`Portfolio/About/`** — DB-backed
   content that used to be (or, for `Experience`, always was) hardcoded in the frontend. Each follows the same
   shape: a Doctrine entity per concept (`ExperienceTechnology`; `Stat`; `QualityPrinciple`/`QualityTrait`;
@@ -202,7 +231,12 @@ Content management for all of the above, plus user administration, gated end-to-
 - **`Security/User` backoffice resources** (`ROLE_SUPER`): `BackofficeUserResource` —
   `GetCollection` (list, `normalizationContext: skip_null_values=false` so `email` is always present),
   `Post /backoffice/users` (**invite** by `{email, locale}`, input DTO `BackofficeUserInviteInput`, → 201; direct
-  username+password creation stays CLI-only), `Delete /backoffice/users/{id}`. Plus dedicated one-operation
+  username+password creation stays CLI-only), an explicit `Get /backoffice/users/{id}` and
+  `Delete /backoffice/users/{id}`. The `Get` is declared **on purpose** (audit C6): without an item operation,
+  API Platform silently synthesises one to build IRIs, published on its default template
+  `/api/backoffice_users/{id}` — a second, undocumented path to the same data, which only stayed protected by
+  the accident that `^/api/backoffice` (no trailing slash) matches `backoffice_users` by prefix. Declaring it
+  removes that route. Plus dedicated one-operation
   resources: `BackofficeUserPasswordResource` (`Put …/{id}/password`, `output: false`),
   `BackofficeUserRoleResource` (`Put …/{id}/roles` `{superAdmin}`, `output: false`),
   `BackofficeUserInvitationResource` (`Post …/{id}/invitation` `{locale}`, resend, `read: false`, → 202).
@@ -395,6 +429,29 @@ via `window.__APP_CONFIG__` (`frontend/src/infrastructure/config/getApiUrl.ts`, 
 image — like the backend — is built once and promoted from preprod to prod unchanged, only the `API_URL` env var
 differs per environment; `make build-front-prod`/`build-front-preprod` no longer take an `API_URL` argument.
 
+### Deployment invariants (learned the hard way — don't undo these)
+
+- **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
+  deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
+  it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would
+  resolve to `docker.io/library/backend`). The deployer `Role` no longer has `pods/exec: create`: that verb
+  granted a shell in any pod of the namespace, i.e. every mounted secret and arbitrary code execution in
+  production. If a console command must run at deploy time, declare another Job — never bring `pods/exec` back.
+  The RBAC is a **manual bootstrap the pipeline never replays**: after changing it, re-run the loop in
+  `k8s/README.md` §4 *before* the next deploy, or the job fails on `cannot create resource "jobs"`.
+- **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
+  the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
+  internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's
+  `trusted_proxies: private_ranges`. `docker/nginx/default.conf` and `k8s/base/backend-nginx-conf.yaml` are
+  mirrors of each other: change both.
+- **Postgres/RabbitMQ carry state on a PVC** — a `kubectl apply --dry-run=server` proves nothing about runtime
+  behaviour on an already-initialised volume. Release v0.5.0 put RabbitMQ in `CrashLoopBackOff` in production
+  (~15 min of `POST /api/contact` returning 500) by adding `runAsNonRoot`/`fsGroup`: Erlang refuses to start
+  when its `.erlang.cookie` is group-accessible, and the offending file survived the manifest rollback. Any
+  change to those two workloads needs a real preprod rollout with `rollout status` + logs before promotion.
+  `seccompProfile: RuntimeDefault` (audit I6) is a syscall filter and touches neither uid nor file modes, but
+  the rule stands.
+
 ### Versions
 
 All image/tool versions are pinned in `../.env` and mirrored in `versions.lock`. The only deliberate exception is
@@ -456,7 +513,13 @@ runs the full suite (see "Project state" above for CI/PHPStan/Rector wiring).
 **No `.env.<env>` file is versioned in `backend/`** — `.env.dev` and `.env.test` used to be (Symfony's own
 default convention: `.env.$APP_ENV` is normally committed), but both were untracked after a GitGuardian alert
 flagged a disposable `JWT_PASSPHRASE` placeholder value as an exposed secret; only `backend/.env` (no real
-value, `APP_SECRET=` empty) stays tracked now. Don't re-add either file to git — extend `docker/php/init-symfony.sh`
+value, `APP_SECRET=` empty) stays tracked now. `CONTACT_SENDER_EMAIL` / `CONTACT_RECIPIENT_EMAIL` are empty
+there too (audit I4 — real addresses in a public repo feed harvesters and reveal the Scaleway TEM sending
+identity); their values come from outside the repo: `.env.local` in dev, Secret Manager in preprod/prod, and
+**`phpunit.dist.xml` in test**, since the test env never loads `.env.local` — with `force="true"`, without
+which Dotenv overwrites them with the empty value from `.env`. Beware: `init-symfony.sh` returns early when
+`composer.json` exists, so an already-initialised checkout needs those two lines added to `.env.local` by hand.
+Don't re-add either file to git — extend `docker/php/init-symfony.sh`
 instead if a fresh-clone default needs to change. Locally, `init-symfony.sh` generates both `.env.local` (dev)
 and `.env.test.local` (test) with the Docker-internal `DATABASE_URL` (`database:5432`); since Symfony never
 loads `.env.local` when `APP_ENV=test`, the test env needs its own `.env.test.local` — same database name as

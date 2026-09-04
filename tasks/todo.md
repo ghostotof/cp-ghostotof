@@ -78,11 +78,27 @@ k8s (si touché) `kubectl kustomize` prod **et** preprod.
 > `deploy-preprod`/`deploy-prod` échoueront sur `cannot create resource "jobs"`.
 > Procédure et commandes `auth can-i` de vérification dans `k8s/README.md` §4.
 
-## Phase 8 — C5 + clôture
-- [ ] 8.1 C5 : `git grep` des anciens secrets sur `HEAD` (vide) ; consigner « sans effet, ESO » + prescription vérif Scaleway ; excision d'historique = option non planifiée
-- [ ] 8.2 MAJ mémoire `project_security_audit.md` (numérotation C1–C8/I1–I9, état, commit/PR)
-- [ ] 8.3 MAJ `.claude/CLAUDE.md` (changements structurants)
-- [ ] **CHECKPOINT 8 (final)** — gates verts, PR vers `develop`, CI verte
+## Phase 8 — C5 + clôture  · FAIT (hors PR, non demandée)
+- [x] 8.1 C5 : `HEAD` vérifié propre — aucun secret, `config/jwt/` non suivi, `APP_SECRET`/`JWT_PASSPHRASE` vides.
+  **La seule occurrence restante était dans `tasks/plan.md` lui-même**, qui citait la valeur littérale dans sa
+  commande `git grep` : le plan republiait le secret qu'il visait. Remplacée par une commande qui la relit
+  depuis l'historique sans l'inscrire. Risque résiduel + prescriptions consignés dans `plan.md` §8.1.
+- [x] 8.2 Mémoire `project_security_audit_remediation_2026-09` réécrite (tableau point par point, écarts au
+  plan, 3 actions humaines) + ligne d'index `MEMORY.md` mise à jour
+- [x] 8.3 `.claude/CLAUDE.md` : objectif n°9 reformulé (périmètre = CV + `/api/me`, plus la page À propos) ;
+  jeton d'invitation créé côté handler ; listener de rate-limit set-password ; `Locale::fromString` +
+  `InvalidLocaleException` et interdiction de re-mapper `ValueError` ; `Get` explicite backoffice users ;
+  `CONTACT_*` hors `.env` ; nouvelle section « Deployment invariants » (Job de migration, `real_ip`, règle
+  Postgres/RabbitMQ)
+- [x] **CHECKPOINT 8 (final)** — gates verts. **PR volontairement non ouverte** (demande explicite).
+
+## Reste à faire — actions humaines, hors périmètre de cette branche
+1. Ajouter `access-key` au Secret `scaleway-eso-auth` (préprod + prod) avant d'appliquer `secretstore.yaml`
+2. Rejouer le bootstrap RBAC (`k8s/README.md` §4) avant le prochain déploiement
+3. Rotations : paire IAM ESO, et vérifier qu'aucun secret `prod-*`/`preprod-*` ne réutilise l'ancien
+   `APP_SECRET`/`JWT_PASSPHRASE` de dev
+4. Rollout préprod réel (avec `rollout status` + logs) avant toute promotion en prod — I6 touche Postgres/RabbitMQ
+5. Ouvrir la PR vers `develop`
 
 ## Non traités (acceptés + documentés)
 - I1 — 401 vs 404 sur `/api/backoffice/*` : renvoyer 404 casserait la sémantique REST + la redirection frontend

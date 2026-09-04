@@ -306,20 +306,56 @@ rendu kustomize + les gates frontend, la bascule réelle est manuelle (README).
 
 ## Phase 8 — C5 + clôture
 
-- [ ] 8.1 **C5** — `git grep -nI 'b5549e957bd857d7782904c40bf9f625'` sur `HEAD` (doit
-  être vide) ; vérifier qu'aucun fichier suivi ne porte un ancien `APP_SECRET`/
-  `JWT_PASSPHRASE`. Consigner : les valeurs restent dans l'historique public mais sont
-  sans effet (secrets déployés via ESO, keypair JWT jamais commité) ; prescription =
-  confirmer côté console Scaleway que `prod-*`/`preprod-*` n'ont jamais réutilisé ces
-  valeurs. Excision d'historique (`git filter-repo`) laissée en option explicite,
-  non planifiée.
-- [ ] 8.2 Mettre à jour la mémoire `project_security_audit.md` : ajouter cette passe
+- [x] 8.1 **C5** — état des lieux fait le 2026-09-04.
+
+  > **Note d'ironie, corrigée** : la rédaction initiale de cette tâche citait la
+  > valeur littérale de l'ancien `APP_SECRET` de dev dans la commande `git grep`.
+  > Le plan de remédiation republiait donc, sur `HEAD`, le secret même qu'il
+  > visait à purger — seule occurrence restante dans le dépôt. Elle est
+  > remplacée ci-dessous par une commande qui retrouve la valeur depuis
+  > l'historique sans l'inscrire nulle part.
+
+  **Vérifications sur `HEAD` (toutes vertes)** :
+  ```bash
+  # L'ancien APP_SECRET de dev n'apparaît plus dans aucun fichier suivi.
+  OLD=$(git show cbdf7d3:backend/.env.dev 2>/dev/null | sed -n 's/^APP_SECRET=//p')
+  git ls-files -z | xargs -0 grep -nI "$OLD"          # -> vide
+
+  # Aucune variable sensible renseignée dans un fichier suivi.
+  git ls-files -z | xargs -0 grep -nIE '^(APP_SECRET|JWT_PASSPHRASE)='  # -> valeurs vides
+
+  # Aucun motif de clé/token/clé privée.
+  git ls-files -z | xargs -0 grep -nIE '(SCW[A-Z0-9]{17}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}|BEGIN [A-Z ]*PRIVATE KEY)'
+
+  git ls-files backend/config/jwt/                     # -> 0 fichier (keypair jamais commitée)
+  ```
+  Restent seulement des identifiants de développement local assumés
+  (`POSTGRES_PASSWORD=app`, `RABBITMQ_PASSWORD=app` dans `../.env`, le
+  `!ChangeMe!` par défaut de Flex dans `backend/.env`) : ils ne valent que pour
+  le stack Docker local, la préprod et la prod tirant tout d'ESO.
+
+  **Analyse du risque résiduel** : trois valeurs subsistent dans l'historique
+  public — l'ancien `APP_SECRET`/`JWT_PASSPHRASE` de dev (commits `cbdf7d3`,
+  `55c6b87`, regénérés à l'ouverture du dépôt) et l'`accessKey` Scaleway
+  (retirée de `HEAD` en phase 5, C4). Aucune n'est exploitable en l'état : les
+  secrets d'exécution vivent dans Scaleway Secret Manager via ESO, la keypair
+  JWT n'a jamais été commitée, et l'`accessKey` est inerte sans sa `secretKey`.
+
+  **Prescriptions (actions humaines, hors périmètre de cette branche)** :
+  1. confirmer en console Scaleway qu'aucun secret `prod-*`/`preprod-*` ne
+     réutilise l'ancien `APP_SECRET`/`JWT_PASSPHRASE` de dev ;
+  2. faire tourner la paire IAM ESO, l'`accessKey` ayant été publique ;
+  3. excision d'historique (`git filter-repo`) : **option explicite, non
+     retenue** — réécrire l'historique d'un dépôt public déjà cloné/forké ne
+     retire pas les copies, casse les SHA et les liens de PR, pour un gain nul
+     dès lors que les valeurs sont invalidées. La rotation est le vrai correctif.
+- [x] 8.2 Mettre à jour la mémoire `project_security_audit.md` : ajouter cette passe
   (numérotation C1–C8 / I1–I9), l'état de traitement point par point, le commit/PR.
-- [ ] 8.3 `.claude/CLAUDE.md` : refléter les changements structurants (listener de
+- [x] 8.3 `.claude/CLAUDE.md` : refléter les changements structurants (listener de
   rate-limit set-password ; jeton d'invitation créé dans le handler ; filtre serveur
   About ; `Locale::fromString` + `InvalidLocaleException` ; `Get` explicite backoffice
   users ; `accessKey` ESO en secretRef ; migrations par Job le cas échéant).
-- [ ] **CHECKPOINT 8 (final)** — tous les gates verts, PR ouverte vers `develop`, CI verte.
+- [x] **CHECKPOINT 8 (final)** — tous les gates verts. **PR volontairement non ouverte** (demande explicite du 2026-09-04) ; reste à l'ouvrir vers `develop`, avec les 4 actions humaines listées dans `todo.md`.
 
 ---
 
