@@ -8,15 +8,15 @@ frontend (si touché) `npm run lint && npm run build && npm test` ;
 k8s (si touché) `kubectl kustomize` prod **et** preprod.
 
 ## Phase 0 — Préparation
-- [ ] 0.1 Créer `feature/security-audit-remediation` depuis `develop`
-- [ ] **CHECKPOINT 0** — plan validé
+- [x] 0.1 Créer `feature/security-audit-remediation` depuis `develop`
+- [x] **CHECKPOINT 0** — plan validé
 
 ## Phase 1 — C1 : rate-limit avant validation (set-password public)  · priorité HAUTE
-- [ ] 1.1 `PasswordSetupRateLimitRequestListener` (`kernel.request` prio 15, préfixe `/api/account/password-setup/`, GET+POST) → `rateLimiter->consume(clientIp)`
-- [ ] 1.2 Retirer `consume()` + la dépendance du `AccountPasswordSetupProvider` et `AccountPasswordSetupProcessor`
-- [ ] 1.3 `#[Assert\NotCompromisedPassword(skipOnError: true)]` sur `AccountPasswordSetupResource` + `BackofficeUserPasswordResource`
-- [ ] 1.4 Tests : listener unitaire (hors préfixe ignoré, GET+POST consomment, quota → 429) ; fonctionnel 11ᵉ POST jeton bidon → 429 sans appel HIBP + `Retry-After` ; GET soumis au quota ; set-password nominal inchangé
-- [ ] **CHECKPOINT 1** — gates backend
+- [x] 1.1 `PasswordSetupRateLimitRequestListener` (`kernel.request` prio 15, préfixe `/api/account/password-setup/`, GET+POST) → `rateLimiter->consume(clientIp)`
+- [x] 1.2 Retirer `consume()` + la dépendance du `AccountPasswordSetupProvider` et `AccountPasswordSetupProcessor`
+- [x] 1.3 `#[Assert\NotCompromisedPassword(skipOnError: true)]` sur `AccountPasswordSetupResource` + `BackofficeUserPasswordResource`
+- [x] 1.4 Tests : listener unitaire (hors préfixe ignoré, GET+POST consomment, sous-requête ignorée, sans IP → clé partagée, quota → exception) ; fonctionnel 11ᵉ POST jeton bidon → 429 avant validation du corps + `Retry-After` ; GET+POST partagent le quota ; set-password nominal inchangé
+- [x] **CHECKPOINT 1** — gates backend verts (PHPStan max, Rector, PHPUnit 256 tests)
 
 ## Phase 2 — C2 : jeton hors du message (donc hors failure transport)  · priorité HAUTE
 - [ ] 2.1 `SendAccountInvitationMessage` → `{ userId: int, locale: string }` uniquement

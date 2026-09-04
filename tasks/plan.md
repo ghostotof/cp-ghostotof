@@ -61,8 +61,8 @@ Gates à repasser à chaque checkpoint :
 
 ## Phase 0 — Préparation
 
-- [ ] 0.1 Créer `feature/security-audit-remediation` depuis `develop` à jour.
-- [ ] **CHECKPOINT 0** — plan validé, branche créée.
+- [x] 0.1 Créer `feature/security-audit-remediation` depuis `develop` à jour.
+- [x] **CHECKPOINT 0** — plan validé, branche créée.
 
 ---
 
@@ -71,7 +71,7 @@ Gates à repasser à chaque checkpoint :
 **Priorité : haute.** Constat de sévérité moyenne→élevée (disponibilité), trivialement
 déclenchable et lisible dans le code.
 
-- [ ] 1.1 `App\Security\User\Infrastructure\Http\PasswordSetupRateLimitRequestListener`
+- [x] 1.1 `App\Security\User\Infrastructure\Http\PasswordSetupRateLimitRequestListener`
   - `#[AsEventListener(event: RequestEvent::class, priority: 15)]` (après le CSRF à 20,
     très en amont du contrôleur API Platform).
   - `isMainRequest()` + `str_starts_with($request->getPathInfo(), '/api/account/password-setup/')`
@@ -79,11 +79,11 @@ déclenchable et lisible dans le code.
   - L'exception `PasswordSetupRateLimitExceededException` (→429, déjà mappée) est levée
     ici ; `PasswordSetupRateLimitRetryAfterListener` (kernel.exception→kernel.response)
     continue de poser `Retry-After` sans modification.
-- [ ] 1.2 Retirer `PasswordSetupRateLimiterInterface` + l'appel `consume()` de
+- [x] 1.2 Retirer `PasswordSetupRateLimiterInterface` + l'appel `consume()` de
   `AccountPasswordSetupProvider` et `AccountPasswordSetupProcessor` (dépendance et ligne).
-- [ ] 1.3 `#[Assert\NotCompromisedPassword(skipOnError: true)]` sur
+- [x] 1.3 `#[Assert\NotCompromisedPassword(skipOnError: true)]` sur
   `AccountPasswordSetupResource` **et** `BackofficeUserPasswordResource`.
-- [ ] 1.4 Tests :
+- [x] 1.4 Tests :
   - unitaire listener : chemin hors préfixe ignoré ; GET et POST consomment ; au-delà
     du quota → `PasswordSetupRateLimitExceededException`.
   - fonctionnel (`AccountPasswordSetupResourceTest`) : 11ᵉ `POST /api/account/password-setup/<jeton-bidon>`
@@ -96,7 +96,7 @@ Critères d'acceptation : le quota IP est consommé avant toute désérialisatio
 une panne HIBP ne renvoie plus 500 sur `/api/account/password-setup` ni sur
 `PUT …/users/{id}/password`.
 
-- [ ] **CHECKPOINT 1** — gates backend verts.
+- [x] **CHECKPOINT 1** — gates backend verts.
 
 ---
 
