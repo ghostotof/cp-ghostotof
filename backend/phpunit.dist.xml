@@ -15,6 +15,17 @@
         <ini name="error_reporting" value="-1" />
         <server name="APP_ENV" value="test" force="true" />
         <server name="SHELL_VERBOSITY" value="-1" />
+        <!-- Point d'audit I4 : CONTACT_* sont vides dans le .env versionné
+             (dépôt public), les vraies valeurs venant de hors dépôt — .env.local
+             en dev, Secret Manager en préprod/prod. L'environnement de test ne
+             charge jamais .env.local : ces adresses de test sont donc posées
+             ici, ce qui rend la suite autonome et identique en local et en CI
+             (le workflow écrit son propre .env.test.local, qui n'a pas à les
+             connaître). Le mailer est neutralisé en test (MAILER_DSN=null://null).
+             `force` est indispensable : sans lui, Dotenv écrase la valeur par
+             celle (vide) du .env, puisque la variable y figure. -->
+        <server name="CONTACT_SENDER_EMAIL" value="noreply@example.test" force="true" />
+        <server name="CONTACT_RECIPIENT_EMAIL" value="contact@example.test" force="true" />
     </php>
 
     <testsuites>
