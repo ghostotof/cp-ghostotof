@@ -14,7 +14,10 @@ resources:
 configMapGenerator:
   - name: backend-config
     literals:
-      - CORS_ALLOW_ORIGIN=^https://preprod\.cp-ghostotof\.com$
+      # Point d'audit I2 : ancre `\z` (fin absolue) et non `$`, qui en PCRE
+      # accepte aussi la position avant un saut de ligne final — voir le
+      # commentaire détaillé dans l'overlay prod.
+      - CORS_ALLOW_ORIGIN=^https://preprod\.cp-ghostotof\.com\z
       - DEFAULT_URI=https://preprod.cp-ghostotof.com
       # Base des liens construits dans les e-mails sortants (ex. lien de
       # définition de mot de passe d'un utilisateur invité). Consommé par le
