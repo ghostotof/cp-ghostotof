@@ -64,6 +64,11 @@ cat > .env.local <<LOCALENV
 APP_ENV=dev
 DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}?serverVersion=16&charset=utf8"
 MESSENGER_TRANSPORT_DSN="amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/%2f/messages"
+# Point d'audit I4 : laissées vides dans le .env versionné (dépôt public), donc
+# posées ici. Adresses de test : en dev le mailer pointe sur Mailpit ou
+# null://null, rien ne part vers l'extérieur.
+CONTACT_SENDER_EMAIL=noreply@example.test
+CONTACT_RECIPIENT_EMAIL=contact@example.test
 LOCALENV
 
 # .env.local n'est jamais chargé par Symfony en environnement test (comportement

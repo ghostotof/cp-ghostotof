@@ -12,8 +12,16 @@ resources:
 configMapGenerator:
   - name: backend-config
     literals:
-      - CORS_ALLOW_ORIGIN=^https://cp-ghostotof\.com$
+      # Point d'audit I2 : ancre de fin `\z` et non `$`. En PCRE (nelmio_cors
+      # compile cette valeur en regex, cf. origin_regex: true), `$` accepte
+      # aussi une position AVANT un saut de ligne final — `https://cp-ghostotof.com\n`
+      # passerait donc le contrôle d'origine. `\z` n'accepte que la fin absolue.
+      - CORS_ALLOW_ORIGIN=^https://cp-ghostotof\.com\z
       - DEFAULT_URI=https://cp-ghostotof.com
+      # Base des liens construits dans les e-mails sortants (ex. lien de
+      # définition de mot de passe d'un utilisateur invité). Consommé par le
+      # backend ET le worker Messenger (envoi effectif des e-mails).
+      - APP_FRONTEND_BASE_URL=https://cp-ghostotof.com
       - CV_DOWNLOAD_FILENAME=cv.pdf
       # From des notifications du formulaire de contact (non secret, adresse
       # d'envoi dédiée du domaine validé Scaleway TEM). CONTACT_RECIPIENT_EMAIL

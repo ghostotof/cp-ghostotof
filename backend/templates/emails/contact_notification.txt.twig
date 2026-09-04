@@ -1,0 +1,10 @@
+{% extends 'emails/base.txt.twig' %}
+
+{% block body %}
+Nouveau message de contact
+
+De     : {{ senderName }}
+E-mail : {{ senderEmail }}
+
+{{ body }}
+{% endblock %}

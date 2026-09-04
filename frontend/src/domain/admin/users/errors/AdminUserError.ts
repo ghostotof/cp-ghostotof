@@ -1,17 +1,28 @@
 /**
  * `reason` catégorise l'échec pour que la présentation choisisse le bon
- * message traduit (cf. i18n `admin.users.errors.*`) sans avoir à connaître le
- * détail du transport HTTP. `cannot-delete-self` est spécifique à ce module :
- * le backend refuse (409) qu'un ROLE_SUPER supprime son propre compte (cf.
- * CannotDeleteOwnAccountException) — l'UI désactive déjà le bouton pour sa
- * propre ligne, mais ce cas reste géré ici en défense en profondeur (état
- * désynchronisé possible avec plusieurs onglets ouverts).
+ * message traduit (cf. i18n `admin.users.errors.*`) sans connaître le détail du
+ * transport HTTP. Plusieurs cas de conflit (409) coexistent, désambiguïsés par
+ * l'opération et le `detail` renvoyé :
+ * - `email-taken` : invitation d'une adresse déjà rattachée à un compte ;
+ * - `cannot-modify-own-roles` / `cannot-demote-last-super` : garde-fous sur le
+ *   changement de rôle ;
+ * - `already-activated` : renvoi d'invitation à un compte déjà activé ;
+ * - `cannot-delete-self` : suppression de son propre compte (l'UI désactive
+ *   déjà le bouton pour sa ligne, gardé ici en défense en profondeur).
  */
-export type AdminUserErrorReason = 'not-found' | 'cannot-delete-self' | 'validation' | 'unknown'
+export type AdminUserErrorReason =
+  | 'not-found'
+  | 'cannot-delete-self'
+  | 'email-taken'
+  | 'email-invalid'
+  | 'cannot-modify-own-roles'
+  | 'cannot-demote-last-super'
+  | 'already-activated'
+  | 'validation'
+  | 'unknown'
 
 /**
- * Levée par AdminUserRepository en cas d'échec d'une opération (suppression,
- * changement de mot de passe).
+ * Levée par AdminUserRepository en cas d'échec d'une opération.
  */
 export class AdminUserError extends Error {
   readonly reason: AdminUserErrorReason

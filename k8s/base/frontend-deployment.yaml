@@ -26,6 +26,9 @@ spec:
       # anonyme, plus besoin d'imagePullSecrets.
       securityContext:
         fsGroup: 101
+        # Point d'audit I6 : filtre d'appels système par défaut du runtime.
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         - name: copy-html
           image: frontend

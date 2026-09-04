@@ -17,6 +17,7 @@ framework:
         routing:
             # Route your messages to the transports
             'App\Contact\Application\Message\SendContactMessageMessage': async
+            'App\Security\User\Application\Message\SendAccountInvitationMessage': async
 
 when@test:
     framework:

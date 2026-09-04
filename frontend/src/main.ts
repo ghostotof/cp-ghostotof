@@ -35,6 +35,8 @@ import { ADMIN_STATS_REPOSITORY } from './application/admin/stats/useAdminStats'
 import { HttpAdminStatsRepository } from './infrastructure/admin/stats/HttpAdminStatsRepository'
 import { ADMIN_USER_REPOSITORY } from './application/admin/users/useAdminUsers'
 import { HttpAdminUserRepository } from './infrastructure/admin/users/HttpAdminUserRepository'
+import { ACCOUNT_REPOSITORY } from './application/account/useAccountPasswordSetup'
+import { HttpAccountRepository } from './infrastructure/account/HttpAccountRepository'
 import { getApiUrl } from './infrastructure/config/getApiUrl'
 
 const app = createApp(App)
@@ -58,6 +60,7 @@ app.provide(ADMIN_QUALITY_PRINCIPLE_REPOSITORY, new HttpAdminQualityPrincipleRep
 app.provide(ADMIN_QUALITY_TRAIT_REPOSITORY, new HttpAdminQualityTraitRepository(apiUrl))
 app.provide(ADMIN_STATS_REPOSITORY, new HttpAdminStatsRepository(apiUrl))
 app.provide(ADMIN_USER_REPOSITORY, new HttpAdminUserRepository(apiUrl))
+app.provide(ACCOUNT_REPOSITORY, new HttpAccountRepository(apiUrl))
 
 app.use(i18n)
 app.use(router)

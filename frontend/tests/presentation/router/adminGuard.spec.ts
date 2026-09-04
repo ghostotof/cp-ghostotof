@@ -73,6 +73,15 @@ describe('router — garde /admin (ROLE_SUPER)', () => {
     expect(router.currentRoute.value.name).toBe('admin-technologies')
   })
 
+  it('route publique set-password : accessible sans authentification (le garde ne la bloque pas)', async () => {
+    await primeAuthState(null)
+
+    await router.push('/fr/set-password/deadbeef')
+
+    expect(router.currentRoute.value.name).toBe('set-password')
+    expect(router.currentRoute.value.params.token).toBe('deadbeef')
+  })
+
   it('attend la résolution de checkAuth() avant de trancher (évite une redirection prématurée au rechargement de page)', async () => {
     let resolveMe: (user: AuthenticatedUser | null) => void = () => {}
     const repository: AuthRepository = {

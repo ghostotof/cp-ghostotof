@@ -237,7 +237,16 @@ jobs:
           kubectl apply -k .
           kubectl -n preprod rollout status deployment/backend --timeout=180s
           kubectl -n preprod rollout status deployment/frontend --timeout=180s
-          kubectl -n preprod exec deploy/backend -c php-fpm -- php bin/console doctrine:migrations:migrate --no-interaction
+          # Point d'audit C8 : migrations via un Job dédié plutôt que
+          # `kubectl exec`, ce qui permet de retirer `pods/exec: create` du Role
+          # du déployeur (un shell dans n'importe quel pod = accès à tous les
+          # secrets montés). Le Job n'est pas dans les `resources:` de
+          # kustomize : l'image est donc substituée ici.
+          kubectl -n preprod delete job backend-migrate --ignore-not-found
+          BACKEND_IMAGE=$IMAGE_BACKEND:$TAG-preprod \
+            envsubst < ../../base/migrate-job.yaml | kubectl -n preprod apply -f -
+          kubectl -n preprod wait --for=condition=complete --timeout=180s job/backend-migrate \
+            || { kubectl -n preprod logs job/backend-migrate --tail=200; exit 1; }
 
   # ---------------------------------------------------------------------------
   # test-preprod — smoke tests + audit boîte noire (gate bloquant)
@@ -332,7 +341,12 @@ jobs:
           kubectl apply -k .
           kubectl -n prod rollout status deployment/backend --timeout=180s
           kubectl -n prod rollout status deployment/frontend --timeout=180s
-          kubectl -n prod exec deploy/backend -c php-fpm -- php bin/console doctrine:migrations:migrate --no-interaction
+          # Point d'audit C8 — même mécanique qu'en préprod, cf. deploy-preprod.
+          kubectl -n prod delete job backend-migrate --ignore-not-found
+          BACKEND_IMAGE=$IMAGE_BACKEND:$TAG \
+            envsubst < ../../base/migrate-job.yaml | kubectl -n prod apply -f -
+          kubectl -n prod wait --for=condition=complete --timeout=180s job/backend-migrate \
+            || { kubectl -n prod logs job/backend-migrate --tail=200; exit 1; }
 
   # ---------------------------------------------------------------------------
   # audit-prod — vérification post-promotion, non bloquant (pas de rollback

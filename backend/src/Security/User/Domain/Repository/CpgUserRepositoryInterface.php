@@ -15,6 +15,8 @@ interface CpgUserRepositoryInterface
 {
     public function findOneByUsername(string $username): ?CpgUser;
 
+    public function findOneByEmail(string $email): ?CpgUser;
+
     public function findOneById(int $id): ?CpgUser;
 
     /**

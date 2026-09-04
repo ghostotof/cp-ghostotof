@@ -26,10 +26,15 @@ api_platform:
         App\Contact\Domain\Exception\ContactMessageDeliveryException: 503
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException: 409
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException: 404
-        # Levée par Locale::from() dans StatProvider/BackofficeStatProcessor
-        # quand le segment {locale}/le champ "locale" du DTO ne vaut ni "fr"
-        # ni "en".
-        ValueError: 404
+        # Point d'audit I3 : remplace un mapping `ValueError: 404` fourre-tout.
+        # Celui-ci déguisait en « 404 Not Found » *toute* ValueError levée dans
+        # la pile HTTP, y compris un bug sans rapport avec la locale — un vrai
+        # défaut serait passé inaperçu sous un 404 plausible. Le segment d'URL
+        # {locale} passe désormais par Locale::fromString() (cf. le helper
+        # uriVariableLocale du trait ResolvesUriVariables), qui lève cette
+        # exception précise. Les champs "locale" des DTO de backoffice, eux,
+        # sont déjà bornés en amont par #[Assert\Choice] (422, pas 404).
+        App\Portfolio\Shared\Domain\Exception\InvalidLocaleException: 404
         App\Portfolio\Stats\Domain\Exception\StatNotFoundException: 404
         App\Portfolio\Quality\Domain\Exception\QualityPrincipleNotFoundException: 404
         App\Portfolio\Quality\Domain\Exception\QualityTraitNotFoundException: 404
@@ -39,6 +44,19 @@ api_platform:
         App\Security\User\Domain\Exception\CpgUserNotFoundException: 404
         App\Security\User\Domain\Exception\CannotDeleteOwnAccountException: 409
         App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException: 409
+        App\Security\User\Domain\Exception\CannotModifyOwnRolesException: 409
+        App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException: 409
+        App\Security\User\Domain\Exception\EmailAlreadyUsedException: 409
+        App\Security\User\Domain\Exception\AccountNotAwaitingActivationException: 409
+        # Levée par SendAccountInvitationHandler (worker Messenger async) ;
+        # entrée défensive au cas où l'envoi serait un jour synchrone.
+        App\Security\User\Domain\Exception\AccountInvitationDeliveryException: 503
+        # Parcours public de définition de mot de passe (/api/account/password-setup) :
+        # jeton inconnu -> 404, expiré ou déjà consommé -> 410 (cas fusionnés
+        # pour ne pas révéler qu'un lien a servi), quota IP dépassé -> 429.
+        App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException: 404
+        App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException: 410
+        App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException: 429
     defaults:
         stateless: true
         cache_headers:

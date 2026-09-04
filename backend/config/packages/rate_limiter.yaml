@@ -9,3 +9,13 @@ framework:
             policy: 'sliding_window'
             limit: 5
             interval: '1 hour'
+
+        # Anti-brute-force sur GET/POST /api/account/password-setup/{token}
+        # (endpoint public, sans authentification ni CSRF). Borne les tentatives
+        # de deviner un jeton valide ou de forcer un mot de passe sur un jeton
+        # connu mais pas encore consommé. Clé : l'IP de l'appelant
+        # (cf. SymfonyPasswordSetupRateLimiter).
+        account_password_setup:
+            policy: 'sliding_window'
+            limit: 10
+            interval: '1 hour'

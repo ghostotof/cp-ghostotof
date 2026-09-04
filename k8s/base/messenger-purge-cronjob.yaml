@@ -26,6 +26,9 @@ spec:
           restartPolicy: OnFailure
           securityContext:
             fsGroup: 10001
+            # Point d'audit I6 : filtre d'appels système par défaut du runtime.
+            seccompProfile:
+              type: RuntimeDefault
           containers:
             - name: purge
               image: backend

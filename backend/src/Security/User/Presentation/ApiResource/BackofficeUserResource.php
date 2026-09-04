@@ -6,23 +6,48 @@ namespace App\Security\User\Presentation\ApiResource;
 
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Delete;
+use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
+use ApiPlatform\Metadata\Post;
+use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserInviteProcessor;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserProcessor;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserProvider;
 
 /**
- * Listing + suppression des comptes CpgUser, réservé ROLE_SUPER (cf.
- * access_control ^/api/backoffice dans config/packages/security.yaml).
- * Aucune opération de création : les comptes se créent exclusivement via la
- * commande CLI app:user:create (cf. CreateCpgUserCommand), pas de formulaire
- * d'inscription même côté backoffice.
+ * Listing + invitation + suppression des comptes CpgUser, réservé ROLE_SUPER
+ * (cf. access_control ^/api/backoffice dans config/packages/security.yaml).
+ *
+ * La création directe (username + mot de passe) reste réservée à la commande
+ * CLI app:user:create. Le POST ici *invite* : il prend une adresse e-mail,
+ * dérive un identifiant, crée un compte en attente d'activation et envoie un
+ * lien de définition de mot de passe (cf. BackofficeUserInviteInput /
+ * App\Security\User\Application\CpgUserInviter).
  */
 #[ApiResource(
     shortName: 'BackofficeUser',
+    // Garde `email: null` dans la réponse (défaut API Platform : les valeurs
+    // nulles sont omises) : le frontend attend toujours la clé pour distinguer
+    // « compte sans e-mail » de « champ absent ».
+    normalizationContext: ['skip_null_values' => false],
     operations: [
         new GetCollection(
             uriTemplate: '/backoffice/users',
             provider: BackofficeUserProvider::class,
+        ),
+        // Point d'audit C6 : sans opération `Get` déclarée ici, API Platform en
+        // fabrique une d'office pour pouvoir construire les IRI, exposée sur son
+        // gabarit par défaut `/api/backoffice_users/{id}` — un second chemin,
+        // non voulu et non documenté, vers les mêmes données. La déclarer
+        // explicitement sur le gabarit maison supprime cette route parasite.
+        new Get(
+            uriTemplate: '/backoffice/users/{id}',
+            provider: BackofficeUserProvider::class,
+        ),
+        new Post(
+            uriTemplate: '/backoffice/users',
+            status: 201,
+            input: BackofficeUserInviteInput::class,
+            processor: BackofficeUserInviteProcessor::class,
         ),
         new Delete(
             uriTemplate: '/backoffice/users/{id}',
@@ -38,6 +63,9 @@ final readonly class BackofficeUserResource
         public string $username,
         /** @var list<string> */
         public array $roles,
+        public ?string $email = null,
+        /** @var 'pending'|'active' */
+        public string $status = 'active',
     ) {
     }
 }
