@@ -88,6 +88,37 @@ reprendre la charte graphique du site.
   actions de ligne du tableau `/admin/users` sont regroupées derrière un menu
   « ⋯ » (un seul ouvert à la fois).
 
+### Risque opérationnel du compte invité générique (point d'audit I8)
+
+Tout compte créé par ce flux — y compris le **compte invité générique** prévu
+par l'objectif n°9 du projet — possède `ROLE_USER`. Or `ROLE_USER` est
+exactement le niveau qui ouvre l'accès aux données personnelles :
+
+| Ressource | Contrôle |
+|---|---|
+| `GET /api/cv` | `ROLE_USER` — le CV réel : identité, employeurs, parcours |
+| `GET /api/me` | `ROLE_USER` |
+
+Il n'y a **pas de palier intermédiaire** entre « visiteur anonyme » et « accès
+complet aux données personnelles ». Conséquence à assumer explicitement : la
+fuite des identifiants de ce seul compte partagé équivaut à publier le CV. Ce
+n'est pas une faille — c'est le modèle choisi — mais il impose une hygiène
+opérationnelle :
+
+- mot de passe **long et propre à ce compte**, jamais réutilisé ailleurs ;
+- **rotation** à chaque fois qu'il a pu être diffusé largement (fin d'un
+  processus de recrutement, démonstration publique, capture d'écran) ;
+- ne jamais lui donner `ROLE_SUPER` : le backoffice est une surface distincte,
+  et l'anti-lockout ne protège que du verrouillage, pas du partage.
+
+Si le besoin d'un accès « démo » plus large apparaissait, la bonne réponse
+serait un rôle dédié (ex. `ROLE_GUEST`) donnant moins que `ROLE_USER`, plutôt
+que de diffuser plus largement un compte `ROLE_USER`.
+
+Note : depuis la révision de D4 (audit C3, 2026-09-04), le contenu « À propos »
+est entièrement public — le CV est donc désormais **la** ressource protégée,
+ce qui concentre le risque décrit ci-dessus au lieu de le diluer.
+
 ## Alternatives écartées
 
 - **E-mails en texte brut** (statu quo) : rejeté, demande explicite d'une charte.
