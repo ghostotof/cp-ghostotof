@@ -14,8 +14,6 @@ import { ABOUT_CONTENT_REPOSITORY } from '../../../src/application/about/useAbou
 import type { AboutContentRepository } from '../../../src/domain/about/repositories/AboutContentRepository'
 import { QUALITY_CONTENT_REPOSITORY } from '../../../src/application/quality/useQualityContent'
 import type { QualityContentRepository } from '../../../src/domain/quality/repositories/QualityContentRepository'
-import { STATS_REPOSITORY } from '../../../src/application/stats/useStats'
-import type { StatsRepository } from '../../../src/domain/stats/repositories/StatsRepository'
 import { createAppI18n } from '../../../src/presentation/i18n'
 
 const STUB_ABOUT_CONTENT = {
@@ -53,10 +51,6 @@ function createStubQualityContentRepository(): QualityContentRepository {
   return { get: vi.fn(async () => ({ principles: [], traits: [] })) }
 }
 
-function createStubStatsRepository(): StatsRepository {
-  return { list: vi.fn(async () => []) }
-}
-
 async function mountLayout(initialPath = '/fr') {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -77,7 +71,6 @@ async function mountLayout(initialPath = '/fr') {
         [CV_REPOSITORY as symbol]: createStubCvRepository(),
         [ABOUT_CONTENT_REPOSITORY as symbol]: createStubAboutContentRepository(),
         [QUALITY_CONTENT_REPOSITORY as symbol]: createStubQualityContentRepository(),
-        [STATS_REPOSITORY as symbol]: createStubStatsRepository(),
       },
     },
   })

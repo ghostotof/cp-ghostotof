@@ -39,7 +39,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repository started as a freshly generated project skeleton (single "Init" commit). Real backend code now
 exists — the `Security` bounded context (`User` + `Authentication`) and four `Portfolio` bounded contexts
-(`Experience`, `Stats`, `Quality`, `About`, see Backend architecture below) — and follows a DDD structure under
+(`Experience`, `Quality`, `About`, see Backend architecture below) — and follows a DDD structure under
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
 over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
 recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
@@ -191,13 +191,13 @@ folder), so entities live inside their bounded context instead of a shared top-l
   - There used to be a blanket `ValueError: 404` mapping. It has been **removed and must not come back**: it
     disguised *every* `ValueError` in the HTTP stack as a plausible "404 Not Found", which is exactly how a
     real defect goes unnoticed.
-- **`Portfolio/Experience/`**, **`Portfolio/Stats/`**, **`Portfolio/Quality/`**, **`Portfolio/About/`** — DB-backed
+- **`Portfolio/Experience/`**, **`Portfolio/Quality/`**, **`Portfolio/About/`** — DB-backed
   content that used to be (or, for `Experience`, always was) hardcoded in the frontend. Each follows the same
-  shape: a Doctrine entity per concept (`ExperienceTechnology`; `Stat`; `QualityPrinciple`/`QualityTrait`;
+  shape: a Doctrine entity per concept (`ExperienceTechnology`; `QualityPrinciple`/`QualityTrait`;
   `AboutSettings`/`AboutSiteCard`/`AboutMeCard`, the latter with an `AboutMeCardCategory` enum), a public
-  read-only API Platform resource (`GetCollection('/stats/{locale}')`, or an aggregating `Provider` for
+  read-only API Platform resource (`GetCollection('/experience/technologies')`, or an aggregating `Provider` for
   `/quality/{locale}` and `/about/{locale}` that returns `{principles, traits}` / `{settings, siteCards, meCards}`
-  in one call), and a backoffice CRUD resource (see below). Seeded via idempotent `app:{about,quality,stats}:seed`
+  in one call), and a backoffice CRUD resource (see below). Seeded via idempotent `app:{about,quality}:seed`
   console commands (purge-by-locale then recreate — safe to rerun).
 
 ### Backoffice (`ROLE_SUPER`)
@@ -220,7 +220,7 @@ Content management for all of the above, plus user administration, gated end-to-
   means adding an entry to `PUBLIC_PATHS` **with a written justification**; if you can't justify it, it isn't
   public. Never weaken or delete that test to make a new route pass.
 - **API Platform pattern**, repeated identically across every backoffice resource
-  (`BackofficeExperienceTechnologyResource`, `BackofficeStatResource`, `BackofficeQuality{Principle,Trait}Resource`,
+  (`BackofficeExperienceTechnologyResource`, `BackofficeQuality{Principle,Trait}Resource`,
   `Backoffice{About}{Settings,SiteCard,MeCard}Resource`, `BackofficeUserResource`,
   `BackofficeUserPasswordResource`): a flat DTO (never the Doctrine entity itself) under
   `Presentation/ApiResource/`, backed by a `Provider` (`GetCollection`/`Get`) and a `Processor`
@@ -283,23 +283,23 @@ Single-page app in clean-architecture layers, `PortfolioContentRepository` is th
 To add a new content block: entity → repository interface method (with a `locale: Locale` parameter) →
 `infrastructure/portfolio/content/{fr,en}.ts` (structured content) → expose it from `usePortfolioContent` →
 new `presentation/sections/*.vue` → wire into `LandingPage.vue`. Note: this "static content" flow only still
-applies to `hero`/`technologies` — About/Quality/Stats moved to the API-backed flow below.
+applies to `hero`/`technologies` — About/Quality moved to the API-backed flow below.
 
 To add a new page: new route in `presentation/router/index.ts` (nested under `/:locale(fr|en)`, with
 `meta.titleKey`/`meta.descriptionKey` for SEO — see below) → new `presentation/pages/*.vue` (its own
 `usePortfolioContent()` call for its own content) → new `NavigationLink` entry (`to` + `isEnabled`) in
 `StaticPortfolioContentRepository`. `AppHeader` derives the active nav link from `useRoute()`, not from props.
 
-#### API-backed content (About/Quality/Stats)
+#### API-backed content (About/Quality)
 
-Unlike `PortfolioContentRepository` (hero/technologies, synchronous, hardcoded), the About/Quality/Stats content
+Unlike `PortfolioContentRepository` (hero/technologies, synchronous, hardcoded), the About/Quality content
 now lives in the backend DB and is fetched asynchronously, each with its own small vertical slice:
-`domain/{about,quality,stats}/repositories/*ContentRepository.ts` (interface) →
-`infrastructure/{about,quality,stats}/Http*ContentRepository.ts` (the implementation, calls the public
-`/api/{about,quality,stats}/{locale}` endpoints) → `application/{about,quality,stats}/use*Content.ts` (composable
+`domain/{about,quality}/repositories/*ContentRepository.ts` (interface) →
+`infrastructure/{about,quality}/Http*ContentRepository.ts` (the implementation, calls the public
+`/api/{about,quality}/{locale}` endpoints) → `application/{about,quality}/use*Content.ts` (composable
 exposing `content`/`isLoading`/`hasError`, injected the same `InjectionKey` way as `usePortfolioContent`) →
-consumed by `AboutPage.vue` / `LandingPage.vue`'s Quality/Stats sections, each rendering a loading state, an
-error state (`role="alert"`), and the content. `main.ts` provides all three repositories alongside the existing
+consumed by `AboutPage.vue` / `LandingPage.vue`'s Quality section, each rendering a loading state, an
+error state (`role="alert"`), and the content. `main.ts` provides both repositories alongside the existing
 `PortfolioContentRepository` one. Don't add new content here unless it's genuinely backend-managed (i.e. editable
 from the backoffice) — purely static content still belongs in `infrastructure/portfolio/content/{fr,en}.ts`.
 
@@ -308,7 +308,7 @@ from the backoffice) — purely static content still belongs in `infrastructure/
 Content/user management UI, mirrored per-resource under `domain/admin/<resource>/{entities,repositories,errors}`
 → `infrastructure/admin/<resource>/Http*Repository.ts` → `application/admin/<resource>/use*.ts` →
 `presentation/pages/admin/Admin*Page.vue` (form + Bootstrap table, `window.confirm()` for deletes — no modals).
-Existing resources: `technologies`, `stats`, `quality` (principles + traits), `about` (settings + site cards +
+Existing resources: `technologies`, `quality` (principles + traits), `about` (settings + site cards +
 me cards), `users` (list + **invite by email** + change-password + promote/demote + resend invitation + delete;
 direct username+password creation stays CLI-only). `AdminUsersPage.vue` disables the delete and role buttons on
 the current user's own row (compared by `username` via `useAuth()`); the `email` column shows the linked address
@@ -319,7 +319,7 @@ public `/api/account/password-setup/{token}` endpoints.
 
 - `presentation/ui/{BaseTextInput,BaseTextarea,BaseNumberInput,BaseSelect}.vue` — the project's first reusable
   form components, used by every admin form. Reach for these before writing a new raw `<input>` in `admin/*`.
-- `presentation/layout/AdminLayout.vue` — sub-navigation across the 5 admin sections, rendered for every
+- `presentation/layout/AdminLayout.vue` — sub-navigation across the admin sections, rendered for every
   `/admin/*` route.
 - **Route protection**: `RouteMeta` carries `requiresAuth?: boolean` and `roles?: readonly string[]`; every
   `/admin/*` route sets `{ requiresAuth: true, roles: [ROLE_SUPER] }`. A `router.beforeEach` guard in
@@ -350,7 +350,7 @@ meaningful (see Lint below):
   router). Tests call `createAppI18n()` themselves for an isolated instance, the same pattern the router specs
   already use for a fresh `createRouter(...)` per test.
 - `infrastructure/portfolio/content/{fr,en}.ts` — the structured portfolio content still hardcoded on the
-  frontend (hero, technologies — About/Quality/Stats moved to the backend DB, see "API-backed content" above),
+  frontend (hero, technologies — About/Quality moved to the backend DB, see "API-backed content" above),
   typed against `PortfolioLocaleContent` and read directly by `StaticPortfolioContentRepository` (never through
   vue-i18n). Keep new "content" here, not in the i18n JSON, unless it's genuinely a short UI string and it isn't
   meant to be backoffice-editable.
@@ -380,7 +380,7 @@ fixed:
   bypass the header/nav on every page.
 - **No heading-level skips**: every section title is a real `<h2>`/`<h3>`, never a styled `<p>` — screen readers
   navigate by heading level, and a "looks like a title" paragraph is invisible to that navigation
-  (`TechnologiesSection`/`QualitySection` eyebrows, `StatsSection`'s visually-hidden `<h2>`). `BaseCard` takes a
+  (`TechnologiesSection`/`QualitySection` eyebrows). `BaseCard` takes a
   `headingLevel` prop (`2 | 3`, default `3`) specifically so a card grid sitting directly under a page's `<h1>`
   (e.g. `AboutPage.vue`'s `site.cards`) can render `<h2>` instead of skipping straight to `<h3>`.
 - **Text contrast**: use the `.text-eyebrow` class (`style.css`, `color: var(--bs-link-color)`) for actual text,

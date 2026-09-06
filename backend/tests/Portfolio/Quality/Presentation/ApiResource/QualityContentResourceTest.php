@@ -13,7 +13,7 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 /**
  * Couvre GET /api/quality/{locale} : endpoint public (aucune restriction
  * dans access_control, cf. config/packages/security.yaml), en miroir de
- * StatResourceTest.
+ * ExperienceTechnologyResourceTest.
  */
 final class QualityContentResourceTest extends WebTestCase
 {

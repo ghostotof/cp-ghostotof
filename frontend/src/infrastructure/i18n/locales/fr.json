@@ -34,31 +34,7 @@
       "technologies": "Technologies",
       "about": "À propos",
       "quality": "Qualité",
-      "stats": "Statistiques",
       "users": "Utilisateurs"
-    },
-    "stats": {
-      "create": "Ajouter une statistique",
-      "edit": "Modifier la statistique",
-      "editAction": "Modifier",
-      "listTitle": "Statistiques enregistrées",
-      "valueLabel": "Valeur",
-      "labelLabel": "Libellé",
-      "iconKeyLabel": "Icône",
-      "positionLabel": "Position",
-      "actions": "Actions",
-      "save": "Enregistrer",
-      "cancel": "Annuler",
-      "delete": "Supprimer",
-      "confirmDelete": "Supprimer la statistique « {label} » ?",
-      "empty": "Aucune statistique enregistrée pour cette langue.",
-      "loading": "Chargement des statistiques…",
-      "loadError": "Le chargement des statistiques a échoué. Réessayez plus tard.",
-      "errors": {
-        "not-found": "Cette statistique n'existe plus.",
-        "validation": "Le formulaire contient des erreurs. Vérifiez les champs.",
-        "unknown": "Une erreur est survenue. Réessayez plus tard."
-      }
     },
     "quality": {
       "actions": "Actions",
@@ -245,11 +221,6 @@
     "loading": "Chargement des principes de qualité…",
     "error": "Les principes de qualité n'ont pas pu être chargés. Réessayez plus tard."
   },
-  "stats": {
-    "sectionTitle": "Chiffres clés",
-    "loading": "Chargement des statistiques…",
-    "error": "Les statistiques n'ont pas pu être chargées. Réessayez plus tard."
-  },
   "localeSwitcher": {
     "label": "Changer de langue"
   },
@@ -359,10 +330,6 @@
     "adminQuality": {
       "title": "Administration — Qualité",
       "description": "Gestion des principes et qualités logicielles affichés sur la landing page."
-    },
-    "adminStats": {
-      "title": "Administration — Statistiques",
-      "description": "Gestion des statistiques clés affichées sur la landing page."
     },
     "adminUsers": {
       "title": "Administration — Utilisateurs",

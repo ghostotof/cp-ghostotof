@@ -34,31 +34,7 @@
       "technologies": "Technologies",
       "about": "About",
       "quality": "Quality",
-      "stats": "Stats",
       "users": "Users"
-    },
-    "stats": {
-      "create": "Add a stat",
-      "edit": "Edit stat",
-      "editAction": "Edit",
-      "listTitle": "Registered stats",
-      "valueLabel": "Value",
-      "labelLabel": "Label",
-      "iconKeyLabel": "Icon",
-      "positionLabel": "Position",
-      "actions": "Actions",
-      "save": "Save",
-      "cancel": "Cancel",
-      "delete": "Delete",
-      "confirmDelete": "Delete stat \"{label}\"?",
-      "empty": "No stat registered for this language yet.",
-      "loading": "Loading stats…",
-      "loadError": "Failed to load stats. Please try again later.",
-      "errors": {
-        "not-found": "This stat no longer exists.",
-        "validation": "The form contains errors. Please check the fields.",
-        "unknown": "Something went wrong. Please try again later."
-      }
     },
     "quality": {
       "actions": "Actions",
@@ -245,11 +221,6 @@
     "loading": "Loading quality principles…",
     "error": "Quality principles could not be loaded. Please try again later."
   },
-  "stats": {
-    "sectionTitle": "Key figures",
-    "loading": "Loading stats…",
-    "error": "Stats could not be loaded. Please try again later."
-  },
   "localeSwitcher": {
     "label": "Change language"
   },
@@ -359,10 +330,6 @@
     "adminQuality": {
       "title": "Administration — Quality",
       "description": "Manage the principles and software qualities displayed on the landing page."
-    },
-    "adminStats": {
-      "title": "Administration — Stats",
-      "description": "Manage the key figures displayed on the landing page."
     },
     "adminUsers": {
       "title": "Administration — Users",

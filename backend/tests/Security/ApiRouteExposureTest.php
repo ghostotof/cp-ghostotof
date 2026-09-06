@@ -16,7 +16,7 @@ use Symfony\Component\Routing\RouterInterface;
  * appelant qui n'y a pas droit**, indépendamment de ce que le frontend choisit
  * d'afficher. Le masquage côté client n'est jamais une protection.
  *
- * Contrairement aux tests par ressource (BackofficeStatResourceTest, etc.) qui
+ * Contrairement aux tests par ressource (BackofficeExperienceTechnologyResourceTest, etc.) qui
  * vérifient chacun *leurs* endpoints, ce test énumère le routeur : une route
  * ajoutée demain est automatiquement soumise à la règle. Pour qu'elle soit
  * servie sans authentification, il faut l'inscrire **explicitement** dans
@@ -45,7 +45,6 @@ final class ApiRouteExposureTest extends WebTestCase
         // c'est à la saisie qu'on décide de ce qui est publié.
         '/api/about/{locale}' => 'Page « À propos » — publique dans son intégralité (audit C3).',
         '/api/quality/{locale}' => 'Principes/traits qualité — contenu de démonstration.',
-        '/api/stats/{locale}' => 'Chiffres clés — contenu de démonstration.',
         '/api/experience/technologies' => 'Liste de technologies — contenu de démonstration.',
 
         // --- Parcours publics par conception.

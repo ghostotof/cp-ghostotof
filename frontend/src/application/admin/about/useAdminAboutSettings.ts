@@ -20,7 +20,7 @@ export interface UseAdminAboutSettingsResult {
 }
 
 /**
- * Pas de dépendance à useI18n() (cf. useAdminStats) : la page appelante
+ * Pas de dépendance à useI18n() (cf. useAdminExperienceTechnologies) : la page appelante
  * possède le sélecteur de locale et pilote load(locale). Pas de liste ici
  * (singleton par locale) : `settings` est un objet unique ou `null` tant que
  * non chargé.

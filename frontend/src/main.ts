@@ -19,8 +19,6 @@ import { ABOUT_CONTENT_REPOSITORY } from './application/about/useAboutContent'
 import { HttpAboutContentRepository } from './infrastructure/about/HttpAboutContentRepository'
 import { QUALITY_CONTENT_REPOSITORY } from './application/quality/useQualityContent'
 import { HttpQualityContentRepository } from './infrastructure/quality/HttpQualityContentRepository'
-import { STATS_REPOSITORY } from './application/stats/useStats'
-import { HttpStatsRepository } from './infrastructure/stats/HttpStatsRepository'
 import { ADMIN_ABOUT_SETTINGS_REPOSITORY } from './application/admin/about/useAdminAboutSettings'
 import { HttpAdminAboutSettingsRepository } from './infrastructure/admin/about/HttpAdminAboutSettingsRepository'
 import { ADMIN_ABOUT_SITE_CARD_REPOSITORY } from './application/admin/about/useAdminAboutSiteCards'
@@ -31,8 +29,6 @@ import { ADMIN_QUALITY_PRINCIPLE_REPOSITORY } from './application/admin/quality/
 import { HttpAdminQualityPrincipleRepository } from './infrastructure/admin/quality/HttpAdminQualityPrincipleRepository'
 import { ADMIN_QUALITY_TRAIT_REPOSITORY } from './application/admin/quality/useAdminQualityTraits'
 import { HttpAdminQualityTraitRepository } from './infrastructure/admin/quality/HttpAdminQualityTraitRepository'
-import { ADMIN_STATS_REPOSITORY } from './application/admin/stats/useAdminStats'
-import { HttpAdminStatsRepository } from './infrastructure/admin/stats/HttpAdminStatsRepository'
 import { ADMIN_USER_REPOSITORY } from './application/admin/users/useAdminUsers'
 import { HttpAdminUserRepository } from './infrastructure/admin/users/HttpAdminUserRepository'
 import { ACCOUNT_REPOSITORY } from './application/account/useAccountPasswordSetup'
@@ -52,13 +48,11 @@ app.provide(CONTACT_REPOSITORY, new HttpContactRepository(apiUrl))
 app.provide(ADMIN_EXPERIENCE_TECHNOLOGY_REPOSITORY, new HttpAdminExperienceTechnologyRepository(apiUrl))
 app.provide(ABOUT_CONTENT_REPOSITORY, new HttpAboutContentRepository(apiUrl))
 app.provide(QUALITY_CONTENT_REPOSITORY, new HttpQualityContentRepository(apiUrl))
-app.provide(STATS_REPOSITORY, new HttpStatsRepository(apiUrl))
 app.provide(ADMIN_ABOUT_SETTINGS_REPOSITORY, new HttpAdminAboutSettingsRepository(apiUrl))
 app.provide(ADMIN_ABOUT_SITE_CARD_REPOSITORY, new HttpAdminAboutSiteCardRepository(apiUrl))
 app.provide(ADMIN_ABOUT_ME_CARD_REPOSITORY, new HttpAdminAboutMeCardRepository(apiUrl))
 app.provide(ADMIN_QUALITY_PRINCIPLE_REPOSITORY, new HttpAdminQualityPrincipleRepository(apiUrl))
 app.provide(ADMIN_QUALITY_TRAIT_REPOSITORY, new HttpAdminQualityTraitRepository(apiUrl))
-app.provide(ADMIN_STATS_REPOSITORY, new HttpAdminStatsRepository(apiUrl))
 app.provide(ADMIN_USER_REPOSITORY, new HttpAdminUserRepository(apiUrl))
 app.provide(ACCOUNT_REPOSITORY, new HttpAccountRepository(apiUrl))
 

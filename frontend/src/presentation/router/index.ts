@@ -39,7 +39,6 @@ const AdminLayout = () => import('../layout/AdminLayout.vue')
 const AdminTechnologiesPage = () => import('../pages/admin/AdminTechnologiesPage.vue')
 const AdminAboutPage = () => import('../pages/admin/AdminAboutPage.vue')
 const AdminQualityPage = () => import('../pages/admin/AdminQualityPage.vue')
-const AdminStatsPage = () => import('../pages/admin/AdminStatsPage.vue')
 const AdminUsersPage = () => import('../pages/admin/AdminUsersPage.vue')
 
 /** Rôle requis pour accéder à l'espace /admin (cf. backend CpgUser::ROLE_SUPER). */
@@ -147,12 +146,6 @@ export const router = createRouter({
               name: 'admin-quality',
               component: AdminQualityPage,
               meta: { titleKey: 'seo.adminQuality.title', descriptionKey: 'seo.adminQuality.description' },
-            },
-            {
-              path: 'stats',
-              name: 'admin-stats',
-              component: AdminStatsPage,
-              meta: { titleKey: 'seo.adminStats.title', descriptionKey: 'seo.adminStats.description' },
             },
             {
               path: 'users',
