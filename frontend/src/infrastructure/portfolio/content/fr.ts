@@ -26,7 +26,7 @@ const fr: PortfolioLocaleContent = {
   },
 
   experience: {
-    eyebrow: 'Expériences',
+    eyebrow: 'Parcours technique',
     description:
       "Classement de mes principales technologies selon le temps cumulé passé dessus au fil de mon parcours professionnel et de mes études, de la plus expérimentée à la plus récente. Durées estimées à partir de l'historique de mes missions et de mes cursus (années arrondies au semestre).",
   },

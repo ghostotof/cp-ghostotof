@@ -10,4 +10,6 @@ export interface AdminExperienceTechnology {
   readonly years: number
   readonly iconKey: string | null
   readonly relatedTechnologyName: string | null
+  /** Repliée dans « également pratiquées », hors du classement chiffré. */
+  readonly isSecondary: boolean
 }

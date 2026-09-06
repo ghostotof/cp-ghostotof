@@ -10,7 +10,9 @@ import { createAppI18n } from '../../../src/presentation/i18n'
  * tests restent isolés les uns des autres (même convention que les specs de
  * router, qui construisent leur propre createRouter).
  */
-function mountButton(props: Record<string, unknown>, slots: Record<string, string> = {}) {
+type BaseButtonProps = InstanceType<typeof BaseButton>['$props']
+
+function mountButton(props: BaseButtonProps, slots: Record<string, string> = {}) {
   return mount(BaseButton, {
     props,
     slots,

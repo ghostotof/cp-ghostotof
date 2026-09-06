@@ -2,7 +2,7 @@
   "nav": {
     "home": "Accueil",
     "skills": "Compétences",
-    "experiences": "Expériences",
+    "experiences": "Parcours technique",
     "contact": "Contact",
     "about": "À propos"
   },
@@ -166,7 +166,11 @@
         "not-found": "Cette technologie n'existe plus.",
         "validation": "Le formulaire contient des erreurs. Vérifiez les champs.",
         "unknown": "Une erreur est survenue. Réessayez plus tard."
-      }
+      },
+      "secondaryLabel": "Replier hors du classement",
+      "secondaryHelp": "La technologie rejoint la ligne « Également pratiqués au fil du parcours », sans durée affichée.",
+      "secondaryColumn": "Repliée",
+      "secondaryYes": "Oui"
     },
     "users": {
       "listTitle": "Utilisateurs enregistrés",
@@ -229,7 +233,8 @@
   },
   "experience": {
     "loading": "Chargement du classement des technologies…",
-    "error": "Le classement des technologies n'a pas pu être chargé. Réessayez plus tard."
+    "error": "Le classement des technologies n'a pas pu être chargé. Réessayez plus tard.",
+    "alsoPractised": "Également pratiqués au fil du parcours :"
   },
   "about": {
     "loading": "Chargement du contenu…",
@@ -312,8 +317,8 @@
       "description": "À propos de ce site : son origine et sa conception."
     },
     "experience": {
-      "title": "Expériences",
-      "description": "Technologies classées selon le temps cumulé passé sur chacune d'elles au fil de mon parcours professionnel."
+      "title": "Parcours technique",
+      "description": "Technologies classées selon le temps cumulé passé sur chacune d'elles au fil de mon parcours professionnel et de mes études."
     },
     "contact": {
       "title": "Contact",

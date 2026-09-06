@@ -9,7 +9,7 @@ import type { AdminExperienceTechnologyRepository } from '../../../../src/domain
 import type { AdminExperienceTechnology } from '../../../../src/domain/admin/technologies/entities/AdminExperienceTechnology'
 import { AdminExperienceTechnologyError } from '../../../../src/domain/admin/technologies/errors/AdminExperienceTechnologyError'
 
-const TECHNOLOGY: AdminExperienceTechnology = { id: 1, name: 'PHP', years: 13.5, iconKey: null, relatedTechnologyName: null }
+const TECHNOLOGY: AdminExperienceTechnology = { id: 1, name: 'PHP', years: 13.5, iconKey: null, relatedTechnologyName: null, isSecondary: false }
 
 function createStubRepository(overrides: Partial<AdminExperienceTechnologyRepository> = {}): AdminExperienceTechnologyRepository {
   return {
@@ -78,9 +78,9 @@ describe('useAdminExperienceTechnologies', () => {
     await composable.load()
     vi.mocked(repository.list).mockClear()
 
-    await composable.create({ name: 'Vue', years: 3, iconKey: null, relatedTechnologyName: null })
+    await composable.create({ name: 'Vue', years: 3, iconKey: null, relatedTechnologyName: null, isSecondary: false })
 
-    expect(repository.create).toHaveBeenCalledWith({ name: 'Vue', years: 3, iconKey: null, relatedTechnologyName: null })
+    expect(repository.create).toHaveBeenCalledWith({ name: 'Vue', years: 3, iconKey: null, relatedTechnologyName: null, isSecondary: false })
     expect(repository.list).toHaveBeenCalledTimes(1)
     expect(composable.errorMessage.value).toBeNull()
   })
@@ -92,7 +92,7 @@ describe('useAdminExperienceTechnologies', () => {
     const composable = mountWithComposable(repository)
     await composable.load()
 
-    await composable.update(1, { name: 'PHP', years: 1, iconKey: null, relatedTechnologyName: null })
+    await composable.update(1, { name: 'PHP', years: 1, iconKey: null, relatedTechnologyName: null, isSecondary: false })
 
     expect(composable.errorMessage.value?.reason).toBe('duplicate')
   })

@@ -14,7 +14,7 @@ interface ExperienceTechnologyAdministratorInterface
      * @throws ExperienceTechnologyNotFoundException si l'id est inconnu
      * @throws ExperienceTechnologyAlreadyExistsException si le nom est déjà utilisé par une autre technologie
      */
-    public function update(int $id, string $name, float $years, ?string $iconKey, ?string $relatedTechnologyName): ExperienceTechnology;
+    public function update(int $id, string $name, float $years, ?string $iconKey, ?string $relatedTechnologyName, bool $secondary = false): ExperienceTechnology;
 
     /**
      * @throws ExperienceTechnologyNotFoundException si l'id est inconnu

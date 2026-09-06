@@ -17,7 +17,7 @@ final readonly class ExperienceTechnologyAdministrator implements ExperienceTech
     ) {
     }
 
-    public function update(int $id, string $name, float $years, ?string $iconKey, ?string $relatedTechnologyName): ExperienceTechnology
+    public function update(int $id, string $name, float $years, ?string $iconKey, ?string $relatedTechnologyName, bool $secondary = false): ExperienceTechnology
     {
         $technology = $this->experienceTechnologyRepository->findOneById($id);
 
@@ -31,7 +31,7 @@ final readonly class ExperienceTechnologyAdministrator implements ExperienceTech
             throw ExperienceTechnologyAlreadyExistsException::forName($name);
         }
 
-        $technology->update($name, $years, $iconKey, $relatedTechnologyName);
+        $technology->update($name, $years, $iconKey, $relatedTechnologyName, $secondary);
 
         try {
             $this->experienceTechnologyRepository->save($technology);

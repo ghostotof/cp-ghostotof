@@ -9,7 +9,20 @@ const { t } = useI18n()
 const { experienceContent } = usePortfolioContent()
 const { technologies, isLoading, hasError } = useExperienceTechnologies()
 
-const maxYears = computed(() => technologies.value.reduce((max, technology) => Math.max(max, technology.years), 0))
+/**
+ * Le classement chiffré ne retient que les technologies structurantes. Les
+ * autres sont regroupées plus bas en une énumération sans durée : les afficher
+ * avec leur ancienneté (« Python — 6 mois ») reviendrait à publier l'endroit
+ * où l'on débute, et diluerait le profil vers « généraliste ».
+ */
+const rankedTechnologies = computed(() => technologies.value.filter((technology) => !technology.isSecondary))
+const alsoPractisedTechnologies = computed(() => technologies.value.filter((technology) => technology.isSecondary))
+
+// Calculé sur le seul classement : une technologie repliée ne doit pas
+// influencer l'échelle des barres de proportion.
+const maxYears = computed(() => rankedTechnologies.value.reduce((max, technology) => Math.max(max, technology.years), 0))
+
+const alsoPractisedNames = computed(() => alsoPractisedTechnologies.value.map((technology) => technology.name).join(', '))
 </script>
 
 <template>
@@ -48,7 +61,7 @@ const maxYears = computed(() => technologies.value.reduce((max, technology) => M
         class="list-unstyled d-flex flex-column gap-2 mb-0"
       >
         <li
-          v-for="(technology, index) in technologies"
+          v-for="(technology, index) in rankedTechnologies"
           :key="technology.name"
           class="experience-item d-flex align-items-center gap-3 p-2 p-sm-3"
           :class="{ 'experience-item--top': index < 3 }"
@@ -92,6 +105,13 @@ const maxYears = computed(() => technologies.value.reduce((max, technology) => M
           </div>
         </li>
       </ol>
+
+      <p
+        v-if="!isLoading && !hasError && alsoPractisedTechnologies.length > 0"
+        class="text-body-secondary small mt-3 mb-0"
+      >
+        {{ t('experience.alsoPractised') }} {{ alsoPractisedNames }}
+      </p>
     </div>
   </section>
 </template>

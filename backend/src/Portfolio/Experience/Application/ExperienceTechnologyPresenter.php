@@ -17,6 +17,7 @@ final class ExperienceTechnologyPresenter implements ExperienceTechnologyPresent
             'years' => $technology->getYears(),
             'iconKey' => $technology->getIconKey(),
             'relatedTechnology' => null !== $relatedTechnologyName ? ['name' => $relatedTechnologyName] : null,
+            'secondary' => $technology->isSecondary(),
         ];
     }
 }

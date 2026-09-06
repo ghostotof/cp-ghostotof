@@ -10,7 +10,7 @@ const { t } = useI18n()
 const { technologies, isLoading, hasError, errorMessage, create, update, remove } = useAdminExperienceTechnologies()
 
 const editingId = ref<number | null>(null)
-const form = reactive({ name: '', years: 0, iconKey: '', relatedTechnologyName: '' })
+const form = reactive({ name: '', years: 0, iconKey: '', relatedTechnologyName: '', isSecondary: false })
 const isSubmitting = ref(false)
 
 const isEditing = computed(() => null !== editingId.value)
@@ -23,6 +23,7 @@ function resetForm(): void {
   form.years = 0
   form.iconKey = ''
   form.relatedTechnologyName = ''
+  form.isSecondary = false
 }
 
 function startEdit(technology: AdminExperienceTechnology): void {
@@ -31,6 +32,7 @@ function startEdit(technology: AdminExperienceTechnology): void {
   form.years = technology.years
   form.iconKey = technology.iconKey ?? ''
   form.relatedTechnologyName = technology.relatedTechnologyName ?? ''
+  form.isSecondary = technology.isSecondary
 }
 
 async function handleSubmit(): Promise<void> {
@@ -41,6 +43,7 @@ async function handleSubmit(): Promise<void> {
     years: form.years,
     iconKey: '' === form.iconKey ? null : form.iconKey,
     relatedTechnologyName: '' === form.relatedTechnologyName ? null : form.relatedTechnologyName,
+    isSecondary: form.isSecondary,
   }
 
   if (null !== editingId.value) {
@@ -98,6 +101,26 @@ async function handleDelete(technology: AdminExperienceTechnology): Promise<void
           v-model="form.relatedTechnologyName"
           :label="t('admin.technologies.relatedTechnologyLabel')"
         />
+
+        <div class="form-check">
+          <input
+            id="admin-tech-secondary"
+            v-model="form.isSecondary"
+            class="form-check-input"
+            type="checkbox"
+            aria-describedby="admin-tech-secondary-help"
+          >
+          <label
+            class="form-check-label"
+            for="admin-tech-secondary"
+          >{{ t('admin.technologies.secondaryLabel') }}</label>
+          <div
+            id="admin-tech-secondary-help"
+            class="form-text"
+          >
+            {{ t('admin.technologies.secondaryHelp') }}
+          </div>
+        </div>
 
         <p
           v-if="errorText"
@@ -171,6 +194,9 @@ async function handleDelete(technology: AdminExperienceTechnology): Promise<void
                 {{ t('admin.technologies.relatedTechnologyLabel') }}
               </th>
               <th scope="col">
+                {{ t('admin.technologies.secondaryColumn') }}
+              </th>
+              <th scope="col">
                 <span class="visually-hidden">{{ t('admin.technologies.actions') }}</span>
               </th>
             </tr>
@@ -184,6 +210,7 @@ async function handleDelete(technology: AdminExperienceTechnology): Promise<void
               <td>{{ technology.years }}</td>
               <td>{{ technology.iconKey ?? '—' }}</td>
               <td>{{ technology.relatedTechnologyName ?? '—' }}</td>
+              <td>{{ technology.isSecondary ? t('admin.technologies.secondaryYes') : '—' }}</td>
               <td class="text-end">
                 <button
                   type="button"

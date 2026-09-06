@@ -26,7 +26,7 @@ const en: PortfolioLocaleContent = {
   },
 
   experience: {
-    eyebrow: 'Experiences',
+    eyebrow: 'Technical background',
     description:
       "A ranking of the main technologies I've worked with, based on the cumulative time spent on each throughout my career and my studies, from most to least experienced. Durations are estimated from my professional history and coursework (years rounded to the nearest half-year).",
   },

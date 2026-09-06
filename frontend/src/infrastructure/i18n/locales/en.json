@@ -2,7 +2,7 @@
   "nav": {
     "home": "Home",
     "skills": "Skills",
-    "experiences": "Experiences",
+    "experiences": "Technical background",
     "contact": "Contact",
     "about": "About"
   },
@@ -166,7 +166,11 @@
         "not-found": "This technology no longer exists.",
         "validation": "The form contains errors. Please check the fields.",
         "unknown": "Something went wrong. Please try again later."
-      }
+      },
+      "secondaryLabel": "Collapse out of the ranking",
+      "secondaryHelp": "The technology joins the \"Also practised along the way\" line, with no duration shown.",
+      "secondaryColumn": "Collapsed",
+      "secondaryYes": "Yes"
     },
     "users": {
       "listTitle": "Registered users",
@@ -229,7 +233,8 @@
   },
   "experience": {
     "loading": "Loading the technology ranking…",
-    "error": "The technology ranking could not be loaded. Please try again later."
+    "error": "The technology ranking could not be loaded. Please try again later.",
+    "alsoPractised": "Also practised along the way:"
   },
   "about": {
     "loading": "Loading content…",
@@ -312,8 +317,8 @@
       "description": "About this site: its origin and design."
     },
     "experience": {
-      "title": "Experiences",
-      "description": "Technologies ranked by cumulative time spent on each throughout my career."
+      "title": "Technical background",
+      "description": "Technologies ranked by cumulative time spent on each throughout my career and my studies."
     },
     "contact": {
       "title": "Contact",

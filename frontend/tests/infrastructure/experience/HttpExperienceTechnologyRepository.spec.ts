@@ -24,13 +24,35 @@ describe('HttpExperienceTechnologyRepository', () => {
   })
 
   it('list() convertit la réponse JSON en entités et calcule la durée localisée', async () => {
-    stubFetch([{ name: 'PHP', years: 13.5, iconKey: 'php', relatedTechnology: { name: 'HTML / CSS / JavaScript' } }])
+    stubFetch([{ name: 'PHP', years: 13.5, iconKey: 'php', relatedTechnology: { name: 'HTML / CSS / JavaScript' }, secondary: false }])
 
     const result = await new HttpExperienceTechnologyRepository('https://api.example.test').list('fr')
 
     expect(result).toEqual([
-      { name: 'PHP', years: 13.5, duration: '~13,5 ans', iconKey: 'php', relatedTechnology: { name: 'HTML / CSS / JavaScript' } },
+      { name: 'PHP', years: 13.5, duration: '~13,5 ans', iconKey: 'php', relatedTechnology: { name: 'HTML / CSS / JavaScript' }, isSecondary: false },
     ])
+  })
+
+  it('list() traduit le champ `secondary` de l\'API en `isSecondary`', async () => {
+    stubFetch([
+      { name: 'PHP', years: 13.5, iconKey: null, relatedTechnology: null, secondary: false },
+      { name: 'Python', years: 0.5, iconKey: null, relatedTechnology: null, secondary: true },
+    ])
+
+    const result = await new HttpExperienceTechnologyRepository('https://api.example.test').list('fr')
+
+    expect(result.map((technology) => technology.isSecondary)).toEqual([false, true])
+  })
+
+  it('list() considère une technologie comme classée quand l\'API n\'expose pas encore le champ', async () => {
+    // Réponse d'une version antérieure du backend (ou servie depuis un cache) :
+    // mieux vaut afficher la technologie dans le classement que la faire
+    // disparaître silencieusement de la page.
+    stubFetch([{ name: 'PHP', years: 13.5, iconKey: null, relatedTechnology: null }])
+
+    const result = await new HttpExperienceTechnologyRepository('https://api.example.test').list('fr')
+
+    expect(result[0].isSecondary).toBe(false)
   })
 
   it('list() convertit les champs iconKey/relatedTechnology null en undefined', async () => {
