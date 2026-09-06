@@ -49,6 +49,7 @@ final readonly class BackofficeExperienceTechnologyProvider implements ProviderI
             years: $technology->getYears(),
             iconKey: $technology->getIconKey(),
             relatedTechnologyName: $technology->getRelatedTechnologyName(),
+            secondary: $technology->isSecondary(),
         );
     }
 }

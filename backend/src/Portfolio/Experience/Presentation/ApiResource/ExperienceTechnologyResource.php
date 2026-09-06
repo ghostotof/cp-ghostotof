@@ -30,6 +30,7 @@ final readonly class ExperienceTechnologyResource
         public float $years,
         public ?string $iconKey = null,
         public ?ExperienceRelatedTechnologyResource $relatedTechnology = null,
+        public bool $secondary = false,
     ) {
     }
 }

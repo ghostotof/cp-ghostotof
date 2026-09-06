@@ -2,25 +2,31 @@ import type { PortfolioLocaleContent } from './PortfolioLocaleContent'
 
 const en: PortfolioLocaleContent = {
   hero: {
-    eyebrow: 'Senior Web Developer',
-    titleLead: 'I build applications that are',
-    titleAccent: 'robust, performant, and scalable.',
+    eyebrow: 'Senior PHP / Symfony Developer',
+    titleLead: 'This site is',
+    titleAccent: 'its own demonstration.',
     description:
-      'A developer passionate about building modern, maintainable web solutions, with a focus on quality and user experience.',
+      'Not a brochure: a Symfony 8 API decoupled from a Vue 3/TypeScript frontend, split into DDD bounded contexts, analysed by PHPStan at max level and deployed to Kubernetes through GitHub Actions. The code is public — what you are reading is exactly what runs.',
     callsToAction: [
-      { label: 'Discover my approach', href: '#technologies', variant: 'primary', iconKey: 'arrow-right' },
-      { label: 'Get in touch', href: '/en/contact', variant: 'secondary', iconKey: 'message-circle' },
+      {
+        label: 'Read the code on GitHub',
+        href: 'https://github.com/ghostotof/cp-ghostotof',
+        variant: 'primary',
+        iconKey: 'github',
+        isExternal: true,
+      },
+      { label: 'How it is built', href: '/en/about', variant: 'secondary', iconKey: 'arrow-right' },
     ],
     highlights: [
-      { label: 'Clean code', iconKey: 'code' },
-      { label: 'Scalable architecture', iconKey: 'layers' },
-      { label: 'Performance', iconKey: 'zap' },
-      { label: 'Security', iconKey: 'shield' },
+      { label: 'DDD & layered architecture', iconKey: 'layers' },
+      { label: 'PHPStan max level, no baseline', iconKey: 'shield' },
+      { label: 'Tested — PHPUnit & Vitest', iconKey: 'check' },
+      { label: 'Kubernetes & CI/CD', iconKey: 'boxes' },
     ],
   },
 
   experience: {
-    eyebrow: 'Experiences',
+    eyebrow: 'Technical background',
     description:
       "A ranking of the main technologies I've worked with, based on the cumulative time spent on each throughout my career and my studies, from most to least experienced. Durations are estimated from my professional history and coursework (years rounded to the nearest half-year).",
   },

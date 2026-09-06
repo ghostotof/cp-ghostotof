@@ -122,29 +122,6 @@ body {
   transform: translateY(-1px);
 }
 
-/* Statistique (icône + valeur), légère mise en avant au survol. */
-.stat-item {
-  border-radius: 0.75rem;
-  transition:
-    background-color 0.2s ease,
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
-}
-
-.stat-item:hover {
-  background: rgba(255, 255, 255, 0.04);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px -14px rgba(124, 58, 237, 0.5);
-}
-
-.stat-item svg {
-  transition: transform 0.2s ease;
-}
-
-.stat-item:hover svg {
-  transform: scale(1.1);
-}
-
 /* Bouton d'appel à l'action principal (dégradé), le secondaire reste un btn-outline-light standard. */
 .btn-gradient,
 .btn-outline-light {
@@ -257,8 +234,6 @@ body {
   .card-portfolio svg,
   .card-portfolio h3,
   .badge-soft,
-  .stat-item,
-  .stat-item svg,
   .btn-gradient,
   .btn-outline-light,
   .nav-link-portfolio {
@@ -266,7 +241,6 @@ body {
   }
 
   .card-portfolio:hover,
-  .stat-item:hover,
   .badge-soft:hover,
   .btn-gradient:hover,
   .btn-outline-light:hover {

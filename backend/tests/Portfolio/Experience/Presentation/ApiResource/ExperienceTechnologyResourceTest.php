@@ -49,4 +49,44 @@ final class ExperienceTechnologyResourceTest extends WebTestCase
         self::assertSame(['name' => 'HTML / CSS / JavaScript'], $payload[0]['relatedTechnology']);
         self::assertNull($payload[1]['relatedTechnology']);
     }
+
+    /**
+     * Le drapeau `secondary` doit traverser toute la chaîne
+     * entité → presenter → ressource API Platform. Le frontend s'en sert pour
+     * sortir la technologie du classement chiffré : s'il n'était pas
+     * sérialisé, toutes les technologies repliées réapparaîtraient dans le
+     * classement avec leur durée — précisément ce que ce champ évite.
+     */
+    public function testSecondaryFlagIsExposedForEveryTechnology(): void
+    {
+        $client = self::createClient();
+        $registrar = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class);
+
+        $registrar->register('PHP', 13.5, 'php', null);
+        $registrar->register('Python', 0.5, 'python', null, true);
+
+        $client->request('GET', '/api/experience/technologies');
+
+        self::assertResponseIsSuccessful();
+
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+
+        /** @var array<string, bool> $secondaryByName */
+        $secondaryByName = [];
+
+        self::assertIsArray($payload);
+        foreach ($payload as $technology) {
+            self::assertIsArray($technology);
+            self::assertArrayHasKey('name', $technology);
+            self::assertArrayHasKey('secondary', $technology, 'Le champ "secondary" doit être sérialisé, y compris à false.');
+
+            $name = $technology['name'];
+            self::assertIsString($name);
+            self::assertIsBool($technology['secondary']);
+
+            $secondaryByName[$name] = $technology['secondary'];
+        }
+
+        self::assertSame(['PHP' => false, 'Python' => true], $secondaryByName);
+    }
 }

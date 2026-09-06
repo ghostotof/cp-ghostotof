@@ -22,7 +22,7 @@ export interface UseAdminAboutMeCardsResult {
 }
 
 /**
- * Pas de dépendance à useI18n() (cf. useAdminStats) : la page appelante
+ * Pas de dépendance à useI18n() (cf. useAdminExperienceTechnologies) : la page appelante
  * possède le sélecteur de locale et pilote load(locale). Contrairement aux
  * autres composables admin about, load() charge TOUJOURS les 3 catégories
  * (pas de filtre `category` passé ici) : c'est la page qui répartit les

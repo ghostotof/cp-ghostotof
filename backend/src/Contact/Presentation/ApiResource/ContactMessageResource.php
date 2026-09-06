@@ -29,8 +29,18 @@ use Symfony\Component\Validator\Constraints as Assert;
 )]
 final class ContactMessageResource
 {
+    /**
+     * Le nom est repris dans DEUX en-têtes du mail sortant : le sujet et le
+     * replyTo (cf. SendContactMessageHandler). Symfony Mime encode ses
+     * en-têtes et ne laisserait pas passer une injection, mais on refuse les
+     * retours chariot en amont plutôt que de dépendre de ce comportement :
+     * la règle « une donnée qui finit dans un en-tête ne contient pas de CR
+     * ni de LF » doit être lisible à l'endroit où la donnée entre, pas
+     * déduite d'une lecture du composant Mime.
+     */
     #[Assert\NotBlank(message: 'Votre nom est requis.', normalizer: 'trim')]
     #[Assert\Length(min: 2, max: 100, minMessage: 'Votre nom est trop court.', maxMessage: 'Votre nom est trop long.', normalizer: 'trim')]
+    #[Assert\Regex(pattern: '/[\r\n]/', match: false, message: 'Votre nom contient des caractères non autorisés.')]
     public string $name = '';
 
     #[Assert\NotBlank(message: 'Votre email est requis.', normalizer: 'trim')]

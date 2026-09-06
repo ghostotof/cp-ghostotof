@@ -7,7 +7,7 @@ import type { AdminExperienceTechnologyRepository } from '../../../../src/domain
 import type { AdminExperienceTechnology } from '../../../../src/domain/admin/technologies/entities/AdminExperienceTechnology'
 import { AdminExperienceTechnologyError } from '../../../../src/domain/admin/technologies/errors/AdminExperienceTechnologyError'
 
-const PHP: AdminExperienceTechnology = { id: 1, name: 'PHP', years: 13.5, iconKey: null, relatedTechnologyName: null }
+const PHP: AdminExperienceTechnology = { id: 1, name: 'PHP', years: 13.5, iconKey: null, relatedTechnologyName: null, isSecondary: false }
 
 function createStubRepository(overrides: Partial<AdminExperienceTechnologyRepository> = {}): AdminExperienceTechnologyRepository {
   return {
@@ -66,7 +66,7 @@ describe('AdminTechnologiesPage', () => {
     await wrapper.get('form').trigger('submit.prevent')
     await flushPromises()
 
-    expect(repository.create).toHaveBeenCalledWith({ name: 'Vue', years: 3, iconKey: null, relatedTechnologyName: null })
+    expect(repository.create).toHaveBeenCalledWith({ name: 'Vue', years: 3, iconKey: null, relatedTechnologyName: null, isSecondary: false })
     expect((wrapper.get('#admin-tech-name').element as HTMLInputElement).value).toBe('')
   })
 
@@ -83,7 +83,7 @@ describe('AdminTechnologiesPage', () => {
     await wrapper.get('form').trigger('submit.prevent')
     await flushPromises()
 
-    expect(repository.update).toHaveBeenCalledWith(1, { name: 'PHP 8', years: 13.5, iconKey: null, relatedTechnologyName: null })
+    expect(repository.update).toHaveBeenCalledWith(1, { name: 'PHP 8', years: 13.5, iconKey: null, relatedTechnologyName: null, isSecondary: false })
   })
 
   it('supprime après confirmation', async () => {

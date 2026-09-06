@@ -28,6 +28,7 @@ declare module 'vue-router' {
 const LandingPage = () => import('../pages/LandingPage.vue')
 const AboutPage = () => import('../pages/AboutPage.vue')
 const ExperiencePage = () => import('../pages/ExperiencePage.vue')
+const ContributionsPage = () => import('../pages/ContributionsPage.vue')
 const ContactPage = () => import('../pages/ContactPage.vue')
 const LoginPage = () => import('../pages/LoginPage.vue')
 const SetPasswordPage = () => import('../pages/SetPasswordPage.vue')
@@ -38,8 +39,8 @@ const ForbiddenPage = () => import('../pages/ForbiddenPage.vue')
 const AdminLayout = () => import('../layout/AdminLayout.vue')
 const AdminTechnologiesPage = () => import('../pages/admin/AdminTechnologiesPage.vue')
 const AdminAboutPage = () => import('../pages/admin/AdminAboutPage.vue')
+const AdminContributionsPage = () => import('../pages/admin/AdminContributionsPage.vue')
 const AdminQualityPage = () => import('../pages/admin/AdminQualityPage.vue')
-const AdminStatsPage = () => import('../pages/admin/AdminStatsPage.vue')
 const AdminUsersPage = () => import('../pages/admin/AdminUsersPage.vue')
 
 /** Rôle requis pour accéder à l'espace /admin (cf. backend CpgUser::ROLE_SUPER). */
@@ -72,6 +73,12 @@ export const router = createRouter({
           name: 'about',
           component: AboutPage,
           meta: { titleKey: 'seo.about.title', descriptionKey: 'seo.about.description' },
+        },
+        {
+          path: 'contributions',
+          name: 'contributions',
+          component: ContributionsPage,
+          meta: { titleKey: 'seo.contributions.title', descriptionKey: 'seo.contributions.description' },
         },
         {
           path: 'experience',
@@ -149,10 +156,10 @@ export const router = createRouter({
               meta: { titleKey: 'seo.adminQuality.title', descriptionKey: 'seo.adminQuality.description' },
             },
             {
-              path: 'stats',
-              name: 'admin-stats',
-              component: AdminStatsPage,
-              meta: { titleKey: 'seo.adminStats.title', descriptionKey: 'seo.adminStats.description' },
+              path: 'contributions',
+              name: 'admin-contributions',
+              component: AdminContributionsPage,
+              meta: { titleKey: 'seo.adminContributions.title', descriptionKey: 'seo.adminContributions.description' },
             },
             {
               path: 'users',

@@ -35,7 +35,7 @@ final class CsrfCookieRequestSubscriberTest extends TestCase
 
     public function testSafeMethodIsNeverChecked(): void
     {
-        $request = Request::create('/api/backoffice/stats', 'GET');
+        $request = Request::create('/api/backoffice/experience/technologies', 'GET');
 
         $this->subscriber->__invoke($this->mainRequestEvent($request));
 
@@ -82,7 +82,7 @@ final class CsrfCookieRequestSubscriberTest extends TestCase
 
     public function testSubRequestIsNeverChecked(): void
     {
-        $request = Request::create('/api/backoffice/stats', 'POST');
+        $request = Request::create('/api/backoffice/experience/technologies', 'POST');
 
         // Aucun cookie/header CSRF fourni : lèverait normalement une
         // AccessDeniedHttpException si c'était la requête principale.
@@ -97,7 +97,7 @@ final class CsrfCookieRequestSubscriberTest extends TestCase
 
     public function testUnsafeMethodOnProtectedPathWithoutCookieIsRejected(): void
     {
-        $request = Request::create('/api/backoffice/stats', 'POST', server: ['HTTP_X_XSRF_TOKEN' => 'token-value']);
+        $request = Request::create('/api/backoffice/experience/technologies', 'POST', server: ['HTTP_X_XSRF_TOKEN' => 'token-value']);
 
         $this->expectException(AccessDeniedHttpException::class);
 
@@ -106,7 +106,7 @@ final class CsrfCookieRequestSubscriberTest extends TestCase
 
     public function testUnsafeMethodOnProtectedPathWithoutHeaderIsRejected(): void
     {
-        $request = Request::create('/api/backoffice/stats', 'POST', cookies: ['XSRF-TOKEN' => 'token-value']);
+        $request = Request::create('/api/backoffice/experience/technologies', 'POST', cookies: ['XSRF-TOKEN' => 'token-value']);
 
         $this->expectException(AccessDeniedHttpException::class);
 
@@ -115,7 +115,7 @@ final class CsrfCookieRequestSubscriberTest extends TestCase
 
     public function testUnsafeMethodOnProtectedPathWithMismatchedTokensIsRejected(): void
     {
-        $request = Request::create('/api/backoffice/stats', 'POST', server: ['HTTP_X_XSRF_TOKEN' => 'attacker-value'], cookies: ['XSRF-TOKEN' => 'legitimate-value']);
+        $request = Request::create('/api/backoffice/experience/technologies', 'POST', server: ['HTTP_X_XSRF_TOKEN' => 'attacker-value'], cookies: ['XSRF-TOKEN' => 'legitimate-value']);
 
         $this->expectException(AccessDeniedHttpException::class);
 
@@ -125,7 +125,7 @@ final class CsrfCookieRequestSubscriberTest extends TestCase
     public function testUnsafeMethodOnProtectedPathWithMatchingSignedTokensIsAccepted(): void
     {
         $token = $this->signer->issue();
-        $request = Request::create('/api/backoffice/stats', 'POST', server: ['HTTP_X_XSRF_TOKEN' => $token], cookies: ['XSRF-TOKEN' => $token]);
+        $request = Request::create('/api/backoffice/experience/technologies', 'POST', server: ['HTTP_X_XSRF_TOKEN' => $token], cookies: ['XSRF-TOKEN' => $token]);
 
         $this->subscriber->__invoke($this->mainRequestEvent($request));
 
@@ -140,7 +140,7 @@ final class CsrfCookieRequestSubscriberTest extends TestCase
     public function testUnsafeMethodWithMatchingButUnsignedTokensIsRejected(): void
     {
         $forged = 'attacker-chosen-value.attacker-chosen-signature';
-        $request = Request::create('/api/backoffice/stats', 'POST', server: ['HTTP_X_XSRF_TOKEN' => $forged], cookies: ['XSRF-TOKEN' => $forged]);
+        $request = Request::create('/api/backoffice/experience/technologies', 'POST', server: ['HTTP_X_XSRF_TOKEN' => $forged], cookies: ['XSRF-TOKEN' => $forged]);
 
         $this->expectException(AccessDeniedHttpException::class);
 
@@ -154,7 +154,7 @@ final class CsrfCookieRequestSubscriberTest extends TestCase
     public function testUnsafeMethodWithTokenSignedByAnotherSecretIsRejected(): void
     {
         $foreignToken = (new CsrfCookieTokenSigner('a-different-secret'))->issue();
-        $request = Request::create('/api/backoffice/stats', 'POST', server: ['HTTP_X_XSRF_TOKEN' => $foreignToken], cookies: ['XSRF-TOKEN' => $foreignToken]);
+        $request = Request::create('/api/backoffice/experience/technologies', 'POST', server: ['HTTP_X_XSRF_TOKEN' => $foreignToken], cookies: ['XSRF-TOKEN' => $foreignToken]);
 
         $this->expectException(AccessDeniedHttpException::class);
 
@@ -170,7 +170,7 @@ final class CsrfCookieRequestSubscriberTest extends TestCase
      */
     public function testEmptyCookieAndHeaderAreRejectedNotTreatedAsMatching(): void
     {
-        $request = Request::create('/api/backoffice/stats', 'POST', server: ['HTTP_X_XSRF_TOKEN' => ''], cookies: ['XSRF-TOKEN' => '']);
+        $request = Request::create('/api/backoffice/experience/technologies', 'POST', server: ['HTTP_X_XSRF_TOKEN' => ''], cookies: ['XSRF-TOKEN' => '']);
 
         $this->expectException(AccessDeniedHttpException::class);
 

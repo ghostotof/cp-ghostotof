@@ -10,7 +10,7 @@ import { createAppI18n } from '../../../src/presentation/i18n'
 
 function createStubRepository(overrides: Partial<ExperienceTechnologyRepository> = {}): ExperienceTechnologyRepository {
   return {
-    list: vi.fn(async () => [{ name: 'PHP', years: 13.5, duration: '~13,5 ans' }]),
+    list: vi.fn(async () => [{ name: 'PHP', years: 13.5, duration: '~13,5 ans', isSecondary: false }]),
     ...overrides,
   }
 }
@@ -63,7 +63,7 @@ describe('useExperienceTechnologies', () => {
     await flushPromises()
 
     expect(repository.list).toHaveBeenCalledWith('fr')
-    expect(technologies.value).toEqual([{ name: 'PHP', years: 13.5, duration: '~13,5 ans' }])
+    expect(technologies.value).toEqual([{ name: 'PHP', years: 13.5, duration: '~13,5 ans', isSecondary: false }])
     expect(isLoading.value).toBe(false)
     expect(hasError.value).toBe(false)
   })

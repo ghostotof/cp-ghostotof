@@ -12,5 +12,5 @@ interface ExperienceTechnologyRegistrarInterface
     /**
      * @throws ExperienceTechnologyAlreadyExistsException si le nom est déjà utilisé
      */
-    public function register(string $name, float $years, ?string $iconKey, ?string $relatedTechnologyName): ExperienceTechnology;
+    public function register(string $name, float $years, ?string $iconKey, ?string $relatedTechnologyName, bool $secondary = false): ExperienceTechnology;
 }

@@ -20,7 +20,7 @@ describe('HttpAdminExperienceTechnologyRepository', () => {
 
   it('list() appelle GET avec credentials include, sans header CSRF, et mappe la réponse (iconKey/relatedTechnologyName absents => null)', async () => {
     const fetchMock = vi.fn(async () =>
-      jsonResponse(200, [{ id: 1, name: 'PHP', years: 13.5 }, { id: 2, name: 'Symfony', years: 9.5, iconKey: 'symfony', relatedTechnologyName: null }]),
+      jsonResponse(200, [{ id: 1, name: 'PHP', years: 13.5 }, { id: 2, name: 'Symfony', years: 9.5, iconKey: 'symfony', relatedTechnologyName: null, isSecondary: false }]),
     )
     vi.stubGlobal('fetch', fetchMock)
 
@@ -33,8 +33,8 @@ describe('HttpAdminExperienceTechnologyRepository', () => {
       credentials: 'include',
     })
     expect(technologies).toEqual([
-      { id: 1, name: 'PHP', years: 13.5, iconKey: null, relatedTechnologyName: null },
-      { id: 2, name: 'Symfony', years: 9.5, iconKey: 'symfony', relatedTechnologyName: null },
+      { id: 1, name: 'PHP', years: 13.5, iconKey: null, relatedTechnologyName: null, isSecondary: false },
+      { id: 2, name: 'Symfony', years: 9.5, iconKey: 'symfony', relatedTechnologyName: null, isSecondary: false },
     ])
   })
 
@@ -43,7 +43,7 @@ describe('HttpAdminExperienceTechnologyRepository', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const repository = new HttpAdminExperienceTechnologyRepository(API_BASE_URL)
-    await repository.create({ name: 'Vue', years: 3, iconKey: null, relatedTechnologyName: null })
+    await repository.create({ name: 'Vue', years: 3, iconKey: null, relatedTechnologyName: null, isSecondary: false })
 
     expect(fetchMock).toHaveBeenCalledWith(
       `${API_BASE_URL}/api/backoffice/experience/technologies`,
@@ -51,7 +51,11 @@ describe('HttpAdminExperienceTechnologyRepository', () => {
         method: 'POST',
         credentials: 'include',
         headers: expect.objectContaining({ 'X-XSRF-TOKEN': 'csrf-token-value', 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ name: 'Vue', years: 3, iconKey: null, relatedTechnologyName: null }),
+        // `secondary` et non `isSecondary` : le domaine frontend nomme le
+        // drapeau à la convention TypeScript, le DTO API Platform l'expose
+        // sous son nom à lui. Envoyer l'objet du formulaire tel quel ferait
+        // ignorer le champ par le dénormaliseur, sans la moindre erreur.
+        body: JSON.stringify({ name: 'Vue', years: 3, iconKey: null, relatedTechnologyName: null, secondary: false }),
       }),
     )
   })
@@ -61,7 +65,7 @@ describe('HttpAdminExperienceTechnologyRepository', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const repository = new HttpAdminExperienceTechnologyRepository(API_BASE_URL)
-    await repository.update(3, { name: 'Vue 3', years: 3, iconKey: null, relatedTechnologyName: null })
+    await repository.update(3, { name: 'Vue 3', years: 3, iconKey: null, relatedTechnologyName: null, isSecondary: false })
 
     expect(fetchMock).toHaveBeenCalledWith(
       `${API_BASE_URL}/api/backoffice/experience/technologies/3`,
@@ -86,7 +90,7 @@ describe('HttpAdminExperienceTechnologyRepository', () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(409, { detail: 'Une technologie existe déjà avec le nom "PHP".' })))
 
     const repository = new HttpAdminExperienceTechnologyRepository(API_BASE_URL)
-    const error = await repository.create({ name: 'PHP', years: 1, iconKey: null, relatedTechnologyName: null }).catch((caught: unknown) => caught)
+    const error = await repository.create({ name: 'PHP', years: 1, iconKey: null, relatedTechnologyName: null, isSecondary: false }).catch((caught: unknown) => caught)
 
     expect(error).toBeInstanceOf(AdminExperienceTechnologyError)
     expect((error as AdminExperienceTechnologyError).reason).toBe('duplicate')
@@ -97,7 +101,7 @@ describe('HttpAdminExperienceTechnologyRepository', () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(404, { detail: 'Not Found' })))
 
     const repository = new HttpAdminExperienceTechnologyRepository(API_BASE_URL)
-    const error = await repository.update(999, { name: 'X', years: 1, iconKey: null, relatedTechnologyName: null }).catch((caught: unknown) => caught)
+    const error = await repository.update(999, { name: 'X', years: 1, iconKey: null, relatedTechnologyName: null, isSecondary: false }).catch((caught: unknown) => caught)
 
     expect(error).toBeInstanceOf(AdminExperienceTechnologyError)
     expect((error as AdminExperienceTechnologyError).reason).toBe('not-found')
@@ -117,7 +121,7 @@ describe('HttpAdminExperienceTechnologyRepository', () => {
     )
 
     const repository = new HttpAdminExperienceTechnologyRepository(API_BASE_URL)
-    const error = await repository.create({ name: '', years: -1, iconKey: null, relatedTechnologyName: null }).catch((caught: unknown) => caught)
+    const error = await repository.create({ name: '', years: -1, iconKey: null, relatedTechnologyName: null, isSecondary: false }).catch((caught: unknown) => caught)
 
     expect(error).toBeInstanceOf(AdminExperienceTechnologyError)
     expect((error as AdminExperienceTechnologyError).reason).toBe('validation')

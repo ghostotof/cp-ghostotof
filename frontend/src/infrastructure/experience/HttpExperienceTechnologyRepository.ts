@@ -9,6 +9,7 @@ interface ExperienceTechnologyApiResponse {
   years: number
   iconKey: string | null
   relatedTechnology: ExperienceRelatedTechnology | null
+  secondary: boolean
 }
 
 /**
@@ -41,6 +42,10 @@ export class HttpExperienceTechnologyRepository implements ExperienceTechnologyR
         duration: formatExperienceDuration(technology.years, locale),
         iconKey: technology.iconKey ?? undefined,
         relatedTechnology: technology.relatedTechnology ?? undefined,
+        // `?? false` : une API plus ancienne (ou un cache de réponse antérieur
+        // au déploiement) n'expose pas encore le champ — mieux vaut afficher
+        // une technologie dans le classement que la faire disparaître.
+        isSecondary: technology.secondary ?? false,
       }))
   }
 }

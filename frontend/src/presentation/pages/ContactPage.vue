@@ -4,13 +4,10 @@ import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { useContactForm } from '../../application/contact/useContactForm'
 import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
-import BaseButton from '../ui/BaseButton.vue'
 
 const { t, locale } = useI18n()
 const route = useRoute()
 const { name, email, message, honeypot, isSubmitting, isSuccess, hasError, submit } = useContactForm()
-
-const CONTACT_EMAIL = 'contact@cp-ghostotof.com'
 
 /** Même repli route → i18n que AppHeader.homeLink, pour construire le lien vers la politique de confidentialité. */
 const currentLocale = computed<Locale>(() => {
@@ -31,17 +28,9 @@ const currentLocale = computed<Locale>(() => {
         {{ t('contact.eyebrow') }}
       </h1>
 
-      <p class="text-body-secondary mb-4">
+      <p class="text-body-secondary mb-0">
         {{ t('contact.intro') }}
       </p>
-
-      <BaseButton
-        :href="`mailto:${CONTACT_EMAIL}`"
-        icon-key="mail"
-        variant="secondary"
-      >
-        {{ CONTACT_EMAIL }}
-      </BaseButton>
     </div>
 
     <div

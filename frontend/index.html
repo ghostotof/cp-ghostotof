@@ -4,10 +4,42 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!--
+      SPA sans SSR : les crawlers sociaux (LinkedIn, Slack, Facebook, Discord…)
+      n'exécutent PAS le JavaScript. Les balises posées à la navigation par
+      presentation/router/seo.ts leur sont donc invisibles — seules celles
+      ci-dessous, statiques dans le HTML livré, sont lues. Elles décrivent le
+      site dans son ensemble et ne varient pas par route : c'est assumé, la
+      carte partagée est la même quelle que soit l'URL du portfolio.
+
+      Googlebot, lui, exécute le JS : seo.ts écrase `description` par route
+      (attribut `name=`) sans jamais toucher aux balises Open Graph (attribut
+      `property=`), qu'il ne sélectionne pas.
+    -->
     <meta
       name="description"
-      content="Démonstration des meilleures pratiques pour une application web moderne : Symfony, Vue.js, TypeScript, Docker."
+      content="API Symfony 8 découplée d'un front Vue 3/TypeScript, déployée sur Kubernetes via GitHub Actions. DDD, API Platform, Docker, PostgreSQL."
     />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://cp-ghostotof.com" />
+    <meta property="og:site_name" content="CP-Ghostotof" />
+    <meta property="og:locale" content="fr_FR" />
+    <meta property="og:title" content="Christophe Piton — Développeur PHP/Symfony senior" />
+    <meta
+      property="og:description"
+      content="API Symfony 8 découplée d'un front Vue 3/TypeScript, déployée sur Kubernetes via GitHub Actions. DDD, API Platform, Docker, PostgreSQL."
+    />
+    <!-- Régénérée depuis frontend/scripts/og/template.html — voir npm run og:generate -->
+    <meta property="og:image" content="https://cp-ghostotof.com/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Carte de présentation : Christophe Piton, développeur PHP/Symfony senior — API Symfony 8, Vue 3/TypeScript, Kubernetes."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+
     <title>CP-Ghostotof — Développeur Web Senior</title>
   </head>
   <body>

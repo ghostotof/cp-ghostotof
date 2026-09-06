@@ -42,6 +42,7 @@ final readonly class BackofficeExperienceTechnologyProcessor implements Processo
                 $data->years,
                 $data->iconKey,
                 $data->relatedTechnologyName,
+                $data->secondary,
             );
         } elseif ($operation instanceof Post) {
             $technology = $this->experienceTechnologyRegistrar->register(
@@ -49,6 +50,7 @@ final readonly class BackofficeExperienceTechnologyProcessor implements Processo
                 $data->years,
                 $data->iconKey,
                 $data->relatedTechnologyName,
+                $data->secondary,
             );
         } else {
             throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
@@ -60,6 +62,7 @@ final readonly class BackofficeExperienceTechnologyProcessor implements Processo
             years: $technology->getYears(),
             iconKey: $technology->getIconKey(),
             relatedTechnologyName: $technology->getRelatedTechnologyName(),
+            secondary: $technology->isSecondary(),
         );
     }
 }

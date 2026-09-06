@@ -15,9 +15,27 @@ interface BackofficeExperienceTechnologyApiResponse {
   years: number
   iconKey?: string | null
   relatedTechnologyName?: string | null
+  secondary?: boolean
 }
 
 const BASE_PATH = '/api/backoffice/experience/technologies'
+
+/**
+ * Projette l'entrée du formulaire sur le contrat HTTP du backoffice. Le
+ * domaine frontend nomme le drapeau `isSecondary` (convention booléenne
+ * TypeScript), le DTO API Platform l'expose en `secondary` : envoyer l'objet
+ * du formulaire tel quel ferait silencieusement ignorer le champ par le
+ * dénormaliseur, et la case à cocher n'aurait aucun effet.
+ */
+function toPayload(input: AdminExperienceTechnologyInput): Record<string, unknown> {
+  return {
+    name: input.name,
+    years: input.years,
+    iconKey: input.iconKey,
+    relatedTechnologyName: input.relatedTechnologyName,
+    secondary: input.isSecondary,
+  }
+}
 
 /**
  * Implémentation HTTP de AdminExperienceTechnologyRepository. Contrairement à
@@ -45,13 +63,13 @@ export class HttpAdminExperienceTechnologyRepository implements AdminExperienceT
   }
 
   async create(input: AdminExperienceTechnologyInput): Promise<AdminExperienceTechnology> {
-    const response = await this.mutate('POST', BASE_PATH, input)
+    const response = await this.mutate('POST', BASE_PATH, toPayload(input))
 
     return this.toEntity((await response.json()) as BackofficeExperienceTechnologyApiResponse)
   }
 
   async update(id: number, input: AdminExperienceTechnologyInput): Promise<AdminExperienceTechnology> {
-    const response = await this.mutate('PUT', `${BASE_PATH}/${id}`, input)
+    const response = await this.mutate('PUT', `${BASE_PATH}/${id}`, toPayload(input))
 
     return this.toEntity((await response.json()) as BackofficeExperienceTechnologyApiResponse)
   }
@@ -77,6 +95,7 @@ export class HttpAdminExperienceTechnologyRepository implements AdminExperienceT
       years: technology.years,
       iconKey: technology.iconKey ?? null,
       relatedTechnologyName: technology.relatedTechnologyName ?? null,
+      isSecondary: technology.secondary ?? false,
     }
   }
 

@@ -10,7 +10,8 @@
     "test": "NODE_OPTIONS=--no-experimental-webstorage vitest run",
     "test:watch": "NODE_OPTIONS=--no-experimental-webstorage vitest",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "og:generate": "./scripts/og/generate.sh"
   },
   "dependencies": {
     "bootstrap": "^5.3.8",

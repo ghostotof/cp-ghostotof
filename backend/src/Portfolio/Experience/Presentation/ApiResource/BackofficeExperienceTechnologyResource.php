@@ -61,6 +61,11 @@ final class BackofficeExperienceTechnologyResource
         public ?string $iconKey = null,
         #[Assert\Length(max: 180)]
         public ?string $relatedTechnologyName = null,
+        /**
+         * Sort la technologie du classement chiffré pour la ranger dans
+         * l'énumération « également pratiquées », sans durée affichée.
+         */
+        public bool $secondary = false,
     ) {
     }
 }

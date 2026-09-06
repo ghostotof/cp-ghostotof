@@ -6,6 +6,7 @@ namespace App\Tests\Contact\Presentation\ApiResource;
 
 use App\Contact\Application\Message\SendContactMessageMessage;
 use App\Tests\Support\HttpJson;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
@@ -83,6 +84,41 @@ final class ContactMessageResourceTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(422);
         self::assertCount(0, $this->asyncTransport()->getSent());
+    }
+
+    /**
+     * Injection d'en-tête de mail : le nom est repris dans le sujet et dans
+     * le replyTo (cf. SendContactMessageHandler). Une valeur contenant un
+     * retour chariot suivi d'un en-tête forgé permettrait, sur une pile qui
+     * concatène les en-têtes sans les encoder, d'ajouter un destinataire en
+     * copie cachée — soit un relais de spam ouvert.
+     *
+     * @param non-empty-string $forgedName
+     */
+    #[DataProvider('provideNamesCarryingLineBreaks')]
+    public function testANameCarryingALineBreakIsRejectedWithoutDispatchingAnything(string $forgedName): void
+    {
+        $client = $this->createClientWithFreshRateLimiter();
+
+        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
+            'name' => $forgedName,
+            'email' => 'jane@example.com',
+            'message' => 'Bonjour, je souhaite vous contacter pour un projet.',
+        ]));
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertCount(0, $this->asyncTransport()->getSent());
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function provideNamesCarryingLineBreaks(): iterable
+    {
+        yield 'CRLF + Bcc forgé' => ["Jane Doe\r\nBcc: spam@example.com"];
+        yield 'LF seul' => ["Jane Doe\nBcc: spam@example.com"];
+        yield 'CR seul' => ["Jane Doe\rBcc: spam@example.com"];
+        yield 'saut de ligne en fin de valeur' => ["Jane Doe\r\n"];
     }
 
     public function testABlankMessageIsRejectedWithoutDispatchingAnything(): void
