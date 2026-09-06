@@ -454,6 +454,12 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's
   `trusted_proxies: private_ranges`. `docker/nginx/default.conf` and `k8s/base/backend-nginx-conf.yaml` are
   mirrors of each other: change both.
+- **The release notes live in the tag annotation.** `create-release` publishes the GitHub Release
+  automatically once `deploy-prod` succeeds — never earlier: a release announces that a version
+  *runs*, not that it compiled (v0.7.0 took four pipeline runs to reach production). The body is the
+  annotated tag's message minus its first line, which becomes the title; a tag with only a subject
+  falls back to GitHub's generated notes. So write the real notes into `git tag -a`, not afterwards
+  into the GitHub UI — otherwise the automation publishes a thin release.
 - **A reused Git tag serves a stale image.** Pods default to `imagePullPolicy: IfNotPresent`, and a
   Git tag is mutable: re-cutting `vX.Y.Z` after a failed release makes the node reuse the image it
   already cached under that name. Release v0.7.0 spent two pipeline runs on this — a migration fix
