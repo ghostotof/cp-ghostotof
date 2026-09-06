@@ -40,6 +40,16 @@ spec:
       containers:
         - name: migrate
           image: ${BACKEND_IMAGE}
+          # `Always` et non le défaut `IfNotPresent` : un tag Git est mutable, et
+          # une release rejouée sous le même nom (correctif avant tout
+          # déploiement réussi) laisse le nœud resservir l'image qu'il a en
+          # cache. Ce Job a alors joué les migrations d'une version antérieure
+          # tout en affichant le bon tag — un correctif de migration semblait
+          # sans effet, alors qu'il n'était simplement jamais exécuté.
+          # Le surcoût est nul à l'échelle d'un Job qui tourne une fois par
+          # déploiement, et la garantie « ce Job exécute exactement le code de
+          # la release » vaut bien plus que ce pull.
+          imagePullPolicy: Always
           command: ['php', 'bin/console', 'doctrine:migrations:migrate', '--no-interaction']
           envFrom:
             - configMapRef:
