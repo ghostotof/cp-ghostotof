@@ -57,6 +57,21 @@ if [[ -z "$resize" ]]; then
   exit 1
 fi
 
+# ImageMagick 7 regroupe tout sous `magick` (`magick identify ...`) ; la 6, encore
+# livrée par Ubuntu, expose `convert` et `identify` comme deux binaires distincts
+# et ne comprend pas `convert identify`. Choisir la forme d'après le binaire
+# trouvé, plutôt que de supposer la 7 : c'est la 6 qui tourne sur les runners.
+if [[ "$resize" == 'magick' ]]; then
+  identify=(magick identify)
+else
+  identify=(identify)
+fi
+
+if ! command -v "${identify[0]}" >/dev/null 2>&1; then
+  echo "ERREUR : la commande '${identify[0]}' est introuvable, impossible de vérifier le rendu." >&2
+  exit 1
+fi
+
 # --- Rendu -------------------------------------------------------------------
 # --screenshot n'accepte pas d'écrire hors du répertoire courant de façon
 # fiable selon les versions : on passe par un fichier temporaire dédié.
@@ -88,7 +103,7 @@ mkdir -p "$(dirname "$output")"
 # --- Vérification ------------------------------------------------------------
 # Un rendu qui part en vrille (police manquante, gabarit cassé) donne souvent
 # une image quasi vide : on refuse de publier une carte visiblement dégénérée.
-actual="$("$resize" identify -format '%wx%h' "$output" 2>/dev/null || echo '?')"
+actual="$("${identify[@]}" -format '%wx%h' "$output" 2>/dev/null || echo '?')"
 if [[ "$actual" != "${WIDTH}x${HEIGHT}" ]]; then
   echo "ERREUR : dimensions inattendues ($actual, attendu ${WIDTH}x${HEIGHT})." >&2
   exit 1
