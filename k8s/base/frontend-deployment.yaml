@@ -32,6 +32,11 @@ spec:
       initContainers:
         - name: copy-html
           image: frontend
+          # `Always` : le tag Git porté par kustomize est mutable, et une release
+          # rejouée sous le même nom laisserait le nœud resservir l'image qu'il a
+          # en cache — le pod tournerait alors sur un build antérieur tout en
+          # affichant le bon tag (cf. invariants de déploiement, CLAUDE.md).
+          imagePullPolicy: Always
           command: ['sh', '-c', 'cp -a /usr/share/nginx/html/. /shared-html/']
           volumeMounts:
             - name: shared-html
@@ -45,6 +50,7 @@ spec:
       containers:
         - name: nginx
           image: frontend
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
           envFrom:

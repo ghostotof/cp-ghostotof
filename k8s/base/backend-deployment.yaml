@@ -30,6 +30,11 @@ spec:
       initContainers:
         - name: copy-public
           image: backend
+          # `Always` : le tag Git porté par kustomize est mutable, et une release
+          # rejouée sous le même nom laisserait le nœud resservir l'image qu'il a
+          # en cache — le pod tournerait alors sur un build antérieur tout en
+          # affichant le bon tag (cf. invariants de déploiement, CLAUDE.md).
+          imagePullPolicy: Always
           command: ['sh', '-c', 'cp -a /var/www/backend/public/. /shared-public/']
           volumeMounts:
             - name: shared-public
@@ -43,6 +48,7 @@ spec:
       containers:
         - name: php-fpm
           image: backend
+          imagePullPolicy: Always
           ports:
             - containerPort: 9000
           envFrom:
