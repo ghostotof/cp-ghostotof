@@ -20,7 +20,8 @@
     "legalNoticeLink": "Mentions légales",
     "privacyPolicyLink": "Politique de confidentialité",
     "legalNavigation": "Navigation légale",
-    "administration": "Administration"
+    "administration": "Administration",
+    "opensInNewTab": "(nouvelle fenêtre)"
   },
   "admin": {
     "heading": "Administration",
@@ -250,7 +251,7 @@
   "auth": {
     "heading": "Connexion",
     "usernameLabel": "Nom d'utilisateur",
-      "emailLabel": "E-mail",
+    "emailLabel": "E-mail",
     "passwordLabel": "Mot de passe",
     "submit": "Se connecter",
     "invalidCredentials": "Nom d'utilisateur ou mot de passe incorrect.",
@@ -258,7 +259,7 @@
   },
   "contact": {
     "eyebrow": "Contact",
-    "intro": "Une question, un projet, une opportunité ? N'hésitez pas à m'écrire directement à l'adresse ci-dessous ou via le formulaire.",
+    "intro": "Une question, un projet, une opportunité ? Écrivez-moi via le formulaire ci-dessous, je vous réponds directement.",
     "form": {
       "heading": "Envoyer un message",
       "nameLabel": "Votre nom",
@@ -269,7 +270,7 @@
       "submitting": "Envoi en cours…",
       "success": "Votre message a bien été envoyé, merci !",
       "error": "L'envoi du message a échoué. Réessayez plus tard.",
-      "privacyNoticePrefix": "Vos données ne sont utilisées que pour vous répondre et ne sont jamais stockées."
+      "privacyNoticePrefix": "Vos données servent uniquement à vous répondre. Elles ne sont pas conservées si le message part normalement ; en cas d'échec d'envoi, il est mis en file d'attente puis supprimé automatiquement sous 30 jours."
     }
   },
   "notFound": {

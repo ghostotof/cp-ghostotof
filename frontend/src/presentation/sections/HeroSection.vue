@@ -42,6 +42,7 @@ defineProps<{
             :href="cta.href"
             :variant="cta.variant"
             :icon-key="cta.iconKey"
+            :is-external="cta.isExternal"
           >
             {{ cta.label }}
           </BaseButton>

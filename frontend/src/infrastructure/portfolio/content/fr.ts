@@ -2,20 +2,26 @@ import type { PortfolioLocaleContent } from './PortfolioLocaleContent'
 
 const fr: PortfolioLocaleContent = {
   hero: {
-    eyebrow: 'Développeur Web Senior',
-    titleLead: 'Je construis des applications',
-    titleAccent: 'robustes, performantes et évolutives.',
+    eyebrow: 'Développeur PHP / Symfony senior',
+    titleLead: 'Ce site est',
+    titleAccent: 'sa propre démonstration.',
     description:
-      'Développeur passionné par la création de solutions web modernes et maintenables, avec une approche orientée qualité et expérience utilisateur.',
+      "Pas une plaquette : une API Symfony 8 découplée d'un front Vue 3/TypeScript, découpée en contextes DDD, analysée en PHPStan niveau max et déployée sur Kubernetes via GitHub Actions. Le code est public — ce que vous lisez ici est exactement ce qui tourne.",
     callsToAction: [
-      { label: 'Découvrir mon approche', href: '#technologies', variant: 'primary', iconKey: 'arrow-right' },
-      { label: 'Me contacter', href: '/fr/contact', variant: 'secondary', iconKey: 'message-circle' },
+      {
+        label: 'Lire le code sur GitHub',
+        href: 'https://github.com/ghostotof/cp-ghostotof',
+        variant: 'primary',
+        iconKey: 'github',
+        isExternal: true,
+      },
+      { label: 'Comment il est construit', href: '/fr/about', variant: 'secondary', iconKey: 'arrow-right' },
     ],
     highlights: [
-      { label: 'Code propre', iconKey: 'code' },
-      { label: 'Architecture scalable', iconKey: 'layers' },
-      { label: 'Performance', iconKey: 'zap' },
-      { label: 'Sécurité', iconKey: 'shield' },
+      { label: 'DDD & architecture en couches', iconKey: 'layers' },
+      { label: 'PHPStan niveau max, sans baseline', iconKey: 'shield' },
+      { label: 'Testé — PHPUnit & Vitest', iconKey: 'check' },
+      { label: 'Kubernetes & CI/CD', iconKey: 'boxes' },
     ],
   },
 

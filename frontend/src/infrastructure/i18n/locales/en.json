@@ -20,7 +20,8 @@
     "legalNoticeLink": "Legal notice",
     "privacyPolicyLink": "Privacy policy",
     "legalNavigation": "Legal navigation",
-    "administration": "Administration"
+    "administration": "Administration",
+    "opensInNewTab": "(opens in a new tab)"
   },
   "admin": {
     "heading": "Administration",
@@ -250,7 +251,7 @@
   "auth": {
     "heading": "Login",
     "usernameLabel": "Username",
-      "emailLabel": "Email",
+    "emailLabel": "Email",
     "passwordLabel": "Password",
     "submit": "Log in",
     "invalidCredentials": "Incorrect username or password.",
@@ -258,7 +259,7 @@
   },
   "contact": {
     "eyebrow": "Contact",
-    "intro": "A question, a project, an opportunity? Feel free to write to me directly at the address below or via the form.",
+    "intro": "A question, a project, an opportunity? Write to me through the form below and I will reply directly.",
     "form": {
       "heading": "Send a message",
       "nameLabel": "Your name",
@@ -269,7 +270,7 @@
       "submitting": "Sending…",
       "success": "Your message has been sent, thank you!",
       "error": "Sending the message failed. Please try again later.",
-      "privacyNoticePrefix": "Your data is only used to reply to you and is never stored."
+      "privacyNoticePrefix": "Your data is only used to reply to you. It is not retained when the message goes through; if delivery fails, the message is queued and then deleted automatically within 30 days."
     }
   },
   "notFound": {

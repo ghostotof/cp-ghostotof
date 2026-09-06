@@ -41,15 +41,15 @@ async function mountContactPage(repository: ContactRepository = createStubReposi
 }
 
 describe('ContactPage', () => {
-  it("affiche l'adresse de contact liée au site plutôt qu'une adresse personnelle, sous forme de lien mailto", async () => {
+  it("n'expose aucune adresse email en clair : le formulaire couvre le besoin", async () => {
     const wrapper = await mountContactPage()
 
-    const mailLink = wrapper.find('a[href^="mailto:"]')
-    expect(mailLink.exists()).toBe(true)
-    expect(mailLink.attributes('href')).toBe('mailto:contact@cp-ghostotof.com')
-    expect(wrapper.text()).toContain('contact@cp-ghostotof.com')
-    // Ne divulgue jamais l'adresse email personnelle derrière l'alias.
-    expect(wrapper.html()).not.toMatch(/@gmail\.com/)
+    // Régression : la page affichait l'adresse de contact dans un bouton
+    // mailto. Une adresse en clair dans le HTML d'une page publique est
+    // moissonnée par les robots à spam, et le formulaire (avec honeypot et
+    // limitation de débit côté API) remplit exactement la même fonction.
+    expect(wrapper.find('a[href^="mailto:"]').exists()).toBe(false)
+    expect(wrapper.html()).not.toMatch(/[\w.+-]+@[\w-]+\.[\w.]+/)
   })
 
   it('utilise un titre de niveau page (h1), la page étant routée indépendamment', async () => {

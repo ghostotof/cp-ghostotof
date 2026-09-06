@@ -161,7 +161,7 @@ final class SeedAboutContentCommand extends Command
                     'eyebrow' => 'À propos de ce site',
                     'cards' => [
                         ['title' => 'Architecture', 'description' => "Application découplée en deux parties indépendantes : une API Symfony côté backend et une interface Vue.js/TypeScript côté frontend, conçues selon les principes du DDD et de l'architecture propre.", 'iconKey' => 'layers'],
-                        ['title' => 'Stack technique', 'description' => 'Symfony, Doctrine/PostgreSQL, messagerie asynchrone, Vue 3 et TypeScript, le tout orchestré avec Docker Compose pour un environnement reproductible.', 'iconKey' => 'server'],
+                        ['title' => 'Stack technique', 'description' => 'Symfony et API Platform, Doctrine/PostgreSQL, messagerie asynchrone, Vue 3 et TypeScript. Docker Compose en développement, déploiement sur Kubernetes via GitHub Actions.', 'iconKey' => 'server'],
                         ['title' => 'Confidentialité', 'description' => "Aucune information personnelle identifiable n'est visible sans authentification : un compte invité générique permet de découvrir le site en toute confidentialité.", 'iconKey' => 'shield'],
                         ['title' => 'Conception', 'description' => "Site conçu et développé par moi-même, avec l'aide d'outils d'intelligence artificielle pour accélérer certaines étapes tout en gardant la main sur les choix techniques.", 'iconKey' => 'sparkles'],
                     ],
@@ -195,7 +195,7 @@ final class SeedAboutContentCommand extends Command
                     'eyebrow' => 'About this site',
                     'cards' => [
                         ['title' => 'Architecture', 'description' => 'Decoupled into two independent parts: a Symfony API on the backend and a Vue.js/TypeScript interface on the frontend, designed around DDD and clean architecture principles.', 'iconKey' => 'layers'],
-                        ['title' => 'Tech stack', 'description' => 'Symfony, Doctrine/PostgreSQL, asynchronous messaging, Vue 3 and TypeScript, all orchestrated with Docker Compose for a reproducible environment.', 'iconKey' => 'server'],
+                        ['title' => 'Tech stack', 'description' => 'Symfony and API Platform, Doctrine/PostgreSQL, asynchronous messaging, Vue 3 and TypeScript. Docker Compose in development, deployed to Kubernetes through GitHub Actions.', 'iconKey' => 'server'],
                         ['title' => 'Privacy', 'description' => 'No personally identifiable information is visible without authentication: a generic guest account lets visitors explore the site with full confidentiality.', 'iconKey' => 'shield'],
                         ['title' => 'Design', 'description' => 'Designed and built by me, with the help of AI tools to speed up some steps while staying in control of the technical decisions.', 'iconKey' => 'sparkles'],
                     ],
