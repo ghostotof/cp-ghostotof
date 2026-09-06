@@ -454,6 +454,13 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's
   `trusted_proxies: private_ranges`. `docker/nginx/default.conf` and `k8s/base/backend-nginx-conf.yaml` are
   mirrors of each other: change both.
+- **A reused Git tag serves a stale image.** Pods default to `imagePullPolicy: IfNotPresent`, and a
+  Git tag is mutable: re-cutting `vX.Y.Z` after a failed release makes the node reuse the image it
+  already cached under that name. Release v0.7.0 spent two pipeline runs on this — a migration fix
+  looked ineffective because the migrate Job kept running the *previous* build while reporting the
+  right tag (registry digest and `imageID` on the pod differed). `k8s/base/migrate-job.yaml` now
+  pins `imagePullPolicy: Always`, which is the right trade for a Job that must execute exactly the
+  release's code. For anything else, prefer cutting a fresh tag over re-cutting one.
 - **Postgres/RabbitMQ carry state on a PVC** — a `kubectl apply --dry-run=server` proves nothing about runtime
   behaviour on an already-initialised volume. Release v0.5.0 put RabbitMQ in `CrashLoopBackOff` in production
   (~15 min of `POST /api/contact` returning 500) by adding `runAsNonRoot`/`fsGroup`: Erlang refuses to start
