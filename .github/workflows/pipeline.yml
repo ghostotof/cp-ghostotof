@@ -198,6 +198,25 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # La carte Open Graph est régénérée ICI, juste avant la construction de
+      # l'image frontend, et non commitée « en espérant » qu'elle soit à jour :
+      # l'image publiée porte donc toujours une carte cohérente avec le gabarit
+      # versionné. frontend/public/og.png est aussi commité, pour que
+      # `npm run dev` et un build local sans Chrome disposent d'un fichier.
+      #
+      # Dépendances installées explicitement plutôt que supposées présentes :
+      # ImageMagick ne fait plus partie de l'image runner ubuntu-24.04, et un
+      # fallback silencieux sur une police manquante décalerait la mise en page
+      # sans faire échouer le job.
+      - name: Dépendances de rendu de la carte Open Graph
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            imagemagick fonts-dejavu-core fonts-liberation
+      - name: Régénération de la carte Open Graph (frontend/public/og.png)
+        working-directory: frontend
+        run: npm run og:generate
+
       - name: Build & push (prod + preprod, backend + frontend)
         env:
           TAG: ${{ github.ref_name }}
