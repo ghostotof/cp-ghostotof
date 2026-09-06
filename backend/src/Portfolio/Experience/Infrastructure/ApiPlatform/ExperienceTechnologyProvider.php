@@ -42,6 +42,7 @@ final readonly class ExperienceTechnologyProvider implements ProviderInterface
                     relatedTechnology: null !== $presented['relatedTechnology']
                         ? new ExperienceRelatedTechnologyResource($presented['relatedTechnology']['name'])
                         : null,
+                    secondary: $presented['secondary'],
                 );
             },
             $this->experienceTechnologyRepository->findAllOrderedByYearsDesc(),

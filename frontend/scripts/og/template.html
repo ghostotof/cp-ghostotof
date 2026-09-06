@@ -1,0 +1,72 @@
+<!doctype html>
+<!--
+  Gabarit de la carte Open Graph (1200x630). Rendu en PNG par
+  frontend/scripts/og/generate.sh -> frontend/public/og.png (`npm run og:generate`).
+
+  Ce fichier n'est JAMAIS servi : il vit dans scripts/ et non dans public/,
+  que Vite recopie tel quel dans dist/.
+
+  CONTRAINTE POLICES — ne pas y toucher : le rendu se fait par Chrome headless
+  sur une URL file://, où une police distante (Google Fonts) n'est pas chargée
+  de façon fiable et retombe silencieusement sur une fallback, ce qui décale
+  toute la mise en page sans que rien n'échoue. La pile ci-dessous n'utilise
+  que des polices installées localement (paquets fonts-dejavu / fonts-liberation,
+  présents sur les runners ubuntu-latest de GitHub Actions).
+-->
+<html lang="fr"><head><meta charset="utf-8">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1200px;height:630px}
+  body{background:radial-gradient(900px 620px at 88% 8%, rgba(109,59,240,.42), rgba(11,8,24,0) 62%),radial-gradient(700px 560px at 4% 96%, rgba(74,42,203,.34), rgba(11,8,24,0) 60%),#0B0818;font-family:"DejaVu Sans","Liberation Sans",system-ui,sans-serif;
+       color:#EDEAF6;position:relative;overflow:hidden}
+  .glow{position:absolute;border-radius:50%;filter:blur(90px)}
+  .g1{width:620px;height:620px;background:#6D3BF0;right:-160px;top:-220px;opacity:.55}
+  .g2{width:420px;height:420px;background:#4A2ACB;left:-140px;bottom:-200px;opacity:.42}
+
+  .top{position:absolute;top:52px;left:68px;display:flex;align-items:center;gap:18px}
+  .badge{width:58px;height:58px;border-radius:16px;
+         background:linear-gradient(135deg,#7C4DFF,#5A2FE0);
+         display:flex;align-items:center;justify-content:center;
+         font-size:24px;font-weight:700;color:#fff;letter-spacing:-1px;
+         box-shadow:0 10px 34px rgba(124,77,255,.45)}
+  .brand{font-size:27px;font-weight:700;letter-spacing:-.4px}
+
+  .mid{position:absolute;top:178px;left:68px;right:68px}
+  .eyebrow{font-size:18px;font-weight:700;letter-spacing:3px;color:#A98BFF;
+           text-transform:uppercase;margin-bottom:16px}
+  h1{font-size:70px;line-height:1.02;font-weight:700;letter-spacing:-2.2px}
+  h1 .acc{color:#9B7BFF}
+  .sub{margin-top:22px;font-size:27px;line-height:1.42;color:#B9B2D0}
+  .sub b{color:#EDEAF6;font-weight:700}
+
+  .row{position:absolute;left:68px;right:68px;top:496px;
+       display:flex;align-items:center;justify-content:space-between}
+  .chips{display:flex;gap:12px}
+  .chip{border:1px solid rgba(155,123,255,.42);border-radius:999px;padding:9px 18px;
+        font-size:18px;color:#CFC6EA;background:rgba(124,77,255,.09)}
+  .url{font-size:23px;font-weight:700;color:#9B7BFF}
+</style></head>
+<body>
+  
+
+  <div class="top">
+    <div class="badge">&lt;/&gt;</div>
+    <div class="brand">CP-Ghostotof</div>
+  </div>
+
+  <div class="mid">
+    <div class="eyebrow">Développeur PHP / Symfony senior</div>
+    <h1>Christophe <span class="acc">Piton</span></h1>
+    <div class="sub"><b>API Symfony 8</b> découplée d'un front <b>Vue 3 / TypeScript</b>,<br>déployée sur <b>Kubernetes</b> via GitHub Actions.</div>
+  </div>
+
+  <div class="row">
+    <div class="chips">
+      <div class="chip">DDD</div>
+      <div class="chip">API Platform</div>
+      <div class="chip">Docker</div>
+      <div class="chip">PostgreSQL</div>
+    </div>
+    <div class="url">cp-ghostotof.com</div>
+  </div>
+</body></html>

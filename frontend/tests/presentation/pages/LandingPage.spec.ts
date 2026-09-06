@@ -1,20 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import LandingPage from '../../../src/presentation/pages/LandingPage.vue'
 import { PORTFOLIO_CONTENT_REPOSITORY } from '../../../src/application/portfolio/usePortfolioContent'
 import { StaticPortfolioContentRepository } from '../../../src/infrastructure/portfolio/StaticPortfolioContentRepository'
 import { QUALITY_CONTENT_REPOSITORY } from '../../../src/application/quality/useQualityContent'
-import { STATS_REPOSITORY } from '../../../src/application/stats/useStats'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import type { QualityContentRepository } from '../../../src/domain/quality/repositories/QualityContentRepository'
-import type { StatsRepository } from '../../../src/domain/stats/repositories/StatsRepository'
 
 const STUB_QUALITY_CONTENT = {
   principles: [{ title: 'DDD', description: 'Description DDD', iconKey: 'boxes' }],
   traits: [{ label: 'Architecture propre' }],
 }
-
-const STUB_STATS = [{ value: '+50K', label: 'Lignes de code', iconKey: 'code' }]
 
 function createStubQualityContentRepository(
   overrides: Partial<QualityContentRepository> = {},
@@ -25,24 +22,25 @@ function createStubQualityContentRepository(
   }
 }
 
-function createStubStatsRepository(overrides: Partial<StatsRepository> = {}): StatsRepository {
-  return {
-    list: vi.fn(async () => STUB_STATS),
-    ...overrides,
-  }
-}
-
 function mountLandingPage(
   qualityContentRepository: QualityContentRepository = createStubQualityContentRepository(),
-  statsRepository: StatsRepository = createStubStatsRepository(),
 ) {
+  // BaseButton rend les appels à action internes du hero en RouterLink : la
+  // page a donc besoin d'un routeur pour être montée.
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: { template: '<div />' } },
+      { path: '/fr/about', component: { template: '<div />' } },
+    ],
+  })
+
   return mount(LandingPage, {
     global: {
-      plugins: [createAppI18n()],
+      plugins: [router, createAppI18n()],
       provide: {
         [PORTFOLIO_CONTENT_REPOSITORY as symbol]: new StaticPortfolioContentRepository(),
         [QUALITY_CONTENT_REPOSITORY as symbol]: qualityContentRepository,
-        [STATS_REPOSITORY as symbol]: statsRepository,
       },
     },
   })
@@ -65,13 +63,12 @@ describe('LandingPage', () => {
     expect(wrapper.text()).toContain(repository.getFeaturedTechnologies('fr')[0]?.name)
   })
 
-  it('affiche les principes/traits de qualité et les statistiques une fois chargés', async () => {
+  it('affiche les principes et traits de qualité une fois chargés', async () => {
     const wrapper = mountLandingPage()
     await flushPromises()
 
     expect(wrapper.text()).toContain(STUB_QUALITY_CONTENT.principles[0].title)
     expect(wrapper.text()).toContain(STUB_QUALITY_CONTENT.traits[0].label)
-    expect(wrapper.text()).toContain(STUB_STATS[0].value)
   })
 
   it('affiche un message d\'erreur générique si la récupération de la qualité échoue', async () => {
@@ -82,11 +79,15 @@ describe('LandingPage', () => {
     expect(wrapper.findAll('[role="alert"]').length).toBeGreaterThan(0)
   })
 
-  it('affiche un message d\'erreur générique si la récupération des statistiques échoue', async () => {
-    const repository = createStubStatsRepository({ list: vi.fn(async () => Promise.reject(new Error('unavailable'))) })
-    const wrapper = mountLandingPage(undefined, repository)
+  it('ne monte plus le bloc de statistiques', async () => {
+    const wrapper = mountLandingPage()
     await flushPromises()
 
-    expect(wrapper.findAll('[role="alert"]').length).toBeGreaterThan(0)
+    // Régression : l'accueil affichait « +50K lignes de code », « ∞ Passion »…
+    // Des métriques de vanité sur une page qui parle par ailleurs de revue de
+    // code et d'analyse statique — et le nombre de lignes est une mesure
+    // discréditée. Le bloc a été retiré ; la page ne doit plus solliciter le
+    // StatsRepository, dont l'absence d'injection ferait échouer ce montage.
+    expect(wrapper.text()).not.toContain('Lignes de code')
   })
 })

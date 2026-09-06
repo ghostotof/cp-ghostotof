@@ -1,6 +1,12 @@
 # cp-ghostotof
 
-Projet Symfony dockerisé, généré le 2026-08-08.
+**Le site tourne en ligne : [cp-ghostotof.com](https://cp-ghostotof.com)** — ce dépôt en est le code
+source intégral, backend comme frontend.
+
+API Symfony 8 (API Platform) découplée d'un front Vue 3/TypeScript, découpée en contextes DDD,
+analysée en PHPStan niveau max sans baseline, testée (PHPUnit + Vitest) et déployée sur Kubernetes
+via GitHub Actions.
+
 Mode backend : **API (API Platform) + frontend Vite dédié**
 
 ## Services

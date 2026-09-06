@@ -15,7 +15,7 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
  * Couvre le CRUD réservé ROLE_SUPER de /api/backoffice/quality/principles,
- * en miroir de BackofficeStatResourceTest.
+ * en miroir de BackofficeExperienceTechnologyResourceTest.
  */
 final class BackofficeQualityPrincipleResourceTest extends WebTestCase
 {

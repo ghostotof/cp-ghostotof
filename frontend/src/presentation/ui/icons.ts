@@ -17,6 +17,7 @@ import IconCplusplus from '~icons/simple-icons/cplusplus'
 import IconOcaml from '~icons/simple-icons/ocaml'
 import IconOpenjdk from '~icons/simple-icons/openjdk'
 import IconR from '~icons/simple-icons/r'
+import IconGithub from '~icons/simple-icons/github'
 import IconCode from '~icons/lucide/code'
 import IconLayers from '~icons/lucide/layers'
 import IconZap from '~icons/lucide/zap'
@@ -66,6 +67,7 @@ const iconRegistry: Record<string, Component> = {
   ocaml: IconOcaml,
   java: IconOpenjdk,
   r: IconR,
+  github: IconGithub,
   code: IconCode,
   layers: IconLayers,
   zap: IconZap,

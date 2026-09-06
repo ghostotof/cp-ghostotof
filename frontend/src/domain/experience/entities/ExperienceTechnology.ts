@@ -14,6 +14,13 @@ export interface ExperienceTechnology {
    * muted label next to it instead of its own entry (e.g. HTML/CSS/JS next to PHP).
    */
   readonly relatedTechnology?: ExperienceRelatedTechnology
+  /**
+   * Practised along the way without shaping the profile. These are listed as a single
+   * sentence without durations rather than ranked: publishing "Python — 6 months" only
+   * advertises where one is a beginner. Editorial per technology, hence carried by the
+   * content itself (backoffice-editable) instead of a threshold on `years`.
+   */
+  readonly isSecondary: boolean
 }
 
 export interface ExperienceRelatedTechnology {

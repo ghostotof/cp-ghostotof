@@ -22,7 +22,7 @@ use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
  * deux repositories (principles + traits) : seule cette classe
  * Infrastructure a le droit de connaître à la fois les entités Doctrine et
  * la ressource API Platform. Même pattern que
- * App\Portfolio\Stats\Infrastructure\ApiPlatform\StatProvider.
+ * App\Portfolio\Experience\Infrastructure\ApiPlatform\ExperienceTechnologyProvider.
  *
  * @implements ProviderInterface<QualityContentResource>
  */

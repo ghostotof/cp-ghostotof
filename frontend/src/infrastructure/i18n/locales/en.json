@@ -2,9 +2,10 @@
   "nav": {
     "home": "Home",
     "skills": "Skills",
-    "experiences": "Experiences",
+    "experiences": "Technical background",
     "contact": "Contact",
-    "about": "About"
+    "about": "About",
+    "contributions": "Contributions"
   },
   "common": {
     "downloadCv": "Download my CV",
@@ -20,7 +21,8 @@
     "legalNoticeLink": "Legal notice",
     "privacyPolicyLink": "Privacy policy",
     "legalNavigation": "Legal navigation",
-    "administration": "Administration"
+    "administration": "Administration",
+    "opensInNewTab": "(opens in a new tab)"
   },
   "admin": {
     "heading": "Administration",
@@ -33,31 +35,8 @@
       "technologies": "Technologies",
       "about": "About",
       "quality": "Quality",
-      "stats": "Stats",
-      "users": "Users"
-    },
-    "stats": {
-      "create": "Add a stat",
-      "edit": "Edit stat",
-      "editAction": "Edit",
-      "listTitle": "Registered stats",
-      "valueLabel": "Value",
-      "labelLabel": "Label",
-      "iconKeyLabel": "Icon",
-      "positionLabel": "Position",
-      "actions": "Actions",
-      "save": "Save",
-      "cancel": "Cancel",
-      "delete": "Delete",
-      "confirmDelete": "Delete stat \"{label}\"?",
-      "empty": "No stat registered for this language yet.",
-      "loading": "Loading stats…",
-      "loadError": "Failed to load stats. Please try again later.",
-      "errors": {
-        "not-found": "This stat no longer exists.",
-        "validation": "The form contains errors. Please check the fields.",
-        "unknown": "Something went wrong. Please try again later."
-      }
+      "users": "Users",
+      "contributions": "Contributions"
     },
     "quality": {
       "actions": "Actions",
@@ -165,7 +144,11 @@
         "not-found": "This technology no longer exists.",
         "validation": "The form contains errors. Please check the fields.",
         "unknown": "Something went wrong. Please try again later."
-      }
+      },
+      "secondaryLabel": "Collapse out of the ranking",
+      "secondaryHelp": "The technology joins the \"Also practised along the way\" line, with no duration shown.",
+      "secondaryColumn": "Collapsed",
+      "secondaryYes": "Yes"
     },
     "users": {
       "listTitle": "Registered users",
@@ -212,6 +195,34 @@
         "validation": "The password must be at least 8 characters long.",
         "unknown": "Something went wrong. Please try again later."
       }
+    },
+    "contributions": {
+      "create": "Add a contribution",
+      "edit": "Edit contribution",
+      "listTitle": "Registered contributions",
+      "save": "Save",
+      "cancel": "Cancel",
+      "localeLabel": "Language",
+      "titleLabel": "Title (the claim being made)",
+      "projectLabel": "Project",
+      "referenceLabel": "Reference",
+      "urlLabel": "Discussion URL",
+      "summaryLabel": "Lede",
+      "bodyLabel": "Argument",
+      "bodyHelp": "Plain text. Separate paragraphs with a blank line; wrap a parameter name in backticks to render it as code.",
+      "positionLabel": "Position",
+      "actions": "Actions",
+      "editAction": "Edit",
+      "deleteAction": "Delete",
+      "confirmDelete": "Delete contribution \"{title}\"?",
+      "empty": "No contribution registered yet.",
+      "loading": "Loading contributions…",
+      "loadError": "Failed to load contributions. Please try again later.",
+      "errors": {
+        "not-found": "This contribution no longer exists.",
+        "validation": "Some fields are invalid.",
+        "unknown": "An error occurred. Please try again later."
+      }
     }
   },
   "forbidden": {
@@ -228,7 +239,8 @@
   },
   "experience": {
     "loading": "Loading the technology ranking…",
-    "error": "The technology ranking could not be loaded. Please try again later."
+    "error": "The technology ranking could not be loaded. Please try again later.",
+    "alsoPractised": "Also practised along the way:"
   },
   "about": {
     "loading": "Loading content…",
@@ -239,18 +251,13 @@
     "loading": "Loading quality principles…",
     "error": "Quality principles could not be loaded. Please try again later."
   },
-  "stats": {
-    "sectionTitle": "Key figures",
-    "loading": "Loading stats…",
-    "error": "Stats could not be loaded. Please try again later."
-  },
   "localeSwitcher": {
     "label": "Change language"
   },
   "auth": {
     "heading": "Login",
     "usernameLabel": "Username",
-      "emailLabel": "Email",
+    "emailLabel": "Email",
     "passwordLabel": "Password",
     "submit": "Log in",
     "invalidCredentials": "Incorrect username or password.",
@@ -258,7 +265,7 @@
   },
   "contact": {
     "eyebrow": "Contact",
-    "intro": "A question, a project, an opportunity? Feel free to write to me directly at the address below or via the form.",
+    "intro": "A question, a project, an opportunity? Write to me through the form below and I will reply directly.",
     "form": {
       "heading": "Send a message",
       "nameLabel": "Your name",
@@ -269,7 +276,7 @@
       "submitting": "Sending…",
       "success": "Your message has been sent, thank you!",
       "error": "Sending the message failed. Please try again later.",
-      "privacyNoticePrefix": "Your data is only used to reply to you and is never stored."
+      "privacyNoticePrefix": "Your data is only used to reply to you. It is not retained when the message goes through; if delivery fails, the message is queued and then deleted automatically within 30 days."
     }
   },
   "notFound": {
@@ -311,8 +318,8 @@
       "description": "About this site: its origin and design."
     },
     "experience": {
-      "title": "Experiences",
-      "description": "Technologies ranked by cumulative time spent on each throughout my career."
+      "title": "Technical background",
+      "description": "Technologies ranked by cumulative time spent on each throughout my career and my studies."
     },
     "contact": {
       "title": "Contact",
@@ -354,13 +361,25 @@
       "title": "Administration — Quality",
       "description": "Manage the principles and software qualities displayed on the landing page."
     },
-    "adminStats": {
-      "title": "Administration — Stats",
-      "description": "Manage the key figures displayed on the landing page."
-    },
     "adminUsers": {
       "title": "Administration — Users",
       "description": "Manage user accounts."
+    },
+    "contributions": {
+      "title": "Contributions",
+      "description": "Public technical discussions I took part in, with the reasoning behind them."
+    },
+    "adminContributions": {
+      "title": "Administration — Contributions",
+      "description": "Manage the technical contributions published on the site."
     }
+  },
+  "contributions": {
+    "eyebrow": "Contributions",
+    "intro": "Public technical discussions I took part in, with the reasoning behind them — not just the link. This is the only content on this site that could not exist on a LinkedIn profile.",
+    "loading": "Loading contributions…",
+    "error": "Contributions could not be loaded. Please try again later.",
+    "empty": "No contribution published yet.",
+    "readOnGitHub": "Read the discussion on GitHub"
   }
 }

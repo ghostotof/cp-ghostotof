@@ -2,9 +2,10 @@
   "nav": {
     "home": "Accueil",
     "skills": "Compétences",
-    "experiences": "Expériences",
+    "experiences": "Parcours technique",
     "contact": "Contact",
-    "about": "À propos"
+    "about": "À propos",
+    "contributions": "Contributions"
   },
   "common": {
     "downloadCv": "Télécharger mon CV",
@@ -20,7 +21,8 @@
     "legalNoticeLink": "Mentions légales",
     "privacyPolicyLink": "Politique de confidentialité",
     "legalNavigation": "Navigation légale",
-    "administration": "Administration"
+    "administration": "Administration",
+    "opensInNewTab": "(nouvelle fenêtre)"
   },
   "admin": {
     "heading": "Administration",
@@ -33,31 +35,8 @@
       "technologies": "Technologies",
       "about": "À propos",
       "quality": "Qualité",
-      "stats": "Statistiques",
-      "users": "Utilisateurs"
-    },
-    "stats": {
-      "create": "Ajouter une statistique",
-      "edit": "Modifier la statistique",
-      "editAction": "Modifier",
-      "listTitle": "Statistiques enregistrées",
-      "valueLabel": "Valeur",
-      "labelLabel": "Libellé",
-      "iconKeyLabel": "Icône",
-      "positionLabel": "Position",
-      "actions": "Actions",
-      "save": "Enregistrer",
-      "cancel": "Annuler",
-      "delete": "Supprimer",
-      "confirmDelete": "Supprimer la statistique « {label} » ?",
-      "empty": "Aucune statistique enregistrée pour cette langue.",
-      "loading": "Chargement des statistiques…",
-      "loadError": "Le chargement des statistiques a échoué. Réessayez plus tard.",
-      "errors": {
-        "not-found": "Cette statistique n'existe plus.",
-        "validation": "Le formulaire contient des erreurs. Vérifiez les champs.",
-        "unknown": "Une erreur est survenue. Réessayez plus tard."
-      }
+      "users": "Utilisateurs",
+      "contributions": "Contributions"
     },
     "quality": {
       "actions": "Actions",
@@ -165,7 +144,11 @@
         "not-found": "Cette technologie n'existe plus.",
         "validation": "Le formulaire contient des erreurs. Vérifiez les champs.",
         "unknown": "Une erreur est survenue. Réessayez plus tard."
-      }
+      },
+      "secondaryLabel": "Replier hors du classement",
+      "secondaryHelp": "La technologie rejoint la ligne « Également pratiqués au fil du parcours », sans durée affichée.",
+      "secondaryColumn": "Repliée",
+      "secondaryYes": "Oui"
     },
     "users": {
       "listTitle": "Utilisateurs enregistrés",
@@ -212,6 +195,34 @@
         "validation": "Le mot de passe doit contenir au moins 8 caractères.",
         "unknown": "Une erreur est survenue. Réessayez plus tard."
       }
+    },
+    "contributions": {
+      "create": "Ajouter une contribution",
+      "edit": "Modifier la contribution",
+      "listTitle": "Contributions enregistrées",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "localeLabel": "Langue",
+      "titleLabel": "Titre (la thèse défendue)",
+      "projectLabel": "Projet",
+      "referenceLabel": "Référence",
+      "urlLabel": "URL de la discussion",
+      "summaryLabel": "Chapeau",
+      "bodyLabel": "Argument",
+      "bodyHelp": "Texte brut. Séparez les paragraphes par une ligne vide ; entourez un nom de paramètre d'accents graves pour le mettre en forme de code.",
+      "positionLabel": "Position",
+      "actions": "Actions",
+      "editAction": "Modifier",
+      "deleteAction": "Supprimer",
+      "confirmDelete": "Supprimer la contribution « {title} » ?",
+      "empty": "Aucune contribution enregistrée.",
+      "loading": "Chargement des contributions…",
+      "loadError": "Le chargement des contributions a échoué. Réessayez plus tard.",
+      "errors": {
+        "not-found": "Cette contribution n'existe plus.",
+        "validation": "Certains champs sont invalides.",
+        "unknown": "Une erreur est survenue. Réessayez plus tard."
+      }
     }
   },
   "forbidden": {
@@ -228,7 +239,8 @@
   },
   "experience": {
     "loading": "Chargement du classement des technologies…",
-    "error": "Le classement des technologies n'a pas pu être chargé. Réessayez plus tard."
+    "error": "Le classement des technologies n'a pas pu être chargé. Réessayez plus tard.",
+    "alsoPractised": "Également pratiqués au fil du parcours :"
   },
   "about": {
     "loading": "Chargement du contenu…",
@@ -239,18 +251,13 @@
     "loading": "Chargement des principes de qualité…",
     "error": "Les principes de qualité n'ont pas pu être chargés. Réessayez plus tard."
   },
-  "stats": {
-    "sectionTitle": "Chiffres clés",
-    "loading": "Chargement des statistiques…",
-    "error": "Les statistiques n'ont pas pu être chargées. Réessayez plus tard."
-  },
   "localeSwitcher": {
     "label": "Changer de langue"
   },
   "auth": {
     "heading": "Connexion",
     "usernameLabel": "Nom d'utilisateur",
-      "emailLabel": "E-mail",
+    "emailLabel": "E-mail",
     "passwordLabel": "Mot de passe",
     "submit": "Se connecter",
     "invalidCredentials": "Nom d'utilisateur ou mot de passe incorrect.",
@@ -258,7 +265,7 @@
   },
   "contact": {
     "eyebrow": "Contact",
-    "intro": "Une question, un projet, une opportunité ? N'hésitez pas à m'écrire directement à l'adresse ci-dessous ou via le formulaire.",
+    "intro": "Une question, un projet, une opportunité ? Écrivez-moi via le formulaire ci-dessous, je vous réponds directement.",
     "form": {
       "heading": "Envoyer un message",
       "nameLabel": "Votre nom",
@@ -269,7 +276,7 @@
       "submitting": "Envoi en cours…",
       "success": "Votre message a bien été envoyé, merci !",
       "error": "L'envoi du message a échoué. Réessayez plus tard.",
-      "privacyNoticePrefix": "Vos données ne sont utilisées que pour vous répondre et ne sont jamais stockées."
+      "privacyNoticePrefix": "Vos données servent uniquement à vous répondre. Elles ne sont pas conservées si le message part normalement ; en cas d'échec d'envoi, il est mis en file d'attente puis supprimé automatiquement sous 30 jours."
     }
   },
   "notFound": {
@@ -311,8 +318,8 @@
       "description": "À propos de ce site : son origine et sa conception."
     },
     "experience": {
-      "title": "Expériences",
-      "description": "Technologies classées selon le temps cumulé passé sur chacune d'elles au fil de mon parcours professionnel."
+      "title": "Parcours technique",
+      "description": "Technologies classées selon le temps cumulé passé sur chacune d'elles au fil de mon parcours professionnel et de mes études."
     },
     "contact": {
       "title": "Contact",
@@ -354,13 +361,25 @@
       "title": "Administration — Qualité",
       "description": "Gestion des principes et qualités logicielles affichés sur la landing page."
     },
-    "adminStats": {
-      "title": "Administration — Statistiques",
-      "description": "Gestion des statistiques clés affichées sur la landing page."
-    },
     "adminUsers": {
       "title": "Administration — Utilisateurs",
       "description": "Gestion des comptes utilisateurs."
+    },
+    "contributions": {
+      "title": "Contributions",
+      "description": "Discussions techniques publiques auxquelles j'ai pris part, avec le raisonnement qui les porte."
+    },
+    "adminContributions": {
+      "title": "Administration — Contributions",
+      "description": "Gestion des contributions techniques publiées sur le site."
     }
+  },
+  "contributions": {
+    "eyebrow": "Contributions",
+    "intro": "Des discussions techniques publiques auxquelles j'ai pris part, avec le raisonnement qui les porte — pas seulement le lien. C'est le seul contenu de ce site qui ne peut pas exister sur un profil LinkedIn.",
+    "loading": "Chargement des contributions…",
+    "error": "Les contributions n'ont pas pu être chargées. Réessayez plus tard.",
+    "empty": "Aucune contribution publiée pour le moment.",
+    "readOnGitHub": "Lire la discussion sur GitHub"
   }
 }

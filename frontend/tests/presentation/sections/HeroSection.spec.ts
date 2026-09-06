@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import HeroSection from '../../../src/presentation/sections/HeroSection.vue'
 import type { HeroContent } from '../../../src/domain/portfolio/entities/HeroContent'
 import { createAppI18n } from '../../../src/presentation/i18n'
@@ -10,8 +11,14 @@ const content: HeroContent = {
   titleAccent: 'robustes, performantes et évolutives.',
   description: 'Développeur passionné par la création de solutions web modernes et maintenables.',
   callsToAction: [
-    { label: 'Découvrir mon approche', href: '#technologies', variant: 'primary', iconKey: 'arrow-right' },
-    { label: 'Me contacter', href: '#contact', variant: 'secondary', iconKey: 'message-circle' },
+    {
+      label: 'Lire le code sur GitHub',
+      href: 'https://github.com/ghostotof/cp-ghostotof',
+      variant: 'primary',
+      iconKey: 'github',
+      isExternal: true,
+    },
+    { label: 'Comment il est construit', href: '/fr/about', variant: 'secondary', iconKey: 'arrow-right' },
   ],
   highlights: [
     { label: 'Code propre', iconKey: 'code' },
@@ -19,8 +26,20 @@ const content: HeroContent = {
   ],
 }
 
+/**
+ * Un routeur est nécessaire : BaseButton rend les appels à action internes en
+ * RouterLink, pour éviter le rechargement complet du document.
+ */
 function mountSection() {
-  return mount(HeroSection, { props: { content }, global: { plugins: [createAppI18n()] } })
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: { template: '<div />' } },
+      { path: '/fr/about', component: { template: '<div />' } },
+    ],
+  })
+
+  return mount(HeroSection, { props: { content }, global: { plugins: [router, createAppI18n()] } })
 }
 
 describe('HeroSection', () => {
@@ -44,8 +63,21 @@ describe('HeroSection', () => {
 
     const links = wrapper.findAll('a.btn')
     expect(links).toHaveLength(content.callsToAction.length)
-    expect(links[0]?.attributes('href')).toBe('#technologies')
-    expect(links[1]?.attributes('href')).toBe('#contact')
+    expect(links[0]?.attributes('href')).toBe('https://github.com/ghostotof/cp-ghostotof')
+    expect(links[1]?.attributes('href')).toBe('/fr/about')
+  })
+
+  it('transmet isExternal à BaseButton, qui isole la navigation sortante', () => {
+    const wrapper = mountSection()
+
+    const links = wrapper.findAll('a.btn')
+
+    // Régression : sans la transmission de la propriété, le lien vers le dépôt
+    // remplacerait le portfolio dans l'onglet courant au lieu de s'ouvrir à
+    // côté — et perdrait la protection contre le tabnabbing.
+    expect(links[0]?.attributes('target')).toBe('_blank')
+    expect(links[0]?.attributes('rel')).toBe('noopener noreferrer')
+    expect(links[1]?.attributes('target')).toBeUndefined()
   })
 
   it('rend un élément de liste par highlight', () => {

@@ -22,7 +22,7 @@ export interface UseAdminQualityTraitsResult {
 }
 
 /**
- * Pas de dépendance à useI18n() (cf. useAdminStats) : la page appelante
+ * Pas de dépendance à useI18n() (cf. useAdminExperienceTechnologies) : la page appelante
  * possède le sélecteur de locale et pilote load(locale).
  */
 export function useAdminQualityTraits(): UseAdminQualityTraitsResult {

@@ -26,6 +26,7 @@ api_platform:
         App\Contact\Domain\Exception\ContactMessageDeliveryException: 503
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException: 409
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException: 404
+        App\Portfolio\Contribution\Domain\Exception\ContributionNotFoundException: 404
         # Point d'audit I3 : remplace un mapping `ValueError: 404` fourre-tout.
         # Celui-ci déguisait en « 404 Not Found » *toute* ValueError levée dans
         # la pile HTTP, y compris un bug sans rapport avec la locale — un vrai
@@ -35,7 +36,6 @@ api_platform:
         # exception précise. Les champs "locale" des DTO de backoffice, eux,
         # sont déjà bornés en amont par #[Assert\Choice] (422, pas 404).
         App\Portfolio\Shared\Domain\Exception\InvalidLocaleException: 404
-        App\Portfolio\Stats\Domain\Exception\StatNotFoundException: 404
         App\Portfolio\Quality\Domain\Exception\QualityPrincipleNotFoundException: 404
         App\Portfolio\Quality\Domain\Exception\QualityTraitNotFoundException: 404
         App\Portfolio\About\Domain\Exception\AboutSettingsNotFoundException: 404

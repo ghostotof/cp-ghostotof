@@ -9,8 +9,8 @@ use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
- * Une technologie du classement affiché sur la page Expériences, avec le temps
- * cumulé passé dessus (en années). Créée via la commande
+ * Une technologie du parcours technique, avec le temps cumulé passé dessus
+ * (en années). Créée via la commande
  * app:experience:add-technology (cf. Presentation\Command\AddExperienceTechnologyCommand)
  * ou via le backoffice (ROLE_SUPER, cf. Presentation\ApiResource\BackofficeExperienceTechnologyResource),
  * éditable/supprimable uniquement depuis ce dernier.
@@ -40,12 +40,33 @@ class ExperienceTechnology
     #[ORM\Column(length: 180, nullable: true)]
     private ?string $relatedTechnologyName;
 
-    public function __construct(string $name, float $years, ?string $iconKey = null, ?string $relatedTechnologyName = null)
-    {
+    /**
+     * Technologie pratiquée au fil du parcours sans structurer le profil.
+     * Elle sort du classement chiffré pour rejoindre une énumération unique,
+     * sans durée.
+     *
+     * Pourquoi une donnée et non une règle de présentation : afficher « Python
+     * ~6 mois » revient à publier l'endroit où l'on débute, alors que personne
+     * ne l'a demandé — c'est un arbitrage éditorial, propre à chaque
+     * technologie, qui doit rester modifiable depuis le backoffice sans
+     * redéploiement. Un seuil automatique sur `years` produirait au contraire
+     * un classement qui se réorganise tout seul au fil des mises à jour.
+     */
+    #[ORM\Column(options: ['default' => false])]
+    private bool $secondary;
+
+    public function __construct(
+        string $name,
+        float $years,
+        ?string $iconKey = null,
+        ?string $relatedTechnologyName = null,
+        bool $secondary = false,
+    ) {
         $this->name = $name;
         $this->years = $years;
         $this->iconKey = $iconKey;
         $this->relatedTechnologyName = $relatedTechnologyName;
+        $this->secondary = $secondary;
     }
 
     public function getId(): ?int
@@ -73,11 +94,22 @@ class ExperienceTechnology
         return $this->relatedTechnologyName;
     }
 
-    public function update(string $name, float $years, ?string $iconKey, ?string $relatedTechnologyName): void
+    public function isSecondary(): bool
     {
+        return $this->secondary;
+    }
+
+    public function update(
+        string $name,
+        float $years,
+        ?string $iconKey,
+        ?string $relatedTechnologyName,
+        bool $secondary = false,
+    ): void {
         $this->name = $name;
         $this->years = $years;
         $this->iconKey = $iconKey;
         $this->relatedTechnologyName = $relatedTechnologyName;
+        $this->secondary = $secondary;
     }
 }

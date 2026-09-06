@@ -5,6 +5,7 @@ export interface AdminExperienceTechnologyInput {
   years: number
   iconKey: string | null
   relatedTechnologyName: string | null
+  isSecondary: boolean
 }
 
 /**

@@ -16,13 +16,13 @@ final readonly class ExperienceTechnologyRegistrar implements ExperienceTechnolo
     ) {
     }
 
-    public function register(string $name, float $years, ?string $iconKey, ?string $relatedTechnologyName): ExperienceTechnology
+    public function register(string $name, float $years, ?string $iconKey, ?string $relatedTechnologyName, bool $secondary = false): ExperienceTechnology
     {
         if (null !== $this->experienceTechnologyRepository->findOneByName($name)) {
             throw ExperienceTechnologyAlreadyExistsException::forName($name);
         }
 
-        $technology = new ExperienceTechnology($name, $years, $iconKey, $relatedTechnologyName);
+        $technology = new ExperienceTechnology($name, $years, $iconKey, $relatedTechnologyName, $secondary);
 
         try {
             $this->experienceTechnologyRepository->save($technology);
