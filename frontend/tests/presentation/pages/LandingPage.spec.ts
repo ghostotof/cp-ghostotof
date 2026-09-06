@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import LandingPage from '../../../src/presentation/pages/LandingPage.vue'
 import { PORTFOLIO_CONTENT_REPOSITORY } from '../../../src/application/portfolio/usePortfolioContent'
 import { StaticPortfolioContentRepository } from '../../../src/infrastructure/portfolio/StaticPortfolioContentRepository'
@@ -24,9 +25,19 @@ function createStubQualityContentRepository(
 function mountLandingPage(
   qualityContentRepository: QualityContentRepository = createStubQualityContentRepository(),
 ) {
+  // BaseButton rend les appels à action internes du hero en RouterLink : la
+  // page a donc besoin d'un routeur pour être montée.
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: { template: '<div />' } },
+      { path: '/fr/about', component: { template: '<div />' } },
+    ],
+  })
+
   return mount(LandingPage, {
     global: {
-      plugins: [createAppI18n()],
+      plugins: [router, createAppI18n()],
       provide: {
         [PORTFOLIO_CONTENT_REPOSITORY as symbol]: new StaticPortfolioContentRepository(),
         [QUALITY_CONTENT_REPOSITORY as symbol]: qualityContentRepository,
