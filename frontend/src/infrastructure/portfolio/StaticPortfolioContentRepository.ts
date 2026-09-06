@@ -39,6 +39,7 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
     return [
       { label: nav.home, to: `/${locale}`, isEnabled: true },
       { label: nav.skills, to: `/${locale}#technologies`, isEnabled: true },
+      { label: nav.contributions, to: `/${locale}/contributions`, isEnabled: true },
       { label: nav.experiences, to: `/${locale}/experience`, isEnabled: true },
       { label: nav.contact, to: `/${locale}/contact`, isEnabled: true },
       { label: nav.about, to: `/${locale}/about`, isEnabled: true },

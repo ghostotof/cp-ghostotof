@@ -46,6 +46,7 @@ final class ApiRouteExposureTest extends WebTestCase
         '/api/about/{locale}' => 'Page « À propos » — publique dans son intégralité (audit C3).',
         '/api/quality/{locale}' => 'Principes/traits qualité — contenu de démonstration.',
         '/api/experience/technologies' => 'Liste de technologies — contenu de démonstration.',
+        '/api/contributions/{locale}' => 'Contributions techniques publiques : précisément le contenu destiné au visiteur non authentifié arrivé depuis LinkedIn. Aucune donnée personnelle identifiante.',
 
         // --- Parcours publics par conception.
         '/api/contact' => 'Formulaire de contact anonyme (honeypot + rate limit IP).',

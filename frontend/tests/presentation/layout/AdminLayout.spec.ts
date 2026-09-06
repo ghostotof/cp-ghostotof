@@ -19,6 +19,7 @@ function createTestRouter(): Router {
       { path: '/:locale(fr|en)/admin/technologies', name: 'admin-technologies', component: StubPage },
       { path: '/:locale(fr|en)/admin/about', name: 'admin-about', component: StubPage },
       { path: '/:locale(fr|en)/admin/quality', name: 'admin-quality', component: StubPage },
+      { path: '/:locale(fr|en)/admin/contributions', name: 'admin-contributions', component: StubPage },
       { path: '/:locale(fr|en)/admin/users', name: 'admin-users', component: StubPage },
     ],
   })
@@ -61,14 +62,14 @@ describe('AdminLayout', () => {
     wrapper.unmount()
   })
 
-  it('un clic sur « Contenu » ouvre le menu déroulant avec les 4 liens de section', async () => {
+  it('un clic sur « Contenu » ouvre le menu déroulant avec les liens de section', async () => {
     const wrapper = await mountLayout('/fr/admin/technologies')
 
     await contentToggle(wrapper).trigger('click')
 
     expect(contentToggle(wrapper).attributes('aria-expanded')).toBe('true')
     const items = wrapper.findAll('.dropdown-item')
-    expect(items.map((item) => item.text())).toEqual(['Technologies', 'À propos', 'Qualité'])
+    expect(items.map((item) => item.text())).toEqual(['Technologies', 'À propos', 'Qualité', 'Contributions'])
 
     wrapper.unmount()
   })

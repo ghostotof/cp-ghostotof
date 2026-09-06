@@ -4,7 +4,8 @@
     "skills": "Compétences",
     "experiences": "Parcours technique",
     "contact": "Contact",
-    "about": "À propos"
+    "about": "À propos",
+    "contributions": "Contributions"
   },
   "common": {
     "downloadCv": "Télécharger mon CV",
@@ -34,7 +35,8 @@
       "technologies": "Technologies",
       "about": "À propos",
       "quality": "Qualité",
-      "users": "Utilisateurs"
+      "users": "Utilisateurs",
+      "contributions": "Contributions"
     },
     "quality": {
       "actions": "Actions",
@@ -193,6 +195,34 @@
         "validation": "Le mot de passe doit contenir au moins 8 caractères.",
         "unknown": "Une erreur est survenue. Réessayez plus tard."
       }
+    },
+    "contributions": {
+      "create": "Ajouter une contribution",
+      "edit": "Modifier la contribution",
+      "listTitle": "Contributions enregistrées",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "localeLabel": "Langue",
+      "titleLabel": "Titre (la thèse défendue)",
+      "projectLabel": "Projet",
+      "referenceLabel": "Référence",
+      "urlLabel": "URL de la discussion",
+      "summaryLabel": "Chapeau",
+      "bodyLabel": "Argument",
+      "bodyHelp": "Texte brut. Séparez les paragraphes par une ligne vide ; entourez un nom de paramètre d'accents graves pour le mettre en forme de code.",
+      "positionLabel": "Position",
+      "actions": "Actions",
+      "editAction": "Modifier",
+      "deleteAction": "Supprimer",
+      "confirmDelete": "Supprimer la contribution « {title} » ?",
+      "empty": "Aucune contribution enregistrée.",
+      "loading": "Chargement des contributions…",
+      "loadError": "Le chargement des contributions a échoué. Réessayez plus tard.",
+      "errors": {
+        "not-found": "Cette contribution n'existe plus.",
+        "validation": "Certains champs sont invalides.",
+        "unknown": "Une erreur est survenue. Réessayez plus tard."
+      }
     }
   },
   "forbidden": {
@@ -334,6 +364,22 @@
     "adminUsers": {
       "title": "Administration — Utilisateurs",
       "description": "Gestion des comptes utilisateurs."
+    },
+    "contributions": {
+      "title": "Contributions",
+      "description": "Discussions techniques publiques auxquelles j'ai pris part, avec le raisonnement qui les porte."
+    },
+    "adminContributions": {
+      "title": "Administration — Contributions",
+      "description": "Gestion des contributions techniques publiées sur le site."
     }
+  },
+  "contributions": {
+    "eyebrow": "Contributions",
+    "intro": "Des discussions techniques publiques auxquelles j'ai pris part, avec le raisonnement qui les porte — pas seulement le lien. C'est le seul contenu de ce site qui ne peut pas exister sur un profil LinkedIn.",
+    "loading": "Chargement des contributions…",
+    "error": "Les contributions n'ont pas pu être chargées. Réessayez plus tard.",
+    "empty": "Aucune contribution publiée pour le moment.",
+    "readOnGitHub": "Lire la discussion sur GitHub"
   }
 }

@@ -19,6 +19,10 @@ import { ABOUT_CONTENT_REPOSITORY } from './application/about/useAboutContent'
 import { HttpAboutContentRepository } from './infrastructure/about/HttpAboutContentRepository'
 import { QUALITY_CONTENT_REPOSITORY } from './application/quality/useQualityContent'
 import { HttpQualityContentRepository } from './infrastructure/quality/HttpQualityContentRepository'
+import { CONTRIBUTION_REPOSITORY } from './application/contributions/useContributions'
+import { ADMIN_CONTRIBUTION_REPOSITORY } from './application/admin/contributions/useAdminContributions'
+import { HttpAdminContributionRepository } from './infrastructure/admin/contributions/HttpAdminContributionRepository'
+import { HttpContributionRepository } from './infrastructure/contributions/HttpContributionRepository'
 import { ADMIN_ABOUT_SETTINGS_REPOSITORY } from './application/admin/about/useAdminAboutSettings'
 import { HttpAdminAboutSettingsRepository } from './infrastructure/admin/about/HttpAdminAboutSettingsRepository'
 import { ADMIN_ABOUT_SITE_CARD_REPOSITORY } from './application/admin/about/useAdminAboutSiteCards'
@@ -48,6 +52,8 @@ app.provide(CONTACT_REPOSITORY, new HttpContactRepository(apiUrl))
 app.provide(ADMIN_EXPERIENCE_TECHNOLOGY_REPOSITORY, new HttpAdminExperienceTechnologyRepository(apiUrl))
 app.provide(ABOUT_CONTENT_REPOSITORY, new HttpAboutContentRepository(apiUrl))
 app.provide(QUALITY_CONTENT_REPOSITORY, new HttpQualityContentRepository(apiUrl))
+app.provide(CONTRIBUTION_REPOSITORY, new HttpContributionRepository(apiUrl))
+app.provide(ADMIN_CONTRIBUTION_REPOSITORY, new HttpAdminContributionRepository(apiUrl))
 app.provide(ADMIN_ABOUT_SETTINGS_REPOSITORY, new HttpAdminAboutSettingsRepository(apiUrl))
 app.provide(ADMIN_ABOUT_SITE_CARD_REPOSITORY, new HttpAdminAboutSiteCardRepository(apiUrl))
 app.provide(ADMIN_ABOUT_ME_CARD_REPOSITORY, new HttpAdminAboutMeCardRepository(apiUrl))

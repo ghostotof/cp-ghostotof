@@ -39,7 +39,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repository started as a freshly generated project skeleton (single "Init" commit). Real backend code now
 exists — the `Security` bounded context (`User` + `Authentication`) and four `Portfolio` bounded contexts
-(`Experience`, `Quality`, `About`, see Backend architecture below) — and follows a DDD structure under
+(`Experience`, `Quality`, `About`, `Contribution`, see Backend architecture below) — and follows a DDD structure under
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
 over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
 recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
@@ -191,14 +191,23 @@ folder), so entities live inside their bounded context instead of a shared top-l
   - There used to be a blanket `ValueError: 404` mapping. It has been **removed and must not come back**: it
     disguised *every* `ValueError` in the HTTP stack as a plausible "404 Not Found", which is exactly how a
     real defect goes unnoticed.
-- **`Portfolio/Experience/`**, **`Portfolio/Quality/`**, **`Portfolio/About/`** — DB-backed
+- **`Portfolio/Experience/`**, **`Portfolio/Quality/`**, **`Portfolio/About/`**, **`Portfolio/Contribution/`** — DB-backed
   content that used to be (or, for `Experience`, always was) hardcoded in the frontend. Each follows the same
   shape: a Doctrine entity per concept (`ExperienceTechnology`; `QualityPrinciple`/`QualityTrait`;
   `AboutSettings`/`AboutSiteCard`/`AboutMeCard`, the latter with an `AboutMeCardCategory` enum), a public
   read-only API Platform resource (`GetCollection('/experience/technologies')`, or an aggregating `Provider` for
   `/quality/{locale}` and `/about/{locale}` that returns `{principles, traits}` / `{settings, siteCards, meCards}`
-  in one call), and a backoffice CRUD resource (see below). Seeded via idempotent `app:{about,quality}:seed`
+  in one call), and a backoffice CRUD resource (see below). Seeded via idempotent `app:{about,quality,contributions}:seed`
   console commands (purge-by-locale then recreate — safe to rerun).
+
+  `Contribution` is the odd one out and deliberately so: it carries a long `body` (the argument, not
+  just a link to it) alongside `title`/`project`/`reference`/`url`/`summary`. That text is **plain
+  text**, paragraphs separated by a blank line, rendered by splitting on those blanks —
+  `ContributionsPage.vue` never uses `v-html`. The only markup honoured is `` `backticks` ``, turned
+  into `<code>` by splitting on a capturing regex, so every segment stays an interpolated text node.
+  The content is authored through the backoffice, so treating it as HTML would trade formatting for
+  a stored-XSS hole on a public page — there is a regression test pinning that
+  (`tests/presentation/pages/ContributionsPage.spec.ts`).
 
 ### Backoffice (`ROLE_SUPER`)
 
@@ -221,6 +230,7 @@ Content management for all of the above, plus user administration, gated end-to-
   public. Never weaken or delete that test to make a new route pass.
 - **API Platform pattern**, repeated identically across every backoffice resource
   (`BackofficeExperienceTechnologyResource`, `BackofficeQuality{Principle,Trait}Resource`,
+  `BackofficeContributionResource`,
   `Backoffice{About}{Settings,SiteCard,MeCard}Resource`, `BackofficeUserResource`,
   `BackofficeUserPasswordResource`): a flat DTO (never the Doctrine entity itself) under
   `Presentation/ApiResource/`, backed by a `Provider` (`GetCollection`/`Get`) and a `Processor`
@@ -290,13 +300,13 @@ To add a new page: new route in `presentation/router/index.ts` (nested under `/:
 `usePortfolioContent()` call for its own content) → new `NavigationLink` entry (`to` + `isEnabled`) in
 `StaticPortfolioContentRepository`. `AppHeader` derives the active nav link from `useRoute()`, not from props.
 
-#### API-backed content (About/Quality)
+#### API-backed content (About/Quality/Contributions)
 
-Unlike `PortfolioContentRepository` (hero/technologies, synchronous, hardcoded), the About/Quality content
+Unlike `PortfolioContentRepository` (hero/technologies, synchronous, hardcoded), the About/Quality/Contributions content
 now lives in the backend DB and is fetched asynchronously, each with its own small vertical slice:
-`domain/{about,quality}/repositories/*ContentRepository.ts` (interface) →
-`infrastructure/{about,quality}/Http*ContentRepository.ts` (the implementation, calls the public
-`/api/{about,quality}/{locale}` endpoints) → `application/{about,quality}/use*Content.ts` (composable
+`domain/{about,quality,contributions}/repositories/*Repository.ts` (interface) →
+`infrastructure/{about,quality,contributions}/Http*Repository.ts` (the implementation, calls the public
+`/api/{about,quality,contributions}/{locale}` endpoints) → `application/{about,quality,contributions}/use*.ts` (composable
 exposing `content`/`isLoading`/`hasError`, injected the same `InjectionKey` way as `usePortfolioContent`) →
 consumed by `AboutPage.vue` / `LandingPage.vue`'s Quality section, each rendering a loading state, an
 error state (`role="alert"`), and the content. `main.ts` provides both repositories alongside the existing
@@ -308,7 +318,7 @@ from the backoffice) — purely static content still belongs in `infrastructure/
 Content/user management UI, mirrored per-resource under `domain/admin/<resource>/{entities,repositories,errors}`
 → `infrastructure/admin/<resource>/Http*Repository.ts` → `application/admin/<resource>/use*.ts` →
 `presentation/pages/admin/Admin*Page.vue` (form + Bootstrap table, `window.confirm()` for deletes — no modals).
-Existing resources: `technologies`, `quality` (principles + traits), `about` (settings + site cards +
+Existing resources: `technologies`, `quality` (principles + traits), `contributions`, `about` (settings + site cards +
 me cards), `users` (list + **invite by email** + change-password + promote/demote + resend invitation + delete;
 direct username+password creation stays CLI-only). `AdminUsersPage.vue` disables the delete and role buttons on
 the current user's own row (compared by `username` via `useAuth()`); the `email` column shows the linked address

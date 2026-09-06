@@ -28,6 +28,7 @@ declare module 'vue-router' {
 const LandingPage = () => import('../pages/LandingPage.vue')
 const AboutPage = () => import('../pages/AboutPage.vue')
 const ExperiencePage = () => import('../pages/ExperiencePage.vue')
+const ContributionsPage = () => import('../pages/ContributionsPage.vue')
 const ContactPage = () => import('../pages/ContactPage.vue')
 const LoginPage = () => import('../pages/LoginPage.vue')
 const SetPasswordPage = () => import('../pages/SetPasswordPage.vue')
@@ -38,6 +39,7 @@ const ForbiddenPage = () => import('../pages/ForbiddenPage.vue')
 const AdminLayout = () => import('../layout/AdminLayout.vue')
 const AdminTechnologiesPage = () => import('../pages/admin/AdminTechnologiesPage.vue')
 const AdminAboutPage = () => import('../pages/admin/AdminAboutPage.vue')
+const AdminContributionsPage = () => import('../pages/admin/AdminContributionsPage.vue')
 const AdminQualityPage = () => import('../pages/admin/AdminQualityPage.vue')
 const AdminUsersPage = () => import('../pages/admin/AdminUsersPage.vue')
 
@@ -71,6 +73,12 @@ export const router = createRouter({
           name: 'about',
           component: AboutPage,
           meta: { titleKey: 'seo.about.title', descriptionKey: 'seo.about.description' },
+        },
+        {
+          path: 'contributions',
+          name: 'contributions',
+          component: ContributionsPage,
+          meta: { titleKey: 'seo.contributions.title', descriptionKey: 'seo.contributions.description' },
         },
         {
           path: 'experience',
@@ -146,6 +154,12 @@ export const router = createRouter({
               name: 'admin-quality',
               component: AdminQualityPage,
               meta: { titleKey: 'seo.adminQuality.title', descriptionKey: 'seo.adminQuality.description' },
+            },
+            {
+              path: 'contributions',
+              name: 'admin-contributions',
+              component: AdminContributionsPage,
+              meta: { titleKey: 'seo.adminContributions.title', descriptionKey: 'seo.adminContributions.description' },
             },
             {
               path: 'users',
