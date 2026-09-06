@@ -100,6 +100,20 @@ jobs:
         run: npm test
       - working-directory: frontend
         run: npm run build
+      # La génération de la carte Open Graph tourne ici, sur chaque push, et pas
+      # seulement dans build-images (qui ne s'exécute que sur un tag). Le script
+      # dépend d'outils système — Chrome, ImageMagick, polices — dont les
+      # versions dérivent sur les runners : la release v0.7.0 a échoué parce
+      # qu'il supposait ImageMagick 7 alors qu'Ubuntu livre la 6. Un tel écart
+      # doit se voir sur une branche, pas au moment de livrer.
+      - name: Dépendances de rendu de la carte Open Graph
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            imagemagick fonts-dejavu-core fonts-liberation
+      - name: Génération de la carte Open Graph (contrôle du script)
+        working-directory: frontend
+        run: npm run og:generate
 
   # ---------------------------------------------------------------------------
   # sast-backend — analyse de teinte Psalm (point d'audit M4). CodeQL ne
@@ -366,6 +380,68 @@ jobs:
             envsubst < ../../base/migrate-job.yaml | kubectl -n prod apply -f -
           kubectl -n prod wait --for=condition=complete --timeout=180s job/backend-migrate \
             || { kubectl -n prod logs job/backend-migrate --tail=200; exit 1; }
+
+  # ---------------------------------------------------------------------------
+  # create-release — publie la release GitHub une fois la prod effectivement
+  # déployée. Volontairement APRÈS deploy-prod et pas après build-images : une
+  # release est l'annonce publique qu'une version tourne, pas qu'elle a compilé.
+  # La v0.7.0 a demandé quatre exécutions avant d'atteindre la prod ; publier
+  # plus tôt aurait annoncé trois versions qui n'ont jamais tourné.
+  #
+  # Pas de dépendance à audit-prod : ce job est `continue-on-error`, sa
+  # conclusion vaut « success » même en échec — l'y accrocher donnerait
+  # l'illusion d'un contrôle supplémentaire sans en être un.
+  # ---------------------------------------------------------------------------
+  create-release:
+    needs: [deploy-prod]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    # Seul job à écrire dans le dépôt : permission élevée ici, pas globalement.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nécessaire pour lire l'annotation du tag : un checkout superficiel
+          # ne récupère pas l'objet tag lui-même, seulement le commit.
+          fetch-depth: 0
+      - name: Publier la release GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # Idempotent : un re-run du workflow ne doit pas échouer sur une
+          # release déjà publiée.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG déjà publiée — rien à faire."
+            exit 0
+          fi
+
+          # Le corps de la release vient de l'annotation du tag : c'est le seul
+          # texte écrit au moment de décider du contenu de la version, donc le
+          # seul qui puisse la décrire honnêtement. Première ligne = titre.
+          TITLE="$(git tag -l --format='%(contents:subject)' "$TAG")"
+          BODY="$(git tag -l --format='%(contents:body)' "$TAG")"
+
+          if [ -n "$BODY" ]; then
+            printf '%s' "$BODY" > /tmp/release-notes.md
+            gh release create "$TAG" \
+              --verify-tag --latest \
+              --title "${TITLE:-$TAG}" \
+              --notes-file /tmp/release-notes.md
+          else
+            # Tag sans annotation détaillée (ou tag léger) : on retombe sur les
+            # notes générées par GitHub plutôt que de publier une release vide.
+            echo "Tag $TAG sans corps d'annotation — notes générées automatiquement."
+            gh release create "$TAG" \
+              --verify-tag --latest \
+              --title "${TITLE:-$TAG}" \
+              --generate-notes
+          fi
+
+          echo "Release publiée : $(gh release view "$TAG" --json url --jq .url)"
 
   # ---------------------------------------------------------------------------
   # audit-prod — vérification post-promotion, non bloquant (pas de rollback
