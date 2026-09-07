@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Presentation\Command;
 
-use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
+use App\Portfolio\Watch\Application\WatchedProductAdministratorInterface;
 use App\Portfolio\Watch\Domain\Repository\WatchedProductRepositoryInterface;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -37,8 +37,10 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 )]
 final class SeedWatchedProductsCommand extends Command
 {
-    public function __construct(private readonly WatchedProductRepositoryInterface $watchedProductRepository)
-    {
+    public function __construct(
+        private readonly WatchedProductRepositoryInterface $watchedProductRepository,
+        private readonly WatchedProductAdministratorInterface $watchedProductAdministrator,
+    ) {
         parent::__construct();
     }
 
@@ -50,10 +52,12 @@ final class SeedWatchedProductsCommand extends Command
             $this->watchedProductRepository->remove($existing);
         }
 
+        // Passe par le cas d'usage plutôt que d'écrire en base directement,
+        // comme les autres seeds du projet : la vérification d'unicité du slug
+        // est inutile juste après la purge, mais elle protégerait le jour où
+        // cette commande cesserait de purger.
         foreach ($this->catalog() as $position => [$slug, $label, $versionSource, $version]) {
-            $this->watchedProductRepository->save(
-                new WatchedProduct($slug, $label, $versionSource, $version, $position),
-            );
+            $this->watchedProductAdministrator->create($slug, $label, $versionSource, $version, $position);
         }
 
         $io->success(sprintf('%d produits surveillés posés.', \count($this->catalog())));
