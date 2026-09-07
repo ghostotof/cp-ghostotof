@@ -1,4 +1,4 @@
-import type { WatchSnapshot } from '../entities/WatchSnapshot'
+import type { WatchContent } from '../entities/WatchContent'
 
 /**
  * Abstraction (DIP) dont dépend l'application. L'implémentation concrète
@@ -10,5 +10,5 @@ import type { WatchSnapshot } from '../entities/WatchSnapshot'
  * ils vivent dans les fichiers i18n.
  */
 export interface WatchRepository {
-  get(): Promise<WatchSnapshot>
+  get(): Promise<WatchContent>
 }

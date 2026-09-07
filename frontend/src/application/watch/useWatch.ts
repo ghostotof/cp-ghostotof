@@ -1,11 +1,11 @@
 import { inject, ref, type InjectionKey, type Ref } from 'vue'
-import type { WatchSnapshot } from '../../domain/watch/entities/WatchSnapshot'
+import type { WatchContent } from '../../domain/watch/entities/WatchContent'
 import type { WatchRepository } from '../../domain/watch/repositories/WatchRepository'
 
 export const WATCH_REPOSITORY: InjectionKey<WatchRepository> = Symbol('WatchRepository')
 
 export interface UseWatchResult {
-  snapshot: Ref<WatchSnapshot | null>
+  content: Ref<WatchContent | null>
   isLoading: Ref<boolean>
   hasError: Ref<boolean>
 }
@@ -28,7 +28,7 @@ export function useWatch(): UseWatchResult {
     )
   }
 
-  const snapshot = ref<WatchSnapshot | null>(null)
+  const content = ref<WatchContent | null>(null)
   const isLoading = ref(true)
   const hasError = ref(false)
 
@@ -37,7 +37,7 @@ export function useWatch(): UseWatchResult {
     hasError.value = false
 
     try {
-      snapshot.value = await repository.get()
+      content.value = await repository.get()
     } catch {
       hasError.value = true
     } finally {
@@ -47,5 +47,5 @@ export function useWatch(): UseWatchResult {
 
   void load()
 
-  return { snapshot, isLoading, hasError }
+  return { content, isLoading, hasError }
 }

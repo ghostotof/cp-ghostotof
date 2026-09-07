@@ -49,9 +49,9 @@ final class WatchProviderTest extends TestCase
 
         $resource = $this->provider->provide(new Get());
 
-        self::assertSame([], $resource->products);
-        self::assertNull($resource->refreshedAt);
-        self::assertNull($resource->sourceStatus);
+        self::assertSame([], $resource->releaseCycles->products);
+        self::assertNull($resource->releaseCycles->refreshedAt);
+        self::assertNull($resource->releaseCycles->sourceStatus);
     }
 
     public function testItExposesTheStoredEntries(): void
@@ -71,13 +71,13 @@ final class WatchProviderTest extends TestCase
 
         $resource = $this->provider->provide(new Get());
 
-        self::assertCount(1, $resource->products);
-        self::assertSame('php', $resource->products[0]->slug);
-        self::assertSame('8.5.9', $resource->products[0]->version);
-        self::assertSame('supported', $resource->products[0]->status);
-        self::assertTrue($resource->products[0]->hasNewerPatch);
-        self::assertSame('2026-09-07T04:41:00+00:00', $resource->refreshedAt);
-        self::assertSame('ok', $resource->sourceStatus);
+        self::assertCount(1, $resource->releaseCycles->products);
+        self::assertSame('php', $resource->releaseCycles->products[0]->slug);
+        self::assertSame('8.5.9', $resource->releaseCycles->products[0]->version);
+        self::assertSame('supported', $resource->releaseCycles->products[0]->status);
+        self::assertTrue($resource->releaseCycles->products[0]->hasNewerPatch);
+        self::assertSame('2026-09-07T04:41:00+00:00', $resource->releaseCycles->refreshedAt);
+        self::assertSame('ok', $resource->releaseCycles->sourceStatus);
     }
 
     /**
@@ -94,8 +94,8 @@ final class WatchProviderTest extends TestCase
 
         $resource = $this->provider->provide(new Get());
 
-        self::assertCount(1, $resource->products);
-        self::assertSame('php', $resource->products[0]->slug);
+        self::assertCount(1, $resource->releaseCycles->products);
+        self::assertSame('php', $resource->releaseCycles->products[0]->slug);
     }
 
     public function testAPayloadWithoutProductsYieldsNoEntry(): void
@@ -104,8 +104,8 @@ final class WatchProviderTest extends TestCase
 
         $resource = $this->provider->provide(new Get());
 
-        self::assertSame([], $resource->products);
+        self::assertSame([], $resource->releaseCycles->products);
         // La date de rafraîchissement reste exposée : le snapshot existe bien.
-        self::assertNotNull($resource->refreshedAt);
+        self::assertNotNull($resource->releaseCycles->refreshedAt);
     }
 }

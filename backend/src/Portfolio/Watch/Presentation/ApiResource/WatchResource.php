@@ -24,6 +24,11 @@ use App\Portfolio\Watch\Infrastructure\ApiPlatform\WatchProvider;
  * Pas de segment {locale}, contrairement aux autres ressources publiques du
  * portfolio : une version installée est un fait, pas une traduction (D6). Les
  * libellés d'interface sont pris en charge côté frontend.
+ *
+ * **Structure par volet**, et non à plat : le second volet, les vulnérabilités
+ * connues, portera sa propre date de vérification. Grouper dès maintenant évite
+ * d'avoir à casser ce contrat pour l'accueillir, et surtout d'avoir à choisir
+ * lequel des deux instantanés une date unique décrirait.
  */
 #[ApiResource(
     shortName: 'Watch',
@@ -41,16 +46,8 @@ use App\Portfolio\Watch\Infrastructure\ApiPlatform\WatchProvider;
 )]
 final readonly class WatchResource
 {
-    /**
-     * @param list<WatchedProductResource> $products
-     * @param string|null                  $refreshedAt date du dernier rafraîchissement abouti, en UTC
-     *                                                  (ISO 8601), ou null si aucun n'a encore eu lieu
-     * @param string|null                  $sourceStatus valeur de SnapshotSourceStatus, ou null si jamais rafraîchi
-     */
     public function __construct(
-        public array $products,
-        public ?string $refreshedAt,
-        public ?string $sourceStatus,
+        public WatchReleaseCyclesResource $releaseCycles,
     ) {
     }
 }

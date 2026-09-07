@@ -3,7 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import StackPage from '../../../src/presentation/pages/StackPage.vue'
 import { WATCH_REPOSITORY } from '../../../src/application/watch/useWatch'
 import type { WatchRepository } from '../../../src/domain/watch/repositories/WatchRepository'
-import type { WatchedProduct, WatchSnapshot } from '../../../src/domain/watch/entities/WatchSnapshot'
+import type { WatchContent, WatchedProduct } from '../../../src/domain/watch/entities/WatchContent'
 import { createAppI18n } from '../../../src/presentation/i18n'
 
 const PHP: WatchedProduct = {
@@ -19,13 +19,15 @@ const PHP: WatchedProduct = {
   documentationUrl: 'https://endoflife.date/php',
 }
 
-const SNAPSHOT: WatchSnapshot = {
-  products: [PHP],
-  refreshedAt: '2026-09-07T10:47:58+00:00',
-  sourceStatus: 'ok',
+const SNAPSHOT: WatchContent = {
+  releaseCycles: {
+    products: [PHP],
+    refreshedAt: '2026-09-07T10:47:58+00:00',
+    sourceStatus: 'ok',
+  },
 }
 
-function createStubRepository(snapshot: WatchSnapshot = SNAPSHOT): WatchRepository {
+function createStubRepository(snapshot: WatchContent = SNAPSHOT): WatchRepository {
   return { get: vi.fn(async () => snapshot) }
 }
 
@@ -82,12 +84,14 @@ describe('StackPage', () => {
   it('traduit chaque statut de support', async () => {
     const wrapper = mountPage(
       createStubRepository({
-        ...SNAPSHOT,
-        products: [
-          { ...PHP, slug: 'a', status: 'eol' },
-          { ...PHP, slug: 'b', status: 'security_only' },
-          { ...PHP, slug: 'c', status: 'unknown' },
-        ],
+        releaseCycles: {
+          ...SNAPSHOT.releaseCycles,
+          products: [
+            { ...PHP, slug: 'a', status: 'eol' },
+            { ...PHP, slug: 'b', status: 'security_only' },
+            { ...PHP, slug: 'c', status: 'unknown' },
+          ],
+        },
       }),
     )
     await flushPromises()
@@ -134,8 +138,10 @@ describe('StackPage', () => {
   it('n’annonce pas de correctif quand l’installation est à jour', async () => {
     const wrapper = mountPage(
       createStubRepository({
-        ...SNAPSHOT,
-        products: [{ ...PHP, hasNewerPatch: false, latestVersion: '8.5.9' }],
+        releaseCycles: {
+          ...SNAPSHOT.releaseCycles,
+          products: [{ ...PHP, hasNewerPatch: false, latestVersion: '8.5.9' }],
+        },
       }),
     )
     await flushPromises()
@@ -162,7 +168,7 @@ describe('StackPage', () => {
    */
   it('distingue « jamais rafraîchi » d’un état sain', async () => {
     const wrapper = mountPage(
-      createStubRepository({ products: [], refreshedAt: null, sourceStatus: null }),
+      createStubRepository({ releaseCycles: { products: [], refreshedAt: null, sourceStatus: null } }),
     )
     await flushPromises()
 

@@ -77,10 +77,12 @@ final class WatchResourceTest extends WebTestCase
         self::assertResponseIsSuccessful();
 
         $payload = $this->decode($client);
-        self::assertIsArray($payload['products']);
-        self::assertCount(1, $payload['products']);
-        self::assertSame('2026-09-07T04:41:00+00:00', $payload['refreshedAt']);
-        self::assertSame('ok', $payload['sourceStatus']);
+        /** @var array<string, mixed> $releaseCycles */
+        $releaseCycles = $payload['releaseCycles'];
+        self::assertIsArray($releaseCycles['products']);
+        self::assertCount(1, $releaseCycles['products']);
+        self::assertSame('2026-09-07T04:41:00+00:00', $releaseCycles['refreshedAt']);
+        self::assertSame('ok', $releaseCycles['sourceStatus']);
     }
 
     /**
@@ -97,13 +99,15 @@ final class WatchResourceTest extends WebTestCase
         self::assertResponseIsSuccessful();
 
         $payload = $this->decode($client);
-        self::assertSame([], $payload['products']);
+        /** @var array<string, mixed> $releaseCycles */
+        $releaseCycles = $payload['releaseCycles'];
+        self::assertSame([], $releaseCycles['products']);
         // Présentes et explicitement nulles, jamais élidées : le client
         // distingue « jamais rafraîchi » sans avoir à interpréter une absence.
-        self::assertArrayHasKey('refreshedAt', $payload);
-        self::assertArrayHasKey('sourceStatus', $payload);
-        self::assertNull($payload['refreshedAt']);
-        self::assertNull($payload['sourceStatus']);
+        self::assertArrayHasKey('refreshedAt', $releaseCycles);
+        self::assertArrayHasKey('sourceStatus', $releaseCycles);
+        self::assertNull($releaseCycles['refreshedAt']);
+        self::assertNull($releaseCycles['sourceStatus']);
     }
 
     /**

@@ -1,4 +1,4 @@
-import type { WatchSnapshot } from '../../domain/watch/entities/WatchSnapshot'
+import type { WatchContent } from '../../domain/watch/entities/WatchContent'
 import type { WatchRepository } from '../../domain/watch/repositories/WatchRepository'
 import { WatchUnavailableError } from '../../domain/watch/errors/WatchUnavailableError'
 
@@ -17,13 +17,13 @@ export class HttpWatchRepository implements WatchRepository {
     this.apiBaseUrl = apiBaseUrl
   }
 
-  async get(): Promise<WatchSnapshot> {
+  async get(): Promise<WatchContent> {
     const response = await fetch(`${this.apiBaseUrl}/api/watch`, { method: 'GET' })
 
     if (!response.ok) {
       throw new WatchUnavailableError()
     }
 
-    return (await response.json()) as WatchSnapshot
+    return (await response.json()) as WatchContent
   }
 }

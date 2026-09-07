@@ -2,10 +2,10 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useWatch } from '../../application/watch/useWatch'
-import type { SupportStatus } from '../../domain/watch/entities/WatchSnapshot'
+import type { SupportStatus } from '../../domain/watch/entities/WatchContent'
 
 const { t, locale } = useI18n()
-const { snapshot, isLoading, hasError } = useWatch()
+const { content, isLoading, hasError } = useWatch()
 
 /**
  * Correspondances explicites plutôt qu'une clé construite à la volée : une
@@ -27,9 +27,10 @@ const STATUS_BADGE_CLASSES: Record<SupportStatus, string> = {
   unknown: 'text-bg-secondary',
 }
 
-const products = computed(() => snapshot.value?.products ?? [])
-const refreshedAt = computed(() => snapshot.value?.refreshedAt ?? null)
-const isPartial = computed(() => snapshot.value?.sourceStatus === 'partial')
+const releaseCycles = computed(() => content.value?.releaseCycles ?? null)
+const products = computed(() => releaseCycles.value?.products ?? [])
+const refreshedAt = computed(() => releaseCycles.value?.refreshedAt ?? null)
+const isPartial = computed(() => releaseCycles.value?.sourceStatus === 'partial')
 
 const deadlineFormatter = computed(
   () => new Intl.DateTimeFormat(locale.value, { year: 'numeric', month: 'long' }),

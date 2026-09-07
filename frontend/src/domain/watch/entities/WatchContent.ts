@@ -26,16 +26,28 @@ export interface WatchedProduct {
 }
 
 /**
- * L'instantané servi par GET /api/watch.
+ * Le volet « cycles de vie », avec sa propre fraîcheur.
  *
  * `refreshedAt` est nul tant qu'aucun rafraîchissement n'a abouti — un état
  * normal sur une installation neuve, que la page doit savoir présenter sans le
  * confondre avec une panne.
  */
-export interface WatchSnapshot {
+export interface ReleaseCyclesSnapshot {
   readonly products: readonly WatchedProduct[]
   /** Date ISO 8601 en UTC, ou null si jamais rafraîchi. */
   readonly refreshedAt: string | null
   /** « ok » ou « partial » : au moins une source avait échoué. */
   readonly sourceStatus: string | null
+}
+
+/**
+ * La réponse de GET /api/watch, structurée par volet.
+ *
+ * Le second volet — les vulnérabilités connues — portera sa propre date de
+ * vérification : les deux instantanés sont distincts et peuvent réussir ou
+ * échouer séparément. D'où le groupement, plutôt qu'une date unique à la racine
+ * qui ne pourrait décrire que l'un des deux.
+ */
+export interface WatchContent {
+  readonly releaseCycles: ReleaseCyclesSnapshot
 }

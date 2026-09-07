@@ -10,6 +10,7 @@ use App\Portfolio\Watch\Domain\Repository\WatchSnapshotRepositoryInterface;
 use App\Portfolio\Watch\Domain\ValueObject\SupportStatus;
 use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
 use App\Portfolio\Watch\Presentation\ApiResource\WatchedProductResource;
+use App\Portfolio\Watch\Presentation\ApiResource\WatchReleaseCyclesResource;
 use App\Portfolio\Watch\Presentation\ApiResource\WatchResource;
 
 /**
@@ -38,17 +39,17 @@ final readonly class WatchProvider implements ProviderInterface
         $snapshot = $this->snapshotRepository->findOneByType(WatchSnapshotType::RELEASE_CYCLES);
 
         if (null === $snapshot) {
-            return new WatchResource([], null, null);
+            return new WatchResource(new WatchReleaseCyclesResource([], null, null));
         }
 
-        return new WatchResource(
+        return new WatchResource(new WatchReleaseCyclesResource(
             $this->productsFrom($snapshot->getPayload()),
             // Exposée en UTC : le contrat de l'API ne doit pas dépendre du
             // date.timezone du conteneur, qui pourrait changer sans que
             // personne n'y voie un changement d'interface.
             $snapshot->getRefreshedAt()->setTimezone(new \DateTimeZone('UTC'))->format(\DATE_ATOM),
             $snapshot->getSourceStatus()->value,
-        );
+        ));
     }
 
     /**
