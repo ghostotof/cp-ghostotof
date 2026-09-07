@@ -459,7 +459,14 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   *runs*, not that it compiled (v0.7.0 took four pipeline runs to reach production). The body is the
   annotated tag's message minus its first line, which becomes the title; a tag with only a subject
   falls back to GitHub's generated notes. So write the real notes into `git tag -a`, not afterwards
-  into the GitHub UI — otherwise the automation publishes a thin release.
+  into the GitHub UI — otherwise the automation publishes a thin release. **Tag with
+  `--cleanup=verbatim`**: git's default cleanup for tag messages strips every line starting with
+  `#`, so Markdown headings silently vanish between the file and the tag. v0.7.1 lost all three of
+  its section headings that way, and the release had to be edited afterwards to restore them.
+
+  ```bash
+  git tag -a vX.Y.Z --cleanup=verbatim -F notes.md
+  ```
 - **A reused Git tag serves a stale image.** Pods default to `imagePullPolicy: IfNotPresent`, and a
   Git tag is mutable: re-cutting `vX.Y.Z` after a failed release makes the node reuse the image it
   already cached under that name. Release v0.7.0 spent two pipeline runs on this — a migration fix
