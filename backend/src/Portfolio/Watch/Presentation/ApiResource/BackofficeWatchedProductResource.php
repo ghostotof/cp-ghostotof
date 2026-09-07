@@ -12,6 +12,7 @@ use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use App\Portfolio\Watch\Infrastructure\ApiPlatform\BackofficeWatchedProductProcessor;
 use App\Portfolio\Watch\Infrastructure\ApiPlatform\BackofficeWatchedProductProvider;
+use App\Portfolio\Watch\Infrastructure\Validator\WatchedProductSlugExists;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -36,6 +37,12 @@ use Symfony\Component\Validator\Constraints as Assert;
         new Post(
             uriTemplate: '/backoffice/watch/products',
             processor: BackofficeWatchedProductProcessor::class,
+            // La vérification du slug auprès du fournisseur n'a lieu qu'ici.
+            // Le slug étant immuable, la refaire à chaque modification
+            // n'apprendrait rien — et bloquerait l'édition d'une entrée dont le
+            // produit aurait été retiré du catalogue entre-temps, ce qui arrive
+            // (produits fusionnés ou renommés).
+            validationContext: ['groups' => ['Default', self::CREATION_GROUP]],
         ),
         new Put(
             uriTemplate: '/backoffice/watch/products/{id}',
@@ -52,6 +59,9 @@ use Symfony\Component\Validator\Constraints as Assert;
 )]
 final class BackofficeWatchedProductResource
 {
+    /** Groupe de validation appliqué à la seule création (cf. l'opération Post). */
+    public const string CREATION_GROUP = 'watched_product:create';
+
     public function __construct(
         public ?int $id = null,
         /**
@@ -66,6 +76,7 @@ final class BackofficeWatchedProductResource
             pattern: '/^[a-z0-9][a-z0-9.-]*$/',
             message: 'Le slug ne peut contenir que des minuscules, des chiffres, des tirets et des points.',
         )]
+        #[WatchedProductSlugExists(groups: [self::CREATION_GROUP])]
         public string $slug = '',
         #[Assert\NotBlank]
         #[Assert\Length(max: 100)]

@@ -42,6 +42,13 @@ final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
     private const float MAX_DURATION_SECONDS = 10.0;
 
     /**
+     * Borne de la simple vérification d'existence (décision D10). Plus courte
+     * que celle du rafraîchissement : un humain attend devant son formulaire,
+     * et mieux vaut renoncer à vérifier que le faire patienter.
+     */
+    private const float VERIFICATION_TIMEOUT_SECONDS = 2.0;
+
+    /**
      * Le fournisseur demande un User-Agent identifiable. On y met de quoi nous
      * joindre — le dépôt public, jamais le domaine de production.
      */
@@ -83,6 +90,36 @@ final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
         }
 
         return $this->mapProduct($slug, $payload);
+    }
+
+    public function supportsProduct(string $slug): bool
+    {
+        try {
+            $response = $this->httpClient->request('GET', self::BASE_URL.rawurlencode($slug).'/', [
+                'timeout' => self::VERIFICATION_TIMEOUT_SECONDS,
+                'max_duration' => self::VERIFICATION_TIMEOUT_SECONDS,
+                'headers' => [
+                    'Accept' => 'application/json',
+                    'User-Agent' => self::USER_AGENT,
+                ],
+            ]);
+
+            // getStatusCode() n'attend que les en-têtes : le corps de la
+            // réponse n'est jamais téléchargé, on n'a besoin que du verdict.
+            $statusCode = $response->getStatusCode();
+        } catch (HttpClientExceptionInterface $exception) {
+            throw ReleaseCycleSourceUnavailableException::forTransportFailure($slug, $exception);
+        }
+
+        if (Response::HTTP_NOT_FOUND === $statusCode) {
+            return false;
+        }
+
+        if (Response::HTTP_OK !== $statusCode) {
+            throw ReleaseCycleSourceUnavailableException::forUnexpectedStatus($slug, $statusCode);
+        }
+
+        return true;
     }
 
     /**

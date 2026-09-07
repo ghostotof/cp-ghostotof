@@ -32,3 +32,24 @@ services:
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
+
+when@test:
+    services:
+        _defaults:
+            autowire: true
+            autoconfigure: true
+
+        # Seule source d'appels sortants de l'application, rendue publique en
+        # test pour que les tests fonctionnels puissent la remplacer.
+        #
+        # C'est bien la classe concrète qu'il faut viser, pas l'alias
+        # ReleaseCycleSourceInterface : un service privé n'ayant qu'un
+        # consommateur est « inliné » à la compilation, si bien que
+        # TestContainer::set() sur l'alias reste sans effet. Rendre l'alias
+        # public ne suffit pas — la référence injectée pointe sur la classe.
+        #
+        # Sans cela, un test croirait simuler le fournisseur tout en l'appelant
+        # réellement : il passerait, et la CI casserait au premier incident chez
+        # le tiers.
+        App\Portfolio\Watch\Infrastructure\Http\EndOfLifeDateClient:
+            public: true

@@ -210,6 +210,69 @@ final class EndOfLifeDateClientTest extends TestCase
         self::assertCount(2, $product->cycles);
     }
 
+    public function testItConfirmsAKnownProductExists(): void
+    {
+        self::assertTrue($this->client(new MockResponse(self::PHP_PAYLOAD))->supportsProduct('php'));
+    }
+
+    public function testItReportsAnUnknownProductAsAbsent(): void
+    {
+        $client = $this->client(new MockResponse('{"message":"not found"}', ['http_code' => 404]));
+
+        self::assertFalse($client->supportsProduct('phpp'));
+    }
+
+    /**
+     * « Ce produit n'existe pas » et « je n'ai pas pu vérifier » sont deux
+     * réponses différentes. Retourner `false` dans le second cas ferait rejeter
+     * une saisie correcte à la première indisponibilité du fournisseur.
+     */
+    public function testAnUndecidableVerificationRaisesRatherThanReturningFalse(): void
+    {
+        $client = $this->client(new MockResponse('', ['http_code' => 503]));
+
+        $this->expectException(ReleaseCycleSourceUnavailableException::class);
+
+        $client->supportsProduct('php');
+    }
+
+    public function testATransportFailureDuringVerificationRaises(): void
+    {
+        $client = $this->client(static function (): MockResponse {
+            throw new TransportException('Idle timeout reached');
+        });
+
+        $this->expectException(ReleaseCycleSourceUnavailableException::class);
+
+        $client->supportsProduct('php');
+    }
+
+    /**
+     * La vérification s'exécute pendant qu'un humain attend devant un
+     * formulaire : sa borne doit être plus serrée que celle du rafraîchissement,
+     * qui tourne dans un travail planifié.
+     */
+    public function testVerificationIsBoundedMoreTightlyThanRefreshing(): void
+    {
+        $verificationOptions = [];
+        $refreshOptions = [];
+
+        $client = $this->client(function (string $method, string $url, array $options) use (&$verificationOptions, &$refreshOptions): MockResponse {
+            if ([] === $verificationOptions) {
+                $verificationOptions = $options;
+            } else {
+                $refreshOptions = $options;
+            }
+
+            return new MockResponse(self::PHP_PAYLOAD);
+        });
+
+        $client->supportsProduct('php');
+        $client->fetchProduct('php');
+
+        self::assertLessThan($refreshOptions['max_duration'], $verificationOptions['max_duration']);
+    }
+
     /**
      * Une entrée illisible au milieu d'une réponse par ailleurs valide est
      * ignorée, pas fatale : mieux vaut afficher quatre cycles sur cinq qu'une

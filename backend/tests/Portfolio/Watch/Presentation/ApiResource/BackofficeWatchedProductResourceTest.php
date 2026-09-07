@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Tests\Portfolio\Watch\Presentation\ApiResource;
 
 use App\Portfolio\Watch\Application\WatchedProductAdministratorInterface;
+use App\Portfolio\Watch\Domain\Exception\ReleaseCycleSourceUnavailableException;
+use App\Portfolio\Watch\Domain\Service\ReleaseCycleSourceInterface;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
+use App\Portfolio\Watch\Infrastructure\Http\EndOfLifeDateClient;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
@@ -68,6 +71,7 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
         $client = self::createClient();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $this->stubSlugVerification($client);
 
         $client->getContainer()->get(WatchedProductAdministratorInterface::class)
             ->create('postgresql', 'PostgreSQL', VersionSource::MANUAL, '18.4', 0);
@@ -172,6 +176,7 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
         $client = self::createClient();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $this->stubSlugVerification($client);
 
         $client->request('POST', '/api/backoffice/watch/products', server: [
             'CONTENT_TYPE' => 'application/json',
@@ -188,6 +193,66 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
     }
 
     /**
+     * Décision D10 : un slug absent du catalogue est signalé sur le champ, tout
+     * de suite, plutôt que de produire une ligne « inconnue » que l'auteur ne
+     * découvrirait qu'au prochain rafraîchissement.
+     */
+    public function testASlugAbsentFromTheProviderCatalogIsRejected(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $this->stubSlugVerification($client, slugExists: false);
+
+        $client->request('POST', '/api/backoffice/watch/products', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody([
+            'slug' => 'phpp',
+            'label' => 'PHP (typo)',
+            'versionSource' => 'manual',
+            'version' => '8.5.9',
+            'position' => 0,
+        ]));
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertStringContainsString('phpp', (string) $client->getResponse()->getContent());
+    }
+
+    /**
+     * Le test qui porte vraiment D10 : le fournisseur est injoignable, donc la
+     * vérification n'aboutit pas — et l'enregistrement passe quand même. Une
+     * panne chez un tiers ne doit jamais empêcher d'administrer son propre
+     * site, d'autant qu'un slug fautif se limiterait à une ligne affichée
+     * « inconnue », réparable à tout moment.
+     */
+    public function testAnUnreachableProviderDoesNotBlockAdministration(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+
+        $source = self::createStub(ReleaseCycleSourceInterface::class);
+        $source->method('supportsProduct')->willThrowException(
+            ReleaseCycleSourceUnavailableException::forUnexpectedStatus('postgresql', 503),
+        );
+        $this->replaceReleaseCycleSource($client, $source);
+
+        $client->request('POST', '/api/backoffice/watch/products', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody([
+            'slug' => 'postgresql',
+            'label' => 'PostgreSQL',
+            'versionSource' => 'manual',
+            'version' => '18.4',
+            'position' => 0,
+        ]));
+
+        self::assertResponseIsSuccessful();
+    }
+
+    /**
      * Le pendant : une source runtime n'accepte pas de version saisie. Une
      * chaîne vide venue du formulaire est normalisée en `null` et passe donc
      * sans erreur — c'est exactement ce que l'auteur voulait exprimer.
@@ -197,6 +262,7 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
         $client = self::createClient();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $this->stubSlugVerification($client);
 
         $client->request('POST', '/api/backoffice/watch/products', server: [
             'CONTENT_TYPE' => 'application/json',
@@ -219,6 +285,7 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
         $client = self::createClient();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $this->stubSlugVerification($client);
 
         $client->request('POST', '/api/backoffice/watch/products', server: [
             'CONTENT_TYPE' => 'application/json',
@@ -232,6 +299,42 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
         ]));
 
         self::assertResponseStatusCodeSame(422);
+    }
+
+    /**
+     * Substitue la source de cycles de vie pour que la validation du slug (D10)
+     * ne sorte jamais sur le réseau.
+     *
+     * La substitution vise l'id de la **classe concrète**, et non l'alias
+     * ReleaseCycleSourceInterface : c'est la classe que le conteneur injecte
+     * réellement, l'alias n'étant qu'un panneau indicateur résolu à la
+     * compilation. Le double reste, lui, un doublon de l'interface — c'est le
+     * type que déclare le consommateur.
+     *
+     * Le premier jet de ces tests substituait `http_client` : sans effet, car
+     * un service privé à consommateur unique est « inliné ». Ils simulaient
+     * donc le fournisseur tout en l'appelant pour de bon — ils passaient, et la
+     * CI aurait cassé au premier incident chez le tiers. La classe est rendue
+     * publique sous `when@test` (config/services.yaml) pour éviter cet inlining.
+     */
+    private function stubSlugVerification(KernelBrowser $client, bool $slugExists = true): void
+    {
+        $source = self::createStub(ReleaseCycleSourceInterface::class);
+        $source->method('supportsProduct')->willReturn($slugExists);
+
+        $this->replaceReleaseCycleSource($client, $source);
+    }
+
+    /**
+     * `disableReboot()` est indispensable : par défaut KernelBrowser redémarre
+     * le noyau entre deux requêtes, ce qui reconstruit le conteneur et jette le
+     * service substitué. Sans lui, le double est bien enregistré puis
+     * silencieusement remplacé par le vrai client au moment de la requête.
+     */
+    private function replaceReleaseCycleSource(KernelBrowser $client, ReleaseCycleSourceInterface $source): void
+    {
+        $client->disableReboot();
+        $client->getContainer()->set(EndOfLifeDateClient::class, $source);
     }
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string

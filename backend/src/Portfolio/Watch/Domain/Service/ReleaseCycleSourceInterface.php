@@ -23,4 +23,19 @@ interface ReleaseCycleSourceInterface
      * @throws ReleaseCycleSourceUnavailableException si la source est injoignable ou illisible
      */
     public function fetchProduct(string $slug): ProductReleaseCycles;
+
+    /**
+     * Vérifie l'existence d'un produit au catalogue, sans en rapporter les
+     * cycles. Bornée par un délai plus court que `fetchProduct` : elle est
+     * appelée pendant qu'un humain attend devant un formulaire, là où le
+     * rafraîchissement s'exécute dans un travail planifié.
+     *
+     * Lève plutôt que de retourner `false` quand la question reste sans
+     * réponse : « ce produit n'existe pas » et « je n'ai pas pu vérifier » sont
+     * deux informations différentes, et les confondre ferait rejeter une saisie
+     * correcte à la première indisponibilité du fournisseur.
+     *
+     * @throws ReleaseCycleSourceUnavailableException si la vérification n'a pas pu aboutir
+     */
+    public function supportsProduct(string $slug): bool;
 }
