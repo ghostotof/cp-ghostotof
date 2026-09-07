@@ -27,6 +27,7 @@ api_platform:
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException: 409
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException: 404
         App\Portfolio\Contribution\Domain\Exception\ContributionNotFoundException: 404
+        App\Portfolio\Incident\Domain\Exception\IncidentNotFoundException: 404
         # Point d'audit I3 : remplace un mapping `ValueError: 404` fourre-tout.
         # Celui-ci déguisait en « 404 Not Found » *toute* ValueError levée dans
         # la pile HTTP, y compris un bug sans rapport avec la locale — un vrai
