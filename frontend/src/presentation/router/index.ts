@@ -30,6 +30,7 @@ const AboutPage = () => import('../pages/AboutPage.vue')
 const ExperiencePage = () => import('../pages/ExperiencePage.vue')
 const ContributionsPage = () => import('../pages/ContributionsPage.vue')
 const IncidentsPage = () => import('../pages/IncidentsPage.vue')
+const StackPage = () => import('../pages/StackPage.vue')
 const ContactPage = () => import('../pages/ContactPage.vue')
 const LoginPage = () => import('../pages/LoginPage.vue')
 const SetPasswordPage = () => import('../pages/SetPasswordPage.vue')
@@ -87,6 +88,12 @@ export const router = createRouter({
           name: 'incidents',
           component: IncidentsPage,
           meta: { titleKey: 'seo.incidents.title', descriptionKey: 'seo.incidents.description' },
+        },
+        {
+          path: 'stack',
+          name: 'stack',
+          component: StackPage,
+          meta: { titleKey: 'seo.stack.title', descriptionKey: 'seo.stack.description' },
         },
         {
           path: 'experience',

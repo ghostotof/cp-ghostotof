@@ -408,6 +408,10 @@
       "title": "Incidents et invariants",
       "description": "Pannes de production de ce projet, causes racines et règles qui en sont sorties."
     },
+    "stack": {
+      "title": "Ma stack, en vie",
+      "description": "Versions installées de ce site et leurs échéances de support, relevées chaque jour auprès d'endoflife.date."
+    },
     "adminIncidents": {
       "title": "Administration — Incidents",
       "description": "Gestion du journal des incidents de production."
@@ -432,6 +436,32 @@
       "rootCause": "Cause racine",
       "resolution": "Résolution",
       "invariant": "Invariant"
+    }
+  },
+  "stack": {
+    "eyebrow": "Ma stack, en vie",
+    "intro": "Les versions qui font tourner ce site, confrontées chaque jour aux dates de fin de support publiées par endoflife.date. Rien n'est saisi à la main ici : les versions de PHP et de Symfony sont lues dans le processus qui vous sert cette page.",
+    "loading": "Chargement de la veille technique…",
+    "error": "L'état de la veille n'a pas pu être chargé. Réessayez plus tard.",
+    "neverRefreshed": "Aucun rafraîchissement n'a encore abouti : les données seront disponibles après la prochaine exécution planifiée.",
+    "partial": "Rafraîchissement partiel : au moins une source n'a pas répondu. Les entrées concernées datent du relevé précédent.",
+    "refreshed": "relevé du {date}",
+    "source": "Source : endoflife.date",
+    "tableCaption": "Versions installées et échéances de support de la stack de ce site.",
+    "patchAvailable": "correctif disponible",
+    "columns": {
+      "product": "Produit",
+      "version": "Version installée",
+      "status": "Statut",
+      "activeSupport": "Support actif jusqu'à",
+      "eol": "Fin de vie",
+      "latest": "Dernier correctif"
+    },
+    "status": {
+      "supported": "Supporté",
+      "securityOnly": "Sécurité uniquement",
+      "eol": "Fin de vie",
+      "unknown": "Inconnu"
     }
   }
 }

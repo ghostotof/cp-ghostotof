@@ -26,6 +26,8 @@ import { ADMIN_INCIDENT_REPOSITORY } from './application/admin/incidents/useAdmi
 import { HttpAdminIncidentRepository } from './infrastructure/admin/incidents/HttpAdminIncidentRepository'
 import { HttpContributionRepository } from './infrastructure/contributions/HttpContributionRepository'
 import { INCIDENT_REPOSITORY } from './application/incidents/useIncidents'
+import { WATCH_REPOSITORY } from './application/watch/useWatch'
+import { HttpWatchRepository } from './infrastructure/watch/HttpWatchRepository'
 import { HttpIncidentRepository } from './infrastructure/incidents/HttpIncidentRepository'
 import { ADMIN_ABOUT_SETTINGS_REPOSITORY } from './application/admin/about/useAdminAboutSettings'
 import { HttpAdminAboutSettingsRepository } from './infrastructure/admin/about/HttpAdminAboutSettingsRepository'
@@ -58,6 +60,7 @@ app.provide(ABOUT_CONTENT_REPOSITORY, new HttpAboutContentRepository(apiUrl))
 app.provide(QUALITY_CONTENT_REPOSITORY, new HttpQualityContentRepository(apiUrl))
 app.provide(CONTRIBUTION_REPOSITORY, new HttpContributionRepository(apiUrl))
 app.provide(INCIDENT_REPOSITORY, new HttpIncidentRepository(apiUrl))
+app.provide(WATCH_REPOSITORY, new HttpWatchRepository(apiUrl))
 app.provide(ADMIN_CONTRIBUTION_REPOSITORY, new HttpAdminContributionRepository(apiUrl))
 app.provide(ADMIN_INCIDENT_REPOSITORY, new HttpAdminIncidentRepository(apiUrl))
 app.provide(ADMIN_ABOUT_SETTINGS_REPOSITORY, new HttpAdminAboutSettingsRepository(apiUrl))

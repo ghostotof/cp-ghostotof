@@ -1,0 +1,41 @@
+/**
+ * État de maintenance d'une version installée, tel que le backend le calcule.
+ *
+ * `unknown` n'est pas une valeur de repli commode : elle dit que la version
+ * n'a été retrouvée dans aucun cycle publié. L'afficher comme telle vaut mieux
+ * que de laisser croire à une fin de vie.
+ */
+export type SupportStatus = 'supported' | 'security_only' | 'eol' | 'unknown'
+
+/** Une ligne du radar : un produit de la stack et ses échéances de support. */
+export interface WatchedProduct {
+  readonly slug: string
+  readonly label: string
+  /** Version installée. Nulle si le backend n'a pas su la déterminer. */
+  readonly version: string | null
+  readonly status: SupportStatus
+  /** Cycle de vie auquel appartient la version installée, ex. « 8.5 ». */
+  readonly cycle: string | null
+  /** Dates de calendrier (AAAA-MM-JJ), sans heure ni fuseau. */
+  readonly endOfActiveSupportFrom: string | null
+  readonly eolFrom: string | null
+  /** Dernier correctif publié sur le cycle, ex. « 8.5.10 ». */
+  readonly latestVersion: string | null
+  readonly hasNewerPatch: boolean
+  readonly documentationUrl: string | null
+}
+
+/**
+ * L'instantané servi par GET /api/watch.
+ *
+ * `refreshedAt` est nul tant qu'aucun rafraîchissement n'a abouti — un état
+ * normal sur une installation neuve, que la page doit savoir présenter sans le
+ * confondre avec une panne.
+ */
+export interface WatchSnapshot {
+  readonly products: readonly WatchedProduct[]
+  /** Date ISO 8601 en UTC, ou null si jamais rafraîchi. */
+  readonly refreshedAt: string | null
+  /** « ok » ou « partial » : au moins une source avait échoué. */
+  readonly sourceStatus: string | null
+}

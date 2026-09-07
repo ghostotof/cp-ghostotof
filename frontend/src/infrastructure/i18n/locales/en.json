@@ -408,6 +408,10 @@
       "title": "Incidents and invariants",
       "description": "This project's production outages, root causes and the rules that came out of them."
     },
+    "stack": {
+      "title": "My stack, alive",
+      "description": "Installed versions of this site and their support deadlines, checked daily against endoflife.date."
+    },
     "adminIncidents": {
       "title": "Administration — Incidents",
       "description": "Manage the production incident log."
@@ -432,6 +436,32 @@
       "rootCause": "Root cause",
       "resolution": "Resolution",
       "invariant": "Invariant"
+    }
+  },
+  "stack": {
+    "eyebrow": "My stack, alive",
+    "intro": "The versions running this site, checked daily against the end-of-support dates published by endoflife.date. Nothing here is typed in by hand: the PHP and Symfony versions are read from the very process serving you this page.",
+    "loading": "Loading technology watch…",
+    "error": "The watch data could not be loaded. Please try again later.",
+    "neverRefreshed": "No refresh has completed yet: data will appear after the next scheduled run.",
+    "partial": "Partial refresh: at least one source did not answer. The affected entries come from the previous reading.",
+    "refreshed": "reading from {date}",
+    "source": "Source: endoflife.date",
+    "tableCaption": "Installed versions and support deadlines for this site's stack.",
+    "patchAvailable": "patch available",
+    "columns": {
+      "product": "Product",
+      "version": "Installed version",
+      "status": "Status",
+      "activeSupport": "Active support until",
+      "eol": "End of life",
+      "latest": "Latest patch"
+    },
+    "status": {
+      "supported": "Supported",
+      "securityOnly": "Security fixes only",
+      "eol": "End of life",
+      "unknown": "Unknown"
     }
   }
 }
