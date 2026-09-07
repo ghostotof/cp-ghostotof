@@ -500,6 +500,16 @@
       "securityOnly": "Security fixes only",
       "eol": "End of life",
       "unknown": "Unknown"
+    },
+    "vulnerabilities": {
+      "title": "Known vulnerabilities",
+      "healthyBadge": "Clear",
+      "healthy": "No known vulnerability across the {scanned} deployed packages.",
+      "affected": "known vulnerability across the {scanned} deployed packages. | known vulnerabilities across the {scanned} deployed packages.",
+      "notScanned": "Scan not performed: the list of deployed packages is not available here. Nothing can be concluded from it — which is not the same as “no vulnerability”.",
+      "detailRestricted": "The details — identifiers, affected packages, fixed versions — are only visible in administration: publishing them would amount to documenting this site's weaknesses.",
+      "source": "Source: OSV.dev",
+      "checkedAt": "checked on {date}"
     }
   }
 }

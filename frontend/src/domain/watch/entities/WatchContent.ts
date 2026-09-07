@@ -41,13 +41,31 @@ export interface ReleaseCyclesSnapshot {
 }
 
 /**
+ * Le volet « vulnérabilités », réduit à un décompte.
+ *
+ * Le détail — identifiants, paquets touchés, versions correctives — existe côté
+ * serveur mais n'est servi qu'à l'administration : le publier reviendrait à
+ * tendre au premier venu la carte des faiblesses du site.
+ *
+ * `packagesScanned` vaut null quand aucune analyse n'a eu lieu. C'est ce qui
+ * distingue « rien trouvé » de « rien cherché », et empêche la page d'afficher
+ * un zéro rassurant que personne n'a vérifié.
+ */
+export interface VulnerabilitiesSnapshot {
+  readonly packagesScanned: number | null
+  readonly affectedCount: number
+  /** Date ISO 8601 en UTC, ou null si aucune analyse n'a abouti. */
+  readonly checkedAt: string | null
+}
+
+/**
  * La réponse de GET /api/watch, structurée par volet.
  *
- * Le second volet — les vulnérabilités connues — portera sa propre date de
- * vérification : les deux instantanés sont distincts et peuvent réussir ou
- * échouer séparément. D'où le groupement, plutôt qu'une date unique à la racine
- * qui ne pourrait décrire que l'un des deux.
+ * Chaque volet porte sa propre date : les deux instantanés sont distincts et
+ * peuvent réussir ou échouer séparément. D'où le groupement, plutôt qu'une date
+ * unique à la racine qui ne pourrait décrire que l'un des deux.
  */
 export interface WatchContent {
   readonly releaseCycles: ReleaseCyclesSnapshot
+  readonly vulnerabilities: VulnerabilitiesSnapshot
 }

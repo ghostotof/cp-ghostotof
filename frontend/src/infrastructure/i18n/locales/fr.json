@@ -500,6 +500,16 @@
       "securityOnly": "Sécurité uniquement",
       "eol": "Fin de vie",
       "unknown": "Inconnu"
+    },
+    "vulnerabilities": {
+      "title": "Vulnérabilités connues",
+      "healthyBadge": "Sain",
+      "healthy": "Aucune vulnérabilité connue sur les {scanned} paquets déployés.",
+      "affected": "vulnérabilité connue sur les {scanned} paquets déployés. | vulnérabilités connues sur les {scanned} paquets déployés.",
+      "notScanned": "Analyse non effectuée : le périmètre des paquets déployés n'est pas disponible ici. Aucune conclusion ne peut en être tirée — ce n'est pas la même chose que « aucune vulnérabilité ».",
+      "detailRestricted": "Le détail — identifiants, paquets concernés, versions correctives — n'est consultable qu'en administration : le publier reviendrait à documenter les faiblesses de ce site.",
+      "source": "Source : OSV.dev",
+      "checkedAt": "vérifié le {date}"
     }
   }
 }

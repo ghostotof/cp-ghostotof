@@ -25,6 +25,11 @@ const SNAPSHOT: WatchContent = {
     refreshedAt: '2026-09-07T10:47:58+00:00',
     sourceStatus: 'ok',
   },
+  vulnerabilities: {
+    packagesScanned: 99,
+    affectedCount: 0,
+    checkedAt: '2026-09-07T10:47:58+00:00',
+  },
 }
 
 function createStubRepository(snapshot: WatchContent = SNAPSHOT): WatchRepository {
@@ -84,6 +89,7 @@ describe('StackPage', () => {
   it('traduit chaque statut de support', async () => {
     const wrapper = mountPage(
       createStubRepository({
+        ...SNAPSHOT,
         releaseCycles: {
           ...SNAPSHOT.releaseCycles,
           products: [
@@ -138,6 +144,7 @@ describe('StackPage', () => {
   it('n’annonce pas de correctif quand l’installation est à jour', async () => {
     const wrapper = mountPage(
       createStubRepository({
+        ...SNAPSHOT,
         releaseCycles: {
           ...SNAPSHOT.releaseCycles,
           products: [{ ...PHP, hasNewerPatch: false, latestVersion: '8.5.9' }],
@@ -168,7 +175,10 @@ describe('StackPage', () => {
    */
   it('distingue « jamais rafraîchi » d’un état sain', async () => {
     const wrapper = mountPage(
-      createStubRepository({ releaseCycles: { products: [], refreshedAt: null, sourceStatus: null } }),
+      createStubRepository({
+        ...SNAPSHOT,
+        releaseCycles: { products: [], refreshedAt: null, sourceStatus: null },
+      }),
     )
     await flushPromises()
 
@@ -206,6 +216,7 @@ describe('StackPage', () => {
     it('met en évidence une échéance proche', async () => {
       const wrapper = mountPage(
         createStubRepository({
+          ...SNAPSHOT,
           releaseCycles: {
             ...SNAPSHOT.releaseCycles,
             products: [{ ...PHP, eolFrom: '2027-01-31' }],
@@ -222,6 +233,83 @@ describe('StackPage', () => {
       await flushPromises()
 
       expect(wrapper.find('tbody .text-warning').exists()).toBe(false)
+    })
+  })
+
+  /**
+   * Trois états à ne jamais confondre. Le plus dangereux est le troisième :
+   * afficher « aucune vulnérabilité » sans avoir cherché serait le mensonge le
+   * plus confortable de cette page.
+   */
+  describe('vulnérabilités', () => {
+    it('annonce un périmètre sain sans laisser croire à une absence d’analyse', async () => {
+      const wrapper = mountPage()
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Aucune vulnérabilité connue sur les 99 paquets')
+    })
+
+    it('signale les vulnérabilités trouvées dans une région annoncée', async () => {
+      const wrapper = mountPage(
+        createStubRepository({
+          ...SNAPSHOT,
+          vulnerabilities: { packagesScanned: 99, affectedCount: 3, checkedAt: '2026-09-07T10:47:58+00:00' },
+        }),
+      )
+      await flushPromises()
+
+      expect(wrapper.find('[role="status"]').text()).toContain('vulnérabilités connues')
+      expect(wrapper.find('.badge.text-bg-danger').text()).toBe('3')
+    })
+
+    /**
+     * Le singulier n'est pas un détail de style : « 1 vulnérabilités connues »
+     * décrédibiliserait toute la page.
+     */
+    it('accorde le message au singulier', async () => {
+      const wrapper = mountPage(
+        createStubRepository({
+          ...SNAPSHOT,
+          vulnerabilities: { packagesScanned: 99, affectedCount: 1, checkedAt: null },
+        }),
+      )
+      await flushPromises()
+
+      expect(wrapper.find('[role="status"]').text()).toContain('vulnérabilité connue')
+      expect(wrapper.find('[role="status"]').text()).not.toContain('vulnérabilités')
+    })
+
+    /**
+     * Le cas qui justifie tout le dispositif : sans manifeste, aucune analyse
+     * n'a eu lieu. La page doit le dire, et surtout ne pas afficher un zéro.
+     */
+    it('distingue « analyse non effectuée » d’un périmètre sain', async () => {
+      const wrapper = mountPage(
+        createStubRepository({
+          ...SNAPSHOT,
+          vulnerabilities: { packagesScanned: null, affectedCount: 0, checkedAt: null },
+        }),
+      )
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Analyse non effectuée')
+      expect(wrapper.text()).not.toContain('Aucune vulnérabilité connue')
+    })
+
+    /**
+     * Expliquer pourquoi on ne montre qu'un chiffre vaut mieux que de laisser
+     * croire à un oubli — et c'est le compromis lui-même qui a de la valeur.
+     */
+    it('explique pourquoi le détail n’est pas public', async () => {
+      const wrapper = mountPage(
+        createStubRepository({
+          ...SNAPSHOT,
+          vulnerabilities: { packagesScanned: 99, affectedCount: 2, checkedAt: null },
+        }),
+      )
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('administration')
     })
   })
 

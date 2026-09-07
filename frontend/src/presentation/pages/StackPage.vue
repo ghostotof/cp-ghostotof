@@ -28,6 +28,19 @@ const STATUS_BADGE_CLASSES: Record<SupportStatus, string> = {
 }
 
 const releaseCycles = computed(() => content.value?.releaseCycles ?? null)
+const vulnerabilities = computed(() => content.value?.vulnerabilities ?? null)
+
+/**
+ * Trois états, à ne surtout pas confondre : l'analyse n'a pas eu lieu, elle
+ * n'a rien trouvé, ou elle a trouvé. Le premier ressemble au deuxième si on
+ * n'y prend pas garde, et afficher « aucune vulnérabilité » sans avoir cherché
+ * serait le mensonge le plus confortable de cette page.
+ */
+const vulnerabilityState = computed<'unscanned' | 'healthy' | 'affected'>(() => {
+  if (null === vulnerabilities.value || null === vulnerabilities.value.packagesScanned) return 'unscanned'
+
+  return vulnerabilities.value.affectedCount > 0 ? 'affected' : 'healthy'
+})
 const products = computed(() => releaseCycles.value?.products ?? [])
 const refreshedAt = computed(() => releaseCycles.value?.refreshedAt ?? null)
 const isPartial = computed(() => releaseCycles.value?.sourceStatus === 'partial')
@@ -152,8 +165,54 @@ function isImminent(isoDate: string | null): boolean {
       {{ t('stack.neverRefreshed') }}
     </p>
 
+    <!-- Volet vulnérabilités : un décompte, jamais le détail (décision D4).
+         Le dire explicitement vaut mieux que de laisser croire à un oubli. -->
     <div
-      v-else
+      v-if="!isLoading && !hasError && vulnerabilities"
+      class="surface-panel p-3 p-sm-4"
+    >
+      <h2 class="h6 fw-bold text-white mb-2">
+        {{ t('stack.vulnerabilities.title') }}
+      </h2>
+
+      <p
+        v-if="'unscanned' === vulnerabilityState"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('stack.vulnerabilities.notScanned') }}
+      </p>
+
+      <template v-else-if="'healthy' === vulnerabilityState">
+        <p class="mb-0">
+          <span class="badge text-bg-success me-2">{{ t('stack.vulnerabilities.healthyBadge') }}</span>
+          {{ t('stack.vulnerabilities.healthy', { scanned: vulnerabilities.packagesScanned }) }}
+        </p>
+      </template>
+
+      <template v-else>
+        <p
+          class="mb-1"
+          role="status"
+        >
+          <span class="badge text-bg-danger me-2">{{ vulnerabilities.affectedCount }}</span>
+          {{ t('stack.vulnerabilities.affected', { count: vulnerabilities.affectedCount, scanned: vulnerabilities.packagesScanned }, vulnerabilities.affectedCount) }}
+        </p>
+        <p class="form-text mb-0">
+          {{ t('stack.vulnerabilities.detailRestricted') }}
+        </p>
+      </template>
+
+      <p
+        v-if="vulnerabilities.checkedAt"
+        class="text-body-secondary small mb-0 mt-2"
+      >
+        {{ t('stack.vulnerabilities.source') }} ·
+        <time :datetime="vulnerabilities.checkedAt">{{ t('stack.vulnerabilities.checkedAt', { date: formatRefreshedAt(vulnerabilities.checkedAt) }) }}</time>
+      </p>
+    </div>
+
+    <div
+      v-if="!isLoading && !hasError && refreshedAt !== null"
       class="surface-panel p-3 p-sm-4"
     >
       <p
