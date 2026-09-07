@@ -8,23 +8,30 @@ use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Domain\Entity\WatchSnapshot;
 use App\Portfolio\Watch\Domain\Exception\ReleaseCycleProductNotFoundException;
 use App\Portfolio\Watch\Domain\Exception\ReleaseCycleSourceUnavailableException;
+use App\Portfolio\Watch\Domain\Exception\VulnerabilitySourceUnavailableException;
 use App\Portfolio\Watch\Domain\Repository\WatchedProductRepositoryInterface;
 use App\Portfolio\Watch\Domain\Repository\WatchSnapshotRepositoryInterface;
 use App\Portfolio\Watch\Domain\Service\InstalledVersionMatcher;
 use App\Portfolio\Watch\Domain\Service\InstalledVersionResolverInterface;
+use App\Portfolio\Watch\Domain\Service\PackageManifestReaderInterface;
 use App\Portfolio\Watch\Domain\Service\ReleaseCycleSourceInterface;
 use App\Portfolio\Watch\Domain\Service\SupportStatusCalculator;
+use App\Portfolio\Watch\Domain\Service\VulnerabilitySourceInterface;
+use App\Portfolio\Watch\Domain\ValueObject\KnownVulnerability;
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotSourceStatus;
 use App\Portfolio\Watch\Domain\ValueObject\SupportStatus;
 use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
 use Psr\Log\LoggerInterface;
 
 /**
- * Assemble les cycles de vie publiés, la version réellement installée et le
- * calcul de statut, puis fige le tout dans le snapshot courant.
+ * Rafraîchit les deux volets de la veille : les cycles de vie des versions, et
+ * les vulnérabilités connues des paquets déployés.
  *
- * Deux échecs, deux traitements — la distinction est la règle de conduite de
- * toute la classe :
+ * Les deux sont indépendants — instantanés distincts, sources distinctes — et
+ * l'échec de l'un ne prive pas l'autre de sa mise à jour. C'est aussi pourquoi
+ * le compte-rendu est structuré par volet plutôt qu'à plat.
+ *
+ * Deux échecs, deux traitements, sur le volet des cycles de vie :
  *
  *  - **produit inconnu de la source (404)** : erreur de contenu, réparable au
  *    backoffice. L'entrée est conservée dans le snapshot avec le statut
@@ -49,11 +56,21 @@ final readonly class WatchRefresher implements WatchRefresherInterface
         private InstalledVersionResolverInterface $versionResolver,
         private InstalledVersionMatcher $matcher,
         private SupportStatusCalculator $statusCalculator,
+        private PackageManifestReaderInterface $packageManifestReader,
+        private VulnerabilitySourceInterface $vulnerabilitySource,
         private LoggerInterface $logger,
     ) {
     }
 
     public function refresh(\DateTimeImmutable $now, bool $dryRun = false): WatchRefreshReport
+    {
+        return new WatchRefreshReport(
+            $this->refreshReleaseCycles($now, $dryRun),
+            $this->refreshVulnerabilities($now, $dryRun),
+        );
+    }
+
+    private function refreshReleaseCycles(\DateTimeImmutable $now, bool $dryRun): ReleaseCyclesRefreshReport
     {
         $entries = [];
         $unknownSlugs = [];
@@ -109,20 +126,87 @@ final readonly class WatchRefresher implements WatchRefresherInterface
         }
 
         if ([] === $entries) {
-            return new WatchRefreshReport(0, $unknownSlugs, $failedSlugs, false);
+            return new ReleaseCyclesRefreshReport(0, $unknownSlugs, $failedSlugs, false);
         }
 
         if ($dryRun) {
-            return new WatchRefreshReport(\count($entries), $unknownSlugs, $failedSlugs, false);
+            return new ReleaseCyclesRefreshReport(\count($entries), $unknownSlugs, $failedSlugs, false);
         }
 
         $this->persist(
+            WatchSnapshotType::RELEASE_CYCLES,
             ['products' => $entries],
             $now,
             [] === $failedSlugs ? SnapshotSourceStatus::OK : SnapshotSourceStatus::PARTIAL,
         );
 
-        return new WatchRefreshReport(\count($entries), $unknownSlugs, $failedSlugs, true);
+        return new ReleaseCyclesRefreshReport(\count($entries), $unknownSlugs, $failedSlugs, true);
+    }
+
+    /**
+     * Le snapshot conserve le **détail** des vulnérabilités, que seul le
+     * backoffice affichera (décision D4) ; l'API publique n'en tire qu'un
+     * décompte. Ce cloisonnement se joue à la lecture, dans le provider, et non
+     * ici — écrire un snapshot amputé priverait l'administrateur de ce qu'il
+     * est précisément le seul à avoir le droit de voir.
+     */
+    private function refreshVulnerabilities(\DateTimeImmutable $now, bool $dryRun): VulnerabilityRefreshReport
+    {
+        $manifest = $this->packageManifestReader->read();
+
+        if (null === $manifest) {
+            // Aucun manifeste : l'analyse n'a pas lieu d'être tentée. Ne rien
+            // écrire est ce qui permettra à la page de dire « analyse non
+            // effectuée » plutôt qu'un « 0 vulnérabilité » mensonger.
+            $this->logger->info('Aucun manifeste de paquets : analyse de vulnérabilités ignorée.');
+
+            return new VulnerabilityRefreshReport(null, 0, false, false);
+        }
+
+        $packagesScanned = \count($manifest->packages);
+
+        try {
+            $vulnerabilities = $this->vulnerabilitySource->findVulnerabilities($manifest->packages);
+        } catch (VulnerabilitySourceUnavailableException $exception) {
+            $this->logger->error('Base de vulnérabilités indisponible.', ['exception' => $exception]);
+
+            return new VulnerabilityRefreshReport($packagesScanned, 0, false, true);
+        }
+
+        if ($dryRun) {
+            return new VulnerabilityRefreshReport($packagesScanned, \count($vulnerabilities), false, false);
+        }
+
+        $this->persist(
+            WatchSnapshotType::VULNERABILITIES,
+            [
+                'packagesScanned' => $packagesScanned,
+                'vulnerabilities' => array_map($this->vulnerabilityToArray(...), $vulnerabilities),
+            ],
+            $now,
+            SnapshotSourceStatus::OK,
+        );
+
+        return new VulnerabilityRefreshReport($packagesScanned, \count($vulnerabilities), true, false);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function vulnerabilityToArray(KnownVulnerability $vulnerability): array
+    {
+        return [
+            'id' => $vulnerability->id,
+            'aliases' => $vulnerability->aliases,
+            'summary' => $vulnerability->summary,
+            'severity' => $vulnerability->severity,
+            'package' => [
+                'ecosystem' => $vulnerability->package->ecosystem,
+                'name' => $vulnerability->package->name,
+                'version' => $vulnerability->package->version,
+            ],
+            'fixedIn' => $vulnerability->fixedIn,
+        ];
     }
 
     /**
@@ -162,12 +246,16 @@ final readonly class WatchRefresher implements WatchRefresherInterface
     /**
      * @param array<string, mixed> $payload
      */
-    private function persist(array $payload, \DateTimeImmutable $now, SnapshotSourceStatus $status): void
-    {
-        $snapshot = $this->snapshotRepository->findOneByType(WatchSnapshotType::RELEASE_CYCLES);
+    private function persist(
+        WatchSnapshotType $type,
+        array $payload,
+        \DateTimeImmutable $now,
+        SnapshotSourceStatus $status,
+    ): void {
+        $snapshot = $this->snapshotRepository->findOneByType($type);
 
         if (null === $snapshot) {
-            $snapshot = new WatchSnapshot(WatchSnapshotType::RELEASE_CYCLES, $payload, $now, $status);
+            $snapshot = new WatchSnapshot($type, $payload, $now, $status);
         } else {
             $snapshot->refresh($payload, $now, $status);
         }

@@ -9,12 +9,18 @@ use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Domain\Entity\WatchSnapshot;
 use App\Portfolio\Watch\Domain\Exception\ReleaseCycleProductNotFoundException;
 use App\Portfolio\Watch\Domain\Exception\ReleaseCycleSourceUnavailableException;
+use App\Portfolio\Watch\Domain\Exception\VulnerabilitySourceUnavailableException;
 use App\Portfolio\Watch\Domain\Repository\WatchedProductRepositoryInterface;
 use App\Portfolio\Watch\Domain\Repository\WatchSnapshotRepositoryInterface;
 use App\Portfolio\Watch\Domain\Service\InstalledVersionMatcher;
 use App\Portfolio\Watch\Domain\Service\InstalledVersionResolverInterface;
+use App\Portfolio\Watch\Domain\Service\PackageManifestReaderInterface;
 use App\Portfolio\Watch\Domain\Service\ReleaseCycleSourceInterface;
 use App\Portfolio\Watch\Domain\Service\SupportStatusCalculator;
+use App\Portfolio\Watch\Domain\Service\VulnerabilitySourceInterface;
+use App\Portfolio\Watch\Domain\ValueObject\KnownVulnerability;
+use App\Portfolio\Watch\Domain\ValueObject\PackageCoordinates;
+use App\Portfolio\Watch\Domain\ValueObject\PackageManifest;
 use App\Portfolio\Watch\Domain\ValueObject\ProductReleaseCycles;
 use App\Portfolio\Watch\Domain\ValueObject\ReleaseCycle;
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotSourceStatus;
@@ -43,6 +49,8 @@ final class WatchRefresherTest extends TestCase
     private ReleaseCycleSourceInterface&Stub $releaseCycleSource;
     private InstalledVersionResolverInterface&Stub $versionResolver;
     private WatchSnapshotRepositoryInterface&MockObject $snapshotRepository;
+    private PackageManifestReaderInterface&Stub $packageManifestReader;
+    private VulnerabilitySourceInterface&Stub $vulnerabilitySource;
     private WatchRefresher $refresher;
 
     protected function setUp(): void
@@ -51,6 +59,8 @@ final class WatchRefresherTest extends TestCase
         $this->releaseCycleSource = self::createStub(ReleaseCycleSourceInterface::class);
         $this->versionResolver = self::createStub(InstalledVersionResolverInterface::class);
         $this->snapshotRepository = $this->createMock(WatchSnapshotRepositoryInterface::class);
+        $this->packageManifestReader = self::createStub(PackageManifestReaderInterface::class);
+        $this->vulnerabilitySource = self::createStub(VulnerabilitySourceInterface::class);
 
         $this->refresher = new WatchRefresher(
             $this->productRepository,
@@ -59,6 +69,8 @@ final class WatchRefresherTest extends TestCase
             $this->versionResolver,
             new InstalledVersionMatcher(),
             new SupportStatusCalculator(),
+            $this->packageManifestReader,
+            $this->vulnerabilitySource,
             new NullLogger(),
         );
     }
@@ -89,6 +101,40 @@ final class WatchRefresherTest extends TestCase
     private function givenProducts(array $products): void
     {
         $this->productRepository->method('findAllOrdered')->willReturn($products);
+    }
+
+    /**
+     * @param list<PackageCoordinates> $packages
+     */
+    private function givenManifest(array $packages): void
+    {
+        $this->packageManifestReader->method('read')->willReturn(
+            new PackageManifest(new \DateTimeImmutable('2026-09-01 00:00:00'), $packages),
+        );
+    }
+
+    /**
+     * @return callable(): WatchSnapshot le snapshot du type demandé, tel qu'il a été enregistré
+     */
+    private function captureSnapshot(WatchSnapshotType $type): callable
+    {
+        $captured = null;
+
+        $this->snapshotRepository->method('findOneByType')->willReturn(null);
+        $this->snapshotRepository
+            ->expects(self::atLeastOnce())
+            ->method('save')
+            ->willReturnCallback(function (WatchSnapshot $snapshot) use (&$captured, $type): void {
+                if ($snapshot->getType() === $type) {
+                    $captured = $snapshot;
+                }
+            });
+
+        return static function () use (&$captured): WatchSnapshot {
+            self::assertInstanceOf(WatchSnapshot::class, $captured);
+
+            return $captured;
+        };
     }
 
     /**
@@ -203,9 +249,9 @@ final class WatchRefresherTest extends TestCase
 
         $report = $this->refresher->refresh($this->now());
 
-        self::assertSame(['phpp'], $report->unknownSlugs);
-        self::assertSame([], $report->failedSlugs);
-        self::assertSame(2, $report->refreshedCount);
+        self::assertSame(['phpp'], $report->releaseCycles->unknownSlugs);
+        self::assertSame([], $report->releaseCycles->failedSlugs);
+        self::assertSame(2, $report->releaseCycles->refreshedCount);
         // La source a répondu, et correctement : ce n'est pas une panne.
         self::assertSame(SnapshotSourceStatus::OK, $capturedStatus);
     }
@@ -233,8 +279,8 @@ final class WatchRefresherTest extends TestCase
 
         $report = $this->refresher->refresh($this->now());
 
-        self::assertSame(['nginx'], $report->failedSlugs);
-        self::assertSame(1, $report->refreshedCount);
+        self::assertSame(['nginx'], $report->releaseCycles->failedSlugs);
+        self::assertSame(1, $report->releaseCycles->refreshedCount);
         self::assertSame(SnapshotSourceStatus::PARTIAL, $capturedStatus);
     }
 
@@ -255,9 +301,9 @@ final class WatchRefresherTest extends TestCase
 
         $report = $this->refresher->refresh($this->now());
 
-        self::assertFalse($report->persisted);
-        self::assertSame(0, $report->refreshedCount);
-        self::assertSame(['php'], $report->failedSlugs);
+        self::assertFalse($report->releaseCycles->persisted);
+        self::assertSame(0, $report->releaseCycles->refreshedCount);
+        self::assertSame(['php'], $report->releaseCycles->failedSlugs);
     }
 
     public function testNoWatchedProductWritesNothing(): void
@@ -268,8 +314,8 @@ final class WatchRefresherTest extends TestCase
 
         $report = $this->refresher->refresh($this->now());
 
-        self::assertFalse($report->persisted);
-        self::assertSame(0, $report->refreshedCount);
+        self::assertFalse($report->releaseCycles->persisted);
+        self::assertSame(0, $report->releaseCycles->refreshedCount);
     }
 
     public function testADryRunComputesEverythingAndPersistsNothing(): void
@@ -281,8 +327,8 @@ final class WatchRefresherTest extends TestCase
 
         $report = $this->refresher->refresh($this->now(), dryRun: true);
 
-        self::assertSame(1, $report->refreshedCount);
-        self::assertFalse($report->persisted);
+        self::assertSame(1, $report->releaseCycles->refreshedCount);
+        self::assertFalse($report->releaseCycles->persisted);
     }
 
     /**
@@ -317,6 +363,109 @@ final class WatchRefresherTest extends TestCase
         /** @var list<array<string, mixed>> $products */
         $products = $existing->getPayload()['products'];
         self::assertSame('php', $products[0]['slug']);
+    }
+
+    /**
+     * Sans manifeste, l'analyse n'a pas lieu d'être tentée — et surtout, rien
+     * n'est écrit. C'est ce qui permettra à la page d'annoncer « analyse non
+     * effectuée » plutôt qu'un « 0 vulnérabilité » que personne n'a vérifié.
+     */
+    public function testWithoutAManifestNoVulnerabilityScanIsAttempted(): void
+    {
+        $this->givenProducts([]);
+        $this->packageManifestReader->method('read')->willReturn(null);
+        $this->vulnerabilitySource->method('findVulnerabilities')->willReturnCallback(
+            static fn (): never => throw new \LogicException('La base ne doit pas être interrogée sans périmètre.'),
+        );
+
+        // Rien à écrire d'aucun côté : ni cycles de vie (aucun produit suivi),
+        // ni vulnérabilités (aucun périmètre).
+        $this->snapshotRepository->expects(self::never())->method('save');
+
+        $report = $this->refresher->refresh($this->now());
+
+        self::assertFalse($report->vulnerabilities->wasAttempted());
+        self::assertNull($report->vulnerabilities->packagesScanned);
+        self::assertFalse($report->vulnerabilities->persisted);
+    }
+
+    public function testItScansThePackagesOfTheManifest(): void
+    {
+        $this->givenProducts([]);
+        $this->givenManifest([
+            new PackageCoordinates(PackageCoordinates::ECOSYSTEM_PACKAGIST, 'symfony/http-client', '8.1.4'),
+            new PackageCoordinates(PackageCoordinates::ECOSYSTEM_NPM, 'vue', '3.5.42'),
+        ]);
+        $this->vulnerabilitySource->method('findVulnerabilities')->willReturn([]);
+
+        $captured = $this->captureSnapshot(WatchSnapshotType::VULNERABILITIES);
+        $report = $this->refresher->refresh($this->now());
+
+        self::assertSame(2, $report->vulnerabilities->packagesScanned);
+        self::assertSame(0, $report->vulnerabilities->found);
+        self::assertSame(2, $captured()->getPayload()['packagesScanned']);
+    }
+
+    /**
+     * Le snapshot conserve le détail complet : c'est le provider public qui
+     * n'en expose qu'un décompte (D4). L'écrire amputé priverait le backoffice
+     * de ce qu'il est précisément le seul à pouvoir consulter.
+     */
+    public function testTheSnapshotKeepsTheFullDetailForTheBackoffice(): void
+    {
+        $package = new PackageCoordinates(PackageCoordinates::ECOSYSTEM_PACKAGIST, 'symfony/http-kernel', '4.0.0');
+        $this->givenProducts([]);
+        $this->givenManifest([$package]);
+        $this->vulnerabilitySource->method('findVulnerabilities')->willReturn([
+            new KnownVulnerability('GHSA-aaaa', ['CVE-2026-1'], 'Résumé', 'HIGH', $package, '4.4.50'),
+        ]);
+
+        $captured = $this->captureSnapshot(WatchSnapshotType::VULNERABILITIES);
+        $report = $this->refresher->refresh($this->now());
+
+        self::assertSame(1, $report->vulnerabilities->found);
+
+        /** @var list<array<string, mixed>> $stored */
+        $stored = $captured()->getPayload()['vulnerabilities'];
+        self::assertSame('GHSA-aaaa', $stored[0]['id']);
+        self::assertSame('HIGH', $stored[0]['severity']);
+        self::assertSame('4.4.50', $stored[0]['fixedIn']);
+        self::assertSame(['ecosystem' => 'Packagist', 'name' => 'symfony/http-kernel', 'version' => '4.0.0'], $stored[0]['package']);
+    }
+
+    /**
+     * Une base injoignable n'efface pas la dernière analyse : rien n'est écrit,
+     * et l'échec est rapporté pour que le travail planifié reprenne.
+     */
+    public function testAnUnreachableVulnerabilityDatabaseWritesNothing(): void
+    {
+        $this->givenProducts([]);
+        $this->givenManifest([new PackageCoordinates(PackageCoordinates::ECOSYSTEM_NPM, 'vue', '3.5.42')]);
+        $this->vulnerabilitySource->method('findVulnerabilities')->willThrowException(
+            VulnerabilitySourceUnavailableException::forUnexpectedStatus(503),
+        );
+
+        $this->snapshotRepository->expects(self::never())->method('save');
+
+        $report = $this->refresher->refresh($this->now());
+
+        self::assertTrue($report->vulnerabilities->failed);
+        self::assertFalse($report->vulnerabilities->persisted);
+        self::assertTrue($report->hasFailure());
+    }
+
+    public function testADryRunScansWithoutWriting(): void
+    {
+        $this->givenProducts([]);
+        $this->givenManifest([new PackageCoordinates(PackageCoordinates::ECOSYSTEM_NPM, 'vue', '3.5.42')]);
+        $this->vulnerabilitySource->method('findVulnerabilities')->willReturn([]);
+
+        $this->snapshotRepository->expects(self::never())->method('save');
+
+        $report = $this->refresher->refresh($this->now(), dryRun: true);
+
+        self::assertSame(1, $report->vulnerabilities->packagesScanned);
+        self::assertFalse($report->vulnerabilities->persisted);
     }
 
     /**

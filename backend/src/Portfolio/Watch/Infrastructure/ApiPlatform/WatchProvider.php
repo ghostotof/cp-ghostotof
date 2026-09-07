@@ -12,6 +12,7 @@ use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
 use App\Portfolio\Watch\Presentation\ApiResource\WatchedProductResource;
 use App\Portfolio\Watch\Presentation\ApiResource\WatchReleaseCyclesResource;
 use App\Portfolio\Watch\Presentation\ApiResource\WatchResource;
+use App\Portfolio\Watch\Presentation\ApiResource\WatchVulnerabilitiesResource;
 
 /**
  * Relie WatchResource au snapshot local, et rien d'autre.
@@ -36,20 +37,66 @@ final readonly class WatchProvider implements ProviderInterface
 
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): WatchResource
     {
+        return new WatchResource(
+            $this->releaseCycles(),
+            $this->vulnerabilities(),
+        );
+    }
+
+    private function releaseCycles(): WatchReleaseCyclesResource
+    {
         $snapshot = $this->snapshotRepository->findOneByType(WatchSnapshotType::RELEASE_CYCLES);
 
         if (null === $snapshot) {
-            return new WatchResource(new WatchReleaseCyclesResource([], null, null));
+            return new WatchReleaseCyclesResource([], null, null);
         }
 
-        return new WatchResource(new WatchReleaseCyclesResource(
+        return new WatchReleaseCyclesResource(
             $this->productsFrom($snapshot->getPayload()),
-            // Exposée en UTC : le contrat de l'API ne doit pas dépendre du
-            // date.timezone du conteneur, qui pourrait changer sans que
-            // personne n'y voie un changement d'interface.
-            $snapshot->getRefreshedAt()->setTimezone(new \DateTimeZone('UTC'))->format(\DATE_ATOM),
+            $this->utc($snapshot->getRefreshedAt()),
             $snapshot->getSourceStatus()->value,
-        ));
+        );
+    }
+
+    /**
+     * **Le cloisonnement de la décision D4 se joue ici**, et nulle part
+     * ailleurs : le snapshot contient le détail complet des vulnérabilités —
+     * identifiants, paquets touchés, versions correctives — mais cette méthode
+     * n'en extrait qu'un décompte. Le détail reste réservé à ROLE_SUPER.
+     *
+     * Un test fonctionnel dédié asserte l'absence de ces champs dans la réponse
+     * anonyme. Il ne doit jamais être assoupli : c'est la seule chose qui
+     * empêche une évolution distraite de publier la surface d'attaque du site.
+     */
+    private function vulnerabilities(): WatchVulnerabilitiesResource
+    {
+        $snapshot = $this->snapshotRepository->findOneByType(WatchSnapshotType::VULNERABILITIES);
+
+        if (null === $snapshot) {
+            // Aucune analyse n'a jamais abouti : on l'annonce, plutôt que de
+            // laisser un zéro rassurer à tort.
+            return new WatchVulnerabilitiesResource(null, 0, null);
+        }
+
+        $payload = $snapshot->getPayload();
+        $scanned = $payload['packagesScanned'] ?? null;
+        $vulnerabilities = $payload['vulnerabilities'] ?? null;
+
+        return new WatchVulnerabilitiesResource(
+            \is_int($scanned) ? $scanned : null,
+            \is_array($vulnerabilities) ? \count($vulnerabilities) : 0,
+            $this->utc($snapshot->getRefreshedAt()),
+        );
+    }
+
+    /**
+     * Exposée en UTC : le contrat de l'API ne doit pas dépendre du
+     * date.timezone du conteneur, qui pourrait changer sans que personne n'y
+     * voie un changement d'interface.
+     */
+    private function utc(\DateTimeImmutable $date): string
+    {
+        return $date->setTimezone(new \DateTimeZone('UTC'))->format(\DATE_ATOM);
     }
 
     /**

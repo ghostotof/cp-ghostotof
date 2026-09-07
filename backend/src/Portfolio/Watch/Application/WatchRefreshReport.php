@@ -9,24 +9,26 @@ namespace App\Portfolio\Watch\Application;
  * supervision). Ce n'est pas un concept métier : il ne franchit pas la
  * frontière vers le domaine et n'est jamais persisté.
  *
- * Les deux listes sont distinctes à dessein : un slug inconnu est une erreur de
- * contenu qu'on répare au backoffice, une source en échec est une panne qu'on
- * subit. Les additionner dans un unique compteur d'erreurs ferait perdre la
- * seule information utile pour décider quoi faire.
+ * Structuré par volet, comme la réponse de l'API : les deux instantanés sont
+ * indépendants et peuvent réussir ou échouer séparément. Un rapport plat
+ * mélangerait des compteurs sans lien, et il faudrait deviner lequel décrit
+ * quoi.
  */
 final readonly class WatchRefreshReport
 {
-    /**
-     * @param int          $refreshedCount nombre d'entrées écrites dans le snapshot
-     * @param list<string> $unknownSlugs   produits absents du catalogue de la source
-     * @param list<string> $failedSlugs    produits dont la source n'a pas répondu
-     * @param bool         $persisted      false en simulation, ou quand il n'y avait rien à écrire
-     */
     public function __construct(
-        public int $refreshedCount,
-        public array $unknownSlugs,
-        public array $failedSlugs,
-        public bool $persisted,
+        public ReleaseCyclesRefreshReport $releaseCycles,
+        public VulnerabilityRefreshReport $vulnerabilities,
     ) {
+    }
+
+    /**
+     * Vrai dès qu'une source n'a pas répondu. La commande en fait un code de
+     * sortie non nul : la panne est généralement transitoire, la reprise du
+     * travail planifié a du sens.
+     */
+    public function hasFailure(): bool
+    {
+        return [] !== $this->releaseCycles->failedSlugs || $this->vulnerabilities->failed;
     }
 }

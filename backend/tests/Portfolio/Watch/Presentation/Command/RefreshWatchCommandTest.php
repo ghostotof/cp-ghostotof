@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Portfolio\Watch\Presentation\Command;
 
+use App\Portfolio\Watch\Application\ReleaseCyclesRefreshReport;
+use App\Portfolio\Watch\Application\VulnerabilityRefreshReport;
 use App\Portfolio\Watch\Application\WatchRefreshReport;
 use App\Portfolio\Watch\Application\WatchRefresherInterface;
 use App\Portfolio\Watch\Presentation\Command\RefreshWatchCommand;
@@ -38,7 +40,10 @@ final class RefreshWatchCommandTest extends TestCase
 
     public function testASuccessfulRefreshReportsTheCountAndSucceeds(): void
     {
-        $this->givenReport(new WatchRefreshReport(7, [], [], true));
+        $this->givenReport(new WatchRefreshReport(
+            new ReleaseCyclesRefreshReport(7, [], [], true),
+            new VulnerabilityRefreshReport(null, 0, false, false),
+        ));
 
         $exitCode = $this->tester->execute([]);
 
@@ -53,7 +58,10 @@ final class RefreshWatchCommandTest extends TestCase
      */
     public function testUnknownSlugsAreReportedWithoutFailingTheCommand(): void
     {
-        $this->givenReport(new WatchRefreshReport(7, ['phpp'], [], true));
+        $this->givenReport(new WatchRefreshReport(
+            new ReleaseCyclesRefreshReport(7, ['phpp'], [], true),
+            new VulnerabilityRefreshReport(null, 0, false, false),
+        ));
 
         $exitCode = $this->tester->execute([]);
 
@@ -69,7 +77,10 @@ final class RefreshWatchCommandTest extends TestCase
      */
     public function testAPartialRefreshWritesButStillFails(): void
     {
-        $this->givenReport(new WatchRefreshReport(6, [], ['nginx'], true));
+        $this->givenReport(new WatchRefreshReport(
+            new ReleaseCyclesRefreshReport(6, [], ['nginx'], true),
+            new VulnerabilityRefreshReport(null, 0, false, false),
+        ));
 
         $exitCode = $this->tester->execute([]);
 
@@ -79,7 +90,10 @@ final class RefreshWatchCommandTest extends TestCase
 
     public function testATotalOutageFails(): void
     {
-        $this->givenReport(new WatchRefreshReport(0, [], ['php', 'nginx'], false));
+        $this->givenReport(new WatchRefreshReport(
+            new ReleaseCyclesRefreshReport(0, [], ['php', 'nginx'], false),
+            new VulnerabilityRefreshReport(null, 0, false, false),
+        ));
 
         $exitCode = $this->tester->execute([]);
 
@@ -92,7 +106,10 @@ final class RefreshWatchCommandTest extends TestCase
      */
     public function testAnEmptyCatalogSucceedsQuietly(): void
     {
-        $this->givenReport(new WatchRefreshReport(0, [], [], false));
+        $this->givenReport(new WatchRefreshReport(
+            new ReleaseCyclesRefreshReport(0, [], [], false),
+            new VulnerabilityRefreshReport(null, 0, false, false),
+        ));
 
         $exitCode = $this->tester->execute([]);
 
@@ -106,7 +123,10 @@ final class RefreshWatchCommandTest extends TestCase
             function (\DateTimeImmutable $now, bool $dryRun) use (&$seenDryRun): WatchRefreshReport {
                 $seenDryRun = $dryRun;
 
-                return new WatchRefreshReport(7, [], [], false);
+                return new WatchRefreshReport(
+            new ReleaseCyclesRefreshReport(7, [], [], false),
+            new VulnerabilityRefreshReport(null, 0, false, false),
+        );
             },
         );
 

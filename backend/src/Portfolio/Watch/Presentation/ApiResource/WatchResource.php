@@ -48,6 +48,7 @@ final readonly class WatchResource
 {
     public function __construct(
         public WatchReleaseCyclesResource $releaseCycles,
+        public WatchVulnerabilitiesResource $vulnerabilities,
     ) {
     }
 }

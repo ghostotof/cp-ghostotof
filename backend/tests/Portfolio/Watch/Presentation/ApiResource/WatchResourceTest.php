@@ -56,6 +56,32 @@ final class WatchResourceTest extends WebTestCase
     }
 
     /**
+     * Un snapshot de vulnérabilités tel que le rafraîchisseur l'écrit : avec
+     * tout son détail, celui-là même que la réponse publique ne doit pas
+     * laisser passer.
+     */
+    private function givenVulnerabilitySnapshot(KernelBrowser $client): void
+    {
+        $repository = $client->getContainer()->get(WatchSnapshotRepositoryInterface::class);
+        $repository->save(new WatchSnapshot(
+            WatchSnapshotType::VULNERABILITIES,
+            [
+                'packagesScanned' => 84,
+                'vulnerabilities' => [[
+                    'id' => 'GHSA-h7vf-5wrv-9fhv',
+                    'aliases' => ['CVE-2026-0001'],
+                    'summary' => 'Une faille sérieuse',
+                    'severity' => 'MODERATE',
+                    'package' => ['ecosystem' => 'Packagist', 'name' => 'symfony/http-kernel', 'version' => '4.0.0'],
+                    'fixedIn' => '4.4.50',
+                ]],
+            ],
+            new \DateTimeImmutable('2026-09-07 04:41:00', new \DateTimeZone('UTC')),
+            SnapshotSourceStatus::OK,
+        ));
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function decode(KernelBrowser $client): array
@@ -108,6 +134,79 @@ final class WatchResourceTest extends WebTestCase
         self::assertArrayHasKey('sourceStatus', $releaseCycles);
         self::assertNull($releaseCycles['refreshedAt']);
         self::assertNull($releaseCycles['sourceStatus']);
+    }
+
+    /**
+     * ⚠️ GARDE-FOU DE LA DÉCISION D4 — À NE JAMAIS ASSOUPLIR.
+     *
+     * Le snapshot contient le détail complet des vulnérabilités : identifiants,
+     * paquets touchés, versions vulnérables, versions correctives. La réponse
+     * anonyme, elle, n'en expose qu'un décompte.
+     *
+     * Publier ce détail reviendrait à tendre au premier scanner venu la carte
+     * des faiblesses de ce site en production. Le compte invité ROLE_USER ne
+     * suffirait pas davantage : il est partagé et ses identifiants circulent,
+     * ce qui en fait l'équivalent du public dès qu'il s'agit d'une surface
+     * d'attaque.
+     *
+     * Ce test cherche l'ABSENCE de champs, ce qui est inhabituel et
+     * délibéré : ApiRouteExposureTest prouve qu'une route est protégée, jamais
+     * qu'une route publique ne laisse pas fuir un champ de trop. C'est la seule
+     * chose qui empêche une évolution distraite de publier tout cela.
+     */
+    public function testTheAnonymousResponseNeverLeaksVulnerabilityDetails(): void
+    {
+        $client = self::createClient();
+        $this->givenVulnerabilitySnapshot($client);
+
+        $client->request('GET', '/api/watch');
+
+        self::assertResponseIsSuccessful();
+
+        $body = (string) $client->getResponse()->getContent();
+
+        foreach (['GHSA-h7vf-5wrv-9fhv', 'CVE-2026-0001', 'symfony/http-kernel', '4.4.50', 'Une faille'] as $secret) {
+            self::assertStringNotContainsString($secret, $body, sprintf(
+                'La réponse publique expose « %s », qui relève du seul backoffice (décision D4).',
+                $secret,
+            ));
+        }
+
+        $payload = $this->decode($client);
+        /** @var array<string, mixed> $vulnerabilities */
+        $vulnerabilities = $payload['vulnerabilities'];
+
+        // Le décompte, lui, est bien là : c'est tout l'intérêt de la page.
+        self::assertSame(1, $vulnerabilities['affectedCount']);
+        self::assertSame(84, $vulnerabilities['packagesScanned']);
+
+        foreach (['id', 'aliases', 'summary', 'severity', 'package', 'fixedIn', 'vulnerabilities'] as $forbidden) {
+            self::assertArrayNotHasKey($forbidden, $vulnerabilities, sprintf(
+                'Le champ « %s » n\'a rien à faire dans la réponse publique (décision D4).',
+                $forbidden,
+            ));
+        }
+    }
+
+    /**
+     * Aucune analyse n'a jamais abouti : la page doit pouvoir le dire, plutôt
+     * que d'afficher un « 0 vulnérabilité » que personne n'a vérifié.
+     */
+    public function testAnUnscannedInstallationIsNotReportedAsHealthy(): void
+    {
+        $client = self::createClient();
+
+        $client->request('GET', '/api/watch');
+
+        self::assertResponseIsSuccessful();
+
+        $payload = $this->decode($client);
+        /** @var array<string, mixed> $vulnerabilities */
+        $vulnerabilities = $payload['vulnerabilities'];
+
+        self::assertArrayHasKey('packagesScanned', $vulnerabilities);
+        self::assertNull($vulnerabilities['packagesScanned']);
+        self::assertNull($vulnerabilities['checkedAt']);
     }
 
     /**

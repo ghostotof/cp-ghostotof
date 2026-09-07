@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Presentation\Command;
 
-use App\Portfolio\Watch\Application\WatchRefreshReport;
+use App\Portfolio\Watch\Application\ReleaseCyclesRefreshReport;
+use App\Portfolio\Watch\Application\VulnerabilityRefreshReport;
 use App\Portfolio\Watch\Application\WatchRefresherInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -64,12 +65,13 @@ final class RefreshWatchCommand extends Command
 
         $report = $this->refresher->refresh(new \DateTimeImmutable(), $dryRun);
 
-        $this->describe($io, $report);
+        $this->describeReleaseCycles($io, $report->releaseCycles);
+        $this->describeVulnerabilities($io, $report->vulnerabilities);
 
-        return [] === $report->failedSlugs ? Command::SUCCESS : Command::FAILURE;
+        return $report->hasFailure() ? Command::FAILURE : Command::SUCCESS;
     }
 
-    private function describe(SymfonyStyle $io, WatchRefreshReport $report): void
+    private function describeReleaseCycles(SymfonyStyle $io, ReleaseCyclesRefreshReport $report): void
     {
         if ([] !== $report->unknownSlugs) {
             $io->warning(sprintf(
@@ -102,5 +104,32 @@ final class RefreshWatchCommand extends Command
         }
 
         $io->info($message.' Rien n\'a été écrit.');
+    }
+
+    private function describeVulnerabilities(SymfonyStyle $io, VulnerabilityRefreshReport $report): void
+    {
+        if (!$report->wasAttempted()) {
+            // Pas une erreur : en développement, aucun manifeste n'est produit.
+            // Le dire évite de croire que l'analyse a tourné et n'a rien trouvé.
+            $io->note('Aucun manifeste de paquets : analyse de vulnérabilités non effectuée.');
+
+            return;
+        }
+
+        if ($report->failed) {
+            $io->error('Base de vulnérabilités injoignable. La dernière analyse reste servie.');
+
+            return;
+        }
+
+        $message = sprintf('%d paquets analysés, %d vulnérabilité(s) connue(s).', $report->packagesScanned ?? 0, $report->found);
+
+        if (0 === $report->found) {
+            $io->success($message);
+
+            return;
+        }
+
+        $io->warning($message.' Le détail est consultable au backoffice.');
     }
 }
