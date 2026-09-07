@@ -20,11 +20,13 @@ final readonly class WatchReleaseCyclesResource
      * @param string|null                  $refreshedAt  date du dernier rafraîchissement abouti, en UTC
      *                                                   (ISO 8601), ou null si aucun n'a encore eu lieu
      * @param string|null                  $sourceStatus valeur de SnapshotSourceStatus, ou null si jamais rafraîchi
+     * @param string                       $freshness    valeur de SnapshotFreshness : fresh, stale ou never_refreshed
      */
     public function __construct(
         public array $products,
         public ?string $refreshedAt,
         public ?string $sourceStatus,
+        public string $freshness,
     ) {
     }
 }

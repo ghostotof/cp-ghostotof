@@ -28,11 +28,13 @@ final readonly class WatchVulnerabilitiesResource
      * @param int|null    $packagesScanned taille du périmètre analysé, null si aucune analyse n'a eu lieu
      * @param int         $affectedCount   nombre de vulnérabilités connues sur ce périmètre
      * @param string|null $checkedAt       date de l'analyse, en UTC (ISO 8601), ou null si aucune
+     * @param string      $freshness       valeur de SnapshotFreshness : fresh, stale ou never_refreshed
      */
     public function __construct(
         public ?int $packagesScanned,
         public int $affectedCount,
         public ?string $checkedAt,
+        public string $freshness,
     ) {
     }
 }

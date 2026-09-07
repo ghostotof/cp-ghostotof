@@ -7,6 +7,7 @@ namespace App\Tests\Portfolio\Watch\Infrastructure\ApiPlatform;
 use ApiPlatform\Metadata\Get;
 use App\Portfolio\Watch\Domain\Entity\WatchSnapshot;
 use App\Portfolio\Watch\Domain\Repository\WatchSnapshotRepositoryInterface;
+use App\Portfolio\Watch\Domain\Service\SnapshotFreshnessCalculator;
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotSourceStatus;
 use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
 use App\Portfolio\Watch\Infrastructure\ApiPlatform\WatchProvider;
@@ -21,7 +22,7 @@ final class WatchProviderTest extends TestCase
     protected function setUp(): void
     {
         $this->snapshotRepository = self::createStub(WatchSnapshotRepositoryInterface::class);
-        $this->provider = new WatchProvider($this->snapshotRepository);
+        $this->provider = new WatchProvider($this->snapshotRepository, new SnapshotFreshnessCalculator());
     }
 
     /**
@@ -32,7 +33,7 @@ final class WatchProviderTest extends TestCase
         $this->snapshotRepository->method('findOneByType')->willReturn(new WatchSnapshot(
             WatchSnapshotType::RELEASE_CYCLES,
             $payload,
-            new \DateTimeImmutable('2026-09-07 04:41:00', new \DateTimeZone('UTC')),
+            new \DateTimeImmutable('-2 hours'),
             SnapshotSourceStatus::OK,
         ));
     }
@@ -76,7 +77,7 @@ final class WatchProviderTest extends TestCase
         self::assertSame('8.5.9', $resource->releaseCycles->products[0]->version);
         self::assertSame('supported', $resource->releaseCycles->products[0]->status);
         self::assertTrue($resource->releaseCycles->products[0]->hasNewerPatch);
-        self::assertSame('2026-09-07T04:41:00+00:00', $resource->releaseCycles->refreshedAt);
+        self::assertNotNull($resource->releaseCycles->refreshedAt);
         self::assertSame('ok', $resource->releaseCycles->sourceStatus);
     }
 
@@ -96,6 +97,44 @@ final class WatchProviderTest extends TestCase
 
         self::assertCount(1, $resource->releaseCycles->products);
         self::assertSame('php', $resource->releaseCycles->products[0]->slug);
+    }
+
+    /**
+     * La fraîcheur est calculée à la lecture : un snapshot que plus rien ne
+     * rafraîchit devient périmé de lui-même, sans qu'un processus ait à venir
+     * le marquer — ce qui serait précisément celui qui a échoué.
+     */
+    public function testFreshnessIsDerivedFromTheReadingMoment(): void
+    {
+        $this->givenSnapshot(['products' => []]);
+
+        self::assertSame('fresh', $this->provider->provide(new Get())->releaseCycles->freshness);
+    }
+
+    public function testAnOldSnapshotIsServedButFlaggedStale(): void
+    {
+        $this->snapshotRepository->method('findOneByType')->willReturn(new WatchSnapshot(
+            WatchSnapshotType::RELEASE_CYCLES,
+            ['products' => [['slug' => 'php', 'label' => 'PHP']]],
+            new \DateTimeImmutable('-3 days'),
+            SnapshotSourceStatus::OK,
+        ));
+
+        $resource = $this->provider->provide(new Get());
+
+        // Servi malgré tout : une donnée datée reste plus utile qu'une page vide.
+        self::assertCount(1, $resource->releaseCycles->products);
+        self::assertSame('stale', $resource->releaseCycles->freshness);
+    }
+
+    public function testAMissingSnapshotIsReportedAsNeverRefreshed(): void
+    {
+        $this->snapshotRepository->method('findOneByType')->willReturn(null);
+
+        $resource = $this->provider->provide(new Get());
+
+        self::assertSame('never_refreshed', $resource->releaseCycles->freshness);
+        self::assertSame('never_refreshed', $resource->vulnerabilities->freshness);
     }
 
     public function testAPayloadWithoutProductsYieldsNoEntry(): void

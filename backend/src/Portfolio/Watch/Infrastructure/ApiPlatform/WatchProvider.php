@@ -7,6 +7,8 @@ namespace App\Portfolio\Watch\Infrastructure\ApiPlatform;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
 use App\Portfolio\Watch\Domain\Repository\WatchSnapshotRepositoryInterface;
+use App\Portfolio\Watch\Domain\Service\SnapshotFreshnessCalculator;
+use App\Portfolio\Watch\Domain\ValueObject\SnapshotFreshness;
 use App\Portfolio\Watch\Domain\ValueObject\SupportStatus;
 use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
 use App\Portfolio\Watch\Presentation\ApiResource\WatchedProductResource;
@@ -31,30 +33,38 @@ use App\Portfolio\Watch\Presentation\ApiResource\WatchVulnerabilitiesResource;
  */
 final readonly class WatchProvider implements ProviderInterface
 {
-    public function __construct(private WatchSnapshotRepositoryInterface $snapshotRepository)
-    {
+    public function __construct(
+        private WatchSnapshotRepositoryInterface $snapshotRepository,
+        private SnapshotFreshnessCalculator $freshnessCalculator,
+    ) {
     }
 
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): WatchResource
     {
+        // La fraîcheur se juge à l'instant de la lecture : c'est ce qui fait
+        // qu'un snapshot devient périmé tout seul quand le rafraîchissement
+        // cesse d'aboutir, sans que personne n'ait à venir le marquer.
+        $now = new \DateTimeImmutable();
+
         return new WatchResource(
-            $this->releaseCycles(),
-            $this->vulnerabilities(),
+            $this->releaseCycles($now),
+            $this->vulnerabilities($now),
         );
     }
 
-    private function releaseCycles(): WatchReleaseCyclesResource
+    private function releaseCycles(\DateTimeImmutable $now): WatchReleaseCyclesResource
     {
         $snapshot = $this->snapshotRepository->findOneByType(WatchSnapshotType::RELEASE_CYCLES);
 
         if (null === $snapshot) {
-            return new WatchReleaseCyclesResource([], null, null);
+            return new WatchReleaseCyclesResource([], null, null, SnapshotFreshness::NEVER_REFRESHED->value);
         }
 
         return new WatchReleaseCyclesResource(
             $this->productsFrom($snapshot->getPayload()),
             $this->utc($snapshot->getRefreshedAt()),
             $snapshot->getSourceStatus()->value,
+            $this->freshnessCalculator->freshnessFor($snapshot->getRefreshedAt(), $now)->value,
         );
     }
 
@@ -68,14 +78,14 @@ final readonly class WatchProvider implements ProviderInterface
      * anonyme. Il ne doit jamais être assoupli : c'est la seule chose qui
      * empêche une évolution distraite de publier la surface d'attaque du site.
      */
-    private function vulnerabilities(): WatchVulnerabilitiesResource
+    private function vulnerabilities(\DateTimeImmutable $now): WatchVulnerabilitiesResource
     {
         $snapshot = $this->snapshotRepository->findOneByType(WatchSnapshotType::VULNERABILITIES);
 
         if (null === $snapshot) {
             // Aucune analyse n'a jamais abouti : on l'annonce, plutôt que de
             // laisser un zéro rassurer à tort.
-            return new WatchVulnerabilitiesResource(null, 0, null);
+            return new WatchVulnerabilitiesResource(null, 0, null, SnapshotFreshness::NEVER_REFRESHED->value);
         }
 
         $payload = $snapshot->getPayload();
@@ -86,6 +96,7 @@ final readonly class WatchProvider implements ProviderInterface
             \is_int($scanned) ? $scanned : null,
             \is_array($vulnerabilities) ? \count($vulnerabilities) : 0,
             $this->utc($snapshot->getRefreshedAt()),
+            $this->freshnessCalculator->freshnessFor($snapshot->getRefreshedAt(), $now)->value,
         );
     }
 
