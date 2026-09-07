@@ -39,7 +39,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repository started as a freshly generated project skeleton (single "Init" commit). Real backend code now
 exists — the `Security` bounded context (`User` + `Authentication`) and four `Portfolio` bounded contexts
-(`Experience`, `Quality`, `About`, `Contribution`, see Backend architecture below) — and follows a DDD structure under
+(`Experience`, `Quality`, `About`, `Contribution`, `Incident`, see Backend architecture below) — and follows a DDD structure under
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
 over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
 recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
@@ -191,13 +191,14 @@ folder), so entities live inside their bounded context instead of a shared top-l
   - There used to be a blanket `ValueError: 404` mapping. It has been **removed and must not come back**: it
     disguised *every* `ValueError` in the HTTP stack as a plausible "404 Not Found", which is exactly how a
     real defect goes unnoticed.
-- **`Portfolio/Experience/`**, **`Portfolio/Quality/`**, **`Portfolio/About/`**, **`Portfolio/Contribution/`** — DB-backed
+- **`Portfolio/Experience/`**, **`Portfolio/Quality/`**, **`Portfolio/About/`**, **`Portfolio/Contribution/`**,
+  **`Portfolio/Incident/`** — DB-backed
   content that used to be (or, for `Experience`, always was) hardcoded in the frontend. Each follows the same
   shape: a Doctrine entity per concept (`ExperienceTechnology`; `QualityPrinciple`/`QualityTrait`;
   `AboutSettings`/`AboutSiteCard`/`AboutMeCard`, the latter with an `AboutMeCardCategory` enum), a public
   read-only API Platform resource (`GetCollection('/experience/technologies')`, or an aggregating `Provider` for
   `/quality/{locale}` and `/about/{locale}` that returns `{principles, traits}` / `{settings, siteCards, meCards}`
-  in one call), and a backoffice CRUD resource (see below). Seeded via idempotent `app:{about,quality,contributions}:seed`
+  in one call), and a backoffice CRUD resource (see below). Seeded via idempotent `app:{about,quality,contributions,incidents}:seed`
   console commands (purge-by-locale then recreate — safe to rerun).
 
   `Contribution` is the odd one out and deliberately so: it carries a long `body` (the argument, not
@@ -208,6 +209,16 @@ folder), so entities live inside their bounded context instead of a shared top-l
   The content is authored through the backoffice, so treating it as HTML would trade formatting for
   a stored-XSS hole on a public page — there is a regression test pinning that
   (`tests/presentation/pages/ContributionsPage.spec.ts`).
+
+  `Incident` follows the same shape with a post-mortem's fields — `impact`, `rootCause`,
+  `resolution` and, crucially, **`invariant`, which is `NOT NULL`**. That constraint is the page's
+  editorial line made structural: an entry you cannot save without stating the rule you drew from
+  the outage cannot drift into a confession. Don't relax it to "make an entry easier to add".
+
+  Both pages render their prose through **`presentation/ui/RichText.vue`** — paragraphs split on
+  blank lines, `` `backticks` `` turned into `<code>`, never `v-html`. It is shared rather than
+  duplicated precisely because it carries a security guarantee: a fix applied to one copy would
+  silently leave the other exposed. Reach for it for any backoffice-authored prose.
 
 ### Backoffice (`ROLE_SUPER`)
 
@@ -230,7 +241,7 @@ Content management for all of the above, plus user administration, gated end-to-
   public. Never weaken or delete that test to make a new route pass.
 - **API Platform pattern**, repeated identically across every backoffice resource
   (`BackofficeExperienceTechnologyResource`, `BackofficeQuality{Principle,Trait}Resource`,
-  `BackofficeContributionResource`,
+  `BackofficeContributionResource`, `BackofficeIncidentResource`,
   `Backoffice{About}{Settings,SiteCard,MeCard}Resource`, `BackofficeUserResource`,
   `BackofficeUserPasswordResource`): a flat DTO (never the Doctrine entity itself) under
   `Presentation/ApiResource/`, backed by a `Provider` (`GetCollection`/`Get`) and a `Processor`
@@ -300,7 +311,7 @@ To add a new page: new route in `presentation/router/index.ts` (nested under `/:
 `usePortfolioContent()` call for its own content) → new `NavigationLink` entry (`to` + `isEnabled`) in
 `StaticPortfolioContentRepository`. `AppHeader` derives the active nav link from `useRoute()`, not from props.
 
-#### API-backed content (About/Quality/Contributions)
+#### API-backed content (About/Quality/Contributions/Incidents)
 
 Unlike `PortfolioContentRepository` (hero/technologies, synchronous, hardcoded), the About/Quality/Contributions content
 now lives in the backend DB and is fetched asynchronously, each with its own small vertical slice:
@@ -318,7 +329,7 @@ from the backoffice) — purely static content still belongs in `infrastructure/
 Content/user management UI, mirrored per-resource under `domain/admin/<resource>/{entities,repositories,errors}`
 → `infrastructure/admin/<resource>/Http*Repository.ts` → `application/admin/<resource>/use*.ts` →
 `presentation/pages/admin/Admin*Page.vue` (form + Bootstrap table, `window.confirm()` for deletes — no modals).
-Existing resources: `technologies`, `quality` (principles + traits), `contributions`, `about` (settings + site cards +
+Existing resources: `technologies`, `quality` (principles + traits), `contributions`, `incidents`, `about` (settings + site cards +
 me cards), `users` (list + **invite by email** + change-password + promote/demote + resend invitation + delete;
 direct username+password creation stays CLI-only). `AdminUsersPage.vue` disables the delete and role buttons on
 the current user's own row (compared by `username` via `useAuth()`); the `email` column shows the linked address
@@ -459,7 +470,14 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   *runs*, not that it compiled (v0.7.0 took four pipeline runs to reach production). The body is the
   annotated tag's message minus its first line, which becomes the title; a tag with only a subject
   falls back to GitHub's generated notes. So write the real notes into `git tag -a`, not afterwards
-  into the GitHub UI — otherwise the automation publishes a thin release.
+  into the GitHub UI — otherwise the automation publishes a thin release. **Tag with
+  `--cleanup=verbatim`**: git's default cleanup for tag messages strips every line starting with
+  `#`, so Markdown headings silently vanish between the file and the tag. v0.7.1 lost all three of
+  its section headings that way, and the release had to be edited afterwards to restore them.
+
+  ```bash
+  git tag -a vX.Y.Z --cleanup=verbatim -F notes.md
+  ```
 - **A reused Git tag serves a stale image.** Pods default to `imagePullPolicy: IfNotPresent`, and a
   Git tag is mutable: re-cutting `vX.Y.Z` after a failed release makes the node reuse the image it
   already cached under that name. Release v0.7.0 spent two pipeline runs on this — a migration fix

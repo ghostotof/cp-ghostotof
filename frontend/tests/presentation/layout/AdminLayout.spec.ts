@@ -20,6 +20,7 @@ function createTestRouter(): Router {
       { path: '/:locale(fr|en)/admin/about', name: 'admin-about', component: StubPage },
       { path: '/:locale(fr|en)/admin/quality', name: 'admin-quality', component: StubPage },
       { path: '/:locale(fr|en)/admin/contributions', name: 'admin-contributions', component: StubPage },
+      { path: '/:locale(fr|en)/admin/incidents', name: 'admin-incidents', component: StubPage },
       { path: '/:locale(fr|en)/admin/users', name: 'admin-users', component: StubPage },
     ],
   })
@@ -69,7 +70,7 @@ describe('AdminLayout', () => {
 
     expect(contentToggle(wrapper).attributes('aria-expanded')).toBe('true')
     const items = wrapper.findAll('.dropdown-item')
-    expect(items.map((item) => item.text())).toEqual(['Technologies', 'À propos', 'Qualité', 'Contributions'])
+    expect(items.map((item) => item.text())).toEqual(['Technologies', 'À propos', 'Qualité', 'Contributions', 'Incidents'])
 
     wrapper.unmount()
   })

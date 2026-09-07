@@ -43,7 +43,7 @@ const en: PortfolioLocaleContent = {
     additional: [
       { name: 'API Platform' },
       { name: 'Bootstrap' },
-      { name: 'Git & GitHub' },
+      { name: 'Git' },
       { name: 'Nginx' },
       { name: 'Linux' },
       { name: 'CI/CD' },

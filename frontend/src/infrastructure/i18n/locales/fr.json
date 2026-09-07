@@ -5,7 +5,8 @@
     "experiences": "Parcours technique",
     "contact": "Contact",
     "about": "À propos",
-    "contributions": "Contributions"
+    "contributions": "Contributions",
+    "incidents": "Incidents"
   },
   "common": {
     "downloadCv": "Télécharger mon CV",
@@ -36,7 +37,8 @@
       "about": "À propos",
       "quality": "Qualité",
       "users": "Utilisateurs",
-      "contributions": "Contributions"
+      "contributions": "Contributions",
+      "incidents": "Incidents"
     },
     "quality": {
       "actions": "Actions",
@@ -223,6 +225,35 @@
         "validation": "Certains champs sont invalides.",
         "unknown": "Une erreur est survenue. Réessayez plus tard."
       }
+    },
+    "incidents": {
+      "create": "Ajouter un incident",
+      "edit": "Modifier l'incident",
+      "listTitle": "Incidents enregistrés",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "localeLabel": "Langue",
+      "titleLabel": "Titre (ce qui a cassé)",
+      "versionLabel": "Version",
+      "occurredAtLabel": "Date",
+      "impactLabel": "Impact (conséquence et durée)",
+      "rootCauseLabel": "Cause racine",
+      "resolutionLabel": "Résolution",
+      "invariantLabel": "Invariant (la règle acquise)",
+      "invariantHelp": "Obligatoire. C'est ce champ qui distingue un journal d'incidents d'une liste d'échecs : sans règle tirée de la panne, l'entrée n'a pas sa place ici.",
+      "positionLabel": "Position",
+      "actions": "Actions",
+      "editAction": "Modifier",
+      "deleteAction": "Supprimer",
+      "confirmDelete": "Supprimer l'incident « {title} » ?",
+      "empty": "Aucun incident enregistré.",
+      "loading": "Chargement des incidents…",
+      "loadError": "Le chargement des incidents a échoué. Réessayez plus tard.",
+      "errors": {
+        "not-found": "Cet incident n'existe plus.",
+        "validation": "Certains champs sont invalides.",
+        "unknown": "Une erreur est survenue. Réessayez plus tard."
+      }
     }
   },
   "forbidden": {
@@ -372,6 +403,14 @@
     "adminContributions": {
       "title": "Administration — Contributions",
       "description": "Gestion des contributions techniques publiées sur le site."
+    },
+    "incidents": {
+      "title": "Incidents et invariants",
+      "description": "Pannes de production de ce projet, causes racines et règles qui en sont sorties."
+    },
+    "adminIncidents": {
+      "title": "Administration — Incidents",
+      "description": "Gestion du journal des incidents de production."
     }
   },
   "contributions": {
@@ -381,5 +420,18 @@
     "error": "Les contributions n'ont pas pu être chargées. Réessayez plus tard.",
     "empty": "Aucune contribution publiée pour le moment.",
     "readOnGitHub": "Lire la discussion sur GitHub"
+  },
+  "incidents": {
+    "eyebrow": "Incidents et invariants",
+    "intro": "Les pannes que ce projet a connues en production, leur cause racine, et la règle que chacune a laissée. Publier ses incidents n'a d'intérêt que si l'on en tire quelque chose : c'est l'invariant qui compte, pas la panne.",
+    "loading": "Chargement des incidents…",
+    "error": "Le journal des incidents n'a pas pu être chargé. Réessayez plus tard.",
+    "empty": "Aucun incident publié pour le moment.",
+    "fields": {
+      "impact": "Impact",
+      "rootCause": "Cause racine",
+      "resolution": "Résolution",
+      "invariant": "Invariant"
+    }
   }
 }
