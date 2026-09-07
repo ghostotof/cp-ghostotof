@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import StackPage from '../../../src/presentation/pages/StackPage.vue'
 import { WATCH_REPOSITORY } from '../../../src/application/watch/useWatch'
@@ -174,6 +174,55 @@ describe('StackPage', () => {
 
     expect(wrapper.text()).toContain('Aucun rafraîchissement')
     expect(wrapper.find('table').exists()).toBe(false)
+  })
+
+  /**
+   * « janvier 2027 » ne dit rien à qui ne fait pas le calcul de tête. Sans le
+   * relatif, l'information la plus importante du tableau — une échéance à
+   * quatre mois — a exactement la même apparence qu'une échéance à quatre ans.
+   */
+  describe('échéances', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-09-07T12:00:00Z'))
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('affiche l’échéance en relatif à côté de la date', async () => {
+      const wrapper = mountPage()
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('décembre 2027')
+      expect(wrapper.text()).toContain('dans 15 mois')
+    })
+
+    /**
+     * Le signalement passe par le texte autant que par la couleur : « dans
+     * 4 mois » se lit sans distinguer les teintes.
+     */
+    it('met en évidence une échéance proche', async () => {
+      const wrapper = mountPage(
+        createStubRepository({
+          releaseCycles: {
+            ...SNAPSHOT.releaseCycles,
+            products: [{ ...PHP, eolFrom: '2027-01-31' }],
+          },
+        }),
+      )
+      await flushPromises()
+
+      expect(wrapper.find('tbody .text-warning').text()).toContain('dans 4 mois')
+    })
+
+    it('ne met pas en évidence une échéance lointaine', async () => {
+      const wrapper = mountPage()
+      await flushPromises()
+
+      expect(wrapper.find('tbody .text-warning').exists()).toBe(false)
+    })
   })
 
   /**

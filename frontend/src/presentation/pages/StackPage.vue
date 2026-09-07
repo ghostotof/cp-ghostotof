@@ -32,8 +32,24 @@ const products = computed(() => releaseCycles.value?.products ?? [])
 const refreshedAt = computed(() => releaseCycles.value?.refreshedAt ?? null)
 const isPartial = computed(() => releaseCycles.value?.sourceStatus === 'partial')
 
+/**
+ * En deçà de ce délai, une échéance cesse d'être une note de bas de page.
+ * Douze mois laissent le temps de planifier une montée de version sans que
+ * l'alerte se déclenche pour tout le tableau.
+ */
+const IMMINENT_THRESHOLD_MONTHS = 12
+
 const deadlineFormatter = computed(
   () => new Intl.DateTimeFormat(locale.value, { year: 'numeric', month: 'long' }),
+)
+
+/**
+ * `Intl.RelativeTimeFormat` plutôt que des clés traduites avec pluriel : la
+ * langue, l'accord et le choix entre « dans 4 mois » et « le mois prochain »
+ * sont l'affaire du navigateur, pas du fichier de traduction.
+ */
+const relativeFormatter = computed(
+  () => new Intl.RelativeTimeFormat(locale.value, { numeric: 'auto' }),
 )
 
 const refreshedAtFormatter = computed(
@@ -61,6 +77,37 @@ function formatRefreshedAt(iso: string): string {
   const parsed = new Date(iso)
 
   return Number.isNaN(parsed.getTime()) ? iso : refreshedAtFormatter.value.format(parsed)
+}
+
+/** Nombre de mois entiers d'ici l'échéance ; négatif si elle est passée. */
+function monthsUntil(isoDate: string): number | null {
+  const parsed = new Date(`${isoDate}T00:00:00`)
+
+  if (Number.isNaN(parsed.getTime())) return null
+
+  const today = new Date()
+
+  return (parsed.getFullYear() - today.getFullYear()) * 12 + (parsed.getMonth() - today.getMonth())
+}
+
+/**
+ * « janvier 2027 » ne dit rien à qui ne fait pas le calcul. « dans 4 mois »,
+ * si — et c'est toute la différence entre un tableau de dates et une veille.
+ */
+function relativeDeadline(isoDate: string | null): string | null {
+  if (null === isoDate) return null
+
+  const months = monthsUntil(isoDate)
+
+  return null === months ? null : relativeFormatter.value.format(months, 'month')
+}
+
+function isImminent(isoDate: string | null): boolean {
+  if (null === isoDate) return false
+
+  const months = monthsUntil(isoDate)
+
+  return null !== months && months <= IMMINENT_THRESHOLD_MONTHS
 }
 </script>
 
@@ -178,8 +225,25 @@ function formatRefreshedAt(iso: string): string {
                 >{{ t(STATUS_LABEL_KEYS[product.status]) }}</span>
               </td>
 
-              <td>{{ formatDeadline(product.endOfActiveSupportFrom) }}</td>
-              <td>{{ formatDeadline(product.eolFrom) }}</td>
+              <!-- La date absolue reste la donnée, le relatif la rend lisible.
+                   L'échéance proche est signalée par le texte autant que par la
+                   couleur : « dans 4 mois » se lit sans distinguer les teintes. -->
+              <td>
+                {{ formatDeadline(product.endOfActiveSupportFrom) }}
+                <span
+                  v-if="relativeDeadline(product.endOfActiveSupportFrom)"
+                  class="d-block small"
+                  :class="isImminent(product.endOfActiveSupportFrom) ? 'text-warning fw-semibold' : 'text-body-secondary'"
+                >{{ relativeDeadline(product.endOfActiveSupportFrom) }}</span>
+              </td>
+              <td>
+                {{ formatDeadline(product.eolFrom) }}
+                <span
+                  v-if="relativeDeadline(product.eolFrom)"
+                  class="d-block small"
+                  :class="isImminent(product.eolFrom) ? 'text-warning fw-semibold' : 'text-body-secondary'"
+                >{{ relativeDeadline(product.eolFrom) }}</span>
+              </td>
 
               <td>{{ product.latestVersion ?? '—' }}</td>
 
