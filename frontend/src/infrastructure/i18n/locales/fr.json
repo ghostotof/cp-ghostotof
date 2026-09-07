@@ -455,7 +455,8 @@
       "status": "Statut",
       "activeSupport": "Support actif jusqu'à",
       "eol": "Fin de vie",
-      "latest": "Dernier correctif"
+      "latest": "Dernier correctif",
+      "update": "Mise à jour"
     },
     "status": {
       "supported": "Supporté",

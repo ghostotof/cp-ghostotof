@@ -111,6 +111,26 @@ describe('StackPage', () => {
     expect(wrapper.find('tbody .badge.text-bg-info').text()).toContain('correctif')
   })
 
+  /**
+   * La version publiée et le fait qu'une mise à jour soit en attente sont deux
+   * informations distinctes : la seconde est la plus actionnable du tableau et
+   * se lit mieux alignée dans sa propre colonne que noyée à côté d'un numéro.
+   */
+  it('sépare la version du dernier correctif de l’indicateur de mise à jour', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.findAll('thead th')).toHaveLength(7)
+
+    const cells = wrapper.findAll('tbody tr:first-child td')
+    const latest = cells[cells.length - 2]
+    const update = cells[cells.length - 1]
+
+    expect(latest.text()).toBe('8.5.10')
+    expect(latest.find('.badge').exists()).toBe(false)
+    expect(update.find('.badge').text()).toContain('correctif')
+  })
+
   it('n’annonce pas de correctif quand l’installation est à jour', async () => {
     const wrapper = mountPage(
       createStubRepository({

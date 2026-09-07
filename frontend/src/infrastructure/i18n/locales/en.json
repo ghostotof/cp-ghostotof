@@ -455,7 +455,8 @@
       "status": "Status",
       "activeSupport": "Active support until",
       "eol": "End of life",
-      "latest": "Latest patch"
+      "latest": "Latest patch",
+      "update": "Update"
     },
     "status": {
       "supported": "Supported",

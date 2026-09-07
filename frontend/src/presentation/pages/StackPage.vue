@@ -141,6 +141,9 @@ function formatRefreshedAt(iso: string): string {
               <th scope="col">
                 {{ t('stack.columns.latest') }}
               </th>
+              <th scope="col">
+                {{ t('stack.columns.update') }}
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -177,12 +180,19 @@ function formatRefreshedAt(iso: string): string {
               <td>{{ formatDeadline(product.endOfActiveSupportFrom) }}</td>
               <td>{{ formatDeadline(product.eolFrom) }}</td>
 
+              <td>{{ product.latestVersion ?? '—' }}</td>
+
+              <!-- Colonne dédiée plutôt qu'un badge accolé à la version : c'est
+                   l'information la plus actionnable du tableau, elle se lit
+                   mieux alignée verticalement que noyée dans une cellule. -->
               <td>
-                {{ product.latestVersion ?? '—' }}
                 <span
                   v-if="product.hasNewerPatch"
-                  class="badge text-bg-info ms-1"
+                  class="badge text-bg-info"
                 >{{ t('stack.patchAvailable') }}</span>
+                <span v-else>
+                  —
+                </span>
               </td>
             </tr>
           </tbody>
