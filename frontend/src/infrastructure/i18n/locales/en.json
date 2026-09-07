@@ -5,7 +5,8 @@
     "experiences": "Technical background",
     "contact": "Contact",
     "about": "About",
-    "contributions": "Contributions"
+    "contributions": "Contributions",
+    "incidents": "Incidents"
   },
   "common": {
     "downloadCv": "Download my CV",
@@ -36,7 +37,8 @@
       "about": "About",
       "quality": "Quality",
       "users": "Users",
-      "contributions": "Contributions"
+      "contributions": "Contributions",
+      "incidents": "Incidents"
     },
     "quality": {
       "actions": "Actions",
@@ -223,6 +225,35 @@
         "validation": "Some fields are invalid.",
         "unknown": "An error occurred. Please try again later."
       }
+    },
+    "incidents": {
+      "create": "Add an incident",
+      "edit": "Edit incident",
+      "listTitle": "Registered incidents",
+      "save": "Save",
+      "cancel": "Cancel",
+      "localeLabel": "Language",
+      "titleLabel": "Title (what broke)",
+      "versionLabel": "Version",
+      "occurredAtLabel": "Date",
+      "impactLabel": "Impact (consequence and duration)",
+      "rootCauseLabel": "Root cause",
+      "resolutionLabel": "Resolution",
+      "invariantLabel": "Invariant (the rule learned)",
+      "invariantHelp": "Required. This field is what separates an incident log from a list of failures: without a rule drawn from the outage, the entry does not belong here.",
+      "positionLabel": "Position",
+      "actions": "Actions",
+      "editAction": "Edit",
+      "deleteAction": "Delete",
+      "confirmDelete": "Delete incident \"{title}\"?",
+      "empty": "No incident registered yet.",
+      "loading": "Loading incidents…",
+      "loadError": "Failed to load incidents. Please try again later.",
+      "errors": {
+        "not-found": "This incident no longer exists.",
+        "validation": "Some fields are invalid.",
+        "unknown": "An error occurred. Please try again later."
+      }
     }
   },
   "forbidden": {
@@ -372,6 +403,14 @@
     "adminContributions": {
       "title": "Administration — Contributions",
       "description": "Manage the technical contributions published on the site."
+    },
+    "incidents": {
+      "title": "Incidents and invariants",
+      "description": "This project's production outages, root causes and the rules that came out of them."
+    },
+    "adminIncidents": {
+      "title": "Administration — Incidents",
+      "description": "Manage the production incident log."
     }
   },
   "contributions": {
@@ -381,5 +420,18 @@
     "error": "Contributions could not be loaded. Please try again later.",
     "empty": "No contribution published yet.",
     "readOnGitHub": "Read the discussion on GitHub"
+  },
+  "incidents": {
+    "eyebrow": "Incidents and invariants",
+    "intro": "The outages this project hit in production, their root cause, and the rule each one left behind. Publishing incidents is only worth it if something comes out of them: what matters is the invariant, not the outage.",
+    "loading": "Loading incidents…",
+    "error": "The incident log could not be loaded. Please try again later.",
+    "empty": "No incident published yet.",
+    "fields": {
+      "impact": "Impact",
+      "rootCause": "Root cause",
+      "resolution": "Resolution",
+      "invariant": "Invariant"
+    }
   }
 }

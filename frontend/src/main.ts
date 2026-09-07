@@ -22,7 +22,11 @@ import { HttpQualityContentRepository } from './infrastructure/quality/HttpQuali
 import { CONTRIBUTION_REPOSITORY } from './application/contributions/useContributions'
 import { ADMIN_CONTRIBUTION_REPOSITORY } from './application/admin/contributions/useAdminContributions'
 import { HttpAdminContributionRepository } from './infrastructure/admin/contributions/HttpAdminContributionRepository'
+import { ADMIN_INCIDENT_REPOSITORY } from './application/admin/incidents/useAdminIncidents'
+import { HttpAdminIncidentRepository } from './infrastructure/admin/incidents/HttpAdminIncidentRepository'
 import { HttpContributionRepository } from './infrastructure/contributions/HttpContributionRepository'
+import { INCIDENT_REPOSITORY } from './application/incidents/useIncidents'
+import { HttpIncidentRepository } from './infrastructure/incidents/HttpIncidentRepository'
 import { ADMIN_ABOUT_SETTINGS_REPOSITORY } from './application/admin/about/useAdminAboutSettings'
 import { HttpAdminAboutSettingsRepository } from './infrastructure/admin/about/HttpAdminAboutSettingsRepository'
 import { ADMIN_ABOUT_SITE_CARD_REPOSITORY } from './application/admin/about/useAdminAboutSiteCards'
@@ -53,7 +57,9 @@ app.provide(ADMIN_EXPERIENCE_TECHNOLOGY_REPOSITORY, new HttpAdminExperienceTechn
 app.provide(ABOUT_CONTENT_REPOSITORY, new HttpAboutContentRepository(apiUrl))
 app.provide(QUALITY_CONTENT_REPOSITORY, new HttpQualityContentRepository(apiUrl))
 app.provide(CONTRIBUTION_REPOSITORY, new HttpContributionRepository(apiUrl))
+app.provide(INCIDENT_REPOSITORY, new HttpIncidentRepository(apiUrl))
 app.provide(ADMIN_CONTRIBUTION_REPOSITORY, new HttpAdminContributionRepository(apiUrl))
+app.provide(ADMIN_INCIDENT_REPOSITORY, new HttpAdminIncidentRepository(apiUrl))
 app.provide(ADMIN_ABOUT_SETTINGS_REPOSITORY, new HttpAdminAboutSettingsRepository(apiUrl))
 app.provide(ADMIN_ABOUT_SITE_CARD_REPOSITORY, new HttpAdminAboutSiteCardRepository(apiUrl))
 app.provide(ADMIN_ABOUT_ME_CARD_REPOSITORY, new HttpAdminAboutMeCardRepository(apiUrl))
