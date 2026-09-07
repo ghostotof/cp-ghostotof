@@ -43,6 +43,7 @@ const AdminTechnologiesPage = () => import('../pages/admin/AdminTechnologiesPage
 const AdminAboutPage = () => import('../pages/admin/AdminAboutPage.vue')
 const AdminContributionsPage = () => import('../pages/admin/AdminContributionsPage.vue')
 const AdminIncidentsPage = () => import('../pages/admin/AdminIncidentsPage.vue')
+const AdminWatchPage = () => import('../pages/admin/AdminWatchPage.vue')
 const AdminQualityPage = () => import('../pages/admin/AdminQualityPage.vue')
 const AdminUsersPage = () => import('../pages/admin/AdminUsersPage.vue')
 
@@ -181,6 +182,12 @@ export const router = createRouter({
               name: 'admin-incidents',
               component: AdminIncidentsPage,
               meta: { titleKey: 'seo.adminIncidents.title', descriptionKey: 'seo.adminIncidents.description' },
+            },
+            {
+              path: 'watch',
+              name: 'admin-watch',
+              component: AdminWatchPage,
+              meta: { titleKey: 'seo.adminWatch.title', descriptionKey: 'seo.adminWatch.description' },
             },
             {
               path: 'users',

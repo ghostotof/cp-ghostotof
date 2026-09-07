@@ -38,7 +38,8 @@
       "quality": "Quality",
       "users": "Users",
       "contributions": "Contributions",
-      "incidents": "Incidents"
+      "incidents": "Incidents",
+      "watch": "Watch"
     },
     "quality": {
       "actions": "Actions",
@@ -254,6 +255,38 @@
         "validation": "Some fields are invalid.",
         "unknown": "An error occurred. Please try again later."
       }
+    },
+    "watch": {
+      "create": "Add a watched product",
+      "edit": "Edit watched product",
+      "listTitle": "Watched products",
+      "save": "Save",
+      "cancel": "Cancel",
+      "slugLabel": "endoflife.date identifier",
+      "slugImmutableHelp": "Not editable: this is what identifies the product at the provider. To watch a different one, delete this entry and create a new one.",
+      "labelLabel": "Displayed label",
+      "versionSourceLabel": "Version origin",
+      "versionLabel": "Installed version",
+      "versionFromRuntimeHelp": "The version is read straight from the process serving the site: it is not typed in.",
+      "positionLabel": "Position",
+      "actions": "Actions",
+      "editAction": "Edit",
+      "deleteAction": "Delete",
+      "confirmDelete": "Remove “{label}” from the watch?",
+      "empty": "No watched product.",
+      "loading": "Loading watched products…",
+      "loadError": "Failed to load watched products. Please try again later.",
+      "sources": {
+        "manual": "Typed in",
+        "runtime_php": "Running PHP version",
+        "runtime_symfony": "Loaded Symfony version"
+      },
+      "errors": {
+        "not-found": "This product no longer exists.",
+        "validation": "Some fields are invalid.",
+        "conflict": "This product is already watched, or its identifier cannot be changed.",
+        "unknown": "An error occurred. Please try again later."
+      }
     }
   },
   "forbidden": {
@@ -415,6 +448,10 @@
     "adminIncidents": {
       "title": "Administration — Incidents",
       "description": "Manage the production incident log."
+    },
+    "adminWatch": {
+      "title": "Administration — Watch",
+      "description": "Manage the products whose lifecycle is tracked."
     }
   },
   "contributions": {

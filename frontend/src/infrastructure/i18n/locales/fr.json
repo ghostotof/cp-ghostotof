@@ -38,7 +38,8 @@
       "quality": "Qualité",
       "users": "Utilisateurs",
       "contributions": "Contributions",
-      "incidents": "Incidents"
+      "incidents": "Incidents",
+      "watch": "Veille"
     },
     "quality": {
       "actions": "Actions",
@@ -254,6 +255,38 @@
         "validation": "Certains champs sont invalides.",
         "unknown": "Une erreur est survenue. Réessayez plus tard."
       }
+    },
+    "watch": {
+      "create": "Ajouter un produit surveillé",
+      "edit": "Modifier le produit surveillé",
+      "listTitle": "Produits surveillés",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "slugLabel": "Identifiant endoflife.date",
+      "slugImmutableHelp": "Non modifiable : c'est lui qui désigne le produit chez le fournisseur. Pour en suivre un autre, supprimez cette entrée et créez-en une nouvelle.",
+      "labelLabel": "Libellé affiché",
+      "versionSourceLabel": "Origine de la version",
+      "versionLabel": "Version installée",
+      "versionFromRuntimeHelp": "La version est lue directement dans le processus qui sert le site : elle ne se saisit pas.",
+      "positionLabel": "Position",
+      "actions": "Actions",
+      "editAction": "Modifier",
+      "deleteAction": "Supprimer",
+      "confirmDelete": "Retirer « {label} » de la veille ?",
+      "empty": "Aucun produit surveillé.",
+      "loading": "Chargement des produits surveillés…",
+      "loadError": "Le chargement des produits surveillés a échoué. Réessayez plus tard.",
+      "sources": {
+        "manual": "Saisie manuelle",
+        "runtime_php": "Version de PHP exécutée",
+        "runtime_symfony": "Version de Symfony chargée"
+      },
+      "errors": {
+        "not-found": "Ce produit n'existe plus.",
+        "validation": "Certains champs sont invalides.",
+        "conflict": "Ce produit est déjà surveillé, ou son identifiant ne peut pas être modifié.",
+        "unknown": "Une erreur est survenue. Réessayez plus tard."
+      }
     }
   },
   "forbidden": {
@@ -415,6 +448,10 @@
     "adminIncidents": {
       "title": "Administration — Incidents",
       "description": "Gestion du journal des incidents de production."
+    },
+    "adminWatch": {
+      "title": "Administration — Veille",
+      "description": "Gestion des produits dont le cycle de vie est suivi."
     }
   },
   "contributions": {
