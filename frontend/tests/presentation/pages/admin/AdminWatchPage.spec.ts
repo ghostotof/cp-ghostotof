@@ -6,6 +6,26 @@ import { createAppI18n } from '../../../../src/presentation/i18n'
 import type { AdminWatchedProductRepository } from '../../../../src/domain/admin/watch/repositories/AdminWatchedProductRepository'
 import type { AdminWatchedProduct } from '../../../../src/domain/admin/watch/entities/AdminWatchedProduct'
 import { AdminWatchedProductError } from '../../../../src/domain/admin/watch/errors/AdminWatchedProductError'
+import { ADMIN_VULNERABILITY_REPOSITORY } from '../../../../src/application/admin/watch/useAdminVulnerabilities'
+import type { AdminVulnerabilityRepository } from '../../../../src/domain/admin/watch/repositories/AdminVulnerabilityRepository'
+import type { AdminVulnerability } from '../../../../src/domain/admin/watch/entities/AdminVulnerability'
+
+const VULNERABILITY: AdminVulnerability = {
+  id: 'GHSA-h7vf-5wrv-9fhv',
+  aliases: ['CVE-2022-24894'],
+  summary: 'Symfony storing cookie headers in HttpCache',
+  severity: 'MODERATE',
+  packageEcosystem: 'Packagist',
+  packageName: 'symfony/http-kernel',
+  packageVersion: '4.0.0',
+  fixedIn: '4.4.50',
+}
+
+function createStubVulnerabilityRepository(
+  vulnerabilities: readonly AdminVulnerability[] = [],
+): AdminVulnerabilityRepository {
+  return { list: vi.fn(async () => vulnerabilities) }
+}
 
 const POSTGRES: AdminWatchedProduct = {
   id: 1,
@@ -29,11 +49,17 @@ function createStubRepository(
   }
 }
 
-async function mountPage(repository: AdminWatchedProductRepository = createStubRepository()) {
+async function mountPage(
+  repository: AdminWatchedProductRepository = createStubRepository(),
+  vulnerabilityRepository: AdminVulnerabilityRepository = createStubVulnerabilityRepository(),
+) {
   const wrapper = mount(AdminWatchPage, {
     global: {
       plugins: [createAppI18n()],
-      provide: { [ADMIN_WATCHED_PRODUCT_REPOSITORY as symbol]: repository },
+      provide: {
+        [ADMIN_WATCHED_PRODUCT_REPOSITORY as symbol]: repository,
+        [ADMIN_VULNERABILITY_REPOSITORY as symbol]: vulnerabilityRepository,
+      },
     },
   })
   await flushPromises()
@@ -161,5 +187,55 @@ describe('AdminWatchPage', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('déjà surveillé')
+  })
+
+  /**
+   * C'est ici, et nulle part ailleurs, que le détail des failles est visible :
+   * la page publique n'en montre que le nombre (décision D4).
+   */
+  describe('vulnérabilités', () => {
+    it('affiche le détail que la page publique ne montre pas', async () => {
+      const wrapper = await mountPage(createStubRepository(), createStubVulnerabilityRepository([VULNERABILITY]))
+
+      expect(wrapper.text()).toContain('GHSA-h7vf-5wrv-9fhv')
+      expect(wrapper.text()).toContain('CVE-2022-24894')
+      expect(wrapper.text()).toContain('symfony/http-kernel')
+      expect(wrapper.text()).toContain('MODERATE')
+      expect(wrapper.text()).toContain('4.4.50')
+    })
+
+    it('renvoie vers la fiche publiée par la base', async () => {
+      const wrapper = await mountPage(createStubRepository(), createStubVulnerabilityRepository([VULNERABILITY]))
+
+      const link = wrapper.get(`a[href="https://osv.dev/vulnerability/${VULNERABILITY.id}"]`)
+
+      expect(link.text()).toBe(VULNERABILITY.id)
+    })
+
+    /**
+     * Une entrée dont l'enrichissement avait échoué reste listée, avec des
+     * tirets : la retirer ferait diverger le tableau du décompte public.
+     */
+    it('liste une entrée dépourvue de détail', async () => {
+      const bare = { ...VULNERABILITY, aliases: [], summary: null, severity: null, fixedIn: null }
+      const wrapper = await mountPage(createStubRepository(), createStubVulnerabilityRepository([bare]))
+
+      expect(wrapper.text()).toContain(VULNERABILITY.id)
+      expect(wrapper.findAll('tbody')[1].text()).toContain('—')
+    })
+
+    it('annonce l’absence de vulnérabilité connue', async () => {
+      const wrapper = await mountPage()
+
+      expect(wrapper.text()).toContain('Aucune vulnérabilité connue')
+    })
+
+    it('signale un échec de chargement des vulnérabilités', async () => {
+      const wrapper = await mountPage(createStubRepository(), {
+        list: vi.fn(async () => Promise.reject(new Error('unavailable'))),
+      })
+
+      expect(wrapper.text()).toContain('chargement des vulnérabilités a échoué')
+    })
   })
 })

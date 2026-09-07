@@ -286,6 +286,18 @@
         "validation": "Some fields are invalid.",
         "conflict": "This product is already watched, or its identifier cannot be changed.",
         "unknown": "An error occurred. Please try again later."
+      },
+      "vulnerabilities": {
+        "title": "Known vulnerabilities",
+        "help": "Details are administration-only: the public page shows the count alone. The list is regenerated on every refresh and cannot be edited here.",
+        "identifier": "Identifier",
+        "package": "Package",
+        "severity": "Severity",
+        "fixedIn": "Fixed in",
+        "summary": "Summary",
+        "empty": "No known vulnerability to date.",
+        "loading": "Loading vulnerabilities…",
+        "loadError": "Failed to load vulnerabilities. Please try again later."
       }
     }
   },

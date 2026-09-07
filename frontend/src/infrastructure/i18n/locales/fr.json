@@ -286,6 +286,18 @@
         "validation": "Certains champs sont invalides.",
         "conflict": "Ce produit est déjà surveillé, ou son identifiant ne peut pas être modifié.",
         "unknown": "Une erreur est survenue. Réessayez plus tard."
+      },
+      "vulnerabilities": {
+        "title": "Vulnérabilités connues",
+        "help": "Détail réservé à l'administration : la page publique n'en affiche que le nombre. La liste est régénérée à chaque rafraîchissement, elle ne se modifie pas ici.",
+        "identifier": "Identifiant",
+        "package": "Paquet",
+        "severity": "Sévérité",
+        "fixedIn": "Corrigé en",
+        "summary": "Résumé",
+        "empty": "Aucune vulnérabilité connue à ce jour.",
+        "loading": "Chargement des vulnérabilités…",
+        "loadError": "Le chargement des vulnérabilités a échoué. Réessayez plus tard."
       }
     }
   },

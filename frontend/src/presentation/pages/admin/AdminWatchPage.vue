@@ -2,6 +2,7 @@
 import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminWatchedProducts } from '../../../application/admin/watch/useAdminWatchedProducts'
+import { useAdminVulnerabilities } from '../../../application/admin/watch/useAdminVulnerabilities'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseNumberInput from '../../ui/BaseNumberInput.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
@@ -9,6 +10,16 @@ import type { AdminWatchedProduct } from '../../../domain/admin/watch/entities/A
 
 const { t } = useI18n()
 const { products, isLoading, hasError, errorMessage, create, update, remove } = useAdminWatchedProducts()
+const {
+  vulnerabilities,
+  isLoading: isLoadingVulnerabilities,
+  hasError: hasVulnerabilityError,
+} = useAdminVulnerabilities()
+
+/** L'adresse de la fiche publiée par la base, pour vérifier à la source. */
+function osvUrl(id: string): string {
+  return `https://osv.dev/vulnerability/${encodeURIComponent(id)}`
+}
 
 const VERSION_SOURCES = ['manual', 'runtime_php', 'runtime_symfony'] as const
 
@@ -283,6 +294,91 @@ async function handleDelete(product: AdminWatchedProduct): Promise<void> {
                   {{ t('admin.watch.deleteAction') }}
                 </button>
               </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Détail des vulnérabilités : visible ici et nulle part ailleurs. La
+         page publique n'en montre qu'un décompte (décision D4). -->
+    <div class="surface-panel p-3 p-sm-4">
+      <h2 class="h6 fw-bold text-white mb-1">
+        {{ t('admin.watch.vulnerabilities.title') }}
+      </h2>
+      <p class="form-text mb-3">
+        {{ t('admin.watch.vulnerabilities.help') }}
+      </p>
+
+      <p
+        v-if="isLoadingVulnerabilities"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('admin.watch.vulnerabilities.loading') }}
+      </p>
+      <p
+        v-else-if="hasVulnerabilityError"
+        class="text-danger mb-0"
+        role="alert"
+      >
+        {{ t('admin.watch.vulnerabilities.loadError') }}
+      </p>
+      <p
+        v-else-if="0 === vulnerabilities.length"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('admin.watch.vulnerabilities.empty') }}
+      </p>
+      <div
+        v-else
+        class="table-responsive"
+      >
+        <table class="table table-dark table-hover align-middle mb-0">
+          <thead>
+            <tr>
+              <th scope="col">
+                {{ t('admin.watch.vulnerabilities.identifier') }}
+              </th>
+              <th scope="col">
+                {{ t('admin.watch.vulnerabilities.package') }}
+              </th>
+              <th scope="col">
+                {{ t('admin.watch.vulnerabilities.severity') }}
+              </th>
+              <th scope="col">
+                {{ t('admin.watch.vulnerabilities.fixedIn') }}
+              </th>
+              <th scope="col">
+                {{ t('admin.watch.vulnerabilities.summary') }}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="vulnerability in vulnerabilities"
+              :key="vulnerability.id"
+            >
+              <th
+                scope="row"
+                class="fw-semibold text-white"
+              >
+                <a
+                  :href="osvUrl(vulnerability.id)"
+                  rel="noreferrer"
+                  class="link-light"
+                >{{ vulnerability.id }}</a>
+                <span
+                  v-if="vulnerability.aliases.length > 0"
+                  class="d-block form-text"
+                >{{ vulnerability.aliases.join(', ') }}</span>
+              </th>
+              <td>
+                {{ vulnerability.packageName }}
+                <span class="d-block form-text">{{ vulnerability.packageVersion }}</span>
+              </td>
+              <td>{{ vulnerability.severity ?? '—' }}</td>
+              <td>{{ vulnerability.fixedIn ?? '—' }}</td>
+              <td>{{ vulnerability.summary ?? '—' }}</td>
             </tr>
           </tbody>
         </table>
