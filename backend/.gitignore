@@ -24,3 +24,9 @@
 # Surcharge locale facultative (la config versionnee est phpstan.dist.neon).
 /phpstan.neon
 ###< phpstan/phpstan ###
+
+###> app/watch ###
+# Manifeste des paquets déployés : produit au build (app:watch:build-manifest),
+# jamais commité — il décrit un artefact, pas le code source.
+/config/watch/package-manifest.json
+###< app/watch ###

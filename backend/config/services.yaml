@@ -18,6 +18,10 @@ parameters:
     # URL publique du frontend, pour construire les liens des e-mails sortants
     # (ex. lien de définition de mot de passe d'un utilisateur invité).
     app.frontend_base_url: '%env(APP_FRONTEND_BASE_URL)%'
+    # Manifeste des paquets déployés, produit au build et embarqué dans l'image.
+    # Sous config/ et non var/ : c'est une donnée du déploiement, figée avec lui,
+    # là où var/ est le seul répertoire inscriptible en production.
+    app.watch_package_manifest_path: '%kernel.project_dir%/config/watch/package-manifest.json'
 
 services:
     # default configuration for services in *this* file
@@ -32,6 +36,19 @@ services:
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
+
+    # Chemins du manifeste de paquets (contexte Portfolio/Watch). Le lock npm
+    # n'existe que là où le dépôt frontend est accessible — au build, pas dans
+    # le conteneur backend de développement : son absence est un cas prévu.
+    App\Portfolio\Watch\Infrastructure\Manifest\LockFilePackageManifestBuilder:
+        arguments:
+            $composerLockPath: '%kernel.project_dir%/composer.lock'
+            $npmLockPath: '%kernel.project_dir%/../frontend/package-lock.json'
+            $manifestPath: '%app.watch_package_manifest_path%'
+
+    App\Portfolio\Watch\Infrastructure\Manifest\FilePackageManifestReader:
+        arguments:
+            $manifestPath: '%app.watch_package_manifest_path%'
 
 when@test:
     services:
