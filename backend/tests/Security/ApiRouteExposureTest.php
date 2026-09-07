@@ -48,6 +48,7 @@ final class ApiRouteExposureTest extends WebTestCase
         '/api/experience/technologies' => 'Liste de technologies — contenu de démonstration.',
         '/api/contributions/{locale}' => 'Contributions techniques publiques : précisément le contenu destiné au visiteur non authentifié arrivé depuis LinkedIn. Aucune donnée personnelle identifiante.',
         '/api/incidents/{locale}' => 'Journal des pannes de production et des invariants qui en sont sortis : contenu de démonstration, sans donnée personnelle identifiante.',
+        '/api/watch' => 'Veille technique : versions de la stack et échéances de support, lues dans le snapshot local. Aucune donnée personnelle identifiante, et rien qu\'un visiteur ne puisse déjà déduire des en-têtes HTTP ou du dépôt public. Le volet vulnérabilités, lui, ne sera exposé ici qu\'agrégé — le détail des CVE reste ROLE_SUPER (décision D4).',
 
         // --- Parcours publics par conception.
         '/api/contact' => 'Formulaire de contact anonyme (honeypot + rate limit IP).',
