@@ -33,7 +33,8 @@ T1.1 entités+migration ─┬─> T1.4 refresher+commande ──> T1.5 API publ
 T1.2 client EOL ────────┤
 T1.3 statut+versions ───┘
 
-T2.1 CRUD backoffice ──> T2.2 validation slug ──> T2.3 page admin ──> T2.4 seed
+T1.5b seed du catalogue  (remontée depuis la tranche 2 : sans lui, la page du Checkpoint A est vide)
+T2.1 CRUD backoffice ──> T2.2 validation slug ──> T2.3 page admin
 T3.1 manifeste ──> T3.2 client OSV ──> T3.3 agrégat public ──> T3.4 «rien cherché» ──> T3.5 rendu ──> T3.6 CI
 T4.1 API détail ──> T4.2 rendu admin
 T5.1 fraîcheur ──> T5.2 rendu ──> T5.3 CronJob
@@ -85,6 +86,18 @@ sortant dans la requête**. Entrée dans `PUBLIC_PATHS` d'`ApiRouteExposureTest`
 **Vérification** : test fonctionnel anonyme → 200 ; `ApiRouteExposureTest` vert ; assertion qu'aucune
 requête HTTP sortante n'est émise pendant l'appel (client mocké et jamais sollicité).
 
+### T1.5b — Catalogue des produits suivis (S) — *remontée depuis T2.4 le 2026-09-07*
+`app:watch:seed` idempotente (purge puis recréation) : `php`, `symfony`, `postgresql`, `nodejs`,
+`vue`, `nginx`, `rabbitmq`, versions issues de `versions.lock`.
+
+*Pourquoi ici et non en tranche 2* : le Checkpoint A demande de voir la page fonctionner, or sans
+catalogue elle s'affiche vide. Un « seed minimal » provisoire aurait fait repasser deux fois sur le
+même fichier et son test pour cinq lignes de données — dans une commande de seed, le squelette
+domine largement le contenu. La tranche 2 se réduit d'autant, ce qui correspond mieux à sa nature :
+l'administration au backoffice.
+
+**Vérification** : double exécution ⇒ même état ; les slugs répondent tous 200 chez endoflife.date.
+
 ### T1.6 — Tranche frontend minimale (M) — *dépend de T1.5*
 `domain/watch/` (entités + `WatchRepository`), `infrastructure/watch/HttpWatchRepository.ts`,
 `application/watch/useWatch.ts` (injecté par `InjectionKey` depuis `main.ts`),
@@ -118,10 +131,7 @@ doit jamais empêcher d'administrer son propre site.
 composants `Base*.vue` existants, entrée dans `AdminLayout.vue`, route `{ requiresAuth: true, roles: [ROLE_SUPER] }`.
 **Vérification** : Vitest ; guard de route testé.
 
-### T2.4 — Seed initial (S)
-`app:watch:seed` idempotente (purge puis recréation) : `php`, `symfony`, `postgresql`, `nodejs`,
-`vue`, `nginx`, `rabbitmq`, versions issues de `versions.lock`.
-**Vérification** : double exécution ⇒ même état ; les slugs répondent tous 200 chez endoflife.date.
+*(L'ancienne T2.4 — seed du catalogue — a été remontée en T1.5b, voir tranche 1.)*
 
 > ### ✅ Checkpoint B — la page vit de son propre contenu
 
