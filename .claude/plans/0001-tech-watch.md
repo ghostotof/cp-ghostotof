@@ -165,12 +165,18 @@ Manifeste absent ou vide ⇒ état explicite, jamais un « 0 vulnérabilité » 
 ### T3.5 — Rendu de l'agrégat (S) — *dépend de T3.3*
 **Vérification** : Vitest sur les trois cas — sain, vulnérabilités présentes, analyse non effectuée.
 
-### T3.6 — Intégration CI (S)
-**Étape dans le job `build-images`**, avant `Build & push` — et non un job séparé : le job régénère
-déjà la carte Open Graph au même endroit, et un job distinct imposerait de transmettre un artefact.
-*(Précision par rapport à D3, qui parlait d'un « job CI ».)*
-**Vérification** : pipeline vert ; `docker run <image> cat config/watch/package-manifest.json` renvoie
-le manifeste attendu.
+### T3.6 — Génération à la construction de l'image (S) — *révisé le 2026-09-07*
+Le manifeste est produit **pendant le `docker build`**, dans le stage `production`, par un script PHP
+autonome (`bin/build-package-manifest.php`) sans kernel Symfony — au build, ni `APP_SECRET` ni
+`DATABASE_URL` ne sont disponibles, et démarrer l'application pour lire deux fichiers JSON exigerait
+une configuration complète sans aucun besoin.
+
+*Révision de D3 et du plan initial, qui prévoyaient tous deux une étape CI.* Le contexte de build
+étant la racine du dépôt, `frontend/package-lock.json` y est déjà accessible : **aucune modification
+du pipeline n'est nécessaire**, et le manifeste ne peut pas se désynchroniser de l'image puisqu'il
+naît avec elle.
+
+**Vérification** : `docker run <image>` montre le manifeste attendu.
 
 > ### ✅ Checkpoint C — revue de sécurité
 > Le cloisonnement D4 est la promesse centrale de cette fonctionnalité. Relire à froid le payload
