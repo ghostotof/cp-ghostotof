@@ -555,6 +555,16 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   same image as the Deployment. It is also **the only object in the cluster that makes outbound calls to
   third parties**; the namespace's NetworkPolicies restrict ingress only, so nothing extra is needed today —
   but adding an egress policy would break this Job first.
+- **An nginx-config-only change does not reach the running nginx.** Two mechanisms stack up:
+  `backend-nginx-conf` is a **plain resource, not a `configMapGenerator`** (no hash suffix, so applying
+  it triggers no rollout), *and* the backend Deployment mounts it with **`subPath: default.conf`**,
+  which Kubernetes never refreshes in a running container. So `kubectl apply` prints
+  `configmap/backend-nginx-conf configured` while the sidecar keeps its old rules **indefinitely**.
+  A normal release is unaffected — the image tag changes, the pod is recreated, the config comes with
+  it. The trap is the config-only hotfix: it looks applied and isn't. Force a rollout
+  (`kubectl -n <ns> rollout restart deploy/backend`) and verify with
+  `kubectl exec … -c nginx -- nginx -T | grep <the new directive>`. Same family as the stale-image
+  incident below: the deploy reports success while running something else.
 - **Three nginx rate-limit zones, two different jobs.** `contact` (10 r/m) and `pwsetup` (20 r/m)
   protect a *side effect* — sending mail, guessing a token. `publicapi` (600 r/m, burst 200, on
   `location /`) protects the *resource*: without it every public read reaches PHP and Postgres as
