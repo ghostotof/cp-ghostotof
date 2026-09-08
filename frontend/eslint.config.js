@@ -2,6 +2,7 @@ import { globalIgnores } from 'eslint/config'
 import { defineConfigWithVueTs, vueTsConfigs } from '@vue/eslint-config-typescript'
 import pluginVue from 'eslint-plugin-vue'
 import pluginVueI18n from '@intlify/eslint-plugin-vue-i18n'
+import pluginVueA11y from 'eslint-plugin-vuejs-accessibility'
 import globals from 'globals'
 
 export default defineConfigWithVueTs(
@@ -19,6 +20,26 @@ export default defineConfigWithVueTs(
   pluginVue.configs['flat/recommended'],
   vueTsConfigs.recommended,
   ...pluginVueI18n.configs['flat/recommended'],
+  // Accessibilité : analyse statique des templates (alt manquant, champ sans
+  // label, @click sans équivalent clavier, ARIA invalide…). `npm run lint`
+  // étant bloquant en CI, ces règles le sont aussi.
+  //
+  // Ce niveau ne voit que ce qui se lit dans le template. Il ne dira rien du
+  // contraste ni de l'ordre de tabulation, qui demandent un rendu réel : le
+  // Tab-through manuel reste nécessaire, l'outillage le complète sans le
+  // remplacer.
+  ...pluginVueA11y.configs['flat/recommended'],
+  {
+    name: 'app/vue-a11y-settings',
+    rules: {
+      // Par défaut la règle exige qu'un label soit À LA FOIS imbriqué autour de
+      // son champ ET porteur d'un `for`. C'est plus strict que WCAG, qui tient
+      // l'une ou l'autre méthode pour valide — et les composants Base*.vue
+      // utilisent `for`/`id`, l'association la plus explicite, notamment parce
+      // qu'elle survit à un champ déplacé dans le template.
+      'vuejs-accessibility/label-has-for': ['error', { required: { some: ['nesting', 'id'] } }],
+    },
+  },
   {
     name: 'app/tests',
     files: ['tests/**/*.{ts,vue}'],
