@@ -220,6 +220,19 @@ qui est en retard. Divulgation assumée, désormais écrite plutôt que sous-ent
   **issue #13**. Rien d'exploitable en l'état (aucun `v-html`, `href` liés à une donnée tous bornés),
   et la mise en œuvre n'est pas triviale — `connect-src` dépend de l'`API_URL` injectée au runtime,
   donc la conf nginx doit passer par le même `envsubst` que `config.template.js`.
+- **La dérive de version des cinq produits saisis à la main.** PHP et Symfony lisent le runtime et ne
+  peuvent pas mentir (décision n°3) ; PostgreSQL, Node, Vue, nginx et RabbitMQ sont en saisie. Monter
+  `POSTGRES_TAG` dans `.env` et déployer laisse donc `/stack` annoncer l'ancienne version jusqu'à ce
+  que quelqu'un modifie l'entrée au backoffice — la page affirme alors quelque chose de faux sur ce
+  qui tourne, ce qu'elle existe précisément pour éviter. C'est le coût assumé de la source hybride ;
+  la parade est de traiter l'édition du catalogue comme une étape du changement de version, au même
+  titre que `versions.lock`. Une piste pour plus tard : lire ces versions depuis le cluster.
+- **Le seed n'est joué par personne au déploiement.** `app:watch:seed` est un amorçage manuel, une
+  fois par environnement, et doit le rester : comme tous les `app:*:seed` il purge puis recrée, donc
+  l'automatiser effacerait à chaque release les modifications faites au backoffice. Un environnement
+  neuf démarre par conséquent avec un catalogue vide, `app:watch:refresh` le dit sans échouer
+  (« Aucun produit surveillé : rien à rafraîchir. »), et `/stack` affiche « jamais rafraîchi » jusqu'à
+  l'amorçage. Au 2026-09-08 c'est l'état de la **préprod**, `Incident` et `Contribution` compris.
 - L'historisation des snapshots et les courbes d'évolution (hors périmètre v1).
 - La notification à la détection d'une nouvelle vulnérabilité : aujourd'hui il faut ouvrir la page.
 - Le volume de `GET /v1/vulns/{id}` si les vulnérabilités se multipliaient — l'enrichissement est

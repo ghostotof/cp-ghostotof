@@ -288,6 +288,20 @@ folder), so entities live inside their bounded context instead of a shared top-l
     than in `WatchedProductAdministrator` so that `app:watch:seed` (and its test) stay off the network.
   - Not localized (no `locale` column, unlike every other `Portfolio/*` context): a version number is a
     fact, not a translation. UI labels are handled frontend-side.
+  - **`app:watch:seed` is a one-time bootstrap per environment, and must never be wired into the
+    deploy pipeline.** Like every other `app:*:seed`, it purges and recreates — running it on each
+    release would silently wipe the admin's catalogue edits (added products, hand-updated versions),
+    which is the whole point of the backoffice. Nothing runs seeds at deploy time; the migrate Job
+    only migrates. A fresh environment therefore starts with an empty `watched_product`, and
+    `app:watch:refresh` says so plainly (`Aucun produit surveillé : rien à rafraîchir.`) rather than
+    failing — but `/stack` will show "never refreshed" until someone seeds it. As of 2026-09-08 that
+    is the state of **preprod**, for `Incident` and `Contribution` too; prod is populated.
+  - **A version bump in `.env` does not reach the page by itself.** PHP and Symfony read the runtime,
+    so they cannot drift — that is decision D2. The other five (PostgreSQL, Node, Vue, nginx,
+    RabbitMQ) are `VersionSource::MANUAL`: bumping `POSTGRES_TAG` and deploying leaves `/stack`
+    announcing the previous version until the backoffice entry is edited. The page then states
+    something untrue about what is running, which is precisely what it exists to prevent. Treat
+    editing the catalogue as part of a version bump, the same way `versions.lock` is.
 
 ### Backoffice (`ROLE_SUPER`)
 
