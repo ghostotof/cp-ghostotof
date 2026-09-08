@@ -68,6 +68,38 @@ final class SeedAboutContentCommandTest extends KernelTestCase
         self::assertCount(11, $meCardRepository->findByLocale(Locale::EN));
     }
 
+    /**
+     * Subtilité propre à ce contexte : les réglages (`AboutSettings`) sont
+     * exclus du décompte, parce que leur écriture est un upsert et non une
+     * purge — ils ne risquent rien. Les compter ferait tenir pour « peuplée »
+     * une base qui n'a pourtant aucune carte, et le peuplement automatique de
+     * la préprod n'aurait alors jamais lieu.
+     *
+     * Ce test le prouve en ne laissant QUE des réglages en base.
+     */
+    public function testSettingsAloneDoNotCountAsExistingContent(): void
+    {
+        $this->commandTester()->execute([]);
+
+        $siteCardRepository = self::getContainer()->get(AboutSiteCardRepositoryInterface::class);
+        $meCardRepository = self::getContainer()->get(AboutMeCardRepositoryInterface::class);
+
+        foreach (Locale::cases() as $locale) {
+            foreach ($siteCardRepository->findByLocale($locale) as $card) {
+                $siteCardRepository->remove($card);
+            }
+            foreach ($meCardRepository->findByLocale($locale) as $card) {
+                $meCardRepository->remove($card);
+            }
+        }
+
+        // Les réglages sont restés : si on les comptait, la commande renoncerait.
+        $this->commandTester()->execute([]);
+
+        self::assertCount(4, $siteCardRepository->findByLocale(Locale::FR));
+        self::assertCount(11, $meCardRepository->findByLocale(Locale::FR));
+    }
+
     private function commandTester(): CommandTester
     {
         \assert(self::$kernel instanceof KernelInterface);

@@ -13,6 +13,7 @@ use App\Portfolio\About\Domain\Repository\AboutSettingsRepositoryInterface;
 use App\Portfolio\About\Domain\Repository\AboutSiteCardRepositoryInterface;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Presentation\Command\GuardsExistingContent;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -33,6 +34,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 )]
 final class SeedAboutContentCommand extends Command
 {
+    use GuardsExistingContent;
+
     public function __construct(
         private readonly AboutSettingsRepositoryInterface $aboutSettingsRepository,
         private readonly AboutSiteCardRepositoryInterface $aboutSiteCardRepository,
@@ -44,9 +47,18 @@ final class SeedAboutContentCommand extends Command
         parent::__construct();
     }
 
+    protected function configure(): void
+    {
+        $this->addForceOption();
+    }
+
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
+
+        if ($this->refusesToOverwrite($io, $input, $this->countExisting())) {
+            return Command::SUCCESS;
+        }
 
         foreach ($this->content() as $localeValue => $content) {
             $locale = Locale::from($localeValue);
@@ -225,5 +237,27 @@ final class SeedAboutContentCommand extends Command
                 ],
             ],
         ];
+    }
+
+    /**
+     * Cartes site et cartes « moi », toutes locales confondues. Les réglages
+     * (`AboutSettings`) sont volontairement exclus du décompte : leur mise à
+     * jour est un upsert, pas une purge — ils ne risquent donc rien, et les
+     * compter ferait considérer comme « peuplée » une base qui n'a pourtant
+     * aucune carte.
+     */
+    private function countExisting(): int
+    {
+        $total = 0;
+
+        foreach (Locale::cases() as $locale) {
+            $total += \count($this->aboutSiteCardRepository->findByLocale($locale));
+
+            foreach (AboutMeCardCategory::cases() as $category) {
+                $total += \count($this->aboutMeCardRepository->findByLocaleAndCategory($locale, $category));
+            }
+        }
+
+        return $total;
     }
 }

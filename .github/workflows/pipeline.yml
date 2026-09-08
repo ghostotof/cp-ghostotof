@@ -280,6 +280,17 @@ jobs:
             envsubst < ../../base/migrate-job.yaml | kubectl -n preprod apply -f -
           kubectl -n preprod wait --for=condition=complete --timeout=180s job/backend-migrate \
             || { kubectl -n preprod logs job/backend-migrate --tail=200; exit 1; }
+          # Peuplement du contenu de référence, préprod UNIQUEMENT — la
+          # production tient son contenu du backoffice et n'a rien à recevoir
+          # d'ici. Sans danger à chaque déploiement : les commandes de seed
+          # refusent d'écraser du contenu déjà présent et sortent en code 0
+          # (cf. GuardsExistingContent et l'en-tête de seed-job.yaml). `--force`
+          # n'est jamais passé : une réinitialisation reste un geste manuel.
+          kubectl -n preprod delete job backend-seed --ignore-not-found
+          BACKEND_IMAGE=$IMAGE_BACKEND:$TAG-preprod \
+            envsubst < ../../base/seed-job.yaml | kubectl -n preprod apply -f -
+          kubectl -n preprod wait --for=condition=complete --timeout=180s job/backend-seed \
+            || { kubectl -n preprod logs job/backend-seed --tail=200; exit 1; }
 
   # ---------------------------------------------------------------------------
   # test-preprod — smoke tests + audit boîte noire (gate bloquant)

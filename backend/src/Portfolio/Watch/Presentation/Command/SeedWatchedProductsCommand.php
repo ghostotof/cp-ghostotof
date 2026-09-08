@@ -7,6 +7,7 @@ namespace App\Portfolio\Watch\Presentation\Command;
 use App\Portfolio\Watch\Application\WatchedProductAdministratorInterface;
 use App\Portfolio\Watch\Domain\Repository\WatchedProductRepositoryInterface;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
+use App\Shared\Presentation\Command\GuardsExistingContent;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -16,10 +17,10 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 /**
  * Pose le catalogue des produits dont la page /stack suit le cycle de vie.
  *
- * Attention : purge avant de recréer. Rejouer cette commande écrase les
- * produits ajoutés depuis le backoffice — elle sert à poser l'état de référence
- * sur un environnement neuf, pas à synchroniser une base éditée. Même
- * comportement que `app:incidents:seed` et `app:about:seed`.
+ * Ne fait rien si un catalogue est déjà en place : il faut `--force` pour le
+ * remplacer, et c'est alors une purge suivie d'une recréation, qui écrase les
+ * produits ajoutés depuis le backoffice. Voir `GuardsExistingContent` — même
+ * comportement pour les cinq commandes de peuplement du projet.
  *
  * Les `slug` sont les identifiants du catalogue endoflife.date, et tous ont été
  * vérifiés à l'écriture de cette commande. Un slug fautif ne casserait pas la
@@ -37,6 +38,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 )]
 final class SeedWatchedProductsCommand extends Command
 {
+    use GuardsExistingContent;
+
     public function __construct(
         private readonly WatchedProductRepositoryInterface $watchedProductRepository,
         private readonly WatchedProductAdministratorInterface $watchedProductAdministrator,
@@ -44,11 +47,22 @@ final class SeedWatchedProductsCommand extends Command
         parent::__construct();
     }
 
+    protected function configure(): void
+    {
+        $this->addForceOption();
+    }
+
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
 
-        foreach ($this->watchedProductRepository->findAllOrdered() as $existing) {
+        $existingProducts = $this->watchedProductRepository->findAllOrdered();
+
+        if ($this->refusesToOverwrite($io, $input, \count($existingProducts))) {
+            return Command::SUCCESS;
+        }
+
+        foreach ($existingProducts as $existing) {
             $this->watchedProductRepository->remove($existing);
         }
 

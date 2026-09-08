@@ -9,6 +9,7 @@ use App\Portfolio\Quality\Application\QualityTraitAdministratorInterface;
 use App\Portfolio\Quality\Domain\Repository\QualityPrincipleRepositoryInterface;
 use App\Portfolio\Quality\Domain\Repository\QualityTraitRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Presentation\Command\GuardsExistingContent;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -27,6 +28,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 )]
 final class SeedQualityContentCommand extends Command
 {
+    use GuardsExistingContent;
+
     public function __construct(
         private readonly QualityPrincipleRepositoryInterface $qualityPrincipleRepository,
         private readonly QualityTraitRepositoryInterface $qualityTraitRepository,
@@ -36,9 +39,18 @@ final class SeedQualityContentCommand extends Command
         parent::__construct();
     }
 
+    protected function configure(): void
+    {
+        $this->addForceOption();
+    }
+
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
+
+        if ($this->refusesToOverwrite($io, $input, $this->countExisting())) {
+            return Command::SUCCESS;
+        }
 
         foreach ($this->content() as $localeValue => $content) {
             $locale = Locale::from($localeValue);
@@ -110,5 +122,21 @@ final class SeedQualityContentCommand extends Command
                 ],
             ],
         ];
+    }
+
+    /**
+     * Principes et traits, toutes locales confondues : une base à moitié
+     * peuplée compte comme peuplée, et n'est donc pas écrasée en silence.
+     */
+    private function countExisting(): int
+    {
+        $total = 0;
+
+        foreach (Locale::cases() as $locale) {
+            $total += \count($this->qualityPrincipleRepository->findByLocale($locale));
+            $total += \count($this->qualityTraitRepository->findByLocale($locale));
+        }
+
+        return $total;
     }
 }
