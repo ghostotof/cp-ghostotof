@@ -365,6 +365,28 @@ describe('StackPage', () => {
   })
 
   /**
+   * Les lecteurs d'écran naviguent de titre en titre : un niveau sauté leur
+   * fait manquer une section entière. C'est invisible à l'œil, et rien dans le
+   * lint ne l'attrape — la hiérarchie ne se voit qu'une fois le composant rendu.
+   */
+  it('ne saute aucun niveau de titre', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const niveaux = wrapper
+      .findAll('h1, h2, h3, h4, h5, h6')
+      .map((titre) => Number(titre.element.tagName[1]))
+
+    expect(niveaux[0]).toBe(1)
+
+    for (const [index, niveau] of niveaux.entries()) {
+      if (0 === index) continue
+
+      expect(niveau).toBeLessThanOrEqual(niveaux[index - 1] + 1)
+    }
+  })
+
+  /**
    * Le tableau est large : il doit défiler dans son propre conteneur, sinon
    * c'est la page entière qui défile horizontalement sur mobile.
    */
