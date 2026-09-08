@@ -7,6 +7,7 @@ namespace App\Portfolio\Watch\Infrastructure\ApiPlatform;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
 use App\Portfolio\Watch\Domain\Repository\WatchSnapshotRepositoryInterface;
+use App\Portfolio\Watch\Domain\Service\ExternalUrlFilter;
 use App\Portfolio\Watch\Domain\Service\SnapshotFreshnessCalculator;
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotFreshness;
 use App\Portfolio\Watch\Domain\ValueObject\SupportStatus;
@@ -36,6 +37,7 @@ final readonly class WatchProvider implements ProviderInterface
     public function __construct(
         private WatchSnapshotRepositoryInterface $snapshotRepository,
         private SnapshotFreshnessCalculator $freshnessCalculator,
+        private ExternalUrlFilter $urlFilter,
     ) {
     }
 
@@ -146,7 +148,14 @@ final readonly class WatchProvider implements ProviderInterface
                 $this->readString($entry, 'eolFrom'),
                 $this->readString($entry, 'latestVersion'),
                 true === ($entry['hasNewerPatch'] ?? null),
-                $this->readString($entry, 'documentationUrl'),
+                // Seconde barrière, et non redondance : le filtrage principal
+                // est posé à l'écriture, dans le client. Mais un snapshot écrit
+                // avant ce correctif contient encore la valeur brute du tiers,
+                // et c'est cette lecture-ci qui la republierait — jusqu'au
+                // prochain rafraîchissement. Cohérent, du reste, avec la
+                // doctrine énoncée plus haut : ce payload est une donnée non
+                // fiable.
+                $this->urlFilter->keepIfSafe($this->readString($entry, 'documentationUrl')),
             );
         }
 

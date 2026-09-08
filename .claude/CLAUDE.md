@@ -249,6 +249,18 @@ folder), so entities live inside their bounded context instead of a shared top-l
     "zero product" payload would wipe the page on the provider's first outage while yesterday's data
     is still perfectly readable. Likewise a missing manifest yields an explicit "not analysed" state,
     never a lying "0 vulnerabilities": *found nothing* ≠ *looked for nothing*.
+  - **A third party's string never becomes an `href` unfiltered** (security review, 2026-09-08).
+    `links.html` from endoflife.date reached `/stack`'s `:href` with no scheme check — Vue does not
+    sanitize `:href`, and the frontend nginx has no CSP, so a `javascript:` value published in their
+    **open dataset** was executable script on a public page. `Domain/Service/ExternalUrlFilter` is an
+    **allow-list** (`https` only — a `javascript:` denylist would still let `data:` and `vbscript:`
+    through) and also rejects control characters, which browsers strip while parsing an href
+    (`java\tscript:` runs). A refused URL becomes **absent, never "cleaned"**: repairing it means
+    guessing the author's intent, which is how a neutralised payload gets reassembled. It is applied
+    **twice, at write and at read** — a snapshot written before the fix still holds the raw value, so
+    filtering only on write would leave every deployed installation exposed until the next refresh.
+  - **`max_redirects: 0` on every outbound call.** Symfony's default follows 20, and the CronJob pod
+    has no egress restriction — a hijacked provider would get a lever into the internal network.
   - **PHP's and Symfony's versions come from the runtime**, not the backoffice
     (`VersionSource::RUNTIME_PHP` / `RUNTIME_SYMFONY`, `PhpAndSymfonyVersionResolver`) and the version
     field is refused for them (`InvalidWatchedProductException`, 422). The two most-looked-at versions

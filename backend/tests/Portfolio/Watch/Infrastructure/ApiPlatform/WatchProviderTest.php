@@ -7,6 +7,7 @@ namespace App\Tests\Portfolio\Watch\Infrastructure\ApiPlatform;
 use ApiPlatform\Metadata\Get;
 use App\Portfolio\Watch\Domain\Entity\WatchSnapshot;
 use App\Portfolio\Watch\Domain\Repository\WatchSnapshotRepositoryInterface;
+use App\Portfolio\Watch\Domain\Service\ExternalUrlFilter;
 use App\Portfolio\Watch\Domain\Service\SnapshotFreshnessCalculator;
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotSourceStatus;
 use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
@@ -22,7 +23,13 @@ final class WatchProviderTest extends TestCase
     protected function setUp(): void
     {
         $this->snapshotRepository = self::createStub(WatchSnapshotRepositoryInterface::class);
-        $this->provider = new WatchProvider($this->snapshotRepository, new SnapshotFreshnessCalculator());
+        // Le filtre d'URL est une fonction pure : le vrai plutôt qu'une
+        // doublure, pour que la chaîne réellement servie soit celle testée.
+        $this->provider = new WatchProvider(
+            $this->snapshotRepository,
+            new SnapshotFreshnessCalculator(),
+            new ExternalUrlFilter(),
+        );
     }
 
     /**
@@ -97,6 +104,33 @@ final class WatchProviderTest extends TestCase
 
         self::assertCount(1, $resource->releaseCycles->products);
         self::assertSame('php', $resource->releaseCycles->products[0]->slug);
+    }
+
+    /**
+     * Revue de sécurité du 2026-09-08. Le filtrage est posé à l'écriture, dans
+     * le client — mais un snapshot écrit **avant** ce correctif contient encore
+     * la valeur brute du tiers, et c'est la lecture qui la republie. Filtrer
+     * seulement à l'écriture aurait donc laissé la faille ouverte sur toute
+     * installation déjà déployée, jusqu'au prochain rafraîchissement.
+     *
+     * D'où la seconde barrière ici, cohérente avec la doctrine déjà énoncée par
+     * ce provider : le payload relu est traité comme une donnée non fiable.
+     */
+    public function testAHostileDocumentationUrlIsNotRepublished(): void
+    {
+        $this->givenSnapshot(['products' => [[
+            'slug' => 'php',
+            'label' => 'PHP',
+            'status' => 'supported',
+            'documentationUrl' => 'javascript:alert(document.domain)',
+        ]]]);
+
+        $resource = $this->provider->provide(new Get());
+
+        // L'entrée reste affichée : c'est le lien qui disparaît, pas le produit.
+        self::assertCount(1, $resource->releaseCycles->products);
+        self::assertSame('php', $resource->releaseCycles->products[0]->slug);
+        self::assertNull($resource->releaseCycles->products[0]->documentationUrl);
     }
 
     /**

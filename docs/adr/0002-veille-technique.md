@@ -104,6 +104,10 @@ Les dix décisions structurantes, dans l'ordre où elles se rencontrent en lisan
   lisible.
 - **« Rien trouvé » n'est pas « rien cherché ».** Manifeste absent ⇒ état explicite, jamais un
   « 0 vulnérabilité » mensonger.
+- **Une chaîne venue d'un tiers ne devient jamais un `href` sans liste blanche de schémas**
+  (`ExternalUrlFilter`, `https` seul). Voir ci-dessous : c'est une faille réelle, pas une précaution
+  théorique.
+- **Aucun appel sortant ne suit de redirection** (`max_redirects: 0`).
 
 ## Conséquences
 
@@ -141,8 +145,44 @@ Les dix décisions structurantes, dans l'ordre où elles se rencontrent en lisan
   cosmétique : elle met Rector et PHPStan en désaccord frontal, l'un exigeant la réécriture que
   l'autre refuse.
 
+### Revue de sécurité du 2026-09-08 — deux correctifs
+
+La relecture à froid du payload public (checkpoint C) a trouvé une faille réelle, reproduite de bout
+en bout avant d'être corrigée.
+
+**XSS stocké via le lien de documentation du tiers.** `links.html`, fourni par endoflife.date,
+traversait la couche anti-corruption, la base et l'API publique **sans qu'aucune couche n'en vérifie
+le schéma**, puis atterrissait dans un `:href` de `/stack` — or Vue ne filtre pas les `href`, et le
+nginx frontend n'émet pas de CSP. Un `javascript:` publié chez le fournisseur devenait donc du script
+exécutable sur une page anonyme. Compromettre un serveur n'était pas nécessaire : le catalogue
+d'endoflife.date est un **jeu de données ouvert**, faire accepter une donnée suffisait.
+
+Correctif : `Domain/Service/ExternalUrlFilter`, **liste blanche de schémas** (`https` seul) — une
+liste noire de `javascript:` aurait laissé passer `data:`, `vbscript:` et le prochain schéma inventé.
+Le filtre refuse aussi les caractères de contrôle, que les navigateurs ignorent en analysant un
+`href` (`java\tscript:` s'exécute). Une URL refusée devient **absente**, jamais « nettoyée » :
+réparer reviendrait à deviner l'intention de son auteur, et c'est ainsi qu'on reconstitue une charge
+utile qu'on croyait neutralisée. L'entrée reste affichée, seul le lien disparaît.
+
+Il est appliqué **deux fois**, à l'écriture (client) et à la lecture (provider). Ce n'est pas une
+redondance : un snapshot écrit avant le correctif contient encore la valeur brute, et c'est la
+lecture qui la republierait — filtrer seulement à l'écriture aurait laissé la faille ouverte sur tout
+déploiement existant jusqu'au rafraîchissement suivant.
+
+**Redirections non bornées.** Les deux clients suivaient le défaut Symfony de 20 redirections, alors
+que le pod du CronJob n'a aucune restriction de sortie : un fournisseur détourné disposait d'un levier
+vers le réseau interne. `max_redirects: 0` sur les quatre appels ; les URL sont canoniques, cela ne
+coûte rien.
+
+Ce que la revue a confirmé, en revanche : le cloisonnement D4 tient avec **27 CVE réellement en
+base** — le payload anonyme ne contient aucun identifiant, nom de paquet, sévérité ni version
+corrigée ; anonyme 401, `ROLE_USER` 403, `ROLE_SUPER` 200 ; sept routes, aucune fantôme.
+
 ### Ce qui reste ouvert
 
+- **Pas de CSP sur le nginx frontend** (`docker/node/nginx.conf`), qui porte pourtant tous les autres
+  en-têtes de sécurité — le nginx backend, lui, en a une stricte. C'est ce qui a transformé la faille
+  ci-dessus de « bloquée » en « exploitable ». Préexiste à ce contexte, donc traité à part.
 - L'historisation des snapshots et les courbes d'évolution (hors périmètre v1).
 - La notification à la détection d'une nouvelle vulnérabilité : aujourd'hui il faut ouvrir la page.
 - Le volume de `GET /v1/vulns/{id}` si les vulnérabilités se multipliaient — l'enrichissement est

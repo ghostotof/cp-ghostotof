@@ -224,6 +224,29 @@ final class OsvClientTest extends TestCase
         $client->findVulnerabilities($this->packages());
     }
 
+    /**
+     * Même raison que côté endoflife.date : sans borne, le client suit jusqu'à
+     * 20 redirections (défaut Symfony), ce qui offre à un tiers détourné un
+     * levier vers le réseau interne depuis le pod du CronJob.
+     */
+    public function testItFollowsNoRedirection(): void
+    {
+        $seenOptions = [];
+
+        $client = new OsvClient(
+            new MockHttpClient(function (string $method, string $url, array $options) use (&$seenOptions): MockResponse {
+                $seenOptions = $options;
+
+                return new MockResponse('{"results":[{},{}]}');
+            }),
+            new NullLogger(),
+        );
+
+        $client->findVulnerabilities($this->packages());
+
+        self::assertSame(0, $seenOptions['max_redirects'] ?? null);
+    }
+
     public function testATransportFailureIsReportedAsUnavailable(): void
     {
         $client = new OsvClient(

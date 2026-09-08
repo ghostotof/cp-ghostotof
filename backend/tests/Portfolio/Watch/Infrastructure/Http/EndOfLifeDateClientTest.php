@@ -6,6 +6,7 @@ namespace App\Tests\Portfolio\Watch\Infrastructure\Http;
 
 use App\Portfolio\Watch\Domain\Exception\ReleaseCycleProductNotFoundException;
 use App\Portfolio\Watch\Domain\Exception\ReleaseCycleSourceUnavailableException;
+use App\Portfolio\Watch\Domain\Service\ExternalUrlFilter;
 use App\Portfolio\Watch\Infrastructure\Http\EndOfLifeDateClient;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -67,7 +68,7 @@ final class EndOfLifeDateClientTest extends TestCase
      */
     private function client(callable|ResponseInterface $response): EndOfLifeDateClient
     {
-        return new EndOfLifeDateClient(new MockHttpClient($response), new NullLogger());
+        return new EndOfLifeDateClient(new MockHttpClient($response), new NullLogger(), new ExternalUrlFilter());
     }
 
     public function testItMapsTheProductAndEveryReleaseCycle(): void
@@ -142,6 +143,50 @@ final class EndOfLifeDateClientTest extends TestCase
         self::assertArrayHasKey('max_duration', $seenOptions);
         self::assertGreaterThan(0, $seenOptions['timeout']);
         self::assertGreaterThan(0, $seenOptions['max_duration']);
+    }
+
+    /**
+     * Revue de sécurité du 2026-09-08. Le catalogue d'endoflife.date est un jeu
+     * de données ouvert : `links.html` n'est donc pas une valeur de confiance.
+     * Sans filtrage ici, la chaîne traversait la couche anti-corruption, la
+     * base et l'API publique intacte, jusqu'à un `:href` — que Vue ne filtre
+     * pas. Le lien tombe, le produit reste.
+     */
+    public function testAHostileDocumentationLinkIsDroppedRatherThanMapped(): void
+    {
+        $payload = str_replace(
+            '"html": "https://endoflife.date/php"',
+            '"html": "javascript:alert(document.domain)"',
+            self::PHP_PAYLOAD,
+        );
+
+        $product = $this->client(new MockResponse($payload))->fetchProduct('php');
+
+        self::assertNull($product->documentationUrl);
+        self::assertSame('php', $product->slug);
+        self::assertCount(2, $product->cycles);
+    }
+
+    /**
+     * Sans borne, le client suit jusqu'à 20 redirections (défaut Symfony). Un
+     * fournisseur hostile ou détourné pourrait donc faire pointer l'appel vers
+     * une adresse interne — le pod du CronJob n'a aucune restriction de sortie.
+     * L'URL appelée est déjà canonique : ne suivre aucune redirection ne coûte
+     * rien et retire le levier.
+     */
+    public function testItFollowsNoRedirection(): void
+    {
+        $seenOptions = [];
+
+        $client = $this->client(function (string $method, string $url, array $options) use (&$seenOptions): MockResponse {
+            $seenOptions = $options;
+
+            return new MockResponse(self::PHP_PAYLOAD);
+        });
+
+        $client->fetchProduct('php');
+
+        self::assertSame(0, $seenOptions['max_redirects'] ?? null);
     }
 
     /**

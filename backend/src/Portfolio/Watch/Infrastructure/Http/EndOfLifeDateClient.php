@@ -6,6 +6,7 @@ namespace App\Portfolio\Watch\Infrastructure\Http;
 
 use App\Portfolio\Watch\Domain\Exception\ReleaseCycleProductNotFoundException;
 use App\Portfolio\Watch\Domain\Exception\ReleaseCycleSourceUnavailableException;
+use App\Portfolio\Watch\Domain\Service\ExternalUrlFilter;
 use App\Portfolio\Watch\Domain\Service\ReleaseCycleSourceInterface;
 use App\Portfolio\Watch\Domain\ValueObject\ProductReleaseCycles;
 use App\Portfolio\Watch\Domain\ValueObject\ReleaseCycle;
@@ -57,20 +58,40 @@ final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
     public function __construct(
         private HttpClientInterface $httpClient,
         private LoggerInterface $logger,
+        private ExternalUrlFilter $urlFilter,
     ) {
+    }
+
+    /**
+     * Options communes aux deux appels. `max_redirects: 0` n'est pas une
+     * optimisation : le défaut Symfony est de suivre jusqu'à 20 redirections,
+     * et le pod du CronJob n'a aucune restriction de sortie — un fournisseur
+     * détourné disposerait donc d'un levier vers le réseau interne. Les URL
+     * appelées sont canoniques, ne suivre aucune redirection ne coûte rien.
+     *
+     * @return array<string, mixed>
+     */
+    private function requestOptions(float $idleTimeout, float $maxDuration): array
+    {
+        return [
+            'timeout' => $idleTimeout,
+            'max_duration' => $maxDuration,
+            'max_redirects' => 0,
+            'headers' => [
+                'Accept' => 'application/json',
+                'User-Agent' => self::USER_AGENT,
+            ],
+        ];
     }
 
     public function fetchProduct(string $slug): ProductReleaseCycles
     {
         try {
-            $response = $this->httpClient->request('GET', self::BASE_URL.rawurlencode($slug).'/', [
-                'timeout' => self::IDLE_TIMEOUT_SECONDS,
-                'max_duration' => self::MAX_DURATION_SECONDS,
-                'headers' => [
-                    'Accept' => 'application/json',
-                    'User-Agent' => self::USER_AGENT,
-                ],
-            ]);
+            $response = $this->httpClient->request(
+                'GET',
+                self::BASE_URL.rawurlencode($slug).'/',
+                $this->requestOptions(self::IDLE_TIMEOUT_SECONDS, self::MAX_DURATION_SECONDS),
+            );
 
             $statusCode = $response->getStatusCode();
 
@@ -95,14 +116,11 @@ final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
     public function supportsProduct(string $slug): bool
     {
         try {
-            $response = $this->httpClient->request('GET', self::BASE_URL.rawurlencode($slug).'/', [
-                'timeout' => self::VERIFICATION_TIMEOUT_SECONDS,
-                'max_duration' => self::VERIFICATION_TIMEOUT_SECONDS,
-                'headers' => [
-                    'Accept' => 'application/json',
-                    'User-Agent' => self::USER_AGENT,
-                ],
-            ]);
+            $response = $this->httpClient->request(
+                'GET',
+                self::BASE_URL.rawurlencode($slug).'/',
+                $this->requestOptions(self::VERIFICATION_TIMEOUT_SECONDS, self::VERIFICATION_TIMEOUT_SECONDS),
+            );
 
             // getStatusCode() n'attend que les en-têtes : le corps de la
             // réponse n'est jamais téléchargé, on n'a besoin que du verdict.
@@ -161,7 +179,11 @@ final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
         return new ProductReleaseCycles(
             $slug,
             $this->readString($result, 'label') ?? $slug,
-            \is_array($links) ? $this->readString($links, 'html') : null,
+            // Le catalogue du fournisseur est un jeu de données ouvert : ce lien
+            // n'est pas une valeur de confiance, et il finit dans un `href` de
+            // page publique. Filtré ici, à la frontière — c'est le rôle même de
+            // cette classe.
+            $this->urlFilter->keepIfSafe(\is_array($links) ? $this->readString($links, 'html') : null),
             $cycles,
         );
     }

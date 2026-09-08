@@ -27,6 +27,11 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * résultats** : OSV répond dans l'ordre des requêtes envoyées, sans rappeler de
  * quel paquet il s'agit. C'est fragile par nature, et c'est pourquoi un test le
  * fige.
+ *
+ * `max_redirects: 0` sur les deux appels : le défaut Symfony est d'en suivre
+ * jusqu'à vingt, et le pod qui exécute cette analyse n'a aucune restriction de
+ * sortie. Un fournisseur détourné disposerait donc d'un levier vers le réseau
+ * interne. Les URL sont canoniques, s'interdire les redirections ne coûte rien.
  */
 final readonly class OsvClient implements VulnerabilitySourceInterface
 {
@@ -175,6 +180,7 @@ final readonly class OsvClient implements VulnerabilitySourceInterface
             $response = $this->httpClient->request('POST', self::QUERY_BATCH_URL, [
                 'timeout' => self::IDLE_TIMEOUT_SECONDS,
                 'max_duration' => self::MAX_DURATION_SECONDS,
+                'max_redirects' => 0,
                 'headers' => [
                     'Accept' => 'application/json',
                     'Content-Type' => 'application/json',
@@ -214,6 +220,7 @@ final readonly class OsvClient implements VulnerabilitySourceInterface
             $response = $this->httpClient->request('GET', self::VULNERABILITY_URL.rawurlencode($id), [
                 'timeout' => self::IDLE_TIMEOUT_SECONDS,
                 'max_duration' => self::MAX_DURATION_SECONDS,
+                'max_redirects' => 0,
                 'headers' => [
                     'Accept' => 'application/json',
                     'User-Agent' => self::USER_AGENT,
