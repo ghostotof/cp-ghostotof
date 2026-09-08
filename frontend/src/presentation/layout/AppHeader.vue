@@ -224,15 +224,18 @@ function navLinkClass(link: NavigationLink) {
           >
             {{ link.label }}
           </RouterLink>
-          <a
+          <!-- Lien désactivé : ni href, ni gestionnaire. Il n'était pas
+               focusable au clavier, si bien que son @click ne pouvait servir
+               qu'à la souris — et fermer le menu sans naviguer nulle part
+               n'avait de toute façon pas de sens. -->
+          <span
             v-else
             class="nav-link-portfolio d-block py-2"
             :class="navLinkClass(link)"
             aria-disabled="true"
-            @click="isMobileMenuOpen = false"
           >
             {{ link.label }}
-          </a>
+          </span>
         </template>
       </div>
     </nav>

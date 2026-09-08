@@ -18,6 +18,7 @@ const contentSections = [
   { name: 'admin-quality', labelKey: 'admin.nav.quality' },
   { name: 'admin-contributions', labelKey: 'admin.nav.contributions' },
   { name: 'admin-incidents', labelKey: 'admin.nav.incidents' },
+  { name: 'admin-watch', labelKey: 'admin.nav.watch' },
 ] as const
 
 const isContentRoute = computed(() => contentSections.some((section) => section.name === route.name))

@@ -197,6 +197,23 @@ RUN set -eux; \
     # Nettoyage : ni Composer ni les manifestes n'ont d'utilité à l'exécution.
     rm -f /usr/local/bin/composer
 
+# Manifeste des paquets déployés, relevé ici parce que c'est le seul endroit où
+# les deux fichiers de verrouillage coexistent : le conteneur applicatif ne voit
+# jamais le dépôt frontend. Le manifeste voyage ensuite dans l'image, ce qui
+# permet à l'analyse quotidienne de vulnérabilités de porter sur le périmètre
+# réel du déploiement, front compris.
+#
+# Placé après le gros RUN ci-dessus pour ne pas en invalider le cache : une
+# simple mise à jour de dépendance npm ne doit pas relancer tout le reste.
+COPY frontend/package-lock.json /tmp/frontend-package-lock.json
+RUN set -eux; \
+    php bin/build-package-manifest.php /tmp/frontend-package-lock.json; \
+    rm -f /tmp/frontend-package-lock.json; \
+    chown -R "${APP_UID}:${APP_GID}" config/watch; \
+    # Lecture seule : le manifeste décrit l'image, rien ne doit le réécrire à
+    # l'exécution. Sans ce chmod il hérite du umask du build (0666).
+    chmod 0644 config/watch/package-manifest.json
+
 COPY docker/php/php.prod.ini  /usr/local/etc/php/conf.d/zz-app.ini
 COPY docker/php/www.prod.conf /usr/local/etc/php-fpm.d/zz-www.conf
 

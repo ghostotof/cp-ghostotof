@@ -39,6 +39,27 @@ describe('StaticPortfolioContentRepository', () => {
     },
   )
 
+  /**
+   * Décision D8 : l'entrée mène à la page de veille plutôt qu'à l'ancre de la
+   * section Technologies, ce qui évite une huitième entrée au menu. Son libellé
+   * a suivi — « Compétences » aurait annoncé autre chose que ce qu'il ouvre,
+   * la page parlant de versions installées et non de savoir-faire.
+   */
+  it.each(SUPPORTED_LOCALES)(
+    'fait pointer le lien de veille vers la page dédiée pour la locale %s, et non vers une ancre',
+    (locale) => {
+      const links = repository.getNavigationLinks(locale)
+
+      expect(links.some((link) => link.to.includes('#technologies'))).toBe(false)
+
+      const stackLink = links.find((link) => link.to.endsWith('/stack'))
+
+      expect(stackLink?.isEnabled).toBe(true)
+      expect(stackLink?.to).toBe(`/${locale}/stack`)
+      expect(stackLink?.label).toBe('fr' === locale ? 'Ma stack' : 'My stack')
+    },
+  )
+
   it.each(SUPPORTED_LOCALES)('préfixe tous les liens de navigation par la locale %s', (locale) => {
     const links = repository.getNavigationLinks(locale)
 

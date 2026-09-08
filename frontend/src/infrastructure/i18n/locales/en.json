@@ -1,7 +1,7 @@
 {
   "nav": {
     "home": "Home",
-    "skills": "Skills",
+    "stack": "My stack",
     "experiences": "Technical background",
     "contact": "Contact",
     "about": "About",
@@ -38,7 +38,8 @@
       "quality": "Quality",
       "users": "Users",
       "contributions": "Contributions",
-      "incidents": "Incidents"
+      "incidents": "Incidents",
+      "watch": "Watch"
     },
     "quality": {
       "actions": "Actions",
@@ -254,6 +255,50 @@
         "validation": "Some fields are invalid.",
         "unknown": "An error occurred. Please try again later."
       }
+    },
+    "watch": {
+      "create": "Add a watched product",
+      "edit": "Edit watched product",
+      "listTitle": "Watched products",
+      "save": "Save",
+      "cancel": "Cancel",
+      "slugLabel": "endoflife.date identifier",
+      "slugImmutableHelp": "Not editable: this is what identifies the product at the provider. To watch a different one, delete this entry and create a new one.",
+      "labelLabel": "Displayed label",
+      "versionSourceLabel": "Version origin",
+      "versionLabel": "Installed version",
+      "versionFromRuntimeHelp": "The version is read straight from the process serving the site: it is not typed in.",
+      "positionLabel": "Position",
+      "actions": "Actions",
+      "editAction": "Edit",
+      "deleteAction": "Delete",
+      "confirmDelete": "Remove “{label}” from the watch?",
+      "empty": "No watched product.",
+      "loading": "Loading watched products…",
+      "loadError": "Failed to load watched products. Please try again later.",
+      "sources": {
+        "manual": "Typed in",
+        "runtime_php": "Running PHP version",
+        "runtime_symfony": "Loaded Symfony version"
+      },
+      "errors": {
+        "not-found": "This product no longer exists.",
+        "validation": "Some fields are invalid.",
+        "conflict": "This product is already watched, or its identifier cannot be changed.",
+        "unknown": "An error occurred. Please try again later."
+      },
+      "vulnerabilities": {
+        "title": "Known vulnerabilities",
+        "help": "Details are administration-only: the public page shows the count alone. The list is regenerated on every refresh and cannot be edited here.",
+        "identifier": "Identifier",
+        "package": "Package",
+        "severity": "Severity",
+        "fixedIn": "Fixed in",
+        "summary": "Summary",
+        "empty": "No known vulnerability to date.",
+        "loading": "Loading vulnerabilities…",
+        "loadError": "Failed to load vulnerabilities. Please try again later."
+      }
     }
   },
   "forbidden": {
@@ -265,6 +310,7 @@
     "illustrationAlt": "Illustration: developer behind their computer"
   },
   "technologies": {
+    "seeStack": "See which versions all this actually runs on →",
     "sectionTitle": "Technologies",
     "andAlso": "ALSO"
   },
@@ -408,9 +454,17 @@
       "title": "Incidents and invariants",
       "description": "This project's production outages, root causes and the rules that came out of them."
     },
+    "stack": {
+      "title": "My stack, alive",
+      "description": "Installed versions of this site and their support deadlines, checked daily against endoflife.date."
+    },
     "adminIncidents": {
       "title": "Administration — Incidents",
       "description": "Manage the production incident log."
+    },
+    "adminWatch": {
+      "title": "Administration — Watch",
+      "description": "Manage the products whose lifecycle is tracked."
     }
   },
   "contributions": {
@@ -432,6 +486,45 @@
       "rootCause": "Root cause",
       "resolution": "Resolution",
       "invariant": "Invariant"
+    }
+  },
+  "stack": {
+    "eyebrow": "My stack, alive",
+    "intro": "The versions running this site, checked daily against the end-of-support dates published by endoflife.date. Nothing here is typed in by hand: the PHP and Symfony versions are read from the very process serving you this page.",
+    "loading": "Loading technology watch…",
+    "error": "The watch data could not be loaded. Please try again later.",
+    "neverRefreshed": "No refresh has completed yet: data will appear after the next scheduled run.",
+    "partial": "Partial refresh: at least one source did not answer. The affected entries come from the previous reading.",
+    "refreshed": "reading from {date}",
+    "stale": "Reading overdue: the automated refresh has not completed for over a day. The deadlines shown still hold, but a version released since then is missing.",
+    "source": "Source: endoflife.date",
+    "tableCaption": "Installed versions and support deadlines for this site's stack.",
+    "patchAvailable": "patch available",
+    "columns": {
+      "product": "Product",
+      "version": "Installed version",
+      "status": "Status",
+      "activeSupport": "Active support until",
+      "eol": "End of life",
+      "latest": "Latest patch",
+      "update": "Update"
+    },
+    "status": {
+      "supported": "Supported",
+      "securityOnly": "Security fixes only",
+      "eol": "End of life",
+      "unknown": "Unknown"
+    },
+    "vulnerabilities": {
+      "title": "Known vulnerabilities",
+      "healthyBadge": "Clear",
+      "healthy": "No known vulnerability across the {scanned} deployed packages.",
+      "affected": "known vulnerability across the {scanned} deployed packages. | known vulnerabilities across the {scanned} deployed packages.",
+      "notScanned": "Scan not performed: the list of deployed packages is not available here. Nothing can be concluded from it — which is not the same as “no vulnerability”.",
+      "detailRestricted": "The details — identifiers, affected packages, fixed versions — are only visible in administration: publishing them would amount to documenting this site's weaknesses.",
+      "source": "Source: OSV.dev",
+      "checkedAt": "checked on {date}",
+      "stale": "Scan overdue: it has not completed for over a day. A vulnerability published since then is missing from it."
     }
   }
 }

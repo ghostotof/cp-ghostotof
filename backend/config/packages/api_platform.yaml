@@ -28,6 +28,17 @@ api_platform:
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException: 404
         App\Portfolio\Contribution\Domain\Exception\ContributionNotFoundException: 404
         App\Portfolio\Incident\Domain\Exception\IncidentNotFoundException: 404
+        App\Portfolio\Watch\Domain\Exception\WatchedProductNotFoundException: 404
+        App\Portfolio\Watch\Domain\Exception\WatchedProductSlugAlreadyUsedException: 409
+        # Changer le slug d'un produit suivi revient à en suivre un autre :
+        # l'entité ne l'expose pas en écriture, et le refus est explicite plutôt
+        # que silencieux (409 comme la collision de slug, c'est bien un conflit
+        # avec l'état existant).
+        App\Portfolio\Watch\Domain\Exception\WatchedProductSlugIsImmutableException: 409
+        # Version obligatoire pour une source « manual », interdite pour une
+        # source runtime : c'est une saisie invalide, donc 422 comme les erreurs
+        # de validation — surtout pas 500, l'auteur peut corriger lui-même.
+        App\Portfolio\Watch\Domain\Exception\InvalidWatchedProductException: 422
         # Point d'audit I3 : remplace un mapping `ValueError: 404` fourre-tout.
         # Celui-ci déguisait en « 404 Not Found » *toute* ValueError levée dans
         # la pile HTTP, y compris un bug sans rapport avec la locale — un vrai

@@ -48,6 +48,16 @@ final class ApiRouteExposureTest extends WebTestCase
         '/api/experience/technologies' => 'Liste de technologies — contenu de démonstration.',
         '/api/contributions/{locale}' => 'Contributions techniques publiques : précisément le contenu destiné au visiteur non authentifié arrivé depuis LinkedIn. Aucune donnée personnelle identifiante.',
         '/api/incidents/{locale}' => 'Journal des pannes de production et des invariants qui en sont sortis : contenu de démonstration, sans donnée personnelle identifiante.',
+        // Formulation revue le 2026-09-08 : la version initiale affirmait que la
+        // page ne révélait « rien qu'un visiteur ne puisse déjà déduire du dépôt
+        // public ». C'est vrai des numéros de version (.env et versions.lock sont
+        // suivis en git), mais la page en dit un peu plus, et l'écrire vaut mieux
+        // que de le sous-entendre : elle confirme que ces versions tournent
+        // effectivement, et signale celles dont un correctif est disponible mais
+        // non appliqué. Le dépôt dit ce qui est épinglé ; la page dit ce qui est
+        // en retard. Divulgation assumée : c'est le sujet même de la page, et la
+        // réponse honnête au risque est d'appliquer les correctifs.
+        '/api/watch' => 'Veille technique : versions de la stack et échéances de support, lues dans le snapshot local. Aucune donnée personnelle identifiante. Les versions elles-mêmes figurent déjà dans .env et versions.lock, suivis dans ce dépôt public ; la page y ajoute qu\'elles sont en service et qu\'un correctif reste parfois à appliquer — divulgation délibérée, c\'est l\'objet de la page. Le volet vulnérabilités n\'est exposé ici qu\'agrégé : le détail des CVE reste ROLE_SUPER (décision D4).',
 
         // --- Parcours publics par conception.
         '/api/contact' => 'Formulaire de contact anonyme (honeypot + rate limit IP).',
