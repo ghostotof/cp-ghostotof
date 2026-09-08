@@ -10,7 +10,6 @@ use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use ApiPlatform\State\ProcessorInterface;
 use App\Portfolio\Quality\Application\QualityPrincipleAdministratorInterface;
-use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
 use App\Portfolio\Quality\Presentation\ApiResource\BackofficeQualityPrincipleResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
@@ -55,18 +54,6 @@ final readonly class BackofficeQualityPrincipleProcessor implements ProcessorInt
             throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
         }
 
-        return $this->toResource($principle);
-    }
-
-    private function toResource(QualityPrinciple $principle): BackofficeQualityPrincipleResource
-    {
-        return new BackofficeQualityPrincipleResource(
-            id: $principle->getId(),
-            locale: $principle->getLocale()->value,
-            title: $principle->getTitle(),
-            description: $principle->getDescription(),
-            iconKey: $principle->getIconKey(),
-            position: $principle->getPosition(),
-        );
+        return BackofficeQualityPrincipleResource::fromEntity($principle);
     }
 }

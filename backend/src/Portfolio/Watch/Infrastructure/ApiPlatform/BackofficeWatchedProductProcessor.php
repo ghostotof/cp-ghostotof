@@ -10,7 +10,6 @@ use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use ApiPlatform\State\ProcessorInterface;
 use App\Portfolio\Watch\Application\WatchedProductAdministratorInterface;
-use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use App\Portfolio\Watch\Presentation\ApiResource\BackofficeWatchedProductResource;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
@@ -61,7 +60,7 @@ final readonly class BackofficeWatchedProductProcessor implements ProcessorInter
             throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
         }
 
-        return $this->toResource($product);
+        return BackofficeWatchedProductResource::fromEntity($product);
     }
 
     /**
@@ -74,17 +73,5 @@ final readonly class BackofficeWatchedProductProcessor implements ProcessorInter
     private function normalizeVersion(?string $version): ?string
     {
         return null === $version || '' === trim($version) ? null : $version;
-    }
-
-    private function toResource(WatchedProduct $product): BackofficeWatchedProductResource
-    {
-        return new BackofficeWatchedProductResource(
-            id: $product->getId(),
-            slug: $product->getSlug(),
-            label: $product->getLabel(),
-            versionSource: $product->getVersionSource()->value,
-            version: $product->getVersion(),
-            position: $product->getPosition(),
-        );
     }
 }

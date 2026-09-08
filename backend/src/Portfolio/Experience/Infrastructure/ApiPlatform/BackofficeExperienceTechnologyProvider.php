@@ -7,7 +7,6 @@ namespace App\Portfolio\Experience\Infrastructure\ApiPlatform;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
-use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Domain\Repository\ExperienceTechnologyRepositoryInterface;
 use App\Portfolio\Experience\Presentation\ApiResource\BackofficeExperienceTechnologyResource;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
@@ -31,25 +30,13 @@ final readonly class BackofficeExperienceTechnologyProvider implements ProviderI
     {
         if ($operation instanceof GetCollection) {
             return array_map(
-                $this->toResource(...),
+                BackofficeExperienceTechnologyResource::fromEntity(...),
                 $this->experienceTechnologyRepository->findAllOrderedByYearsDesc(),
             );
         }
 
         $technology = $this->experienceTechnologyRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
 
-        return null !== $technology ? $this->toResource($technology) : null;
-    }
-
-    private function toResource(ExperienceTechnology $technology): BackofficeExperienceTechnologyResource
-    {
-        return new BackofficeExperienceTechnologyResource(
-            id: $technology->getId(),
-            name: $technology->getName(),
-            years: $technology->getYears(),
-            iconKey: $technology->getIconKey(),
-            relatedTechnologyName: $technology->getRelatedTechnologyName(),
-            secondary: $technology->isSecondary(),
-        );
+        return null !== $technology ? BackofficeExperienceTechnologyResource::fromEntity($technology) : null;
     }
 }

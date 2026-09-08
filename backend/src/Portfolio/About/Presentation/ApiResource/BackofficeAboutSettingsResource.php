@@ -7,6 +7,7 @@ namespace App\Portfolio\About\Presentation\ApiResource;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\Put;
+use App\Portfolio\About\Domain\Entity\AboutSettings;
 use App\Portfolio\About\Infrastructure\ApiPlatform\BackofficeAboutSettingsProcessor;
 use App\Portfolio\About\Infrastructure\ApiPlatform\BackofficeAboutSettingsProvider;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -52,5 +53,22 @@ final class BackofficeAboutSettingsResource
         #[Assert\Length(max: 180)]
         public string $hobbiesSubtitle = '',
     ) {
+    }
+
+    /**
+     * Fabrique unique du DTO : le Provider et le Processor la partagent, faute
+     * de quoi un champ ajouté à l'entité devait être reporté aux deux endroits
+     * — sans qu'aucun test ne le rappelle (issue #15).
+     */
+    public static function fromEntity(AboutSettings $settings): self
+    {
+        return new self(
+            locale: $settings->getLocale()->value,
+            siteEyebrow: $settings->getSiteEyebrow(),
+            meEyebrow: $settings->getMeEyebrow(),
+            technicalSubtitle: $settings->getTechnicalSubtitle(),
+            personalSubtitle: $settings->getPersonalSubtitle(),
+            hobbiesSubtitle: $settings->getHobbiesSubtitle(),
+        );
     }
 }

@@ -10,6 +10,7 @@ use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use App\Portfolio\Incident\Domain\Entity\Incident;
 use App\Portfolio\Incident\Infrastructure\ApiPlatform\BackofficeIncidentProcessor;
 use App\Portfolio\Incident\Infrastructure\ApiPlatform\BackofficeIncidentProvider;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -76,5 +77,26 @@ final class BackofficeIncidentResource
         #[Assert\PositiveOrZero]
         public int $position = 0,
     ) {
+    }
+
+    /**
+     * Fabrique unique du DTO : le Provider et le Processor la partagent, faute
+     * de quoi un champ ajouté à l'entité devait être reporté aux deux endroits
+     * — sans qu'aucun test ne le rappelle (issue #15).
+     */
+    public static function fromEntity(Incident $incident): self
+    {
+        return new self(
+            id: $incident->getId(),
+            locale: $incident->getLocale()->value,
+            title: $incident->getTitle(),
+            version: $incident->getVersion(),
+            occurredAt: $incident->getOccurredAt()->format('Y-m-d'),
+            impact: $incident->getImpact(),
+            rootCause: $incident->getRootCause(),
+            resolution: $incident->getResolution(),
+            invariant: $incident->getInvariant(),
+            position: $incident->getPosition(),
+        );
     }
 }

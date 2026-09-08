@@ -30,14 +30,6 @@ final readonly class BackofficeUserInviteProcessor implements ProcessorInterface
     {
         $user = $this->cpgUserInviter->invite($data->email, Locale::from($data->locale));
 
-        $presented = $this->cpgUserAdminPresenter->present($user);
-
-        return new BackofficeUserResource(
-            id: $presented['id'],
-            username: $presented['username'],
-            roles: $presented['roles'],
-            email: $presented['email'],
-            status: $presented['status'],
-        );
+        return BackofficeUserResource::fromPresented($this->cpgUserAdminPresenter->present($user));
     }
 }

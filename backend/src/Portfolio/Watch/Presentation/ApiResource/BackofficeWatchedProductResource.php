@@ -10,6 +10,7 @@ use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Infrastructure\ApiPlatform\BackofficeWatchedProductProcessor;
 use App\Portfolio\Watch\Infrastructure\ApiPlatform\BackofficeWatchedProductProvider;
 use App\Portfolio\Watch\Infrastructure\Validator\WatchedProductSlugExists;
@@ -93,5 +94,22 @@ final class BackofficeWatchedProductResource
         #[Assert\PositiveOrZero]
         public int $position = 0,
     ) {
+    }
+
+    /**
+     * Fabrique unique du DTO : le Provider et le Processor la partagent, faute
+     * de quoi un champ ajouté à l'entité devait être reporté aux deux endroits
+     * — sans qu'aucun test ne le rappelle (issue #15).
+     */
+    public static function fromEntity(WatchedProduct $product): self
+    {
+        return new self(
+            id: $product->getId(),
+            slug: $product->getSlug(),
+            label: $product->getLabel(),
+            versionSource: $product->getVersionSource()->value,
+            version: $product->getVersion(),
+            position: $product->getPosition(),
+        );
     }
 }

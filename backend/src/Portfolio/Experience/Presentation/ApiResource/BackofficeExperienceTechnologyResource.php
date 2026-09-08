@@ -10,6 +10,7 @@ use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Infrastructure\ApiPlatform\BackofficeExperienceTechnologyProcessor;
 use App\Portfolio\Experience\Infrastructure\ApiPlatform\BackofficeExperienceTechnologyProvider;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -67,5 +68,22 @@ final class BackofficeExperienceTechnologyResource
          */
         public bool $secondary = false,
     ) {
+    }
+
+    /**
+     * Fabrique unique du DTO : le Provider et le Processor la partagent, faute
+     * de quoi un champ ajouté à l'entité devait être reporté aux deux endroits
+     * — sans qu'aucun test ne le rappelle (issue #15).
+     */
+    public static function fromEntity(ExperienceTechnology $technology): self
+    {
+        return new self(
+            id: $technology->getId(),
+            name: $technology->getName(),
+            years: $technology->getYears(),
+            iconKey: $technology->getIconKey(),
+            relatedTechnologyName: $technology->getRelatedTechnologyName(),
+            secondary: $technology->isSecondary(),
+        );
     }
 }

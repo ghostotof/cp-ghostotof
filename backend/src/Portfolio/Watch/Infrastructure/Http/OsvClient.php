@@ -399,5 +399,4 @@ final readonly class OsvClient implements VulnerabilitySourceInterface
 
         return $this->readString($affectedPackage, 'name') === $package->name;
     }
-
 }

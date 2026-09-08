@@ -64,16 +64,6 @@ final readonly class BackofficeContributionProcessor implements ProcessorInterfa
             throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
         }
 
-        return new BackofficeContributionResource(
-            id: $contribution->getId(),
-            locale: $contribution->getLocale()->value,
-            title: $contribution->getTitle(),
-            project: $contribution->getProject(),
-            reference: $contribution->getReference(),
-            url: $contribution->getUrl(),
-            summary: $contribution->getSummary(),
-            body: $contribution->getBody(),
-            position: $contribution->getPosition(),
-        );
+        return BackofficeContributionResource::fromEntity($contribution);
     }
 }

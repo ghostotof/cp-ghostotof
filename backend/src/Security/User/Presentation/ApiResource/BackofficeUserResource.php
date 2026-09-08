@@ -68,4 +68,28 @@ final readonly class BackofficeUserResource
         public string $status = 'active',
     ) {
     }
+
+    /**
+     * Fabrique unique du DTO : le Provider et le Processor d'invitation la
+     * partagent, faute de quoi un champ ajouté devait être reporté aux deux
+     * endroits — sans qu'aucun test ne le rappelle (issue #15).
+     *
+     * Elle prend la sortie du présentateur et non l'entité, contrairement aux
+     * autres ressources de backoffice : `CpgUserAdminPresenter` décide seul de
+     * ce qui est exposé d'un compte, et court-circuiter cette décision depuis
+     * la présentation reviendrait à la dupliquer là où elle est le plus facile
+     * à oublier.
+     *
+     * @param array{id: int, username: string, email: string|null, roles: list<string>, status: 'pending'|'active'} $presented
+     */
+    public static function fromPresented(array $presented): self
+    {
+        return new self(
+            id: $presented['id'],
+            username: $presented['username'],
+            roles: $presented['roles'],
+            email: $presented['email'],
+            status: $presented['status'],
+        );
+    }
 }
