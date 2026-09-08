@@ -216,7 +216,10 @@ qui est en retard. Divulgation assumée, désormais écrite plutôt que sous-ent
 
 - **Pas de CSP sur le nginx frontend** (`docker/node/nginx.conf`), qui porte pourtant tous les autres
   en-têtes de sécurité — le nginx backend, lui, en a une stricte. C'est ce qui a transformé la faille
-  ci-dessus de « bloquée » en « exploitable ». Préexiste à ce contexte, donc traité à part.
+  ci-dessus de « bloquée » en « exploitable ». Préexiste à ce contexte, donc suivi à part :
+  **issue #13**. Rien d'exploitable en l'état (aucun `v-html`, `href` liés à une donnée tous bornés),
+  et la mise en œuvre n'est pas triviale — `connect-src` dépend de l'`API_URL` injectée au runtime,
+  donc la conf nginx doit passer par le même `envsubst` que `config.template.js`.
 - L'historisation des snapshots et les courbes d'évolution (hors périmètre v1).
 - La notification à la détection d'une nouvelle vulnérabilité : aujourd'hui il faut ouvrir la page.
 - Le volume de `GET /v1/vulns/{id}` si les vulnérabilités se multipliaient — l'enrichissement est
