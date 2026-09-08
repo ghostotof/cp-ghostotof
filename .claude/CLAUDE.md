@@ -251,8 +251,15 @@ folder), so entities live inside their bounded context instead of a shared top-l
     never a lying "0 vulnerabilities": *found nothing* ≠ *looked for nothing*.
   - **A third party's string never becomes an `href` unfiltered** (security review, 2026-09-08).
     `links.html` from endoflife.date reached `/stack`'s `:href` with no scheme check — Vue does not
-    sanitize `:href`, and the frontend nginx has no CSP, so a `javascript:` value published in their
-    **open dataset** was executable script on a public page. `Domain/Service/ExternalUrlFilter` is an
+    sanitize `:href` — so a `javascript:` value published in their **open dataset** landed intact in
+    the DOM of a public page. *(The review first called this an exploitable stored XSS, on the
+    strength of a second claim — "the frontend nginx has no CSP" — that was **wrong**: the grep
+    behind it was truncated by a `head`. `docker/node/nginx.conf` serves a strict CSP,
+    `script-src 'self'` with no `'unsafe-inline'`, which blocks `javascript:` navigation; the browser
+    demo ran against Vite's dev server, which sends no CSP. The defect was mitigated in production.
+    The filter is still right — a CSP is a mitigation, not a licence to republish an unchecked URL —
+    and note that adding `'unsafe-inline'` to `script-src` would reopen exactly this door.)*
+    `Domain/Service/ExternalUrlFilter` is an
     **allow-list** (`https` only — a `javascript:` denylist would still let `data:` and `vbscript:`
     through) and also rejects control characters, which browsers strip while parsing an href
     (`java\tscript:` runs). A refused URL becomes **absent, never "cleaned"**: repairing it means
