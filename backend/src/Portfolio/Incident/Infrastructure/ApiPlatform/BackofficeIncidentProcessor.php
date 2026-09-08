@@ -68,17 +68,6 @@ final readonly class BackofficeIncidentProcessor implements ProcessorInterface
             throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
         }
 
-        return new BackofficeIncidentResource(
-            id: $incident->getId(),
-            locale: $incident->getLocale()->value,
-            title: $incident->getTitle(),
-            version: $incident->getVersion(),
-            occurredAt: $incident->getOccurredAt()->format('Y-m-d'),
-            impact: $incident->getImpact(),
-            rootCause: $incident->getRootCause(),
-            resolution: $incident->getResolution(),
-            invariant: $incident->getInvariant(),
-            position: $incident->getPosition(),
-        );
+        return BackofficeIncidentResource::fromEntity($incident);
     }
 }

@@ -10,7 +10,6 @@ use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use ApiPlatform\State\ProcessorInterface;
 use App\Portfolio\Quality\Application\QualityTraitAdministratorInterface;
-use App\Portfolio\Quality\Domain\Entity\QualityTrait as QualityTraitEntity;
 use App\Portfolio\Quality\Presentation\ApiResource\BackofficeQualityTraitResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
@@ -51,16 +50,6 @@ final readonly class BackofficeQualityTraitProcessor implements ProcessorInterfa
             throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
         }
 
-        return $this->toResource($trait);
-    }
-
-    private function toResource(QualityTraitEntity $trait): BackofficeQualityTraitResource
-    {
-        return new BackofficeQualityTraitResource(
-            id: $trait->getId(),
-            locale: $trait->getLocale()->value,
-            label: $trait->getLabel(),
-            position: $trait->getPosition(),
-        );
+        return BackofficeQualityTraitResource::fromEntity($trait);
     }
 }

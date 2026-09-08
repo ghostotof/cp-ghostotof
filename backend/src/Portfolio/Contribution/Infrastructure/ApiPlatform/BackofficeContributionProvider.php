@@ -7,7 +7,6 @@ namespace App\Portfolio\Contribution\Infrastructure\ApiPlatform;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
-use App\Portfolio\Contribution\Domain\Entity\Contribution;
 use App\Portfolio\Contribution\Domain\Repository\ContributionRepositoryInterface;
 use App\Portfolio\Contribution\Presentation\ApiResource\BackofficeContributionResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -44,26 +43,11 @@ final readonly class BackofficeContributionProvider implements ProviderInterface
                 ? $this->contributionRepository->findByLocale($locale)
                 : $this->contributionRepository->findAll();
 
-            return array_map($this->toResource(...), $contributions);
+            return array_map(BackofficeContributionResource::fromEntity(...), $contributions);
         }
 
         $contribution = $this->contributionRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
 
-        return null !== $contribution ? $this->toResource($contribution) : null;
-    }
-
-    private function toResource(Contribution $contribution): BackofficeContributionResource
-    {
-        return new BackofficeContributionResource(
-            id: $contribution->getId(),
-            locale: $contribution->getLocale()->value,
-            title: $contribution->getTitle(),
-            project: $contribution->getProject(),
-            reference: $contribution->getReference(),
-            url: $contribution->getUrl(),
-            summary: $contribution->getSummary(),
-            body: $contribution->getBody(),
-            position: $contribution->getPosition(),
-        );
+        return null !== $contribution ? BackofficeContributionResource::fromEntity($contribution) : null;
     }
 }

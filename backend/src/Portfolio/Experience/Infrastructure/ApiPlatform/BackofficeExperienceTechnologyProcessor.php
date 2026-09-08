@@ -56,13 +56,6 @@ final readonly class BackofficeExperienceTechnologyProcessor implements Processo
             throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
         }
 
-        return new BackofficeExperienceTechnologyResource(
-            id: $technology->getId(),
-            name: $technology->getName(),
-            years: $technology->getYears(),
-            iconKey: $technology->getIconKey(),
-            relatedTechnologyName: $technology->getRelatedTechnologyName(),
-            secondary: $technology->isSecondary(),
-        );
+        return BackofficeExperienceTechnologyResource::fromEntity($technology);
     }
 }

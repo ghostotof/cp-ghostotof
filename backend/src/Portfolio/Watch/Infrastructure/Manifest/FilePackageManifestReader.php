@@ -110,5 +110,4 @@ final readonly class FilePackageManifestReader implements PackageManifestReaderI
 
         return $collected;
     }
-
 }

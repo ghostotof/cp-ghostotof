@@ -164,5 +164,4 @@ final readonly class WatchProvider implements ProviderInterface
 
         return $products;
     }
-
 }

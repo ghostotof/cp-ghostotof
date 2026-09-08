@@ -10,6 +10,7 @@ use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use App\Portfolio\Contribution\Domain\Entity\Contribution;
 use App\Portfolio\Contribution\Infrastructure\ApiPlatform\BackofficeContributionProcessor;
 use App\Portfolio\Contribution\Infrastructure\ApiPlatform\BackofficeContributionProvider;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -76,5 +77,25 @@ final class BackofficeContributionResource
         #[Assert\PositiveOrZero]
         public int $position = 0,
     ) {
+    }
+
+    /**
+     * Fabrique unique du DTO : le Provider et le Processor la partagent, faute
+     * de quoi un champ ajouté à l'entité devait être reporté aux deux endroits
+     * — sans qu'aucun test ne le rappelle (issue #15).
+     */
+    public static function fromEntity(Contribution $contribution): self
+    {
+        return new self(
+            id: $contribution->getId(),
+            locale: $contribution->getLocale()->value,
+            title: $contribution->getTitle(),
+            project: $contribution->getProject(),
+            reference: $contribution->getReference(),
+            url: $contribution->getUrl(),
+            summary: $contribution->getSummary(),
+            body: $contribution->getBody(),
+            position: $contribution->getPosition(),
+        );
     }
 }
