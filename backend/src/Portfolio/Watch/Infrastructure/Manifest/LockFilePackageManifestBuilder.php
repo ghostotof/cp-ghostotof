@@ -7,6 +7,7 @@ namespace App\Portfolio\Watch\Infrastructure\Manifest;
 use App\Portfolio\Watch\Domain\Service\PackageManifestBuilderInterface;
 use App\Portfolio\Watch\Domain\ValueObject\PackageCoordinates;
 use App\Portfolio\Watch\Domain\ValueObject\PackageManifest;
+use App\Portfolio\Watch\Infrastructure\ReadsUntrustedArrays;
 
 /**
  * Produit le manifeste des paquets déployés à partir des fichiers de
@@ -24,6 +25,8 @@ use App\Portfolio\Watch\Domain\ValueObject\PackageManifest;
  */
 final readonly class LockFilePackageManifestBuilder implements PackageManifestBuilderInterface
 {
+    use ReadsUntrustedArrays;
+
     public function __construct(
         private string $composerLockPath,
         private string $npmLockPath,
@@ -157,15 +160,6 @@ final readonly class LockFilePackageManifestBuilder implements PackageManifestBu
         return \is_array($decoded) ? $decoded : [];
     }
 
-    /**
-     * @param array<mixed> $data
-     */
-    private function readString(array $data, string $key): ?string
-    {
-        $value = $data[$key] ?? null;
-
-        return \is_string($value) && '' !== $value ? $value : null;
-    }
 
     private function write(PackageManifest $manifest): void
     {

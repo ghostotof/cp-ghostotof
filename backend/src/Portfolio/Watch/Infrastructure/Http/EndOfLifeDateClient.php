@@ -10,6 +10,7 @@ use App\Portfolio\Watch\Domain\Service\ExternalUrlFilter;
 use App\Portfolio\Watch\Domain\Service\ReleaseCycleSourceInterface;
 use App\Portfolio\Watch\Domain\ValueObject\ProductReleaseCycles;
 use App\Portfolio\Watch\Domain\ValueObject\ReleaseCycle;
+use App\Portfolio\Watch\Infrastructure\ReadsUntrustedArrays;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExceptionInterface;
@@ -34,6 +35,8 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  */
 final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
 {
+    use ReadsUntrustedArrays;
+
     private const string BASE_URL = 'https://endoflife.date/api/v1/products/';
 
     /** Inactivité maximale entre deux fragments de réponse, en secondes. */
@@ -211,15 +214,6 @@ final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
         );
     }
 
-    /**
-     * @param array<mixed> $data
-     */
-    private function readString(array $data, string $key): ?string
-    {
-        $value = $data[$key] ?? null;
-
-        return \is_string($value) && '' !== $value ? $value : null;
-    }
 
     /**
      * Une valeur absente ou d'un autre type vaut `false` : en veille, l'absence

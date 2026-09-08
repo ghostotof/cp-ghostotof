@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useIncidents } from '../../application/incidents/useIncidents'
+import { parseIsoDate } from '../format/isoDate'
 import RichText from '../ui/RichText.vue'
 
 const { t, locale } = useI18n()
@@ -14,11 +15,11 @@ const { incidents, isLoading, hasError } = useIncidents()
 const dateFormatter = computed(() => new Intl.DateTimeFormat(locale.value, { year: 'numeric', month: 'long', day: 'numeric' }))
 
 function formatDate(isoDate: string): string {
-  const parsed = new Date(`${isoDate}T00:00:00`)
+  const parsed = parseIsoDate(isoDate)
 
   // Une date illisible ne doit pas faire disparaître l'incident : on retombe
   // sur la valeur brute plutôt que d'afficher « Invalid Date ».
-  return Number.isNaN(parsed.getTime()) ? isoDate : dateFormatter.value.format(parsed)
+  return null === parsed ? isoDate : dateFormatter.value.format(parsed)
 }
 </script>
 

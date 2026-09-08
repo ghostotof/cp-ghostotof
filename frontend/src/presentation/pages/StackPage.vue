@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useWatch } from '../../application/watch/useWatch'
 import type { SupportStatus } from '../../domain/watch/entities/WatchContent'
+import { parseIsoDate } from '../format/isoDate'
 
 const { t, locale } = useI18n()
 const { content, isLoading, hasError } = useWatch()
@@ -81,9 +82,9 @@ const refreshedAtFormatter = computed(
 function formatDeadline(isoDate: string | null): string {
   if (isoDate === null) return '—'
 
-  const parsed = new Date(`${isoDate}T00:00:00`)
+  const parsed = parseIsoDate(isoDate)
 
-  return Number.isNaN(parsed.getTime()) ? isoDate : deadlineFormatter.value.format(parsed)
+  return null === parsed ? isoDate : deadlineFormatter.value.format(parsed)
 }
 
 function formatRefreshedAt(iso: string): string {
@@ -94,9 +95,9 @@ function formatRefreshedAt(iso: string): string {
 
 /** Nombre de mois entiers d'ici l'échéance ; négatif si elle est passée. */
 function monthsUntil(isoDate: string): number | null {
-  const parsed = new Date(`${isoDate}T00:00:00`)
+  const parsed = parseIsoDate(isoDate)
 
-  if (Number.isNaN(parsed.getTime())) return null
+  if (null === parsed) return null
 
   const today = new Date()
 

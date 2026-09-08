@@ -7,6 +7,7 @@ namespace App\Portfolio\Watch\Infrastructure\Manifest;
 use App\Portfolio\Watch\Domain\Service\PackageManifestReaderInterface;
 use App\Portfolio\Watch\Domain\ValueObject\PackageCoordinates;
 use App\Portfolio\Watch\Domain\ValueObject\PackageManifest;
+use App\Portfolio\Watch\Infrastructure\ReadsUntrustedArrays;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -18,6 +19,8 @@ use Psr\Log\LoggerInterface;
  */
 final readonly class FilePackageManifestReader implements PackageManifestReaderInterface
 {
+    use ReadsUntrustedArrays;
+
     public function __construct(
         private string $manifestPath,
         private LoggerInterface $logger,
@@ -108,13 +111,4 @@ final readonly class FilePackageManifestReader implements PackageManifestReaderI
         return $collected;
     }
 
-    /**
-     * @param array<mixed> $data
-     */
-    private function readString(array $data, string $key): ?string
-    {
-        $value = $data[$key] ?? null;
-
-        return \is_string($value) && '' !== $value ? $value : null;
-    }
 }

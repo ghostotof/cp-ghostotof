@@ -12,6 +12,7 @@ use App\Portfolio\Watch\Domain\Service\SnapshotFreshnessCalculator;
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotFreshness;
 use App\Portfolio\Watch\Domain\ValueObject\SupportStatus;
 use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
+use App\Portfolio\Watch\Infrastructure\ReadsUntrustedArrays;
 use App\Portfolio\Watch\Presentation\ApiResource\WatchedProductResource;
 use App\Portfolio\Watch\Presentation\ApiResource\WatchReleaseCyclesResource;
 use App\Portfolio\Watch\Presentation\ApiResource\WatchResource;
@@ -34,6 +35,8 @@ use App\Portfolio\Watch\Presentation\ApiResource\WatchVulnerabilitiesResource;
  */
 final readonly class WatchProvider implements ProviderInterface
 {
+    use ReadsUntrustedArrays;
+
     public function __construct(
         private WatchSnapshotRepositoryInterface $snapshotRepository,
         private SnapshotFreshnessCalculator $freshnessCalculator,
@@ -162,13 +165,4 @@ final readonly class WatchProvider implements ProviderInterface
         return $products;
     }
 
-    /**
-     * @param array<mixed> $data
-     */
-    private function readString(array $data, string $key): ?string
-    {
-        $value = $data[$key] ?? null;
-
-        return \is_string($value) && '' !== $value ? $value : null;
-    }
 }

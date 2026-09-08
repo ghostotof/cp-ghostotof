@@ -8,6 +8,7 @@ use App\Portfolio\Watch\Domain\Exception\VulnerabilitySourceUnavailableException
 use App\Portfolio\Watch\Domain\Service\VulnerabilitySourceInterface;
 use App\Portfolio\Watch\Domain\ValueObject\KnownVulnerability;
 use App\Portfolio\Watch\Domain\ValueObject\PackageCoordinates;
+use App\Portfolio\Watch\Infrastructure\ReadsUntrustedArrays;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExceptionInterface;
@@ -35,6 +36,8 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  */
 final readonly class OsvClient implements VulnerabilitySourceInterface
 {
+    use ReadsUntrustedArrays;
+
     private const string QUERY_BATCH_URL = 'https://api.osv.dev/v1/querybatch';
     private const string VULNERABILITY_URL = 'https://api.osv.dev/v1/vulns/';
 
@@ -243,7 +246,7 @@ final readonly class OsvClient implements VulnerabilitySourceInterface
 
         return new KnownVulnerability(
             $id,
-            $this->aliases($payload),
+            $this->readStringList($payload, 'aliases'),
             $this->readString($payload, 'summary'),
             $this->severity($payload),
             $package,
@@ -258,29 +261,6 @@ final readonly class OsvClient implements VulnerabilitySourceInterface
         return new KnownVulnerability($id, [], null, null, $package, null);
     }
 
-    /**
-     * @param array<mixed> $payload
-     *
-     * @return list<string>
-     */
-    private function aliases(array $payload): array
-    {
-        $aliases = $payload['aliases'] ?? null;
-
-        if (!\is_array($aliases)) {
-            return [];
-        }
-
-        $collected = [];
-
-        foreach ($aliases as $alias) {
-            if (\is_string($alias) && '' !== $alias) {
-                $collected[] = $alias;
-            }
-        }
-
-        return $collected;
-    }
 
     /**
      * OSV publie la sévérité à deux endroits : un champ propre à la base
@@ -420,13 +400,4 @@ final readonly class OsvClient implements VulnerabilitySourceInterface
         return $this->readString($affectedPackage, 'name') === $package->name;
     }
 
-    /**
-     * @param array<mixed> $data
-     */
-    private function readString(array $data, string $key): ?string
-    {
-        $value = $data[$key] ?? null;
-
-        return \is_string($value) && '' !== $value ? $value : null;
-    }
 }
