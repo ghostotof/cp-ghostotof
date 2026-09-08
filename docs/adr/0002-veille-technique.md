@@ -227,12 +227,15 @@ qui est en retard. Divulgation assumée, désormais écrite plutôt que sous-ent
   qui tourne, ce qu'elle existe précisément pour éviter. C'est le coût assumé de la source hybride ;
   la parade est de traiter l'édition du catalogue comme une étape du changement de version, au même
   titre que `versions.lock`. Une piste pour plus tard : lire ces versions depuis le cluster.
-- **Le seed n'est joué par personne au déploiement.** `app:watch:seed` est un amorçage manuel, une
-  fois par environnement, et doit le rester : comme tous les `app:*:seed` il purge puis recrée, donc
-  l'automatiser effacerait à chaque release les modifications faites au backoffice. Un environnement
-  neuf démarre par conséquent avec un catalogue vide, `app:watch:refresh` le dit sans échouer
-  (« Aucun produit surveillé : rien à rafraîchir. »), et `/stack` affiche « jamais rafraîchi » jusqu'à
-  l'amorçage. Au 2026-09-08 c'est l'état de la **préprod**, `Incident` et `Contribution` compris.
+- ~~**Le seed n'est joué par personne au déploiement.**~~ *Résolu le 2026-09-08, après cet ADR.* Le
+  constat tenait : la préprod naissait vide, `Incident` et `Contribution` y étaient restées vides
+  depuis leurs releases. La parade envisagée ici — « amorçage manuel, ne jamais automatiser, sinon la
+  purge effacerait le contenu édité » — a été remplacée par une meilleure : les cinq commandes
+  `app:*:seed` **refusent désormais d'écraser du contenu existant** sans `--force`
+  (`GuardsExistingContent`). L'automatisation devient sans danger, et un Job k8s les joue à chaque
+  déploiement de préprod. La production, qui a du contenu, est protégée par la même règle — y compris
+  d'une erreur de namespace. Un catalogue vide reste annoncé sans échec par `app:watch:refresh`
+  (« Aucun produit surveillé : rien à rafraîchir. »).
 - L'historisation des snapshots et les courbes d'évolution (hors périmètre v1).
 - La notification à la détection d'une nouvelle vulnérabilité : aujourd'hui il faut ouvrir la page.
 - Le volume de `GET /v1/vulns/{id}` si les vulnérabilités se multipliaient — l'enrichissement est

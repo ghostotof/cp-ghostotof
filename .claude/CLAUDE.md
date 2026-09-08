@@ -288,14 +288,10 @@ folder), so entities live inside their bounded context instead of a shared top-l
     than in `WatchedProductAdministrator` so that `app:watch:seed` (and its test) stay off the network.
   - Not localized (no `locale` column, unlike every other `Portfolio/*` context): a version number is a
     fact, not a translation. UI labels are handled frontend-side.
-  - **`app:watch:seed` is a one-time bootstrap per environment, and must never be wired into the
-    deploy pipeline.** Like every other `app:*:seed`, it purges and recreates — running it on each
-    release would silently wipe the admin's catalogue edits (added products, hand-updated versions),
-    which is the whole point of the backoffice. Nothing runs seeds at deploy time; the migrate Job
-    only migrates. A fresh environment therefore starts with an empty `watched_product`, and
-    `app:watch:refresh` says so plainly (`Aucun produit surveillé : rien à rafraîchir.`) rather than
-    failing — but `/stack` will show "never refreshed" until someone seeds it. As of 2026-09-08 that
-    is the state of **preprod**, for `Incident` and `Contribution` too; prod is populated.
+  - **A fresh environment starts with an empty `watched_product`**, and `app:watch:refresh` says so
+    plainly (`Aucun produit surveillé : rien à rafraîchir.`) rather than failing — `/stack` then shows
+    "never refreshed" until the catalogue is seeded. Preprod is seeded automatically on every deploy
+    (see "Seeding" below); prod is populated and the guard keeps it that way.
   - **A version bump in `.env` does not reach the page by itself.** PHP and Symfony read the runtime,
     so they cannot drift — that is decision D2. The other five (PostgreSQL, Node, Vue, nginx,
     RabbitMQ) are `VersionSource::MANUAL`: bumping `POSTGRES_TAG` and deploying leaves `/stack`
@@ -362,6 +358,38 @@ Content management for all of the above, plus user administration, gated end-to-
   `use App\Security\User\Domain\Exception\HasProblemType` (declare `problemType()` → a stable kebab slug +
   `problemStatus()`): API Platform then emits `type: /errors/<slug>` in the problem+json, which the client keys
   on instead of substring-matching the localized `detail`.
+
+### Seeding (`app:*:seed`)
+
+Five commands carry the reference content: `app:{about,quality,contributions,incidents,watch}:seed`.
+They **purge and recreate** — that is how an entry removed from the reference content actually
+disappears — which used to make them silently destructive on any environment whose content had been
+edited through the backoffice.
+
+Since 2026-09-08 the rule is inverted by `App\Shared\Presentation\Command\GuardsExistingContent`:
+**a populated database is left alone**, and `--force` is required to replace it. Three consequences,
+all deliberate:
+
+- a fresh environment seeds itself, which is what makes automatic seeding safe;
+- **prod becomes untouchable by accident** — it has content, so the command declines, even on a
+  wrong-namespace mistake, which is the error that costs the most;
+- a deliberate reset is still possible, but it has to be written out.
+
+**The refusal exits 0.** This detail carries the rest: a non-zero exit would fail the seed Job — and
+therefore the deployment — on every run after the first. "There is already content" is the expected
+answer in nearly every execution, not an error. `SeedWatchedProductsCommandTest` pins it.
+
+`k8s/base/seed-job.yaml` runs the five on **every preprod deploy** (`deploy-preprod` only — prod gets
+its content from the backoffice and receives nothing from here). Like `migrate-job.yaml` it sits
+outside `kustomization.yaml`, hence `${BACKEND_IMAGE}` + `envsubst`. It never passes `--force`, so it
+cannot repair a divergence: if the reference content changes in code, preprod keeps the old one until
+someone forces it by hand. That is the price of harmlessness, and it is the right trade — a Job that
+can destroy nothing beats a Job that syncs and one day picks the wrong namespace.
+
+**Preprod never receives a copy of production data.** The content comes from the code, not from a
+dump: a dump would carry `cpg_user` — e-mail addresses and password hashes — into a second
+environment, multiplying the places they can leak, and it would buy nothing here since prod's content
+*is* what these seeds produce.
 
 To add a new bounded context (e.g. a second `Security` aggregate, or a new `Portfolio` sub-context): mirror
 the same `Domain/Application/Infrastructure/Presentation` split under a new `src/<Context>/` folder, creating
@@ -681,7 +709,7 @@ Tech-watch upkeep (`Portfolio/Watch`, ADR 0002) — in dev these are run by hand
 `watch-refresh` CronJob:
 
 ```bash
-php bin/console app:watch:seed            # catalogue of tracked products (idempotent)
+php bin/console app:watch:seed            # catalogue of tracked products (declines if already populated)
 php bin/console app:watch:build-manifest  # composer.lock [+ package-lock.json] -> package manifest
 php bin/console app:watch:refresh         # queries endoflife.date + OSV.dev, writes the snapshots
 php bin/console app:watch:refresh --dry-run

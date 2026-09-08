@@ -61,6 +61,40 @@ final class SeedQualityContentCommandTest extends KernelTestCase
         self::assertCount(7, $traitRepository->findByLocale(Locale::FR));
     }
 
+    /**
+     * Le comptage traverse ici **deux dépôts et deux locales** — la forme la
+     * plus riche des cinq commandes de peuplement. Un seul principe déjà en
+     * base suffit à protéger l'ensemble : c'est ce qui permet de jouer ce seed
+     * à chaque déploiement de préprod sans jamais rien écraser.
+     */
+    public function testItLeavesExistingContentAlone(): void
+    {
+        $this->commandTester()->execute([]);
+
+        $principleRepository = self::getContainer()->get(QualityPrincipleRepositoryInterface::class);
+        $principleRepository->remove($principleRepository->findByLocale(Locale::FR)[0]);
+
+        $tester = $this->commandTester();
+        $tester->execute([]);
+
+        // Toujours amputé : la commande a bien renoncé plutôt que de recréer.
+        self::assertCount(2, $principleRepository->findByLocale(Locale::FR));
+        self::assertSame(0, $tester->getStatusCode());
+        self::assertStringContainsString('déjà en place', $tester->getDisplay());
+    }
+
+    public function testForceRebuildsFromReferenceContent(): void
+    {
+        $this->commandTester()->execute([]);
+
+        $principleRepository = self::getContainer()->get(QualityPrincipleRepositoryInterface::class);
+        $principleRepository->remove($principleRepository->findByLocale(Locale::FR)[0]);
+
+        $this->commandTester()->execute(['--force' => true]);
+
+        self::assertCount(3, $principleRepository->findByLocale(Locale::FR));
+    }
+
     private function commandTester(): CommandTester
     {
         \assert(self::$kernel instanceof KernelInterface);

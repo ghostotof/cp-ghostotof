@@ -7,6 +7,7 @@ namespace App\Portfolio\Contribution\Presentation\Command;
 use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
 use App\Portfolio\Contribution\Domain\Repository\ContributionRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Presentation\Command\GuardsExistingContent;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -28,6 +29,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 )]
 final class SeedContributionsContentCommand extends Command
 {
+    use GuardsExistingContent;
+
     public function __construct(
         private readonly ContributionRepositoryInterface $contributionRepository,
         private readonly ContributionAdministratorInterface $contributionAdministrator,
@@ -35,9 +38,18 @@ final class SeedContributionsContentCommand extends Command
         parent::__construct();
     }
 
+    protected function configure(): void
+    {
+        $this->addForceOption();
+    }
+
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
+
+        if ($this->refusesToOverwrite($io, $input, $this->countExisting())) {
+            return Command::SUCCESS;
+        }
 
         foreach ($this->content() as $localeValue => $contributions) {
             $locale = Locale::from($localeValue);
@@ -112,5 +124,20 @@ final class SeedContributionsContentCommand extends Command
                 ],
             ],
         ];
+    }
+
+    /**
+     * Toutes locales confondues : une base à moitié peuplée (fr seulement, par
+     * exemple) compte comme peuplée, et n'est donc pas écrasée en silence.
+     */
+    private function countExisting(): int
+    {
+        $total = 0;
+
+        foreach (Locale::cases() as $locale) {
+            $total += \count($this->contributionRepository->findByLocale($locale));
+        }
+
+        return $total;
     }
 }

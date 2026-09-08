@@ -110,16 +110,47 @@ final class SeedWatchedProductsCommandTest extends KernelTestCase
     }
 
     /**
-     * Le seed purge avant de recréer : rejouer la commande écrase ce qui a été
-     * ajouté au backoffice. C'est le comportement des autres seeds du projet,
-     * et il est assumé — cette commande pose un état de référence sur un
-     * environnement neuf, elle ne synchronise pas une base éditée.
+     * Le contrat a changé le 2026-09-08 : un catalogue déjà en place n'est plus
+     * écrasé. C'est ce qui permet de jouer ce seed à chaque déploiement de
+     * préprod sans jamais rien détruire — et ce qui rend la production
+     * intouchable, y compris sur une erreur de namespace.
      */
-    public function testItReplacesWhateverWasThereBefore(): void
+    public function testItLeavesAnExistingCatalogueAlone(): void
+    {
+        $this->repository()->save(new WatchedProduct('maison', 'Produit maison', VersionSource::MANUAL, '1.0', 99));
+
+        $tester = $this->commandTester();
+        $tester->execute([]);
+
+        self::assertNotNull($this->repository()->findOneBySlug('maison'));
+        self::assertCount(1, $this->repository()->findAllOrdered());
+        self::assertStringContainsString('déjà en place', $tester->getDisplay());
+    }
+
+    /**
+     * Le refus doit être un **succès**. Un code de sortie non nul ferait
+     * échouer le Job de peuplement — donc le déploiement de préprod — à chaque
+     * passage après le premier. « Il y a déjà du contenu » est la réponse
+     * attendue dans la quasi-totalité des exécutions, pas une erreur.
+     */
+    public function testRefusingToOverwriteIsASuccess(): void
+    {
+        $this->repository()->save(new WatchedProduct('maison', 'Produit maison', VersionSource::MANUAL, '1.0', 99));
+
+        $tester = $this->commandTester();
+        $tester->execute([]);
+
+        self::assertSame(0, $tester->getStatusCode());
+    }
+
+    /**
+     * La réinitialisation délibérée reste possible — elle s'écrit.
+     */
+    public function testForceReplacesWhateverWasThereBefore(): void
     {
         $this->repository()->save(new WatchedProduct('obsolete', 'À supprimer', VersionSource::MANUAL, '1.0', 99));
 
-        $this->commandTester()->execute([]);
+        $this->commandTester()->execute(['--force' => true]);
 
         self::assertNull($this->repository()->findOneBySlug('obsolete'));
         self::assertCount(7, $this->repository()->findAllOrdered());
