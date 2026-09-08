@@ -11,6 +11,7 @@ resources:
   - backend-nginx-conf.yaml
   - messenger-worker-deployment.yaml
   - messenger-purge-cronjob.yaml
+  - watch-refresh-cronjob.yaml
   - frontend-deployment.yaml
   - frontend-service.yaml
   - postgres.yaml
