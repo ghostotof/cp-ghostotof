@@ -1,7 +1,7 @@
 {
   "nav": {
     "home": "Home",
-    "skills": "Skills",
+    "stack": "My stack",
     "experiences": "Technical background",
     "contact": "Contact",
     "about": "About",
@@ -310,6 +310,7 @@
     "illustrationAlt": "Illustration: developer behind their computer"
   },
   "technologies": {
+    "seeStack": "See which versions all this actually runs on →",
     "sectionTitle": "Technologies",
     "andAlso": "ALSO"
   },

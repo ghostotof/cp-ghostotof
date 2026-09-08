@@ -8,7 +8,7 @@ defineProps<{
   additionalTechnologies: readonly Technology[]
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 </script>
 
 <template>
@@ -58,6 +58,18 @@ const { t } = useI18n()
           <span>{{ technology.name }}</span>
         </template>
       </div>
+
+      <!-- Le pont vers /stack : cette section dit ce que je maîtrise, la page
+           dit dans quelles versions cela tourne réellement. Deux questions
+           différentes, que le lecteur se pose l'une après l'autre. -->
+      <p class="mt-4 mb-0">
+        <RouterLink
+          :to="`/${locale}/stack`"
+          class="link-light"
+        >
+          {{ t('technologies.seeStack') }}
+        </RouterLink>
+      </p>
     </div>
   </section>
 </template>
