@@ -178,6 +178,40 @@ Ce que la revue a confirmé, en revanche : le cloisonnement D4 tient avec **27 C
 base** — le payload anonyme ne contient aucun identifiant, nom de paquet, sévérité ni version
 corrigée ; anonyme 401, `ROLE_USER` 403, `ROLE_SUPER` 200 ; sept routes, aucune fantôme.
 
+Trois points mineurs relevés au passage ont été traités ensuite.
+
+**`/api/watch` devient cachable publiquement.** La réponse est identique pour tout le monde et ne
+bouge qu'une fois par jour ; la servir en `no-cache, private` (défaut Symfony) faisait traverser PHP
+et Postgres à chaque visiteur. `public, max-age=300, s-maxage=300, stale-while-revalidate=600,
+stale-if-error=3600`.
+
+Les durées sont courtes, et **la raison n'est pas la fraîcheur des données mais celle du libellé** :
+`freshness` est calculé au moment de la lecture, et le frontend s'y fie au lieu de le recalculer
+depuis `refreshedAt`. Une réponse gardée T secondes affiche donc un libellé vieux de T secondes au
+pire. Cinq minutes contre un seuil de 36 h, c'est du bruit ; une journée aurait pu afficher « donnée
+fraîche » alors que le rafraîchissement avait cessé — soit mentir sur exactement ce que cette page
+prétend rendre visible. `stale_if_error` s'autorise une heure parce que, pendant une panne du
+backend, l'alternative n'est pas une page plus honnête : c'est une 502.
+
+`public` n'est sûr **que parce que** `WatchProvider` ignore totalement l'appelant. Un test dédié
+vérifie l'autre versant : le détail `ROLE_SUPER` reste `no-cache, private`, un `public` s'y glissant
+autoriserait un cache partagé à le resservir à quelqu'un d'autre.
+
+**Filet de débit sur les lectures publiques.** `/api/watch` n'avait aucun plafond — comme
+`/api/about` et `/api/quality` : les zones existantes protègent un effet de bord (envoi d'e-mail,
+jeton devinable), pas la ressource. Singulariser `/api/watch` aurait été incohérent, d'où une zone
+`publicapi` générale (600 r/m, burst 200) posée sur `location /` dans **les deux** configurations
+nginx, qui sont des miroirs. Le plafond est très au-dessus de tout usage réel, et cette marge est
+délibérée : derrière un CGNAT d'opérateur mobile, des milliers de visiteurs partagent une adresse
+(point d'audit C7). Vérifié en local — 30 requêtes séquentielles passent intégralement, 500 en
+parallèle déclenchent 266 réponses 429.
+
+**Justification de `PUBLIC_PATHS` reformulée.** Elle affirmait que la page ne révélait « rien qu'un
+visiteur ne puisse déjà déduire du dépôt public ». C'est exact pour les numéros de version — `.env`
+et `versions.lock` sont suivis en git — mais la page en dit un peu plus : que ces versions tournent
+effectivement, et lesquelles attendent un correctif. Le dépôt dit ce qui est épinglé, la page dit ce
+qui est en retard. Divulgation assumée, désormais écrite plutôt que sous-entendue.
+
 ### Ce qui reste ouvert
 
 - **Pas de CSP sur le nginx frontend** (`docker/node/nginx.conf`), qui porte pourtant tous les autres

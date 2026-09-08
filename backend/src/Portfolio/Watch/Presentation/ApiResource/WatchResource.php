@@ -36,6 +36,36 @@ use App\Portfolio\Watch\Infrastructure\ApiPlatform\WatchProvider;
         new Get(
             uriTemplate: '/watch',
             provider: WatchProvider::class,
+            /*
+             * Réponse identique pour tout le monde, rafraîchie une fois par
+             * jour : la servir en `no-cache, private` (défaut Symfony) faisait
+             * traverser PHP et Postgres à chaque visiteur pour un contenu qui
+             * ne bouge pas. `public` est sûr **parce que** ce provider ignore
+             * totalement l'utilisateur — si cette réponse devait un jour
+             * dépendre de l'appelant, il faudrait retirer ce drapeau avant, ou
+             * un cache partagé servirait la vue de l'un à l'autre.
+             *
+             * Les durées sont volontairement courtes, et la raison n'est pas la
+             * fraîcheur des données — elles sont quotidiennes — mais celle du
+             * **libellé** : `freshness` est calculé au moment de la lecture, et
+             * le frontend s'y fie au lieu de le recalculer. Une réponse gardée
+             * T secondes affiche donc un libellé vieux de T secondes au pire.
+             * Cinq minutes contre un seuil d'obsolescence de 36 h, c'est du
+             * bruit ; une journée aurait pu masquer une panne de
+             * rafraîchissement, c'est-à-dire mentir sur exactement ce que cette
+             * page prétend rendre visible.
+             *
+             * `stale_if_error` est le seul à s'autoriser une heure : pendant une
+             * panne du backend, l'alternative n'est pas une page plus honnête,
+             * c'est une 502.
+             */
+            cacheHeaders: [
+                'public' => true,
+                'max_age' => 300,
+                'shared_max_age' => 300,
+                'stale_while_revalidate' => 600,
+                'stale_if_error' => 3600,
+            ],
         ),
     ],
     // Sans cela, API Platform élide les champs nuls : sur une installation

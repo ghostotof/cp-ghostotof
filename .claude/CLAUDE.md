@@ -261,6 +261,15 @@ folder), so entities live inside their bounded context instead of a shared top-l
     filtering only on write would leave every deployed installation exposed until the next refresh.
   - **`max_redirects: 0` on every outbound call.** Symfony's default follows 20, and the CronJob pod
     has no egress restriction — a hijacked provider would get a lever into the internal network.
+  - **`/api/watch` is publicly cacheable, but briefly** (`cacheHeaders` on the `Get`: `public`,
+    `max-age`/`s-maxage` 300, `stale-if-error` 3600). The short lifetime is *not* about the data —
+    that is daily — but about the **label**: `freshness` is computed at read time and `StackPage.vue`
+    trusts it instead of recomputing from `refreshedAt`, so a response cached for T seconds shows a
+    label T seconds out of date. A day-long cache could therefore display "fresh" after refreshing
+    had stopped, which is a lie about the one thing this page exists to show. `public` is only safe
+    because `WatchProvider` ignores the caller entirely — remove it before making this response
+    depend on who is asking. `WatchResourceTest` pins the ceiling (not the exact value) and pins the
+    other side too: the `ROLE_SUPER` detail must never become publicly cacheable.
   - **PHP's and Symfony's versions come from the runtime**, not the backoffice
     (`VersionSource::RUNTIME_PHP` / `RUNTIME_SYMFONY`, `PhpAndSymfonyVersionResolver`) and the version
     field is refused for them (`InvalidWatchedProductException`, 422). The two most-looked-at versions
@@ -546,6 +555,13 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   same image as the Deployment. It is also **the only object in the cluster that makes outbound calls to
   third parties**; the namespace's NetworkPolicies restrict ingress only, so nothing extra is needed today —
   but adding an egress policy would break this Job first.
+- **Three nginx rate-limit zones, two different jobs.** `contact` (10 r/m) and `pwsetup` (20 r/m)
+  protect a *side effect* — sending mail, guessing a token. `publicapi` (600 r/m, burst 200, on
+  `location /`) protects the *resource*: without it every public read reaches PHP and Postgres as
+  often as asked. Its ceiling is deliberately far above real use — behind a mobile carrier's CGNAT
+  thousands of visitors share one address, and a tight cap would cut them all off at once, which is
+  the very DoS audit C7 was about. `/healthz` uses an exact-match `location =`, so kubelet probes are
+  never capped.
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's

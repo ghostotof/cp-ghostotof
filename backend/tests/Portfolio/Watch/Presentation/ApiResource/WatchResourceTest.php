@@ -112,6 +112,58 @@ final class WatchResourceTest extends WebTestCase
     }
 
     /**
+     * La réponse est identique pour tout le monde et ne bouge qu'une fois par
+     * jour : la garder en `no-cache, private` faisait traverser PHP et Postgres
+     * à chaque visiteur pour rien.
+     *
+     * La borne supérieure est ce que ce test protège vraiment. `freshness` est
+     * calculé à la lecture et le frontend s'y fie sans le recalculer : une durée
+     * de cache trop longue afficherait « donnée fraîche » alors que le
+     * rafraîchissement a cessé — soit un mensonge sur précisément ce que cette
+     * page prétend rendre visible.
+     */
+    public function testThePublicResponseIsShareableButBriefly(): void
+    {
+        $client = self::createClient();
+        $this->givenSnapshot($client);
+
+        $client->request('GET', '/api/watch');
+
+        $cacheControl = $client->getResponse()->headers->get('Cache-Control') ?? '';
+
+        self::assertStringContainsString('public', $cacheControl);
+        self::assertStringNotContainsString('private', $cacheControl);
+
+        $maxAge = $client->getResponse()->getMaxAge();
+
+        self::assertNotNull($maxAge);
+        self::assertGreaterThan(0, $maxAge);
+        // C'est le plafond qui porte la garantie, pas la valeur exacte : régler
+        // 300 sur 600 reste légitime, passer à la journée ne l'est pas. Figer la
+        // borne plutôt que le réglage laisse le second échouer sans que le
+        // premier ait à toucher au test.
+        self::assertLessThanOrEqual(900, $maxAge);
+    }
+
+    /**
+     * Le pendant du test précédent, et le seul des deux qui touche à la
+     * sécurité : `public` sur une réponse réservée à ROLE_SUPER autoriserait un
+     * cache partagé à la resservir à quelqu'un d'autre. Le détail des
+     * vulnérabilités ne doit donc jamais devenir cachable publiquement, même par
+     * héritage d'un défaut posé ailleurs.
+     */
+    public function testTheRoleSuperDetailIsNeverPubliclyCacheable(): void
+    {
+        $client = self::createClient();
+        $client->request('GET', '/api/backoffice/watch/vulnerabilities');
+
+        $cacheControl = $client->getResponse()->headers->get('Cache-Control') ?? '';
+
+        self::assertStringNotContainsString('public', $cacheControl);
+        self::assertStringNotContainsString('s-maxage', $cacheControl);
+    }
+
+    /**
      * Sur une base neuve, aucun rafraîchissement n'a encore eu lieu. La réponse
      * doit rester exploitable — jamais 404, jamais 500, et surtout pas d'appel
      * sortant de secours qui remettrait le fournisseur dans le chemin de rendu.
