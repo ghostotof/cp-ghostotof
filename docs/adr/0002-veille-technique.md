@@ -150,12 +150,27 @@ Les dix décisions structurantes, dans l'ordre où elles se rencontrent en lisan
 La relecture à froid du payload public (checkpoint C) a trouvé une faille réelle, reproduite de bout
 en bout avant d'être corrigée.
 
-**XSS stocké via le lien de documentation du tiers.** `links.html`, fourni par endoflife.date,
+**URL de tiers republiée sans vérification de schéma.** `links.html`, fourni par endoflife.date,
 traversait la couche anti-corruption, la base et l'API publique **sans qu'aucune couche n'en vérifie
-le schéma**, puis atterrissait dans un `:href` de `/stack` — or Vue ne filtre pas les `href`, et le
-nginx frontend n'émet pas de CSP. Un `javascript:` publié chez le fournisseur devenait donc du script
-exécutable sur une page anonyme. Compromettre un serveur n'était pas nécessaire : le catalogue
-d'endoflife.date est un **jeu de données ouvert**, faire accepter une donnée suffisait.
+le schéma**, puis atterrissait dans un `:href` de `/stack` — or Vue ne filtre pas les `href`. Un
+`javascript:` publié chez le fournisseur arrivait donc intact dans le DOM d'une page anonyme, et
+compromettre un serveur n'était pas nécessaire pour l'y mettre : le catalogue d'endoflife.date est un
+**jeu de données ouvert**.
+
+> **Correction du 2026-09-08, après relecture.** La revue avait d'abord qualifié ce défaut de XSS
+> stocké exploitable, en s'appuyant sur un second constat — « le nginx frontend n'émet pas de CSP » —
+> **qui était faux**. Il l'était pour une raison instructive : le `grep` qui l'a établi était tronqué
+> par un `head`, et la conclusion a été tirée d'une sortie coupée. `docker/node/nginx.conf` sert en
+> réalité une CSP stricte, `script-src 'self'` sans `'unsafe-inline'` — vérifié sur les en-têtes
+> réels de la production et de la préprod — et cette directive **bloque la navigation vers une URL
+> `javascript:`**. La démonstration faite au navigateur portait, elle, sur le serveur de
+> développement Vite, qui n'émet aucune CSP : elle prouvait la présence de la charge dans le DOM,
+> pas son exécution en production.
+>
+> Ce qui reste vrai : une chaîne venue d'un tiers arrivait sans contrôle dans un `href`. Le correctif
+> garde tout son sens — une CSP est une atténuation, pas une raison de republier une URL non
+> vérifiée, et elle ne protège que tant qu'elle reste stricte. Ce qui change, c'est la gravité : le
+> défaut était **atténué en production**, non exploitable en l'état.
 
 Correctif : `Domain/Service/ExternalUrlFilter`, **liste blanche de schémas** (`https` seul) — une
 liste noire de `javascript:` aurait laissé passer `data:`, `vbscript:` et le prochain schéma inventé.
@@ -214,12 +229,11 @@ qui est en retard. Divulgation assumée, désormais écrite plutôt que sous-ent
 
 ### Ce qui reste ouvert
 
-- **Pas de CSP sur le nginx frontend** (`docker/node/nginx.conf`), qui porte pourtant tous les autres
-  en-têtes de sécurité — le nginx backend, lui, en a une stricte. C'est ce qui a transformé la faille
-  ci-dessus de « bloquée » en « exploitable ». Préexiste à ce contexte, donc suivi à part :
-  **issue #13**. Rien d'exploitable en l'état (aucun `v-html`, `href` liés à une donnée tous bornés),
-  et la mise en œuvre n'est pas triviale — `connect-src` dépend de l'`API_URL` injectée au runtime,
-  donc la conf nginx doit passer par le même `envsubst` que `config.template.js`.
+- ~~**Pas de CSP sur le nginx frontend.**~~ **Constat erroné, retiré le 2026-09-08** : la CSP existe
+  et elle est stricte (voir la correction ci-dessus). L'issue #13 qui en découlait a été fermée comme
+  invalide. À noter tout de même, pour qui la modifierait un jour : `script-src` ne contient pas
+  `'unsafe-inline'`, et c'est précisément ce qui neutralise les URL `javascript:` — l'y ajouter
+  rouvrirait la porte que le filtre d'URL ferme par ailleurs.
 - **La dérive de version des cinq produits saisis à la main.** PHP et Symfony lisent le runtime et ne
   peuvent pas mentir (décision n°3) ; PostgreSQL, Node, Vue, nginx et RabbitMQ sont en saisie. Monter
   `POSTGRES_TAG` dans `.env` et déployer laisse donc `/stack` annoncer l'ancienne version jusqu'à ce
