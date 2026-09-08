@@ -495,6 +495,7 @@
     "neverRefreshed": "No refresh has completed yet: data will appear after the next scheduled run.",
     "partial": "Partial refresh: at least one source did not answer. The affected entries come from the previous reading.",
     "refreshed": "reading from {date}",
+    "stale": "Reading overdue: the automated refresh has not completed for over a day. The deadlines shown still hold, but a version released since then is missing.",
     "source": "Source: endoflife.date",
     "tableCaption": "Installed versions and support deadlines for this site's stack.",
     "patchAvailable": "patch available",
@@ -521,7 +522,8 @@
       "notScanned": "Scan not performed: the list of deployed packages is not available here. Nothing can be concluded from it — which is not the same as “no vulnerability”.",
       "detailRestricted": "The details — identifiers, affected packages, fixed versions — are only visible in administration: publishing them would amount to documenting this site's weaknesses.",
       "source": "Source: OSV.dev",
-      "checkedAt": "checked on {date}"
+      "checkedAt": "checked on {date}",
+      "stale": "Scan overdue: it has not completed for over a day. A vulnerability published since then is missing from it."
     }
   }
 }

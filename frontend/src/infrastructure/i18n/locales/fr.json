@@ -495,6 +495,7 @@
     "neverRefreshed": "Aucun rafraîchissement n'a encore abouti : les données seront disponibles après la prochaine exécution planifiée.",
     "partial": "Rafraîchissement partiel : au moins une source n'a pas répondu. Les entrées concernées datent du relevé précédent.",
     "refreshed": "relevé du {date}",
+    "stale": "Relevé en retard : le rafraîchissement automatique n'a pas abouti depuis plus d'un jour. Les échéances affichées restent valables, mais une version publiée depuis n'y figure pas.",
     "source": "Source : endoflife.date",
     "tableCaption": "Versions installées et échéances de support de la stack de ce site.",
     "patchAvailable": "correctif disponible",
@@ -521,7 +522,8 @@
       "notScanned": "Analyse non effectuée : le périmètre des paquets déployés n'est pas disponible ici. Aucune conclusion ne peut en être tirée — ce n'est pas la même chose que « aucune vulnérabilité ».",
       "detailRestricted": "Le détail — identifiants, paquets concernés, versions correctives — n'est consultable qu'en administration : le publier reviendrait à documenter les faiblesses de ce site.",
       "source": "Source : OSV.dev",
-      "checkedAt": "vérifié le {date}"
+      "checkedAt": "vérifié le {date}",
+      "stale": "Analyse en retard : elle n'a pas abouti depuis plus d'un jour. Une faille publiée depuis n'y figure pas."
     }
   }
 }

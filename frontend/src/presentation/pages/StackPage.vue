@@ -209,6 +209,16 @@ function isImminent(isoDate: string | null): boolean {
         {{ t('stack.vulnerabilities.source') }} ·
         <time :datetime="vulnerabilities.checkedAt">{{ t('stack.vulnerabilities.checkedAt', { date: formatRefreshedAt(vulnerabilities.checkedAt) }) }}</time>
       </p>
+      <!-- Une analyse qui date n'est pas fausse, elle est incomplète : une
+           faille publiée depuis n'y figure pas. Le dire vaut mieux que de
+           laisser lire un chiffre rassurant comme s'il était d'aujourd'hui. -->
+      <p
+        v-if="'stale' === vulnerabilities.freshness"
+        class="text-warning small mb-0"
+        role="status"
+      >
+        {{ t('stack.vulnerabilities.stale') }}
+      </p>
     </div>
 
     <div
@@ -326,6 +336,13 @@ function isImminent(isoDate: string | null): boolean {
       <p class="text-body-secondary small mb-0 mt-3">
         {{ t('stack.source') }} ·
         <time :datetime="refreshedAt">{{ t('stack.refreshed', { date: formatRefreshedAt(refreshedAt) }) }}</time>
+      </p>
+      <p
+        v-if="'stale' === releaseCycles?.freshness"
+        class="text-warning small mb-0"
+        role="status"
+      >
+        {{ t('stack.stale') }}
       </p>
     </div>
   </section>

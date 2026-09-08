@@ -24,11 +24,13 @@ const SNAPSHOT: WatchContent = {
     products: [PHP],
     refreshedAt: '2026-09-07T10:47:58+00:00',
     sourceStatus: 'ok',
+    freshness: 'fresh',
   },
   vulnerabilities: {
     packagesScanned: 99,
     affectedCount: 0,
     checkedAt: '2026-09-07T10:47:58+00:00',
+    freshness: 'fresh',
   },
 }
 
@@ -177,7 +179,7 @@ describe('StackPage', () => {
     const wrapper = mountPage(
       createStubRepository({
         ...SNAPSHOT,
-        releaseCycles: { products: [], refreshedAt: null, sourceStatus: null },
+        releaseCycles: { products: [], refreshedAt: null, sourceStatus: null, freshness: 'never_refreshed' },
       }),
     )
     await flushPromises()
@@ -253,7 +255,7 @@ describe('StackPage', () => {
       const wrapper = mountPage(
         createStubRepository({
           ...SNAPSHOT,
-          vulnerabilities: { packagesScanned: 99, affectedCount: 3, checkedAt: '2026-09-07T10:47:58+00:00' },
+          vulnerabilities: { packagesScanned: 99, affectedCount: 3, checkedAt: '2026-09-07T10:47:58+00:00', freshness: 'fresh' },
         }),
       )
       await flushPromises()
@@ -270,7 +272,7 @@ describe('StackPage', () => {
       const wrapper = mountPage(
         createStubRepository({
           ...SNAPSHOT,
-          vulnerabilities: { packagesScanned: 99, affectedCount: 1, checkedAt: null },
+          vulnerabilities: { packagesScanned: 99, affectedCount: 1, checkedAt: null, freshness: 'fresh' },
         }),
       )
       await flushPromises()
@@ -287,7 +289,7 @@ describe('StackPage', () => {
       const wrapper = mountPage(
         createStubRepository({
           ...SNAPSHOT,
-          vulnerabilities: { packagesScanned: null, affectedCount: 0, checkedAt: null },
+          vulnerabilities: { packagesScanned: null, affectedCount: 0, checkedAt: null, freshness: 'fresh' },
         }),
       )
       await flushPromises()
@@ -304,12 +306,61 @@ describe('StackPage', () => {
       const wrapper = mountPage(
         createStubRepository({
           ...SNAPSHOT,
-          vulnerabilities: { packagesScanned: 99, affectedCount: 2, checkedAt: null },
+          vulnerabilities: { packagesScanned: 99, affectedCount: 2, checkedAt: null, freshness: 'fresh' },
         }),
       )
       await flushPromises()
 
       expect(wrapper.text()).toContain('administration')
+    })
+  })
+
+  /**
+   * Une donnée datée reste plus utile qu'une page vide — à condition de dire
+   * son âge. C'est la différence entre servir un relevé de l'avant-veille et
+   * laisser croire qu'il date de ce matin.
+   */
+  describe('fraîcheur', () => {
+    it('avertit quand le relevé des cycles de vie est en retard', async () => {
+      const wrapper = mountPage(
+        createStubRepository({
+          ...SNAPSHOT,
+          releaseCycles: { ...SNAPSHOT.releaseCycles, freshness: 'stale' },
+        }),
+      )
+      await flushPromises()
+
+      const warnings = wrapper.findAll('[role="status"]').map((element) => element.text())
+
+      expect(warnings.some((text) => text.includes('Relevé en retard'))).toBe(true)
+      // Le tableau reste affiché : la donnée est datée, pas fausse.
+      expect(wrapper.find('table').exists()).toBe(true)
+    })
+
+    /**
+     * Une analyse qui date n'est pas fausse, elle est incomplète : une faille
+     * publiée depuis n'y figure pas. Un décompte à zéro lu comme s'il datait de
+     * ce matin serait trompeur.
+     */
+    it('avertit quand l’analyse de vulnérabilités est en retard', async () => {
+      const wrapper = mountPage(
+        createStubRepository({
+          ...SNAPSHOT,
+          vulnerabilities: { ...SNAPSHOT.vulnerabilities, freshness: 'stale' },
+        }),
+      )
+      await flushPromises()
+
+      const warnings = wrapper.findAll('[role="status"]').map((element) => element.text())
+
+      expect(warnings.some((text) => text.includes('Analyse en retard'))).toBe(true)
+    })
+
+    it('n’avertit de rien quand tout est à jour', async () => {
+      const wrapper = mountPage()
+      await flushPromises()
+
+      expect(wrapper.text()).not.toContain('en retard')
     })
   })
 

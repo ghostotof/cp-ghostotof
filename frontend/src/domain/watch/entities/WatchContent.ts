@@ -26,6 +26,15 @@ export interface WatchedProduct {
 }
 
 /**
+ * Ce que vaut encore la donnée affichée.
+ *
+ * Calculée côté serveur au moment de la lecture, ce qui permet à un instantané
+ * de devenir périmé de lui-même quand le rafraîchissement cesse d'aboutir :
+ * personne n'a besoin de venir le marquer.
+ */
+export type SnapshotFreshness = 'fresh' | 'stale' | 'never_refreshed'
+
+/**
  * Le volet « cycles de vie », avec sa propre fraîcheur.
  *
  * `refreshedAt` est nul tant qu'aucun rafraîchissement n'a abouti — un état
@@ -38,6 +47,7 @@ export interface ReleaseCyclesSnapshot {
   readonly refreshedAt: string | null
   /** « ok » ou « partial » : au moins une source avait échoué. */
   readonly sourceStatus: string | null
+  readonly freshness: SnapshotFreshness
 }
 
 /**
@@ -56,6 +66,7 @@ export interface VulnerabilitiesSnapshot {
   readonly affectedCount: number
   /** Date ISO 8601 en UTC, ou null si aucune analyse n'a abouti. */
   readonly checkedAt: string | null
+  readonly freshness: SnapshotFreshness
 }
 
 /**
