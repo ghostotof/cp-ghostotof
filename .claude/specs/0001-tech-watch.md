@@ -1,8 +1,16 @@
 # SPEC — Radar de veille technique (`Portfolio/Watch`)
 
-> Statut : **validée le 2026-09-07**, prête pour le découpage en tâches. Une fois la fonctionnalité livrée, ce fichier
-> a vocation à céder la place à un ADR (`docs/adr/0002-veille-technique.md`) : l'ADR documente la
-> décision qui tient, la spec documente l'intention du moment.
+> ## ⚠️ Document historique — remplacé par [`docs/adr/0002-veille-technique.md`](../../docs/adr/0002-veille-technique.md)
+>
+> Statut : **validée le 2026-09-07**, **livrée le 2026-09-08**. **Pour l'état des lieux, lire l'ADR,
+> pas ce fichier** : l'ADR documente la décision qui tient, la spec l'intention du moment. Les deux
+> divergent déjà — D3 notamment, dont la mise en œuvre a quitté la CI pour le `docker build`
+> (cf. ADR, décision n°5), et la structure du contrat public, groupée par volet en cours de route.
+>
+> Conservé plutôt que supprimé, pour une raison précise : le **journal d'audit de sensibilité (§10)**
+> est la trace de la relecture faite avant publication dans un dépôt public. Supprimer le fichier
+> effacerait cette trace de l'arbre de travail. Ce qui a été livré se lit dans l'ADR ; ce qui a été
+> vérifié avant de publier se lit ici.
 >
 > ⚠️ **Ce fichier vit dans un dépôt public** (`.claude/` est versionné, hors `CLAUDE.local.md`).
 > Toute spec déposée ici est publiée au prochain push : aucun secret, aucune adresse réelle, aucun

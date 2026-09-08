@@ -1,0 +1,168 @@
+# ADR 0002 — Veille technique en données vivantes (`Portfolio/Watch`)
+
+- Statut : accepté
+- Date : 2026-09-08
+- Portée : `src/Portfolio/Watch`, `backend/bin/build-package-manifest.php`, `docker/php/Dockerfile`
+  (stage `production`), `k8s/base/watch-refresh-cronjob.yaml`, frontend `watch` + `admin/watch` +
+  page publique `/{locale}/stack`
+
+## Contexte
+
+Le site affirmait deux choses qu'il ne prouvait pas : « je maintiens ma stack » et « la sécurité est
+une priorité ». Une section « Technologies » listant des logos ne démontre ni l'un ni l'autre — elle
+énonce.
+
+D'où une page publique alimentée par deux sources externes :
+
+1. **[endoflife.date](https://endoflife.date)** — les dates officielles de fin de support actif et de
+   fin de vie des versions réellement en service ici (PHP, Symfony, PostgreSQL, Node, Vue, nginx,
+   RabbitMQ) ;
+2. **[OSV.dev](https://osv.dev)** — les vulnérabilités connues affectant les dépendances du dépôt.
+
+**Le thème est un prétexte assumé.** Le vrai sujet de démonstration est *l'intégration d'un tiers sans
+en devenir l'otage* : couche anti-corruption, appel sortant hors du chemin de rendu, snapshot
+persisté, dégradation gracieuse, aucun secret, testabilité sans réseau. La page **rend cette
+ingénierie visible** (source, âge de la donnée, état du dernier rafraîchissement) — c'est ce qui la
+sépare d'un gadget.
+
+## Décisions
+
+Les dix décisions structurantes, dans l'ordre où elles se rencontrent en lisant le code.
+
+1. **Tout appel sortant part du backend** (D1). Jamais du navigateur : pas de CORS subi, aucune clé
+   exposée, et surtout **l'IP du visiteur n'est jamais transmise à un tiers** — il n'y a donc rien à
+   ajouter à la politique de confidentialité.
+
+2. **Rafraîchissement par CronJob → snapshot en base ; l'API ne sert que du local** (D5).
+   `WatchProvider` n'a **aucune dépendance vers une source externe** : il ne *peut pas*, même par
+   accident, remettre un tiers dans le chemin de rendu d'une page publique. Temps de réponse
+   constant, aucun visiteur ne paie l'appel sortant, et le site survit à une panne d'endoflife.date.
+   Un cache paresseux aurait fait payer le premier visiteur après expiration — et lui aurait servi un
+   500 le jour où le tiers est en panne.
+
+3. **Versions surveillées : source hybride** (D2). Les produits sont saisis au backoffice (slug
+   endoflife.date + version), **sauf PHP et Symfony dont la version est lue au runtime**
+   (`PHP_VERSION`, `Kernel::VERSION`) et **non saisissable**. Un radar de veille affichant une version
+   périmée par oubli de saisie serait un contre-argument en entretien : les deux versions les plus
+   regardées ne peuvent pas mentir.
+
+4. **Détail des vulnérabilités réservé à `ROLE_SUPER`** (D4). Le public voit un agrégat —
+   `{packagesScanned, affectedCount, checkedAt}` — et rien d'autre : ni identifiant de CVE, ni nom de
+   paquet affecté, ni version vulnérable. Motif : le compte invité `ROLE_USER` est partagé et ses
+   identifiants circulent (cf. ADR 0001) ; `ROLE_USER` ≈ public **dès qu'il s'agit d'une surface
+   d'attaque**, ce qui n'est pas le cas d'un CV. Le cloisonnement se joue **à la lecture** (dans le
+   provider), jamais à l'écriture : le snapshot conserve le détail, sans quoi l'administrateur serait
+   privé de ce qu'il est précisément le seul à avoir le droit de voir.
+
+5. **Le périmètre analysé est relevé pendant le `docker build`** (D3, *révisée en cours de route*).
+   `bin/build-package-manifest.php` — script autonome, **sans kernel Symfony** — fusionne
+   `composer.lock` et `frontend/package-lock.json` en un manifeste normalisé
+   `{ecosystem, name, version}`, écrit dans l'image en lecture seule.
+   *La spec prévoyait une étape CI.* Le stage `production` s'est révélé meilleur : le contexte de
+   build **étant** la racine du dépôt, les deux fichiers de verrouillage y coexistent déjà, **aucune
+   modification du pipeline n'est nécessaire**, et le manifeste ne peut pas se désynchroniser de
+   l'image puisqu'il naît avec elle. Sans kernel, parce qu'au build ni `APP_SECRET` ni
+   `DATABASE_URL` n'existent : démarrer l'application pour lire deux fichiers JSON aurait exigé une
+   configuration complète sans aucun besoin.
+
+6. **Les produits suivis ne sont pas localisés** (D6). Écart délibéré avec les autres contextes
+   `Portfolio/*`, qui portent tous une colonne `locale` : « PostgreSQL 18.4 » traduit deux fois, ce
+   sont deux vérités possibles pour un fait unique. Seuls les libellés d'interface sont traduits, et
+   ils vivent dans `frontend/src/infrastructure/i18n/locales/{fr,en}.json`.
+
+7. **Route `/{locale}/stack`, intitulée « Ma stack »** (D7). « Radar » et *tech radar* entrent en
+   collision sémantique avec celui de ThoughtWorks (adopt/trial/assess/hold), qui n'a rien à voir avec
+   le sujet.
+
+8. **La page remplace l'ancre `#technologies` au menu** (D8), et `TechnologiesSection.vue` gagne un
+   lien « voir l'état de ma stack → ». La navigation comptait déjà 7 entrées ; une 8e la déséquilibre.
+   Les deux blocs répondent d'ailleurs à deux questions successives : la section dit ce que je
+   maîtrise, la page dit dans quelles versions cela tourne réellement.
+
+9. **CronJob quotidien, seuil d'obsolescence à 36 h** (D9), soit 1,5 × la période. Un seuil égal à la
+   période afficherait « donnée obsolète » chaque jour avant l'exécution : **le seuil doit toujours
+   laisser passer un cycle manqué**. La fraîcheur est calculée **à la lecture**, ce qui fait qu'un
+   snapshot se périme tout seul quand le rafraîchissement cesse d'aboutir, sans que personne n'ait à
+   venir le marquer.
+
+10. **Le slug est validé auprès d'endoflife.date à l'enregistrement backoffice, sans bloquer** (D10) :
+    timeout 2 s, et **une panne du tiers laisse l'enregistrement aboutir**. Tension assumée avec la
+    décision n°2 — c'est le seul appel sortant situé dans une requête HTTP — mais elle est
+    `ROLE_SUPER`, non publique, et son échec ne coûte rien. Une validation bloquante aurait laissé une
+    panne d'endoflife.date empêcher d'administrer son propre site.
+
+### Ce qui n'est jamais négociable
+
+- La réponse d'un tiers **ne franchit pas la frontière d'`Infrastructure/`**. Les clients HTTP
+  retournent des Value Objects du domaine, jamais un `array` décodé — c'est la couche anti-corruption,
+  et c'est ce qui rend le domaine testable sans réseau.
+- **Aucun test ne sort sur le réseau.** Un test appelant réellement endoflife.date serait intermittent
+  par construction et casserait la CI le jour d'un incident chez le tiers — exactement le couplage que
+  cette fonctionnalité prétend démontrer qu'on sait éviter.
+- **Si rien n'a pu être rafraîchi, rien n'est écrit.** Persister un payload « zéro produit » effacerait
+  la page à la première panne du fournisseur, alors que la donnée de la veille reste parfaitement
+  lisible.
+- **« Rien trouvé » n'est pas « rien cherché ».** Manifeste absent ⇒ état explicite, jamais un
+  « 0 vulnérabilité » mensonger.
+
+## Conséquences
+
+- **Un contexte borné de plus** (`src/Portfolio/Watch/`), le premier du projet dont le domaine dépend
+  de sources externes — et le seul à posséder un stage de build et un CronJob à lui.
+- **Deux tables** : `watched_product` (catalogue) et `watch_snapshot` (une ligne par volet, écrasée à
+  chaque rafraîchissement — l'historisation est hors périmètre v1).
+- **Une entrée publique de plus** dans `PUBLIC_PATHS` d'`ApiRouteExposureTest`, `/api/watch`, avec sa
+  justification écrite. Elle est doublée d'un **test dédié assertant l'absence** des clés
+  `id`/`cve`/`package`/`version`/`fixedIn` de la réponse anonyme : c'est le garde-fou de la décision
+  n°4, il ne doit jamais être assoupli.
+- **Le contrat public est groupé par volet** — `{releaseCycles, vulnerabilities}` — et non plat. Il
+  l'a été *avant* que le second volet n'existe : le regrouper plus tard aurait cassé le contrat, et
+  surtout obligé à choisir lequel des deux instantanés une date unique décrirait.
+  `skip_null_values: false`, sans quoi une installation jamais rafraîchie renverrait `{"products":[]}`
+  et le client devrait déduire l'état « jamais rafraîchi » d'une clé absente.
+- **Un seul objet du cluster provoque des appels sortants** : le CronJob `watch-refresh`
+  (`41 4 * * *`, décalé de la purge Messenger). Les NetworkPolicy du namespace ne restreignent que
+  l'entrée, ces appels passent donc sans règle supplémentaire.
+- **`EndOfLifeDateClient` est déclaré `public: true` sous `when@test`.** C'est bien la **classe
+  concrète** qu'il faut viser, pas l'alias : un service privé n'ayant qu'un consommateur est inliné à
+  la compilation, si bien qu'un `TestContainer::set()` sur l'alias reste sans effet. Sans cela, trois
+  tests fonctionnels croyaient simuler le fournisseur **tout en l'appelant réellement** — ils
+  passaient, et la CI aurait cassé au premier incident chez le tiers.
+- **`BackofficeVulnerabilityResource` déclare `#[ApiProperty(identifier: false)]`.** Même piège
+  qu'au point d'audit C6 : sans cela, API Platform synthétise une opération d'item pour fabriquer ses
+  IRI et publie `/api/backoffice_vulnerabilities/{id}`, une seconde route non documentée vers les
+  mêmes données.
+- **L'accessibilité est passée du manuel à l'outillé** : `eslint-plugin-vuejs-accessibility` est
+  désormais actif dans `npm run lint`, donc bloquant en CI. Il ne voit que le template — ni le
+  contraste ni l'ordre de tabulation, qui exigent un rendu réel. Le Tab-through manuel reste
+  nécessaire, l'outil le complète sans le remplacer (suite prévue : axe-core, issue #12).
+- **Une règle Rector de plus dans la liste de `skip`**,
+  `ArrowFunctionDelegatingCallToFirstClassCallableRector` — la seule qui n'y soit pas pour raison
+  cosmétique : elle met Rector et PHPStan en désaccord frontal, l'un exigeant la réécriture que
+  l'autre refuse.
+
+### Ce qui reste ouvert
+
+- L'historisation des snapshots et les courbes d'évolution (hors périmètre v1).
+- La notification à la détection d'une nouvelle vulnérabilité : aujourd'hui il faut ouvrir la page.
+- Le volume de `GET /v1/vulns/{id}` si les vulnérabilités se multipliaient — l'enrichissement est
+  borné et hors requête utilisateur, mais rien ne le plafonne dans le temps.
+
+## Alternatives écartées
+
+- **`fetch` direct depuis Vue** vers endoflife.date/OSV : transmet l'IP du visiteur à un tiers, subit
+  le CORS, et rend la page tributaire de la disponibilité d'autrui à chaque affichage.
+- **Cache paresseux** au lieu du CronJob : le premier visiteur après expiration paie l'appel — et voit
+  un 500 si le tiers est en panne.
+- **Tout déduire de `composer.lock`** : aveugle à PostgreSQL, Node, nginx et RabbitMQ, qui ne sont
+  dépendances Composer de rien.
+- **Tout saisir au backoffice** : fragile là où c'est le plus visible (PHP, Symfony).
+- **Publier le détail des CVE**, ou le réserver à `ROLE_USER` : la carte des vulnérabilités connues
+  d'un site est une aide à l'attaque, et `ROLE_USER` est un compte partagé.
+- **CI interrogeant OSV puis poussant le résultat en production** (formulation initiale de D3) : aurait
+  exigé un credential machine et un endpoint d'écriture supplémentaires, et figé l'analyse au build —
+  alors qu'une CVE publiée trois semaines après le déploiement doit apparaître.
+- **Colonne `locale` sur `WatchedProduct`** par cohérence de façade avec les autres contextes
+  `Portfolio/*` : deux vérités possibles pour un numéro de version.
+- **`/tech-radar` ou `/veille`** comme route : collision sémantique avec le Tech Radar de
+  ThoughtWorks pour le premier, intraduisible pour le second.

@@ -38,8 +38,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project state
 
 This repository started as a freshly generated project skeleton (single "Init" commit). Real backend code now
-exists — the `Security` bounded context (`User` + `Authentication`) and four `Portfolio` bounded contexts
-(`Experience`, `Quality`, `About`, `Contribution`, `Incident`, see Backend architecture below) — and follows a DDD structure under
+exists — the `Security` bounded context (`User` + `Authentication`) and six `Portfolio` bounded contexts
+(`Experience`, `Quality`, `About`, `Contribution`, `Incident`, `Watch`, see Backend architecture below) — and follows a DDD structure under
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
 over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
 recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
@@ -62,7 +62,9 @@ prepared sets deadCode/codeQuality/typeDeclarations/earlyReturn/instanceOf): `co
 `rector/rector-symfony`/`-doctrine`/`-phpunit` are deliberately omitted (their deps conflict with `symfony/*
 8.1.*`). Some cosmetic rules are skipped in `rector.php` (`SortAttributeNamedArgs`, `NewMethodCallWithoutParentheses`,
 `FlipTypeControlToUseExclusiveType`, `ClassPropertyAssignToConstructorPromotion` — entities keep explicit
-properties) — extend that skip list rather than fighting a rule inline. Psalm
+properties) — extend that skip list rather than fighting a rule inline. One skip is **not** cosmetic:
+`ArrowFunctionDelegatingCallToFirstClassCallableRector` puts Rector and PHPStan in head-on disagreement (Rector
+demands the rewrite, PHPStan rejects it), so it can never be satisfied — leave it skipped. Psalm
 *is* installed (`psalm/phar`, `backend/psalm.xml`) but **only** for taint analysis (`composer psalm`, CI job
 `sast-backend`, audit point M4) — `errorLevel="8"`, it is not and must not become a second type-checker
 alongside PHPStan; don't reach for Psalm annotations or raise its level. The
@@ -109,7 +111,11 @@ prod run the identical PHP engine:
   so bind-mounted files stay host-editable. Code is bind-mounted, not copied.
 - **`vendor`** — isolated `composer install --no-dev` layer, cached on `composer.json`/`composer.lock` only.
 - **`production`** — copies `vendor` + `../backend` source into the image (no mount), runs as a fixed non-root
-  `app` user (UID 10001), read-only filesystem except `var/`. This is the real deployable artifact.
+  `app` user (UID 10001), read-only filesystem except `var/`. This is the real deployable artifact. It also
+  **builds `config/watch/package-manifest.json`** here (`bin/build-package-manifest.php`, no Symfony kernel):
+  the build context is the repo root, so this is the one place `composer.lock` and
+  `frontend/package-lock.json` coexist — the manifest describes exactly what the image deploys and cannot
+  drift from it. Keep that `COPY`/`RUN` pair *after* the big install layer so an npm bump doesn't invalidate it.
 - **`preprod`** — built **`FROM production`** (not a parallel build) so its application layers are byte-identical
   to prod; only adds Xdebug in profiling-trigger mode (`XDEBUG_TRIGGER`, never `debug` mode) and verbose logs.
   Pipeline order is dev → preprod → prod regardless of declaration order in the Dockerfile.
@@ -219,6 +225,48 @@ folder), so entities live inside their bounded context instead of a shared top-l
   blank lines, `` `backticks` `` turned into `<code>`, never `v-html`. It is shared rather than
   duplicated precisely because it carries a security guarantee: a fix applied to one copy would
   silently leave the other exposed. Reach for it for any backoffice-authored prose.
+- **`Portfolio/Watch/`** — the tech-watch radar behind the public `/{locale}/stack` page: version
+  lifecycles from **endoflife.date** and known vulnerabilities of the deployed packages from **OSV.dev**.
+  It is the only context whose domain depends on third parties, and the rules below are what keep that
+  dependency from becoming a liability. Full rationale in `docs/adr/0002-veille-technique.md`.
+  - **No outbound call ever sits in a public render path.** A CronJob (`app:watch:refresh`) writes a
+    `WatchSnapshot` per volet; `GET /api/watch` reads **only** that local snapshot. `WatchProvider` has
+    **no dependency at all** on an external source, so it cannot reintroduce one by accident — a
+    functional test pins it by substituting an HTTP client that fails on any call. The single
+    deliberate exception is the backoffice slug check (below).
+  - **A third party's response never crosses the `Infrastructure/` boundary.** `EndOfLifeDateClient` /
+    `OsvClient` return domain Value Objects (`ProductReleaseCycles`, `KnownVulnerability`…), never a
+    decoded `array`. That anti-corruption layer is what makes the domain testable without a network;
+    **no test may go out on the wire** (`MockHttpClient` everywhere) — a test really calling
+    endoflife.date is intermittent by construction and breaks CI the day the provider has an incident.
+  - **Public sees an aggregate, `ROLE_SUPER` sees the detail.** `/api/watch` carries
+    `{packagesScanned, affectedCount, checkedAt}` and never a CVE id, affected package name or
+    vulnerable version; the detail lives at `/api/backoffice/watch/vulnerabilities`. The partition is
+    enforced **at read time in the provider** — the snapshot itself keeps the full detail on purpose,
+    since amputating it would rob the one person entitled to see it. A dedicated test asserts the
+    absent keys in the anonymous payload; never relax it.
+  - **Refusing to write is a feature.** If nothing could be refreshed, nothing is persisted — a
+    "zero product" payload would wipe the page on the provider's first outage while yesterday's data
+    is still perfectly readable. Likewise a missing manifest yields an explicit "not analysed" state,
+    never a lying "0 vulnerabilities": *found nothing* ≠ *looked for nothing*.
+  - **PHP's and Symfony's versions come from the runtime**, not the backoffice
+    (`VersionSource::RUNTIME_PHP` / `RUNTIME_SYMFONY`, `PhpAndSymfonyVersionResolver`) and the version
+    field is refused for them (`InvalidWatchedProductException`, 422). The two most-looked-at versions
+    cannot go stale through a forgotten edit.
+  - **Freshness is computed at read time**, threshold `SnapshotFreshnessCalculator::STALE_AFTER_HOURS`
+    = **36 h** — 1.5× the daily CronJob. It must stay strictly above the period, or a single missed
+    cycle (or merely the hour before the run) would display "stale".
+  - **The package manifest is built during `docker build`**, not by the app and not by CI:
+    `bin/build-package-manifest.php` (standalone, **no Symfony kernel** — at build time neither
+    `APP_SECRET` nor `DATABASE_URL` exists) merges `composer.lock` + `frontend/package-lock.json` in
+    the `production` stage, the one place both lockfiles coexist. The file is gitignored and read-only
+    in the image. `app:watch:build-manifest` is the same thing for local use.
+  - `WatchedProductSlugExists` (an `Infrastructure/Validator/` constraint, not a domain rule) checks the
+    slug against endoflife.date **when saving from the backoffice** — 2 s timeout, **non-blocking**: a
+    provider outage must never prevent administering your own site. It lives in the validator rather
+    than in `WatchedProductAdministrator` so that `app:watch:seed` (and its test) stay off the network.
+  - Not localized (no `locale` column, unlike every other `Portfolio/*` context): a version number is a
+    fact, not a translation. UI labels are handled frontend-side.
 
 ### Backoffice (`ROLE_SUPER`)
 
@@ -241,7 +289,7 @@ Content management for all of the above, plus user administration, gated end-to-
   public. Never weaken or delete that test to make a new route pass.
 - **API Platform pattern**, repeated identically across every backoffice resource
   (`BackofficeExperienceTechnologyResource`, `BackofficeQuality{Principle,Trait}Resource`,
-  `BackofficeContributionResource`, `BackofficeIncidentResource`,
+  `BackofficeContributionResource`, `BackofficeIncidentResource`, `BackofficeWatchedProductResource`,
   `Backoffice{About}{Settings,SiteCard,MeCard}Resource`, `BackofficeUserResource`,
   `BackofficeUserPasswordResource`): a flat DTO (never the Doctrine entity itself) under
   `Presentation/ApiResource/`, backed by a `Provider` (`GetCollection`/`Get`) and a `Processor`
@@ -249,6 +297,13 @@ Content management for all of the above, plus user administration, gated end-to-
   (unlike the public `{locale}` path param — collections aren't per-locale routes). **`Put`/`Delete` operations
   need an explicit `provider:` set, not just `processor:`** — otherwise API Platform's default provider tries to
   resolve the DTO via Doctrine directly and 404s before ever reaching the processor.
+- **A read-only resource with no Doctrine identifier needs `#[ApiProperty(identifier: false)]`** on its
+  `id` field — `BackofficeVulnerabilityResource` (`GetCollection /backoffice/watch/vulnerabilities`,
+  read straight from the snapshot) is the case in point. Without it API Platform infers `id` as the
+  identifier, synthesises an item operation to build IRIs, and publishes
+  `/api/backoffice_vulnerabilities/{id}`: a second, undocumented route to the same data. Same trap as
+  audit C6 on `BackofficeUserResource`, arrived at from the other end. Check `debug:router` after
+  adding any resource.
 - **`Security/User` backoffice resources** (`ROLE_SUPER`): `BackofficeUserResource` —
   `GetCollection` (list, `normalizationContext: skip_null_values=false` so `email` is always present),
   `Post /backoffice/users` (**invite** by `{email, locale}`, input DTO `BackofficeUserInviteInput`, → 201; direct
@@ -311,7 +366,7 @@ To add a new page: new route in `presentation/router/index.ts` (nested under `/:
 `usePortfolioContent()` call for its own content) → new `NavigationLink` entry (`to` + `isEnabled`) in
 `StaticPortfolioContentRepository`. `AppHeader` derives the active nav link from `useRoute()`, not from props.
 
-#### API-backed content (About/Quality/Contributions/Incidents)
+#### API-backed content (About/Quality/Contributions/Incidents/Watch)
 
 Unlike `PortfolioContentRepository` (hero/technologies, synchronous, hardcoded), the About/Quality/Contributions content
 now lives in the backend DB and is fetched asynchronously, each with its own small vertical slice:
@@ -321,7 +376,10 @@ now lives in the backend DB and is fetched asynchronously, each with its own sma
 exposing `content`/`isLoading`/`hasError`, injected the same `InjectionKey` way as `usePortfolioContent`) →
 consumed by `AboutPage.vue` / `LandingPage.vue`'s Quality section, each rendering a loading state, an
 error state (`role="alert"`), and the content. `main.ts` provides both repositories alongside the existing
-`PortfolioContentRepository` one. Don't add new content here unless it's genuinely backend-managed (i.e. editable
+`PortfolioContentRepository` one. `domain/watch` → `infrastructure/watch/HttpWatchRepository.ts` →
+`application/watch/useWatch.ts` → `presentation/pages/StackPage.vue` follows the identical shape, with one
+difference that comes from the backend: **its endpoint has no `{locale}` segment** (`GET /api/watch`) — a
+version number is a fact, not a translation, so only the surrounding UI strings are localized. Don't add new content here unless it's genuinely backend-managed (i.e. editable
 from the backoffice) — purely static content still belongs in `infrastructure/portfolio/content/{fr,en}.ts`.
 
 #### Backoffice (`/admin`, `ROLE_SUPER`)
@@ -330,7 +388,7 @@ Content/user management UI, mirrored per-resource under `domain/admin/<resource>
 → `infrastructure/admin/<resource>/Http*Repository.ts` → `application/admin/<resource>/use*.ts` →
 `presentation/pages/admin/Admin*Page.vue` (form + Bootstrap table, `window.confirm()` for deletes — no modals).
 Existing resources: `technologies`, `quality` (principles + traits), `contributions`, `incidents`, `about` (settings + site cards +
-me cards), `users` (list + **invite by email** + change-password + promote/demote + resend invitation + delete;
+me cards), `watch` (tracked products + the `ROLE_SUPER`-only vulnerability detail, read-only), `users` (list + **invite by email** + change-password + promote/demote + resend invitation + delete;
 direct username+password creation stays CLI-only). `AdminUsersPage.vue` disables the delete and role buttons on
 the current user's own row (compared by `username` via `useAuth()`); the `email` column shows the linked address
 or a dash. The `domain/account` + `application/account/useAccountPasswordSetup` + `presentation/pages/SetPasswordPage.vue`
@@ -411,8 +469,18 @@ fixed:
 - **Nav landmarks**: `AppHeader.vue` has two `<nav>` elements (desktop + mobile disclosure) — both need a
   distinct `aria-label` (`common.mainNavigation` / `common.mobileNavigation`) so they aren't ambiguous to
   assistive tech, and the active link gets `aria-current="page"` (not just a CSS class).
-- No automated a11y linting is wired in yet (no `eslint-plugin-vue-a11y`/axe) — checks today are manual
-  (keyboard Tab-through, heading outline, contrast) rather than CI-enforced.
+- **Static a11y linting is wired in** (`eslint-plugin-vuejs-accessibility`, `flat/recommended`, in
+  `npm run lint` — blocking in CI). One rule is loosened: `label-has-for` defaults to requiring a label
+  both wrapped around its field *and* carrying a `for`, stricter than WCAG, which accepts either; the
+  `Base*.vue` components use `for`/`id`, so it's set to `some`.
+  It only sees what's readable in the template — it says nothing about contrast or tab order, which need
+  a real render. **The manual Tab-through, heading outline and contrast check remain necessary**; the
+  linter complements them. Two caveats learned doing it: computing contrast against a translucent
+  panel's own `background-color` produces phantom failures (composite the alpha down to the first
+  opaque layer — `.surface-panel` sits on `rgb(16,15,25)`, not white), and a `Tab` keypress sent
+  through browser automation leaves focus on `BODY`, which makes a working skip link look broken.
+  Heading hierarchy *is* pinned per page in Vitest (`StackPage.spec.ts`) — it only exists once
+  rendered, so no linter catches it. axe-core in Vitest is tracked as issue #12.
 
 Tests live under `tests/`, mirroring the `src/` tree rather than being colocated (e.g.
 `src/presentation/layout/AppHeader.vue` is tested by `tests/presentation/layout/AppHeader.spec.ts`, the same
@@ -432,7 +500,8 @@ To add a test for a new file: create it at the mirrored path under `tests/`, not
 
 `npm run lint` (`eslint .`, flat config in `eslint.config.js`): `eslint-plugin-vue` (`flat/recommended`) +
 `@vue/eslint-config-typescript` (non type-checked — type errors are already caught by `vue-tsc -b` in the
-`build` script, ESLint here is style/correctness only) + `@intlify/eslint-plugin-vue-i18n` (`flat/recommended`,
+`build` script, ESLint here is style/correctness only) + `eslint-plugin-vuejs-accessibility`
+(`flat/recommended`, see the a11y section above) + `@intlify/eslint-plugin-vue-i18n` (`flat/recommended`,
 `settings['vue-i18n'].localeDir` points at `infrastructure/i18n/locales/*.json`) — this last one is why UI-chrome
 strings and portfolio content are kept in separate files (see i18n above): mixing them in would make
 `no-raw-text`/key-usage checks meaningless. `no-raw-text`'s `ignorePattern` is configured to skip strings with
@@ -460,6 +529,11 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   production. If a console command must run at deploy time, declare another Job — never bring `pods/exec` back.
   The RBAC is a **manual bootstrap the pipeline never replays**: after changing it, re-run the loop in
   `k8s/README.md` §4 *before* the next deploy, or the job fails on `cannot create resource "jobs"`.
+- **`watch-refresh-cronjob.yaml` *is* in `kustomization.yaml`'s `resources:`** — the opposite of
+  `migrate-job.yaml` above, and deliberately: it wants kustomize's image transformer, since it must run the
+  same image as the Deployment. It is also **the only object in the cluster that makes outbound calls to
+  third parties**; the namespace's NetworkPolicies restrict ingress only, so nothing extra is needed today —
+  but adding an egress policy would break this Job first.
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's
@@ -551,6 +625,20 @@ Standard Symfony/Composer/Doctrine CLI applies: `php bin/console ...` (MakerBund
 `make:entity`, `make:controller`, etc.), `composer require ...`. PHPUnit is configured — `php bin/phpunit`
 runs the full suite (see "Project state" above for CI/PHPStan/Rector wiring).
 
+Tech-watch upkeep (`Portfolio/Watch`, ADR 0002) — in dev these are run by hand, in production by the
+`watch-refresh` CronJob:
+
+```bash
+php bin/console app:watch:seed            # catalogue of tracked products (idempotent)
+php bin/console app:watch:build-manifest  # composer.lock [+ package-lock.json] -> package manifest
+php bin/console app:watch:refresh         # queries endoflife.date + OSV.dev, writes the snapshots
+php bin/console app:watch:refresh --dry-run
+```
+
+Without a manifest (the normal state of a dev container — it is built into the production image, and
+gitignored), `/api/watch` reports the vulnerability volet as *not analysed*, which is the intended
+behaviour, not a bug.
+
 **No `.env.<env>` file is versioned in `backend/`** — `.env.dev` and `.env.test` used to be (Symfony's own
 default convention: `.env.$APP_ENV` is normally committed), but both were untracked after a GitGuardian alert
 flagged a disposable `JWT_PASSPHRASE` placeholder value as an exposed secret; only `backend/.env` (no real
@@ -576,12 +664,26 @@ If `make sh` / `docker compose exec backend` shows stale source (edits made on t
 container — this bit a `.env.test.local` edit once), the bind-mount view has desynced — `docker compose
 restart backend` resyncs it (same symptom/fix as the frontend note below).
 
-### Frontend day-to-day (inside `make sh-front`, or `../frontend` on the host)
+### Frontend day-to-day (inside `make sh-front`)
 
 ```bash
 npm test            # vitest run — one-shot, used in CI/pre-commit
 npm run test:watch  # vitest — watch mode for local development
 ```
+
+**Run `test` and `build` in the container, not on the host.** Both fail there, for two unrelated reasons —
+and neither failure means anything is broken:
+
+- `npm test` — the scripts are prefixed with `NODE_OPTIONS=--no-experimental-webstorage` (see the jsdom
+  note under Versions), and a Node predating that flag *rejects* it instead of ignoring it:
+  `--no-experimental-webstorage is not allowed in NODE_OPTIONS`, exit 1, zero tests run. Don't "fix" it by
+  dropping the flag — it guards a real failure on Node ≥ 22.
+- `npm run build` — `vue-tsc -b` passes, then `vite build` dies on
+  `Cannot find module '@rolldown/binding-wasm32-wasi'`. `node_modules` is shared with the container and was
+  installed by it, so rolldown's native binding doesn't resolve for the host Node.
+
+`npm run lint` is the one that works in both places. The container pins `NODE_TAG` 26.7.0, so `make sh-front`
+always works — when in doubt, run it there.
 
 If `make sh-front` / `docker compose exec frontend` shows stale source (edits made on the host, e.g. a new
 `package.json` dependency, not reflected in the container), the container's bind-mount view has desynced —
@@ -610,4 +712,7 @@ Issues live in GitHub Issues for this repo. See `docs/agents/issue-tracker.md`.
 ### Domain docs
 
 Single-context layout — root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
-ADRs: `docs/adr/0001-admin-user-provisioning.md` (invitation-by-email flow, `email` now stored, Twig for emails).
+ADRs:
+- `docs/adr/0001-admin-user-provisioning.md` (invitation-by-email flow, `email` now stored, Twig for emails)
+- `docs/adr/0002-veille-technique.md` (`Portfolio/Watch`: outbound calls out of the render path, snapshot in
+  DB, public aggregate vs `ROLE_SUPER` detail, manifest built at `docker build`)
