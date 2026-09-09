@@ -12,6 +12,7 @@ use App\Portfolio\Watch\Infrastructure\Http\EndOfLifeDateClient;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -25,9 +26,7 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
     use HttpJson;
 
     private const string SUPER_USERNAME = 'super';
-    private const string SUPER_PASSWORD = 'SuperSecret123';
     private const string PLAIN_USERNAME = 'jane';
-    private const string PLAIN_PASSWORD = 'SecurePassword123';
 
     protected function setUp(): void
     {
@@ -58,8 +57,8 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
     public function testRequestWithoutRoleSuperIsForbidden(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, self::PLAIN_PASSWORD);
-        $this->loginAs($client, self::PLAIN_USERNAME, self::PLAIN_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
+        $this->loginAs($client, self::PLAIN_USERNAME, TestCredentials::plainPassword());
 
         $client->request('GET', '/api/backoffice/watch/products');
 
@@ -69,8 +68,8 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
     public function testFullCrudCycleAsRoleSuper(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $this->stubSlugVerification($client);
 
         $client->getContainer()->get(WatchedProductAdministratorInterface::class)
@@ -174,8 +173,8 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
     public function testAManualSourceWithoutVersionIsRejectedAsInvalidInput(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $this->stubSlugVerification($client);
 
         $client->request('POST', '/api/backoffice/watch/products', server: [
@@ -200,8 +199,8 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
     public function testASlugAbsentFromTheProviderCatalogIsRejected(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $this->stubSlugVerification($client, slugExists: false);
 
         $client->request('POST', '/api/backoffice/watch/products', server: [
@@ -229,8 +228,8 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
     public function testAnUnreachableProviderDoesNotBlockAdministration(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         $source = self::createStub(ReleaseCycleSourceInterface::class);
         $source->method('supportsProduct')->willThrowException(
@@ -260,8 +259,8 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
     public function testARuntimeSourceAcceptsAnEmptyVersionFromTheForm(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $this->stubSlugVerification($client);
 
         $client->request('POST', '/api/backoffice/watch/products', server: [
@@ -283,8 +282,8 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
     public function testAnInvalidSlugIsRejectedByValidation(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $this->stubSlugVerification($client);
 
         $client->request('POST', '/api/backoffice/watch/products', server: [

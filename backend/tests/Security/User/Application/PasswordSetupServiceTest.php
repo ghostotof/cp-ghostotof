@@ -11,6 +11,7 @@ use App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException;
 use App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
+use App\Tests\Support\TestCredentials;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
@@ -88,11 +89,11 @@ final class PasswordSetupServiceTest extends TestCase
         $hasher = $this->createMock(UserPasswordHasherInterface::class);
         $hasher->expects(self::once())
             ->method('hashPassword')
-            ->with($user, 'NewSecurePass1')
+            ->with($user, TestCredentials::variant('setup'))
             ->willReturn('hashed-new-password');
 
         $this->service($tokenRepository, $cpgUserRepository, $hasher, $clock)
-            ->complete(self::CLEAR_TOKEN, 'NewSecurePass1');
+            ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
 
         self::assertSame('hashed-new-password', $user->getPassword());
         self::assertFalse($user->isPendingActivation());
@@ -120,7 +121,7 @@ final class PasswordSetupServiceTest extends TestCase
         $this->expectException(PasswordSetupTokenExpiredException::class);
 
         $this->service($tokenRepository, $cpgUserRepository, clock: $clock)
-            ->complete(self::CLEAR_TOKEN, 'NewSecurePass1');
+            ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
     }
 
     private function usableToken(MockClock $clock): PasswordSetupToken

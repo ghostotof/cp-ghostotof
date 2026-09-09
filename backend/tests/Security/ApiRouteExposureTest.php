@@ -6,6 +6,7 @@ namespace App\Tests\Security;
 
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -33,7 +34,6 @@ final class ApiRouteExposureTest extends WebTestCase
     use HttpJson;
 
     private const string PLAIN_USERNAME = 'jane';
-    private const string PLAIN_PASSWORD = 'SecurePassword123';
 
     /**
      * Routes délibérément servies sans authentification, chacune justifiée.
@@ -157,8 +157,8 @@ final class ApiRouteExposureTest extends WebTestCase
     public function testEveryBackofficeRouteRefusesAnAuthenticatedUserWithoutRoleSuper(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, self::PLAIN_PASSWORD);
-        $csrfToken = $this->loginAs($client, self::PLAIN_USERNAME, self::PLAIN_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
+        $csrfToken = $this->loginAs($client, self::PLAIN_USERNAME, TestCredentials::plainPassword());
 
         $routes = array_filter(
             $this->protectedApiRoutes(),
