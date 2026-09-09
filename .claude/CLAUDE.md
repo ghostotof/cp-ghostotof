@@ -855,3 +855,8 @@ ADRs:
 - `docs/adr/0001-admin-user-provisioning.md` (invitation-by-email flow, `email` now stored, Twig for emails)
 - `docs/adr/0002-veille-technique.md` (`Portfolio/Watch`: outbound calls out of the render path, snapshot in
   DB, public aggregate vs `ROLE_SUPER` detail, manifest built at `docker build`)
+- `docs/adr/0003-paliers-d-acces.md` — **statut `proposé`, rien n'est implémenté.** Would make `ROLE_USER`
+  the bottom tier (one click, no credentials, discretion rather than secrecy) and move the CV behind a new
+  `ROLE_TRUSTED`. Read it before touching `access_control` or `CpgUser::getRoles()`: it turns on the fact
+  that `getRoles()` grants `ROLE_USER` unconditionally, which is why a tier was added *above* rather than
+  below. Until it is accepted, Goal #9 and ADR 0001 stand as written.
