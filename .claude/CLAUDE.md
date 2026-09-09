@@ -663,22 +663,22 @@ All image/tool versions are pinned in `../.env` and mirrored in `versions.lock`.
 Composer, pinned to major branch `2` only (see comments in `../.env`) so 2.x patches land on every `make build`
 without ever silently jumping to Composer 3.
 
-`jsdom` (frontend devDependency, used by Vitest) is deliberately pinned to `^26.x`, not latest: `jsdom@30`
-requires Node `>=22.22`/`>=26` and fails at runtime (`webidl.util.markAsUncloneable is not a function`) on
-older Node — including any host below the project's Docker `NODE_TAG` (26.7.0). Don't let it float to latest.
+`jsdom` used to be held back at `^26.x` because `jsdom@30` requires Node `>=22.22` and fails on anything
+older — including a workstation below the project's `NODE_TAG`. **That pin is gone** (issue #26): the fix was
+to stop letting the host matter, via the `make front-*` targets above, not to constrain a dependency to suit
+one machine. A host-only constraint has no business in `package.json`.
 
 Node 26's own native (experimental) `localStorage`/`sessionStorage` globals conflict with jsdom's: without
 `--no-experimental-webstorage`, any test touching the bare `localStorage` global (not `window.localStorage`)
 before jsdom's environment fully initializes fails with `Cannot read properties of undefined (reading
-'clear')` — only reproduces on Node ≥22 with webstorage enabled (silent on older/host Node), which is why it
-only surfaced once the GitLab CI `test-frontend` job started running tests inside the pinned `node:${NODE_TAG}`
-image. Fixed by prefixing `frontend/package.json`'s `test`/`test:watch` scripts with
-`NODE_OPTIONS=--no-experimental-webstorage` — don't remove it.
+'clear')`. Fixed by prefixing `frontend/package.json`'s `test`/`test:watch` scripts with
+`NODE_OPTIONS=--no-experimental-webstorage` — **don't remove it**. Re-checked when jsdom moved to 30
+(issue #26): still required. Dropping the flag there fails immediately with
+`Cannot read properties of undefined (reading 'setItem')`, so the newer jsdom does not make it obsolete.
 
-`vue-i18n`/`@intlify/*` (and transitively a few ESLint tooling packages) declare an `engines.node >= 22`
-requirement. `npm install`/`test`/`build` still work on an older host Node (just an `EBADENGINE` warning, not
-a hard failure) as of this writing, but don't be surprised by the warning — it's expected below Node 22,
-same root cause as the jsdom note above.
+`vue-i18n`/`@intlify/*` (and transitively a few ESLint tooling packages) declare `engines.node >= 22`. The
+container satisfies it, so this is only ever an `EBADENGINE` warning if someone installs outside it — one
+more reason the `make front-*` targets exist.
 
 ## Commands
 
@@ -694,6 +694,12 @@ make sh                # shell into backend as the `dev` user
 make sh-front          # shell into the frontend container
 make db-migrate        # doctrine:migrations:migrate --no-interaction
 make consume           # messenger:consume async -vv (Messenger worker)
+
+make front-test        # vitest run, in the container
+make front-lint        # eslint, in the container
+make front-build       # vue-tsc -b + vite build, in the container
+make back-test         # phpunit, in the container
+make back-quality      # phpstan + rector + psalm, in the container
 ```
 
 `make init` and `make front-init` (re)run the Symfony/Vite project scaffolding — both are already applied in
@@ -754,26 +760,26 @@ If `make sh` / `docker compose exec backend` shows stale source (edits made on t
 container — this bit a `.env.test.local` edit once), the bind-mount view has desynced — `docker compose
 restart backend` resyncs it (same symptom/fix as the frontend note below).
 
-### Frontend day-to-day (inside `make sh-front`)
+### Frontend day-to-day
+
+**Use the make targets — they run in the container, which is the point** (issue #26):
 
 ```bash
-npm test            # vitest run — one-shot, used in CI/pre-commit
-npm run test:watch  # vitest — watch mode for local development
+make front-test     # vitest run
+make front-lint     # eslint
+make front-build    # vue-tsc -b + vite build
+make back-test      # phpunit
+make back-quality   # phpstan + rector + psalm
 ```
 
-**Run `test` and `build` in the container, not on the host.** Both fail there, for two unrelated reasons —
-and neither failure means anything is broken:
+The host's Node version must not influence the project's behaviour. The container pins `NODE_TAG`; a
+workstation pins nothing, so anything run by hand there gives a machine-dependent answer — and that gap had
+already leaked into `package.json`, where `jsdom` was held back to accommodate an older host Node. It no
+longer is. Prefer these targets over `make sh-front` + `npm …`, and add a target rather than documenting a
+manual incantation when a new command becomes routine.
 
-- `npm test` — the scripts are prefixed with `NODE_OPTIONS=--no-experimental-webstorage` (see the jsdom
-  note under Versions), and a Node predating that flag *rejects* it instead of ignoring it:
-  `--no-experimental-webstorage is not allowed in NODE_OPTIONS`, exit 1, zero tests run. Don't "fix" it by
-  dropping the flag — it guards a real failure on Node ≥ 22.
-- `npm run build` — `vue-tsc -b` passes, then `vite build` dies on
-  `Cannot find module '@rolldown/binding-wasm32-wasi'`. `node_modules` is shared with the container and was
-  installed by it, so rolldown's native binding doesn't resolve for the host Node.
-
-`npm run lint` is the one that works in both places. The container pins `NODE_TAG` 26.7.0, so `make sh-front`
-always works — when in doubt, run it there.
+`make sh-front` remains, for exploring inside the container. `npm run test:watch` (watch mode) has no target
+on purpose — it is interactive, so run it from that shell.
 
 If `make sh-front` / `docker compose exec frontend` shows stale source (edits made on the host, e.g. a new
 `package.json` dependency, not reflected in the container), the container's bind-mount view has desynced —
