@@ -7,6 +7,7 @@ namespace App\Tests\Security\User\Presentation\ApiResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\InvitesUsers;
+use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -23,7 +24,6 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
 
     private const string EMAIL = 'newcomer@example.com';
     private const string DERIVED_USERNAME = 'newcomer';
-    private const string NEW_PASSWORD = 'NotCompromisedPass1';
 
     protected function setUp(): void
     {
@@ -75,18 +75,18 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         $client = $this->freshClient();
         $token = $this->inviteAndCollectToken();
 
-        $client->request('POST', '/api/account/password-setup/'.$token, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => self::NEW_PASSWORD]));
+        $client->request('POST', '/api/account/password-setup/'.$token, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => TestCredentials::variant('new')]));
         self::assertResponseStatusCodeSame(204);
 
         // Le compte est désormais utilisable avec l'identifiant dérivé.
         $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'username' => self::DERIVED_USERNAME,
-            'password' => self::NEW_PASSWORD,
+            'password' => TestCredentials::variant('new'),
         ]));
         self::assertResponseIsSuccessful();
 
         // Le jeton est consommé : rejouer le POST échoue en 410.
-        $client->request('POST', '/api/account/password-setup/'.$token, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => self::NEW_PASSWORD]));
+        $client->request('POST', '/api/account/password-setup/'.$token, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => TestCredentials::variant('new')]));
         self::assertResponseStatusCodeSame(410);
     }
 
@@ -130,7 +130,7 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         $unknown = bin2hex(random_bytes(32));
 
         for ($i = 0; $i < 10; ++$i) {
-            $client->request('POST', '/api/account/password-setup/'.$unknown, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => self::NEW_PASSWORD]));
+            $client->request('POST', '/api/account/password-setup/'.$unknown, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => TestCredentials::variant('new')]));
             self::assertResponseStatusCodeSame(404);
         }
 
@@ -154,7 +154,7 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
             self::assertResponseStatusCodeSame(404);
         }
         for ($i = 0; $i < 5; ++$i) {
-            $client->request('POST', '/api/account/password-setup/'.$unknown, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => self::NEW_PASSWORD]));
+            $client->request('POST', '/api/account/password-setup/'.$unknown, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => TestCredentials::variant('new')]));
             self::assertResponseStatusCodeSame(404);
         }
 

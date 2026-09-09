@@ -10,6 +10,7 @@ use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\InvitesUsers;
+use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -26,9 +27,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
     use InvitesUsers;
 
     private const string SUPER_USERNAME = 'super';
-    private const string SUPER_PASSWORD = 'SuperSecret123';
     private const string PLAIN_USERNAME = 'jane';
-    private const string PLAIN_PASSWORD = 'SecurePassword123';
     private const string INVITEE_EMAIL = 'newcomer@example.com';
     private const string INVITEE_USERNAME = 'newcomer';
 
@@ -57,8 +56,8 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
     public function testRequestWithoutRoleSuperIsForbidden(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, self::PLAIN_PASSWORD);
-        $csrfToken = $this->loginAs($client, self::PLAIN_USERNAME, self::PLAIN_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
+        $csrfToken = $this->loginAs($client, self::PLAIN_USERNAME, TestCredentials::plainPassword());
 
         $client->request('POST', '/api/backoffice/users/1/invitation', server: [
             'CONTENT_TYPE' => 'application/json',
@@ -71,9 +70,9 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
     public function testResendToAPendingUserDispatchesANewInvitation(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $this->invite();
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $id = $this->findInviteeId($client);
 
         $client->request('POST', sprintf('/api/backoffice/users/%d/invitation', $id), server: [
@@ -94,8 +93,8 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
     public function testResendToAnUnknownIdReturns404(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         $client->request('POST', '/api/backoffice/users/999999/invitation', server: [
             'CONTENT_TYPE' => 'application/json',
@@ -112,14 +111,14 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
         // filesystem partagé par tous les tests fonctionnels (127.0.0.1) : on
         // repart d'un quota vierge.
         self::getContainer()->get('cache.rate_limiter')->clear();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $token = $this->invite();
 
         // La personne définit son mot de passe -> compte activé.
-        $client->request('POST', '/api/account/password-setup/'.$token, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => 'NotCompromisedPass1']));
+        $client->request('POST', '/api/account/password-setup/'.$token, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => TestCredentials::variant('setup')]));
         self::assertResponseStatusCodeSame(204);
 
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $id = $this->findInviteeId($client);
 
         $client->request('POST', sprintf('/api/backoffice/users/%d/invitation', $id), server: [
@@ -133,9 +132,9 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
     public function testResendWithAMissingLocaleReturns422(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $this->invite();
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $id = $this->findInviteeId($client);
 
         $client->request('POST', sprintf('/api/backoffice/users/%d/invitation', $id), server: [

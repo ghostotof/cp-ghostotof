@@ -7,6 +7,7 @@ namespace App\Tests\Portfolio\Cv\Presentation\Controller;
 use App\Portfolio\Cv\Presentation\Controller\DownloadCvController;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -24,7 +25,6 @@ final class DownloadCvControllerTest extends WebTestCase
     use HttpJson;
 
     private const string USERNAME = 'jane';
-    private const string PASSWORD = 'SecurePassword123';
     private const string FIXTURE_PATH = __DIR__.'/../../Fixtures/dummy.pdf';
 
     protected function setUp(): void
@@ -50,11 +50,11 @@ final class DownloadCvControllerTest extends WebTestCase
     public function testAuthenticatedRequestReturnsThePdfFixture(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::USERNAME, self::PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::USERNAME, TestCredentials::plainPassword());
 
         $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'username' => self::USERNAME,
-            'password' => self::PASSWORD,
+            'password' => TestCredentials::plainPassword(),
         ]));
         self::assertResponseIsSuccessful();
 

@@ -9,6 +9,7 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -22,9 +23,7 @@ final class BackofficeAboutSiteCardResourceTest extends WebTestCase
     use HttpJson;
 
     private const string SUPER_USERNAME = 'super';
-    private const string SUPER_PASSWORD = 'SuperSecret123';
     private const string PLAIN_USERNAME = 'jane';
-    private const string PLAIN_PASSWORD = 'SecurePassword123';
 
     protected function setUp(): void
     {
@@ -51,8 +50,8 @@ final class BackofficeAboutSiteCardResourceTest extends WebTestCase
     public function testRequestWithoutRoleSuperIsForbidden(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, self::PLAIN_PASSWORD);
-        $this->loginAs($client, self::PLAIN_USERNAME, self::PLAIN_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
+        $this->loginAs($client, self::PLAIN_USERNAME, TestCredentials::plainPassword());
 
         $client->request('GET', '/api/backoffice/about/site-cards');
 
@@ -62,8 +61,8 @@ final class BackofficeAboutSiteCardResourceTest extends WebTestCase
     public function testGetCollectionFiltersByLocaleQueryParameter(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         $administrator = $client->getContainer()->get(AboutSiteCardAdministratorInterface::class);
         $administrator->create(Locale::FR, 'Architecture', 'Description.', 'layers', 0);
@@ -84,8 +83,8 @@ final class BackofficeAboutSiteCardResourceTest extends WebTestCase
     public function testFullCrudCycleAsRoleSuper(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         // Post
         $client->request('POST', '/api/backoffice/about/site-cards', server: [
@@ -129,8 +128,8 @@ final class BackofficeAboutSiteCardResourceTest extends WebTestCase
     public function testPostWithMissingLocaleIsRejected(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         $client->request('POST', '/api/backoffice/about/site-cards', server: [
             'CONTENT_TYPE' => 'application/json',
@@ -143,8 +142,8 @@ final class BackofficeAboutSiteCardResourceTest extends WebTestCase
     public function testPostWithTooLongDescriptionIsRejected(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         $client->request('POST', '/api/backoffice/about/site-cards', server: [
             'CONTENT_TYPE' => 'application/json',

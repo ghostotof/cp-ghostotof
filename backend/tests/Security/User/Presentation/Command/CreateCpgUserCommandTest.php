@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Presentation\Command;
 
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -31,7 +32,7 @@ final class CreateCpgUserCommandTest extends KernelTestCase
 
         $exitCode = $tester->execute([
             '--username' => 'jane',
-            '--password' => 'SecurePassword123',
+            '--password' => TestCredentials::plainPassword(),
         ]);
 
         self::assertSame(0, $exitCode);
@@ -44,9 +45,9 @@ final class CreateCpgUserCommandTest extends KernelTestCase
     public function testFailsWhenUsernameAlreadyUsed(): void
     {
         $tester = $this->commandTester();
-        $tester->execute(['--username' => 'jane', '--password' => 'SecurePassword123']);
+        $tester->execute(['--username' => 'jane', '--password' => TestCredentials::plainPassword()]);
 
-        $exitCode = $tester->execute(['--username' => 'jane', '--password' => 'AnotherPassword123']);
+        $exitCode = $tester->execute(['--username' => 'jane', '--password' => TestCredentials::variant('autre')]);
 
         self::assertSame(1, $exitCode);
         self::assertStringContainsString('existe déjà', $tester->getDisplay());
@@ -56,7 +57,7 @@ final class CreateCpgUserCommandTest extends KernelTestCase
     {
         $tester = $this->commandTester();
 
-        $exitCode = $tester->execute(['--username' => 'ab', '--password' => 'SecurePassword123']);
+        $exitCode = $tester->execute(['--username' => 'ab', '--password' => TestCredentials::plainPassword()]);
 
         self::assertSame(1, $exitCode);
     }
@@ -80,7 +81,7 @@ final class CreateCpgUserCommandTest extends KernelTestCase
 
         $exitCode = $tester->execute([
             '--username' => 'super',
-            '--password' => 'SecurePassword123',
+            '--password' => TestCredentials::plainPassword(),
             '--role' => ['ROLE_SUPER'],
         ]);
 
@@ -97,7 +98,7 @@ final class CreateCpgUserCommandTest extends KernelTestCase
 
         $exitCode = $tester->execute([
             '--username' => 'jane',
-            '--password' => 'SecurePassword123',
+            '--password' => TestCredentials::plainPassword(),
             '--role' => ['ROLE_UNKNOWN'],
         ]);
 
