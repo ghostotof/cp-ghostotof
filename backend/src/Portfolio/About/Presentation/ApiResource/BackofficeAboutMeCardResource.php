@@ -10,6 +10,7 @@ use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use App\Portfolio\About\Domain\Entity\AboutMeCard;
 use App\Portfolio\About\Infrastructure\ApiPlatform\BackofficeAboutMeCardProcessor;
 use App\Portfolio\About\Infrastructure\ApiPlatform\BackofficeAboutMeCardProvider;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -72,5 +73,23 @@ final class BackofficeAboutMeCardResource
         #[Assert\PositiveOrZero]
         public int $position = 0,
     ) {
+    }
+
+    /**
+     * Fabrique unique du DTO : le Provider et le Processor la partagent, faute
+     * de quoi un champ ajouté à l'entité devait être reporté aux deux endroits
+     * — sans qu'aucun test ne le rappelle (issue #15).
+     */
+    public static function fromEntity(AboutMeCard $card): self
+    {
+        return new self(
+            id: $card->getId(),
+            locale: $card->getLocale()->value,
+            category: $card->getCategory()->value,
+            title: $card->getTitle(),
+            description: $card->getDescription(),
+            iconKey: $card->getIconKey(),
+            position: $card->getPosition(),
+        );
     }
 }

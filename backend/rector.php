@@ -7,6 +7,7 @@ use Rector\CodeQuality\Rector\FuncCall\SortCallLikeNamedArgsRector;
 use Rector\CodeQuality\Rector\Identical\FlipTypeControlToUseExclusiveTypeRector;
 use Rector\Config\RectorConfig;
 use Rector\Php80\Rector\Class_\ClassPropertyAssignToConstructorPromotionRector;
+use Rector\CodingStyle\Rector\ArrowFunction\ArrowFunctionDelegatingCallToFirstClassCallableRector;
 use Rector\Php84\Rector\MethodCall\NewMethodCallWithoutParenthesesRector;
 
 /*
@@ -36,6 +37,15 @@ return RectorConfig::configure()
         NewMethodCallWithoutParenthesesRector::class, // `new Foo()->bar()` moins lisible que `(new Foo())->bar()`
         FlipTypeControlToUseExclusiveTypeRector::class, // `$x instanceof Foo` la ou `null !== $x` est plus clair
         ClassPropertyAssignToConstructorPromotionRector::class, // les entites Doctrine gardent leurs proprietes explicites
+
+        // Celle-ci n'est pas cosmetique : elle met Rector et PHPStan en
+        // desaccord. Transformer une closure en callable de premiere classe
+        // capture la signature *complete* de la fonction native, parametres
+        // optionnels compris — `version_compare(...)` devient
+        // `callable(string,string,?string): (bool|int)`, que `usort` refuse
+        // puisqu'il attend `callable(string,string): int`. La closure explicite
+        // est la seule forme que les deux outils acceptent.
+        ArrowFunctionDelegatingCallToFirstClassCallableRector::class,
     ])
     ->withCache(__DIR__.'/var/cache/rector')
     ->withImportNames(importShortClasses: false, removeUnusedImports: true)

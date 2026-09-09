@@ -32,7 +32,7 @@ final readonly class BackofficeUserProvider implements ProviderInterface
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): BackofficeUserResource|array|null
     {
         if ($operation instanceof GetCollection) {
-            return array_map($this->toResource(...), $this->cpgUserRepository->findAll());
+            return array_map($this->present(...), $this->cpgUserRepository->findAll());
         }
 
         // Résolution de la ressource existante avant suppression (Delete) :
@@ -40,19 +40,18 @@ final readonly class BackofficeUserProvider implements ProviderInterface
         // sur un id inconnu avant même d'atteindre le processor.
         $user = $this->cpgUserRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
 
-        return null !== $user ? $this->toResource($user) : null;
+        return null !== $user ? $this->present($user) : null;
     }
 
-    private function toResource(CpgUser $user): BackofficeUserResource
+    /**
+     * Deux étapes, et l'ordre importe : le présentateur décide de ce qui est
+     * exposé d'un compte, la fabrique se contente de lui donner sa forme de
+     * DTO. Les enchaîner ici plutôt que dans la fabrique évite que la
+     * présentation aille chercher elle-même l'entité, et garde `fromPresented`
+     * utilisable par le Processor d'invitation, qui a déjà le tableau présenté.
+     */
+    private function present(CpgUser $user): BackofficeUserResource
     {
-        $presented = $this->cpgUserAdminPresenter->present($user);
-
-        return new BackofficeUserResource(
-            id: $presented['id'],
-            username: $presented['username'],
-            roles: $presented['roles'],
-            email: $presented['email'],
-            status: $presented['status'],
-        );
+        return BackofficeUserResource::fromPresented($this->cpgUserAdminPresenter->present($user));
     }
 }

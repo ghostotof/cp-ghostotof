@@ -7,7 +7,6 @@ namespace App\Portfolio\Quality\Infrastructure\ApiPlatform;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
-use App\Portfolio\Quality\Domain\Entity\QualityTrait as QualityTraitEntity;
 use App\Portfolio\Quality\Domain\Repository\QualityTraitRepositoryInterface;
 use App\Portfolio\Quality\Presentation\ApiResource\BackofficeQualityTraitResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -41,21 +40,11 @@ final readonly class BackofficeQualityTraitProvider implements ProviderInterface
                 ? $this->qualityTraitRepository->findByLocale($locale)
                 : $this->qualityTraitRepository->findAll();
 
-            return array_map($this->toResource(...), $traits);
+            return array_map(BackofficeQualityTraitResource::fromEntity(...), $traits);
         }
 
         $trait = $this->qualityTraitRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
 
-        return null !== $trait ? $this->toResource($trait) : null;
-    }
-
-    private function toResource(QualityTraitEntity $trait): BackofficeQualityTraitResource
-    {
-        return new BackofficeQualityTraitResource(
-            id: $trait->getId(),
-            locale: $trait->getLocale()->value,
-            label: $trait->getLabel(),
-            position: $trait->getPosition(),
-        );
+        return null !== $trait ? BackofficeQualityTraitResource::fromEntity($trait) : null;
     }
 }

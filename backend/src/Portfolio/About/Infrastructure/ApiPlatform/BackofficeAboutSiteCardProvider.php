@@ -7,7 +7,6 @@ namespace App\Portfolio\About\Infrastructure\ApiPlatform;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
-use App\Portfolio\About\Domain\Entity\AboutSiteCard;
 use App\Portfolio\About\Domain\Repository\AboutSiteCardRepositoryInterface;
 use App\Portfolio\About\Presentation\ApiResource\BackofficeAboutSiteCardResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -41,23 +40,11 @@ final readonly class BackofficeAboutSiteCardProvider implements ProviderInterfac
                 ? $this->aboutSiteCardRepository->findByLocale($locale)
                 : $this->aboutSiteCardRepository->findAll();
 
-            return array_map($this->toResource(...), $cards);
+            return array_map(BackofficeAboutSiteCardResource::fromEntity(...), $cards);
         }
 
         $card = $this->aboutSiteCardRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
 
-        return null !== $card ? $this->toResource($card) : null;
-    }
-
-    private function toResource(AboutSiteCard $card): BackofficeAboutSiteCardResource
-    {
-        return new BackofficeAboutSiteCardResource(
-            id: $card->getId(),
-            locale: $card->getLocale()->value,
-            title: $card->getTitle(),
-            description: $card->getDescription(),
-            iconKey: $card->getIconKey(),
-            position: $card->getPosition(),
-        );
+        return null !== $card ? BackofficeAboutSiteCardResource::fromEntity($card) : null;
     }
 }

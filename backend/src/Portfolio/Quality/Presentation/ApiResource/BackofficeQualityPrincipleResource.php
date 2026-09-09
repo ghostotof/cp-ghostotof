@@ -10,6 +10,7 @@ use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
 use App\Portfolio\Quality\Infrastructure\ApiPlatform\BackofficeQualityPrincipleProcessor;
 use App\Portfolio\Quality\Infrastructure\ApiPlatform\BackofficeQualityPrincipleProvider;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -69,5 +70,22 @@ final class BackofficeQualityPrincipleResource
         #[Assert\PositiveOrZero]
         public int $position = 0,
     ) {
+    }
+
+    /**
+     * Fabrique unique du DTO : le Provider et le Processor la partagent, faute
+     * de quoi un champ ajouté à l'entité devait être reporté aux deux endroits
+     * — sans qu'aucun test ne le rappelle (issue #15).
+     */
+    public static function fromEntity(QualityPrinciple $principle): self
+    {
+        return new self(
+            id: $principle->getId(),
+            locale: $principle->getLocale()->value,
+            title: $principle->getTitle(),
+            description: $principle->getDescription(),
+            iconKey: $principle->getIconKey(),
+            position: $principle->getPosition(),
+        );
     }
 }

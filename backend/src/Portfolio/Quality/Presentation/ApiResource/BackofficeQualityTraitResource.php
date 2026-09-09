@@ -10,6 +10,7 @@ use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use App\Portfolio\Quality\Domain\Entity\QualityTrait as QualityTraitEntity;
 use App\Portfolio\Quality\Infrastructure\ApiPlatform\BackofficeQualityTraitProcessor;
 use App\Portfolio\Quality\Infrastructure\ApiPlatform\BackofficeQualityTraitProvider;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -63,5 +64,23 @@ final class BackofficeQualityTraitResource
         #[Assert\PositiveOrZero]
         public int $position = 0,
     ) {
+    }
+
+    /**
+     * Fabrique unique du DTO : le Provider et le Processor la partagent, faute
+     * de quoi un champ ajouté à l'entité devait être reporté aux deux endroits
+     * — sans qu'aucun test ne le rappelle (issue #15).
+     *
+     * L'entité est importée sous alias : `QualityTrait` seul prêterait à
+     * confusion avec le mot-clé du langage.
+     */
+    public static function fromEntity(QualityTraitEntity $trait): self
+    {
+        return new self(
+            id: $trait->getId(),
+            locale: $trait->getLocale()->value,
+            label: $trait->getLabel(),
+            position: $trait->getPosition(),
+        );
     }
 }

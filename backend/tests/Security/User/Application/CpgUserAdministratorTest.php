@@ -10,6 +10,7 @@ use App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CannotDeleteOwnAccountException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Tests\Support\TestCredentials;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
@@ -104,12 +105,12 @@ final class CpgUserAdministratorTest extends TestCase
         $hasher = $this->createMock(UserPasswordHasherInterface::class);
         $hasher->expects(self::once())
             ->method('hashPassword')
-            ->with($user, 'NewSecurePassword123')
+            ->with($user, TestCredentials::variant('new'))
             ->willReturn('new-hashed-password');
 
         $administrator = new CpgUserAdministrator($repository, $hasher);
 
-        $administrator->changePassword(2, 'NewSecurePassword123');
+        $administrator->changePassword(2, TestCredentials::variant('new'));
 
         self::assertSame('new-hashed-password', $user->getPassword());
     }
@@ -125,7 +126,7 @@ final class CpgUserAdministratorTest extends TestCase
 
         $this->expectException(CpgUserNotFoundException::class);
 
-        $administrator->changePassword(2, 'NewSecurePassword123');
+        $administrator->changePassword(2, TestCredentials::variant('new'));
     }
 
     private function userWithId(int $id, string $username): CpgUser

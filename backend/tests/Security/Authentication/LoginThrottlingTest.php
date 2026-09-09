@@ -6,6 +6,7 @@ namespace App\Tests\Security\Authentication;
 
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -22,7 +23,6 @@ final class LoginThrottlingTest extends WebTestCase
 {
     use HttpJson;
 
-    private const string PASSWORD = 'SecurePassword123';
 
     /**
      * Le compteur de `login_throttling` est indexé par (IP, identifiant) et
@@ -47,7 +47,7 @@ final class LoginThrottlingTest extends WebTestCase
     public function testAttemptsBeyondLimitAreBlockedEvenWithValidCredentials(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register($this->username, self::PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register($this->username, TestCredentials::plainPassword());
 
         // 5 échecs autorisés : chacun renvoie 401 (identifiants invalides).
         for ($attempt = 1; $attempt <= 5; ++$attempt) {
@@ -63,7 +63,7 @@ final class LoginThrottlingTest extends WebTestCase
 
         // Le bon mot de passe est lui aussi refusé tant que la fenêtre n'est pas
         // écoulée : sans throttling, cette requête renverrait 200 + cookie BEARER.
-        $this->attemptLogin($client, self::PASSWORD);
+        $this->attemptLogin($client, TestCredentials::plainPassword());
         self::assertResponseStatusCodeSame(401);
         self::assertStringContainsStringIgnoringCase('too many failed login attempts', (string) $client->getResponse()->getContent());
         self::assertNull($client->getCookieJar()->get('BEARER'));

@@ -7,7 +7,6 @@ namespace App\Portfolio\About\Infrastructure\ApiPlatform;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
-use App\Portfolio\About\Domain\Entity\AboutMeCard;
 use App\Portfolio\About\Domain\Repository\AboutMeCardRepositoryInterface;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\About\Presentation\ApiResource\BackofficeAboutMeCardResource;
@@ -46,24 +45,11 @@ final readonly class BackofficeAboutMeCardProvider implements ProviderInterface
                 default => $this->aboutMeCardRepository->findAll(),
             };
 
-            return array_map($this->toResource(...), $cards);
+            return array_map(BackofficeAboutMeCardResource::fromEntity(...), $cards);
         }
 
         $card = $this->aboutMeCardRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
 
-        return null !== $card ? $this->toResource($card) : null;
-    }
-
-    private function toResource(AboutMeCard $card): BackofficeAboutMeCardResource
-    {
-        return new BackofficeAboutMeCardResource(
-            id: $card->getId(),
-            locale: $card->getLocale()->value,
-            category: $card->getCategory()->value,
-            title: $card->getTitle(),
-            description: $card->getDescription(),
-            iconKey: $card->getIconKey(),
-            position: $card->getPosition(),
-        );
+        return null !== $card ? BackofficeAboutMeCardResource::fromEntity($card) : null;
     }
 }

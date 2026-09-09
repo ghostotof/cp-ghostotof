@@ -7,6 +7,7 @@ namespace App\Tests\Security\User\Presentation\ApiResource;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -25,9 +26,7 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
     use HttpJson;
 
     private const string SUPER_USERNAME = 'super';
-    private const string SUPER_PASSWORD = 'SuperSecret123';
     private const string PLAIN_USERNAME = 'jane';
-    private const string PLAIN_PASSWORD = 'SecurePassword123';
 
     protected function setUp(): void
     {
@@ -54,8 +53,8 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
     public function testRequestWithoutRoleSuperIsForbidden(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, self::PLAIN_PASSWORD);
-        $csrfToken = $this->loginAs($client, self::PLAIN_USERNAME, self::PLAIN_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
+        $csrfToken = $this->loginAs($client, self::PLAIN_USERNAME, TestCredentials::plainPassword());
 
         $client->request('PUT', '/api/backoffice/users/1/roles', server: [
             'CONTENT_TYPE' => 'application/json',
@@ -68,9 +67,9 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
     public function testRoleSuperPromotesThenDemotesAnotherUser(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, self::PLAIN_PASSWORD);
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $server = ['CONTENT_TYPE' => 'application/json', 'HTTP_X_XSRF_TOKEN' => $csrfToken];
 
         $janeId = $this->findId($this->fetchUsers($client), self::PLAIN_USERNAME);
@@ -93,8 +92,8 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
     public function testDemotingOwnAccountReturns409(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         $superId = $this->findId($this->fetchUsers($client), self::SUPER_USERNAME);
 
@@ -115,9 +114,9 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
     public function testMissingSuperAdminFieldReturns422(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, self::PLAIN_PASSWORD);
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $janeId = $this->findId($this->fetchUsers($client), self::PLAIN_USERNAME);
 
         $client->request('PUT', sprintf('/api/backoffice/users/%d/roles', $janeId), server: [
@@ -131,8 +130,8 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
     public function testUnknownIdReturns404(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         $client->request('PUT', '/api/backoffice/users/999999/roles', server: [
             'CONTENT_TYPE' => 'application/json',

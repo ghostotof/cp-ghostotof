@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 DC := docker compose
 
-.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init build-front-prod build-front-preprod get-secret
+.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality build-front-prod build-front-preprod get-secret
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -73,6 +73,34 @@ build-preprod: ## Construit l'image de préprod (= prod + outils de diagnostic)
 
 sh-front: ## Ouvre un shell dans le conteneur frontend
 	$(DC) exec frontend sh
+
+# --- Contrôles qualité -------------------------------------------------------
+#
+# Ces cibles existent pour que le Node du poste n'ait aucune influence sur le
+# comportement du projet. Le conteneur épingle sa version (NODE_TAG), le poste
+# non : lancer `npm test` à la main donnait donc un résultat dépendant de la
+# machine — et cet écart avait fini par remonter jusqu'au package.json, où
+# jsdom était épinglé pour ménager un Node de poste trop ancien.
+#
+# Le préfixe est `front-`/`back-` et non `test-front` : `build-front` aurait
+# prêté à confusion avec `build-front-prod`, qui construit une image déployable
+# et n'a rien à voir.
+front-test: ## Lance les tests frontend (Vitest) dans le conteneur
+	$(DC) exec frontend npm test
+
+front-lint: ## Lance ESLint sur le frontend dans le conteneur
+	$(DC) exec frontend npm run lint
+
+front-build: ## Vérifie les types (vue-tsc) et construit le bundle, dans le conteneur
+	$(DC) exec frontend npm run build
+
+back-test: ## Lance les tests backend (PHPUnit) dans le conteneur
+	$(DC) exec -u dev backend php bin/phpunit
+
+back-quality: ## Lance PHPStan, Rector (dry-run) et Psalm dans le conteneur
+	$(DC) exec -u dev backend composer phpstan
+	$(DC) exec -u dev backend composer rector
+	$(DC) exec -u dev backend composer psalm
 
 front-init: ## Crée le projet Vite en mode INTERACTIF (à lancer une seule fois)
 	$(DC) run --rm frontend npm create vite@$(shell grep '^CREATE_VITE_VERSION=' .env | cut -d= -f2) .

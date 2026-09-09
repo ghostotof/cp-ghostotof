@@ -7,6 +7,7 @@ namespace App\Tests\Security\User\Presentation\ApiResource;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -20,9 +21,7 @@ final class BackofficeUserResourceTest extends WebTestCase
     use HttpJson;
 
     private const string SUPER_USERNAME = 'super';
-    private const string SUPER_PASSWORD = 'SuperSecret123';
     private const string PLAIN_USERNAME = 'jane';
-    private const string PLAIN_PASSWORD = 'SecurePassword123';
 
     protected function setUp(): void
     {
@@ -47,8 +46,8 @@ final class BackofficeUserResourceTest extends WebTestCase
     public function testRequestWithoutRoleSuperIsForbidden(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, self::PLAIN_PASSWORD);
-        $this->loginAs($client, self::PLAIN_USERNAME, self::PLAIN_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
+        $this->loginAs($client, self::PLAIN_USERNAME, TestCredentials::plainPassword());
 
         $client->request('GET', '/api/backoffice/users');
 
@@ -65,8 +64,8 @@ final class BackofficeUserResourceTest extends WebTestCase
     public function testItemReadIsServedOnTheExplicitTemplateOnlyForRoleSuper(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         $client->request('GET', '/api/backoffice/users');
         self::assertResponseIsSuccessful();
@@ -105,9 +104,9 @@ final class BackofficeUserResourceTest extends WebTestCase
     public function testListDeleteAndSelfDeleteGuardAsRoleSuper(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, self::SUPER_PASSWORD, [CpgUser::ROLE_SUPER]);
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, self::PLAIN_PASSWORD);
-        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, self::SUPER_PASSWORD);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         // GetCollection : liste les 2 comptes, jamais de champ password
         $client->request('GET', '/api/backoffice/users');

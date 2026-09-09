@@ -1,7 +1,7 @@
 {
   "nav": {
     "home": "Accueil",
-    "skills": "Compétences",
+    "stack": "Ma stack",
     "experiences": "Parcours technique",
     "contact": "Contact",
     "about": "À propos",
@@ -38,7 +38,8 @@
       "quality": "Qualité",
       "users": "Utilisateurs",
       "contributions": "Contributions",
-      "incidents": "Incidents"
+      "incidents": "Incidents",
+      "watch": "Veille"
     },
     "quality": {
       "actions": "Actions",
@@ -254,6 +255,50 @@
         "validation": "Certains champs sont invalides.",
         "unknown": "Une erreur est survenue. Réessayez plus tard."
       }
+    },
+    "watch": {
+      "create": "Ajouter un produit surveillé",
+      "edit": "Modifier le produit surveillé",
+      "listTitle": "Produits surveillés",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "slugLabel": "Identifiant endoflife.date",
+      "slugImmutableHelp": "Non modifiable : c'est lui qui désigne le produit chez le fournisseur. Pour en suivre un autre, supprimez cette entrée et créez-en une nouvelle.",
+      "labelLabel": "Libellé affiché",
+      "versionSourceLabel": "Origine de la version",
+      "versionLabel": "Version installée",
+      "versionFromRuntimeHelp": "La version est lue directement dans le processus qui sert le site : elle ne se saisit pas.",
+      "positionLabel": "Position",
+      "actions": "Actions",
+      "editAction": "Modifier",
+      "deleteAction": "Supprimer",
+      "confirmDelete": "Retirer « {label} » de la veille ?",
+      "empty": "Aucun produit surveillé.",
+      "loading": "Chargement des produits surveillés…",
+      "loadError": "Le chargement des produits surveillés a échoué. Réessayez plus tard.",
+      "sources": {
+        "manual": "Saisie manuelle",
+        "runtime_php": "Version de PHP exécutée",
+        "runtime_symfony": "Version de Symfony chargée"
+      },
+      "errors": {
+        "not-found": "Ce produit n'existe plus.",
+        "validation": "Certains champs sont invalides.",
+        "conflict": "Ce produit est déjà surveillé, ou son identifiant ne peut pas être modifié.",
+        "unknown": "Une erreur est survenue. Réessayez plus tard."
+      },
+      "vulnerabilities": {
+        "title": "Vulnérabilités connues",
+        "help": "Détail réservé à l'administration : la page publique n'en affiche que le nombre. La liste est régénérée à chaque rafraîchissement, elle ne se modifie pas ici.",
+        "identifier": "Identifiant",
+        "package": "Paquet",
+        "severity": "Sévérité",
+        "fixedIn": "Corrigé en",
+        "summary": "Résumé",
+        "empty": "Aucune vulnérabilité connue à ce jour.",
+        "loading": "Chargement des vulnérabilités…",
+        "loadError": "Le chargement des vulnérabilités a échoué. Réessayez plus tard."
+      }
     }
   },
   "forbidden": {
@@ -265,6 +310,7 @@
     "illustrationAlt": "Illustration : développeur derrière son ordinateur"
   },
   "technologies": {
+    "seeStack": "Voir dans quelles versions tout cela tourne →",
     "sectionTitle": "Technologies",
     "andAlso": "ET AUSSI"
   },
@@ -408,9 +454,17 @@
       "title": "Incidents et invariants",
       "description": "Pannes de production de ce projet, causes racines et règles qui en sont sorties."
     },
+    "stack": {
+      "title": "Ma stack, en vie",
+      "description": "Versions installées de ce site et leurs échéances de support, relevées chaque jour auprès d'endoflife.date."
+    },
     "adminIncidents": {
       "title": "Administration — Incidents",
       "description": "Gestion du journal des incidents de production."
+    },
+    "adminWatch": {
+      "title": "Administration — Veille",
+      "description": "Gestion des produits dont le cycle de vie est suivi."
     }
   },
   "contributions": {
@@ -432,6 +486,45 @@
       "rootCause": "Cause racine",
       "resolution": "Résolution",
       "invariant": "Invariant"
+    }
+  },
+  "stack": {
+    "eyebrow": "Ma stack, en vie",
+    "intro": "Les versions qui font tourner ce site, confrontées chaque jour aux dates de fin de support publiées par endoflife.date. Rien n'est saisi à la main ici : les versions de PHP et de Symfony sont lues dans le processus qui vous sert cette page.",
+    "loading": "Chargement de la veille technique…",
+    "error": "L'état de la veille n'a pas pu être chargé. Réessayez plus tard.",
+    "neverRefreshed": "Aucun rafraîchissement n'a encore abouti : les données seront disponibles après la prochaine exécution planifiée.",
+    "partial": "Rafraîchissement partiel : au moins une source n'a pas répondu. Les entrées concernées datent du relevé précédent.",
+    "refreshed": "relevé du {date}",
+    "stale": "Relevé en retard : le rafraîchissement automatique n'a pas abouti depuis plus d'un jour. Les échéances affichées restent valables, mais une version publiée depuis n'y figure pas.",
+    "source": "Source : endoflife.date",
+    "tableCaption": "Versions installées et échéances de support de la stack de ce site.",
+    "patchAvailable": "correctif disponible",
+    "columns": {
+      "product": "Produit",
+      "version": "Version installée",
+      "status": "Statut",
+      "activeSupport": "Support actif jusqu'à",
+      "eol": "Fin de vie",
+      "latest": "Dernier correctif",
+      "update": "Mise à jour"
+    },
+    "status": {
+      "supported": "Supporté",
+      "securityOnly": "Sécurité uniquement",
+      "eol": "Fin de vie",
+      "unknown": "Inconnu"
+    },
+    "vulnerabilities": {
+      "title": "Vulnérabilités connues",
+      "healthyBadge": "Sain",
+      "healthy": "Aucune vulnérabilité connue sur les {scanned} paquets déployés.",
+      "affected": "vulnérabilité connue sur les {scanned} paquets déployés. | vulnérabilités connues sur les {scanned} paquets déployés.",
+      "notScanned": "Analyse non effectuée : le périmètre des paquets déployés n'est pas disponible ici. Aucune conclusion ne peut en être tirée — ce n'est pas la même chose que « aucune vulnérabilité ».",
+      "detailRestricted": "Le détail — identifiants, paquets concernés, versions correctives — n'est consultable qu'en administration : le publier reviendrait à documenter les faiblesses de ce site.",
+      "source": "Source : OSV.dev",
+      "checkedAt": "vérifié le {date}",
+      "stale": "Analyse en retard : elle n'a pas abouti depuis plus d'un jour. Une faille publiée depuis n'y figure pas."
     }
   }
 }

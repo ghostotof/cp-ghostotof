@@ -22,6 +22,10 @@ use Symfony\Component\Validator\Constraints as Assert;
  */
 #[ORM\Entity(repositoryClass: ContributionRepository::class)]
 #[ORM\Table(name: 'contribution')]
+// Index créé par Version20260906200000 mais qui n'était pas déclaré ici : le
+// mapping l'ignorait, si bien que chaque `doctrine:migrations:diff` proposait
+// de le supprimer. Le déclarer aligne le mapping sur la base, sans SQL.
+#[ORM\Index(name: 'idx_contribution_locale_position', columns: ['locale', 'position'])]
 class Contribution
 {
     #[ORM\Id]

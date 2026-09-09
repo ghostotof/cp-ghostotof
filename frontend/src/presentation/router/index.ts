@@ -30,6 +30,7 @@ const AboutPage = () => import('../pages/AboutPage.vue')
 const ExperiencePage = () => import('../pages/ExperiencePage.vue')
 const ContributionsPage = () => import('../pages/ContributionsPage.vue')
 const IncidentsPage = () => import('../pages/IncidentsPage.vue')
+const StackPage = () => import('../pages/StackPage.vue')
 const ContactPage = () => import('../pages/ContactPage.vue')
 const LoginPage = () => import('../pages/LoginPage.vue')
 const SetPasswordPage = () => import('../pages/SetPasswordPage.vue')
@@ -42,6 +43,7 @@ const AdminTechnologiesPage = () => import('../pages/admin/AdminTechnologiesPage
 const AdminAboutPage = () => import('../pages/admin/AdminAboutPage.vue')
 const AdminContributionsPage = () => import('../pages/admin/AdminContributionsPage.vue')
 const AdminIncidentsPage = () => import('../pages/admin/AdminIncidentsPage.vue')
+const AdminWatchPage = () => import('../pages/admin/AdminWatchPage.vue')
 const AdminQualityPage = () => import('../pages/admin/AdminQualityPage.vue')
 const AdminUsersPage = () => import('../pages/admin/AdminUsersPage.vue')
 
@@ -87,6 +89,12 @@ export const router = createRouter({
           name: 'incidents',
           component: IncidentsPage,
           meta: { titleKey: 'seo.incidents.title', descriptionKey: 'seo.incidents.description' },
+        },
+        {
+          path: 'stack',
+          name: 'stack',
+          component: StackPage,
+          meta: { titleKey: 'seo.stack.title', descriptionKey: 'seo.stack.description' },
         },
         {
           path: 'experience',
@@ -174,6 +182,12 @@ export const router = createRouter({
               name: 'admin-incidents',
               component: AdminIncidentsPage,
               meta: { titleKey: 'seo.adminIncidents.title', descriptionKey: 'seo.adminIncidents.description' },
+            },
+            {
+              path: 'watch',
+              name: 'admin-watch',
+              component: AdminWatchPage,
+              meta: { titleKey: 'seo.adminWatch.title', descriptionKey: 'seo.adminWatch.description' },
             },
             {
               path: 'users',

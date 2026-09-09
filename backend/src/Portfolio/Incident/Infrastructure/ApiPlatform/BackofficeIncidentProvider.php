@@ -7,7 +7,6 @@ namespace App\Portfolio\Incident\Infrastructure\ApiPlatform;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
-use App\Portfolio\Incident\Domain\Entity\Incident;
 use App\Portfolio\Incident\Domain\Repository\IncidentRepositoryInterface;
 use App\Portfolio\Incident\Presentation\ApiResource\BackofficeIncidentResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -43,27 +42,11 @@ final readonly class BackofficeIncidentProvider implements ProviderInterface
                 ? $this->incidentRepository->findByLocale($locale)
                 : $this->incidentRepository->findAll();
 
-            return array_map($this->toResource(...), $incidents);
+            return array_map(BackofficeIncidentResource::fromEntity(...), $incidents);
         }
 
         $incident = $this->incidentRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
 
-        return null !== $incident ? $this->toResource($incident) : null;
-    }
-
-    private function toResource(Incident $incident): BackofficeIncidentResource
-    {
-        return new BackofficeIncidentResource(
-            id: $incident->getId(),
-            locale: $incident->getLocale()->value,
-            title: $incident->getTitle(),
-            version: $incident->getVersion(),
-            occurredAt: $incident->getOccurredAt()->format('Y-m-d'),
-            impact: $incident->getImpact(),
-            rootCause: $incident->getRootCause(),
-            resolution: $incident->getResolution(),
-            invariant: $incident->getInvariant(),
-            position: $incident->getPosition(),
-        );
+        return null !== $incident ? BackofficeIncidentResource::fromEntity($incident) : null;
     }
 }

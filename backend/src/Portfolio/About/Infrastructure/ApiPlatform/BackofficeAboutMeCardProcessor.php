@@ -10,7 +10,6 @@ use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use ApiPlatform\State\ProcessorInterface;
 use App\Portfolio\About\Application\AboutMeCardAdministratorInterface;
-use App\Portfolio\About\Domain\Entity\AboutMeCard;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\About\Presentation\ApiResource\BackofficeAboutMeCardResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -57,19 +56,6 @@ final readonly class BackofficeAboutMeCardProcessor implements ProcessorInterfac
             throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
         }
 
-        return $this->toResource($card);
-    }
-
-    private function toResource(AboutMeCard $card): BackofficeAboutMeCardResource
-    {
-        return new BackofficeAboutMeCardResource(
-            id: $card->getId(),
-            locale: $card->getLocale()->value,
-            category: $card->getCategory()->value,
-            title: $card->getTitle(),
-            description: $card->getDescription(),
-            iconKey: $card->getIconKey(),
-            position: $card->getPosition(),
-        );
+        return BackofficeAboutMeCardResource::fromEntity($card);
     }
 }

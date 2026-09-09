@@ -7,6 +7,7 @@ namespace App\Portfolio\Incident\Presentation\Command;
 use App\Portfolio\Incident\Application\IncidentAdministratorInterface;
 use App\Portfolio\Incident\Domain\Repository\IncidentRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Presentation\Command\GuardsExistingContent;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -32,6 +33,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 )]
 final class SeedIncidentsContentCommand extends Command
 {
+    use GuardsExistingContent;
+
     public function __construct(
         private readonly IncidentRepositoryInterface $incidentRepository,
         private readonly IncidentAdministratorInterface $incidentAdministrator,
@@ -39,9 +42,18 @@ final class SeedIncidentsContentCommand extends Command
         parent::__construct();
     }
 
+    protected function configure(): void
+    {
+        $this->addForceOption();
+    }
+
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
+
+        if ($this->refusesToOverwrite($io, $input, $this->countExisting())) {
+            return Command::SUCCESS;
+        }
 
         foreach ($this->content() as $localeValue => $incidents) {
             $locale = Locale::from($localeValue);
@@ -219,5 +231,20 @@ final class SeedIncidentsContentCommand extends Command
                 ],
             ],
         ];
+    }
+
+    /**
+     * Toutes locales confondues : une base à moitié peuplée (fr seulement, par
+     * exemple) compte comme peuplée, et n'est donc pas écrasée en silence.
+     */
+    private function countExisting(): int
+    {
+        $total = 0;
+
+        foreach (Locale::cases() as $locale) {
+            $total += \count($this->incidentRepository->findByLocale($locale));
+        }
+
+        return $total;
     }
 }

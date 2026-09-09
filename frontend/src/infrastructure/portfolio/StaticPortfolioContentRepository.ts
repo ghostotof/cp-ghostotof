@@ -38,7 +38,10 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
     const nav = MESSAGES[locale].nav
     return [
       { label: nav.home, to: `/${locale}`, isEnabled: true },
-      { label: nav.skills, to: `/${locale}#technologies`, isEnabled: true },
+      // Pointe vers la page plutôt que vers l'ancre de la section (décision D8) :
+      // le menu n'a pas grossi, et la section reste atteignable depuis l'accueil,
+      // d'où un lien renvoie vers cette même page.
+      { label: nav.stack, to: `/${locale}/stack`, isEnabled: true },
       { label: nav.contributions, to: `/${locale}/contributions`, isEnabled: true },
       { label: nav.incidents, to: `/${locale}/incidents`, isEnabled: true },
       { label: nav.experiences, to: `/${locale}/experience`, isEnabled: true },
