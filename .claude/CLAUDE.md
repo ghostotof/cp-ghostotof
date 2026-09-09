@@ -386,12 +386,23 @@ all deliberate:
 therefore the deployment — on every run after the first. "There is already content" is the expected
 answer in nearly every execution, not an error. `SeedWatchedProductsCommandTest` pins it.
 
-`k8s/base/seed-job.yaml` runs the five on **every preprod deploy** (`deploy-preprod` only — prod gets
-its content from the backoffice and receives nothing from here). Like `migrate-job.yaml` it sits
+`k8s/base/seed-job.yaml` runs the five on **every preprod deploy**. Like `migrate-job.yaml` it sits
 outside `kustomization.yaml`, hence `${BACKEND_IMAGE}` + `envsubst`. It never passes `--force`, so it
 cannot repair a divergence: if the reference content changes in code, preprod keeps the old one until
 someone forces it by hand. That is the price of harmlessness, and it is the right trade — a Job that
 can destroy nothing beats a Job that syncs and one day picks the wrong namespace.
+
+**Production is never seeded automatically** — settled 2026-09-09, issue #17. Not "not yet": the seed
+Job is wired to `deploy-preprod` and must stay there. Prod's content is authored through the
+backoffice, and an automatic writer against it is a standing risk for no standing benefit. Seeding prod
+is a deliberate, case-by-case act: apply the same Job by hand to the `prod` namespace when a genuinely
+empty table needs a starting point (a new bounded context, typically). The guard makes that safe — the
+already-populated contexts decline, only the empty one is filled — but *safe* is not *automatic*, and
+the distinction is the decision. Do not "complete" the pipeline by adding this step to `deploy-prod`.
+
+The cost is accepted and worth naming: a new context ships with an empty page in production until
+someone seeds it, and nothing fails to announce it. If that ever needs catching, the answer is a
+post-deploy check that fails on an empty public payload — never an automatic writer.
 
 **Preprod never receives a copy of production data.** The content comes from the code, not from a
 dump: a dump would carry `cpg_user` — e-mail addresses and password hashes — into a second
