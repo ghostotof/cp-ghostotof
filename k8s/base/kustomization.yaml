@@ -8,7 +8,6 @@ labels:
 resources:
   - backend-deployment.yaml
   - backend-service.yaml
-  - backend-nginx-conf.yaml
   - messenger-worker-deployment.yaml
   - messenger-purge-cronjob.yaml
   - watch-refresh-cronjob.yaml
@@ -29,6 +28,28 @@ resources:
   # privilège volontairement absent de son Role (moindre privilège). Bootstrap
   # manuel unique, cf. k8s/README.md — même principe que scaleway-eso-auth et
   # cv-pdf, jamais réappliqué par le pipeline.
+
+# Configuration nginx du sidecar backend — générée, donc suffixée d'un hachage
+# de contenu (issue #18).
+#
+# C'est tout l'intérêt, et c'est l'inverse du choix fait pour `backend-config`
+# dans les overlays : ici le suffixe est VOULU. Modifier backend-nginx.conf
+# change le hachage, donc le nom de la ConfigMap, donc le template du pod — et
+# le Deployment est recréé. Sans lui, un `kubectl apply` annonçait
+# « configmap configured » pendant que le sidecar gardait ses anciennes règles
+# indéfiniment : la ConfigMap était montée en `subPath`, que Kubernetes ne
+# rafraîchit jamais dans un conteneur en cours d'exécution.
+#
+# Ce qui rend le suffixe possible ici et impossible pour `backend-config` :
+# cette ConfigMap n'est référencée QUE par backend-deployment.yaml, que
+# kustomize traite — il y réécrit donc la référence tout seul. `backend-config`,
+# elle, est appelée par son nom littéral depuis migrate-job, seed-job et les
+# deux CronJob, tous délibérément hors de kustomize ; d'où son
+# `disableNameSuffixHash: true` et l'incident v0.6.0 qui l'a établi.
+configMapGenerator:
+  - name: backend-nginx-conf
+    files:
+      - default.conf=backend-nginx.conf
 
 # Placeholders remplacés par chaque overlay via `kustomize edit set image`
 # (fait par le job de déploiement CI, jamais commité en dur : le registre et

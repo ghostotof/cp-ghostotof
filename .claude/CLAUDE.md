@@ -604,16 +604,19 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   same image as the Deployment. It is also **the only object in the cluster that makes outbound calls to
   third parties**; the namespace's NetworkPolicies restrict ingress only, so nothing extra is needed today —
   but adding an egress policy would break this Job first.
-- **An nginx-config-only change does not reach the running nginx.** Two mechanisms stack up:
-  `backend-nginx-conf` is a **plain resource, not a `configMapGenerator`** (no hash suffix, so applying
-  it triggers no rollout), *and* the backend Deployment mounts it with **`subPath: default.conf`**,
-  which Kubernetes never refreshes in a running container. So `kubectl apply` prints
-  `configmap/backend-nginx-conf configured` while the sidecar keeps its old rules **indefinitely**.
-  A normal release is unaffected — the image tag changes, the pod is recreated, the config comes with
-  it. The trap is the config-only hotfix: it looks applied and isn't. Force a rollout
-  (`kubectl -n <ns> rollout restart deploy/backend`) and verify with
-  `kubectl exec … -c nginx -- nginx -T | grep <the new directive>`. Same family as the stale-image
-  incident below: the deploy reports success while running something else.
+- **The two ConfigMaps hash differently, and each on purpose** (issue #18). `backend-nginx-conf` is a
+  **`configMapGenerator`**: its content hash is part of its name, so editing `k8s/base/backend-nginx.conf`
+  changes the name, hence the pod template, hence triggers a rollout — which is the only way the
+  sidecar ever picks the change up, since the file is mounted with `subPath` and Kubernetes never
+  refreshes those in a running container. Before that, `kubectl apply` printed
+  `configmap … configured` while nginx kept its old rules **indefinitely** — the deploy reporting
+  success while running something else, same family as the stale-image incident below.
+  `backend-config` is the **opposite** and must stay `disableNameSuffixHash: true`: it is referenced
+  by literal name from `migrate-job`, `seed-job` and both CronJobs, all deliberately outside
+  kustomize, which therefore cannot rewrite their references — a hashed name breaks them with
+  `CreateContainerConfigError` (incident v0.6.0). The rule that decides: **hash it if kustomize owns
+  every reference to it, don't if anything outside kustomize names it.** Verify a config change
+  actually landed with `kubectl exec … -c nginx -- nginx -T | grep <the new directive>`.
 - **Three nginx rate-limit zones, two different jobs.** `contact` (10 r/m) and `pwsetup` (20 r/m)
   protect a *side effect* — sending mail, guessing a token. `publicapi` (600 r/m, burst 200, on
   `location /`) protects the *resource*: without it every public read reaches PHP and Postgres as
@@ -624,7 +627,7 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's
-  `trusted_proxies: private_ranges`. `docker/nginx/default.conf` and `k8s/base/backend-nginx-conf.yaml` are
+  `trusted_proxies: private_ranges`. `docker/nginx/default.conf` and `k8s/base/backend-nginx.conf` are
   mirrors of each other: change both.
 - **The release notes live in the tag annotation.** `create-release` publishes the GitHub Release
   automatically once `deploy-prod` succeeds — never earlier: a release announces that a version
