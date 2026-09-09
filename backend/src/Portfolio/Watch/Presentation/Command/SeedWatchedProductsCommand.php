@@ -27,10 +27,16 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * page — l'entrée s'afficherait « inconnue » — mais il n'y a aucune raison d'en
  * laisser passer un.
  *
- * Les versions reflètent `../.env` / `versions.lock`, à deux exceptions près :
- * PHP et Symfony n'en portent pas, parce qu'elles sont lues dans le processus
- * au moment du rafraîchissement (décision D2). Les renseigner ici
- * réintroduirait exactement la version périmée que cette décision élimine.
+ * **Aucun produit ne porte de version.** Elles étaient saisies ici jusqu'au
+ * 2026-09-09 ; le défaut était qu'une montée de version dans les manifestes
+ * laissait la page annoncer l'ancienne jusqu'à ce que quelqu'un pense à la
+ * corriger — la page affirmait alors quelque chose de faux sur ce qui tourne.
+ *
+ * PHP et Symfony sont lus dans le processus (décision D2) ; les cinq autres
+ * sont relevés à la construction de l'image depuis les fichiers qui font foi
+ * (manifestes Kubernetes, `.env`, lock npm). Renseigner une version ici
+ * réintroduirait exactement la dérive que ce dispositif élimine — et l'entité
+ * la refuserait de toute façon.
  */
 #[AsCommand(
     name: 'app:watch:seed',
@@ -90,11 +96,11 @@ final class SeedWatchedProductsCommand extends Command
         return [
             ['php', 'PHP', VersionSource::RUNTIME_PHP, null],
             ['symfony', 'Symfony', VersionSource::RUNTIME_SYMFONY, null],
-            ['postgresql', 'PostgreSQL', VersionSource::MANUAL, '18.4'],
-            ['nodejs', 'Node.js', VersionSource::MANUAL, '26.7.0'],
-            ['vue', 'Vue.js', VersionSource::MANUAL, '3.5.42'],
-            ['nginx', 'nginx', VersionSource::MANUAL, '1.30.4'],
-            ['rabbitmq', 'RabbitMQ', VersionSource::MANUAL, '4.3.4'],
+            ['postgresql', 'PostgreSQL', VersionSource::DEPLOYED, null],
+            ['nodejs', 'Node.js', VersionSource::DEPLOYED, null],
+            ['vue', 'Vue.js', VersionSource::DEPLOYED, null],
+            ['nginx', 'nginx', VersionSource::DEPLOYED, null],
+            ['rabbitmq', 'RabbitMQ', VersionSource::DEPLOYED, null],
         ];
     }
 }

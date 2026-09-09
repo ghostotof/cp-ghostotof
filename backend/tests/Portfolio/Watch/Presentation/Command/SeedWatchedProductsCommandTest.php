@@ -90,15 +90,34 @@ final class SeedWatchedProductsCommandTest extends KernelTestCase
         self::assertNull($symfony->getVersion());
     }
 
-    public function testManuallyVersionedProductsMatchTheDeployedStack(): void
+    /**
+     * Contrat changé le 2026-09-09 : plus aucun produit ne porte de version
+     * saisie. Ce test le fige sur l'ensemble du catalogue plutôt que sur un
+     * seul produit — c'est l'absence générale qui fait la garantie, une seule
+     * entrée oubliée en MANUAL suffirait à rouvrir la dérive.
+     */
+    public function testNoProductCarriesAStoredVersion(): void
+    {
+        $this->commandTester()->execute([]);
+
+        foreach ($this->repository()->findAllOrdered() as $product) {
+            self::assertNotSame(
+                VersionSource::MANUAL,
+                $product->getVersionSource(),
+                sprintf('Le produit « %s » est encore en saisie manuelle.', $product->getSlug()),
+            );
+            self::assertNull($product->getVersion(), sprintf('Le produit « %s » porte une version.', $product->getSlug()));
+        }
+    }
+
+    public function testTheDeployedProductsAreResolvedFromTheBuildRecord(): void
     {
         $this->commandTester()->execute([]);
 
         $postgres = $this->repository()->findOneBySlug('postgresql');
 
         self::assertNotNull($postgres);
-        self::assertSame(VersionSource::MANUAL, $postgres->getVersionSource());
-        self::assertSame('18.4', $postgres->getVersion());
+        self::assertSame(VersionSource::DEPLOYED, $postgres->getVersionSource());
     }
 
     public function testItIsIdempotent(): void

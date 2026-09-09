@@ -1,0 +1,10 @@
+{
+    "generatedAt": "2026-09-09T15:17:47+02:00",
+    "versions": {
+        "postgresql": "18.4",
+        "rabbitmq": "4.3.4",
+        "nginx": "1.30.4",
+        "nodejs": "26.7.0",
+        "vue": "3.5.42"
+    }
+}
