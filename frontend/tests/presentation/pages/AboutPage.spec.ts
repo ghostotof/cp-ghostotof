@@ -5,6 +5,7 @@ import { ABOUT_CONTENT_REPOSITORY } from '../../../src/application/about/useAbou
 import { createAppI18n } from '../../../src/presentation/i18n'
 import type { AboutContentRepository } from '../../../src/domain/about/repositories/AboutContentRepository'
 import type { AboutContent } from '../../../src/domain/portfolio/entities/AboutContent'
+import { expectNoAccessibilityViolation } from '../../support/axe'
 
 const STUB_ABOUT_CONTENT: AboutContent = {
   site: {
@@ -123,5 +124,19 @@ describe('AboutPage', () => {
 
     expect(wrapper.find('h1').exists()).toBe(false)
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+  })
+
+  /**
+   * Audit du DOM rendu, complémentaire du lint d'accessibilité : celui-ci ne
+   * voit que le template, axe inspecte ce qui existe une fois rendu.
+   *
+   * Attention à ce qu'il ne dit PAS : jsdom ne calcule ni mise en page ni
+   * couleur, donc le contraste n'est jamais vérifié ici (cf. tests/support/axe).
+   */
+  it("ne présente aucune violation d'accessibilité détectable", async () => {
+    const wrapper = await mountAboutPage()
+    await flushPromises()
+
+    await expectNoAccessibilityViolation(wrapper)
   })
 })
