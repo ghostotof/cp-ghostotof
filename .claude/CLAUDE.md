@@ -560,8 +560,21 @@ fixed:
   panel's own `background-color` produces phantom failures (composite the alpha down to the first
   opaque layer — `.surface-panel` sits on `rgb(16,15,25)`, not white), and a `Tab` keypress sent
   through browser automation leaves focus on `BODY`, which makes a working skip link look broken.
-  Heading hierarchy *is* pinned per page in Vitest (`StackPage.spec.ts`) — it only exists once
-  rendered, so no linter catches it. axe-core in Vitest is tracked as issue #12.
+- **axe-core audits the rendered DOM** (issue #12), via `tests/support/axe.ts` →
+  `expectNoAccessibilityViolation(wrapper)`. It complements the linter rather than replacing it: the
+  linter reads the template, axe inspects what exists once rendered — heading skips, duplicate ids
+  from a loop, wrong `th`/`td` scope, badly nested ARIA. Applied to `Stack`, `Incidents`,
+  `Contributions` and `About`; add it to a new page's spec as one more `it`.
+  The helper re-attaches the wrapper to `document.body` for the run, because `@vue/test-utils` mounts
+  detached and axe then answers *"No elements found for include in page Context"* — which reads like
+  "no violations". That trap is handled once, in the helper.
+- **What that audit will never see, and it matters.** jsdom does no layout and no colour computation,
+  so `color-contrast` **silently disables itself** — a green test says nothing about contrast. The
+  helper therefore disables it explicitly (naming what you don't check beats letting it look checked)
+  and asserts that the rules which *should* run actually did, so a future axe release cannot quietly
+  turn one off and leave the suite green for the wrong reason. Contrast, focus visibility, tab order
+  and the relevance of alt text still need a real browser and a human — automated tooling covers
+  roughly a third of WCAG.
 
 Tests live under `tests/`, mirroring the `src/` tree rather than being colocated (e.g.
 `src/presentation/layout/AppHeader.vue` is tested by `tests/presentation/layout/AppHeader.spec.ts`, the same
