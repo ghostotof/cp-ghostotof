@@ -210,13 +210,15 @@ final readonly class WatchRefresher implements WatchRefresherInterface
     }
 
     /**
-     * Décision D2 : la version vient du processus pour PHP et Symfony, de la
-     * saisie pour tout le reste.
+     * Décision D2, étendue : plus aucune version n'est saisie. PHP et Symfony
+     * viennent du processus, les cinq autres du relevé fait à la construction
+     * de l'image. Le slug est transmis parce que ce relevé couvre plusieurs
+     * produits, là où chaque source runtime n'en désigne qu'un.
      */
     private function installedVersionOf(WatchedProduct $product): ?string
     {
         return $product->getVersionSource()->isResolvedAtRuntime()
-            ? $this->versionResolver->resolve($product->getVersionSource())
+            ? $this->versionResolver->resolve($product->getVersionSource(), $product->getSlug())
             : $product->getVersion();
     }
 

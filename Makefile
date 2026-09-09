@@ -57,6 +57,10 @@ build-prod: ## Construit l'image de production (TAG=... IMAGE=...)
 	  --build-arg COMPOSER_TAG=$(shell grep '^COMPOSER_TAG=' .env | cut -d= -f2) \
 	  --build-arg AMQP_EXT_VERSION=$(shell grep '^AMQP_EXT_VERSION=' .env | cut -d= -f2) \
 	  --build-arg BACKEND_FLAVOR=$(FLAVOR) \
+	  --build-arg POSTGRES_TAG=$(shell sed -n 's/.*image: postgres:\(\S*\).*/\1/p' k8s/base/postgres.yaml | head -1) \
+	  --build-arg RABBITMQ_TAG=$(shell sed -n 's/.*image: rabbitmq:\(\S*\).*/\1/p' k8s/base/rabbitmq.yaml | head -1) \
+	  --build-arg NGINX_TAG=$(shell sed -n 's/.*image: nginx:\(\S*\).*/\1/p' k8s/base/backend-deployment.yaml | head -1) \
+	  --build-arg NODE_TAG=$(shell grep '^NODE_TAG=' .env | cut -d= -f2) \
 	  -f docker/php/Dockerfile \
 	  -t $(IMAGE):$(TAG) .
 
@@ -68,6 +72,10 @@ build-preprod: ## Construit l'image de préprod (= prod + outils de diagnostic)
 	  --build-arg AMQP_EXT_VERSION=$(shell grep '^AMQP_EXT_VERSION=' .env | cut -d= -f2) \
 	  --build-arg XDEBUG_VERSION=$(shell grep '^XDEBUG_VERSION=' .env | cut -d= -f2) \
 	  --build-arg BACKEND_FLAVOR=$(FLAVOR) \
+	  --build-arg POSTGRES_TAG=$(shell sed -n 's/.*image: postgres:\(\S*\).*/\1/p' k8s/base/postgres.yaml | head -1) \
+	  --build-arg RABBITMQ_TAG=$(shell sed -n 's/.*image: rabbitmq:\(\S*\).*/\1/p' k8s/base/rabbitmq.yaml | head -1) \
+	  --build-arg NGINX_TAG=$(shell sed -n 's/.*image: nginx:\(\S*\).*/\1/p' k8s/base/backend-deployment.yaml | head -1) \
+	  --build-arg NODE_TAG=$(shell grep '^NODE_TAG=' .env | cut -d= -f2) \
 	  -f docker/php/Dockerfile \
 	  -t $(IMAGE):$(TAG)-preprod .
 

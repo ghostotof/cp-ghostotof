@@ -206,13 +206,29 @@ RUN set -eux; \
 # Placé après le gros RUN ci-dessus pour ne pas en invalider le cache : une
 # simple mise à jour de dépendance npm ne doit pas relancer tout le reste.
 COPY frontend/package-lock.json /tmp/frontend-package-lock.json
+# Versions des composants déployés, relevées depuis les fichiers qui font foi :
+# les manifestes Kubernetes pour ce que le cluster tire, le lock npm pour Vue.
+# Elles étaient saisies au backoffice, où une montée de version pouvait rester
+# ignorée — la page annonçait alors une version qui ne tournait plus.
+#
+# Les tags arrivent en arguments de build, pas par copie des fichiers sources :
+# `k8s/` est exclu du contexte (cf. .dockerignore — l'image n'a pas à embarquer
+# les manifestes de déploiement), et copier `.env` créerait une couche qui le
+# conserverait même supprimé ensuite. Le Makefile les extrait et les passe ici.
+ARG POSTGRES_TAG
+ARG RABBITMQ_TAG
+ARG NGINX_TAG
+ARG NODE_TAG
 RUN set -eux; \
     php bin/build-package-manifest.php /tmp/frontend-package-lock.json; \
-    rm -f /tmp/frontend-package-lock.json; \
+    mkdir -p /tmp/repo/frontend; \
+    cp /tmp/frontend-package-lock.json /tmp/repo/frontend/package-lock.json; \
+    php bin/build-deployed-versions.php /tmp/repo; \
+    rm -rf /tmp/repo /tmp/frontend-package-lock.json; \
     chown -R "${APP_UID}:${APP_GID}" config/watch; \
-    # Lecture seule : le manifeste décrit l'image, rien ne doit le réécrire à
-    # l'exécution. Sans ce chmod il hérite du umask du build (0666).
-    chmod 0644 config/watch/package-manifest.json
+    # Lecture seule : ces fichiers décrivent l'image, rien ne doit les réécrire
+    # à l'exécution. Sans ce chmod ils héritent du umask du build (0666).
+    chmod 0644 config/watch/package-manifest.json config/watch/deployed-versions.json
 
 COPY docker/php/php.prod.ini  /usr/local/etc/php/conf.d/zz-app.ini
 COPY docker/php/www.prod.conf /usr/local/etc/php-fpm.d/zz-www.conf

@@ -16,9 +16,14 @@ use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 interface InstalledVersionResolverInterface
 {
     /**
+     * Le slug est nécessaire pour la source `DEPLOYED` : contrairement aux
+     * sources runtime, qui désignent chacune un composant unique, elle couvre
+     * plusieurs produits et il faut savoir lequel.
+     *
      * @return string|null la version installée, ou null si la source ne relève
      *                     pas du runtime (cas `MANUAL`, dont la version est
-     *                     stockée sur l'entité)
+     *                     stockée sur l'entité) ou si elle n'a pas pu être
+     *                     relevée
      */
-    public function resolve(VersionSource $source): ?string;
+    public function resolve(VersionSource $source, string $slug): ?string;
 }
