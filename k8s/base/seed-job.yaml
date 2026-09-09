@@ -26,6 +26,16 @@
 # environnement, ce qui multiplie les endroits d'où ils peuvent fuir sans rien
 # apporter ici, le contenu de production étant précisément celui de ces seeds.
 #
+# Et symétriquement : LA PRODUCTION N'EST JAMAIS PEUPLÉE AUTOMATIQUEMENT
+# (décision du 2026-09-09, issue #17). Ce Job est branché sur `deploy-preprod`
+# et doit y rester. Son contenu est rédigé au backoffice ; un écrivain
+# automatique braqué dessus serait un risque permanent pour un bénéfice
+# occasionnel. Le peupler reste un geste délibéré, au cas par cas : appliquer ce
+# même Job à la main au namespace `prod` quand une table réellement vide a
+# besoin d'un point de départ — typiquement un nouveau contexte borné. Le
+# garde-fou rend ce geste sûr (les contextes déjà peuplés refusent), mais
+# « sûr » n'est pas « automatique », et c'est là toute la décision.
+#
 # DÉLIBÉRÉMENT ABSENT de kustomization.yaml `resources:`, pour les mêmes raisons
 # que migrate-job.yaml : il est appliqué à la demande par le pipeline, donc le
 # transformateur d'images de kustomize ne le voit pas — d'où le placeholder
