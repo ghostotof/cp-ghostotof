@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Portfolio\Watch\Infrastructure\Runtime;
 
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
+use App\Portfolio\Watch\Infrastructure\Manifest\FileDeployedVersionsReader;
 use App\Portfolio\Watch\Infrastructure\Runtime\PhpAndSymfonyVersionResolver;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpKernel\Kernel;
@@ -12,10 +13,19 @@ use Symfony\Component\HttpKernel\Kernel;
 final class PhpAndSymfonyVersionResolverTest extends TestCase
 {
     private PhpAndSymfonyVersionResolver $resolver;
+    private string $versionsPath;
 
     protected function setUp(): void
     {
-        $this->resolver = new PhpAndSymfonyVersionResolver();
+        $this->versionsPath = sys_get_temp_dir().'/dv-'.bin2hex(random_bytes(6)).'.json';
+        $this->resolver = new PhpAndSymfonyVersionResolver(new FileDeployedVersionsReader($this->versionsPath));
+    }
+
+    protected function tearDown(): void
+    {
+        if (is_file($this->versionsPath)) {
+            unlink($this->versionsPath);
+        }
     }
 
     /**
@@ -26,7 +36,7 @@ final class PhpAndSymfonyVersionResolverTest extends TestCase
      */
     public function testItReportsTheRunningPhpVersion(): void
     {
-        $version = $this->resolver->resolve(VersionSource::RUNTIME_PHP);
+        $version = $this->resolver->resolve(VersionSource::RUNTIME_PHP, 'php');
 
         self::assertSame(PHP_VERSION, $version);
         self::assertMatchesRegularExpression('/^\d+\.\d+\.\d+/', $version);
@@ -34,7 +44,7 @@ final class PhpAndSymfonyVersionResolverTest extends TestCase
 
     public function testItReportsTheLoadedSymfonyVersion(): void
     {
-        $version = $this->resolver->resolve(VersionSource::RUNTIME_SYMFONY);
+        $version = $this->resolver->resolve(VersionSource::RUNTIME_SYMFONY, 'symfony');
 
         self::assertSame(Kernel::VERSION, $version);
         self::assertMatchesRegularExpression('/^\d+\.\d+\.\d+/', $version);
@@ -46,6 +56,32 @@ final class PhpAndSymfonyVersionResolverTest extends TestCase
      */
     public function testAManualSourceIsNotTheResolversBusiness(): void
     {
-        self::assertNull($this->resolver->resolve(VersionSource::MANUAL));
+        self::assertNull($this->resolver->resolve(VersionSource::MANUAL, 'nimporte'));
+    }
+
+    /**
+     * La source DEPLOYED couvre plusieurs produits : c'est le slug qui choisit,
+     * et c'est précisément ce que ce test protège — que postgresql ne reçoive
+     * pas la version de rabbitmq.
+     */
+    public function testADeployedSourceIsResolvedBySlug(): void
+    {
+        file_put_contents($this->versionsPath, json_encode([
+            'versions' => ['postgresql' => '18.4', 'rabbitmq' => '4.3.4'],
+        ]));
+
+        self::assertSame('18.4', $this->resolver->resolve(VersionSource::DEPLOYED, 'postgresql'));
+        self::assertSame('4.3.4', $this->resolver->resolve(VersionSource::DEPLOYED, 'rabbitmq'));
+    }
+
+    /**
+     * Relevé absent — le cas normal d'un conteneur de développement où l'image
+     * n'a jamais été construite. L'entrée s'affiche alors sans version, ce que
+     * la page sait présenter ; faire échouer le rafraîchissement serait hors de
+     * proportion.
+     */
+    public function testAMissingRecordYieldsNoVersionRatherThanAnError(): void
+    {
+        self::assertNull($this->resolver->resolve(VersionSource::DEPLOYED, 'postgresql'));
     }
 }

@@ -299,12 +299,27 @@ folder), so entities live inside their bounded context instead of a shared top-l
     plainly (`Aucun produit surveillé : rien à rafraîchir.`) rather than failing — `/stack` then shows
     "never refreshed" until the catalogue is seeded. Preprod is seeded automatically on every deploy
     (see "Seeding" below); prod is populated and the guard keeps it that way.
-  - **A version bump in `.env` does not reach the page by itself.** PHP and Symfony read the runtime,
-    so they cannot drift — that is decision D2. The other five (PostgreSQL, Node, Vue, nginx,
-    RabbitMQ) are `VersionSource::MANUAL`: bumping `POSTGRES_TAG` and deploying leaves `/stack`
-    announcing the previous version until the backoffice entry is edited. The page then states
-    something untrue about what is running, which is precisely what it exists to prevent. Treat
-    editing the catalogue as part of a version bump, the same way `versions.lock` is.
+  - **No version is ever typed in** (issue #19). Decision D2 started with PHP and Symfony reading the
+    runtime; the other five used to be `MANUAL`, so bumping `POSTGRES_TAG` left `/stack` announcing
+    the previous version until someone edited the backoffice — the page stating something untrue
+    about what runs, which is exactly what it exists to prevent. They are now `VersionSource::DEPLOYED`,
+    resolved from a record written at **`docker build`** into `config/watch/deployed-versions.json`
+    (same shape as the package manifest: a builder that writes, a reader that reads back).
+    The authority is **`k8s/base/*.yaml`** — the manifests the cluster actually applies — not `.env`,
+    which only drives dev images and was kept in sync with them by a comment. That comment is gone.
+  - **The tags reach the build as `--build-arg`, never as copied files.** Two independent reasons, and
+    both must hold: `k8s/` is excluded by `.dockerignore` (an application image has no business
+    carrying deployment manifests), and `COPY .env` would create a layer that keeps the file even
+    after a later `rm`. The `Makefile` extracts the tags with `sed` from the manifests and passes
+    them; the builder falls back to reading the files, which is the **dev** path — `docker-compose`
+    mounts `k8s/`, `.env` and the npm lock read-only for that, and `app:watch:build-versions` is the
+    local equivalent of the build step.
+  - **Node is the odd one and stays labelled as such.** It is deployed nowhere: it builds the bundle
+    and disappears, the frontend image serving only nginx. Its version comes from `.env` — which
+    genuinely drives the build — and the page shows it as toolchain, not as something running. Vue
+    likewise comes from the npm lock, being a bundle dependency rather than an image.
+  - A missing record is not an error: the products show without a version, which the page already
+    renders. Failing a build or a refresh over a renamed manifest would be out of proportion.
 
 ### Backoffice (`ROLE_SUPER`)
 
@@ -560,8 +575,21 @@ fixed:
   panel's own `background-color` produces phantom failures (composite the alpha down to the first
   opaque layer — `.surface-panel` sits on `rgb(16,15,25)`, not white), and a `Tab` keypress sent
   through browser automation leaves focus on `BODY`, which makes a working skip link look broken.
-  Heading hierarchy *is* pinned per page in Vitest (`StackPage.spec.ts`) — it only exists once
-  rendered, so no linter catches it. axe-core in Vitest is tracked as issue #12.
+- **axe-core audits the rendered DOM** (issue #12), via `tests/support/axe.ts` →
+  `expectNoAccessibilityViolation(wrapper)`. It complements the linter rather than replacing it: the
+  linter reads the template, axe inspects what exists once rendered — heading skips, duplicate ids
+  from a loop, wrong `th`/`td` scope, badly nested ARIA. Applied to `Stack`, `Incidents`,
+  `Contributions` and `About`; add it to a new page's spec as one more `it`.
+  The helper re-attaches the wrapper to `document.body` for the run, because `@vue/test-utils` mounts
+  detached and axe then answers *"No elements found for include in page Context"* — which reads like
+  "no violations". That trap is handled once, in the helper.
+- **What that audit will never see, and it matters.** jsdom does no layout and no colour computation,
+  so `color-contrast` **silently disables itself** — a green test says nothing about contrast. The
+  helper therefore disables it explicitly (naming what you don't check beats letting it look checked)
+  and asserts that the rules which *should* run actually did, so a future axe release cannot quietly
+  turn one off and leave the suite green for the wrong reason. Contrast, focus visibility, tab order
+  and the relevance of alt text still need a real browser and a human — automated tooling covers
+  roughly a third of WCAG.
 
 Tests live under `tests/`, mirroring the `src/` tree rather than being colocated (e.g.
 `src/presentation/layout/AppHeader.vue` is tested by `tests/presentation/layout/AppHeader.spec.ts`, the same

@@ -5,6 +5,7 @@ import { INCIDENT_REPOSITORY } from '../../../src/application/incidents/useIncid
 import type { IncidentRepository } from '../../../src/domain/incidents/repositories/IncidentRepository'
 import type { Incident } from '../../../src/domain/incidents/entities/Incident'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { expectNoAccessibilityViolation } from '../../support/axe'
 
 const INCIDENT: Incident = {
   title: 'RabbitMQ en CrashLoopBackOff après un durcissement de sécurité',
@@ -124,5 +125,19 @@ describe('IncidentsPage', () => {
 
     expect(wrapper.text()).toContain('Aucun incident publié')
     expect(wrapper.find('article').exists()).toBe(false)
+  })
+
+  /**
+   * Audit du DOM rendu, complémentaire du lint d'accessibilité : celui-ci ne
+   * voit que le template, axe inspecte ce qui existe une fois rendu.
+   *
+   * Attention à ce qu'il ne dit PAS : jsdom ne calcule ni mise en page ni
+   * couleur, donc le contraste n'est jamais vérifié ici (cf. tests/support/axe).
+   */
+  it("ne présente aucune violation d'accessibilité détectable", async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await expectNoAccessibilityViolation(wrapper)
   })
 })

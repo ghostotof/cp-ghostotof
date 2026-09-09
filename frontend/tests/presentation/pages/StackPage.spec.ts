@@ -5,6 +5,7 @@ import { WATCH_REPOSITORY } from '../../../src/application/watch/useWatch'
 import type { WatchRepository } from '../../../src/domain/watch/repositories/WatchRepository'
 import type { WatchContent, WatchedProduct } from '../../../src/domain/watch/entities/WatchContent'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { expectNoAccessibilityViolation } from '../../support/axe'
 
 const PHP: WatchedProduct = {
   slug: 'php',
@@ -395,5 +396,19 @@ describe('StackPage', () => {
     await flushPromises()
 
     expect(wrapper.find('.table-responsive').exists()).toBe(true)
+  })
+
+  /**
+   * Audit du DOM rendu, complémentaire du lint d'accessibilité : celui-ci ne
+   * voit que le template, axe inspecte ce qui existe une fois rendu.
+   *
+   * Attention à ce qu'il ne dit PAS : jsdom ne calcule ni mise en page ni
+   * couleur, donc le contraste n'est jamais vérifié ici (cf. tests/support/axe).
+   */
+  it("ne présente aucune violation d'accessibilité détectable", async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await expectNoAccessibilityViolation(wrapper)
   })
 })

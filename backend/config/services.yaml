@@ -22,6 +22,7 @@ parameters:
     # Sous config/ et non var/ : c'est une donnée du déploiement, figée avec lui,
     # là où var/ est le seul répertoire inscriptible en production.
     app.watch_package_manifest_path: '%kernel.project_dir%/config/watch/package-manifest.json'
+    app.watch_deployed_versions_path: '%kernel.project_dir%/config/watch/deployed-versions.json'
 
 services:
     # default configuration for services in *this* file
@@ -49,6 +50,20 @@ services:
     App\Portfolio\Watch\Infrastructure\Manifest\FilePackageManifestReader:
         arguments:
             $manifestPath: '%app.watch_package_manifest_path%'
+
+    # Versions relevées au `docker build` depuis les manifestes k8s, `.env` et le
+    # lock npm. La racine du dépôt n'est visible qu'au build et, en dev, par les
+    # montages en lecture seule du docker-compose.
+    App\Portfolio\Watch\Infrastructure\Manifest\DeployedVersionsBuilder:
+        arguments:
+            $repositoryRoot: '%kernel.project_dir%/..'
+            $npmLockPath: '%kernel.project_dir%/../frontend/package-lock.json'
+            $outputPath: '%app.watch_deployed_versions_path%'
+            $tagOverrides: []
+
+    App\Portfolio\Watch\Infrastructure\Manifest\FileDeployedVersionsReader:
+        arguments:
+            $versionsPath: '%app.watch_deployed_versions_path%'
 
 when@test:
     services:

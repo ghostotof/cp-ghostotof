@@ -6,6 +6,7 @@ import { CONTRIBUTION_REPOSITORY } from '../../../src/application/contributions/
 import type { ContributionRepository } from '../../../src/domain/contributions/repositories/ContributionRepository'
 import type { Contribution } from '../../../src/domain/contributions/entities/Contribution'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { expectNoAccessibilityViolation } from '../../support/axe'
 
 const CONTRIBUTION: Contribution = {
   title: 'Retry de transport, re-prompt de validation : deux mécanismes, un seul mot',
@@ -124,5 +125,19 @@ describe('ContributionsPage', () => {
 
     expect(wrapper.text()).toContain('Aucune contribution publiée')
     expect(wrapper.find('article').exists()).toBe(false)
+  })
+
+  /**
+   * Audit du DOM rendu, complémentaire du lint d'accessibilité : celui-ci ne
+   * voit que le template, axe inspecte ce qui existe une fois rendu.
+   *
+   * Attention à ce qu'il ne dit PAS : jsdom ne calcule ni mise en page ni
+   * couleur, donc le contraste n'est jamais vérifié ici (cf. tests/support/axe).
+   */
+  it("ne présente aucune violation d'accessibilité détectable", async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await expectNoAccessibilityViolation(wrapper)
   })
 })

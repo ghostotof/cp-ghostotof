@@ -40,6 +40,14 @@ services:
     volumes:
       # Bind mount : le code vit sur l'hôte, l'IDE l'édite directement.
       - ./backend:/var/www/backend
+      # Lecture seule, pour que `app:watch:build-*` puisse relever en dev ce que
+      # le `docker build` relève en production : les versions déployées viennent
+      # des manifestes k8s, celle de Node de .env, celle de Vue du lock npm.
+      # Sans ces montages, le conteneur ne voit que backend/ et ces commandes
+      # rendraient un résultat vide — indistinguable d'un défaut.
+      - ./k8s:/var/www/k8s:ro
+      - ./.env:/var/www/.env:ro
+      - ./frontend/package-lock.json:/var/www/frontend/package-lock.json:ro
     depends_on:
       database:
         condition: service_healthy
