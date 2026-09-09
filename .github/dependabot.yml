@@ -3,10 +3,19 @@
 # GitHub sont désormais figées sur un SHA (cf. .github/workflows/*.yml) ;
 # c'est ce job `github-actions` qui les fait avancer — il met à jour le SHA
 # *et* le commentaire `# vX.Y.Z` — pour qu'un pin ne se périme pas en silence.
+#
+# `target-branch: develop` sur chaque écosystème, et ce n'est pas cosmétique :
+# sans lui Dependabot ouvre ses PR sur la branche par défaut du dépôt, donc sur
+# `main`. Une montée de version arrivait ainsi directement sur la branche de
+# production, hors du git flow, sans passer par develop ni par une préprod. Rien
+# ne se déployait pour autant — le pipeline ne se déclenche que sur un tag — mais
+# main et develop divergeaient en silence, et la divergence ne se voyait qu'au
+# moment de préparer la release suivante.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
     groups:
@@ -15,6 +24,7 @@ updates:
 
   - package-ecosystem: composer
     directory: /backend
+    target-branch: develop
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
@@ -24,6 +34,7 @@ updates:
 
   - package-ecosystem: npm
     directory: /frontend
+    target-branch: develop
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
@@ -33,10 +44,12 @@ updates:
 
   - package-ecosystem: docker
     directory: /docker/php
+    target-branch: develop
     schedule:
       interval: weekly
 
   - package-ecosystem: docker
     directory: /docker/node
+    target-branch: develop
     schedule:
       interval: weekly

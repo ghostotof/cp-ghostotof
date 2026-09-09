@@ -707,13 +707,17 @@ older — including a workstation below the project's `NODE_TAG`. **That pin is 
 to stop letting the host matter, via the `make front-*` targets above, not to constrain a dependency to suit
 one machine. A host-only constraint has no business in `package.json`.
 
-Node 26's own native (experimental) `localStorage`/`sessionStorage` globals conflict with jsdom's: without
-`--no-experimental-webstorage`, any test touching the bare `localStorage` global (not `window.localStorage`)
-before jsdom's environment fully initializes fails with `Cannot read properties of undefined (reading
-'clear')`. Fixed by prefixing `frontend/package.json`'s `test`/`test:watch` scripts with
-`NODE_OPTIONS=--no-experimental-webstorage` — **don't remove it**. Re-checked when jsdom moved to 30
-(issue #26): still required. Dropping the flag there fails immediately with
-`Cannot read properties of undefined (reading 'setItem')`, so the newer jsdom does not make it obsolete.
+Node 26's own native (experimental) `localStorage`/`sessionStorage` globals conflict with jsdom's: any test
+touching the bare `localStorage` global (not `window.localStorage`) before jsdom's environment fully
+initializes used to fail with `Cannot read properties of undefined (reading 'clear')`. The workaround was
+`NODE_OPTIONS=--no-experimental-webstorage` on `frontend/package.json`'s `test`/`test:watch` scripts, kept
+through the jsdom 30 move (issue #26), which did not make it obsolete.
+
+**Vitest 5 does** (vitest-dev/vitest#10293, "don't emit localStorage warnings on Node 26"), so the flag is
+gone. Verified both ways rather than assumed, since the failure is environment-dependent and a green suite
+alone proves nothing: on Vitest 4 without the flag, 11 tests fail on `setItem`/`clear`; on Vitest 5 without
+it, all 490 pass. If those failures ever come back, the flag is the fix — but check first whether Vitest or
+Node changed, because reinstating it would hide a real regression just as well as it hides this one.
 
 `vue-i18n`/`@intlify/*` (and transitively a few ESLint tooling packages) declare `engines.node >= 22`. The
 container satisfies it, so this is only ever an `EBADENGINE` warning if someone installs outside it — one
