@@ -70,3 +70,17 @@ patches:
       - op: replace
         path: /spec/tls/0/secretName
         value: cp-ghostotof-preprod-tls
+      # Point de sécurité posé le 2026-09-12 : préprod restreinte à mes
+      # seuls appareils. Basic Auth plutôt qu'un allowlist IP (whitelist-
+      # source-range), qui ne fonctionnerait pas pour un accès mobile — voir
+      # external-secrets.yaml pour le Secret htpasswd (preprod-basic-auth,
+      # synchronisé par ESO). Uniquement sur cet overlay : prod reste public.
+      - op: add
+        path: /metadata/annotations/nginx.ingress.kubernetes.io~1auth-type
+        value: basic
+      - op: add
+        path: /metadata/annotations/nginx.ingress.kubernetes.io~1auth-secret
+        value: preprod-basic-auth
+      - op: add
+        path: /metadata/annotations/nginx.ingress.kubernetes.io~1auth-realm
+        value: "Préprod — accès restreint"

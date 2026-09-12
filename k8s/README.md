@@ -194,6 +194,42 @@ Une fois toutes les valeurs présentes dans Scaleway Secret Manager, ESO les
 synchronise automatiquement dans le cluster (`refreshInterval: 1h` sur chaque
 `ExternalSecret`) — pas d'action supplémentaire côté `kubectl apply -k`.
 
+### 2bis. Basic Auth de la préprod (restriction d'accès, posée le 2026-09-12)
+
+La préprod n'est plus censée être publique : Basic Auth sur tout l'ingress
+(annotations `nginx.ingress.kubernetes.io/auth-*` dans l'overlay `preprod`
+uniquement — `prod` reste public). Choisi plutôt qu'un allowlist par IP
+source (`whitelist-source-range`) : une IP mobile (4G/5G) vient du CGNAT de
+l'opérateur, partagée et changeante — impossible à allowlister sans soit
+laisser passer une partie du réseau de l'opérateur, soit devoir la mettre à
+jour en permanence.
+
+Générer le fichier htpasswd (bcrypt, via une image jetable — pas besoin
+d'installer `htpasswd` en local) :
+
+```bash
+docker run --rm httpd:alpine htpasswd -nbB '<identifiant>' '<mot-de-passe>' > /tmp/preprod.htpasswd
+cat /tmp/preprod.htpasswd
+# <identifiant>:$2y$05$...
+```
+
+Uploader le **contenu complet du fichier** (pas juste le mot de passe) dans
+Scaleway Secret Manager :
+
+```bash
+scw secret secret create name=preprod-basic-auth-htpasswd path=/ region=fr-par
+scw secret version create secret-id=<id> data="$(cat /tmp/preprod.htpasswd)" region=fr-par
+shred -u /tmp/preprod.htpasswd
+```
+
+ESO synchronise le Secret `preprod-basic-auth` sous 1h maximum (forcer avec
+`kubectl annotate externalsecret preprod-basic-auth -n preprod
+force-sync=$(date +%s) --overwrite` pour ne pas attendre). **Contrairement
+aux autres Secrets** (cf. « Rotation » ci-dessous), **aucun redémarrage de
+pod n'est nécessaire** : le contrôleur ingress-nginx surveille lui-même le
+Secret référencé par `auth-secret` et recharge sa configuration nginx dès
+qu'il change.
+
 ## Rotation / mise à jour d'un Secret
 
 Mettre à jour la valeur dans Scaleway Secret Manager (nouvelle version) : ESO
