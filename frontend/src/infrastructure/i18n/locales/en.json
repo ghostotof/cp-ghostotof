@@ -454,6 +454,10 @@
       "title": "Incidents and invariants",
       "description": "This project's production outages, root causes and the rules that came out of them."
     },
+    "caseStudies": {
+      "title": "Case studies",
+      "description": "Real technical problems, the solutions retained and measured results — no client names."
+    },
     "stack": {
       "title": "My stack, alive",
       "description": "Installed versions of this site and their support deadlines, checked daily against endoflife.date."
@@ -486,6 +490,26 @@
       "rootCause": "Root cause",
       "resolution": "Resolution",
       "invariant": "Invariant"
+    }
+  },
+  "caseStudies": {
+    "eyebrow": "Case studies",
+    "intro": "Real technical problems, the solution retained, what it cost, and a measured result — never a client name.",
+    "loading": "Loading case studies…",
+    "error": "Case studies could not be loaded. Please try again later.",
+    "empty": "No case study published yet.",
+    "fields": {
+      "problem": "Problem",
+      "solution": "Solution",
+      "tradeoffs": "Tradeoffs",
+      "measuredResult": "Measured result"
+    },
+    "needsAccess": {
+      "message": "This content requires basic access — free, no credentials.",
+      "action": "Get access",
+      "granting": "Getting access…",
+      "rateLimited": "Too many attempts from this address. Please try again later.",
+      "error": "Access could not be granted. Please try again later."
     }
   },
   "stack": {

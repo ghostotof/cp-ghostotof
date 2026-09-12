@@ -73,15 +73,16 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 - [x] Task 5 — Ressource publique `GET /api/case-studies/{locale}` (`ROLE_USER`) — [#50](https://github.com/ghostotof/cp-ghostotof/issues/50) (`feature/adr0003-case-study-public-resource`, commit `4a25438`)
 - [x] Task 6 — Ressource backoffice CRUD (`ROLE_SUPER`) — [#51](https://github.com/ghostotof/cp-ghostotof/issues/51) (`feature/adr0003-case-study-backoffice`, commit `79a1057`)
 - [x] Task 7 — Commande `app:case-studies:seed` (contenu placeholder, `GuardsExistingContent`) — [#52](https://github.com/ghostotof/cp-ghostotof/issues/52) (`feature/adr0003-case-study-seed`, commit `da359be`)
-- [ ] Task 8 — Tranche frontend (page + composable + garde d'accès palier de base) — [#53](https://github.com/ghostotof/cp-ghostotof/issues/53)
+- [x] Task 8 — Tranche frontend (page + composable + garde d'accès palier de base) — [#53](https://github.com/ghostotof/cp-ghostotof/issues/53) (`feature/adr0003-case-study-frontend`, commit `4d4c3d6`)
 
 ### Checkpoint 2 — parcours complet de bout en bout
-- [ ] Un visiteur anonyme obtient le jeton (Phase 1) et atteint une vraie page de contenu (Phase 2)
-- [ ] axe-core sur la nouvelle page, suite frontend + backend vertes
-- [ ] Revue avec Christophe avant de poursuivre
+- [x] Un visiteur anonyme obtient le jeton (Phase 1) et atteint une vraie page de contenu (Phase 2) — vérifié dans un vrai navigateur (Chrome), pas seulement en test automatisé
+- [x] axe-core sur la nouvelle page, suite frontend + backend vertes
+- [ ] Revue avec Christophe avant de poursuivre — **en attente, ne pas enchaîner sur la Phase 3 sans confirmation**
 
 ### Phase 3 — État d'auth à trois cas (frontend)
 - [ ] Task 9 — `hasRole`/garde de routeur/`AppHeader` : 3e cas (palier de base), CTA vers Task 2 — [#54](https://github.com/ghostotof/cp-ghostotof/issues/54)
+- [ ] Task 13 — Action « Terminer cet accès » pour le palier de base (dépend de Task 9) — [#65](https://github.com/ghostotof/cp-ghostotof/issues/65)
 
 ### Phase 4 — D5, contenus restants (priorité plus basse, indépendants)
 - [ ] Task 10 — CV sans identité (même forme que Task 4–7, second type de contenu) — [#55](https://github.com/ghostotof/cp-ghostotof/issues/55)

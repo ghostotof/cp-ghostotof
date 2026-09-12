@@ -47,6 +47,10 @@ import { ADMIN_USER_REPOSITORY } from './application/admin/users/useAdminUsers'
 import { HttpAdminUserRepository } from './infrastructure/admin/users/HttpAdminUserRepository'
 import { ACCOUNT_REPOSITORY } from './application/account/useAccountPasswordSetup'
 import { HttpAccountRepository } from './infrastructure/account/HttpAccountRepository'
+import { CASE_STUDY_REPOSITORY } from './application/caseStudies/useCaseStudies'
+import { HttpCaseStudyRepository } from './infrastructure/caseStudies/HttpCaseStudyRepository'
+import { BASE_ACCESS_REPOSITORY } from './application/baseAccess/useBaseAccess'
+import { HttpBaseAccessRepository } from './infrastructure/baseAccess/HttpBaseAccessRepository'
 import { getApiUrl } from './infrastructure/config/getApiUrl'
 
 const app = createApp(App)
@@ -63,6 +67,8 @@ app.provide(ADMIN_EXPERIENCE_TECHNOLOGY_REPOSITORY, new HttpAdminExperienceTechn
 app.provide(ABOUT_CONTENT_REPOSITORY, new HttpAboutContentRepository(apiUrl))
 app.provide(QUALITY_CONTENT_REPOSITORY, new HttpQualityContentRepository(apiUrl))
 app.provide(CONTRIBUTION_REPOSITORY, new HttpContributionRepository(apiUrl))
+app.provide(CASE_STUDY_REPOSITORY, new HttpCaseStudyRepository(apiUrl))
+app.provide(BASE_ACCESS_REPOSITORY, new HttpBaseAccessRepository(apiUrl))
 app.provide(INCIDENT_REPOSITORY, new HttpIncidentRepository(apiUrl))
 app.provide(WATCH_REPOSITORY, new HttpWatchRepository(apiUrl))
 app.provide(ADMIN_WATCHED_PRODUCT_REPOSITORY, new HttpAdminWatchedProductRepository(apiUrl))
