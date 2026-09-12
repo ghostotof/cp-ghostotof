@@ -71,7 +71,7 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 ### Phase 2 — D5 (1/3) : études de cas techniques — première tranche verticale complète
 - [x] Task 4 — Bounded context `Portfolio/CaseStudy` (entité + migration + repository) — [#49](https://github.com/ghostotof/cp-ghostotof/issues/49) (`feature/adr0003-case-study-entity`, commit `ffd4590`)
 - [x] Task 5 — Ressource publique `GET /api/case-studies/{locale}` (`ROLE_USER`) — [#50](https://github.com/ghostotof/cp-ghostotof/issues/50) (`feature/adr0003-case-study-public-resource`, commit `4a25438`)
-- [ ] Task 6 — Ressource backoffice CRUD (`ROLE_SUPER`) — [#51](https://github.com/ghostotof/cp-ghostotof/issues/51)
+- [x] Task 6 — Ressource backoffice CRUD (`ROLE_SUPER`) — [#51](https://github.com/ghostotof/cp-ghostotof/issues/51) (`feature/adr0003-case-study-backoffice`, commit `79a1057`)
 - [ ] Task 7 — Commande `app:case-studies:seed` (contenu placeholder, `GuardsExistingContent`) — [#52](https://github.com/ghostotof/cp-ghostotof/issues/52)
 - [ ] Task 8 — Tranche frontend (page + composable + garde d'accès palier de base) — [#53](https://github.com/ghostotof/cp-ghostotof/issues/53)
 
