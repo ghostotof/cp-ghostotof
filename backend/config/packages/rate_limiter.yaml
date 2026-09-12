@@ -19,3 +19,15 @@ framework:
             policy: 'sliding_window'
             limit: 10
             interval: '1 hour'
+
+        # Anti-abus sur l'endpoint d'accès au palier de base (ADR 0003 D6,
+        # POST /api/account/base-access) : émet un jeton ROLE_USER sans
+        # compte persisté. Aucun effet de bord coûteux (pas d'e-mail, pas de
+        # hash de mot de passe) contrairement aux deux limiteurs ci-dessus —
+        # plafond volontairement plus haut, mais borné : sans lui, l'endpoint
+        # devient un distributeur de jetons (D6). Clé : l'IP de l'appelant
+        # (cf. SymfonyBaseAccessRateLimiter).
+        base_access:
+            policy: 'sliding_window'
+            limit: 20
+            interval: '1 hour'
