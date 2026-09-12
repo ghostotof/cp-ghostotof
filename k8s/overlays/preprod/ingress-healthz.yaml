@@ -1,0 +1,35 @@
+# Exempte /healthz de la Basic Auth posée sur l'ingress préprod (incident
+# v0.8.5) : ingress-nginx applique les annotations auth-* à l'ensemble des
+# chemins d'un même objet Ingress, il n'existe pas d'annotation d'exclusion
+# par chemin. La technique documentée est de scinder en plusieurs objets
+# Ingress pour le même host — un chemin plus spécifique (Exact) prend le pas
+# sur le préfixe général `/` de l'ingress principal, sans hériter de ses
+# annotations. Même pattern que k8s/overlays/prod/ingress-www-redirect.yaml.
+#
+# Cible le frontend, dont /healthz (docker/node/nginx.conf) ne renvoie qu'un
+# "ok" statique, sans donnée applicative — aucune régression de
+# confidentialité à le laisser public. Sert le smoke test du pipeline
+# (`curl .../healthz` en anonyme) et tout futur contrôle de vivacité externe.
+#
+# Pas de bloc `tls` ni d'annotation cert-manager ici : le host est déjà
+# couvert par le certificat de l'ingress principal (même host,
+# cp-ghostotof-preprod-tls) — nginx-ingress fusionne tous les objets Ingress
+# d'un même host dans un seul bloc serveur HTTPS. Dupliquer `tls` ferait
+# gérer le même secret par deux Certificate cert-manager pour rien.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cp-ghostotof-healthz
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: preprod.cp-ghostotof.com
+      http:
+        paths:
+          - path: /healthz
+            pathType: Exact
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
