@@ -42,8 +42,11 @@ final readonly class CsrfCookieRequestSubscriber
      *   qu'un attaquant pourrait faire agir à son insu) — la protection
      *   double-submit-cookie n'a pas de sens ici. Le spam reste un risque
      *   distinct, traité par le honeypot de ContactMessageResource.
+     * - /api/account/base-access (ADR 0003 D6) : même raisonnement — l'appelant
+     *   est anonyme par définition (c'est le but de l'endpoint) et n'a donc
+     *   aucun cookie XSRF-TOKEN préexistant à double-soumettre.
      */
-    private const array EXCLUDED_PATHS = ['/api/login_check', '/api/contact'];
+    private const array EXCLUDED_PATHS = ['/api/login_check', '/api/contact', '/api/account/base-access'];
 
     /**
      * - /api/account/password-setup/ : parcours public de définition de mot de
