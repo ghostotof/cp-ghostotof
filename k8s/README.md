@@ -230,6 +230,21 @@ pod n'est nécessaire** : le contrôleur ingress-nginx surveille lui-même le
 Secret référencé par `auth-secret` et recharge sa configuration nginx dès
 qu'il change.
 
+**Secret GitHub Actions associé** (créé côté GitHub, jamais dans ce dépôt) :
+le job `audit-preprod` du pipeline (`tools/audit-prod.sh`) fait des requêtes
+anonymes sur la préprod pour vérifier ses en-têtes de sécurité et l'absence
+de chemins sensibles exposés — sans identifiants, il ne recevrait que des
+401 et prendrait chacun pour une fuite. `PREPROD_BASIC_AUTH` porte les
+mêmes identifiants que le htpasswd ci-dessus, au format
+`utilisateur:mot_de_passe` (celui que `curl -u` attend, pas le hash bcrypt) :
+
+```bash
+gh secret set PREPROD_BASIC_AUTH --body '<identifiant>:<mot-de-passe>'
+```
+
+Absent côté `audit-prod` (la vraie prod, non protégée) : le script s'exécute
+alors sans `-u`, comportement inchangé.
+
 ## Rotation / mise à jour d'un Secret
 
 Mettre à jour la valeur dans Scaleway Secret Manager (nouvelle version) : ESO

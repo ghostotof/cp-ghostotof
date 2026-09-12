@@ -20,6 +20,17 @@ BASE="https://${DOMAIN}"
 # Timeout court sur chaque requête : un domaine qui ne répond pas ne doit pas
 # faire tourner le job en boucle jusqu'au timeout du runner CI.
 CURL_OPTS=(--connect-timeout 5 --max-time 15)
+
+# Préprod exige une Basic Auth (point de sécurité 2026-09-12) : sans elle,
+# chaque requête de cet audit recevrait 401 au lieu du vrai contenu, et les
+# sections 6/7 ci-dessous interpréteraient ce 401 comme des chemins
+# sensibles exposés — des dizaines de faux échecs bloquants. AUDIT_BASIC_AUTH
+# ("utilisateur:mot_de_passe") est optionnelle : absente contre la vraie
+# prod (non protégée), fournie par le job audit-preprod du pipeline via le
+# secret GitHub PREPROD_BASIC_AUTH.
+if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
+  CURL_OPTS+=(-u "$AUDIT_BASIC_AUTH")
+fi
 DIG_TIMEOUT=(+time=3 +tries=1)
 
 # Petit helper d'affichage pour séparer visuellement les sections
