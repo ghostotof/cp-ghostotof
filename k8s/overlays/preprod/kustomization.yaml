@@ -75,6 +75,14 @@ patches:
       # source-range), qui ne fonctionnerait pas pour un accès mobile — voir
       # external-secrets.yaml pour le Secret htpasswd (preprod-basic-auth,
       # synchronisé par ESO). Uniquement sur cet overlay : prod reste public.
+      #
+      # auth-realm en ASCII strict (incident v0.8.4) : le webhook de
+      # validation d'ingress-nginx rejette toute valeur contenant un
+      # caractère hors ASCII (accent, tiret cadratin) — "annotation ...
+      # contains invalid value". Le premier essai ("Préprod — accès
+      # restreint") a fait échouer deploy-preprod, sans impact sur la prod
+      # (rollback-preprod a restauré l'état précédent, deploy-prod n'a
+      # jamais été atteint).
       - op: add
         path: /metadata/annotations/nginx.ingress.kubernetes.io~1auth-type
         value: basic
@@ -83,4 +91,4 @@ patches:
         value: preprod-basic-auth
       - op: add
         path: /metadata/annotations/nginx.ingress.kubernetes.io~1auth-realm
-        value: "Préprod — accès restreint"
+        value: "Preprod - acces restreint"
