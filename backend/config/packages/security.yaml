@@ -75,6 +75,9 @@ security:
         - { path: ^/api/backoffice, roles: ROLE_SUPER }
         - { path: ^/api/me, roles: ROLE_TRUSTED }
         - { path: ^/api/cv, roles: ROLE_TRUSTED }
+        # ADR 0003 D5 : contenu du palier de base — publiable en soi, mais pas
+        # anonyme. ROLE_USER suffit (le jeton D6 comme un compte réel).
+        - { path: ^/api/case-studies, roles: ROLE_USER }
 
 when@test:
     security:
