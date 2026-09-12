@@ -10,6 +10,17 @@ security:
                 class: App\Security\User\Domain\Entity\CpgUser
                 property: username
 
+        # ADR 0003 D6 : reconnaît un jeton du palier de base (marqueur "guest"
+        # dans le payload JWT signé) sans jamais interroger Doctrine — voir
+        # GuestUserProvider. Retombe sur cpg_users pour tout le reste, donc
+        # aucun changement de comportement pour un compte réel.
+        guest_users:
+            id: App\Security\User\Infrastructure\Security\GuestUserProvider
+
+        app_users:
+            chain:
+                providers: [guest_users, cpg_users]
+
     firewalls:
         # Ensure dev tools and static assets are always allowed
         dev:
@@ -46,7 +57,7 @@ security:
         api:
             pattern: ^/api
             stateless: true
-            provider: cpg_users
+            provider: app_users
             jwt: ~
             logout:
                 path: /api/logout

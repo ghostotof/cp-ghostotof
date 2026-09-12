@@ -62,6 +62,7 @@ final class ApiRouteExposureTest extends WebTestCase
         // --- Parcours publics par conception.
         '/api/contact' => 'Formulaire de contact anonyme (honeypot + rate limit IP).',
         '/api/account/password-setup/{token}' => 'Définition du mot de passe via lien e-mail : l\'appelant n\'a pas encore de compte utilisable (rate limit IP).',
+        '/api/account/base-access' => 'ADR 0003 D6 : émet un jeton ROLE_USER (palier de base, publiable/non-identifiant) sans authentification — c\'est exactement l\'objet de l\'endpoint. Rate limité par IP (BaseAccessRateLimitRequestListener). N\'ouvre jamais /api/cv ni /api/me (ROLE_TRUSTED requis), voir BaseAccessControllerTest.',
         '/api/login_check' => 'Point d\'entrée du login : par définition atteint sans être authentifié.',
 
         // --- Infrastructure API Platform. enable_docs/enable_entrypoint sont à
