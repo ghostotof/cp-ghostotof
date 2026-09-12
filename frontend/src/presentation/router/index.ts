@@ -30,6 +30,7 @@ const AboutPage = () => import('../pages/AboutPage.vue')
 const ExperiencePage = () => import('../pages/ExperiencePage.vue')
 const ContributionsPage = () => import('../pages/ContributionsPage.vue')
 const IncidentsPage = () => import('../pages/IncidentsPage.vue')
+const CaseStudiesPage = () => import('../pages/CaseStudiesPage.vue')
 const StackPage = () => import('../pages/StackPage.vue')
 const ContactPage = () => import('../pages/ContactPage.vue')
 const LoginPage = () => import('../pages/LoginPage.vue')
@@ -89,6 +90,16 @@ export const router = createRouter({
           name: 'incidents',
           component: IncidentsPage,
           meta: { titleKey: 'seo.incidents.title', descriptionKey: 'seo.incidents.description' },
+        },
+        {
+          path: 'case-studies',
+          name: 'case-studies',
+          component: CaseStudiesPage,
+          // ADR 0003 D1 : le palier de base (ROLE_USER) est « publiable, non
+          // indexable » par construction — pas une protection, une discrétion.
+          // noindex ici, pas requiresAuth : un visiteur anonyme atteint la
+          // page et voit l'action qui débloque l'accès, il n'est pas redirigé.
+          meta: { titleKey: 'seo.caseStudies.title', descriptionKey: 'seo.caseStudies.description', noindex: true },
         },
         {
           path: 'stack',

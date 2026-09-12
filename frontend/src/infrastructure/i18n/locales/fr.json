@@ -454,6 +454,10 @@
       "title": "Incidents et invariants",
       "description": "Pannes de production de ce projet, causes racines et règles qui en sont sorties."
     },
+    "caseStudies": {
+      "title": "Études de cas",
+      "description": "Problèmes techniques réels, solutions retenues et résultats mesurés — sans nom de client."
+    },
     "stack": {
       "title": "Ma stack, en vie",
       "description": "Versions installées de ce site et leurs échéances de support, relevées chaque jour auprès d'endoflife.date."
@@ -486,6 +490,26 @@
       "rootCause": "Cause racine",
       "resolution": "Résolution",
       "invariant": "Invariant"
+    }
+  },
+  "caseStudies": {
+    "eyebrow": "Études de cas",
+    "intro": "Des problèmes techniques réels, la solution retenue, ce qu'elle a coûté, et un résultat mesuré — jamais de nom de client.",
+    "loading": "Chargement des études de cas…",
+    "error": "Les études de cas n'ont pas pu être chargées. Réessayez plus tard.",
+    "empty": "Aucune étude de cas publiée pour le moment.",
+    "fields": {
+      "problem": "Problème",
+      "solution": "Solution",
+      "tradeoffs": "Compromis",
+      "measuredResult": "Résultat mesuré"
+    },
+    "needsAccess": {
+      "message": "Ce contenu demande un accès de base, gratuit et sans identifiants.",
+      "action": "Obtenir l'accès",
+      "granting": "Obtention de l'accès…",
+      "rateLimited": "Trop de tentatives depuis cette adresse. Réessayez plus tard.",
+      "error": "L'accès n'a pas pu être obtenu. Réessayez plus tard."
     }
   },
   "stack": {
