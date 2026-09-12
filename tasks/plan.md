@@ -69,7 +69,7 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 - [ ] Suite complète (backend) verte, PHPStan max + Rector verts
 
 ### Phase 2 — D5 (1/3) : études de cas techniques — première tranche verticale complète
-- [ ] Task 4 — Bounded context `Portfolio/CaseStudy` (entité + migration + repository) — [#49](https://github.com/ghostotof/cp-ghostotof/issues/49)
+- [x] Task 4 — Bounded context `Portfolio/CaseStudy` (entité + migration + repository) — [#49](https://github.com/ghostotof/cp-ghostotof/issues/49) (`feature/adr0003-case-study-entity`, commit `ffd4590`)
 - [ ] Task 5 — Ressource publique `GET /api/case-studies/{locale}` (`ROLE_USER`) — [#50](https://github.com/ghostotof/cp-ghostotof/issues/50)
 - [ ] Task 6 — Ressource backoffice CRUD (`ROLE_SUPER`) — [#51](https://github.com/ghostotof/cp-ghostotof/issues/51)
 - [ ] Task 7 — Commande `app:case-studies:seed` (contenu placeholder, `GuardsExistingContent`) — [#52](https://github.com/ghostotof/cp-ghostotof/issues/52)
