@@ -7,6 +7,7 @@ resources:
   - namespace.yaml
   - ../../base
   - external-secrets.yaml
+  - ingress-healthz.yaml
 
 # CORS_ALLOW_ORIGIN est une regex (cf. backend/config/packages/nelmio_cors.yaml).
 # <domaine> est un placeholder : à remplacer une fois cp-ghostotof.com acheté
