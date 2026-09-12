@@ -27,6 +27,7 @@ api_platform:
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException: 409
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException: 404
         App\Portfolio\Contribution\Domain\Exception\ContributionNotFoundException: 404
+        App\Portfolio\CaseStudy\Domain\Exception\CaseStudyNotFoundException: 404
         App\Portfolio\Incident\Domain\Exception\IncidentNotFoundException: 404
         App\Portfolio\Watch\Domain\Exception\WatchedProductNotFoundException: 404
         App\Portfolio\Watch\Domain\Exception\WatchedProductSlugAlreadyUsedException: 409
