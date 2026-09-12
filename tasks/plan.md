@@ -82,6 +82,7 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 
 ### Phase 3 — État d'auth à trois cas (frontend)
 - [ ] Task 9 — `hasRole`/garde de routeur/`AppHeader` : 3e cas (palier de base), CTA vers Task 2 — [#54](https://github.com/ghostotof/cp-ghostotof/issues/54)
+- [ ] Task 13 — Action « Terminer cet accès » pour le palier de base (dépend de Task 9) — [#65](https://github.com/ghostotof/cp-ghostotof/issues/65)
 
 ### Phase 4 — D5, contenus restants (priorité plus basse, indépendants)
 - [ ] Task 10 — CV sans identité (même forme que Task 4–7, second type de contenu) — [#55](https://github.com/ghostotof/cp-ghostotof/issues/55)
