@@ -72,7 +72,7 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 - [x] Task 4 — Bounded context `Portfolio/CaseStudy` (entité + migration + repository) — [#49](https://github.com/ghostotof/cp-ghostotof/issues/49) (`feature/adr0003-case-study-entity`, commit `ffd4590`)
 - [x] Task 5 — Ressource publique `GET /api/case-studies/{locale}` (`ROLE_USER`) — [#50](https://github.com/ghostotof/cp-ghostotof/issues/50) (`feature/adr0003-case-study-public-resource`, commit `4a25438`)
 - [x] Task 6 — Ressource backoffice CRUD (`ROLE_SUPER`) — [#51](https://github.com/ghostotof/cp-ghostotof/issues/51) (`feature/adr0003-case-study-backoffice`, commit `79a1057`)
-- [ ] Task 7 — Commande `app:case-studies:seed` (contenu placeholder, `GuardsExistingContent`) — [#52](https://github.com/ghostotof/cp-ghostotof/issues/52)
+- [x] Task 7 — Commande `app:case-studies:seed` (contenu placeholder, `GuardsExistingContent`) — [#52](https://github.com/ghostotof/cp-ghostotof/issues/52) (`feature/adr0003-case-study-seed`, commit `da359be`)
 - [ ] Task 8 — Tranche frontend (page + composable + garde d'accès palier de base) — [#53](https://github.com/ghostotof/cp-ghostotof/issues/53)
 
 ### Checkpoint 2 — parcours complet de bout en bout
