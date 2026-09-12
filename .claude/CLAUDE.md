@@ -18,19 +18,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - The frontend is fully linted with ESLint.
    - The backend is fully linted with PHPStan.
 8. The security must be a top priority.
-9. In its final state, the website will have an authentication system with a generic guest user.
-   Without authentication, the site must not expose any personal information that could identify me.
-   This information becomes available once the user is authenticated.
-   - **Scope, as settled on 2026-09-04** (audit C3): this covers the **CV** (`GET /api/cv`, `ROLE_USER`) —
+9. In its final state, the website implements the three-tier access model of ADR 0003 (anonymous, a
+   discretion-only base tier, and a nominative trusted tier) rather than a shared generic guest account.
+   Without `ROLE_TRUSTED`, the site must not expose any personal information that could identify me. This
+   information becomes available once `ROLE_TRUSTED` is granted.
+   - **Scope, as settled on 2026-09-04** (audit C3), **role updated 2026-09-12** (ADR 0003 D2/D4): this
+     covers the **CV** (`GET /api/cv`, `ROLE_TRUSTED`) —
      real name, employers, career history — and `GET /api/me`. It does **not** cover the About page: its
      content is deliberately public in full, including the "hobbies" panel, because that content is authored
      through the backoffice and what gets published is decided at authoring time. Don't reintroduce a
      conditional filter there (see `AboutContentResource`'s docblock).
    - "Expose", not "display": hiding a field client-side is presentation, never protection. The enforcement
      rule and its automated guard live under "Backoffice" below.
-   - There is no tier between anonymous and full access — `ROLE_USER` opens the CV outright. Leaking the
-     shared guest account's credentials is equivalent to publishing the CV; see `docs/adr/0001` for the
-     operational hygiene that follows (dedicated password, rotation, never `ROLE_SUPER`).
+   - **There is a base tier below the trusted one** (`ROLE_USER`, ADR 0003 D1/D2): granted to anyone
+     authenticated, publishable and non-identifying by construction — it must never gate CV-level data.
+     Only `ROLE_TRUSTED` does, and it is granted **nominatively** by a `ROLE_SUPER` account through the
+     backoffice invitation flow (`CpgUserInviter::invite`), never via a shared or published credential.
+     `ROLE_SUPER` inherits `ROLE_TRUSTED` via the `role_hierarchy` in `security.yaml`. See `docs/adr/0003`
+     for the full model, `docs/adr/0001` (amended) for the invitation mechanics.
+   - **Not yet built** (ADR 0003 D5/D6): the credential-free, self-serve way to reach the base tier, and
+     the content that tier is meant to carry. Until then `ROLE_USER` is reachable only through a real
+     account (CLI or invited) that was never granted `ROLE_TRUSTED` — e.g. the dev-only `demo` account.
 10. The modifications must follow the git flow planned for this project on GitHub (main branch "main", next release "develop", new feature "feature", etc...)
 11. The resulting can be shown during an interview.
 12. The resulting must be fully multilingual (French, English)
