@@ -110,7 +110,7 @@ const en: PortfolioLocaleContent = {
         paragraphs: ['Depending on how you use the site, the following data may be collected:'],
         list: [
           'Contact form: name, email address and message you voluntarily enter.',
-          "Authentication: username and password, for the site's single demo account (no public sign-up is offered).",
+          'Authentication: username and password, for individually granted accounts (no public sign-up is offered, no shared account).',
           'IP address: used transiently to rate-limit abuse of the contact form.',
           'Language preference: stored locally in your browser (localStorage), never sent to the server.',
         ],

@@ -51,11 +51,19 @@ security:
             logout:
                 path: /api/logout
 
+    # ADR 0003 : ROLE_USER est le palier de base (authentifié, sans plus) ;
+    # ROLE_TRUSTED (identifiant, accordé nominativement) et ROLE_SUPER
+    # l'englobent. Doit rester déclaré avant tout access_control qui
+    # référence ROLE_TRUSTED.
+    role_hierarchy:
+        ROLE_TRUSTED: [ROLE_USER]
+        ROLE_SUPER: [ROLE_TRUSTED]
+
     # Note: Only the *first* matching rule is applied
     access_control:
         - { path: ^/api/backoffice, roles: ROLE_SUPER }
-        - { path: ^/api/me, roles: ROLE_USER }
-        - { path: ^/api/cv, roles: ROLE_USER }
+        - { path: ^/api/me, roles: ROLE_TRUSTED }
+        - { path: ^/api/cv, roles: ROLE_TRUSTED }
 
 when@test:
     security:

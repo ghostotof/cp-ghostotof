@@ -182,6 +182,29 @@ final class ApiRouteExposureTest extends WebTestCase
     }
 
     /**
+     * Invariant n°4 — le palier de base (ADR 0003) ne suffit pas pour les
+     * données identifiantes. Un compte authentifié sans ROLE_TRUSTED doit se
+     * voir refuser /api/cv et /api/me, même si ROLE_USER (le palier de base)
+     * est accordé.
+     */
+    public function testCvAndMeRefuseAnAuthenticatedUserWithoutRoleTrusted(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
+        $this->loginAs($client, self::PLAIN_USERNAME, TestCredentials::plainPassword());
+
+        foreach (['/api/cv', '/api/me'] as $path) {
+            $client->request('GET', $path);
+
+            self::assertSame(
+                403,
+                $client->getResponse()->getStatusCode(),
+                sprintf('GET %s doit répondre 403 à un compte sans ROLE_TRUSTED.', $path),
+            );
+        }
+    }
+
+    /**
      * Toutes les routes /api hors liste blanche, dédupliquées par (chemin, méthode).
      *
      * @return list<array{0: string, 1: string}>

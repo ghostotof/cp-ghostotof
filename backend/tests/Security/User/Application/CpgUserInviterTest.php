@@ -66,7 +66,9 @@ final class CpgUserInviterTest extends TestCase
         self::assertSame('jean.dupont', $user->getUsername());
         self::assertSame('jean.dupont@example.com', $user->getEmail());
         self::assertTrue($user->isPendingActivation());
-        self::assertSame(['ROLE_USER'], $user->getRoles());
+        // ADR 0003 D1 : l'invitation par un ROLE_SUPER *est* l'octroi
+        // nominatif de ROLE_TRUSTED, pas un simple compte au palier de base.
+        self::assertSame([CpgUser::ROLE_TRUSTED, 'ROLE_USER'], $user->getRoles());
 
         self::assertInstanceOf(SendAccountInvitationMessage::class, $dispatched);
         self::assertSame(self::GENERATED_ID, $dispatched->userId);
