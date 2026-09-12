@@ -43,7 +43,12 @@ final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministrato
             throw CannotDemoteLastSuperAdminException::forUsername($user->getUsername());
         }
 
-        $user->setRoles($grant ? [CpgUser::ROLE_SUPER] : []);
+        // ADR 0003 D1 : ROLE_SUPER implique déjà ROLE_TRUSTED via la
+        // role_hierarchy — une rétrogradation ramène donc au palier réel de
+        // la personne (ROLE_TRUSTED), jamais au palier de base. Il n'y a pas
+        // de perte de confiance implicite lors d'une simple rétrogradation
+        // administrative.
+        $user->setRoles($grant ? [CpgUser::ROLE_SUPER] : [CpgUser::ROLE_TRUSTED]);
         $this->cpgUserRepository->save($user);
     }
 }

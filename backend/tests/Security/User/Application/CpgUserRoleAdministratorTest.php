@@ -42,6 +42,10 @@ final class CpgUserRoleAdministratorTest extends TestCase
         (new CpgUserRoleAdministrator($repository))->setSuperAdmin(2, false, $actingUser);
 
         self::assertNotContains(CpgUser::ROLE_SUPER, $target->getRoles());
+        // ADR 0003 D1 : ROLE_SUPER implique déjà ROLE_TRUSTED (role_hierarchy) ;
+        // une rétrogradation ramène donc au palier réel de la personne, jamais
+        // au palier de base — ROLE_TRUSTED n'était pas un droit temporaire.
+        self::assertContains(CpgUser::ROLE_TRUSTED, $target->getRoles());
     }
 
     public function testRevokeThrowsWhenTargetIsTheLastSuperAdmin(): void

@@ -88,6 +88,8 @@ final class BackofficeUserInviteResourceTest extends WebTestCase
         self::assertSame('jean.dupont@example.com', $body['email']);
         self::assertSame('pending', $body['status']);
         self::assertContains('ROLE_USER', $body['roles']);
+        // ADR 0003 D1 : l'invitation par un ROLE_SUPER est l'octroi nominatif de ROLE_TRUSTED.
+        self::assertContains(CpgUser::ROLE_TRUSTED, $body['roles']);
         self::assertArrayNotHasKey('password', $body);
 
         // Le message ne porte plus que { userId, locale } (audit C2 / D3) :

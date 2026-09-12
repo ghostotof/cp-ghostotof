@@ -42,6 +42,10 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
         // passe défini via le lien d'invitation (cf. PasswordSetupService).
         $user = new CpgUser($this->usernameGenerator->generateFromEmail($email), '');
         $user->setEmail($email);
+        // ADR 0003 D1 : inviter depuis le backoffice *est* l'octroi nominatif
+        // de ROLE_TRUSTED par un ROLE_SUPER — ce n'est jamais un compte au
+        // seul palier de base.
+        $user->setRoles([CpgUser::ROLE_TRUSTED]);
         $user->markInvited($this->clock->now());
 
         try {
