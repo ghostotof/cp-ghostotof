@@ -206,6 +206,34 @@ final class ApiRouteExposureTest extends WebTestCase
     }
 
     /**
+     * Invariant n°5 — ADR 0003 D6. Même garde que l'invariant n°4, mais côté
+     * jeton du palier de base émis par POST /api/account/base-access (aucun
+     * compte, cf. GuestUser/GuestUserProvider) plutôt qu'un compte enregistré :
+     * les deux chemins vers ROLE_USER doivent être également insuffisants pour
+     * le CV/api-me.
+     */
+    public function testCvAndMeRefuseABaseAccessToken(): void
+    {
+        $client = self::createClient();
+        // Le rate limiter "base_access" est backé par le filesystem (cache.rate_limiter),
+        // donc partagé entre tests exécutés sous la même IP client (127.0.0.1) —
+        // même rationale que ContactMessageResourceTest::createClientWithFreshRateLimiter().
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $client->request('POST', '/api/account/base-access');
+        self::assertResponseIsSuccessful();
+
+        foreach (['/api/cv', '/api/me'] as $path) {
+            $client->request('GET', $path);
+
+            self::assertSame(
+                403,
+                $client->getResponse()->getStatusCode(),
+                sprintf('GET %s doit répondre 403 à un jeton du palier de base (sans ROLE_TRUSTED).', $path),
+            );
+        }
+    }
+
+    /**
      * Toutes les routes /api hors liste blanche, dédupliquées par (chemin, méthode).
      *
      * @return list<array{0: string, 1: string}>

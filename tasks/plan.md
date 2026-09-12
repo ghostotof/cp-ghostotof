@@ -60,7 +60,7 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 ### Phase 1 — D6 : mécanisme d'accès au palier de base
 - [x] Task 1 — Rate limiter dédié à l'endpoint d'accès de base — [#46](https://github.com/ghostotof/cp-ghostotof/issues/46) (`feature/adr0003-base-access-rate-limiter`, commit `54bb642`)
 - [x] Task 2 — `POST /api/account/base-access` : jeton `ROLE_USER` sans compte — [#47](https://github.com/ghostotof/cp-ghostotof/issues/47) (`feature/adr0003-base-access-rate-limiter`, commit `04c1b2c`)
-- [ ] Task 3 — Test de régression : le jeton n'ouvre jamais `/api/cv`/`/api/me` — [#48](https://github.com/ghostotof/cp-ghostotof/issues/48)
+- [x] Task 3 — Test de régression : le jeton n'ouvre jamais `/api/cv`/`/api/me` — [#48](https://github.com/ghostotof/cp-ghostotof/issues/48) (`feature/adr0003-base-access-regression-test`, commit `b7ec52a`)
 
 ### Checkpoint 1
 - [ ] Rate limiter actif et testé
