@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\Authentication;
 
 use App\Security\User\Application\CpgUserRegistrarInterface;
+use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
@@ -37,7 +38,9 @@ final class AuthenticationFlowTest extends WebTestCase
     public function testFullLoginMeLogoutCycle(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::USERNAME, TestCredentials::plainPassword());
+        // ADR 0003 : /api/me exige ROLE_TRUSTED (au-delà du palier de base
+        // ROLE_USER) — accordé ici pour couvrir le cycle complet jusqu'au bout.
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::USERNAME, TestCredentials::plainPassword(), [CpgUser::ROLE_TRUSTED]);
 
         // 1. Mauvais mot de passe => 401
         $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
@@ -60,7 +63,7 @@ final class AuthenticationFlowTest extends WebTestCase
         $data = json_decode((string) $client->getResponse()->getContent(), true);
         self::assertArrayNotHasKey('token', $data);
         self::assertSame(self::USERNAME, $data['user']['username']);
-        self::assertSame(['ROLE_USER'], $data['user']['roles']);
+        self::assertSame([CpgUser::ROLE_TRUSTED, 'ROLE_USER'], $data['user']['roles']);
 
         $bearerCookie = $client->getCookieJar()->get('BEARER');
         self::assertNotNull($bearerCookie);
@@ -75,7 +78,7 @@ final class AuthenticationFlowTest extends WebTestCase
         self::assertResponseIsSuccessful();
         $me = json_decode((string) $client->getResponse()->getContent(), true);
         self::assertSame(self::USERNAME, $me['user']['username']);
-        self::assertSame(['ROLE_USER'], $me['user']['roles']);
+        self::assertSame([CpgUser::ROLE_TRUSTED, 'ROLE_USER'], $me['user']['roles']);
 
         // 5. Logout sans header CSRF => 403
         $client->request('POST', '/api/logout');

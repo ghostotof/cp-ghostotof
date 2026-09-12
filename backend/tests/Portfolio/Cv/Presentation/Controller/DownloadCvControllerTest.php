@@ -6,6 +6,7 @@ namespace App\Tests\Portfolio\Cv\Presentation\Controller;
 
 use App\Portfolio\Cv\Presentation\Controller\DownloadCvController;
 use App\Security\User\Application\CpgUserRegistrarInterface;
+use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
@@ -47,10 +48,33 @@ final class DownloadCvControllerTest extends WebTestCase
         self::assertResponseStatusCodeSame(401);
     }
 
-    public function testAuthenticatedRequestReturnsThePdfFixture(): void
+    /**
+     * Miroir du cas d'échec de ApiRouteExposureTest::testCvAndMeRefuseAnAuthenticatedUserWithoutRoleTrusted :
+     * couvre ici le comportement précis (403, pas juste "pas 200") plutôt que
+     * la seule non-régression transverse.
+     */
+    public function testAuthenticatedRequestWithoutRoleTrustedIsForbidden(): void
     {
         $client = self::createClient();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::USERNAME, TestCredentials::plainPassword());
+
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
+            'username' => self::USERNAME,
+            'password' => TestCredentials::plainPassword(),
+        ]));
+        self::assertResponseIsSuccessful();
+
+        $client->request('GET', '/api/cv');
+
+        self::assertResponseStatusCodeSame(403);
+    }
+
+    public function testAuthenticatedRequestReturnsThePdfFixture(): void
+    {
+        $client = self::createClient();
+        // ADR 0003 : /api/cv exige ROLE_TRUSTED, au-delà du simple palier
+        // de base ROLE_USER — accordé ici pour couvrir le cas d'accès autorisé.
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::USERNAME, TestCredentials::plainPassword(), [CpgUser::ROLE_TRUSTED]);
 
         $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
             'username' => self::USERNAME,
