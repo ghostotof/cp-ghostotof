@@ -8,8 +8,9 @@
     "contributions": "Contributions",
     "incidents": "Incidents",
     "caseStudies": "Case studies",
-    "anonymousCv": "Anonymous CV",
-    "dossiers": "Dossiers"
+    "anonymousCv": "CV without identity",
+    "career": "Career",
+    "lessonsLearned": "Lessons learned"
   },
   "common": {
     "downloadCv": "Download my CV",
@@ -48,7 +49,7 @@
       "users": "Users",
       "contributions": "Contributions",
       "incidents": "Incidents",
-      "anonymousCv": "Anonymous CV",
+      "anonymousCv": "CV without identity",
       "watch": "Watch"
     },
     "quality": {
@@ -492,7 +493,7 @@
       "description": "This project's production outages, root causes and the rules that came out of them."
     },
     "anonymousCv": {
-      "title": "Anonymous CV",
+      "title": "CV without identity",
       "description": "Skills, seniority and achievements by domain — no name, employer or contact details."
     },
     "caseStudies": {
@@ -504,8 +505,8 @@
       "description": "Installed versions of this site and their support deadlines, checked daily against endoflife.date."
     },
     "adminAnonymousCv": {
-      "title": "Administration — Anonymous CV",
-      "description": "Manage the anonymous CV sections (base tier)."
+      "title": "Administration — CV without identity",
+      "description": "Manage the sections of the CV without identity (base tier)."
     },
     "adminIncidents": {
       "title": "Administration — Incidents",
@@ -538,10 +539,10 @@
     }
   },
   "anonymousCv": {
-    "eyebrow": "Anonymous CV",
+    "eyebrow": "CV without identity",
     "intro": "Skills, seniority and achievements by domain — no name, employer, client or contact details. Enough to decide whether you want to ask for the real one.",
-    "loading": "Loading the anonymous CV…",
-    "error": "The anonymous CV could not be loaded. Please try again later.",
+    "loading": "Loading the CV without identity…",
+    "error": "The CV without identity could not be loaded. Please try again later.",
     "empty": "No section published yet.",
     "years": "{count} year of experience | {count} year of experience | {count} years of experience",
     "fields": {

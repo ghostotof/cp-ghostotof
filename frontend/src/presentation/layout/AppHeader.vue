@@ -28,7 +28,9 @@ const isMobileMenuOpen = ref(false)
  * Sous-menu desktop d'un groupe (issue #70) : même mécanique que le menu
  * « Contenu » d'AdminLayout — Bootstrap n'est chargé qu'en CSS, l'ouverture
  * et la fermeture (clic extérieur, Échap, clic sur un lien) sont gérées ici.
- * Un seul groupe ouvert à la fois, identifié par son libellé.
+ * Un seul groupe ouvert à la fois, identifié par son libellé : ouvrir le
+ * second (« Parcours » / « Retours d'expérience », issue #88) referme le
+ * premier, ce qui évite deux menus superposés.
  */
 const openGroupLabel = ref<string | null>(null)
 const groupRefs = ref<Map<string, HTMLElement>>(new Map())
