@@ -23,11 +23,16 @@ use Symfony\Component\Routing\RouterInterface;
  * servie sans authentification, il faut l'inscrire **explicitement** dans
  * PUBLIC_PATHS avec sa justification — un choix conscient, jamais un oubli.
  *
- * Trois invariants :
+ * Six invariants :
  *  1. toute route hors PUBLIC_PATHS refuse un appelant anonyme (401 ou 403) ;
  *  2. aucune route /api/backoffice ne peut être inscrite dans PUBLIC_PATHS ;
  *  3. tout le backoffice refuse un compte authentifié mais sans ROLE_SUPER
- *     (authentifié ≠ autorisé).
+ *     (authentifié ≠ autorisé) ;
+ *  4. /api/cv et /api/me refusent un compte sans ROLE_TRUSTED (ADR 0003) ;
+ *  5. idem pour le jeton du palier de base émis sans compte (D6) ;
+ *  6. ce jeton n'ouvre **rien** hors PUBLIC_PATHS ∪ BASE_TIER_PATHS — la
+ *     liste de ce que le palier de base porte est explicite, comme
+ *     PUBLIC_PATHS l'est pour l'anonyme.
  */
 final class ApiRouteExposureTest extends WebTestCase
 {
@@ -74,6 +79,21 @@ final class ApiRouteExposureTest extends WebTestCase
         '/api/validation_errors/{id}' => 'Ressource d\'erreur de validation interne d\'API Platform.',
         '/api/.well-known/genid/{id}' => 'Identifiants anonymes générés par API Platform, aucune donnée métier.',
         '/api/.well-known/genid/{id}.{_format}' => 'Idem, variante formatée.',
+    ];
+
+    /**
+     * Routes que le palier de base (ROLE_USER, ADR 0003) ouvre, et lui seul
+     * en plus de PUBLIC_PATHS. La liste est fermée : une route qu'un jeton
+     * D6 atteint sans figurer ici fait rougir l'invariant n°6. Y inscrire
+     * une route revient à affirmer qu'elle ne porte aucune donnée
+     * identifiante (D2 : le palier de base est publiable par construction).
+     *
+     * @var array<string, string> chemin de route (tel que déclaré au routeur) => raison
+     */
+    private const array BASE_TIER_PATHS = [
+        '/api/case-studies/{locale}' => 'ADR 0003 D5 : études de cas techniques — ni nom, ni employeur, ni client.',
+        '/api/anonymous-cv/{locale}' => 'ADR 0003 D5 : CV sans identité — compétences, séniorité et réalisations par domaine, sans nom, employeur, client ni chronologie (D5 amendée le 2026-09-13).',
+        '/api/logout' => '« Terminer cet accès » (issue #65) : expire les cookies, quel que soit le porteur. Ne sert aucune donnée.',
     ];
 
     protected function setUp(): void
@@ -215,12 +235,7 @@ final class ApiRouteExposureTest extends WebTestCase
     public function testCvAndMeRefuseABaseAccessToken(): void
     {
         $client = self::createClient();
-        // Le rate limiter "base_access" est backé par le filesystem (cache.rate_limiter),
-        // donc partagé entre tests exécutés sous la même IP client (127.0.0.1) —
-        // même rationale que ContactMessageResourceTest::createClientWithFreshRateLimiter().
-        self::getContainer()->get('cache.rate_limiter')->clear();
-        $client->request('POST', '/api/account/base-access');
-        self::assertResponseIsSuccessful();
+        $this->obtainBaseAccess($client);
 
         foreach (['/api/cv', '/api/me'] as $path) {
             $client->request('GET', $path);
@@ -230,6 +245,99 @@ final class ApiRouteExposureTest extends WebTestCase
                 $client->getResponse()->getStatusCode(),
                 sprintf('GET %s doit répondre 403 à un jeton du palier de base (sans ROLE_TRUSTED).', $path),
             );
+        }
+    }
+
+    /**
+     * Invariant n°6 — la contraposée des invariants n°4/5, et leur
+     * généralisation : ils prouvent que le jeton du palier de base n'ouvre
+     * pas /api/cv ni /api/me, celui-ci prouve qu'il n'ouvre **que**
+     * BASE_TIER_PATHS. Sans lui, une future règle `ROLE_USER` sur une route
+     * identifiante passerait sans qu'aucun test ne rougisse (issue #78, pt 1).
+     *
+     * Le jeton XSRF émis avec l'accès de base est joint aux écritures, pour
+     * que le 403 attendu vienne bien de l'autorisation et non du garde CSRF —
+     * sinon le test prouverait moins que ce qu'il annonce.
+     */
+    public function testABaseAccessTokenOpensNothingBeyondTheBaseTierAllowList(): void
+    {
+        $client = self::createClient();
+        $csrfToken = $this->obtainBaseAccess($client);
+
+        $routes = array_filter(
+            $this->protectedApiRoutes(),
+            static fn (array $route): bool => !isset(self::BASE_TIER_PATHS[$route[0]]),
+        );
+
+        self::assertNotEmpty($routes, 'Aucune route hors palier de base détectée : le test ne vérifie plus rien.');
+
+        foreach ($routes as [$path, $method]) {
+            $client->request($method, $this->concreteUrl($path), server: [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_XSRF_TOKEN' => $csrfToken,
+            ], content: self::jsonBody([]));
+
+            self::assertSame(
+                403,
+                $client->getResponse()->getStatusCode(),
+                sprintf(
+                    '%s %s a répondu %d à un jeton du palier de base. Soit la route doit exiger '
+                    .'ROLE_TRUSTED ou ROLE_SUPER, soit elle appartient au palier de base et doit être '
+                    .'inscrite dans BASE_TIER_PATHS avec sa justification.',
+                    $method,
+                    $path,
+                    $client->getResponse()->getStatusCode(),
+                ),
+            );
+        }
+    }
+
+    /**
+     * Pendant de l'invariant n°6 : BASE_TIER_PATHS ne doit pas mentir dans
+     * l'autre sens. Une entrée que le jeton n'atteint pas (401/403) est un
+     * reste de refactor ou une route mal protégée — dans les deux cas la
+     * liste donnerait une fausse impression de couverture. Un client neuf
+     * par entrée : /api/logout expire précisément le cookie qu'on teste.
+     */
+    public function testEveryBaseTierPathIsActuallyReachableWithABaseAccessToken(): void
+    {
+        $declaredPaths = $this->allApiRoutePaths();
+
+        foreach (self::BASE_TIER_PATHS as $path => $reason) {
+            self::assertContains($path, $declaredPaths, sprintf('BASE_TIER_PATHS déclare "%s", qui n\'existe plus dans le routeur.', $path));
+
+            self::ensureKernelShutdown();
+            $client = self::createClient();
+            $csrfToken = $this->obtainBaseAccess($client);
+
+            foreach ($this->requestableMethods($this->routeMethods($path)) as $method) {
+                $client->request($method, $this->concreteUrl($path), server: [
+                    'CONTENT_TYPE' => 'application/json',
+                    'HTTP_X_XSRF_TOKEN' => $csrfToken,
+                ], content: self::jsonBody([]));
+
+                self::assertNotContains(
+                    $client->getResponse()->getStatusCode(),
+                    [401, 403],
+                    sprintf('%s %s est inscrit dans BASE_TIER_PATHS mais refuse le jeton du palier de base.', $method, $path),
+                );
+            }
+        }
+    }
+
+    /**
+     * Garde structurel, jumeau de l'invariant n°2 : le palier de base ne peut
+     * jamais couvrir le backoffice ni les deux routes identifiantes de
+     * l'ADR 0003 — ni, par redondance, une route déjà publique.
+     */
+    public function testTheBaseTierAllowListNeverCoversIdentifyingOrPublicRoutes(): void
+    {
+        foreach (array_keys(self::BASE_TIER_PATHS) as $path) {
+            foreach (['/api/backoffice', '/api/cv', '/api/me'] as $forbiddenPrefix) {
+                self::assertStringStartsNotWith($forbiddenPrefix, $path, sprintf('"%s" ne peut pas appartenir au palier de base.', $path));
+            }
+
+            self::assertArrayNotHasKey($path, self::PUBLIC_PATHS, sprintf('"%s" est déjà public : inutile (et trompeur) dans BASE_TIER_PATHS.', $path));
         }
     }
 
@@ -310,9 +418,46 @@ final class ApiRouteExposureTest extends WebTestCase
         );
     }
 
+    /**
+     * Méthodes déclarées pour un chemin (toutes routes confondues).
+     *
+     * @return array<string>
+     */
+    private function routeMethods(string $path): array
+    {
+        $methods = [];
+
+        foreach ($this->router()->getRouteCollection() as $route) {
+            if ($route->getPath() === $path) {
+                $methods = [...$methods, ...$route->getMethods()];
+            }
+        }
+
+        return array_values(array_unique($methods));
+    }
+
     private function router(): RouterInterface
     {
         return self::getContainer()->get('router');
+    }
+
+    /**
+     * Obtient un jeton du palier de base (ADR 0003 D6) et renvoie le jeton
+     * XSRF qui l'accompagne. Le rate limiter "base_access" est backé par le
+     * filesystem (cache.rate_limiter), donc partagé entre tests exécutés sous
+     * la même IP client (127.0.0.1) — même rationale que
+     * ContactMessageResourceTest::createClientWithFreshRateLimiter().
+     */
+    private function obtainBaseAccess(KernelBrowser $client): string
+    {
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $client->request('POST', '/api/account/base-access');
+        self::assertResponseIsSuccessful();
+
+        $csrfCookie = $client->getCookieJar()->get('XSRF-TOKEN');
+        self::assertNotNull($csrfCookie);
+
+        return $csrfCookie->getValue();
     }
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string
