@@ -1,18 +1,33 @@
 <script setup lang="ts">
+import { watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useCaseStudies } from '../../application/caseStudies/useCaseStudies'
 import { useBaseAccess } from '../../application/baseAccess/useBaseAccess'
+import { authState } from '../../application/auth/useAuth'
 import RichText from '../ui/RichText.vue'
 
 const { t } = useI18n()
 const { caseStudies, isLoading, hasError, needsAccess, reload } = useCaseStudies()
 const { isGranting, errorReason, grant } = useBaseAccess()
 
+/**
+ * Un seul chemin de rechargement : le changement de palier. Il couvre aussi
+ * bien le bouton de cette page que le CTA de l'en-tête (Task 9), qui ne
+ * remonte pas la page puisque la route ne change pas. `authState` est lu
+ * directement (pas useAuth()) : cette page n'a besoin d'aucune action
+ * d'auth, seulement d'observer l'état.
+ */
+watch(
+  () => authState.tier,
+  () => {
+    if (needsAccess.value) {
+      void reload()
+    }
+  },
+)
+
 async function handleGrantAccess(): Promise<void> {
-  const granted = await grant()
-  if (granted) {
-    await reload()
-  }
+  await grant()
 }
 </script>
 

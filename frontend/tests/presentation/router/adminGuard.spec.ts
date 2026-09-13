@@ -5,6 +5,8 @@ import { router } from '../../../src/presentation/router'
 import { AUTH_REPOSITORY, useAuth } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
+import type { AuthSession } from '../../../src/domain/auth/entities/AuthSession'
+import { sessionFor } from '../../support/authSession'
 
 /**
  * Exerce le routeur singleton (presentation/router/index.ts) plutôt qu'une
@@ -17,7 +19,7 @@ function createStubRepository(user: AuthenticatedUser | null): AuthRepository {
   return {
     login: vi.fn(async () => user ?? { username: 'jane', roles: ['ROLE_USER'] }),
     logout: vi.fn(async () => undefined),
-    me: vi.fn(async () => user),
+    me: vi.fn(async () => sessionFor(user)),
   }
 }
 
@@ -83,11 +85,11 @@ describe('router — garde /admin (ROLE_SUPER)', () => {
   })
 
   it('attend la résolution de checkAuth() avant de trancher (évite une redirection prématurée au rechargement de page)', async () => {
-    let resolveMe: (user: AuthenticatedUser | null) => void = () => {}
+    let resolveMe: (session: AuthSession) => void = () => {}
     const repository: AuthRepository = {
       login: vi.fn(),
       logout: vi.fn(),
-      me: vi.fn(() => new Promise<AuthenticatedUser | null>((resolve) => (resolveMe = resolve))),
+      me: vi.fn(() => new Promise<AuthSession>((resolve) => (resolveMe = resolve))),
     }
     const Probe = defineComponent({
       setup() {
@@ -100,7 +102,7 @@ describe('router — garde /admin (ROLE_SUPER)', () => {
     const checkAuthPromise = wrapper.vm.auth.checkAuth()
     const pushPromise = router.push('/fr/admin/technologies')
 
-    resolveMe({ username: 'super', roles: ['ROLE_SUPER'] })
+    resolveMe(sessionFor({ username: 'super', roles: ['ROLE_SUPER'] }))
     await checkAuthPromise
     await pushPromise
 

@@ -23,7 +23,12 @@
     "privacyPolicyLink": "Politique de confidentialité",
     "legalNavigation": "Navigation légale",
     "administration": "Administration",
-    "opensInNewTab": "(nouvelle fenêtre)"
+    "opensInNewTab": "(nouvelle fenêtre)",
+    "instantAccess": "Accès instantané",
+    "instantAccessGranting": "Accès en cours…",
+    "instantAccessRateLimited": "Trop de tentatives depuis cette adresse. Réessayez plus tard.",
+    "instantAccessError": "L'accès n'a pas pu être obtenu. Réessayez plus tard.",
+    "baseAccessBadge": "Accès de base"
   },
   "admin": {
     "heading": "Administration",

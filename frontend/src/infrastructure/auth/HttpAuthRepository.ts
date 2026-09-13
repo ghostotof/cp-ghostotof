@@ -1,6 +1,8 @@
 import type { AuthRepository } from '../../domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../domain/auth/entities/AuthenticatedUser'
 import { InvalidCredentialsError } from '../../domain/auth/errors/InvalidCredentialsError'
+import { ANONYMOUS_SESSION, BASE_ACCESS_SESSION, type AuthSession } from '../../domain/auth/entities/AuthSession'
+import { sessionForUser } from '../../domain/auth/services/sessionForUser'
 import { readCsrfToken } from './csrfCookie'
 
 interface UserResponseBody {
@@ -54,14 +56,24 @@ export class HttpAuthRepository implements AuthRepository {
     }
   }
 
-  async me(): Promise<AuthenticatedUser | null> {
+  /**
+   * Le code HTTP de /api/me porte le palier (ADR 0003 D1) : la route exige
+   * ROLE_TRUSTED (security.yaml), donc 401 = aucun jeton valide, 403 = jeton
+   * valide mais insuffisant — exactement le jeton D6 du palier de base, sans
+   * compte derrière (BaseAccessControllerTest le pinne côté backend) —,
+   * 200 = compte de confiance. Un 403 n'est donc pas une erreur ici.
+   */
+  async me(): Promise<AuthSession> {
     const response = await fetch(`${this.apiBaseUrl}/api/me`, {
       method: 'GET',
       credentials: 'include',
     })
 
     if (401 === response.status) {
-      return null
+      return ANONYMOUS_SESSION
+    }
+    if (403 === response.status) {
+      return BASE_ACCESS_SESSION
     }
     if (!response.ok) {
       throw new Error(`Fetching current user failed with status ${response.status}`)
@@ -69,6 +81,6 @@ export class HttpAuthRepository implements AuthRepository {
 
     const body = (await response.json()) as UserResponseBody
 
-    return { username: body.user.username, roles: body.user.roles }
+    return sessionForUser({ username: body.user.username, roles: body.user.roles })
   }
 }

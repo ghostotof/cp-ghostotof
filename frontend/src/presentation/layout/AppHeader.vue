@@ -6,9 +6,11 @@ import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
 import type { NavigationLink } from '../../domain/portfolio/entities/NavigationLink'
 import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
 import { useAuth } from '../../application/auth/useAuth'
+import { useBaseAccess } from '../../application/baseAccess/useBaseAccess'
 import { useCvDownload } from '../../application/cv/useCvDownload'
 import LocaleSwitcher from '../ui/LocaleSwitcher.vue'
 import IconDownload from '~icons/lucide/download'
+import IconZap from '~icons/lucide/zap'
 import IconMenu from '~icons/lucide/menu'
 import IconX from '~icons/lucide/x'
 
@@ -21,13 +23,37 @@ const isMobileMenuOpen = ref(false)
 const route = useRoute()
 const router = useRouter()
 const { t, locale } = useI18n()
-const { isAuthenticated, isChecking, isSuperAdmin, logout } = useAuth()
+const { tier, isChecking, isSuperAdmin, logout } = useAuth()
 const { isDownloading, hasError: hasCvDownloadError, downloadCv } = useCvDownload()
+const { isGranting, errorReason: baseAccessErrorReason, grant: grantBaseAccess } = useBaseAccess()
 
 async function handleLogout(): Promise<void> {
   await logout()
   await router.push(homeLink.value)
 }
+
+/**
+ * ADR 0003 D6 : un clic, sans identifiants. Le CTA n'est proposé qu'à
+ * l'anonyme — au palier de base l'accès est déjà là, et au palier de
+ * confiance rappeler l'endpoint remplacerait le cookie du compte par un
+ * jeton D6, c'est-à-dire une rétrogradation. En cas de succès on mène au
+ * contenu que ce palier porte (les études de cas, D5) : un bouton qui ne
+ * donnerait visiblement rien serait le défaut que l'ADR nomme.
+ */
+async function handleInstantAccess(): Promise<void> {
+  if (await grantBaseAccess()) {
+    await router.push(`${homeLink.value}/case-studies`)
+  }
+}
+
+const baseAccessErrorMessage = computed(() => {
+  if (null === baseAccessErrorReason.value) {
+    return null
+  }
+  return 'rate-limited' === baseAccessErrorReason.value
+    ? t('common.instantAccessRateLimited')
+    : t('common.instantAccessError')
+})
 
 /**
  * Priorité au paramètre de route (source de vérité de l'URL) ; repli sur la locale
@@ -118,13 +144,60 @@ function navLinkClass(link: NavigationLink) {
         <LocaleSwitcher />
 
         <template v-if="!isChecking">
-          <RouterLink
-            v-if="!isAuthenticated"
-            :to="`${homeLink}/login`"
-            class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-2"
-          >
-            {{ t('common.login') }}
-          </RouterLink>
+          <!-- Trois paliers (ADR 0003 D1) : anonyme → CTA + connexion ;
+               palier de base → badge + connexion (un compte de confiance
+               peut toujours se connecter par-dessus) ; palier de confiance →
+               administration (si ROLE_SUPER), CV, déconnexion. -->
+          <template v-if="'anonymous' === tier">
+            <button
+              type="button"
+              class="btn btn-gradient btn-sm d-none d-sm-inline-flex align-items-center gap-2"
+              :disabled="isGranting"
+              @click="handleInstantAccess"
+            >
+              {{ isGranting ? t('common.instantAccessGranting') : t('common.instantAccess') }}
+              <IconZap
+                width="16"
+                height="16"
+                aria-hidden="true"
+              />
+            </button>
+            <button
+              type="button"
+              class="btn btn-gradient btn-sm d-sm-none d-inline-flex align-items-center"
+              :disabled="isGranting"
+              :aria-label="isGranting ? t('common.instantAccessGranting') : t('common.instantAccess')"
+              @click="handleInstantAccess"
+            >
+              <IconZap
+                width="16"
+                height="16"
+                aria-hidden="true"
+              />
+            </button>
+            <RouterLink
+              :to="`${homeLink}/login`"
+              class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-2"
+            >
+              {{ t('common.login') }}
+            </RouterLink>
+          </template>
+          <template v-else-if="'base' === tier">
+            <span class="badge rounded-pill text-bg-secondary fw-normal d-inline-flex align-items-center gap-1">
+              <IconZap
+                width="12"
+                height="12"
+                aria-hidden="true"
+              />
+              {{ t('common.baseAccessBadge') }}
+            </span>
+            <RouterLink
+              :to="`${homeLink}/login`"
+              class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-2"
+            >
+              {{ t('common.login') }}
+            </RouterLink>
+          </template>
           <template v-else>
             <RouterLink
               v-if="isSuperAdmin"
@@ -199,6 +272,14 @@ function navLinkClass(link: NavigationLink) {
       role="alert"
     >
       {{ t('common.downloadCvError') }}
+    </p>
+
+    <p
+      v-if="baseAccessErrorMessage"
+      class="container-xl text-danger small mb-2"
+      role="alert"
+    >
+      {{ baseAccessErrorMessage }}
     </p>
 
     <nav

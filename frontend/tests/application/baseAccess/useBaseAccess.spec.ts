@@ -4,6 +4,7 @@ import { mount } from '@vue/test-utils'
 import { BASE_ACCESS_REPOSITORY, useBaseAccess } from '../../../src/application/baseAccess/useBaseAccess'
 import type { BaseAccessRepository } from '../../../src/domain/baseAccess/repositories/BaseAccessRepository'
 import { BaseAccessError } from '../../../src/domain/baseAccess/errors/BaseAccessError'
+import { authState } from '../../../src/application/auth/useAuth'
 
 function createStubRepository(overrides: Partial<BaseAccessRepository> = {}): BaseAccessRepository {
   return {
@@ -69,5 +70,13 @@ describe('useBaseAccess', () => {
     })
 
     expect(() => mount(Host)).toThrow(/BaseAccessRepository/)
+  })
+
+  it('grant() réussi : l\'état d\'auth partagé passe au palier de base (l\'en-tête doit le refléter sans relire /api/me)', async () => {
+    const { grant } = mountWithComposable(createStubRepository())
+
+    await grant()
+
+    expect(authState.tier).toBe('base')
   })
 })
