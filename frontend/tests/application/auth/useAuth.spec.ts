@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
-import { AUTH_REPOSITORY, authState, markBaseAccessGranted, useAuth } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, authState, markBaseAccessExpired, markBaseAccessGranted, useAuth } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
@@ -190,6 +190,103 @@ describe('useAuth', () => {
       await auth.logout()
 
       expect(auth.tier.value).toBe('anonymous')
+    })
+  })
+
+  /**
+   * Le cookie D6 est httpOnly et s'éteint seul après 15 min : sans ces
+   * mécanismes, l'en-tête afficherait « Accès de base » jusqu'au prochain
+   * rechargement, bien après que le jeton ait cessé d'exister.
+   */
+  describe("expiration du jeton du palier de base (ADR 0003 D6)", () => {
+    const FIFTEEN_MINUTES = 15 * 60 * 1000
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+      localStorage.clear()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+      localStorage.clear()
+    })
+
+    it("à l'échéance annoncée, le palier de base retombe à anonyme sans aucun appel réseau", async () => {
+      const repository = createStubRepository()
+      const auth = mountWithComposable(repository)
+      await auth.checkAuth()
+      vi.mocked(repository.me).mockClear()
+
+      markBaseAccessGranted(new Date(Date.now() + FIFTEEN_MINUTES))
+      expect(auth.tier.value).toBe('base')
+
+      vi.advanceTimersByTime(FIFTEEN_MINUTES - 1)
+      expect(auth.tier.value).toBe('base')
+
+      vi.advanceTimersByTime(1)
+      expect(auth.tier.value).toBe('anonymous')
+      expect(repository.me).not.toHaveBeenCalled()
+    })
+
+    it("sans échéance connue (contrat plus ancien), rien n'est programmé : comportement d'avant", async () => {
+      const auth = mountWithComposable(createStubRepository())
+      await auth.checkAuth()
+
+      markBaseAccessGranted(null)
+      vi.advanceTimersByTime(FIFTEEN_MINUTES * 10)
+
+      expect(auth.tier.value).toBe('base')
+    })
+
+    it("un login avant l'échéance annule la minuterie : le compte n'est pas déconnecté par le timer du jeton D6", async () => {
+      const auth = mountWithComposable(
+        createStubRepository({ login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })) }),
+      )
+      await auth.checkAuth()
+      markBaseAccessGranted(new Date(Date.now() + FIFTEEN_MINUTES))
+
+      await auth.login('jane', 'password')
+      vi.advanceTimersByTime(FIFTEEN_MINUTES)
+
+      expect(auth.tier.value).toBe('trusted')
+      expect(localStorage.getItem('baseAccessExpiresAt')).toBeNull()
+    })
+
+    it("après un rechargement, checkAuth() reprend l'échéance mémorisée quand le serveur confirme le palier de base", async () => {
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => BASE_ACCESS_SESSION) }))
+      localStorage.setItem('baseAccessExpiresAt', new Date(Date.now() + FIFTEEN_MINUTES).toISOString())
+
+      await auth.checkAuth()
+      expect(auth.tier.value).toBe('base')
+
+      vi.advanceTimersByTime(FIFTEEN_MINUTES)
+      expect(auth.tier.value).toBe('anonymous')
+    })
+
+    it("une échéance mémorisée mais passée est ignorée : c'est le serveur qui fait foi", async () => {
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => BASE_ACCESS_SESSION) }))
+      localStorage.setItem('baseAccessExpiresAt', new Date(Date.now() - 1000).toISOString())
+
+      await auth.checkAuth()
+      vi.advanceTimersByTime(FIFTEEN_MINUTES)
+
+      expect(auth.tier.value).toBe('base')
+      expect(localStorage.getItem('baseAccessExpiresAt')).toBeNull()
+    })
+
+    it('markBaseAccessExpired() ramène le palier de base (sans compte) à anonyme, et ne touche pas à un compte identifié', async () => {
+      const auth = mountWithComposable(createStubRepository())
+      await auth.checkAuth()
+      markBaseAccessGranted(new Date(Date.now() + FIFTEEN_MINUTES))
+
+      markBaseAccessExpired()
+      expect(auth.tier.value).toBe('anonymous')
+      expect(localStorage.getItem('baseAccessExpiresAt')).toBeNull()
+
+      await auth.login('jane', 'password') // compte réel au palier de base, identifié
+      markBaseAccessExpired()
+      expect(auth.tier.value).toBe('base')
+      expect(auth.user.value?.username).toBe('jane')
     })
   })
 })

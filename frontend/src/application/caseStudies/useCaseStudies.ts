@@ -5,6 +5,7 @@ import type { CaseStudyRepository } from '../../domain/caseStudies/repositories/
 import type { Locale } from '../../domain/portfolio/entities/Locale'
 import { CaseStudiesAccessNotGrantedError } from '../../domain/caseStudies/errors/CaseStudiesAccessNotGrantedError'
 import { createStaleRequestGuard } from '../shared/staleRequestGuard'
+import { markBaseAccessExpired } from '../auth/useAuth'
 
 export const CASE_STUDY_REPOSITORY: InjectionKey<CaseStudyRepository> = Symbol('CaseStudyRepository')
 
@@ -55,6 +56,10 @@ export function useCaseStudies(): UseCaseStudiesResult {
       if (!requestGuard.isCurrent(token)) return
       if (error instanceof CaseStudiesAccessNotGrantedError) {
         needsAccess.value = true
+        // Le serveur vient de dire que le jeton ne vaut plus rien : l'en-tête
+        // ne doit pas continuer d'afficher « Accès de base » au-dessus d'une
+        // page qui demande de l'obtenir.
+        markBaseAccessExpired()
       } else {
         hasError.value = true
       }

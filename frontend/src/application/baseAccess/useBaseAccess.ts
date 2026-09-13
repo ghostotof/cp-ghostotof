@@ -38,8 +38,8 @@ export function useBaseAccess(): UseBaseAccessResult {
     errorReason.value = null
 
     try {
-      await repository.grant()
-      markBaseAccessGranted()
+      const { expiresAt } = await repository.grant()
+      markBaseAccessGranted(expiresAt)
       return true
     } catch (error) {
       errorReason.value = error instanceof BaseAccessError ? error.reason : 'unknown'

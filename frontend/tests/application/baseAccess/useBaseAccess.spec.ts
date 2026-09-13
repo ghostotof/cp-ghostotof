@@ -8,7 +8,7 @@ import { authState } from '../../../src/application/auth/useAuth'
 
 function createStubRepository(overrides: Partial<BaseAccessRepository> = {}): BaseAccessRepository {
   return {
-    grant: vi.fn(async () => undefined),
+    grant: vi.fn(async () => ({ expiresAt: null })),
     ...overrides,
   }
 }
@@ -78,5 +78,15 @@ describe('useBaseAccess', () => {
     await grant()
 
     expect(authState.tier).toBe('base')
+  })
+
+  it("grant() transmet l'échéance à l'état d'auth, qui la mémorise pour survivre à un rechargement", async () => {
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000)
+    const { grant } = mountWithComposable(createStubRepository({ grant: vi.fn(async () => ({ expiresAt })) }))
+
+    await grant()
+
+    expect(localStorage.getItem('baseAccessExpiresAt')).toBe(expiresAt.toISOString())
+    localStorage.clear()
   })
 })

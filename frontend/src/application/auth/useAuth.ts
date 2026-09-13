@@ -27,9 +27,66 @@ const state = reactive<{ tier: AccessTier; user: AuthenticatedUser | null; isChe
   isChecking: true,
 })
 
+/**
+ * Échéance du jeton D6, mémorisée pour survivre à un rechargement de page :
+ * après un F5, checkAuth() ne voit qu'un 403 sur /api/me (palier de base),
+ * sans savoir jusqu'à quand. Convenance locale, jamais une source de vérité :
+ * un localStorage indisponible ou vide rend simplement le badge un peu
+ * moins précis (comportement d'avant).
+ */
+const BASE_ACCESS_EXPIRY_STORAGE_KEY = 'baseAccessExpiresAt'
+
+/** Plafond de setTimeout (2^31 − 1 ms) : au-delà, le navigateur déclenche immédiatement. */
+const MAX_TIMEOUT_MS = 2_147_483_647
+
+let baseAccessExpiryTimer: ReturnType<typeof setTimeout> | null = null
+
 function applySession(session: AuthSession): void {
   state.tier = session.tier
   state.user = session.user
+  // Tout changement de session rend la minuterie précédente caduque : un
+  // login remplace le cookie D6 par celui du compte, un logout l'efface.
+  clearBaseAccessExpiry()
+}
+
+function clearBaseAccessExpiry(): void {
+  if (null !== baseAccessExpiryTimer) {
+    clearTimeout(baseAccessExpiryTimer)
+    baseAccessExpiryTimer = null
+  }
+  try {
+    localStorage.removeItem(BASE_ACCESS_EXPIRY_STORAGE_KEY)
+  } catch {
+    // Stockage indisponible (navigation privée, données bloquées) : sans conséquence.
+  }
+}
+
+function scheduleBaseAccessExpiry(expiresAt: Date): void {
+  clearBaseAccessExpiry()
+  try {
+    localStorage.setItem(BASE_ACCESS_EXPIRY_STORAGE_KEY, expiresAt.toISOString())
+  } catch {
+    // Idem : le badge survivra moins bien à un rechargement, rien de plus.
+  }
+  const delay = Math.min(Math.max(expiresAt.getTime() - Date.now(), 0), MAX_TIMEOUT_MS)
+  baseAccessExpiryTimer = setTimeout(() => {
+    baseAccessExpiryTimer = null
+    markBaseAccessExpired()
+  }, delay)
+}
+
+function recallBaseAccessExpiry(): Date | null {
+  try {
+    const stored = localStorage.getItem(BASE_ACCESS_EXPIRY_STORAGE_KEY)
+    if (null === stored) {
+      return null
+    }
+    const expiresAt = new Date(stored)
+
+    return Number.isNaN(expiresAt.getTime()) ? null : expiresAt
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -71,8 +128,25 @@ export async function waitForAuthCheck(): Promise<void> {
  * ce qu'on sait déjà. Exposée hors composant (comme authState) parce que
  * l'appelant, useBaseAccess, ne doit pas dépendre de AUTH_REPOSITORY.
  */
-export function markBaseAccessGranted(): void {
+export function markBaseAccessGranted(expiresAt: Date | null = null): void {
   applySession(BASE_ACCESS_SESSION)
+  if (null !== expiresAt) {
+    scheduleBaseAccessExpiry(expiresAt)
+  }
+}
+
+/**
+ * Le jeton D6 n'existe plus : son échéance est passée, ou le backend vient
+ * de répondre 401 à un contenu du palier de base (useCaseStudies,
+ * useAnonymousCv). Sans ce signal, l'en-tête afficherait « Accès de base »
+ * alors que la page en dessous demande déjà de l'obtenir. Ne touche qu'au
+ * palier de base sans compte : un compte identifié a sa propre session, et
+ * ce n'est pas à un timer local de la révoquer.
+ */
+export function markBaseAccessExpired(): void {
+  if ('base' === state.tier && null === state.user) {
+    applySession(ANONYMOUS_SESSION)
+  }
 }
 
 export interface UseAuthResult {
@@ -111,7 +185,15 @@ export function useAuth(): UseAuthResult {
   const checkAuth = async (): Promise<void> => {
     state.isChecking = true
     try {
-      applySession(await repository.me())
+      // Lue avant applySession(), qui efface la mémoire : si le serveur
+      // confirme le palier de base et qu'une échéance future est connue, la
+      // minuterie reprend là où le rechargement l'avait interrompue.
+      const rememberedExpiry = recallBaseAccessExpiry()
+      const session = await repository.me()
+      applySession(session)
+      if ('base' === session.tier && null === session.user && null !== rememberedExpiry && rememberedExpiry.getTime() > Date.now()) {
+        scheduleBaseAccessExpiry(rememberedExpiry)
+      }
     } finally {
       state.isChecking = false
     }

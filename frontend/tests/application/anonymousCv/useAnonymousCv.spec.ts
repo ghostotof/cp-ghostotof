@@ -5,6 +5,7 @@ import { ANONYMOUS_CV_REPOSITORY, useAnonymousCv } from '../../../src/applicatio
 import type { AnonymousCvRepository } from '../../../src/domain/anonymousCv/repositories/AnonymousCvRepository'
 import { AnonymousCvAccessNotGrantedError } from '../../../src/domain/anonymousCv/errors/AnonymousCvAccessNotGrantedError'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { authState, markBaseAccessGranted } from '../../../src/application/auth/useAuth'
 
 const SECTION = { title: 'Backend', skills: 'Symfony', yearsOfExperience: 12, achievements: 'Réalisations.' }
 
@@ -78,6 +79,15 @@ describe('useAnonymousCv', () => {
     await flushPromises()
     expect(broken.hasError.value).toBe(true)
     expect(broken.needsAccess.value).toBe(false)
+  })
+
+  it("un refus d'accès alors que l'état croyait au palier de base le fait retomber à anonyme (le jeton a expiré)", async () => {
+    markBaseAccessGranted()
+    expect(authState.tier).toBe('base')
+    mountWithComposable(createStubRepository({ list: vi.fn(async () => Promise.reject(new AnonymousCvAccessNotGrantedError())) }))
+    await flushPromises()
+
+    expect(authState.tier).toBe('anonymous')
   })
 
   it('reload() relance la récupération et efface needsAccess une fois le contenu obtenu', async () => {

@@ -5,6 +5,7 @@ import type { AnonymousCvRepository } from '../../domain/anonymousCv/repositorie
 import type { Locale } from '../../domain/portfolio/entities/Locale'
 import { AnonymousCvAccessNotGrantedError } from '../../domain/anonymousCv/errors/AnonymousCvAccessNotGrantedError'
 import { createStaleRequestGuard } from '../shared/staleRequestGuard'
+import { markBaseAccessExpired } from '../auth/useAuth'
 
 export const ANONYMOUS_CV_REPOSITORY: InjectionKey<AnonymousCvRepository> = Symbol('AnonymousCvRepository')
 
@@ -54,6 +55,10 @@ export function useAnonymousCv(): UseAnonymousCvResult {
       if (!requestGuard.isCurrent(token)) return
       if (error instanceof AnonymousCvAccessNotGrantedError) {
         needsAccess.value = true
+        // Le serveur vient de dire que le jeton ne vaut plus rien : l'en-tête
+        // ne doit pas continuer d'afficher « Accès de base » au-dessus d'une
+        // page qui demande de l'obtenir.
+        markBaseAccessExpired()
       } else {
         hasError.value = true
       }

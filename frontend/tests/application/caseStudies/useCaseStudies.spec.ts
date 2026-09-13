@@ -5,6 +5,7 @@ import { CASE_STUDY_REPOSITORY, useCaseStudies } from '../../../src/application/
 import type { CaseStudyRepository } from '../../../src/domain/caseStudies/repositories/CaseStudyRepository'
 import { CaseStudiesAccessNotGrantedError } from '../../../src/domain/caseStudies/errors/CaseStudiesAccessNotGrantedError'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { authState, markBaseAccessGranted } from '../../../src/application/auth/useAuth'
 
 const CASE_STUDY = {
   title: 'Titre',
@@ -71,6 +72,18 @@ describe('useCaseStudies', () => {
     expect(needsAccess.value).toBe(true)
     expect(hasError.value).toBe(false)
     expect(isLoading.value).toBe(false)
+  })
+
+  it("un refus d'accès alors que l'état croyait au palier de base le fait retomber à anonyme (le jeton a expiré)", async () => {
+    markBaseAccessGranted()
+    expect(authState.tier).toBe('base')
+    const repository = createStubRepository({
+      list: vi.fn(async () => Promise.reject(new CaseStudiesAccessNotGrantedError())),
+    })
+    mountWithComposable(repository)
+    await flushPromises()
+
+    expect(authState.tier).toBe('anonymous')
   })
 
   it('bascule hasError (pas needsAccess) sur une autre erreur', async () => {
