@@ -398,7 +398,7 @@ Content management for all of the above, plus user administration, gated end-to-
 
 ### Seeding (`app:*:seed`)
 
-Five commands carry the reference content: `app:{about,quality,contributions,incidents,watch}:seed`.
+Seven commands carry the reference content: `app:{about,quality,contributions,incidents,watch,case-studies,anonymous-cv}:seed`.
 They **purge and recreate** — that is how an entry removed from the reference content actually
 disappears — which used to make them silently destructive on any environment whose content had been
 edited through the backoffice.
@@ -416,7 +416,8 @@ all deliberate:
 therefore the deployment — on every run after the first. "There is already content" is the expected
 answer in nearly every execution, not an error. `SeedWatchedProductsCommandTest` pins it.
 
-`k8s/base/seed-job.yaml` runs the five on **every preprod deploy**. Like `migrate-job.yaml` it sits
+`k8s/base/seed-job.yaml` runs the seven on **every preprod deploy** (`case-studies` was missing from it
+until 2026-09-13 — adding a seed command means adding its line there, the Job's comment says so). Like `migrate-job.yaml` it sits
 outside `kustomization.yaml`, hence `${BACKEND_IMAGE}` + `envsubst`. It never passes `--force`, so it
 cannot repair a divergence: if the reference content changes in code, preprod keeps the old one until
 someone forces it by hand. That is the price of harmlessness, and it is the right trade — a Job that

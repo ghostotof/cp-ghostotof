@@ -78,6 +78,9 @@ security:
         # ADR 0003 D5 : contenu du palier de base — publiable en soi, mais pas
         # anonyme. ROLE_USER suffit (le jeton D6 comme un compte réel).
         - { path: ^/api/case-studies, roles: ROLE_USER }
+        # Même palier. Le chemin ne commence pas par /api/cv, sinon la règle
+        # ROLE_TRUSTED ci-dessus le capturerait (première règle qui matche).
+        - { path: ^/api/anonymous-cv, roles: ROLE_USER }
 
 when@test:
     security:
