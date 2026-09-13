@@ -94,7 +94,7 @@ Reprises de la spec (§2), rappelées ici parce qu'elles décident de l'ordre :
 | Le bundle 0.13 ne passe pas PHPStan `max` + strict-rules, ou Rector le réécrit | Medium | Task 1 isolée et en premier ; un éventuel `ignoreErrors` scopé à `Infrastructure/SymfonyAi/` (Task 3), jamais de baseline ; `rector.php` skip ciblé si besoin |
 | Le remplacement de la plateforme dans le conteneur de test ne fonctionne pas (service déjà instancié, alias) | Low | Repli prévu dans la Task 4 : `ai.http_client` remplacé par un `MockHttpClient` au format Anthropic |
 | Le bridge Anthropic n'honore pas `response_format` comme attendu (sortie non structurée) | Medium | La validation serveur de la Task 3 transforme le cas en 503 explicite ; l'essai réel du checkpoint 1 le révèle avant le frontend |
-| Coût : boucle UI ou usage abusif d'un compte `ROLE_SUPER` | Low | Quota 30/h par compte, `max_output_tokens` 4096, timeout 40 s (Task 5 / Task 1) |
+| Coût : boucle UI ou usage abusif d'un compte `ROLE_SUPER` | Low | Quota 30/h par compte, `max_tokens` 4096, timeout 40 s (Task 5 / Task 1) |
 | Timeout mural : nginx ou ingress coupent avant les 40 s | Low | Vérifié dans la Task 6 (défauts à 60 s, aucune annotation) ; le 503 reste le comportement dégradé |
 | Secrets Scaleway non créés avant le déploiement preprod | Medium (Deployment bloqué) | Action humaine signalée dans la Task 6 et au checkpoint 3 ; la faire dès la Task 1 mergée |
 | Injection de prompt via le contenu à traduire | Low (auteur = super-admin, humain relit) | Prompt système explicite, sortie structurée, aucune persistance automatique ; risque résiduel accepté dans l'ADR 0004 |

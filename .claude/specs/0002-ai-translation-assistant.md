@@ -77,7 +77,7 @@ compte du palier de base ou nominatif n'y a accès, ni directement ni par effet 
   partielle.
 - **D6 — Coût borné par construction** : quota `translation_assistant` en fenêtre glissante de
   **30 appels par heure et par compte** (clé : le `username`, l'appelant est authentifié),
-  `max_output_tokens: 4096`, timeout client HTTP **40 s**. Les trois ensemble bornent la dépense
+  `max_tokens: 4096` (nom Anthropic), timeout client HTTP **40 s**. Les trois ensemble bornent la dépense
   même sur une boucle infinie côté UI.
 - **D7 — Humain dans la boucle.** L'endpoint ne lit ni n'écrit en base ; le frontend bascule le
   formulaire en création avec le brouillon, et signale son origine par une bannière. Le bouton
