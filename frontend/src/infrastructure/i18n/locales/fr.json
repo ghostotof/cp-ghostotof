@@ -47,6 +47,7 @@
       "users": "Utilisateurs",
       "contributions": "Contributions",
       "incidents": "Incidents",
+      "anonymousCv": "CV sans identité",
       "watch": "Veille"
     },
     "quality": {
@@ -231,6 +232,33 @@
       "loadError": "Le chargement des contributions a échoué. Réessayez plus tard.",
       "errors": {
         "not-found": "Cette contribution n'existe plus.",
+        "validation": "Certains champs sont invalides.",
+        "unknown": "Une erreur est survenue. Réessayez plus tard."
+      }
+    },
+    "anonymousCv": {
+      "create": "Ajouter une section",
+      "edit": "Modifier la section",
+      "listTitle": "Sections enregistrées",
+      "identityHelp": "Ni nom, ni employeur, ni client, ni coordonnées : c'est ici, à la saisie, que le contenu reste non identifiant. Aucun filtre ne le fera à votre place.",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "localeLabel": "Langue",
+      "titleLabel": "Domaine de compétence",
+      "skillsLabel": "Compétences (technologies, pratiques)",
+      "yearsLabel": "Années d'expérience",
+      "achievementsLabel": "Réalisations",
+      "achievementsHelp": "Obligatoire. Ce qui a été réalisé avec cette compétence — les années par technologie sont déjà publiques, ce sont les réalisations qui justifient ce palier. Paragraphes séparés par une ligne vide.",
+      "positionLabel": "Position",
+      "actions": "Actions",
+      "editAction": "Modifier",
+      "deleteAction": "Supprimer",
+      "confirmDelete": "Supprimer la section « {title} » ?",
+      "empty": "Aucune section enregistrée.",
+      "loading": "Chargement des sections…",
+      "loadError": "Le chargement des sections a échoué. Réessayez plus tard.",
+      "errors": {
+        "not-found": "Cette section n'existe plus.",
         "validation": "Certains champs sont invalides.",
         "unknown": "Une erreur est survenue. Réessayez plus tard."
       }
@@ -473,6 +501,10 @@
     "stack": {
       "title": "Ma stack, en vie",
       "description": "Versions installées de ce site et leurs échéances de support, relevées chaque jour auprès d'endoflife.date."
+    },
+    "adminAnonymousCv": {
+      "title": "Administration — CV sans identité",
+      "description": "Gestion des sections du CV sans identité (palier de base)."
     },
     "adminIncidents": {
       "title": "Administration — Incidents",

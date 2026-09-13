@@ -24,6 +24,8 @@ import { ADMIN_CONTRIBUTION_REPOSITORY } from './application/admin/contributions
 import { HttpAdminContributionRepository } from './infrastructure/admin/contributions/HttpAdminContributionRepository'
 import { ADMIN_INCIDENT_REPOSITORY } from './application/admin/incidents/useAdminIncidents'
 import { HttpAdminIncidentRepository } from './infrastructure/admin/incidents/HttpAdminIncidentRepository'
+import { ADMIN_ANONYMOUS_CV_SECTION_REPOSITORY } from './application/admin/anonymousCv/useAdminAnonymousCvSections'
+import { HttpAdminAnonymousCvSectionRepository } from './infrastructure/admin/anonymousCv/HttpAdminAnonymousCvSectionRepository'
 import { HttpContributionRepository } from './infrastructure/contributions/HttpContributionRepository'
 import { INCIDENT_REPOSITORY } from './application/incidents/useIncidents'
 import { WATCH_REPOSITORY } from './application/watch/useWatch'
@@ -78,6 +80,7 @@ app.provide(ADMIN_WATCHED_PRODUCT_REPOSITORY, new HttpAdminWatchedProductReposit
 app.provide(ADMIN_VULNERABILITY_REPOSITORY, new HttpAdminVulnerabilityRepository(apiUrl))
 app.provide(ADMIN_CONTRIBUTION_REPOSITORY, new HttpAdminContributionRepository(apiUrl))
 app.provide(ADMIN_INCIDENT_REPOSITORY, new HttpAdminIncidentRepository(apiUrl))
+app.provide(ADMIN_ANONYMOUS_CV_SECTION_REPOSITORY, new HttpAdminAnonymousCvSectionRepository(apiUrl))
 app.provide(ADMIN_ABOUT_SETTINGS_REPOSITORY, new HttpAdminAboutSettingsRepository(apiUrl))
 app.provide(ADMIN_ABOUT_SITE_CARD_REPOSITORY, new HttpAdminAboutSiteCardRepository(apiUrl))
 app.provide(ADMIN_ABOUT_ME_CARD_REPOSITORY, new HttpAdminAboutMeCardRepository(apiUrl))
