@@ -283,11 +283,20 @@ describe('AppHeader', () => {
     expect(wrapper.find('#mobile-nav').exists()).toBe(false)
   })
 
-  it('ROLE_SUPER : affiche un lien Administration', async () => {
+  /**
+   * Pour ROLE_SUPER le téléchargement du CV vit dans le menu d'administration
+   * (AdminLayout), pas dans l'en-tête : c'est le seul palier dont la barre de
+   * droite débordait entre 1200 et 1399 px (mesure de l'issue #88), et le
+   * propriétaire du site n'a pas besoin de son propre CV à chaque page.
+   */
+  it("ROLE_SUPER : affiche un lien Administration, et pas de bouton CV — il vit dans le menu d'administration", async () => {
     await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
     const { wrapper } = await mountHeader()
 
     expect(wrapper.get('a[href="/fr/admin"]').text()).toBe('Administration')
+    expect(wrapper.text()).not.toContain('Télécharger mon CV')
+    expect(wrapper.find('button[aria-label="Télécharger mon CV"]').exists()).toBe(false)
+    expect(findButton(wrapper, 'Déconnexion')).toBeDefined()
   })
 
   it('palier de confiance sans ROLE_SUPER : pas de lien Administration', async () => {

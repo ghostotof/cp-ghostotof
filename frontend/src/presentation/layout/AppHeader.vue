@@ -275,7 +275,12 @@ function navLinkClass(link: NavigationLink) {
           <!-- Trois paliers (ADR 0003 D1) : anonyme → CTA + connexion ;
                palier de base → badge + fin d'accès + connexion (un compte de
                confiance peut toujours se connecter par-dessus) ; palier de
-               confiance → administration (si ROLE_SUPER), CV, déconnexion. -->
+               confiance → CV + déconnexion, ou administration + déconnexion
+               pour ROLE_SUPER : son CV se télécharge depuis le menu
+               d'administration (AdminLayout). C'était le seul palier dont la
+               barre débordait entre 1200 et 1399 px (mesure de l'issue #88),
+               et le propriétaire du site n'a pas besoin de son propre CV à
+               chaque page. -->
           <template v-if="'anonymous' === tier">
             <button
               type="button"
@@ -343,32 +348,34 @@ function navLinkClass(link: NavigationLink) {
             >
               {{ t('common.administration') }}
             </RouterLink>
-            <button
-              type="button"
-              class="btn btn-outline-light btn-sm d-none d-sm-inline-flex align-items-center gap-2"
-              :disabled="isDownloading"
-              @click="downloadCv"
-            >
-              {{ t('common.downloadCv') }}
-              <IconDownload
-                width="16"
-                height="16"
-                aria-hidden="true"
-              />
-            </button>
-            <button
-              type="button"
-              class="btn btn-outline-light btn-sm d-sm-none d-inline-flex align-items-center"
-              :disabled="isDownloading"
-              :aria-label="t('common.downloadCv')"
-              @click="downloadCv"
-            >
-              <IconDownload
-                width="16"
-                height="16"
-                aria-hidden="true"
-              />
-            </button>
+            <template v-if="!isSuperAdmin">
+              <button
+                type="button"
+                class="btn btn-outline-light btn-sm d-none d-sm-inline-flex align-items-center gap-2"
+                :disabled="isDownloading"
+                @click="downloadCv"
+              >
+                {{ t('common.downloadCv') }}
+                <IconDownload
+                  width="16"
+                  height="16"
+                  aria-hidden="true"
+                />
+              </button>
+              <button
+                type="button"
+                class="btn btn-outline-light btn-sm d-sm-none d-inline-flex align-items-center"
+                :disabled="isDownloading"
+                :aria-label="t('common.downloadCv')"
+                @click="downloadCv"
+              >
+                <IconDownload
+                  width="16"
+                  height="16"
+                  aria-hidden="true"
+                />
+              </button>
+            </template>
             <button
               type="button"
               class="btn btn-outline-light btn-sm d-inline-flex align-items-center"
