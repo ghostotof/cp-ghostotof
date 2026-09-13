@@ -19,7 +19,9 @@ interface CpgUserRoleAdministratorInterface
     /**
      * Accorde (`$grant = true`) ou retire (`$grant = false`) le rôle
      * ROLE_SUPER. Idempotent : si le compte est déjà dans l'état demandé,
-     * ne fait rien.
+     * ne fait rien. Au retrait, ROLE_TRUSTED n'est conservé que si le compte
+     * a un e-mail (octroi nominatif, ADR 0003 D1) ; un compte CLI retombe au
+     * palier de base.
      *
      * @throws CannotModifyOwnRolesException si $id est le compte de $actingUser
      * @throws CpgUserNotFoundException si l'id est inconnu
