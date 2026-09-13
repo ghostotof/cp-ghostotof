@@ -28,7 +28,8 @@
     "instantAccessGranting": "Accès en cours…",
     "instantAccessRateLimited": "Trop de tentatives depuis cette adresse. Réessayez plus tard.",
     "instantAccessError": "L'accès n'a pas pu être obtenu. Réessayez plus tard.",
-    "baseAccessBadge": "Accès de base"
+    "baseAccessBadge": "Accès de base",
+    "endBaseAccess": "Terminer cet accès"
   },
   "admin": {
     "heading": "Administration",

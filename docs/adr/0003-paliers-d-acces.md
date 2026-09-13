@@ -1,6 +1,9 @@
 # ADR 0003 — Trois paliers d'accès : anonyme, invité, approuvé
 
-- Statut : **proposé** (à valider avant tout code)
+- Statut : **accepté** (2026-09-12) — socle D1/D2/D4/D7 mergé (PR #41), D6 et le premier contenu
+  D5 (études de cas) mergés le 2026-09-12/13. Reste ouvert : D5 2/3 (CV sans identité, #55) et
+  D5 3/3 (parcours anonymisé, non découpé — niveau de détail à arbitrer). Suivi dans `tasks/plan.md`
+  et les issues `adr-0003`.
 - Date : 2026-09-10
 - Portée : `config/packages/security.yaml`, `src/Security/User`, `src/Security/Authentication`,
   `tests/Security/ApiRouteExposureTest.php`, frontend `presentation/pages/LoginPage.vue` + garde de

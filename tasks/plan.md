@@ -63,10 +63,10 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 - [x] Task 3 — Test de régression : le jeton n'ouvre jamais `/api/cv`/`/api/me` — [#48](https://github.com/ghostotof/cp-ghostotof/issues/48) (`feature/adr0003-base-access-regression-test`, commit `b7ec52a`)
 
 ### Checkpoint 1
-- [ ] Rate limiter actif et testé
-- [ ] Endpoint pose un cookie BEARER exploitable par le frontend
-- [ ] `/api/cv` et `/api/me` refusent toujours ce jeton (403)
-- [ ] Suite complète (backend) verte, PHPStan max + Rector verts
+- [x] Rate limiter actif et testé
+- [x] Endpoint pose un cookie BEARER exploitable par le frontend
+- [x] `/api/cv` et `/api/me` refusent toujours ce jeton (403)
+- [x] Suite complète (backend) verte, PHPStan max + Rector verts
 
 ### Phase 2 — D5 (1/3) : études de cas techniques — première tranche verticale complète
 - [x] Task 4 — Bounded context `Portfolio/CaseStudy` (entité + migration + repository) — [#49](https://github.com/ghostotof/cp-ghostotof/issues/49) (`feature/adr0003-case-study-entity`, commit `ffd4590`)
@@ -82,7 +82,7 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 
 ### Phase 3 — État d'auth à trois cas (frontend)
 - [x] Task 9 — `hasRole`/garde de routeur/`AppHeader` : 3e cas (palier de base), CTA vers Task 2 — [#54](https://github.com/ghostotof/cp-ghostotof/issues/54) (`feature/adr0003-auth-tiers-frontend`, commit `9bc03fc`)
-- [ ] Task 13 — Action « Terminer cet accès » pour le palier de base (dépend de Task 9) — [#65](https://github.com/ghostotof/cp-ghostotof/issues/65)
+- [x] Task 13 — Action « Terminer cet accès » pour le palier de base (dépend de Task 9) — [#65](https://github.com/ghostotof/cp-ghostotof/issues/65) (`feature/adr0003-end-base-access`, commit `0bd72c3`)
 
 ### Phase 4 — D5, contenus restants (priorité plus basse, indépendants)
 - [ ] Task 10 — CV sans identité (même forme que Task 4–7, second type de contenu) — [#55](https://github.com/ghostotof/cp-ghostotof/issues/55)
@@ -108,4 +108,4 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 - [x] Tâches enregistrées dans le tracker désigné (GitHub Issues, pas `tasks/todo.md`)
 - [x] Aucune tâche ne touche plus de ~5 fichiers (le « Parcours anonymisé » n'est justement pas découpé faute d'info)
 - [x] Checkpoints entre les phases à risque
-- [ ] Revue humaine du plan (Christophe) — **en attente**
+- [x] Revue humaine du plan (Christophe) — confirmée au Checkpoint 2, le 2026-09-13
