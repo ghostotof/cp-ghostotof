@@ -43,7 +43,25 @@ final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministrato
             throw CannotDemoteLastSuperAdminException::forUsername($user->getUsername());
         }
 
-        $user->setRoles($grant ? [CpgUser::ROLE_SUPER] : []);
+        $user->setRoles($grant ? [CpgUser::ROLE_SUPER] : $this->rolesAfterDemotion($user));
         $this->cpgUserRepository->save($user);
+    }
+
+    /**
+     * ADR 0003 D1 (issue #78, pt 3). ROLE_SUPER englobe ROLE_TRUSTED via la
+     * role_hierarchy, mais ROLE_TRUSTED ne s'accorde que nominativement : par
+     * l'invitation, qui lie l'octroi à une adresse e-mail, donc à une personne.
+     * Un compte invité retrouve donc son palier réel à la rétrogradation — il
+     * n'y a pas de perte de confiance implicite dans un acte administratif.
+     * Un compte CLI, lui, n'a pas d'e-mail : personne ne l'a jamais accordé, et
+     * la CLI refuse justement `--role ROLE_TRUSTED` (Task 12). Le promouvoir
+     * puis le rétrograder ne doit pas être une voie détournée vers le CV : il
+     * retombe au palier de base (ROLE_USER, ajouté par getRoles()).
+     *
+     * @return list<string>
+     */
+    private function rolesAfterDemotion(CpgUser $user): array
+    {
+        return null !== $user->getEmail() ? [CpgUser::ROLE_TRUSTED] : [];
     }
 }

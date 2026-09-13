@@ -29,10 +29,11 @@ final class CpgUserRoleAdministratorTest extends TestCase
         self::assertContains(CpgUser::ROLE_SUPER, $target->getRoles());
     }
 
-    public function testRevokeSuperAdminWhenAnotherSuperAdminRemains(): void
+    public function testRevokeSuperAdminFromAnInvitedAccountKeepsRoleTrusted(): void
     {
         $actingUser = $this->userWithId(1, 'super');
         $target = $this->superUserWithId(2, 'other-super');
+        $target->setEmail('other-super@example.test');
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
         $repository->expects(self::once())->method('findOneById')->with(2)->willReturn($target);
@@ -42,6 +43,32 @@ final class CpgUserRoleAdministratorTest extends TestCase
         (new CpgUserRoleAdministrator($repository))->setSuperAdmin(2, false, $actingUser);
 
         self::assertNotContains(CpgUser::ROLE_SUPER, $target->getRoles());
+        // ADR 0003 D1 : un compte invité a été accordé nominativement (son
+        // e-mail dit à qui le CV est ouvert) — la rétrogradation le ramène à
+        // son palier réel, ROLE_TRUSTED, jamais au palier de base.
+        self::assertContains(CpgUser::ROLE_TRUSTED, $target->getRoles());
+    }
+
+    /**
+     * Issue #78, pt 3. Un compte CLI n'a pas d'e-mail : personne ne l'a
+     * jamais accordé nominativement (Task 12 refuse `--role ROLE_TRUSTED` à
+     * la CLI, précisément pour ça). Le promouvoir ROLE_SUPER puis le
+     * rétrograder ne doit pas être une voie détournée vers le CV : il
+     * retombe au palier de base.
+     */
+    public function testRevokeSuperAdminFromAnAccountWithoutEmailDropsItToTheBaseTier(): void
+    {
+        $actingUser = $this->userWithId(1, 'super');
+        $target = $this->superUserWithId(2, 'cli-super');
+
+        $repository = $this->createMock(CpgUserRepositoryInterface::class);
+        $repository->expects(self::once())->method('findOneById')->with(2)->willReturn($target);
+        $repository->expects(self::once())->method('countByRole')->with(CpgUser::ROLE_SUPER)->willReturn(2);
+        $repository->expects(self::once())->method('save')->with($target);
+
+        (new CpgUserRoleAdministrator($repository))->setSuperAdmin(2, false, $actingUser);
+
+        self::assertSame(['ROLE_USER'], $target->getRoles());
     }
 
     public function testRevokeThrowsWhenTargetIsTheLastSuperAdmin(): void

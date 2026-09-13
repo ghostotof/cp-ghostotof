@@ -71,7 +71,7 @@ final class LoginThrottlingTest extends WebTestCase
 
     private function attemptLogin(KernelBrowser $client, string $password): void
     {
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
             'username' => $this->username,
             'password' => $password,
         ]));

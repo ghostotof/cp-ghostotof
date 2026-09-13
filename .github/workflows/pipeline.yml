@@ -344,6 +344,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Audit préprod
+        env:
+          # Préprod exige une Basic Auth (point de sécurité 2026-09-12) :
+          # sans elle, cet audit anonyme prendrait chaque 401 pour un
+          # chemin sensible exposé. Secret à créer manuellement
+          # (`gh secret set PREPROD_BASIC_AUTH`, format "utilisateur:mot_de_passe",
+          # identique à celui posé dans Scaleway Secret Manager /
+          # preprod-basic-auth-htpasswd) — voir k8s/README.md §2bis.
+          AUDIT_BASIC_AUTH: ${{ secrets.PREPROD_BASIC_AUTH }}
         run: ./tools/audit-prod.sh preprod.cp-ghostotof.com
 
   # ---------------------------------------------------------------------------

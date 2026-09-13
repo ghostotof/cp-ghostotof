@@ -6,7 +6,10 @@
     "contact": "Contact",
     "about": "About",
     "contributions": "Contributions",
-    "incidents": "Incidents"
+    "incidents": "Incidents",
+    "caseStudies": "Case studies",
+    "anonymousCv": "Anonymous CV",
+    "dossiers": "Dossiers"
   },
   "common": {
     "downloadCv": "Download my CV",
@@ -23,7 +26,13 @@
     "privacyPolicyLink": "Privacy policy",
     "legalNavigation": "Legal navigation",
     "administration": "Administration",
-    "opensInNewTab": "(opens in a new tab)"
+    "opensInNewTab": "(opens in a new tab)",
+    "instantAccess": "Instant access",
+    "instantAccessGranting": "Granting access…",
+    "instantAccessRateLimited": "Too many attempts from this address. Please try again later.",
+    "instantAccessError": "Access could not be granted. Please try again later.",
+    "baseAccessBadge": "Base access",
+    "endBaseAccess": "End this access"
   },
   "admin": {
     "heading": "Administration",
@@ -39,6 +48,7 @@
       "users": "Users",
       "contributions": "Contributions",
       "incidents": "Incidents",
+      "anonymousCv": "Anonymous CV",
       "watch": "Watch"
     },
     "quality": {
@@ -223,6 +233,33 @@
       "loadError": "Failed to load contributions. Please try again later.",
       "errors": {
         "not-found": "This contribution no longer exists.",
+        "validation": "Some fields are invalid.",
+        "unknown": "An error occurred. Please try again later."
+      }
+    },
+    "anonymousCv": {
+      "create": "Add a section",
+      "edit": "Edit section",
+      "listTitle": "Registered sections",
+      "identityHelp": "No name, employer, client or contact details: this is where, at input time, the content stays non-identifying. No filter will do it for you.",
+      "save": "Save",
+      "cancel": "Cancel",
+      "localeLabel": "Language",
+      "titleLabel": "Skill domain",
+      "skillsLabel": "Skills (technologies, practices)",
+      "yearsLabel": "Years of experience",
+      "achievementsLabel": "Achievements",
+      "achievementsHelp": "Required. What was achieved with this skill — years per technology are already public, achievements are what justify this tier. Paragraphs separated by a blank line.",
+      "positionLabel": "Position",
+      "actions": "Actions",
+      "editAction": "Edit",
+      "deleteAction": "Delete",
+      "confirmDelete": "Delete section \"{title}\"?",
+      "empty": "No section registered yet.",
+      "loading": "Loading sections…",
+      "loadError": "Failed to load sections. Please try again later.",
+      "errors": {
+        "not-found": "This section no longer exists.",
         "validation": "Some fields are invalid.",
         "unknown": "An error occurred. Please try again later."
       }
@@ -454,9 +491,21 @@
       "title": "Incidents and invariants",
       "description": "This project's production outages, root causes and the rules that came out of them."
     },
+    "anonymousCv": {
+      "title": "Anonymous CV",
+      "description": "Skills, seniority and achievements by domain — no name, employer or contact details."
+    },
+    "caseStudies": {
+      "title": "Case studies",
+      "description": "Real technical problems, the solutions retained and measured results — no client names."
+    },
     "stack": {
       "title": "My stack, alive",
       "description": "Installed versions of this site and their support deadlines, checked daily against endoflife.date."
+    },
+    "adminAnonymousCv": {
+      "title": "Administration — Anonymous CV",
+      "description": "Manage the anonymous CV sections (base tier)."
     },
     "adminIncidents": {
       "title": "Administration — Incidents",
@@ -486,6 +535,45 @@
       "rootCause": "Root cause",
       "resolution": "Resolution",
       "invariant": "Invariant"
+    }
+  },
+  "anonymousCv": {
+    "eyebrow": "Anonymous CV",
+    "intro": "Skills, seniority and achievements by domain — no name, employer, client or contact details. Enough to decide whether you want to ask for the real one.",
+    "loading": "Loading the anonymous CV…",
+    "error": "The anonymous CV could not be loaded. Please try again later.",
+    "empty": "No section published yet.",
+    "years": "{count} year of experience | {count} year of experience | {count} years of experience",
+    "fields": {
+      "skills": "Skills",
+      "achievements": "Achievements"
+    },
+    "needsAccess": {
+      "message": "This content requires basic access — free, no credentials.",
+      "action": "Get access",
+      "granting": "Getting access…",
+      "rateLimited": "Too many attempts from this address. Please try again later.",
+      "error": "Access could not be granted. Please try again later."
+    }
+  },
+  "caseStudies": {
+    "eyebrow": "Case studies",
+    "intro": "Real technical problems, the solution retained, what it cost, and a measured result — never a client name.",
+    "loading": "Loading case studies…",
+    "error": "Case studies could not be loaded. Please try again later.",
+    "empty": "No case study published yet.",
+    "fields": {
+      "problem": "Problem",
+      "solution": "Solution",
+      "tradeoffs": "Tradeoffs",
+      "measuredResult": "Measured result"
+    },
+    "needsAccess": {
+      "message": "This content requires basic access — free, no credentials.",
+      "action": "Get access",
+      "granting": "Getting access…",
+      "rateLimited": "Too many attempts from this address. Please try again later.",
+      "error": "Access could not be granted. Please try again later."
     }
   },
   "stack": {

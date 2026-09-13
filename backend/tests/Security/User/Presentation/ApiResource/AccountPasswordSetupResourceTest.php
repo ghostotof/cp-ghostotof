@@ -79,7 +79,7 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(204);
 
         // Le compte est désormais utilisable avec l'identifiant dérivé.
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
             'username' => self::DERIVED_USERNAME,
             'password' => TestCredentials::variant('new'),
         ]));
@@ -159,6 +159,24 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         }
 
         $client->request('GET', '/api/account/password-setup/'.$unknown);
+        self::assertResponseStatusCodeSame(429);
+    }
+
+    /**
+     * Régression issue #77 : `%2D` = '-'. Le routeur sert `password%2Dsetup`
+     * comme `password-setup`, le quota par IP doit s'appliquer à l'identique.
+     */
+    public function testPercentEncodedPathDoesNotBypassTheRateLimiter(): void
+    {
+        $client = $this->freshClient();
+        $unknown = bin2hex(random_bytes(32));
+
+        for ($i = 0; $i < 10; ++$i) {
+            $client->request('GET', '/api/account/password%2Dsetup/'.$unknown);
+            self::assertResponseStatusCodeSame(404);
+        }
+
+        $client->request('GET', '/api/account/password%2Dsetup/'.$unknown);
         self::assertResponseStatusCodeSame(429);
     }
 

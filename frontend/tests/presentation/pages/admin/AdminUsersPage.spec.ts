@@ -10,6 +10,7 @@ import type { AdminUser } from '../../../../src/domain/admin/users/entities/Admi
 import type { AuthRepository } from '../../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../../src/domain/auth/entities/AuthenticatedUser'
 import { AdminUserError } from '../../../../src/domain/admin/users/errors/AdminUserError'
+import { sessionFor } from '../../../support/authSession'
 
 const SUPER: AdminUser = { id: 1, username: 'super', email: null, roles: ['ROLE_SUPER', 'ROLE_USER'], status: 'active' }
 const JANE: AdminUser = { id: 2, username: 'jane', email: null, roles: ['ROLE_USER'], status: 'active' }
@@ -51,7 +52,7 @@ function createStubAuthRepository(user: AuthenticatedUser | null): AuthRepositor
   return {
     login: vi.fn(async () => user ?? { username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }),
     logout: vi.fn(async () => undefined),
-    me: vi.fn(async () => user),
+    me: vi.fn(async () => sessionFor(user)),
   }
 }
 

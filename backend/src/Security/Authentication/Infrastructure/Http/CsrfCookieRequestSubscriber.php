@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Http;
 
+use App\Shared\Infrastructure\Http\CanonicalPath;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
@@ -24,6 +25,10 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
  * la propagation de l'événement) dès son passage. Une priorité inférieure à 8
  * ne verrait donc jamais passer cette requête.
  *
+ * Le chemin est comparé sous sa forme décodée (CanonicalPath, issue #77) :
+ * getPathInfo() est brut, et un `%XX` dans l'URL suffisait à faire rater le
+ * préfixe /api ici alors que le firewall, lui, décodait et exécutait.
+ *
  * Point d'audit B1 : en plus du double-submit, la valeur du cookie doit
  * porter une signature HMAC-APP_SECRET valide (cf. CsrfCookieTokenSigner) —
  * sinon un cookie forgé par un attaquant (qui recopie sa propre valeur dans
@@ -42,8 +47,15 @@ final readonly class CsrfCookieRequestSubscriber
      *   qu'un attaquant pourrait faire agir à son insu) — la protection
      *   double-submit-cookie n'a pas de sens ici. Le spam reste un risque
      *   distinct, traité par le honeypot de ContactMessageResource.
+     * - /api/account/base-access (ADR 0003 D6) : même raisonnement — l'appelant
+     *   est anonyme par définition (c'est le but de l'endpoint) et n'a donc
+     *   aucun cookie XSRF-TOKEN préexistant à double-soumettre.
+     *
+     * Les deux premières POSENT un cookie BEARER : être hors double-submit ne
+     * les met pas hors CSRF pour autant (login-CSRF, issue #76). Elles sont
+     * gardées par LoginCsrfRequestListener, qui exige un en-tête personnalisé.
      */
-    private const array EXCLUDED_PATHS = ['/api/login_check', '/api/contact'];
+    private const array EXCLUDED_PATHS = ['/api/login_check', '/api/contact', '/api/account/base-access'];
 
     /**
      * - /api/account/password-setup/ : parcours public de définition de mot de
@@ -101,7 +113,10 @@ final readonly class CsrfCookieRequestSubscriber
             return false;
         }
 
-        $path = $request->getPathInfo();
+        // Chemin décodé comme le routeur/firewall le voient (issue #77) :
+        // sur le brut, `/%61pi/logout` ne commence pas par `/api` alors que
+        // Symfony l'exécute bien comme /api/logout.
+        $path = CanonicalPath::of($request);
 
         if (!str_starts_with($path, '/api')) {
             return false;

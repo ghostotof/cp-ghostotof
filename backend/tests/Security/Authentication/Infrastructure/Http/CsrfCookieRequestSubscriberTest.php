@@ -177,6 +177,35 @@ final class CsrfCookieRequestSubscriberTest extends TestCase
         $this->subscriber->__invoke($this->mainRequestEvent($request));
     }
 
+    /**
+     * Régression issue #77 : `%61` = 'a'. Le routeur et le firewall décodent
+     * le chemin (`/%61pi/logout` atteint bien le LogoutListener), mais
+     * getPathInfo() le renvoie brut — comparé tel quel, le préfixe /api
+     * n'est pas reconnu et la protection CSRF est contournée d'un octet.
+     */
+    public function testPercentEncodedApiPathIsStillChecked(): void
+    {
+        $request = Request::create('/%61pi/logout', 'POST');
+
+        $this->expectException(AccessDeniedHttpException::class);
+
+        $this->subscriber->__invoke($this->mainRequestEvent($request));
+    }
+
+    /**
+     * Symétrique du précédent : une exclusion doit aussi se reconnaître sous
+     * forme encodée, sinon le frontend qui appellerait `/api/contact` avec
+     * un octet encodé se verrait exiger un jeton CSRF qu'il n'a pas.
+     */
+    public function testPercentEncodedExcludedPathIsStillExcluded(): void
+    {
+        $request = Request::create('/api/cont%61ct', 'POST');
+
+        $this->subscriber->__invoke($this->mainRequestEvent($request));
+
+        $this->addToAssertionCount(1);
+    }
+
     private function mainRequestEvent(Request $request): RequestEvent
     {
         return new RequestEvent(self::createStub(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);

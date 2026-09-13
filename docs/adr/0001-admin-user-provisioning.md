@@ -88,36 +88,23 @@ reprendre la charte graphique du site.
   actions de ligne du tableau `/admin/users` sont regroupées derrière un menu
   « ⋯ » (un seul ouvert à la fois).
 
-### Risque opérationnel du compte invité générique (point d'audit I8)
+### Palier générique retiré au profit d'un octroi nominatif (ADR 0003, 2026-09-12)
 
-Tout compte créé par ce flux — y compris le **compte invité générique** prévu
-par l'objectif n°9 du projet — possède `ROLE_USER`. Or `ROLE_USER` est
-exactement le niveau qui ouvre l'accès aux données personnelles :
+Cette section décrivait le risque opérationnel d'un **compte invité générique
+partagé** (point d'audit I8), prévu par l'objectif n°9 pour ouvrir `ROLE_USER`
+— et donc, à l'époque, le CV — à quiconque en connaîtrait les identifiants. Ce
+compte n'a jamais été créé en production.
 
-| Ressource | Contrôle |
-|---|---|
-| `GET /api/cv` | `ROLE_USER` — le CV réel : identité, employeurs, parcours |
-| `GET /api/me` | `ROLE_USER` |
+**ADR 0003 retire ce modèle plutôt que de l'assainir.** `ROLE_USER` redevient
+le palier de base (authentifié, non identifiant, jamais suffisant pour le
+CV) ; l'accès au CV et à `/api/me` exige désormais `ROLE_TRUSTED`, accordé
+**individuellement** par un `ROLE_SUPER` via ce même flux d'invitation
+(`CpgUserInviter::invite`), jamais par un identifiant partagé. Il n'y a donc
+plus de secret partagé à faire tourner, protéger ou révoquer : l'hygiène
+opérationnelle ci-dessus (mot de passe dédié, rotation, jamais `ROLE_SUPER`)
+n'a plus d'objet.
 
-Il n'y a **pas de palier intermédiaire** entre « visiteur anonyme » et « accès
-complet aux données personnelles ». Conséquence à assumer explicitement : la
-fuite des identifiants de ce seul compte partagé équivaut à publier le CV. Ce
-n'est pas une faille — c'est le modèle choisi — mais il impose une hygiène
-opérationnelle :
-
-- mot de passe **long et propre à ce compte**, jamais réutilisé ailleurs ;
-- **rotation** à chaque fois qu'il a pu être diffusé largement (fin d'un
-  processus de recrutement, démonstration publique, capture d'écran) ;
-- ne jamais lui donner `ROLE_SUPER` : le backoffice est une surface distincte,
-  et l'anti-lockout ne protège que du verrouillage, pas du partage.
-
-Si le besoin d'un accès « démo » plus large apparaissait, la bonne réponse
-serait un rôle dédié (ex. `ROLE_GUEST`) donnant moins que `ROLE_USER`, plutôt
-que de diffuser plus largement un compte `ROLE_USER`.
-
-Note : depuis la révision de D4 (audit C3, 2026-09-04), le contenu « À propos »
-est entièrement public — le CV est donc désormais **la** ressource protégée,
-ce qui concentre le risque décrit ci-dessus au lieu de le diluer.
+Voir `docs/adr/0003-paliers-d-acces.md` pour le modèle complet.
 
 ## Alternatives écartées
 

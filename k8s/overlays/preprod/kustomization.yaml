@@ -7,6 +7,7 @@ resources:
   - namespace.yaml
   - ../../base
   - external-secrets.yaml
+  - ingress-healthz.yaml
 
 # CORS_ALLOW_ORIGIN est une regex (cf. backend/config/packages/nelmio_cors.yaml).
 # <domaine> est un placeholder : à remplacer une fois cp-ghostotof.com acheté
@@ -70,3 +71,25 @@ patches:
       - op: replace
         path: /spec/tls/0/secretName
         value: cp-ghostotof-preprod-tls
+      # Point de sécurité posé le 2026-09-12 : préprod restreinte à mes
+      # seuls appareils. Basic Auth plutôt qu'un allowlist IP (whitelist-
+      # source-range), qui ne fonctionnerait pas pour un accès mobile — voir
+      # external-secrets.yaml pour le Secret htpasswd (preprod-basic-auth,
+      # synchronisé par ESO). Uniquement sur cet overlay : prod reste public.
+      #
+      # auth-realm en ASCII strict (incident v0.8.4) : le webhook de
+      # validation d'ingress-nginx rejette toute valeur contenant un
+      # caractère hors ASCII (accent, tiret cadratin) — "annotation ...
+      # contains invalid value". Le premier essai ("Préprod — accès
+      # restreint") a fait échouer deploy-preprod, sans impact sur la prod
+      # (rollback-preprod a restauré l'état précédent, deploy-prod n'a
+      # jamais été atteint).
+      - op: add
+        path: /metadata/annotations/nginx.ingress.kubernetes.io~1auth-type
+        value: basic
+      - op: add
+        path: /metadata/annotations/nginx.ingress.kubernetes.io~1auth-secret
+        value: preprod-basic-auth
+      - op: add
+        path: /metadata/annotations/nginx.ingress.kubernetes.io~1auth-realm
+        value: "Preprod - acces restreint"

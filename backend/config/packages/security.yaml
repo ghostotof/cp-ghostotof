@@ -10,6 +10,17 @@ security:
                 class: App\Security\User\Domain\Entity\CpgUser
                 property: username
 
+        # ADR 0003 D6 : reconnaît un jeton du palier de base (marqueur "guest"
+        # dans le payload JWT signé) sans jamais interroger Doctrine — voir
+        # GuestUserProvider. Retombe sur cpg_users pour tout le reste, donc
+        # aucun changement de comportement pour un compte réel.
+        guest_users:
+            id: App\Security\User\Infrastructure\Security\GuestUserProvider
+
+        app_users:
+            chain:
+                providers: [guest_users, cpg_users]
+
     firewalls:
         # Ensure dev tools and static assets are always allowed
         dev:
@@ -46,16 +57,41 @@ security:
         api:
             pattern: ^/api
             stateless: true
-            provider: cpg_users
+            provider: app_users
             jwt: ~
             logout:
                 path: /api/logout
 
-    # Note: Only the *first* matching rule is applied
+    # ADR 0003 : ROLE_USER est le palier de base (authentifié, sans plus) ;
+    # ROLE_TRUSTED (identifiant, accordé nominativement) et ROLE_SUPER
+    # l'englobent. Doit rester déclaré avant tout access_control qui
+    # référence ROLE_TRUSTED.
+    role_hierarchy:
+        ROLE_TRUSTED: [ROLE_USER]
+        ROLE_SUPER: [ROLE_TRUSTED]
+
+    # Note: Only the *first* matching rule is applied.
+    #
+    # Chaque `path` est une regex, ancrée aux deux bouts par `(/|$)` : la règle
+    # couvre sa route et son sous-arbre, rien d'autre. Sans cette ancre,
+    # `^/api/cv` capturait `/api/cv-export` et `^/api/case-studies` aurait
+    # capturé un futur `/api/case-studies-drafts` avec le rôle de la règle
+    # voisine, quel que soit le palier que cette route devait exiger — et comme
+    # seule la première règle compte, une entrée ajoutée plus bas n'y aurait
+    # rien changé (issue #78, pt 2). Un chemin voisin n'hérite donc d'aucune
+    # protection implicite : il reçoit sa propre règle, ou
+    # ApiRouteExposureTest le signale. AccessControlAnchoringTest pince l'ancre.
     access_control:
-        - { path: ^/api/backoffice, roles: ROLE_SUPER }
-        - { path: ^/api/me, roles: ROLE_USER }
-        - { path: ^/api/cv, roles: ROLE_USER }
+        - { path: ^/api/backoffice(/|$), roles: ROLE_SUPER }
+        - { path: ^/api/me(/|$), roles: ROLE_TRUSTED }
+        - { path: ^/api/cv(/|$), roles: ROLE_TRUSTED }
+        # ADR 0003 D5 : contenu du palier de base — publiable en soi, mais pas
+        # anonyme. ROLE_USER suffit (le jeton D6 comme un compte réel).
+        - { path: ^/api/case-studies(/|$), roles: ROLE_USER }
+        # Même palier. Le chemin ne commence pas par /api/cv, sinon la règle
+        # ROLE_TRUSTED ci-dessus le capturerait (première règle qui matche —
+        # l'ancre n'y change rien, /api/cv/anonymous serait dans son sous-arbre).
+        - { path: ^/api/anonymous-cv(/|$), roles: ROLE_USER }
 
 when@test:
     security:

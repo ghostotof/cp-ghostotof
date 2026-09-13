@@ -24,6 +24,8 @@ import { ADMIN_CONTRIBUTION_REPOSITORY } from './application/admin/contributions
 import { HttpAdminContributionRepository } from './infrastructure/admin/contributions/HttpAdminContributionRepository'
 import { ADMIN_INCIDENT_REPOSITORY } from './application/admin/incidents/useAdminIncidents'
 import { HttpAdminIncidentRepository } from './infrastructure/admin/incidents/HttpAdminIncidentRepository'
+import { ADMIN_ANONYMOUS_CV_SECTION_REPOSITORY } from './application/admin/anonymousCv/useAdminAnonymousCvSections'
+import { HttpAdminAnonymousCvSectionRepository } from './infrastructure/admin/anonymousCv/HttpAdminAnonymousCvSectionRepository'
 import { HttpContributionRepository } from './infrastructure/contributions/HttpContributionRepository'
 import { INCIDENT_REPOSITORY } from './application/incidents/useIncidents'
 import { WATCH_REPOSITORY } from './application/watch/useWatch'
@@ -47,6 +49,12 @@ import { ADMIN_USER_REPOSITORY } from './application/admin/users/useAdminUsers'
 import { HttpAdminUserRepository } from './infrastructure/admin/users/HttpAdminUserRepository'
 import { ACCOUNT_REPOSITORY } from './application/account/useAccountPasswordSetup'
 import { HttpAccountRepository } from './infrastructure/account/HttpAccountRepository'
+import { CASE_STUDY_REPOSITORY } from './application/caseStudies/useCaseStudies'
+import { HttpCaseStudyRepository } from './infrastructure/caseStudies/HttpCaseStudyRepository'
+import { ANONYMOUS_CV_REPOSITORY } from './application/anonymousCv/useAnonymousCv'
+import { HttpAnonymousCvRepository } from './infrastructure/anonymousCv/HttpAnonymousCvRepository'
+import { BASE_ACCESS_REPOSITORY } from './application/baseAccess/useBaseAccess'
+import { HttpBaseAccessRepository } from './infrastructure/baseAccess/HttpBaseAccessRepository'
 import { getApiUrl } from './infrastructure/config/getApiUrl'
 
 const app = createApp(App)
@@ -63,12 +71,16 @@ app.provide(ADMIN_EXPERIENCE_TECHNOLOGY_REPOSITORY, new HttpAdminExperienceTechn
 app.provide(ABOUT_CONTENT_REPOSITORY, new HttpAboutContentRepository(apiUrl))
 app.provide(QUALITY_CONTENT_REPOSITORY, new HttpQualityContentRepository(apiUrl))
 app.provide(CONTRIBUTION_REPOSITORY, new HttpContributionRepository(apiUrl))
+app.provide(CASE_STUDY_REPOSITORY, new HttpCaseStudyRepository(apiUrl))
+app.provide(ANONYMOUS_CV_REPOSITORY, new HttpAnonymousCvRepository(apiUrl))
+app.provide(BASE_ACCESS_REPOSITORY, new HttpBaseAccessRepository(apiUrl))
 app.provide(INCIDENT_REPOSITORY, new HttpIncidentRepository(apiUrl))
 app.provide(WATCH_REPOSITORY, new HttpWatchRepository(apiUrl))
 app.provide(ADMIN_WATCHED_PRODUCT_REPOSITORY, new HttpAdminWatchedProductRepository(apiUrl))
 app.provide(ADMIN_VULNERABILITY_REPOSITORY, new HttpAdminVulnerabilityRepository(apiUrl))
 app.provide(ADMIN_CONTRIBUTION_REPOSITORY, new HttpAdminContributionRepository(apiUrl))
 app.provide(ADMIN_INCIDENT_REPOSITORY, new HttpAdminIncidentRepository(apiUrl))
+app.provide(ADMIN_ANONYMOUS_CV_SECTION_REPOSITORY, new HttpAdminAnonymousCvSectionRepository(apiUrl))
 app.provide(ADMIN_ABOUT_SETTINGS_REPOSITORY, new HttpAdminAboutSettingsRepository(apiUrl))
 app.provide(ADMIN_ABOUT_SITE_CARD_REPOSITORY, new HttpAdminAboutSiteCardRepository(apiUrl))
 app.provide(ADMIN_ABOUT_ME_CARD_REPOSITORY, new HttpAdminAboutMeCardRepository(apiUrl))

@@ -7,7 +7,7 @@
 # smoke tests aveugles à ce que voit réellement un visiteur.
 #
 # Pourquoi il est SANS DANGER de le jouer à chaque déploiement : depuis le
-# 2026-09-08, les cinq commandes `app:*:seed` refusent d'écraser du contenu déjà
+# 2026-09-08, les commandes `app:*:seed` refusent d'écraser du contenu déjà
 # présent (cf. App\Shared\Presentation\Command\GuardsExistingContent). Une base
 # neuve se peuple, une base déjà peuplée est laissée intacte, et le refus sort
 # en code 0 — sans quoi ce Job ferait échouer tous les déploiements après le
@@ -84,6 +84,8 @@ spec:
               php bin/console app:contributions:seed
               php bin/console app:incidents:seed
               php bin/console app:watch:seed
+              php bin/console app:case-studies:seed
+              php bin/console app:anonymous-cv:seed
           envFrom:
             - configMapRef:
                 name: backend-config

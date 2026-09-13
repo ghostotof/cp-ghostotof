@@ -18,19 +18,46 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - The frontend is fully linted with ESLint.
    - The backend is fully linted with PHPStan.
 8. The security must be a top priority.
-9. In its final state, the website will have an authentication system with a generic guest user.
-   Without authentication, the site must not expose any personal information that could identify me.
-   This information becomes available once the user is authenticated.
-   - **Scope, as settled on 2026-09-04** (audit C3): this covers the **CV** (`GET /api/cv`, `ROLE_USER`) —
+9. In its final state, the website implements the three-tier access model of ADR 0003 (anonymous, a
+   discretion-only base tier, and a nominative trusted tier) rather than a shared generic guest account.
+   Without `ROLE_TRUSTED`, the site must not expose any personal information that could identify me. This
+   information becomes available once `ROLE_TRUSTED` is granted.
+   - **Scope, as settled on 2026-09-04** (audit C3), **role updated 2026-09-12** (ADR 0003 D2/D4): this
+     covers the **CV** (`GET /api/cv`, `ROLE_TRUSTED`) —
      real name, employers, career history — and `GET /api/me`. It does **not** cover the About page: its
      content is deliberately public in full, including the "hobbies" panel, because that content is authored
      through the backoffice and what gets published is decided at authoring time. Don't reintroduce a
      conditional filter there (see `AboutContentResource`'s docblock).
    - "Expose", not "display": hiding a field client-side is presentation, never protection. The enforcement
      rule and its automated guard live under "Backoffice" below.
-   - There is no tier between anonymous and full access — `ROLE_USER` opens the CV outright. Leaking the
-     shared guest account's credentials is equivalent to publishing the CV; see `docs/adr/0001` for the
-     operational hygiene that follows (dedicated password, rotation, never `ROLE_SUPER`).
+   - **There is a base tier below the trusted one** (`ROLE_USER`, ADR 0003 D1/D2): granted to anyone
+     authenticated, publishable and non-identifying by construction — it must never gate CV-level data.
+     Only `ROLE_TRUSTED` does, and it is granted **nominatively** by a `ROLE_SUPER` account through the
+     backoffice invitation flow (`CpgUserInviter::invite`), never via a shared or published credential.
+     `ROLE_SUPER` inherits `ROLE_TRUSTED` via the `role_hierarchy` in `security.yaml`. See `docs/adr/0003`
+     for the full model, `docs/adr/0001` (amended) for the invitation mechanics.
+   - **The credential-free way to reach the base tier is built** (ADR 0003 D6): `POST /api/account/base-access`
+     (`BaseAccessController`, per-IP rate-limited, double-submit-CSRF-excluded like `/api/contact` but
+     guarded by `LoginCsrfRequestListener`, see `Security/Authentication` below) issues a 15-minute
+     JWT carrying exactly `ROLE_USER`, with **no account materialised in the DB**. The frontend's
+     "Accès instantané" CTA calls it; "Terminer cet accès" (issue #65) ends it early through the
+     unchanged `POST /api/logout`, which expires the cookie whoever holds it. The tier is read from the
+     HTTP status of `GET /api/me` (401 anonymous / 403 base / 200 trusted) — no dedicated endpoint.
+     The response body carries `expiresAt`, the only way the frontend can know when the httpOnly cookie
+     dies: `useAuth` arms a timer on it (remembered in `localStorage` to survive a reload, a past value
+     is ignored — the server is the truth) and any 401 on base-tier content calls
+     `markBaseAccessExpired()`, so the header never shows "Accès de base" above a page asking for it.
+   - **Content that tier carries** (ADR 0003 D5): two contexts, both built — `Portfolio/CaseStudy`
+     (`GET /api/case-studies/{locale}`) and `Portfolio/AnonymousCv` (`GET /api/anonymous-cv/{locale}`,
+     skills, seniority and **achievements** per domain, no name/employer/client; the path deliberately
+     avoids the `^/api/cv` prefix, which is `ROLE_TRUSTED`). The third content the ADR listed, an
+     anonymised career path, was **dropped on 2026-09-13** (D5 amended): the time sequence is the most
+     re-identifying element, and the chronology is precisely what the nominative tier adds — don't
+     reintroduce it as "just durations and sectors". A real account never granted `ROLE_TRUSTED` still
+     lands on that same base tier. **Never name a real account in this repo** (issue #78, pt 5): a valid
+     username in a public repository is half a credential, `login_throttling` or not — the former
+     shared demo account was removed from production for that reason, and its name scrubbed from here
+     and from the migration docblock that mentioned it.
 10. The modifications must follow the git flow planned for this project on GitHub (main branch "main", next release "develop", new feature "feature", etc...)
 11. The resulting can be shown during an interview.
 12. The resulting must be fully multilingual (French, English)
@@ -152,7 +179,8 @@ folder), so entities live inside their bounded context instead of a shared top-l
     (`invite(email, Locale)` / `reinvite(user, Locale)`: derives username, creates/marks the pending account,
     then **only** dispatches `SendAccountInvitationMessage`) · `PasswordSetupService` (`validate` / `complete`
     the public flow) · `CpgUserAdministrator` (delete / change-password) · `CpgUserRoleAdministrator`
-    (`setSuperAdmin`, idempotent, anti-lockout guards) · `PasswordSetupRateLimiterInterface` (calqued on the
+    (`setSuperAdmin`, idempotent, anti-lockout guards; on demotion `ROLE_TRUSTED` is kept **only if the account
+    has an `email`** — nominative grant, ADR 0003 D1, issue #78 pt 3 — a CLI account falls back to the base tier) · `PasswordSetupRateLimiterInterface` (calqued on the
     Contact rate limiter). Presenters: `CpgUserPresenter` (`/api/me`), `CpgUserAdminPresenter`
     (backoffice list — `id`, `username`, `email`, `roles`, `status`).
   - **The invitation token is created by the Messenger handler, never by the use case** (audit C2):
@@ -185,6 +213,25 @@ folder), so entities live inside their bounded context instead of a shared top-l
     `/api/logout`).
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
     listener at priority 20 (must run *above* the Security firewall's priority 8 — see the class docblock).
+  - `Infrastructure/Http/LoginCsrfRequestListener.php` — **login-CSRF guard** (issue #76) on the two anonymous
+    routes that *set* a `BEARER` cookie, `POST /api/login_check` and `POST /api/account/base-access`. Both are
+    rightly outside the double-submit (an anonymous caller has no `XSRF-TOKEN` to echo), but a cross-site
+    HTML form could submit them top-level: the victim's cookie isn't sent (`SameSite=Lax`), yet the
+    response's `Set-Cookie` *is* accepted and **replaces** the trusted `BEARER` with the attacker's (or a
+    15-minute guest one). The guard requires the `X-Requested-With` header, which a form cannot set and
+    which makes a cross-site `fetch()` fail its CORS preflight. **Presence is the protection, not the
+    value.** Same priority 20 as the CSRF subscriber: above the firewall (or `json_login` sets the cookie
+    first) and above the rate limiters (15), so a forged submission never burns the victim's IP quota.
+    `nelmio_cors.yaml` lists the header in `allow_headers`; the frontend sends it via
+    `infrastructure/http/loginCsrfHeader.ts` on both calls. Functional tests therefore pass
+    `'HTTP_X_REQUESTED_WITH' => 'fetch'` in `server:` on every login/base-access request.
+  - **Any `kernel.request` listener that matches on the path must use `App\Shared\Infrastructure\Http\CanonicalPath::of()`,
+    never `getPathInfo()` directly** (issue #77). `getPathInfo()` is *not* decoded, while the router, the
+    firewalls and `access_control` all decide on `rawurldecode()`: `POST /%61pi/logout` reached the
+    `LogoutListener` without ever passing the CSRF check, and `/api/account/base%2Daccess` escaped its rate
+    limiter. The four listeners (`CsrfCookieRequestSubscriber`, `LoginCsrfRequestListener`,
+    `BaseAccessRateLimitRequestListener`, `PasswordSetupRateLimitRequestListener`) go through the helper,
+    and each has a `%XX` regression test.
 - **`Portfolio/Shared/`** — `Domain/ValueObject/Locale.php`, the `enum Locale: string { FR = 'fr'; EN = 'en' }`
   shared by every `Portfolio/*` context. Two entry points, and the distinction matters (audit I3):
   - **`Locale::fromString()` for anything coming from outside** (a `{locale}` URL segment, a command
@@ -327,9 +374,14 @@ Content management for all of the above, plus user administration, gated end-to-
 (the default role every account also has is `ROLE_USER`, cf. `CpgUser::getRoles()` — never sufficient here):
 
 - **Authorization**: a single `access_control` entry in `config/packages/security.yaml`,
-  `{ path: ^/api/backoffice, roles: ROLE_SUPER }`, which **must stay the first entry in the list** — Symfony
+  `{ path: ^/api/backoffice(/|$), roles: ROLE_SUPER }`, which **must stay the first entry in the list** — Symfony
   applies only the first matching rule, so a later/looser rule (e.g. `^/api/me`) would never get a chance to
-  override it, but a rule placed *before* it could accidentally widen backoffice access.
+  override it, but a rule placed *before* it could accidentally widen backoffice access. **Every `path` is
+  anchored with `(/|$)`** (issue #78, pt 2): a rule covers its route and its subtree, nothing else, so
+  `/api/cv-export` is *not* `ROLE_TRUSTED` by accident and a future `/api/case-studies-drafts` is *not*
+  `ROLE_USER` by accident. A sibling path therefore inherits no implicit protection — write its rule, or
+  `ApiRouteExposureTest` flags it. `tests/Security/AccessControlAnchoringTest.php` pins the anchors against
+  the compiled `AccessMap`; keep the pattern when adding a rule.
 - **Non-negotiable rule for every new endpoint — "never send what the caller isn't entitled to"**: the API must
   never return protected data to an unauthenticated or unauthorized caller, *even when the frontend does not
   display it*. Hiding a field client-side is presentation, never protection — anyone can call the endpoint
@@ -339,7 +391,11 @@ Content management for all of the above, plus user administration, gated end-to-
   `/api/backoffice*` path can ever be allow-listed, and that the whole backoffice answers 403 to an
   authenticated account lacking `ROLE_SUPER` (authenticated ≠ authorized). Adding a public endpoint therefore
   means adding an entry to `PUBLIC_PATHS` **with a written justification**; if you can't justify it, it isn't
-  public. Never weaken or delete that test to make a new route pass.
+  public. The same test carries `BASE_TIER_PATHS` (issue #78, invariant n°6): with a base-tier token
+  (`POST /api/account/base-access`, `ROLE_USER`) **every** route outside `PUBLIC_PATHS ∪ BASE_TIER_PATHS`
+  must answer 403, and every listed entry must actually open — so a new `ROLE_USER` content route needs its
+  own justified entry there, and a `ROLE_USER` rule on an identifying route turns the suite red. Never
+  weaken or delete that test to make a new route pass.
 - **API Platform pattern**, repeated identically across every backoffice resource
   (`BackofficeExperienceTechnologyResource`, `BackofficeQuality{Principle,Trait}Resource`,
   `BackofficeContributionResource`, `BackofficeIncidentResource`, `BackofficeWatchedProductResource`,
@@ -363,9 +419,11 @@ Content management for all of the above, plus user administration, gated end-to-
   username+password creation stays CLI-only), an explicit `Get /backoffice/users/{id}` and
   `Delete /backoffice/users/{id}`. The `Get` is declared **on purpose** (audit C6): without an item operation,
   API Platform silently synthesises one to build IRIs, published on its default template
-  `/api/backoffice_users/{id}` — a second, undocumented path to the same data, which only stayed protected by
-  the accident that `^/api/backoffice` (no trailing slash) matches `backoffice_users` by prefix. Declaring it
-  removes that route. Plus dedicated one-operation
+  `/api/backoffice_users/{id}` — a second, undocumented path to the same data, which at the time only stayed
+  protected by the accident that the then-unanchored `^/api/backoffice` matched `backoffice_users` by prefix.
+  That accident is gone (the rule is now `^/api/backoffice(/|$)`, see "Authorization" above), so such a route
+  would be served to anyone — `ApiRouteExposureTest` would turn red, but check `debug:router` first. Declaring
+  the `Get` removes that route. Plus dedicated one-operation
   resources: `BackofficeUserPasswordResource` (`Put …/{id}/password`, `output: false`),
   `BackofficeUserRoleResource` (`Put …/{id}/roles` `{superAdmin}`, `output: false`),
   `BackofficeUserInvitationResource` (`Post …/{id}/invitation` `{locale}`, resend, `read: false`, → 202).
@@ -383,7 +441,7 @@ Content management for all of the above, plus user administration, gated end-to-
 
 ### Seeding (`app:*:seed`)
 
-Five commands carry the reference content: `app:{about,quality,contributions,incidents,watch}:seed`.
+Seven commands carry the reference content: `app:{about,quality,contributions,incidents,watch,case-studies,anonymous-cv}:seed`.
 They **purge and recreate** — that is how an entry removed from the reference content actually
 disappears — which used to make them silently destructive on any environment whose content had been
 edited through the backoffice.
@@ -401,7 +459,8 @@ all deliberate:
 therefore the deployment — on every run after the first. "There is already content" is the expected
 answer in nearly every execution, not an error. `SeedWatchedProductsCommandTest` pins it.
 
-`k8s/base/seed-job.yaml` runs the five on **every preprod deploy**. Like `migrate-job.yaml` it sits
+`k8s/base/seed-job.yaml` runs the seven on **every preprod deploy** (`case-studies` was missing from it
+until 2026-09-13 — adding a seed command means adding its line there, the Job's comment says so). Like `migrate-job.yaml` it sits
 outside `kustomization.yaml`, hence `${BACKEND_IMAGE}` + `envsubst`. It never passes `--force`, so it
 cannot repair a divergence: if the reference content changes in code, preprod keeps the old one until
 someone forces it by hand. That is the price of harmlessness, and it is the right trade — a Job that
@@ -656,8 +715,9 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   `CreateContainerConfigError` (incident v0.6.0). The rule that decides: **hash it if kustomize owns
   every reference to it, don't if anything outside kustomize names it.** Verify a config change
   actually landed with `kubectl exec … -c nginx -- nginx -T | grep <the new directive>`.
-- **Three nginx rate-limit zones, two different jobs.** `contact` (10 r/m) and `pwsetup` (20 r/m)
-  protect a *side effect* — sending mail, guessing a token. `publicapi` (600 r/m, burst 200, on
+- **Four nginx rate-limit zones, two different jobs.** `contact` (10 r/m), `pwsetup` (20 r/m) and
+  `baseaccess` (20 r/m, issue #77 — each call signs an RS256 JWT) protect a *side effect* — sending mail,
+  guessing a token, minting a token. `publicapi` (600 r/m, burst 200, on
   `location /`) protects the *resource*: without it every public read reaches PHP and Postgres as
   often as asked. Its ceiling is deliberately far above real use — behind a mobile carrier's CGNAT
   thousands of visitors share one address, and a tight cap would cut them all off at once, which is
@@ -855,3 +915,8 @@ ADRs:
 - `docs/adr/0001-admin-user-provisioning.md` (invitation-by-email flow, `email` now stored, Twig for emails)
 - `docs/adr/0002-veille-technique.md` (`Portfolio/Watch`: outbound calls out of the render path, snapshot in
   DB, public aggregate vs `ROLE_SUPER` detail, manifest built at `docker build`)
+- `docs/adr/0003-paliers-d-acces.md` — **statut `accepté`, implémenté** (D1/D2/D4/D6/D7, D5 réduit à deux
+  contenus par amendement du 2026-09-13; `tasks/plan.md` lists the housekeeping left). Makes `ROLE_USER` the bottom tier (one click, no credentials,
+  discretion rather than secrecy) and puts the CV behind `ROLE_TRUSTED`. Read it before touching
+  `access_control`, `CpgUser::getRoles()` or `BaseAccessController`: it turns on the fact that `getRoles()`
+  grants `ROLE_USER` unconditionally, which is why a tier was added *above* rather than below.

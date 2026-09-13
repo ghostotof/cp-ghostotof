@@ -1,15 +1,17 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
-import { AUTH_REPOSITORY, useAuth } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, authState, markBaseAccessExpired, markBaseAccessGranted, useAuth } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
+import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
+import { sessionFor } from '../../support/authSession'
 
 function createStubRepository(overrides: Partial<AuthRepository> = {}): AuthRepository {
   return {
     login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER'] }) satisfies AuthenticatedUser),
     logout: vi.fn(async () => undefined),
-    me: vi.fn(async () => null),
+    me: vi.fn(async () => sessionFor(null)),
     ...overrides,
   }
 }
@@ -61,7 +63,7 @@ describe('useAuth', () => {
   })
 
   it('checkAuth() hydrate isAuthenticated depuis repository.me()', async () => {
-    const repository = createStubRepository({ me: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER'] })) })
+    const repository = createStubRepository({ me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })) })
     const auth = mountWithComposable(repository)
 
     expect(auth.isAuthenticated.value).toBe(false)
@@ -69,12 +71,12 @@ describe('useAuth', () => {
     await auth.checkAuth()
 
     expect(auth.isAuthenticated.value).toBe(true)
-    expect(auth.user.value).toEqual({ username: 'jane', roles: ['ROLE_USER'] })
+    expect(auth.user.value).toEqual({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
   })
 
   it('isSuperAdmin reflète le rôle ROLE_SUPER du user courant', async () => {
     const repository = createStubRepository({
-      me: vi.fn(async () => ({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })),
+      me: vi.fn(async () => sessionFor({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })),
     })
     const auth = mountWithComposable(repository)
 
@@ -114,5 +116,177 @@ describe('useAuth', () => {
     expect(repository.logout).toHaveBeenCalled()
     expect(auth.isAuthenticated.value).toBe(false)
     expect(auth.user.value).toBeNull()
+  })
+
+  describe('palier d\'accès (ADR 0003 D1 — trois cas)', () => {
+    it('anonyme par défaut : tier=anonymous, ni authentifié ni de confiance', async () => {
+      const auth = mountWithComposable(createStubRepository())
+
+      await auth.checkAuth()
+
+      expect(auth.tier.value).toBe('anonymous')
+      expect(auth.isAuthenticated.value).toBe(false)
+      expect(auth.isTrusted.value).toBe(false)
+    })
+
+    it('checkAuth() reconnaît le palier de base (403 sur /api/me) : authentifié, sans identité, pas de confiance', async () => {
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => BASE_ACCESS_SESSION) }))
+
+      await auth.checkAuth()
+
+      expect(auth.tier.value).toBe('base')
+      expect(auth.isAuthenticated.value).toBe(true)
+      expect(auth.isTrusted.value).toBe(false)
+      expect(auth.user.value).toBeNull()
+    })
+
+    it('checkAuth() reconnaît le palier de confiance', async () => {
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })) }))
+
+      await auth.checkAuth()
+
+      expect(auth.tier.value).toBe('trusted')
+      expect(auth.isTrusted.value).toBe(true)
+    })
+
+    it('markBaseAccessGranted() fait passer un anonyme au palier de base, visible via authState (hors composant)', async () => {
+      const auth = mountWithComposable(createStubRepository())
+      await auth.checkAuth()
+
+      markBaseAccessGranted()
+
+      expect(auth.tier.value).toBe('base')
+      expect(authState.tier).toBe('base')
+      expect(authState.user).toBeNull()
+    })
+
+    it('login() depuis le palier de base avec un compte de confiance passe au palier de confiance', async () => {
+      const auth = mountWithComposable(
+        createStubRepository({ login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })) }),
+      )
+      await auth.checkAuth()
+      markBaseAccessGranted()
+
+      await auth.login('jane', 'password')
+
+      expect(auth.tier.value).toBe('trusted')
+      expect(auth.user.value?.username).toBe('jane')
+    })
+
+    it('login() avec un compte réel sans ROLE_TRUSTED reste au palier de base, mais identifié', async () => {
+      const auth = mountWithComposable(createStubRepository())
+
+      await auth.login('jane', 'password')
+
+      expect(auth.tier.value).toBe('base')
+      expect(auth.user.value?.username).toBe('jane')
+    })
+
+    it('logout() depuis le palier de base ramène à anonyme', async () => {
+      const auth = mountWithComposable(createStubRepository())
+      await auth.checkAuth()
+      markBaseAccessGranted()
+
+      await auth.logout()
+
+      expect(auth.tier.value).toBe('anonymous')
+    })
+  })
+
+  /**
+   * Le cookie D6 est httpOnly et s'éteint seul après 15 min : sans ces
+   * mécanismes, l'en-tête afficherait « Accès de base » jusqu'au prochain
+   * rechargement, bien après que le jeton ait cessé d'exister.
+   */
+  describe("expiration du jeton du palier de base (ADR 0003 D6)", () => {
+    const FIFTEEN_MINUTES = 15 * 60 * 1000
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+      localStorage.clear()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+      localStorage.clear()
+    })
+
+    it("à l'échéance annoncée, le palier de base retombe à anonyme sans aucun appel réseau", async () => {
+      const repository = createStubRepository()
+      const auth = mountWithComposable(repository)
+      await auth.checkAuth()
+      vi.mocked(repository.me).mockClear()
+
+      markBaseAccessGranted(new Date(Date.now() + FIFTEEN_MINUTES))
+      expect(auth.tier.value).toBe('base')
+
+      vi.advanceTimersByTime(FIFTEEN_MINUTES - 1)
+      expect(auth.tier.value).toBe('base')
+
+      vi.advanceTimersByTime(1)
+      expect(auth.tier.value).toBe('anonymous')
+      expect(repository.me).not.toHaveBeenCalled()
+    })
+
+    it("sans échéance connue (contrat plus ancien), rien n'est programmé : comportement d'avant", async () => {
+      const auth = mountWithComposable(createStubRepository())
+      await auth.checkAuth()
+
+      markBaseAccessGranted(null)
+      vi.advanceTimersByTime(FIFTEEN_MINUTES * 10)
+
+      expect(auth.tier.value).toBe('base')
+    })
+
+    it("un login avant l'échéance annule la minuterie : le compte n'est pas déconnecté par le timer du jeton D6", async () => {
+      const auth = mountWithComposable(
+        createStubRepository({ login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })) }),
+      )
+      await auth.checkAuth()
+      markBaseAccessGranted(new Date(Date.now() + FIFTEEN_MINUTES))
+
+      await auth.login('jane', 'password')
+      vi.advanceTimersByTime(FIFTEEN_MINUTES)
+
+      expect(auth.tier.value).toBe('trusted')
+      expect(localStorage.getItem('baseAccessExpiresAt')).toBeNull()
+    })
+
+    it("après un rechargement, checkAuth() reprend l'échéance mémorisée quand le serveur confirme le palier de base", async () => {
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => BASE_ACCESS_SESSION) }))
+      localStorage.setItem('baseAccessExpiresAt', new Date(Date.now() + FIFTEEN_MINUTES).toISOString())
+
+      await auth.checkAuth()
+      expect(auth.tier.value).toBe('base')
+
+      vi.advanceTimersByTime(FIFTEEN_MINUTES)
+      expect(auth.tier.value).toBe('anonymous')
+    })
+
+    it("une échéance mémorisée mais passée est ignorée : c'est le serveur qui fait foi", async () => {
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => BASE_ACCESS_SESSION) }))
+      localStorage.setItem('baseAccessExpiresAt', new Date(Date.now() - 1000).toISOString())
+
+      await auth.checkAuth()
+      vi.advanceTimersByTime(FIFTEEN_MINUTES)
+
+      expect(auth.tier.value).toBe('base')
+      expect(localStorage.getItem('baseAccessExpiresAt')).toBeNull()
+    })
+
+    it('markBaseAccessExpired() ramène le palier de base (sans compte) à anonyme, et ne touche pas à un compte identifié', async () => {
+      const auth = mountWithComposable(createStubRepository())
+      await auth.checkAuth()
+      markBaseAccessGranted(new Date(Date.now() + FIFTEEN_MINUTES))
+
+      markBaseAccessExpired()
+      expect(auth.tier.value).toBe('anonymous')
+      expect(localStorage.getItem('baseAccessExpiresAt')).toBeNull()
+
+      await auth.login('jane', 'password') // compte réel au palier de base, identifié
+      markBaseAccessExpired()
+      expect(auth.tier.value).toBe('base')
+      expect(auth.user.value?.username).toBe('jane')
+    })
   })
 })

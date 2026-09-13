@@ -92,6 +92,27 @@ final class CreateCpgUserCommandTest extends KernelTestCase
         self::assertContains('ROLE_SUPER', $user->getRoles());
     }
 
+    /**
+     * ADR 0003, Task 12 (#56) : ROLE_TRUSTED s'obtient nominativement par
+     * invitation (lié à une adresse e-mail), jamais depuis la CLI — un compte
+     * CLI n'a qu'un username et ne dirait pas à qui le CV a été ouvert. Ce test
+     * pince la décision : élargir ALLOWED_ROLES doit le faire rougir.
+     */
+    public function testRefusesRoleTrustedWhichIsGrantedByInvitationOnly(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute([
+            '--username' => 'jane',
+            '--password' => TestCredentials::plainPassword(),
+            '--role' => ['ROLE_TRUSTED'],
+        ]);
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('ROLE_TRUSTED', $tester->getDisplay());
+        self::assertNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane'));
+    }
+
     public function testFailsOnUnknownRole(): void
     {
         $tester = $this->commandTester();

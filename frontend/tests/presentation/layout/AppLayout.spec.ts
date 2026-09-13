@@ -15,6 +15,8 @@ import type { AboutContentRepository } from '../../../src/domain/about/repositor
 import { QUALITY_CONTENT_REPOSITORY } from '../../../src/application/quality/useQualityContent'
 import type { QualityContentRepository } from '../../../src/domain/quality/repositories/QualityContentRepository'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { BASE_ACCESS_REPOSITORY } from '../../../src/application/baseAccess/useBaseAccess'
+import { sessionFor } from '../../support/authSession'
 
 const STUB_ABOUT_CONTENT = {
   site: { eyebrow: 'À propos de ce site (stub)', cards: [] },
@@ -33,7 +35,7 @@ function createStubAuthRepository(): AuthRepository {
   return {
     login: async () => ({ username: 'jane', roles: ['ROLE_USER'] }),
     logout: async () => undefined,
-    me: async () => null,
+    me: async () => sessionFor(null),
   }
 }
 
@@ -69,6 +71,7 @@ async function mountLayout(initialPath = '/fr') {
         [PORTFOLIO_CONTENT_REPOSITORY as symbol]: new StaticPortfolioContentRepository(),
         [AUTH_REPOSITORY as symbol]: createStubAuthRepository(),
         [CV_REPOSITORY as symbol]: createStubCvRepository(),
+        [BASE_ACCESS_REPOSITORY as symbol]: { grant: async () => undefined },
         [ABOUT_CONTENT_REPOSITORY as symbol]: createStubAboutContentRepository(),
         [QUALITY_CONTENT_REPOSITORY as symbol]: createStubQualityContentRepository(),
       },

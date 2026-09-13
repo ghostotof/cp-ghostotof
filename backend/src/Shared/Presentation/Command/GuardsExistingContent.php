@@ -11,7 +11,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 /**
  * Empêche une commande de peuplement d'effacer du contenu déjà en place.
  *
- * Les cinq commandes `app:*:seed` **purgent avant de recréer** : c'est
+ * Les commandes `app:*:seed` **purgent avant de recréer** : c'est
  * volontaire, c'est ainsi qu'une entrée retirée du contenu de référence
  * disparaît vraiment. Mais cette même purge, jouée sur un environnement dont
  * le contenu a été édité au backoffice, le détruit sans avertissement — et rien

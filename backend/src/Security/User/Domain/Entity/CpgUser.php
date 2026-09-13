@@ -35,6 +35,13 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
     /** Rôle réservé à l'administration du backoffice (gestion de contenu, gestion des utilisateurs). */
     public const string ROLE_SUPER = 'ROLE_SUPER';
 
+    /**
+     * Palier « identifiant » (ADR 0003) : accordé nominativement, jamais par
+     * simple authentification. Ouvre le CV et /api/me. Hérité automatiquement
+     * par ROLE_SUPER via la role_hierarchy de security.yaml.
+     */
+    public const string ROLE_TRUSTED = 'ROLE_TRUSTED';
+
     public const int MIN_PASSWORD_LENGTH = 8;
 
     /**

@@ -6,6 +6,7 @@ import { AUTH_REPOSITORY } from '../../../src/application/auth/useAuth'
 import { InvalidCredentialsError } from '../../../src/domain/auth/errors/InvalidCredentialsError'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { sessionFor } from '../../support/authSession'
 
 const StubPage = { template: '<div />' }
 
@@ -13,7 +14,7 @@ function createStubRepository(overrides: Partial<AuthRepository> = {}): AuthRepo
   return {
     login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER'] })),
     logout: vi.fn(async () => undefined),
-    me: vi.fn(async () => null),
+    me: vi.fn(async () => sessionFor(null)),
     ...overrides,
   }
 }
