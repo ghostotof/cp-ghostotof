@@ -26,6 +26,11 @@
              celle (vide) du .env, puisque la variable y figure. -->
         <server name="CONTACT_SENDER_EMAIL" value="noreply@example.test" force="true" />
         <server name="CONTACT_RECIPIENT_EMAIL" value="contact@example.test" force="true" />
+        <!-- Même mécanique pour la clé Anthropic (ADR 0004) : valeur factice
+             forcée, jamais la vraie. Aucun test ne sort sur le réseau — la
+             plateforme est remplacée par une implémentation en mémoire ; un test
+             qui atteindrait l'API réelle échouerait en 401, filet voulu. -->
+        <server name="ANTHROPIC_API_KEY" value="sk-ant-test-not-a-real-key" force="true" />
     </php>
 
     <testsuites>

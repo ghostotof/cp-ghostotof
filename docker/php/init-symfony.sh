@@ -69,6 +69,9 @@ MESSENGER_TRANSPORT_DSN="amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5
 # null://null, rien ne part vers l'extérieur.
 CONTACT_SENDER_EMAIL=noreply@example.test
 CONTACT_RECIPIENT_EMAIL=contact@example.test
+# Clé Anthropic de l'assistant du backoffice (ADR 0004). Vide par défaut : sans
+# clé, seul le bouton de traduction du backoffice échoue (503), rien d'autre.
+ANTHROPIC_API_KEY=
 LOCALENV
 
 # .env.local n'est jamais chargé par Symfony en environnement test (comportement

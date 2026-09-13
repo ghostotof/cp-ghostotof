@@ -17,6 +17,20 @@ framework:
     # Note that the session will be started ONLY if you read or write from it.
     session: true
 
+    http_client:
+        scoped_clients:
+            # Client dédié aux appels Symfony AI (cf. config/packages/ai.yaml).
+            # Séparé du client par défaut pour que ses bornes ne s'appliquent
+            # qu'à lui : 40 s de timeout, sous les 60 s de fastcgi_read_timeout
+            # (nginx) et de l'ingress, sans quoi le client attendrait une réponse
+            # que le reverse proxy a déjà abandonnée ; max_redirects 0, même règle
+            # que les clients de Portfolio/Watch (ADR 0002) — un fournisseur
+            # détourné n'obtient pas de levier vers le réseau interne.
+            ai.http_client:
+                base_uri: 'https://api.anthropic.com'
+                timeout: 40
+                max_redirects: 0
+
     #esi: true
     #fragments: true
 
