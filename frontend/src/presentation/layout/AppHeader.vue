@@ -105,7 +105,7 @@ function navLinkClass(link: NavigationLink) {
     <div class="container-xl d-flex align-items-center justify-content-between gap-3 py-3">
       <RouterLink
         :to="homeLink"
-        class="d-flex align-items-center gap-2 text-white text-decoration-none fw-semibold"
+        class="d-flex align-items-center gap-2 text-white text-decoration-none fw-semibold text-nowrap"
       >
         <!-- Glyphe décoratif du logo, pas du texte à traduire -->
         <span
@@ -118,8 +118,11 @@ function navLinkClass(link: NavigationLink) {
         {{ siteIdentity.brandName }}
       </RouterLink>
 
+      <!-- flex-wrap + text-nowrap : neuf entrées ne tiennent pas toujours sur
+           une ligne ; quand ça déborde, un lien entier passe à la ligne, jamais
+           un libellé coupé en deux. -->
       <nav
-        class="d-none d-md-flex align-items-center gap-4 small"
+        class="d-none d-md-flex flex-wrap align-items-center column-gap-3 row-gap-1 small"
         :aria-label="t('common.mainNavigation')"
       >
         <template
@@ -129,7 +132,7 @@ function navLinkClass(link: NavigationLink) {
           <RouterLink
             v-if="link.isEnabled"
             :to="link.to"
-            class="nav-link-portfolio"
+            class="nav-link-portfolio text-nowrap"
             :class="navLinkClass(link)"
             aria-disabled="false"
             :aria-current="isActiveLink(link) ? 'page' : undefined"
@@ -138,7 +141,7 @@ function navLinkClass(link: NavigationLink) {
           </RouterLink>
           <a
             v-else
-            class="nav-link-portfolio"
+            class="nav-link-portfolio text-nowrap"
             :class="navLinkClass(link)"
             aria-disabled="true"
           >
@@ -202,7 +205,7 @@ function navLinkClass(link: NavigationLink) {
                  partagé, fermer l'onglet laisserait le cookie httpOnly actif. -->
             <button
               type="button"
-              class="btn btn-outline-light btn-sm d-inline-flex align-items-center"
+              class="btn btn-outline-light btn-sm d-inline-flex align-items-center text-nowrap"
               @click="handleLogout"
             >
               {{ t('common.endBaseAccess') }}
