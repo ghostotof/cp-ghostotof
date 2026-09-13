@@ -100,13 +100,13 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 ### Phase 6 — Suites de la revue de sécurité du 2026-09-13 (`main..develop`)
 - [x] Task 15 — Chemin décodé dans les trois listeners `kernel.request` (CSRF + deux rate limiters contournables par `%XX`) + zone nginx `baseaccess` — [#77](https://github.com/ghostotof/cp-ghostotof/issues/77) (`feature/adr0003-path-encoding-bypass`) — **bloquant avant le merge `develop → main`**
 - [x] Login-CSRF de rétrogradation sur `POST /api/account/base-access` (faible) — [#76](https://github.com/ghostotof/cp-ghostotof/issues/76) — en-tête `X-Requested-With` exigé (`LoginCsrfRequestListener`), PR #81 mergée le 2026-09-13, issue fermée
-- [ ] Points de faible sévérité regroupés — [#78](https://github.com/ghostotof/cp-ghostotof/issues/78)
+- [x] Points de faible sévérité regroupés — [#78](https://github.com/ghostotof/cp-ghostotof/issues/78) — pt 1 à 5 mergés (PR #80, #82, #83, #84), pt 6 traité pour sa seule partie corrigeable (PR #85)
   - [x] pt 1 — invariant n°6 : `BASE_TIER_PATHS` dans `ApiRouteExposureTest`, le jeton D6 n'ouvre rien d'autre (`feature/adr0003-base-tier-coverage`)
   - [x] pt 2 — ancres `(/|$)` sur les cinq regex `access_control` + `AccessControlAnchoringTest` (`feature/adr0003-access-control-anchors`)
   - [x] pt 3 — rétrogradation SUPER→TRUSTED : `ROLE_TRUSTED` conservé seulement si `email` non nul (décision du 2026-09-13), `CpgUserRoleAdministrator::rolesAfterDemotion` + tests unitaire et fonctionnel (`feature/adr0003-demotion-nominative-trusted`)
   - [x] pt 4 — comptes invités pré-existants : vérification faite en prod par Christophe le 2026-09-13, rien à promouvoir
   - [x] pt 5 — nom du compte partagé retiré du docblock de la migration, de `CLAUDE.md` et d'une fixture Vitest ; le compte ne reste pas en prod (décision du 2026-09-13, `feature/adr0003-demo-account-name`)
-  - [ ] pt 6 info (compteurs IPv6 /64, `Secure` recalculé ×3, `curl -u` dans `audit-prod.sh`) — non planifié
+  - [x] pt 6 — `curl -u` dans `audit-prod.sh` remplacé par un fichier de configuration curl en 600 (`feature/adr0003-audit-basic-auth-argv`, PR #85). Les deux autres sous-points sont des limites acceptées, non planifiées : compteurs anti-abus par IP exacte (un `/64` IPv6 les contourne) et locaux au pod (×2 réplicas en prod, remis à zéro au redémarrage) ; drapeau `Secure` recalculé depuis `kernel.environment` à trois endroits (candidat à un `AuthCookieFactory` unique, `__Host-` en prod, dans une tâche dédiée si elle est ouverte)
 
 ## Risks and Mitigations
 
