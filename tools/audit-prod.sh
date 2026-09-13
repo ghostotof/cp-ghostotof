@@ -28,8 +28,18 @@ CURL_OPTS=(--connect-timeout 5 --max-time 15)
 # ("utilisateur:mot_de_passe") est optionnelle : absente contre la vraie
 # prod (non protégée), fournie par le job audit-preprod du pipeline via le
 # secret GitHub PREPROD_BASIC_AUTH.
+#
+# Jamais via `-u` : les arguments d'un processus sont lisibles dans `ps` par
+# tout utilisateur de la machine pendant la requête (revue de sécurité du
+# 2026-09-13, #78 pt 6). Le couple passe par un fichier de configuration curl
+# (`-K`), créé en 600 par mktemp et supprimé à la sortie ; seul son chemin
+# apparaît dans les arguments. Les guillemets et antislashs sont échappés au
+# format attendu par curl, donc n'importe quel mot de passe convient.
 if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
-  CURL_OPTS+=(-u "$AUDIT_BASIC_AUTH")
+  CURL_AUTH_CONFIG="$(mktemp)"
+  trap 'rm -f "$CURL_AUTH_CONFIG"' EXIT
+  printf 'user = "%s"\n' "$(printf '%s' "$AUDIT_BASIC_AUTH" | sed 's/\\/\\\\/g; s/"/\\"/g')" > "$CURL_AUTH_CONFIG"
+  CURL_OPTS+=(-K "$CURL_AUTH_CONFIG")
 fi
 DIG_TIMEOUT=(+time=3 +tries=1)
 
