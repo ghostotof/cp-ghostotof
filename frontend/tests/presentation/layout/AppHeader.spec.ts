@@ -22,10 +22,17 @@ const siteIdentity: SiteIdentity = { brandName: 'CP-Ghostotof' }
 const navigationLinks: readonly NavigationEntry[] = [
   { label: 'Accueil', to: '/fr', isEnabled: true },
   {
-    label: 'Dossiers',
+    label: 'Parcours',
     links: [
-      { label: 'Incidents', to: '/fr/incidents', isEnabled: true },
+      { label: 'CV sans identité', to: '/fr/anonymous-cv', isEnabled: true },
+      { label: 'Parcours technique', to: '/fr/experience', isEnabled: true },
+    ],
+  },
+  {
+    label: "Retours d'expérience",
+    links: [
       { label: 'Études de cas', to: '/fr/case-studies', isEnabled: true },
+      { label: 'Incidents', to: '/fr/incidents', isEnabled: true },
     ],
   },
   { label: 'À propos', to: '/fr/about', isEnabled: true },
@@ -100,6 +107,8 @@ async function mountHeader(
       { path: '/:locale(fr|en)/login', name: 'login', component: StubPage },
       { path: '/:locale(fr|en)/case-studies', name: 'case-studies', component: StubPage },
       { path: '/:locale(fr|en)/incidents', name: 'incidents', component: StubPage },
+      { path: '/:locale(fr|en)/experience', name: 'experience', component: StubPage },
+      { path: '/:locale(fr|en)/anonymous-cv', name: 'anonymous-cv', component: StubPage },
       { path: '/:locale(fr|en)/admin', name: 'admin-technologies', component: StubPage },
     ],
   })
@@ -274,11 +283,20 @@ describe('AppHeader', () => {
     expect(wrapper.find('#mobile-nav').exists()).toBe(false)
   })
 
-  it('ROLE_SUPER : affiche un lien Administration', async () => {
+  /**
+   * Pour ROLE_SUPER le téléchargement du CV vit dans le menu d'administration
+   * (AdminLayout), pas dans l'en-tête : c'est le seul palier dont la barre de
+   * droite débordait entre 1200 et 1399 px (mesure de l'issue #88), et le
+   * propriétaire du site n'a pas besoin de son propre CV à chaque page.
+   */
+  it("ROLE_SUPER : affiche un lien Administration, et pas de bouton CV — il vit dans le menu d'administration", async () => {
     await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
     const { wrapper } = await mountHeader()
 
     expect(wrapper.get('a[href="/fr/admin"]').text()).toBe('Administration')
+    expect(wrapper.text()).not.toContain('Télécharger mon CV')
+    expect(wrapper.find('button[aria-label="Télécharger mon CV"]').exists()).toBe(false)
+    expect(findButton(wrapper, 'Déconnexion')).toBeDefined()
   })
 
   it('palier de confiance sans ROLE_SUPER : pas de lien Administration', async () => {
@@ -289,21 +307,39 @@ describe('AppHeader', () => {
   })
 
   /**
-   * Issue #70 : neuf entrées ne tenaient plus sur une ligne. Les contenus
-   * « matière » sont regroupés sous un menu déroulant, même mécanique que le
-   * menu « Contenu » d'AdminLayout (pas de JS Bootstrap).
+   * Issue #70 : neuf entrées ne tenaient plus sur une ligne, les contenus
+   * « matière » sont passés dans un menu déroulant, même mécanique que le menu
+   * « Contenu » d'AdminLayout (pas de JS Bootstrap). Issue #88 : ce groupe
+   * unique est devenu deux groupes homogènes, « Parcours » et « Retours
+   * d'expérience » — le second disclosure doit se comporter exactement comme
+   * le premier, et un seul est ouvert à la fois.
    */
-  describe('groupe de navigation « Dossiers » (#70)', () => {
-    function groupToggle(wrapper: Awaited<ReturnType<typeof mountHeader>>['wrapper']) {
-      return wrapper.get('nav.d-md-flex button[aria-haspopup="true"]')
+  describe("groupes de navigation « Parcours » et « Retours d'expérience » (#70, #88)", () => {
+    type Wrapper = Awaited<ReturnType<typeof mountHeader>>['wrapper']
+
+    function groupToggles(wrapper: Wrapper) {
+      return wrapper.findAll('nav.d-md-flex button[aria-haspopup="true"]')
     }
 
-    it("est fermé par défaut : ses liens n'apparaissent pas, le bouton annonce aria-expanded=false", async () => {
+    function groupToggle(wrapper: Wrapper, label: string) {
+      const toggle = groupToggles(wrapper).find((button) => button.text() === label)
+      if (undefined === toggle) {
+        throw new Error(`Aucun groupe « ${label} » dans la navigation desktop`)
+      }
+      return toggle
+    }
+
+    it('rend les deux groupes, fermés par défaut, chacun avec son propre menu (aria-controls distinct)', async () => {
       await primeAuthState(null)
       const { wrapper } = await mountHeader()
 
-      expect(groupToggle(wrapper).text()).toBe('Dossiers')
-      expect(groupToggle(wrapper).attributes('aria-expanded')).toBe('false')
+      expect(groupToggles(wrapper).map((button) => button.text())).toEqual(['Parcours', "Retours d'expérience"])
+      for (const toggle of groupToggles(wrapper)) {
+        expect(toggle.attributes('aria-expanded')).toBe('false')
+      }
+      const menuIds = groupToggles(wrapper).map((button) => button.attributes('aria-controls'))
+      expect(new Set(menuIds).size).toBe(2)
+      expect(wrapper.find('nav.d-md-flex a[href="/fr/experience"]').exists()).toBe(false)
       expect(wrapper.find('nav.d-md-flex a[href="/fr/incidents"]').exists()).toBe(false)
     })
 
@@ -311,14 +347,30 @@ describe('AppHeader', () => {
       await primeAuthState(null)
       const { wrapper } = await mountHeader()
 
-      await groupToggle(wrapper).trigger('click')
+      await groupToggle(wrapper, "Retours d'expérience").trigger('click')
 
-      expect(groupToggle(wrapper).attributes('aria-expanded')).toBe('true')
-      const menu = wrapper.get(`#${groupToggle(wrapper).attributes('aria-controls')}`)
+      const toggle = groupToggle(wrapper, "Retours d'expérience")
+      expect(toggle.attributes('aria-expanded')).toBe('true')
+      const menu = wrapper.get(`#${toggle.attributes('aria-controls')}`)
       expect(menu.findAll('a').map((a) => [a.text(), a.attributes('href')])).toEqual([
-        ['Incidents', '/fr/incidents'],
         ['Études de cas', '/fr/case-studies'],
+        ['Incidents', '/fr/incidents'],
       ])
+    })
+
+    it("ouvrir un groupe referme l'autre : un seul menu déroulant à la fois", async () => {
+      await primeAuthState(null)
+      const { wrapper } = await mountHeader()
+
+      await groupToggle(wrapper, 'Parcours').trigger('click')
+      expect(groupToggle(wrapper, 'Parcours').attributes('aria-expanded')).toBe('true')
+      expect(wrapper.find('nav.d-md-flex a[href="/fr/anonymous-cv"]').exists()).toBe(true)
+
+      await groupToggle(wrapper, "Retours d'expérience").trigger('click')
+      expect(groupToggle(wrapper, 'Parcours').attributes('aria-expanded')).toBe('false')
+      expect(groupToggle(wrapper, "Retours d'expérience").attributes('aria-expanded')).toBe('true')
+      expect(wrapper.find('nav.d-md-flex a[href="/fr/anonymous-cv"]').exists()).toBe(false)
+      expect(wrapper.find('nav.d-md-flex a[href="/fr/incidents"]').exists()).toBe(true)
     })
 
     it('se referme au clic sur un lien, à la touche Échap et au clic en dehors', async () => {
@@ -326,54 +378,71 @@ describe('AppHeader', () => {
       const { wrapper } = await mountHeader()
       wrapper.element.ownerDocument.body.appendChild(wrapper.element)
 
-      await groupToggle(wrapper).trigger('click')
+      await groupToggle(wrapper, "Retours d'expérience").trigger('click')
       await wrapper.get('nav.d-md-flex a[href="/fr/incidents"]').trigger('click')
-      expect(groupToggle(wrapper).attributes('aria-expanded')).toBe('false')
+      expect(groupToggle(wrapper, "Retours d'expérience").attributes('aria-expanded')).toBe('false')
 
-      await groupToggle(wrapper).trigger('click')
+      await groupToggle(wrapper, 'Parcours').trigger('click')
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
       await wrapper.vm.$nextTick()
-      expect(groupToggle(wrapper).attributes('aria-expanded')).toBe('false')
+      expect(groupToggle(wrapper, 'Parcours').attributes('aria-expanded')).toBe('false')
 
-      await groupToggle(wrapper).trigger('click')
+      await groupToggle(wrapper, 'Parcours').trigger('click')
       document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await wrapper.vm.$nextTick()
-      expect(groupToggle(wrapper).attributes('aria-expanded')).toBe('false')
+      expect(groupToggle(wrapper, 'Parcours').attributes('aria-expanded')).toBe('false')
 
       wrapper.unmount()
     })
 
-    it("le bouton hérite de l'état actif quand l'un de ses liens correspond à la route, et lui seul", async () => {
+    it("seul le groupe dont un lien correspond à la route hérite de l'état actif", async () => {
       await primeAuthState(null)
       const { wrapper } = await mountHeader('/fr/incidents')
 
-      expect(groupToggle(wrapper).classes()).toContain('nav-link-portfolio--active')
+      expect(groupToggle(wrapper, "Retours d'expérience").classes()).toContain('nav-link-portfolio--active')
+      expect(groupToggle(wrapper, 'Parcours').classes()).not.toContain('nav-link-portfolio--active')
       expect(wrapper.get('nav.d-md-flex a[href="/fr"]').classes()).not.toContain('nav-link-portfolio--active')
 
-      await groupToggle(wrapper).trigger('click')
+      await groupToggle(wrapper, "Retours d'expérience").trigger('click')
       expect(wrapper.get('nav.d-md-flex a[href="/fr/incidents"]').attributes('aria-current')).toBe('page')
       expect(wrapper.get('nav.d-md-flex a[href="/fr/case-studies"]').attributes('aria-current')).toBeUndefined()
     })
 
-    it('sur mobile, le groupe se déplie à plat : un intitulé puis ses liens, qui referment le menu', async () => {
+    it("le groupe « Parcours » est actif sur le CV sans identité, pas l'autre", async () => {
+      await primeAuthState(null)
+      const { wrapper } = await mountHeader('/fr/anonymous-cv')
+
+      expect(groupToggle(wrapper, 'Parcours').classes()).toContain('nav-link-portfolio--active')
+      expect(groupToggle(wrapper, "Retours d'expérience").classes()).not.toContain('nav-link-portfolio--active')
+    })
+
+    it('sur mobile, les groupes se déplient à plat : un intitulé puis ses liens, qui referment le menu', async () => {
       await primeAuthState(null)
       const { wrapper } = await mountHeader()
 
       await wrapper.get('button[aria-controls="mobile-nav"]').trigger('click')
       const mobileNav = wrapper.get('#mobile-nav')
-      expect(mobileNav.text()).toContain('Dossiers')
+      expect(mobileNav.text()).toContain('Parcours')
+      expect(mobileNav.text()).toContain("Retours d'expérience")
       expect(mobileNav.find('button[aria-haspopup="true"]').exists()).toBe(false)
-      expect(mobileNav.findAll('a').map((a) => a.attributes('href'))).toEqual(['/fr', '/fr/incidents', '/fr/case-studies', '/fr/about'])
+      expect(mobileNav.findAll('a').map((a) => a.attributes('href'))).toEqual([
+        '/fr',
+        '/fr/anonymous-cv',
+        '/fr/experience',
+        '/fr/case-studies',
+        '/fr/incidents',
+        '/fr/about',
+      ])
 
       await mobileNav.get('a[href="/fr/case-studies"]').trigger('click')
       expect(wrapper.find('#mobile-nav').exists()).toBe(false)
     })
 
-    it("menu ouvert : aucune violation d'accessibilité détectable", async () => {
+    it("menu ouvert : aucune violation d'accessibilité détectable, avec deux disclosures", async () => {
       await primeAuthState(null)
       const { wrapper } = await mountHeader()
 
-      await groupToggle(wrapper).trigger('click')
+      await groupToggle(wrapper, "Retours d'expérience").trigger('click')
 
       await expectNoAccessibilityViolation(wrapper)
     })

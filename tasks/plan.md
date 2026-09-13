@@ -92,6 +92,7 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 - [x] Task 10 — CV sans identité (même forme que Task 4–7, second type de contenu) — [#55](https://github.com/ghostotof/cp-ghostotof/issues/55) (`feature/adr0003-anonymous-cv`, commits `34ca837` → seed ; décision : nouveau contexte `Portfolio/AnonymousCv`, pas une extension de `CaseStudy`)
 - [x] Task 14 — Tranche frontend du CV sans identité (page publique + backoffice, même forme que Task 8) — [#68](https://github.com/ghostotof/cp-ghostotof/issues/68) (`feature/adr0003-anonymous-cv-frontend`, commits `64b2f3a` → `9dea988` ; a aussi ajouté le lien de navigation manquant vers `/case-studies`)
 - [x] (hors tâche, design) Navigation principale à neuf entrées : menu « Dossiers » — [#70](https://github.com/ghostotof/cp-ghostotof/issues/70) (`feature/adr0003-nav-dossiers`, PR #75, fermée le 2026-09-13)
+- [x] (hors tâche, design) « Dossiers » remplacé par deux groupes homogènes, « Parcours » et « Retours d'expérience », libellé « CV sans identité » unifié menu/page — [#88](https://github.com/ghostotof/cp-ghostotof/issues/88) (`feature/adr0003-nav-two-groups`)
 - [x] Parcours anonymisé — **abandonné, décision du 2026-09-13** (ADR 0003 D5 amendée : la séquence temporelle est l'élément le plus ré-identifiant, la chronologie reste au palier nominatif). D5 = deux contenus.
 
 ### Phase 5 — Housekeeping

@@ -42,22 +42,32 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
       // le menu n'a pas grossi, et la section reste atteignable depuis l'accueil,
       // d'où un lien renvoie vers cette même page.
       { label: nav.stack, to: `/${locale}/stack`, isEnabled: true },
-      // « Dossiers » (issue #70, décision du 2026-09-13) : neuf entrées ne
-      // tenaient plus sur une ligne. Les quatre contenus « matière » sont
-      // regroupés ; les URL ne changent pas. Les deux derniers sont ceux du
-      // palier de base (ADR 0003 D5), visibles de tous dans le menu — le
-      // palier est une discrétion, pas un secret (D1) — la page elle-même
-      // propose l'action qui débloque l'accès.
+      // Deux groupes (issues #70 puis #88, décisions du 2026-09-13) : neuf
+      // entrées ne tenaient plus sur une ligne, et le groupe unique
+      // « Dossiers » qui les a d'abord remplacées couvrait quatre pages de
+      // natures différentes. « Parcours » réunit les deux variantes du
+      // parcours ; « Retours d'expérience » les trois retours publics. Les URL
+      // ne changent pas, le premier niveau reste à six entrées. Dans chaque
+      // groupe, le contenu du palier de base (ADR 0003 D5) vient en tête :
+      // visible de tous dans le menu — le palier est une discrétion, pas un
+      // secret (D1) — la page elle-même propose l'action qui débloque
+      // l'accès. Le CV complet (palier de confiance) reste un bouton d'action
+      // de l'en-tête, pas un lien de « Parcours ».
       {
-        label: nav.dossiers,
+        label: nav.career,
         links: [
-          { label: nav.contributions, to: `/${locale}/contributions`, isEnabled: true },
-          { label: nav.incidents, to: `/${locale}/incidents`, isEnabled: true },
-          { label: nav.caseStudies, to: `/${locale}/case-studies`, isEnabled: true },
           { label: nav.anonymousCv, to: `/${locale}/anonymous-cv`, isEnabled: true },
+          { label: nav.experiences, to: `/${locale}/experience`, isEnabled: true },
         ],
       },
-      { label: nav.experiences, to: `/${locale}/experience`, isEnabled: true },
+      {
+        label: nav.lessonsLearned,
+        links: [
+          { label: nav.caseStudies, to: `/${locale}/case-studies`, isEnabled: true },
+          { label: nav.incidents, to: `/${locale}/incidents`, isEnabled: true },
+          { label: nav.contributions, to: `/${locale}/contributions`, isEnabled: true },
+        ],
+      },
       { label: nav.contact, to: `/${locale}/contact`, isEnabled: true },
       { label: nav.about, to: `/${locale}/about`, isEnabled: true },
     ]
