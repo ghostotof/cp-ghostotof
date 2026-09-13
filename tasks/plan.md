@@ -85,7 +85,8 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 - [x] Task 13 — Action « Terminer cet accès » pour le palier de base (dépend de Task 9) — [#65](https://github.com/ghostotof/cp-ghostotof/issues/65) (`feature/adr0003-end-base-access`, commit `0bd72c3`)
 
 ### Phase 4 — D5, contenus restants (priorité plus basse, indépendants)
-- [ ] Task 10 — CV sans identité (même forme que Task 4–7, second type de contenu) — [#55](https://github.com/ghostotof/cp-ghostotof/issues/55)
+- [x] Task 10 — CV sans identité (même forme que Task 4–7, second type de contenu) — [#55](https://github.com/ghostotof/cp-ghostotof/issues/55) (`feature/adr0003-anonymous-cv`, commits `34ca837` → seed ; décision : nouveau contexte `Portfolio/AnonymousCv`, pas une extension de `CaseStudy`)
+- [ ] Task 14 — Tranche frontend du CV sans identité (page publique + backoffice, même forme que Task 8) — [#68](https://github.com/ghostotof/cp-ghostotof/issues/68)
 - [ ] (non découpé) Parcours anonymisé — voir Open Questions §3
 
 ### Phase 5 — Housekeeping
