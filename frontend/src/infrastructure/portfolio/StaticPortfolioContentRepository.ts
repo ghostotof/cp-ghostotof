@@ -1,6 +1,6 @@
 import type { PortfolioContentRepository } from '../../domain/portfolio/repositories/PortfolioContentRepository'
 import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
-import type { NavigationLink } from '../../domain/portfolio/entities/NavigationLink'
+import type { NavigationEntry } from '../../domain/portfolio/entities/NavigationEntry'
 import type { HeroContent } from '../../domain/portfolio/entities/HeroContent'
 import type { ExperienceContent } from '../../domain/portfolio/entities/ExperienceContent'
 import type { Technology } from '../../domain/portfolio/entities/Technology'
@@ -34,7 +34,7 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
     }
   }
 
-  getNavigationLinks(locale: Locale): readonly NavigationLink[] {
+  getNavigationLinks(locale: Locale): readonly NavigationEntry[] {
     const nav = MESSAGES[locale].nav
     return [
       { label: nav.home, to: `/${locale}`, isEnabled: true },
@@ -42,13 +42,21 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
       // le menu n'a pas grossi, et la section reste atteignable depuis l'accueil,
       // d'où un lien renvoie vers cette même page.
       { label: nav.stack, to: `/${locale}/stack`, isEnabled: true },
-      { label: nav.contributions, to: `/${locale}/contributions`, isEnabled: true },
-      { label: nav.incidents, to: `/${locale}/incidents`, isEnabled: true },
-      // Contenus du palier de base (ADR 0003 D5) : visibles de tous dans le
-      // menu — le palier est une discrétion, pas un secret (D1) — la page
-      // elle-même propose l'action qui débloque l'accès.
-      { label: nav.caseStudies, to: `/${locale}/case-studies`, isEnabled: true },
-      { label: nav.anonymousCv, to: `/${locale}/anonymous-cv`, isEnabled: true },
+      // « Dossiers » (issue #70, décision du 2026-09-13) : neuf entrées ne
+      // tenaient plus sur une ligne. Les quatre contenus « matière » sont
+      // regroupés ; les URL ne changent pas. Les deux derniers sont ceux du
+      // palier de base (ADR 0003 D5), visibles de tous dans le menu — le
+      // palier est une discrétion, pas un secret (D1) — la page elle-même
+      // propose l'action qui débloque l'accès.
+      {
+        label: nav.dossiers,
+        links: [
+          { label: nav.contributions, to: `/${locale}/contributions`, isEnabled: true },
+          { label: nav.incidents, to: `/${locale}/incidents`, isEnabled: true },
+          { label: nav.caseStudies, to: `/${locale}/case-studies`, isEnabled: true },
+          { label: nav.anonymousCv, to: `/${locale}/anonymous-cv`, isEnabled: true },
+        ],
+      },
       { label: nav.experiences, to: `/${locale}/experience`, isEnabled: true },
       { label: nav.contact, to: `/${locale}/contact`, isEnabled: true },
       { label: nav.about, to: `/${locale}/about`, isEnabled: true },

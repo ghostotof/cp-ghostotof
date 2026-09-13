@@ -15,12 +15,19 @@ import { expectNoAccessibilityViolation } from '../../support/axe'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import type { CvRepository } from '../../../src/domain/cv/repositories/CvRepository'
 import type { SiteIdentity } from '../../../src/domain/portfolio/entities/SiteIdentity'
-import type { NavigationLink } from '../../../src/domain/portfolio/entities/NavigationLink'
+import type { NavigationEntry } from '../../../src/domain/portfolio/entities/NavigationEntry'
 
 const siteIdentity: SiteIdentity = { brandName: 'CP-Ghostotof' }
 
-const navigationLinks: readonly NavigationLink[] = [
+const navigationLinks: readonly NavigationEntry[] = [
   { label: 'Accueil', to: '/fr', isEnabled: true },
+  {
+    label: 'Dossiers',
+    links: [
+      { label: 'Incidents', to: '/fr/incidents', isEnabled: true },
+      { label: 'Études de cas', to: '/fr/case-studies', isEnabled: true },
+    ],
+  },
   { label: 'À propos', to: '/fr/about', isEnabled: true },
   { label: 'Expériences', to: '/fr#experiences', isEnabled: false },
 ]
@@ -92,6 +99,7 @@ async function mountHeader(
       { path: '/:locale(fr|en)/about', name: 'about', component: StubPage },
       { path: '/:locale(fr|en)/login', name: 'login', component: StubPage },
       { path: '/:locale(fr|en)/case-studies', name: 'case-studies', component: StubPage },
+      { path: '/:locale(fr|en)/incidents', name: 'incidents', component: StubPage },
       { path: '/:locale(fr|en)/admin', name: 'admin-technologies', component: StubPage },
     ],
   })
@@ -278,6 +286,97 @@ describe('AppHeader', () => {
     const { wrapper } = await mountHeader()
 
     expect(wrapper.find('a[href="/fr/admin"]').exists()).toBe(false)
+  })
+
+  /**
+   * Issue #70 : neuf entrées ne tenaient plus sur une ligne. Les contenus
+   * « matière » sont regroupés sous un menu déroulant, même mécanique que le
+   * menu « Contenu » d'AdminLayout (pas de JS Bootstrap).
+   */
+  describe('groupe de navigation « Dossiers » (#70)', () => {
+    function groupToggle(wrapper: Awaited<ReturnType<typeof mountHeader>>['wrapper']) {
+      return wrapper.get('nav.d-md-flex button[aria-haspopup="true"]')
+    }
+
+    it("est fermé par défaut : ses liens n'apparaissent pas, le bouton annonce aria-expanded=false", async () => {
+      await primeAuthState(null)
+      const { wrapper } = await mountHeader()
+
+      expect(groupToggle(wrapper).text()).toBe('Dossiers')
+      expect(groupToggle(wrapper).attributes('aria-expanded')).toBe('false')
+      expect(wrapper.find('nav.d-md-flex a[href="/fr/incidents"]').exists()).toBe(false)
+    })
+
+    it("s'ouvre au clic et liste ses liens dans l'ordre, sans changer les URL", async () => {
+      await primeAuthState(null)
+      const { wrapper } = await mountHeader()
+
+      await groupToggle(wrapper).trigger('click')
+
+      expect(groupToggle(wrapper).attributes('aria-expanded')).toBe('true')
+      const menu = wrapper.get(`#${groupToggle(wrapper).attributes('aria-controls')}`)
+      expect(menu.findAll('a').map((a) => [a.text(), a.attributes('href')])).toEqual([
+        ['Incidents', '/fr/incidents'],
+        ['Études de cas', '/fr/case-studies'],
+      ])
+    })
+
+    it('se referme au clic sur un lien, à la touche Échap et au clic en dehors', async () => {
+      await primeAuthState(null)
+      const { wrapper } = await mountHeader()
+      wrapper.element.ownerDocument.body.appendChild(wrapper.element)
+
+      await groupToggle(wrapper).trigger('click')
+      await wrapper.get('nav.d-md-flex a[href="/fr/incidents"]').trigger('click')
+      expect(groupToggle(wrapper).attributes('aria-expanded')).toBe('false')
+
+      await groupToggle(wrapper).trigger('click')
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      await wrapper.vm.$nextTick()
+      expect(groupToggle(wrapper).attributes('aria-expanded')).toBe('false')
+
+      await groupToggle(wrapper).trigger('click')
+      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await wrapper.vm.$nextTick()
+      expect(groupToggle(wrapper).attributes('aria-expanded')).toBe('false')
+
+      wrapper.unmount()
+    })
+
+    it("le bouton hérite de l'état actif quand l'un de ses liens correspond à la route, et lui seul", async () => {
+      await primeAuthState(null)
+      const { wrapper } = await mountHeader('/fr/incidents')
+
+      expect(groupToggle(wrapper).classes()).toContain('nav-link-portfolio--active')
+      expect(wrapper.get('nav.d-md-flex a[href="/fr"]').classes()).not.toContain('nav-link-portfolio--active')
+
+      await groupToggle(wrapper).trigger('click')
+      expect(wrapper.get('nav.d-md-flex a[href="/fr/incidents"]').attributes('aria-current')).toBe('page')
+      expect(wrapper.get('nav.d-md-flex a[href="/fr/case-studies"]').attributes('aria-current')).toBeUndefined()
+    })
+
+    it('sur mobile, le groupe se déplie à plat : un intitulé puis ses liens, qui referment le menu', async () => {
+      await primeAuthState(null)
+      const { wrapper } = await mountHeader()
+
+      await wrapper.get('button[aria-controls="mobile-nav"]').trigger('click')
+      const mobileNav = wrapper.get('#mobile-nav')
+      expect(mobileNav.text()).toContain('Dossiers')
+      expect(mobileNav.find('button[aria-haspopup="true"]').exists()).toBe(false)
+      expect(mobileNav.findAll('a').map((a) => a.attributes('href'))).toEqual(['/fr', '/fr/incidents', '/fr/case-studies', '/fr/about'])
+
+      await mobileNav.get('a[href="/fr/case-studies"]').trigger('click')
+      expect(wrapper.find('#mobile-nav').exists()).toBe(false)
+    })
+
+    it("menu ouvert : aucune violation d'accessibilité détectable", async () => {
+      await primeAuthState(null)
+      const { wrapper } = await mountHeader()
+
+      await groupToggle(wrapper).trigger('click')
+
+      await expectNoAccessibilityViolation(wrapper)
+    })
   })
 
   it('rend un sélecteur de langue avec FR et EN', async () => {
