@@ -103,7 +103,10 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 - [ ] Points de faible sévérité regroupés — [#78](https://github.com/ghostotof/cp-ghostotof/issues/78)
   - [x] pt 1 — invariant n°6 : `BASE_TIER_PATHS` dans `ApiRouteExposureTest`, le jeton D6 n'ouvre rien d'autre (`feature/adr0003-base-tier-coverage`)
   - [x] pt 2 — ancres `(/|$)` sur les cinq regex `access_control` + `AccessControlAnchoringTest` (`feature/adr0003-access-control-anchors`)
-  - [ ] pt 3 (rétrogradation SUPER→TRUSTED) et pt 5 (compte `demo`) attendent une décision de Christophe ; pt 4 est une action humaine en prod ; pt 6 info
+  - [x] pt 3 — rétrogradation SUPER→TRUSTED : `ROLE_TRUSTED` conservé seulement si `email` non nul (décision du 2026-09-13), `CpgUserRoleAdministrator::rolesAfterDemotion` + tests unitaire et fonctionnel (`feature/adr0003-demotion-nominative-trusted`)
+  - [x] pt 4 — comptes invités pré-existants : vérification faite en prod par Christophe le 2026-09-13, rien à promouvoir
+  - [x] pt 5 — nom du compte partagé retiré du docblock de la migration, de `CLAUDE.md` et d'une fixture Vitest ; le compte ne reste pas en prod (décision du 2026-09-13, `feature/adr0003-demo-account-name`)
+  - [ ] pt 6 info (compteurs IPv6 /64, `Secure` recalculé ×3, `curl -u` dans `audit-prod.sh`) — non planifié
 
 ## Risks and Mitigations
 

@@ -13,13 +13,16 @@ use Doctrine\Migrations\AbstractMigration;
  *
  * Décision prise le 2026-09-12 : cette migration n'attribue **aucun**
  * ROLE_TRUSTED. Un premier jet balayait automatiquement tout compte sans
- * ROLE_SUPER — erreur repérée avant tout déploiement : parmi les deux
- * comptes connus à cette date, l'un (`demo`) est précisément le compte
- * générique/partagé que l'ADR vise à cantonner au palier de base (contenu
- * « flou », jamais identifiant) — le promouvoir aurait reconstitué
- * exactement le risque que l'ADR corrige (fuite d'identifiants = accès au
- * vrai CV). ROLE_TRUSTED se veut « accordé nominativement » (D1) : une
- * décision individuelle par ROLE_SUPER, jamais un balayage automatique.
+ * ROLE_SUPER — erreur repérée avant tout déploiement : parmi les comptes
+ * connus à cette date figurait précisément le compte générique/partagé que
+ * l'ADR vise à cantonner au palier de base (contenu « flou », jamais
+ * identifiant) — le promouvoir aurait reconstitué exactement le risque que
+ * l'ADR corrige (fuite d'identifiants = accès au vrai CV). ROLE_TRUSTED se
+ * veut « accordé nominativement » (D1) : une décision individuelle par
+ * ROLE_SUPER, jamais un balayage automatique. Ce compte n'est pas nommé ici :
+ * un identifiant valide n'a rien à faire dans un dépôt public (revue de
+ * sécurité du 2026-09-13, #78 pt 5), et il a depuis été retiré de la
+ * production.
  *
  * ROLE_SUPER n'a besoin d'aucune action : il hérite déjà de ROLE_TRUSTED
  * via la role_hierarchy de security.yaml (ROLE_SUPER: [ROLE_TRUSTED]).
