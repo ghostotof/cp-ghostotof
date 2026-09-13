@@ -32,6 +32,7 @@ const ExperiencePage = () => import('../pages/ExperiencePage.vue')
 const ContributionsPage = () => import('../pages/ContributionsPage.vue')
 const IncidentsPage = () => import('../pages/IncidentsPage.vue')
 const CaseStudiesPage = () => import('../pages/CaseStudiesPage.vue')
+const AnonymousCvPage = () => import('../pages/AnonymousCvPage.vue')
 const StackPage = () => import('../pages/StackPage.vue')
 const ContactPage = () => import('../pages/ContactPage.vue')
 const LoginPage = () => import('../pages/LoginPage.vue')
@@ -45,6 +46,7 @@ const AdminTechnologiesPage = () => import('../pages/admin/AdminTechnologiesPage
 const AdminAboutPage = () => import('../pages/admin/AdminAboutPage.vue')
 const AdminContributionsPage = () => import('../pages/admin/AdminContributionsPage.vue')
 const AdminIncidentsPage = () => import('../pages/admin/AdminIncidentsPage.vue')
+const AdminAnonymousCvPage = () => import('../pages/admin/AdminAnonymousCvPage.vue')
 const AdminWatchPage = () => import('../pages/admin/AdminWatchPage.vue')
 const AdminQualityPage = () => import('../pages/admin/AdminQualityPage.vue')
 const AdminUsersPage = () => import('../pages/admin/AdminUsersPage.vue')
@@ -98,6 +100,13 @@ export const router = createRouter({
           // noindex ici, pas requiresAuth : un visiteur anonyme atteint la
           // page et voit l'action qui débloque l'accès, il n'est pas redirigé.
           meta: { titleKey: 'seo.caseStudies.title', descriptionKey: 'seo.caseStudies.description', noindex: true },
+        },
+        {
+          path: 'anonymous-cv',
+          name: 'anonymous-cv',
+          component: AnonymousCvPage,
+          // Même palier et même raisonnement que case-studies (ADR 0003 D5).
+          meta: { titleKey: 'seo.anonymousCv.title', descriptionKey: 'seo.anonymousCv.description', noindex: true },
         },
         {
           path: 'stack',
@@ -191,6 +200,12 @@ export const router = createRouter({
               name: 'admin-incidents',
               component: AdminIncidentsPage,
               meta: { titleKey: 'seo.adminIncidents.title', descriptionKey: 'seo.adminIncidents.description' },
+            },
+            {
+              path: 'anonymous-cv',
+              name: 'admin-anonymous-cv',
+              component: AdminAnonymousCvPage,
+              meta: { titleKey: 'seo.adminAnonymousCv.title', descriptionKey: 'seo.adminAnonymousCv.description' },
             },
             {
               path: 'watch',

@@ -44,6 +44,11 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
       { label: nav.stack, to: `/${locale}/stack`, isEnabled: true },
       { label: nav.contributions, to: `/${locale}/contributions`, isEnabled: true },
       { label: nav.incidents, to: `/${locale}/incidents`, isEnabled: true },
+      // Contenus du palier de base (ADR 0003 D5) : visibles de tous dans le
+      // menu — le palier est une discrétion, pas un secret (D1) — la page
+      // elle-même propose l'action qui débloque l'accès.
+      { label: nav.caseStudies, to: `/${locale}/case-studies`, isEnabled: true },
+      { label: nav.anonymousCv, to: `/${locale}/anonymous-cv`, isEnabled: true },
       { label: nav.experiences, to: `/${locale}/experience`, isEnabled: true },
       { label: nav.contact, to: `/${locale}/contact`, isEnabled: true },
       { label: nav.about, to: `/${locale}/about`, isEnabled: true },

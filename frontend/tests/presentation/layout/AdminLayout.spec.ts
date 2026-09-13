@@ -21,6 +21,7 @@ function createTestRouter(): Router {
       { path: '/:locale(fr|en)/admin/quality', name: 'admin-quality', component: StubPage },
       { path: '/:locale(fr|en)/admin/contributions', name: 'admin-contributions', component: StubPage },
       { path: '/:locale(fr|en)/admin/incidents', name: 'admin-incidents', component: StubPage },
+      { path: '/:locale(fr|en)/admin/anonymous-cv', name: 'admin-anonymous-cv', component: StubPage },
       { path: '/:locale(fr|en)/admin/watch', name: 'admin-watch', component: StubPage },
       { path: '/:locale(fr|en)/admin/users', name: 'admin-users', component: StubPage },
     ],
@@ -77,6 +78,7 @@ describe('AdminLayout', () => {
       'Qualité',
       'Contributions',
       'Incidents',
+      'CV sans identité',
       'Veille',
     ])
 
