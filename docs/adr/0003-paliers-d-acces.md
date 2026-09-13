@@ -43,6 +43,13 @@ la seule partie publique, qui ne parle jamais de travail réel.
 | `ROLE_TRUSTED` | Identifiant, **jamais publiable** | Accordé nominativement par `ROLE_SUPER` |
 | `ROLE_SUPER` | Administration | Inchangé, amorçage CLI |
 
+*Précision du 2026-09-13 (Task 12, #56) :* « accordé nominativement » se lit au pied de la lettre —
+`ROLE_TRUSTED` ne s'attribue **que** par l'invitation, qui lie l'octroi à une adresse e-mail, donc à
+une personne. La CLI (`app:user:create`) ne le propose pas et ne le proposera pas : un compte CLI
+n'a qu'un `username`, il ne dirait pas à qui le CV a été ouvert. Elle reste limitée à `ROLE_SUPER`,
+pour le premier administrateur ; que celui-ci hérite de `ROLE_TRUSTED` est assumé, l'administrateur
+du site étant par construction la personne identifiée. Un test pince ce refus.
+
 Le palier intermédiaire **n'est pas un contrôle d'accès et ne doit jamais être présenté comme tel.**
 Un script obtient le jeton aussi facilement qu'un humain, en une requête. Ce qui est placé derrière
 est donc, de fait, public.

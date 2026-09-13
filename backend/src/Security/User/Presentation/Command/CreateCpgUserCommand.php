@@ -18,9 +18,11 @@ use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
- * Seul moyen de créer un CpgUser : il n'existe volontairement aucun
- * formulaire d'inscription public. Usage interactif (prompts) ou scripté
- * (--username/--password, ex. provisionnement dans un pipeline de déploiement).
+ * Chemin d'amorçage : il n'existe volontairement aucun formulaire
+ * d'inscription public, et depuis l'ADR 0001 la voie normale de création est
+ * l'invitation depuis le backoffice. La CLI reste pour ce que l'invitation ne
+ * peut pas faire — créer le premier ROLE_SUPER — et pour les comptes de
+ * développement. Usage interactif (prompts) ou scripté (--username/--password).
  */
 #[AsCommand(
     name: 'app:user:create',
@@ -28,7 +30,23 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 )]
 final class CreateCpgUserCommand extends Command
 {
-    /** @var list<string> */
+    /**
+     * Décision ADR 0003, Task 12 (#56, 2026-09-13) : **ROLE_TRUSTED n'est pas
+     * attribuable ici, et c'est voulu.** D1 veut ce palier « accordé
+     * nominativement » : l'invitation (CpgUserInviter) lie l'octroi à une
+     * adresse e-mail, donc à une personne ; un compte CLI n'a qu'un username,
+     * il ne dit pas *à qui* l'accès au CV a été ouvert. Un second chemin
+     * d'octroi, sans cette trace, affaiblirait la seule garantie que le palier
+     * de confiance apporte. ROLE_SUPER reste ici parce qu'il faut bien un
+     * premier administrateur avant que l'invitation existe — et il hérite de
+     * ROLE_TRUSTED par la role_hierarchy, ce qui est assumé : l'administrateur
+     * du site est, par construction, la personne identifiée. Sans --role, le
+     * compte reste au palier de base (ROLE_USER, cf. CpgUser::getRoles()),
+     * ce qui est exactement ce qu'un compte de développement doit être.
+     * Un test pince le refus.
+     *
+     * @var list<string>
+     */
     private const array ALLOWED_ROLES = [CpgUser::ROLE_SUPER];
 
     public function __construct(

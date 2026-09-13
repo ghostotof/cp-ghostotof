@@ -51,9 +51,11 @@ trois cas côté frontend.
    la recommandation que la séquence temporelle est l'empreinte la plus
    ré-identifiante et que la chronologie est justement ce que le palier
    nominatif apporte. Acté dans l'ADR (amendement de D5).
-4. **`CreateCpgUserCommand::ALLOWED_ROLES`** reste `[ROLE_SUPER]` — reste
-   correct une fois D6 en place (ROLE_TRUSTED reste nominatif via
-   l'invitation, jamais via CLI) ? Tranché en tâche 12 plutôt que supposé.
+4. **`CreateCpgUserCommand::ALLOWED_ROLES`** — **tranché le 2026-09-13 :
+   reste `[ROLE_SUPER]`.** L'invitation lie l'octroi de `ROLE_TRUSTED` à une
+   adresse e-mail (nominatif au sens de D1) ; un compte CLI n'a qu'un
+   `username`. Écrit dans le code, l'ADR (précision sous D1) et pincé par
+   un test (`--role ROLE_TRUSTED` refusé).
 
 ## Task List
 
@@ -93,7 +95,7 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 - [x] Parcours anonymisé — **abandonné, décision du 2026-09-13** (ADR 0003 D5 amendée : la séquence temporelle est l'élément le plus ré-identifiant, la chronologie reste au palier nominatif). D5 = deux contenus.
 
 ### Phase 5 — Housekeeping
-- [ ] Task 12 — Trancher `CreateCpgUserCommand::ALLOWED_ROLES` (voir Open Questions §4) — [#56](https://github.com/ghostotof/cp-ghostotof/issues/56)
+- [x] Task 12 — Trancher `CreateCpgUserCommand::ALLOWED_ROLES` (voir Open Questions §4) — [#56](https://github.com/ghostotof/cp-ghostotof/issues/56) (`feature/adr0003-cli-allowed-roles` : statu quo confirmé, documenté et pincé par un test)
 
 ## Risks and Mitigations
 
