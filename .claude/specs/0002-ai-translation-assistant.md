@@ -84,9 +84,12 @@ compte du palier de base ou nominatif n'y a accès, ni directement ni par effet 
   d'enregistrement habituel reste le seul chemin vers la persistance.
 - **D8 — Une ADR 0004 « Assistance IA »** consigne ces règles et celles qui préparent la phase 2
   (voir §5, « Ce qui est touché en dehors du contexte »).
-- **D9 — Bundle pinné en version exacte** (`symfony/ai-bundle` `0.13.0`, pas de `^`), le projet
-  n'ayant aucune promesse de compatibilité ascendante. Flex est en `allow-contrib: false` : la recette
-  ne s'applique pas, `bundles.php` et `ai.yaml` sont écrits à la main.
+- **D9 — Bundle pinné en version exacte** (`symfony/ai-bundle`, `symfony/ai-anthropic-platform` et
+  `symfony/ai-agent`, tous trois `0.13.0`, pas de `^`), le projet n'ayant aucune promesse de
+  compatibilité ascendante. En 0.13 le bridge Anthropic et le composant Agent sont des paquets
+  séparés : le bundle seul ne suffit pas. Les recettes Flex viennent du dépôt officiel
+  `symfony/recipes` (pas de contrib), elles s'appliquent malgré `allow-contrib: false` ; le fichier
+  `ai_anthropic_platform.yaml` qu'elles génèrent est fusionné dans `ai.yaml`.
 
 ### Contrats externes (vérifiés le 2026-09-14, pas de mémoire)
 
@@ -342,9 +345,15 @@ chaque page par étape). Exigence ajoutée par Christophe : préparer la phase 2
 phase 2).
 
 Corrections apportées à la rédaction : `claude-sonnet-5` refuse `temperature`, le réglage prévu à
-l'oral est retiré ; Flex `allow-contrib: false` rend la recette inopérante, `bundles.php` et `ai.yaml`
-sont écrits à la main ; `HasProblemType` quitte `Security/User` pour `Shared/` plutôt que d'être
+l'oral est retiré ; `HasProblemType` quitte `Security/User` pour `Shared/` plutôt que d'être
 dupliqué.
+
+**2026-09-14** — Découpage validé (`tasks/plan.md`, issues #91–#103), page admin des études de cas
+ouverte en #104. Corrections à l'installation (Task 1) : les recettes Flex **s'appliquent** (dépôt
+officiel `symfony/recipes`, pas contrib — la spec disait l'inverse) ; le bridge Anthropic et le
+composant Agent sont des paquets séparés, ajoutés et pinnés ; l'option de jetons s'appelle
+`max_tokens` (nom Anthropic, fusionné tel quel dans la requête par le bridge, défaut 1000), pas
+`max_output_tokens`. D9 et §5 mis à jour.
 
 **Audit de sensibilité avant publication** : aucun e-mail, aucune adresse IP, aucun chemin
 utilisateur, aucun nom de domaine, aucun secret ni credential (la clé d'API n'apparaît que comme nom
