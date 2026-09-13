@@ -58,7 +58,7 @@ final class DownloadCvControllerTest extends WebTestCase
         $client = self::createClient();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::USERNAME, TestCredentials::plainPassword());
 
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
             'username' => self::USERNAME,
             'password' => TestCredentials::plainPassword(),
         ]));
@@ -76,7 +76,7 @@ final class DownloadCvControllerTest extends WebTestCase
         // de base ROLE_USER — accordé ici pour couvrir le cas d'accès autorisé.
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::USERNAME, TestCredentials::plainPassword(), [CpgUser::ROLE_TRUSTED]);
 
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
             'username' => self::USERNAME,
             'password' => TestCredentials::plainPassword(),
         ]));

@@ -31,7 +31,7 @@ describe('HttpBaseAccessRepository', () => {
     await expect(new HttpBaseAccessRepository('https://api.example.test').grant()).resolves.toEqual({ expiresAt: null })
   })
 
-  it('grant() envoie une requête POST authentifiée par cookie, sans header CSRF (endpoint exclu)', async () => {
+  it('grant() envoie un POST avec cookies, sans header CSRF (endpoint exclu) mais avec X-Requested-With (anti login-CSRF, issue #76)', async () => {
     const fetchMock = stubFetch({ ok: true, status: 200, json: async () => ({}) } as unknown as Response)
 
     await new HttpBaseAccessRepository('https://api.example.test').grant()
@@ -39,6 +39,7 @@ describe('HttpBaseAccessRepository', () => {
     expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/api/account/base-access', {
       method: 'POST',
       credentials: 'include',
+      headers: { 'X-Requested-With': 'fetch' },
     })
   })
 

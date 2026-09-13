@@ -3,7 +3,10 @@ nelmio_cors:
         origin_regex: true
         allow_origin: ['%env(CORS_ALLOW_ORIGIN)%']
         allow_methods: ['GET', 'OPTIONS', 'POST', 'PUT', 'PATCH', 'DELETE']
-        allow_headers: ['Content-Type', 'X-XSRF-TOKEN']
+        # X-Requested-With : exigé par LoginCsrfRequestListener sur /api/login_check
+        # et /api/account/base-access (issue #76). Un en-tête personnalisé
+        # déclenche un preflight en cross-origin (dev : Vite sur un autre port).
+        allow_headers: ['Content-Type', 'X-XSRF-TOKEN', 'X-Requested-With']
         expose_headers: ['Link']
         # Indispensable pour que le navigateur envoie/reçoive le cookie httpOnly du
         # JWT lors des requêtes cross-port (frontend Vite sur un port distinct de nginx).

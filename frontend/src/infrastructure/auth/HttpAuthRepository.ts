@@ -4,6 +4,7 @@ import { InvalidCredentialsError } from '../../domain/auth/errors/InvalidCredent
 import { ANONYMOUS_SESSION, BASE_ACCESS_SESSION, type AuthSession } from '../../domain/auth/entities/AuthSession'
 import { sessionForUser } from '../../domain/auth/services/sessionForUser'
 import { readCsrfToken } from './csrfCookie'
+import { LOGIN_CSRF_HEADER } from '../http/loginCsrfHeader'
 
 interface UserResponseBody {
   user: { username: string; roles: string[] }
@@ -26,7 +27,7 @@ export class HttpAuthRepository implements AuthRepository {
     const response = await fetch(`${this.apiBaseUrl}/api/login_check`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...LOGIN_CSRF_HEADER },
       body: JSON.stringify({ username, password }),
     })
 

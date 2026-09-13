@@ -37,7 +37,7 @@ final class BaseAccessControllerTest extends WebTestCase
         $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         $countBefore = $this->countCpgUsers($connection);
 
-        $client->request('POST', '/api/account/base-access');
+        $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
 
         self::assertResponseIsSuccessful();
 
@@ -88,11 +88,11 @@ final class BaseAccessControllerTest extends WebTestCase
         // Quota (rate_limiter.yaml, limiteur "base_access") : 20 requêtes/heure
         // par IP ; le client de test partage toujours la même IP (127.0.0.1).
         for ($i = 0; $i < 20; ++$i) {
-            $client->request('POST', '/api/account/base-access');
+            $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
             self::assertResponseIsSuccessful();
         }
 
-        $client->request('POST', '/api/account/base-access');
+        $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
 
         self::assertResponseStatusCodeSame(429);
         self::assertTrue($client->getResponse()->headers->has('Retry-After'));
@@ -109,12 +109,30 @@ final class BaseAccessControllerTest extends WebTestCase
         $client = $this->createClientWithFreshRateLimiter();
 
         for ($i = 0; $i < 20; ++$i) {
-            $client->request('POST', '/api/account/base%2Daccess');
+            $client->request('POST', '/api/account/base%2Daccess', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
             self::assertResponseIsSuccessful();
         }
 
-        $client->request('POST', '/api/account/base%2Daccess');
+        $client->request('POST', '/api/account/base%2Daccess', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
 
         self::assertResponseStatusCodeSame(429);
+    }
+
+    /**
+     * Régression issue #76 (login-CSRF) : cette route étant publique et hors
+     * double-submit, un formulaire cross-site pouvait la faire soumettre par
+     * le navigateur d'un visiteur du palier de confiance et remplacer son
+     * BEARER par un jeton invité. Sans X-Requested-With — qu'un formulaire
+     * ne peut pas poser — la requête est refusée avant tout Set-Cookie.
+     */
+    public function testWithoutTheRequestedWithHeaderTheRequestIsRefusedAndSetsNoCookie(): void
+    {
+        $client = $this->createClientWithFreshRateLimiter();
+
+        $client->request('POST', '/api/account/base-access');
+
+        self::assertResponseStatusCodeSame(403);
+        self::assertNull($client->getCookieJar()->get('BEARER'));
+        self::assertNull($client->getCookieJar()->get('XSRF-TOKEN'));
     }
 }

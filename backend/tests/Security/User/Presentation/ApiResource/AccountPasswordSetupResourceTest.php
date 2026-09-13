@@ -79,7 +79,7 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(204);
 
         // Le compte est désormais utilisable avec l'identifiant dérivé.
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
             'username' => self::DERIVED_USERNAME,
             'password' => TestCredentials::variant('new'),
         ]));

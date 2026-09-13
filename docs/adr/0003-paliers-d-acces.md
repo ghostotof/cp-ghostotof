@@ -130,6 +130,16 @@ base. Trois contraintes, chacune pour une raison distincte :
   `getRoles()`, ce qui est désormais correct, mais il ajouterait un secret partagé à gérer sans rien
   apporter.
 
+**Amendement du 2026-09-13 (issue #76).** Un endpoint anonyme qui *pose* un cookie de session est
+exposé au *login-CSRF* : un formulaire HTML sur un site tiers peut le faire soumettre par le
+navigateur d'un visiteur du palier de confiance, et la réponse — reçue en navigation de premier
+niveau — remplace son jeton par un jeton invité. Rien ne fuit, mais la session est cassée à
+distance. La route exige donc l'en-tête `X-Requested-With`, qu'un formulaire ne peut pas poser et
+qu'un `fetch()` cross-site ne peut envoyer sans échouer son preflight CORS (`LoginCsrfRequestListener`).
+La même garde s'applique à `/api/login_check`, qui avait le même défaut depuis toujours. Écarté :
+« refuser si un `BEARER` valide est déjà présent » — dans le scénario cross-site, ce cookie n'est
+justement pas envoyé, le serveur ne peut pas savoir que la victime est connectée.
+
 ### D7 — Une hiérarchie de rôles est déclarée
 
 Il n'en existe aucune aujourd'hui, et cela ne fonctionne que parce que le rôle de base est ajouté à

@@ -43,7 +43,7 @@ final class AuthenticationFlowTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::USERNAME, TestCredentials::plainPassword(), [CpgUser::ROLE_TRUSTED]);
 
         // 1. Mauvais mot de passe => 401
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
             'username' => self::USERNAME,
             'password' => 'wrong-password',
         ]));
@@ -54,7 +54,7 @@ final class AuthenticationFlowTest extends WebTestCase
         self::assertResponseStatusCodeSame(401);
 
         // 3. Login valide => 200, cookies BEARER (httpOnly) + XSRF-TOKEN posés, plus de "token" dans le corps
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
             'username' => self::USERNAME,
             'password' => TestCredentials::plainPassword(),
         ]));
@@ -107,5 +107,28 @@ final class AuthenticationFlowTest extends WebTestCase
         $client->request('POST', '/%61pi/logout');
 
         self::assertResponseStatusCodeSame(403);
+    }
+
+    /**
+     * Régression issue #76 (login-CSRF) : un formulaire HTML cross-site peut
+     * soumettre ce POST en navigation de premier niveau ; la réponse poserait
+     * alors un BEARER qui écrase celui de la victime. Un formulaire ne peut
+     * pas poser d'en-tête personnalisé : sans X-Requested-With, la requête
+     * doit être refusée avant le firewall, donc sans aucun Set-Cookie.
+     */
+    public function testLoginWithoutTheRequestedWithHeaderIsRefusedAndSetsNoCookie(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::USERNAME, TestCredentials::plainPassword(), [CpgUser::ROLE_TRUSTED]);
+
+        // Identifiants valides, corps JSON valide : seul l'en-tête manque.
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
+            'username' => self::USERNAME,
+            'password' => TestCredentials::plainPassword(),
+        ]));
+
+        self::assertResponseStatusCodeSame(403);
+        self::assertNull($client->getCookieJar()->get('BEARER'));
+        self::assertNull($client->getCookieJar()->get('XSRF-TOKEN'));
     }
 }

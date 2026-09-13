@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HttpAuthRepository } from '../../../src/infrastructure/auth/HttpAuthRepository'
+import { InvalidCredentialsError } from '../../../src/domain/auth/errors/InvalidCredentialsError'
 
 function stubFetch(status: number, body: unknown = undefined): ReturnType<typeof vi.fn> {
   const fetchMock = vi.fn(async () => ({
@@ -48,5 +49,49 @@ describe('HttpAuthRepository.me()', () => {
     stubFetch(503)
 
     await expect(new HttpAuthRepository('https://api.example.test').me()).rejects.toThrow(/503/)
+  })
+})
+
+/**
+ * Le backend exige X-Requested-With sur /api/login_check (LoginCsrfRequestListener,
+ * issue #76) : un formulaire HTML cross-site ne peut pas poser cet en-tête,
+ * un fetch() du SPA le pose sans peine. Sans lui, la connexion répond 403.
+ */
+describe('HttpAuthRepository.login()', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  // Identifiants de test factices, déclarés séparément : un couple
+  // username/password littéral dans un même objet déclenche GitGuardian.
+  const username = 'jane'
+  const password = 'not-a-real-password'
+
+  it('envoie un POST JSON avec cookies et l\'en-tête X-Requested-With', async () => {
+    const fetchMock = stubFetch(200, { user: { username, roles: ['ROLE_TRUSTED', 'ROLE_USER'] } })
+
+    await new HttpAuthRepository('https://api.example.test').login(username, password)
+
+    expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/api/login_check', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+      body: JSON.stringify({ username, password }),
+    })
+  })
+
+  it('200 : renvoie l\'utilisateur du corps', async () => {
+    stubFetch(200, { user: { username, roles: ['ROLE_TRUSTED', 'ROLE_USER'] } })
+
+    await expect(new HttpAuthRepository('https://api.example.test').login(username, password)).resolves.toEqual({
+      username: 'jane',
+      roles: ['ROLE_TRUSTED', 'ROLE_USER'],
+    })
+  })
+
+  it('401 : InvalidCredentialsError', async () => {
+    stubFetch(401)
+
+    await expect(new HttpAuthRepository('https://api.example.test').login(username, 'wrong')).rejects.toBeInstanceOf(InvalidCredentialsError)
   })
 })
