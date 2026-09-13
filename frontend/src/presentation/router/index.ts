@@ -5,6 +5,7 @@ import { applySeoMeta } from './seo'
 import { LOCALE_STORAGE_KEY, resolvePreferredLocale } from './preferredLocale'
 import { authState, waitForAuthCheck } from '../../application/auth/useAuth'
 import { hasRole } from '../../domain/auth/services/hasRole'
+import { ROLE_SUPER } from '../../domain/auth/entities/Role'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -47,9 +48,6 @@ const AdminIncidentsPage = () => import('../pages/admin/AdminIncidentsPage.vue')
 const AdminWatchPage = () => import('../pages/admin/AdminWatchPage.vue')
 const AdminQualityPage = () => import('../pages/admin/AdminQualityPage.vue')
 const AdminUsersPage = () => import('../pages/admin/AdminUsersPage.vue')
-
-/** Rôle requis pour accéder à l'espace /admin (cf. backend CpgUser::ROLE_SUPER). */
-const ROLE_SUPER = 'ROLE_SUPER'
 
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),

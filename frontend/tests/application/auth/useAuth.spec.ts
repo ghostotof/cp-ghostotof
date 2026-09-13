@@ -1,15 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
-import { AUTH_REPOSITORY, useAuth } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, authState, markBaseAccessGranted, useAuth } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
+import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
+import { sessionFor } from '../../support/authSession'
 
 function createStubRepository(overrides: Partial<AuthRepository> = {}): AuthRepository {
   return {
     login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER'] }) satisfies AuthenticatedUser),
     logout: vi.fn(async () => undefined),
-    me: vi.fn(async () => null),
+    me: vi.fn(async () => sessionFor(null)),
     ...overrides,
   }
 }
@@ -61,7 +63,7 @@ describe('useAuth', () => {
   })
 
   it('checkAuth() hydrate isAuthenticated depuis repository.me()', async () => {
-    const repository = createStubRepository({ me: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER'] })) })
+    const repository = createStubRepository({ me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })) })
     const auth = mountWithComposable(repository)
 
     expect(auth.isAuthenticated.value).toBe(false)
@@ -69,12 +71,12 @@ describe('useAuth', () => {
     await auth.checkAuth()
 
     expect(auth.isAuthenticated.value).toBe(true)
-    expect(auth.user.value).toEqual({ username: 'jane', roles: ['ROLE_USER'] })
+    expect(auth.user.value).toEqual({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
   })
 
   it('isSuperAdmin reflète le rôle ROLE_SUPER du user courant', async () => {
     const repository = createStubRepository({
-      me: vi.fn(async () => ({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })),
+      me: vi.fn(async () => sessionFor({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })),
     })
     const auth = mountWithComposable(repository)
 
@@ -114,5 +116,80 @@ describe('useAuth', () => {
     expect(repository.logout).toHaveBeenCalled()
     expect(auth.isAuthenticated.value).toBe(false)
     expect(auth.user.value).toBeNull()
+  })
+
+  describe('palier d\'accès (ADR 0003 D1 — trois cas)', () => {
+    it('anonyme par défaut : tier=anonymous, ni authentifié ni de confiance', async () => {
+      const auth = mountWithComposable(createStubRepository())
+
+      await auth.checkAuth()
+
+      expect(auth.tier.value).toBe('anonymous')
+      expect(auth.isAuthenticated.value).toBe(false)
+      expect(auth.isTrusted.value).toBe(false)
+    })
+
+    it('checkAuth() reconnaît le palier de base (403 sur /api/me) : authentifié, sans identité, pas de confiance', async () => {
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => BASE_ACCESS_SESSION) }))
+
+      await auth.checkAuth()
+
+      expect(auth.tier.value).toBe('base')
+      expect(auth.isAuthenticated.value).toBe(true)
+      expect(auth.isTrusted.value).toBe(false)
+      expect(auth.user.value).toBeNull()
+    })
+
+    it('checkAuth() reconnaît le palier de confiance', async () => {
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })) }))
+
+      await auth.checkAuth()
+
+      expect(auth.tier.value).toBe('trusted')
+      expect(auth.isTrusted.value).toBe(true)
+    })
+
+    it('markBaseAccessGranted() fait passer un anonyme au palier de base, visible via authState (hors composant)', async () => {
+      const auth = mountWithComposable(createStubRepository())
+      await auth.checkAuth()
+
+      markBaseAccessGranted()
+
+      expect(auth.tier.value).toBe('base')
+      expect(authState.tier).toBe('base')
+      expect(authState.user).toBeNull()
+    })
+
+    it('login() depuis le palier de base avec un compte de confiance passe au palier de confiance', async () => {
+      const auth = mountWithComposable(
+        createStubRepository({ login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })) }),
+      )
+      await auth.checkAuth()
+      markBaseAccessGranted()
+
+      await auth.login('jane', 'password')
+
+      expect(auth.tier.value).toBe('trusted')
+      expect(auth.user.value?.username).toBe('jane')
+    })
+
+    it('login() avec un compte réel sans ROLE_TRUSTED reste au palier de base, mais identifié', async () => {
+      const auth = mountWithComposable(createStubRepository())
+
+      await auth.login('jane', 'password')
+
+      expect(auth.tier.value).toBe('base')
+      expect(auth.user.value?.username).toBe('jane')
+    })
+
+    it('logout() depuis le palier de base ramène à anonyme', async () => {
+      const auth = mountWithComposable(createStubRepository())
+      await auth.checkAuth()
+      markBaseAccessGranted()
+
+      await auth.logout()
+
+      expect(auth.tier.value).toBe('anonymous')
+    })
   })
 })

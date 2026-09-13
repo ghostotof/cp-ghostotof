@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import CaseStudiesPage from '../../../src/presentation/pages/CaseStudiesPage.vue'
 import { CASE_STUDY_REPOSITORY } from '../../../src/application/caseStudies/useCaseStudies'
@@ -10,6 +11,8 @@ import type { CaseStudy } from '../../../src/domain/caseStudies/entities/CaseStu
 import { CaseStudiesAccessNotGrantedError } from '../../../src/domain/caseStudies/errors/CaseStudiesAccessNotGrantedError'
 import { BaseAccessError } from '../../../src/domain/baseAccess/errors/BaseAccessError'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { AUTH_REPOSITORY, markBaseAccessGranted, useAuth } from '../../../src/application/auth/useAuth'
+import { sessionFor } from '../../support/authSession'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 
 const CASE_STUDY: CaseStudy = {
@@ -54,7 +57,37 @@ function mountPage(
   })
 }
 
+/**
+ * L'état d'auth est un singleton de module que grant() fait passer au palier
+ * de base : on le remet à « anonyme » avant chaque test, sinon un test qui
+ * obtient l'accès contamine les suivants (et un second grant() ne
+ * changerait plus le palier, donc ne rechargerait plus la page).
+ */
+async function primeAnonymous(): Promise<void> {
+  const Probe = defineComponent({
+    setup() {
+      return { auth: useAuth() }
+    },
+    template: '<div />',
+  })
+  const wrapper = mount(Probe, {
+    global: {
+      provide: {
+        [AUTH_REPOSITORY as symbol]: {
+          login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER'] })),
+          logout: vi.fn(async () => undefined),
+          me: vi.fn(async () => sessionFor(null)),
+        },
+      },
+    },
+  })
+  await wrapper.vm.auth.checkAuth()
+  wrapper.unmount()
+}
+
 describe('CaseStudiesPage', () => {
+  beforeEach(primeAnonymous)
+
   it('utilise un titre de niveau page (h1), la page étant routée indépendamment', () => {
     expect(mountPage().find('h1').exists()).toBe(true)
   })
@@ -141,6 +174,17 @@ describe('CaseStudiesPage', () => {
       await flushPromises()
 
       expect(wrapper.text()).toContain('Trop de tentatives')
+    })
+
+    it("l'accès obtenu ailleurs (CTA de l'en-tête) recharge le contenu sans clic sur la page", async () => {
+      const wrapper = mountNeedingAccess()
+      await flushPromises()
+      expect(wrapper.find('article').exists()).toBe(false)
+
+      markBaseAccessGranted()
+      await flushPromises()
+
+      expect(wrapper.text()).toContain(CASE_STUDY.title)
     })
   })
 
