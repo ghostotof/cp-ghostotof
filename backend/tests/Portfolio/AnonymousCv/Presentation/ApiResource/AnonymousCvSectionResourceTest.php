@@ -132,7 +132,7 @@ final class AnonymousCvSectionResourceTest extends WebTestCase
 
     private function loginAs(KernelBrowser $client, string $username, string $password): void
     {
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: json_encode([
             'username' => $username,
             'password' => $password,
         ], \JSON_THROW_ON_ERROR));

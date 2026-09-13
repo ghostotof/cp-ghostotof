@@ -451,7 +451,7 @@ final class ApiRouteExposureTest extends WebTestCase
     private function obtainBaseAccess(KernelBrowser $client): string
     {
         self::getContainer()->get('cache.rate_limiter')->clear();
-        $client->request('POST', '/api/account/base-access');
+        $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
         self::assertResponseIsSuccessful();
 
         $csrfCookie = $client->getCookieJar()->get('XSRF-TOKEN');
@@ -462,7 +462,7 @@ final class ApiRouteExposureTest extends WebTestCase
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string
     {
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
             'username' => $username,
             'password' => $password,
         ]));

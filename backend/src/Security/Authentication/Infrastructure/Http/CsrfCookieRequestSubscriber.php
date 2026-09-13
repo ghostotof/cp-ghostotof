@@ -50,6 +50,10 @@ final readonly class CsrfCookieRequestSubscriber
      * - /api/account/base-access (ADR 0003 D6) : même raisonnement — l'appelant
      *   est anonyme par définition (c'est le but de l'endpoint) et n'a donc
      *   aucun cookie XSRF-TOKEN préexistant à double-soumettre.
+     *
+     * Les deux premières POSENT un cookie BEARER : être hors double-submit ne
+     * les met pas hors CSRF pour autant (login-CSRF, issue #76). Elles sont
+     * gardées par LoginCsrfRequestListener, qui exige un en-tête personnalisé.
      */
     private const array EXCLUDED_PATHS = ['/api/login_check', '/api/contact', '/api/account/base-access'];
 

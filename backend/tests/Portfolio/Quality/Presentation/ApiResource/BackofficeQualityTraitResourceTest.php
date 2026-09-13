@@ -129,7 +129,7 @@ final class BackofficeQualityTraitResourceTest extends WebTestCase
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string
     {
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
             'username' => $username,
             'password' => $password,
         ]));
