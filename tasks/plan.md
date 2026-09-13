@@ -78,10 +78,10 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 ### Checkpoint 2 — parcours complet de bout en bout
 - [x] Un visiteur anonyme obtient le jeton (Phase 1) et atteint une vraie page de contenu (Phase 2) — vérifié dans un vrai navigateur (Chrome), pas seulement en test automatisé
 - [x] axe-core sur la nouvelle page, suite frontend + backend vertes
-- [ ] Revue avec Christophe avant de poursuivre — **en attente, ne pas enchaîner sur la Phase 3 sans confirmation**
+- [x] Revue avec Christophe avant de poursuivre — confirmée le 2026-09-13 (« on va continuer l'ADR 0003 »)
 
 ### Phase 3 — État d'auth à trois cas (frontend)
-- [ ] Task 9 — `hasRole`/garde de routeur/`AppHeader` : 3e cas (palier de base), CTA vers Task 2 — [#54](https://github.com/ghostotof/cp-ghostotof/issues/54)
+- [x] Task 9 — `hasRole`/garde de routeur/`AppHeader` : 3e cas (palier de base), CTA vers Task 2 — [#54](https://github.com/ghostotof/cp-ghostotof/issues/54) (`feature/adr0003-auth-tiers-frontend`, commit `9bc03fc`)
 - [ ] Task 13 — Action « Terminer cet accès » pour le palier de base (dépend de Task 9) — [#65](https://github.com/ghostotof/cp-ghostotof/issues/65)
 
 ### Phase 4 — D5, contenus restants (priorité plus basse, indépendants)
