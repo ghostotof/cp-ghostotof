@@ -27,6 +27,13 @@ const { tier, isChecking, isSuperAdmin, logout } = useAuth()
 const { isDownloading, hasError: hasCvDownloadError, downloadCv } = useCvDownload()
 const { isGranting, errorReason: baseAccessErrorReason, grant: grantBaseAccess } = useBaseAccess()
 
+/**
+ * Sert aux deux sorties : la déconnexion d'un compte (palier de confiance)
+ * et « Terminer cet accès » au palier de base (ADR 0003 D6, issue #65).
+ * Même mécanique — POST /api/logout expire le cookie quel que soit le
+ * porteur du jeton — seul le libellé diffère : il n'y a pas eu de
+ * connexion au sens propre, donc pas de « déconnexion » à afficher.
+ */
 async function handleLogout(): Promise<void> {
   await logout()
   await router.push(homeLink.value)
@@ -145,9 +152,9 @@ function navLinkClass(link: NavigationLink) {
 
         <template v-if="!isChecking">
           <!-- Trois paliers (ADR 0003 D1) : anonyme → CTA + connexion ;
-               palier de base → badge + connexion (un compte de confiance
-               peut toujours se connecter par-dessus) ; palier de confiance →
-               administration (si ROLE_SUPER), CV, déconnexion. -->
+               palier de base → badge + fin d'accès + connexion (un compte de
+               confiance peut toujours se connecter par-dessus) ; palier de
+               confiance → administration (si ROLE_SUPER), CV, déconnexion. -->
           <template v-if="'anonymous' === tier">
             <button
               type="button"
@@ -191,6 +198,15 @@ function navLinkClass(link: NavigationLink) {
               />
               {{ t('common.baseAccessBadge') }}
             </span>
+            <!-- Sortir avant l'expiration du jeton (15 min) : sur un poste
+                 partagé, fermer l'onglet laisserait le cookie httpOnly actif. -->
+            <button
+              type="button"
+              class="btn btn-outline-light btn-sm d-inline-flex align-items-center"
+              @click="handleLogout"
+            >
+              {{ t('common.endBaseAccess') }}
+            </button>
             <RouterLink
               :to="`${homeLink}/login`"
               class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-2"

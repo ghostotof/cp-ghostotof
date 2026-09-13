@@ -83,6 +83,7 @@ async function mountHeader(
   authRepository?: AuthRepository,
   cvRepository?: CvRepository,
   baseAccessRepository?: BaseAccessRepository,
+  i18nLocale: 'fr' | 'en' = 'fr',
 ) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -97,10 +98,16 @@ async function mountHeader(
   await router.push(initialPath)
   await router.isReady()
 
+  // La locale i18n est synchronisée depuis l'URL par le garde du routeur
+  // applicatif (presentation/router/index.ts), absent de ce routeur de test :
+  // on la fixe donc explicitement quand un cas a besoin de l'anglais.
+  const i18n = createAppI18n()
+  i18n.global.locale.value = i18nLocale
+
   const wrapper = mount(AppHeader, {
     props: { siteIdentity, navigationLinks },
     global: {
-      plugins: [router, createAppI18n()],
+      plugins: [router, i18n],
       provide: {
         [AUTH_REPOSITORY as symbol]: authRepository ?? createStubAuthRepository(null),
         [CV_REPOSITORY as symbol]: cvRepository ?? createStubCvRepository(),
@@ -343,6 +350,52 @@ describe('AppHeader', () => {
       expect(wrapper.text()).not.toContain('Télécharger mon CV')
       expect(wrapper.text()).not.toContain('Déconnexion')
       expect(wrapper.find('a[href="/fr/admin"]').exists()).toBe(false)
+    })
+
+    // Task 13 (#65) : sortir du palier de base avant l'expiration du jeton
+    // (15 min, D6), sur un ordinateur partagé notamment. Ce n'est pas une
+    // « déconnexion » — il n'y a jamais eu de connexion — d'où un libellé
+    // distinct, mais la mécanique est celle de logout() (POST /api/logout
+    // expire le cookie sans regarder le type de porteur).
+    it('palier de base : propose « Terminer cet accès », distinct de la déconnexion des comptes', async () => {
+      await primeBaseAccessState()
+      const { wrapper } = await mountHeader()
+
+      expect(findButton(wrapper, 'Terminer cet accès')).toBeDefined()
+      expect(findButton(wrapper, 'Déconnexion')).toBeUndefined()
+    })
+
+    it('palier de base : « Terminer cet accès » expire le jeton, l\'état retombe à anonyme et mène à l\'accueil', async () => {
+      await primeBaseAccessState()
+      const authRepository = createStubAuthRepository(null)
+      const { wrapper, router } = await mountHeader('/fr/case-studies', authRepository)
+
+      await findButton(wrapper, 'Terminer cet accès')?.trigger('click')
+      await flushPromises()
+
+      expect(authRepository.logout).toHaveBeenCalledOnce()
+      expect(wrapper.text()).not.toContain('Accès de base')
+      expect(findButton(wrapper, 'Terminer cet accès')).toBeUndefined()
+      expect(findButton(wrapper, 'Accès instantané')).toBeDefined()
+      expect(router.currentRoute.value.path).toBe('/fr')
+    })
+
+    it('anonyme comme au palier de confiance : pas de « Terminer cet accès » (les comptes gardent « Déconnexion »)', async () => {
+      await primeAuthState(null)
+      expect(findButton((await mountHeader()).wrapper, 'Terminer cet accès')).toBeUndefined()
+
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader()
+      expect(findButton(wrapper, 'Terminer cet accès')).toBeUndefined()
+      expect(findButton(wrapper, 'Déconnexion')).toBeDefined()
+    })
+
+    it('en anglais : le libellé est « End this access », pas « Logout »', async () => {
+      await primeBaseAccessState()
+      const { wrapper } = await mountHeader('/en', undefined, undefined, undefined, 'en')
+
+      expect(findButton(wrapper, 'End this access')).toBeDefined()
+      expect(findButton(wrapper, 'Logout')).toBeUndefined()
     })
 
     it('palier de confiance : ni CTA, ni badge (rien ne change pour ROLE_SUPER non plus)', async () => {
