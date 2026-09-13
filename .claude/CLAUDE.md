@@ -36,9 +36,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
      backoffice invitation flow (`CpgUserInviter::invite`), never via a shared or published credential.
      `ROLE_SUPER` inherits `ROLE_TRUSTED` via the `role_hierarchy` in `security.yaml`. See `docs/adr/0003`
      for the full model, `docs/adr/0001` (amended) for the invitation mechanics.
-   - **Not yet built** (ADR 0003 D5/D6): the credential-free, self-serve way to reach the base tier, and
-     the content that tier is meant to carry. Until then `ROLE_USER` is reachable only through a real
-     account (CLI or invited) that was never granted `ROLE_TRUSTED` — e.g. the dev-only `demo` account.
+   - **The credential-free way to reach the base tier is built** (ADR 0003 D6): `POST /api/account/base-access`
+     (`BaseAccessController`, per-IP rate-limited, CSRF-excluded like `/api/contact`) issues a 15-minute
+     JWT carrying exactly `ROLE_USER`, with **no account materialised in the DB**. The frontend's
+     "Accès instantané" CTA calls it; "Terminer cet accès" (issue #65) ends it early through the
+     unchanged `POST /api/logout`, which expires the cookie whoever holds it. The tier is read from the
+     HTTP status of `GET /api/me` (401 anonymous / 403 base / 200 trusted) — no dedicated endpoint.
+   - **Content that tier carries** (ADR 0003 D5): the `Portfolio/CaseStudy` context (`GET
+     /api/case-studies/{locale}`, `ROLE_USER`) is built; the "CV without identity" (#55) and the
+     anonymised career path (not yet broken down) are not. A real account never granted `ROLE_TRUSTED`
+     (e.g. the dev-only `demo` account) still lands on that same base tier.
 10. The modifications must follow the git flow planned for this project on GitHub (main branch "main", next release "develop", new feature "feature", etc...)
 11. The resulting can be shown during an interview.
 12. The resulting must be fully multilingual (French, English)
@@ -863,8 +870,8 @@ ADRs:
 - `docs/adr/0001-admin-user-provisioning.md` (invitation-by-email flow, `email` now stored, Twig for emails)
 - `docs/adr/0002-veille-technique.md` (`Portfolio/Watch`: outbound calls out of the render path, snapshot in
   DB, public aggregate vs `ROLE_SUPER` detail, manifest built at `docker build`)
-- `docs/adr/0003-paliers-d-acces.md` — **statut `proposé`, rien n'est implémenté.** Would make `ROLE_USER`
-  the bottom tier (one click, no credentials, discretion rather than secrecy) and move the CV behind a new
-  `ROLE_TRUSTED`. Read it before touching `access_control` or `CpgUser::getRoles()`: it turns on the fact
-  that `getRoles()` grants `ROLE_USER` unconditionally, which is why a tier was added *above* rather than
-  below. Until it is accepted, Goal #9 and ADR 0001 stand as written.
+- `docs/adr/0003-paliers-d-acces.md` — **statut `accepté`, largement implémenté** (D1/D2/D4/D6/D7 + D5 1/3,
+  see `tasks/plan.md` for what remains). Makes `ROLE_USER` the bottom tier (one click, no credentials,
+  discretion rather than secrecy) and puts the CV behind `ROLE_TRUSTED`. Read it before touching
+  `access_control`, `CpgUser::getRoles()` or `BaseAccessController`: it turns on the fact that `getRoles()`
+  grants `ROLE_USER` unconditionally, which is why a tier was added *above* rather than below.
