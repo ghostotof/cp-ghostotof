@@ -52,6 +52,19 @@ final class BaseAccessControllerTest extends WebTestCase
         $countAfter = $this->countCpgUsers($connection);
         self::assertSame($countBefore, $countAfter, 'Aucun compte ne doit être créé en base (D6).');
 
+        // Le corps annonce l'échéance : le cookie est httpOnly, le frontend ne
+        // peut pas lire l'expiration du jeton, et sans elle le badge « Accès
+        // de base » resterait affiché après les 15 minutes de D6.
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($payload);
+        self::assertSame(['ROLE_USER'], $payload['roles']);
+        self::assertIsString($payload['expiresAt']);
+        $expiresAt = new \DateTimeImmutable($payload['expiresAt']);
+        $remaining = $expiresAt->getTimestamp() - time();
+        self::assertGreaterThan(14 * 60, $remaining);
+        self::assertLessThanOrEqual(15 * 60, $remaining);
+        self::assertSame($expiresAt->getTimestamp(), (int) $bearerCookie->getExpiresTime(), 'Le corps et le cookie doivent annoncer la même échéance.');
+
         // Le cookie authentifie bien la requête suivante (403, pas 401) : la
         // mécanique de ré-authentification via GuestUserProvider fonctionne.
         // /api/me exige ROLE_TRUSTED (ADR 0003 D4) : un jeton ROLE_USER seul

@@ -50,7 +50,14 @@ final readonly class BaseAccessController
             'exp' => $expiresAt,
         ]);
 
-        $response = new JsonResponse(['roles' => $guest->getRoles()]);
+        // `expiresAt` est le seul moyen pour le frontend de connaître
+        // l'échéance : le cookie est httpOnly, le JWT illisible en JS. Sans
+        // cette information, l'en-tête afficherait « Accès de base » jusqu'au
+        // prochain rechargement, bien après que le jeton ait expiré.
+        $response = new JsonResponse([
+            'roles' => $guest->getRoles(),
+            'expiresAt' => (new \DateTimeImmutable('@'.$expiresAt))->format(\DateTimeInterface::ATOM),
+        ]);
 
         $isProd = 'prod' === $this->environment;
 
