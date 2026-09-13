@@ -1,5 +1,11 @@
+import type { BaseAccessGrant } from '../../domain/baseAccess/entities/BaseAccessGrant'
 import type { BaseAccessRepository } from '../../domain/baseAccess/repositories/BaseAccessRepository'
 import { BaseAccessError } from '../../domain/baseAccess/errors/BaseAccessError'
+
+interface BaseAccessResponseBody {
+  roles?: string[]
+  expiresAt?: string
+}
 
 /**
  * Implémentation HTTP de BaseAccessRepository (ADR 0003 D6). Pas de header
@@ -14,7 +20,7 @@ export class HttpBaseAccessRepository implements BaseAccessRepository {
     this.apiBaseUrl = apiBaseUrl
   }
 
-  async grant(): Promise<void> {
+  async grant(): Promise<BaseAccessGrant> {
     const response = await fetch(`${this.apiBaseUrl}/api/account/base-access`, {
       method: 'POST',
       credentials: 'include',
@@ -26,5 +32,20 @@ export class HttpBaseAccessRepository implements BaseAccessRepository {
       }
       throw new BaseAccessError('unknown', `Request failed with status ${response.status}`)
     }
+
+    // L'échéance est informative : un corps absent ou illisible ne doit pas
+    // transformer un accès obtenu (le cookie est posé) en échec.
+    const body = (await response.json().catch(() => ({}))) as BaseAccessResponseBody
+
+    return { expiresAt: parseExpiresAt(body.expiresAt) }
   }
+}
+
+function parseExpiresAt(value: string | undefined): Date | null {
+  if (undefined === value) {
+    return null
+  }
+  const date = new Date(value)
+
+  return Number.isNaN(date.getTime()) ? null : date
 }

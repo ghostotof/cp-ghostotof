@@ -32,7 +32,7 @@ function createStubCaseStudyRepository(overrides: Partial<CaseStudyRepository> =
 
 function createStubBaseAccessRepository(overrides: Partial<BaseAccessRepository> = {}): BaseAccessRepository {
   return {
-    grant: vi.fn(async () => undefined),
+    grant: vi.fn(async () => ({ expiresAt: null })),
     ...overrides,
   }
 }

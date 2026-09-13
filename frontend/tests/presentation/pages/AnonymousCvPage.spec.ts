@@ -31,7 +31,7 @@ function createStubAnonymousCvRepository(overrides: Partial<AnonymousCvRepositor
 
 function createStubBaseAccessRepository(overrides: Partial<BaseAccessRepository> = {}): BaseAccessRepository {
   return {
-    grant: vi.fn(async () => undefined),
+    grant: vi.fn(async () => ({ expiresAt: null })),
     ...overrides,
   }
 }
