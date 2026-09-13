@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Security\User\Infrastructure\Http;
 
 use App\Security\User\Application\BaseAccessRateLimiterInterface;
+use App\Shared\Infrastructure\Http\CanonicalPath;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 
@@ -32,7 +33,9 @@ final readonly class BaseAccessRateLimitRequestListener
 
         $request = $event->getRequest();
 
-        if (self::PATH !== $request->getPathInfo() || 'POST' !== $request->getMethod()) {
+        // Chemin décodé (CanonicalPath, issue #77) : `base%2Daccess` est routé
+        // vers ce contrôleur, il doit consommer le même quota.
+        if (self::PATH !== CanonicalPath::of($request) || 'POST' !== $request->getMethod()) {
             return;
         }
 

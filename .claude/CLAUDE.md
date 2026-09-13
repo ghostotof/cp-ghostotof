@@ -208,6 +208,12 @@ folder), so entities live inside their bounded context instead of a shared top-l
     `/api/logout`).
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
     listener at priority 20 (must run *above* the Security firewall's priority 8 — see the class docblock).
+  - **Any `kernel.request` listener that matches on the path must use `App\Shared\Infrastructure\Http\CanonicalPath::of()`,
+    never `getPathInfo()` directly** (issue #77). `getPathInfo()` is *not* decoded, while the router, the
+    firewalls and `access_control` all decide on `rawurldecode()`: `POST /%61pi/logout` reached the
+    `LogoutListener` without ever passing the CSRF check, and `/api/account/base%2Daccess` escaped its rate
+    limiter. The three listeners (`CsrfCookieRequestSubscriber`, `BaseAccessRateLimitRequestListener`,
+    `PasswordSetupRateLimitRequestListener`) go through the helper, and each has a `%XX` regression test.
 - **`Portfolio/Shared/`** — `Domain/ValueObject/Locale.php`, the `enum Locale: string { FR = 'fr'; EN = 'en' }`
   shared by every `Portfolio/*` context. Two entry points, and the distinction matters (audit I3):
   - **`Locale::fromString()` for anything coming from outside** (a `{locale}` URL segment, a command
@@ -680,8 +686,9 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   `CreateContainerConfigError` (incident v0.6.0). The rule that decides: **hash it if kustomize owns
   every reference to it, don't if anything outside kustomize names it.** Verify a config change
   actually landed with `kubectl exec … -c nginx -- nginx -T | grep <the new directive>`.
-- **Three nginx rate-limit zones, two different jobs.** `contact` (10 r/m) and `pwsetup` (20 r/m)
-  protect a *side effect* — sending mail, guessing a token. `publicapi` (600 r/m, burst 200, on
+- **Four nginx rate-limit zones, two different jobs.** `contact` (10 r/m), `pwsetup` (20 r/m) and
+  `baseaccess` (20 r/m, issue #77 — each call signs an RS256 JWT) protect a *side effect* — sending mail,
+  guessing a token, minting a token. `publicapi` (600 r/m, burst 200, on
   `location /`) protects the *resource*: without it every public read reaches PHP and Postgres as
   often as asked. Its ceiling is deliberately far above real use — behind a mobile carrier's CGNAT
   thousands of visitors share one address, and a tight cap would cut them all off at once, which is
