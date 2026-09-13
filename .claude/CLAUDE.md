@@ -53,8 +53,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
      avoids the `^/api/cv` prefix, which is `ROLE_TRUSTED`). The third content the ADR listed, an
      anonymised career path, was **dropped on 2026-09-13** (D5 amended): the time sequence is the most
      re-identifying element, and the chronology is precisely what the nominative tier adds — don't
-     reintroduce it as "just durations and sectors". A real account never granted `ROLE_TRUSTED` (e.g.
-     the dev-only `demo` account) still lands on that same base tier.
+     reintroduce it as "just durations and sectors". A real account never granted `ROLE_TRUSTED` still
+     lands on that same base tier. **Never name a real account in this repo** (issue #78, pt 5): a valid
+     username in a public repository is half a credential, `login_throttling` or not — the former
+     shared demo account was removed from production for that reason, and its name scrubbed from here
+     and from the migration docblock that mentioned it.
 10. The modifications must follow the git flow planned for this project on GitHub (main branch "main", next release "develop", new feature "feature", etc...)
 11. The resulting can be shown during an interview.
 12. The resulting must be fully multilingual (French, English)

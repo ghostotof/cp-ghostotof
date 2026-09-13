@@ -16,7 +16,7 @@ describe('sessionForUser', () => {
   })
 
   it('un compte réel qui n\'a que ROLE_USER reste au palier de base, identité conservée', () => {
-    const user: AuthenticatedUser = { username: 'demo', roles: ['ROLE_USER'] }
+    const user: AuthenticatedUser = { username: 'jane', roles: ['ROLE_USER'] }
 
     expect(sessionForUser(user)).toEqual({ tier: 'base', user })
   })
