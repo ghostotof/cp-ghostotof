@@ -1,9 +1,9 @@
 # ADR 0003 — Trois paliers d'accès : anonyme, invité, approuvé
 
-- Statut : **accepté** (2026-09-12) — socle D1/D2/D4/D7 mergé (PR #41), D6 et le premier contenu
-  D5 (études de cas) mergés le 2026-09-12/13. Reste ouvert : D5 2/3 (CV sans identité, #55) et
-  D5 3/3 (parcours anonymisé, non découpé — niveau de détail à arbitrer). Suivi dans `tasks/plan.md`
-  et les issues `adr-0003`.
+- Statut : **accepté** (2026-09-12) — socle D1/D2/D4/D7 mergé (PR #41), D6 (PR #46-48), D5 1/3
+  études de cas (PR #49-53) et D5 2/3 CV sans identité (PR #69, #71) mergés les 2026-09-12/13.
+  **D5 3/3 (parcours anonymisé) est abandonné, décision du 2026-09-13** — voir D5. Suivi dans
+  `tasks/plan.md` et les issues `adr-0003`.
 - Date : 2026-09-10
 - Portée : `config/packages/security.yaml`, `src/Security/User`, `src/Security/Authentication`,
   `tests/Security/ApiRouteExposureTest.php`, frontend `presentation/pages/LoginPage.vue` + garde de
@@ -100,6 +100,15 @@ Il serait vide si l'on se contentait de redistribuer l'existant. Par ordre de va
 3. **Parcours anonymisé** — durées, tailles d'équipe, secteurs, technologies par période. **Le plus
    délicat du lot** : un parcours suffisamment détaillé se ré-identifie par recoupement, surtout sur
    un marché étroit. Rester large sur les dates et les secteurs, ou s'en abstenir.
+
+   **Amendement du 2026-09-13 : on s'en abstient.** Une fois les deux premiers contenus en place,
+   ce que ce troisième ajouterait se réduit à une seule chose, la *séquence* dans le temps — et
+   c'est précisément la séquence qui sert d'empreinte : une suite « n ans dans tel secteur, puis
+   m ans avec telle stack » se recoupe avec un profil public en quelques minutes, même sans nom ni
+   date, et le rendre assez large pour ne plus l'être le vide de son intérêt. Le classement des
+   technologies par années cumulées est déjà public ; l'ancienneté par domaine et les réalisations
+   sont au palier de base. La chronologie est exactement ce que le palier nominatif apporte en
+   plus, et c'est là qu'elle reste. **D5 se compose donc de deux contenus, pas trois.**
 
 ### D6 — Mécanique du palier intermédiaire
 

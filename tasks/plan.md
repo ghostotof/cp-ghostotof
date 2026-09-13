@@ -45,10 +45,12 @@ trois cas côté frontend.
 2. **Nom de la ressource/route D6** — proposé dans ce plan :
    `POST /api/account/base-access`, à confirmer (cohérence avec
    `/api/account/password-setup/*` déjà existant).
-3. **« Parcours anonymisé » (3e contenu D5)** — pas encore découpé en
-   tâche : la question du niveau de détail acceptable (dates, secteurs,
-   tailles d'équipe) sans permettre la ré-identification par recoupement
-   est à trancher par Christophe avant toute décomposition.
+3. **« Parcours anonymisé » (3e contenu D5)** — **tranché le 2026-09-13 :
+   abandonné.** Trois options présentées (s'abstenir / version grossière
+   sans dates / version détaillée) ; Christophe a retenu l'abstention, sur
+   la recommandation que la séquence temporelle est l'empreinte la plus
+   ré-identifiante et que la chronologie est justement ce que le palier
+   nominatif apporte. Acté dans l'ADR (amendement de D5).
 4. **`CreateCpgUserCommand::ALLOWED_ROLES`** reste `[ROLE_SUPER]` — reste
    correct une fois D6 en place (ROLE_TRUSTED reste nominatif via
    l'invitation, jamais via CLI) ? Tranché en tâche 12 plutôt que supposé.
@@ -88,7 +90,7 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 - [x] Task 10 — CV sans identité (même forme que Task 4–7, second type de contenu) — [#55](https://github.com/ghostotof/cp-ghostotof/issues/55) (`feature/adr0003-anonymous-cv`, commits `34ca837` → seed ; décision : nouveau contexte `Portfolio/AnonymousCv`, pas une extension de `CaseStudy`)
 - [x] Task 14 — Tranche frontend du CV sans identité (page publique + backoffice, même forme que Task 8) — [#68](https://github.com/ghostotof/cp-ghostotof/issues/68) (`feature/adr0003-anonymous-cv-frontend`, commits `64b2f3a` → `9dea988` ; a aussi ajouté le lien de navigation manquant vers `/case-studies`)
 - [ ] (hors tâche, design) Navigation principale à neuf entrées : regroupement à décider — [#70](https://github.com/ghostotof/cp-ghostotof/issues/70)
-- [ ] (non découpé) Parcours anonymisé — voir Open Questions §3
+- [x] Parcours anonymisé — **abandonné, décision du 2026-09-13** (ADR 0003 D5 amendée : la séquence temporelle est l'élément le plus ré-identifiant, la chronologie reste au palier nominatif). D5 = deux contenus.
 
 ### Phase 5 — Housekeeping
 - [ ] Task 12 — Trancher `CreateCpgUserCommand::ALLOWED_ROLES` (voir Open Questions §4) — [#56](https://github.com/ghostotof/cp-ghostotof/issues/56)
