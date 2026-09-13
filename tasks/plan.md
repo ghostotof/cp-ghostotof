@@ -105,8 +105,9 @@ Reprises de la spec (§2), rappelées ici parce qu'elles décident de l'ordre :
 1. **Il n'existe pas de page admin pour les études de cas** (routes admin : technologies, about,
    quality, contributions, incidents, anonymous-cv, watch, users) alors que l'ADR 0003 prévoit leur
    saisie par le backoffice et que le contenu rédigé attend d'y être saisi. Hors périmètre de cette
-   spec ; à ouvrir comme issue séparée si Christophe le confirme, et l'assistant s'y branchera
-   ensuite (Task 14 éventuelle, même forme que la Task 9).
+   spec. **Confirmé par Christophe le 2026-09-14 → issue [#104](https://github.com/ghostotof/cp-ghostotof/issues/104)**
+   (label `adr-0003`, hors de ce plan). L'assistant s'y branchera ensuite (Task 14, même forme que
+   la Task 9, issue à ouvrir quand la page existera).
 2. **Modèle par environnement** : `claude-sonnet-5` partout, ou un modèle moins cher en preprod ?
    Parti pris : le même partout (preprod doit reproduire prod, y compris la qualité de la sortie
    structurée) ; à revoir si le coût preprod devient visible.
@@ -121,4 +122,4 @@ Reprises de la spec (§2), rappelées ici parce qu'elles décident de l'ordre :
 - [x] Tâches enregistrées dans le tracker désigné (GitHub Issues #91–#103, pas `tasks/todo.md`)
 - [x] Aucune tâche ne touche plus de ~5 fichiers de logique (la Task 1 en touche 9, tous de configuration ; la Task 12 est annoncée M et découpable)
 - [x] Checkpoints entre les phases
-- [ ] Revue humaine du plan (Christophe)
+- [x] Revue humaine du plan (Christophe) — ordre et découpage validés le 2026-09-14
