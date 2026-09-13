@@ -6,7 +6,9 @@
     "contact": "Contact",
     "about": "À propos",
     "contributions": "Contributions",
-    "incidents": "Incidents"
+    "incidents": "Incidents",
+    "caseStudies": "Études de cas",
+    "anonymousCv": "CV sans identité"
   },
   "common": {
     "downloadCv": "Télécharger mon CV",
@@ -460,6 +462,10 @@
       "title": "Incidents et invariants",
       "description": "Pannes de production de ce projet, causes racines et règles qui en sont sorties."
     },
+    "anonymousCv": {
+      "title": "CV sans identité",
+      "description": "Compétences, ancienneté et réalisations par domaine — sans nom, employeur ni coordonnées."
+    },
     "caseStudies": {
       "title": "Études de cas",
       "description": "Problèmes techniques réels, solutions retenues et résultats mesurés — sans nom de client."
@@ -496,6 +502,25 @@
       "rootCause": "Cause racine",
       "resolution": "Résolution",
       "invariant": "Invariant"
+    }
+  },
+  "anonymousCv": {
+    "eyebrow": "CV sans identité",
+    "intro": "Compétences, ancienneté et réalisations par domaine — sans nom, employeur, client ni coordonnées. De quoi décider si vous voulez demander le vrai.",
+    "loading": "Chargement du CV sans identité…",
+    "error": "Le CV sans identité n'a pas pu être chargé. Réessayez plus tard.",
+    "empty": "Aucune section publiée pour le moment.",
+    "years": "{count} an d'expérience | {count} an d'expérience | {count} ans d'expérience",
+    "fields": {
+      "skills": "Compétences",
+      "achievements": "Réalisations"
+    },
+    "needsAccess": {
+      "message": "Ce contenu demande un accès de base, gratuit et sans identifiants.",
+      "action": "Obtenir l'accès",
+      "granting": "Obtention de l'accès…",
+      "rateLimited": "Trop de tentatives depuis cette adresse. Réessayez plus tard.",
+      "error": "L'accès n'a pas pu être obtenu. Réessayez plus tard."
     }
   },
   "caseStudies": {

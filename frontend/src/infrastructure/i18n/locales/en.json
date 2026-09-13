@@ -6,7 +6,9 @@
     "contact": "Contact",
     "about": "About",
     "contributions": "Contributions",
-    "incidents": "Incidents"
+    "incidents": "Incidents",
+    "caseStudies": "Case studies",
+    "anonymousCv": "Anonymous CV"
   },
   "common": {
     "downloadCv": "Download my CV",
@@ -460,6 +462,10 @@
       "title": "Incidents and invariants",
       "description": "This project's production outages, root causes and the rules that came out of them."
     },
+    "anonymousCv": {
+      "title": "Anonymous CV",
+      "description": "Skills, seniority and achievements by domain — no name, employer or contact details."
+    },
     "caseStudies": {
       "title": "Case studies",
       "description": "Real technical problems, the solutions retained and measured results — no client names."
@@ -496,6 +502,25 @@
       "rootCause": "Root cause",
       "resolution": "Resolution",
       "invariant": "Invariant"
+    }
+  },
+  "anonymousCv": {
+    "eyebrow": "Anonymous CV",
+    "intro": "Skills, seniority and achievements by domain — no name, employer, client or contact details. Enough to decide whether you want to ask for the real one.",
+    "loading": "Loading the anonymous CV…",
+    "error": "The anonymous CV could not be loaded. Please try again later.",
+    "empty": "No section published yet.",
+    "years": "{count} year of experience | {count} year of experience | {count} years of experience",
+    "fields": {
+      "skills": "Skills",
+      "achievements": "Achievements"
+    },
+    "needsAccess": {
+      "message": "This content requires basic access — free, no credentials.",
+      "action": "Get access",
+      "granting": "Getting access…",
+      "rateLimited": "Too many attempts from this address. Please try again later.",
+      "error": "Access could not be granted. Please try again later."
     }
   },
   "caseStudies": {
