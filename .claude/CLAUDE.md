@@ -42,6 +42,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
      "Accès instantané" CTA calls it; "Terminer cet accès" (issue #65) ends it early through the
      unchanged `POST /api/logout`, which expires the cookie whoever holds it. The tier is read from the
      HTTP status of `GET /api/me` (401 anonymous / 403 base / 200 trusted) — no dedicated endpoint.
+     The response body carries `expiresAt`, the only way the frontend can know when the httpOnly cookie
+     dies: `useAuth` arms a timer on it (remembered in `localStorage` to survive a reload, a past value
+     is ignored — the server is the truth) and any 401 on base-tier content calls
+     `markBaseAccessExpired()`, so the header never shows "Accès de base" above a page asking for it.
    - **Content that tier carries** (ADR 0003 D5): two contexts, both built — `Portfolio/CaseStudy`
      (`GET /api/case-studies/{locale}`) and `Portfolio/AnonymousCv` (`GET /api/anonymous-cv/{locale}`,
      skills, seniority and **achievements** per domain, no name/employer/client; the path deliberately
