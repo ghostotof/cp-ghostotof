@@ -42,10 +42,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
      "Accès instantané" CTA calls it; "Terminer cet accès" (issue #65) ends it early through the
      unchanged `POST /api/logout`, which expires the cookie whoever holds it. The tier is read from the
      HTTP status of `GET /api/me` (401 anonymous / 403 base / 200 trusted) — no dedicated endpoint.
-   - **Content that tier carries** (ADR 0003 D5): the `Portfolio/CaseStudy` context (`GET
-     /api/case-studies/{locale}`, `ROLE_USER`) is built; the "CV without identity" (#55) and the
-     anonymised career path (not yet broken down) are not. A real account never granted `ROLE_TRUSTED`
-     (e.g. the dev-only `demo` account) still lands on that same base tier.
+   - **Content that tier carries** (ADR 0003 D5): two contexts, both built — `Portfolio/CaseStudy`
+     (`GET /api/case-studies/{locale}`) and `Portfolio/AnonymousCv` (`GET /api/anonymous-cv/{locale}`,
+     skills, seniority and **achievements** per domain, no name/employer/client; the path deliberately
+     avoids the `^/api/cv` prefix, which is `ROLE_TRUSTED`). The third content the ADR listed, an
+     anonymised career path, was **dropped on 2026-09-13** (D5 amended): the time sequence is the most
+     re-identifying element, and the chronology is precisely what the nominative tier adds — don't
+     reintroduce it as "just durations and sectors". A real account never granted `ROLE_TRUSTED` (e.g.
+     the dev-only `demo` account) still lands on that same base tier.
 10. The modifications must follow the git flow planned for this project on GitHub (main branch "main", next release "develop", new feature "feature", etc...)
 11. The resulting can be shown during an interview.
 12. The resulting must be fully multilingual (French, English)
@@ -871,8 +875,8 @@ ADRs:
 - `docs/adr/0001-admin-user-provisioning.md` (invitation-by-email flow, `email` now stored, Twig for emails)
 - `docs/adr/0002-veille-technique.md` (`Portfolio/Watch`: outbound calls out of the render path, snapshot in
   DB, public aggregate vs `ROLE_SUPER` detail, manifest built at `docker build`)
-- `docs/adr/0003-paliers-d-acces.md` — **statut `accepté`, largement implémenté** (D1/D2/D4/D6/D7 + D5 1/3,
-  see `tasks/plan.md` for what remains). Makes `ROLE_USER` the bottom tier (one click, no credentials,
+- `docs/adr/0003-paliers-d-acces.md` — **statut `accepté`, implémenté** (D1/D2/D4/D6/D7, D5 réduit à deux
+  contenus par amendement du 2026-09-13; `tasks/plan.md` lists the housekeeping left). Makes `ROLE_USER` the bottom tier (one click, no credentials,
   discretion rather than secrecy) and puts the CV behind `ROLE_TRUSTED`. Read it before touching
   `access_control`, `CpgUser::getRoles()` or `BaseAccessController`: it turns on the fact that `getRoles()`
   grants `ROLE_USER` unconditionally, which is why a tier was added *above* rather than below.
