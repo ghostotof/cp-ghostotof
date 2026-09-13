@@ -162,6 +162,24 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(429);
     }
 
+    /**
+     * Régression issue #77 : `%2D` = '-'. Le routeur sert `password%2Dsetup`
+     * comme `password-setup`, le quota par IP doit s'appliquer à l'identique.
+     */
+    public function testPercentEncodedPathDoesNotBypassTheRateLimiter(): void
+    {
+        $client = $this->freshClient();
+        $unknown = bin2hex(random_bytes(32));
+
+        for ($i = 0; $i < 10; ++$i) {
+            $client->request('GET', '/api/account/password%2Dsetup/'.$unknown);
+            self::assertResponseStatusCodeSame(404);
+        }
+
+        $client->request('GET', '/api/account/password%2Dsetup/'.$unknown);
+        self::assertResponseStatusCodeSame(429);
+    }
+
     private function freshClient(): KernelBrowser
     {
         $client = self::createClient();

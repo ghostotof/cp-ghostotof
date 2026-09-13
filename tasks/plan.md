@@ -91,11 +91,16 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 ### Phase 4 — D5, contenus restants (priorité plus basse, indépendants)
 - [x] Task 10 — CV sans identité (même forme que Task 4–7, second type de contenu) — [#55](https://github.com/ghostotof/cp-ghostotof/issues/55) (`feature/adr0003-anonymous-cv`, commits `34ca837` → seed ; décision : nouveau contexte `Portfolio/AnonymousCv`, pas une extension de `CaseStudy`)
 - [x] Task 14 — Tranche frontend du CV sans identité (page publique + backoffice, même forme que Task 8) — [#68](https://github.com/ghostotof/cp-ghostotof/issues/68) (`feature/adr0003-anonymous-cv-frontend`, commits `64b2f3a` → `9dea988` ; a aussi ajouté le lien de navigation manquant vers `/case-studies`)
-- [ ] (hors tâche, design) Navigation principale à neuf entrées : regroupement à décider — [#70](https://github.com/ghostotof/cp-ghostotof/issues/70)
+- [x] (hors tâche, design) Navigation principale à neuf entrées : menu « Dossiers » — [#70](https://github.com/ghostotof/cp-ghostotof/issues/70) (`feature/adr0003-nav-dossiers`, PR #75, fermée le 2026-09-13)
 - [x] Parcours anonymisé — **abandonné, décision du 2026-09-13** (ADR 0003 D5 amendée : la séquence temporelle est l'élément le plus ré-identifiant, la chronologie reste au palier nominatif). D5 = deux contenus.
 
 ### Phase 5 — Housekeeping
 - [x] Task 12 — Trancher `CreateCpgUserCommand::ALLOWED_ROLES` (voir Open Questions §4) — [#56](https://github.com/ghostotof/cp-ghostotof/issues/56) (`feature/adr0003-cli-allowed-roles` : statu quo confirmé, documenté et pincé par un test)
+
+### Phase 6 — Suites de la revue de sécurité du 2026-09-13 (`main..develop`)
+- [x] Task 15 — Chemin décodé dans les trois listeners `kernel.request` (CSRF + deux rate limiters contournables par `%XX`) + zone nginx `baseaccess` — [#77](https://github.com/ghostotof/cp-ghostotof/issues/77) (`feature/adr0003-path-encoding-bypass`) — **bloquant avant le merge `develop → main`**
+- [ ] Login-CSRF de rétrogradation sur `POST /api/account/base-access` (faible) — [#76](https://github.com/ghostotof/cp-ghostotof/issues/76) — décision de Christophe attendue (en-tête personnalisé exigé ?)
+- [ ] Points de faible sévérité regroupés — [#78](https://github.com/ghostotof/cp-ghostotof/issues/78)
 
 ## Risks and Mitigations
 

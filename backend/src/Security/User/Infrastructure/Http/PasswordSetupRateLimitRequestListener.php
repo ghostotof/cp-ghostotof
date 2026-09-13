@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Security\User\Infrastructure\Http;
 
 use App\Security\User\Application\PasswordSetupRateLimiterInterface;
+use App\Shared\Infrastructure\Http\CanonicalPath;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 
@@ -56,7 +57,9 @@ final readonly class PasswordSetupRateLimitRequestListener
 
         $request = $event->getRequest();
 
-        if (!str_starts_with($request->getPathInfo(), self::PATH_PREFIX)) {
+        // Chemin décodé (CanonicalPath, issue #77) : `password%2Dsetup` est
+        // routé vers la ressource, il doit consommer le même quota.
+        if (!str_starts_with(CanonicalPath::of($request), self::PATH_PREFIX)) {
             return;
         }
 

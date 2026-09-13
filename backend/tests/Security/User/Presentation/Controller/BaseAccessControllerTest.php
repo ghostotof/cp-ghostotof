@@ -98,4 +98,23 @@ final class BaseAccessControllerTest extends WebTestCase
         self::assertTrue($client->getResponse()->headers->has('Retry-After'));
         self::assertGreaterThan(0, (int) $client->getResponse()->headers->get('Retry-After'));
     }
+
+    /**
+     * Régression issue #77 : `%2D` = '-'. Le routeur sert `base%2Daccess`
+     * comme `base-access`, le listener de quota doit le compter de même —
+     * sinon l'endpoint redevient « un distributeur de jetons » (D6).
+     */
+    public function testPercentEncodedPathDoesNotBypassTheRateLimiter(): void
+    {
+        $client = $this->createClientWithFreshRateLimiter();
+
+        for ($i = 0; $i < 20; ++$i) {
+            $client->request('POST', '/api/account/base%2Daccess');
+            self::assertResponseIsSuccessful();
+        }
+
+        $client->request('POST', '/api/account/base%2Daccess');
+
+        self::assertResponseStatusCodeSame(429);
+    }
 }

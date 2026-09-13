@@ -107,6 +107,23 @@ final class PasswordSetupRateLimitRequestListenerTest extends TestCase
         }
     }
 
+    /**
+     * Régression issue #77 : `%2D` = '-'. API Platform sert
+     * `/api/account/password%2Dsetup/{token}` comme le chemin en clair (le
+     * routeur décode), le quota doit donc être consommé à l'identique.
+     */
+    public function testPercentEncodedPrefixIsRateLimitedLikeThePlainOne(): void
+    {
+        $limiter = new SpyPasswordSetupRateLimiter();
+        $listener = new PasswordSetupRateLimitRequestListener($limiter);
+
+        $listener->__invoke($this->mainRequestEvent(
+            Request::create('/api/account/password%2Dsetup/deadbeef', 'GET', server: ['REMOTE_ADDR' => '203.0.113.7']),
+        ));
+
+        self::assertSame(['203.0.113.7'], $limiter->consumedIdentifiers);
+    }
+
     private function mainRequestEvent(Request $request): RequestEvent
     {
         return new RequestEvent(self::createStub(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Http;
 
+use App\Shared\Infrastructure\Http\CanonicalPath;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
@@ -23,6 +24,10 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
  * pour /api/logout, le LogoutListener de Symfony fixe la réponse (donc stoppe
  * la propagation de l'événement) dès son passage. Une priorité inférieure à 8
  * ne verrait donc jamais passer cette requête.
+ *
+ * Le chemin est comparé sous sa forme décodée (CanonicalPath, issue #77) :
+ * getPathInfo() est brut, et un `%XX` dans l'URL suffisait à faire rater le
+ * préfixe /api ici alors que le firewall, lui, décodait et exécutait.
  *
  * Point d'audit B1 : en plus du double-submit, la valeur du cookie doit
  * porter une signature HMAC-APP_SECRET valide (cf. CsrfCookieTokenSigner) —
@@ -104,7 +109,10 @@ final readonly class CsrfCookieRequestSubscriber
             return false;
         }
 
-        $path = $request->getPathInfo();
+        // Chemin décodé comme le routeur/firewall le voient (issue #77) :
+        // sur le brut, `/%61pi/logout` ne commence pas par `/api` alors que
+        // Symfony l'exécute bien comme /api/logout.
+        $path = CanonicalPath::of($request);
 
         if (!str_starts_with($path, '/api')) {
             return false;

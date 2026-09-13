@@ -92,4 +92,20 @@ final class AuthenticationFlowTest extends WebTestCase
         $client->request('GET', '/api/me');
         self::assertResponseStatusCodeSame(401);
     }
+
+    /**
+     * Régression issue #77 (reproduit en dev : `POST /%61pi/logout` sans
+     * XSRF-TOKEN répondait 204 avec `Set-Cookie: BEARER=deleted`). Le
+     * firewall décode le chemin et exécute bien le logout ; la protection
+     * CSRF doit le voir aussi, sinon un formulaire cross-site déconnecte
+     * n'importe quel visiteur.
+     */
+    public function testPercentEncodedLogoutPathStillRequiresTheCsrfHeader(): void
+    {
+        $client = self::createClient();
+
+        $client->request('POST', '/%61pi/logout');
+
+        self::assertResponseStatusCodeSame(403);
+    }
 }
