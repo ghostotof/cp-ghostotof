@@ -71,22 +71,40 @@ describe('StaticPortfolioContentRepository', () => {
   })
 
   /**
-   * Issue #70 (décision du 2026-09-13) : neuf entrées ne tenaient plus sur
-   * une ligne. Les contenus « matière » sont regroupés sous « Dossiers » ; les
-   * URL ne changent pas, et le premier niveau retombe à six entrées.
+   * Issue #70 puis #88 (décisions du 2026-09-13) : neuf entrées ne tenaient
+   * plus sur une ligne, et le regroupement unique « Dossiers » couvrait quatre
+   * pages de natures différentes. Deux groupes homogènes : « Parcours »
+   * (CV sans identité, parcours technique) et « Retours d'expérience »
+   * (études de cas, incidents, contributions) — dans chaque groupe le contenu
+   * du palier de base vient en tête. Les URL ne changent pas, le premier
+   * niveau reste à six entrées, dans le même ordre qu'avant.
    */
-  it.each(SUPPORTED_LOCALES)('regroupe les quatre contenus « matière » sous « Dossiers », six entrées au premier niveau (%s)', (locale) => {
+  it.each(SUPPORTED_LOCALES)('regroupe les contenus en deux groupes homogènes, six entrées au premier niveau (%s)', (locale) => {
     const entries = repository.getNavigationLinks(locale)
-    const group = entries.find(isNavigationGroup)
+    const groups = entries.filter(isNavigationGroup)
 
-    expect(entries).toHaveLength(6)
-    expect(group?.label).toBe('Dossiers')
-    expect(group?.links.map((link) => link.to)).toEqual([
-      `/${locale}/contributions`,
-      `/${locale}/incidents`,
+    expect(entries.map((entry) => entry.label)).toEqual(
+      'fr' === locale
+        ? ['Accueil', 'Ma stack', 'Parcours', "Retours d'expérience", 'Contact', 'À propos']
+        : ['Home', 'My stack', 'Career', 'Lessons learned', 'Contact', 'About'],
+    )
+    expect(groups[0]?.links.map((link) => link.to)).toEqual([`/${locale}/anonymous-cv`, `/${locale}/experience`])
+    expect(groups[1]?.links.map((link) => link.to)).toEqual([
       `/${locale}/case-studies`,
-      `/${locale}/anonymous-cv`,
+      `/${locale}/incidents`,
+      `/${locale}/contributions`,
     ])
+  })
+
+  /**
+   * Issue #88 : le CV sans identité portait deux noms (« CV anonyme » dans le
+   * menu, « CV sans identité » en titre de page). Un seul désormais — il dit
+   * ce qui manque plutôt que de promettre un anonymat.
+   */
+  it.each(SUPPORTED_LOCALES)('nomme le CV sans identité comme sa page, pas « CV anonyme » (%s)', (locale) => {
+    const link = flatLinks(locale).find((entry) => entry.to.endsWith('/anonymous-cv'))
+
+    expect(link?.label).toBe('fr' === locale ? 'CV sans identité' : 'CV without identity')
   })
 
   it.each(SUPPORTED_LOCALES)(

@@ -8,8 +8,9 @@
     "contributions": "Contributions",
     "incidents": "Incidents",
     "caseStudies": "Études de cas",
-    "anonymousCv": "CV anonyme",
-    "dossiers": "Dossiers"
+    "anonymousCv": "CV sans identité",
+    "career": "Parcours",
+    "lessonsLearned": "Retours d'expérience"
   },
   "common": {
     "downloadCv": "Télécharger mon CV",

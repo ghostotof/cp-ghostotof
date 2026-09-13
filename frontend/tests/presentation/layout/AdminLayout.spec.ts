@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { nextTick } from 'vue'
 import AdminLayout from '../../../src/presentation/layout/AdminLayout.vue'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { CV_REPOSITORY } from '../../../src/application/cv/useCvDownload'
+import type { CvRepository } from '../../../src/domain/cv/repositories/CvRepository'
 
 const StubPage = { template: '<div />' }
 
@@ -28,14 +30,21 @@ function createTestRouter(): Router {
   })
 }
 
-async function mountLayout(initialPath: string) {
+function createStubCvRepository(overrides: Partial<CvRepository> = {}): CvRepository {
+  return {
+    download: vi.fn(async () => ({ blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }), filename: 'cv.pdf' })),
+    ...overrides,
+  }
+}
+
+async function mountLayout(initialPath: string, cvRepository: CvRepository = createStubCvRepository()) {
   const router = createTestRouter()
   await router.push(initialPath)
   await router.isReady()
 
   const wrapper = mount(AdminLayout, {
     attachTo: document.body,
-    global: { plugins: [router, createAppI18n()] },
+    global: { plugins: [router, createAppI18n()], provide: { [CV_REPOSITORY as symbol]: cvRepository } },
   })
   await wrapper.vm.$nextTick()
 
@@ -144,6 +153,55 @@ describe('AdminLayout', () => {
     expect(contentToggle(wrapper).classes()).toContain('btn-outline-light')
 
     wrapper.unmount()
+  })
+
+  /**
+   * Le téléchargement du CV complet est ici pour ROLE_SUPER, et non dans
+   * l'en-tête (AppHeader) : c'est le seul palier dont la barre de droite
+   * débordait entre 1200 et 1399 px (mesure de l'issue #88). Les autres
+   * comptes de confiance gardent le bouton dans l'en-tête — ils n'ont pas
+   * accès à cette page.
+   */
+  describe('téléchargement du CV (ROLE_SUPER)', () => {
+    function downloadButton(wrapper: Awaited<ReturnType<typeof mountLayout>>) {
+      return wrapper.findAll('nav button').find((button) => button.text().includes('Télécharger mon CV'))
+    }
+
+    it("propose « Télécharger mon CV » dans la navigation d'administration", async () => {
+      const wrapper = await mountLayout('/fr/admin/technologies')
+
+      expect(downloadButton(wrapper)).toBeDefined()
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+
+      wrapper.unmount()
+    })
+
+    it('le clic télécharge le fichier via le repository, sans message d\'erreur', async () => {
+      vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:mock'), revokeObjectURL: vi.fn() })
+      const cvRepository = createStubCvRepository()
+      const wrapper = await mountLayout('/fr/admin/technologies', cvRepository)
+
+      await downloadButton(wrapper)?.trigger('click')
+      await nextTick()
+
+      expect(cvRepository.download).toHaveBeenCalledTimes(1)
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+
+      wrapper.unmount()
+      vi.unstubAllGlobals()
+    })
+
+    it('affiche un message si le téléchargement échoue', async () => {
+      const cvRepository = createStubCvRepository({ download: vi.fn(async () => Promise.reject(new Error('unavailable'))) })
+      const wrapper = await mountLayout('/fr/admin/technologies', cvRepository)
+
+      await downloadButton(wrapper)?.trigger('click')
+      await nextTick()
+
+      expect(wrapper.get('[role="alert"]').text()).toBe('Le téléchargement du CV a échoué. Réessayez plus tard.')
+
+      wrapper.unmount()
+    })
   })
 
   it('le menu déroulant porte un aria-label distinct de la navigation', async () => {

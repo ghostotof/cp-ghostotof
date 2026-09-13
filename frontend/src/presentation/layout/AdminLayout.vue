@@ -2,9 +2,20 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useCvDownload } from '../../application/cv/useCvDownload'
+import IconDownload from '~icons/lucide/download'
 
 const route = useRoute()
 const { t } = useI18n()
+
+/**
+ * Le CV complet se télécharge d'ici pour ROLE_SUPER, et non depuis l'en-tête
+ * (AppHeader, qui garde le bouton pour les autres comptes de confiance) : la
+ * barre de droite du super-admin était la seule à déborder entre 1200 et
+ * 1399 px (mesure de l'issue #88), et le propriétaire du site n'a pas besoin
+ * de son propre CV à chaque page. Même composable, même endpoint ROLE_TRUSTED.
+ */
+const { isDownloading, hasError: hasCvDownloadError, downloadCv } = useCvDownload()
 
 /**
  * Sections d'édition de contenu, regroupées derrière l'onglet « Contenu » de
@@ -118,7 +129,30 @@ onBeforeUnmount(() => {
       >
         {{ t('admin.nav.users') }}
       </RouterLink>
+
+      <!-- Action, pas une section : à droite, hors des onglets. -->
+      <button
+        type="button"
+        class="btn btn-outline-light btn-sm ms-md-auto d-inline-flex align-items-center gap-2"
+        :disabled="isDownloading"
+        @click="downloadCv"
+      >
+        {{ t('common.downloadCv') }}
+        <IconDownload
+          width="16"
+          height="16"
+          aria-hidden="true"
+        />
+      </button>
     </nav>
+
+    <p
+      v-if="hasCvDownloadError"
+      class="text-danger small mb-0"
+      role="alert"
+    >
+      {{ t('common.downloadCvError') }}
+    </p>
 
     <RouterView />
   </section>
