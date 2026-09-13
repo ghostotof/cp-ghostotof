@@ -89,6 +89,38 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
         self::assertNotContains(CpgUser::ROLE_SUPER, $this->findRoles($this->fetchUsers($client), self::PLAIN_USERNAME));
     }
 
+    /**
+     * Issue #78, pt 3 — ADR 0003 D1. Un compte créé en CLI n'a pas d'e-mail,
+     * donc n'a jamais été accordé nominativement ; promu ROLE_SUPER puis
+     * rétrogradé, il retombe au palier de base et le CV lui reste fermé.
+     * Sans cette garde, la promotion/rétrogradation était une voie détournée
+     * vers ROLE_TRUSTED, que Task 12 refuse justement à la CLI.
+     */
+    public function testDemotingAnAccountWithoutEmailClosesTheCvAgain(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $server = ['CONTENT_TYPE' => 'application/json', 'HTTP_X_XSRF_TOKEN' => $csrfToken];
+
+        $janeId = $this->findId($this->fetchUsers($client), self::PLAIN_USERNAME);
+
+        $client->request('PUT', sprintf('/api/backoffice/users/%d/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => true]));
+        self::assertResponseStatusCodeSame(204);
+        $client->request('PUT', sprintf('/api/backoffice/users/%d/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => false]));
+        self::assertResponseStatusCodeSame(204);
+
+        self::assertNotContains(CpgUser::ROLE_TRUSTED, $this->findRoles($this->fetchUsers($client), self::PLAIN_USERNAME));
+
+        // La preuve qui compte : vue du compte rétrogradé, la route identifiante reste fermée.
+        self::ensureKernelShutdown();
+        $client = self::createClient();
+        $this->loginAs($client, self::PLAIN_USERNAME, TestCredentials::plainPassword());
+        $client->request('GET', '/api/cv');
+        self::assertResponseStatusCodeSame(403);
+    }
+
     public function testDemotingOwnAccountReturns409(): void
     {
         $client = self::createClient();
