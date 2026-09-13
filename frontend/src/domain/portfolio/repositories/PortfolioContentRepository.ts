@@ -1,5 +1,5 @@
 import type { SiteIdentity } from '../entities/SiteIdentity'
-import type { NavigationLink } from '../entities/NavigationLink'
+import type { NavigationEntry } from '../entities/NavigationEntry'
 import type { HeroContent } from '../entities/HeroContent'
 import type { ExperienceContent } from '../entities/ExperienceContent'
 import type { Technology } from '../entities/Technology'
@@ -17,7 +17,7 @@ import type { LegalPageContent } from '../entities/LegalPageContent'
 export interface PortfolioContentRepository {
   /** Ne dépend pas de la locale : le nom de marque est identique dans toutes les langues. */
   getSiteIdentity(): SiteIdentity
-  getNavigationLinks(locale: Locale): readonly NavigationLink[]
+  getNavigationLinks(locale: Locale): readonly NavigationEntry[]
   getHeroContent(locale: Locale): HeroContent
   getExperienceContent(locale: Locale): ExperienceContent
   getFeaturedTechnologies(locale: Locale): readonly Technology[]
