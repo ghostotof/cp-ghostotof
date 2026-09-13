@@ -50,6 +50,12 @@ n'a qu'un `username`, il ne dirait pas à qui le CV a été ouvert. Elle reste l
 pour le premier administrateur ; que celui-ci hérite de `ROLE_TRUSTED` est assumé, l'administrateur
 du site étant par construction la personne identifiée. Un test pince ce refus.
 
+*Précision du 2026-09-13 (revue de sécurité, #78 pt 3) :* la même lecture vaut pour la rétrogradation
+`ROLE_SUPER` → `ROLE_TRUSTED` depuis le backoffice. `CpgUserRoleAdministrator` ne conserve
+`ROLE_TRUSTED` que si le compte a un e-mail ; un compte CLI promu puis rétrogradé retombe au palier de
+base, sinon promotion + rétrogradation serait une voie détournée vers exactement ce que la CLI refuse.
+Deux tests pincent les deux cas (invité → `ROLE_TRUSTED` gardé, CLI → `/api/cv` 403).
+
 Le palier intermédiaire **n'est pas un contrôle d'accès et ne doit jamais être présenté comme tel.**
 Un script obtient le jeton aussi facilement qu'un humain, en une requête. Ce qui est placé derrière
 est donc, de fait, public.

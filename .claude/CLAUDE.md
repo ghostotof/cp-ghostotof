@@ -179,7 +179,8 @@ folder), so entities live inside their bounded context instead of a shared top-l
     (`invite(email, Locale)` / `reinvite(user, Locale)`: derives username, creates/marks the pending account,
     then **only** dispatches `SendAccountInvitationMessage`) · `PasswordSetupService` (`validate` / `complete`
     the public flow) · `CpgUserAdministrator` (delete / change-password) · `CpgUserRoleAdministrator`
-    (`setSuperAdmin`, idempotent, anti-lockout guards) · `PasswordSetupRateLimiterInterface` (calqued on the
+    (`setSuperAdmin`, idempotent, anti-lockout guards; on demotion `ROLE_TRUSTED` is kept **only if the account
+    has an `email`** — nominative grant, ADR 0003 D1, issue #78 pt 3 — a CLI account falls back to the base tier) · `PasswordSetupRateLimiterInterface` (calqued on the
     Contact rate limiter). Presenters: `CpgUserPresenter` (`/api/me`), `CpgUserAdminPresenter`
     (backoffice list — `id`, `username`, `email`, `roles`, `status`).
   - **The invitation token is created by the Messenger handler, never by the use case** (audit C2):
