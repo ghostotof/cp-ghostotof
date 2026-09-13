@@ -99,10 +99,11 @@ Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label ad
 
 ### Phase 6 — Suites de la revue de sécurité du 2026-09-13 (`main..develop`)
 - [x] Task 15 — Chemin décodé dans les trois listeners `kernel.request` (CSRF + deux rate limiters contournables par `%XX`) + zone nginx `baseaccess` — [#77](https://github.com/ghostotof/cp-ghostotof/issues/77) (`feature/adr0003-path-encoding-bypass`) — **bloquant avant le merge `develop → main`**
-- [ ] Login-CSRF de rétrogradation sur `POST /api/account/base-access` (faible) — [#76](https://github.com/ghostotof/cp-ghostotof/issues/76) — décision de Christophe attendue (en-tête personnalisé exigé ?)
+- [x] Login-CSRF de rétrogradation sur `POST /api/account/base-access` (faible) — [#76](https://github.com/ghostotof/cp-ghostotof/issues/76) — en-tête `X-Requested-With` exigé (`LoginCsrfRequestListener`), PR #81 mergée le 2026-09-13, issue fermée
 - [ ] Points de faible sévérité regroupés — [#78](https://github.com/ghostotof/cp-ghostotof/issues/78)
   - [x] pt 1 — invariant n°6 : `BASE_TIER_PATHS` dans `ApiRouteExposureTest`, le jeton D6 n'ouvre rien d'autre (`feature/adr0003-base-tier-coverage`)
-  - [ ] pt 2 — ancres de fin sur les regex `access_control` ; pt 3 (rétrogradation SUPER→TRUSTED) et pt 5 (compte `demo`) attendent une décision ; pt 4 est une action humaine en prod ; pt 6 info
+  - [x] pt 2 — ancres `(/|$)` sur les cinq regex `access_control` + `AccessControlAnchoringTest` (`feature/adr0003-access-control-anchors`)
+  - [ ] pt 3 (rétrogradation SUPER→TRUSTED) et pt 5 (compte `demo`) attendent une décision de Christophe ; pt 4 est une action humaine en prod ; pt 6 info
 
 ## Risks and Mitigations
 

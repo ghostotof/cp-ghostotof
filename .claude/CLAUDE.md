@@ -370,9 +370,14 @@ Content management for all of the above, plus user administration, gated end-to-
 (the default role every account also has is `ROLE_USER`, cf. `CpgUser::getRoles()` — never sufficient here):
 
 - **Authorization**: a single `access_control` entry in `config/packages/security.yaml`,
-  `{ path: ^/api/backoffice, roles: ROLE_SUPER }`, which **must stay the first entry in the list** — Symfony
+  `{ path: ^/api/backoffice(/|$), roles: ROLE_SUPER }`, which **must stay the first entry in the list** — Symfony
   applies only the first matching rule, so a later/looser rule (e.g. `^/api/me`) would never get a chance to
-  override it, but a rule placed *before* it could accidentally widen backoffice access.
+  override it, but a rule placed *before* it could accidentally widen backoffice access. **Every `path` is
+  anchored with `(/|$)`** (issue #78, pt 2): a rule covers its route and its subtree, nothing else, so
+  `/api/cv-export` is *not* `ROLE_TRUSTED` by accident and a future `/api/case-studies-drafts` is *not*
+  `ROLE_USER` by accident. A sibling path therefore inherits no implicit protection — write its rule, or
+  `ApiRouteExposureTest` flags it. `tests/Security/AccessControlAnchoringTest.php` pins the anchors against
+  the compiled `AccessMap`; keep the pattern when adding a rule.
 - **Non-negotiable rule for every new endpoint — "never send what the caller isn't entitled to"**: the API must
   never return protected data to an unauthenticated or unauthorized caller, *even when the frontend does not
   display it*. Hiding a field client-side is presentation, never protection — anyone can call the endpoint
@@ -410,9 +415,11 @@ Content management for all of the above, plus user administration, gated end-to-
   username+password creation stays CLI-only), an explicit `Get /backoffice/users/{id}` and
   `Delete /backoffice/users/{id}`. The `Get` is declared **on purpose** (audit C6): without an item operation,
   API Platform silently synthesises one to build IRIs, published on its default template
-  `/api/backoffice_users/{id}` — a second, undocumented path to the same data, which only stayed protected by
-  the accident that `^/api/backoffice` (no trailing slash) matches `backoffice_users` by prefix. Declaring it
-  removes that route. Plus dedicated one-operation
+  `/api/backoffice_users/{id}` — a second, undocumented path to the same data, which at the time only stayed
+  protected by the accident that the then-unanchored `^/api/backoffice` matched `backoffice_users` by prefix.
+  That accident is gone (the rule is now `^/api/backoffice(/|$)`, see "Authorization" above), so such a route
+  would be served to anyone — `ApiRouteExposureTest` would turn red, but check `debug:router` first. Declaring
+  the `Get` removes that route. Plus dedicated one-operation
   resources: `BackofficeUserPasswordResource` (`Put …/{id}/password`, `output: false`),
   `BackofficeUserRoleResource` (`Put …/{id}/roles` `{superAdmin}`, `output: false`),
   `BackofficeUserInvitationResource` (`Post …/{id}/invitation` `{locale}`, resend, `read: false`, → 202).
