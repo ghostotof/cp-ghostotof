@@ -268,13 +268,14 @@
       "save": "Save",
       "cancel": "Cancel",
       "localeLabel": "Language",
+      "translationOfLabel": "Translation of",
+      "translationOfNone": "— none —",
+      "contentLabel": "Content",
       "titleLabel": "Skill domain",
       "skillsLabel": "Skills (technologies, practices)",
       "yearsLabel": "Years of experience",
       "achievementsLabel": "Achievements",
       "achievementsHelp": "Required. What was achieved with this skill — years per technology are already public, achievements are what justify this tier. Paragraphs separated by a blank line.",
-      "positionLabel": "Position",
-      "actions": "Actions",
       "editAction": "Edit",
       "deleteAction": "Delete",
       "confirmDelete": "Delete section \"{title}\"?",
@@ -284,7 +285,9 @@
       "errors": {
         "not-found": "This section no longer exists.",
         "validation": "Some fields are invalid.",
-        "unknown": "An error occurred. Please try again later."
+        "unknown": "An error occurred. Please try again later.",
+        "translation-already-exists": "This content already has a version in that language.",
+        "unknown-translation-group": "The content to attach this version to no longer exists. Reload the page."
       }
     },
     "incidents": {
