@@ -8,6 +8,7 @@ use App\Portfolio\CaseStudy\Domain\Entity\CaseStudy;
 use App\Portfolio\CaseStudy\Domain\Exception\CaseStudyNotFoundException;
 use App\Portfolio\CaseStudy\Domain\Repository\CaseStudyRepositoryInterface;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
+use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Uid\Uuid;
 
@@ -16,6 +17,7 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
     public function __construct(
         private CaseStudyRepositoryInterface $caseStudyRepository,
         private ContentPlacement $contentPlacement,
+        private OrderAssigner $orderAssigner,
     ) {
     }
 
@@ -70,6 +72,15 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
         }
 
         $this->caseStudyRepository->remove($caseStudy);
+    }
+
+    public function reorder(array $keys): void
+    {
+        $scope = $this->caseStudyRepository->findAll();
+
+        $this->orderAssigner->assign($scope, $keys);
+
+        $this->caseStudyRepository->saveAll($scope);
     }
 
     /**

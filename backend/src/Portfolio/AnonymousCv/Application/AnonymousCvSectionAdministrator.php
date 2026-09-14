@@ -8,6 +8,7 @@ use App\Portfolio\AnonymousCv\Domain\Entity\AnonymousCvSection;
 use App\Portfolio\AnonymousCv\Domain\Exception\AnonymousCvSectionNotFoundException;
 use App\Portfolio\AnonymousCv\Domain\Repository\AnonymousCvSectionRepositoryInterface;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
+use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Uid\Uuid;
 
@@ -16,6 +17,7 @@ final readonly class AnonymousCvSectionAdministrator implements AnonymousCvSecti
     public function __construct(
         private AnonymousCvSectionRepositoryInterface $sectionRepository,
         private ContentPlacement $contentPlacement,
+        private OrderAssigner $orderAssigner,
     ) {
     }
 
@@ -68,6 +70,15 @@ final readonly class AnonymousCvSectionAdministrator implements AnonymousCvSecti
         }
 
         $this->sectionRepository->remove($section);
+    }
+
+    public function reorder(array $keys): void
+    {
+        $scope = $this->sectionRepository->findAll();
+
+        $this->orderAssigner->assign($scope, $keys);
+
+        $this->sectionRepository->saveAll($scope);
     }
 
     /**

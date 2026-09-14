@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Application;
 
+use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductNotFoundException;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductSlugAlreadyUsedException;
@@ -24,6 +25,7 @@ final readonly class WatchedProductAdministrator implements WatchedProductAdmini
 {
     public function __construct(
         private WatchedProductRepositoryInterface $watchedProductRepository,
+        private OrderAssigner $orderAssigner,
     ) {
     }
 
@@ -78,5 +80,14 @@ final readonly class WatchedProductAdministrator implements WatchedProductAdmini
         }
 
         $this->watchedProductRepository->remove($product);
+    }
+
+    public function reorder(array $keys): void
+    {
+        $scope = $this->watchedProductRepository->findAllOrdered();
+
+        $this->orderAssigner->assign($scope, $keys);
+
+        $this->watchedProductRepository->saveAll($scope);
     }
 }

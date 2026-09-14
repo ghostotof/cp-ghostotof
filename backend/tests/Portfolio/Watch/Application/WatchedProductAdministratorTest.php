@@ -9,6 +9,7 @@ use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductNotFoundException;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductSlugAlreadyUsedException;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductSlugIsImmutableException;
+use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Watch\Domain\Repository\WatchedProductRepositoryInterface;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -23,7 +24,7 @@ final class WatchedProductAdministratorTest extends TestCase
     protected function setUp(): void
     {
         $this->repository = $this->createMock(WatchedProductRepositoryInterface::class);
-        $this->administrator = new WatchedProductAdministrator($this->repository);
+        $this->administrator = new WatchedProductAdministrator($this->repository, new OrderAssigner());
     }
 
     private function postgres(): WatchedProduct
@@ -114,5 +115,26 @@ final class WatchedProductAdministratorTest extends TestCase
         $this->expectException(WatchedProductNotFoundException::class);
 
         $this->administrator->delete(Uuid::v7());
+    }
+
+    /**
+     * Spec 0004 D5/D6 : `WatchedProduct` n'a pas de groupe de traduction, son
+     * `orderingKey()` est son id — le périmètre chargé est tout le catalogue
+     * (`findAllOrdered()`), et la persistance passe par `saveAll()` (un seul
+     * appel), jamais par `save()` (un flush par entité).
+     */
+    public function testReorderLoadsTheCatalogueAndSavesItInOneCall(): void
+    {
+        $php = new WatchedProduct('php', 'PHP', VersionSource::MANUAL, '8.4', 0);
+        $postgres = $this->postgres();
+
+        $this->repository->method('findAllOrdered')->willReturn([$php, $postgres]);
+        $this->repository->expects(self::never())->method('save');
+        $this->repository->expects(self::once())->method('saveAll')->with([$php, $postgres]);
+
+        $this->administrator->reorder([$postgres->getId()->toRfc4122(), $php->getId()->toRfc4122()]);
+
+        self::assertSame(1, $php->getPosition());
+        self::assertSame(0, $postgres->getPosition());
     }
 }

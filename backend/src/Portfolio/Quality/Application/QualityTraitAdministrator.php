@@ -8,6 +8,7 @@ use App\Portfolio\Quality\Domain\Entity\QualityTrait as QualityTraitEntity;
 use App\Portfolio\Quality\Domain\Exception\QualityTraitNotFoundException;
 use App\Portfolio\Quality\Domain\Repository\QualityTraitRepositoryInterface;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
+use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Uid\Uuid;
 
@@ -16,6 +17,7 @@ final readonly class QualityTraitAdministrator implements QualityTraitAdministra
     public function __construct(
         private QualityTraitRepositoryInterface $qualityTraitRepository,
         private ContentPlacement $contentPlacement,
+        private OrderAssigner $orderAssigner,
     ) {
     }
 
@@ -59,6 +61,15 @@ final readonly class QualityTraitAdministrator implements QualityTraitAdministra
         }
 
         $this->qualityTraitRepository->remove($trait);
+    }
+
+    public function reorder(array $keys): void
+    {
+        $scope = $this->qualityTraitRepository->findAll();
+
+        $this->orderAssigner->assign($scope, $keys);
+
+        $this->qualityTraitRepository->saveAll($scope);
     }
 
     /**

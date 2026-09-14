@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Application;
 
+use App\Portfolio\Shared\Domain\Exception\IncompleteOrderException;
+use App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException;
 use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Domain\Exception\InvalidWatchedProductException;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductNotFoundException;
@@ -44,4 +46,18 @@ interface WatchedProductAdministratorInterface
      * @throws WatchedProductNotFoundException si l'id est inconnu
      */
     public function delete(Uuid $id): void;
+
+    /**
+     * Spec 0004 D4/D5 : réordonne tout le catalogue. `WatchedProduct` n'a pas
+     * de groupe de traduction (D6 : une version n'est pas une traduction) —
+     * `$keys` est donc l'ensemble des **ids** existants, en RFC 4122, une
+     * occurrence chacun.
+     *
+     * @param list<string> $keys ids, en RFC 4122
+     *
+     * @throws UnknownOrderEntryException une clé n'est pas dans le catalogue, ou y apparaît plus
+     *                                    d'une fois
+     * @throws IncompleteOrderException   un id du catalogue est absent de `$keys`
+     */
+    public function reorder(array $keys): void;
 }
