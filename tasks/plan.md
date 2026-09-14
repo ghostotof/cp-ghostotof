@@ -85,14 +85,14 @@ Reprises des specs (§2), rappelées ici parce qu'elles décident de l'ordre :
 Ordre de construction de la spec (§3), une PR par tâche, label `spec-0004` :
 
 ### Backend
-- [ ] Task B1 — Groupes de traduction : `translationGroup` sur les 8 entités localisées, interface `Orderable`, migration réversible avec appariement, seeds, `Assert\Choice` sur `Locale::cases()` — [#141](https://github.com/ghostotof/cp-ghostotof/issues/141)
-- [ ] Task B2 — Écriture : `position` retirée des DTO/`create`/`update`, `translationGroup` nullable, héritage de position, `TranslationAlreadyExistsException` (409) — [#142](https://github.com/ghostotof/cp-ghostotof/issues/142)
-- [ ] Task B3 — `OrderAssigner` (`Portfolio/Shared`), exceptions 422, `reorder()` sur les 9 `Administrator` + tests unitaires — [#143](https://github.com/ghostotof/cp-ghostotof/issues/143)
-- [ ] Task B4 — Les 9 ressources `Backoffice<X>OrderResource` (`PUT …/order`, 204) + tests fonctionnels (ordre relu sur backoffice **et** endpoints publics FR/EN) — [#144](https://github.com/ghostotof/cp-ghostotof/issues/144)
+- [x] Task B1 — Groupes de traduction : `translationGroup` sur les 8 entités localisées, interface `Orderable`, migration réversible avec appariement, seeds, `Assert\Choice` sur `Locale::cases()` — [#141](https://github.com/ghostotof/cp-ghostotof/issues/141)
+- [x] Task B2 — Écriture : `position` retirée des DTO/`create`/`update`, `translationGroup` nullable, héritage de position, `TranslationAlreadyExistsException` (409) — [#142](https://github.com/ghostotof/cp-ghostotof/issues/142)
+- [x] Task B3 — `OrderAssigner` (`Portfolio/Shared`), exceptions 422, `reorder()` sur les 9 `Administrator` + tests unitaires — [#143](https://github.com/ghostotof/cp-ghostotof/issues/143)
+- [x] Task B4 — Les 9 ressources `Backoffice<X>OrderResource` (`PUT …/order`, 204) + tests fonctionnels (ordre relu sur backoffice **et** endpoints publics FR/EN) — [#144](https://github.com/ghostotof/cp-ghostotof/issues/144)
 
 ### Checkpoint B1 — contrat d'ordre figé et cloisonné
-- [ ] `ApiRouteExposureTest` inchangé et vert ; `debug:router | grep /order` : neuf routes, aucune synthétisée
-- [ ] Un réordonnancement backoffice se lit sur `/api/<x>/fr` **et** `/api/<x>/en`
+- [x] `ApiRouteExposureTest` inchangé et vert ; `debug:router | grep /order` : neuf routes, aucune synthétisée — vérifié le 2026-09-14 sur c30ab99
+- [x] Un réordonnancement backoffice se lit sur `/api/<x>/fr` **et** `/api/<x>/en` — tests fonctionnels des 8 ressources localisées (titres ordonnés), confirmés en revue
 
 ### Frontend
 - [ ] Task B5 — Briques partagées : `domain/admin/shared/ordering/`, `useOrderDraft`, `useRowDragAndDrop`, `OrderHandle.vue`, `OrderToolbar.vue`, clés `admin.order.*` — [#145](https://github.com/ghostotof/cp-ghostotof/issues/145)
