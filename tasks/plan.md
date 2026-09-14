@@ -103,10 +103,10 @@ Ordre de construction de la spec (§3), une PR par tâche, label `spec-0004` :
 - [x] Revue avec Christophe avant de dérouler les autres pages — « enchaîne sur la B7 dès que la revue est propre » (2026-09-14)
 
 ### Les autres pages, une PR chacune
-- [ ] Task B7 — Contributions — [#147](https://github.com/ghostotof/cp-ghostotof/issues/147)
-- [ ] Task B8 — CV sans identité — [#148](https://github.com/ghostotof/cp-ghostotof/issues/148)
-- [ ] Task B9 — Qualité (principes, traits ; le tableau affiche toutes les langues) — [#149](https://github.com/ghostotof/cp-ghostotof/issues/149)
-- [ ] Task B10 — À propos (cartes site ; cartes moi par catégorie) — [#150](https://github.com/ghostotof/cp-ghostotof/issues/150)
+- [x] Task B7 — Contributions — [#147](https://github.com/ghostotof/cp-ghostotof/issues/147)
+- [x] Task B8 — CV sans identité — [#148](https://github.com/ghostotof/cp-ghostotof/issues/148)
+- [x] Task B9 — Qualité (principes, traits ; le tableau affiche toutes les langues) — [#149](https://github.com/ghostotof/cp-ghostotof/issues/149)
+- [x] Task B10 — À propos (cartes site ; cartes moi par catégorie) — [#150](https://github.com/ghostotof/cp-ghostotof/issues/150)
 - [ ] Task B11 — Watch (ids, sans groupe) — [#151](https://github.com/ghostotof/cp-ghostotof/issues/151)
 - [ ] Task B12 — Documentation (`CLAUDE.md`, spec 0002 amendée « le groupe est recopié »), release `v0.12.0`, préprod vérifiée FR et EN — [#152](https://github.com/ghostotof/cp-ghostotof/issues/152)
 

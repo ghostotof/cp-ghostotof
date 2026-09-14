@@ -116,13 +116,21 @@
       "delete": "Supprimer",
       "loading": "Chargement…",
       "loadError": "Le chargement a échoué. Réessayez plus tard.",
+      "localeHelp": "Langue de cette entrée : c'est elle qui sera enregistrée, et celle sur laquelle porte l'assistant de traduction. Le tableau ci-dessous, lui, affiche toutes les langues.",
+      "translationOfLabel": "Version de",
+      "translationOfNone": "— aucune —",
+      "contentLabel": "Contenu",
       "errors": {
         "not-found": "Cet élément n'existe plus.",
         "validation": "Le formulaire contient des erreurs. Vérifiez les champs.",
-        "unknown": "Une erreur est survenue. Réessayez plus tard."
+        "unknown": "Une erreur est survenue. Réessayez plus tard.",
+        "translation-already-exists": "Ce contenu a déjà une version dans cette langue.",
+        "unknown-translation-group": "Le contenu auquel rattacher cette version n'existe plus. Rechargez la page."
       },
       "settings": {
         "title": "Textes de la page À propos",
+        "localeLabel": "Langue des textes de la page À propos",
+        "localeHelp": "Ces textes sont un enregistrement par langue : changer de langue charge l'autre version. Les cartes ci-dessous, elles, ont chacune la leur.",
         "siteEyebrowLabel": "Titre de section « À propos de ce site »",
         "meEyebrowLabel": "Titre de section « À propos de moi »",
         "technicalSubtitleLabel": "Sous-titre « Techniquement »",
@@ -137,8 +145,7 @@
         "titleLabel": "Titre",
         "descriptionLabel": "Description",
         "iconKeyLabel": "Icône",
-        "positionLabel": "Position",
-        "empty": "Aucune carte enregistrée pour cette langue.",
+        "empty": "Aucune carte enregistrée.",
         "confirmDelete": "Supprimer la carte « {title} » ?"
       },
       "meCard": {
@@ -153,8 +160,7 @@
         "titleLabel": "Titre",
         "descriptionLabel": "Description",
         "iconKeyLabel": "Icône",
-        "positionLabel": "Position",
-        "empty": "Aucune carte enregistrée pour cette langue/catégorie.",
+        "empty": "Aucune carte enregistrée dans cette catégorie.",
         "confirmDelete": "Supprimer la carte « {title} » ?"
       }
     },
