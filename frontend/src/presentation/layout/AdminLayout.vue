@@ -30,6 +30,7 @@ const contentSections = [
   { name: 'admin-contributions', labelKey: 'admin.nav.contributions' },
   { name: 'admin-incidents', labelKey: 'admin.nav.incidents' },
   { name: 'admin-anonymous-cv', labelKey: 'admin.nav.anonymousCv' },
+  { name: 'admin-case-studies', labelKey: 'admin.nav.caseStudies' },
   { name: 'admin-watch', labelKey: 'admin.nav.watch' },
 ] as const
 
