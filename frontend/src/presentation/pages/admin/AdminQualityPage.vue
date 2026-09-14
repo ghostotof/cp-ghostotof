@@ -34,28 +34,30 @@ import type { AdminQualityTrait } from '../../../domain/admin/quality/entities/A
  * les traits de qualité —, chacun avec son tableau groupé, son brouillon
  * d'ordre et son formulaire.
  *
- * **Ce que le sélecteur de langue pilote désormais** (spec 0004, D8) : les
- * formulaires et l'assistant de traduction, plus les tableaux. Ceux-ci
- * affichent **toutes** les langues, une ligne par groupe de traduction, parce
- * que l'ordre est celui du groupe et non celui d'une langue : le régler en
- * regardant une seule langue reviendrait à ignorer la moitié du contenu
- * déplacé. `list()` a perdu son paramètre de locale en conséquence, et changer
- * la langue ne recharge plus rien.
+ * **Les tableaux affichent toutes les langues** (spec 0004, D8), une ligne par
+ * groupe de traduction : l'ordre est celui du groupe et non celui d'une
+ * langue, le régler en n'en regardant qu'une reviendrait à ignorer la moitié
+ * du contenu déplacé. `list()` a perdu son paramètre de locale en conséquence.
  *
- * **Conséquence sur l'assistant** : il ne bascule plus la *page* mais le
- * *formulaire* vers la locale cible, exactement comme sur Incidents (D9) — la
- * bascule est la même ligne de code, c'est son effet qui a changé, aucune
- * liste ne se recharge derrière. Le brouillon reste rattaché au groupe de
- * l'entrée source, si bien que l'enregistrer lie la traduction sans geste
- * supplémentaire.
+ * **La langue est un champ de formulaire, pas un état de page.** Chaque
+ * formulaire a son propre sélecteur (`principleForm.locale`,
+ * `traitForm.locale`), comme `AdminIncidentsPage.vue` : c'est la langue de
+ * l'entrée en cours d'édition ou de création, et elle ne pilote rien d'autre
+ * que ce formulaire et son assistant. Le sélecteur unique de page a été
+ * supprimé : partagé par deux formulaires, il permettait à un geste fait dans
+ * un panneau (« Modifier » sur une entrée anglaise, « Créer la version EN »,
+ * une traduction) de réécrire la langue de l'entrée en cours d'édition dans
+ * *l'autre* panneau, sans avertissement — d'autant plus silencieusement que,
+ * depuis D8, changer de langue ne recharge plus aucune liste.
  *
- * **Le sélecteur reste unique et partagé par les deux formulaires**, comme
- * avant : c'est la langue de travail de la page. Le corollaire est assumé —
- * traduire un principe, ou demander « Créer la version EN » sur un trait,
- * change la langue cible de l'autre formulaire aussi. Le comportement est
- * celui d'avant cette tâche (le sélecteur était déjà partagé) et le risque est
- * borné : un formulaire vide ne perd rien, un formulaire en cours affiche sa
- * langue en haut de page.
+ * **Conséquence sur l'assistant** : chacun bascule **son** formulaire vers la
+ * locale cible (D9) et y rattache le brouillon au groupe de l'entrée source,
+ * si bien que l'enregistrer lie la traduction sans geste supplémentaire. Rien
+ * n'est rechargé derrière, donc rien ne vient écraser le brouillon.
+ *
+ * **« Modifier » sur une entrée d'une autre langue** aligne la langue du
+ * formulaire sur celle de l'entrée : sans cela, l'enregistrement réécrirait
+ * l'entrée anglaise en français.
  *
  * **Verrouillage (D6) : global à la page.** Un seul brouillon modifié, où
  * qu'il soit, désactive toutes les mutations des deux panneaux. Un verrou par
@@ -93,9 +95,6 @@ const {
 
 const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: LOCALE_NATIVE_NAMES[locale] }))
 
-/** Langue de travail des deux formulaires (et de l'assistant), jamais des tableaux. */
-const selectedLocale = ref<Locale>(SUPPORTED_LOCALES[0])
-
 /**
  * Une instance de composable de traduction par formulaire : chacun a son
  * attente et son message d'erreur.
@@ -120,7 +119,14 @@ const PRINCIPLE_PROSE_FIELDS = ['title', 'description'] as const
 /** Un trait n'est qu'un libellé court — mais un libellé se traduit, et c'est son seul champ. */
 const TRAIT_PROSE_FIELDS = ['label'] as const
 
+/**
+ * `locale` est typée explicitement : sans annotation, `reactive` l'infère au
+ * type littéral de sa valeur initiale et le sélecteur de langue ne compile
+ * plus. Le champ numérique `Position` a disparu (spec 0004, D3) — la position
+ * ne se saisit plus, seul `PUT …/order` l'écrit.
+ */
 interface PrincipleForm {
+  locale: Locale
   translationGroup: string
   title: string
   description: string
@@ -128,12 +134,19 @@ interface PrincipleForm {
 }
 
 interface TraitForm {
+  locale: Locale
   translationGroup: string
   label: string
 }
 
-const principleForm = reactive<PrincipleForm>({ translationGroup: '', title: '', description: '', iconKey: '' })
-const traitForm = reactive<TraitForm>({ translationGroup: '', label: '' })
+const principleForm = reactive<PrincipleForm>({
+  locale: SUPPORTED_LOCALES[0],
+  translationGroup: '',
+  title: '',
+  description: '',
+  iconKey: '',
+})
+const traitForm = reactive<TraitForm>({ locale: SUPPORTED_LOCALES[0], translationGroup: '', label: '' })
 
 const editingPrincipleId = ref<string | null>(null)
 const editingTraitId = ref<string | null>(null)
@@ -265,7 +278,7 @@ const principleTranslationOptions = computed(() => [
   { value: '', label: t('admin.quality.translationOfNone') },
   ...translationGroupOptions(
     principles.value,
-    selectedLocale.value,
+    principleForm.locale,
     principleForm.translationGroup,
     editingPrincipleId.value,
     (principle) => `${principle.locale.toUpperCase()} · ${principle.title}`,
@@ -276,7 +289,7 @@ const traitTranslationOptions = computed(() => [
   { value: '', label: t('admin.quality.translationOfNone') },
   ...translationGroupOptions(
     traits.value,
-    selectedLocale.value,
+    traitForm.locale,
     traitForm.translationGroup,
     editingTraitId.value,
     (trait) => `${trait.locale.toUpperCase()} · ${trait.label}`,
@@ -287,6 +300,7 @@ function resetPrincipleForm(): void {
   editingPrincipleId.value = null
   principleDraftSourceLocale.value = null
   principleSourceGroup.value = null
+  principleForm.locale = SUPPORTED_LOCALES[0]
   principleForm.translationGroup = ''
   principleForm.title = ''
   principleForm.description = ''
@@ -297,6 +311,7 @@ function resetTraitForm(): void {
   editingTraitId.value = null
   traitDraftSourceLocale.value = null
   traitSourceGroup.value = null
+  traitForm.locale = SUPPORTED_LOCALES[0]
   traitForm.translationGroup = ''
   traitForm.label = ''
 }
@@ -310,7 +325,7 @@ function startEditPrinciple(principle: AdminQualityPrinciple): void {
   editingPrincipleId.value = principle.id
   principleDraftSourceLocale.value = null
   principleSourceGroup.value = principle.translationGroup
-  selectedLocale.value = principle.locale
+  principleForm.locale = principle.locale
   principleForm.translationGroup = hasSibling(principles.value, principle) ? principle.translationGroup : ''
   principleForm.title = principle.title
   principleForm.description = principle.description
@@ -321,7 +336,7 @@ function startEditTrait(trait: AdminQualityTrait): void {
   editingTraitId.value = trait.id
   traitDraftSourceLocale.value = null
   traitSourceGroup.value = trait.translationGroup
-  selectedLocale.value = trait.locale
+  traitForm.locale = trait.locale
   traitForm.translationGroup = hasSibling(traits.value, trait) ? trait.translationGroup : ''
   traitForm.label = trait.label
 }
@@ -339,7 +354,7 @@ function startCreatePrincipleVersion(row: TranslationGroupRow<AdminQualityPrinci
   editingPrincipleId.value = null
   principleDraftSourceLocale.value = null
   principleSourceGroup.value = row.key
-  selectedLocale.value = locale
+  principleForm.locale = locale
   principleForm.translationGroup = row.key
   principleForm.iconKey = existing?.iconKey ?? ''
   principleForm.title = ''
@@ -351,7 +366,7 @@ function startCreateTraitVersion(row: TranslationGroupRow<AdminQualityTrait>, lo
   editingTraitId.value = null
   traitDraftSourceLocale.value = null
   traitSourceGroup.value = row.key
-  selectedLocale.value = locale
+  traitForm.locale = locale
   traitForm.translationGroup = row.key
   traitForm.label = ''
 }
@@ -360,7 +375,7 @@ async function handleSubmitPrinciple(): Promise<void> {
   isSubmittingPrinciple.value = true
 
   const input = {
-    locale: selectedLocale.value,
+    locale: principleForm.locale,
     // D3 : aucun `position` n'est jamais envoyé. `null` = contenu neuf à la
     // création, détachement sur une mise à jour.
     translationGroup: '' === principleForm.translationGroup ? null : principleForm.translationGroup,
@@ -386,7 +401,7 @@ async function handleSubmitTrait(): Promise<void> {
   isSubmittingTrait.value = true
 
   const input = {
-    locale: selectedLocale.value,
+    locale: traitForm.locale,
     translationGroup: '' === traitForm.translationGroup ? null : traitForm.translationGroup,
     label: traitForm.label,
   }
@@ -413,7 +428,7 @@ async function handleSubmitTrait(): Promise<void> {
  * D4). En cas d'échec, le formulaire reste intact et la raison s'affiche.
  */
 async function handleTranslatePrinciple(targetLocale: Locale): Promise<void> {
-  const sourceLocale = selectedLocale.value
+  const sourceLocale = principleForm.locale
 
   const draft = await translatePrinciple(
     sourceLocale,
@@ -425,14 +440,14 @@ async function handleTranslatePrinciple(targetLocale: Locale): Promise<void> {
   }
 
   editingPrincipleId.value = null
-  selectedLocale.value = targetLocale
+  principleForm.locale = targetLocale
   principleForm.translationGroup = principleSourceGroup.value ?? ''
   applyTranslationDraft(principleForm, PRINCIPLE_PROSE_FIELDS, draft)
   principleDraftSourceLocale.value = sourceLocale
 }
 
 async function handleTranslateTrait(targetLocale: Locale): Promise<void> {
-  const sourceLocale = selectedLocale.value
+  const sourceLocale = traitForm.locale
 
   const draft = await translateTrait(sourceLocale, targetLocale, collectProseFields(traitForm, TRAIT_PROSE_FIELDS))
   if (!draft) {
@@ -440,7 +455,7 @@ async function handleTranslateTrait(targetLocale: Locale): Promise<void> {
   }
 
   editingTraitId.value = null
-  selectedLocale.value = targetLocale
+  traitForm.locale = targetLocale
   traitForm.translationGroup = traitSourceGroup.value ?? ''
   applyTranslationDraft(traitForm, TRAIT_PROSE_FIELDS, draft)
   traitDraftSourceLocale.value = sourceLocale
@@ -488,24 +503,18 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
 
 <template>
   <div class="d-flex flex-column gap-4">
-    <div class="surface-panel p-3 p-sm-4">
-      <BaseSelect
-        id="admin-quality-locale"
-        v-model="selectedLocale"
-        :label="t('admin.localeLabel')"
-        :options="localeOptions"
-      />
-      <p class="form-text mb-0">
-        {{ t('admin.quality.localeHelp') }}
-      </p>
-      <p
-        v-if="isAnyOrderDirty"
-        :id="LOCKED_HINT_ID"
-        class="form-text mb-0"
-      >
-        {{ t('admin.order.lockedHint') }}
-      </p>
-    </div>
+    <!--
+      Le verrou est global à la page : son aide l'est aussi, rendue exactement
+      quand `lockedHintId` est défini — une référence `aria-describedby`
+      pendante serait elle-même une erreur d'accessibilité.
+    -->
+    <p
+      v-if="isAnyOrderDirty"
+      :id="LOCKED_HINT_ID"
+      class="alert alert-warning mb-0"
+    >
+      {{ t('admin.order.lockedHint') }}
+    </p>
 
     <div class="surface-panel p-3 p-sm-4">
       <h2 class="h6 fw-bold text-white mb-3">
@@ -516,6 +525,15 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         novalidate
         @submit.prevent="handleSubmitPrinciple"
       >
+        <BaseSelect
+          id="admin-quality-principle-locale"
+          v-model="principleForm.locale"
+          :label="t('admin.localeLabel')"
+          :options="localeOptions"
+        />
+        <p class="form-text mb-3">
+          {{ t('admin.quality.localeHelp') }}
+        </p>
         <BaseSelect
           id="admin-quality-principle-translation-group"
           v-model="principleForm.translationGroup"
@@ -548,7 +566,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         -->
         <div class="mb-3">
           <TranslateEntryButton
-            :form-locale="selectedLocale"
+            :form-locale="principleForm.locale"
             :is-translating="isTranslatingPrinciple"
             :disabled="!hasPrincipleProse || isSubmittingPrinciple || isAnyOrderDirty"
             @translate="handleTranslatePrinciple"
@@ -737,6 +755,15 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         @submit.prevent="handleSubmitTrait"
       >
         <BaseSelect
+          id="admin-quality-trait-locale"
+          v-model="traitForm.locale"
+          :label="t('admin.localeLabel')"
+          :options="localeOptions"
+        />
+        <p class="form-text mb-3">
+          {{ t('admin.quality.localeHelp') }}
+        </p>
+        <BaseSelect
           id="admin-quality-trait-translation-group"
           v-model="traitForm.translationGroup"
           :label="t('admin.quality.translationOfLabel')"
@@ -751,7 +778,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
 
         <div class="mb-3">
           <TranslateEntryButton
-            :form-locale="selectedLocale"
+            :form-locale="traitForm.locale"
             :is-translating="isTranslatingTrait"
             :disabled="!hasTraitProse || isSubmittingTrait || isAnyOrderDirty"
             @translate="handleTranslateTrait"

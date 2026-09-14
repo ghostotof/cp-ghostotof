@@ -77,7 +77,7 @@
       "delete": "Supprimer",
       "loading": "Chargement…",
       "loadError": "Le chargement a échoué. Réessayez plus tard.",
-      "localeHelp": "Langue des deux formulaires et de l'assistant de traduction. Les tableaux, eux, affichent toutes les langues.",
+      "localeHelp": "Langue de cette entrée : c'est elle qui sera enregistrée, et celle sur laquelle porte l'assistant de traduction. Le tableau ci-dessous, lui, affiche toutes les langues.",
       "translationOfLabel": "Version de",
       "translationOfNone": "— aucune —",
       "contentLabel": "Contenu",

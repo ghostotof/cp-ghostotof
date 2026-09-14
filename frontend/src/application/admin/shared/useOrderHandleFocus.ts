@@ -6,7 +6,8 @@ export interface UseOrderHandleFocusResult {
    * lambda inline dans le template, qui serait rappelée avec `null` puis
    * l'élément à chaque rendu et laisserait la carte dans un état dépendant de
    * l'ordre des appels) : la clé de ligne est lue sur le DOM,
-   * `data-order-key`.
+   * `data-order-key`. Appelée avec `null` au démontage d'une ligne, elle
+   * **purge** les cellules détachées au lieu de les garder.
    */
   registerHandleCell: (el: Element | ComponentPublicInstance | null) => void
   /** Déplace la ligne puis rend le focus à sa poignée, une fois le DOM à jour. */
@@ -27,6 +28,17 @@ export function useOrderHandleFocus(move: (from: number, to: number) => void): U
 
   function registerHandleCell(el: Element | ComponentPublicInstance | null): void {
     if (!(el instanceof HTMLElement)) {
+      // Vue appelle la fonction de `ref` avec `null` quand une ligne est
+      // démontée, sans dire laquelle : la carte est donc purgée de ses cellules
+      // qui ne sont plus dans le document — exactement l'ensemble des lignes
+      // disparues. Sans cela, supprimer une entrée laisserait sa cellule (et
+      // tout son sous-arbre DOM) retenue jusqu'au démontage de la page.
+      for (const [knownKey, cell] of handleCells) {
+        if (!cell.isConnected) {
+          handleCells.delete(knownKey)
+        }
+      }
+
       return
     }
 

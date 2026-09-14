@@ -180,10 +180,13 @@ function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string):
   return button as DOMWrapper<HTMLButtonElement>
 }
 
-/** Le panneau (formulaire + tableau) d'un des deux contenus — le premier porte le sélecteur de langue. */
+/** Le panneau (formulaire + tableau) d'un des deux contenus : principes puis traits. */
 function panelOf(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
-  return wrapper.findAll('.surface-panel')[which + 1]
+  return wrapper.findAll('.surface-panel')[which]
 }
+
+/** L'identifiant du sélecteur de langue d'un formulaire : chacun a le sien. */
+const LOCALE_SELECT = ['#admin-quality-principle-locale', '#admin-quality-trait-locale'] as const
 
 function formOf(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
   return wrapper.findAll('form')[which]
@@ -227,7 +230,7 @@ describe('AdminQualityPage', () => {
       vi.mocked(principleRepository.list).mockClear()
       vi.mocked(traitRepository.list).mockClear()
 
-      await wrapper.get('#admin-quality-locale').setValue('en')
+      await wrapper.get(LOCALE_SELECT[PRINCIPLES]).setValue('en')
       await flushPromises()
 
       expect(principleRepository.list).not.toHaveBeenCalled()
@@ -428,7 +431,7 @@ describe('AdminQualityPage', () => {
       await buttonLabelled(rowsOf(wrapper, PRINCIPLES)[1], 'Créer la version EN').trigger('click')
 
       expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe('Ajouter un principe')
-      expect(valueOf(wrapper, '#admin-quality-locale')).toBe('en')
+      expect(valueOf(wrapper, LOCALE_SELECT[PRINCIPLES])).toBe('en')
       expect(valueOf(wrapper, '#admin-quality-principle-translation-group')).toBe(P_GROUP_TWO)
       expect(valueOf(wrapper, '#admin-quality-principle-icon-key')).toBe('flask-conical')
       expect(valueOf(wrapper, '#admin-quality-principle-title')).toBe('')
@@ -441,7 +444,7 @@ describe('AdminQualityPage', () => {
       await buttonLabelled(rowsOf(wrapper, TRAITS)[1], 'Créer la version EN').trigger('click')
 
       expect(wrapper.findAll('h2')[TRAITS].text()).toBe('Ajouter un trait')
-      expect(valueOf(wrapper, '#admin-quality-locale')).toBe('en')
+      expect(valueOf(wrapper, LOCALE_SELECT[TRAITS])).toBe('en')
       expect(valueOf(wrapper, '#admin-quality-trait-translation-group')).toBe(T_GROUP_TWO)
       expect(valueOf(wrapper, '#admin-quality-trait-label')).toBe('')
     })
@@ -453,7 +456,7 @@ describe('AdminQualityPage', () => {
       // Modifier l'entrée EN bascule aussi la langue du formulaire : sans cela,
       // l'enregistrement réécrirait l'entrée anglaise en français.
       await buttonLabelled(lineContaining(wrapper, PRINCIPLES, 'DDD in English'), 'Modifier').trigger('click')
-      expect(valueOf(wrapper, '#admin-quality-locale')).toBe('en')
+      expect(valueOf(wrapper, LOCALE_SELECT[PRINCIPLES])).toBe('en')
       expect(valueOf(wrapper, '#admin-quality-principle-translation-group')).toBe(P_GROUP_ONE)
 
       await formOf(wrapper, PRINCIPLES).trigger('submit.prevent')
@@ -462,6 +465,32 @@ describe('AdminQualityPage', () => {
       expect(principleRepository.update).toHaveBeenCalledWith(
         PRINCIPLE_EN_ONE.id,
         expect.objectContaining({ locale: 'en', translationGroup: P_GROUP_ONE }),
+      )
+    })
+
+    it("un geste dans un panneau ne change jamais la langue du formulaire de l'autre", async () => {
+      const traitRepository = createTraitRepository()
+      const { wrapper } = await mountPage(createPrincipleRepository(), traitRepository)
+
+      // Régression : avec un sélecteur de langue unique et partagé par les deux
+      // formulaires, éditer une entrée anglaise dans un panneau basculait la
+      // langue de l'autre — et le trait français en cours d'édition se serait
+      // enregistré en anglais, sans avertissement ni index unique pour l'arrêter
+      // (une entrée solitaire n'a pas de sœur qui occupe déjà la locale). La
+      // langue est désormais un champ de chaque formulaire.
+      await buttonLabelled(lineContaining(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
+      expect(valueOf(wrapper, LOCALE_SELECT[TRAITS])).toBe('fr')
+
+      await buttonLabelled(lineContaining(wrapper, PRINCIPLES, 'DDD in English'), 'Modifier').trigger('click')
+      expect(valueOf(wrapper, LOCALE_SELECT[PRINCIPLES])).toBe('en')
+      expect(valueOf(wrapper, LOCALE_SELECT[TRAITS])).toBe('fr')
+
+      await formOf(wrapper, TRAITS).trigger('submit.prevent')
+      await flushPromises()
+
+      expect(traitRepository.update).toHaveBeenCalledWith(
+        TRAIT_FR_TWO.id,
+        expect.objectContaining({ locale: 'fr', label: TRAIT_FR_TWO.label }),
       )
     })
 
@@ -575,7 +604,7 @@ describe('AdminQualityPage', () => {
       await flushPromises()
 
       expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe('Ajouter un principe')
-      expect(valueOf(wrapper, '#admin-quality-locale')).toBe('en')
+      expect(valueOf(wrapper, LOCALE_SELECT[PRINCIPLES])).toBe('en')
       // Aucune liste rechargée : le tableau affiche déjà les deux langues.
       expect(principleRepository.list).not.toHaveBeenCalled()
       expect(valueOf(wrapper, '#admin-quality-principle-translation-group')).toBe(P_GROUP_TWO)
@@ -620,7 +649,7 @@ describe('AdminQualityPage', () => {
       await flushPromises()
 
       expect(translation.translate).toHaveBeenCalledWith('fr', 'en', { label: TRAIT_FR_TWO.label })
-      expect(valueOf(wrapper, '#admin-quality-locale')).toBe('en')
+      expect(valueOf(wrapper, LOCALE_SELECT[TRAITS])).toBe('en')
       expect(wrapper.findAll('h2')[TRAITS].text()).toBe('Ajouter un trait')
       expect(valueOf(wrapper, '#admin-quality-trait-label')).toBe(TRANSLATED_TRAIT.label)
 
@@ -648,7 +677,7 @@ describe('AdminQualityPage', () => {
 
       expect(formOf(wrapper, PRINCIPLES).get('[role="alert"]').text()).toContain('Quota horaire')
       expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe('Modifier le principe')
-      expect(valueOf(wrapper, '#admin-quality-locale')).toBe('fr')
+      expect(valueOf(wrapper, LOCALE_SELECT[PRINCIPLES])).toBe('fr')
       expect(valueOf(wrapper, '#admin-quality-principle-title')).toBe(PRINCIPLE_FR_TWO.title)
     })
   })

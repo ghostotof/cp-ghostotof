@@ -77,7 +77,7 @@
       "delete": "Delete",
       "loading": "Loading…",
       "loadError": "Loading failed. Please try again later.",
-      "localeHelp": "Language of both forms and of the translation assistant. The tables below show every language.",
+      "localeHelp": "Language of this entry: the one it will be saved in, and the one the translation assistant starts from. The table below shows every language.",
       "translationOfLabel": "Version of",
       "translationOfNone": "— none —",
       "contentLabel": "Content",
