@@ -11,6 +11,7 @@ use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Couvre GET /api/backoffice/users (listing) et DELETE /api/backoffice/users/{id},
@@ -22,6 +23,9 @@ final class BackofficeUserResourceTest extends WebTestCase
 
     private const string SUPER_USERNAME = 'super';
     private const string PLAIN_USERNAME = 'jane';
+
+    /** UUID syntaxiquement valide mais absent de la base : 404 applicatif. */
+    private const string UNKNOWN_ID = '01998b2e-2d2c-73f4-9f39-8f5b0c1f0a11';
 
     protected function setUp(): void
     {
@@ -72,7 +76,7 @@ final class BackofficeUserResourceTest extends WebTestCase
         $users = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         $superId = $this->findIdByUsername($users, self::SUPER_USERNAME);
 
-        $client->request('GET', sprintf('/api/backoffice/users/%d', $superId));
+        $client->request('GET', sprintf('/api/backoffice/users/%s', $superId));
 
         self::assertResponseIsSuccessful();
         $user = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
@@ -84,11 +88,11 @@ final class BackofficeUserResourceTest extends WebTestCase
         self::assertArrayNotHasKey('password', $user);
 
         // Id inconnu sur le gabarit maison : 404, pas 500.
-        $client->request('GET', '/api/backoffice/users/999999');
+        $client->request('GET', '/api/backoffice/users/'.self::UNKNOWN_ID);
         self::assertResponseStatusCodeSame(404);
 
         // La route générée par défaut a disparu du routeur.
-        $client->request('GET', sprintf('/api/backoffice_users/%d', $superId));
+        $client->request('GET', sprintf('/api/backoffice_users/%s', $superId));
         self::assertResponseStatusCodeSame(404);
     }
 
@@ -96,9 +100,31 @@ final class BackofficeUserResourceTest extends WebTestCase
     {
         $client = self::createClient();
 
-        $client->request('GET', '/api/backoffice/users/1');
+        $client->request('GET', '/api/backoffice/users/'.self::UNKNOWN_ID);
 
         self::assertResponseStatusCodeSame(401);
+    }
+
+    /**
+     * Spec 0003 D6 : `requirements: ['id' => Requirement::UUID]` fait d'un
+     * segment malformé un 404 du **routeur** (RouterListener, priorité 32),
+     * donc bien avant le firewall (8) et avant tout Provider. La preuve n'est
+     * pas le code 404 seul — un 404 applicatif le porterait aussi — mais
+     * l'absence de problem+json d'API Platform dans la réponse.
+     */
+    public function testANonUuidIdIsRejectedByTheRouterBeforeAnyProvider(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('GET', '/api/backoffice/users/1');
+
+        self::assertResponseStatusCodeSame(404);
+        self::assertStringNotContainsString(
+            'application/problem+json',
+            (string) $client->getResponse()->headers->get('Content-Type'),
+        );
     }
 
     public function testListDeleteAndSelfDeleteGuardAsRoleSuper(): void
@@ -115,7 +141,9 @@ final class BackofficeUserResourceTest extends WebTestCase
         self::assertCount(2, $users);
         foreach ($users as $user) {
             self::assertArrayNotHasKey('password', $user);
-            self::assertIsInt($user['id']);
+            // Spec 0003 D7 : la frontière HTTP expose une chaîne RFC 4122.
+            self::assertIsString($user['id']);
+            self::assertTrue(Uuid::isValid($user['id']));
             // Comptes créés en CLI : pas d'e-mail, utilisables d'emblée.
             self::assertNull($user['email']);
             self::assertSame('active', $user['status']);
@@ -125,15 +153,15 @@ final class BackofficeUserResourceTest extends WebTestCase
         $janeId = $this->findIdByUsername($users, self::PLAIN_USERNAME);
 
         // Auto-suppression => 409
-        $client->request('DELETE', sprintf('/api/backoffice/users/%d', $superId), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
+        $client->request('DELETE', sprintf('/api/backoffice/users/%s', $superId), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
         self::assertResponseStatusCodeSame(409);
 
         // Id inconnu => 404
-        $client->request('DELETE', '/api/backoffice/users/999999', server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
+        $client->request('DELETE', '/api/backoffice/users/'.self::UNKNOWN_ID, server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
         self::assertResponseStatusCodeSame(404);
 
         // Suppression d'un autre utilisateur => 204
-        $client->request('DELETE', sprintf('/api/backoffice/users/%d', $janeId), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
+        $client->request('DELETE', sprintf('/api/backoffice/users/%s', $janeId), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
         self::assertResponseStatusCodeSame(204);
 
         // La liste ne contient plus que le compte super
@@ -143,9 +171,9 @@ final class BackofficeUserResourceTest extends WebTestCase
     }
 
     /**
-     * @param list<array{id: int, username: string, email: string|null, roles: list<string>, status: string}> $users
+     * @param list<array{id: string, username: string, email: string|null, roles: list<string>, status: string}> $users
      */
-    private function findIdByUsername(array $users, string $username): int
+    private function findIdByUsername(array $users, string $username): string
     {
         foreach ($users as $user) {
             if ($user['username'] === $username) {

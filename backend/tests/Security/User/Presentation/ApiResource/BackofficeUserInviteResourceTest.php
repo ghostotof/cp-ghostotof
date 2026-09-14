@@ -13,6 +13,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Couvre POST /api/backoffice/users (invitation d'un utilisateur par e-mail),
@@ -98,6 +99,9 @@ final class BackofficeUserInviteResourceTest extends WebTestCase
         self::assertCount(1, $sent);
         $message = $sent[0]->getMessage();
         self::assertInstanceOf(SendAccountInvitationMessage::class, $message);
+        // Spec 0003 D7 : l'id circule en chaîne RFC 4122, des deux côtés.
+        self::assertIsString($body['id']);
+        self::assertTrue(Uuid::isValid($body['id']));
         self::assertSame($body['id'], $message->userId);
         self::assertSame('fr', $message->locale);
     }

@@ -37,7 +37,7 @@ final readonly class BackofficeUserProcessor implements ProcessorInterface
             throw new \LogicException('BackofficeUserProcessor::process() appelé sans utilisateur authentifié.');
         }
 
-        $this->cpgUserAdministrator->delete($this->uriVariableInt($uriVariables, 'id'), $actingUser);
+        $this->cpgUserAdministrator->delete($this->uriVariableUuid($uriVariables), $actingUser);
 
         return null;
     }

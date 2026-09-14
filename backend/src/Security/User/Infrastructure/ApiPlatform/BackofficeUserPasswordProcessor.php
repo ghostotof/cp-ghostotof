@@ -24,7 +24,7 @@ final readonly class BackofficeUserPasswordProcessor implements ProcessorInterfa
 
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): mixed
     {
-        $this->cpgUserAdministrator->changePassword($this->uriVariableInt($uriVariables, 'id'), $data->password);
+        $this->cpgUserAdministrator->changePassword($this->uriVariableUuid($uriVariables), $data->password);
 
         return null;
     }

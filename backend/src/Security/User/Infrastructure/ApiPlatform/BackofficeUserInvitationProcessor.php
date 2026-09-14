@@ -31,7 +31,7 @@ final readonly class BackofficeUserInvitationProcessor implements ProcessorInter
 
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): mixed
     {
-        $id = $this->uriVariableInt($uriVariables, 'id');
+        $id = $this->uriVariableUuid($uriVariables);
         $user = $this->cpgUserRepository->findOneById($id);
 
         if (null === $user) {

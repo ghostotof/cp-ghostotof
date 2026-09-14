@@ -7,6 +7,7 @@ namespace App\Security\User\Presentation\ApiResource;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Post;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserInvitationProcessor;
+use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -20,6 +21,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     operations: [
         new Post(
             uriTemplate: '/backoffice/users/{id}/invitation',
+            requirements: ['id' => Requirement::UUID],
             status: 202,
             read: false,
             output: false,

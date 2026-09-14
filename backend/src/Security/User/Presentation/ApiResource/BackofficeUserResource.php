@@ -12,6 +12,7 @@ use ApiPlatform\Metadata\Post;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserInviteProcessor;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserProcessor;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserProvider;
+use Symfony\Component\Routing\Requirement\Requirement;
 
 /**
  * Listing + invitation + suppression des comptes CpgUser, réservé ROLE_SUPER
@@ -41,6 +42,7 @@ use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserProvider;
         // explicitement sur le gabarit maison supprime cette route parasite.
         new Get(
             uriTemplate: '/backoffice/users/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeUserProvider::class,
         ),
         new Post(
@@ -51,6 +53,7 @@ use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserProvider;
         ),
         new Delete(
             uriTemplate: '/backoffice/users/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeUserProvider::class,
             processor: BackofficeUserProcessor::class,
         ),
@@ -59,7 +62,7 @@ use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserProvider;
 final readonly class BackofficeUserResource
 {
     public function __construct(
-        public int $id,
+        public string $id,
         public string $username,
         /** @var list<string> */
         public array $roles,
@@ -80,7 +83,7 @@ final readonly class BackofficeUserResource
      * la présentation reviendrait à la dupliquer là où elle est le plus facile
      * à oublier.
      *
-     * @param array{id: int, username: string, email: string|null, roles: list<string>, status: 'pending'|'active'} $presented
+     * @param array{id: string, username: string, email: string|null, roles: list<string>, status: 'pending'|'active'} $presented
      */
     public static function fromPresented(array $presented): self
     {

@@ -38,7 +38,7 @@ final readonly class BackofficeUserProvider implements ProviderInterface
         // Résolution de la ressource existante avant suppression (Delete) :
         // sans provider, API Platform ne saurait pas répondre 404 nativement
         // sur un id inconnu avant même d'atteindre le processor.
-        $user = $this->cpgUserRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
+        $user = $this->cpgUserRepository->findOneById($this->uriVariableUuid($uriVariables));
 
         return null !== $user ? $this->present($user) : null;
     }
