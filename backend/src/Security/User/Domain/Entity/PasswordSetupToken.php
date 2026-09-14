@@ -6,6 +6,8 @@ namespace App\Security\User\Domain\Entity;
 
 use App\Security\User\Infrastructure\Doctrine\PasswordSetupTokenRepository;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Bridge\Doctrine\Types\UuidType;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Jeton à usage unique et à durée de vie limitée permettant à une personne
@@ -21,10 +23,10 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\UniqueConstraint(name: 'uniq_password_setup_token_hash', columns: ['token_hash'])]
 class PasswordSetupToken
 {
+    /** Spec 0003 D1/D2 : UUID v7 posé par le constructeur (cf. CpgUser). */
     #[ORM\Id]
-    #[ORM\GeneratedValue]
-    #[ORM\Column]
-    private ?int $id = null;
+    #[ORM\Column(type: UuidType::NAME)]
+    private Uuid $id;
 
     #[ORM\ManyToOne(targetEntity: CpgUser::class)]
     #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
@@ -42,12 +44,13 @@ class PasswordSetupToken
 
     public function __construct(CpgUser $user, string $tokenHash, \DateTimeImmutable $expiresAt)
     {
+        $this->id = Uuid::v7();
         $this->user = $user;
         $this->tokenHash = $tokenHash;
         $this->expiresAt = $expiresAt;
     }
 
-    public function getId(): ?int
+    public function getId(): Uuid
     {
         return $this->id;
     }

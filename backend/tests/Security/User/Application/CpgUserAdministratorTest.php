@@ -13,16 +13,17 @@ use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Tests\Support\TestCredentials;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
+use Symfony\Component\Uid\Uuid;
 
 final class CpgUserAdministratorTest extends TestCase
 {
     public function testDeleteRemovesAnotherUser(): void
     {
-        $actingUser = $this->userWithId(1, 'super');
-        $targetUser = $this->userWithId(2, 'jane');
+        $actingUser = $this->user('super');
+        $targetUser = $this->user('jane');
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(2)->willReturn($targetUser);
+        $repository->expects(self::once())->method('findOneById')->with($targetUser->getId())->willReturn($targetUser);
         // Cible sans ROLE_SUPER : la garde anti-lockout ne doit même pas
         // interroger le dépôt sur le décompte.
         $repository->expects(self::never())->method('countByRole');
@@ -30,16 +31,16 @@ final class CpgUserAdministratorTest extends TestCase
 
         $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class));
 
-        $administrator->delete(2, $actingUser);
+        $administrator->delete($targetUser->getId(), $actingUser);
     }
 
     public function testDeleteThrowsWhenTargetIsTheLastSuperAdmin(): void
     {
-        $actingUser = $this->userWithId(1, 'super');
-        $targetUser = $this->superUserWithId(2, 'other-super');
+        $actingUser = $this->user('super');
+        $targetUser = $this->superUser('other-super');
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(2)->willReturn($targetUser);
+        $repository->expects(self::once())->method('findOneById')->with($targetUser->getId())->willReturn($targetUser);
         $repository->expects(self::once())->method('countByRole')->with(CpgUser::ROLE_SUPER)->willReturn(1);
         $repository->expects(self::never())->method('remove');
 
@@ -47,27 +48,35 @@ final class CpgUserAdministratorTest extends TestCase
 
         $this->expectException(CannotDeleteLastSuperAdminException::class);
 
-        $administrator->delete(2, $actingUser);
+        $administrator->delete($targetUser->getId(), $actingUser);
     }
 
     public function testDeleteRemovesSuperAdminWhenAnotherSuperAdminRemains(): void
     {
-        $actingUser = $this->userWithId(1, 'super');
-        $targetUser = $this->superUserWithId(2, 'other-super');
+        $actingUser = $this->user('super');
+        $targetUser = $this->superUser('other-super');
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(2)->willReturn($targetUser);
+        $repository->expects(self::once())->method('findOneById')->with($targetUser->getId())->willReturn($targetUser);
         $repository->expects(self::once())->method('countByRole')->with(CpgUser::ROLE_SUPER)->willReturn(2);
         $repository->expects(self::once())->method('remove')->with($targetUser);
 
         $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class));
 
-        $administrator->delete(2, $actingUser);
+        $administrator->delete($targetUser->getId(), $actingUser);
     }
 
+    /**
+     * La garde porte sur une *valeur* d'identifiant, pas sur une instance :
+     * l'id vient de l'URL, donc d'un `Uuid` fraîchement reconstruit. Un `===`
+     * entre deux objets `Uuid` de même valeur répondrait faux et laisserait
+     * un super-admin se supprimer lui-même — d'où la comparaison par
+     * `equals()`, et ce test qui la pin.
+     */
     public function testDeleteThrowsWhenTargetingOwnAccount(): void
     {
-        $actingUser = $this->userWithId(1, 'super');
+        $actingUser = $this->user('super');
+        $sameIdFromTheUrl = Uuid::fromString($actingUser->getId()->toRfc4122());
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
         $repository->expects(self::never())->method('findOneById');
@@ -77,12 +86,12 @@ final class CpgUserAdministratorTest extends TestCase
 
         $this->expectException(CannotDeleteOwnAccountException::class);
 
-        $administrator->delete(1, $actingUser);
+        $administrator->delete($sameIdFromTheUrl, $actingUser);
     }
 
     public function testDeleteThrowsWhenUserNotFound(): void
     {
-        $actingUser = $this->userWithId(1, 'super');
+        $actingUser = $this->user('super');
 
         $repository = self::createStub(CpgUserRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
@@ -91,15 +100,15 @@ final class CpgUserAdministratorTest extends TestCase
 
         $this->expectException(CpgUserNotFoundException::class);
 
-        $administrator->delete(2, $actingUser);
+        $administrator->delete(Uuid::v7(), $actingUser);
     }
 
     public function testChangePasswordHashesAndSavesNewPassword(): void
     {
-        $user = $this->userWithId(2, 'jane');
+        $user = $this->user('jane');
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(2)->willReturn($user);
+        $repository->expects(self::once())->method('findOneById')->with($user->getId())->willReturn($user);
         $repository->expects(self::once())->method('save')->with($user);
 
         $hasher = $this->createMock(UserPasswordHasherInterface::class);
@@ -110,7 +119,7 @@ final class CpgUserAdministratorTest extends TestCase
 
         $administrator = new CpgUserAdministrator($repository, $hasher);
 
-        $administrator->changePassword(2, TestCredentials::variant('new'));
+        $administrator->changePassword($user->getId(), TestCredentials::variant('new'));
 
         self::assertSame('new-hashed-password', $user->getPassword());
     }
@@ -126,22 +135,21 @@ final class CpgUserAdministratorTest extends TestCase
 
         $this->expectException(CpgUserNotFoundException::class);
 
-        $administrator->changePassword(2, TestCredentials::variant('new'));
+        $administrator->changePassword(Uuid::v7(), TestCredentials::variant('new'));
     }
 
-    private function userWithId(int $id, string $username): CpgUser
+    /**
+     * Plus de réflexion sur `id` : depuis la spec 0003, le constructeur pose
+     * lui-même un UUID v7, distinct pour chaque instance.
+     */
+    private function user(string $username): CpgUser
     {
-        $user = new CpgUser($username, 'hashed-password');
-
-        $reflection = new \ReflectionProperty(CpgUser::class, 'id');
-        $reflection->setValue($user, $id);
-
-        return $user;
+        return new CpgUser($username, 'hashed-password');
     }
 
-    private function superUserWithId(int $id, string $username): CpgUser
+    private function superUser(string $username): CpgUser
     {
-        $user = $this->userWithId($id, $username);
+        $user = $this->user($username);
         $user->setRoles([CpgUser::ROLE_SUPER]);
 
         return $user;

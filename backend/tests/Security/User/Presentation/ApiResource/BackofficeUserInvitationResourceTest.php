@@ -31,6 +31,9 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
     private const string INVITEE_EMAIL = 'newcomer@example.com';
     private const string INVITEE_USERNAME = 'newcomer';
 
+    /** UUID syntaxiquement valide mais absent de la base : 404 applicatif. */
+    private const string UNKNOWN_ID = '01998b2e-2d2c-73f4-9f39-8f5b0c1f0a11';
+
     protected function setUp(): void
     {
         self::ensureKernelShutdown();
@@ -48,7 +51,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
     {
         $client = self::createClient();
 
-        $client->request('POST', '/api/backoffice/users/1/invitation', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['locale' => 'fr']));
+        $client->request('POST', '/api/backoffice/users/'.self::UNKNOWN_ID.'/invitation', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['locale' => 'fr']));
 
         self::assertResponseStatusCodeSame(403);
     }
@@ -59,7 +62,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
         $csrfToken = $this->loginAs($client, self::PLAIN_USERNAME, TestCredentials::plainPassword());
 
-        $client->request('POST', '/api/backoffice/users/1/invitation', server: [
+        $client->request('POST', '/api/backoffice/users/'.self::UNKNOWN_ID.'/invitation', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['locale' => 'fr']));
@@ -75,7 +78,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $id = $this->findInviteeId($client);
 
-        $client->request('POST', sprintf('/api/backoffice/users/%d/invitation', $id), server: [
+        $client->request('POST', sprintf('/api/backoffice/users/%s/invitation', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['locale' => 'en']));
@@ -90,13 +93,36 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
         self::assertSame('en', $message->locale);
     }
 
+    /**
+     * Spec 0003 D6 : un `{id}` malformé est un 404 du **routeur** (priorité
+     * 32), avant le contrôle CSRF (20), le firewall (8) et le Processor —
+     * d'où l'absence de problem+json applicatif.
+     */
+    public function testANonUuidIdIsRejectedByTheRouterBeforeAnyProcessor(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('POST', '/api/backoffice/users/1/invitation', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody(['locale' => 'fr']));
+
+        self::assertResponseStatusCodeSame(404);
+        self::assertStringNotContainsString(
+            'application/problem+json',
+            (string) $client->getResponse()->headers->get('Content-Type'),
+        );
+    }
+
     public function testResendToAnUnknownIdReturns404(): void
     {
         $client = self::createClient();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->request('POST', '/api/backoffice/users/999999/invitation', server: [
+        $client->request('POST', '/api/backoffice/users/'.self::UNKNOWN_ID.'/invitation', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['locale' => 'fr']));
@@ -121,7 +147,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $id = $this->findInviteeId($client);
 
-        $client->request('POST', sprintf('/api/backoffice/users/%d/invitation', $id), server: [
+        $client->request('POST', sprintf('/api/backoffice/users/%s/invitation', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['locale' => 'fr']));
@@ -137,7 +163,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $id = $this->findInviteeId($client);
 
-        $client->request('POST', sprintf('/api/backoffice/users/%d/invitation', $id), server: [
+        $client->request('POST', sprintf('/api/backoffice/users/%s/invitation', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody([]));
@@ -155,7 +181,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
         return $this->inviteAndCollectSetupToken(self::INVITEE_EMAIL, Locale::FR);
     }
 
-    private function findInviteeId(KernelBrowser $client): int
+    private function findInviteeId(KernelBrowser $client): string
     {
         $client->request('GET', '/api/backoffice/users');
         self::assertResponseIsSuccessful();
@@ -165,9 +191,9 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
     }
 
     /**
-     * @param list<array{id: int, username: string}> $users
+     * @param list<array{id: string, username: string}> $users
      */
-    private function extractId(array $users): int
+    private function extractId(array $users): string
     {
         foreach ($users as $user) {
             if ($user['username'] === self::INVITEE_USERNAME) {

@@ -27,7 +27,7 @@ final readonly class BackofficeUserRoleProvider implements ProviderInterface
 
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeUserRoleResource
     {
-        $user = $this->cpgUserRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
+        $user = $this->cpgUserRepository->findOneById($this->uriVariableUuid($uriVariables));
 
         return null !== $user ? new BackofficeUserRoleResource() : null;
     }

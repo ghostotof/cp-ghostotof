@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Security\User\Domain\Repository;
 
 use App\Security\User\Domain\Entity\CpgUser;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Abstraction (DIP) dont dépend la couche Application (CpgUserRegistrar) :
@@ -17,7 +18,7 @@ interface CpgUserRepositoryInterface
 
     public function findOneByEmail(string $email): ?CpgUser;
 
-    public function findOneById(int $id): ?CpgUser;
+    public function findOneById(Uuid $id): ?CpgUser;
 
     /**
      * @return list<CpgUser>

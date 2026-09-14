@@ -18,6 +18,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Consommé par `make consume` (messenger:consume async -vv). Depuis le point
@@ -55,7 +56,7 @@ final readonly class SendAccountInvitationHandler
 
     public function __invoke(SendAccountInvitationMessage $message): void
     {
-        $user = $this->cpgUserRepository->findOneById($message->userId);
+        $user = $this->cpgUserRepository->findOneById(Uuid::fromString($message->userId));
 
         if (null === $user || !$user->isPendingActivation()) {
             // Compte supprimé entre le dispatch et la consommation, ou mot de

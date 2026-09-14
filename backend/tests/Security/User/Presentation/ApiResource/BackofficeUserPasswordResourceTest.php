@@ -25,6 +25,9 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
     private const string SUPER_USERNAME = 'super';
     private const string PLAIN_USERNAME = 'jane';
 
+    /** UUID syntaxiquement valide mais absent de la base : 404 applicatif. */
+    private const string UNKNOWN_ID = '01998b2e-2d2c-73f4-9f39-8f5b0c1f0a11';
+
     protected function setUp(): void
     {
         self::ensureKernelShutdown();
@@ -44,7 +47,7 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
         // (CsrfCookieRequestSubscriber, priorité 20) s'exécute avant même le
         // firewall Security (priorité 8) et rejette en 403 faute de cookie/
         // header XSRF-TOKEN, sans jamais atteindre la vérification d'authentification.
-        $client->request('PUT', '/api/backoffice/users/1/password', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => TestCredentials::variant('new')]));
+        $client->request('PUT', '/api/backoffice/users/'.self::UNKNOWN_ID.'/password', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => TestCredentials::variant('new')]));
 
         self::assertResponseStatusCodeSame(403);
     }
@@ -57,7 +60,7 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
 
         // Header CSRF valide fourni : ce test doit échouer sur le contrôle
         // ROLE_SUPER, pas sur le contrôle CSRF (cf. testAnonymousRequestIsRejected).
-        $client->request('PUT', '/api/backoffice/users/1/password', server: [
+        $client->request('PUT', '/api/backoffice/users/'.self::UNKNOWN_ID.'/password', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['password' => TestCredentials::variant('new')]));
@@ -72,7 +75,7 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
         $jane = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::variant('old'));
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->request('PUT', sprintf('/api/backoffice/users/%d/password', $jane->getId()), server: [
+        $client->request('PUT', sprintf('/api/backoffice/users/%s/password', $jane->getId()->toRfc4122()), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['password' => TestCredentials::variant('new')]));
@@ -101,7 +104,7 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
         $jane = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::variant('old'));
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->request('PUT', sprintf('/api/backoffice/users/%d/password', $jane->getId()), server: [
+        $client->request('PUT', sprintf('/api/backoffice/users/%s/password', $jane->getId()->toRfc4122()), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['password' => 'short']));
@@ -119,12 +122,35 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
         // 4097 caractères : au-delà de CpgUser::MAX_PASSWORD_LENGTH, le hasher
         // Symfony lèverait une exception (500). La contrainte Assert\Length
         // doit intercepter en 422 avant d'atteindre le Processor.
-        $client->request('PUT', sprintf('/api/backoffice/users/%d/password', $jane->getId()), server: [
+        $client->request('PUT', sprintf('/api/backoffice/users/%s/password', $jane->getId()->toRfc4122()), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['password' => str_repeat('a', CpgUser::MAX_PASSWORD_LENGTH + 1)]));
 
         self::assertResponseStatusCodeSame(422);
+    }
+
+    /**
+     * Spec 0003 D6 : un `{id}` malformé est un 404 du **routeur** (priorité
+     * 32), donc avant le contrôle CSRF (20) et le firewall (8) — d'où
+     * l'absence de problem+json applicatif.
+     */
+    public function testANonUuidIdIsRejectedByTheRouterBeforeAnyProvider(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('PUT', '/api/backoffice/users/1/password', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody(['password' => TestCredentials::variant('new')]));
+
+        self::assertResponseStatusCodeSame(404);
+        self::assertStringNotContainsString(
+            'application/problem+json',
+            (string) $client->getResponse()->headers->get('Content-Type'),
+        );
     }
 
     public function testUnknownIdReturnsNotFound(): void
@@ -133,7 +159,7 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->request('PUT', '/api/backoffice/users/999999/password', server: [
+        $client->request('PUT', '/api/backoffice/users/'.self::UNKNOWN_ID.'/password', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['password' => TestCredentials::variant('new')]));

@@ -31,7 +31,7 @@ final readonly class BackofficeUserPasswordProvider implements ProviderInterface
 
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeUserPasswordResource
     {
-        $user = $this->cpgUserRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
+        $user = $this->cpgUserRepository->findOneById($this->uriVariableUuid($uriVariables));
 
         return null !== $user ? new BackofficeUserPasswordResource() : null;
     }

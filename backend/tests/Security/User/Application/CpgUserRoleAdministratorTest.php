@@ -11,36 +11,37 @@ use App\Security\User\Domain\Exception\CannotModifyOwnRolesException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\Uuid;
 
 final class CpgUserRoleAdministratorTest extends TestCase
 {
     public function testGrantSuperAdminToAPlainUser(): void
     {
-        $actingUser = $this->userWithId(1, 'super');
-        $target = $this->userWithId(2, 'jane');
+        $actingUser = $this->user('super');
+        $target = $this->user('jane');
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(2)->willReturn($target);
+        $repository->expects(self::once())->method('findOneById')->with($target->getId())->willReturn($target);
         $repository->expects(self::never())->method('countByRole');
         $repository->expects(self::once())->method('save')->with($target);
 
-        (new CpgUserRoleAdministrator($repository))->setSuperAdmin(2, true, $actingUser);
+        (new CpgUserRoleAdministrator($repository))->setSuperAdmin($target->getId(), true, $actingUser);
 
         self::assertContains(CpgUser::ROLE_SUPER, $target->getRoles());
     }
 
     public function testRevokeSuperAdminFromAnInvitedAccountKeepsRoleTrusted(): void
     {
-        $actingUser = $this->userWithId(1, 'super');
-        $target = $this->superUserWithId(2, 'other-super');
+        $actingUser = $this->user('super');
+        $target = $this->superUser('other-super');
         $target->setEmail('other-super@example.test');
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(2)->willReturn($target);
+        $repository->expects(self::once())->method('findOneById')->with($target->getId())->willReturn($target);
         $repository->expects(self::once())->method('countByRole')->with(CpgUser::ROLE_SUPER)->willReturn(2);
         $repository->expects(self::once())->method('save')->with($target);
 
-        (new CpgUserRoleAdministrator($repository))->setSuperAdmin(2, false, $actingUser);
+        (new CpgUserRoleAdministrator($repository))->setSuperAdmin($target->getId(), false, $actingUser);
 
         self::assertNotContains(CpgUser::ROLE_SUPER, $target->getRoles());
         // ADR 0003 D1 : un compte invité a été accordé nominativement (son
@@ -58,37 +59,44 @@ final class CpgUserRoleAdministratorTest extends TestCase
      */
     public function testRevokeSuperAdminFromAnAccountWithoutEmailDropsItToTheBaseTier(): void
     {
-        $actingUser = $this->userWithId(1, 'super');
-        $target = $this->superUserWithId(2, 'cli-super');
+        $actingUser = $this->user('super');
+        $target = $this->superUser('cli-super');
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(2)->willReturn($target);
+        $repository->expects(self::once())->method('findOneById')->with($target->getId())->willReturn($target);
         $repository->expects(self::once())->method('countByRole')->with(CpgUser::ROLE_SUPER)->willReturn(2);
         $repository->expects(self::once())->method('save')->with($target);
 
-        (new CpgUserRoleAdministrator($repository))->setSuperAdmin(2, false, $actingUser);
+        (new CpgUserRoleAdministrator($repository))->setSuperAdmin($target->getId(), false, $actingUser);
 
         self::assertSame(['ROLE_USER'], $target->getRoles());
     }
 
     public function testRevokeThrowsWhenTargetIsTheLastSuperAdmin(): void
     {
-        $actingUser = $this->userWithId(1, 'super');
-        $target = $this->superUserWithId(2, 'other-super');
+        $actingUser = $this->user('super');
+        $target = $this->superUser('other-super');
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(2)->willReturn($target);
+        $repository->expects(self::once())->method('findOneById')->with($target->getId())->willReturn($target);
         $repository->expects(self::once())->method('countByRole')->with(CpgUser::ROLE_SUPER)->willReturn(1);
         $repository->expects(self::never())->method('save');
 
         $this->expectException(CannotDemoteLastSuperAdminException::class);
 
-        (new CpgUserRoleAdministrator($repository))->setSuperAdmin(2, false, $actingUser);
+        (new CpgUserRoleAdministrator($repository))->setSuperAdmin($target->getId(), false, $actingUser);
     }
 
+    /**
+     * Même garde que CpgUserAdministratorTest::testDeleteThrowsWhenTargetingOwnAccount :
+     * l'identifiant vient de l'URL, donc d'un `Uuid` reconstruit. Un `===`
+     * entre deux instances de même valeur laisserait un super-admin se
+     * rétrograder lui-même.
+     */
     public function testCannotModifyOwnRoles(): void
     {
-        $actingUser = $this->userWithId(1, 'super');
+        $actingUser = $this->user('super');
+        $sameIdFromTheUrl = Uuid::fromString($actingUser->getId()->toRfc4122());
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
         $repository->expects(self::never())->method('findOneById');
@@ -96,61 +104,60 @@ final class CpgUserRoleAdministratorTest extends TestCase
 
         $this->expectException(CannotModifyOwnRolesException::class);
 
-        (new CpgUserRoleAdministrator($repository))->setSuperAdmin(1, false, $actingUser);
+        (new CpgUserRoleAdministrator($repository))->setSuperAdmin($sameIdFromTheUrl, false, $actingUser);
     }
 
     public function testThrowsWhenUserNotFound(): void
     {
-        $actingUser = $this->userWithId(1, 'super');
+        $actingUser = $this->user('super');
 
         $repository = self::createStub(CpgUserRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
         $this->expectException(CpgUserNotFoundException::class);
 
-        (new CpgUserRoleAdministrator($repository))->setSuperAdmin(2, true, $actingUser);
+        (new CpgUserRoleAdministrator($repository))->setSuperAdmin(Uuid::v7(), true, $actingUser);
     }
 
     public function testGrantIsIdempotentWhenTheUserIsAlreadySuperAdmin(): void
     {
-        $actingUser = $this->userWithId(1, 'super');
-        $target = $this->superUserWithId(2, 'other-super');
+        $actingUser = $this->user('super');
+        $target = $this->superUser('other-super');
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(2)->willReturn($target);
+        $repository->expects(self::once())->method('findOneById')->with($target->getId())->willReturn($target);
         $repository->expects(self::never())->method('countByRole');
         $repository->expects(self::never())->method('save');
 
-        (new CpgUserRoleAdministrator($repository))->setSuperAdmin(2, true, $actingUser);
+        (new CpgUserRoleAdministrator($repository))->setSuperAdmin($target->getId(), true, $actingUser);
     }
 
     public function testRevokeIsIdempotentWhenTheUserIsNotSuperAdmin(): void
     {
         // Cible sans ROLE_SUPER : la garde du dernier super ne doit pas être consultée.
-        $actingUser = $this->userWithId(1, 'super');
-        $target = $this->userWithId(2, 'jane');
+        $actingUser = $this->user('super');
+        $target = $this->user('jane');
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(2)->willReturn($target);
+        $repository->expects(self::once())->method('findOneById')->with($target->getId())->willReturn($target);
         $repository->expects(self::never())->method('countByRole');
         $repository->expects(self::never())->method('save');
 
-        (new CpgUserRoleAdministrator($repository))->setSuperAdmin(2, false, $actingUser);
+        (new CpgUserRoleAdministrator($repository))->setSuperAdmin($target->getId(), false, $actingUser);
     }
 
-    private function userWithId(int $id, string $username): CpgUser
+    /**
+     * Plus de réflexion sur `id` : depuis la spec 0003, le constructeur pose
+     * lui-même un UUID v7, distinct pour chaque instance.
+     */
+    private function user(string $username): CpgUser
     {
-        $user = new CpgUser($username, 'hashed-password');
-
-        $reflection = new \ReflectionProperty(CpgUser::class, 'id');
-        $reflection->setValue($user, $id);
-
-        return $user;
+        return new CpgUser($username, 'hashed-password');
     }
 
-    private function superUserWithId(int $id, string $username): CpgUser
+    private function superUser(string $username): CpgUser
     {
-        $user = $this->userWithId($id, $username);
+        $user = $this->user($username);
         $user->setRoles([CpgUser::ROLE_SUPER]);
 
         return $user;

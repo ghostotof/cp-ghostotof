@@ -6,9 +6,36 @@ namespace App\Tests\Security\User\Domain\Entity;
 
 use App\Security\User\Domain\Entity\CpgUser;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\UuidV7;
 
 final class CpgUserTest extends TestCase
 {
+    /**
+     * Spec 0003 D1 : l'identite est posee par le constructeur, pas par le
+     * flush. Une entite construite est donc deja identifiable, comparable et
+     * testable sans base de donnees.
+     */
+    public function testANewUserIsIdentifiedByAUuidV7BeforeAnyPersistence(): void
+    {
+        $user = new CpgUser('jane', 'hashed-password');
+
+        self::assertInstanceOf(UuidV7::class, $user->getId());
+    }
+
+    /**
+     * Pin le v7 et non le v4 : deux constructions successives doivent donner
+     * des identifiants distincts et croissants, sur quoi repose l'ordre de
+     * repli `ORDER BY id` des repositories.
+     */
+    public function testTwoUsersBuiltInSequenceGetDistinctIncreasingIds(): void
+    {
+        $first = new CpgUser('jane', 'hashed-password');
+        $second = new CpgUser('john', 'hashed-password');
+
+        self::assertNotSame($first->getId()->toRfc4122(), $second->getId()->toRfc4122());
+        self::assertLessThan($second->getId()->toRfc4122(), $first->getId()->toRfc4122());
+    }
+
     public function testUserIdentifierIsUsername(): void
     {
         $user = new CpgUser('jane', 'hashed-password');
