@@ -6,6 +6,8 @@ namespace App\Portfolio\Experience\Domain\Entity;
 
 use App\Portfolio\Experience\Infrastructure\Doctrine\ExperienceTechnologyRepository;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Bridge\Doctrine\Types\UuidType;
+use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -20,10 +22,14 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\UniqueConstraint(name: 'uniq_experience_technology_name', columns: ['name'])]
 class ExperienceTechnology
 {
+    /**
+     * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
+     * non par la base au flush. Une entité connaît donc son identité dès sa
+     * construction — elle se compare et se teste sans persistance.
+     */
     #[ORM\Id]
-    #[ORM\GeneratedValue]
-    #[ORM\Column]
-    private ?int $id = null;
+    #[ORM\Column(type: UuidType::NAME)]
+    private Uuid $id;
 
     #[ORM\Column(length: 180)]
     #[Assert\NotBlank]
@@ -62,6 +68,7 @@ class ExperienceTechnology
         ?string $relatedTechnologyName = null,
         bool $secondary = false,
     ) {
+        $this->id = Uuid::v7();
         $this->name = $name;
         $this->years = $years;
         $this->iconKey = $iconKey;
@@ -69,7 +76,7 @@ class ExperienceTechnology
         $this->secondary = $secondary;
     }
 
-    public function getId(): ?int
+    public function getId(): Uuid
     {
         return $this->id;
     }

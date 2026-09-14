@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Portfolio\Experience\Domain\Repository;
 
 use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Abstraction (DIP) dont dépend la couche Application
@@ -16,7 +17,7 @@ interface ExperienceTechnologyRepositoryInterface
 {
     public function findOneByName(string $name): ?ExperienceTechnology;
 
-    public function findOneById(int $id): ?ExperienceTechnology;
+    public function findOneById(Uuid $id): ?ExperienceTechnology;
 
     public function save(ExperienceTechnology $technology): void;
 
