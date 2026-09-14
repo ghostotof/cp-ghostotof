@@ -52,7 +52,10 @@ forme dans les URLs et les DTO.
   disponible), jamais `VARCHAR(36)` : 16 octets, comparaison native, index compacts.
 - **D3 — `symfony/uid` devient une dépendance directe** (`8.1.*`, comme les autres composants
   Symfony du projet), et non plus seulement transitive.
-- **D4 — Une seule migration, irréversible.** `down()` appelle
+- **D4 — Des migrations irréversibles, une par tâche backend** (amendé au découpage du 2026-09-14 :
+  la CI construit la base de test par `doctrine:migrations:migrate`, donc une tâche n'est verte que si
+  elle embarque la migration de ses propres tables ; cinq migrations jouées d'un bloc à la release
+  valent une seule pour le déploiement). Chaque `down()` appelle
   `$this->throwIrreversibleMigrationException()` : les entiers d'origine ne sont pas restituables et
   un rollback qui les réinventerait mentirait. Conséquence assumée : la release passe par préprod
   avec vérification réelle avant promotion (invariant existant pour tout ce qui touche un volume
@@ -84,6 +87,9 @@ forme dans les URLs et les DTO.
   modification autorisée sur ce test, et elle ne touche ni `PUBLIC_PATHS` ni `BASE_TIER_PATHS`.
 - Une seule clé étrangère entre entités : `password_setup_token.user_id → cpg_user.id`
   (`ON DELETE CASCADE`).
+- `SendAccountInvitationMessage` transporte `int $userId` (oublié par la rédaction initiale) : il
+  passe en `string` RFC 4122 ; un message encore en file au déploiement serait rejoué avec un
+  entier, d'où la vérification `messenger:failed:show` avant la release (§8).
 
 ## 3. Carte des capacités (ordre de construction)
 
@@ -91,7 +97,7 @@ forme dans les URLs et les DTO.
 |---|---|---|---|
 | A1 | Socle : `symfony/uid` direct, `uriVariableUuid()` dans `ResolvesUriVariables`, suppression de `uriVariableInt()` | — | `composer phpstan` vert sur le trait |
 | A2 | Les 14 entités et leurs interfaces de repository (`findOneById(Uuid)`), signatures des `Administrator`, presenters ; tests d'entité adaptés | A1 | `php bin/phpunit tests/*/Domain` vert |
-| A3 | Migration unique (14 tables, FK `password_setup_token`), irréversible, monotone (D5) | A2 | `doctrine:migrations:migrate` puis `doctrine:schema:validate` verts en dev et en test |
+| A3 | Migrations (une par contexte, 14 tables au total, FK `password_setup_token`), irréversibles, monotones (D5) | A2 | `doctrine:migrations:migrate` puis `doctrine:schema:validate` verts en dev et en test |
 | A4 | Ressources API Platform : `requirements` UUID sur toutes les opérations d'item, DTO `id: string`, Providers/Processors sur `uriVariableUuid()` ; placeholder de `ApiRouteExposureTest` ; tests fonctionnels sur `getId()->toRfc4122()` ; un test « `{id}` non UUID → 404 » par ressource | A3 | Suite backend verte, `make back-quality` vert |
 | A5 | Frontend : `id: string` sur les entités admin, interfaces, composables, pages (`editingId: string \| null`), specs sur des UUID littéraux | A4 | `make front-test`, `front-lint`, `front-build` verts |
 | A6 | Documentation et release : `CLAUDE.md`, notes de release dans le tag, préprod vérifiée, prod | A5 | `v0.11.0` en production |
@@ -254,6 +260,11 @@ grep -rn 'id: number' frontend/src/domain/admin frontend/src/application/admin  
 (spec 0004) : clés primaires UUID sur toutes les entités, applicable globalement dès maintenant.
 Design validé en session : v7 au constructeur, type natif, migration unique irréversible et
 monotone, `requirements` UUID sur les items, livraison seule et préalable à la spec 0004.
+
+**2026-09-14** — Découpage validé (`tasks/plan.md`, issues #120–#127, label `spec-0003`) : une tâche
+par contexte vertical, `Security/User` en premier. Deux écarts avec la rédaction, corrigés dans le
+texte : une migration par tâche plutôt qu'une seule (D4, A3) ; `SendAccountInvitationMessage.userId`
+entier → chaîne (contrats vérifiés).
 
 **Audit de sensibilité avant publication** : aucun e-mail, aucune adresse, aucun nom de compte, aucun
 secret. Le document décrit le schéma des tables et le flux d'invitation au même niveau de détail que
