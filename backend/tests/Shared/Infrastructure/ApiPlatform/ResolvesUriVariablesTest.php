@@ -25,16 +25,16 @@ final class ResolvesUriVariablesTest extends TestCase
         self::assertTrue(Uuid::fromString($value)->equals($resolver->resolve(['id' => $value])));
     }
 
-    public function testANonUuidStringTriggersTheAssertion(): void
+    public function testANonUuidStringIsRejected(): void
     {
-        $this->expectException(\AssertionError::class);
+        $this->expectException(\InvalidArgumentException::class);
 
         $this->resolver()->resolve(['id' => 'not-a-uuid']);
     }
 
-    public function testAnAbsentKeyTriggersTheAssertion(): void
+    public function testAnAbsentKeyIsRejected(): void
     {
-        $this->expectException(\AssertionError::class);
+        $this->expectException(\InvalidArgumentException::class);
 
         $this->resolver()->resolve([]);
     }
