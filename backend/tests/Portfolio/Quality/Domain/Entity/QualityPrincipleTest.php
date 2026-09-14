@@ -53,13 +53,16 @@ final class QualityPrincipleTest extends TestCase
     {
         $principle = new QualityPrinciple(Locale::EN, 'DDD', 'Domain modeling.', 'boxes', 0);
 
-        $principle->update('SOLID', 'Solid foundations.', 'columns-3', 1);
+        $principle->update('SOLID', 'Solid foundations.', 'columns-3');
 
         self::assertSame(Locale::EN, $principle->getLocale());
         self::assertSame('SOLID', $principle->getTitle());
         self::assertSame('Solid foundations.', $principle->getDescription());
         self::assertSame('columns-3', $principle->getIconKey());
-        self::assertSame(1, $principle->getPosition());
+        // Spec 0004 D3 : `update()` ne touche plus à la position — elle ne se
+        // saisit pas, seuls un rattachement à un groupe et l'endpoint d'ordre
+        // l'écrivent.
+        self::assertSame(0, $principle->getPosition());
     }
 
     /**

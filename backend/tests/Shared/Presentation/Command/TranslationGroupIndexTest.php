@@ -6,38 +6,67 @@ namespace App\Tests\Shared\Presentation\Command;
 
 use App\Shared\Presentation\Command\TranslationGroupIndex;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Uid\UuidV7;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Spec 0004 D1 — l'appariement FR/EN des commandes de peuplement tient
  * entièrement à cette classe : c'est elle qui décide que deux entrées sont le
- * même contenu. Deux propriétés la définissent, et les deux comptent autant
- * l'une que l'autre :
+ * même contenu. Trois propriétés la définissent, et les trois comptent :
  *
- *  - un même couple (périmètre, index) rend **toujours** le même groupe — sans
- *    quoi la version EN ne serait liée à rien ;
+ *  - un couple (périmètre, index) encore inconnu rend `null` — la première
+ *    langue crée son entrée **sans groupe** (spec 0004 D3 : un groupe forgé
+ *    d'avance n'est porté par aucune entrée, et le domaine le refuse) ;
+ *  - une fois retenu, ce couple rend **toujours** le même groupe — sans quoi la
+ *    version EN ne serait liée à rien ;
  *  - deux couples différents rendent des groupes **différents** — sans quoi des
  *    contenus étrangers se prétendraient traductions les uns des autres.
  */
 final class TranslationGroupIndexTest extends TestCase
 {
-    public function testTheSameScopeAndIndexAlwaysYieldTheSameGroup(): void
+    /**
+     * Ce `null` est le contrat, pas un défaut : c'est lui qui fait créer la
+     * première langue sans groupe, l'entité s'en forgeant un que la suite
+     * retient.
+     */
+    public function testAnUnknownPairYieldsNoGroupYet(): void
     {
-        $index = new TranslationGroupIndex();
-
-        $first = $index->forIndex('incident', 0);
-        $second = $index->forIndex('incident', 0);
-
-        self::assertTrue($first->equals($second));
-        // Même instance : le groupe est mémorisé, pas reconstruit à l'identique.
-        self::assertSame($first, $second);
+        self::assertNull((new TranslationGroupIndex())->forIndex('incident', 0));
     }
 
-    public function testEachIndexOfAScopeGetsItsOwnGroup(): void
+    public function testARememberedPairAlwaysYieldsTheSameGroup(): void
     {
         $index = new TranslationGroupIndex();
+        $group = Uuid::v7();
 
-        self::assertFalse($index->forIndex('incident', 0)->equals($index->forIndex('incident', 1)));
+        $index->remember('incident', 0, $group);
+
+        self::assertSame($group, $index->forIndex('incident', 0));
+        self::assertSame($group, $index->forIndex('incident', 0));
+    }
+
+    /**
+     * C'est la **première** langue qui fait foi : les suivantes se rattachent à
+     * son groupe et le redonnent en retour, ce qui ne doit rien changer.
+     */
+    public function testRememberingTwiceKeepsTheFirstGroup(): void
+    {
+        $index = new TranslationGroupIndex();
+        $first = Uuid::v7();
+
+        $index->remember('incident', 0, $first);
+        $index->remember('incident', 0, Uuid::v7());
+
+        self::assertSame($first, $index->forIndex('incident', 0));
+    }
+
+    public function testEachIndexOfAScopeKeepsItsOwnGroup(): void
+    {
+        $index = new TranslationGroupIndex();
+        $group = Uuid::v7();
+
+        $index->remember('incident', 0, $group);
+
+        self::assertNull($index->forIndex('incident', 1));
     }
 
     /**
@@ -52,7 +81,9 @@ final class TranslationGroupIndexTest extends TestCase
     {
         $index = new TranslationGroupIndex();
 
-        self::assertFalse($index->forIndex('principle', 0)->equals($index->forIndex('trait', 0)));
+        $index->remember('principle', 0, Uuid::v7());
+
+        self::assertNull($index->forIndex('trait', 0));
     }
 
     /**
@@ -65,15 +96,8 @@ final class TranslationGroupIndexTest extends TestCase
         $first = new TranslationGroupIndex();
         $second = new TranslationGroupIndex();
 
-        self::assertFalse($first->forIndex('incident', 0)->equals($second->forIndex('incident', 0)));
-    }
+        $first->remember('incident', 0, Uuid::v7());
 
-    /**
-     * Les groupes sont des UUID v7 comme les identifiants (spec 0003) :
-     * croissants dans le temps, donc classables sans clé supplémentaire.
-     */
-    public function testGroupsAreUuidV7(): void
-    {
-        self::assertInstanceOf(UuidV7::class, (new TranslationGroupIndex())->forIndex('incident', 0));
+        self::assertNull($second->forIndex('incident', 0));
     }
 }

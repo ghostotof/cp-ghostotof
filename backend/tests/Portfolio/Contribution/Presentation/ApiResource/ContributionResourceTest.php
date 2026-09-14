@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Portfolio\Contribution\Presentation\ApiResource;
 
 use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
+use App\Portfolio\Contribution\Domain\Repository\ContributionRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -33,8 +34,17 @@ final class ContributionResourceTest extends WebTestCase
         $client = self::createClient();
         $administrator = $client->getContainer()->get(ContributionAdministratorInterface::class);
 
-        $administrator->create(Locale::FR, 'Deuxième', 'symfony/ai', 'Issue #2', 'https://example.test/2', 'Chapeau 2.', 'Corps 2.', 1);
-        $administrator->create(Locale::FR, 'Première', 'symfony/ai', 'Issue #1', 'https://example.test/1', 'Chapeau 1.', 'Corps 1.', 0);
+        $second = $administrator->create(Locale::FR, 'Deuxième', 'symfony/ai', 'Issue #2', 'https://example.test/2', 'Chapeau 2.', 'Corps 2.');
+        $first = $administrator->create(Locale::FR, 'Première', 'symfony/ai', 'Issue #1', 'https://example.test/1', 'Chapeau 1.', 'Corps 1.');
+
+        // Le tri public se fait sur la position, pas sur l'ordre de création :
+        // depuis la spec 0004 D3 celle-ci suit l'insertion, il faut donc les
+        // séparer explicitement pour que l'assertion prouve encore quelque chose.
+        $repository = $client->getContainer()->get(ContributionRepositoryInterface::class);
+        $second->moveToPosition(1);
+        $first->moveToPosition(0);
+        $repository->save($second);
+        $repository->save($first);
 
         $client->request('GET', '/api/contributions/fr');
 
@@ -51,8 +61,8 @@ final class ContributionResourceTest extends WebTestCase
         $client = self::createClient();
         $administrator = $client->getContainer()->get(ContributionAdministratorInterface::class);
 
-        $administrator->create(Locale::FR, 'Version française', 'symfony/ai', 'Issue #1', 'https://example.test/1', 'Chapeau.', 'Corps.', 0);
-        $administrator->create(Locale::EN, 'English version', 'symfony/ai', 'Issue #1', 'https://example.test/1', 'Lede.', 'Body.', 0);
+        $administrator->create(Locale::FR, 'Version française', 'symfony/ai', 'Issue #1', 'https://example.test/1', 'Chapeau.', 'Corps.');
+        $administrator->create(Locale::EN, 'English version', 'symfony/ai', 'Issue #1', 'https://example.test/1', 'Lede.', 'Body.');
 
         $client->request('GET', '/api/contributions/en');
 
@@ -71,7 +81,7 @@ final class ContributionResourceTest extends WebTestCase
     public function testThePublicContractExposesOnlyTheEditorialFields(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(ContributionAdministratorInterface::class)->create(Locale::FR, 'Titre', 'symfony/ai', 'Issue #1', 'https://example.test/1', 'Chapeau.', 'Corps.', 0);
+        $client->getContainer()->get(ContributionAdministratorInterface::class)->create(Locale::FR, 'Titre', 'symfony/ai', 'Issue #1', 'https://example.test/1', 'Chapeau.', 'Corps.');
 
         $client->request('GET', '/api/contributions/fr');
 

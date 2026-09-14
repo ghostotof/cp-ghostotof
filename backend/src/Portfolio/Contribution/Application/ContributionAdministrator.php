@@ -7,6 +7,7 @@ namespace App\Portfolio\Contribution\Application;
 use App\Portfolio\Contribution\Domain\Entity\Contribution;
 use App\Portfolio\Contribution\Domain\Exception\ContributionNotFoundException;
 use App\Portfolio\Contribution\Domain\Repository\ContributionRepositoryInterface;
+use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Uid\Uuid;
 
@@ -14,6 +15,7 @@ final readonly class ContributionAdministrator implements ContributionAdministra
 {
     public function __construct(
         private ContributionRepositoryInterface $contributionRepository,
+        private ContentPlacement $contentPlacement,
     ) {
     }
 
@@ -25,10 +27,9 @@ final readonly class ContributionAdministrator implements ContributionAdministra
         string $url,
         string $summary,
         string $body,
-        int $position,
         ?Uuid $translationGroup = null,
     ): Contribution {
-        $contribution = new Contribution($locale, $title, $project, $reference, $url, $summary, $body, $position, $translationGroup);
+        $contribution = new Contribution($locale, $title, $project, $reference, $url, $summary, $body, $this->positionFor($locale, $translationGroup), $translationGroup);
 
         $this->contributionRepository->save($contribution);
 
@@ -43,7 +44,7 @@ final readonly class ContributionAdministrator implements ContributionAdministra
         string $url,
         string $summary,
         string $body,
-        int $position,
+        ?Uuid $translationGroup,
     ): Contribution {
         $contribution = $this->contributionRepository->findOneById($id);
 
@@ -51,7 +52,12 @@ final readonly class ContributionAdministrator implements ContributionAdministra
             throw ContributionNotFoundException::forId($id);
         }
 
-        $contribution->update($title, $project, $reference, $url, $summary, $body, $position);
+        $this->contentPlacement->reattach(
+            $contribution,
+            $translationGroup,
+            $this->contributionRepository->findByTranslationGroup($translationGroup ?? $contribution->getTranslationGroup()),
+        );
+        $contribution->update($title, $project, $reference, $url, $summary, $body);
         $this->contributionRepository->save($contribution);
 
         return $contribution;
@@ -66,5 +72,23 @@ final readonly class ContributionAdministrator implements ContributionAdministra
         }
 
         $this->contributionRepository->remove($contribution);
+    }
+
+    /**
+     * Spec 0004 D3 : sans groupe, l'entrée se range en fin de périmètre
+     * (toutes langues confondues) ; avec un groupe, elle hérite de sa position.
+     * Le périmètre n'est chargé que dans la première branche.
+     */
+    private function positionFor(Locale $locale, ?Uuid $translationGroup): int
+    {
+        if (null === $translationGroup) {
+            return $this->contentPlacement->atEndOf($this->contributionRepository->findAll());
+        }
+
+        return $this->contentPlacement->inGroup(
+            $translationGroup,
+            $locale,
+            $this->contributionRepository->findByTranslationGroup($translationGroup),
+        );
     }
 }

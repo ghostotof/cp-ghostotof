@@ -6,6 +6,7 @@ namespace App\Portfolio\AnonymousCv\Domain\Entity;
 
 use App\Portfolio\AnonymousCv\Infrastructure\Doctrine\AnonymousCvSectionRepository;
 use App\Portfolio\Shared\Domain\Orderable;
+use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -35,7 +36,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Table(name: 'anonymous_cv_section')]
 #[ORM\UniqueConstraint(name: 'uniq_anonymous_cv_section_translation_group_locale', columns: ['translation_group', 'locale'])]
 #[ORM\Index(name: 'idx_anonymous_cv_section_locale_position', columns: ['locale', 'position'])]
-class AnonymousCvSection implements Orderable
+class AnonymousCvSection implements Orderable, TranslatableContent
 {
     /**
      * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
@@ -148,13 +149,11 @@ class AnonymousCvSection implements Orderable
         string $skills,
         int $yearsOfExperience,
         string $achievements,
-        int $position,
     ): void {
         $this->title = $title;
         $this->skills = $skills;
         $this->yearsOfExperience = $yearsOfExperience;
         $this->achievements = $achievements;
-        $this->position = $position;
     }
 
     public function getTranslationGroup(): Uuid

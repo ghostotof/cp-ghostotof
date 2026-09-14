@@ -56,6 +56,15 @@ api_platform:
         # exception précise. Les champs "locale" des DTO de backoffice, eux,
         # sont déjà bornés en amont par #[Assert\Choice] (422, pas 404).
         App\Portfolio\Shared\Domain\Exception\InvalidLocaleException: 404
+        # Spec 0004 D3 : rattacher une entrée à un groupe de traduction. Le
+        # groupe qui porte déjà cette langue est un conflit avec l'existant
+        # (409), pas une saisie invalide — l'index unique
+        # (translation_group, locale) le refuserait de toute façon, mais en 500 ;
+        # un groupe qu'aucune entrée du périmètre ne porte, lui, est bien une
+        # saisie invalide (422). Les deux portent un `type` stable, le frontend
+        # n'a donc pas à lire le `detail` localisé.
+        App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException: 409
+        App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException: 422
         App\Portfolio\Quality\Domain\Exception\QualityPrincipleNotFoundException: 404
         App\Portfolio\Quality\Domain\Exception\QualityTraitNotFoundException: 404
         App\Portfolio\About\Domain\Exception\AboutSettingsNotFoundException: 404

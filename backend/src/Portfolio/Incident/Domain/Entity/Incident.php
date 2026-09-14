@@ -6,6 +6,7 @@ namespace App\Portfolio\Incident\Domain\Entity;
 
 use App\Portfolio\Incident\Infrastructure\Doctrine\IncidentRepository;
 use App\Portfolio\Shared\Domain\Orderable;
+use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -32,7 +33,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 // mapping l'ignorait, si bien que chaque `doctrine:migrations:diff` proposait
 // de le supprimer. Le déclarer aligne le mapping sur la base, sans SQL.
 #[ORM\Index(name: 'idx_incident_locale_position', columns: ['locale', 'position'])]
-class Incident implements Orderable
+class Incident implements Orderable, TranslatableContent
 {
     /**
      * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
@@ -177,7 +178,6 @@ class Incident implements Orderable
         string $rootCause,
         string $resolution,
         string $invariant,
-        int $position,
     ): void {
         $this->title = $title;
         $this->version = $version;
@@ -186,7 +186,6 @@ class Incident implements Orderable
         $this->rootCause = $rootCause;
         $this->resolution = $resolution;
         $this->invariant = $invariant;
-        $this->position = $position;
     }
 
     public function getTranslationGroup(): Uuid

@@ -6,6 +6,7 @@ namespace App\Portfolio\Quality\Domain\Entity;
 
 use App\Portfolio\Quality\Infrastructure\Doctrine\QualityTraitRepository;
 use App\Portfolio\Shared\Domain\Orderable;
+use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -21,7 +22,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Entity(repositoryClass: QualityTraitRepository::class)]
 #[ORM\Table(name: 'quality_trait')]
 #[ORM\UniqueConstraint(name: 'uniq_quality_trait_translation_group_locale', columns: ['translation_group', 'locale'])]
-class QualityTrait implements Orderable
+class QualityTrait implements Orderable, TranslatableContent
 {
     /**
      * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
@@ -85,10 +86,9 @@ class QualityTrait implements Orderable
         return $this->position;
     }
 
-    public function update(string $label, int $position): void
+    public function update(string $label): void
     {
         $this->label = $label;
-        $this->position = $position;
     }
 
     public function getTranslationGroup(): Uuid

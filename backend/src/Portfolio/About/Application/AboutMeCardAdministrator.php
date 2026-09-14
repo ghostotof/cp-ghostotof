@@ -8,6 +8,7 @@ use App\Portfolio\About\Domain\Entity\AboutMeCard;
 use App\Portfolio\About\Domain\Exception\AboutMeCardNotFoundException;
 use App\Portfolio\About\Domain\Repository\AboutMeCardRepositoryInterface;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
+use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Uid\Uuid;
 
@@ -15,6 +16,7 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
 {
     public function __construct(
         private AboutMeCardRepositoryInterface $aboutMeCardRepository,
+        private ContentPlacement $contentPlacement,
     ) {
     }
 
@@ -24,17 +26,16 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
         string $title,
         string $description,
         ?string $iconKey,
-        int $position,
         ?Uuid $translationGroup = null,
     ): AboutMeCard {
-        $card = new AboutMeCard($locale, $category, $title, $description, $iconKey, $position, $translationGroup);
+        $card = new AboutMeCard($locale, $category, $title, $description, $iconKey, $this->positionFor($locale, $category, $translationGroup), $translationGroup);
 
         $this->aboutMeCardRepository->save($card);
 
         return $card;
     }
 
-    public function update(Uuid $id, string $title, string $description, ?string $iconKey, int $position): AboutMeCard
+    public function update(Uuid $id, string $title, string $description, ?string $iconKey, ?Uuid $translationGroup): AboutMeCard
     {
         $card = $this->aboutMeCardRepository->findOneById($id);
 
@@ -42,7 +43,12 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
             throw AboutMeCardNotFoundException::forId($id);
         }
 
-        $card->update($title, $description, $iconKey, $position);
+        $this->contentPlacement->reattach(
+            $card,
+            $translationGroup,
+            $this->membersOf($translationGroup ?? $card->getTranslationGroup(), $card->getCategory()),
+        );
+        $card->update($title, $description, $iconKey);
         $this->aboutMeCardRepository->save($card);
 
         return $card;
@@ -57,5 +63,36 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
         }
 
         $this->aboutMeCardRepository->remove($card);
+    }
+
+    /**
+     * Spec 0004 D3 : le périmètre d'ordre d'une carte « moi » est sa
+     * **catégorie**, toutes langues confondues — c'est ce que servent les trois
+     * tableaux de la page À propos, et donc ce que numérotent leurs positions.
+     */
+    private function positionFor(Locale $locale, AboutMeCardCategory $category, ?Uuid $translationGroup): int
+    {
+        if (null === $translationGroup) {
+            return $this->contentPlacement->atEndOf($this->aboutMeCardRepository->findByCategory($category));
+        }
+
+        return $this->contentPlacement->inGroup($translationGroup, $locale, $this->membersOf($translationGroup, $category));
+    }
+
+    /**
+     * Les entrées du groupe **dans cette catégorie**. Un groupe ne peut pas
+     * chevaucher deux catégories : une même position y vaudrait dans deux
+     * tableaux différents, et déplacer l'un déplacerait l'autre. Un groupe
+     * d'une autre catégorie est donc filtré ici, et ressort comme inconnu du
+     * périmètre — 422, `unknown-translation-group`.
+     *
+     * @return list<AboutMeCard>
+     */
+    private function membersOf(Uuid $translationGroup, AboutMeCardCategory $category): array
+    {
+        return array_values(array_filter(
+            $this->aboutMeCardRepository->findByTranslationGroup($translationGroup),
+            static fn (AboutMeCard $card): bool => $card->getCategory() === $category,
+        ));
     }
 }

@@ -55,14 +55,17 @@ final class AboutMeCardTest extends TestCase
     {
         $card = new AboutMeCard(Locale::EN, AboutMeCardCategory::HOBBY, 'Musique', 'Description.', 'guitar', 0);
 
-        $card->update('Moto', 'New description.', 'motorbike', 1);
+        $card->update('Moto', 'New description.', 'motorbike');
 
         self::assertSame(Locale::EN, $card->getLocale());
         self::assertSame(AboutMeCardCategory::HOBBY, $card->getCategory());
         self::assertSame('Moto', $card->getTitle());
         self::assertSame('New description.', $card->getDescription());
         self::assertSame('motorbike', $card->getIconKey());
-        self::assertSame(1, $card->getPosition());
+        // Spec 0004 D3 : `update()` ne touche plus à la position — elle ne se
+        // saisit pas, seuls un rattachement à un groupe et l'endpoint d'ordre
+        // l'écrivent.
+        self::assertSame(0, $card->getPosition());
     }
 
     /**

@@ -60,24 +60,30 @@ final class SeedCaseStudyContentCommand extends Command
 
         $translationGroups = new TranslationGroupIndex();
 
+        // Spec 0004 D3 : la purge précède désormais toute création, au lieu
+        // d'être faite langue par langue. Une entrée sans groupe se range en
+        // fin de périmètre, toutes langues confondues : les entrées d'une
+        // autre langue encore en place pendant la création décaleraient la
+        // numérotation d'autant, à chaque `--force`.
+        foreach ($this->caseStudyRepository->findAll() as $existing) {
+            $this->caseStudyRepository->remove($existing);
+        }
+
         foreach ($this->content() as $localeValue => $caseStudies) {
             $locale = Locale::from($localeValue);
 
-            foreach ($this->caseStudyRepository->findByLocale($locale) as $existing) {
-                $this->caseStudyRepository->remove($existing);
-            }
-
-            foreach ($caseStudies as $position => $caseStudy) {
-                $this->caseStudyAdministrator->create(
+            foreach ($caseStudies as $index => $caseStudy) {
+                $created = $this->caseStudyAdministrator->create(
                     $locale,
                     $caseStudy['title'],
                     $caseStudy['problem'],
                     $caseStudy['solution'],
                     $caseStudy['tradeoffs'],
                     $caseStudy['measuredResult'],
-                    $position,
-                    $translationGroups->forIndex('case-study', $position),
+                    $translationGroups->forIndex('case-study', $index),
                 );
+
+                $translationGroups->remember('case-study', $index, $created->getTranslationGroup());
             }
 
             $io->success(sprintf('[%s] %d étude(s) de cas.', $localeValue, \count($caseStudies)));

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Incident\Presentation\ApiResource;
 
+use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Delete;
 use ApiPlatform\Metadata\Get;
@@ -64,10 +65,13 @@ final class BackofficeIncidentResource
         public ?string $locale = null,
         /**
          * Spec 0004 D1 : groupe de traduction, en RFC 4122 — les entrées qui le
-         * partagent sont le même contenu dans des langues différentes. Exposé
-         * en lecture dès maintenant ; le Processor l'ignore encore, le côté
-         * écriture (et sa contrainte de validation) arrive en B2.
+         * partagent sont le même contenu dans des langues différentes.
+         *
+         * En écriture (D3) : à la création, le groupe de l'entrée dont celle-ci
+         * est la traduction, ou `null` pour un contenu neuf ; sur un `PUT`,
+         * `null` détache l'entrée de ses traductions.
          */
+        #[Assert\Uuid]
         public ?string $translationGroup = null,
         #[Assert\NotBlank]
         #[Assert\Length(max: 255)]
@@ -86,7 +90,14 @@ final class BackofficeIncidentResource
         public string $resolution = '',
         #[Assert\NotBlank]
         public string $invariant = '',
-        #[Assert\PositiveOrZero]
+        /**
+         * Spec 0004 D3 : lecture seule. La position ne se saisit plus — elle
+         * se déduit du groupe ou de la fin du périmètre, et seul l'endpoint
+         * d'ordre l'écrira. `writable: false` la retire du contrat d'écriture
+         * (et de l'OpenAPI) sans pour autant refuser un corps qui en porterait
+         * encore une : elle est simplement ignorée.
+         */
+        #[ApiProperty(writable: false)]
         public int $position = 0,
     ) {
     }

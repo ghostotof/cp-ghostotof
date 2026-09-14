@@ -84,7 +84,6 @@ final class ContributionTest extends TestCase
             'https://github.com/symfony/language-tools/issues/56',
             'Nouveau chapeau.',
             'Nouveau corps.',
-            3,
         );
 
         self::assertSame('Nouveau titre', $contribution->getTitle());
@@ -93,7 +92,10 @@ final class ContributionTest extends TestCase
         self::assertSame('https://github.com/symfony/language-tools/issues/56', $contribution->getUrl());
         self::assertSame('Nouveau chapeau.', $contribution->getSummary());
         self::assertSame('Nouveau corps.', $contribution->getBody());
-        self::assertSame(3, $contribution->getPosition());
+        // Spec 0004 D3 : `update()` ne touche plus à la position — elle ne se
+        // saisit pas, seuls un rattachement à un groupe et l'endpoint d'ordre
+        // l'écrivent.
+        self::assertSame(0, $contribution->getPosition());
         // La locale n'est pas modifiable : changer la langue d'une contribution
         // revient à en créer une autre, pas à éditer celle-ci.
         self::assertSame(Locale::FR, $contribution->getLocale());

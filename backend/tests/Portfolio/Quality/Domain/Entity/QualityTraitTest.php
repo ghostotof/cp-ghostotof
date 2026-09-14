@@ -51,11 +51,14 @@ final class QualityTraitTest extends TestCase
     {
         $trait = new QualityTraitEntity(Locale::EN, 'Clean architecture', 0);
 
-        $trait->update('Maintainability', 1);
+        $trait->update('Maintainability');
 
         self::assertSame(Locale::EN, $trait->getLocale());
         self::assertSame('Maintainability', $trait->getLabel());
-        self::assertSame(1, $trait->getPosition());
+        // Spec 0004 D3 : `update()` ne touche plus à la position — elle ne se
+        // saisit pas, seuls un rattachement à un groupe et l'endpoint d'ordre
+        // l'écrivent.
+        self::assertSame(0, $trait->getPosition());
     }
 
     /**

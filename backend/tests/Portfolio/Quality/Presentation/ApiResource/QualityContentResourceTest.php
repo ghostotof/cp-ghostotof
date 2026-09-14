@@ -6,6 +6,7 @@ namespace App\Tests\Portfolio\Quality\Presentation\ApiResource;
 
 use App\Portfolio\Quality\Application\QualityPrincipleAdministratorInterface;
 use App\Portfolio\Quality\Application\QualityTraitAdministratorInterface;
+use App\Portfolio\Quality\Domain\Repository\QualityPrincipleRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -36,11 +37,20 @@ final class QualityContentResourceTest extends WebTestCase
         $principleAdministrator = $client->getContainer()->get(QualityPrincipleAdministratorInterface::class);
         $traitAdministrator = $client->getContainer()->get(QualityTraitAdministratorInterface::class);
 
-        $principleAdministrator->create(Locale::FR, 'SOLID', 'Des bases solides.', 'columns-3', 1);
-        $principleAdministrator->create(Locale::FR, 'DDD', 'Modélisation du domaine.', 'boxes', 0);
-        $principleAdministrator->create(Locale::EN, 'DDD', 'Domain modeling.', 'boxes', 0);
-        $traitAdministrator->create(Locale::FR, 'Architecture propre', 0);
-        $traitAdministrator->create(Locale::EN, 'Clean architecture', 0);
+        $solid = $principleAdministrator->create(Locale::FR, 'SOLID', 'Des bases solides.', 'columns-3');
+        $ddd = $principleAdministrator->create(Locale::FR, 'DDD', 'Modélisation du domaine.', 'boxes');
+        $principleAdministrator->create(Locale::EN, 'DDD', 'Domain modeling.', 'boxes');
+        $traitAdministrator->create(Locale::FR, 'Architecture propre');
+        $traitAdministrator->create(Locale::EN, 'Clean architecture');
+
+        // Le tri public se fait sur la position, pas sur l'ordre de création :
+        // depuis la spec 0004 D3 celle-ci suit l'insertion, il faut donc les
+        // séparer explicitement pour que l'assertion prouve encore quelque chose.
+        $principleRepository = $client->getContainer()->get(QualityPrincipleRepositoryInterface::class);
+        $solid->moveToPosition(1);
+        $ddd->moveToPosition(0);
+        $principleRepository->save($solid);
+        $principleRepository->save($ddd);
 
         $client->request('GET', '/api/quality/fr');
 

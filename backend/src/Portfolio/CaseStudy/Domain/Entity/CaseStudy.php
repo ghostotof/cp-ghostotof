@@ -6,6 +6,7 @@ namespace App\Portfolio\CaseStudy\Domain\Entity;
 
 use App\Portfolio\CaseStudy\Infrastructure\Doctrine\CaseStudyRepository;
 use App\Portfolio\Shared\Domain\Orderable;
+use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -26,7 +27,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Table(name: 'case_study')]
 #[ORM\UniqueConstraint(name: 'uniq_case_study_translation_group_locale', columns: ['translation_group', 'locale'])]
 #[ORM\Index(name: 'idx_case_study_locale_position', columns: ['locale', 'position'])]
-class CaseStudy implements Orderable
+class CaseStudy implements Orderable, TranslatableContent
 {
     /**
      * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
@@ -144,14 +145,12 @@ class CaseStudy implements Orderable
         string $solution,
         string $tradeoffs,
         string $measuredResult,
-        int $position,
     ): void {
         $this->title = $title;
         $this->problem = $problem;
         $this->solution = $solution;
         $this->tradeoffs = $tradeoffs;
         $this->measuredResult = $measuredResult;
-        $this->position = $position;
     }
 
     public function getTranslationGroup(): Uuid

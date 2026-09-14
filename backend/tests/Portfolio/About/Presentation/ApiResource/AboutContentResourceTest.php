@@ -7,6 +7,7 @@ namespace App\Tests\Portfolio\About\Presentation\ApiResource;
 use App\Portfolio\About\Application\AboutMeCardAdministratorInterface;
 use App\Portfolio\About\Application\AboutSiteCardAdministratorInterface;
 use App\Portfolio\About\Domain\Repository\AboutSettingsRepositoryInterface;
+use App\Portfolio\About\Domain\Repository\AboutSiteCardRepositoryInterface;
 use App\Portfolio\About\Domain\Entity\AboutSettings;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -44,13 +45,22 @@ final class AboutContentResourceTest extends WebTestCase
         );
 
         $siteCardAdministrator = $container->get(AboutSiteCardAdministratorInterface::class);
-        $siteCardAdministrator->create(Locale::FR, 'Architecture', 'Description.', 'layers', 1);
-        $siteCardAdministrator->create(Locale::FR, 'Stack technique', 'Description.', 'server', 0);
+        $architecture = $siteCardAdministrator->create(Locale::FR, 'Architecture', 'Description.', 'layers');
+        $stack = $siteCardAdministrator->create(Locale::FR, 'Stack technique', 'Description.', 'server');
+
+        // Le tri public se fait sur la position, pas sur l'ordre de création :
+        // depuis la spec 0004 D3 celle-ci suit l'insertion, il faut donc les
+        // séparer explicitement pour que l'assertion prouve encore quelque chose.
+        $siteCardRepository = $container->get(AboutSiteCardRepositoryInterface::class);
+        $architecture->moveToPosition(1);
+        $stack->moveToPosition(0);
+        $siteCardRepository->save($architecture);
+        $siteCardRepository->save($stack);
 
         $meCardAdministrator = $container->get(AboutMeCardAdministratorInterface::class);
-        $meCardAdministrator->create(Locale::FR, AboutMeCardCategory::TECHNICAL, 'Développeur', 'Description.', 'code', 0);
-        $meCardAdministrator->create(Locale::FR, AboutMeCardCategory::PERSONAL, 'Curieux', 'Description.', 'lightbulb', 0);
-        $meCardAdministrator->create(Locale::FR, AboutMeCardCategory::HOBBY, 'Musique', 'Description.', 'guitar', 0);
+        $meCardAdministrator->create(Locale::FR, AboutMeCardCategory::TECHNICAL, 'Développeur', 'Description.', 'code');
+        $meCardAdministrator->create(Locale::FR, AboutMeCardCategory::PERSONAL, 'Curieux', 'Description.', 'lightbulb');
+        $meCardAdministrator->create(Locale::FR, AboutMeCardCategory::HOBBY, 'Musique', 'Description.', 'guitar');
 
         $client->request('GET', '/api/about/fr');
 

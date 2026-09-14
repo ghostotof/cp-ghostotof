@@ -58,15 +58,20 @@ final class SeedIncidentsContentCommand extends Command
 
         $translationGroups = new TranslationGroupIndex();
 
+        // Spec 0004 D3 : la purge précède désormais toute création, au lieu
+        // d'être faite langue par langue. Une entrée sans groupe se range en
+        // fin de table, toutes langues confondues : les entrées anglaises
+        // encore en place pendant la création des françaises décaleraient la
+        // numérotation d'autant, à chaque `--force`.
+        foreach ($this->incidentRepository->findAll() as $existing) {
+            $this->incidentRepository->remove($existing);
+        }
+
         foreach ($this->content() as $localeValue => $incidents) {
             $locale = Locale::from($localeValue);
 
-            foreach ($this->incidentRepository->findByLocale($locale) as $existing) {
-                $this->incidentRepository->remove($existing);
-            }
-
-            foreach ($incidents as $position => $incident) {
-                $this->incidentAdministrator->create(
+            foreach ($incidents as $index => $incident) {
+                $created = $this->incidentAdministrator->create(
                     $locale,
                     $incident['title'],
                     $incident['version'],
@@ -75,9 +80,10 @@ final class SeedIncidentsContentCommand extends Command
                     $incident['rootCause'],
                     $incident['resolution'],
                     $incident['invariant'],
-                    $position,
-                    $translationGroups->forIndex('incident', $position),
+                    $translationGroups->forIndex('incident', $index),
                 );
+
+                $translationGroups->remember('incident', $index, $created->getTranslationGroup());
             }
 
             $io->success(sprintf('[%s] %d incident(s).', $localeValue, \count($incidents)));

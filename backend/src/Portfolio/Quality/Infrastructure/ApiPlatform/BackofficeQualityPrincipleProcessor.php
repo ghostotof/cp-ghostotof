@@ -13,6 +13,7 @@ use App\Portfolio\Quality\Application\QualityPrincipleAdministratorInterface;
 use App\Portfolio\Quality\Presentation\ApiResource\BackofficeQualityPrincipleResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @implements ProcessorInterface<BackofficeQualityPrincipleResource, BackofficeQualityPrincipleResource|null>
@@ -40,7 +41,7 @@ final readonly class BackofficeQualityPrincipleProcessor implements ProcessorInt
                 $data->title,
                 $data->description,
                 $data->iconKey,
-                $data->position,
+                $this->translationGroup($data),
             );
         } elseif ($operation instanceof Post) {
             $principle = $this->qualityPrincipleAdministrator->create(
@@ -48,12 +49,22 @@ final readonly class BackofficeQualityPrincipleProcessor implements ProcessorInt
                 $data->title,
                 $data->description,
                 $data->iconKey,
-                $data->position,
+                $this->translationGroup($data),
             );
         } else {
             throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
         }
 
         return BackofficeQualityPrincipleResource::fromEntity($principle);
+    }
+
+    /**
+     * Le groupe est une chaîne RFC 4122 à la frontière, un Uuid dans le domaine
+     * (spec 0003 D7). `Uuid::fromString` accepte d'autres formats, mais
+     * `#[Assert\Uuid]` a déjà borné le champ en amont.
+     */
+    private function translationGroup(BackofficeQualityPrincipleResource $data): ?Uuid
+    {
+        return null === $data->translationGroup ? null : Uuid::fromString($data->translationGroup);
     }
 }
