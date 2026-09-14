@@ -46,9 +46,9 @@ compte du palier de base ou nominatif n'y a accès, ni directement ni par effet 
   D9, `v0.12.0`) : le brouillon est rattaché au groupe de l'entrée source, l'enregistrer le lie.
 - Autres fournisseurs (Ollama en cluster, Mistral…) : le bundle les permet par configuration, mais
   aucun n'est câblé ni testé en v1.
-- La page admin des études de cas, qui n'existe pas encore côté frontend (routes admin actuelles :
-  technologies, about, quality, contributions, incidents, anonymous-cv, watch, users) : la créer est
-  une tâche à part ; l'assistant s'y branchera ensuite.
+- La page admin des études de cas, qui n'existait pas côté frontend en v1 : créée le 2026-09-14
+  (issue #104), l'assistant y est branché dès sa création, sur le modèle de la page du CV sans
+  identité.
 - L'ajout de `symfony lsp:check` à la CI (issue #90) : sans rapport, une PR par tâche.
 
 ## 2. Décisions structurantes

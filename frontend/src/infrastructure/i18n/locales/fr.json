@@ -50,6 +50,7 @@
       "contributions": "Contributions",
       "incidents": "Incidents",
       "anonymousCv": "CV sans identité",
+      "caseStudies": "Études de cas",
       "watch": "Veille"
     },
     "order": {
@@ -294,6 +295,37 @@
       "loadError": "Le chargement des sections a échoué. Réessayez plus tard.",
       "errors": {
         "not-found": "Cette section n'existe plus.",
+        "validation": "Certains champs sont invalides.",
+        "unknown": "Une erreur est survenue. Réessayez plus tard.",
+        "translation-already-exists": "Ce contenu a déjà une version dans cette langue.",
+        "unknown-translation-group": "Le contenu auquel rattacher cette version n'existe plus. Rechargez la page."
+      }
+    },
+    "caseStudies": {
+      "create": "Ajouter une étude de cas",
+      "edit": "Modifier l'étude de cas",
+      "listTitle": "Études de cas enregistrées",
+      "identityHelp": "Ni nom de client, ni nom d'employeur, ni coordonnées : c'est ici, à la saisie, que l'étude reste non identifiante. Aucun filtre ne le fera à votre place.",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "localeLabel": "Langue",
+      "translationOfLabel": "Version de",
+      "translationOfNone": "— aucune —",
+      "contentLabel": "Contenu",
+      "titleLabel": "Titre",
+      "problemLabel": "Problème (et ses contraintes)",
+      "solutionLabel": "Solution retenue",
+      "tradeoffsLabel": "Compromis",
+      "measuredResultLabel": "Résultat mesuré",
+      "measuredResultHelp": "Obligatoire. Un chiffre, une durée, un avant/après : c'est ce qui distingue une étude de cas d'un récit. Paragraphes séparés par une ligne vide.",
+      "editAction": "Modifier",
+      "deleteAction": "Supprimer",
+      "confirmDelete": "Supprimer l'étude de cas « {title} » ?",
+      "empty": "Aucune étude de cas enregistrée.",
+      "loading": "Chargement des études de cas…",
+      "loadError": "Le chargement des études de cas a échoué. Réessayez plus tard.",
+      "errors": {
+        "not-found": "Cette étude de cas n'existe plus.",
         "validation": "Certains champs sont invalides.",
         "unknown": "Une erreur est survenue. Réessayez plus tard.",
         "translation-already-exists": "Ce contenu a déjà une version dans cette langue.",
@@ -555,6 +587,10 @@
     "adminAnonymousCv": {
       "title": "Administration — CV sans identité",
       "description": "Gestion des sections du CV sans identité (palier de base)."
+    },
+    "adminCaseStudies": {
+      "title": "Administration — Études de cas",
+      "description": "Gestion des études de cas (palier de base)."
     },
     "adminIncidents": {
       "title": "Administration — Incidents",

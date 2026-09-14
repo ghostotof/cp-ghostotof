@@ -637,7 +637,9 @@ from the backoffice) — purely static content still belongs in `infrastructure/
 Content/user management UI, mirrored per-resource under `domain/admin/<resource>/{entities,repositories,errors}`
 → `infrastructure/admin/<resource>/Http*Repository.ts` → `application/admin/<resource>/use*.ts` →
 `presentation/pages/admin/Admin*Page.vue` (form + Bootstrap table, `window.confirm()` for deletes — no modals).
-Existing resources: `technologies`, `quality` (principles + traits), `contributions`, `incidents`, `about` (settings + site cards +
+Existing resources: `technologies`, `quality` (principles + traits), `contributions`, `incidents`, `anonymousCv`,
+`caseStudies` (the two base-tier contents of ADR 0003 D5, both prose-only, editorial rule reminded above the
+form: no client or employer name — no filter does it for you), `about` (settings + site cards +
 me cards), `watch` (tracked products + the `ROLE_SUPER`-only vulnerability detail, read-only), `users` (list + **invite by email** + change-password + promote/demote + resend invitation + delete;
 direct username+password creation stays CLI-only). `AdminUsersPage.vue` disables the delete and role buttons on
 the current user's own row (compared by `username` via `useAuth()`); the `email` column shows the linked address
@@ -701,8 +703,9 @@ the one singleton per locale, so its draft is **deferred**: parked in `pendingDr
 return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server
 would overwrite it). The button is disabled while an order draft is dirty (a draft the locked form could
 not save would burn quota for nothing). Never use `v-html` on text coming back from the model: it goes
-through the form fields, then `RichText.vue`. The case-studies admin page does not exist yet (issue
-#104); the button lands there with it.
+through the form fields, then `RichText.vue`. The case-studies admin page (`/admin/case-studies`, issue #104,
+closed 2026-09-14) is wired exactly like the anonymous-CV one — every field is prose, so "Create the XX
+version" copies nothing and the assistant sends all five fields.
 
 - `presentation/ui/{BaseTextInput,BaseTextarea,BaseNumberInput,BaseSelect}.vue` — the project's first reusable
   form components, used by every admin form. Reach for these before writing a new raw `<input>` in `admin/*`.
@@ -1092,8 +1095,8 @@ ADRs:
   `access_control`, `CpgUser::getRoles()` or `BaseAccessController`: it turns on the fact that `getRoles()`
   grants `ROLE_USER` unconditionally, which is why a tier was added *above* rather than below.
 - `docs/adr/0004-assistance-ia.md` — **statut `accepté` (2026-09-14), phase 1 livrée** (spec 0002, issues
-  `spec-0002` closed, v0.10.0/v0.10.1 in production the same day; the case-studies admin page, #104, is the one
-  form still without the button). Rules for anything that calls a language model: one importing class behind an interface,
+  `spec-0002` closed, v0.10.0/v0.10.1 in production the same day; the case-studies admin page, #104, joined
+  on 2026-09-14, so every admin form now has the button). Rules for anything that calls a language model: one importing class behind an interface,
   bundle pinned exact, no call from a public render path, only publishable backoffice content leaves, human in
   the loop, bounded cost, offline tests; D7 fixes phase 2 (MCP server, `ROLE_TRUSTED`) pending an amendment.
   Read it before adding any `Symfony\AI` usage or a new `ai.agent`.

@@ -47,6 +47,7 @@ const AdminAboutPage = () => import('../pages/admin/AdminAboutPage.vue')
 const AdminContributionsPage = () => import('../pages/admin/AdminContributionsPage.vue')
 const AdminIncidentsPage = () => import('../pages/admin/AdminIncidentsPage.vue')
 const AdminAnonymousCvPage = () => import('../pages/admin/AdminAnonymousCvPage.vue')
+const AdminCaseStudiesPage = () => import('../pages/admin/AdminCaseStudiesPage.vue')
 const AdminWatchPage = () => import('../pages/admin/AdminWatchPage.vue')
 const AdminQualityPage = () => import('../pages/admin/AdminQualityPage.vue')
 const AdminUsersPage = () => import('../pages/admin/AdminUsersPage.vue')
@@ -206,6 +207,12 @@ export const router = createRouter({
               name: 'admin-anonymous-cv',
               component: AdminAnonymousCvPage,
               meta: { titleKey: 'seo.adminAnonymousCv.title', descriptionKey: 'seo.adminAnonymousCv.description' },
+            },
+            {
+              path: 'case-studies',
+              name: 'admin-case-studies',
+              component: AdminCaseStudiesPage,
+              meta: { titleKey: 'seo.adminCaseStudies.title', descriptionKey: 'seo.adminCaseStudies.description' },
             },
             {
               path: 'watch',
