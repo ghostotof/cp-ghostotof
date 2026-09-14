@@ -486,19 +486,31 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
           <table class="table table-dark align-middle mb-0">
             <thead>
               <tr>
-                <th scope="col">
+                <th
+                  scope="col"
+                  class="col-md-1"
+                >
                   <span class="visually-hidden">{{ t('admin.order.columnHeader') }}</span>
                 </th>
                 <th scope="col">
                   {{ t('admin.incidents.contentLabel') }}
                 </th>
-                <th scope="col">
+                <th
+                  scope="col"
+                  class="col-md-2"
+                >
                   {{ t('admin.incidents.occurredAtLabel') }}
                 </th>
-                <th scope="col">
+                <th
+                  scope="col"
+                  class="col-md-2"
+                >
                   {{ t('admin.incidents.versionLabel') }}
                 </th>
-                <th scope="col">
+                <th
+                  scope="col"
+                  class="col-md-2 text-end"
+                >
                   <span class="visually-hidden">{{ t('admin.order.actionsColumn') }}</span>
                 </th>
               </tr>

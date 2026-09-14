@@ -184,10 +184,16 @@ async function handleDelete(technology: AdminExperienceTechnology): Promise<void
               <th scope="col">
                 {{ t('admin.technologies.nameLabel') }}
               </th>
-              <th scope="col">
+              <th
+                scope="col"
+                class="col-md-1"
+              >
                 {{ t('admin.technologies.yearsLabel') }}
               </th>
-              <th scope="col">
+              <th
+                scope="col"
+                class="col-md-1"
+              >
                 {{ t('admin.technologies.iconKeyLabel') }}
               </th>
               <th scope="col">
@@ -196,7 +202,10 @@ async function handleDelete(technology: AdminExperienceTechnology): Promise<void
               <th scope="col">
                 {{ t('admin.technologies.secondaryColumn') }}
               </th>
-              <th scope="col">
+              <th
+                scope="col"
+                class="col-md-2 text-end"
+              >
                 <span class="visually-hidden">{{ t('admin.technologies.actions') }}</span>
               </th>
             </tr>

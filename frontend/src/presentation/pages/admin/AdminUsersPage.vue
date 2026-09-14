@@ -263,7 +263,10 @@ async function handleDelete(user: AdminUser): Promise<void> {
               <th scope="col">
                 {{ t('admin.users.statusLabel') }}
               </th>
-              <th scope="col">
+              <th
+                scope="col"
+                class="col-md-2 text-end"
+              >
                 <span class="visually-hidden">{{ t('admin.users.actions') }}</span>
               </th>
             </tr>
