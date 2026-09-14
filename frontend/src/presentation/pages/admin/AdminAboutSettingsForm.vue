@@ -9,7 +9,18 @@ import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import type { TranslationDraft } from '../../../domain/admin/translation/entities/TranslationDraft'
 
-const props = defineProps<{ locale: Locale }>()
+/**
+ * Les réglages sont le **seul** formulaire de la page à garder la langue de
+ * page (spec 0004, D8 : les cartes ont chacune la leur). Ce n'est pas une
+ * exception de commodité — un singleton par locale n'a pas de « langue de
+ * l'entrée » : choisir une langue, c'est choisir l'enregistrement à éditer,
+ * donc en charger un autre. D'où le prop `locale` piloté par la page.
+ *
+ * `isLocked` vient du verrou d'ordre global (D6) : un brouillon d'ordre
+ * modifié ailleurs sur la page désactive aussi l'enregistrement d'ici, qui
+ * rechargerait des listes et perdrait ce brouillon.
+ */
+const props = defineProps<{ locale: Locale; isLocked: boolean; lockedHintId?: string }>()
 const emit = defineEmits<{ switchLocale: [locale: Locale] }>()
 
 const { t } = useI18n()
@@ -153,7 +164,8 @@ async function handleSubmit(): Promise<void> {
         <TranslateEntryButton
           :form-locale="locale"
           :is-translating="isTranslating"
-          :disabled="!hasProseToTranslate || isSubmitting"
+          :disabled="!hasProseToTranslate || isSubmitting || isLocked"
+          :aria-describedby="lockedHintId"
           @translate="handleTranslate"
         />
       </div>
@@ -185,7 +197,8 @@ async function handleSubmit(): Promise<void> {
       <button
         type="submit"
         class="btn btn-gradient"
-        :disabled="isSubmitting"
+        :disabled="isSubmitting || isLocked"
+        :aria-describedby="lockedHintId"
       >
         {{ t('admin.about.save') }}
       </button>

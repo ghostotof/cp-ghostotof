@@ -8,6 +8,8 @@ use App\Portfolio\About\Application\AboutSiteCardAdministrator;
 use App\Portfolio\About\Domain\Entity\AboutSiteCard;
 use App\Portfolio\About\Domain\Exception\AboutSiteCardNotFoundException;
 use App\Portfolio\About\Domain\Repository\AboutSiteCardRepositoryInterface;
+use App\Portfolio\Shared\Domain\Service\ContentPlacement;
+use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
@@ -19,9 +21,9 @@ final class AboutSiteCardAdministratorTest extends TestCase
         $repository = $this->createMock(AboutSiteCardRepositoryInterface::class);
         $repository->expects(self::once())->method('save')->with(self::isInstanceOf(AboutSiteCard::class));
 
-        $administrator = new AboutSiteCardAdministrator($repository);
+        $administrator = new AboutSiteCardAdministrator($repository, new ContentPlacement(), new OrderAssigner());
 
-        $card = $administrator->create(Locale::FR, 'Architecture', 'Description.', 'layers', 0);
+        $card = $administrator->create(Locale::FR, 'Architecture', 'Description.', 'layers');
 
         self::assertSame('Architecture', $card->getTitle());
     }
@@ -34,9 +36,9 @@ final class AboutSiteCardAdministratorTest extends TestCase
         $repository->expects(self::once())->method('findOneById')->with($card->getId())->willReturn($card);
         $repository->expects(self::once())->method('save')->with($card);
 
-        $administrator = new AboutSiteCardAdministrator($repository);
+        $administrator = new AboutSiteCardAdministrator($repository, new ContentPlacement(), new OrderAssigner());
 
-        $updated = $administrator->update($card->getId(), 'Stack', 'New description.', 'server', 1);
+        $updated = $administrator->update($card->getId(), 'Stack', 'New description.', 'server', null);
 
         self::assertSame('Stack', $updated->getTitle());
     }
@@ -46,11 +48,11 @@ final class AboutSiteCardAdministratorTest extends TestCase
         $repository = self::createStub(AboutSiteCardRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
-        $administrator = new AboutSiteCardAdministrator($repository);
+        $administrator = new AboutSiteCardAdministrator($repository, new ContentPlacement(), new OrderAssigner());
 
         $this->expectException(AboutSiteCardNotFoundException::class);
 
-        $administrator->update(Uuid::v7(), 'x', 'x', 'x', 0);
+        $administrator->update(Uuid::v7(), 'x', 'x', 'x', null);
     }
 
     public function testDeleteRemovesCard(): void
@@ -61,7 +63,7 @@ final class AboutSiteCardAdministratorTest extends TestCase
         $repository->expects(self::once())->method('findOneById')->with($card->getId())->willReturn($card);
         $repository->expects(self::once())->method('remove')->with($card);
 
-        $administrator = new AboutSiteCardAdministrator($repository);
+        $administrator = new AboutSiteCardAdministrator($repository, new ContentPlacement(), new OrderAssigner());
 
         $administrator->delete($card->getId());
     }
@@ -71,7 +73,7 @@ final class AboutSiteCardAdministratorTest extends TestCase
         $repository = self::createStub(AboutSiteCardRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
-        $administrator = new AboutSiteCardAdministrator($repository);
+        $administrator = new AboutSiteCardAdministrator($repository, new ContentPlacement(), new OrderAssigner());
 
         $this->expectException(AboutSiteCardNotFoundException::class);
 

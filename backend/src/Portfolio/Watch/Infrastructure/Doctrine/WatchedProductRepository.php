@@ -45,6 +45,17 @@ class WatchedProductRepository extends ServiceEntityRepository implements Watche
         $this->getEntityManager()->flush();
     }
 
+    public function saveAll(array $products): void
+    {
+        $this->getEntityManager()->wrapInTransaction(function () use ($products): void {
+            foreach ($products as $product) {
+                $this->getEntityManager()->persist($product);
+            }
+
+            $this->getEntityManager()->flush();
+        });
+    }
+
     public function remove(WatchedProduct $product): void
     {
         $this->getEntityManager()->remove($product);

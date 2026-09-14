@@ -56,6 +56,23 @@ api_platform:
         # exception précise. Les champs "locale" des DTO de backoffice, eux,
         # sont déjà bornés en amont par #[Assert\Choice] (422, pas 404).
         App\Portfolio\Shared\Domain\Exception\InvalidLocaleException: 404
+        # Spec 0004 D3 : rattacher une entrée à un groupe de traduction. Le
+        # groupe qui porte déjà cette langue est un conflit avec l'existant
+        # (409), pas une saisie invalide — l'index unique
+        # (translation_group, locale) le refuserait de toute façon, mais en 500 ;
+        # un groupe qu'aucune entrée du périmètre ne porte, lui, est bien une
+        # saisie invalide (422). Les deux portent un `type` stable, le frontend
+        # n'a donc pas à lire le `detail` localisé.
+        App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException: 409
+        App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException: 422
+        # Spec 0004 D4 : PUT …/order exige l'ensemble exact des clés du
+        # périmètre. Une clé inconnue (ou dupliquée) et une clé manquante sont
+        # toutes deux une saisie invalide (422), pas une 404 ni un 409 : la
+        # ressource visée (l'entrée d'ordre) existe, c'est son contenu qui ne
+        # correspond plus au périmètre relu côté serveur — le frontend
+        # recharge la liste plutôt que de réessayer l'envoi automatiquement.
+        App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException: 422
+        App\Portfolio\Shared\Domain\Exception\IncompleteOrderException: 422
         App\Portfolio\Quality\Domain\Exception\QualityPrincipleNotFoundException: 404
         App\Portfolio\Quality\Domain\Exception\QualityTraitNotFoundException: 404
         App\Portfolio\About\Domain\Exception\AboutSettingsNotFoundException: 404

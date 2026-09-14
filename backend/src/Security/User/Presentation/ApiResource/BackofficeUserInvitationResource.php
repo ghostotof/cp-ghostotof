@@ -6,6 +6,7 @@ namespace App\Security\User\Presentation\ApiResource;
 
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Post;
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserInvitationProcessor;
 use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -33,7 +34,7 @@ final readonly class BackofficeUserInvitationResource
 {
     public function __construct(
         #[Assert\NotBlank]
-        #[Assert\Choice(choices: ['fr', 'en'])]
+        #[Assert\Choice(callback: [Locale::class, 'values'])]
         public string $locale = '',
     ) {
     }

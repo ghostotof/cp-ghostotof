@@ -52,17 +52,41 @@
       "anonymousCv": "CV without identity",
       "watch": "Watch"
     },
+    "order": {
+      "moveHandle": "Move: {label}",
+      "moved": "Moved to position {position} of {count}",
+      "status": {
+        "clean": "Order · up to date",
+        "dirty": "Order · modified, not saved"
+      },
+      "save": "Save order",
+      "cancel": "Cancel",
+      "errors": {
+        "stale-order": "The list changed in the meantime: the order was reloaded, try again.",
+        "unknown": "Saving the order failed. Please try again later."
+      },
+      "lockedHint": "Save or cancel the order first.",
+      "missingTranslation": "Missing translation",
+      "createVersion": "Create the {locale} version",
+      "columnHeader": "Order",
+      "leaveConfirm": "The modified order is not saved. Leaving this page will discard it. Continue?"
+    },
     "quality": {
-      "actions": "Actions",
       "save": "Save",
       "cancel": "Cancel",
       "delete": "Delete",
       "loading": "Loading…",
       "loadError": "Loading failed. Please try again later.",
+      "localeHelp": "Language of this entry: the one it will be saved in, and the one the translation assistant starts from. The table below shows every language.",
+      "translationOfLabel": "Version of",
+      "translationOfNone": "— none —",
+      "contentLabel": "Content",
       "errors": {
         "not-found": "This item no longer exists.",
         "validation": "The form contains errors. Please check the fields.",
-        "unknown": "Something went wrong. Please try again later."
+        "unknown": "Something went wrong. Please try again later.",
+        "translation-already-exists": "This content already has a version in that language.",
+        "unknown-translation-group": "The content to attach this version to no longer exists. Please reload the page."
       },
       "principle": {
         "listTitle": "Quality principles",
@@ -72,8 +96,7 @@
         "titleLabel": "Title",
         "descriptionLabel": "Description",
         "iconKeyLabel": "Icon",
-        "positionLabel": "Position",
-        "empty": "No principle registered for this language yet.",
+        "empty": "No principle registered yet.",
         "confirmDelete": "Delete principle \"{title}\"?"
       },
       "trait": {
@@ -82,8 +105,7 @@
         "edit": "Edit trait",
         "editAction": "Edit",
         "labelLabel": "Label",
-        "positionLabel": "Position",
-        "empty": "No trait registered for this language yet.",
+        "empty": "No trait registered yet.",
         "confirmDelete": "Delete trait \"{label}\"?"
       }
     },
@@ -94,13 +116,21 @@
       "delete": "Delete",
       "loading": "Loading…",
       "loadError": "Loading failed. Please try again later.",
+      "localeHelp": "Language of this entry: the one it will be saved in, and the one the translation assistant starts from. The table below shows every language.",
+      "translationOfLabel": "Version of",
+      "translationOfNone": "— none —",
+      "contentLabel": "Content",
       "errors": {
         "not-found": "This item no longer exists.",
         "validation": "The form contains errors. Please check the fields.",
-        "unknown": "Something went wrong. Please try again later."
+        "unknown": "Something went wrong. Please try again later.",
+        "translation-already-exists": "This content already has a version in that language.",
+        "unknown-translation-group": "The content to attach this version to no longer exists. Please reload the page."
       },
       "settings": {
         "title": "About page texts",
+        "localeLabel": "Language of the About page texts",
+        "localeHelp": "These texts are one record per language: switching language loads the other version. The cards below each carry their own.",
         "siteEyebrowLabel": "\"About this site\" section title",
         "meEyebrowLabel": "\"About me\" section title",
         "technicalSubtitleLabel": "\"Technically\" subtitle",
@@ -115,8 +145,7 @@
         "titleLabel": "Title",
         "descriptionLabel": "Description",
         "iconKeyLabel": "Icon",
-        "positionLabel": "Position",
-        "empty": "No card registered for this language yet.",
+        "empty": "No card registered yet.",
         "confirmDelete": "Delete card \"{title}\"?"
       },
       "meCard": {
@@ -131,8 +160,7 @@
         "titleLabel": "Title",
         "descriptionLabel": "Description",
         "iconKeyLabel": "Icon",
-        "positionLabel": "Position",
-        "empty": "No card registered for this language/category yet.",
+        "empty": "No card registered in this category yet.",
         "confirmDelete": "Delete card \"{title}\"?"
       }
     },
@@ -217,6 +245,9 @@
       "save": "Save",
       "cancel": "Cancel",
       "localeLabel": "Language",
+      "translationOfLabel": "Translation of",
+      "translationOfNone": "— none —",
+      "contentLabel": "Content",
       "titleLabel": "Title (the claim being made)",
       "projectLabel": "Project",
       "referenceLabel": "Reference",
@@ -224,8 +255,6 @@
       "summaryLabel": "Lede",
       "bodyLabel": "Argument",
       "bodyHelp": "Plain text. Separate paragraphs with a blank line; wrap a parameter name in backticks to render it as code.",
-      "positionLabel": "Position",
-      "actions": "Actions",
       "editAction": "Edit",
       "deleteAction": "Delete",
       "confirmDelete": "Delete contribution \"{title}\"?",
@@ -235,7 +264,9 @@
       "errors": {
         "not-found": "This contribution no longer exists.",
         "validation": "Some fields are invalid.",
-        "unknown": "An error occurred. Please try again later."
+        "unknown": "An error occurred. Please try again later.",
+        "translation-already-exists": "This content already has a version in that language.",
+        "unknown-translation-group": "The content to attach this version to no longer exists. Reload the page."
       }
     },
     "anonymousCv": {
@@ -246,13 +277,14 @@
       "save": "Save",
       "cancel": "Cancel",
       "localeLabel": "Language",
+      "translationOfLabel": "Translation of",
+      "translationOfNone": "— none —",
+      "contentLabel": "Content",
       "titleLabel": "Skill domain",
       "skillsLabel": "Skills (technologies, practices)",
       "yearsLabel": "Years of experience",
       "achievementsLabel": "Achievements",
       "achievementsHelp": "Required. What was achieved with this skill — years per technology are already public, achievements are what justify this tier. Paragraphs separated by a blank line.",
-      "positionLabel": "Position",
-      "actions": "Actions",
       "editAction": "Edit",
       "deleteAction": "Delete",
       "confirmDelete": "Delete section \"{title}\"?",
@@ -262,7 +294,9 @@
       "errors": {
         "not-found": "This section no longer exists.",
         "validation": "Some fields are invalid.",
-        "unknown": "An error occurred. Please try again later."
+        "unknown": "An error occurred. Please try again later.",
+        "translation-already-exists": "This content already has a version in that language.",
+        "unknown-translation-group": "The content to attach this version to no longer exists. Reload the page."
       }
     },
     "incidents": {
@@ -272,6 +306,9 @@
       "save": "Save",
       "cancel": "Cancel",
       "localeLabel": "Language",
+      "translationOfLabel": "Translation of",
+      "translationOfNone": "— none —",
+      "contentLabel": "Content",
       "titleLabel": "Title (what broke)",
       "versionLabel": "Version",
       "occurredAtLabel": "Date",
@@ -280,8 +317,6 @@
       "resolutionLabel": "Resolution",
       "invariantLabel": "Invariant (the rule learned)",
       "invariantHelp": "Required. This field is what separates an incident log from a list of failures: without a rule drawn from the outage, the entry does not belong here.",
-      "positionLabel": "Position",
-      "actions": "Actions",
       "editAction": "Edit",
       "deleteAction": "Delete",
       "confirmDelete": "Delete incident \"{title}\"?",
@@ -291,7 +326,9 @@
       "errors": {
         "not-found": "This incident no longer exists.",
         "validation": "Some fields are invalid.",
-        "unknown": "An error occurred. Please try again later."
+        "unknown": "An error occurred. Please try again later.",
+        "translation-already-exists": "This content already has a version in that language.",
+        "unknown-translation-group": "The content to attach this version to no longer exists. Reload the page."
       }
     },
     "translation": {
@@ -317,7 +354,6 @@
       "versionSourceLabel": "Version origin",
       "versionLabel": "Installed version",
       "versionFromRuntimeHelp": "The version is read straight from the process serving the site: it is not typed in.",
-      "positionLabel": "Position",
       "actions": "Actions",
       "editAction": "Edit",
       "deleteAction": "Delete",

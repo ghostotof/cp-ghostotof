@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Portfolio\About\Domain\Entity;
 
 use App\Portfolio\About\Infrastructure\Doctrine\AboutSiteCardRepository;
+use App\Portfolio\Shared\Domain\Orderable;
+use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -19,8 +21,9 @@ use Symfony\Component\Validator\Constraints as Assert;
  */
 #[ORM\Entity(repositoryClass: AboutSiteCardRepository::class)]
 #[ORM\Table(name: 'about_site_card')]
+#[ORM\UniqueConstraint(name: 'uniq_about_site_card_translation_group_locale', columns: ['translation_group', 'locale'])]
 #[ORM\Index(name: 'idx_about_site_card_locale', columns: ['locale'])]
-class AboutSiteCard
+class AboutSiteCard implements Orderable, TranslatableContent
 {
     /**
      * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
@@ -33,6 +36,16 @@ class AboutSiteCard
 
     #[ORM\Column(enumType: Locale::class, length: 2)]
     private Locale $locale;
+
+    /**
+     * Spec 0004 D1 : identifiant partagé par les versions d'un même contenu
+     * dans les différentes langues — deux lignes de même groupe sont le même
+     * contenu traduit. Ce n'est délibérément pas une entité : le jour où un
+     * besoin porte sur le groupe lui-même, cet UUID devient la clé primaire
+     * d'une table de contenu que ces lignes référencent déjà.
+     */
+    #[ORM\Column(type: UuidType::NAME)]
+    private Uuid $translationGroup;
 
     #[ORM\Column(length: 180)]
     #[Assert\NotBlank]
@@ -48,9 +61,16 @@ class AboutSiteCard
     #[ORM\Column]
     private int $position;
 
-    public function __construct(Locale $locale, string $title, string $description, ?string $iconKey, int $position)
-    {
+    public function __construct(
+        Locale $locale,
+        string $title,
+        string $description,
+        ?string $iconKey,
+        int $position,
+        ?Uuid $translationGroup = null,
+    ) {
         $this->id = Uuid::v7();
+        $this->translationGroup = $translationGroup ?? Uuid::v7();
         $this->locale = $locale;
         $this->title = $title;
         $this->description = $description;
@@ -88,11 +108,49 @@ class AboutSiteCard
         return $this->position;
     }
 
-    public function update(string $title, string $description, ?string $iconKey, int $position): void
+    public function update(string $title, string $description, ?string $iconKey): void
     {
         $this->title = $title;
         $this->description = $description;
         $this->iconKey = $iconKey;
+    }
+
+    public function getTranslationGroup(): Uuid
+    {
+        return $this->translationGroup;
+    }
+
+    /**
+     * Rattache cette entrée au groupe d'un contenu existant : elle en devient
+     * la version dans sa propre langue. L'index unique (translation_group,
+     * locale) refuse un groupe qui porte déjà cette langue.
+     */
+    public function attachToTranslationGroup(Uuid $translationGroup): void
+    {
+        $this->translationGroup = $translationGroup;
+    }
+
+    /**
+     * Détache l'entrée de ses traductions. La colonne étant NOT NULL, elle
+     * reçoit un groupe neuf plutôt que `null` : une entrée est toujours dans un
+     * groupe, seul son cardinal change.
+     */
+    public function detachFromTranslationGroup(): void
+    {
+        $this->translationGroup = Uuid::v7();
+    }
+
+    /**
+     * Spec 0004 D5 : la clé d'ordre est le groupe, pas l'id — toutes les
+     * langues d'un même contenu se déplacent donc ensemble.
+     */
+    public function orderingKey(): string
+    {
+        return $this->translationGroup->toRfc4122();
+    }
+
+    public function moveToPosition(int $position): void
+    {
         $this->position = $position;
     }
 }

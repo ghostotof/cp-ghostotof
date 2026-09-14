@@ -9,6 +9,7 @@ use App\Portfolio\Incident\Domain\Repository\IncidentRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -47,10 +48,31 @@ class IncidentRepository extends ServiceEntityRepository implements IncidentRepo
             ->getResult();
     }
 
+    public function findByTranslationGroup(Uuid $translationGroup): array
+    {
+        return $this->createQueryBuilder('incident')
+            ->andWhere('incident.translationGroup = :translationGroup')
+            ->setParameter('translationGroup', $translationGroup, UuidType::NAME)
+            ->orderBy('incident.locale', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
     public function save(Incident $incident): void
     {
         $this->getEntityManager()->persist($incident);
         $this->getEntityManager()->flush();
+    }
+
+    public function saveAll(array $incidents): void
+    {
+        $this->getEntityManager()->wrapInTransaction(function () use ($incidents): void {
+            foreach ($incidents as $incident) {
+                $this->getEntityManager()->persist($incident);
+            }
+
+            $this->getEntityManager()->flush();
+        });
     }
 
     public function remove(Incident $incident): void

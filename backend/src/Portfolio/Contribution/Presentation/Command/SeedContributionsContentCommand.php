@@ -8,6 +8,7 @@ use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
 use App\Portfolio\Contribution\Domain\Repository\ContributionRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Presentation\Command\GuardsExistingContent;
+use App\Shared\Presentation\Command\TranslationGroupIndex;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -51,15 +52,22 @@ final class SeedContributionsContentCommand extends Command
             return Command::SUCCESS;
         }
 
+        $translationGroups = new TranslationGroupIndex();
+
+        // Spec 0004 D3 : la purge précède désormais toute création, au lieu
+        // d'être faite langue par langue. Une entrée sans groupe se range en
+        // fin de périmètre, toutes langues confondues : les entrées d'une
+        // autre langue encore en place pendant la création décaleraient la
+        // numérotation d'autant, à chaque `--force`.
+        foreach ($this->contributionRepository->findAll() as $existing) {
+            $this->contributionRepository->remove($existing);
+        }
+
         foreach ($this->content() as $localeValue => $contributions) {
             $locale = Locale::from($localeValue);
 
-            foreach ($this->contributionRepository->findByLocale($locale) as $existing) {
-                $this->contributionRepository->remove($existing);
-            }
-
-            foreach ($contributions as $position => $contribution) {
-                $this->contributionAdministrator->create(
+            foreach ($contributions as $index => $contribution) {
+                $created = $this->contributionAdministrator->create(
                     $locale,
                     $contribution['title'],
                     $contribution['project'],
@@ -67,8 +75,10 @@ final class SeedContributionsContentCommand extends Command
                     $contribution['url'],
                     $contribution['summary'],
                     $contribution['body'],
-                    $position,
+                    $translationGroups->forIndex('contribution', $index),
                 );
+
+                $translationGroups->remember('contribution', $index, $created->getTranslationGroup());
             }
 
             $io->success(sprintf('[%s] %d contribution(s).', $localeValue, \count($contributions)));

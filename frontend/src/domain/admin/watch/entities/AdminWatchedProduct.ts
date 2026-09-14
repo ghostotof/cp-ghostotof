@@ -13,5 +13,6 @@ export interface AdminWatchedProduct {
   readonly versionSource: string
   /** Renseignée pour la seule source « manual », nulle pour les autres. */
   readonly version: string | null
+  /** Lecture seule (spec 0004, D3) : écrite par le seul endpoint d'ordre. */
   readonly position: number
 }

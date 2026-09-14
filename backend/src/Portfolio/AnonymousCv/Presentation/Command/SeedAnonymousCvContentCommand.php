@@ -8,6 +8,7 @@ use App\Portfolio\AnonymousCv\Application\AnonymousCvSectionAdministratorInterfa
 use App\Portfolio\AnonymousCv\Domain\Repository\AnonymousCvSectionRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Presentation\Command\GuardsExistingContent;
+use App\Shared\Presentation\Command\TranslationGroupIndex;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -57,22 +58,31 @@ final class SeedAnonymousCvContentCommand extends Command
             return Command::SUCCESS;
         }
 
+        $translationGroups = new TranslationGroupIndex();
+
+        // Spec 0004 D3 : la purge précède désormais toute création, au lieu
+        // d'être faite langue par langue. Une entrée sans groupe se range en
+        // fin de périmètre, toutes langues confondues : les entrées d'une
+        // autre langue encore en place pendant la création décaleraient la
+        // numérotation d'autant, à chaque `--force`.
+        foreach ($this->sectionRepository->findAll() as $existing) {
+            $this->sectionRepository->remove($existing);
+        }
+
         foreach ($this->content() as $localeValue => $sections) {
             $locale = Locale::from($localeValue);
 
-            foreach ($this->sectionRepository->findByLocale($locale) as $existing) {
-                $this->sectionRepository->remove($existing);
-            }
-
-            foreach ($sections as $position => $section) {
-                $this->sectionAdministrator->create(
+            foreach ($sections as $index => $section) {
+                $created = $this->sectionAdministrator->create(
                     $locale,
                     $section['title'],
                     $section['skills'],
                     $section['yearsOfExperience'],
                     $section['achievements'],
-                    $position,
+                    $translationGroups->forIndex('anonymous-cv-section', $index),
                 );
+
+                $translationGroups->remember('anonymous-cv-section', $index, $created->getTranslationGroup());
             }
 
             $io->success(sprintf('[%s] %d section(s) de CV sans identité.', $localeValue, \count($sections)));

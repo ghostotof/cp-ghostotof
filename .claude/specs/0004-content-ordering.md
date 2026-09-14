@@ -1,6 +1,6 @@
 # SPEC — Ordre des contenus par glisser-déposer et groupes de traduction (phase B)
 
-> Statut : **design validé en session le 2026-09-14**, à découper en tâches.
+> Statut : **livrée** — design validé en session le 2026-09-14, B1 à B12 (issues #141–#152, PR #155–#168) le même jour, release `v0.12.0`.
 > Dépend de la spec 0003 (clés primaires UUID), livrée et en production **avant** le début de cette
 > phase. Livraison prévue : `v0.12.0`.
 >
@@ -63,7 +63,7 @@ ils continuent de servir chaque locale triée par `position`.
 - **D2 — Rien ne câble le couple FR/EN.** Le champ « Version de » liste les entrées de **toute autre
   locale** dont le groupe n'a pas la locale du formulaire ; le tableau rend ses badges de langue
   depuis `SUPPORTED_LOCALES` ; les `#[Assert\Choice(choices: ['fr', 'en'])]` des DTO backoffice
-  pointent sur `Locale::cases()`. Une troisième langue est une troisième ligne par groupe.
+  pointent sur `Locale::values()` (les chaînes, pas les instances — `cases()` ferait refuser toute valeur). Une troisième langue est une troisième ligne par groupe.
 - **D3 — La position n'est jamais saisie ; l'endpoint d'ordre est son seul écrivain.** `position`
   sort des DTO d'écriture et des signatures `create`/`update`. Une entrée rattachée à un groupe
   **hérite de la position du groupe** ; une entrée sans groupe prend `max(position) + 1` de son
@@ -124,16 +124,17 @@ ils continuent de servir chaque locale triée par `position`.
 
 | # | Capacité | Dépend de | Livrable |
 |---|---|---|---|
-| B1 | Groupes : `translationGroup` sur les 8 entités (constructeur `?Uuid`, `attachToTranslationGroup`, `detachFromTranslationGroup`), interface `Orderable`, migration réversible avec appariement (§5), seeds, `Assert\Choice` sur `Locale::cases()` | spec 0003 | Migration jouée, `schema:validate` vert, seeds verts sur base vide |
+| B1 | Groupes : `translationGroup` sur les 8 entités (constructeur `?Uuid`, `attachToTranslationGroup`, `detachFromTranslationGroup`), interface `Orderable`, migration réversible avec appariement (§5), seeds, `Assert\Choice` sur `Locale::values()` | spec 0003 | Migration jouée, `schema:validate` vert, seeds verts sur base vide |
 | B2 | Écriture : `position` retirée des DTO/`create`/`update`, `translationGroup` nullable dans les DTO d'écriture, héritage de position (D3), `TranslationAlreadyExistsException` (409), DTO de lecture avec `translationGroup` | B1 | Tests fonctionnels CRUD des 8 ressources adaptés + cas 409 |
 | B3 | `OrderAssigner` + exceptions 422 + `reorder()` sur les 9 `Administrator` (transaction unique) | B1 | Tests unitaires du service |
 | B4 | Les 9 ressources `Backoffice<X>OrderResource` (`PUT …/order`, 204), Processors, `exception_to_status` | B3 | Tests fonctionnels par ressource (§4) |
 | B5 | Frontend, briques partagées : `domain/admin/shared/ordering/`, `useOrderDraft`, `useRowDragAndDrop`, `OrderHandle.vue`, `OrderToolbar.vue`, clés `admin.order.*` | B4 | Tests unitaires et de composant |
 | B6 | Première page complète : Incidents (entité, repository `reorder`, tableau groupé, « Version de », « Créer la version », assistant rattaché, garde de route) | B5 | Spec Vitest + axe, lint, build |
-| B7+ | Déroulé page par page, une PR chacune : Contributions, CV sans identité, Qualité (principes, traits), À propos (cartes site, cartes « moi » par catégorie), Watch (ids, sans groupe) | B6 | Mêmes critères que B6 |
-| B8 | Documentation et release : `CLAUDE.md`, spec 0002, `.gitignore` (`.superpowers/`), préprod vérifiée FR **et** EN, prod | B7 | `v0.12.0` en production |
+| B7–B11 | Déroulé page par page, une PR chacune : B7 Contributions, B8 CV sans identité, B9 Qualité (principes, traits), B10 À propos (cartes site, cartes « moi » par catégorie), B11 Watch (ids, sans groupe — et sa `position` sort du contrat d'écriture, oubli de B2) | B6 | Mêmes critères que B6 |
+| B12 | Documentation et release : `CLAUDE.md`, spec 0002, `.gitignore` (`.superpowers/`), préprod vérifiée FR **et** EN, prod | B11 | `v0.12.0` en production |
 
-B1 à B6 forment la première tranche verticale complète ; B7 n'ajoute que du câblage.
+B1 à B6 forment la première tranche verticale complète ; B7 à B11 n'ajoutent que du câblage
+(numérotation réelle des issues #141–#152 : la rédaction initiale s'arrêtait à « B8 »).
 
 ## 4. Critères d'acceptation
 
@@ -274,7 +275,8 @@ composer phpstan && composer rector && composer psalm
 make front-test && make front-lint && make front-build
 
 # Non-régression grep
-grep -rn 'positionLabel\|BaseNumberInput' frontend/src/presentation/pages/admin   # vide en fin de B7, sauf Watch si un champ y reste
+grep -rn 'positionLabel' frontend/src/presentation/pages/admin                    # vide en fin de B11
+grep -rn 'BaseNumberInput' frontend/src/presentation/pages/admin                  # 2 usages légitimes : années (CV sans identité, Technologies)
 grep -rn "'fr', 'en'" backend/src/*/*/Presentation/ApiResource                   # vide (D2)
 ```
 
@@ -347,6 +349,32 @@ l'extension à d'autres langues traitée par D2 et la voie A → B de D1 ; DnD n
 d'ordre à ensemble exact ; tableau « une ligne par groupe, langues empilées » choisi sur maquette
 (option A, dates sans retour à la ligne). Décision connexe prise pendant ce design et sortie en
 spec 0003, livrée avant : clés primaires UUID sur toutes les entités.
+
+**2026-09-14, livraison** — B1 à B12 sur une pile de PR (#155 → #168), une par tâche. Trois écarts
+avec la rédaction initiale, tous consignés dans le code :
+
+- **B2 ne couvrait que les huit ressources localisées** ; Watch acceptait encore `position` à
+  l'écriture. Corrigé en B11 : `WatchedProductAdministrator::create()` range en fin de catalogue,
+  `update()` ne déplace plus, DTO `writable: false`, un corps qui porte encore `position` est accepté
+  et ignoré (test fonctionnel).
+- **Une locale par formulaire** (revue B9) : un sélecteur de locale de page partagé par deux
+  formulaires écrasait silencieusement la locale d'une entrée en édition dans l'autre panneau. Les
+  pages Qualité et À propos ont chacune un sélecteur par formulaire ; celui en tête de la page À
+  propos ne pilote que le singleton des réglages.
+- **`BackofficeAboutMeCardResource.category`** bornée par `AboutMeCardCategory::values()` et non plus
+  par une liste littérale (D2, même règle que `Locale::values()`), fait en B12.
+
+Vérifié en fin de phase : `beforeunload` testé une fois (Incidents, avec `enableAutoUnmount` — une
+page laissée montée gardait son écouteur et faisait mentir le test) ; `debug:router | grep /order`
+liste neuf routes, aucune synthétisée ; `ApiRouteExposureTest` et `AccessControlAnchoringTest`
+inchangés et verts.
+
+**Déploiement** : la migration `Version20260914170000` est réversible, mais le rollout ordinaire ne
+suffit pas — le pipeline standard fait le rollout **avant** le Job de migration, et le nouveau code
+lit `translation_group` sur toutes les lectures publiques. `DEPLOY_MAINTENANCE_WINDOW=true` est donc
+requis pour `v0.12.0` (migration à zéro réplica, puis rollout), comme pour `v0.11.0`, et retiré
+après la prod. Backend et frontend se déploient ensemble : un `PUT` de l'ancien frontend, sans
+`translationGroup`, détacherait une traduction.
 
 **Audit de sensibilité avant publication** : aucun e-mail, aucune adresse, aucun nom de compte, aucun
 secret. Les titres d'incidents cités en exemple dans les maquettes sont ceux du contenu public déjà

@@ -4,12 +4,15 @@ import type {
   AdminQualityPrincipleRepository,
 } from '../../../domain/admin/quality/repositories/AdminQualityPrincipleRepository'
 import { AdminQualityError, type AdminQualityErrorReason } from '../../../domain/admin/quality/errors/AdminQualityError'
+import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderError'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
+import { STALE_ORDER_PROBLEM_TYPES, hasProblemType } from '../shared/orderProblems'
 
 interface BackofficeQualityPrincipleApiResponse {
   id: string
   locale: string
+  translationGroup: string
   title: string
   description: string
   iconKey: string
@@ -20,7 +23,7 @@ const BASE_PATH = '/api/backoffice/quality/principles'
 
 /**
  * Implémentation HTTP de AdminQualityPrincipleRepository, même pattern que
- * HttpAdminExperienceTechnologyRepository (BackofficeHttpClient).
+ * HttpAdminContributionRepository (BackofficeHttpClient).
  */
 export class HttpAdminQualityPrincipleRepository implements AdminQualityPrincipleRepository {
   private readonly client: BackofficeHttpClient
@@ -29,8 +32,9 @@ export class HttpAdminQualityPrincipleRepository implements AdminQualityPrincipl
     this.client = new BackofficeHttpClient(apiBaseUrl)
   }
 
-  async list(locale: Locale): Promise<readonly AdminQualityPrinciple[]> {
-    const response = await this.client.get(`${BASE_PATH}?${new URLSearchParams({ locale })}`)
+  /** Sans `?locale=` (spec 0004, D8) : le tableau du backoffice montre toutes les langues. */
+  async list(): Promise<readonly AdminQualityPrinciple[]> {
+    const response = await this.client.get(BASE_PATH)
 
     if (!response.ok) {
       throw await this.toError(response)
@@ -57,6 +61,14 @@ export class HttpAdminQualityPrincipleRepository implements AdminQualityPrincipl
     await this.mutate('DELETE', `${BASE_PATH}/${id}`)
   }
 
+  async reorder(keys: readonly string[]): Promise<void> {
+    const response = await this.client.mutate('PUT', `${BASE_PATH}/order`, { groups: keys })
+
+    if (!response.ok) {
+      throw await this.toOrderError(response)
+    }
+  }
+
   private async mutate(method: string, path: string, body?: unknown): Promise<Response> {
     const response = await this.client.mutate(method, path, body)
 
@@ -71,6 +83,7 @@ export class HttpAdminQualityPrincipleRepository implements AdminQualityPrincipl
     return {
       id: principle.id,
       locale: principle.locale as Locale,
+      translationGroup: principle.translationGroup,
       title: principle.title,
       description: principle.description,
       iconKey: principle.iconKey,
@@ -84,11 +97,34 @@ export class HttpAdminQualityPrincipleRepository implements AdminQualityPrincipl
     if (404 === response.status) {
       return new AdminQualityError('not-found', 'Quality principle not found')
     }
+
+    if (409 === response.status) {
+      return new AdminQualityError('translation-already-exists', violationsMessage(body, 'Translation already exists'))
+    }
+
     if (422 === response.status) {
-      const reason: AdminQualityErrorReason = 'validation'
+      const reason: AdminQualityErrorReason = hasProblemType(body, 'unknown-translation-group')
+        ? 'unknown-translation-group'
+        : 'validation'
+
       return new AdminQualityError(reason, violationsMessage(body))
     }
 
     return new AdminQualityError('unknown', `Request failed with status ${response.status}`)
+  }
+
+  /**
+   * L'endpoint d'ordre a son propre type d'erreur : `useOrderDraft` décide sur
+   * `stale-order` de recharger la liste, ce qu'aucun autre motif ne déclenche.
+   */
+  private async toOrderError(response: Response): Promise<AdminOrderError> {
+    const body = await this.client.parseProblem(response)
+
+    const isStale =
+      422 === response.status && STALE_ORDER_PROBLEM_TYPES.some((problemType) => hasProblemType(body, problemType))
+
+    return isStale
+      ? new AdminOrderError('stale-order', violationsMessage(body, 'Order is stale'))
+      : new AdminOrderError('unknown', `Reordering failed with status ${response.status}`)
   }
 }

@@ -9,6 +9,7 @@ use App\Portfolio\Contribution\Domain\Repository\ContributionRepositoryInterface
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -47,10 +48,31 @@ class ContributionRepository extends ServiceEntityRepository implements Contribu
             ->getResult();
     }
 
+    public function findByTranslationGroup(Uuid $translationGroup): array
+    {
+        return $this->createQueryBuilder('contribution')
+            ->andWhere('contribution.translationGroup = :translationGroup')
+            ->setParameter('translationGroup', $translationGroup, UuidType::NAME)
+            ->orderBy('contribution.locale', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
     public function save(Contribution $contribution): void
     {
         $this->getEntityManager()->persist($contribution);
         $this->getEntityManager()->flush();
+    }
+
+    public function saveAll(array $contributions): void
+    {
+        $this->getEntityManager()->wrapInTransaction(function () use ($contributions): void {
+            foreach ($contributions as $contribution) {
+                $this->getEntityManager()->persist($contribution);
+            }
+
+            $this->getEntityManager()->flush();
+        });
     }
 
     public function remove(Contribution $contribution): void

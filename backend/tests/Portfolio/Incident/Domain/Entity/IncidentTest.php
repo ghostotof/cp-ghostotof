@@ -7,6 +7,7 @@ namespace App\Tests\Portfolio\Incident\Domain\Entity;
 use App\Portfolio\Incident\Domain\Entity\Incident;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
 
 final class IncidentTest extends TestCase
@@ -86,7 +87,6 @@ final class IncidentTest extends TestCase
             'Nouvelle cause.',
             'Nouvelle résolution.',
             'Nouvel invariant.',
-            3,
         );
 
         self::assertSame('Nouveau titre', $incident->getTitle());
@@ -96,8 +96,97 @@ final class IncidentTest extends TestCase
         self::assertSame('Nouvelle cause.', $incident->getRootCause());
         self::assertSame('Nouvelle résolution.', $incident->getResolution());
         self::assertSame('Nouvel invariant.', $incident->getInvariant());
-        self::assertSame(3, $incident->getPosition());
+        // Spec 0004 D3 : `update()` ne touche plus à la position — elle ne se
+        // saisit pas, seuls le rattachement à un groupe et l'endpoint d'ordre
+        // l'écrivent.
+        self::assertSame(0, $incident->getPosition());
         // Changer la langue d'un incident revient à en créer un autre.
         self::assertSame(Locale::FR, $incident->getLocale());
+    }
+
+    /**
+     * Spec 0004 D1 : le groupe de traduction est un identifiant partagé, pas
+     * une entité. Une entrée construite sans groupe en reçoit un neuf — elle
+     * est donc toujours dans un groupe, fût-il d'une seule langue, ce qui
+     * permet à `translation_group` d'être NOT NULL.
+     */
+    public function testAnIncidentBuiltWithoutAGroupGetsAFreshTranslationGroup(): void
+    {
+        $first = $this->incident();
+        $second = $this->incident();
+
+        self::assertInstanceOf(UuidV7::class, $first->getTranslationGroup());
+        self::assertFalse($first->getTranslationGroup()->equals($second->getTranslationGroup()));
+    }
+
+    /**
+     * L'autre voie : la version EN d'un contenu reçoit le groupe de la version
+     * FR à la construction (c'est ce que font les commandes de peuplement).
+     */
+    public function testAnIncidentBuiltWithAGroupCarriesIt(): void
+    {
+        $group = Uuid::v7();
+
+        $incident = new Incident(
+            Locale::EN,
+            'RabbitMQ in CrashLoopBackOff',
+            'v0.5.0',
+            new \DateTimeImmutable('2026-09-03'),
+            'Contact form returning 500 for fifteen minutes.',
+            'The Erlang cookie became group-readable.',
+            'File mode fixed, hotfix v0.5.1.',
+            'A securityContext change on a stateful service needs a real preprod rollout.',
+            0,
+            $group,
+        );
+
+        self::assertTrue($group->equals($incident->getTranslationGroup()));
+    }
+
+    public function testAttachToTranslationGroupLinksTheEntryToAnExistingGroup(): void
+    {
+        $incident = $this->incident();
+        $group = Uuid::v7();
+
+        $incident->attachToTranslationGroup($group);
+
+        self::assertTrue($group->equals($incident->getTranslationGroup()));
+    }
+
+    /**
+     * Détacher ne remet pas le groupe à `null` — la colonne est NOT NULL : elle
+     * en reçoit un neuf, ce qui isole l'entrée de ses anciennes traductions.
+     */
+    public function testDetachFromTranslationGroupGivesAFreshGroup(): void
+    {
+        $incident = $this->incident();
+        $previous = $incident->getTranslationGroup();
+
+        $incident->detachFromTranslationGroup();
+
+        self::assertInstanceOf(UuidV7::class, $incident->getTranslationGroup());
+        self::assertFalse($previous->equals($incident->getTranslationGroup()));
+    }
+
+    /**
+     * Spec 0004 D5 : la clé d'ordre d'un contenu localisé est son groupe, pas
+     * son id — c'est ce qui fait qu'un déplacement suit le contenu dans toutes
+     * les langues.
+     */
+    public function testOrderingKeyIsTheTranslationGroupAndNotTheId(): void
+    {
+        $incident = $this->incident();
+
+        self::assertSame($incident->getTranslationGroup()->toRfc4122(), $incident->orderingKey());
+        self::assertNotSame($incident->getId()->toRfc4122(), $incident->orderingKey());
+    }
+
+    public function testMoveToPositionWritesThePosition(): void
+    {
+        $incident = $this->incident();
+
+        $incident->moveToPosition(4);
+
+        self::assertSame(4, $incident->getPosition());
     }
 }

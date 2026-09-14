@@ -9,6 +9,7 @@ use App\Portfolio\AnonymousCv\Domain\Repository\AnonymousCvSectionRepositoryInte
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -47,10 +48,31 @@ class AnonymousCvSectionRepository extends ServiceEntityRepository implements An
             ->getResult();
     }
 
+    public function findByTranslationGroup(Uuid $translationGroup): array
+    {
+        return $this->createQueryBuilder('section')
+            ->andWhere('section.translationGroup = :translationGroup')
+            ->setParameter('translationGroup', $translationGroup, UuidType::NAME)
+            ->orderBy('section.locale', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
     public function save(AnonymousCvSection $section): void
     {
         $this->getEntityManager()->persist($section);
         $this->getEntityManager()->flush();
+    }
+
+    public function saveAll(array $sections): void
+    {
+        $this->getEntityManager()->wrapInTransaction(function () use ($sections): void {
+            foreach ($sections as $section) {
+                $this->getEntityManager()->persist($section);
+            }
+
+            $this->getEntityManager()->flush();
+        });
     }
 
     public function remove(AnonymousCvSection $section): void

@@ -13,6 +13,7 @@ use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
 use App\Portfolio\Contribution\Presentation\ApiResource\BackofficeContributionResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @implements ProcessorInterface<BackofficeContributionResource, BackofficeContributionResource|null>
@@ -43,7 +44,7 @@ final readonly class BackofficeContributionProcessor implements ProcessorInterfa
                 $data->url,
                 $data->summary,
                 $data->body,
-                $data->position,
+                $this->translationGroup($data),
             );
         } elseif ($operation instanceof Post) {
             // Locale::from (et non fromString) : la valeur est déjà bornée en
@@ -58,12 +59,22 @@ final readonly class BackofficeContributionProcessor implements ProcessorInterfa
                 $data->url,
                 $data->summary,
                 $data->body,
-                $data->position,
+                $this->translationGroup($data),
             );
         } else {
             throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
         }
 
         return BackofficeContributionResource::fromEntity($contribution);
+    }
+
+    /**
+     * Le groupe est une chaîne RFC 4122 à la frontière, un Uuid dans le domaine
+     * (spec 0003 D7). `Uuid::fromString` accepte d'autres formats, mais
+     * `#[Assert\Uuid]` a déjà borné le champ en amont.
+     */
+    private function translationGroup(BackofficeContributionResource $data): ?Uuid
+    {
+        return null === $data->translationGroup ? null : Uuid::fromString($data->translationGroup);
     }
 }

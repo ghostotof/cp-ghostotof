@@ -7,6 +7,8 @@ namespace App\Portfolio\About\Application;
 use App\Portfolio\About\Domain\Entity\AboutSiteCard;
 use App\Portfolio\About\Domain\Exception\AboutSiteCardNotFoundException;
 use App\Portfolio\About\Domain\Repository\AboutSiteCardRepositoryInterface;
+use App\Portfolio\Shared\Domain\Service\ContentPlacement;
+use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Uid\Uuid;
 
@@ -14,19 +16,26 @@ final readonly class AboutSiteCardAdministrator implements AboutSiteCardAdminist
 {
     public function __construct(
         private AboutSiteCardRepositoryInterface $aboutSiteCardRepository,
+        private ContentPlacement $contentPlacement,
+        private OrderAssigner $orderAssigner,
     ) {
     }
 
-    public function create(Locale $locale, string $title, string $description, ?string $iconKey, int $position): AboutSiteCard
-    {
-        $card = new AboutSiteCard($locale, $title, $description, $iconKey, $position);
+    public function create(
+        Locale $locale,
+        string $title,
+        string $description,
+        ?string $iconKey,
+        ?Uuid $translationGroup = null,
+    ): AboutSiteCard {
+        $card = new AboutSiteCard($locale, $title, $description, $iconKey, $this->positionFor($locale, $translationGroup), $translationGroup);
 
         $this->aboutSiteCardRepository->save($card);
 
         return $card;
     }
 
-    public function update(Uuid $id, string $title, string $description, ?string $iconKey, int $position): AboutSiteCard
+    public function update(Uuid $id, string $title, string $description, ?string $iconKey, ?Uuid $translationGroup): AboutSiteCard
     {
         $card = $this->aboutSiteCardRepository->findOneById($id);
 
@@ -34,7 +43,12 @@ final readonly class AboutSiteCardAdministrator implements AboutSiteCardAdminist
             throw AboutSiteCardNotFoundException::forId($id);
         }
 
-        $card->update($title, $description, $iconKey, $position);
+        $this->contentPlacement->reattach(
+            $card,
+            $translationGroup,
+            $this->aboutSiteCardRepository->findByTranslationGroup($translationGroup ?? $card->getTranslationGroup()),
+        );
+        $card->update($title, $description, $iconKey);
         $this->aboutSiteCardRepository->save($card);
 
         return $card;
@@ -49,5 +63,32 @@ final readonly class AboutSiteCardAdministrator implements AboutSiteCardAdminist
         }
 
         $this->aboutSiteCardRepository->remove($card);
+    }
+
+    public function reorder(array $keys): void
+    {
+        $scope = $this->aboutSiteCardRepository->findAll();
+
+        $this->orderAssigner->assign($scope, $keys);
+
+        $this->aboutSiteCardRepository->saveAll($scope);
+    }
+
+    /**
+     * Spec 0004 D3 : sans groupe, l'entrée se range en fin de périmètre
+     * (toutes langues confondues) ; avec un groupe, elle hérite de sa position.
+     * Le périmètre n'est chargé que dans la première branche.
+     */
+    private function positionFor(Locale $locale, ?Uuid $translationGroup): int
+    {
+        if (null === $translationGroup) {
+            return $this->contentPlacement->atEndOf($this->aboutSiteCardRepository->findAll());
+        }
+
+        return $this->contentPlacement->inGroup(
+            $translationGroup,
+            $locale,
+            $this->aboutSiteCardRepository->findByTranslationGroup($translationGroup),
+        );
     }
 }

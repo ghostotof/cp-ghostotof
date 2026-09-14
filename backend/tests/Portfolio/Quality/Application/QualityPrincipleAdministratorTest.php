@@ -8,6 +8,8 @@ use App\Portfolio\Quality\Application\QualityPrincipleAdministrator;
 use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
 use App\Portfolio\Quality\Domain\Exception\QualityPrincipleNotFoundException;
 use App\Portfolio\Quality\Domain\Repository\QualityPrincipleRepositoryInterface;
+use App\Portfolio\Shared\Domain\Service\ContentPlacement;
+use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
@@ -19,9 +21,9 @@ final class QualityPrincipleAdministratorTest extends TestCase
         $repository = $this->createMock(QualityPrincipleRepositoryInterface::class);
         $repository->expects(self::once())->method('save')->with(self::isInstanceOf(QualityPrinciple::class));
 
-        $administrator = new QualityPrincipleAdministrator($repository);
+        $administrator = new QualityPrincipleAdministrator($repository, new ContentPlacement(), new OrderAssigner());
 
-        $principle = $administrator->create(Locale::FR, 'DDD', 'Description.', 'boxes', 0);
+        $principle = $administrator->create(Locale::FR, 'DDD', 'Description.', 'boxes');
 
         self::assertSame('DDD', $principle->getTitle());
     }
@@ -34,12 +36,15 @@ final class QualityPrincipleAdministratorTest extends TestCase
         $repository->expects(self::once())->method('findOneById')->with($principle->getId())->willReturn($principle);
         $repository->expects(self::once())->method('save')->with($principle);
 
-        $administrator = new QualityPrincipleAdministrator($repository);
+        $administrator = new QualityPrincipleAdministrator($repository, new ContentPlacement(), new OrderAssigner());
 
-        $updated = $administrator->update($principle->getId(), 'SOLID', 'Description mise à jour.', 'columns-3', 1);
+        $updated = $administrator->update($principle->getId(), 'SOLID', 'Description mise à jour.', 'columns-3', null);
 
         self::assertSame('SOLID', $updated->getTitle());
-        self::assertSame(1, $updated->getPosition());
+        // Spec 0004 D3 : `update` ne touche plus à la position — elle ne se
+        // saisit pas. Seuls un rattachement à un groupe et l'endpoint d'ordre
+        // l'écrivent.
+        self::assertSame(0, $updated->getPosition());
     }
 
     public function testUpdateThrowsWhenPrincipleNotFound(): void
@@ -47,11 +52,11 @@ final class QualityPrincipleAdministratorTest extends TestCase
         $repository = self::createStub(QualityPrincipleRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
-        $administrator = new QualityPrincipleAdministrator($repository);
+        $administrator = new QualityPrincipleAdministrator($repository, new ContentPlacement(), new OrderAssigner());
 
         $this->expectException(QualityPrincipleNotFoundException::class);
 
-        $administrator->update(Uuid::v7(), 'Titre', 'Description', 'icon', 0);
+        $administrator->update(Uuid::v7(), 'Titre', 'Description', 'icon', null);
     }
 
     public function testDeleteRemovesPrinciple(): void
@@ -62,7 +67,7 @@ final class QualityPrincipleAdministratorTest extends TestCase
         $repository->expects(self::once())->method('findOneById')->with($principle->getId())->willReturn($principle);
         $repository->expects(self::once())->method('remove')->with($principle);
 
-        $administrator = new QualityPrincipleAdministrator($repository);
+        $administrator = new QualityPrincipleAdministrator($repository, new ContentPlacement(), new OrderAssigner());
 
         $administrator->delete($principle->getId());
     }
@@ -72,7 +77,7 @@ final class QualityPrincipleAdministratorTest extends TestCase
         $repository = self::createStub(QualityPrincipleRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
-        $administrator = new QualityPrincipleAdministrator($repository);
+        $administrator = new QualityPrincipleAdministrator($repository, new ContentPlacement(), new OrderAssigner());
 
         $this->expectException(QualityPrincipleNotFoundException::class);
 

@@ -20,13 +20,18 @@ export interface UseAdminAnonymousCvSectionsResult {
   create: (input: AdminAnonymousCvSectionInput) => Promise<void>
   update: (id: string, input: AdminAnonymousCvSectionInput) => Promise<void>
   remove: (id: string) => Promise<void>
+  reorder: (keys: readonly string[]) => Promise<void>
 }
 
 /**
- * Même forme que useAdminIncidents : pas de dépendance à useI18n(), la page
- * traduit `errorMessage.reason`. `hasError` couvre l'échec du chargement
- * initial ; `errorMessage` celui d'une mutation — distincts, pour ne pas
- * masquer une liste chargée derrière une erreur de formulaire.
+ * Pas de dépendance à useI18n() (cf. useAdminContributions) : la page
+ * appelante traduit `errorMessage.reason`, ce qui garde ce composable
+ * testable sans instance i18n.
+ *
+ * `hasError` reflète un échec du chargement initial de la liste (affichage
+ * plein écran) ; `errorMessage` reflète l'échec d'une mutation ponctuelle
+ * (affiché près du formulaire) — distincts pour ne pas masquer une liste déjà
+ * chargée derrière une erreur transitoire de formulaire.
  */
 export function useAdminAnonymousCvSections(): UseAdminAnonymousCvSectionsResult {
   const repository = inject(ADMIN_ANONYMOUS_CV_SECTION_REPOSITORY)
@@ -79,7 +84,16 @@ export function useAdminAnonymousCvSections(): UseAdminAnonymousCvSectionsResult
 
   const remove = (id: string): Promise<void> => runMutation(() => repository.remove(id))
 
+  /**
+   * Volontairement hors de `runMutation` : ni rechargement ni absorption de
+   * l'erreur ici. `useOrderDraft` recharge lui-même après un enregistrement
+   * réussi, et il a besoin de recevoir l'`AdminOrderError` telle quelle pour
+   * distinguer un ordre obsolète (D4) d'une panne — la convertir en
+   * `AdminAnonymousCvSectionError` lui retirerait cette information.
+   */
+  const reorder = (keys: readonly string[]): Promise<void> => repository.reorder(keys)
+
   void load()
 
-  return { sections, isLoading, hasError, errorMessage, load, create, update, remove }
+  return { sections, isLoading, hasError, errorMessage, load, create, update, remove, reorder }
 }

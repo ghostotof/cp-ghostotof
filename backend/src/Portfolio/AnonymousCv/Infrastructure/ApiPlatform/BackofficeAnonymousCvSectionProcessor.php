@@ -13,6 +13,7 @@ use App\Portfolio\AnonymousCv\Application\AnonymousCvSectionAdministratorInterfa
 use App\Portfolio\AnonymousCv\Presentation\ApiResource\BackofficeAnonymousCvSectionResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @implements ProcessorInterface<BackofficeAnonymousCvSectionResource, BackofficeAnonymousCvSectionResource|null>
@@ -41,7 +42,7 @@ final readonly class BackofficeAnonymousCvSectionProcessor implements ProcessorI
                 $data->skills,
                 $data->yearsOfExperience,
                 $data->achievements,
-                $data->position,
+                $this->translationGroup($data),
             );
         } elseif ($operation instanceof Post) {
             // Locale::from (et non fromString) : la valeur est déjà bornée en
@@ -54,12 +55,22 @@ final readonly class BackofficeAnonymousCvSectionProcessor implements ProcessorI
                 $data->skills,
                 $data->yearsOfExperience,
                 $data->achievements,
-                $data->position,
+                $this->translationGroup($data),
             );
         } else {
             throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
         }
 
         return BackofficeAnonymousCvSectionResource::fromEntity($section);
+    }
+
+    /**
+     * Le groupe est une chaîne RFC 4122 à la frontière, un Uuid dans le domaine
+     * (spec 0003 D7). `Uuid::fromString` accepte d'autres formats, mais
+     * `#[Assert\Uuid]` a déjà borné le champ en amont.
+     */
+    private function translationGroup(BackofficeAnonymousCvSectionResource $data): ?Uuid
+    {
+        return null === $data->translationGroup ? null : Uuid::fromString($data->translationGroup);
     }
 }

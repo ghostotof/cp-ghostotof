@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Portfolio\AnonymousCv\Presentation\ApiResource;
 
+use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Delete;
 use ApiPlatform\Metadata\Get;
@@ -13,6 +14,7 @@ use ApiPlatform\Metadata\Put;
 use App\Portfolio\AnonymousCv\Domain\Entity\AnonymousCvSection;
 use App\Portfolio\AnonymousCv\Infrastructure\ApiPlatform\BackofficeAnonymousCvSectionProcessor;
 use App\Portfolio\AnonymousCv\Infrastructure\ApiPlatform\BackofficeAnonymousCvSectionProvider;
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -58,8 +60,18 @@ final class BackofficeAnonymousCvSectionResource
     public function __construct(
         public ?string $id = null,
         #[Assert\NotBlank]
-        #[Assert\Choice(choices: ['fr', 'en'])]
+        #[Assert\Choice(callback: [Locale::class, 'values'])]
         public ?string $locale = null,
+        /**
+         * Spec 0004 D1 : groupe de traduction, en RFC 4122 — les entrées qui le
+         * partagent sont le même contenu dans des langues différentes.
+         *
+         * En écriture (D3) : à la création, le groupe de l'entrée dont celle-ci
+         * est la traduction, ou `null` pour un contenu neuf ; sur un `PUT`,
+         * `null` détache l'entrée de ses traductions.
+         */
+        #[Assert\Uuid]
+        public ?string $translationGroup = null,
         #[Assert\NotBlank]
         #[Assert\Length(max: 255)]
         public string $title = '',
@@ -69,7 +81,14 @@ final class BackofficeAnonymousCvSectionResource
         public int $yearsOfExperience = 0,
         #[Assert\NotBlank]
         public string $achievements = '',
-        #[Assert\PositiveOrZero]
+        /**
+         * Spec 0004 D3 : lecture seule. La position ne se saisit plus — elle
+         * se déduit du groupe ou de la fin du périmètre, et seul l'endpoint
+         * d'ordre l'écrira. `writable: false` la retire du contrat d'écriture
+         * (et de l'OpenAPI) sans pour autant refuser un corps qui en porterait
+         * encore une : elle est simplement ignorée.
+         */
+        #[ApiProperty(writable: false)]
         public int $position = 0,
     ) {
     }
@@ -83,6 +102,7 @@ final class BackofficeAnonymousCvSectionResource
         return new self(
             id: $section->getId()->toRfc4122(),
             locale: $section->getLocale()->value,
+            translationGroup: $section->getTranslationGroup()->toRfc4122(),
             title: $section->getTitle(),
             skills: $section->getSkills(),
             yearsOfExperience: $section->getYearsOfExperience(),

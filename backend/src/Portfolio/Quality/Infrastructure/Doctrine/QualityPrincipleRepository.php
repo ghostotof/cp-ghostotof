@@ -9,6 +9,7 @@ use App\Portfolio\Quality\Domain\Repository\QualityPrincipleRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -47,10 +48,31 @@ class QualityPrincipleRepository extends ServiceEntityRepository implements Qual
             ->getResult();
     }
 
+    public function findByTranslationGroup(Uuid $translationGroup): array
+    {
+        return $this->createQueryBuilder('principle')
+            ->andWhere('principle.translationGroup = :translationGroup')
+            ->setParameter('translationGroup', $translationGroup, UuidType::NAME)
+            ->orderBy('principle.locale', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
     public function save(QualityPrinciple $principle): void
     {
         $this->getEntityManager()->persist($principle);
         $this->getEntityManager()->flush();
+    }
+
+    public function saveAll(array $principles): void
+    {
+        $this->getEntityManager()->wrapInTransaction(function () use ($principles): void {
+            foreach ($principles as $principle) {
+                $this->getEntityManager()->persist($principle);
+            }
+
+            $this->getEntityManager()->flush();
+        });
     }
 
     public function remove(QualityPrinciple $principle): void

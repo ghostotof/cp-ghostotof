@@ -70,45 +70,51 @@ Reprises des specs (§2), rappelées ici parce qu'elles décident de l'ordre :
 ### Checkpoint A2 — parcours complet
 - [x] `make front-test`, `make front-lint`, `make front-build` verts
 - [x] Dans un vrai navigateur, stack dev migrée : lister / éditer / supprimer sur une ressource admin, URLs en UUID — reste à faire par Christophe — fait le 2026-09-14 (incidents : liste, création, édition PUT, suppression DELETE, URLs en UUID)
-- [ ] Revue avec Christophe avant la release : la migration est irréversible
+- [x] Revue avec Christophe avant la release : la migration est irréversible — feu vert et release demandés le 2026-09-14
 
 ### Documentation et release
-- [ ] Task 8 — `CLAUDE.md`, spec, notes de release ; préprod vérifiée (rollout, Job `migrate`, backoffice, invitation, endpoints publics) **puis** prod — [#127](https://github.com/ghostotof/cp-ghostotof/issues/127)
+- [x] Task 8 — `CLAUDE.md`, spec, notes de release ; préprod vérifiée (rollout, Job `migrate`, backoffice, invitation, endpoints publics) **puis** prod — [#127](https://github.com/ghostotof/cp-ghostotof/issues/127)
 
 ### Checkpoint A3 — `v0.11.0` en production
-- [ ] Pipeline verte de bout en bout, release GitHub publiée avec le corps des notes
-- [ ] `messenger:failed:show` vide avant et après le déploiement prod
-- [ ] Feu vert pour ouvrir les issues de la phase B
+- [x] Pipeline verte de bout en bout, release GitHub publiée avec le corps des notes (run 34850406964, 2026-09-14)
+- [x] Files Messenger prod vides avant (RabbitMQ 0, `messenger_messages` 0) et après le déploiement
+- [x] Feu vert pour ouvrir les issues de la phase B — `v0.11.0` en production le 2026-09-14
 
-## Task List — Phase B (spec 0004, `v0.12.0`) — index prévisionnel, issues à ouvrir après le checkpoint A3
+## Task List — Phase B (spec 0004, `v0.12.0`) — issues ouvertes le 2026-09-14 (label `spec-0004`), après `v0.11.0` en prod et #137 livrée
 
 Ordre de construction de la spec (§3), une PR par tâche, label `spec-0004` :
 
 ### Backend
-- [ ] Task B1 — Groupes de traduction : `translationGroup` sur les 8 entités localisées, interface `Orderable`, migration réversible avec appariement, seeds, `Assert\Choice` sur `Locale::cases()`
-- [ ] Task B2 — Écriture : `position` retirée des DTO/`create`/`update`, `translationGroup` nullable, héritage de position, `TranslationAlreadyExistsException` (409)
-- [ ] Task B3 — `OrderAssigner` (`Portfolio/Shared`), exceptions 422, `reorder()` sur les 9 `Administrator` + tests unitaires
-- [ ] Task B4 — Les 9 ressources `Backoffice<X>OrderResource` (`PUT …/order`, 204) + tests fonctionnels (ordre relu sur backoffice **et** endpoints publics FR/EN)
+- [x] Task B1 — Groupes de traduction : `translationGroup` sur les 8 entités localisées, interface `Orderable`, migration réversible avec appariement, seeds, `Assert\Choice` sur `Locale::cases()` — [#141](https://github.com/ghostotof/cp-ghostotof/issues/141)
+- [x] Task B2 — Écriture : `position` retirée des DTO/`create`/`update`, `translationGroup` nullable, héritage de position, `TranslationAlreadyExistsException` (409) — [#142](https://github.com/ghostotof/cp-ghostotof/issues/142)
+- [x] Task B3 — `OrderAssigner` (`Portfolio/Shared`), exceptions 422, `reorder()` sur les 9 `Administrator` + tests unitaires — [#143](https://github.com/ghostotof/cp-ghostotof/issues/143)
+- [x] Task B4 — Les 9 ressources `Backoffice<X>OrderResource` (`PUT …/order`, 204) + tests fonctionnels (ordre relu sur backoffice **et** endpoints publics FR/EN) — [#144](https://github.com/ghostotof/cp-ghostotof/issues/144)
 
 ### Checkpoint B1 — contrat d'ordre figé et cloisonné
-- [ ] `ApiRouteExposureTest` inchangé et vert ; `debug:router | grep /order` : neuf routes, aucune synthétisée
-- [ ] Un réordonnancement backoffice se lit sur `/api/<x>/fr` **et** `/api/<x>/en`
+- [x] `ApiRouteExposureTest` inchangé et vert ; `debug:router | grep /order` : neuf routes, aucune synthétisée — vérifié le 2026-09-14 sur c30ab99
+- [x] Un réordonnancement backoffice se lit sur `/api/<x>/fr` **et** `/api/<x>/en` — tests fonctionnels des 8 ressources localisées (titres ordonnés), confirmés en revue
 
 ### Frontend
-- [ ] Task B5 — Briques partagées : `domain/admin/shared/ordering/`, `useOrderDraft`, `useRowDragAndDrop`, `OrderHandle.vue`, `OrderToolbar.vue`, clés `admin.order.*`
-- [ ] Task B6 — Page Incidents complète : tableau groupé, « Version de », « Créer la version », assistant rattaché, garde de route, axe
+- [x] Task B5 — Briques partagées : `domain/admin/shared/ordering/`, `useOrderDraft`, `useRowDragAndDrop`, `OrderHandle.vue`, `OrderToolbar.vue`, clés `admin.order.*` — [#145](https://github.com/ghostotof/cp-ghostotof/issues/145)
+- [x] Task B6 — Page Incidents complète : tableau groupé, « Version de », « Créer la version », assistant rattaché, garde de route, axe — [#146](https://github.com/ghostotof/cp-ghostotof/issues/146)
 
 ### Checkpoint B2 — première tranche verticale dans un vrai navigateur
-- [ ] Glisser, ↑/↓ au clavier, enregistrer, 422 obsolète, « Créer la version EN », assistant → groupe
-- [ ] Revue avec Christophe avant de dérouler les autres pages
+- [x] Glisser, ↑/↓ au clavier, enregistrer, 422 obsolète, « Créer la version EN », assistant → groupe — contrôle Chrome fait le 2026-09-14 (parcours complet, ordre relu FR et EN)
+- [x] Revue avec Christophe avant de dérouler les autres pages — « enchaîne sur la B7 dès que la revue est propre » (2026-09-14)
 
 ### Les autres pages, une PR chacune
-- [ ] Task B7 — Contributions
-- [ ] Task B8 — CV sans identité
-- [ ] Task B9 — Qualité (principes, traits ; le tableau affiche toutes les langues)
-- [ ] Task B10 — À propos (cartes site ; cartes moi par catégorie)
-- [ ] Task B11 — Watch (ids, sans groupe)
-- [ ] Task B12 — Documentation (`CLAUDE.md`, spec 0002 amendée « le groupe est recopié »), release `v0.12.0`, préprod vérifiée FR et EN
+- [x] Task B7 — Contributions — [#147](https://github.com/ghostotof/cp-ghostotof/issues/147)
+- [x] Task B8 — CV sans identité — [#148](https://github.com/ghostotof/cp-ghostotof/issues/148)
+- [x] Task B9 — Qualité (principes, traits ; le tableau affiche toutes les langues) — [#149](https://github.com/ghostotof/cp-ghostotof/issues/149)
+- [x] Task B10 — À propos (cartes site ; cartes moi par catégorie) — [#150](https://github.com/ghostotof/cp-ghostotof/issues/150)
+- [x] Task B11 — Watch (ids, sans groupe ; la position sort aussi du contrat d'écriture backend, oubli de B2) — [#151](https://github.com/ghostotof/cp-ghostotof/issues/151)
+- [x] Task B12 — Documentation (`CLAUDE.md`, spec 0002 amendée « le groupe est recopié », spec 0004 §10, `Choice` de la catégorie sur l'enum, test `beforeunload`) — [#152](https://github.com/ghostotof/cp-ghostotof/issues/152)
+
+### Checkpoint B3 — `v0.12.0` en production
+- [ ] Pile #155 → #168 mergée dans `develop` dans l'ordre, avec retargeting avant suppression de branche ; `develop` → `main`
+- [ ] `DEPLOY_MAINTENANCE_WINDOW=true` posée **avant** le tag (le rollout standard précède la migration, cf. spec 0004 §10), retirée après la prod
+- [ ] Tag `v0.12.0 --cleanup=verbatim` avec les notes ; préprod : migration jouée, appariement vérifié sur les données seedées (un groupe par contenu bilingue), un réordonnancement relu sur `/api/<x>/fr` **et** `/api/<x>/en`
+- [ ] Prod : migration jouée, appariement vérifié (orphelins signalés), pages publiques inchangées ; release publiée par `create-release` — [#152](https://github.com/ghostotof/cp-ghostotof/issues/152)
 
 ## Risks and Mitigations
 
@@ -120,7 +126,7 @@ Ordre de construction de la spec (§3), une PR par tâche, label `spec-0004` :
 | `uuidv7(interval)` absent (image Postgres < 18 en dev ou en CI) | Medium | `POSTGRES_TAG=18.6-alpine` partout (dev, CI, k8s) ; la Task 2 échoue immédiatement en dev si ce n'est pas le cas |
 | `ApiRouteExposureTest` perd sa portée sans qu'on le voie (404 routeur pris pour un refus) | High (le garde-fou de sécurité devient muet) | Placeholder UUID dès la Task 1, et le test assert des 401/403 précis, jamais « non 200 » |
 | Rector réécrit les constructeurs ou le mapping | Low | `composer rector` à chaque PR ; `rector.php` skip ciblé si nécessaire, jamais de baseline PHPStan |
-| Phase B : appariement de migration incorrect sur des données éditées en prod | Low (aucune perte, un lien faux) | Appariement seulement sur couple unique, sinon groupe propre ; « Version de » permet de corriger depuis l'admin |
+| Phase B : appariement de migration incorrect sur des données éditées en prod (10 incidents, 1 compte en prod au 2026-09-14) | Low (aucune perte, un lien faux) | Appariement seulement sur couple unique, sinon groupe propre ; « Version de » permet de corriger depuis l'admin |
 
 ## Open Questions
 

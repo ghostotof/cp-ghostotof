@@ -52,17 +52,41 @@
       "anonymousCv": "CV sans identité",
       "watch": "Veille"
     },
+    "order": {
+      "moveHandle": "Déplacer : {label}",
+      "moved": "Déplacé en position {position} sur {count}",
+      "status": {
+        "clean": "Ordre · à jour",
+        "dirty": "Ordre · modifié, non enregistré"
+      },
+      "save": "Enregistrer l'ordre",
+      "cancel": "Annuler",
+      "errors": {
+        "stale-order": "La liste a changé entre-temps : l'ordre a été rechargé, recommencez.",
+        "unknown": "L'enregistrement de l'ordre a échoué. Réessayez plus tard."
+      },
+      "lockedHint": "Enregistrez ou annulez l'ordre d'abord.",
+      "missingTranslation": "Traduction manquante",
+      "createVersion": "Créer la version {locale}",
+      "columnHeader": "Ordre",
+      "leaveConfirm": "L'ordre modifié n'est pas enregistré. Quitter cette page l'abandonnera. Continuer ?"
+    },
     "quality": {
-      "actions": "Actions",
       "save": "Enregistrer",
       "cancel": "Annuler",
       "delete": "Supprimer",
       "loading": "Chargement…",
       "loadError": "Le chargement a échoué. Réessayez plus tard.",
+      "localeHelp": "Langue de cette entrée : c'est elle qui sera enregistrée, et celle sur laquelle porte l'assistant de traduction. Le tableau ci-dessous, lui, affiche toutes les langues.",
+      "translationOfLabel": "Version de",
+      "translationOfNone": "— aucune —",
+      "contentLabel": "Contenu",
       "errors": {
         "not-found": "Cet élément n'existe plus.",
         "validation": "Le formulaire contient des erreurs. Vérifiez les champs.",
-        "unknown": "Une erreur est survenue. Réessayez plus tard."
+        "unknown": "Une erreur est survenue. Réessayez plus tard.",
+        "translation-already-exists": "Ce contenu a déjà une version dans cette langue.",
+        "unknown-translation-group": "Le contenu auquel rattacher cette version n'existe plus. Rechargez la page."
       },
       "principle": {
         "listTitle": "Principes de qualité",
@@ -72,8 +96,7 @@
         "titleLabel": "Titre",
         "descriptionLabel": "Description",
         "iconKeyLabel": "Icône",
-        "positionLabel": "Position",
-        "empty": "Aucun principe enregistré pour cette langue.",
+        "empty": "Aucun principe enregistré.",
         "confirmDelete": "Supprimer le principe « {title} » ?"
       },
       "trait": {
@@ -82,8 +105,7 @@
         "edit": "Modifier le trait",
         "editAction": "Modifier",
         "labelLabel": "Libellé",
-        "positionLabel": "Position",
-        "empty": "Aucun trait enregistré pour cette langue.",
+        "empty": "Aucun trait enregistré.",
         "confirmDelete": "Supprimer le trait « {label} » ?"
       }
     },
@@ -94,13 +116,21 @@
       "delete": "Supprimer",
       "loading": "Chargement…",
       "loadError": "Le chargement a échoué. Réessayez plus tard.",
+      "localeHelp": "Langue de cette entrée : c'est elle qui sera enregistrée, et celle sur laquelle porte l'assistant de traduction. Le tableau ci-dessous, lui, affiche toutes les langues.",
+      "translationOfLabel": "Version de",
+      "translationOfNone": "— aucune —",
+      "contentLabel": "Contenu",
       "errors": {
         "not-found": "Cet élément n'existe plus.",
         "validation": "Le formulaire contient des erreurs. Vérifiez les champs.",
-        "unknown": "Une erreur est survenue. Réessayez plus tard."
+        "unknown": "Une erreur est survenue. Réessayez plus tard.",
+        "translation-already-exists": "Ce contenu a déjà une version dans cette langue.",
+        "unknown-translation-group": "Le contenu auquel rattacher cette version n'existe plus. Rechargez la page."
       },
       "settings": {
         "title": "Textes de la page À propos",
+        "localeLabel": "Langue des textes de la page À propos",
+        "localeHelp": "Ces textes sont un enregistrement par langue : changer de langue charge l'autre version. Les cartes ci-dessous, elles, ont chacune la leur.",
         "siteEyebrowLabel": "Titre de section « À propos de ce site »",
         "meEyebrowLabel": "Titre de section « À propos de moi »",
         "technicalSubtitleLabel": "Sous-titre « Techniquement »",
@@ -115,8 +145,7 @@
         "titleLabel": "Titre",
         "descriptionLabel": "Description",
         "iconKeyLabel": "Icône",
-        "positionLabel": "Position",
-        "empty": "Aucune carte enregistrée pour cette langue.",
+        "empty": "Aucune carte enregistrée.",
         "confirmDelete": "Supprimer la carte « {title} » ?"
       },
       "meCard": {
@@ -131,8 +160,7 @@
         "titleLabel": "Titre",
         "descriptionLabel": "Description",
         "iconKeyLabel": "Icône",
-        "positionLabel": "Position",
-        "empty": "Aucune carte enregistrée pour cette langue/catégorie.",
+        "empty": "Aucune carte enregistrée dans cette catégorie.",
         "confirmDelete": "Supprimer la carte « {title} » ?"
       }
     },
@@ -217,6 +245,9 @@
       "save": "Enregistrer",
       "cancel": "Annuler",
       "localeLabel": "Langue",
+      "translationOfLabel": "Version de",
+      "translationOfNone": "— aucune —",
+      "contentLabel": "Contenu",
       "titleLabel": "Titre (la thèse défendue)",
       "projectLabel": "Projet",
       "referenceLabel": "Référence",
@@ -224,8 +255,6 @@
       "summaryLabel": "Chapeau",
       "bodyLabel": "Argument",
       "bodyHelp": "Texte brut. Séparez les paragraphes par une ligne vide ; entourez un nom de paramètre d'accents graves pour le mettre en forme de code.",
-      "positionLabel": "Position",
-      "actions": "Actions",
       "editAction": "Modifier",
       "deleteAction": "Supprimer",
       "confirmDelete": "Supprimer la contribution « {title} » ?",
@@ -235,7 +264,9 @@
       "errors": {
         "not-found": "Cette contribution n'existe plus.",
         "validation": "Certains champs sont invalides.",
-        "unknown": "Une erreur est survenue. Réessayez plus tard."
+        "unknown": "Une erreur est survenue. Réessayez plus tard.",
+        "translation-already-exists": "Ce contenu a déjà une version dans cette langue.",
+        "unknown-translation-group": "Le contenu auquel rattacher cette version n'existe plus. Rechargez la page."
       }
     },
     "anonymousCv": {
@@ -246,13 +277,14 @@
       "save": "Enregistrer",
       "cancel": "Annuler",
       "localeLabel": "Langue",
+      "translationOfLabel": "Version de",
+      "translationOfNone": "— aucune —",
+      "contentLabel": "Contenu",
       "titleLabel": "Domaine de compétence",
       "skillsLabel": "Compétences (technologies, pratiques)",
       "yearsLabel": "Années d'expérience",
       "achievementsLabel": "Réalisations",
       "achievementsHelp": "Obligatoire. Ce qui a été réalisé avec cette compétence — les années par technologie sont déjà publiques, ce sont les réalisations qui justifient ce palier. Paragraphes séparés par une ligne vide.",
-      "positionLabel": "Position",
-      "actions": "Actions",
       "editAction": "Modifier",
       "deleteAction": "Supprimer",
       "confirmDelete": "Supprimer la section « {title} » ?",
@@ -262,7 +294,9 @@
       "errors": {
         "not-found": "Cette section n'existe plus.",
         "validation": "Certains champs sont invalides.",
-        "unknown": "Une erreur est survenue. Réessayez plus tard."
+        "unknown": "Une erreur est survenue. Réessayez plus tard.",
+        "translation-already-exists": "Ce contenu a déjà une version dans cette langue.",
+        "unknown-translation-group": "Le contenu auquel rattacher cette version n'existe plus. Rechargez la page."
       }
     },
     "incidents": {
@@ -272,6 +306,9 @@
       "save": "Enregistrer",
       "cancel": "Annuler",
       "localeLabel": "Langue",
+      "translationOfLabel": "Version de",
+      "translationOfNone": "— aucune —",
+      "contentLabel": "Contenu",
       "titleLabel": "Titre (ce qui a cassé)",
       "versionLabel": "Version",
       "occurredAtLabel": "Date",
@@ -280,8 +317,6 @@
       "resolutionLabel": "Résolution",
       "invariantLabel": "Invariant (la règle acquise)",
       "invariantHelp": "Obligatoire. C'est ce champ qui distingue un journal d'incidents d'une liste d'échecs : sans règle tirée de la panne, l'entrée n'a pas sa place ici.",
-      "positionLabel": "Position",
-      "actions": "Actions",
       "editAction": "Modifier",
       "deleteAction": "Supprimer",
       "confirmDelete": "Supprimer l'incident « {title} » ?",
@@ -291,7 +326,9 @@
       "errors": {
         "not-found": "Cet incident n'existe plus.",
         "validation": "Certains champs sont invalides.",
-        "unknown": "Une erreur est survenue. Réessayez plus tard."
+        "unknown": "Une erreur est survenue. Réessayez plus tard.",
+        "translation-already-exists": "Ce contenu a déjà une version dans cette langue.",
+        "unknown-translation-group": "Le contenu auquel rattacher cette version n'existe plus. Rechargez la page."
       }
     },
     "translation": {
@@ -317,7 +354,6 @@
       "versionSourceLabel": "Origine de la version",
       "versionLabel": "Version installée",
       "versionFromRuntimeHelp": "La version est lue directement dans le processus qui sert le site : elle ne se saisit pas.",
-      "positionLabel": "Position",
       "actions": "Actions",
       "editAction": "Modifier",
       "deleteAction": "Supprimer",

@@ -10,6 +10,7 @@ use App\Portfolio\Quality\Domain\Repository\QualityPrincipleRepositoryInterface;
 use App\Portfolio\Quality\Domain\Repository\QualityTraitRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Presentation\Command\GuardsExistingContent;
+use App\Shared\Presentation\Command\TranslationGroupIndex;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -52,21 +53,44 @@ final class SeedQualityContentCommand extends Command
             return Command::SUCCESS;
         }
 
+        $translationGroups = new TranslationGroupIndex();
+
+        // Spec 0004 D3 : la purge précède désormais toute création, au lieu
+        // d'être faite langue par langue. Une entrée sans groupe se range en
+        // fin de périmètre, toutes langues confondues : les entrées d'une
+        // autre langue encore en place pendant la création décaleraient la
+        // numérotation d'autant, à chaque `--force`.
+        foreach ($this->qualityPrincipleRepository->findAll() as $existing) {
+            $this->qualityPrincipleRepository->remove($existing);
+        }
+
+        foreach ($this->qualityTraitRepository->findAll() as $existing) {
+            $this->qualityTraitRepository->remove($existing);
+        }
+
         foreach ($this->content() as $localeValue => $content) {
             $locale = Locale::from($localeValue);
 
-            foreach ($this->qualityPrincipleRepository->findByLocale($locale) as $existing) {
-                $this->qualityPrincipleRepository->remove($existing);
-            }
-            foreach ($content['principles'] as $position => $principle) {
-                $this->qualityPrincipleAdministrator->create($locale, $principle['title'], $principle['description'], $principle['iconKey'], $position);
+            foreach ($content['principles'] as $index => $principle) {
+                $created = $this->qualityPrincipleAdministrator->create(
+                    $locale,
+                    $principle['title'],
+                    $principle['description'],
+                    $principle['iconKey'],
+                    $translationGroups->forIndex('principle', $index),
+                );
+
+                $translationGroups->remember('principle', $index, $created->getTranslationGroup());
             }
 
-            foreach ($this->qualityTraitRepository->findByLocale($locale) as $existing) {
-                $this->qualityTraitRepository->remove($existing);
-            }
-            foreach ($content['traits'] as $position => $trait) {
-                $this->qualityTraitAdministrator->create($locale, $trait['label'], $position);
+            foreach ($content['traits'] as $index => $trait) {
+                $created = $this->qualityTraitAdministrator->create(
+                    $locale,
+                    $trait['label'],
+                    $translationGroups->forIndex('trait', $index),
+                );
+
+                $translationGroups->remember('trait', $index, $created->getTranslationGroup());
             }
 
             $io->success(sprintf(

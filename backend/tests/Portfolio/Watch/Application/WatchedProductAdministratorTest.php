@@ -9,6 +9,7 @@ use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductNotFoundException;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductSlugAlreadyUsedException;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductSlugIsImmutableException;
+use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Watch\Domain\Repository\WatchedProductRepositoryInterface;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -23,7 +24,7 @@ final class WatchedProductAdministratorTest extends TestCase
     protected function setUp(): void
     {
         $this->repository = $this->createMock(WatchedProductRepositoryInterface::class);
-        $this->administrator = new WatchedProductAdministrator($this->repository);
+        $this->administrator = new WatchedProductAdministrator($this->repository, new OrderAssigner());
     }
 
     private function postgres(): WatchedProduct
@@ -31,15 +32,35 @@ final class WatchedProductAdministratorTest extends TestCase
         return new WatchedProduct('postgresql', 'PostgreSQL', VersionSource::MANUAL, '18.4', 2);
     }
 
-    public function testItRegistersANewProduct(): void
+    /**
+     * Spec 0004 D3 : la position ne se saisit plus. Une entrée neuve se range
+     * en fin de catalogue — après la dernière position existante, pas au
+     * rang « nombre d'entrées », qui divergerait dès qu'un trou apparaît.
+     */
+    public function testItRegistersANewProductAtTheEndOfTheCatalogue(): void
     {
         $this->repository->method('findOneBySlug')->willReturn(null);
+        $this->repository->method('findAllOrdered')->willReturn([
+            new WatchedProduct('php', 'PHP', VersionSource::MANUAL, '8.4', 0),
+            $this->postgres(),
+        ]);
         $this->repository->expects(self::once())->method('save');
 
-        $product = $this->administrator->create('postgresql', 'PostgreSQL', VersionSource::MANUAL, '18.4', 2);
+        $product = $this->administrator->create('nginx', 'nginx', VersionSource::MANUAL, '1.30');
 
-        self::assertSame('postgresql', $product->getSlug());
-        self::assertSame('18.4', $product->getVersion());
+        self::assertSame('nginx', $product->getSlug());
+        self::assertSame('1.30', $product->getVersion());
+        self::assertSame(3, $product->getPosition());
+    }
+
+    public function testTheFirstProductOfAnEmptyCatalogueTakesPositionZero(): void
+    {
+        $this->repository->method('findOneBySlug')->willReturn(null);
+        $this->repository->method('findAllOrdered')->willReturn([]);
+
+        $product = $this->administrator->create('postgresql', 'PostgreSQL', VersionSource::MANUAL, '18.4');
+
+        self::assertSame(0, $product->getPosition());
     }
 
     /**
@@ -54,7 +75,7 @@ final class WatchedProductAdministratorTest extends TestCase
 
         $this->expectException(WatchedProductSlugAlreadyUsedException::class);
 
-        $this->administrator->create('postgresql', 'Doublon', VersionSource::MANUAL, '18.4', 3);
+        $this->administrator->create('postgresql', 'Doublon', VersionSource::MANUAL, '18.4');
     }
 
     public function testItAppliesTheChangesOfAnExistingProduct(): void
@@ -63,11 +84,12 @@ final class WatchedProductAdministratorTest extends TestCase
         $this->repository->method('findOneById')->willReturn($product);
         $this->repository->expects(self::once())->method('save');
 
-        $updated = $this->administrator->update($product->getId(), 'postgresql', 'PostgreSQL 18', VersionSource::MANUAL, '18.6', 4);
+        $updated = $this->administrator->update($product->getId(), 'postgresql', 'PostgreSQL 18', VersionSource::MANUAL, '18.6');
 
         self::assertSame('PostgreSQL 18', $updated->getLabel());
         self::assertSame('18.6', $updated->getVersion());
-        self::assertSame(4, $updated->getPosition());
+        // D3 : une modification ne déplace jamais l'entrée, seul PUT …/order le fait.
+        self::assertSame(2, $updated->getPosition());
     }
 
     /**
@@ -84,7 +106,7 @@ final class WatchedProductAdministratorTest extends TestCase
 
         $this->expectException(WatchedProductSlugIsImmutableException::class);
 
-        $this->administrator->update($product->getId(), 'mariadb', 'MariaDB', VersionSource::MANUAL, '11.4', 2);
+        $this->administrator->update($product->getId(), 'mariadb', 'MariaDB', VersionSource::MANUAL, '11.4');
     }
 
     public function testUpdatingAnUnknownProductIsReported(): void
@@ -94,7 +116,7 @@ final class WatchedProductAdministratorTest extends TestCase
 
         $this->expectException(WatchedProductNotFoundException::class);
 
-        $this->administrator->update(Uuid::v7(), 'postgresql', 'PostgreSQL', VersionSource::MANUAL, '18.4', 0);
+        $this->administrator->update(Uuid::v7(), 'postgresql', 'PostgreSQL', VersionSource::MANUAL, '18.4');
     }
 
     public function testItRemovesAnExistingProduct(): void
@@ -114,5 +136,26 @@ final class WatchedProductAdministratorTest extends TestCase
         $this->expectException(WatchedProductNotFoundException::class);
 
         $this->administrator->delete(Uuid::v7());
+    }
+
+    /**
+     * Spec 0004 D5/D6 : `WatchedProduct` n'a pas de groupe de traduction, son
+     * `orderingKey()` est son id — le périmètre chargé est tout le catalogue
+     * (`findAllOrdered()`), et la persistance passe par `saveAll()` (un seul
+     * appel), jamais par `save()` (un flush par entité).
+     */
+    public function testReorderLoadsTheCatalogueAndSavesItInOneCall(): void
+    {
+        $php = new WatchedProduct('php', 'PHP', VersionSource::MANUAL, '8.4', 0);
+        $postgres = $this->postgres();
+
+        $this->repository->method('findAllOrdered')->willReturn([$php, $postgres]);
+        $this->repository->expects(self::never())->method('save');
+        $this->repository->expects(self::once())->method('saveAll')->with([$php, $postgres]);
+
+        $this->administrator->reorder([$postgres->getId()->toRfc4122(), $php->getId()->toRfc4122()]);
+
+        self::assertSame(1, $php->getPosition());
+        self::assertSame(0, $postgres->getPosition());
     }
 }

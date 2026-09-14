@@ -10,6 +10,7 @@ use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -74,10 +75,31 @@ class AboutMeCardRepository extends ServiceEntityRepository implements AboutMeCa
             ->getResult();
     }
 
+    public function findByTranslationGroup(Uuid $translationGroup): array
+    {
+        return $this->createQueryBuilder('card')
+            ->andWhere('card.translationGroup = :translationGroup')
+            ->setParameter('translationGroup', $translationGroup, UuidType::NAME)
+            ->orderBy('card.locale', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
     public function save(AboutMeCard $card): void
     {
         $this->getEntityManager()->persist($card);
         $this->getEntityManager()->flush();
+    }
+
+    public function saveAll(array $cards): void
+    {
+        $this->getEntityManager()->wrapInTransaction(function () use ($cards): void {
+            foreach ($cards as $card) {
+                $this->getEntityManager()->persist($card);
+            }
+
+            $this->getEntityManager()->flush();
+        });
     }
 
     public function remove(AboutMeCard $card): void

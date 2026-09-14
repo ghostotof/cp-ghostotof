@@ -42,7 +42,8 @@ compte du palier de base ou nominatif n'y a accès, ni directement ni par effet 
 - Traduction automatique à l'enregistrement, ou synchronisation FR↔EN après coup : l'assistant
   produit un brouillon, jamais une mise à jour silencieuse.
 - Lien persistant entre une entrée FR et son pendant EN (`translationGroup`) : non nécessaire au
-  brouillon, à reconsidérer si un besoin de « resynchroniser » apparaît.
+  brouillon en v1. **Livré depuis par la spec 0004** (`.claude/specs/0004-content-ordering.md`, D1 et
+  D9, `v0.12.0`) : le brouillon est rattaché au groupe de l'entrée source, l'enregistrer le lie.
 - Autres fournisseurs (Ollama en cluster, Mistral…) : le bundle les permet par configuration, mais
   aucun n'est câblé ni testé en v1.
 - La page admin des études de cas, qui n'existe pas encore côté frontend (routes admin actuelles :
@@ -58,7 +59,9 @@ compte du palier de base ou nominatif n'y a accès, ni directement ni par effet 
 - **D2 — Un endpoint générique, agnostique du contenu** : `POST /api/backoffice/translations` reçoit
   un dictionnaire `nom → texte` et le renvoie traduit. Le backend ignore ce qu'il traduit ; le
   frontend choisit les champs de prose de chaque page et recopie les autres (`version`,
-  `occurredAt`, `position`…). Alternative écartée : un endpoint par ressource
+  `occurredAt`…) — **et le groupe de traduction de l'entrée source** (spec 0004, D9, amendement du
+  2026-09-14 : `position` n'est plus recopiée, elle ne se saisit plus, le brouillon enregistré hérite
+  de celle de son groupe). Alternative écartée : un endpoint par ressource
   (`POST /api/backoffice/incidents/{id}/translation`), qui typerait mieux mais dupliquerait la logique
   six fois et ne pourrait pas traduire une saisie non encore enregistrée.
 - **D3 — Fournisseur Anthropic, modèle `claude-sonnet-5`**, via le bridge du bundle. Vérifié dans le
@@ -168,9 +171,10 @@ M1 à M5 constituent la première tranche verticale complète ; M6+ n'ajoute que
   version EN » si `fr`, « Proposer la version FR » si `en`), désactivé si aucun champ de prose n'est
   rempli ou pendant un appel (`aria-busy`, spinner).
 - Au succès : `editingId` passe à `null`, `form.locale` prend la locale cible, `title`, `impact`,
-  `rootCause`, `resolution`, `invariant` sont remplacés, `version`, `occurredAt`, `position` sont
-  conservés, une bannière `role="status"` indique l'origine IA du brouillon. L'en-tête du formulaire
-  affiche « Créer ».
+  `rootCause`, `resolution`, `invariant` sont remplacés, `version`, `occurredAt` sont conservés
+  ainsi que le `translationGroup` de l'entrée source (amendement spec 0004, D9 — `position`, qui
+  figurait ici, n'existe plus en écriture), une bannière `role="status"` indique l'origine IA du
+  brouillon. L'en-tête du formulaire affiche « Créer ».
 - Aucune requête `POST/PUT /api/backoffice/incidents` n'est émise par l'assistant lui-même.
 - Erreurs : 429 → message « quota atteint, réessayez plus tard », 503 → « assistant indisponible »,
   autres → message générique ; toutes en `role="alert"`, le formulaire reste intact.

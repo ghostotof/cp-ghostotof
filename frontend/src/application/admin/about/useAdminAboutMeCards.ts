@@ -1,11 +1,10 @@
 import { inject, ref, type InjectionKey, type Ref } from 'vue'
-import type { AdminAboutMeCard } from '../../../domain/admin/about/entities/AdminAboutMeCard'
+import type { AdminAboutMeCard, AdminAboutMeCardCategory } from '../../../domain/admin/about/entities/AdminAboutMeCard'
 import type {
   AdminAboutMeCardInput,
   AdminAboutMeCardRepository,
 } from '../../../domain/admin/about/repositories/AdminAboutMeCardRepository'
 import { AdminAboutError } from '../../../domain/admin/about/errors/AdminAboutError'
-import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
 
 export const ADMIN_ABOUT_ME_CARD_REPOSITORY: InjectionKey<AdminAboutMeCardRepository> = Symbol('AdminAboutMeCardRepository')
@@ -15,18 +14,21 @@ export interface UseAdminAboutMeCardsResult {
   isLoading: Ref<boolean>
   hasError: Ref<boolean>
   errorMessage: Ref<AdminAboutError | null>
-  load: (locale: Locale) => Promise<void>
+  load: () => Promise<void>
   create: (input: AdminAboutMeCardInput) => Promise<void>
   update: (id: string, input: AdminAboutMeCardInput) => Promise<void>
   remove: (id: string) => Promise<void>
+  reorder: (keys: readonly string[], category: AdminAboutMeCardCategory) => Promise<void>
 }
 
 /**
- * Pas de dépendance à useI18n() (cf. useAdminExperienceTechnologies) : la page appelante
- * possède le sélecteur de locale et pilote load(locale). Contrairement aux
- * autres composables admin about, load() charge TOUJOURS les 3 catégories
- * (pas de filtre `category` passé ici) : c'est la page qui répartit les
- * cartes reçues en 3 groupes pour l'affichage/l'édition.
+ * Pas de dépendance à useI18n() (cf. useAdminExperienceTechnologies) : la page
+ * appelante traduit `errorMessage.reason`.
+ *
+ * `load()` ne prend ni locale ni catégorie depuis la spec 0004 (D8) : la
+ * collection entière est chargée une fois, et la page en tire ses trois
+ * tableaux — un par catégorie, chacun avec son propre ordre. Trois requêtes
+ * filtrées auraient dit la même chose en trois allers-retours.
  */
 export function useAdminAboutMeCards(): UseAdminAboutMeCardsResult {
   const repository = inject(ADMIN_ABOUT_ME_CARD_REPOSITORY)
@@ -42,16 +44,14 @@ export function useAdminAboutMeCards(): UseAdminAboutMeCardsResult {
   const hasError = ref(false)
   const errorMessage = ref<AdminAboutError | null>(null)
   const requestGuard = createStaleRequestGuard()
-  let currentLocale: Locale | null = null
 
-  const load = async (locale: Locale): Promise<void> => {
-    currentLocale = locale
+  const load = async (): Promise<void> => {
     const token = requestGuard.begin()
     isLoading.value = true
     hasError.value = false
 
     try {
-      const result = await repository.list(locale)
+      const result = await repository.list()
       if (!requestGuard.isCurrent(token)) return
       cards.value = result
     } catch {
@@ -66,9 +66,7 @@ export function useAdminAboutMeCards(): UseAdminAboutMeCardsResult {
 
     try {
       await mutation()
-      if (currentLocale) {
-        await load(currentLocale)
-      }
+      await load()
     } catch (error) {
       errorMessage.value = error instanceof AdminAboutError ? error : new AdminAboutError('unknown', 'Unknown error')
     }
@@ -80,5 +78,15 @@ export function useAdminAboutMeCards(): UseAdminAboutMeCardsResult {
 
   const remove = (id: string): Promise<void> => runMutation(() => repository.remove(id))
 
-  return { cards, isLoading, hasError, errorMessage, load, create, update, remove }
+  /**
+   * Volontairement hors de `runMutation` (cf. useAdminAboutSiteCards) : c'est
+   * `useOrderDraft` qui recharge et qui a besoin de l'`AdminOrderError` intacte.
+   * La catégorie accompagne les clés : elle est le périmètre de l'ordre.
+   */
+  const reorder = (keys: readonly string[], category: AdminAboutMeCardCategory): Promise<void> =>
+    repository.reorder(keys, category)
+
+  void load()
+
+  return { cards, isLoading, hasError, errorMessage, load, create, update, remove, reorder }
 }

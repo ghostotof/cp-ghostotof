@@ -9,6 +9,7 @@ use App\Portfolio\Quality\Domain\Repository\QualityTraitRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -47,10 +48,31 @@ class QualityTraitRepository extends ServiceEntityRepository implements QualityT
             ->getResult();
     }
 
+    public function findByTranslationGroup(Uuid $translationGroup): array
+    {
+        return $this->createQueryBuilder('trait')
+            ->andWhere('trait.translationGroup = :translationGroup')
+            ->setParameter('translationGroup', $translationGroup, UuidType::NAME)
+            ->orderBy('trait.locale', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
     public function save(QualityTraitEntity $trait): void
     {
         $this->getEntityManager()->persist($trait);
         $this->getEntityManager()->flush();
+    }
+
+    public function saveAll(array $traits): void
+    {
+        $this->getEntityManager()->wrapInTransaction(function () use ($traits): void {
+            foreach ($traits as $trait) {
+                $this->getEntityManager()->persist($trait);
+            }
+
+            $this->getEntityManager()->flush();
+        });
     }
 
     public function remove(QualityTraitEntity $trait): void

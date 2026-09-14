@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Application;
 
+use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductNotFoundException;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductSlugAlreadyUsedException;
@@ -24,6 +25,7 @@ final readonly class WatchedProductAdministrator implements WatchedProductAdmini
 {
     public function __construct(
         private WatchedProductRepositoryInterface $watchedProductRepository,
+        private OrderAssigner $orderAssigner,
     ) {
     }
 
@@ -32,13 +34,12 @@ final readonly class WatchedProductAdministrator implements WatchedProductAdmini
         string $label,
         VersionSource $versionSource,
         ?string $version,
-        int $position,
     ): WatchedProduct {
         if (null !== $this->watchedProductRepository->findOneBySlug($slug)) {
             throw WatchedProductSlugAlreadyUsedException::forSlug($slug);
         }
 
-        $product = new WatchedProduct($slug, $label, $versionSource, $version, $position);
+        $product = new WatchedProduct($slug, $label, $versionSource, $version, $this->positionAtEnd());
 
         $this->watchedProductRepository->save($product);
 
@@ -51,7 +52,6 @@ final readonly class WatchedProductAdministrator implements WatchedProductAdmini
         string $label,
         VersionSource $versionSource,
         ?string $version,
-        int $position,
     ): WatchedProduct {
         $product = $this->watchedProductRepository->findOneById($id);
 
@@ -63,7 +63,7 @@ final readonly class WatchedProductAdministrator implements WatchedProductAdmini
             throw WatchedProductSlugIsImmutableException::forSlugs($product->getSlug(), $slug);
         }
 
-        $product->update($label, $versionSource, $version, $position);
+        $product->update($label, $versionSource, $version);
         $this->watchedProductRepository->save($product);
 
         return $product;
@@ -78,5 +78,31 @@ final readonly class WatchedProductAdministrator implements WatchedProductAdmini
         }
 
         $this->watchedProductRepository->remove($product);
+    }
+
+    public function reorder(array $keys): void
+    {
+        $scope = $this->watchedProductRepository->findAllOrdered();
+
+        $this->orderAssigner->assign($scope, $keys);
+
+        $this->watchedProductRepository->saveAll($scope);
+    }
+
+    /**
+     * Spec 0004 D3 : une entrée neuve se range après la dernière du catalogue,
+     * 0 s'il est vide. Calculé ici et non par `ContentPlacement::atEndOf()`,
+     * qui parle aux contenus traduisibles — `WatchedProduct` n'en est pas un.
+     * Le catalogue est servi trié par position, la dernière entrée suffit.
+     */
+    private function positionAtEnd(): int
+    {
+        $catalogue = $this->watchedProductRepository->findAllOrdered();
+
+        if ([] === $catalogue) {
+            return 0;
+        }
+
+        return $catalogue[array_key_last($catalogue)]->getPosition() + 1;
     }
 }

@@ -7,11 +7,14 @@ import {
   AdminContributionError,
   type AdminContributionErrorReason,
 } from '../../../domain/admin/contributions/errors/AdminContributionError'
+import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderError'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
+import { STALE_ORDER_PROBLEM_TYPES, hasProblemType } from '../shared/orderProblems'
 
 interface BackofficeContributionApiResponse {
   id: string
   locale: string
+  translationGroup: string
   title: string
   project: string
   reference: string
@@ -24,9 +27,8 @@ interface BackofficeContributionApiResponse {
 const BASE_PATH = '/api/backoffice/contributions'
 
 /**
- * Implémentation HTTP de AdminContributionRepository. Contrairement à
- * HttpContributionRepository (endpoint public), toutes les méthodes exigent le
- * cookie httpOnly BEARER et les mutations le header CSRF
+ * Implémentation HTTP de AdminContributionRepository. Toutes les méthodes
+ * exigent le cookie httpOnly BEARER, et les mutations le header CSRF
  * (cf. BackofficeHttpClient).
  */
 export class HttpAdminContributionRepository implements AdminContributionRepository {
@@ -64,6 +66,14 @@ export class HttpAdminContributionRepository implements AdminContributionReposit
     await this.mutate('DELETE', `${BASE_PATH}/${id}`)
   }
 
+  async reorder(keys: readonly string[]): Promise<void> {
+    const response = await this.client.mutate('PUT', `${BASE_PATH}/order`, { groups: keys })
+
+    if (!response.ok) {
+      throw await this.toOrderError(response)
+    }
+  }
+
   private async mutate(method: string, path: string, body?: unknown): Promise<Response> {
     const response = await this.client.mutate(method, path, body)
 
@@ -78,6 +88,7 @@ export class HttpAdminContributionRepository implements AdminContributionReposit
     return {
       id: contribution.id,
       locale: contribution.locale,
+      translationGroup: contribution.translationGroup,
       title: contribution.title,
       project: contribution.project,
       reference: contribution.reference,
@@ -95,8 +106,36 @@ export class HttpAdminContributionRepository implements AdminContributionReposit
       return new AdminContributionError('not-found', 'Contribution not found')
     }
 
-    const reason: AdminContributionErrorReason = 422 === response.status ? 'validation' : 'unknown'
+    if (409 === response.status) {
+      return new AdminContributionError(
+        'translation-already-exists',
+        violationsMessage(body, 'Translation already exists'),
+      )
+    }
 
-    return new AdminContributionError(reason, violationsMessage(body))
+    if (422 === response.status) {
+      const reason: AdminContributionErrorReason = hasProblemType(body, 'unknown-translation-group')
+        ? 'unknown-translation-group'
+        : 'validation'
+
+      return new AdminContributionError(reason, violationsMessage(body))
+    }
+
+    return new AdminContributionError('unknown', violationsMessage(body, `Request failed with status ${response.status}`))
+  }
+
+  /**
+   * L'endpoint d'ordre a son propre type d'erreur : `useOrderDraft` décide sur
+   * `stale-order` de recharger la liste, ce qu'aucun autre motif ne déclenche.
+   */
+  private async toOrderError(response: Response): Promise<AdminOrderError> {
+    const body = await this.client.parseProblem(response)
+
+    const isStale =
+      422 === response.status && STALE_ORDER_PROBLEM_TYPES.some((problemType) => hasProblemType(body, problemType))
+
+    return isStale
+      ? new AdminOrderError('stale-order', violationsMessage(body, 'Order is stale'))
+      : new AdminOrderError('unknown', `Reordering failed with status ${response.status}`)
   }
 }

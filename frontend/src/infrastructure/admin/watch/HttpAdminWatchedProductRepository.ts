@@ -7,7 +7,9 @@ import {
   AdminWatchedProductError,
   type AdminWatchedProductErrorReason,
 } from '../../../domain/admin/watch/errors/AdminWatchedProductError'
+import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderError'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
+import { STALE_ORDER_PROBLEM_TYPES, hasProblemType } from '../shared/orderProblems'
 
 interface BackofficeWatchedProductApiResponse {
   id: string
@@ -60,6 +62,18 @@ export class HttpAdminWatchedProductRepository implements AdminWatchedProductRep
     await this.mutate('DELETE', `${BASE_PATH}/${id}`)
   }
 
+  /**
+   * Le corps s'appelle `ids`, pas `groups` : la ressource d'ordre de Watch
+   * prend des ids d'entrées, ce contexte n'ayant pas de groupe de traduction.
+   */
+  async reorder(ids: readonly string[]): Promise<void> {
+    const response = await this.client.mutate('PUT', `${BASE_PATH}/order`, { ids })
+
+    if (!response.ok) {
+      throw await this.toOrderError(response)
+    }
+  }
+
   private async mutate(method: string, path: string, body?: unknown): Promise<Response> {
     const response = await this.client.mutate(method, path, body)
 
@@ -98,5 +112,20 @@ export class HttpAdminWatchedProductRepository implements AdminWatchedProductRep
     const reason: AdminWatchedProductErrorReason = 422 === response.status ? 'validation' : 'unknown'
 
     return new AdminWatchedProductError(reason, violationsMessage(body))
+  }
+
+  /**
+   * L'endpoint d'ordre a son propre type d'erreur : `useOrderDraft` décide sur
+   * `stale-order` de recharger la liste, ce qu'aucun autre motif ne déclenche.
+   */
+  private async toOrderError(response: Response): Promise<AdminOrderError> {
+    const body = await this.client.parseProblem(response)
+
+    const isStale =
+      422 === response.status && STALE_ORDER_PROBLEM_TYPES.some((problemType) => hasProblemType(body, problemType))
+
+    return isStale
+      ? new AdminOrderError('stale-order', violationsMessage(body, 'Order is stale'))
+      : new AdminOrderError('unknown', `Reordering failed with status ${response.status}`)
   }
 }

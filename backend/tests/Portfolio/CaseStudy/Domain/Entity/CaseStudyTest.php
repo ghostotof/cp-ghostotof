@@ -7,6 +7,7 @@ namespace App\Tests\Portfolio\CaseStudy\Domain\Entity;
 use App\Portfolio\CaseStudy\Domain\Entity\CaseStudy;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
 
 final class CaseStudyTest extends TestCase
@@ -71,7 +72,6 @@ final class CaseStudyTest extends TestCase
             'Nouvelle solution.',
             'Nouveaux compromis.',
             'Nouveau résultat.',
-            3,
         );
 
         self::assertSame('Nouveau titre', $caseStudy->getTitle());
@@ -79,10 +79,98 @@ final class CaseStudyTest extends TestCase
         self::assertSame('Nouvelle solution.', $caseStudy->getSolution());
         self::assertSame('Nouveaux compromis.', $caseStudy->getTradeoffs());
         self::assertSame('Nouveau résultat.', $caseStudy->getMeasuredResult());
-        self::assertSame(3, $caseStudy->getPosition());
+        // Spec 0004 D3 : `update()` ne touche plus à la position — elle ne se
+        // saisit pas, seuls un rattachement à un groupe et l'endpoint d'ordre
+        // l'écrivent.
+        self::assertSame(0, $caseStudy->getPosition());
         // La locale n'est pas modifiable : changer la langue d'une étude de cas
         // revient à en créer une autre, pas à éditer celle-ci (même choix que
         // Contribution::update()).
         self::assertSame(Locale::FR, $caseStudy->getLocale());
+    }
+
+    /**
+     * Spec 0004 D1 : le groupe de traduction est un identifiant partagé, pas
+     * une entité. Une entrée construite sans groupe en reçoit un neuf — elle
+     * est donc toujours dans un groupe, fût-il d'une seule langue, ce qui
+     * permet à `translation_group` d'être NOT NULL.
+     */
+    public function testAnEntryBuiltWithoutAGroupGetsAFreshTranslationGroup(): void
+    {
+        $first = $this->caseStudy();
+        $second = $this->caseStudy();
+
+        self::assertInstanceOf(UuidV7::class, $first->getTranslationGroup());
+        self::assertFalse($first->getTranslationGroup()->equals($second->getTranslationGroup()));
+    }
+
+    /**
+     * L'autre voie : la version d'une autre langue reçoit le groupe de
+     * l'entrée existante dès la construction — c'est ce que font les commandes
+     * de peuplement pour apparier FR et EN au même index.
+     */
+    public function testAnEntryBuiltWithAGroupCarriesIt(): void
+    {
+        $group = Uuid::v7();
+
+        $entry = new CaseStudy(
+            Locale::EN,
+            'A shared cache serving responses to the wrong organisation',
+            'A multi-tenant API sometimes returned another customer\'s data under load.',
+            'Cache key always including the tenant identifier.',
+            'Higher key complexity, slightly lower hit rate.',
+            'Zero cross-tenant leak over 3 months in production.',
+            0,
+            $group,
+        );
+
+        self::assertTrue($group->equals($entry->getTranslationGroup()));
+    }
+
+    public function testAttachToTranslationGroupLinksTheEntryToAnExistingGroup(): void
+    {
+        $entry = $this->caseStudy();
+        $group = Uuid::v7();
+
+        $entry->attachToTranslationGroup($group);
+
+        self::assertTrue($group->equals($entry->getTranslationGroup()));
+    }
+
+    /**
+     * Détacher ne remet pas le groupe à `null` — la colonne est NOT NULL : elle
+     * en reçoit un neuf, ce qui isole l'entrée de ses anciennes traductions.
+     */
+    public function testDetachFromTranslationGroupGivesAFreshGroup(): void
+    {
+        $entry = $this->caseStudy();
+        $previous = $entry->getTranslationGroup();
+
+        $entry->detachFromTranslationGroup();
+
+        self::assertInstanceOf(UuidV7::class, $entry->getTranslationGroup());
+        self::assertFalse($previous->equals($entry->getTranslationGroup()));
+    }
+
+    /**
+     * Spec 0004 D5 : la clé d'ordre d'un contenu localisé est son groupe, pas
+     * son id — c'est ce qui fait qu'un déplacement suit le contenu dans toutes
+     * les langues.
+     */
+    public function testOrderingKeyIsTheTranslationGroupAndNotTheId(): void
+    {
+        $entry = $this->caseStudy();
+
+        self::assertSame($entry->getTranslationGroup()->toRfc4122(), $entry->orderingKey());
+        self::assertNotSame($entry->getId()->toRfc4122(), $entry->orderingKey());
+    }
+
+    public function testMoveToPositionWritesThePosition(): void
+    {
+        $entry = $this->caseStudy();
+
+        $entry->moveToPosition(4);
+
+        self::assertSame(4, $entry->getPosition());
     }
 }

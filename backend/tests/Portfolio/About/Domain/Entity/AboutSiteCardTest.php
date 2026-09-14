@@ -7,6 +7,7 @@ namespace App\Tests\Portfolio\About\Domain\Entity;
 use App\Portfolio\About\Domain\Entity\AboutSiteCard;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
 
 final class AboutSiteCardTest extends TestCase
@@ -59,12 +60,91 @@ final class AboutSiteCardTest extends TestCase
     {
         $card = new AboutSiteCard(Locale::EN, 'Architecture', 'Description.', 'layers', 0);
 
-        $card->update('Stack', 'New description.', 'server', 1);
+        $card->update('Stack', 'New description.', 'server');
 
         self::assertSame(Locale::EN, $card->getLocale());
         self::assertSame('Stack', $card->getTitle());
         self::assertSame('New description.', $card->getDescription());
         self::assertSame('server', $card->getIconKey());
-        self::assertSame(1, $card->getPosition());
+        // Spec 0004 D3 : `update()` ne touche plus à la position — elle ne se
+        // saisit pas, seuls un rattachement à un groupe et l'endpoint d'ordre
+        // l'écrivent.
+        self::assertSame(0, $card->getPosition());
+    }
+
+    /**
+     * Spec 0004 D1 : le groupe de traduction est un identifiant partagé, pas
+     * une entité. Une entrée construite sans groupe en reçoit un neuf — elle
+     * est donc toujours dans un groupe, fût-il d'une seule langue, ce qui
+     * permet à `translation_group` d'être NOT NULL.
+     */
+    public function testAnEntryBuiltWithoutAGroupGetsAFreshTranslationGroup(): void
+    {
+        $first = new AboutSiteCard(Locale::FR, 'Architecture', 'Description.', 'layers', 0);
+        $second = new AboutSiteCard(Locale::FR, 'Architecture', 'Description.', 'layers', 0);
+
+        self::assertInstanceOf(UuidV7::class, $first->getTranslationGroup());
+        self::assertFalse($first->getTranslationGroup()->equals($second->getTranslationGroup()));
+    }
+
+    /**
+     * L'autre voie : la version d'une autre langue reçoit le groupe de
+     * l'entrée existante dès la construction — c'est ce que font les commandes
+     * de peuplement pour apparier FR et EN au même index.
+     */
+    public function testAnEntryBuiltWithAGroupCarriesIt(): void
+    {
+        $group = Uuid::v7();
+
+        $entry = new AboutSiteCard(Locale::EN, 'Architecture', 'Description.', 'layers', 0, $group);
+
+        self::assertTrue($group->equals($entry->getTranslationGroup()));
+    }
+
+    public function testAttachToTranslationGroupLinksTheEntryToAnExistingGroup(): void
+    {
+        $entry = new AboutSiteCard(Locale::FR, 'Architecture', 'Description.', 'layers', 0);
+        $group = Uuid::v7();
+
+        $entry->attachToTranslationGroup($group);
+
+        self::assertTrue($group->equals($entry->getTranslationGroup()));
+    }
+
+    /**
+     * Détacher ne remet pas le groupe à `null` — la colonne est NOT NULL : elle
+     * en reçoit un neuf, ce qui isole l'entrée de ses anciennes traductions.
+     */
+    public function testDetachFromTranslationGroupGivesAFreshGroup(): void
+    {
+        $entry = new AboutSiteCard(Locale::FR, 'Architecture', 'Description.', 'layers', 0);
+        $previous = $entry->getTranslationGroup();
+
+        $entry->detachFromTranslationGroup();
+
+        self::assertInstanceOf(UuidV7::class, $entry->getTranslationGroup());
+        self::assertFalse($previous->equals($entry->getTranslationGroup()));
+    }
+
+    /**
+     * Spec 0004 D5 : la clé d'ordre d'un contenu localisé est son groupe, pas
+     * son id — c'est ce qui fait qu'un déplacement suit le contenu dans toutes
+     * les langues.
+     */
+    public function testOrderingKeyIsTheTranslationGroupAndNotTheId(): void
+    {
+        $entry = new AboutSiteCard(Locale::FR, 'Architecture', 'Description.', 'layers', 0);
+
+        self::assertSame($entry->getTranslationGroup()->toRfc4122(), $entry->orderingKey());
+        self::assertNotSame($entry->getId()->toRfc4122(), $entry->orderingKey());
+    }
+
+    public function testMoveToPositionWritesThePosition(): void
+    {
+        $entry = new AboutSiteCard(Locale::FR, 'Architecture', 'Description.', 'layers', 0);
+
+        $entry->moveToPosition(4);
+
+        self::assertSame(4, $entry->getPosition());
     }
 }

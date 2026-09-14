@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Portfolio\About\Presentation\ApiResource;
 
 use App\Portfolio\About\Application\AboutSiteCardAdministratorInterface;
+use App\Portfolio\About\Domain\Repository\AboutSiteCardRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
@@ -96,7 +97,7 @@ final class BackofficeAboutSiteCardResourceTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $card = $client->getContainer()->get(AboutSiteCardAdministratorInterface::class)->create(Locale::FR, 'Architecture', 'Description.', 'layers', 0);
+        $card = $client->getContainer()->get(AboutSiteCardAdministratorInterface::class)->create(Locale::FR, 'Architecture', 'Description.', 'layers');
 
         $client->request('GET', sprintf('/api/backoffice/about/site-cards/%s', $card->getId()->toRfc4122()));
         self::assertResponseIsSuccessful();
@@ -119,8 +120,8 @@ final class BackofficeAboutSiteCardResourceTest extends WebTestCase
         $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         $administrator = $client->getContainer()->get(AboutSiteCardAdministratorInterface::class);
-        $administrator->create(Locale::FR, 'Architecture', 'Description.', 'layers', 0);
-        $administrator->create(Locale::EN, 'Architecture', 'Description.', 'layers', 0);
+        $administrator->create(Locale::FR, 'Architecture', 'Description.', 'layers');
+        $administrator->create(Locale::EN, 'Architecture', 'Description.', 'layers');
 
         $client->request('GET', '/api/backoffice/about/site-cards?locale=fr');
         self::assertResponseIsSuccessful();
@@ -206,6 +207,240 @@ final class BackofficeAboutSiteCardResourceTest extends WebTestCase
         ], content: self::jsonBody(['locale' => 'fr', 'title' => 'Architecture', 'description' => str_repeat('a', 501), 'iconKey' => 'layers', 'position' => 0]));
 
         self::assertResponseStatusCodeSame(422);
+    }
+
+    /**
+     * Spec 0004 D3 : la position n'est plus jamais saisie. Une entrée sans
+     * groupe se range après la dernière du périmètre — toutes langues
+     * confondues, puisque les traductions d'un contenu partagent sa position.
+     */
+    public function testPostWithoutTranslationGroupGoesToTheEndOfTheScope(): void
+    {
+        [$client, $csrfToken] = $this->superClient();
+
+        $existing = $this->administrator($client)->create(Locale::FR, 'Premier', 'Description.', 'layers');
+        self::assertSame(0, $existing->getPosition());
+
+        $created = $this->post($client, $csrfToken, ['title' => 'Second']);
+
+        self::assertResponseStatusCodeSame(201);
+        self::assertSame(1, $created['position']);
+        self::assertIsString($created['translationGroup']);
+        self::assertNotSame($existing->getTranslationGroup()->toRfc4122(), $created['translationGroup']);
+    }
+
+    /**
+     * Le cœur de D3 : la version anglaise d'un contenu n'a pas de position à
+     * elle, elle prend celle du contenu. C'est ce qui fera qu'un déplacement
+     * suivra le contenu quelle que soit la langue (D5).
+     */
+    public function testPostWithTheGroupOfAnotherLocaleInheritsItsPosition(): void
+    {
+        [$client, $csrfToken] = $this->superClient();
+
+        $administrator = $this->administrator($client);
+        $administrator->create(Locale::FR, 'Premier', 'Description.', 'layers');
+        $second = $administrator->create(Locale::FR, 'Second', 'Description.', 'server');
+        self::assertSame(1, $second->getPosition());
+
+        $created = $this->post($client, $csrfToken, [
+            'locale' => 'en',
+            'title' => 'Second, in English',
+            'translationGroup' => $second->getTranslationGroup()->toRfc4122(),
+        ]);
+
+        self::assertResponseStatusCodeSame(201);
+        self::assertSame($second->getTranslationGroup()->toRfc4122(), $created['translationGroup']);
+        self::assertSame(1, $created['position']);
+    }
+
+    /**
+     * Un groupe porte au plus une entrée par langue (index unique
+     * (translation_group, locale)). La vérification a lieu avant l'écriture :
+     * l'auteur reçoit un 409 lisible, pas la violation de contrainte en 500.
+     */
+    public function testPostWithAGroupThatAlreadyCarriesTheLocaleIsAConflict(): void
+    {
+        [$client, $csrfToken] = $this->superClient();
+
+        $existing = $this->administrator($client)->create(Locale::FR, 'Premier', 'Description.', 'layers');
+
+        $body = $this->post($client, $csrfToken, [
+            'title' => 'Doublon',
+            'translationGroup' => $existing->getTranslationGroup()->toRfc4122(),
+        ]);
+
+        self::assertResponseStatusCodeSame(409);
+        self::assertSame('/errors/translation-already-exists', $body['type'] ?? null);
+    }
+
+    public function testPostWithAnUnknownTranslationGroupIsRejected(): void
+    {
+        [$client, $csrfToken] = $this->superClient();
+
+        $body = $this->post($client, $csrfToken, [
+            'title' => 'Orpheline',
+            'translationGroup' => self::UNKNOWN_ID,
+        ]);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertSame('/errors/unknown-translation-group', $body['type'] ?? null);
+    }
+
+    /**
+     * `#[Assert\Uuid]` borne le champ en amont : une chaîne qui n'est pas un
+     * UUID n'atteint jamais le domaine.
+     */
+    public function testPostWithAMalformedTranslationGroupIsRejected(): void
+    {
+        [$client, $csrfToken] = $this->superClient();
+
+        $this->post($client, $csrfToken, ['title' => 'x', 'translationGroup' => 'pas-un-uuid']);
+
+        self::assertResponseStatusCodeSame(422);
+    }
+
+    /**
+     * Spec 0004 D3 : `position` a quitté le contrat d'écriture. Un corps qui en
+     * porte encore une — le formulaire actuel, tant que B5 n'est pas livré —
+     * est accepté et ignoré, jamais refusé.
+     */
+    public function testAPositionInTheBodyIsIgnored(): void
+    {
+        [$client, $csrfToken] = $this->superClient();
+
+        $created = $this->post($client, $csrfToken, ['title' => 'Position imposée', 'position' => 99]);
+
+        self::assertResponseStatusCodeSame(201);
+        self::assertSame(0, $created['position']);
+    }
+
+    /**
+     * `PUT` avec `translationGroup: null` : l'entrée est séparée de ses
+     * traductions — groupe neuf — mais elle n'a pas bougé, sa position est
+     * conservée. Sa traduction, elle, n'est pas touchée.
+     */
+    public function testPutWithANullTranslationGroupDetachesAndKeepsThePosition(): void
+    {
+        [$client, $csrfToken] = $this->superClient();
+
+        $administrator = $this->administrator($client);
+        $administrator->create(Locale::FR, 'Premier', 'Description.', 'layers');
+        $french = $administrator->create(Locale::FR, 'Second', 'Description.', 'server');
+        $english = $administrator->create(Locale::EN, 'Second, in English', 'Description.', 'server', $french->getTranslationGroup());
+
+        $updated = $this->put($client, $csrfToken, $french->getId()->toRfc4122(), [
+            'title' => 'Second, détaché',
+            'translationGroup' => null,
+        ]);
+
+        self::assertResponseIsSuccessful();
+        self::assertSame(1, $updated['position']);
+        self::assertNotSame($english->getTranslationGroup()->toRfc4122(), $updated['translationGroup']);
+
+        $reloaded = self::getContainer()->get(AboutSiteCardRepositoryInterface::class)->findOneById($english->getId());
+        self::assertNotNull($reloaded);
+        self::assertSame(1, $reloaded->getPosition());
+    }
+
+    public function testPutWithAnotherGroupAttachesAndInheritsItsPosition(): void
+    {
+        [$client, $csrfToken] = $this->superClient();
+
+        $administrator = $this->administrator($client);
+        $target = $administrator->create(Locale::FR, 'Premier', 'Description.', 'layers');
+        $english = $administrator->create(Locale::EN, 'Orpheline', 'Description.', 'server');
+        self::assertSame(1, $english->getPosition());
+
+        $updated = $this->put($client, $csrfToken, $english->getId()->toRfc4122(), [
+            'locale' => 'en',
+            'title' => 'Premier, in English',
+            'translationGroup' => $target->getTranslationGroup()->toRfc4122(),
+        ]);
+
+        self::assertResponseIsSuccessful();
+        self::assertSame($target->getTranslationGroup()->toRfc4122(), $updated['translationGroup']);
+        self::assertSame(0, $updated['position']);
+    }
+
+    public function testPutTowardsAGroupThatAlreadyCarriesTheLocaleIsAConflict(): void
+    {
+        [$client, $csrfToken] = $this->superClient();
+
+        $administrator = $this->administrator($client);
+        $target = $administrator->create(Locale::FR, 'Premier', 'Description.', 'layers');
+        $other = $administrator->create(Locale::FR, 'Second', 'Description.', 'server');
+
+        $body = $this->put($client, $csrfToken, $other->getId()->toRfc4122(), [
+            'title' => 'Second',
+            'translationGroup' => $target->getTranslationGroup()->toRfc4122(),
+        ]);
+
+        self::assertResponseStatusCodeSame(409);
+        self::assertSame('/errors/translation-already-exists', $body['type'] ?? null);
+    }
+
+    /**
+     * @return array{0: KernelBrowser, 1: string}
+     */
+    private function superClient(): array
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+
+        return [$client, $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword())];
+    }
+
+    private function administrator(KernelBrowser $client): AboutSiteCardAdministratorInterface
+    {
+        return $client->getContainer()->get(AboutSiteCardAdministratorInterface::class);
+    }
+
+    /**
+     * Le corps décodé est du `mixed` : ce sont les assertions PHPUnit qui
+     * valident la forme de la réponse, pas l'analyse statique (cf. les
+     * `ignoreErrors` de `phpstan.dist.neon`, portée `tests/` seulement).
+     *
+     * @param array<string, mixed> $overrides
+     */
+    private function post(KernelBrowser $client, string $csrfToken, array $overrides): mixed
+    {
+        $client->request('POST', '/api/backoffice/about/site-cards', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody($overrides + $this->payload()));
+
+        return json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * Le corps décodé est du `mixed` : ce sont les assertions PHPUnit qui
+     * valident la forme de la réponse, pas l'analyse statique (cf. les
+     * `ignoreErrors` de `phpstan.dist.neon`, portée `tests/` seulement).
+     *
+     * @param array<string, mixed> $overrides
+     */
+    private function put(KernelBrowser $client, string $csrfToken, string $id, array $overrides): mixed
+    {
+        $client->request('PUT', sprintf('/api/backoffice/about/site-cards/%s', $id), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody($overrides + $this->payload()));
+
+        return json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function payload(): array
+    {
+        return [
+            'locale' => 'fr',
+            'title' => 'Titre',
+            'description' => 'Description.',
+            'iconKey' => 'layers',
+        ];
     }
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string
