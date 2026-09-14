@@ -9,6 +9,7 @@ use App\Portfolio\About\Domain\Exception\AboutMeCardNotFoundException;
 use App\Portfolio\About\Domain\Repository\AboutMeCardRepositoryInterface;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
+use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Uid\Uuid;
 
@@ -17,6 +18,7 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
     public function __construct(
         private AboutMeCardRepositoryInterface $aboutMeCardRepository,
         private ContentPlacement $contentPlacement,
+        private OrderAssigner $orderAssigner,
     ) {
     }
 
@@ -63,6 +65,20 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
         }
 
         $this->aboutMeCardRepository->remove($card);
+    }
+
+    /**
+     * Spec 0004 D4/D5 : le périmètre chargé est la catégorie, pas la table
+     * entière — `findByCategory()` — si bien que les deux autres catégories ne
+     * sont ni lues ni écrites par cet appel.
+     */
+    public function reorder(AboutMeCardCategory $category, array $keys): void
+    {
+        $scope = $this->aboutMeCardRepository->findByCategory($category);
+
+        $this->orderAssigner->assign($scope, $keys);
+
+        $this->aboutMeCardRepository->saveAll($scope);
     }
 
     /**

@@ -8,6 +8,7 @@ use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
 use App\Portfolio\Quality\Domain\Exception\QualityPrincipleNotFoundException;
 use App\Portfolio\Quality\Domain\Repository\QualityPrincipleRepositoryInterface;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
+use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Uid\Uuid;
 
@@ -16,6 +17,7 @@ final readonly class QualityPrincipleAdministrator implements QualityPrincipleAd
     public function __construct(
         private QualityPrincipleRepositoryInterface $qualityPrincipleRepository,
         private ContentPlacement $contentPlacement,
+        private OrderAssigner $orderAssigner,
     ) {
     }
 
@@ -61,6 +63,15 @@ final readonly class QualityPrincipleAdministrator implements QualityPrincipleAd
         }
 
         $this->qualityPrincipleRepository->remove($principle);
+    }
+
+    public function reorder(array $keys): void
+    {
+        $scope = $this->qualityPrincipleRepository->findAll();
+
+        $this->orderAssigner->assign($scope, $keys);
+
+        $this->qualityPrincipleRepository->saveAll($scope);
     }
 
     /**

@@ -64,6 +64,17 @@ class QualityTraitRepository extends ServiceEntityRepository implements QualityT
         $this->getEntityManager()->flush();
     }
 
+    public function saveAll(array $traits): void
+    {
+        $this->getEntityManager()->wrapInTransaction(function () use ($traits): void {
+            foreach ($traits as $trait) {
+                $this->getEntityManager()->persist($trait);
+            }
+
+            $this->getEntityManager()->flush();
+        });
+    }
+
     public function remove(QualityTraitEntity $trait): void
     {
         $this->getEntityManager()->remove($trait);

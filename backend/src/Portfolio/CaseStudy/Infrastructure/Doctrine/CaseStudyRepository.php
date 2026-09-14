@@ -64,6 +64,17 @@ class CaseStudyRepository extends ServiceEntityRepository implements CaseStudyRe
         $this->getEntityManager()->flush();
     }
 
+    public function saveAll(array $caseStudys): void
+    {
+        $this->getEntityManager()->wrapInTransaction(function () use ($caseStudys): void {
+            foreach ($caseStudys as $caseStudy) {
+                $this->getEntityManager()->persist($caseStudy);
+            }
+
+            $this->getEntityManager()->flush();
+        });
+    }
+
     public function remove(CaseStudy $caseStudy): void
     {
         $this->getEntityManager()->remove($caseStudy);

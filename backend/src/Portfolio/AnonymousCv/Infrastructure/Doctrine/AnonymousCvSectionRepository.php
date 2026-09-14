@@ -64,6 +64,17 @@ class AnonymousCvSectionRepository extends ServiceEntityRepository implements An
         $this->getEntityManager()->flush();
     }
 
+    public function saveAll(array $sections): void
+    {
+        $this->getEntityManager()->wrapInTransaction(function () use ($sections): void {
+            foreach ($sections as $section) {
+                $this->getEntityManager()->persist($section);
+            }
+
+            $this->getEntityManager()->flush();
+        });
+    }
+
     public function remove(AnonymousCvSection $section): void
     {
         $this->getEntityManager()->remove($section);

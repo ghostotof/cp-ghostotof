@@ -8,6 +8,7 @@ use App\Portfolio\Incident\Domain\Entity\Incident;
 use App\Portfolio\Incident\Domain\Exception\IncidentNotFoundException;
 use App\Portfolio\Incident\Domain\Repository\IncidentRepositoryInterface;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
+use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Uid\Uuid;
 
@@ -16,6 +17,7 @@ final readonly class IncidentAdministrator implements IncidentAdministratorInter
     public function __construct(
         private IncidentRepositoryInterface $incidentRepository,
         private ContentPlacement $contentPlacement,
+        private OrderAssigner $orderAssigner,
     ) {
     }
 
@@ -74,6 +76,15 @@ final readonly class IncidentAdministrator implements IncidentAdministratorInter
         }
 
         $this->incidentRepository->remove($incident);
+    }
+
+    public function reorder(array $keys): void
+    {
+        $scope = $this->incidentRepository->findAll();
+
+        $this->orderAssigner->assign($scope, $keys);
+
+        $this->incidentRepository->saveAll($scope);
     }
 
     /**

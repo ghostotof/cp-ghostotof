@@ -8,6 +8,7 @@ use App\Portfolio\About\Domain\Entity\AboutSiteCard;
 use App\Portfolio\About\Domain\Exception\AboutSiteCardNotFoundException;
 use App\Portfolio\About\Domain\Repository\AboutSiteCardRepositoryInterface;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
+use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Uid\Uuid;
 
@@ -16,6 +17,7 @@ final readonly class AboutSiteCardAdministrator implements AboutSiteCardAdminist
     public function __construct(
         private AboutSiteCardRepositoryInterface $aboutSiteCardRepository,
         private ContentPlacement $contentPlacement,
+        private OrderAssigner $orderAssigner,
     ) {
     }
 
@@ -61,6 +63,15 @@ final readonly class AboutSiteCardAdministrator implements AboutSiteCardAdminist
         }
 
         $this->aboutSiteCardRepository->remove($card);
+    }
+
+    public function reorder(array $keys): void
+    {
+        $scope = $this->aboutSiteCardRepository->findAll();
+
+        $this->orderAssigner->assign($scope, $keys);
+
+        $this->aboutSiteCardRepository->saveAll($scope);
     }
 
     /**

@@ -37,5 +37,15 @@ interface AnonymousCvSectionRepositoryInterface
 
     public function save(AnonymousCvSection $section): void;
 
+    /**
+     * Spec 0004 B3 : écrit plusieurs entités en une seule transaction — le
+     * besoin de `OrderAssigner::assign()`, qui déplace potentiellement tout un
+     * périmètre en un seul appel. `save()` flushe à chaque entité, donc autant
+     * de transactions que d'entités ; cette méthode n'en ouvre qu'une.
+     *
+     * @param list<AnonymousCvSection> $sections
+     */
+    public function saveAll(array $sections): void;
+
     public function remove(AnonymousCvSection $section): void;
 }

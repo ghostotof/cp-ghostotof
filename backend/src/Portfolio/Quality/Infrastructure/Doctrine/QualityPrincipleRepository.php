@@ -64,6 +64,17 @@ class QualityPrincipleRepository extends ServiceEntityRepository implements Qual
         $this->getEntityManager()->flush();
     }
 
+    public function saveAll(array $principles): void
+    {
+        $this->getEntityManager()->wrapInTransaction(function () use ($principles): void {
+            foreach ($principles as $principle) {
+                $this->getEntityManager()->persist($principle);
+            }
+
+            $this->getEntityManager()->flush();
+        });
+    }
+
     public function remove(QualityPrinciple $principle): void
     {
         $this->getEntityManager()->remove($principle);

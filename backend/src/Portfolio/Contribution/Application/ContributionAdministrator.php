@@ -8,6 +8,7 @@ use App\Portfolio\Contribution\Domain\Entity\Contribution;
 use App\Portfolio\Contribution\Domain\Exception\ContributionNotFoundException;
 use App\Portfolio\Contribution\Domain\Repository\ContributionRepositoryInterface;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
+use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Uid\Uuid;
 
@@ -16,6 +17,7 @@ final readonly class ContributionAdministrator implements ContributionAdministra
     public function __construct(
         private ContributionRepositoryInterface $contributionRepository,
         private ContentPlacement $contentPlacement,
+        private OrderAssigner $orderAssigner,
     ) {
     }
 
@@ -72,6 +74,15 @@ final readonly class ContributionAdministrator implements ContributionAdministra
         }
 
         $this->contributionRepository->remove($contribution);
+    }
+
+    public function reorder(array $keys): void
+    {
+        $scope = $this->contributionRepository->findAll();
+
+        $this->orderAssigner->assign($scope, $keys);
+
+        $this->contributionRepository->saveAll($scope);
     }
 
     /**
