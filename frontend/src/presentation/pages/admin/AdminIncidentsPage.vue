@@ -11,6 +11,12 @@ import {
   groupByTranslationGroup,
   type TranslationGroupRow,
 } from '../../../domain/admin/shared/ordering/groupByTranslationGroup'
+import {
+  firstEntry,
+  hasSibling,
+  rowLines,
+  translationGroupOptions,
+} from '../../../domain/admin/shared/ordering/translationGroupSelection'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseDateInput from '../../ui/BaseDateInput.vue'
@@ -172,82 +178,22 @@ async function moveRow(key: string, from: number, to: number): Promise<void> {
   handleCells.get(key)?.querySelector('button')?.focus()
 }
 
-/** Première entrée disponible du groupe : ce qui nomme et date la ligne quand une langue manque. */
-function firstEntry(row: TranslationGroupRow<AdminIncident>): AdminIncident | null {
-  for (const locale of SUPPORTED_LOCALES) {
-    const entry = row.byLocale[locale]
-    if (entry) {
-      return entry
-    }
-  }
-
-  return null
-}
-
-interface RowLine {
-  locale: Locale
-  nativeName: string
-  entry: AdminIncident | null
-}
-
 /**
- * Une ligne interne par langue de `SUPPORTED_LOCALES` (D2 : jamais 'fr'/'en'
- * en dur), `entry` à `null` quand la traduction manque.
+ * « Version de » : les options du sélecteur (D2, cf.
+ * `domain/admin/shared/ordering/translationGroupSelection.ts` pour la règle
+ * exacte). L'option « aucune » est préfixée ici, son libellé étant un texte
+ * traduit — le module partagé reste framework-free.
  */
-function rowLines(row: TranslationGroupRow<AdminIncident>): RowLine[] {
-  return SUPPORTED_LOCALES.map((locale) => ({
-    locale,
-    nativeName: LOCALE_NATIVE_NAMES[locale],
-    entry: row.byLocale[locale] ?? null,
-  }))
-}
-
-function hasSibling(incident: AdminIncident): boolean {
-  return incidents.value.some(
-    (other) => other.translationGroup === incident.translationGroup && other.id !== incident.id,
-  )
-}
-
-/**
- * « Version de » : les entrées de **toute autre locale** dont le groupe n'a pas
- * encore la locale du formulaire (D2). L'entrée en cours d'édition ne compte
- * pas comme occupant sa propre locale, sans quoi son propre groupe
- * disparaîtrait de la liste et le formulaire ne pourrait plus le renvoyer.
- *
- * Le groupe déjà retenu (`form.translationGroup`) est toujours conservé : le
- * sélecteur ne doit jamais afficher une valeur absente de ses options — un
- * rattachement devenu impossible se solde par un 409 explicite, pas par un
- * champ vide.
- */
-const translationOptions = computed(() => {
-  const options = [{ value: '', label: t('admin.incidents.translationOfNone') }]
-  const seen = new Set<string>()
-
-  for (const incident of incidents.value) {
-    if (incident.locale === form.locale || seen.has(incident.translationGroup)) {
-      continue
-    }
-
-    const alreadyTranslated = incidents.value.some(
-      (other) =>
-        other.locale === form.locale &&
-        other.translationGroup === incident.translationGroup &&
-        other.id !== editingId.value,
-    )
-
-    if (alreadyTranslated && incident.translationGroup !== form.translationGroup) {
-      continue
-    }
-
-    seen.add(incident.translationGroup)
-    options.push({
-      value: incident.translationGroup,
-      label: `${incident.locale.toUpperCase()} · ${incident.title}`,
-    })
-  }
-
-  return options
-})
+const translationOptions = computed(() => [
+  { value: '', label: t('admin.incidents.translationOfNone') },
+  ...translationGroupOptions(
+    incidents.value,
+    form.locale,
+    form.translationGroup,
+    editingId.value,
+    (incident) => `${incident.locale.toUpperCase()} · ${incident.title}`,
+  ),
+])
 
 function resetForm(): void {
   editingId.value = null
@@ -274,7 +220,7 @@ function startEdit(incident: AdminIncident): void {
   // l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::reattach`
   // traite le `null` en non-geste (`count($members) === 1`), le groupe est
   // conservé. Le sélecteur affiche donc « aucune » sans conséquence.
-  form.translationGroup = hasSibling(incident) ? incident.translationGroup : ''
+  form.translationGroup = hasSibling(incidents.value, incident) ? incident.translationGroup : ''
   form.title = incident.title
   form.version = incident.version
   form.occurredAt = incident.occurredAt
@@ -291,7 +237,7 @@ function startEdit(incident: AdminIncident): void {
  * puisqu'il n'y a rien à écrire encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminIncident>, locale: Locale): void {
-  const existing = firstEntry(row)
+  const existing = firstEntry(row, SUPPORTED_LOCALES)
 
   editingId.value = null
   draftSourceLocale.value = null
@@ -606,13 +552,13 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   <OrderHandle
                     :index="index"
                     :count="orderedRows.length"
-                    :label="firstEntry(row)?.title ?? ''"
+                    :label="firstEntry(row, SUPPORTED_LOCALES)?.title ?? ''"
                     @move="(from, to) => moveRow(row.key, from, to)"
                   />
                 </td>
                 <td>
                   <div
-                    v-for="line in rowLines(row)"
+                    v-for="line in rowLines(row, SUPPORTED_LOCALES, LOCALE_NATIVE_NAMES)"
                     :key="line.locale"
                     class="d-flex flex-wrap align-items-center gap-2 py-1"
                   >
@@ -657,10 +603,10 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   </div>
                 </td>
                 <td class="text-nowrap">
-                  {{ firstEntry(row)?.occurredAt }}
+                  {{ firstEntry(row, SUPPORTED_LOCALES)?.occurredAt }}
                 </td>
                 <td class="text-nowrap">
-                  {{ firstEntry(row)?.version }}
+                  {{ firstEntry(row, SUPPORTED_LOCALES)?.version }}
                 </td>
               </tr>
             </tbody>
