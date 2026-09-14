@@ -781,7 +781,11 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   the ingress for the window's duration. It is opt-in specifically so an ordinary release without a
   breaking schema change stays zero-downtime — **set it before pushing the release tag and unset it
   right after the production deploy**: a forgotten `true` turns every subsequent deploy into a
-  downtime deploy for no reason.
+  downtime deploy for no reason. **Fail-closed on a migration failure**: the script exits before
+  reaching `kubectl apply -k .`, so `backend`/`worker` stay at 0 replicas until someone intervenes —
+  deliberate, never serve traffic against a half-migrated schema. To recover: if the migration wrote
+  nothing (PostgreSQL DDL is transactional), `kubectl apply -k .` on that overlay redeploys the
+  previous image against the still-old schema; otherwise fix the migration and cut a new tag.
 - **`watch-refresh-cronjob.yaml` *is* in `kustomization.yaml`'s `resources:`** — the opposite of
   `migrate-job.yaml` above, and deliberately: it wants kustomize's image transformer, since it must run the
   same image as the Deployment. It used to be **the only object in the cluster that makes outbound calls
