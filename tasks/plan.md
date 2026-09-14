@@ -70,15 +70,15 @@ Reprises des specs (§2), rappelées ici parce qu'elles décident de l'ordre :
 ### Checkpoint A2 — parcours complet
 - [x] `make front-test`, `make front-lint`, `make front-build` verts
 - [x] Dans un vrai navigateur, stack dev migrée : lister / éditer / supprimer sur une ressource admin, URLs en UUID — reste à faire par Christophe — fait le 2026-09-14 (incidents : liste, création, édition PUT, suppression DELETE, URLs en UUID)
-- [ ] Revue avec Christophe avant la release : la migration est irréversible
+- [x] Revue avec Christophe avant la release : la migration est irréversible — feu vert et release demandés le 2026-09-14
 
 ### Documentation et release
-- [ ] Task 8 — `CLAUDE.md`, spec, notes de release ; préprod vérifiée (rollout, Job `migrate`, backoffice, invitation, endpoints publics) **puis** prod — [#127](https://github.com/ghostotof/cp-ghostotof/issues/127)
+- [x] Task 8 — `CLAUDE.md`, spec, notes de release ; préprod vérifiée (rollout, Job `migrate`, backoffice, invitation, endpoints publics) **puis** prod — [#127](https://github.com/ghostotof/cp-ghostotof/issues/127)
 
 ### Checkpoint A3 — `v0.11.0` en production
-- [ ] Pipeline verte de bout en bout, release GitHub publiée avec le corps des notes
-- [ ] `messenger:failed:show` vide avant et après le déploiement prod
-- [ ] Feu vert pour ouvrir les issues de la phase B
+- [x] Pipeline verte de bout en bout, release GitHub publiée avec le corps des notes (run 34850406964, 2026-09-14)
+- [x] Files Messenger prod vides avant (RabbitMQ 0, `messenger_messages` 0) et après le déploiement
+- [x] Feu vert pour ouvrir les issues de la phase B — `v0.11.0` en production le 2026-09-14
 
 ## Task List — Phase B (spec 0004, `v0.12.0`) — index prévisionnel, issues à ouvrir après le checkpoint A3
 

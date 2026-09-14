@@ -1,6 +1,6 @@
 # SPEC — Clés primaires UUID v7 sur toutes les entités (phase A du réordonnancement)
 
-> Statut : **implémentée sur branches empilées (Tasks 1 à 7), release `v0.11.0` à faire** — voir le
+> Statut : **livrée — v0.11.0 en production le 2026-09-14** ; précédemment : **implémentée sur branches empilées (Tasks 1 à 7), release `v0.11.0` à faire** — voir le
 > journal §10 pour le détail des PR et des écarts constatés à l'implémentation.
 > Prérequis de la spec 0004 (réordonnancement des contenus par glisser-déposer), livré **seul**
 > dans une release dédiée : la migration réécrit les clés primaires de tables qui ont des données
@@ -336,3 +336,13 @@ discipline.
 **Audit de sensibilité avant publication** : aucun e-mail, aucune adresse, aucun nom de compte, aucun
 secret. Le document décrit le schéma des tables et le flux d'invitation au même niveau de détail que
 `CLAUDE.md` et l'ADR 0001, déjà publics.
+
+**2026-09-14** — Release `v0.11.0` en production. La fenêtre de bascule a été traitée par un mode
+fenêtre de maintenance **opt-in du pipeline** (PR #138, variable de dépôt `DEPLOY_MAINTENANCE_WINDOW`) :
+backend et worker patchés à `replicas: 0`, migration sur base au repos, puis rollout. Mesuré en
+préprod : environ une minute d'indisponibilité de l'API, frontend servi pendant ce temps ; sept endpoints
+publics strictement identiques avant et après ; Job post-rollout « Already at the latest version ».
+Même déroulé en production (run 34850406964) : 14 tables en `uuid`, files Messenger vides avant et
+après, release GitHub publiée par `create-release`. Variable retirée juste après. Reste ouvert : #137
+(test d'invariant `requirements`) ; la phase B (spec 0004) peut démarrer.
+
