@@ -67,7 +67,9 @@
       },
       "lockedHint": "Save or cancel the order first.",
       "missingTranslation": "Missing translation",
-      "createVersion": "Create the {locale} version"
+      "createVersion": "Create the {locale} version",
+      "columnHeader": "Order",
+      "leaveConfirm": "The modified order is not saved. Leaving this page will discard it. Continue?"
     },
     "quality": {
       "actions": "Actions",
@@ -289,6 +291,9 @@
       "save": "Save",
       "cancel": "Cancel",
       "localeLabel": "Language",
+      "translationOfLabel": "Translation of",
+      "translationOfNone": "— none —",
+      "contentLabel": "Content",
       "titleLabel": "Title (what broke)",
       "versionLabel": "Version",
       "occurredAtLabel": "Date",
@@ -297,7 +302,6 @@
       "resolutionLabel": "Resolution",
       "invariantLabel": "Invariant (the rule learned)",
       "invariantHelp": "Required. This field is what separates an incident log from a list of failures: without a rule drawn from the outage, the entry does not belong here.",
-      "positionLabel": "Position",
       "actions": "Actions",
       "editAction": "Edit",
       "deleteAction": "Delete",
@@ -308,7 +312,9 @@
       "errors": {
         "not-found": "This incident no longer exists.",
         "validation": "Some fields are invalid.",
-        "unknown": "An error occurred. Please try again later."
+        "unknown": "An error occurred. Please try again later.",
+        "translation-already-exists": "This content already has a version in that language.",
+        "unknown-translation-group": "The content to attach this version to no longer exists. Reload the page."
       }
     },
     "translation": {
