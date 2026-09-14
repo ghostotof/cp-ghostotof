@@ -302,7 +302,6 @@
       "resolutionLabel": "Resolution",
       "invariantLabel": "Invariant (the rule learned)",
       "invariantHelp": "Required. This field is what separates an incident log from a list of failures: without a rule drawn from the outage, the entry does not belong here.",
-      "actions": "Actions",
       "editAction": "Edit",
       "deleteAction": "Delete",
       "confirmDelete": "Delete incident \"{title}\"?",

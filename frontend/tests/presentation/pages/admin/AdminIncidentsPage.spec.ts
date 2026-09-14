@@ -217,17 +217,27 @@ describe('AdminIncidentsPage', () => {
 
     await dragRow(wrapper, 0, 2)
 
+    // L'aide est rendue visible, jamais portée par un `title` : Bootstrap pose
+    // `pointer-events: none` sur `.btn:disabled`, donc l'infobulle d'un bouton
+    // désactivé ne s'affiche jamais. Les boutons la désignent par aria-describedby.
+    const hint = wrapper.get('#admin-order-locked-hint')
+    expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
+
     const edit = buttonLabelled(lineContaining(wrapper, 'Panne du broker RabbitMQ'), 'Modifier')
     expect(edit.attributes('disabled')).toBeDefined()
-    expect(edit.attributes('title')).toBe("Enregistrez ou annulez l'ordre d'abord.")
+    expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
     expect(buttonLabelled(lineContaining(wrapper, 'Panne du broker RabbitMQ'), 'Supprimer').attributes('disabled')).toBeDefined()
     expect(buttonLabelled(wrapper, 'Créer la version EN').attributes('disabled')).toBeDefined()
     expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeDefined()
+    // Un appel au modèle produirait un brouillon que le formulaire verrouillé ne
+    // pourrait pas enregistrer : du quota dépensé pour rien (ADR 0004).
+    expect(translateButton(wrapper).attributes('disabled')).toBeDefined()
 
     await buttonLabelled(wrapper, 'Annuler').trigger('click')
 
     expect(buttonLabelled(lineContaining(wrapper, 'Panne du broker RabbitMQ'), 'Modifier').attributes('disabled')).toBeUndefined()
     expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
     expect(wrapper.text()).toContain('Ordre · à jour')
   })
 
@@ -274,6 +284,26 @@ describe('AdminIncidentsPage', () => {
     await flushPromises()
 
     expect(incidents.update).toHaveBeenCalledWith(FR_ONE.id, expect.objectContaining({ translationGroup: GROUP_ONE }))
+  })
+
+  it('envoie « aucune » pour une entrée solitaire — un non-geste côté serveur', async () => {
+    const incidents = createIncidentRepository()
+    const { wrapper } = await mountPage(incidents)
+
+    // FR_TWO est seule dans son groupe : le sélecteur affiche « aucune » et le
+    // formulaire envoie donc `translationGroup: null`. Ce n'est pas un
+    // détachement — `ContentPlacement::reattach` traite le `null` en non-geste
+    // quand l'entrée n'a pas de sœur (`count($members) === 1`), ce que pince
+    // `ContentPlacementTest::testDetachingAnEntryWithoutTranslationsDoesNothing`.
+    // Ces deux tests forment le contrat entre les deux moitiés : les casser
+    // séparément doit être impossible sans que l'un des deux vire au rouge.
+    await buttonLabelled(lineContaining(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
+    expect(valueOf(wrapper, '#admin-incident-translation-group')).toBe('')
+
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(incidents.update).toHaveBeenCalledWith(FR_TWO.id, expect.objectContaining({ translationGroup: null }))
   })
 
   it('n\'envoie jamais de position dans le corps d\'une écriture', async () => {

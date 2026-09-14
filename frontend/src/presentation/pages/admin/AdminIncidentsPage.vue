@@ -133,8 +133,16 @@ const orderedRows = computed(() => {
 /**
  * Tant que l'ordre est modifié, toute mutation est verrouillée (D6) : elle
  * rechargerait la liste et perdrait le brouillon sans prévenir.
+ *
+ * L'aide est **rendue visible** sous la barre d'ordre, jamais portée par un
+ * `title` : Bootstrap pose `pointer-events: none` sur `.btn:disabled`, donc
+ * l'infobulle d'un bouton désactivé ne s'affiche jamais au survol. Les boutons
+ * la désignent par `aria-describedby` — et seulement quand elle existe, sinon
+ * la référence pendante serait elle-même une erreur d'accessibilité.
  */
-const lockedHint = computed(() => (isOrderDirty.value ? t('admin.order.lockedHint') : undefined))
+const LOCKED_HINT_ID = 'admin-order-locked-hint'
+
+const lockedHintId = computed(() => (isOrderDirty.value ? LOCKED_HINT_ID : undefined))
 
 /**
  * Poignées indexées par clé de groupe : après un déplacement au clavier, le
@@ -263,9 +271,9 @@ function startEdit(incident: AdminIncident): void {
   form.locale = incident.locale as Locale
   // Le groupe lu est repris tel quel dès qu'il porte une traduction : le
   // formulaire le renvoie alors à l'enregistrement, et le lien FR/EN survit à
-  // l'édition. Un groupe solitaire n'a aucun lien à préserver — le sélecteur
-  // affiche « aucune » et le serveur lui rendra un groupe frais, à position
-  // inchangée.
+  // l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::reattach`
+  // traite le `null` en non-geste (`count($members) === 1`), le groupe est
+  // conservé. Le sélecteur affiche donc « aucune » sans conséquence.
   form.translationGroup = hasSibling(incident) ? incident.translationGroup : ''
   form.title = incident.title
   form.version = incident.version
@@ -461,11 +469,16 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
           {{ t('admin.incidents.invariantHelp') }}
         </div>
 
+        <!--
+          Verrouillé lui aussi tant que l'ordre est modifié : l'appel au modèle
+          produirait un brouillon que le formulaire, verrouillé, ne pourrait pas
+          enregistrer — du quota dépensé pour rien (ADR 0004, coût borné).
+        -->
         <div class="mb-3">
           <TranslateEntryButton
             :form-locale="form.locale"
             :is-translating="isTranslating"
-            :disabled="!hasProseToTranslate || isSubmitting"
+            :disabled="!hasProseToTranslate || isSubmitting || isOrderDirty"
             @translate="handleTranslate"
           />
         </div>
@@ -499,7 +512,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
             type="submit"
             class="btn btn-gradient"
             :disabled="isSubmitting || isOrderDirty"
-            :title="lockedHint"
+            :aria-describedby="lockedHintId"
           >
             {{ t('admin.incidents.save') }}
           </button>
@@ -512,13 +525,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
             {{ t('admin.incidents.cancel') }}
           </button>
         </div>
-
-        <p
-          v-if="isOrderDirty"
-          class="form-text mb-0"
-        >
-          {{ t('admin.order.lockedHint') }}
-        </p>
       </form>
     </div>
 
@@ -555,6 +561,14 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
           @save="saveOrder"
           @cancel="resetOrder"
         />
+
+        <p
+          v-if="isOrderDirty"
+          :id="LOCKED_HINT_ID"
+          class="form-text mb-3"
+        >
+          {{ t('admin.order.lockedHint') }}
+        </p>
 
         <div class="table-responsive">
           <table class="table table-dark align-middle mb-0">
@@ -613,7 +627,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                         type="button"
                         class="btn btn-sm btn-outline-light"
                         :disabled="isOrderDirty"
-                        :title="lockedHint"
+                        :aria-describedby="lockedHintId"
                         @click="startEdit(line.entry)"
                       >
                         {{ t('admin.incidents.editAction') }}
@@ -622,7 +636,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                         type="button"
                         class="btn btn-sm btn-outline-danger"
                         :disabled="isOrderDirty"
-                        :title="lockedHint"
+                        :aria-describedby="lockedHintId"
                         @click="handleDelete(line.entry)"
                       >
                         {{ t('admin.incidents.deleteAction') }}
@@ -634,7 +648,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                         type="button"
                         class="btn btn-sm btn-outline-light"
                         :disabled="isOrderDirty"
-                        :title="lockedHint"
+                        :aria-describedby="lockedHintId"
                         @click="startCreateVersion(row, line.locale)"
                       >
                         {{ t('admin.order.createVersion', { locale: line.locale.toUpperCase() }) }}

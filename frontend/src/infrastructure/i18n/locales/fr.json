@@ -302,7 +302,6 @@
       "resolutionLabel": "Résolution",
       "invariantLabel": "Invariant (la règle acquise)",
       "invariantHelp": "Obligatoire. C'est ce champ qui distingue un journal d'incidents d'une liste d'échecs : sans règle tirée de la panne, l'entrée n'a pas sa place ici.",
-      "actions": "Actions",
       "editAction": "Modifier",
       "deleteAction": "Supprimer",
       "confirmDelete": "Supprimer l'incident « {title} » ?",
