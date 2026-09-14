@@ -1,0 +1,37 @@
+# Symfony AI — socle de l'ADR 0004 (assistance IA). Une seule plateforme et un
+# seul agent, tous deux réservés au backoffice (ROLE_SUPER) : aucun appel sortant
+# ne part jamais d'un chemin de rendu public (règle héritée de l'ADR 0002).
+#
+# La recette Flex de symfony/ai-anthropic-platform génère un fichier séparé
+# (ai_anthropic_platform.yaml) : il a été fusionné ici pour que la plateforme et
+# l'agent qui la consomme se lisent d'un seul tenant. Si `composer recipes:update`
+# le recrée, le supprimer à nouveau plutôt que d'avoir deux sources.
+ai:
+    platform:
+        anthropic:
+            api_key: '%env(ANTHROPIC_API_KEY)%'
+            # Client HTTP dédié (cf. framework.yaml) : timeout 40 s sous les 60 s
+            # de nginx et de l'ingress, max_redirects 0 comme pour Portfolio/Watch.
+            http_client: 'ai.http_client'
+
+    agent:
+        # Traducteur FR/EN du backoffice (contexte Ai/Translation, spec 0002).
+        # Consommé uniquement via App\Ai\Translation\Infrastructure\SymfonyAi\
+        # SymfonyAiContentTranslator, seule classe du projet à importer Symfony\AI.
+        translator:
+            platform: 'ai.platform.anthropic'
+            model:
+                name: 'claude-sonnet-5'
+                options:
+                    # Nom Anthropic (« max_tokens », pas « max_output_tokens ») : le
+                    # bridge fusionne les options telles quelles dans le corps de la
+                    # requête. Plafond de sortie = première borne de coût (ADR 0004
+                    # D5), avec le quota par compte et le timeout du client HTTP.
+                    # Aucun paramètre d'échantillonnage : claude-sonnet-5 refuse
+                    # temperature/top_p/top_k (400).
+                    max_tokens: 4096
+            prompt:
+                file: '%kernel.project_dir%/config/ai/prompts/translator.txt'
+            # Aucun outil : l'agent traduit, il n'agit pas. Rien à exposer, rien à
+            # détourner par injection de prompt.
+            tools: false
