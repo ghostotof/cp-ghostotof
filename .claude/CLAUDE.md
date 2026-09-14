@@ -1089,8 +1089,9 @@ ADRs:
 - `docs/adr/0001-admin-user-provisioning.md` (invitation-by-email flow, `email` now stored, Twig for emails)
 - `docs/adr/0002-veille-technique.md` (`Portfolio/Watch`: outbound calls out of the render path, snapshot in
   DB, public aggregate vs `ROLE_SUPER` detail, manifest built at `docker build`)
-- `docs/adr/0003-paliers-d-acces.md` — **statut `accepté`, implémenté** (D1/D2/D4/D6/D7, D5 réduit à deux
-  contenus par amendement du 2026-09-13; `tasks/plan.md` lists the housekeeping left). Makes `ROLE_USER` the bottom tier (one click, no credentials,
+- `docs/adr/0003-paliers-d-acces.md` — **statut `accepté`, implémenté et clos** (D1/D2/D4/D6/D7, D5 réduit à deux
+  contenus par amendement du 2026-09-13; closed 2026-09-15, see its « Clôture » section — what is left is
+  editorial content entry, not engineering). Makes `ROLE_USER` the bottom tier (one click, no credentials,
   discretion rather than secrecy) and puts the CV behind `ROLE_TRUSTED`. Read it before touching
   `access_control`, `CpgUser::getRoles()` or `BaseAccessController`: it turns on the fact that `getRoles()`
   grants `ROLE_USER` unconditionally, which is why a tier was added *above* rather than below.
