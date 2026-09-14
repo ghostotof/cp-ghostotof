@@ -1,34 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HttpAdminContributionRepository } from '../../../../src/infrastructure/admin/contributions/HttpAdminContributionRepository'
 import { AdminContributionError } from '../../../../src/domain/admin/contributions/errors/AdminContributionError'
+import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 
 const API_BASE_URL = 'https://api.example.test'
-const CONTRIBUTION_ID = '019968a0-0000-7000-8000-000000000061'
-const TARGET_CONTRIBUTION_ID = '019968a0-0000-7000-8000-000000000062'
+const CONTRIBUTION_ID = '019968a0-0000-7000-8000-000000000071'
+const TARGET_CONTRIBUTION_ID = '019968a0-0000-7000-8000-000000000072'
 const MISSING_CONTRIBUTION_ID = '019968a0-0000-7000-8000-000000000999'
+const GROUP_ONE = '019968b0-0000-7000-8000-0000000000a1'
+const GROUP_TWO = '019968b0-0000-7000-8000-0000000000a2'
 const BASE_PATH = `${API_BASE_URL}/api/backoffice/contributions`
 
 const API_CONTRIBUTION = {
-  id: CONTRIBUTION_ID,
-  locale: 'fr',
-  title: 'Retry de transport',
-  project: 'symfony/ai',
-  reference: 'Issue #1688',
-  url: 'https://github.com/symfony/ai/issues/1688',
-  summary: 'Chapeau.',
-  body: 'Corps.',
-  position: 0,
+  id: CONTRIBUTION_ID, locale: 'fr', translationGroup: GROUP_ONE, title: 'Un lock npm', project: 'symfony/ai',
+  reference: 'PR #42', url: 'https://example.test/pr/42', summary: 'Résumé.', body: 'Corps.', position: 0,
 }
-
 const INPUT = {
-  locale: 'fr',
-  title: 'Retry de transport',
-  project: 'symfony/ai',
-  reference: 'Issue #1688',
-  url: 'https://github.com/symfony/ai/issues/1688',
-  summary: 'Chapeau.',
-  body: 'Corps.',
-  position: 0,
+  locale: 'fr', translationGroup: null, title: 'Un lock npm', project: 'symfony/ai', reference: 'PR #42',
+  url: 'https://example.test/pr/42', summary: 'Résumé.', body: 'Corps.',
 }
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -51,26 +40,24 @@ describe('HttpAdminContributionRepository', () => {
 
     const contributions = await new HttpAdminContributionRepository(API_BASE_URL).list()
 
-    // Match exact : garantit qu'aucun header (donc pas de X-XSRF-TOKEN) n'est
-    // ajouté sur une simple lecture.
     expect(fetchMock).toHaveBeenCalledWith(BASE_PATH, { method: 'GET', credentials: 'include' })
     expect(contributions).toEqual([API_CONTRIBUTION])
   })
 
-  it('create() envoie POST avec le header CSRF et le corps JSON', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse(201, API_CONTRIBUTION))
+  it('create() envoie POST avec le corps JSON, groupe de traduction compris et sans position', async () => {
+    let sent: RequestInit | undefined
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      sent = init
+      return jsonResponse(201, API_CONTRIBUTION)
+    })
     vi.stubGlobal('fetch', fetchMock)
 
-    await new HttpAdminContributionRepository(API_BASE_URL).create(INPUT)
+    await new HttpAdminContributionRepository(API_BASE_URL).create({ ...INPUT, translationGroup: GROUP_TWO })
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      BASE_PATH,
-      expect.objectContaining({
-        method: 'POST',
-        credentials: 'include',
-        body: JSON.stringify(INPUT),
-      }),
-    )
+    const body = JSON.parse(sent?.body as string) as Record<string, unknown>
+    expect(fetchMock).toHaveBeenCalledWith(BASE_PATH, expect.objectContaining({ method: 'POST', credentials: 'include' }))
+    expect(body.translationGroup).toBe(GROUP_TWO)
+    expect(body).not.toHaveProperty('position')
   })
 
   it('update() cible l\'id dans le chemin', async () => {
@@ -91,26 +78,86 @@ describe('HttpAdminContributionRepository', () => {
     expect(fetchMock).toHaveBeenCalledWith(`${BASE_PATH}/${TARGET_CONTRIBUTION_ID}`, expect.objectContaining({ method: 'DELETE' }))
   })
 
+  it('reorder() envoie PUT …/order avec la liste complète des groupes', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await new HttpAdminContributionRepository(API_BASE_URL).reorder([GROUP_TWO, GROUP_ONE])
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE_PATH}/order`,
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ groups: [GROUP_TWO, GROUP_ONE] }) }),
+    )
+  })
+
+  it.each([
+    ['/errors/unknown-order-entry'],
+    ['/errors/incomplete-order'],
+  ])('traduit un 422 %s en AdminOrderError « stale-order »', async (problemType) => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(422, { type: problemType, detail: 'Ordre obsolète.' })))
+
+    const error = await new HttpAdminContributionRepository(API_BASE_URL).reorder([GROUP_ONE]).catch((c: unknown) => c)
+
+    expect(error).toBeInstanceOf(AdminOrderError)
+    expect((error as AdminOrderError).reason).toBe('stale-order')
+  })
+
+  it('traduit toute autre erreur d\'ordre en AdminOrderError « unknown »', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(500, {})))
+
+    const error = await new HttpAdminContributionRepository(API_BASE_URL).reorder([GROUP_ONE]).catch((c: unknown) => c)
+
+    expect(error).toBeInstanceOf(AdminOrderError)
+    expect((error as AdminOrderError).reason).toBe('unknown')
+  })
+
   it('traduit un 404 en erreur de domaine « not-found »', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(404, { detail: 'Not Found' })))
 
     const error = await new HttpAdminContributionRepository(API_BASE_URL)
       .update(MISSING_CONTRIBUTION_ID, INPUT)
-      .catch((caught: unknown) => caught)
+      .catch((c: unknown) => c)
 
     expect(error).toBeInstanceOf(AdminContributionError)
     expect((error as AdminContributionError).reason).toBe('not-found')
   })
 
-  it('traduit un 422 en erreur de domaine « validation »', async () => {
+  it('traduit un 409 en erreur de domaine « translation-already-exists »', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => jsonResponse(422, { violations: [{ propertyPath: 'url', message: 'Cette URL est invalide.' }] })),
+      vi.fn(async () => jsonResponse(409, { type: '/errors/translation-already-exists', detail: 'Déjà traduit.' })),
     )
 
     const error = await new HttpAdminContributionRepository(API_BASE_URL)
-      .create({ ...INPUT, url: 'pas-une-url' })
-      .catch((caught: unknown) => caught)
+      .create({ ...INPUT, translationGroup: GROUP_TWO })
+      .catch((c: unknown) => c)
+
+    expect(error).toBeInstanceOf(AdminContributionError)
+    expect((error as AdminContributionError).reason).toBe('translation-already-exists')
+  })
+
+  it('traduit un 422 /errors/unknown-translation-group en son propre motif, distinct de la validation', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(422, { type: '/errors/unknown-translation-group', detail: 'Groupe inconnu.' })),
+    )
+
+    const error = await new HttpAdminContributionRepository(API_BASE_URL)
+      .create({ ...INPUT, translationGroup: GROUP_TWO })
+      .catch((c: unknown) => c)
+
+    expect((error as AdminContributionError).reason).toBe('unknown-translation-group')
+  })
+
+  it('traduit un 422 en erreur de domaine « validation » — résumé vide, par exemple', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(422, { violations: [{ propertyPath: 'summary', message: 'Cette valeur ne doit pas être vide.' }] })),
+    )
+
+    const error = await new HttpAdminContributionRepository(API_BASE_URL)
+      .create({ ...INPUT, summary: '' })
+      .catch((c: unknown) => c)
 
     expect(error).toBeInstanceOf(AdminContributionError)
     expect((error as AdminContributionError).reason).toBe('validation')

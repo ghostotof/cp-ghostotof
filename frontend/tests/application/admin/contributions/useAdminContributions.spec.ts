@@ -8,29 +8,17 @@ import {
 import type { AdminContribution } from '../../../../src/domain/admin/contributions/entities/AdminContribution'
 import type { AdminContributionRepository } from '../../../../src/domain/admin/contributions/repositories/AdminContributionRepository'
 import { AdminContributionError } from '../../../../src/domain/admin/contributions/errors/AdminContributionError'
+import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 
-const CONTRIBUTION_ID = '019968a0-0000-7000-8000-000000000004'
+const CONTRIBUTION_ID = '019968a0-0000-7000-8000-000000000005'
+const GROUP_ID = '019968b0-0000-7000-8000-000000000005'
 const CONTRIBUTION: AdminContribution = {
-  id: CONTRIBUTION_ID,
-  locale: 'fr',
-  title: 'Retry de transport',
-  project: 'symfony/ai',
-  reference: 'Issue #1688',
-  url: 'https://github.com/symfony/ai/issues/1688',
-  summary: 'Chapeau.',
-  body: 'Corps.',
-  position: 0,
+  id: CONTRIBUTION_ID, locale: 'fr', translationGroup: GROUP_ID, title: 'Un lock npm', project: 'symfony/ai',
+  reference: 'PR #42', url: 'https://example.test/pr/42', summary: 'Résumé.', body: 'Corps.', position: 0,
 }
-
 const INPUT = {
-  locale: 'fr',
-  title: 'Retry de transport',
-  project: 'symfony/ai',
-  reference: 'Issue #1688',
-  url: 'https://github.com/symfony/ai/issues/1688',
-  summary: 'Chapeau.',
-  body: 'Corps.',
-  position: 0,
+  locale: 'fr', translationGroup: null, title: 'Un lock npm', project: 'symfony/ai', reference: 'PR #42',
+  url: 'https://example.test/pr/42', summary: 'Résumé.', body: 'Corps.',
 }
 
 function createStubRepository(overrides: Partial<AdminContributionRepository> = {}): AdminContributionRepository {
@@ -39,26 +27,21 @@ function createStubRepository(overrides: Partial<AdminContributionRepository> = 
     create: vi.fn(async () => CONTRIBUTION),
     update: vi.fn(async () => CONTRIBUTION),
     remove: vi.fn(async () => undefined),
+    reorder: vi.fn(async () => undefined),
     ...overrides,
   }
 }
 
 function mountWithComposable(repository: AdminContributionRepository) {
   let captured: ReturnType<typeof useAdminContributions> | undefined
-
   const Host = defineComponent({
     setup() {
       captured = useAdminContributions()
       return () => h('div')
     },
   })
-
   mount(Host, { global: { provide: { [ADMIN_CONTRIBUTION_REPOSITORY as symbol]: repository } } })
-
-  if (!captured) {
-    throw new Error('Le composable n\'a pas été capturé.')
-  }
-
+  if (!captured) throw new Error('Le composable n\'a pas été capturé.')
   return captured
 }
 
@@ -97,18 +80,16 @@ describe('useAdminContributions', () => {
     expect(repository.list).toHaveBeenCalledOnce()
   })
 
-  it('expose la raison de l\'échec d\'une mutation sans vider la liste déjà chargée', async () => {
+  it('expose la raison de l\'échec d\'une mutation sans vider la liste chargée', async () => {
     const repository = createStubRepository({
-      update: vi.fn(async () => Promise.reject(new AdminContributionError('not-found', 'gone'))),
+      update: vi.fn(async () => Promise.reject(new AdminContributionError('validation', 'invalid'))),
     })
     const composable = mountWithComposable(repository)
     await flushPromises()
 
     await composable.update(CONTRIBUTION_ID, INPUT)
 
-    // hasError est réservé à l'échec du chargement initial : une erreur de
-    // formulaire ne doit pas faire disparaître une liste correctement chargée.
-    expect(composable.errorMessage.value?.reason).toBe('not-found')
+    expect(composable.errorMessage.value?.reason).toBe('validation')
     expect(composable.hasError.value).toBe(false)
     expect(composable.contributions.value).toEqual([CONTRIBUTION])
   })
@@ -120,6 +101,34 @@ describe('useAdminContributions', () => {
 
     expect(composable.hasError.value).toBe(true)
     expect(composable.contributions.value).toEqual([])
+  })
+
+  it('délègue reorder() au repository sans recharger la liste', async () => {
+    const repository = createStubRepository()
+    const composable = mountWithComposable(repository)
+    await flushPromises()
+    vi.mocked(repository.list).mockClear()
+
+    await composable.reorder([GROUP_ID])
+
+    expect(repository.reorder).toHaveBeenCalledWith([GROUP_ID])
+    // useOrderDraft recharge lui-même après un enregistrement réussi ; le faire
+    // ici aussi doublerait l'appel.
+    expect(repository.list).not.toHaveBeenCalled()
+  })
+
+  it('laisse remonter l\'AdminOrderError telle quelle, sans la convertir', async () => {
+    const repository = createStubRepository({
+      reorder: vi.fn(async () => Promise.reject(new AdminOrderError('stale-order', 'obsolète'))),
+    })
+    const composable = mountWithComposable(repository)
+    await flushPromises()
+
+    const error = await composable.reorder([GROUP_ID]).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(AdminOrderError)
+    expect((error as AdminOrderError).reason).toBe('stale-order')
+    expect(composable.errorMessage.value).toBeNull()
   })
 
   it('échoue explicitement si le repository n\'a pas été fourni', () => {
