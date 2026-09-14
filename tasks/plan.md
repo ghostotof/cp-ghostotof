@@ -69,7 +69,7 @@ Reprises des specs (§2), rappelées ici parce qu'elles décident de l'ordre :
 
 ### Checkpoint A2 — parcours complet
 - [x] `make front-test`, `make front-lint`, `make front-build` verts
-- [ ] Dans un vrai navigateur, stack dev migrée : lister / éditer / supprimer sur une ressource admin, URLs en UUID — reste à faire par Christophe
+- [x] Dans un vrai navigateur, stack dev migrée : lister / éditer / supprimer sur une ressource admin, URLs en UUID — reste à faire par Christophe — fait le 2026-09-14 (incidents : liste, création, édition PUT, suppression DELETE, URLs en UUID)
 - [ ] Revue avec Christophe avant la release : la migration est irréversible
 
 ### Documentation et release
