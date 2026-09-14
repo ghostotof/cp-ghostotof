@@ -236,6 +236,9 @@
       "save": "Enregistrer",
       "cancel": "Annuler",
       "localeLabel": "Langue",
+      "translationOfLabel": "Version de",
+      "translationOfNone": "— aucune —",
+      "contentLabel": "Contenu",
       "titleLabel": "Titre (la thèse défendue)",
       "projectLabel": "Projet",
       "referenceLabel": "Référence",
@@ -243,8 +246,6 @@
       "summaryLabel": "Chapeau",
       "bodyLabel": "Argument",
       "bodyHelp": "Texte brut. Séparez les paragraphes par une ligne vide ; entourez un nom de paramètre d'accents graves pour le mettre en forme de code.",
-      "positionLabel": "Position",
-      "actions": "Actions",
       "editAction": "Modifier",
       "deleteAction": "Supprimer",
       "confirmDelete": "Supprimer la contribution « {title} » ?",
@@ -254,7 +255,9 @@
       "errors": {
         "not-found": "Cette contribution n'existe plus.",
         "validation": "Certains champs sont invalides.",
-        "unknown": "Une erreur est survenue. Réessayez plus tard."
+        "unknown": "Une erreur est survenue. Réessayez plus tard.",
+        "translation-already-exists": "Ce contenu a déjà une version dans cette langue.",
+        "unknown-translation-group": "Le contenu auquel rattacher cette version n'existe plus. Rechargez la page."
       }
     },
     "anonymousCv": {
