@@ -120,7 +120,7 @@ final class CreateCpgUserCommand extends Command
             return Command::FAILURE;
         }
 
-        $io->success(sprintf('Utilisateur "%s" créé (id: %d).', $user->getUsername(), $user->getId()));
+        $io->success(sprintf('Utilisateur "%s" créé (id: %s).', $user->getUsername(), $user->getId()));
 
         return Command::SUCCESS;
     }

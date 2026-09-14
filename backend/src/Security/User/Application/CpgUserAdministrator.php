@@ -10,6 +10,7 @@ use App\Security\User\Domain\Exception\CannotDeleteOwnAccountException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
+use Symfony\Component\Uid\Uuid;
 
 final readonly class CpgUserAdministrator implements CpgUserAdministratorInterface
 {
@@ -19,9 +20,11 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
     ) {
     }
 
-    public function delete(int $id, CpgUser $actingUser): void
+    public function delete(Uuid $id, CpgUser $actingUser): void
     {
-        if ($id === $actingUser->getId()) {
+        // equals() et non === : deux Uuid identiques restent deux objets
+        // distincts, qu'une comparaison d'identité déclarerait différents.
+        if ($id->equals($actingUser->getId())) {
             throw CannotDeleteOwnAccountException::forUsername($actingUser->getUsername());
         }
 
@@ -43,7 +46,7 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
         $this->cpgUserRepository->remove($user);
     }
 
-    public function changePassword(int $id, string $newPlainPassword): void
+    public function changePassword(Uuid $id, string $newPlainPassword): void
     {
         $user = $this->cpgUserRepository->findOneById($id);
 
