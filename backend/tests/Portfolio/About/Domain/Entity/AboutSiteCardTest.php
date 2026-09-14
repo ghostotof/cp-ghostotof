@@ -60,13 +60,16 @@ final class AboutSiteCardTest extends TestCase
     {
         $card = new AboutSiteCard(Locale::EN, 'Architecture', 'Description.', 'layers', 0);
 
-        $card->update('Stack', 'New description.', 'server', 1);
+        $card->update('Stack', 'New description.', 'server');
 
         self::assertSame(Locale::EN, $card->getLocale());
         self::assertSame('Stack', $card->getTitle());
         self::assertSame('New description.', $card->getDescription());
         self::assertSame('server', $card->getIconKey());
-        self::assertSame(1, $card->getPosition());
+        // Spec 0004 D3 : `update()` ne touche plus à la position — elle ne se
+        // saisit pas, seuls un rattachement à un groupe et l'endpoint d'ordre
+        // l'écrivent.
+        self::assertSame(0, $card->getPosition());
     }
 
     /**

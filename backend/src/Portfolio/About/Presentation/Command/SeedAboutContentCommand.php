@@ -63,14 +63,28 @@ final class SeedAboutContentCommand extends Command
 
         $translationGroups = new TranslationGroupIndex();
 
+        // Spec 0004 D3 : la purge précède désormais toute création, au lieu
+        // d'être faite langue par langue. Une carte sans groupe se range en fin
+        // de périmètre, toutes langues confondues : les cartes d'une autre
+        // langue encore en place pendant la création décaleraient la
+        // numérotation d'autant, à chaque `--force`. Les réglages, eux, sont un
+        // singleton par langue : ils sont mis à jour, jamais purgés.
+        foreach ($this->aboutSiteCardRepository->findAll() as $existing) {
+            $this->aboutSiteCardRepository->remove($existing);
+        }
+
+        foreach ($this->aboutMeCardRepository->findAll() as $existing) {
+            $this->aboutMeCardRepository->remove($existing);
+        }
+
         foreach ($this->content() as $localeValue => $content) {
             $locale = Locale::from($localeValue);
 
             $this->upsertSettings($locale, $content);
-            $this->reseedSiteCards($locale, $content['site']['cards'], $translationGroups);
-            $this->reseedMeCards($locale, AboutMeCardCategory::TECHNICAL, $content['me']['technicalCards'], $translationGroups);
-            $this->reseedMeCards($locale, AboutMeCardCategory::PERSONAL, $content['me']['personalCards'], $translationGroups);
-            $this->reseedMeCards($locale, AboutMeCardCategory::HOBBY, $content['me']['hobbiesCards'], $translationGroups);
+            $this->createSiteCards($locale, $content['site']['cards'], $translationGroups);
+            $this->createMeCards($locale, AboutMeCardCategory::TECHNICAL, $content['me']['technicalCards'], $translationGroups);
+            $this->createMeCards($locale, AboutMeCardCategory::PERSONAL, $content['me']['personalCards'], $translationGroups);
+            $this->createMeCards($locale, AboutMeCardCategory::HOBBY, $content['me']['hobbiesCards'], $translationGroups);
 
             $io->success(sprintf(
                 '[%s] Réglages à jour, %d carte(s) site, %d carte(s) technique(s), %d carte(s) personnelle(s), %d carte(s) loisir(s).',
@@ -129,51 +143,45 @@ final class SeedAboutContentCommand extends Command
     /**
      * @param list<array{title: string, description: string, iconKey: ?string}> $cards
      */
-    private function reseedSiteCards(Locale $locale, array $cards, TranslationGroupIndex $translationGroups): void
+    private function createSiteCards(Locale $locale, array $cards, TranslationGroupIndex $translationGroups): void
     {
-        foreach ($this->aboutSiteCardRepository->findByLocale($locale) as $existing) {
-            $this->aboutSiteCardRepository->remove($existing);
-        }
-
-        foreach ($cards as $position => $card) {
-            $this->aboutSiteCardAdministrator->create(
+        foreach ($cards as $index => $card) {
+            $created = $this->aboutSiteCardAdministrator->create(
                 $locale,
                 $card['title'],
                 $card['description'],
                 $card['iconKey'],
-                $position,
-                $translationGroups->forIndex('site-card', $position),
+                $translationGroups->forIndex('site-card', $index),
             );
+
+            $translationGroups->remember('site-card', $index, $created->getTranslationGroup());
         }
     }
 
     /**
      * @param list<array{title: string, description: string, iconKey: ?string}> $cards
      */
-    private function reseedMeCards(
+    private function createMeCards(
         Locale $locale,
         AboutMeCardCategory $category,
         array $cards,
         TranslationGroupIndex $translationGroups,
     ): void {
-        foreach ($this->aboutMeCardRepository->findByLocaleAndCategory($locale, $category) as $existing) {
-            $this->aboutMeCardRepository->remove($existing);
-        }
-
         // Le périmètre d'ordre des cartes « moi » est la catégorie (toutes
         // langues confondues) : les groupes se numérotent donc par catégorie,
         // sans quoi la carte 0 « technique » et la carte 0 « loisir » se
         // prétendraient traductions l'une de l'autre.
-        foreach ($cards as $position => $card) {
-            $this->aboutMeCardAdministrator->create(
+        foreach ($cards as $index => $card) {
+            $created = $this->aboutMeCardAdministrator->create(
                 $locale,
                 $category,
                 $card['title'],
                 $card['description'],
                 $card['iconKey'],
-                $position,
-                $translationGroups->forIndex('me-card:'.$category->value, $position),
+                $translationGroups->forIndex('me-card:'.$category->value, $index),
             );
+
+            $translationGroups->remember('me-card:'.$category->value, $index, $created->getTranslationGroup());
         }
     }
 

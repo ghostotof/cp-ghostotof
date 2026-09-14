@@ -7,6 +7,8 @@ namespace App\Portfolio\About\Application;
 use App\Portfolio\About\Domain\Entity\AboutMeCard;
 use App\Portfolio\About\Domain\Exception\AboutMeCardNotFoundException;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
+use App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException;
+use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Uid\Uuid;
 
@@ -15,8 +17,13 @@ interface AboutMeCardAdministratorInterface
     /**
      * `$translationGroup` (spec 0004 D1) : groupe d'une entrée existante quand
      * on crée sa version dans une autre langue, `null` pour un contenu neuf —
-     * l'entité s'en forge alors un. La position reste passée ici ; elle en
-     * sortira en B2, quand l'endpoint d'ordre deviendra son seul écrivain.
+     * l'entité s'en forge alors un.
+     *
+     * La position n'est pas un paramètre (spec 0004 D3) : elle se déduit du
+     * groupe, ou de la fin du périmètre. Seul l'endpoint d'ordre l'écrira.
+     *
+     * @throws UnknownTranslationGroupException  groupe inconnu du périmètre
+     * @throws TranslationAlreadyExistsException le groupe porte déjà cette langue
      */
     public function create(
         Locale $locale,
@@ -24,14 +31,20 @@ interface AboutMeCardAdministratorInterface
         string $title,
         string $description,
         ?string $iconKey,
-        int $position,
         ?Uuid $translationGroup = null,
     ): AboutMeCard;
 
     /**
+     * `$translationGroup` porte la sémantique du `PUT` (spec 0004 D3) : `null`
+     * détache l'entrée de ses traductions en conservant sa position, un autre
+     * groupe l'y rattache et lui en fait hériter la position, le sien ne fait
+     * rien.
+     *
      * @throws AboutMeCardNotFoundException si l'id est inconnu
+     * @throws UnknownTranslationGroupException groupe inconnu du périmètre
+     * @throws TranslationAlreadyExistsException le groupe porte déjà cette langue
      */
-    public function update(Uuid $id, string $title, string $description, ?string $iconKey, int $position): AboutMeCard;
+    public function update(Uuid $id, string $title, string $description, ?string $iconKey, ?Uuid $translationGroup): AboutMeCard;
 
     /**
      * @throws AboutMeCardNotFoundException si l'id est inconnu

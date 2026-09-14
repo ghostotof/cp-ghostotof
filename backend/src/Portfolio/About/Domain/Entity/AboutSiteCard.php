@@ -6,6 +6,7 @@ namespace App\Portfolio\About\Domain\Entity;
 
 use App\Portfolio\About\Infrastructure\Doctrine\AboutSiteCardRepository;
 use App\Portfolio\Shared\Domain\Orderable;
+use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -22,7 +23,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Table(name: 'about_site_card')]
 #[ORM\UniqueConstraint(name: 'uniq_about_site_card_translation_group_locale', columns: ['translation_group', 'locale'])]
 #[ORM\Index(name: 'idx_about_site_card_locale', columns: ['locale'])]
-class AboutSiteCard implements Orderable
+class AboutSiteCard implements Orderable, TranslatableContent
 {
     /**
      * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
@@ -107,12 +108,11 @@ class AboutSiteCard implements Orderable
         return $this->position;
     }
 
-    public function update(string $title, string $description, ?string $iconKey, int $position): void
+    public function update(string $title, string $description, ?string $iconKey): void
     {
         $this->title = $title;
         $this->description = $description;
         $this->iconKey = $iconKey;
-        $this->position = $position;
     }
 
     public function getTranslationGroup(): Uuid
