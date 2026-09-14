@@ -80,35 +80,35 @@ Reprises des specs (§2), rappelées ici parce qu'elles décident de l'ordre :
 - [x] Files Messenger prod vides avant (RabbitMQ 0, `messenger_messages` 0) et après le déploiement
 - [x] Feu vert pour ouvrir les issues de la phase B — `v0.11.0` en production le 2026-09-14
 
-## Task List — Phase B (spec 0004, `v0.12.0`) — index prévisionnel, issues à ouvrir après le checkpoint A3
+## Task List — Phase B (spec 0004, `v0.12.0`) — issues ouvertes le 2026-09-14 (label `spec-0004`), après `v0.11.0` en prod et #137 livrée
 
 Ordre de construction de la spec (§3), une PR par tâche, label `spec-0004` :
 
 ### Backend
-- [ ] Task B1 — Groupes de traduction : `translationGroup` sur les 8 entités localisées, interface `Orderable`, migration réversible avec appariement, seeds, `Assert\Choice` sur `Locale::cases()`
-- [ ] Task B2 — Écriture : `position` retirée des DTO/`create`/`update`, `translationGroup` nullable, héritage de position, `TranslationAlreadyExistsException` (409)
-- [ ] Task B3 — `OrderAssigner` (`Portfolio/Shared`), exceptions 422, `reorder()` sur les 9 `Administrator` + tests unitaires
-- [ ] Task B4 — Les 9 ressources `Backoffice<X>OrderResource` (`PUT …/order`, 204) + tests fonctionnels (ordre relu sur backoffice **et** endpoints publics FR/EN)
+- [ ] Task B1 — Groupes de traduction : `translationGroup` sur les 8 entités localisées, interface `Orderable`, migration réversible avec appariement, seeds, `Assert\Choice` sur `Locale::cases()` — [#141](https://github.com/ghostotof/cp-ghostotof/issues/141)
+- [ ] Task B2 — Écriture : `position` retirée des DTO/`create`/`update`, `translationGroup` nullable, héritage de position, `TranslationAlreadyExistsException` (409) — [#142](https://github.com/ghostotof/cp-ghostotof/issues/142)
+- [ ] Task B3 — `OrderAssigner` (`Portfolio/Shared`), exceptions 422, `reorder()` sur les 9 `Administrator` + tests unitaires — [#143](https://github.com/ghostotof/cp-ghostotof/issues/143)
+- [ ] Task B4 — Les 9 ressources `Backoffice<X>OrderResource` (`PUT …/order`, 204) + tests fonctionnels (ordre relu sur backoffice **et** endpoints publics FR/EN) — [#144](https://github.com/ghostotof/cp-ghostotof/issues/144)
 
 ### Checkpoint B1 — contrat d'ordre figé et cloisonné
 - [ ] `ApiRouteExposureTest` inchangé et vert ; `debug:router | grep /order` : neuf routes, aucune synthétisée
 - [ ] Un réordonnancement backoffice se lit sur `/api/<x>/fr` **et** `/api/<x>/en`
 
 ### Frontend
-- [ ] Task B5 — Briques partagées : `domain/admin/shared/ordering/`, `useOrderDraft`, `useRowDragAndDrop`, `OrderHandle.vue`, `OrderToolbar.vue`, clés `admin.order.*`
-- [ ] Task B6 — Page Incidents complète : tableau groupé, « Version de », « Créer la version », assistant rattaché, garde de route, axe
+- [ ] Task B5 — Briques partagées : `domain/admin/shared/ordering/`, `useOrderDraft`, `useRowDragAndDrop`, `OrderHandle.vue`, `OrderToolbar.vue`, clés `admin.order.*` — [#145](https://github.com/ghostotof/cp-ghostotof/issues/145)
+- [ ] Task B6 — Page Incidents complète : tableau groupé, « Version de », « Créer la version », assistant rattaché, garde de route, axe — [#146](https://github.com/ghostotof/cp-ghostotof/issues/146)
 
 ### Checkpoint B2 — première tranche verticale dans un vrai navigateur
 - [ ] Glisser, ↑/↓ au clavier, enregistrer, 422 obsolète, « Créer la version EN », assistant → groupe
 - [ ] Revue avec Christophe avant de dérouler les autres pages
 
 ### Les autres pages, une PR chacune
-- [ ] Task B7 — Contributions
-- [ ] Task B8 — CV sans identité
-- [ ] Task B9 — Qualité (principes, traits ; le tableau affiche toutes les langues)
-- [ ] Task B10 — À propos (cartes site ; cartes moi par catégorie)
-- [ ] Task B11 — Watch (ids, sans groupe)
-- [ ] Task B12 — Documentation (`CLAUDE.md`, spec 0002 amendée « le groupe est recopié »), release `v0.12.0`, préprod vérifiée FR et EN
+- [ ] Task B7 — Contributions — [#147](https://github.com/ghostotof/cp-ghostotof/issues/147)
+- [ ] Task B8 — CV sans identité — [#148](https://github.com/ghostotof/cp-ghostotof/issues/148)
+- [ ] Task B9 — Qualité (principes, traits ; le tableau affiche toutes les langues) — [#149](https://github.com/ghostotof/cp-ghostotof/issues/149)
+- [ ] Task B10 — À propos (cartes site ; cartes moi par catégorie) — [#150](https://github.com/ghostotof/cp-ghostotof/issues/150)
+- [ ] Task B11 — Watch (ids, sans groupe) — [#151](https://github.com/ghostotof/cp-ghostotof/issues/151)
+- [ ] Task B12 — Documentation (`CLAUDE.md`, spec 0002 amendée « le groupe est recopié »), release `v0.12.0`, préprod vérifiée FR et EN — [#152](https://github.com/ghostotof/cp-ghostotof/issues/152)
 
 ## Risks and Mitigations
 
@@ -120,7 +120,7 @@ Ordre de construction de la spec (§3), une PR par tâche, label `spec-0004` :
 | `uuidv7(interval)` absent (image Postgres < 18 en dev ou en CI) | Medium | `POSTGRES_TAG=18.6-alpine` partout (dev, CI, k8s) ; la Task 2 échoue immédiatement en dev si ce n'est pas le cas |
 | `ApiRouteExposureTest` perd sa portée sans qu'on le voie (404 routeur pris pour un refus) | High (le garde-fou de sécurité devient muet) | Placeholder UUID dès la Task 1, et le test assert des 401/403 précis, jamais « non 200 » |
 | Rector réécrit les constructeurs ou le mapping | Low | `composer rector` à chaque PR ; `rector.php` skip ciblé si nécessaire, jamais de baseline PHPStan |
-| Phase B : appariement de migration incorrect sur des données éditées en prod | Low (aucune perte, un lien faux) | Appariement seulement sur couple unique, sinon groupe propre ; « Version de » permet de corriger depuis l'admin |
+| Phase B : appariement de migration incorrect sur des données éditées en prod (10 incidents, 1 compte en prod au 2026-09-14) | Low (aucune perte, un lien faux) | Appariement seulement sur couple unique, sinon groupe propre ; « Version de » permet de corriger depuis l'admin |
 
 ## Open Questions
 
