@@ -84,6 +84,34 @@ final class BackofficeQualityTraitResourceTest extends WebTestCase
         );
     }
 
+    /**
+     * `Get /backoffice/quality/traits/{id}` : existant => 200 avec l'id en
+     * chaîne RFC 4122, inconnu => 404 applicatif (celui du domaine, mappé en
+     * problem+json — à distinguer du 404 du routeur couvert par
+     * testANonUuidIdIsRejectedByTheRouterBeforeAnyProvider).
+     */
+    public function testGetItemAsRoleSuper(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $trait = $client->getContainer()->get(QualityTraitAdministratorInterface::class)->create(Locale::FR, 'Architecture propre', 0);
+
+        $client->request('GET', sprintf('/api/backoffice/quality/traits/%s', $trait->getId()->toRfc4122()));
+        self::assertResponseIsSuccessful();
+        $item = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame($trait->getId()->toRfc4122(), $item['id']);
+        self::assertSame('Architecture propre', $item['label']);
+
+        $client->request('GET', '/api/backoffice/quality/traits/'.self::UNKNOWN_ID);
+        self::assertResponseStatusCodeSame(404);
+        self::assertStringContainsString(
+            'application/problem+json',
+            (string) $client->getResponse()->headers->get('Content-Type'),
+        );
+    }
+
     public function testGetCollectionFiltersByLocaleQueryParameter(): void
     {
         $client = self::createClient();

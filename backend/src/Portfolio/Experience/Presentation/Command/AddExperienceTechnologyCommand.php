@@ -76,7 +76,7 @@ final class AddExperienceTechnologyCommand extends Command
             return Command::FAILURE;
         }
 
-        $io->success(sprintf('Technologie "%s" ajoutée (id: %s, %s ans).', $technology->getName(), $technology->getId(), $technology->getYears()));
+        $io->success(sprintf('Technologie "%s" ajoutée (id: %s, %s ans).', $technology->getName(), $technology->getId()->toRfc4122(), $technology->getYears()));
 
         return Command::SUCCESS;
     }
