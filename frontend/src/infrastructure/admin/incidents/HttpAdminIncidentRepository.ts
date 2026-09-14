@@ -8,7 +8,8 @@ import {
   type AdminIncidentErrorReason,
 } from '../../../domain/admin/incidents/errors/AdminIncidentError'
 import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderError'
-import { BackofficeHttpClient, violationsMessage, type ApiProblemBody } from '../shared/BackofficeHttpClient'
+import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
+import { STALE_ORDER_PROBLEM_TYPES, hasProblemType } from '../shared/orderProblems'
 
 interface BackofficeIncidentApiResponse {
   id: string
@@ -25,15 +26,6 @@ interface BackofficeIncidentApiResponse {
 }
 
 const BASE_PATH = '/api/backoffice/incidents'
-
-/**
- * Les deux `type` de problem+json que le backend renvoie en 422 quand
- * l'ensemble de clés envoyé ne correspond plus au périmètre (spec 0004, D4) :
- * une entrée a été créée ou supprimée entre le chargement de la page et
- * l'enregistrement. Ce n'est pas une erreur de saisie, c'est un conflit de
- * concurrence — d'où `stale-order`, qui déclenche un rechargement.
- */
-const STALE_ORDER_PROBLEM_TYPES = ['unknown-order-entry', 'incomplete-order'] as const
 
 /**
  * Implémentation HTTP de AdminIncidentRepository. Toutes les méthodes exigent
@@ -145,9 +137,4 @@ export class HttpAdminIncidentRepository implements AdminIncidentRepository {
       ? new AdminOrderError('stale-order', violationsMessage(body, 'Order is stale'))
       : new AdminOrderError('unknown', `Reordering failed with status ${response.status}`)
   }
-}
-
-/** Le `type` est un slug stable (`/errors/<slug>`), contrairement au `detail` localisé. */
-function hasProblemType(body: ApiProblemBody, slug: string): boolean {
-  return true === body.type?.endsWith(`/${slug}`)
 }

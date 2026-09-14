@@ -72,16 +72,21 @@
       "leaveConfirm": "The modified order is not saved. Leaving this page will discard it. Continue?"
     },
     "quality": {
-      "actions": "Actions",
       "save": "Save",
       "cancel": "Cancel",
       "delete": "Delete",
       "loading": "Loading…",
       "loadError": "Loading failed. Please try again later.",
+      "localeHelp": "Language of this entry: the one it will be saved in, and the one the translation assistant starts from. The table below shows every language.",
+      "translationOfLabel": "Version of",
+      "translationOfNone": "— none —",
+      "contentLabel": "Content",
       "errors": {
         "not-found": "This item no longer exists.",
         "validation": "The form contains errors. Please check the fields.",
-        "unknown": "Something went wrong. Please try again later."
+        "unknown": "Something went wrong. Please try again later.",
+        "translation-already-exists": "This content already has a version in that language.",
+        "unknown-translation-group": "The content to attach this version to no longer exists. Please reload the page."
       },
       "principle": {
         "listTitle": "Quality principles",
@@ -91,8 +96,7 @@
         "titleLabel": "Title",
         "descriptionLabel": "Description",
         "iconKeyLabel": "Icon",
-        "positionLabel": "Position",
-        "empty": "No principle registered for this language yet.",
+        "empty": "No principle registered yet.",
         "confirmDelete": "Delete principle \"{title}\"?"
       },
       "trait": {
@@ -101,8 +105,7 @@
         "edit": "Edit trait",
         "editAction": "Edit",
         "labelLabel": "Label",
-        "positionLabel": "Position",
-        "empty": "No trait registered for this language yet.",
+        "empty": "No trait registered yet.",
         "confirmDelete": "Delete trait \"{label}\"?"
       }
     },
