@@ -9,6 +9,7 @@ use App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CannotModifyOwnRolesException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use Symfony\Component\Uid\Uuid;
 
 final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministratorInterface
 {
@@ -17,9 +18,10 @@ final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministrato
     ) {
     }
 
-    public function setSuperAdmin(int $id, bool $grant, CpgUser $actingUser): void
+    public function setSuperAdmin(Uuid $id, bool $grant, CpgUser $actingUser): void
     {
-        if ($id === $actingUser->getId()) {
+        // equals() et non === : cf. CpgUserAdministrator::delete().
+        if ($id->equals($actingUser->getId())) {
             throw CannotModifyOwnRolesException::forUsername($actingUser->getUsername());
         }
 

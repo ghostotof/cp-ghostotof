@@ -18,7 +18,7 @@ export interface AdminAnonymousCvSectionRepository {
 
   create(input: AdminAnonymousCvSectionInput): Promise<AdminAnonymousCvSection>
 
-  update(id: number, input: AdminAnonymousCvSectionInput): Promise<AdminAnonymousCvSection>
+  update(id: string, input: AdminAnonymousCvSectionInput): Promise<AdminAnonymousCvSection>
 
-  remove(id: number): Promise<void>
+  remove(id: string): Promise<void>
 }

@@ -41,7 +41,7 @@ final readonly class BackofficeUserRoleProcessor implements ProcessorInterface
         \assert(null !== $data->superAdmin);
 
         $this->cpgUserRoleAdministrator->setSuperAdmin(
-            $this->uriVariableInt($uriVariables, 'id'),
+            $this->uriVariableUuid($uriVariables),
             $data->superAdmin,
             $actingUser,
         );

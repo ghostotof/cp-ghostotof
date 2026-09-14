@@ -8,6 +8,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CannotModifyOwnRolesException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Gestion du rôle ROLE_SUPER d'un compte depuis le backoffice. Séparé de
@@ -27,5 +28,5 @@ interface CpgUserRoleAdministratorInterface
      * @throws CpgUserNotFoundException si l'id est inconnu
      * @throws CannotDemoteLastSuperAdminException si le retrait viderait le dernier ROLE_SUPER
      */
-    public function setSuperAdmin(int $id, bool $grant, CpgUser $actingUser): void;
+    public function setSuperAdmin(Uuid $id, bool $grant, CpgUser $actingUser): void;
 }

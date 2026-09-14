@@ -5,7 +5,7 @@
  * public.
  */
 export interface AdminContribution {
-  readonly id: number
+  readonly id: string
   readonly locale: string
   readonly title: string
   readonly project: string

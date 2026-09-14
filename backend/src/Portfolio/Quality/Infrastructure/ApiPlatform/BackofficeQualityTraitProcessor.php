@@ -29,14 +29,14 @@ final readonly class BackofficeQualityTraitProcessor implements ProcessorInterfa
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeQualityTraitResource
     {
         if ($operation instanceof Delete) {
-            $this->qualityTraitAdministrator->delete($this->uriVariableInt($uriVariables, 'id'));
+            $this->qualityTraitAdministrator->delete($this->uriVariableUuid($uriVariables));
 
             return null;
         }
 
         if ($operation instanceof Put) {
             $trait = $this->qualityTraitAdministrator->update(
-                $this->uriVariableInt($uriVariables, 'id'),
+                $this->uriVariableUuid($uriVariables),
                 $data->label,
                 $data->position,
             );

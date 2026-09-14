@@ -8,6 +8,8 @@ use App\Portfolio\Watch\Domain\Exception\InvalidWatchedProductException;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use App\Portfolio\Watch\Infrastructure\Doctrine\WatchedProductRepository;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Bridge\Doctrine\Types\UuidType;
+use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -28,10 +30,14 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\UniqueConstraint(name: 'uniq_watched_product_slug', columns: ['slug'])]
 class WatchedProduct
 {
+    /**
+     * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
+     * non par la base au flush. Une entité connaît donc son identité dès sa
+     * construction — elle se compare et se teste sans persistance.
+     */
     #[ORM\Id]
-    #[ORM\GeneratedValue]
-    #[ORM\Column]
-    private ?int $id = null;
+    #[ORM\Column(type: UuidType::NAME)]
+    private Uuid $id;
 
     /** Identifiant du produit chez endoflife.date, ex. « postgresql ». */
     #[ORM\Column(length: 60)]
@@ -65,6 +71,7 @@ class WatchedProduct
     ) {
         $this->assertVersionMatchesSource($slug, $versionSource, $version);
 
+        $this->id = Uuid::v7();
         $this->slug = $slug;
         $this->label = $label;
         $this->versionSource = $versionSource;
@@ -72,7 +79,7 @@ class WatchedProduct
         $this->position = $position;
     }
 
-    public function getId(): ?int
+    public function getId(): Uuid
     {
         return $this->id;
     }

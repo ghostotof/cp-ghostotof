@@ -9,8 +9,9 @@ import type { AdminContribution } from '../../../../src/domain/admin/contributio
 import type { AdminContributionRepository } from '../../../../src/domain/admin/contributions/repositories/AdminContributionRepository'
 import { AdminContributionError } from '../../../../src/domain/admin/contributions/errors/AdminContributionError'
 
+const CONTRIBUTION_ID = '019968a0-0000-7000-8000-000000000004'
 const CONTRIBUTION: AdminContribution = {
-  id: 1,
+  id: CONTRIBUTION_ID,
   locale: 'fr',
   title: 'Retry de transport',
   project: 'symfony/ai',
@@ -90,9 +91,9 @@ describe('useAdminContributions', () => {
     await flushPromises()
     vi.mocked(repository.list).mockClear()
 
-    await composable.remove(1)
+    await composable.remove(CONTRIBUTION_ID)
 
-    expect(repository.remove).toHaveBeenCalledWith(1)
+    expect(repository.remove).toHaveBeenCalledWith(CONTRIBUTION_ID)
     expect(repository.list).toHaveBeenCalledOnce()
   })
 
@@ -103,7 +104,7 @@ describe('useAdminContributions', () => {
     const composable = mountWithComposable(repository)
     await flushPromises()
 
-    await composable.update(1, INPUT)
+    await composable.update(CONTRIBUTION_ID, INPUT)
 
     // hasError est réservé à l'échec du chargement initial : une erreur de
     // formulaire ne doit pas faire disparaître une liste correctement chargée.

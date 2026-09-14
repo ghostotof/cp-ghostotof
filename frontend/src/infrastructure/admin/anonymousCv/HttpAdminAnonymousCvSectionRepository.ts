@@ -10,7 +10,7 @@ import {
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 
 interface BackofficeAnonymousCvSectionApiResponse {
-  id: number
+  id: string
   locale: string
   title: string
   skills: string
@@ -51,13 +51,13 @@ export class HttpAdminAnonymousCvSectionRepository implements AdminAnonymousCvSe
     return this.toEntity((await response.json()) as BackofficeAnonymousCvSectionApiResponse)
   }
 
-  async update(id: number, input: AdminAnonymousCvSectionInput): Promise<AdminAnonymousCvSection> {
+  async update(id: string, input: AdminAnonymousCvSectionInput): Promise<AdminAnonymousCvSection> {
     const response = await this.mutate('PUT', `${BASE_PATH}/${id}`, input)
 
     return this.toEntity((await response.json()) as BackofficeAnonymousCvSectionApiResponse)
   }
 
-  async remove(id: number): Promise<void> {
+  async remove(id: string): Promise<void> {
     await this.mutate('DELETE', `${BASE_PATH}/${id}`)
   }
 

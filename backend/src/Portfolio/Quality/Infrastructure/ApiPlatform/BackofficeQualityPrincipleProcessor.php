@@ -29,14 +29,14 @@ final readonly class BackofficeQualityPrincipleProcessor implements ProcessorInt
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeQualityPrincipleResource
     {
         if ($operation instanceof Delete) {
-            $this->qualityPrincipleAdministrator->delete($this->uriVariableInt($uriVariables, 'id'));
+            $this->qualityPrincipleAdministrator->delete($this->uriVariableUuid($uriVariables));
 
             return null;
         }
 
         if ($operation instanceof Put) {
             $principle = $this->qualityPrincipleAdministrator->update(
-                $this->uriVariableInt($uriVariables, 'id'),
+                $this->uriVariableUuid($uriVariables),
                 $data->title,
                 $data->description,
                 $data->iconKey,

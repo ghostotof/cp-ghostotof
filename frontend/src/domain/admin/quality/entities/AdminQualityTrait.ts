@@ -5,7 +5,7 @@ import type { Locale } from '../../../portfolio/entities/Locale'
  * (contrat public en lecture seule, sans id/locale/position).
  */
 export interface AdminQualityTrait {
-  readonly id: number
+  readonly id: string
   readonly locale: Locale
   readonly label: string
   readonly position: number

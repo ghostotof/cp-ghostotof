@@ -28,8 +28,6 @@ use Symfony\Component\Messenger\MessageBusInterface;
  */
 final class CpgUserInviterTest extends TestCase
 {
-    private const int GENERATED_ID = 123;
-
     public function testInviteCreatesAPendingUserWithADerivedUsernameAndAnInvitationMessage(): void
     {
         $clock = new MockClock('2026-09-03 12:00:00');
@@ -37,12 +35,10 @@ final class CpgUserInviterTest extends TestCase
         $cpgUserRepository = $this->createMock(CpgUserRepositoryInterface::class);
         $cpgUserRepository->method('findOneByEmail')->willReturn(null);
         $cpgUserRepository->method('findOneByUsername')->willReturn(null);
-        $cpgUserRepository->expects(self::once())->method('save')->willReturnCallback(
-            static function (CpgUser $user): void {
-                // Simule l'identifiant généré par Doctrine au flush.
-                (new \ReflectionProperty(CpgUser::class, 'id'))->setValue($user, self::GENERATED_ID);
-            },
-        );
+        // Plus rien à simuler au save() : depuis la spec 0003 l'identité est
+        // posée par le constructeur de l'entité, donc connue avant la
+        // persistance — c'est précisément ce que ce style rend possible.
+        $cpgUserRepository->expects(self::once())->method('save');
 
         $dispatched = null;
         $messageBus = $this->createMock(MessageBusInterface::class);
@@ -71,7 +67,9 @@ final class CpgUserInviterTest extends TestCase
         self::assertSame([CpgUser::ROLE_TRUSTED, 'ROLE_USER'], $user->getRoles());
 
         self::assertInstanceOf(SendAccountInvitationMessage::class, $dispatched);
-        self::assertSame(self::GENERATED_ID, $dispatched->userId);
+        // Chaîne RFC 4122 (spec 0003 D7) : le message reste lisible et
+        // rejouable sans dépendre de la sérialisation d'un objet.
+        self::assertSame($user->getId()->toRfc4122(), $dispatched->userId);
         self::assertSame('fr', $dispatched->locale);
     }
 
@@ -128,7 +126,6 @@ final class CpgUserInviterTest extends TestCase
         $user = new CpgUser('newcomer', '');
         $user->setEmail('newcomer@example.com');
         $user->markInvited(new \DateTimeImmutable('2026-09-01 09:00:00'));
-        (new \ReflectionProperty(CpgUser::class, 'id'))->setValue($user, self::GENERATED_ID);
 
         $cpgUserRepository = self::createStub(CpgUserRepositoryInterface::class);
 
@@ -152,7 +149,7 @@ final class CpgUserInviterTest extends TestCase
         $inviter->reinvite($user, Locale::EN);
 
         self::assertInstanceOf(SendAccountInvitationMessage::class, $dispatched);
-        self::assertSame(self::GENERATED_ID, $dispatched->userId);
+        self::assertSame($user->getId()->toRfc4122(), $dispatched->userId);
         self::assertSame('en', $dispatched->locale);
     }
 

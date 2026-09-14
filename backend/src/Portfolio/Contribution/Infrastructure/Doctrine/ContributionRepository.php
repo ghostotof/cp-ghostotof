@@ -9,6 +9,7 @@ use App\Portfolio\Contribution\Domain\Repository\ContributionRepositoryInterface
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<Contribution>
@@ -20,7 +21,7 @@ class ContributionRepository extends ServiceEntityRepository implements Contribu
         parent::__construct($registry, Contribution::class);
     }
 
-    public function findOneById(int $id): ?Contribution
+    public function findOneById(Uuid $id): ?Contribution
     {
         return $this->find($id);
     }

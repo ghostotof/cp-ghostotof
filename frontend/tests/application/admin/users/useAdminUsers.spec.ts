@@ -6,7 +6,10 @@ import type { AdminUserRepository } from '../../../../src/domain/admin/users/rep
 import type { AdminUser } from '../../../../src/domain/admin/users/entities/AdminUser'
 import { AdminUserError } from '../../../../src/domain/admin/users/errors/AdminUserError'
 
-const USER: AdminUser = { id: 1, username: 'jane', email: null, roles: ['ROLE_USER'], status: 'active' }
+const USER_ID = '019968a0-0000-7000-8000-000000000001'
+const OTHER_USER_ID = '019968a0-0000-7000-8000-000000000002'
+const CREATED_USER_ID = '019968a0-0000-7000-8000-000000000009'
+const USER: AdminUser = { id: USER_ID, username: 'jane', email: null, roles: ['ROLE_USER'], status: 'active' }
 
 function createStubRepository(overrides: Partial<AdminUserRepository> = {}): AdminUserRepository {
   return {
@@ -77,9 +80,9 @@ describe('useAdminUsers', () => {
     await composable.load()
     vi.mocked(repository.list).mockClear()
 
-    await composable.remove(1)
+    await composable.remove(USER_ID)
 
-    expect(repository.remove).toHaveBeenCalledWith(1)
+    expect(repository.remove).toHaveBeenCalledWith(USER_ID)
     expect(repository.list).toHaveBeenCalledTimes(1)
     expect(composable.errorMessage.value).toBeNull()
   })
@@ -91,13 +94,13 @@ describe('useAdminUsers', () => {
     const composable = mountWithComposable(repository)
     await composable.load()
 
-    await composable.remove(1)
+    await composable.remove(USER_ID)
 
     expect(composable.errorMessage.value?.reason).toBe('cannot-delete-self')
   })
 
   it('invite() appelle le repository, recharge la liste et retourne l\'utilisateur créé', async () => {
-    const created: AdminUser = { id: 9, username: 'jean.dupont', email: 'jean.dupont@example.com', roles: ['ROLE_USER'], status: 'pending' }
+    const created: AdminUser = { id: CREATED_USER_ID, username: 'jean.dupont', email: 'jean.dupont@example.com', roles: ['ROLE_USER'], status: 'pending' }
     const repository = createStubRepository({ invite: vi.fn(async () => created) })
     const composable = mountWithComposable(repository)
     await composable.load()
@@ -131,9 +134,9 @@ describe('useAdminUsers', () => {
     await composable.load()
     vi.mocked(repository.list).mockClear()
 
-    await composable.setSuperAdmin(2, true)
+    await composable.setSuperAdmin(OTHER_USER_ID, true)
 
-    expect(repository.setSuperAdmin).toHaveBeenCalledWith(2, true)
+    expect(repository.setSuperAdmin).toHaveBeenCalledWith(OTHER_USER_ID, true)
     expect(repository.list).toHaveBeenCalledTimes(1)
     expect(composable.errorMessage.value).toBeNull()
   })
@@ -145,7 +148,7 @@ describe('useAdminUsers', () => {
     const composable = mountWithComposable(repository)
     await composable.load()
 
-    await composable.setSuperAdmin(1, false)
+    await composable.setSuperAdmin(USER_ID, false)
 
     expect(composable.errorMessage.value?.reason).toBe('cannot-modify-own-roles')
   })
@@ -156,9 +159,9 @@ describe('useAdminUsers', () => {
     await composable.load()
     vi.mocked(repository.list).mockClear()
 
-    await composable.resendInvitation(2, 'en')
+    await composable.resendInvitation(OTHER_USER_ID, 'en')
 
-    expect(repository.resendInvitation).toHaveBeenCalledWith(2, 'en')
+    expect(repository.resendInvitation).toHaveBeenCalledWith(OTHER_USER_ID, 'en')
     expect(repository.list).not.toHaveBeenCalled()
     expect(composable.errorMessage.value).toBeNull()
   })
@@ -170,7 +173,7 @@ describe('useAdminUsers', () => {
     const composable = mountWithComposable(repository)
     await composable.load()
 
-    await composable.resendInvitation(2, 'fr')
+    await composable.resendInvitation(OTHER_USER_ID, 'fr')
 
     expect(composable.errorMessage.value?.reason).toBe('already-activated')
   })
@@ -181,9 +184,9 @@ describe('useAdminUsers', () => {
     await composable.load()
     vi.mocked(repository.list).mockClear()
 
-    await composable.changePassword(1, 'NewPassword123')
+    await composable.changePassword(USER_ID, 'NewPassword123')
 
-    expect(repository.changePassword).toHaveBeenCalledWith(1, 'NewPassword123')
+    expect(repository.changePassword).toHaveBeenCalledWith(USER_ID, 'NewPassword123')
     expect(repository.list).not.toHaveBeenCalled()
     expect(composable.errorMessage.value).toBeNull()
   })
@@ -195,7 +198,7 @@ describe('useAdminUsers', () => {
     const composable = mountWithComposable(repository)
     await composable.load()
 
-    await composable.changePassword(1, 'short')
+    await composable.changePassword(USER_ID, 'short')
 
     expect(composable.errorMessage.value?.reason).toBe('validation')
   })

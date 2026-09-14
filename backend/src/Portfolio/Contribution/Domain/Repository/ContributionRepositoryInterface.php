@@ -6,6 +6,7 @@ namespace App\Portfolio\Contribution\Domain\Repository;
 
 use App\Portfolio\Contribution\Domain\Entity\Contribution;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Abstraction (DIP) dont dépend la couche Application
@@ -14,7 +15,7 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
  */
 interface ContributionRepositoryInterface
 {
-    public function findOneById(int $id): ?Contribution;
+    public function findOneById(Uuid $id): ?Contribution;
 
     /**
      * @return list<Contribution> triées par position ASC

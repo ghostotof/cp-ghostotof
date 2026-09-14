@@ -10,6 +10,7 @@ use App\Portfolio\Watch\Domain\Exception\WatchedProductSlugAlreadyUsedException;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductSlugIsImmutableException;
 use App\Portfolio\Watch\Domain\Repository\WatchedProductRepositoryInterface;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Administration du catalogue des produits suivis, depuis le backoffice.
@@ -45,7 +46,7 @@ final readonly class WatchedProductAdministrator implements WatchedProductAdmini
     }
 
     public function update(
-        int $id,
+        Uuid $id,
         string $slug,
         string $label,
         VersionSource $versionSource,
@@ -68,7 +69,7 @@ final readonly class WatchedProductAdministrator implements WatchedProductAdmini
         return $product;
     }
 
-    public function delete(int $id): void
+    public function delete(Uuid $id): void
     {
         $product = $this->watchedProductRepository->findOneById($id);
 

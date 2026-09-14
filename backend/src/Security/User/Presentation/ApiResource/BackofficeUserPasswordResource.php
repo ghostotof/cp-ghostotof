@@ -9,6 +9,7 @@ use ApiPlatform\Metadata\Put;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserPasswordProcessor;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserPasswordProvider;
+use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -21,6 +22,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     operations: [
         new Put(
             uriTemplate: '/backoffice/users/{id}/password',
+            requirements: ['id' => Requirement::UUID],
             status: 204,
             output: false,
             provider: BackofficeUserPasswordProvider::class,

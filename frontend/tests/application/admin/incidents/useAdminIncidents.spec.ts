@@ -9,8 +9,9 @@ import type { AdminIncident } from '../../../../src/domain/admin/incidents/entit
 import type { AdminIncidentRepository } from '../../../../src/domain/admin/incidents/repositories/AdminIncidentRepository'
 import { AdminIncidentError } from '../../../../src/domain/admin/incidents/errors/AdminIncidentError'
 
+const INCIDENT_ID = '019968a0-0000-7000-8000-000000000005'
 const INCIDENT: AdminIncident = {
-  id: 1, locale: 'fr', title: 'RabbitMQ', version: 'v0.5.0', occurredAt: '2026-09-03',
+  id: INCIDENT_ID, locale: 'fr', title: 'RabbitMQ', version: 'v0.5.0', occurredAt: '2026-09-03',
   impact: 'Impact.', rootCause: 'Cause.', resolution: 'Résolution.', invariant: 'Règle.', position: 0,
 }
 const INPUT = {
@@ -70,9 +71,9 @@ describe('useAdminIncidents', () => {
     await flushPromises()
     vi.mocked(repository.list).mockClear()
 
-    await composable.remove(1)
+    await composable.remove(INCIDENT_ID)
 
-    expect(repository.remove).toHaveBeenCalledWith(1)
+    expect(repository.remove).toHaveBeenCalledWith(INCIDENT_ID)
     expect(repository.list).toHaveBeenCalledOnce()
   })
 
@@ -83,7 +84,7 @@ describe('useAdminIncidents', () => {
     const composable = mountWithComposable(repository)
     await flushPromises()
 
-    await composable.update(1, INPUT)
+    await composable.update(INCIDENT_ID, INPUT)
 
     expect(composable.errorMessage.value?.reason).toBe('validation')
     expect(composable.hasError.value).toBe(false)

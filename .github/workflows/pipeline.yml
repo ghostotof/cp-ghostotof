@@ -265,8 +265,51 @@ jobs:
         working-directory: k8s/overlays/preprod
         env:
           TAG: ${{ github.ref_name }}
+          MAINTENANCE_WINDOW: ${{ vars.DEPLOY_MAINTENANCE_WINDOW }}
         run: |
           kustomize edit set image backend=$IMAGE_BACKEND:$TAG-preprod frontend=$IMAGE_FRONTEND:$TAG-preprod
+          # Fenêtre de maintenance (v0.11.0, migration UUID) — opt-in, variable de
+          # dépôt DEPLOY_MAINTENANCE_WINDOW=true. Certaines migrations sont
+          # irréversibles et changent le type de colonne d'une clé primaire :
+          # le code de la release lit un `uuid` là où l'ancien code lit un
+          # `integer`, donc AUCUN pod ne doit servir de requête pendant la
+          # bascule (l'un ou l'autre code hydraterait mal l'entité, 500 sur
+          # toute route touchant la base). replicas est patché à 0 plutôt que
+          # `kubectl scale` : le Role du déployeur n'a pas la subresource
+          # `deployments/scale` (cf. github-actions-rbac/role.yaml — ne pas
+          # ajouter ce verbe pour ce besoin), seulement `patch` sur
+          # `deployments`. Le mode est opt-in pour qu'une release ordinaire
+          # (sans changement de schéma incompatible) reste à zéro interruption.
+          # Le frontend continue de répondre normalement pendant la fenêtre ;
+          # seule l'API (donc son domaine, à travers l'ingress) répond 503.
+          #
+          # Échec du Job : le script sort avant d'atteindre `kubectl apply -k .`
+          # (via `exit 1` ci-dessous), donc `backend` et `worker` restent à 0
+          # replica jusqu'à intervention manuelle — volontaire, pour ne jamais
+          # resservir du trafic sur un schéma à moitié migré. Pour reprendre la
+          # main : si la migration n'a rien écrit (le DDL PostgreSQL est
+          # transactionnel, cf. les logs récupérés ci-dessous), `kubectl apply -k .`
+          # sur cet overlay relance l'ancienne image avec l'ancien schéma ; sinon,
+          # corriger la migration puis publier un nouveau tag.
+          if [ "${MAINTENANCE_WINDOW:-false}" = "true" ]; then
+            echo "::notice::Fenêtre de maintenance : arrêt du backend et du worker avant la migration"
+            kubectl -n preprod patch deployment/backend --type merge -p '{"spec":{"replicas":0}}'
+            kubectl -n preprod patch deployment/worker --type merge -p '{"spec":{"replicas":0}}'
+            kubectl -n preprod wait --for=delete pod -l app.kubernetes.io/name=backend --timeout=120s || true
+            kubectl -n preprod wait --for=delete pod -l app.kubernetes.io/name=worker --timeout=120s || true
+            # Migration sur une base au repos, avec l'image de la release.
+            kubectl -n preprod delete job backend-migrate --ignore-not-found
+            BACKEND_IMAGE=$IMAGE_BACKEND:$TAG-preprod \
+              envsubst < ../../base/migrate-job.yaml | kubectl -n preprod apply -f -
+            # Timeout à 300s (contre 180s pour le Job après rollout plus bas) :
+            # base réellement au repos et cinq migrations de clé primaire à jouer
+            # d'un bloc, pas le simple "Already at the latest version" du Job
+            # post-rollout d'une release ordinaire.
+            kubectl -n preprod wait --for=condition=complete --timeout=300s job/backend-migrate \
+              || { kubectl -n preprod logs job/backend-migrate --tail=200; exit 1; }
+          else
+            echo "::notice::Fenêtre de maintenance désactivée (DEPLOY_MAINTENANCE_WINDOW≠true) : déploiement standard."
+          fi
           kubectl apply -k .
           kubectl -n preprod rollout status deployment/backend --timeout=180s
           kubectl -n preprod rollout status deployment/frontend --timeout=180s
@@ -394,8 +437,49 @@ jobs:
         working-directory: k8s/overlays/prod
         env:
           TAG: ${{ github.ref_name }}
+          MAINTENANCE_WINDOW: ${{ vars.DEPLOY_MAINTENANCE_WINDOW }}
         run: |
           kustomize edit set image backend=$IMAGE_BACKEND:$TAG frontend=$IMAGE_FRONTEND:$TAG
+          # Fenêtre de maintenance (v0.11.0, migration UUID) — opt-in, variable de
+          # dépôt DEPLOY_MAINTENANCE_WINDOW=true. Certaines migrations sont
+          # irréversibles et changent le type de colonne d'une clé primaire :
+          # le code de la release lit un `uuid` là où l'ancien code lit un
+          # `integer`, donc AUCUN pod ne doit servir de requête pendant la
+          # bascule (l'un ou l'autre code hydraterait mal l'entité, 500 sur
+          # toute route touchant la base). replicas est patché à 0 plutôt que
+          # `kubectl scale` : le Role du déployeur n'a pas la subresource
+          # `deployments/scale` (cf. github-actions-rbac/role.yaml — ne pas
+          # ajouter ce verbe pour ce besoin), seulement `patch` sur
+          # `deployments`. Le mode est opt-in pour qu'une release ordinaire
+          # (sans changement de schéma incompatible) reste à zéro interruption.
+          # Le frontend continue de répondre normalement pendant la fenêtre ;
+          # seule l'API (donc son domaine, à travers l'ingress) répond 503.
+          #
+          # Échec du Job : même mécanique qu'en préprod, cf. deploy-preprod — le
+          # script sort avant `kubectl apply -k .` (via `exit 1` ci-dessous),
+          # `backend` et `worker` restent à 0 replica jusqu'à intervention
+          # manuelle (voulu : jamais de trafic sur un schéma à moitié migré).
+          # Reprise : si la migration n'a rien écrit (DDL PostgreSQL
+          # transactionnel), `kubectl apply -k .` sur cet overlay relance
+          # l'ancienne image avec l'ancien schéma ; sinon, corriger puis nouveau tag.
+          if [ "${MAINTENANCE_WINDOW:-false}" = "true" ]; then
+            echo "::notice::Fenêtre de maintenance : arrêt du backend et du worker avant la migration"
+            kubectl -n prod patch deployment/backend --type merge -p '{"spec":{"replicas":0}}'
+            kubectl -n prod patch deployment/worker --type merge -p '{"spec":{"replicas":0}}'
+            kubectl -n prod wait --for=delete pod -l app.kubernetes.io/name=backend --timeout=120s || true
+            kubectl -n prod wait --for=delete pod -l app.kubernetes.io/name=worker --timeout=120s || true
+            # Migration sur une base au repos, avec l'image de la release.
+            kubectl -n prod delete job backend-migrate --ignore-not-found
+            BACKEND_IMAGE=$IMAGE_BACKEND:$TAG \
+              envsubst < ../../base/migrate-job.yaml | kubectl -n prod apply -f -
+            # Timeout à 300s (contre 180s pour le Job après rollout plus bas) —
+            # même justification qu'en préprod : base au repos, cinq migrations
+            # de clé primaire jouées d'un bloc.
+            kubectl -n prod wait --for=condition=complete --timeout=300s job/backend-migrate \
+              || { kubectl -n prod logs job/backend-migrate --tail=200; exit 1; }
+          else
+            echo "::notice::Fenêtre de maintenance désactivée (DEPLOY_MAINTENANCE_WINDOW≠true) : déploiement standard."
+          fi
           kubectl apply -k .
           kubectl -n prod rollout status deployment/backend --timeout=180s
           kubectl -n prod rollout status deployment/frontend --timeout=180s

@@ -21,7 +21,7 @@ export interface AdminAboutMeCardRepository {
 
   create(input: AdminAboutMeCardInput): Promise<AdminAboutMeCard>
 
-  update(id: number, input: AdminAboutMeCardInput): Promise<AdminAboutMeCard>
+  update(id: string, input: AdminAboutMeCardInput): Promise<AdminAboutMeCard>
 
-  remove(id: number): Promise<void>
+  remove(id: string): Promise<void>
 }

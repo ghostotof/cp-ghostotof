@@ -8,6 +8,7 @@ use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
 use App\Portfolio\Quality\Domain\Exception\QualityPrincipleNotFoundException;
 use App\Portfolio\Quality\Domain\Repository\QualityPrincipleRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 final readonly class QualityPrincipleAdministrator implements QualityPrincipleAdministratorInterface
 {
@@ -25,7 +26,7 @@ final readonly class QualityPrincipleAdministrator implements QualityPrincipleAd
         return $principle;
     }
 
-    public function update(int $id, string $title, string $description, string $iconKey, int $position): QualityPrinciple
+    public function update(Uuid $id, string $title, string $description, string $iconKey, int $position): QualityPrinciple
     {
         $principle = $this->qualityPrincipleRepository->findOneById($id);
 
@@ -39,7 +40,7 @@ final readonly class QualityPrincipleAdministrator implements QualityPrincipleAd
         return $principle;
     }
 
-    public function delete(int $id): void
+    public function delete(Uuid $id): void
     {
         $principle = $this->qualityPrincipleRepository->findOneById($id);
 

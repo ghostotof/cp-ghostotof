@@ -8,6 +8,7 @@ use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Put;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserRoleProcessor;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserRoleProvider;
+use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -22,6 +23,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     operations: [
         new Put(
             uriTemplate: '/backoffice/users/{id}/roles',
+            requirements: ['id' => Requirement::UUID],
             status: 204,
             output: false,
             provider: BackofficeUserRoleProvider::class,

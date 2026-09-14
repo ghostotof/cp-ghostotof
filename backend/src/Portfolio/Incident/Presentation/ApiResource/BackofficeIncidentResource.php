@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\Put;
 use App\Portfolio\Incident\Domain\Entity\Incident;
 use App\Portfolio\Incident\Infrastructure\ApiPlatform\BackofficeIncidentProcessor;
 use App\Portfolio\Incident\Infrastructure\ApiPlatform\BackofficeIncidentProvider;
+use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -32,6 +33,7 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Get(
             uriTemplate: '/backoffice/incidents/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeIncidentProvider::class,
         ),
         new Post(
@@ -40,11 +42,13 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Put(
             uriTemplate: '/backoffice/incidents/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeIncidentProvider::class,
             processor: BackofficeIncidentProcessor::class,
         ),
         new Delete(
             uriTemplate: '/backoffice/incidents/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeIncidentProvider::class,
             processor: BackofficeIncidentProcessor::class,
         ),
@@ -53,7 +57,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class BackofficeIncidentResource
 {
     public function __construct(
-        public ?int $id = null,
+        public ?string $id = null,
         #[Assert\NotBlank]
         #[Assert\Choice(choices: ['fr', 'en'])]
         public ?string $locale = null,
@@ -87,7 +91,7 @@ final class BackofficeIncidentResource
     public static function fromEntity(Incident $incident): self
     {
         return new self(
-            id: $incident->getId(),
+            id: $incident->getId()->toRfc4122(),
             locale: $incident->getLocale()->value,
             title: $incident->getTitle(),
             version: $incident->getVersion(),

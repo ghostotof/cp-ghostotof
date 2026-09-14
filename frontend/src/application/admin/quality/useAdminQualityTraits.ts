@@ -17,8 +17,8 @@ export interface UseAdminQualityTraitsResult {
   errorMessage: Ref<AdminQualityError | null>
   load: (locale: Locale) => Promise<void>
   create: (input: AdminQualityTraitInput) => Promise<void>
-  update: (id: number, input: AdminQualityTraitInput) => Promise<void>
-  remove: (id: number) => Promise<void>
+  update: (id: string, input: AdminQualityTraitInput) => Promise<void>
+  remove: (id: string) => Promise<void>
 }
 
 /**
@@ -73,9 +73,9 @@ export function useAdminQualityTraits(): UseAdminQualityTraitsResult {
 
   const create = (input: AdminQualityTraitInput): Promise<void> => runMutation(() => repository.create(input))
 
-  const update = (id: number, input: AdminQualityTraitInput): Promise<void> => runMutation(() => repository.update(id, input))
+  const update = (id: string, input: AdminQualityTraitInput): Promise<void> => runMutation(() => repository.update(id, input))
 
-  const remove = (id: number): Promise<void> => runMutation(() => repository.remove(id))
+  const remove = (id: string): Promise<void> => runMutation(() => repository.remove(id))
 
   return { traits, isLoading, hasError, errorMessage, load, create, update, remove }
 }

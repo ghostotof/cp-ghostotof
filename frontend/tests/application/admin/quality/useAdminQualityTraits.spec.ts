@@ -6,7 +6,8 @@ import type { AdminQualityTraitRepository } from '../../../../src/domain/admin/q
 import type { AdminQualityTrait } from '../../../../src/domain/admin/quality/entities/AdminQualityTrait'
 import { AdminQualityError } from '../../../../src/domain/admin/quality/errors/AdminQualityError'
 
-const TRAIT: AdminQualityTrait = { id: 1, locale: 'fr', label: 'Testé', position: 0 }
+const TRAIT_ID = '019968a0-0000-7000-8000-000000000007'
+const TRAIT: AdminQualityTrait = { id: TRAIT_ID, locale: 'fr', label: 'Testé', position: 0 }
 
 function createStubRepository(overrides: Partial<AdminQualityTraitRepository> = {}): AdminQualityTraitRepository {
   return {
@@ -84,7 +85,7 @@ describe('useAdminQualityTraits', () => {
     const composable = mountWithComposable(repository)
     await composable.load('fr')
 
-    await composable.update(1, { locale: 'fr', label: 'x', position: 0 })
+    await composable.update(TRAIT_ID, { locale: 'fr', label: 'x', position: 0 })
 
     expect(composable.errorMessage.value?.reason).toBe('not-found')
   })
@@ -95,9 +96,9 @@ describe('useAdminQualityTraits', () => {
     await composable.load('fr')
     vi.mocked(repository.list).mockClear()
 
-    await composable.remove(1)
+    await composable.remove(TRAIT_ID)
 
-    expect(repository.remove).toHaveBeenCalledWith(1)
+    expect(repository.remove).toHaveBeenCalledWith(TRAIT_ID)
     expect(repository.list).toHaveBeenCalledWith('fr')
   })
 })

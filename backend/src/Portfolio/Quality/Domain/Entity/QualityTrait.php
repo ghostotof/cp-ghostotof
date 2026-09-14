@@ -7,6 +7,8 @@ namespace App\Portfolio\Quality\Domain\Entity;
 use App\Portfolio\Quality\Infrastructure\Doctrine\QualityTraitRepository;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Bridge\Doctrine\Types\UuidType;
+use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -19,10 +21,14 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Table(name: 'quality_trait')]
 class QualityTrait
 {
+    /**
+     * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
+     * non par la base au flush. Une entité connaît donc son identité dès sa
+     * construction — elle se compare et se teste sans persistance.
+     */
     #[ORM\Id]
-    #[ORM\GeneratedValue]
-    #[ORM\Column]
-    private ?int $id = null;
+    #[ORM\Column(type: UuidType::NAME)]
+    private Uuid $id;
 
     #[ORM\Column(enumType: Locale::class, length: 2)]
     private Locale $locale;
@@ -36,12 +42,13 @@ class QualityTrait
 
     public function __construct(Locale $locale, string $label, int $position)
     {
+        $this->id = Uuid::v7();
         $this->locale = $locale;
         $this->label = $label;
         $this->position = $position;
     }
 
-    public function getId(): ?int
+    public function getId(): Uuid
     {
         return $this->id;
     }

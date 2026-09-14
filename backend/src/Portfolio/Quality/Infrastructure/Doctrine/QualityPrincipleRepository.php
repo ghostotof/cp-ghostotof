@@ -9,6 +9,7 @@ use App\Portfolio\Quality\Domain\Repository\QualityPrincipleRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<QualityPrinciple>
@@ -20,7 +21,7 @@ class QualityPrincipleRepository extends ServiceEntityRepository implements Qual
         parent::__construct($registry, QualityPrinciple::class);
     }
 
-    public function findOneById(int $id): ?QualityPrinciple
+    public function findOneById(Uuid $id): ?QualityPrinciple
     {
         return $this->find($id);
     }

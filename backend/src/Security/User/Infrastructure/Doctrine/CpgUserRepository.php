@@ -11,6 +11,7 @@ use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Component\Security\Core\Exception\UnsupportedUserException;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\PasswordUpgraderInterface;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<CpgUser>
@@ -32,7 +33,7 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
         return $this->findOneBy(['email' => $email]);
     }
 
-    public function findOneById(int $id): ?CpgUser
+    public function findOneById(Uuid $id): ?CpgUser
     {
         return $this->find($id);
     }

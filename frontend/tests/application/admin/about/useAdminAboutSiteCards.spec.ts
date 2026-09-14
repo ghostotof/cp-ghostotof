@@ -6,7 +6,8 @@ import type { AdminAboutSiteCardRepository } from '../../../../src/domain/admin/
 import type { AdminAboutSiteCard } from '../../../../src/domain/admin/about/entities/AdminAboutSiteCard'
 import { AdminAboutError } from '../../../../src/domain/admin/about/errors/AdminAboutError'
 
-const CARD: AdminAboutSiteCard = { id: 1, locale: 'fr', title: 'Architecture', description: 'D', iconKey: 'layers', position: 0 }
+const SITE_CARD_ID = '019968a0-0000-7000-8000-000000000002'
+const CARD: AdminAboutSiteCard = { id: SITE_CARD_ID, locale: 'fr', title: 'Architecture', description: 'D', iconKey: 'layers', position: 0 }
 
 function createStubRepository(overrides: Partial<AdminAboutSiteCardRepository> = {}): AdminAboutSiteCardRepository {
   return {
@@ -84,7 +85,7 @@ describe('useAdminAboutSiteCards', () => {
     const composable = mountWithComposable(repository)
     await composable.load('fr')
 
-    await composable.update(1, { locale: 'fr', title: 'x', description: 'x', iconKey: null, position: 0 })
+    await composable.update(SITE_CARD_ID, { locale: 'fr', title: 'x', description: 'x', iconKey: null, position: 0 })
 
     expect(composable.errorMessage.value?.reason).toBe('not-found')
   })
@@ -95,9 +96,9 @@ describe('useAdminAboutSiteCards', () => {
     await composable.load('fr')
     vi.mocked(repository.list).mockClear()
 
-    await composable.remove(1)
+    await composable.remove(SITE_CARD_ID)
 
-    expect(repository.remove).toHaveBeenCalledWith(1)
+    expect(repository.remove).toHaveBeenCalledWith(SITE_CARD_ID)
     expect(repository.list).toHaveBeenCalledWith('fr')
   })
 })

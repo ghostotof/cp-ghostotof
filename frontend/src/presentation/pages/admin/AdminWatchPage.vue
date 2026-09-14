@@ -23,7 +23,7 @@ function osvUrl(id: string): string {
 
 const VERSION_SOURCES = ['manual', 'runtime_php', 'runtime_symfony'] as const
 
-const editingId = ref<number | null>(null)
+const editingId = ref<string | null>(null)
 
 interface WatchedProductForm {
   slug: string

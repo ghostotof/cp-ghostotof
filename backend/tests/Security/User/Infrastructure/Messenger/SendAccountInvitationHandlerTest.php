@@ -30,7 +30,8 @@ final class SendAccountInvitationHandlerTest extends TestCase
 {
     private const string SENDER_EMAIL = 'noreply@cp-ghostotof.com';
     private const string FRONTEND_BASE_URL = 'https://front.test';
-    private const int USER_ID = 42;
+    /** Le message transporte l'identifiant en chaîne RFC 4122 (spec 0003 D7). */
+    private const string USER_ID = '01998b2e-2d2c-73f4-9f39-8f5b0c1f0a11';
 
     public function testItCreatesAFreshTokenAndSendsALocalisedInvitationEmail(): void
     {
@@ -192,9 +193,8 @@ final class SendAccountInvitationHandlerTest extends TestCase
         $user->setEmail($email);
         $user->markInvited(new \DateTimeImmutable('2026-09-03 11:00:00'));
 
-        $id = new \ReflectionProperty(CpgUser::class, 'id');
-        $id->setValue($user, self::USER_ID);
-
+        // L'identité du compte rechargé n'a pas à correspondre à celle du
+        // message : le dépôt est bouchonné, c'est lui qui décide ce qu'il rend.
         return $user;
     }
 

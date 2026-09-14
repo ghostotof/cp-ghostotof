@@ -35,7 +35,7 @@ final readonly class BackofficeExperienceTechnologyProvider implements ProviderI
             );
         }
 
-        $technology = $this->experienceTechnologyRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
+        $technology = $this->experienceTechnologyRepository->findOneById($this->uriVariableUuid($uriVariables));
 
         return null !== $technology ? BackofficeExperienceTechnologyResource::fromEntity($technology) : null;
     }

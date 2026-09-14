@@ -3,10 +3,13 @@ import { HttpAdminAnonymousCvSectionRepository } from '../../../../src/infrastru
 import { AdminAnonymousCvSectionError } from '../../../../src/domain/admin/anonymousCv/errors/AdminAnonymousCvSectionError'
 
 const API_BASE_URL = 'https://api.example.test'
+const SECTION_ID = '019968a0-0000-7000-8000-000000000051'
+const TARGET_SECTION_ID = '019968a0-0000-7000-8000-000000000052'
+const MISSING_SECTION_ID = '019968a0-0000-7000-8000-000000000999'
 const BASE_PATH = `${API_BASE_URL}/api/backoffice/anonymous-cv`
 
 const API_SECTION = {
-  id: 1, locale: 'fr', title: 'Backend', skills: 'Symfony', yearsOfExperience: 12, achievements: 'Réalisations.', position: 0,
+  id: SECTION_ID, locale: 'fr', title: 'Backend', skills: 'Symfony', yearsOfExperience: 12, achievements: 'Réalisations.', position: 0,
 }
 const INPUT = {
   locale: 'fr', title: 'Backend', skills: 'Symfony', yearsOfExperience: 12, achievements: 'Réalisations.', position: 0,
@@ -57,24 +60,24 @@ describe('HttpAdminAnonymousCvSectionRepository', () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, API_SECTION))
     vi.stubGlobal('fetch', fetchMock)
 
-    await new HttpAdminAnonymousCvSectionRepository(API_BASE_URL).update(7, INPUT)
+    await new HttpAdminAnonymousCvSectionRepository(API_BASE_URL).update(TARGET_SECTION_ID, INPUT)
 
-    expect(fetchMock).toHaveBeenCalledWith(`${BASE_PATH}/7`, expect.objectContaining({ method: 'PUT' }))
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE_PATH}/${TARGET_SECTION_ID}`, expect.objectContaining({ method: 'PUT' }))
   })
 
   it("remove() envoie DELETE sur l'id", async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await new HttpAdminAnonymousCvSectionRepository(API_BASE_URL).remove(7)
+    await new HttpAdminAnonymousCvSectionRepository(API_BASE_URL).remove(TARGET_SECTION_ID)
 
-    expect(fetchMock).toHaveBeenCalledWith(`${BASE_PATH}/7`, expect.objectContaining({ method: 'DELETE' }))
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE_PATH}/${TARGET_SECTION_ID}`, expect.objectContaining({ method: 'DELETE' }))
   })
 
   it('traduit un 404 en erreur de domaine « not-found »', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(404, { detail: 'Not Found' })))
 
-    const error = await new HttpAdminAnonymousCvSectionRepository(API_BASE_URL).update(99, INPUT).catch((c: unknown) => c)
+    const error = await new HttpAdminAnonymousCvSectionRepository(API_BASE_URL).update(MISSING_SECTION_ID, INPUT).catch((c: unknown) => c)
 
     expect(error).toBeInstanceOf(AdminAnonymousCvSectionError)
     expect((error as AdminAnonymousCvSectionError).reason).toBe('not-found')

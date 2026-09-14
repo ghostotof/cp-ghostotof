@@ -28,6 +28,9 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
     private const string SUPER_USERNAME = 'super';
     private const string PLAIN_USERNAME = 'jane';
 
+    /** UUID syntaxiquement valide mais absent de la base : 404 applicatif. */
+    private const string UNKNOWN_ID = '01998b2e-2d2c-73f4-9f39-8f5b0c1f0a11';
+
     protected function setUp(): void
     {
         self::ensureKernelShutdown();
@@ -45,7 +48,7 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
 
         // PUT "unsafe" : le contrôle CSRF (priorité 20) rejette en 403 avant le
         // firewall, faute de cookie/header XSRF-TOKEN.
-        $client->request('PUT', '/api/backoffice/users/1/roles', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['superAdmin' => true]));
+        $client->request('PUT', '/api/backoffice/users/'.self::UNKNOWN_ID.'/roles', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['superAdmin' => true]));
 
         self::assertResponseStatusCodeSame(403);
     }
@@ -56,7 +59,7 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
         $csrfToken = $this->loginAs($client, self::PLAIN_USERNAME, TestCredentials::plainPassword());
 
-        $client->request('PUT', '/api/backoffice/users/1/roles', server: [
+        $client->request('PUT', '/api/backoffice/users/'.self::UNKNOWN_ID.'/roles', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['superAdmin' => true]));
@@ -75,16 +78,16 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
         $janeId = $this->findId($this->fetchUsers($client), self::PLAIN_USERNAME);
 
         // Promotion
-        $client->request('PUT', sprintf('/api/backoffice/users/%d/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => true]));
+        $client->request('PUT', sprintf('/api/backoffice/users/%s/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => true]));
         self::assertResponseStatusCodeSame(204);
         self::assertContains(CpgUser::ROLE_SUPER, $this->findRoles($this->fetchUsers($client), self::PLAIN_USERNAME));
 
         // Idempotent
-        $client->request('PUT', sprintf('/api/backoffice/users/%d/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => true]));
+        $client->request('PUT', sprintf('/api/backoffice/users/%s/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => true]));
         self::assertResponseStatusCodeSame(204);
 
         // Rétrogradation (le compte "super" reste ROLE_SUPER)
-        $client->request('PUT', sprintf('/api/backoffice/users/%d/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => false]));
+        $client->request('PUT', sprintf('/api/backoffice/users/%s/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => false]));
         self::assertResponseStatusCodeSame(204);
         self::assertNotContains(CpgUser::ROLE_SUPER, $this->findRoles($this->fetchUsers($client), self::PLAIN_USERNAME));
     }
@@ -106,9 +109,9 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
 
         $janeId = $this->findId($this->fetchUsers($client), self::PLAIN_USERNAME);
 
-        $client->request('PUT', sprintf('/api/backoffice/users/%d/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => true]));
+        $client->request('PUT', sprintf('/api/backoffice/users/%s/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => true]));
         self::assertResponseStatusCodeSame(204);
-        $client->request('PUT', sprintf('/api/backoffice/users/%d/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => false]));
+        $client->request('PUT', sprintf('/api/backoffice/users/%s/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => false]));
         self::assertResponseStatusCodeSame(204);
 
         self::assertNotContains(CpgUser::ROLE_TRUSTED, $this->findRoles($this->fetchUsers($client), self::PLAIN_USERNAME));
@@ -129,7 +132,7 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
 
         $superId = $this->findId($this->fetchUsers($client), self::SUPER_USERNAME);
 
-        $client->request('PUT', sprintf('/api/backoffice/users/%d/roles', $superId), server: [
+        $client->request('PUT', sprintf('/api/backoffice/users/%s/roles', $superId), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['superAdmin' => false]));
@@ -151,12 +154,36 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $janeId = $this->findId($this->fetchUsers($client), self::PLAIN_USERNAME);
 
-        $client->request('PUT', sprintf('/api/backoffice/users/%d/roles', $janeId), server: [
+        $client->request('PUT', sprintf('/api/backoffice/users/%s/roles', $janeId), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody([]));
 
         self::assertResponseStatusCodeSame(422);
+    }
+
+    /**
+     * Spec 0003 D6 : `requirements: ['id' => Requirement::UUID]` fait d'un
+     * segment malformé un 404 du **routeur** (priorité 32), avant le contrôle
+     * CSRF (20), le firewall (8) et tout Provider — d'où l'absence de
+     * problem+json applicatif dans la réponse.
+     */
+    public function testANonUuidIdIsRejectedByTheRouterBeforeAnyProvider(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('PUT', '/api/backoffice/users/1/roles', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody(['superAdmin' => true]));
+
+        self::assertResponseStatusCodeSame(404);
+        self::assertStringNotContainsString(
+            'application/problem+json',
+            (string) $client->getResponse()->headers->get('Content-Type'),
+        );
     }
 
     public function testUnknownIdReturns404(): void
@@ -165,7 +192,7 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->request('PUT', '/api/backoffice/users/999999/roles', server: [
+        $client->request('PUT', '/api/backoffice/users/'.self::UNKNOWN_ID.'/roles', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['superAdmin' => true]));
@@ -182,7 +209,7 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
     }
 
     /**
-     * @param list<array{id: int, username: string, roles: list<string>}> $users
+     * @param list<array{id: string, username: string, roles: list<string>}> $users
      *
      * @return list<string>
      */
@@ -198,9 +225,9 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
     }
 
     /**
-     * @param list<array{id: int, username: string, roles: list<string>}> $users
+     * @param list<array{id: string, username: string, roles: list<string>}> $users
      */
-    private function findId(array $users, string $username): int
+    private function findId(array $users, string $username): string
     {
         foreach ($users as $user) {
             if ($user['username'] === $username) {

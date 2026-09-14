@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\Put;
 use App\Portfolio\Quality\Domain\Entity\QualityTrait as QualityTraitEntity;
 use App\Portfolio\Quality\Infrastructure\ApiPlatform\BackofficeQualityTraitProcessor;
 use App\Portfolio\Quality\Infrastructure\ApiPlatform\BackofficeQualityTraitProvider;
+use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -33,6 +34,7 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Get(
             uriTemplate: '/backoffice/quality/traits/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeQualityTraitProvider::class,
         ),
         new Post(
@@ -41,11 +43,13 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Put(
             uriTemplate: '/backoffice/quality/traits/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeQualityTraitProvider::class,
             processor: BackofficeQualityTraitProcessor::class,
         ),
         new Delete(
             uriTemplate: '/backoffice/quality/traits/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeQualityTraitProvider::class,
             processor: BackofficeQualityTraitProcessor::class,
         ),
@@ -54,7 +58,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class BackofficeQualityTraitResource
 {
     public function __construct(
-        public ?int $id = null,
+        public ?string $id = null,
         #[Assert\NotBlank]
         #[Assert\Choice(choices: ['fr', 'en'])]
         public ?string $locale = null,
@@ -77,7 +81,7 @@ final class BackofficeQualityTraitResource
     public static function fromEntity(QualityTraitEntity $trait): self
     {
         return new self(
-            id: $trait->getId(),
+            id: $trait->getId()->toRfc4122(),
             locale: $trait->getLocale()->value,
             label: $trait->getLabel(),
             position: $trait->getPosition(),

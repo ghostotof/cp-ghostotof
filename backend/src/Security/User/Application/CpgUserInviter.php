@@ -79,11 +79,10 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
      */
     private function dispatchInvitation(CpgUser $user, Locale $locale): void
     {
-        $userId = $user->getId();
-        // save() (invite) a affecté l'identifiant généré ; reinvite() reçoit un
-        // compte déjà persisté. Non-null dans les deux cas.
-        \assert(null !== $userId);
-
-        $this->messageBus->dispatch(new SendAccountInvitationMessage($userId, $locale->value));
+        // L'identité est posée par le constructeur de l'entité (spec 0003 D1) :
+        // elle existe avant même le save(), et voyage en chaîne RFC 4122 (D7).
+        $this->messageBus->dispatch(
+            new SendAccountInvitationMessage($user->getId()->toRfc4122(), $locale->value),
+        );
     }
 }

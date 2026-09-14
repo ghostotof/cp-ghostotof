@@ -43,7 +43,7 @@ final readonly class BackofficeAboutSiteCardProvider implements ProviderInterfac
             return array_map(BackofficeAboutSiteCardResource::fromEntity(...), $cards);
         }
 
-        $card = $this->aboutSiteCardRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
+        $card = $this->aboutSiteCardRepository->findOneById($this->uriVariableUuid($uriVariables));
 
         return null !== $card ? BackofficeAboutSiteCardResource::fromEntity($card) : null;
     }

@@ -7,6 +7,7 @@ namespace App\Tests\Portfolio\CaseStudy\Domain\Entity;
 use App\Portfolio\CaseStudy\Domain\Entity\CaseStudy;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\UuidV7;
 
 final class CaseStudyTest extends TestCase
 {
@@ -23,11 +24,34 @@ final class CaseStudyTest extends TestCase
         );
     }
 
+    /**
+     * Spec 0003 D1 : l'identite est posee par le constructeur, pas par le
+     * flush. Une entite construite est donc deja identifiable, comparable et
+     * testable sans base de donnees.
+     */
+    public function testANewCaseStudyIsIdentifiedByAUuidV7BeforeAnyPersistence(): void
+    {
+        self::assertInstanceOf(UuidV7::class, $this->caseStudy()->getId());
+    }
+
+    /**
+     * Pin le v7 et non le v4 : deux constructions successives doivent donner
+     * des identifiants distincts et croissants, sur quoi repose l'ordre de
+     * repli `ORDER BY id` du repository.
+     */
+    public function testTwoCaseStudiesBuiltInSequenceGetDistinctIncreasingIds(): void
+    {
+        $first = $this->caseStudy();
+        $second = $this->caseStudy();
+
+        self::assertNotSame($first->getId()->toRfc4122(), $second->getId()->toRfc4122());
+        self::assertLessThan($second->getId()->toRfc4122(), $first->getId()->toRfc4122());
+    }
+
     public function testConstructorSetsAllProperties(): void
     {
         $caseStudy = $this->caseStudy();
 
-        self::assertNull($caseStudy->getId());
         self::assertSame(Locale::FR, $caseStudy->getLocale());
         self::assertSame('Un cache partagé qui servait des réponses à la mauvaise organisation', $caseStudy->getTitle());
         self::assertSame('Une API multi-tenant renvoyait parfois les données du mauvais client sous forte charge.', $caseStudy->getProblem());

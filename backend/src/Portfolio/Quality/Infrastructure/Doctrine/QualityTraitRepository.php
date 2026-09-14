@@ -9,6 +9,7 @@ use App\Portfolio\Quality\Domain\Repository\QualityTraitRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<QualityTraitEntity>
@@ -20,7 +21,7 @@ class QualityTraitRepository extends ServiceEntityRepository implements QualityT
         parent::__construct($registry, QualityTraitEntity::class);
     }
 
-    public function findOneById(int $id): ?QualityTraitEntity
+    public function findOneById(Uuid $id): ?QualityTraitEntity
     {
         return $this->find($id);
     }

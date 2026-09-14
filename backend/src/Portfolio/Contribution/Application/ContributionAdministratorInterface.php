@@ -7,6 +7,7 @@ namespace App\Portfolio\Contribution\Application;
 use App\Portfolio\Contribution\Domain\Entity\Contribution;
 use App\Portfolio\Contribution\Domain\Exception\ContributionNotFoundException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 interface ContributionAdministratorInterface
 {
@@ -25,7 +26,7 @@ interface ContributionAdministratorInterface
      * @throws ContributionNotFoundException si l'id est inconnu
      */
     public function update(
-        int $id,
+        Uuid $id,
         string $title,
         string $project,
         string $reference,
@@ -38,5 +39,5 @@ interface ContributionAdministratorInterface
     /**
      * @throws ContributionNotFoundException si l'id est inconnu
      */
-    public function delete(int $id): void;
+    public function delete(Uuid $id): void;
 }

@@ -18,7 +18,7 @@ export interface AdminAboutSiteCardRepository {
 
   create(input: AdminAboutSiteCardInput): Promise<AdminAboutSiteCard>
 
-  update(id: number, input: AdminAboutSiteCardInput): Promise<AdminAboutSiteCard>
+  update(id: string, input: AdminAboutSiteCardInput): Promise<AdminAboutSiteCard>
 
-  remove(id: number): Promise<void>
+  remove(id: string): Promise<void>
 }

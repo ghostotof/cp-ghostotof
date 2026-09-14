@@ -3,6 +3,9 @@ import { HttpAdminAboutSiteCardRepository } from '../../../../src/infrastructure
 import { AdminAboutError } from '../../../../src/domain/admin/about/errors/AdminAboutError'
 
 const API_BASE_URL = 'https://api.example.test'
+const CARD_ID = '019968a0-0000-7000-8000-000000000011'
+const UPDATED_CARD_ID = '019968a0-0000-7000-8000-000000000012'
+const MISSING_CARD_ID = '019968a0-0000-7000-8000-000000000999'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -19,7 +22,7 @@ describe('HttpAdminAboutSiteCardRepository', () => {
   })
 
   it('list() appelle GET filtré par locale, sans header CSRF, et mappe la réponse (iconKey absent => null)', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse(200, [{ id: 1, locale: 'fr', title: 'Architecture', description: 'D', position: 0 }]))
+    const fetchMock = vi.fn(async () => jsonResponse(200, [{ id: CARD_ID, locale: 'fr', title: 'Architecture', description: 'D', position: 0 }]))
     vi.stubGlobal('fetch', fetchMock)
 
     const repository = new HttpAdminAboutSiteCardRepository(API_BASE_URL)
@@ -29,11 +32,11 @@ describe('HttpAdminAboutSiteCardRepository', () => {
       method: 'GET',
       credentials: 'include',
     })
-    expect(cards).toEqual([{ id: 1, locale: 'fr', title: 'Architecture', description: 'D', iconKey: null, position: 0 }])
+    expect(cards).toEqual([{ id: CARD_ID, locale: 'fr', title: 'Architecture', description: 'D', iconKey: null, position: 0 }])
   })
 
   it('create() envoie POST avec le header CSRF et le corps JSON', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(201, { id: 2, locale: 'fr', title: 'Stack', description: 'D', iconKey: 'server', position: 1 })))
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(201, { id: UPDATED_CARD_ID, locale: 'fr', title: 'Stack', description: 'D', iconKey: 'server', position: 1 })))
 
     const repository = new HttpAdminAboutSiteCardRepository(API_BASE_URL)
     await repository.create({ locale: 'fr', title: 'Stack', description: 'D', iconKey: 'server', position: 1 })
@@ -45,13 +48,13 @@ describe('HttpAdminAboutSiteCardRepository', () => {
   })
 
   it('update() envoie PUT vers /{id} avec le header CSRF', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { id: 2, locale: 'fr', title: 'Stack', description: 'D', iconKey: 'server', position: 1 })))
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { id: UPDATED_CARD_ID, locale: 'fr', title: 'Stack', description: 'D', iconKey: 'server', position: 1 })))
 
     const repository = new HttpAdminAboutSiteCardRepository(API_BASE_URL)
-    await repository.update(2, { locale: 'fr', title: 'Stack', description: 'D', iconKey: 'server', position: 1 })
+    await repository.update(UPDATED_CARD_ID, { locale: 'fr', title: 'Stack', description: 'D', iconKey: 'server', position: 1 })
 
     expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-      `${API_BASE_URL}/api/backoffice/about/site-cards/2`,
+      `${API_BASE_URL}/api/backoffice/about/site-cards/${UPDATED_CARD_ID}`,
       expect.objectContaining({ method: 'PUT', headers: expect.objectContaining({ 'X-XSRF-TOKEN': 'csrf-token-value' }) }),
     )
   })
@@ -60,10 +63,10 @@ describe('HttpAdminAboutSiteCardRepository', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })))
 
     const repository = new HttpAdminAboutSiteCardRepository(API_BASE_URL)
-    await repository.remove(2)
+    await repository.remove(UPDATED_CARD_ID)
 
     expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-      `${API_BASE_URL}/api/backoffice/about/site-cards/2`,
+      `${API_BASE_URL}/api/backoffice/about/site-cards/${UPDATED_CARD_ID}`,
       expect.objectContaining({ method: 'DELETE', headers: expect.objectContaining({ 'X-XSRF-TOKEN': 'csrf-token-value' }) }),
     )
   })
@@ -73,7 +76,7 @@ describe('HttpAdminAboutSiteCardRepository', () => {
 
     const repository = new HttpAdminAboutSiteCardRepository(API_BASE_URL)
     const error = await repository
-      .update(999, { locale: 'fr', title: 'x', description: 'x', iconKey: null, position: 0 })
+      .update(MISSING_CARD_ID, { locale: 'fr', title: 'x', description: 'x', iconKey: null, position: 0 })
       .catch((caught: unknown) => caught)
 
     expect(error).toBeInstanceOf(AdminAboutError)

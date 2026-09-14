@@ -10,6 +10,7 @@ use App\Portfolio\Watch\Domain\Exception\WatchedProductNotFoundException;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductSlugAlreadyUsedException;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductSlugIsImmutableException;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
+use Symfony\Component\Uid\Uuid;
 
 interface WatchedProductAdministratorInterface
 {
@@ -31,7 +32,7 @@ interface WatchedProductAdministratorInterface
      * @throws InvalidWatchedProductException         si la version contredit sa source
      */
     public function update(
-        int $id,
+        Uuid $id,
         string $slug,
         string $label,
         VersionSource $versionSource,
@@ -42,5 +43,5 @@ interface WatchedProductAdministratorInterface
     /**
      * @throws WatchedProductNotFoundException si l'id est inconnu
      */
-    public function delete(int $id): void;
+    public function delete(Uuid $id): void;
 }

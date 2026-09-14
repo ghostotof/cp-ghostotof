@@ -10,7 +10,7 @@ import {
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 
 interface BackofficeExperienceTechnologyApiResponse {
-  id: number
+  id: string
   name: string
   years: number
   iconKey?: string | null
@@ -68,13 +68,13 @@ export class HttpAdminExperienceTechnologyRepository implements AdminExperienceT
     return this.toEntity((await response.json()) as BackofficeExperienceTechnologyApiResponse)
   }
 
-  async update(id: number, input: AdminExperienceTechnologyInput): Promise<AdminExperienceTechnology> {
+  async update(id: string, input: AdminExperienceTechnologyInput): Promise<AdminExperienceTechnology> {
     const response = await this.mutate('PUT', `${BASE_PATH}/${id}`, toPayload(input))
 
     return this.toEntity((await response.json()) as BackofficeExperienceTechnologyApiResponse)
   }
 
-  async remove(id: number): Promise<void> {
+  async remove(id: string): Promise<void> {
     await this.mutate('DELETE', `${BASE_PATH}/${id}`)
   }
 

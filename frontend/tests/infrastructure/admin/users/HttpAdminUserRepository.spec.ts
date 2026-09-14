@@ -3,6 +3,12 @@ import { HttpAdminUserRepository } from '../../../../src/infrastructure/admin/us
 import { AdminUserError } from '../../../../src/domain/admin/users/errors/AdminUserError'
 
 const API_BASE_URL = 'https://api.example.test'
+const USER_ID = '019968a0-0000-7000-8000-000000000001'
+const NEWCOMER_ID = '019968a0-0000-7000-8000-000000000002'
+const SUPER_ADMIN_TARGET_ID = '019968a0-0000-7000-8000-000000000003'
+const RESEND_TARGET_ID = '019968a0-0000-7000-8000-000000000004'
+const INVITED_USER_ID = '019968a0-0000-7000-8000-000000000009'
+const MISSING_USER_ID = '019968a0-0000-7000-8000-000000000999'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -21,8 +27,8 @@ describe('HttpAdminUserRepository', () => {
   it('list() appelle GET avec credentials include, sans header CSRF, et mappe email + status', async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse(200, [
-        { id: 1, username: 'super', email: null, roles: ['ROLE_SUPER', 'ROLE_USER'], status: 'active' },
-        { id: 2, username: 'newcomer', email: 'newcomer@example.com', roles: ['ROLE_USER'], status: 'pending' },
+        { id: USER_ID, username: 'super', email: null, roles: ['ROLE_SUPER', 'ROLE_USER'], status: 'active' },
+        { id: NEWCOMER_ID, username: 'newcomer', email: 'newcomer@example.com', roles: ['ROLE_USER'], status: 'pending' },
       ]),
     )
     vi.stubGlobal('fetch', fetchMock)
@@ -34,14 +40,14 @@ describe('HttpAdminUserRepository', () => {
       credentials: 'include',
     })
     expect(users).toEqual([
-      { id: 1, username: 'super', email: null, roles: ['ROLE_SUPER', 'ROLE_USER'], status: 'active' },
-      { id: 2, username: 'newcomer', email: 'newcomer@example.com', roles: ['ROLE_USER'], status: 'pending' },
+      { id: USER_ID, username: 'super', email: null, roles: ['ROLE_SUPER', 'ROLE_USER'], status: 'active' },
+      { id: NEWCOMER_ID, username: 'newcomer', email: 'newcomer@example.com', roles: ['ROLE_USER'], status: 'pending' },
     ])
   })
 
   it('invite() envoie POST {email, locale} avec le header CSRF et retourne l\'utilisateur créé', async () => {
     const fetchMock = vi.fn(async () =>
-      jsonResponse(201, { id: 9, username: 'jean.dupont', email: 'jean.dupont@example.com', roles: ['ROLE_USER'], status: 'pending' }),
+      jsonResponse(201, { id: INVITED_USER_ID, username: 'jean.dupont', email: 'jean.dupont@example.com', roles: ['ROLE_USER'], status: 'pending' }),
     )
     vi.stubGlobal('fetch', fetchMock)
 
@@ -57,7 +63,7 @@ describe('HttpAdminUserRepository', () => {
       }),
     )
     expect(created).toEqual({
-      id: 9,
+      id: INVITED_USER_ID,
       username: 'jean.dupont',
       email: 'jean.dupont@example.com',
       roles: ['ROLE_USER'],
@@ -86,10 +92,10 @@ describe('HttpAdminUserRepository', () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await new HttpAdminUserRepository(API_BASE_URL).setSuperAdmin(3, true)
+    await new HttpAdminUserRepository(API_BASE_URL).setSuperAdmin(SUPER_ADMIN_TARGET_ID, true)
 
     expect(fetchMock).toHaveBeenCalledWith(
-      `${API_BASE_URL}/api/backoffice/users/3/roles`,
+      `${API_BASE_URL}/api/backoffice/users/${SUPER_ADMIN_TARGET_ID}/roles`,
       expect.objectContaining({
         method: 'PUT',
         credentials: 'include',
@@ -104,14 +110,14 @@ describe('HttpAdminUserRepository', () => {
       'fetch',
       vi.fn(async () => jsonResponse(409, { type: '/errors/cannot-modify-own-roles', detail: 'peu importe, localisé' })),
     )
-    const ownRoles = await new HttpAdminUserRepository(API_BASE_URL).setSuperAdmin(1, false).catch((caught: unknown) => caught)
+    const ownRoles = await new HttpAdminUserRepository(API_BASE_URL).setSuperAdmin(USER_ID, false).catch((caught: unknown) => caught)
     expect((ownRoles as AdminUserError).reason).toBe('cannot-modify-own-roles')
 
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => jsonResponse(409, { type: '/errors/cannot-demote-last-super', detail: 'peu importe, localisé' })),
     )
-    const lastSuper = await new HttpAdminUserRepository(API_BASE_URL).setSuperAdmin(2, false).catch((caught: unknown) => caught)
+    const lastSuper = await new HttpAdminUserRepository(API_BASE_URL).setSuperAdmin(NEWCOMER_ID, false).catch((caught: unknown) => caught)
     expect((lastSuper as AdminUserError).reason).toBe('cannot-demote-last-super')
   })
 
@@ -119,10 +125,10 @@ describe('HttpAdminUserRepository', () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 202 }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await new HttpAdminUserRepository(API_BASE_URL).resendInvitation(4, 'en')
+    await new HttpAdminUserRepository(API_BASE_URL).resendInvitation(RESEND_TARGET_ID, 'en')
 
     expect(fetchMock).toHaveBeenCalledWith(
-      `${API_BASE_URL}/api/backoffice/users/4/invitation`,
+      `${API_BASE_URL}/api/backoffice/users/${RESEND_TARGET_ID}/invitation`,
       expect.objectContaining({
         method: 'POST',
         credentials: 'include',
@@ -135,7 +141,7 @@ describe('HttpAdminUserRepository', () => {
   it('resendInvitation() lève "already-activated" sur 409', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(409, { detail: 'Le compte "jane" n\'est pas en attente d\'activation…' })))
 
-    const error = await new HttpAdminUserRepository(API_BASE_URL).resendInvitation(4, 'fr').catch((caught: unknown) => caught)
+    const error = await new HttpAdminUserRepository(API_BASE_URL).resendInvitation(RESEND_TARGET_ID, 'fr').catch((caught: unknown) => caught)
 
     expect((error as AdminUserError).reason).toBe('already-activated')
   })
@@ -144,10 +150,10 @@ describe('HttpAdminUserRepository', () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await new HttpAdminUserRepository(API_BASE_URL).remove(2)
+    await new HttpAdminUserRepository(API_BASE_URL).remove(NEWCOMER_ID)
 
     expect(fetchMock).toHaveBeenCalledWith(
-      `${API_BASE_URL}/api/backoffice/users/2`,
+      `${API_BASE_URL}/api/backoffice/users/${NEWCOMER_ID}`,
       expect.objectContaining({ method: 'DELETE', credentials: 'include', headers: expect.objectContaining({ 'X-XSRF-TOKEN': 'csrf-token-value' }) }),
     )
   })
@@ -156,10 +162,10 @@ describe('HttpAdminUserRepository', () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(new HttpAdminUserRepository(API_BASE_URL).changePassword(2, 'NewPassword123')).resolves.toBeUndefined()
+    await expect(new HttpAdminUserRepository(API_BASE_URL).changePassword(NEWCOMER_ID, 'NewPassword123')).resolves.toBeUndefined()
 
     expect(fetchMock).toHaveBeenCalledWith(
-      `${API_BASE_URL}/api/backoffice/users/2/password`,
+      `${API_BASE_URL}/api/backoffice/users/${NEWCOMER_ID}/password`,
       expect.objectContaining({
         method: 'PUT',
         body: JSON.stringify({ password: 'NewPassword123' }),
@@ -170,7 +176,7 @@ describe('HttpAdminUserRepository', () => {
   it('remove() lève "cannot-delete-self" sur 409', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(409, { detail: 'L\'utilisateur "super" ne peut pas supprimer son propre compte.' })))
 
-    const error = await new HttpAdminUserRepository(API_BASE_URL).remove(1).catch((caught: unknown) => caught)
+    const error = await new HttpAdminUserRepository(API_BASE_URL).remove(USER_ID).catch((caught: unknown) => caught)
 
     expect((error as AdminUserError).reason).toBe('cannot-delete-self')
   })
@@ -178,7 +184,7 @@ describe('HttpAdminUserRepository', () => {
   it('lève "not-found" sur 404', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(404, { detail: 'Not Found' })))
 
-    const error = await new HttpAdminUserRepository(API_BASE_URL).remove(999).catch((caught: unknown) => caught)
+    const error = await new HttpAdminUserRepository(API_BASE_URL).remove(MISSING_USER_ID).catch((caught: unknown) => caught)
 
     expect((error as AdminUserError).reason).toBe('not-found')
   })
@@ -186,7 +192,7 @@ describe('HttpAdminUserRepository', () => {
   it('lève "validation" sur 422 avec les messages de violation concaténés', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(422, { violations: [{ propertyPath: 'password', message: 'This value is too short.' }] })))
 
-    const error = await new HttpAdminUserRepository(API_BASE_URL).changePassword(1, 'short').catch((caught: unknown) => caught)
+    const error = await new HttpAdminUserRepository(API_BASE_URL).changePassword(USER_ID, 'short').catch((caught: unknown) => caught)
 
     expect((error as AdminUserError).reason).toBe('validation')
     expect((error as AdminUserError).message).toBe('This value is too short.')

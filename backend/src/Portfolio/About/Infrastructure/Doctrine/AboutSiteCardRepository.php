@@ -9,6 +9,7 @@ use App\Portfolio\About\Domain\Repository\AboutSiteCardRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<AboutSiteCard>
@@ -20,7 +21,7 @@ class AboutSiteCardRepository extends ServiceEntityRepository implements AboutSi
         parent::__construct($registry, AboutSiteCard::class);
     }
 
-    public function findOneById(int $id): ?AboutSiteCard
+    public function findOneById(Uuid $id): ?AboutSiteCard
     {
         return $this->find($id);
     }

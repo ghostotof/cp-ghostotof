@@ -11,6 +11,7 @@ use App\Portfolio\About\Domain\Repository\AboutMeCardRepositoryInterface;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\Uuid;
 
 final class AboutMeCardAdministratorTest extends TestCase
 {
@@ -32,12 +33,12 @@ final class AboutMeCardAdministratorTest extends TestCase
         $card = new AboutMeCard(Locale::FR, AboutMeCardCategory::HOBBY, 'Musique', 'Description.', 'guitar', 0);
 
         $repository = $this->createMock(AboutMeCardRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(1)->willReturn($card);
+        $repository->expects(self::once())->method('findOneById')->with($card->getId())->willReturn($card);
         $repository->expects(self::once())->method('save')->with($card);
 
         $administrator = new AboutMeCardAdministrator($repository);
 
-        $updated = $administrator->update(1, 'Moto', 'New description.', 'motorbike', 1);
+        $updated = $administrator->update($card->getId(), 'Moto', 'New description.', 'motorbike', 1);
 
         self::assertSame('Moto', $updated->getTitle());
         self::assertSame(AboutMeCardCategory::HOBBY, $updated->getCategory());
@@ -52,7 +53,7 @@ final class AboutMeCardAdministratorTest extends TestCase
 
         $this->expectException(AboutMeCardNotFoundException::class);
 
-        $administrator->update(404, 'x', 'x', 'x', 0);
+        $administrator->update(Uuid::v7(), 'x', 'x', 'x', 0);
     }
 
     public function testDeleteRemovesCard(): void
@@ -60,12 +61,12 @@ final class AboutMeCardAdministratorTest extends TestCase
         $card = new AboutMeCard(Locale::FR, AboutMeCardCategory::PERSONAL, 'Curieux', 'Description.', 'lightbulb', 0);
 
         $repository = $this->createMock(AboutMeCardRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(1)->willReturn($card);
+        $repository->expects(self::once())->method('findOneById')->with($card->getId())->willReturn($card);
         $repository->expects(self::once())->method('remove')->with($card);
 
         $administrator = new AboutMeCardAdministrator($repository);
 
-        $administrator->delete(1);
+        $administrator->delete($card->getId());
     }
 
     public function testDeleteThrowsWhenCardNotFound(): void
@@ -77,6 +78,6 @@ final class AboutMeCardAdministratorTest extends TestCase
 
         $this->expectException(AboutMeCardNotFoundException::class);
 
-        $administrator->delete(404);
+        $administrator->delete(Uuid::v7());
     }
 }

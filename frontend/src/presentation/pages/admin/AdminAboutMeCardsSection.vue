@@ -27,7 +27,7 @@ const categoryOptions = computed<readonly { value: AdminAboutMeCardCategory; lab
   { value: 'hobby', label: t('admin.about.meCard.categoryHobby') },
 ])
 
-const editingId = ref<number | null>(null)
+const editingId = ref<string | null>(null)
 const form = reactive({ category: 'technical' as AdminAboutMeCardCategory, title: '', description: '', iconKey: '', position: 0 })
 const isSubmitting = ref(false)
 const isEditing = computed(() => null !== editingId.value)

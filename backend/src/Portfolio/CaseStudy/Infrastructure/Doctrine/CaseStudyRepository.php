@@ -9,6 +9,7 @@ use App\Portfolio\CaseStudy\Domain\Repository\CaseStudyRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<CaseStudy>
@@ -20,7 +21,7 @@ class CaseStudyRepository extends ServiceEntityRepository implements CaseStudyRe
         parent::__construct($registry, CaseStudy::class);
     }
 
-    public function findOneById(int $id): ?CaseStudy
+    public function findOneById(Uuid $id): ?CaseStudy
     {
         return $this->find($id);
     }

@@ -6,7 +6,8 @@ import type { AdminQualityPrincipleRepository } from '../../../../src/domain/adm
 import type { AdminQualityPrinciple } from '../../../../src/domain/admin/quality/entities/AdminQualityPrinciple'
 import { AdminQualityError } from '../../../../src/domain/admin/quality/errors/AdminQualityError'
 
-const PRINCIPLE: AdminQualityPrinciple = { id: 1, locale: 'fr', title: 'DDD', description: 'Description', iconKey: 'boxes', position: 0 }
+const PRINCIPLE_ID = '019968a0-0000-7000-8000-000000000006'
+const PRINCIPLE: AdminQualityPrinciple = { id: PRINCIPLE_ID, locale: 'fr', title: 'DDD', description: 'Description', iconKey: 'boxes', position: 0 }
 
 function createStubRepository(overrides: Partial<AdminQualityPrincipleRepository> = {}): AdminQualityPrincipleRepository {
   return {
@@ -84,7 +85,7 @@ describe('useAdminQualityPrinciples', () => {
     const composable = mountWithComposable(repository)
     await composable.load('fr')
 
-    await composable.update(1, { locale: 'fr', title: 'x', description: 'x', iconKey: 'x', position: 0 })
+    await composable.update(PRINCIPLE_ID, { locale: 'fr', title: 'x', description: 'x', iconKey: 'x', position: 0 })
 
     expect(composable.errorMessage.value?.reason).toBe('not-found')
   })
@@ -95,9 +96,9 @@ describe('useAdminQualityPrinciples', () => {
     await composable.load('fr')
     vi.mocked(repository.list).mockClear()
 
-    await composable.remove(1)
+    await composable.remove(PRINCIPLE_ID)
 
-    expect(repository.remove).toHaveBeenCalledWith(1)
+    expect(repository.remove).toHaveBeenCalledWith(PRINCIPLE_ID)
     expect(repository.list).toHaveBeenCalledWith('fr')
   })
 })

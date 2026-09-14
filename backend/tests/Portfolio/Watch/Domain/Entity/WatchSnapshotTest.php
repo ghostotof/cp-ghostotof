@@ -9,6 +9,7 @@ use App\Portfolio\Watch\Domain\Exception\EmptySnapshotPayloadException;
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotSourceStatus;
 use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\UuidV7;
 
 final class WatchSnapshotTest extends TestCase
 {
@@ -29,7 +30,7 @@ final class WatchSnapshotTest extends TestCase
     {
         $snapshot = $this->snapshot();
 
-        self::assertNull($snapshot->getId());
+        self::assertInstanceOf(UuidV7::class, $snapshot->getId());
         self::assertSame(WatchSnapshotType::RELEASE_CYCLES, $snapshot->getType());
         self::assertSame(['products' => [['slug' => 'php']]], $snapshot->getPayload());
         self::assertSame('2026-09-07 04:41:00', $snapshot->getRefreshedAt()->format('Y-m-d H:i:s'));

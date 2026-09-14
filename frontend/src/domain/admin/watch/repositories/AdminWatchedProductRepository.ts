@@ -18,7 +18,7 @@ export interface AdminWatchedProductRepository {
 
   create(input: AdminWatchedProductInput): Promise<AdminWatchedProduct>
 
-  update(id: number, input: AdminWatchedProductInput): Promise<AdminWatchedProduct>
+  update(id: string, input: AdminWatchedProductInput): Promise<AdminWatchedProduct>
 
-  remove(id: number): Promise<void>
+  remove(id: string): Promise<void>
 }

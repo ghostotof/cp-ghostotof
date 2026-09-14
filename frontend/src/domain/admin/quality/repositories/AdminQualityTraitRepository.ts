@@ -19,7 +19,7 @@ export interface AdminQualityTraitRepository {
 
   create(input: AdminQualityTraitInput): Promise<AdminQualityTrait>
 
-  update(id: number, input: AdminQualityTraitInput): Promise<AdminQualityTrait>
+  update(id: string, input: AdminQualityTraitInput): Promise<AdminQualityTrait>
 
-  remove(id: number): Promise<void>
+  remove(id: string): Promise<void>
 }

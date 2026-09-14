@@ -67,7 +67,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This repository started as a freshly generated project skeleton (single "Init" commit). Real backend code now
 exists — the `Security` bounded context (`User` + `Authentication`), six `Portfolio` bounded contexts
 (`Experience`, `Quality`, `About`, `Contribution`, `Incident`, `Watch`, see Backend architecture below) and an
-`Ai` context being built (spec 0002, ADR 0004 — see `Ai/` below) — and follows a DDD structure under
+`Ai` context whose first sub-context, `Translation`, is delivered (spec 0002, ADR 0004, v0.10.0/v0.10.1 — see `Ai/` below) — and follows a DDD structure under
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
 over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
 recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
@@ -80,8 +80,8 @@ it that way. Two scoped `ignoreErrors` in `phpstan.dist.neon` cover functional-t
 response body is `mixed`; the PHPUnit assertions are the shape check, not PHPStan) — `offsetAccess`/`foreach`
 and `argument.type … mixed given`, `path: tests/` only. `src/Kernel.php` is `excludePaths`-excluded
 (`getAllowedEnvs()` false-positive `method.unused`). The `$uriVariables` mixed-access pattern is solved by the
-`App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables` trait (`uriVariableInt`/`uriVariableString`) — reuse
-it in new Providers/Processors rather than casting `mixed`. Functional tests build request bodies via
+`App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables` trait (`uriVariableUuid`/`uriVariableString`/
+`uriVariableLocale`) — reuse it in new Providers/Processors rather than casting `mixed`. Functional tests build request bodies via
 `App\Tests\Support\HttpJson::jsonBody()` (not raw `json_encode`, which is `string|false`).
 `tests/object-manager.php` boots the kernel for `phpstan-doctrine`; `tests/bootstrap.php` is
 `excludePaths`-excluded (Flex-managed). **Rector** is configured (`backend/rector.php`, `withPhpSets()` +
@@ -154,6 +154,32 @@ DDD structure: each bounded context is a top-level folder under `src/`, itself s
 `Application/`, `Infrastructure/`, `Presentation/` layers — only the layers a context actually needs, no empty
 ceremonial folders. `config/packages/doctrine.yaml`'s mapping scans all of `src/` (not a single `Entity/`
 folder), so entities live inside their bounded context instead of a shared top-level directory.
+
+**Every entity has a UUID v7 primary key, assigned in its constructor** (spec 0003, `v0.11.0`):
+`#[ORM\Id] #[ORM\Column(type: UuidType::NAME)] private Uuid $id;` with no `GeneratedValue`,
+`$this->id = Uuid::v7();` as the first assignment, right after the constructor's guards (three entities
+validate an invariant first: `CpgUser`, `WatchedProduct`, `WatchSnapshot`), `getId(): Uuid` non-nullable.
+Never a `setId()`, never an id supplied from outside on creation. The column is PostgreSQL's native `uuid`
+type (`symfony/doctrine-bridge`'s `UuidType`, `symfony/uid` `8.1.*` a direct dependency), never
+`VARCHAR(36)`. Every item operation declares `requirements: ['id' => Requirement::UUID]`
+(`Symfony\Component\Routing\Requirement`), so a malformed `{id}` is a 404 from the router before the
+firewall or any Provider runs; Providers/Processors read it via `ResolvesUriVariables::uriVariableUuid()`.
+`Requirement::UUID` is case-sensitive (lowercase hex), so an upper-case UUID in a URL is a router 404 too —
+`toRfc4122()` always emits lowercase, don't widen the regex. DTOs expose `id` as an RFC 4122 string
+(`$entity->getId()->toRfc4122()`), never the `Uuid` object — a read/write DTO's `id` stays
+`?string $id = null` (absent on creation), but an output-only DTO's is non-nullable
+(`BackofficeUserResource`). **`===`/`!==` between two `Uuid` compares objects, not values — always use
+`->equals()`** (`CpgUserAdministrator`, `CpgUserRoleAdministrator`, `ExperienceTechnologyAdministrator` are
+the three sites that need it). The migration to UUID is irreversible and monotone: PostgreSQL 18's
+`uuidv7(interval)` assigns each existing row a v7 id offset by its rank in the old integer order, so
+`ORDER BY id` keeps producing today's order — one migration per task of phase A (five files,
+`backend/migrations/Version202609141{2..6}0000.php`), each `down()` throws rather than pretend the
+original integers are recoverable. `ApiRouteExposureTest` substitutes `{id}` with a fixed valid UUID (not
+`'1'`): with `requirements` in place, an integer placeholder would 404 at the router and the test would
+silently stop covering every item route. Two traps hit while migrating: the API Platform metadata pool
+survives `cache:clear` after a DTO's `id` type changes — `rm -rf var/cache/<env>` instead; and the usual
+bind-mount desync (`docker compose restart backend`) can make a container run a stale Provider/Processor
+mid-migration.
 
 - **`Security/User/`** — the `CpgUser` aggregate. Two creation paths (see ADR 0001): the CLI command
   (`app:user:create`, bootstrap — notably the first `ROLE_SUPER`) and **invitation from the backoffice**
@@ -371,9 +397,9 @@ folder), so entities live inside their bounded context instead of a shared top-l
 
 - **`Ai/`** — everything that talks to a language model, and nothing else does (ADR 0004,
   `docs/adr/0004-assistance-ia.md`; spec `.claude/specs/0002-ai-translation-assistant.md`). Sub-context per
-  usage: `Ai/Translation/` (phase 1, the backoffice FR/EN translation assistant,
-  `POST /api/backoffice/translations`, `ROLE_SUPER`) and later `Ai/Mcp/` (phase 2, a read-only MCP server
-  reserved to `ROLE_TRUSTED`). The bundle is **Symfony AI**, pinned in **exact version** (`symfony/ai-bundle`,
+  usage: `Ai/Translation/` (phase 1, **delivered 2026-09-14**, v0.10.0 then v0.10.1: the backoffice FR/EN
+  translation assistant, `POST /api/backoffice/translations`, `ROLE_SUPER`) and later `Ai/Mcp/` (phase 2, a
+  read-only MCP server reserved to `ROLE_TRUSTED`, spec still to write — ADR 0004 D7 must be amended first). The bundle is **Symfony AI**, pinned in **exact version** (`symfony/ai-bundle`,
   `symfony/ai-anthropic-platform`, `symfony/ai-agent`, all `0.13.0`, no `^` while 0.x); the platform and the
   `translator` agent (`claude-sonnet-5`, `max_tokens` 4096 — the Anthropic wire name, the bridge merges
   options as-is —, `tools: false`, system prompt in `config/ai/prompts/translator.txt`) are declared in
@@ -384,8 +410,13 @@ folder), so entities live inside their bounded context instead of a shared top-l
   timeout; **only backoffice-authored content meant for publication may be sent** to a provider, never
   `cpg_user`, a token, the nominative CV or a contact message; **a suggestion is never persisted** without a
   human action (the endpoint reads and writes nothing, the frontend fills a *new* form); **cost is bounded by
-  construction** (per-account quota, `max_tokens`, timeout); **no test goes on the wire** (`InMemoryPlatform`,
-  platform swapped in the test container, dummy `ANTHROPIC_API_KEY` forced in `phpunit.dist.xml`). Token
+  construction** (per-account quota `translation_assistant`, 30/h keyed on the `username`, `max_tokens`,
+  timeout); **no test goes on the wire** (unit tests: a `FakeAgent`; functional tests: the concrete client
+  behind the scoped one, `ai.http_client.scoping.inner`, replaced by a `MockHttpClient` answering in the
+  Messages API format — **with `$client->disableReboot()`**, otherwise `KernelBrowser` rebuilds the kernel
+  between the login and the call and the request really leaves for `api.anthropic.com`; dummy
+  `ANTHROPIC_API_KEY` forced in `phpunit.dist.xml`, so such a leak fails 401 → 503 instead of costing money).
+  An anonymous `POST` there answers **403, not 401**: the CSRF subscriber runs before the firewall. Token
   usage and duration are logged, the content never is. `claude-sonnet-5` rejects `temperature`/`top_p`/`top_k`
   (400): no sampling option anywhere. The Flex recipes come from the official `symfony/recipes` (they apply
   despite `allow-contrib: false`); the `ai_anthropic_platform.yaml` they generate is merged into `ai.yaml`,
@@ -574,6 +605,25 @@ slice is the **public** counterpart: route `/(fr|en)/set-password/:token` (`meta
 `useAccountPasswordSetup` state machine (`checking|ready|submitting|done|invalid|expired|error`), talks to the
 public `/api/account/password-setup/{token}` endpoints.
 
+**Translation assistant** (ADR 0004 phase 1, spec 0002): one more admin slice, `domain/admin/translation`
+(`TranslationDraft`, `AdminTranslationError` with reasons `validation|rate-limited|unavailable|unknown`)
+→ `infrastructure/admin/translation/HttpAdminTranslationRepository.ts` (`POST /api/backoffice/translations`)
+→ `application/admin/translation/useAdminTranslation.ts` (`translate()` returns the draft or `null` and
+exposes `errorReason`; **it never touches a form nor persists anything**, ADR 0004 D4) + the two helpers in
+`proseFields.ts` (`collectProseFields` drops blank fields, the API refuses them with a 422;
+`applyTranslationDraft` leaves a field absent from the draft untouched) → `presentation/ui/admin/
+TranslateEntryButton.vue` (label follows the form's locale, `aria-busy` while calling, emits `translate`).
+**Each page alone decides which of its fields are prose** (spec D2 — the backend is content-agnostic) and
+what to do with the draft. Two semantics, and the split is deliberate: on per-entry pages (Incidents,
+Contributions, Anonymous CV, About site/me cards) the form switches to *creation* in the target locale, the
+non-prose fields (`version`, `occurredAt`, `position`, `iconKey`…) are kept and a `role="status"` banner
+names the draft's source locale; on page-locale pages (Quality, About) the assistant switches the **page**
+locale to the target instead, since the list shown must match the form being saved. About *settings* is a
+singleton per locale, so its draft is **deferred**: parked in `pendingDraft`, applied on the return of
+`load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server would
+overwrite it). Never use `v-html` on text coming back from the model: it goes through the form fields, then
+`RichText.vue`. The case-studies admin page does not exist yet (issue #104); the button lands there with it.
+
 - `presentation/ui/{BaseTextInput,BaseTextarea,BaseNumberInput,BaseSelect}.vue` — the project's first reusable
   form components, used by every admin form. Reach for these before writing a new raw `<input>` in `admin/*`.
 - `presentation/layout/AdminLayout.vue` — sub-navigation across the admin sections, rendered for every
@@ -720,6 +770,22 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   production. If a console command must run at deploy time, declare another Job — never bring `pods/exec` back.
   The RBAC is a **manual bootstrap the pipeline never replays**: after changing it, re-run the loop in
   `k8s/README.md` §4 *before* the next deploy, or the job fails on `cannot create resource "jobs"`.
+- **`DEPLOY_MAINTENANCE_WINDOW` (repository variable) opts a deploy into a maintenance window** — added
+  for v0.11.0's irreversible integer→UUID primary-key migrations, where the new code cannot read the old
+  schema and vice versa, so no pod may serve a request while the migration runs. When it equals `true`,
+  `deploy-preprod`/`deploy-prod` in `pipeline.yml` patch `backend` and `worker` to `replicas: 0` (a
+  `kubectl patch` on `spec.replicas` — the deployer `Role` has no `deployments/scale` subresource, so
+  never `kubectl scale`), wait for their pods to disappear, run `migrate-job.yaml` against the quiet
+  database, then let `kubectl apply -k .` restore the manifests' replica counts and the existing
+  `rollout status` wait for the new pods. The frontend keeps serving; only the API returns 503 through
+  the ingress for the window's duration. It is opt-in specifically so an ordinary release without a
+  breaking schema change stays zero-downtime — **set it before pushing the release tag and unset it
+  right after the production deploy**: a forgotten `true` turns every subsequent deploy into a
+  downtime deploy for no reason. **Fail-closed on a migration failure**: the script exits before
+  reaching `kubectl apply -k .`, so `backend`/`worker` stay at 0 replicas until someone intervenes —
+  deliberate, never serve traffic against a half-migrated schema. To recover: if the migration wrote
+  nothing (PostgreSQL DDL is transactional), `kubectl apply -k .` on that overlay redeploys the
+  previous image against the still-old schema; otherwise fix the migration and cut a new tag.
 - **`watch-refresh-cronjob.yaml` *is* in `kustomization.yaml`'s `resources:`** — the opposite of
   `migrate-job.yaml` above, and deliberately: it wants kustomize's image transformer, since it must run the
   same image as the Deployment. It used to be **the only object in the cluster that makes outbound calls
@@ -945,8 +1011,9 @@ ADRs:
   discretion rather than secrecy) and puts the CV behind `ROLE_TRUSTED`. Read it before touching
   `access_control`, `CpgUser::getRoles()` or `BaseAccessController`: it turns on the fact that `getRoles()`
   grants `ROLE_USER` unconditionally, which is why a tier was added *above* rather than below.
-- `docs/adr/0004-assistance-ia.md` — **statut `accepté` (2026-09-14), phase 1 en cours** (spec 0002, issues
-  `spec-0002`). Rules for anything that calls a language model: one importing class behind an interface,
+- `docs/adr/0004-assistance-ia.md` — **statut `accepté` (2026-09-14), phase 1 livrée** (spec 0002, issues
+  `spec-0002` closed, v0.10.0/v0.10.1 in production the same day; the case-studies admin page, #104, is the one
+  form still without the button). Rules for anything that calls a language model: one importing class behind an interface,
   bundle pinned exact, no call from a public render path, only publishable backoffice content leaves, human in
   the loop, bounded cost, offline tests; D7 fixes phase 2 (MCP server, `ROLE_TRUSTED`) pending an amendment.
   Read it before adding any `Symfony\AI` usage or a new `ai.agent`.

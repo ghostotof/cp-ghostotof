@@ -9,6 +9,7 @@ use App\Portfolio\AnonymousCv\Domain\Repository\AnonymousCvSectionRepositoryInte
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<AnonymousCvSection>
@@ -20,7 +21,7 @@ class AnonymousCvSectionRepository extends ServiceEntityRepository implements An
         parent::__construct($registry, AnonymousCvSection::class);
     }
 
-    public function findOneById(int $id): ?AnonymousCvSection
+    public function findOneById(Uuid $id): ?AnonymousCvSection
     {
         return $this->find($id);
     }

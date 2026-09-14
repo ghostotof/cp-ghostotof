@@ -6,6 +6,7 @@ namespace App\Portfolio\Incident\Domain\Repository;
 
 use App\Portfolio\Incident\Domain\Entity\Incident;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Abstraction (DIP) dont dépend la couche Application : elle ne connaît jamais
@@ -13,7 +14,7 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
  */
 interface IncidentRepositoryInterface
 {
-    public function findOneById(int $id): ?Incident;
+    public function findOneById(Uuid $id): ?Incident;
 
     /**
      * @return list<Incident> triés par position ASC

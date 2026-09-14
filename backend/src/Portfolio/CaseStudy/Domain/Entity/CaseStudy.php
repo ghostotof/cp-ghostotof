@@ -7,6 +7,8 @@ namespace App\Portfolio\CaseStudy\Domain\Entity;
 use App\Portfolio\CaseStudy\Infrastructure\Doctrine\CaseStudyRepository;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Bridge\Doctrine\Types\UuidType;
+use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -24,10 +26,14 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Index(name: 'idx_case_study_locale_position', columns: ['locale', 'position'])]
 class CaseStudy
 {
+    /**
+     * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
+     * non par la base au flush. Une entité connaît donc son identité dès sa
+     * construction — elle se compare et se teste sans persistance.
+     */
     #[ORM\Id]
-    #[ORM\GeneratedValue]
-    #[ORM\Column]
-    private ?int $id = null;
+    #[ORM\Column(type: UuidType::NAME)]
+    private Uuid $id;
 
     #[ORM\Column(enumType: Locale::class, length: 2)]
     private Locale $locale;
@@ -68,6 +74,7 @@ class CaseStudy
         string $measuredResult,
         int $position,
     ) {
+        $this->id = Uuid::v7();
         $this->locale = $locale;
         $this->title = $title;
         $this->problem = $problem;
@@ -77,7 +84,7 @@ class CaseStudy
         $this->position = $position;
     }
 
-    public function getId(): ?int
+    public function getId(): Uuid
     {
         return $this->id;
     }

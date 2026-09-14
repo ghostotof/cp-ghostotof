@@ -35,7 +35,7 @@ final readonly class BackofficeWatchedProductProvider implements ProviderInterfa
             return array_map(BackofficeWatchedProductResource::fromEntity(...), $this->watchedProductRepository->findAllOrdered());
         }
 
-        $product = $this->watchedProductRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
+        $product = $this->watchedProductRepository->findOneById($this->uriVariableUuid($uriVariables));
 
         return null !== $product ? BackofficeWatchedProductResource::fromEntity($product) : null;
     }

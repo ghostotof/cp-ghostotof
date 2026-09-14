@@ -8,6 +8,7 @@ use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Domain\Repository\ExperienceTechnologyRepositoryInterface;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<ExperienceTechnology>
@@ -24,7 +25,7 @@ class ExperienceTechnologyRepository extends ServiceEntityRepository implements 
         return $this->findOneBy(['name' => $name]);
     }
 
-    public function findOneById(int $id): ?ExperienceTechnology
+    public function findOneById(Uuid $id): ?ExperienceTechnology
     {
         return $this->find($id);
     }

@@ -20,7 +20,7 @@ export interface AdminExperienceTechnologyRepository {
 
   create(input: AdminExperienceTechnologyInput): Promise<AdminExperienceTechnology>
 
-  update(id: number, input: AdminExperienceTechnologyInput): Promise<AdminExperienceTechnology>
+  update(id: string, input: AdminExperienceTechnologyInput): Promise<AdminExperienceTechnology>
 
-  remove(id: number): Promise<void>
+  remove(id: string): Promise<void>
 }

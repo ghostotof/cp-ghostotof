@@ -11,7 +11,7 @@ final class CpgUserAdminPresenter implements CpgUserAdminPresenterInterface
     public function present(CpgUser $user): array
     {
         return [
-            'id' => (int) $user->getId(),
+            'id' => $user->getId()->toRfc4122(),
             'username' => $user->getUsername(),
             'email' => $user->getEmail(),
             'roles' => $user->getRoles(),

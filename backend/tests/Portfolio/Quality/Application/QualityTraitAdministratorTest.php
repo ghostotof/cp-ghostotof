@@ -10,6 +10,7 @@ use App\Portfolio\Quality\Domain\Exception\QualityTraitNotFoundException;
 use App\Portfolio\Quality\Domain\Repository\QualityTraitRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\Uuid;
 
 final class QualityTraitAdministratorTest extends TestCase
 {
@@ -30,12 +31,12 @@ final class QualityTraitAdministratorTest extends TestCase
         $trait = new QualityTraitEntity(Locale::FR, 'Architecture propre', 0);
 
         $repository = $this->createMock(QualityTraitRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(1)->willReturn($trait);
+        $repository->expects(self::once())->method('findOneById')->with($trait->getId())->willReturn($trait);
         $repository->expects(self::once())->method('save')->with($trait);
 
         $administrator = new QualityTraitAdministrator($repository);
 
-        $updated = $administrator->update(1, 'Maintenabilité', 1);
+        $updated = $administrator->update($trait->getId(), 'Maintenabilité', 1);
 
         self::assertSame('Maintenabilité', $updated->getLabel());
         self::assertSame(1, $updated->getPosition());
@@ -50,7 +51,7 @@ final class QualityTraitAdministratorTest extends TestCase
 
         $this->expectException(QualityTraitNotFoundException::class);
 
-        $administrator->update(404, 'Label', 0);
+        $administrator->update(Uuid::v7(), 'Label', 0);
     }
 
     public function testDeleteRemovesTrait(): void
@@ -58,12 +59,12 @@ final class QualityTraitAdministratorTest extends TestCase
         $trait = new QualityTraitEntity(Locale::FR, 'Architecture propre', 0);
 
         $repository = $this->createMock(QualityTraitRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(1)->willReturn($trait);
+        $repository->expects(self::once())->method('findOneById')->with($trait->getId())->willReturn($trait);
         $repository->expects(self::once())->method('remove')->with($trait);
 
         $administrator = new QualityTraitAdministrator($repository);
 
-        $administrator->delete(1);
+        $administrator->delete($trait->getId());
     }
 
     public function testDeleteThrowsWhenTraitNotFound(): void
@@ -75,6 +76,6 @@ final class QualityTraitAdministratorTest extends TestCase
 
         $this->expectException(QualityTraitNotFoundException::class);
 
-        $administrator->delete(404);
+        $administrator->delete(Uuid::v7());
     }
 }

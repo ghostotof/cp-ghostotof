@@ -10,6 +10,7 @@ use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<AboutMeCard>
@@ -21,7 +22,7 @@ class AboutMeCardRepository extends ServiceEntityRepository implements AboutMeCa
         parent::__construct($registry, AboutMeCard::class);
     }
 
-    public function findOneById(int $id): ?AboutMeCard
+    public function findOneById(Uuid $id): ?AboutMeCard
     {
         return $this->find($id);
     }

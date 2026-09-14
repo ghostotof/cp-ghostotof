@@ -8,6 +8,7 @@ use App\Portfolio\Contribution\Domain\Entity\Contribution;
 use App\Portfolio\Contribution\Domain\Exception\ContributionNotFoundException;
 use App\Portfolio\Contribution\Domain\Repository\ContributionRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 final readonly class ContributionAdministrator implements ContributionAdministratorInterface
 {
@@ -34,7 +35,7 @@ final readonly class ContributionAdministrator implements ContributionAdministra
     }
 
     public function update(
-        int $id,
+        Uuid $id,
         string $title,
         string $project,
         string $reference,
@@ -55,7 +56,7 @@ final readonly class ContributionAdministrator implements ContributionAdministra
         return $contribution;
     }
 
-    public function delete(int $id): void
+    public function delete(Uuid $id): void
     {
         $contribution = $this->contributionRepository->findOneById($id);
 

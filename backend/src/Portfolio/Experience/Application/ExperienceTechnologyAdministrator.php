@@ -9,6 +9,7 @@ use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsE
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException;
 use App\Portfolio\Experience\Domain\Repository\ExperienceTechnologyRepositoryInterface;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Symfony\Component\Uid\Uuid;
 
 final readonly class ExperienceTechnologyAdministrator implements ExperienceTechnologyAdministratorInterface
 {
@@ -17,7 +18,7 @@ final readonly class ExperienceTechnologyAdministrator implements ExperienceTech
     ) {
     }
 
-    public function update(int $id, string $name, float $years, ?string $iconKey, ?string $relatedTechnologyName, bool $secondary = false): ExperienceTechnology
+    public function update(Uuid $id, string $name, float $years, ?string $iconKey, ?string $relatedTechnologyName, bool $secondary = false): ExperienceTechnology
     {
         $technology = $this->experienceTechnologyRepository->findOneById($id);
 
@@ -27,7 +28,10 @@ final readonly class ExperienceTechnologyAdministrator implements ExperienceTech
 
         $existingWithSameName = $this->experienceTechnologyRepository->findOneByName($name);
 
-        if (null !== $existingWithSameName && $existingWithSameName->getId() !== $id) {
+        // Comparaison par valeur (equals()) et non par identité (!==) : l'id
+        // vient de l'URL, donc d'un Uuid fraîchement reconstruit, jamais la
+        // même instance que celui porté par l'entité.
+        if (null !== $existingWithSameName && !$existingWithSameName->getId()->equals($id)) {
             throw ExperienceTechnologyAlreadyExistsException::forName($name);
         }
 
@@ -45,7 +49,7 @@ final readonly class ExperienceTechnologyAdministrator implements ExperienceTech
         return $technology;
     }
 
-    public function delete(int $id): void
+    public function delete(Uuid $id): void
     {
         $technology = $this->experienceTechnologyRepository->findOneById($id);
 

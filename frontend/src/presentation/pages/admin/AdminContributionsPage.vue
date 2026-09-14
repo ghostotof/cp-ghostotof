@@ -16,7 +16,7 @@ const { t } = useI18n()
 const { contributions, isLoading, hasError, errorMessage, create, update, remove } = useAdminContributions()
 const { isTranslating, errorReason: translationErrorReason, translate } = useAdminTranslation()
 
-const editingId = ref<number | null>(null)
+const editingId = ref<string | null>(null)
 
 /**
  * Formulaire typé explicitement : sans annotation, `reactive` infère `locale`
