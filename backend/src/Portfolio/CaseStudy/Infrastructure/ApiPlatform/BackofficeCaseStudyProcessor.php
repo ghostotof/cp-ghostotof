@@ -29,14 +29,14 @@ final readonly class BackofficeCaseStudyProcessor implements ProcessorInterface
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeCaseStudyResource
     {
         if ($operation instanceof Delete) {
-            $this->caseStudyAdministrator->delete($this->uriVariableInt($uriVariables, 'id'));
+            $this->caseStudyAdministrator->delete($this->uriVariableUuid($uriVariables));
 
             return null;
         }
 
         if ($operation instanceof Put) {
             $caseStudy = $this->caseStudyAdministrator->update(
-                $this->uriVariableInt($uriVariables, 'id'),
+                $this->uriVariableUuid($uriVariables),
                 $data->title,
                 $data->problem,
                 $data->solution,

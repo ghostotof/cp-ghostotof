@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Portfolio\CaseStudy\Presentation\ApiResource;
+namespace App\Tests\Portfolio\Contribution\Presentation\ApiResource;
 
-use App\Portfolio\CaseStudy\Application\CaseStudyAdministratorInterface;
-use App\Portfolio\CaseStudy\Domain\Repository\CaseStudyRepositoryInterface;
+use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
+use App\Portfolio\Contribution\Domain\Repository\ContributionRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
@@ -17,11 +17,10 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Couvre le CRUD réservé ROLE_SUPER de /api/backoffice/case-studies, en
- * miroir du test du endpoint public (CaseStudyResourceTest) — même pattern
- * que BackofficeAboutSiteCardResourceTest.
+ * Couvre le CRUD réservé ROLE_SUPER de /api/backoffice/contributions, en
+ * miroir de BackofficeAboutSiteCardResourceTest.
  */
-final class BackofficeCaseStudyResourceTest extends WebTestCase
+final class BackofficeContributionResourceTest extends WebTestCase
 {
     use HttpJson;
 
@@ -39,7 +38,7 @@ final class BackofficeCaseStudyResourceTest extends WebTestCase
     protected function tearDown(): void
     {
         $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
-        $connection->executeStatement('DELETE FROM case_study');
+        $connection->executeStatement('DELETE FROM contribution');
         $connection->executeStatement('DELETE FROM cpg_user');
         parent::tearDown();
     }
@@ -48,7 +47,7 @@ final class BackofficeCaseStudyResourceTest extends WebTestCase
     {
         $client = self::createClient();
 
-        $client->request('GET', '/api/backoffice/case-studies');
+        $client->request('GET', '/api/backoffice/contributions');
 
         self::assertResponseStatusCodeSame(401);
     }
@@ -59,7 +58,7 @@ final class BackofficeCaseStudyResourceTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
         $this->loginAs($client, self::PLAIN_USERNAME, TestCredentials::plainPassword());
 
-        $client->request('GET', '/api/backoffice/case-studies');
+        $client->request('GET', '/api/backoffice/contributions');
 
         self::assertResponseStatusCodeSame(403);
     }
@@ -77,7 +76,7 @@ final class BackofficeCaseStudyResourceTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->request('GET', '/api/backoffice/case-studies/1');
+        $client->request('GET', '/api/backoffice/contributions/1');
 
         self::assertResponseStatusCodeSame(404);
         self::assertStringNotContainsString(
@@ -87,7 +86,7 @@ final class BackofficeCaseStudyResourceTest extends WebTestCase
     }
 
     /**
-     * `Get /backoffice/case-studies/{id}` : existant => 200 avec l'id en
+     * `Get /backoffice/contributions/{id}` : existant => 200 avec l'id en
      * chaîne RFC 4122, inconnu => 404 applicatif (celui du domaine, mappé en
      * problem+json — à distinguer du 404 du routeur couvert par
      * testANonUuidIdIsRejectedByTheRouterBeforeAnyProvider).
@@ -98,23 +97,24 @@ final class BackofficeCaseStudyResourceTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $caseStudy = $client->getContainer()->get(CaseStudyAdministratorInterface::class)->create(
+        $contribution = $client->getContainer()->get(ContributionAdministratorInterface::class)->create(
             Locale::FR,
-            'Un cache mal isolé entre organisations',
-            'Problème.',
-            'Solution.',
-            'Compromis.',
-            'Résultat mesuré.',
+            'Retry de transport, re-prompt de validation',
+            'symfony/ai',
+            'Issue #1688',
+            'https://github.com/symfony/ai/issues/1688',
+            'Deux opérations sous un seul mot.',
+            'Corps.',
             0,
         );
 
-        $client->request('GET', sprintf('/api/backoffice/case-studies/%s', $caseStudy->getId()->toRfc4122()));
+        $client->request('GET', sprintf('/api/backoffice/contributions/%s', $contribution->getId()->toRfc4122()));
         self::assertResponseIsSuccessful();
         $item = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
-        self::assertSame($caseStudy->getId()->toRfc4122(), $item['id']);
-        self::assertSame('Un cache mal isolé entre organisations', $item['title']);
+        self::assertSame($contribution->getId()->toRfc4122(), $item['id']);
+        self::assertSame('Retry de transport, re-prompt de validation', $item['title']);
 
-        $client->request('GET', '/api/backoffice/case-studies/'.self::UNKNOWN_ID);
+        $client->request('GET', '/api/backoffice/contributions/'.self::UNKNOWN_ID);
         self::assertResponseStatusCodeSame(404);
         self::assertStringContainsString(
             'application/problem+json',
@@ -128,17 +128,17 @@ final class BackofficeCaseStudyResourceTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $administrator = $client->getContainer()->get(CaseStudyAdministratorInterface::class);
-        $administrator->create(Locale::FR, 'Titre FR', 'p', 's', 't', 'r', 0);
-        $administrator->create(Locale::EN, 'Title EN', 'p', 's', 't', 'r', 0);
+        $administrator = $client->getContainer()->get(ContributionAdministratorInterface::class);
+        $administrator->create(Locale::FR, 'Titre FR', 'projet', 'ref', 'https://example.test', 'résumé', 'corps', 0);
+        $administrator->create(Locale::EN, 'Title EN', 'project', 'ref', 'https://example.test', 'summary', 'body', 0);
 
-        $client->request('GET', '/api/backoffice/case-studies?locale=fr');
+        $client->request('GET', '/api/backoffice/contributions?locale=fr');
         self::assertResponseIsSuccessful();
         $filtered = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertCount(1, $filtered);
         self::assertSame('fr', $filtered[0]['locale']);
 
-        $client->request('GET', '/api/backoffice/case-studies');
+        $client->request('GET', '/api/backoffice/contributions');
         self::assertResponseIsSuccessful();
         $all = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertCount(2, $all);
@@ -151,84 +151,91 @@ final class BackofficeCaseStudyResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         // Post
-        $client->request('POST', '/api/backoffice/case-studies', server: [
+        $client->request('POST', '/api/backoffice/contributions', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody([
             'locale' => 'fr',
-            'title' => 'Un cache mal isolé entre organisations',
-            'problem' => 'Fuite occasionnelle de données entre tenants sous forte charge.',
-            'solution' => 'Clé de cache incluant systématiquement l\'identifiant de tenant.',
-            'tradeoffs' => 'Complexité de clé accrue.',
-            'measuredResult' => 'Zéro fuite sur 3 mois de production.',
+            'title' => 'Retry de transport',
+            'project' => 'symfony/ai',
+            'reference' => 'Issue #1688',
+            'url' => 'https://github.com/symfony/ai/issues/1688',
+            'summary' => 'Résumé.',
+            'body' => 'Corps.',
             'position' => 0,
         ]));
         self::assertResponseIsSuccessful();
         $created = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
-        self::assertSame('Un cache mal isolé entre organisations', $created['title']);
+        self::assertSame('Retry de transport', $created['title']);
         self::assertIsString($created['id']);
         self::assertTrue(Uuid::isValid($created['id']));
         $id = $created['id'];
 
-        // GetCollection
-        $client->request('GET', '/api/backoffice/case-studies');
-        self::assertResponseIsSuccessful();
-        $collection = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
-        self::assertCount(1, $collection);
-        self::assertSame($id, $collection[0]['id']);
-
-        // GetCollection filtrée par locale absente => vide
-        $client->request('GET', '/api/backoffice/case-studies?locale=en');
-        self::assertResponseIsSuccessful();
-        $emptyCollection = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
-        self::assertSame([], $emptyCollection);
-
-        // Get
-        $client->request('GET', sprintf('/api/backoffice/case-studies/%s', $id));
-        self::assertResponseIsSuccessful();
-
         // Put
-        $client->request('PUT', sprintf('/api/backoffice/case-studies/%s', $id), server: [
+        $client->request('PUT', sprintf('/api/backoffice/contributions/%s', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody([
             'locale' => 'fr',
             'title' => 'Titre mis à jour',
-            'problem' => 'Problème mis à jour.',
-            'solution' => 'Solution mise à jour.',
-            'tradeoffs' => 'Compromis mis à jour.',
-            'measuredResult' => 'Résultat mis à jour.',
+            'project' => 'symfony/ai',
+            'reference' => 'Issue #1688',
+            'url' => 'https://github.com/symfony/ai/issues/1688',
+            'summary' => 'Résumé mis à jour.',
+            'body' => 'Corps mis à jour.',
             'position' => 1,
         ]));
         self::assertResponseIsSuccessful();
         $updated = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame('Titre mis à jour', $updated['title']);
-        self::assertSame(1, $updated['position']);
 
         // Put - id inconnu => 404
-        $client->request('PUT', '/api/backoffice/case-studies/'.self::UNKNOWN_ID, server: [
+        $client->request('PUT', '/api/backoffice/contributions/'.self::UNKNOWN_ID, server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody([
             'locale' => 'fr',
-            'title' => 'X',
-            'problem' => 'X',
-            'solution' => 'X',
-            'tradeoffs' => 'X',
-            'measuredResult' => 'X',
+            'title' => 'x',
+            'project' => 'x',
+            'reference' => 'x',
+            'url' => 'https://example.test',
+            'summary' => 'x',
+            'body' => 'x',
             'position' => 0,
         ]));
         self::assertResponseStatusCodeSame(404);
 
         // Delete - id inconnu => 404
-        $client->request('DELETE', '/api/backoffice/case-studies/'.self::UNKNOWN_ID, server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
+        $client->request('DELETE', '/api/backoffice/contributions/'.self::UNKNOWN_ID, server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
         self::assertResponseStatusCodeSame(404);
 
         // Delete
-        $client->request('DELETE', sprintf('/api/backoffice/case-studies/%s', $id), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
+        $client->request('DELETE', sprintf('/api/backoffice/contributions/%s', $id), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
         self::assertResponseStatusCodeSame(204);
 
-        self::assertSame([], self::getContainer()->get(CaseStudyRepositoryInterface::class)->findAll());
+        self::assertSame([], self::getContainer()->get(ContributionRepositoryInterface::class)->findAll());
+    }
+
+    public function testPostWithMissingLocaleIsRejected(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('POST', '/api/backoffice/contributions', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody([
+            'title' => 'Retry de transport',
+            'project' => 'symfony/ai',
+            'reference' => 'Issue #1688',
+            'url' => 'https://github.com/symfony/ai/issues/1688',
+            'summary' => 'Résumé.',
+            'body' => 'Corps.',
+            'position' => 0,
+        ]));
+
+        self::assertResponseStatusCodeSame(422);
     }
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string

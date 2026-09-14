@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\Put;
 use App\Portfolio\Contribution\Domain\Entity\Contribution;
 use App\Portfolio\Contribution\Infrastructure\ApiPlatform\BackofficeContributionProcessor;
 use App\Portfolio\Contribution\Infrastructure\ApiPlatform\BackofficeContributionProvider;
+use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -32,6 +33,7 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Get(
             uriTemplate: '/backoffice/contributions/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeContributionProvider::class,
         ),
         new Post(
@@ -40,11 +42,13 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Put(
             uriTemplate: '/backoffice/contributions/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeContributionProvider::class,
             processor: BackofficeContributionProcessor::class,
         ),
         new Delete(
             uriTemplate: '/backoffice/contributions/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeContributionProvider::class,
             processor: BackofficeContributionProcessor::class,
         ),
@@ -53,7 +57,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class BackofficeContributionResource
 {
     public function __construct(
-        public ?int $id = null,
+        public ?string $id = null,
         #[Assert\NotBlank]
         #[Assert\Choice(choices: ['fr', 'en'])]
         public ?string $locale = null,
@@ -87,7 +91,7 @@ final class BackofficeContributionResource
     public static function fromEntity(Contribution $contribution): self
     {
         return new self(
-            id: $contribution->getId(),
+            id: $contribution->getId()->toRfc4122(),
             locale: $contribution->getLocale()->value,
             title: $contribution->getTitle(),
             project: $contribution->getProject(),

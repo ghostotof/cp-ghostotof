@@ -7,6 +7,7 @@ namespace App\Portfolio\CaseStudy\Application;
 use App\Portfolio\CaseStudy\Domain\Entity\CaseStudy;
 use App\Portfolio\CaseStudy\Domain\Exception\CaseStudyNotFoundException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 interface CaseStudyAdministratorInterface
 {
@@ -24,7 +25,7 @@ interface CaseStudyAdministratorInterface
      * @throws CaseStudyNotFoundException si l'id est inconnu
      */
     public function update(
-        int $id,
+        Uuid $id,
         string $title,
         string $problem,
         string $solution,
@@ -36,5 +37,5 @@ interface CaseStudyAdministratorInterface
     /**
      * @throws CaseStudyNotFoundException si l'id est inconnu
      */
-    public function delete(int $id): void;
+    public function delete(Uuid $id): void;
 }

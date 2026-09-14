@@ -6,6 +6,7 @@ namespace App\Portfolio\CaseStudy\Domain\Repository;
 
 use App\Portfolio\CaseStudy\Domain\Entity\CaseStudy;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Abstraction (DIP) : la couche Application ne connaît jamais Doctrine
@@ -13,7 +14,7 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
  */
 interface CaseStudyRepositoryInterface
 {
-    public function findOneById(int $id): ?CaseStudy;
+    public function findOneById(Uuid $id): ?CaseStudy;
 
     /**
      * @return list<CaseStudy> triées par position ASC

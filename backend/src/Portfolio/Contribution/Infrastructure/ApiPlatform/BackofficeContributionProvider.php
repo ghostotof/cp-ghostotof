@@ -46,7 +46,7 @@ final readonly class BackofficeContributionProvider implements ProviderInterface
             return array_map(BackofficeContributionResource::fromEntity(...), $contributions);
         }
 
-        $contribution = $this->contributionRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
+        $contribution = $this->contributionRepository->findOneById($this->uriVariableUuid($uriVariables));
 
         return null !== $contribution ? BackofficeContributionResource::fromEntity($contribution) : null;
     }

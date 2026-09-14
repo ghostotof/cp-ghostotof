@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\Put;
 use App\Portfolio\CaseStudy\Domain\Entity\CaseStudy;
 use App\Portfolio\CaseStudy\Infrastructure\ApiPlatform\BackofficeCaseStudyProcessor;
 use App\Portfolio\CaseStudy\Infrastructure\ApiPlatform\BackofficeCaseStudyProvider;
+use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -31,6 +32,7 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Get(
             uriTemplate: '/backoffice/case-studies/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeCaseStudyProvider::class,
         ),
         new Post(
@@ -39,11 +41,13 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Put(
             uriTemplate: '/backoffice/case-studies/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeCaseStudyProvider::class,
             processor: BackofficeCaseStudyProcessor::class,
         ),
         new Delete(
             uriTemplate: '/backoffice/case-studies/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeCaseStudyProvider::class,
             processor: BackofficeCaseStudyProcessor::class,
         ),
@@ -52,7 +56,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class BackofficeCaseStudyResource
 {
     public function __construct(
-        public ?int $id = null,
+        public ?string $id = null,
         #[Assert\NotBlank]
         #[Assert\Choice(choices: ['fr', 'en'])]
         public ?string $locale = null,
@@ -79,7 +83,7 @@ final class BackofficeCaseStudyResource
     public static function fromEntity(CaseStudy $caseStudy): self
     {
         return new self(
-            id: $caseStudy->getId(),
+            id: $caseStudy->getId()->toRfc4122(),
             locale: $caseStudy->getLocale()->value,
             title: $caseStudy->getTitle(),
             problem: $caseStudy->getProblem(),

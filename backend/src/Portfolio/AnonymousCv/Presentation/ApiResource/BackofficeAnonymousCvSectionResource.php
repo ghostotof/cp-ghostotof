@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\Put;
 use App\Portfolio\AnonymousCv\Domain\Entity\AnonymousCvSection;
 use App\Portfolio\AnonymousCv\Infrastructure\ApiPlatform\BackofficeAnonymousCvSectionProcessor;
 use App\Portfolio\AnonymousCv\Infrastructure\ApiPlatform\BackofficeAnonymousCvSectionProvider;
+use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -31,6 +32,7 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Get(
             uriTemplate: '/backoffice/anonymous-cv/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeAnonymousCvSectionProvider::class,
         ),
         new Post(
@@ -39,11 +41,13 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Put(
             uriTemplate: '/backoffice/anonymous-cv/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeAnonymousCvSectionProvider::class,
             processor: BackofficeAnonymousCvSectionProcessor::class,
         ),
         new Delete(
             uriTemplate: '/backoffice/anonymous-cv/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeAnonymousCvSectionProvider::class,
             processor: BackofficeAnonymousCvSectionProcessor::class,
         ),
@@ -52,7 +56,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class BackofficeAnonymousCvSectionResource
 {
     public function __construct(
-        public ?int $id = null,
+        public ?string $id = null,
         #[Assert\NotBlank]
         #[Assert\Choice(choices: ['fr', 'en'])]
         public ?string $locale = null,
@@ -77,7 +81,7 @@ final class BackofficeAnonymousCvSectionResource
     public static function fromEntity(AnonymousCvSection $section): self
     {
         return new self(
-            id: $section->getId(),
+            id: $section->getId()->toRfc4122(),
             locale: $section->getLocale()->value,
             title: $section->getTitle(),
             skills: $section->getSkills(),

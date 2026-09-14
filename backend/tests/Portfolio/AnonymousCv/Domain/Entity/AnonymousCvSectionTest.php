@@ -7,6 +7,7 @@ namespace App\Tests\Portfolio\AnonymousCv\Domain\Entity;
 use App\Portfolio\AnonymousCv\Domain\Entity\AnonymousCvSection;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\UuidV7;
 
 final class AnonymousCvSectionTest extends TestCase
 {
@@ -22,11 +23,34 @@ final class AnonymousCvSectionTest extends TestCase
         );
     }
 
+    /**
+     * Spec 0003 D1 : l'identite est posee par le constructeur, pas par le
+     * flush. Une entite construite est donc deja identifiable, comparable et
+     * testable sans base de donnees.
+     */
+    public function testANewSectionIsIdentifiedByAUuidV7BeforeAnyPersistence(): void
+    {
+        self::assertInstanceOf(UuidV7::class, $this->section()->getId());
+    }
+
+    /**
+     * Pin le v7 et non le v4 : deux constructions successives doivent donner
+     * des identifiants distincts et croissants, sur quoi repose l'ordre de
+     * repli `ORDER BY id` du repository.
+     */
+    public function testTwoSectionsBuiltInSequenceGetDistinctIncreasingIds(): void
+    {
+        $first = $this->section();
+        $second = $this->section();
+
+        self::assertNotSame($first->getId()->toRfc4122(), $second->getId()->toRfc4122());
+        self::assertLessThan($second->getId()->toRfc4122(), $first->getId()->toRfc4122());
+    }
+
     public function testConstructorSetsAllProperties(): void
     {
         $section = $this->section();
 
-        self::assertNull($section->getId());
         self::assertSame(Locale::FR, $section->getLocale());
         self::assertSame('Backend PHP / Symfony', $section->getTitle());
         self::assertSame('Symfony 7, Doctrine ORM, API Platform, Messenger', $section->getSkills());

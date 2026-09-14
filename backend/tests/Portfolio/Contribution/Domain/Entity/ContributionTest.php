@@ -7,6 +7,7 @@ namespace App\Tests\Portfolio\Contribution\Domain\Entity;
 use App\Portfolio\Contribution\Domain\Entity\Contribution;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\UuidV7;
 
 final class ContributionTest extends TestCase
 {
@@ -24,11 +25,34 @@ final class ContributionTest extends TestCase
         );
     }
 
+    /**
+     * Spec 0003 D1 : l'identite est posee par le constructeur, pas par le
+     * flush. Une entite construite est donc deja identifiable, comparable et
+     * testable sans base de donnees.
+     */
+    public function testANewContributionIsIdentifiedByAUuidV7BeforeAnyPersistence(): void
+    {
+        self::assertInstanceOf(UuidV7::class, $this->contribution()->getId());
+    }
+
+    /**
+     * Pin le v7 et non le v4 : deux constructions successives doivent donner
+     * des identifiants distincts et croissants, sur quoi repose l'ordre de
+     * repli `ORDER BY id` du repository.
+     */
+    public function testTwoContributionsBuiltInSequenceGetDistinctIncreasingIds(): void
+    {
+        $first = $this->contribution();
+        $second = $this->contribution();
+
+        self::assertNotSame($first->getId()->toRfc4122(), $second->getId()->toRfc4122());
+        self::assertLessThan($second->getId()->toRfc4122(), $first->getId()->toRfc4122());
+    }
+
     public function testConstructorSetsAllProperties(): void
     {
         $contribution = $this->contribution();
 
-        self::assertNull($contribution->getId());
         self::assertSame(Locale::FR, $contribution->getLocale());
         self::assertSame('Retry de transport, re-prompt de validation', $contribution->getTitle());
         self::assertSame('symfony/ai', $contribution->getProject());

@@ -46,7 +46,7 @@ final readonly class BackofficeCaseStudyProvider implements ProviderInterface
             return array_map(BackofficeCaseStudyResource::fromEntity(...), $caseStudies);
         }
 
-        $caseStudy = $this->caseStudyRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
+        $caseStudy = $this->caseStudyRepository->findOneById($this->uriVariableUuid($uriVariables));
 
         return null !== $caseStudy ? BackofficeCaseStudyResource::fromEntity($caseStudy) : null;
     }

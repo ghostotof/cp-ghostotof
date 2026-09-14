@@ -45,7 +45,7 @@ final readonly class BackofficeIncidentProvider implements ProviderInterface
             return array_map(BackofficeIncidentResource::fromEntity(...), $incidents);
         }
 
-        $incident = $this->incidentRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
+        $incident = $this->incidentRepository->findOneById($this->uriVariableUuid($uriVariables));
 
         return null !== $incident ? BackofficeIncidentResource::fromEntity($incident) : null;
     }
