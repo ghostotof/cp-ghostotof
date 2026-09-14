@@ -73,17 +73,17 @@ Reprises de la spec (§2), rappelées ici parce qu'elles décident de l'ordre :
 ### Checkpoint 3 — parcours complet de bout en bout
 - [x] Suites backend et frontend vertes, `make front-lint` et `make front-build` verts
 - [x] **Dans un vrai navigateur (Chrome), stack dev, clé dans `.env.local`** : un incident FR → bouton → brouillon EN relu → enregistré → visible sur `/en/incidents` — fait le 2026-09-14 (cf. issue #99)
-- [ ] Déploiement preprod : `ExternalSecret` en `SecretSynced`, un appel réel réussi depuis le backoffice preprod
-- [ ] Revue avec Christophe avant de brancher les autres pages
+- [x] Déploiement preprod : v0.10.0 déployée en preprod puis en prod le 2026-09-14, pipeline verte
+- [x] Revue avec Christophe avant de brancher les autres pages — « la CI est verte, c'est en prod, enchaîne » (2026-09-14)
 
 ### Phase 5 — Les autres pages, une PR chacune (câblage seulement)
-- [ ] Task 10 — Contributions (`title`, `summary`, `body` — vérifier que les `` `backticks` `` survivent) — [#100](https://github.com/ghostotof/cp-ghostotof/issues/100)
-- [ ] Task 11 — CV sans identité (`title`, `skills`, `achievements` ; palier de base, rien de nominatif) — [#101](https://github.com/ghostotof/cp-ghostotof/issues/101)
-- [ ] Task 12 — About : réglages (singleton par locale, sémantique à trancher), cartes site, cartes moi — [#102](https://github.com/ghostotof/cp-ghostotof/issues/102)
-- [ ] Task 13 — Quality : principes, traits (champ unique, à trancher) — [#103](https://github.com/ghostotof/cp-ghostotof/issues/103)
+- [x] Task 10 — Contributions (`title`, `summary`, `body` — vérifier que les `` `backticks` `` survivent) — [#100](https://github.com/ghostotof/cp-ghostotof/issues/100)
+- [x] Task 11 — CV sans identité (`title`, `skills`, `achievements` ; palier de base, rien de nominatif) — [#101](https://github.com/ghostotof/cp-ghostotof/issues/101)
+- [x] Task 12 — About : réglages (singleton par locale, sémantique à trancher), cartes site, cartes moi — [#102](https://github.com/ghostotof/cp-ghostotof/issues/102)
+- [x] Task 13 — Quality : principes, traits (champ unique, à trancher) — [#103](https://github.com/ghostotof/cp-ghostotof/issues/103)
 
 ### Checkpoint 4 — phase 1 livrée
-- [ ] Toutes les pages admin localisées disposent du bouton (hors études de cas, voir Open Questions)
+- [x] Toutes les pages admin localisées disposent du bouton (hors études de cas, issue #104)
 - [ ] `CLAUDE.md` et ADR 0004 à jour de ce qui a réellement été livré
 - [ ] Prêt pour la spec de la phase 2 (serveur MCP `ROLE_TRUSTED`)
 
