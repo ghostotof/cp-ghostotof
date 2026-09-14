@@ -49,20 +49,20 @@ Reprises des specs (§2), rappelées ici parce qu'elles décident de l'ordre :
 ## Task List — Phase A (spec 0003, `v0.11.0`)
 
 ### Socle
-- [ ] Task 1 — `symfony/uid` direct, `uriVariableUuid()`, placeholder UUID de `ApiRouteExposureTest` — [#120](https://github.com/ghostotof/cp-ghostotof/issues/120)
+- [x] Task 1 — `symfony/uid` direct, `uriVariableUuid()`, placeholder UUID de `ApiRouteExposureTest` — [#120](https://github.com/ghostotof/cp-ghostotof/issues/120)
 
 ### Backend, un contexte par PR (chacune avec sa migration)
-- [ ] Task 2 — `Security/User` : `CpgUser`, `PasswordSetupToken` (FK), message Messenger, 4 ressources — [#121](https://github.com/ghostotof/cp-ghostotof/issues/121)
-- [ ] Task 3 — `Experience` + `Quality` (comparaison d'ids par `equals()` dans l'unicité de nom) — [#122](https://github.com/ghostotof/cp-ghostotof/issues/122)
-- [ ] Task 4 — `About` : settings, cartes site, cartes moi — [#123](https://github.com/ghostotof/cp-ghostotof/issues/123)
-- [ ] Task 5 — `Contribution`, `Incident`, `AnonymousCv`, `CaseStudy` — [#124](https://github.com/ghostotof/cp-ghostotof/issues/124)
-- [ ] Task 6 — `Watch` (`WatchedProduct`, `WatchSnapshot`) + suppression de `uriVariableInt()` — [#125](https://github.com/ghostotof/cp-ghostotof/issues/125)
+- [x] Task 2 — `Security/User` : `CpgUser`, `PasswordSetupToken` (FK), message Messenger, 4 ressources — [#121](https://github.com/ghostotof/cp-ghostotof/issues/121)
+- [x] Task 3 — `Experience` + `Quality` (comparaison d'ids par `equals()` dans l'unicité de nom) — [#122](https://github.com/ghostotof/cp-ghostotof/issues/122)
+- [x] Task 4 — `About` : settings, cartes site, cartes moi — [#123](https://github.com/ghostotof/cp-ghostotof/issues/123)
+- [x] Task 5 — `Contribution`, `Incident`, `AnonymousCv`, `CaseStudy` — [#124](https://github.com/ghostotof/cp-ghostotof/issues/124)
+- [x] Task 6 — `Watch` (`WatchedProduct`, `WatchSnapshot`) + suppression de `uriVariableInt()` — [#125](https://github.com/ghostotof/cp-ghostotof/issues/125)
 
 ### Checkpoint A1 — contrat d'API figé
-- [ ] `make back-test` et `make back-quality` verts ; `grep -rn 'uriVariableInt\|?int \$id\|getId(): ?int' backend/src backend/tests` vide
-- [ ] `ApiRouteExposureTest` et `AccessControlAnchoringTest` verts, avec pour seule modification le placeholder
-- [ ] `doctrine:schema:validate` `[OK]` sur une base de dev migrée depuis un état seedé + une invitation ; ordre `ORDER BY id` conservé sur chaque table
-- [ ] `debug:router` : `requirements` sur chaque item, aucune route synthétisée
+- [x] `make back-test` et `make back-quality` verts ; `grep -rn 'uriVariableInt\|?int \$id\|getId(): ?int' backend/src backend/tests` vide
+- [x] `ApiRouteExposureTest` et `AccessControlAnchoringTest` verts, avec pour seule modification le placeholder
+- [x] `doctrine:schema:validate` `[OK]` sur une base de dev migrée depuis un état seedé + une invitation ; ordre `ORDER BY id` conservé sur chaque table
+- [x] `debug:router` : `requirements` sur chaque item, aucune route synthétisée
 
 ### Frontend
 - [ ] Task 7 — `id: string` sur entités, repositories, composables, pages, 26 specs — [#126](https://github.com/ghostotof/cp-ghostotof/issues/126)
