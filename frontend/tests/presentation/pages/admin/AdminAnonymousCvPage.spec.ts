@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import AdminAnonymousCvPage from '../../../../src/presentation/pages/admin/AdminAnonymousCvPage.vue'
 import { ADMIN_ANONYMOUS_CV_SECTION_REPOSITORY } from '../../../../src/application/admin/anonymousCv/useAdminAnonymousCvSections'
+import { ADMIN_TRANSLATION_REPOSITORY } from '../../../../src/application/admin/translation/useAdminTranslation'
+import type { AdminTranslationRepository } from '../../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
+import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { createAppI18n } from '../../../../src/presentation/i18n'
 import type { AdminAnonymousCvSectionRepository } from '../../../../src/domain/admin/anonymousCv/repositories/AdminAnonymousCvSectionRepository'
 import type { AdminAnonymousCvSection } from '../../../../src/domain/admin/anonymousCv/entities/AdminAnonymousCvSection'
@@ -22,11 +25,26 @@ function createStubRepository(overrides: Partial<AdminAnonymousCvSectionReposito
   }
 }
 
-async function mountPage(repository: AdminAnonymousCvSectionRepository = createStubRepository()) {
+const TRANSLATED = { title: 'PHP / Symfony backend', skills: 'Symfony 7', achievements: 'Multi-tenant API.' }
+
+function createTranslationRepository(overrides: Partial<AdminTranslationRepository> = {}): AdminTranslationRepository {
+  return {
+    translate: vi.fn(async () => ({ sourceLocale: 'fr' as const, targetLocale: 'en' as const, fields: TRANSLATED })),
+    ...overrides,
+  }
+}
+
+async function mountPage(
+  repository: AdminAnonymousCvSectionRepository = createStubRepository(),
+  translation: AdminTranslationRepository = createTranslationRepository(),
+) {
   const wrapper = mount(AdminAnonymousCvPage, {
     global: {
       plugins: [createAppI18n()],
-      provide: { [ADMIN_ANONYMOUS_CV_SECTION_REPOSITORY as symbol]: repository },
+      provide: {
+        [ADMIN_ANONYMOUS_CV_SECTION_REPOSITORY as symbol]: repository,
+        [ADMIN_TRANSLATION_REPOSITORY as symbol]: translation,
+      },
     },
   })
   await flushPromises()
@@ -155,5 +173,95 @@ describe('AdminAnonymousCvPage', () => {
 
   it("ne présente aucune violation d'accessibilité détectable", async () => {
     await expectNoAccessibilityViolation(await mountPage())
+  })
+
+  describe('assistant de traduction', () => {
+    function translateButton(wrapper: Awaited<ReturnType<typeof mountPage>>) {
+      const button = wrapper.findAll('button').find((candidate) => candidate.text().includes('Proposer la version'))
+      if (!button) throw new Error('Bouton de traduction introuvable.')
+      return button
+    }
+
+    async function startEditing(wrapper: Awaited<ReturnType<typeof mountPage>>): Promise<void> {
+      const editButton = wrapper.findAll('button').find((button) => 'Modifier' === button.text())
+      await editButton?.trigger('click')
+    }
+
+    it('envoie titre, compétences et réalisations — jamais les années ni la position', async () => {
+      const translation = createTranslationRepository()
+      const wrapper = await mountPage(createStubRepository(), translation)
+      await startEditing(wrapper)
+
+      await translateButton(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(translation.translate).toHaveBeenCalledWith('fr', 'en', {
+        title: 'Backend PHP / Symfony',
+        skills: 'Symfony 7',
+        achievements: 'API multi-tenant.',
+      })
+    })
+
+    it('bascule en création EN, prose remplacée, années et position conservées, bannière affichée', async () => {
+      const wrapper = await mountPage()
+      await startEditing(wrapper)
+
+      await translateButton(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('h2').text()).toBe('Ajouter une section')
+      expect((wrapper.get('#admin-anonymous-cv-locale').element as HTMLSelectElement).value).toBe('en')
+      expect((wrapper.get('#admin-anonymous-cv-title').element as HTMLInputElement).value).toBe(TRANSLATED.title)
+      expect((wrapper.get('#admin-anonymous-cv-achievements').element as HTMLTextAreaElement).value).toBe(TRANSLATED.achievements)
+      expect((wrapper.get('#admin-anonymous-cv-years').element as HTMLInputElement).value).toBe('12')
+      expect((wrapper.get('#admin-anonymous-cv-position').element as HTMLInputElement).value).toBe('0')
+      expect(wrapper.get('[role="status"]').text()).toContain('Brouillon généré par IA')
+    })
+
+    it("n'enregistre rien par lui-même ; Enregistrer crée l'entrée EN", async () => {
+      const repository = createStubRepository()
+      const wrapper = await mountPage(repository)
+      await startEditing(wrapper)
+      await translateButton(wrapper).trigger('click')
+      await flushPromises()
+      expect(repository.create).not.toHaveBeenCalled()
+      expect(repository.update).not.toHaveBeenCalled()
+
+      await wrapper.get('form').trigger('submit.prevent')
+      await flushPromises()
+
+      expect(repository.create).toHaveBeenCalledWith({
+        locale: 'en',
+        title: TRANSLATED.title,
+        skills: TRANSLATED.skills,
+        yearsOfExperience: 12,
+        achievements: TRANSLATED.achievements,
+        position: 0,
+      })
+    })
+
+    it('affiche la raison en cas de quota atteint et laisse le formulaire intact', async () => {
+      const translation = createTranslationRepository({
+        translate: vi.fn(async () => { throw new AdminTranslationError('rate-limited', 'Quota.') }),
+      })
+      const wrapper = await mountPage(createStubRepository(), translation)
+      await startEditing(wrapper)
+
+      await translateButton(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('[role="alert"]').text()).toContain('Quota horaire')
+      expect(wrapper.get('h2').text()).toBe('Modifier la section')
+      expect((wrapper.get('#admin-anonymous-cv-locale').element as HTMLSelectElement).value).toBe('fr')
+    })
+
+    it("ne présente aucune violation d'accessibilité avec le brouillon rendu", async () => {
+      const wrapper = await mountPage()
+      await startEditing(wrapper)
+      await translateButton(wrapper).trigger('click')
+      await flushPromises()
+
+      await expectNoAccessibilityViolation(wrapper)
+    })
   })
 })

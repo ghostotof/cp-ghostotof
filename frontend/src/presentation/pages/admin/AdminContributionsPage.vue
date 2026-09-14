@@ -2,15 +2,19 @@
 import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminContributions } from '../../../application/admin/contributions/useAdminContributions'
+import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
+import { applyTranslationDraft, collectProseFields } from '../../../application/admin/translation/proseFields'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseNumberInput from '../../ui/BaseNumberInput.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
+import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import { SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
 import type { AdminContribution } from '../../../domain/admin/contributions/entities/AdminContribution'
 
 const { t } = useI18n()
 const { contributions, isLoading, hasError, errorMessage, create, update, remove } = useAdminContributions()
+const { isTranslating, errorReason: translationErrorReason, translate } = useAdminTranslation()
 
 const editingId = ref<number | null>(null)
 
@@ -42,7 +46,24 @@ const form = reactive<ContributionForm>({
 })
 const isSubmitting = ref(false)
 
+/** Locale de l'entrée dont le formulaire est un brouillon traduit (bannière), `null` sinon. */
+const draftSourceLocale = ref<Locale | null>(null)
+
+/**
+ * La prose traduite par l'assistant. `project`, `reference`, `url` et
+ * `position` sont recopiés tels quels : un nom de projet, une référence de
+ * PR ou une URL n'ont pas de traduction (spec 0002, D2). Le corps garde ses
+ * `backticks`, le prompt l'exige et RichText les rend.
+ */
+const PROSE_FIELDS = ['title', 'summary', 'body'] as const
+
 const isEditing = computed(() => null !== editingId.value)
+
+const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
+
+const translationErrorText = computed(() =>
+  translationErrorReason.value ? t(`admin.translation.errors.${translationErrorReason.value}`) : null,
+)
 
 const errorText = computed(() => (errorMessage.value ? t(`admin.contributions.errors.${errorMessage.value.reason}`) : null))
 
@@ -50,6 +71,7 @@ const localeOptions = computed(() => SUPPORTED_LOCALES.map((locale) => ({ value:
 
 function resetForm(): void {
   editingId.value = null
+  draftSourceLocale.value = null
   form.locale = SUPPORTED_LOCALES[0]
   form.title = ''
   form.project = ''
@@ -62,6 +84,7 @@ function resetForm(): void {
 
 function startEdit(contribution: AdminContribution): void {
   editingId.value = contribution.id
+  draftSourceLocale.value = null
   form.locale = contribution.locale as Locale
   form.title = contribution.title
   form.project = contribution.project
@@ -97,6 +120,25 @@ async function handleSubmit(): Promise<void> {
   if (!errorMessage.value) {
     resetForm()
   }
+}
+
+/**
+ * Brouillon dans l'autre locale, puis bascule en création : prose remplacée,
+ * reste conservé, rien d'enregistré ici (ADR 0004, D4). En échec, le
+ * formulaire reste intact et la raison s'affiche.
+ */
+async function handleTranslate(targetLocale: Locale): Promise<void> {
+  const sourceLocale = form.locale
+
+  const draft = await translate(sourceLocale, targetLocale, collectProseFields(form, PROSE_FIELDS))
+  if (!draft) {
+    return
+  }
+
+  editingId.value = null
+  form.locale = targetLocale
+  applyTranslationDraft(form, PROSE_FIELDS, draft)
+  draftSourceLocale.value = sourceLocale
 }
 
 async function handleDelete(contribution: AdminContribution): Promise<void> {
@@ -176,6 +218,31 @@ async function handleDelete(contribution: AdminContribution): Promise<void> {
           :label="t('admin.contributions.positionLabel')"
           required
         />
+
+        <div class="mb-3">
+          <TranslateEntryButton
+            :form-locale="form.locale"
+            :is-translating="isTranslating"
+            :disabled="!hasProseToTranslate || isSubmitting"
+            @translate="handleTranslate"
+          />
+        </div>
+
+        <p
+          v-if="draftSourceLocale"
+          class="alert alert-info small"
+          role="status"
+        >
+          {{ t('admin.translation.draftNotice', { locale: draftSourceLocale.toUpperCase() }) }}
+        </p>
+
+        <p
+          v-if="translationErrorText"
+          class="text-danger small"
+          role="alert"
+        >
+          {{ translationErrorText }}
+        </p>
 
         <p
           v-if="errorText"

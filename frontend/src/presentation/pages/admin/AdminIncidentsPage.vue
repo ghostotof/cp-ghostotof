@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminIncidents } from '../../../application/admin/incidents/useAdminIncidents'
 import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
+import { applyTranslationDraft, collectProseFields } from '../../../application/admin/translation/proseFields'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseNumberInput from '../../ui/BaseNumberInput.vue'
@@ -137,24 +138,16 @@ async function handleSubmit(): Promise<void> {
  * s'affiche.
  */
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  const fields = Object.fromEntries(
-    PROSE_FIELDS.filter((field) => '' !== form[field].trim()).map((field) => [field, form[field]]),
-  )
   const sourceLocale = form.locale
 
-  const draft = await translate(sourceLocale, targetLocale, fields)
+  const draft = await translate(sourceLocale, targetLocale, collectProseFields(form, PROSE_FIELDS))
   if (!draft) {
     return
   }
 
   editingId.value = null
   form.locale = targetLocale
-  for (const field of PROSE_FIELDS) {
-    const translated = draft.fields[field]
-    if (undefined !== translated) {
-      form[field] = translated
-    }
-  }
+  applyTranslationDraft(form, PROSE_FIELDS, draft)
   draftSourceLocale.value = sourceLocale
 }
 
