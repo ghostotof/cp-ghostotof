@@ -67,7 +67,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This repository started as a freshly generated project skeleton (single "Init" commit). Real backend code now
 exists — the `Security` bounded context (`User` + `Authentication`), six `Portfolio` bounded contexts
 (`Experience`, `Quality`, `About`, `Contribution`, `Incident`, `Watch`, see Backend architecture below) and an
-`Ai` context being built (spec 0002, ADR 0004 — see `Ai/` below) — and follows a DDD structure under
+`Ai` context whose first sub-context, `Translation`, is delivered (spec 0002, ADR 0004, v0.10.0/v0.10.1 — see `Ai/` below) — and follows a DDD structure under
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
 over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
 recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
@@ -371,9 +371,9 @@ folder), so entities live inside their bounded context instead of a shared top-l
 
 - **`Ai/`** — everything that talks to a language model, and nothing else does (ADR 0004,
   `docs/adr/0004-assistance-ia.md`; spec `.claude/specs/0002-ai-translation-assistant.md`). Sub-context per
-  usage: `Ai/Translation/` (phase 1, the backoffice FR/EN translation assistant,
-  `POST /api/backoffice/translations`, `ROLE_SUPER`) and later `Ai/Mcp/` (phase 2, a read-only MCP server
-  reserved to `ROLE_TRUSTED`). The bundle is **Symfony AI**, pinned in **exact version** (`symfony/ai-bundle`,
+  usage: `Ai/Translation/` (phase 1, **delivered 2026-09-14**, v0.10.0 then v0.10.1: the backoffice FR/EN
+  translation assistant, `POST /api/backoffice/translations`, `ROLE_SUPER`) and later `Ai/Mcp/` (phase 2, a
+  read-only MCP server reserved to `ROLE_TRUSTED`, spec still to write — ADR 0004 D7 must be amended first). The bundle is **Symfony AI**, pinned in **exact version** (`symfony/ai-bundle`,
   `symfony/ai-anthropic-platform`, `symfony/ai-agent`, all `0.13.0`, no `^` while 0.x); the platform and the
   `translator` agent (`claude-sonnet-5`, `max_tokens` 4096 — the Anthropic wire name, the bridge merges
   options as-is —, `tools: false`, system prompt in `config/ai/prompts/translator.txt`) are declared in
@@ -384,8 +384,13 @@ folder), so entities live inside their bounded context instead of a shared top-l
   timeout; **only backoffice-authored content meant for publication may be sent** to a provider, never
   `cpg_user`, a token, the nominative CV or a contact message; **a suggestion is never persisted** without a
   human action (the endpoint reads and writes nothing, the frontend fills a *new* form); **cost is bounded by
-  construction** (per-account quota, `max_tokens`, timeout); **no test goes on the wire** (`InMemoryPlatform`,
-  platform swapped in the test container, dummy `ANTHROPIC_API_KEY` forced in `phpunit.dist.xml`). Token
+  construction** (per-account quota `translation_assistant`, 30/h keyed on the `username`, `max_tokens`,
+  timeout); **no test goes on the wire** (unit tests: a `FakeAgent`; functional tests: the concrete client
+  behind the scoped one, `ai.http_client.scoping.inner`, replaced by a `MockHttpClient` answering in the
+  Messages API format — **with `$client->disableReboot()`**, otherwise `KernelBrowser` rebuilds the kernel
+  between the login and the call and the request really leaves for `api.anthropic.com`; dummy
+  `ANTHROPIC_API_KEY` forced in `phpunit.dist.xml`, so such a leak fails 401 → 503 instead of costing money).
+  An anonymous `POST` there answers **403, not 401**: the CSRF subscriber runs before the firewall. Token
   usage and duration are logged, the content never is. `claude-sonnet-5` rejects `temperature`/`top_p`/`top_k`
   (400): no sampling option anywhere. The Flex recipes come from the official `symfony/recipes` (they apply
   despite `allow-contrib: false`); the `ai_anthropic_platform.yaml` they generate is merged into `ai.yaml`,
@@ -573,6 +578,25 @@ or a dash. The `domain/account` + `application/account/useAccountPasswordSetup` 
 slice is the **public** counterpart: route `/(fr|en)/set-password/:token` (`meta.noindex`, no `requiresAuth`),
 `useAccountPasswordSetup` state machine (`checking|ready|submitting|done|invalid|expired|error`), talks to the
 public `/api/account/password-setup/{token}` endpoints.
+
+**Translation assistant** (ADR 0004 phase 1, spec 0002): one more admin slice, `domain/admin/translation`
+(`TranslationDraft`, `AdminTranslationError` with reasons `validation|rate-limited|unavailable|unknown`)
+→ `infrastructure/admin/translation/HttpAdminTranslationRepository.ts` (`POST /api/backoffice/translations`)
+→ `application/admin/translation/useAdminTranslation.ts` (`translate()` returns the draft or `null` and
+exposes `errorReason`; **it never touches a form nor persists anything**, ADR 0004 D4) + the two helpers in
+`proseFields.ts` (`collectProseFields` drops blank fields, the API refuses them with a 422;
+`applyTranslationDraft` leaves a field absent from the draft untouched) → `presentation/ui/admin/
+TranslateEntryButton.vue` (label follows the form's locale, `aria-busy` while calling, emits `translate`).
+**Each page alone decides which of its fields are prose** (spec D2 — the backend is content-agnostic) and
+what to do with the draft. Two semantics, and the split is deliberate: on per-entry pages (Incidents,
+Contributions, Anonymous CV, About site/me cards) the form switches to *creation* in the target locale, the
+non-prose fields (`version`, `occurredAt`, `position`, `iconKey`…) are kept and a `role="status"` banner
+names the draft's source locale; on page-locale pages (Quality, About) the assistant switches the **page**
+locale to the target instead, since the list shown must match the form being saved. About *settings* is a
+singleton per locale, so its draft is **deferred**: parked in `pendingDraft`, applied on the return of
+`load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server would
+overwrite it). Never use `v-html` on text coming back from the model: it goes through the form fields, then
+`RichText.vue`. The case-studies admin page does not exist yet (issue #104); the button lands there with it.
 
 - `presentation/ui/{BaseTextInput,BaseTextarea,BaseNumberInput,BaseSelect}.vue` — the project's first reusable
   form components, used by every admin form. Reach for these before writing a new raw `<input>` in `admin/*`.
@@ -945,8 +969,9 @@ ADRs:
   discretion rather than secrecy) and puts the CV behind `ROLE_TRUSTED`. Read it before touching
   `access_control`, `CpgUser::getRoles()` or `BaseAccessController`: it turns on the fact that `getRoles()`
   grants `ROLE_USER` unconditionally, which is why a tier was added *above* rather than below.
-- `docs/adr/0004-assistance-ia.md` — **statut `accepté` (2026-09-14), phase 1 en cours** (spec 0002, issues
-  `spec-0002`). Rules for anything that calls a language model: one importing class behind an interface,
+- `docs/adr/0004-assistance-ia.md` — **statut `accepté` (2026-09-14), phase 1 livrée** (spec 0002, issues
+  `spec-0002` closed, v0.10.0/v0.10.1 in production the same day; the case-studies admin page, #104, is the one
+  form still without the button). Rules for anything that calls a language model: one importing class behind an interface,
   bundle pinned exact, no call from a public render path, only publishable backoffice content leaves, human in
   the loop, bounded cost, offline tests; D7 fixes phase 2 (MCP server, `ROLE_TRUSTED`) pending an amendment.
   Read it before adding any `Symfony\AI` usage or a new `ai.agent`.

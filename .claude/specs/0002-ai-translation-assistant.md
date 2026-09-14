@@ -1,6 +1,6 @@
 # SPEC — Assistant de traduction FR/EN du backoffice (`Ai/Translation`, Symfony AI)
 
-> Statut : **en relecture** (rédigée le 2026-09-14, design validé en session le même jour).
+> Statut : **livrée** (rédigée le 2026-09-14, design validé en session le même jour, M1–M6 en production le même jour, v0.10.0 puis v0.10.1).
 > Phase 1 de l'intégration de Symfony AI au projet ; la phase 2 (serveur MCP réservé à
 > `ROLE_TRUSTED`) fera l'objet d'une spec distincte, mais ce document en prépare le socle (§2, D1 et D8).
 >
@@ -363,5 +363,13 @@ prompt accepté, au même niveau de détail que `.claude/CLAUDE.md` et les ADR, 
 mentionne que le CV nominatif est servi depuis un fichier PDF, information déjà présente dans
 `services.yaml`.
 
-Prochaine étape : découpage en tâches sur la branche `feature/ai-translation-assistant`, une PR par
-tâche empilée (M1 → M5), M6+ ensuite page par page.
+**2026-09-14** — Livraison. M1–M5 (PR #105 à #114) en production dans la release v0.10.0 ; M6 (PR #115 à
+#118 : Contributions, CV sans identité, Qualité, À propos) dans la v0.10.1. Écarts avec la rédaction,
+consignés dans l'ADR 0004 (Conséquences) et `CLAUDE.md` : les tests fonctionnels remplacent le client
+HTTP (`ai.http_client.scoping.inner`, `disableReboot()`) plutôt que la plateforme ; un POST anonyme
+répond 403 (CSRF avant firewall), pas 401 ; sur les pages à locale de page (Qualité, À propos) c'est la
+page qui bascule de locale, et les réglages À propos reçoivent leur brouillon en différé. Reste hors de
+cette spec : la page admin des études de cas (#104), sur laquelle le bouton se branchera.
+
+Prochaine étape : spec de la phase 2 (serveur MCP réservé à `ROLE_TRUSTED`), précédée de l'amendement de
+la D7 de l'ADR 0004.

@@ -84,8 +84,8 @@ Reprises de la spec (§2), rappelées ici parce qu'elles décident de l'ordre :
 
 ### Checkpoint 4 — phase 1 livrée
 - [x] Toutes les pages admin localisées disposent du bouton (hors études de cas, issue #104)
-- [ ] `CLAUDE.md` et ADR 0004 à jour de ce qui a réellement été livré
-- [ ] Prêt pour la spec de la phase 2 (serveur MCP `ROLE_TRUSTED`)
+- [x] `CLAUDE.md` et ADR 0004 à jour de ce qui a réellement été livré (2026-09-14)
+- [x] Prêt pour la spec de la phase 2 (serveur MCP `ROLE_TRUSTED`) — reste l'amendement de la D7 et la relecture humaine de l'ADR (checkpoint 1)
 
 ## Risks and Mitigations
 
