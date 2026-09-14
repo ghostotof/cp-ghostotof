@@ -65,6 +65,14 @@ api_platform:
         # n'a donc pas à lire le `detail` localisé.
         App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException: 409
         App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException: 422
+        # Spec 0004 D4 : PUT …/order exige l'ensemble exact des clés du
+        # périmètre. Une clé inconnue (ou dupliquée) et une clé manquante sont
+        # toutes deux une saisie invalide (422), pas une 404 ni un 409 : la
+        # ressource visée (l'entrée d'ordre) existe, c'est son contenu qui ne
+        # correspond plus au périmètre relu côté serveur — le frontend
+        # recharge la liste plutôt que de réessayer l'envoi automatiquement.
+        App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException: 422
+        App\Portfolio\Shared\Domain\Exception\IncompleteOrderException: 422
         App\Portfolio\Quality\Domain\Exception\QualityPrincipleNotFoundException: 404
         App\Portfolio\Quality\Domain\Exception\QualityTraitNotFoundException: 404
         App\Portfolio\About\Domain\Exception\AboutSettingsNotFoundException: 404
