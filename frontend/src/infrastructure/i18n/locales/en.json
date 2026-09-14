@@ -236,6 +236,9 @@
       "save": "Save",
       "cancel": "Cancel",
       "localeLabel": "Language",
+      "translationOfLabel": "Translation of",
+      "translationOfNone": "— none —",
+      "contentLabel": "Content",
       "titleLabel": "Title (the claim being made)",
       "projectLabel": "Project",
       "referenceLabel": "Reference",
@@ -243,8 +246,6 @@
       "summaryLabel": "Lede",
       "bodyLabel": "Argument",
       "bodyHelp": "Plain text. Separate paragraphs with a blank line; wrap a parameter name in backticks to render it as code.",
-      "positionLabel": "Position",
-      "actions": "Actions",
       "editAction": "Edit",
       "deleteAction": "Delete",
       "confirmDelete": "Delete contribution \"{title}\"?",
@@ -254,7 +255,9 @@
       "errors": {
         "not-found": "This contribution no longer exists.",
         "validation": "Some fields are invalid.",
-        "unknown": "An error occurred. Please try again later."
+        "unknown": "An error occurred. Please try again later.",
+        "translation-already-exists": "This content already has a version in that language.",
+        "unknown-translation-group": "The content to attach this version to no longer exists. Reload the page."
       }
     },
     "anonymousCv": {
