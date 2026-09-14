@@ -29,7 +29,7 @@ final readonly class BackofficeIncidentProcessor implements ProcessorInterface
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeIncidentResource
     {
         if ($operation instanceof Delete) {
-            $this->incidentAdministrator->delete($this->uriVariableInt($uriVariables, 'id'));
+            $this->incidentAdministrator->delete($this->uriVariableUuid($uriVariables));
 
             return null;
         }
@@ -40,7 +40,7 @@ final readonly class BackofficeIncidentProcessor implements ProcessorInterface
 
         if ($operation instanceof Put) {
             $incident = $this->incidentAdministrator->update(
-                $this->uriVariableInt($uriVariables, 'id'),
+                $this->uriVariableUuid($uriVariables),
                 $data->title,
                 $data->version,
                 $occurredAt,

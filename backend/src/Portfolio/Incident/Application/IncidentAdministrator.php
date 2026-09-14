@@ -8,6 +8,7 @@ use App\Portfolio\Incident\Domain\Entity\Incident;
 use App\Portfolio\Incident\Domain\Exception\IncidentNotFoundException;
 use App\Portfolio\Incident\Domain\Repository\IncidentRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 final readonly class IncidentAdministrator implements IncidentAdministratorInterface
 {
@@ -35,7 +36,7 @@ final readonly class IncidentAdministrator implements IncidentAdministratorInter
     }
 
     public function update(
-        int $id,
+        Uuid $id,
         string $title,
         string $version,
         \DateTimeImmutable $occurredAt,
@@ -57,7 +58,7 @@ final readonly class IncidentAdministrator implements IncidentAdministratorInter
         return $incident;
     }
 
-    public function delete(int $id): void
+    public function delete(Uuid $id): void
     {
         $incident = $this->incidentRepository->findOneById($id);
 

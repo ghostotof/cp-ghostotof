@@ -7,6 +7,7 @@ namespace App\Tests\Portfolio\Incident\Domain\Entity;
 use App\Portfolio\Incident\Domain\Entity\Incident;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\UuidV7;
 
 final class IncidentTest extends TestCase
 {
@@ -25,11 +26,34 @@ final class IncidentTest extends TestCase
         );
     }
 
+    /**
+     * Spec 0003 D1 : l'identite est posee par le constructeur, pas par le
+     * flush. Une entite construite est donc deja identifiable, comparable et
+     * testable sans base de donnees.
+     */
+    public function testANewIncidentIsIdentifiedByAUuidV7BeforeAnyPersistence(): void
+    {
+        self::assertInstanceOf(UuidV7::class, $this->incident()->getId());
+    }
+
+    /**
+     * Pin le v7 et non le v4 : deux constructions successives doivent donner
+     * des identifiants distincts et croissants, sur quoi repose l'ordre de
+     * repli `ORDER BY id` du repository.
+     */
+    public function testTwoIncidentsBuiltInSequenceGetDistinctIncreasingIds(): void
+    {
+        $first = $this->incident();
+        $second = $this->incident();
+
+        self::assertNotSame($first->getId()->toRfc4122(), $second->getId()->toRfc4122());
+        self::assertLessThan($second->getId()->toRfc4122(), $first->getId()->toRfc4122());
+    }
+
     public function testConstructorSetsAllProperties(): void
     {
         $incident = $this->incident();
 
-        self::assertNull($incident->getId());
         self::assertSame(Locale::FR, $incident->getLocale());
         self::assertSame('RabbitMQ en CrashLoopBackOff', $incident->getTitle());
         self::assertSame('v0.5.0', $incident->getVersion());

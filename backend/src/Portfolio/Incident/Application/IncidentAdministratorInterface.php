@@ -7,6 +7,7 @@ namespace App\Portfolio\Incident\Application;
 use App\Portfolio\Incident\Domain\Entity\Incident;
 use App\Portfolio\Incident\Domain\Exception\IncidentNotFoundException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 interface IncidentAdministratorInterface
 {
@@ -26,7 +27,7 @@ interface IncidentAdministratorInterface
      * @throws IncidentNotFoundException si l'id est inconnu
      */
     public function update(
-        int $id,
+        Uuid $id,
         string $title,
         string $version,
         \DateTimeImmutable $occurredAt,
@@ -40,5 +41,5 @@ interface IncidentAdministratorInterface
     /**
      * @throws IncidentNotFoundException si l'id est inconnu
      */
-    public function delete(int $id): void;
+    public function delete(Uuid $id): void;
 }
