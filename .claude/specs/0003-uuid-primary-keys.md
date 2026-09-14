@@ -1,6 +1,7 @@
 # SPEC — Clés primaires UUID v7 sur toutes les entités (phase A du réordonnancement)
 
-> Statut : **design validé en session le 2026-09-14**, à découper en tâches.
+> Statut : **implémentée sur branches empilées (Tasks 1 à 7), release `v0.11.0` à faire** — voir le
+> journal §10 pour le détail des PR et des écarts constatés à l'implémentation.
 > Prérequis de la spec 0004 (réordonnancement des contenus par glisser-déposer), livré **seul**
 > dans une release dédiée : la migration réécrit les clés primaires de tables qui ont des données
 > en production et n'est pas réversible.
@@ -265,6 +266,53 @@ monotone, `requirements` UUID sur les items, livraison seule et préalable à la
 par contexte vertical, `Security/User` en premier. Deux écarts avec la rédaction, corrigés dans le
 texte : une migration par tâche plutôt qu'une seule (D4, A3) ; `SendAccountInvitationMessage.userId`
 entier → chaîne (contrats vérifiés).
+
+**2026-09-14** — Livraison des Tasks 1 à 7, sur des branches empilées depuis `develop`, une PR par
+tâche :
+
+| Tâche | Contenu | PR | Issue |
+|---|---|---|---|
+| 1 | Socle : `symfony/uid` direct, `uriVariableUuid()`, placeholder UUID de `ApiRouteExposureTest` | #129 | #120 |
+| 2 | `Security/User` (`CpgUser`, `PasswordSetupToken`, FK, message Messenger, 4 ressources) | #130 | #121 |
+| 3 | `Experience` + `Quality` | #131 | #122 |
+| 4 | `About` (settings, cartes site, cartes moi) | #132 | #123 |
+| 5 | `Contribution`, `Incident`, `AnonymousCv`, `CaseStudy` | #133 | #124 |
+| 6 | `Watch` + suppression de `uriVariableInt()` | #134 | #125 |
+| 7 | Frontend : `id: string` sur entités/repositories/composables/pages, 26 specs | #135 | #126 |
+
+La Task 3 a nécessité un tour de correction : la PR initiale manquait les tests du `Get` d'item par id
+existant/inconnu sur `Experience`/`Quality` (ajoutés dans un commit dédié avant merge).
+
+Écarts constatés à l'implémentation, non prévus par la rédaction initiale ni par l'amendement du
+découpage :
+
+- Le DTO de sortie `BackofficeUserResource::$id` est `string` non-nullable (et non `?string`) —
+  cohérent avec D7, mais la rédaction ne distinguait pas explicitement DTO de sortie et DTO
+  lecture/écriture ; les DTO lecture/écriture gardent `?string $id = null`.
+- Deux pièges opérationnels découverts pendant la migration, sans lien avec le schéma de données :
+  le pool de métadonnées d'API Platform survit à un `cache:clear` après un changement de type d'`id`
+  sur un DTO (il faut `rm -rf var/cache/<env>`) ; et la désynchronisation habituelle du bind-mount
+  (`docker compose restart backend`) peut faire tourner un Provider/Processor obsolète en cours de
+  migration — les deux pièges connus du projet, pas nouveaux, mais rencontrés ici pour la première
+  fois sur un changement de type d'id.
+
+Checkpoints :
+
+- **A1** (contrat d'API figé) : vérifié — `make back-test` et `make back-quality` verts,
+  `grep -rn 'uriVariableInt\|?int \$id\|getId(): ?int' backend/src backend/tests` vide,
+  `ApiRouteExposureTest`/`AccessControlAnchoringTest` verts avec pour seule modification le
+  placeholder, `doctrine:schema:validate` `[OK]`, `debug:router` sans route synthétisée.
+- **A2** (parcours complet) : suites frontend vertes (`make front-test`, `front-lint`, `front-build`).
+  La vérification dans un vrai navigateur (lister/éditer/supprimer sur une ressource admin, URLs en
+  UUID) reste à faire par Christophe, de même que la revue humaine du caractère irréversible de la
+  migration avant la release.
+
+Points différés à la revue finale (Task 8), non corrigés ici :
+
+- `SendAccountInvitationHandler` lève une exception sur un `userId` non-UUID au lieu d'un simple
+  avertissement journalisé.
+- `uriVariableUuid()` s'appuie sur `assert()`, inactif en production (`zend.assertions=-1`) —
+  inoffensif tant que `requirements` est posé sur chaque opération, ce qui est le cas aujourd'hui.
 
 **Audit de sensibilité avant publication** : aucun e-mail, aucune adresse, aucun nom de compte, aucun
 secret. Le document décrit le schéma des tables et le flux d'invitation au même niveau de détail que

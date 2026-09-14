@@ -80,8 +80,8 @@ it that way. Two scoped `ignoreErrors` in `phpstan.dist.neon` cover functional-t
 response body is `mixed`; the PHPUnit assertions are the shape check, not PHPStan) — `offsetAccess`/`foreach`
 and `argument.type … mixed given`, `path: tests/` only. `src/Kernel.php` is `excludePaths`-excluded
 (`getAllowedEnvs()` false-positive `method.unused`). The `$uriVariables` mixed-access pattern is solved by the
-`App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables` trait (`uriVariableInt`/`uriVariableString`) — reuse
-it in new Providers/Processors rather than casting `mixed`. Functional tests build request bodies via
+`App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables` trait (`uriVariableUuid`/`uriVariableString`/
+`uriVariableLocale`) — reuse it in new Providers/Processors rather than casting `mixed`. Functional tests build request bodies via
 `App\Tests\Support\HttpJson::jsonBody()` (not raw `json_encode`, which is `string|false`).
 `tests/object-manager.php` boots the kernel for `phpstan-doctrine`; `tests/bootstrap.php` is
 `excludePaths`-excluded (Flex-managed). **Rector** is configured (`backend/rector.php`, `withPhpSets()` +
@@ -154,6 +154,29 @@ DDD structure: each bounded context is a top-level folder under `src/`, itself s
 `Application/`, `Infrastructure/`, `Presentation/` layers — only the layers a context actually needs, no empty
 ceremonial folders. `config/packages/doctrine.yaml`'s mapping scans all of `src/` (not a single `Entity/`
 folder), so entities live inside their bounded context instead of a shared top-level directory.
+
+**Every entity has a UUID v7 primary key, assigned in its constructor** (spec 0003, `v0.11.0`):
+`#[ORM\Id] #[ORM\Column(type: UuidType::NAME)] private Uuid $id;` with no `GeneratedValue`,
+`$this->id = Uuid::v7();` as the first line of the constructor, `getId(): Uuid` non-nullable. Never a
+`setId()`, never an id supplied from outside on creation. The column is PostgreSQL's native `uuid` type
+(`symfony/doctrine-bridge`'s `UuidType`, `symfony/uid` `8.1.*` a direct dependency), never `VARCHAR(36)`.
+Every item operation declares `requirements: ['id' => Requirement::UUID]`
+(`Symfony\Component\Routing\Requirement`), so a malformed `{id}` is a 404 from the router before the
+firewall or any Provider runs; Providers/Processors read it via `ResolvesUriVariables::uriVariableUuid()`.
+DTOs expose `id` as an RFC 4122 string (`$entity->getId()->toRfc4122()`), never the `Uuid` object — a
+read/write DTO's `id` stays `?string $id = null` (absent on creation), but an output-only DTO's is
+non-nullable (`BackofficeUserResource`). **`===`/`!==` between two `Uuid` compares objects, not
+values — always use `->equals()`** (`CpgUserAdministrator`, `CpgUserRoleAdministrator`,
+`ExperienceTechnologyAdministrator` are the three sites that need it). The migration to UUID is
+irreversible and monotone: PostgreSQL 18's `uuidv7(interval)` assigns each existing row a v7 id offset by
+its rank in the old integer order, so `ORDER BY id` keeps producing today's order — one migration per
+bounded context (`backend/migrations/Version20260914{12,13,14,15,16}0000.php`), each `down()` throws
+rather than pretend the original integers are recoverable. `ApiRouteExposureTest` substitutes `{id}` with a fixed
+valid UUID (not `'1'`): with `requirements` in place, an integer placeholder would 404 at the router and
+the test would silently stop covering every item route. Two traps hit while migrating: the API Platform
+metadata pool survives `cache:clear` after a DTO's `id` type changes — `rm -rf var/cache/<env>` instead;
+and the usual bind-mount desync (`docker compose restart backend`) can make a container run a stale
+Provider/Processor mid-migration.
 
 - **`Security/User/`** — the `CpgUser` aggregate. Two creation paths (see ADR 0001): the CLI command
   (`app:user:create`, bootstrap — notably the first `ROLE_SUPER`) and **invitation from the backoffice**
