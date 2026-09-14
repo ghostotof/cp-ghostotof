@@ -104,7 +104,7 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
         $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         $product = $client->getContainer()->get(WatchedProductAdministratorInterface::class)
-            ->create('postgresql', 'PostgreSQL', VersionSource::MANUAL, '18.4', 0);
+            ->create('postgresql', 'PostgreSQL', VersionSource::MANUAL, '18.4');
 
         $client->request('GET', sprintf('/api/backoffice/watch/products/%s', $product->getId()->toRfc4122()));
         self::assertResponseIsSuccessful();
@@ -128,7 +128,7 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
         $this->stubSlugVerification($client);
 
         $client->getContainer()->get(WatchedProductAdministratorInterface::class)
-            ->create('postgresql', 'PostgreSQL', VersionSource::MANUAL, '18.4', 0);
+            ->create('postgresql', 'PostgreSQL', VersionSource::MANUAL, '18.4');
 
         // GetCollection
         $client->request('GET', '/api/backoffice/watch/products');
@@ -153,7 +153,6 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
             'label' => 'nginx',
             'versionSource' => 'manual',
             'version' => '1.30.4',
-            'position' => 1,
         ]));
         self::assertResponseIsSuccessful();
         $created = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
@@ -168,7 +167,6 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
             'label' => 'Doublon',
             'versionSource' => 'manual',
             'version' => '1.0',
-            'position' => 2,
         ]));
         self::assertResponseStatusCodeSame(409);
 
@@ -181,7 +179,6 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
             'label' => 'PostgreSQL 18',
             'versionSource' => 'manual',
             'version' => '18.6',
-            'position' => 3,
         ]));
         self::assertResponseIsSuccessful();
         $updated = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
@@ -196,7 +193,6 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
             'label' => 'MariaDB',
             'versionSource' => 'manual',
             'version' => '11.4',
-            'position' => 3,
         ]));
         self::assertResponseStatusCodeSame(409);
 
@@ -209,7 +205,6 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
             'label' => 'Rust',
             'versionSource' => 'manual',
             'version' => '1.0',
-            'position' => 0,
         ]));
         self::assertResponseStatusCodeSame(404);
 
@@ -220,6 +215,56 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
         // Delete
         $client->request('DELETE', sprintf('/api/backoffice/watch/products/%s', $id), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
         self::assertResponseStatusCodeSame(204);
+    }
+
+    /**
+     * Spec 0004 D3 : la position ne se saisit plus. Une entrée neuve se range
+     * en fin de catalogue, et un corps qui porterait encore `position` (un
+     * client d'avant la migration) est accepté mais la valeur ignorée —
+     * `writable: false`, pas un 400 qui casserait ce client pour rien.
+     */
+    public function testAPostedPositionIsIgnoredAndTheNewProductRanksLast(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $this->stubSlugVerification($client);
+
+        $administrator = $client->getContainer()->get(WatchedProductAdministratorInterface::class);
+        $administrator->create('postgresql', 'PostgreSQL', VersionSource::MANUAL, '18.4');
+        $administrator->create('rabbitmq', 'RabbitMQ', VersionSource::MANUAL, '4.0');
+
+        $client->request('POST', '/api/backoffice/watch/products', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody([
+            'slug' => 'nginx',
+            'label' => 'nginx',
+            'versionSource' => 'manual',
+            'version' => '1.30.4',
+            'position' => 0,
+        ]));
+        self::assertResponseStatusCodeSame(201);
+        $created = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame(2, $created['position']);
+
+        $client->request('PUT', sprintf('/api/backoffice/watch/products/%s', $created['id']), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody([
+            'slug' => 'nginx',
+            'label' => 'nginx 1.30',
+            'versionSource' => 'manual',
+            'version' => '1.30.4',
+            'position' => 0,
+        ]));
+        self::assertResponseIsSuccessful();
+        $updated = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame(2, $updated['position']);
+
+        $client->request('GET', '/api/backoffice/watch/products');
+        $collection = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame(['postgresql', 'rabbitmq', 'nginx'], array_column($collection, 'slug'));
     }
 
     /**
@@ -241,7 +286,6 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
             'label' => 'PostgreSQL',
             'versionSource' => 'manual',
             'version' => '',
-            'position' => 0,
         ]));
 
         self::assertResponseStatusCodeSame(422);
@@ -267,7 +311,6 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
             'label' => 'PHP (typo)',
             'versionSource' => 'manual',
             'version' => '8.5.9',
-            'position' => 0,
         ]));
 
         self::assertResponseStatusCodeSame(422);
@@ -301,7 +344,6 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
             'label' => 'PostgreSQL',
             'versionSource' => 'manual',
             'version' => '18.4',
-            'position' => 0,
         ]));
 
         self::assertResponseIsSuccessful();
@@ -327,7 +369,6 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
             'label' => 'PHP',
             'versionSource' => 'runtime_php',
             'version' => '',
-            'position' => 0,
         ]));
 
         self::assertResponseIsSuccessful();
@@ -350,7 +391,6 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
             'label' => 'PostgreSQL',
             'versionSource' => 'manual',
             'version' => '18.4',
-            'position' => 0,
         ]));
 
         self::assertResponseStatusCodeSame(422);

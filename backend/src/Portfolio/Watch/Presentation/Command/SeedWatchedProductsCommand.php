@@ -76,8 +76,10 @@ final class SeedWatchedProductsCommand extends Command
         // comme les autres seeds du projet : la vérification d'unicité du slug
         // est inutile juste après la purge, mais elle protégerait le jour où
         // cette commande cesserait de purger.
-        foreach ($this->catalog() as $position => [$slug, $label, $versionSource, $version]) {
-            $this->watchedProductAdministrator->create($slug, $label, $versionSource, $version, $position);
+        // L'ordre du catalogue est celui de la liste : chaque création se range
+        // en fin (spec 0004, D3), donc l'index n'a plus à être passé.
+        foreach ($this->catalog() as [$slug, $label, $versionSource, $version]) {
+            $this->watchedProductAdministrator->create($slug, $label, $versionSource, $version);
         }
 
         $io->success(sprintf('%d produits surveillés posés.', \count($this->catalog())));

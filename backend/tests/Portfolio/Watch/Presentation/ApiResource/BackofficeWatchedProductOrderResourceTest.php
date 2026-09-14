@@ -190,8 +190,8 @@ final class BackofficeWatchedProductOrderResourceTest extends WebTestCase
     {
         $administrator = $client->getContainer()->get(WatchedProductAdministratorInterface::class);
 
-        $first = $administrator->create('postgresql', 'PostgreSQL', VersionSource::MANUAL, '17.2', 0);
-        $second = $administrator->create('rabbitmq', 'RabbitMQ', VersionSource::MANUAL, '4.0', 1);
+        $first = $administrator->create('postgresql', 'PostgreSQL', VersionSource::MANUAL, '17.2');
+        $second = $administrator->create('rabbitmq', 'RabbitMQ', VersionSource::MANUAL, '4.0');
 
         return [$first->getId()->toRfc4122(), $second->getId()->toRfc4122()];
     }

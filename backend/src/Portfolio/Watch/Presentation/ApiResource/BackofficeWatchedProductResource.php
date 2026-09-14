@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Presentation\ApiResource;
 
+use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Delete;
 use ApiPlatform\Metadata\Get;
@@ -95,7 +96,14 @@ final class BackofficeWatchedProductResource
          */
         #[Assert\Length(max: 30)]
         public ?string $version = null,
-        #[Assert\PositiveOrZero]
+        /**
+         * Spec 0004 D3 : lecture seule. La position ne se saisit plus — une
+         * entrée neuve se range en fin de catalogue, et seul
+         * `PUT …/order` l'écrira. `writable: false` la retire du contrat
+         * d'écriture (et de l'OpenAPI) sans refuser un corps qui en porterait
+         * encore une : elle est simplement ignorée.
+         */
+        #[ApiProperty(writable: false)]
         public int $position = 0,
     ) {
     }

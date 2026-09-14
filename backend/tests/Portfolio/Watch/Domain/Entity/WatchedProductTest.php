@@ -98,15 +98,17 @@ final class WatchedProductTest extends TestCase
         new WatchedProduct('php', 'PHP', VersionSource::RUNTIME_PHP, '8.5.9', 0);
     }
 
-    public function testUpdateReplacesEveryMutablePropertyButNotTheSlug(): void
+    public function testUpdateReplacesEveryMutablePropertyButNotTheSlugNorThePosition(): void
     {
         $product = $this->postgres();
+        $positionBefore = $product->getPosition();
 
-        $product->update('PostgreSQL (base principale)', VersionSource::MANUAL, '18.5', 5);
+        $product->update('PostgreSQL (base principale)', VersionSource::MANUAL, '18.5');
 
         self::assertSame('PostgreSQL (base principale)', $product->getLabel());
         self::assertSame('18.5', $product->getVersion());
-        self::assertSame(5, $product->getPosition());
+        // Spec 0004 D3 : modifier ne déplace pas, seul `moveToPosition()` le fait.
+        self::assertSame($positionBefore, $product->getPosition());
         // Changer le slug revient à suivre un autre produit : c'est une création.
         self::assertSame('postgresql', $product->getSlug());
     }
@@ -117,7 +119,7 @@ final class WatchedProductTest extends TestCase
 
         $this->expectException(InvalidWatchedProductException::class);
 
-        $product->update('PostgreSQL', VersionSource::MANUAL, null, 2);
+        $product->update('PostgreSQL', VersionSource::MANUAL, null);
     }
 
     /**
