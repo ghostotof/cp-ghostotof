@@ -71,7 +71,7 @@ const PRINCIPLE_PROSE_FIELDS = ['title', 'description'] as const
 /** Un trait n'est qu'un libellé court — mais un libellé se traduit. */
 const TRAIT_PROSE_FIELDS = ['label'] as const
 
-const editingPrincipleId = ref<number | null>(null)
+const editingPrincipleId = ref<string | null>(null)
 const principleForm = reactive({ title: '', description: '', iconKey: '', position: 0 })
 const isSubmittingPrinciple = ref(false)
 const isEditingPrinciple = computed(() => null !== editingPrincipleId.value)
@@ -140,7 +140,7 @@ async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<
   await removePrinciple(principle.id)
 }
 
-const editingTraitId = ref<number | null>(null)
+const editingTraitId = ref<string | null>(null)
 const traitForm = reactive({ label: '', position: 0 })
 const isSubmittingTrait = ref(false)
 const isEditingTrait = computed(() => null !== editingTraitId.value)

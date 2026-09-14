@@ -10,8 +10,9 @@ import type { AdminTranslationRepository } from '../../../../src/domain/admin/tr
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 
+const CONTRIBUTION_ID = '019968a0-0000-7000-8000-000000000001'
 const CONTRIBUTION: AdminContribution = {
-  id: 1, locale: 'fr', title: 'Un lock npm dans le manifeste', project: 'symfony/ai', reference: 'PR #42',
+  id: CONTRIBUTION_ID, locale: 'fr', title: 'Un lock npm dans le manifeste', project: 'symfony/ai', reference: 'PR #42',
   url: 'https://example.test/pr/42', summary: 'Résumé.', body: 'Le fichier `composer.lock` suffit.\n\nSecond paragraphe.', position: 0,
 }
 

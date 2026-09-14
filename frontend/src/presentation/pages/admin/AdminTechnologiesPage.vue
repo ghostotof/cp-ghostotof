@@ -9,7 +9,7 @@ import type { AdminExperienceTechnology } from '../../../domain/admin/technologi
 const { t } = useI18n()
 const { technologies, isLoading, hasError, errorMessage, create, update, remove } = useAdminExperienceTechnologies()
 
-const editingId = ref<number | null>(null)
+const editingId = ref<string | null>(null)
 const form = reactive({ name: '', years: 0, iconKey: '', relatedTechnologyName: '', isSecondary: false })
 const isSubmitting = ref(false)
 

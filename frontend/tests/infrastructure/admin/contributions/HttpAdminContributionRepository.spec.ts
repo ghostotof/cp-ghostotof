@@ -3,10 +3,13 @@ import { HttpAdminContributionRepository } from '../../../../src/infrastructure/
 import { AdminContributionError } from '../../../../src/domain/admin/contributions/errors/AdminContributionError'
 
 const API_BASE_URL = 'https://api.example.test'
+const CONTRIBUTION_ID = '019968a0-0000-7000-8000-000000000061'
+const TARGET_CONTRIBUTION_ID = '019968a0-0000-7000-8000-000000000062'
+const MISSING_CONTRIBUTION_ID = '019968a0-0000-7000-8000-000000000999'
 const BASE_PATH = `${API_BASE_URL}/api/backoffice/contributions`
 
 const API_CONTRIBUTION = {
-  id: 1,
+  id: CONTRIBUTION_ID,
   locale: 'fr',
   title: 'Retry de transport',
   project: 'symfony/ai',
@@ -74,25 +77,25 @@ describe('HttpAdminContributionRepository', () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, API_CONTRIBUTION))
     vi.stubGlobal('fetch', fetchMock)
 
-    await new HttpAdminContributionRepository(API_BASE_URL).update(7, INPUT)
+    await new HttpAdminContributionRepository(API_BASE_URL).update(TARGET_CONTRIBUTION_ID, INPUT)
 
-    expect(fetchMock).toHaveBeenCalledWith(`${BASE_PATH}/7`, expect.objectContaining({ method: 'PUT' }))
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE_PATH}/${TARGET_CONTRIBUTION_ID}`, expect.objectContaining({ method: 'PUT' }))
   })
 
   it('remove() envoie DELETE sur l\'id', async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await new HttpAdminContributionRepository(API_BASE_URL).remove(7)
+    await new HttpAdminContributionRepository(API_BASE_URL).remove(TARGET_CONTRIBUTION_ID)
 
-    expect(fetchMock).toHaveBeenCalledWith(`${BASE_PATH}/7`, expect.objectContaining({ method: 'DELETE' }))
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE_PATH}/${TARGET_CONTRIBUTION_ID}`, expect.objectContaining({ method: 'DELETE' }))
   })
 
   it('traduit un 404 en erreur de domaine « not-found »', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(404, { detail: 'Not Found' })))
 
     const error = await new HttpAdminContributionRepository(API_BASE_URL)
-      .update(99, INPUT)
+      .update(MISSING_CONTRIBUTION_ID, INPUT)
       .catch((caught: unknown) => caught)
 
     expect(error).toBeInstanceOf(AdminContributionError)

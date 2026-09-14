@@ -10,8 +10,9 @@ import type { AdminTranslationRepository } from '../../../../src/domain/admin/tr
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 
+const INCIDENT_ID = '019968a0-0000-7000-8000-000000000001'
 const INCIDENT: AdminIncident = {
-  id: 1, locale: 'fr', title: 'Panne du broker RabbitMQ', version: 'v0.5.0', occurredAt: '2026-09-03',
+  id: INCIDENT_ID, locale: 'fr', title: 'Panne du broker RabbitMQ', version: 'v0.5.0', occurredAt: '2026-09-03',
   impact: 'Formulaire en 500 pendant 15 minutes.', rootCause: 'Cookie Erlang.', resolution: 'Rollback.', invariant: 'Tester sur un volume déjà initialisé.', position: 0,
 }
 

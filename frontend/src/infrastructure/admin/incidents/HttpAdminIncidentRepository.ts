@@ -10,7 +10,7 @@ import {
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 
 interface BackofficeIncidentApiResponse {
-  id: number
+  id: string
   locale: string
   title: string
   version: string
@@ -54,13 +54,13 @@ export class HttpAdminIncidentRepository implements AdminIncidentRepository {
     return this.toEntity((await response.json()) as BackofficeIncidentApiResponse)
   }
 
-  async update(id: number, input: AdminIncidentInput): Promise<AdminIncident> {
+  async update(id: string, input: AdminIncidentInput): Promise<AdminIncident> {
     const response = await this.mutate('PUT', `${BASE_PATH}/${id}`, input)
 
     return this.toEntity((await response.json()) as BackofficeIncidentApiResponse)
   }
 
-  async remove(id: number): Promise<void> {
+  async remove(id: string): Promise<void> {
     await this.mutate('DELETE', `${BASE_PATH}/${id}`)
   }
 

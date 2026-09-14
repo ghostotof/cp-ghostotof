@@ -3,10 +3,13 @@ import { HttpAdminIncidentRepository } from '../../../../src/infrastructure/admi
 import { AdminIncidentError } from '../../../../src/domain/admin/incidents/errors/AdminIncidentError'
 
 const API_BASE_URL = 'https://api.example.test'
+const INCIDENT_ID = '019968a0-0000-7000-8000-000000000071'
+const TARGET_INCIDENT_ID = '019968a0-0000-7000-8000-000000000072'
+const MISSING_INCIDENT_ID = '019968a0-0000-7000-8000-000000000999'
 const BASE_PATH = `${API_BASE_URL}/api/backoffice/incidents`
 
 const API_INCIDENT = {
-  id: 1, locale: 'fr', title: 'RabbitMQ', version: 'v0.5.0', occurredAt: '2026-09-03',
+  id: INCIDENT_ID, locale: 'fr', title: 'RabbitMQ', version: 'v0.5.0', occurredAt: '2026-09-03',
   impact: 'Impact.', rootCause: 'Cause.', resolution: 'Résolution.', invariant: 'Règle.', position: 0,
 }
 const INPUT = {
@@ -54,24 +57,24 @@ describe('HttpAdminIncidentRepository', () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, API_INCIDENT))
     vi.stubGlobal('fetch', fetchMock)
 
-    await new HttpAdminIncidentRepository(API_BASE_URL).update(7, INPUT)
+    await new HttpAdminIncidentRepository(API_BASE_URL).update(TARGET_INCIDENT_ID, INPUT)
 
-    expect(fetchMock).toHaveBeenCalledWith(`${BASE_PATH}/7`, expect.objectContaining({ method: 'PUT' }))
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE_PATH}/${TARGET_INCIDENT_ID}`, expect.objectContaining({ method: 'PUT' }))
   })
 
   it('remove() envoie DELETE sur l\'id', async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await new HttpAdminIncidentRepository(API_BASE_URL).remove(7)
+    await new HttpAdminIncidentRepository(API_BASE_URL).remove(TARGET_INCIDENT_ID)
 
-    expect(fetchMock).toHaveBeenCalledWith(`${BASE_PATH}/7`, expect.objectContaining({ method: 'DELETE' }))
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE_PATH}/${TARGET_INCIDENT_ID}`, expect.objectContaining({ method: 'DELETE' }))
   })
 
   it('traduit un 404 en erreur de domaine « not-found »', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(404, { detail: 'Not Found' })))
 
-    const error = await new HttpAdminIncidentRepository(API_BASE_URL).update(99, INPUT).catch((c: unknown) => c)
+    const error = await new HttpAdminIncidentRepository(API_BASE_URL).update(MISSING_INCIDENT_ID, INPUT).catch((c: unknown) => c)
 
     expect(error).toBeInstanceOf(AdminIncidentError)
     expect((error as AdminIncidentError).reason).toBe('not-found')

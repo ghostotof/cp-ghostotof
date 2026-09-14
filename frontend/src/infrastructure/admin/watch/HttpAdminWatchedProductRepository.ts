@@ -10,7 +10,7 @@ import {
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 
 interface BackofficeWatchedProductApiResponse {
-  id: number
+  id: string
   slug: string
   label: string
   versionSource: string
@@ -50,13 +50,13 @@ export class HttpAdminWatchedProductRepository implements AdminWatchedProductRep
     return this.toEntity((await response.json()) as BackofficeWatchedProductApiResponse)
   }
 
-  async update(id: number, input: AdminWatchedProductInput): Promise<AdminWatchedProduct> {
+  async update(id: string, input: AdminWatchedProductInput): Promise<AdminWatchedProduct> {
     const response = await this.mutate('PUT', `${BASE_PATH}/${id}`, input)
 
     return this.toEntity((await response.json()) as BackofficeWatchedProductApiResponse)
   }
 
-  async remove(id: number): Promise<void> {
+  async remove(id: string): Promise<void> {
     await this.mutate('DELETE', `${BASE_PATH}/${id}`)
   }
 

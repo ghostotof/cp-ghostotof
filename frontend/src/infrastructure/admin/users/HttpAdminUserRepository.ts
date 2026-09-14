@@ -5,7 +5,7 @@ import { AdminUserError, type AdminUserErrorReason } from '../../../domain/admin
 import { BackofficeHttpClient, violationsMessage, type ApiProblemBody } from '../shared/BackofficeHttpClient'
 
 interface BackofficeUserApiResponse {
-  id: number
+  id: string
   username: string
   email: string | null
   roles: string[]
@@ -47,15 +47,15 @@ export class HttpAdminUserRepository implements AdminUserRepository {
     return this.toAdminUser((await response.json()) as BackofficeUserApiResponse)
   }
 
-  async setSuperAdmin(id: number, grant: boolean): Promise<void> {
+  async setSuperAdmin(id: string, grant: boolean): Promise<void> {
     await this.mutate('PUT', `${BASE_PATH}/${id}/roles`, { superAdmin: grant }, 'setRole')
   }
 
-  async resendInvitation(id: number, locale: Locale): Promise<void> {
+  async resendInvitation(id: string, locale: Locale): Promise<void> {
     await this.mutate('POST', `${BASE_PATH}/${id}/invitation`, { locale }, 'resend')
   }
 
-  async remove(id: number): Promise<void> {
+  async remove(id: string): Promise<void> {
     await this.mutate('DELETE', `${BASE_PATH}/${id}`, undefined, 'delete')
   }
 
@@ -63,7 +63,7 @@ export class HttpAdminUserRepository implements AdminUserRepository {
    * Réponse 204 sans corps (`output: false` côté backend) : le mot de passe ne
    * doit jamais être renvoyé, même haché — pas de `response.json()` à tenter ici.
    */
-  async changePassword(id: number, newPassword: string): Promise<void> {
+  async changePassword(id: string, newPassword: string): Promise<void> {
     await this.mutate('PUT', `${BASE_PATH}/${id}/password`, { password: newPassword }, 'changePassword')
   }
 

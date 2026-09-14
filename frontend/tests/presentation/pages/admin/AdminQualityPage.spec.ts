@@ -14,8 +14,10 @@ import type { AdminTranslationRepository } from '../../../../src/domain/admin/tr
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 
-const PRINCIPLE: AdminQualityPrinciple = { id: 1, locale: 'fr', title: 'DDD', description: 'Description DDD', iconKey: 'boxes', position: 0 }
-const TRAIT: AdminQualityTrait = { id: 1, locale: 'fr', label: 'Testé', position: 0 }
+const PRINCIPLE_ID = '019968a0-0000-7000-8000-000000000001'
+const TRAIT_ID = '019968a0-0000-7000-8000-000000000002'
+const PRINCIPLE: AdminQualityPrinciple = { id: PRINCIPLE_ID, locale: 'fr', title: 'DDD', description: 'Description DDD', iconKey: 'boxes', position: 0 }
+const TRAIT: AdminQualityTrait = { id: TRAIT_ID, locale: 'fr', label: 'Testé', position: 0 }
 
 function createStubPrincipleRepository(overrides: Partial<AdminQualityPrincipleRepository> = {}): AdminQualityPrincipleRepository {
   return {
@@ -145,7 +147,7 @@ describe('AdminQualityPage', () => {
     await wrapper.findAll('form')[0]?.trigger('submit.prevent')
     await flushPromises()
 
-    expect(principleRepository.update).toHaveBeenCalledWith(1, {
+    expect(principleRepository.update).toHaveBeenCalledWith(PRINCIPLE_ID, {
       locale: 'fr',
       title: 'DDD (mis à jour)',
       description: 'Description DDD',
@@ -175,7 +177,7 @@ describe('AdminQualityPage', () => {
     await deleteButton?.trigger('click')
     await flushPromises()
 
-    expect(principleRepository.remove).toHaveBeenCalledWith(1)
+    expect(principleRepository.remove).toHaveBeenCalledWith(PRINCIPLE_ID)
   })
 
   it("affiche un message traduit si une mutation de principe échoue", async () => {

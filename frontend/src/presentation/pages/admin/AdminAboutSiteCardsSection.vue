@@ -20,7 +20,7 @@ const { cards, isLoading, hasError, errorMessage, load, create, update, remove }
 
 watch(() => props.locale, load, { immediate: true })
 
-const editingId = ref<number | null>(null)
+const editingId = ref<string | null>(null)
 const form = reactive({ title: '', description: '', iconKey: '', position: 0 })
 const isSubmitting = ref(false)
 const isEditing = computed(() => null !== editingId.value)

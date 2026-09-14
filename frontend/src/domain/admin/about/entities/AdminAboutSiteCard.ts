@@ -5,7 +5,7 @@ import type { Locale } from '../../../portfolio/entities/Locale'
  * public imbriqué AboutCard (sans id/locale/position).
  */
 export interface AdminAboutSiteCard {
-  readonly id: number
+  readonly id: string
   readonly locale: Locale
   readonly title: string
   readonly description: string

@@ -18,8 +18,8 @@ export interface UseAdminExperienceTechnologiesResult {
   errorMessage: Ref<AdminExperienceTechnologyError | null>
   load: () => Promise<void>
   create: (input: AdminExperienceTechnologyInput) => Promise<void>
-  update: (id: number, input: AdminExperienceTechnologyInput) => Promise<void>
-  remove: (id: number) => Promise<void>
+  update: (id: string, input: AdminExperienceTechnologyInput) => Promise<void>
+  remove: (id: string) => Promise<void>
 }
 
 /**
@@ -74,9 +74,9 @@ export function useAdminExperienceTechnologies(): UseAdminExperienceTechnologies
 
   const create = (input: AdminExperienceTechnologyInput): Promise<void> => runMutation(() => repository.create(input))
 
-  const update = (id: number, input: AdminExperienceTechnologyInput): Promise<void> => runMutation(() => repository.update(id, input))
+  const update = (id: string, input: AdminExperienceTechnologyInput): Promise<void> => runMutation(() => repository.update(id, input))
 
-  const remove = (id: number): Promise<void> => runMutation(() => repository.remove(id))
+  const remove = (id: string): Promise<void> => runMutation(() => repository.remove(id))
 
   void load()
 

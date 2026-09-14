@@ -16,7 +16,7 @@ const { t } = useI18n()
 const { sections, isLoading, hasError, errorMessage, create, update, remove } = useAdminAnonymousCvSections()
 const { isTranslating, errorReason: translationErrorReason, translate } = useAdminTranslation()
 
-const editingId = ref<number | null>(null)
+const editingId = ref<string | null>(null)
 
 /** Typé explicitement, sinon `reactive` infère `locale` au littéral de sa valeur initiale (cf. AdminIncidentsPage). */
 interface SectionForm {

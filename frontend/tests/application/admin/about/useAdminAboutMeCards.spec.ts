@@ -6,7 +6,8 @@ import type { AdminAboutMeCardRepository } from '../../../../src/domain/admin/ab
 import type { AdminAboutMeCard } from '../../../../src/domain/admin/about/entities/AdminAboutMeCard'
 import { AdminAboutError } from '../../../../src/domain/admin/about/errors/AdminAboutError'
 
-const CARD: AdminAboutMeCard = { id: 1, locale: 'fr', category: 'technical', title: 'Dev senior', description: 'D', iconKey: 'code', position: 0 }
+const ME_CARD_ID = '019968a0-0000-7000-8000-000000000001'
+const CARD: AdminAboutMeCard = { id: ME_CARD_ID, locale: 'fr', category: 'technical', title: 'Dev senior', description: 'D', iconKey: 'code', position: 0 }
 
 function createStubRepository(overrides: Partial<AdminAboutMeCardRepository> = {}): AdminAboutMeCardRepository {
   return {
@@ -84,7 +85,7 @@ describe('useAdminAboutMeCards', () => {
     const composable = mountWithComposable(repository)
     await composable.load('fr')
 
-    await composable.update(1, { locale: 'fr', category: 'technical', title: 'x', description: 'x', iconKey: null, position: 0 })
+    await composable.update(ME_CARD_ID, { locale: 'fr', category: 'technical', title: 'x', description: 'x', iconKey: null, position: 0 })
 
     expect(composable.errorMessage.value?.reason).toBe('not-found')
   })
@@ -95,9 +96,9 @@ describe('useAdminAboutMeCards', () => {
     await composable.load('fr')
     vi.mocked(repository.list).mockClear()
 
-    await composable.remove(1)
+    await composable.remove(ME_CARD_ID)
 
-    expect(repository.remove).toHaveBeenCalledWith(1)
+    expect(repository.remove).toHaveBeenCalledWith(ME_CARD_ID)
     expect(repository.list).toHaveBeenCalledWith('fr')
   })
 })

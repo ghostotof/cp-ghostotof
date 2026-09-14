@@ -27,8 +27,9 @@ function createStubVulnerabilityRepository(
   return { list: vi.fn(async () => vulnerabilities) }
 }
 
+const POSTGRES_ID = '019968a0-0000-7000-8000-000000000001'
 const POSTGRES: AdminWatchedProduct = {
-  id: 1,
+  id: POSTGRES_ID,
   slug: 'postgresql',
   label: 'PostgreSQL',
   versionSource: 'manual',

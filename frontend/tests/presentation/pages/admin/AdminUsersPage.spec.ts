@@ -12,9 +12,12 @@ import type { AuthenticatedUser } from '../../../../src/domain/auth/entities/Aut
 import { AdminUserError } from '../../../../src/domain/admin/users/errors/AdminUserError'
 import { sessionFor } from '../../../support/authSession'
 
-const SUPER: AdminUser = { id: 1, username: 'super', email: null, roles: ['ROLE_SUPER', 'ROLE_USER'], status: 'active' }
-const JANE: AdminUser = { id: 2, username: 'jane', email: null, roles: ['ROLE_USER'], status: 'active' }
-const NEWCOMER: AdminUser = { id: 3, username: 'newcomer', email: 'newcomer@example.com', roles: ['ROLE_USER'], status: 'pending' }
+const SUPER_ID = '019968a0-0000-7000-8000-000000000001'
+const JANE_ID = '019968a0-0000-7000-8000-000000000002'
+const NEWCOMER_ID = '019968a0-0000-7000-8000-000000000003'
+const SUPER: AdminUser = { id: SUPER_ID, username: 'super', email: null, roles: ['ROLE_SUPER', 'ROLE_USER'], status: 'active' }
+const JANE: AdminUser = { id: JANE_ID, username: 'jane', email: null, roles: ['ROLE_USER'], status: 'active' }
+const NEWCOMER: AdminUser = { id: NEWCOMER_ID, username: 'newcomer', email: 'newcomer@example.com', roles: ['ROLE_USER'], status: 'pending' }
 
 function createStubRepository(overrides: Partial<AdminUserRepository> = {}): AdminUserRepository {
   return {
@@ -169,7 +172,7 @@ describe('AdminUsersPage', () => {
     await rowButton(wrapper, 'jane', 'Promouvoir')?.trigger('click')
     await flushPromises()
 
-    expect(repository.setSuperAdmin).toHaveBeenCalledWith(2, true)
+    expect(repository.setSuperAdmin).toHaveBeenCalledWith(JANE_ID, true)
   })
 
   it('l\'action de rôle est désactivée sur sa propre ligne', async () => {
@@ -192,7 +195,7 @@ describe('AdminUsersPage', () => {
     await rowButton(wrapper, 'newcomer', 'Renvoyer')?.trigger('click')
     await flushPromises()
 
-    expect(repository.resendInvitation).toHaveBeenCalledWith(3, 'fr')
+    expect(repository.resendInvitation).toHaveBeenCalledWith(NEWCOMER_ID, 'fr')
   })
 
   it('le message « Invitation renvoyée » disparaît dès qu\'une autre action est déclenchée', async () => {
@@ -257,7 +260,7 @@ describe('AdminUsersPage', () => {
     await rowButton(wrapper, 'jane', 'Supprimer')?.trigger('click')
     await flushPromises()
 
-    expect(repository.remove).toHaveBeenCalledWith(2)
+    expect(repository.remove).toHaveBeenCalledWith(JANE_ID)
   })
 
   it('change le mot de passe via le formulaire dédié', async () => {
@@ -272,7 +275,7 @@ describe('AdminUsersPage', () => {
     await wrapper.get('form.admin-user-password-form').trigger('submit.prevent')
     await flushPromises()
 
-    expect(repository.changePassword).toHaveBeenCalledWith(1, 'NewPassword123')
+    expect(repository.changePassword).toHaveBeenCalledWith(SUPER_ID, 'NewPassword123')
     expect(wrapper.text()).toContain('Mot de passe mis à jour.')
   })
 

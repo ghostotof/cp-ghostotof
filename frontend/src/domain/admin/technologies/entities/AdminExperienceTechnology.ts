@@ -5,7 +5,7 @@
  * (BackofficeExperienceTechnologyResource) tel quel.
  */
 export interface AdminExperienceTechnology {
-  readonly id: number
+  readonly id: string
   readonly name: string
   readonly years: number
   readonly iconKey: string | null
