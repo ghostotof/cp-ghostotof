@@ -46,6 +46,13 @@ describe('OrderToolbar', () => {
     expect(saveButton.attributes('aria-busy')).toBe('true')
   })
 
+  it("désactive Annuler et Enregistrer pendant l'enregistrement, même modifié", () => {
+    const wrapper = mountToolbar({ isDirty: true, isSaving: true, errorReason: null })
+
+    const buttons = wrapper.findAll('button')
+    expect(buttons.every((button) => button.attributes('disabled') !== undefined)).toBe(true)
+  })
+
   it('affiche une alerte pour une liste obsolète', () => {
     const wrapper = mountToolbar({ isDirty: false, isSaving: false, errorReason: 'stale-order' })
 

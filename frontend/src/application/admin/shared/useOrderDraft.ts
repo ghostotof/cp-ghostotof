@@ -51,7 +51,16 @@ export function useOrderDraft(options: UseOrderDraftOptions): UseOrderDraftResul
   })
 
   function move(from: number, to: number): void {
-    draft.value = moveKey(draft.value, from, to)
+    const moved = moveKey(draft.value, from, to)
+
+    // `moveKey` renvoie une copie inchangée hors bornes ou quand from === to
+    // (cf. sa docstring) : comparer avant de marquer le brouillon modifié
+    // évite un « Enregistrer » activé pour un geste qui n'a rien déplacé.
+    if (moved.every((key, index) => key === draft.value[index])) {
+      return
+    }
+
+    draft.value = moved
     dirty.value = true
   }
 
@@ -62,6 +71,14 @@ export function useOrderDraft(options: UseOrderDraftOptions): UseOrderDraftResul
   }
 
   async function save(): Promise<void> {
+    // Garde de réentrance : un double-clic (ou un double appel programmatique)
+    // pendant un enregistrement en cours ne doit jamais déclencher un second
+    // `reorder` — `OrderToolbar` désactive déjà le bouton pendant `isSaving`,
+    // mais rien n'empêche un appelant d'invoquer `save()` directement.
+    if (isSaving.value) {
+      return
+    }
+
     isSaving.value = true
     errorReason.value = null
 

@@ -126,6 +126,56 @@ describe('useOrderDraft', () => {
     expect(errorReason.value).toBeNull()
   })
 
+  it("move() ne marque pas le brouillon modifié quand moveKey ne change rien (from === to)", () => {
+    const serverKeys = ref<readonly string[]>(['a', 'b', 'c'])
+    const { draft, isDirty, move } = useOrderDraft({
+      serverKeys,
+      reorder: vi.fn(async () => {}),
+      reload: vi.fn(async () => {}),
+    })
+
+    move(1, 1)
+
+    expect(draft.value).toEqual(['a', 'b', 'c'])
+    expect(isDirty.value).toBe(false)
+  })
+
+  it("move() ne marque pas le brouillon modifié pour un déplacement hors bornes", () => {
+    const serverKeys = ref<readonly string[]>(['a', 'b', 'c'])
+    const { isDirty, move } = useOrderDraft({
+      serverKeys,
+      reorder: vi.fn(async () => {}),
+      reload: vi.fn(async () => {}),
+    })
+
+    move(0, 5)
+
+    expect(isDirty.value).toBe(false)
+  })
+
+  it("un second appel à save() pendant un enregistrement en cours n'appelle pas reorder une seconde fois", async () => {
+    const serverKeys = ref<readonly string[]>(['a', 'b', 'c'])
+    let resolveReorder!: () => void
+    const reorder = vi.fn(() => new Promise<void>((resolve) => { resolveReorder = resolve }))
+    const reload = vi.fn(async () => {})
+    const { move, save, isSaving } = useOrderDraft({ serverKeys, reorder, reload })
+
+    move(0, 2)
+    const first = save()
+    expect(isSaving.value).toBe(true)
+
+    const second = save()
+
+    expect(reorder).toHaveBeenCalledTimes(1)
+
+    resolveReorder()
+    await first
+    await second
+
+    expect(reorder).toHaveBeenCalledTimes(1)
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
   it('accepte une fonction comme source de clés', () => {
     const keys: readonly string[] = ['a', 'b']
     const { draft } = useOrderDraft({

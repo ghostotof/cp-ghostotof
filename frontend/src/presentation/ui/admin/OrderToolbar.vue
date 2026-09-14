@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import type { AdminOrderErrorReason } from '../../../domain/admin/shared/errors/AdminOrderError'
 
 /**
  * Barre d'action du brouillon d'ordre (spec 0004, D6) : statut, Annuler,
@@ -11,7 +12,7 @@ import { useI18n } from 'vue-i18n'
 const props = defineProps<{
   isDirty: boolean
   isSaving: boolean
-  errorReason: 'stale-order' | 'unknown' | null
+  errorReason: AdminOrderErrorReason | null
 }>()
 
 const emit = defineEmits<{ save: []; cancel: [] }>()
@@ -19,6 +20,13 @@ const emit = defineEmits<{ save: []; cancel: [] }>()
 const { t } = useI18n()
 
 const statusKey = computed(() => (props.isDirty ? 'admin.order.status.dirty' : 'admin.order.status.clean'))
+
+// Un enregistrement en cours verrouille les deux boutons, pas seulement
+// « Enregistrer » : « Annuler » pendant un save() en vol abandonnerait un
+// brouillon que le serveur est en train d'appliquer, et un second clic sur
+// « Enregistrer » redéclencherait un reorder (useOrderDraft s'en protège
+// aussi, mais l'UI ne doit pas laisser croire que c'est possible).
+const actionsDisabled = computed(() => !props.isDirty || props.isSaving)
 </script>
 
 <template>
@@ -27,7 +35,7 @@ const statusKey = computed(() => (props.isDirty ? 'admin.order.status.dirty' : '
     <button
       type="button"
       class="btn btn-outline-light"
-      :disabled="!isDirty"
+      :disabled="actionsDisabled"
       @click="emit('cancel')"
     >
       {{ t('admin.order.cancel') }}
@@ -35,7 +43,7 @@ const statusKey = computed(() => (props.isDirty ? 'admin.order.status.dirty' : '
     <button
       type="button"
       class="btn btn-gradient"
-      :disabled="!isDirty"
+      :disabled="actionsDisabled"
       :aria-busy="isSaving ? 'true' : 'false'"
       @click="emit('save')"
     >
