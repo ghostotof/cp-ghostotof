@@ -1,18 +1,69 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { onBeforeRouteLeave } from 'vue-router'
 import { useAdminQualityPrinciples } from '../../../application/admin/quality/useAdminQualityPrinciples'
 import { useAdminQualityTraits } from '../../../application/admin/quality/useAdminQualityTraits'
 import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
 import { applyTranslationDraft, collectProseFields } from '../../../application/admin/translation/proseFields'
+import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
+import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
+import { useRowDragAndDrop } from '../../../application/admin/shared/useRowDragAndDrop'
+import {
+  groupByTranslationGroup,
+  type TranslationGroupRow,
+} from '../../../domain/admin/shared/ordering/groupByTranslationGroup'
+import {
+  firstEntry,
+  hasSibling,
+  rowLines,
+  translationGroupOptions,
+} from '../../../domain/admin/shared/ordering/translationGroupSelection'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
-import BaseNumberInput from '../../ui/BaseNumberInput.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
+import OrderHandle from '../../ui/admin/OrderHandle.vue'
+import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
 import type { AdminQualityPrinciple } from '../../../domain/admin/quality/entities/AdminQualityPrinciple'
 import type { AdminQualityTrait } from '../../../domain/admin/quality/entities/AdminQualityTrait'
+
+/**
+ * Deux contenus ordonnés indépendamment sur une même page — les principes et
+ * les traits de qualité —, chacun avec son tableau groupé, son brouillon
+ * d'ordre et son formulaire.
+ *
+ * **Ce que le sélecteur de langue pilote désormais** (spec 0004, D8) : les
+ * formulaires et l'assistant de traduction, plus les tableaux. Ceux-ci
+ * affichent **toutes** les langues, une ligne par groupe de traduction, parce
+ * que l'ordre est celui du groupe et non celui d'une langue : le régler en
+ * regardant une seule langue reviendrait à ignorer la moitié du contenu
+ * déplacé. `list()` a perdu son paramètre de locale en conséquence, et changer
+ * la langue ne recharge plus rien.
+ *
+ * **Conséquence sur l'assistant** : il ne bascule plus la *page* mais le
+ * *formulaire* vers la locale cible, exactement comme sur Incidents (D9) — la
+ * bascule est la même ligne de code, c'est son effet qui a changé, aucune
+ * liste ne se recharge derrière. Le brouillon reste rattaché au groupe de
+ * l'entrée source, si bien que l'enregistrer lie la traduction sans geste
+ * supplémentaire.
+ *
+ * **Le sélecteur reste unique et partagé par les deux formulaires**, comme
+ * avant : c'est la langue de travail de la page. Le corollaire est assumé —
+ * traduire un principe, ou demander « Créer la version EN » sur un trait,
+ * change la langue cible de l'autre formulaire aussi. Le comportement est
+ * celui d'avant cette tâche (le sélecteur était déjà partagé) et le risque est
+ * borné : un formulaire vide ne perd rien, un formulaire en cours affiche sa
+ * langue en haut de page.
+ *
+ * **Verrouillage (D6) : global à la page.** Un seul brouillon modifié, où
+ * qu'il soit, désactive toutes les mutations des deux panneaux. Un verrou par
+ * tableau serait plus fin — une création de trait ne recharge que les traits —
+ * mais afficherait deux états désactivés différents pour un seul geste en
+ * cours, alors que les deux panneaux partagent déjà leur sélecteur de langue.
+ * Un état, une aide, une règle à retenir.
+ */
 
 const { t } = useI18n()
 
@@ -25,6 +76,7 @@ const {
   create: createPrinciple,
   update: updatePrinciple,
   remove: removePrinciple,
+  reorder: reorderPrinciples,
 } = useAdminQualityPrinciples()
 
 const {
@@ -36,74 +88,286 @@ const {
   create: createTrait,
   update: updateTrait,
   remove: removeTrait,
+  reorder: reorderTraits,
 } = useAdminQualityTraits()
 
 const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: LOCALE_NATIVE_NAMES[locale] }))
-const selectedLocale = ref<Locale>('fr')
 
-watch(
-  selectedLocale,
-  (locale) => {
-    loadPrinciples(locale)
-    loadTraits(locale)
-  },
-  { immediate: true },
-)
+/** Langue de travail des deux formulaires (et de l'assistant), jamais des tableaux. */
+const selectedLocale = ref<Locale>(SUPPORTED_LOCALES[0])
 
 /**
- * Assistant de traduction (spec 0002). Ici la locale est celle de la page,
- * pas du formulaire : un brouillon dans l'autre langue implique donc de
- * **basculer la page** sur la locale cible — les listes se rechargent par le
- * watcher ci-dessus, les formulaires, eux, ne sont pas touchés par ce
- * rechargement, et gardent le brouillon. Enregistrer crée alors l'entrée dans
- * la locale cible, comme toute création depuis cette page. Une instance de
- * composable par formulaire : chacun a son attente et son message d'erreur.
+ * Une instance de composable de traduction par formulaire : chacun a son
+ * attente et son message d'erreur.
  */
 const {
   isTranslating: isTranslatingPrinciple,
   errorReason: principleTranslationErrorReason,
   translate: translatePrinciple,
 } = useAdminTranslation()
-const { isTranslating: isTranslatingTrait, errorReason: traitTranslationErrorReason, translate: translateTrait } = useAdminTranslation()
+const {
+  isTranslating: isTranslatingTrait,
+  errorReason: traitTranslationErrorReason,
+  translate: translateTrait,
+} = useAdminTranslation()
 
-/** Prose des principes : la clé d'icône et la position sont recopiées. */
+/**
+ * Prose des principes. Le complément de cette liste — `iconKey` — est ce que
+ * « Créer la version XX » recopie de l'entrée existante : une clé d'icône n'a
+ * pas de traduction (spec 0002, D2 ; spec 0004 §7). Une seule source de vérité.
+ */
 const PRINCIPLE_PROSE_FIELDS = ['title', 'description'] as const
-/** Un trait n'est qu'un libellé court — mais un libellé se traduit. */
+/** Un trait n'est qu'un libellé court — mais un libellé se traduit, et c'est son seul champ. */
 const TRAIT_PROSE_FIELDS = ['label'] as const
 
+interface PrincipleForm {
+  translationGroup: string
+  title: string
+  description: string
+  iconKey: string
+}
+
+interface TraitForm {
+  translationGroup: string
+  label: string
+}
+
+const principleForm = reactive<PrincipleForm>({ translationGroup: '', title: '', description: '', iconKey: '' })
+const traitForm = reactive<TraitForm>({ translationGroup: '', label: '' })
+
 const editingPrincipleId = ref<string | null>(null)
-const principleForm = reactive({ title: '', description: '', iconKey: '', position: 0 })
+const editingTraitId = ref<string | null>(null)
 const isSubmittingPrinciple = ref(false)
-const isEditingPrinciple = computed(() => null !== editingPrincipleId.value)
-const principleErrorText = computed(() => (principleErrorMessage.value ? t(`admin.quality.errors.${principleErrorMessage.value.reason}`) : null))
+const isSubmittingTrait = ref(false)
+
+/**
+ * Groupe de l'entrée dont le formulaire est issu (édition, ou « Créer la
+ * version XX »), `null` sur une page blanche. Distinct de
+ * `form.translationGroup`, qui est la valeur *choisie* dans le sélecteur :
+ * l'assistant bascule le formulaire vers l'autre locale et doit y rattacher le
+ * brouillon au groupe de la **source** (D9), y compris quand ce groupe n'avait
+ * aucune traduction et que le sélecteur affichait donc « aucune ».
+ */
+const principleSourceGroup = ref<string | null>(null)
+const traitSourceGroup = ref<string | null>(null)
+
+/** Locale de l'entrée dont le formulaire est un brouillon traduit, `null` sinon. */
 const principleDraftSourceLocale = ref<Locale | null>(null)
+const traitDraftSourceLocale = ref<Locale | null>(null)
+
+const isEditingPrinciple = computed(() => null !== editingPrincipleId.value)
+const isEditingTrait = computed(() => null !== editingTraitId.value)
+
 const hasPrincipleProse = computed(() => PRINCIPLE_PROSE_FIELDS.some((field) => '' !== principleForm[field].trim()))
+const hasTraitProse = computed(() => '' !== traitForm.label.trim())
+
+const principleErrorText = computed(() =>
+  principleErrorMessage.value ? t(`admin.quality.errors.${principleErrorMessage.value.reason}`) : null,
+)
+const traitErrorText = computed(() =>
+  traitErrorMessage.value ? t(`admin.quality.errors.${traitErrorMessage.value.reason}`) : null,
+)
 const principleTranslationErrorText = computed(() =>
   principleTranslationErrorReason.value ? t(`admin.translation.errors.${principleTranslationErrorReason.value}`) : null,
 )
+const traitTranslationErrorText = computed(() =>
+  traitTranslationErrorReason.value ? t(`admin.translation.errors.${traitTranslationErrorReason.value}`) : null,
+)
+
+/** Une ligne de tableau par groupe de traduction (D8), toutes langues confondues. */
+const principleRows = computed(() => groupByTranslationGroup(principles.value, SUPPORTED_LOCALES))
+const traitRows = computed(() => groupByTranslationGroup(traits.value, SUPPORTED_LOCALES))
+
+const {
+  draft: principleOrderDraft,
+  isDirty: isPrincipleOrderDirty,
+  isSaving: isSavingPrincipleOrder,
+  errorReason: principleOrderErrorReason,
+  move: movePrincipleInDraft,
+  reset: resetPrincipleOrder,
+  save: savePrincipleOrder,
+} = useOrderDraft({
+  serverKeys: () => principleRows.value.map((row) => row.key),
+  reorder: reorderPrinciples,
+  reload: loadPrinciples,
+})
+
+const {
+  draft: traitOrderDraft,
+  isDirty: isTraitOrderDirty,
+  isSaving: isSavingTraitOrder,
+  errorReason: traitOrderErrorReason,
+  move: moveTraitInDraft,
+  reset: resetTraitOrder,
+  save: saveTraitOrder,
+} = useOrderDraft({
+  serverKeys: () => traitRows.value.map((row) => row.key),
+  reorder: reorderTraits,
+  reload: loadTraits,
+})
+
+/**
+ * Tant qu'un ordre est modifié, toute mutation de la page est verrouillée
+ * (D6) : elle rechargerait une liste et perdrait le brouillon sans prévenir.
+ *
+ * L'aide est **rendue visible**, jamais portée par un `title` : Bootstrap pose
+ * `pointer-events: none` sur `.btn:disabled`, donc l'infobulle d'un bouton
+ * désactivé ne s'affiche jamais au survol. Les boutons la désignent par
+ * `aria-describedby` — et seulement quand elle existe, sinon la référence
+ * pendante serait elle-même une erreur d'accessibilité.
+ */
+const LOCKED_HINT_ID = 'admin-order-locked-hint'
+
+const isAnyOrderDirty = computed(() => isPrincipleOrderDirty.value || isTraitOrderDirty.value)
+const lockedHintId = computed(() => (isAnyOrderDirty.value ? LOCKED_HINT_ID : undefined))
+
+const {
+  draggingIndex: draggingPrincipleIndex,
+  onDragStart: onPrincipleDragStart,
+  onDragOver: onPrincipleDragOver,
+  onDrop: onPrincipleDrop,
+  onDragEnd: onPrincipleDragEnd,
+} = useRowDragAndDrop(movePrincipleInDraft)
+
+const {
+  draggingIndex: draggingTraitIndex,
+  onDragStart: onTraitDragStart,
+  onDragOver: onTraitDragOver,
+  onDrop: onTraitDrop,
+  onDragEnd: onTraitDragEnd,
+} = useRowDragAndDrop(moveTraitInDraft)
+
+const { registerHandleCell: registerPrincipleHandleCell, moveRow: movePrincipleRow } =
+  useOrderHandleFocus(movePrincipleInDraft)
+const { registerHandleCell: registerTraitHandleCell, moveRow: moveTraitRow } = useOrderHandleFocus(moveTraitInDraft)
+
+/**
+ * Les lignes dans l'ordre du **brouillon**, pas dans celui du serveur : c'est
+ * le glisser-déposer en cours que l'admin doit voir, l'ordre serveur ne
+ * revenant qu'après « Annuler » ou un enregistrement.
+ */
+function orderedBy<T>(rows: readonly TranslationGroupRow<T>[], draft: readonly string[]): TranslationGroupRow<T>[] {
+  const byKey = new Map(rows.map((row) => [row.key, row]))
+
+  return draft.map((key) => byKey.get(key)).filter((row): row is TranslationGroupRow<T> => undefined !== row)
+}
+
+const orderedPrincipleRows = computed(() => orderedBy(principleRows.value, principleOrderDraft.value))
+const orderedTraitRows = computed(() => orderedBy(traitRows.value, traitOrderDraft.value))
+
+/**
+ * « Version de » : les options du sélecteur (D2, cf.
+ * `domain/admin/shared/ordering/translationGroupSelection.ts` pour la règle
+ * exacte). L'option « aucune » est préfixée ici, son libellé étant un texte
+ * traduit — le module partagé reste framework-free.
+ */
+const principleTranslationOptions = computed(() => [
+  { value: '', label: t('admin.quality.translationOfNone') },
+  ...translationGroupOptions(
+    principles.value,
+    selectedLocale.value,
+    principleForm.translationGroup,
+    editingPrincipleId.value,
+    (principle) => `${principle.locale.toUpperCase()} · ${principle.title}`,
+  ),
+])
+
+const traitTranslationOptions = computed(() => [
+  { value: '', label: t('admin.quality.translationOfNone') },
+  ...translationGroupOptions(
+    traits.value,
+    selectedLocale.value,
+    traitForm.translationGroup,
+    editingTraitId.value,
+    (trait) => `${trait.locale.toUpperCase()} · ${trait.label}`,
+  ),
+])
 
 function resetPrincipleForm(): void {
   editingPrincipleId.value = null
   principleDraftSourceLocale.value = null
+  principleSourceGroup.value = null
+  principleForm.translationGroup = ''
   principleForm.title = ''
   principleForm.description = ''
   principleForm.iconKey = ''
-  principleForm.position = 0
 }
 
+function resetTraitForm(): void {
+  editingTraitId.value = null
+  traitDraftSourceLocale.value = null
+  traitSourceGroup.value = null
+  traitForm.translationGroup = ''
+  traitForm.label = ''
+}
+
+// Le groupe lu est repris tel quel dès qu'il porte une traduction : le
+// formulaire le renvoie alors à l'enregistrement, et le lien FR/EN survit à
+// l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::reattach`
+// traite le `null` en non-geste (`count($members) === 1`), le groupe est
+// conservé. Le sélecteur affiche donc « aucune » sans conséquence.
 function startEditPrinciple(principle: AdminQualityPrinciple): void {
   editingPrincipleId.value = principle.id
   principleDraftSourceLocale.value = null
+  principleSourceGroup.value = principle.translationGroup
+  selectedLocale.value = principle.locale
+  principleForm.translationGroup = hasSibling(principles.value, principle) ? principle.translationGroup : ''
   principleForm.title = principle.title
   principleForm.description = principle.description
   principleForm.iconKey = principle.iconKey
-  principleForm.position = principle.position
+}
+
+function startEditTrait(trait: AdminQualityTrait): void {
+  editingTraitId.value = trait.id
+  traitDraftSourceLocale.value = null
+  traitSourceGroup.value = trait.translationGroup
+  selectedLocale.value = trait.locale
+  traitForm.translationGroup = hasSibling(traits.value, trait) ? trait.translationGroup : ''
+  traitForm.label = trait.label
+}
+
+/**
+ * « Créer la version XX » : formulaire en création, déjà rattaché au groupe,
+ * dans la langue manquante — que le sélecteur de la page adopte, puisqu'il est
+ * la langue des formulaires. Les champs non-prose sont recopiés de l'entrée
+ * existante (cf. PRINCIPLE_PROSE_FIELDS par complément) et la prose reste vide :
+ * il n'y a rien à traduire puisqu'il n'y a rien d'écrit encore.
+ */
+function startCreatePrincipleVersion(row: TranslationGroupRow<AdminQualityPrinciple>, locale: Locale): void {
+  const existing = firstEntry(row, SUPPORTED_LOCALES)
+
+  editingPrincipleId.value = null
+  principleDraftSourceLocale.value = null
+  principleSourceGroup.value = row.key
+  selectedLocale.value = locale
+  principleForm.translationGroup = row.key
+  principleForm.iconKey = existing?.iconKey ?? ''
+  principleForm.title = ''
+  principleForm.description = ''
+}
+
+/** Même geste pour un trait, qui n'a aucun champ non-prose à recopier. */
+function startCreateTraitVersion(row: TranslationGroupRow<AdminQualityTrait>, locale: Locale): void {
+  editingTraitId.value = null
+  traitDraftSourceLocale.value = null
+  traitSourceGroup.value = row.key
+  selectedLocale.value = locale
+  traitForm.translationGroup = row.key
+  traitForm.label = ''
 }
 
 async function handleSubmitPrinciple(): Promise<void> {
   isSubmittingPrinciple.value = true
 
-  const input = { locale: selectedLocale.value, ...principleForm }
+  const input = {
+    locale: selectedLocale.value,
+    // D3 : aucun `position` n'est jamais envoyé. `null` = contenu neuf à la
+    // création, détachement sur une mise à jour.
+    translationGroup: '' === principleForm.translationGroup ? null : principleForm.translationGroup,
+    title: principleForm.title,
+    description: principleForm.description,
+    iconKey: principleForm.iconKey,
+  }
 
   if (null !== editingPrincipleId.value) {
     await updatePrinciple(editingPrincipleId.value, input)
@@ -118,57 +382,14 @@ async function handleSubmitPrinciple(): Promise<void> {
   }
 }
 
-async function handleTranslatePrinciple(targetLocale: Locale): Promise<void> {
-  const sourceLocale = selectedLocale.value
-
-  const draft = await translatePrinciple(sourceLocale, targetLocale, collectProseFields(principleForm, PRINCIPLE_PROSE_FIELDS))
-  if (!draft) {
-    return
-  }
-
-  editingPrincipleId.value = null
-  applyTranslationDraft(principleForm, PRINCIPLE_PROSE_FIELDS, draft)
-  principleDraftSourceLocale.value = sourceLocale
-  selectedLocale.value = targetLocale
-}
-
-async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<void> {
-  if (!window.confirm(t('admin.quality.principle.confirmDelete', { title: principle.title }))) {
-    return
-  }
-
-  await removePrinciple(principle.id)
-}
-
-const editingTraitId = ref<string | null>(null)
-const traitForm = reactive({ label: '', position: 0 })
-const isSubmittingTrait = ref(false)
-const isEditingTrait = computed(() => null !== editingTraitId.value)
-const traitErrorText = computed(() => (traitErrorMessage.value ? t(`admin.quality.errors.${traitErrorMessage.value.reason}`) : null))
-const traitDraftSourceLocale = ref<Locale | null>(null)
-const hasTraitProse = computed(() => '' !== traitForm.label.trim())
-const traitTranslationErrorText = computed(() =>
-  traitTranslationErrorReason.value ? t(`admin.translation.errors.${traitTranslationErrorReason.value}`) : null,
-)
-
-function resetTraitForm(): void {
-  editingTraitId.value = null
-  traitDraftSourceLocale.value = null
-  traitForm.label = ''
-  traitForm.position = 0
-}
-
-function startEditTrait(trait: AdminQualityTrait): void {
-  editingTraitId.value = trait.id
-  traitDraftSourceLocale.value = null
-  traitForm.label = trait.label
-  traitForm.position = trait.position
-}
-
 async function handleSubmitTrait(): Promise<void> {
   isSubmittingTrait.value = true
 
-  const input = { locale: selectedLocale.value, ...traitForm }
+  const input = {
+    locale: selectedLocale.value,
+    translationGroup: '' === traitForm.translationGroup ? null : traitForm.translationGroup,
+    label: traitForm.label,
+  }
 
   if (null !== editingTraitId.value) {
     await updateTrait(editingTraitId.value, input)
@@ -183,6 +404,33 @@ async function handleSubmitTrait(): Promise<void> {
   }
 }
 
+/**
+ * Demande un brouillon dans l'autre locale, puis bascule le formulaire en
+ * **création** avec ce brouillon : la prose est remplacée, le reste conservé —
+ * y compris le groupe de l'entrée source, pour que l'enregistrement rattache
+ * la version proposée sans geste supplémentaire (spec 0004, D9). Rien n'est
+ * enregistré ici — seul le bouton Enregistrer habituel persiste (ADR 0004,
+ * D4). En cas d'échec, le formulaire reste intact et la raison s'affiche.
+ */
+async function handleTranslatePrinciple(targetLocale: Locale): Promise<void> {
+  const sourceLocale = selectedLocale.value
+
+  const draft = await translatePrinciple(
+    sourceLocale,
+    targetLocale,
+    collectProseFields(principleForm, PRINCIPLE_PROSE_FIELDS),
+  )
+  if (!draft) {
+    return
+  }
+
+  editingPrincipleId.value = null
+  selectedLocale.value = targetLocale
+  principleForm.translationGroup = principleSourceGroup.value ?? ''
+  applyTranslationDraft(principleForm, PRINCIPLE_PROSE_FIELDS, draft)
+  principleDraftSourceLocale.value = sourceLocale
+}
+
 async function handleTranslateTrait(targetLocale: Locale): Promise<void> {
   const sourceLocale = selectedLocale.value
 
@@ -192,9 +440,18 @@ async function handleTranslateTrait(targetLocale: Locale): Promise<void> {
   }
 
   editingTraitId.value = null
+  selectedLocale.value = targetLocale
+  traitForm.translationGroup = traitSourceGroup.value ?? ''
   applyTranslationDraft(traitForm, TRAIT_PROSE_FIELDS, draft)
   traitDraftSourceLocale.value = sourceLocale
-  selectedLocale.value = targetLocale
+}
+
+async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<void> {
+  if (!window.confirm(t('admin.quality.principle.confirmDelete', { title: principle.title }))) {
+    return
+  }
+
+  await removePrinciple(principle.id)
 }
 
 async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
@@ -204,6 +461,29 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
 
   await removeTrait(trait.id)
 }
+
+/**
+ * Quitter la page avec un ordre modifié l'abandonnerait sans rien dire : la
+ * navigation interne demande confirmation (D6), la fermeture de l'onglet passe
+ * par `beforeunload`, que le navigateur traduit en sa propre boîte de dialogue.
+ */
+function confirmLeaving(): boolean {
+  return !isAnyOrderDirty.value || window.confirm(t('admin.order.leaveConfirm'))
+}
+
+onBeforeRouteLeave(() => confirmLeaving())
+
+function warnBeforeUnload(event: BeforeUnloadEvent): void {
+  if (!isAnyOrderDirty.value) {
+    return
+  }
+
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
+onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload))
 </script>
 
 <template>
@@ -215,6 +495,16 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
         :label="t('admin.localeLabel')"
         :options="localeOptions"
       />
+      <p class="form-text mb-0">
+        {{ t('admin.quality.localeHelp') }}
+      </p>
+      <p
+        v-if="isAnyOrderDirty"
+        :id="LOCKED_HINT_ID"
+        class="form-text mb-0"
+      >
+        {{ t('admin.order.lockedHint') }}
+      </p>
     </div>
 
     <div class="surface-panel p-3 p-sm-4">
@@ -226,6 +516,12 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
         novalidate
         @submit.prevent="handleSubmitPrinciple"
       >
+        <BaseSelect
+          id="admin-quality-principle-translation-group"
+          v-model="principleForm.translationGroup"
+          :label="t('admin.quality.translationOfLabel')"
+          :options="principleTranslationOptions"
+        />
         <BaseTextInput
           id="admin-quality-principle-title"
           v-model="principleForm.title"
@@ -244,18 +540,17 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
           :label="t('admin.quality.principle.iconKeyLabel')"
           required
         />
-        <BaseNumberInput
-          id="admin-quality-principle-position"
-          v-model="principleForm.position"
-          :label="t('admin.quality.principle.positionLabel')"
-          :step="1"
-        />
 
+        <!--
+          Verrouillé lui aussi tant qu'un ordre est modifié : l'appel au modèle
+          produirait un brouillon que le formulaire, verrouillé, ne pourrait pas
+          enregistrer — du quota dépensé pour rien (ADR 0004, coût borné).
+        -->
         <div class="mb-3">
           <TranslateEntryButton
             :form-locale="selectedLocale"
             :is-translating="isTranslatingPrinciple"
-            :disabled="!hasPrincipleProse || isSubmittingPrinciple"
+            :disabled="!hasPrincipleProse || isSubmittingPrinciple || isAnyOrderDirty"
             @translate="handleTranslatePrinciple"
           />
         </div>
@@ -288,7 +583,8 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
           <button
             type="submit"
             class="btn btn-gradient"
-            :disabled="isSubmittingPrinciple"
+            :disabled="isSubmittingPrinciple || isAnyOrderDirty"
+            :aria-describedby="lockedHintId"
           >
             {{ t('admin.quality.save') }}
           </button>
@@ -323,60 +619,112 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
         {{ t('admin.quality.loadError') }}
       </p>
       <p
-        v-else-if="0 === principles.length"
+        v-else-if="0 === orderedPrincipleRows.length"
         class="text-body-secondary mb-0"
       >
         {{ t('admin.quality.principle.empty') }}
       </p>
-      <div
-        v-else
-        class="table-responsive"
-      >
-        <table class="table table-dark table-hover align-middle mb-0">
-          <thead>
-            <tr>
-              <th scope="col">
-                {{ t('admin.quality.principle.titleLabel') }}
-              </th>
-              <th scope="col">
-                {{ t('admin.quality.principle.iconKeyLabel') }}
-              </th>
-              <th scope="col">
-                {{ t('admin.quality.principle.positionLabel') }}
-              </th>
-              <th scope="col">
-                <span class="visually-hidden">{{ t('admin.quality.actions') }}</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="principle in principles"
-              :key="principle.id"
-            >
-              <td>{{ principle.title }}</td>
-              <td>{{ principle.iconKey }}</td>
-              <td>{{ principle.position }}</td>
-              <td class="text-end">
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-light me-2"
-                  @click="startEditPrinciple(principle)"
+      <template v-else>
+        <OrderToolbar
+          class="mb-3"
+          :is-dirty="isPrincipleOrderDirty"
+          :is-saving="isSavingPrincipleOrder"
+          :error-reason="principleOrderErrorReason"
+          @save="savePrincipleOrder"
+          @cancel="resetPrincipleOrder"
+        />
+
+        <div class="table-responsive">
+          <table class="table table-dark align-middle mb-0">
+            <thead>
+              <tr>
+                <th scope="col">
+                  <span class="visually-hidden">{{ t('admin.order.columnHeader') }}</span>
+                </th>
+                <th scope="col">
+                  {{ t('admin.quality.contentLabel') }}
+                </th>
+                <th scope="col">
+                  {{ t('admin.quality.principle.iconKeyLabel') }}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(row, index) in orderedPrincipleRows"
+                :key="row.key"
+                draggable="true"
+                :class="{ 'opacity-50': index === draggingPrincipleIndex }"
+                @dragstart="onPrincipleDragStart(index)"
+                @dragover="onPrincipleDragOver"
+                @drop="onPrincipleDrop(index)"
+                @dragend="onPrincipleDragEnd"
+              >
+                <td
+                  :ref="registerPrincipleHandleCell"
+                  :data-order-key="row.key"
                 >
-                  {{ t('admin.quality.principle.editAction') }}
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-danger"
-                  @click="handleDeletePrinciple(principle)"
-                >
-                  {{ t('admin.quality.delete') }}
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+                  <OrderHandle
+                    :index="index"
+                    :count="orderedPrincipleRows.length"
+                    :label="firstEntry(row, SUPPORTED_LOCALES)?.title ?? ''"
+                    @move="(from, to) => movePrincipleRow(row.key, from, to)"
+                  />
+                </td>
+                <td>
+                  <div
+                    v-for="line in rowLines(row, SUPPORTED_LOCALES, LOCALE_NATIVE_NAMES)"
+                    :key="line.locale"
+                    class="d-flex flex-wrap align-items-center gap-2 py-1"
+                  >
+                    <span
+                      class="badge text-bg-secondary"
+                      aria-hidden="true"
+                    >{{ line.locale.toUpperCase() }}</span>
+                    <span class="visually-hidden">{{ line.nativeName }}</span>
+                    <template v-if="line.entry">
+                      <span class="text-white">{{ line.entry.title }}</span>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-light"
+                        :disabled="isAnyOrderDirty"
+                        :aria-describedby="lockedHintId"
+                        @click="startEditPrinciple(line.entry)"
+                      >
+                        {{ t('admin.quality.principle.editAction') }}
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-danger"
+                        :disabled="isAnyOrderDirty"
+                        :aria-describedby="lockedHintId"
+                        @click="handleDeletePrinciple(line.entry)"
+                      >
+                        {{ t('admin.quality.delete') }}
+                      </button>
+                    </template>
+                    <template v-else>
+                      <span class="text-body-secondary">{{ t('admin.order.missingTranslation') }}</span>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-light"
+                        :disabled="isAnyOrderDirty"
+                        :aria-describedby="lockedHintId"
+                        @click="startCreatePrincipleVersion(row, line.locale)"
+                      >
+                        {{ t('admin.order.createVersion', { locale: line.locale.toUpperCase() }) }}
+                      </button>
+                    </template>
+                  </div>
+                </td>
+                <td class="text-nowrap">
+                  {{ firstEntry(row, SUPPORTED_LOCALES)?.iconKey }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
     </div>
 
     <div class="surface-panel p-3 p-sm-4">
@@ -388,24 +736,24 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
         novalidate
         @submit.prevent="handleSubmitTrait"
       >
+        <BaseSelect
+          id="admin-quality-trait-translation-group"
+          v-model="traitForm.translationGroup"
+          :label="t('admin.quality.translationOfLabel')"
+          :options="traitTranslationOptions"
+        />
         <BaseTextInput
           id="admin-quality-trait-label"
           v-model="traitForm.label"
           :label="t('admin.quality.trait.labelLabel')"
           required
         />
-        <BaseNumberInput
-          id="admin-quality-trait-position"
-          v-model="traitForm.position"
-          :label="t('admin.quality.trait.positionLabel')"
-          :step="1"
-        />
 
         <div class="mb-3">
           <TranslateEntryButton
             :form-locale="selectedLocale"
             :is-translating="isTranslatingTrait"
-            :disabled="!hasTraitProse || isSubmittingTrait"
+            :disabled="!hasTraitProse || isSubmittingTrait || isAnyOrderDirty"
             @translate="handleTranslateTrait"
           />
         </div>
@@ -438,7 +786,8 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
           <button
             type="submit"
             class="btn btn-gradient"
-            :disabled="isSubmittingTrait"
+            :disabled="isSubmittingTrait || isAnyOrderDirty"
+            :aria-describedby="lockedHintId"
           >
             {{ t('admin.quality.save') }}
           </button>
@@ -473,56 +822,106 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
         {{ t('admin.quality.loadError') }}
       </p>
       <p
-        v-else-if="0 === traits.length"
+        v-else-if="0 === orderedTraitRows.length"
         class="text-body-secondary mb-0"
       >
         {{ t('admin.quality.trait.empty') }}
       </p>
-      <div
-        v-else
-        class="table-responsive"
-      >
-        <table class="table table-dark table-hover align-middle mb-0">
-          <thead>
-            <tr>
-              <th scope="col">
-                {{ t('admin.quality.trait.labelLabel') }}
-              </th>
-              <th scope="col">
-                {{ t('admin.quality.trait.positionLabel') }}
-              </th>
-              <th scope="col">
-                <span class="visually-hidden">{{ t('admin.quality.actions') }}</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="trait in traits"
-              :key="trait.id"
-            >
-              <td>{{ trait.label }}</td>
-              <td>{{ trait.position }}</td>
-              <td class="text-end">
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-light me-2"
-                  @click="startEditTrait(trait)"
+      <template v-else>
+        <OrderToolbar
+          class="mb-3"
+          :is-dirty="isTraitOrderDirty"
+          :is-saving="isSavingTraitOrder"
+          :error-reason="traitOrderErrorReason"
+          @save="saveTraitOrder"
+          @cancel="resetTraitOrder"
+        />
+
+        <div class="table-responsive">
+          <table class="table table-dark align-middle mb-0">
+            <thead>
+              <tr>
+                <th scope="col">
+                  <span class="visually-hidden">{{ t('admin.order.columnHeader') }}</span>
+                </th>
+                <th scope="col">
+                  {{ t('admin.quality.contentLabel') }}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(row, index) in orderedTraitRows"
+                :key="row.key"
+                draggable="true"
+                :class="{ 'opacity-50': index === draggingTraitIndex }"
+                @dragstart="onTraitDragStart(index)"
+                @dragover="onTraitDragOver"
+                @drop="onTraitDrop(index)"
+                @dragend="onTraitDragEnd"
+              >
+                <td
+                  :ref="registerTraitHandleCell"
+                  :data-order-key="row.key"
                 >
-                  {{ t('admin.quality.trait.editAction') }}
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-danger"
-                  @click="handleDeleteTrait(trait)"
-                >
-                  {{ t('admin.quality.delete') }}
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+                  <OrderHandle
+                    :index="index"
+                    :count="orderedTraitRows.length"
+                    :label="firstEntry(row, SUPPORTED_LOCALES)?.label ?? ''"
+                    @move="(from, to) => moveTraitRow(row.key, from, to)"
+                  />
+                </td>
+                <td>
+                  <div
+                    v-for="line in rowLines(row, SUPPORTED_LOCALES, LOCALE_NATIVE_NAMES)"
+                    :key="line.locale"
+                    class="d-flex flex-wrap align-items-center gap-2 py-1"
+                  >
+                    <span
+                      class="badge text-bg-secondary"
+                      aria-hidden="true"
+                    >{{ line.locale.toUpperCase() }}</span>
+                    <span class="visually-hidden">{{ line.nativeName }}</span>
+                    <template v-if="line.entry">
+                      <span class="text-white">{{ line.entry.label }}</span>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-light"
+                        :disabled="isAnyOrderDirty"
+                        :aria-describedby="lockedHintId"
+                        @click="startEditTrait(line.entry)"
+                      >
+                        {{ t('admin.quality.trait.editAction') }}
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-danger"
+                        :disabled="isAnyOrderDirty"
+                        :aria-describedby="lockedHintId"
+                        @click="handleDeleteTrait(line.entry)"
+                      >
+                        {{ t('admin.quality.delete') }}
+                      </button>
+                    </template>
+                    <template v-else>
+                      <span class="text-body-secondary">{{ t('admin.order.missingTranslation') }}</span>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-light"
+                        :disabled="isAnyOrderDirty"
+                        :aria-describedby="lockedHintId"
+                        @click="startCreateTraitVersion(row, line.locale)"
+                      >
+                        {{ t('admin.order.createVersion', { locale: line.locale.toUpperCase() }) }}
+                      </button>
+                    </template>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
     </div>
   </div>
 </template>

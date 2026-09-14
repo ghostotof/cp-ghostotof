@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, type ComponentPublicInstance } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { onBeforeRouteLeave } from 'vue-router'
 import { useAdminContributions } from '../../../application/admin/contributions/useAdminContributions'
 import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
 import { applyTranslationDraft, collectProseFields } from '../../../application/admin/translation/proseFields'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
+import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
 import { useRowDragAndDrop } from '../../../application/admin/shared/useRowDragAndDrop'
 import {
   groupByTranslationGroup,
@@ -151,33 +152,7 @@ const LOCKED_HINT_ID = 'admin-order-locked-hint'
 
 const lockedHintId = computed(() => (isOrderDirty.value ? LOCKED_HINT_ID : undefined))
 
-/**
- * Poignées indexées par clé de groupe : après un déplacement au clavier, le
- * focus doit revenir sur la poignée de la ligne déplacée, sans quoi
- * l'utilisateur clavier perd sa place au premier appui sur ↓.
- *
- * La fonction de `ref` est stable (jamais une lambda inline, qui serait
- * rappelée avec `null` puis l'élément à chaque rendu et laisserait la carte
- * dans un état dépendant de l'ordre des appels) : la clé est lue sur le DOM.
- */
-const handleCells = new Map<string, HTMLElement>()
-
-function registerHandleCell(el: Element | ComponentPublicInstance | null): void {
-  if (!(el instanceof HTMLElement)) {
-    return
-  }
-
-  const key = el.dataset.orderKey
-  if (undefined !== key) {
-    handleCells.set(key, el)
-  }
-}
-
-async function moveRow(key: string, from: number, to: number): Promise<void> {
-  moveInDraft(from, to)
-  await nextTick()
-  handleCells.get(key)?.querySelector('button')?.focus()
-}
+const { registerHandleCell, moveRow } = useOrderHandleFocus(moveInDraft)
 
 /**
  * « Version de » : les options du sélecteur (D2, cf.
