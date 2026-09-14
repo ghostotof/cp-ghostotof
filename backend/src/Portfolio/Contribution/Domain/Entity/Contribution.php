@@ -6,6 +6,7 @@ namespace App\Portfolio\Contribution\Domain\Entity;
 
 use App\Portfolio\Contribution\Infrastructure\Doctrine\ContributionRepository;
 use App\Portfolio\Shared\Domain\Orderable;
+use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -30,7 +31,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 // mapping l'ignorait, si bien que chaque `doctrine:migrations:diff` proposait
 // de le supprimer. Le déclarer aligne le mapping sur la base, sans SQL.
 #[ORM\Index(name: 'idx_contribution_locale_position', columns: ['locale', 'position'])]
-class Contribution implements Orderable
+class Contribution implements Orderable, TranslatableContent
 {
     /**
      * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
@@ -167,7 +168,6 @@ class Contribution implements Orderable
         string $url,
         string $summary,
         string $body,
-        int $position,
     ): void {
         $this->title = $title;
         $this->project = $project;
@@ -175,7 +175,6 @@ class Contribution implements Orderable
         $this->url = $url;
         $this->summary = $summary;
         $this->body = $body;
-        $this->position = $position;
     }
 
     public function getTranslationGroup(): Uuid

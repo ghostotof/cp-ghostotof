@@ -6,6 +6,7 @@ namespace App\Portfolio\Quality\Domain\Entity;
 
 use App\Portfolio\Quality\Infrastructure\Doctrine\QualityPrincipleRepository;
 use App\Portfolio\Shared\Domain\Orderable;
+use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -20,7 +21,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Entity(repositoryClass: QualityPrincipleRepository::class)]
 #[ORM\Table(name: 'quality_principle')]
 #[ORM\UniqueConstraint(name: 'uniq_quality_principle_translation_group_locale', columns: ['translation_group', 'locale'])]
-class QualityPrinciple implements Orderable
+class QualityPrinciple implements Orderable, TranslatableContent
 {
     /**
      * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
@@ -106,12 +107,11 @@ class QualityPrinciple implements Orderable
         return $this->position;
     }
 
-    public function update(string $title, string $description, string $iconKey, int $position): void
+    public function update(string $title, string $description, string $iconKey): void
     {
         $this->title = $title;
         $this->description = $description;
         $this->iconKey = $iconKey;
-        $this->position = $position;
     }
 
     public function getTranslationGroup(): Uuid

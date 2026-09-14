@@ -13,6 +13,7 @@ use App\Portfolio\Quality\Application\QualityTraitAdministratorInterface;
 use App\Portfolio\Quality\Presentation\ApiResource\BackofficeQualityTraitResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @implements ProcessorInterface<BackofficeQualityTraitResource, BackofficeQualityTraitResource|null>
@@ -38,18 +39,28 @@ final readonly class BackofficeQualityTraitProcessor implements ProcessorInterfa
             $trait = $this->qualityTraitAdministrator->update(
                 $this->uriVariableUuid($uriVariables),
                 $data->label,
-                $data->position,
+                $this->translationGroup($data),
             );
         } elseif ($operation instanceof Post) {
             $trait = $this->qualityTraitAdministrator->create(
                 Locale::from((string) $data->locale),
                 $data->label,
-                $data->position,
+                $this->translationGroup($data),
             );
         } else {
             throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
         }
 
         return BackofficeQualityTraitResource::fromEntity($trait);
+    }
+
+    /**
+     * Le groupe est une chaîne RFC 4122 à la frontière, un Uuid dans le domaine
+     * (spec 0003 D7). `Uuid::fromString` accepte d'autres formats, mais
+     * `#[Assert\Uuid]` a déjà borné le champ en amont.
+     */
+    private function translationGroup(BackofficeQualityTraitResource $data): ?Uuid
+    {
+        return null === $data->translationGroup ? null : Uuid::fromString($data->translationGroup);
     }
 }

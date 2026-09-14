@@ -64,13 +64,16 @@ final class AnonymousCvSectionTest extends TestCase
     {
         $section = $this->section();
 
-        $section->update('Nouveau domaine', 'Nouvelles compétences', 3, 'Nouvelles réalisations.', 2);
+        $section->update('Nouveau domaine', 'Nouvelles compétences', 3, 'Nouvelles réalisations.');
 
         self::assertSame('Nouveau domaine', $section->getTitle());
         self::assertSame('Nouvelles compétences', $section->getSkills());
         self::assertSame(3, $section->getYearsOfExperience());
         self::assertSame('Nouvelles réalisations.', $section->getAchievements());
-        self::assertSame(2, $section->getPosition());
+        // Spec 0004 D3 : `update()` ne touche plus à la position — elle ne se
+        // saisit pas, seuls un rattachement à un groupe et l'endpoint d'ordre
+        // l'écrivent.
+        self::assertSame(0, $section->getPosition());
         // La locale n'est pas modifiable : changer la langue d'une section
         // revient à en créer une autre (même choix que CaseStudy::update()).
         self::assertSame(Locale::FR, $section->getLocale());

@@ -49,7 +49,7 @@ final readonly class BackofficeIncidentProcessor implements ProcessorInterface
                 $data->rootCause,
                 $data->resolution,
                 $data->invariant,
-                self::translationGroup($data),
+                $this->translationGroup($data),
             );
         } elseif ($operation instanceof Post) {
             // Locale::from : valeur déjà bornée par #[Assert\Choice]. Un
@@ -63,7 +63,7 @@ final readonly class BackofficeIncidentProcessor implements ProcessorInterface
                 $data->rootCause,
                 $data->resolution,
                 $data->invariant,
-                self::translationGroup($data),
+                $this->translationGroup($data),
             );
         } else {
             throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
@@ -77,7 +77,7 @@ final readonly class BackofficeIncidentProcessor implements ProcessorInterface
      * (spec 0003 D7). `Uuid::fromString` accepte d'autres formats, mais
      * `#[Assert\Uuid]` a déjà borné le champ en amont.
      */
-    private static function translationGroup(BackofficeIncidentResource $data): ?Uuid
+    private function translationGroup(BackofficeIncidentResource $data): ?Uuid
     {
         return null === $data->translationGroup ? null : Uuid::fromString($data->translationGroup);
     }

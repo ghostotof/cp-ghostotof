@@ -444,31 +444,35 @@ final class BackofficeIncidentResourceTest extends WebTestCase
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * Le corps décodé est du `mixed` : ce sont les assertions PHPUnit qui
+     * valident la forme de la réponse, pas l'analyse statique (cf. les
+     * `ignoreErrors` de `phpstan.dist.neon`, portée `tests/` seulement).
      *
-     * @return array<string, mixed>
+     * @param array<string, mixed> $overrides
      */
-    private function post(KernelBrowser $client, string $csrfToken, array $overrides): array
+    private function post(KernelBrowser $client, string $csrfToken, array $overrides): mixed
     {
         $client->request('POST', '/api/backoffice/incidents', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: self::jsonBody($overrides + self::payload()));
+        ], content: self::jsonBody($overrides + $this->payload()));
 
         return json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * Le corps décodé est du `mixed` : ce sont les assertions PHPUnit qui
+     * valident la forme de la réponse, pas l'analyse statique (cf. les
+     * `ignoreErrors` de `phpstan.dist.neon`, portée `tests/` seulement).
      *
-     * @return array<string, mixed>
+     * @param array<string, mixed> $overrides
      */
-    private function put(KernelBrowser $client, string $csrfToken, string $id, array $overrides): array
+    private function put(KernelBrowser $client, string $csrfToken, string $id, array $overrides): mixed
     {
         $client->request('PUT', sprintf('/api/backoffice/incidents/%s', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: self::jsonBody($overrides + self::payload()));
+        ], content: self::jsonBody($overrides + $this->payload()));
 
         return json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
     }
@@ -476,7 +480,7 @@ final class BackofficeIncidentResourceTest extends WebTestCase
     /**
      * @return array<string, mixed>
      */
-    private static function payload(): array
+    private function payload(): array
     {
         return [
             'locale' => 'fr',

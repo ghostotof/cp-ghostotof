@@ -7,6 +7,7 @@ namespace App\Portfolio\CaseStudy\Application;
 use App\Portfolio\CaseStudy\Domain\Entity\CaseStudy;
 use App\Portfolio\CaseStudy\Domain\Exception\CaseStudyNotFoundException;
 use App\Portfolio\CaseStudy\Domain\Repository\CaseStudyRepositoryInterface;
+use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Uid\Uuid;
 
@@ -14,6 +15,7 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
 {
     public function __construct(
         private CaseStudyRepositoryInterface $caseStudyRepository,
+        private ContentPlacement $contentPlacement,
     ) {
     }
 
@@ -24,10 +26,9 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
         string $solution,
         string $tradeoffs,
         string $measuredResult,
-        int $position,
         ?Uuid $translationGroup = null,
     ): CaseStudy {
-        $caseStudy = new CaseStudy($locale, $title, $problem, $solution, $tradeoffs, $measuredResult, $position, $translationGroup);
+        $caseStudy = new CaseStudy($locale, $title, $problem, $solution, $tradeoffs, $measuredResult, $this->positionFor($locale, $translationGroup), $translationGroup);
 
         $this->caseStudyRepository->save($caseStudy);
 
@@ -41,7 +42,7 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
         string $solution,
         string $tradeoffs,
         string $measuredResult,
-        int $position,
+        ?Uuid $translationGroup,
     ): CaseStudy {
         $caseStudy = $this->caseStudyRepository->findOneById($id);
 
@@ -49,7 +50,12 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
             throw CaseStudyNotFoundException::forId($id);
         }
 
-        $caseStudy->update($title, $problem, $solution, $tradeoffs, $measuredResult, $position);
+        $this->contentPlacement->reattach(
+            $caseStudy,
+            $translationGroup,
+            $this->caseStudyRepository->findByTranslationGroup($translationGroup ?? $caseStudy->getTranslationGroup()),
+        );
+        $caseStudy->update($title, $problem, $solution, $tradeoffs, $measuredResult);
         $this->caseStudyRepository->save($caseStudy);
 
         return $caseStudy;
@@ -64,5 +70,23 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
         }
 
         $this->caseStudyRepository->remove($caseStudy);
+    }
+
+    /**
+     * Spec 0004 D3 : sans groupe, l'entrée se range en fin de périmètre
+     * (toutes langues confondues) ; avec un groupe, elle hérite de sa position.
+     * Le périmètre n'est chargé que dans la première branche.
+     */
+    private function positionFor(Locale $locale, ?Uuid $translationGroup): int
+    {
+        if (null === $translationGroup) {
+            return $this->contentPlacement->atEndOf($this->caseStudyRepository->findAll());
+        }
+
+        return $this->contentPlacement->inGroup(
+            $translationGroup,
+            $locale,
+            $this->caseStudyRepository->findByTranslationGroup($translationGroup),
+        );
     }
 }

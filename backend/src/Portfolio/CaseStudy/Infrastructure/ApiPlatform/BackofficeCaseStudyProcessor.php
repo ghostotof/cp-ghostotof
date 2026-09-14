@@ -13,6 +13,7 @@ use App\Portfolio\CaseStudy\Application\CaseStudyAdministratorInterface;
 use App\Portfolio\CaseStudy\Presentation\ApiResource\BackofficeCaseStudyResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @implements ProcessorInterface<BackofficeCaseStudyResource, BackofficeCaseStudyResource|null>
@@ -42,7 +43,7 @@ final readonly class BackofficeCaseStudyProcessor implements ProcessorInterface
                 $data->solution,
                 $data->tradeoffs,
                 $data->measuredResult,
-                $data->position,
+                $this->translationGroup($data),
             );
         } elseif ($operation instanceof Post) {
             // Locale::from (et non fromString) : la valeur est déjà bornée en
@@ -56,12 +57,22 @@ final readonly class BackofficeCaseStudyProcessor implements ProcessorInterface
                 $data->solution,
                 $data->tradeoffs,
                 $data->measuredResult,
-                $data->position,
+                $this->translationGroup($data),
             );
         } else {
             throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
         }
 
         return BackofficeCaseStudyResource::fromEntity($caseStudy);
+    }
+
+    /**
+     * Le groupe est une chaîne RFC 4122 à la frontière, un Uuid dans le domaine
+     * (spec 0003 D7). `Uuid::fromString` accepte d'autres formats, mais
+     * `#[Assert\Uuid]` a déjà borné le champ en amont.
+     */
+    private function translationGroup(BackofficeCaseStudyResource $data): ?Uuid
+    {
+        return null === $data->translationGroup ? null : Uuid::fromString($data->translationGroup);
     }
 }

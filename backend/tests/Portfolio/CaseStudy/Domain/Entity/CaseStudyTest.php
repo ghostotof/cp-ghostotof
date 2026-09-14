@@ -72,7 +72,6 @@ final class CaseStudyTest extends TestCase
             'Nouvelle solution.',
             'Nouveaux compromis.',
             'Nouveau résultat.',
-            3,
         );
 
         self::assertSame('Nouveau titre', $caseStudy->getTitle());
@@ -80,7 +79,10 @@ final class CaseStudyTest extends TestCase
         self::assertSame('Nouvelle solution.', $caseStudy->getSolution());
         self::assertSame('Nouveaux compromis.', $caseStudy->getTradeoffs());
         self::assertSame('Nouveau résultat.', $caseStudy->getMeasuredResult());
-        self::assertSame(3, $caseStudy->getPosition());
+        // Spec 0004 D3 : `update()` ne touche plus à la position — elle ne se
+        // saisit pas, seuls un rattachement à un groupe et l'endpoint d'ordre
+        // l'écrivent.
+        self::assertSame(0, $caseStudy->getPosition());
         // La locale n'est pas modifiable : changer la langue d'une étude de cas
         // revient à en créer une autre, pas à éditer celle-ci (même choix que
         // Contribution::update()).
