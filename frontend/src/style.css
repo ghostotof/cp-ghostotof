@@ -247,3 +247,18 @@ body {
     transform: none;
   }
 }
+
+/* Tableaux ordonnés du backoffice (spec 0004, D8) : une ligne par langue dans
+   la cellule de contenu ET dans la cellule d'actions, en dernière colonne. La
+   hauteur minimale commune garde chaque langue en face de ses boutons — un
+   `.btn-sm` fait ~31px, une ligne de texte avec badge ~24px ; sans ce plancher
+   les deux piles dérivent de quelques pixels par langue. Un titre qui passe sur
+   deux lignes désaligne encore (limite acceptée, tableaux larges en pratique). */
+.admin-locale-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding-block: 0.25rem;
+}

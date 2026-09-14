@@ -415,6 +415,9 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
               <th scope="col">
                 {{ t('admin.about.siteCard.iconKeyLabel') }}
               </th>
+              <th scope="col">
+                <span class="visually-hidden">{{ t('admin.order.actionsColumn') }}</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -443,7 +446,7 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
                 <div
                   v-for="line in rowLines(row, SUPPORTED_LOCALES, LOCALE_NATIVE_NAMES)"
                   :key="line.locale"
-                  class="d-flex flex-wrap align-items-center gap-2 py-1"
+                  class="admin-locale-line"
                 >
                   <span
                     class="badge text-bg-secondary"
@@ -452,6 +455,24 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
                   <span class="visually-hidden">{{ line.nativeName }}</span>
                   <template v-if="line.entry">
                     <span class="text-white">{{ line.entry.title }}</span>
+                  </template>
+                  <template v-else>
+                    <span class="text-body-secondary">{{ t('admin.order.missingTranslation') }}</span>
+                  </template>
+                </div>
+              </td>
+              <td class="text-nowrap">
+                {{ firstEntry(row, SUPPORTED_LOCALES)?.iconKey ?? '—' }}
+              </td>
+              <!-- Une ligne par langue, en face de celle de la cellule de contenu :
+                   même v-for, même hauteur minimale (`.admin-locale-line`). -->
+              <td class="text-end">
+                <div
+                  v-for="line in rowLines(row, SUPPORTED_LOCALES, LOCALE_NATIVE_NAMES)"
+                  :key="line.locale"
+                  class="admin-locale-line justify-content-end text-nowrap"
+                >
+                  <template v-if="line.entry">
                     <button
                       type="button"
                       class="btn btn-sm btn-outline-light"
@@ -472,7 +493,6 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
                     </button>
                   </template>
                   <template v-else>
-                    <span class="text-body-secondary">{{ t('admin.order.missingTranslation') }}</span>
                     <button
                       type="button"
                       class="btn btn-sm btn-outline-light"
@@ -484,9 +504,6 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
                     </button>
                   </template>
                 </div>
-              </td>
-              <td class="text-nowrap">
-                {{ firstEntry(row, SUPPORTED_LOCALES)?.iconKey ?? '—' }}
               </td>
             </tr>
           </tbody>

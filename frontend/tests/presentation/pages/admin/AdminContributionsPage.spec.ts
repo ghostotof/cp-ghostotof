@@ -125,10 +125,15 @@ function localeLines(wrapper: VueWrapper): DOMWrapper<Element>[] {
   return wrapper.findAll('tbody tr td:nth-child(2) > div')
 }
 
-function lineContaining(wrapper: VueWrapper, text: string): DOMWrapper<Element> {
-  const line = localeLines(wrapper).find((candidate) => candidate.text().includes(text))
-  if (!line) throw new Error(`Ligne introuvable pour « ${text} ».`)
-  return line
+/**
+ * Les boutons d'une langue vivent dans la dernière cellule (colonne « Actions »),
+ * à la même position que sa ligne dans la cellule de contenu : on retrouve la
+ * ligne par son texte, puis les actions par son index.
+ */
+function actionsForLine(wrapper: VueWrapper, text: string): DOMWrapper<Element> {
+  const index = localeLines(wrapper).findIndex((candidate) => candidate.text().includes(text))
+  if (index < 0) throw new Error(`Ligne introuvable pour « ${text} ».`)
+  return wrapper.findAll('tbody tr td:last-child > div')[index]
 }
 
 function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string): DOMWrapper<HTMLButtonElement> {
@@ -220,11 +225,11 @@ describe('AdminContributionsPage', () => {
     const hint = wrapper.get('#admin-order-locked-hint')
     expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
 
-    const edit = buttonLabelled(lineContaining(wrapper, 'Un lock npm dans le manifeste'), 'Modifier')
+    const edit = buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), 'Modifier')
     expect(edit.attributes('disabled')).toBeDefined()
     expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
     expect(
-      buttonLabelled(lineContaining(wrapper, 'Un lock npm dans le manifeste'), 'Supprimer').attributes('disabled'),
+      buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), 'Supprimer').attributes('disabled'),
     ).toBeDefined()
     expect(buttonLabelled(wrapper, 'Créer la version EN').attributes('disabled')).toBeDefined()
     expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeDefined()
@@ -238,7 +243,7 @@ describe('AdminContributionsPage', () => {
     await buttonLabelled(wrapper, 'Annuler').trigger('click')
 
     expect(
-      buttonLabelled(lineContaining(wrapper, 'Un lock npm dans le manifeste'), 'Modifier').attributes('disabled'),
+      buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), 'Modifier').attributes('disabled'),
     ).toBeUndefined()
     expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
@@ -282,7 +287,7 @@ describe('AdminContributionsPage', () => {
     const contributions = createContributionRepository()
     const { wrapper } = await mountPage(contributions)
 
-    await buttonLabelled(lineContaining(wrapper, 'Un lock npm dans le manifeste'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), 'Modifier').trigger('click')
     expect(valueOf(wrapper, '#admin-contribution-translation-group')).toBe(GROUP_ONE)
 
     await wrapper.get('form').trigger('submit.prevent')
@@ -302,7 +307,7 @@ describe('AdminContributionsPage', () => {
     // `ContentPlacementTest::testDetachingAnEntryWithoutTranslationsDoesNothing`.
     // Ces deux tests forment le contrat entre les deux moitiés : les casser
     // séparément doit être impossible sans que l'un des deux vire au rouge.
-    await buttonLabelled(lineContaining(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
     expect(valueOf(wrapper, '#admin-contribution-translation-group')).toBe('')
 
     await wrapper.get('form').trigger('submit.prevent')
@@ -331,7 +336,7 @@ describe('AdminContributionsPage', () => {
     const translation = createTranslationRepository()
     const { wrapper } = await mountPage(createContributionRepository(), translation)
 
-    await buttonLabelled(lineContaining(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
     await translateButton(wrapper).trigger('click')
     await flushPromises()
 
@@ -346,7 +351,7 @@ describe('AdminContributionsPage', () => {
     const contributions = createContributionRepository()
     const { wrapper } = await mountPage(contributions)
 
-    await buttonLabelled(lineContaining(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
     expect(wrapper.get('h2').text()).toBe('Modifier la contribution')
 
     await translateButton(wrapper).trigger('click')
@@ -369,7 +374,7 @@ describe('AdminContributionsPage', () => {
     const contributions = createContributionRepository()
     const { wrapper } = await mountPage(contributions)
 
-    await buttonLabelled(lineContaining(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
     await translateButton(wrapper).trigger('click')
     await flushPromises()
 
@@ -395,7 +400,7 @@ describe('AdminContributionsPage', () => {
     })
     const { wrapper } = await mountPage(createContributionRepository(), translation)
 
-    await buttonLabelled(lineContaining(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
     await translateButton(wrapper).trigger('click')
     await flushPromises()
 
