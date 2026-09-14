@@ -665,8 +665,11 @@ status announcement) that a fork would silently lose:
 - `presentation/ui/admin/OrderHandle.vue` (a real `<button>`, ↑/↓, `role="status"` announcement) and
   `OrderToolbar.vue` (status, Cancel, "Save order", the order error), i18n under `admin.order.*`.
 - **Page rules**: the table shows **every language** (D8 — the row is the group, languages stacked in the
-  cell, a missing one gets "Create the XX version" which opens a creation already attached to the group
-  with the non-prose fields copied); **one locale per form**, never a page-level locale selector shared
+  content cell, a missing one reads "Missing translation"); **the per-language actions live in a last
+  "Actions" column** (Edit/Delete, or "Create the XX version" which opens a creation already attached to
+  the group with the non-prose fields copied), stacked with the same `v-for` and the shared
+  `.admin-locale-line` class (`style.css`, a common `min-height`) so each language stays in front of its
+  buttons — the specs locate a line's buttons by index in `td:last-child`, keep that structure; **one locale per form**, never a page-level locale selector shared
   by several forms (B9 lesson: it silently overwrote the locale of an entry being edited in the other
   panel; About's top selector only drives the *settings* singleton). While the order draft is dirty,
   **every mutation is disabled** (Edit, Delete, Create version, submit, the translate button) with a

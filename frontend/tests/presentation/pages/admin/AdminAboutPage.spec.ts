@@ -241,10 +241,11 @@ function linesOf(wrapper: VueWrapper, which: number): DOMWrapper<Element>[] {
   return tableOf(wrapper, which).findAll('tbody tr td:nth-child(2) > div')
 }
 
-function lineContaining(wrapper: VueWrapper, which: number, text: string): DOMWrapper<Element> {
-  const line = linesOf(wrapper, which).find((candidate) => candidate.text().includes(text))
-  if (!line) throw new Error(`Ligne introuvable pour « ${text} ».`)
-  return line
+/** Les boutons d'une langue sont dans la dernière cellule, au même index que sa ligne de contenu. */
+function actionsForLine(wrapper: VueWrapper, which: number, text: string): DOMWrapper<Element> {
+  const index = linesOf(wrapper, which).findIndex((candidate) => candidate.text().includes(text))
+  if (index < 0) throw new Error(`Ligne introuvable pour « ${text} ».`)
+  return tableOf(wrapper, which).findAll('tbody tr td:last-child > div')[index]
 }
 
 function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string): DOMWrapper<HTMLButtonElement> {
@@ -543,11 +544,11 @@ describe('AdminAboutPage', () => {
         const hint = wrapper.get('#admin-order-locked-hint')
         expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
 
-        const edit = buttonLabelled(lineContaining(wrapper, which, editableTitle), 'Modifier')
+        const edit = buttonLabelled(actionsForLine(wrapper, which, editableTitle), 'Modifier')
         expect(edit.attributes('disabled')).toBeDefined()
         expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
         expect(
-          buttonLabelled(lineContaining(wrapper, which, lonelyTitle), 'Supprimer').attributes('disabled'),
+          buttonLabelled(actionsForLine(wrapper, which, lonelyTitle), 'Supprimer').attributes('disabled'),
         ).toBeDefined()
         // Par tableau et non par index de ligne : le glisser-déposer vient de
         // déplacer le groupe sans traduction.
@@ -566,7 +567,7 @@ describe('AdminAboutPage', () => {
         await buttonLabelled(orderScopeOf(wrapper, which), 'Annuler').trigger('click')
 
         expect(
-          buttonLabelled(lineContaining(wrapper, which, editableTitle), 'Modifier').attributes('disabled'),
+          buttonLabelled(actionsForLine(wrapper, which, editableTitle), 'Modifier').attributes('disabled'),
         ).toBeUndefined()
         expect(buttonLabelled(formOf(wrapper, SETTINGS_FORM), 'Enregistrer').attributes('disabled')).toBeUndefined()
         expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
@@ -614,7 +615,7 @@ describe('AdminAboutPage', () => {
 
       // Modifier l'entrée EN bascule aussi la langue du formulaire : sans cela,
       // l'enregistrement réécrirait l'entrée anglaise en français.
-      await buttonLabelled(lineContaining(wrapper, SITE, 'Architecture (en)'), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, SITE, 'Architecture (en)'), 'Modifier').trigger('click')
       expect(valueOf(wrapper, '#admin-about-site-card-locale')).toBe('en')
       expect(valueOf(wrapper, '#admin-about-site-card-translation-group')).toBe(S_GROUP_ONE)
 
@@ -636,10 +637,10 @@ describe('AdminAboutPage', () => {
       // langue des autres — et la carte française en cours d'édition se serait
       // enregistrée en anglais, sans avertissement ni index unique pour l'arrêter
       // (une entrée solitaire n'a pas de sœur qui occupe déjà la locale).
-      await buttonLabelled(lineContaining(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
       expect(valueOf(wrapper, '#admin-about-site-card-locale')).toBe('fr')
 
-      await buttonLabelled(lineContaining(wrapper, ME_TABLE.technical, 'Senior developer'), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, 'Senior developer'), 'Modifier').trigger('click')
       expect(valueOf(wrapper, '#admin-about-me-card-locale')).toBe('en')
       expect(valueOf(wrapper, '#admin-about-site-card-locale')).toBe('fr')
       // La langue des réglages, elle, n'a pas non plus bougé.
@@ -665,7 +666,7 @@ describe('AdminAboutPage', () => {
       // `ContentPlacementTest::testDetachingAnEntryWithoutTranslationsDoesNothing`.
       // Ces deux tests forment le contrat entre les deux moitiés : les casser
       // séparément doit être impossible sans que l'un des deux vire au rouge.
-      await buttonLabelled(lineContaining(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
       expect(valueOf(wrapper, '#admin-about-site-card-translation-group')).toBe('')
 
       await formOf(wrapper, SITE_FORM).trigger('submit.prevent')
@@ -749,7 +750,7 @@ describe('AdminAboutPage', () => {
       const meCardRepository = createMeCardRepository()
       const { wrapper } = await mountPage(createSettingsRepository(), createSiteCardRepository(), meCardRepository)
 
-      await buttonLabelled(lineContaining(wrapper, ME_TABLE.personal, 'Curious'), 'Supprimer').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.personal, 'Curious'), 'Supprimer').trigger('click')
       await flushPromises()
 
       expect(meCardRepository.remove).toHaveBeenCalledWith(ME_FIXTURES.personal.cards[1].id)
@@ -767,7 +768,7 @@ describe('AdminAboutPage', () => {
       const translation = createTranslationRepository()
       const { wrapper } = await mountPage(undefined, undefined, undefined, translation)
 
-      await buttonLabelled(lineContaining(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
       await translateButton(wrapper, SITE_FORM).trigger('click')
       await flushPromises()
 
@@ -782,7 +783,7 @@ describe('AdminAboutPage', () => {
       const translation = createTranslationRepository({ title: 'Technical stack', description: 'Stack description' })
       const { wrapper } = await mountPage(createSettingsRepository(), siteCardRepository, undefined, translation)
 
-      await buttonLabelled(lineContaining(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
       expect(wrapper.findAll('h2')[SITE_FORM].text()).toBe('Modifier la carte')
       vi.mocked(siteCardRepository.list).mockClear()
 
@@ -830,7 +831,7 @@ describe('AdminAboutPage', () => {
 
       // L'entrée solitaire est ici l'anglaise : l'assistant part donc de l'EN
       // vers le FR, dans l'autre sens que pour les cartes « site ».
-      await buttonLabelled(lineContaining(wrapper, ME_TABLE.technical, fixture.titles[2]), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, fixture.titles[2]), 'Modifier').trigger('click')
       expect(valueOf(wrapper, '#admin-about-me-card-locale')).toBe('en')
 
       await translateButton(wrapper, ME_FORM).trigger('click')
@@ -867,7 +868,7 @@ describe('AdminAboutPage', () => {
       })
       const { wrapper } = await mountPage(undefined, undefined, undefined, translation)
 
-      await buttonLabelled(lineContaining(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
       await translateButton(wrapper, SITE_FORM).trigger('click')
       await flushPromises()
 

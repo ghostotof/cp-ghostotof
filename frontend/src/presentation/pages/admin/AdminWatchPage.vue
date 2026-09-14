@@ -335,22 +335,37 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
           <table class="table table-dark align-middle mb-0">
             <thead>
               <tr>
-                <th scope="col">
+                <th
+                  scope="col"
+                  class="col-md-1"
+                >
                   <span class="visually-hidden">{{ t('admin.order.columnHeader') }}</span>
                 </th>
-                <th scope="col">
+                <th
+                  scope="col"
+                  class="col-md-2"
+                >
                   {{ t('admin.watch.slugLabel') }}
                 </th>
                 <th scope="col">
                   {{ t('admin.watch.labelLabel') }}
                 </th>
-                <th scope="col">
+                <th
+                  scope="col"
+                  class="col-md-3"
+                >
                   {{ t('admin.watch.versionSourceLabel') }}
                 </th>
-                <th scope="col">
+                <th
+                  scope="col"
+                  class="col-md-1"
+                >
                   {{ t('admin.watch.versionLabel') }}
                 </th>
-                <th scope="col">
+                <th
+                  scope="col"
+                  class="col-md-2 text-end"
+                >
                   <span class="visually-hidden">{{ t('admin.watch.actions') }}</span>
                 </th>
               </tr>
@@ -444,16 +459,28 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         <table class="table table-dark table-hover align-middle mb-0">
           <thead>
             <tr>
-              <th scope="col">
+              <th
+                scope="col"
+                class="col-md-2"
+              >
                 {{ t('admin.watch.vulnerabilities.identifier') }}
               </th>
-              <th scope="col">
+              <th
+                scope="col"
+                class="col-md-2"
+              >
                 {{ t('admin.watch.vulnerabilities.package') }}
               </th>
-              <th scope="col">
+              <th
+                scope="col"
+                class="col-md-1"
+              >
                 {{ t('admin.watch.vulnerabilities.severity') }}
               </th>
-              <th scope="col">
+              <th
+                scope="col"
+                class="col-md-1"
+              >
                 {{ t('admin.watch.vulnerabilities.fixedIn') }}
               </th>
               <th scope="col">
