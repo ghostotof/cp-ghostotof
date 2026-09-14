@@ -6,6 +6,7 @@ namespace App\Shared\Infrastructure\ApiPlatform;
 
 use App\Portfolio\Shared\Domain\Exception\InvalidLocaleException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Les variables d'URI d'API Platform proviennent toujours de segments de
@@ -40,6 +41,22 @@ trait ResolvesUriVariables
         \assert(\is_string($value));
 
         return $value;
+    }
+
+    /**
+     * Résout un segment `{id}` en Uuid. Le segment est déjà borné par
+     * `requirements: ['id' => Requirement::UUID]` sur l'opération (un segment
+     * malformé est un 404 du routeur) ; l'assertion est une garde de second
+     * niveau.
+     *
+     * @param array<string, mixed> $uriVariables
+     */
+    private function uriVariableUuid(array $uriVariables, string $key = 'id'): Uuid
+    {
+        $value = $uriVariables[$key] ?? null;
+        \assert(\is_string($value) && Uuid::isValid($value));
+
+        return Uuid::fromString($value);
     }
 
     /**
