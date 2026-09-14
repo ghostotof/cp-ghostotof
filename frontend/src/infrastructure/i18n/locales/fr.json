@@ -67,7 +67,9 @@
       },
       "lockedHint": "Enregistrez ou annulez l'ordre d'abord.",
       "missingTranslation": "Traduction manquante",
-      "createVersion": "Créer la version {locale}"
+      "createVersion": "Créer la version {locale}",
+      "columnHeader": "Ordre",
+      "leaveConfirm": "L'ordre modifié n'est pas enregistré. Quitter cette page l'abandonnera. Continuer ?"
     },
     "quality": {
       "actions": "Actions",
@@ -289,6 +291,9 @@
       "save": "Enregistrer",
       "cancel": "Annuler",
       "localeLabel": "Langue",
+      "translationOfLabel": "Version de",
+      "translationOfNone": "— aucune —",
+      "contentLabel": "Contenu",
       "titleLabel": "Titre (ce qui a cassé)",
       "versionLabel": "Version",
       "occurredAtLabel": "Date",
@@ -297,8 +302,6 @@
       "resolutionLabel": "Résolution",
       "invariantLabel": "Invariant (la règle acquise)",
       "invariantHelp": "Obligatoire. C'est ce champ qui distingue un journal d'incidents d'une liste d'échecs : sans règle tirée de la panne, l'entrée n'a pas sa place ici.",
-      "positionLabel": "Position",
-      "actions": "Actions",
       "editAction": "Modifier",
       "deleteAction": "Supprimer",
       "confirmDelete": "Supprimer l'incident « {title} » ?",
@@ -308,7 +311,9 @@
       "errors": {
         "not-found": "Cet incident n'existe plus.",
         "validation": "Certains champs sont invalides.",
-        "unknown": "Une erreur est survenue. Réessayez plus tard."
+        "unknown": "Une erreur est survenue. Réessayez plus tard.",
+        "translation-already-exists": "Ce contenu a déjà une version dans cette langue.",
+        "unknown-translation-group": "Le contenu auquel rattacher cette version n'existe plus. Rechargez la page."
       }
     },
     "translation": {

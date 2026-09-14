@@ -95,12 +95,12 @@ Ordre de construction de la spec (§3), une PR par tâche, label `spec-0004` :
 - [x] Un réordonnancement backoffice se lit sur `/api/<x>/fr` **et** `/api/<x>/en` — tests fonctionnels des 8 ressources localisées (titres ordonnés), confirmés en revue
 
 ### Frontend
-- [ ] Task B5 — Briques partagées : `domain/admin/shared/ordering/`, `useOrderDraft`, `useRowDragAndDrop`, `OrderHandle.vue`, `OrderToolbar.vue`, clés `admin.order.*` — [#145](https://github.com/ghostotof/cp-ghostotof/issues/145)
-- [ ] Task B6 — Page Incidents complète : tableau groupé, « Version de », « Créer la version », assistant rattaché, garde de route, axe — [#146](https://github.com/ghostotof/cp-ghostotof/issues/146)
+- [x] Task B5 — Briques partagées : `domain/admin/shared/ordering/`, `useOrderDraft`, `useRowDragAndDrop`, `OrderHandle.vue`, `OrderToolbar.vue`, clés `admin.order.*` — [#145](https://github.com/ghostotof/cp-ghostotof/issues/145)
+- [x] Task B6 — Page Incidents complète : tableau groupé, « Version de », « Créer la version », assistant rattaché, garde de route, axe — [#146](https://github.com/ghostotof/cp-ghostotof/issues/146)
 
 ### Checkpoint B2 — première tranche verticale dans un vrai navigateur
-- [ ] Glisser, ↑/↓ au clavier, enregistrer, 422 obsolète, « Créer la version EN », assistant → groupe
-- [ ] Revue avec Christophe avant de dérouler les autres pages
+- [x] Glisser, ↑/↓ au clavier, enregistrer, 422 obsolète, « Créer la version EN », assistant → groupe — contrôle Chrome fait le 2026-09-14 (parcours complet, ordre relu FR et EN)
+- [x] Revue avec Christophe avant de dérouler les autres pages — « enchaîne sur la B7 dès que la revue est propre » (2026-09-14)
 
 ### Les autres pages, une PR chacune
 - [ ] Task B7 — Contributions — [#147](https://github.com/ghostotof/cp-ghostotof/issues/147)

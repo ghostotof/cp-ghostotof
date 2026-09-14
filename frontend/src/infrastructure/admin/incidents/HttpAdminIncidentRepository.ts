@@ -7,11 +7,13 @@ import {
   AdminIncidentError,
   type AdminIncidentErrorReason,
 } from '../../../domain/admin/incidents/errors/AdminIncidentError'
-import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
+import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderError'
+import { BackofficeHttpClient, violationsMessage, type ApiProblemBody } from '../shared/BackofficeHttpClient'
 
 interface BackofficeIncidentApiResponse {
   id: string
   locale: string
+  translationGroup: string
   title: string
   version: string
   occurredAt: string
@@ -23,6 +25,15 @@ interface BackofficeIncidentApiResponse {
 }
 
 const BASE_PATH = '/api/backoffice/incidents'
+
+/**
+ * Les deux `type` de problem+json que le backend renvoie en 422 quand
+ * l'ensemble de clés envoyé ne correspond plus au périmètre (spec 0004, D4) :
+ * une entrée a été créée ou supprimée entre le chargement de la page et
+ * l'enregistrement. Ce n'est pas une erreur de saisie, c'est un conflit de
+ * concurrence — d'où `stale-order`, qui déclenche un rechargement.
+ */
+const STALE_ORDER_PROBLEM_TYPES = ['unknown-order-entry', 'incomplete-order'] as const
 
 /**
  * Implémentation HTTP de AdminIncidentRepository. Toutes les méthodes exigent
@@ -64,6 +75,14 @@ export class HttpAdminIncidentRepository implements AdminIncidentRepository {
     await this.mutate('DELETE', `${BASE_PATH}/${id}`)
   }
 
+  async reorder(keys: readonly string[]): Promise<void> {
+    const response = await this.client.mutate('PUT', `${BASE_PATH}/order`, { groups: keys })
+
+    if (!response.ok) {
+      throw await this.toOrderError(response)
+    }
+  }
+
   private async mutate(method: string, path: string, body?: unknown): Promise<Response> {
     const response = await this.client.mutate(method, path, body)
 
@@ -78,6 +97,7 @@ export class HttpAdminIncidentRepository implements AdminIncidentRepository {
     return {
       id: incident.id,
       locale: incident.locale,
+      translationGroup: incident.translationGroup,
       title: incident.title,
       version: incident.version,
       occurredAt: incident.occurredAt,
@@ -96,8 +116,38 @@ export class HttpAdminIncidentRepository implements AdminIncidentRepository {
       return new AdminIncidentError('not-found', 'Incident not found')
     }
 
-    const reason: AdminIncidentErrorReason = 422 === response.status ? 'validation' : 'unknown'
+    if (409 === response.status) {
+      return new AdminIncidentError('translation-already-exists', violationsMessage(body, 'Translation already exists'))
+    }
 
-    return new AdminIncidentError(reason, violationsMessage(body))
+    if (422 === response.status) {
+      const reason: AdminIncidentErrorReason = hasProblemType(body, 'unknown-translation-group')
+        ? 'unknown-translation-group'
+        : 'validation'
+
+      return new AdminIncidentError(reason, violationsMessage(body))
+    }
+
+    return new AdminIncidentError('unknown', violationsMessage(body, `Request failed with status ${response.status}`))
   }
+
+  /**
+   * L'endpoint d'ordre a son propre type d'erreur : `useOrderDraft` décide sur
+   * `stale-order` de recharger la liste, ce qu'aucun autre motif ne déclenche.
+   */
+  private async toOrderError(response: Response): Promise<AdminOrderError> {
+    const body = await this.client.parseProblem(response)
+
+    const isStale =
+      422 === response.status && STALE_ORDER_PROBLEM_TYPES.some((problemType) => hasProblemType(body, problemType))
+
+    return isStale
+      ? new AdminOrderError('stale-order', violationsMessage(body, 'Order is stale'))
+      : new AdminOrderError('unknown', `Reordering failed with status ${response.status}`)
+  }
+}
+
+/** Le `type` est un slug stable (`/errors/<slug>`), contrairement au `detail` localisé. */
+function hasProblemType(body: ApiProblemBody, slug: string): boolean {
+  return true === body.type?.endsWith(`/${slug}`)
 }
