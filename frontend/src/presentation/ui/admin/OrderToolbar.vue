@@ -1,0 +1,52 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+/**
+ * Barre d'action du brouillon d'ordre (spec 0004, D6) : statut, Annuler,
+ * Enregistrer l'ordre, et l'éventuelle erreur d'enregistrement. Ne connaît
+ * ni le tableau ni la ressource — la page fournit `isDirty`/`isSaving`/
+ * `errorReason` (venant de `useOrderDraft`) et écoute `save`/`cancel`.
+ */
+const props = defineProps<{
+  isDirty: boolean
+  isSaving: boolean
+  errorReason: 'stale-order' | 'unknown' | null
+}>()
+
+const emit = defineEmits<{ save: []; cancel: [] }>()
+
+const { t } = useI18n()
+
+const statusKey = computed(() => (props.isDirty ? 'admin.order.status.dirty' : 'admin.order.status.clean'))
+</script>
+
+<template>
+  <div class="d-flex flex-wrap align-items-center gap-3">
+    <span class="fw-semibold">{{ t(statusKey) }}</span>
+    <button
+      type="button"
+      class="btn btn-outline-light"
+      :disabled="!isDirty"
+      @click="emit('cancel')"
+    >
+      {{ t('admin.order.cancel') }}
+    </button>
+    <button
+      type="button"
+      class="btn btn-gradient"
+      :disabled="!isDirty"
+      :aria-busy="isSaving ? 'true' : 'false'"
+      @click="emit('save')"
+    >
+      {{ t('admin.order.save') }}
+    </button>
+    <p
+      v-if="errorReason"
+      role="alert"
+      class="text-danger mb-0"
+    >
+      {{ t(`admin.order.errors.${errorReason}`) }}
+    </p>
+  </div>
+</template>

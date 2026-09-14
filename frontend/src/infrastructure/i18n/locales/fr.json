@@ -52,6 +52,23 @@
       "anonymousCv": "CV sans identité",
       "watch": "Veille"
     },
+    "order": {
+      "moveHandle": "Déplacer : {label}",
+      "moved": "Déplacé en position {position} sur {count}",
+      "status": {
+        "clean": "Ordre · à jour",
+        "dirty": "Ordre · modifié, non enregistré"
+      },
+      "save": "Enregistrer l'ordre",
+      "cancel": "Annuler",
+      "errors": {
+        "stale-order": "La liste a changé entre-temps : l'ordre a été rechargé, recommencez.",
+        "unknown": "L'enregistrement de l'ordre a échoué. Réessayez plus tard."
+      },
+      "lockedHint": "Enregistrez ou annulez l'ordre d'abord.",
+      "missingTranslation": "Traduction manquante",
+      "createVersion": "Créer la version {locale}"
+    },
     "quality": {
       "actions": "Actions",
       "save": "Enregistrer",
