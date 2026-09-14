@@ -177,7 +177,21 @@ scw secret version create secret-id=<id> data="cp_ghostotof" region=fr-par
 # preprod-backend-database-url (postgresql://app:<PASSWORD>@database:5432/cp_ghostotof?serverVersion=18&charset=utf8),
 # preprod-backend-messenger-dsn (amqp://app:<PASSWORD>@rabbitmq:5672/%2f/messages),
 # preprod-backend-jwt-passphrase, preprod-backend-mailer-dsn,
-# preprod-backend-contact-email
+# preprod-backend-contact-email, preprod-backend-anthropic-api-key
+```
+
+**Clé Anthropic** (`<env>-backend-anthropic-api-key`, ADR 0004) — une clé de
+compte de service créée dans la console Claude Platform (Settings > API keys),
+idéalement une par environnement pour pouvoir les révoquer séparément, rattachée
+à un workspace doté d'un plafond de dépense mensuel. La valeur ne doit jamais
+transiter par l'historique du shell : la passer par fichier (`data=@fichier`)
+puis supprimer le fichier.
+
+```bash
+for ENV in preprod prod; do
+  ID=$(scw secret secret create name=${ENV}-backend-anthropic-api-key path=/ region=fr-par -o json | jq -r .id)
+  scw secret version create "$ID" data=@/chemin/vers/anthropic.key region=fr-par
+done
 ```
 
 **Clés JWT** — générées en LOCAL (jamais sur le cluster ni en clair ailleurs
