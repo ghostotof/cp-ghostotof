@@ -29,14 +29,14 @@ final readonly class BackofficeContributionProcessor implements ProcessorInterfa
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeContributionResource
     {
         if ($operation instanceof Delete) {
-            $this->contributionAdministrator->delete($this->uriVariableInt($uriVariables, 'id'));
+            $this->contributionAdministrator->delete($this->uriVariableUuid($uriVariables));
 
             return null;
         }
 
         if ($operation instanceof Put) {
             $contribution = $this->contributionAdministrator->update(
-                $this->uriVariableInt($uriVariables, 'id'),
+                $this->uriVariableUuid($uriVariables),
                 $data->title,
                 $data->project,
                 $data->reference,
