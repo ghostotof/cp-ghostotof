@@ -128,10 +128,15 @@ function localeLines(wrapper: VueWrapper): DOMWrapper<Element>[] {
   return wrapper.findAll('tbody tr td:nth-child(2) > div')
 }
 
-function lineContaining(wrapper: VueWrapper, text: string): DOMWrapper<Element> {
-  const line = localeLines(wrapper).find((candidate) => candidate.text().includes(text))
-  if (!line) throw new Error(`Ligne introuvable pour « ${text} ».`)
-  return line
+/**
+ * Les boutons d'une langue vivent dans la dernière cellule (colonne « Actions »),
+ * à la même position que sa ligne dans la cellule de contenu : on retrouve la
+ * ligne par son texte, puis les actions par son index.
+ */
+function actionsForLine(wrapper: VueWrapper, text: string): DOMWrapper<Element> {
+  const index = localeLines(wrapper).findIndex((candidate) => candidate.text().includes(text))
+  if (index < 0) throw new Error(`Ligne introuvable pour « ${text} ».`)
+  return wrapper.findAll('tbody tr td:last-child > div')[index]
 }
 
 function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string): DOMWrapper<HTMLButtonElement> {
@@ -226,10 +231,10 @@ describe('AdminIncidentsPage', () => {
     const hint = wrapper.get('#admin-order-locked-hint')
     expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
 
-    const edit = buttonLabelled(lineContaining(wrapper, 'Panne du broker RabbitMQ'), 'Modifier')
+    const edit = buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), 'Modifier')
     expect(edit.attributes('disabled')).toBeDefined()
     expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
-    expect(buttonLabelled(lineContaining(wrapper, 'Panne du broker RabbitMQ'), 'Supprimer').attributes('disabled')).toBeDefined()
+    expect(buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), 'Supprimer').attributes('disabled')).toBeDefined()
     expect(buttonLabelled(wrapper, 'Créer la version EN').attributes('disabled')).toBeDefined()
     expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeDefined()
     // Un appel au modèle produirait un brouillon que le formulaire verrouillé ne
@@ -238,7 +243,7 @@ describe('AdminIncidentsPage', () => {
 
     await buttonLabelled(wrapper, 'Annuler').trigger('click')
 
-    expect(buttonLabelled(lineContaining(wrapper, 'Panne du broker RabbitMQ'), 'Modifier').attributes('disabled')).toBeUndefined()
+    expect(buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), 'Modifier').attributes('disabled')).toBeUndefined()
     expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
     expect(wrapper.text()).toContain('Ordre · à jour')
@@ -280,7 +285,7 @@ describe('AdminIncidentsPage', () => {
     const incidents = createIncidentRepository()
     const { wrapper } = await mountPage(incidents)
 
-    await buttonLabelled(lineContaining(wrapper, 'Panne du broker RabbitMQ'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), 'Modifier').trigger('click')
     expect(valueOf(wrapper, '#admin-incident-translation-group')).toBe(GROUP_ONE)
 
     await wrapper.get('form').trigger('submit.prevent')
@@ -300,7 +305,7 @@ describe('AdminIncidentsPage', () => {
     // `ContentPlacementTest::testDetachingAnEntryWithoutTranslationsDoesNothing`.
     // Ces deux tests forment le contrat entre les deux moitiés : les casser
     // séparément doit être impossible sans que l'un des deux vire au rouge.
-    await buttonLabelled(lineContaining(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
     expect(valueOf(wrapper, '#admin-incident-translation-group')).toBe('')
 
     await wrapper.get('form').trigger('submit.prevent')
@@ -331,7 +336,7 @@ describe('AdminIncidentsPage', () => {
     const translation = createTranslationRepository()
     const { wrapper } = await mountPage(createIncidentRepository(), translation)
 
-    await buttonLabelled(lineContaining(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
     await translateButton(wrapper).trigger('click')
     await flushPromises()
 
@@ -348,7 +353,7 @@ describe('AdminIncidentsPage', () => {
     const incidents = createIncidentRepository()
     const { wrapper } = await mountPage(incidents)
 
-    await buttonLabelled(lineContaining(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
     expect(wrapper.get('h2').text()).toBe("Modifier l'incident")
 
     await translateButton(wrapper).trigger('click')
@@ -371,7 +376,7 @@ describe('AdminIncidentsPage', () => {
     const incidents = createIncidentRepository()
     const { wrapper } = await mountPage(incidents)
 
-    await buttonLabelled(lineContaining(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
     await translateButton(wrapper).trigger('click')
     await flushPromises()
 
@@ -398,7 +403,7 @@ describe('AdminIncidentsPage', () => {
     })
     const { wrapper } = await mountPage(createIncidentRepository(), translation)
 
-    await buttonLabelled(lineContaining(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
+    await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
     await translateButton(wrapper).trigger('click')
     await flushPromises()
 

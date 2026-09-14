@@ -486,17 +486,32 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
           <table class="table table-dark align-middle mb-0">
             <thead>
               <tr>
-                <th scope="col">
+                <th
+                  scope="col"
+                  class="col-md-1"
+                >
                   <span class="visually-hidden">{{ t('admin.order.columnHeader') }}</span>
                 </th>
                 <th scope="col">
                   {{ t('admin.incidents.contentLabel') }}
                 </th>
-                <th scope="col">
+                <th
+                  scope="col"
+                  class="col-md-1"
+                >
                   {{ t('admin.incidents.occurredAtLabel') }}
                 </th>
-                <th scope="col">
+                <th
+                  scope="col"
+                  class="col-md-1"
+                >
                   {{ t('admin.incidents.versionLabel') }}
+                </th>
+                <th
+                  scope="col"
+                  class="col-md-2 text-end"
+                >
+                  <span class="visually-hidden">{{ t('admin.order.actionsColumn') }}</span>
                 </th>
               </tr>
             </thead>
@@ -526,7 +541,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   <div
                     v-for="line in rowLines(row, SUPPORTED_LOCALES, LOCALE_NATIVE_NAMES)"
                     :key="line.locale"
-                    class="d-flex flex-wrap align-items-center gap-2 py-1"
+                    class="admin-locale-line"
                   >
                     <span
                       class="badge text-bg-secondary"
@@ -534,7 +549,28 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                     >{{ line.locale.toUpperCase() }}</span>
                     <span class="visually-hidden">{{ line.nativeName }}</span>
                     <template v-if="line.entry">
-                      <span class="text-white">{{ line.entry.title }}</span>
+                      <span class="text-white admin-locale-line__text">{{ line.entry.title }}</span>
+                    </template>
+                    <template v-else>
+                      <span class="text-body-secondary admin-locale-line__text">{{ t('admin.order.missingTranslation') }}</span>
+                    </template>
+                  </div>
+                </td>
+                <td class="text-nowrap">
+                  {{ firstEntry(row, SUPPORTED_LOCALES)?.occurredAt }}
+                </td>
+                <td class="text-nowrap">
+                  {{ firstEntry(row, SUPPORTED_LOCALES)?.version }}
+                </td>
+                <!-- Une ligne par langue, en face de celle de la cellule de contenu :
+                     même v-for, même hauteur minimale (`.admin-locale-line`). -->
+                <td class="text-end">
+                  <div
+                    v-for="line in rowLines(row, SUPPORTED_LOCALES, LOCALE_NATIVE_NAMES)"
+                    :key="line.locale"
+                    class="admin-locale-line justify-content-end text-nowrap"
+                  >
+                    <template v-if="line.entry">
                       <button
                         type="button"
                         class="btn btn-sm btn-outline-light"
@@ -555,7 +591,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                       </button>
                     </template>
                     <template v-else>
-                      <span class="text-body-secondary">{{ t('admin.order.missingTranslation') }}</span>
                       <button
                         type="button"
                         class="btn btn-sm btn-outline-light"
@@ -567,12 +602,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                       </button>
                     </template>
                   </div>
-                </td>
-                <td class="text-nowrap">
-                  {{ firstEntry(row, SUPPORTED_LOCALES)?.occurredAt }}
-                </td>
-                <td class="text-nowrap">
-                  {{ firstEntry(row, SUPPORTED_LOCALES)?.version }}
                 </td>
               </tr>
             </tbody>

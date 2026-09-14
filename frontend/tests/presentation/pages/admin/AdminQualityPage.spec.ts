@@ -168,10 +168,11 @@ function linesOf(wrapper: VueWrapper, which: number): DOMWrapper<Element>[] {
   return tableOf(wrapper, which).findAll('tbody tr td:nth-child(2) > div')
 }
 
-function lineContaining(wrapper: VueWrapper, which: number, text: string): DOMWrapper<Element> {
-  const line = linesOf(wrapper, which).find((candidate) => candidate.text().includes(text))
-  if (!line) throw new Error(`Ligne introuvable pour « ${text} ».`)
-  return line
+/** Les boutons d'une langue sont dans la dernière cellule, au même index que sa ligne de contenu. */
+function actionsForLine(wrapper: VueWrapper, which: number, text: string): DOMWrapper<Element> {
+  const index = linesOf(wrapper, which).findIndex((candidate) => candidate.text().includes(text))
+  if (index < 0) throw new Error(`Ligne introuvable pour « ${text} ».`)
+  return tableOf(wrapper, which).findAll('tbody tr td:last-child > div')[index]
 }
 
 function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string): DOMWrapper<HTMLButtonElement> {
@@ -393,11 +394,11 @@ describe('AdminQualityPage', () => {
       const hint = wrapper.get('#admin-order-locked-hint')
       expect(hint.text()).toBe("Enregistrez ou annulez l'ordre d'abord.")
 
-      const edit = buttonLabelled(lineContaining(wrapper, PRINCIPLES, 'DDD in English'), 'Modifier')
+      const edit = buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'DDD in English'), 'Modifier')
       expect(edit.attributes('disabled')).toBeDefined()
       expect(edit.attributes('aria-describedby')).toBe('admin-order-locked-hint')
       expect(
-        buttonLabelled(lineContaining(wrapper, PRINCIPLES, "Tests d'abord"), 'Supprimer').attributes('disabled'),
+        buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Supprimer').attributes('disabled'),
       ).toBeDefined()
       // Par tableau et non par index de ligne : le glisser-déposer vient de
       // déplacer le groupe sans traduction.
@@ -410,14 +411,14 @@ describe('AdminQualityPage', () => {
       expect(translateButton(wrapper, PRINCIPLES).attributes('disabled')).toBeDefined()
 
       // L'autre panneau est verrouillé lui aussi.
-      expect(buttonLabelled(lineContaining(wrapper, TRAITS, 'Testé'), 'Modifier').attributes('disabled')).toBeDefined()
+      expect(buttonLabelled(actionsForLine(wrapper, TRAITS, 'Testé'), 'Modifier').attributes('disabled')).toBeDefined()
       expect(buttonLabelled(formOf(wrapper, TRAITS), 'Enregistrer').attributes('disabled')).toBeDefined()
       expect(translateButton(wrapper, TRAITS).attributes('disabled')).toBeDefined()
 
       await buttonLabelled(panelOf(wrapper, PRINCIPLES), 'Annuler').trigger('click')
 
       expect(
-        buttonLabelled(lineContaining(wrapper, PRINCIPLES, 'DDD in English'), 'Modifier').attributes('disabled'),
+        buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'DDD in English'), 'Modifier').attributes('disabled'),
       ).toBeUndefined()
       expect(buttonLabelled(formOf(wrapper, TRAITS), 'Enregistrer').attributes('disabled')).toBeUndefined()
       expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
@@ -455,7 +456,7 @@ describe('AdminQualityPage', () => {
 
       // Modifier l'entrée EN bascule aussi la langue du formulaire : sans cela,
       // l'enregistrement réécrirait l'entrée anglaise en français.
-      await buttonLabelled(lineContaining(wrapper, PRINCIPLES, 'DDD in English'), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'DDD in English'), 'Modifier').trigger('click')
       expect(valueOf(wrapper, LOCALE_SELECT[PRINCIPLES])).toBe('en')
       expect(valueOf(wrapper, '#admin-quality-principle-translation-group')).toBe(P_GROUP_ONE)
 
@@ -478,10 +479,10 @@ describe('AdminQualityPage', () => {
       // enregistré en anglais, sans avertissement ni index unique pour l'arrêter
       // (une entrée solitaire n'a pas de sœur qui occupe déjà la locale). La
       // langue est désormais un champ de chaque formulaire.
-      await buttonLabelled(lineContaining(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
       expect(valueOf(wrapper, LOCALE_SELECT[TRAITS])).toBe('fr')
 
-      await buttonLabelled(lineContaining(wrapper, PRINCIPLES, 'DDD in English'), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'DDD in English'), 'Modifier').trigger('click')
       expect(valueOf(wrapper, LOCALE_SELECT[PRINCIPLES])).toBe('en')
       expect(valueOf(wrapper, LOCALE_SELECT[TRAITS])).toBe('fr')
 
@@ -505,7 +506,7 @@ describe('AdminQualityPage', () => {
       // `ContentPlacementTest::testDetachingAnEntryWithoutTranslationsDoesNothing`.
       // Ces deux tests forment le contrat entre les deux moitiés : les casser
       // séparément doit être impossible sans que l'un des deux vire au rouge.
-      await buttonLabelled(lineContaining(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
       expect(valueOf(wrapper, '#admin-quality-trait-translation-group')).toBe('')
 
       await formOf(wrapper, TRAITS).trigger('submit.prevent')
@@ -564,7 +565,7 @@ describe('AdminQualityPage', () => {
       const principleRepository = createPrincipleRepository()
       const { wrapper } = await mountPage(principleRepository)
 
-      await buttonLabelled(lineContaining(wrapper, PRINCIPLES, 'DDD in English'), 'Supprimer').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'DDD in English'), 'Supprimer').trigger('click')
       await flushPromises()
 
       expect(principleRepository.remove).toHaveBeenCalledWith(PRINCIPLE_EN_ONE.id)
@@ -582,7 +583,7 @@ describe('AdminQualityPage', () => {
       const translation = createTranslationRepository()
       const { wrapper } = await mountPage(createPrincipleRepository(), createTraitRepository(), translation)
 
-      await buttonLabelled(lineContaining(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
       await translateButton(wrapper, PRINCIPLES).trigger('click')
       await flushPromises()
 
@@ -596,7 +597,7 @@ describe('AdminQualityPage', () => {
       const principleRepository = createPrincipleRepository()
       const { wrapper } = await mountPage(principleRepository)
 
-      await buttonLabelled(lineContaining(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
       expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe('Modifier le principe')
       vi.mocked(principleRepository.list).mockClear()
 
@@ -622,7 +623,7 @@ describe('AdminQualityPage', () => {
       const principleRepository = createPrincipleRepository()
       const { wrapper } = await mountPage(principleRepository)
 
-      await buttonLabelled(lineContaining(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
       await translateButton(wrapper, PRINCIPLES).trigger('click')
       await flushPromises()
 
@@ -644,7 +645,7 @@ describe('AdminQualityPage', () => {
       const traitRepository = createTraitRepository()
       const { wrapper } = await mountPage(createPrincipleRepository(), traitRepository, translation)
 
-      await buttonLabelled(lineContaining(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
       await translateButton(wrapper, TRAITS).trigger('click')
       await flushPromises()
 
@@ -671,7 +672,7 @@ describe('AdminQualityPage', () => {
       })
       const { wrapper } = await mountPage(createPrincipleRepository(), createTraitRepository(), translation)
 
-      await buttonLabelled(lineContaining(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
       await translateButton(wrapper, PRINCIPLES).trigger('click')
       await flushPromises()
 

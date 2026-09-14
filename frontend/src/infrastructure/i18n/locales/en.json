@@ -69,6 +69,7 @@
       "missingTranslation": "Missing translation",
       "createVersion": "Create the {locale} version",
       "columnHeader": "Order",
+      "actionsColumn": "Actions",
       "leaveConfirm": "The modified order is not saved. Leaving this page will discard it. Continue?"
     },
     "quality": {
