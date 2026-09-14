@@ -46,7 +46,7 @@ final readonly class BackofficeAnonymousCvSectionProvider implements ProviderInt
             return array_map(BackofficeAnonymousCvSectionResource::fromEntity(...), $sections);
         }
 
-        $section = $this->sectionRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
+        $section = $this->sectionRepository->findOneById($this->uriVariableUuid($uriVariables));
 
         return null !== $section ? BackofficeAnonymousCvSectionResource::fromEntity($section) : null;
     }

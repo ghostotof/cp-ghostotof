@@ -8,6 +8,7 @@ use App\Portfolio\AnonymousCv\Domain\Entity\AnonymousCvSection;
 use App\Portfolio\AnonymousCv\Domain\Exception\AnonymousCvSectionNotFoundException;
 use App\Portfolio\AnonymousCv\Domain\Repository\AnonymousCvSectionRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 final readonly class AnonymousCvSectionAdministrator implements AnonymousCvSectionAdministratorInterface
 {
@@ -32,7 +33,7 @@ final readonly class AnonymousCvSectionAdministrator implements AnonymousCvSecti
     }
 
     public function update(
-        int $id,
+        Uuid $id,
         string $title,
         string $skills,
         int $yearsOfExperience,
@@ -51,7 +52,7 @@ final readonly class AnonymousCvSectionAdministrator implements AnonymousCvSecti
         return $section;
     }
 
-    public function delete(int $id): void
+    public function delete(Uuid $id): void
     {
         $section = $this->sectionRepository->findOneById($id);
 

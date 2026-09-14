@@ -29,14 +29,14 @@ final readonly class BackofficeAnonymousCvSectionProcessor implements ProcessorI
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeAnonymousCvSectionResource
     {
         if ($operation instanceof Delete) {
-            $this->sectionAdministrator->delete($this->uriVariableInt($uriVariables, 'id'));
+            $this->sectionAdministrator->delete($this->uriVariableUuid($uriVariables));
 
             return null;
         }
 
         if ($operation instanceof Put) {
             $section = $this->sectionAdministrator->update(
-                $this->uriVariableInt($uriVariables, 'id'),
+                $this->uriVariableUuid($uriVariables),
                 $data->title,
                 $data->skills,
                 $data->yearsOfExperience,

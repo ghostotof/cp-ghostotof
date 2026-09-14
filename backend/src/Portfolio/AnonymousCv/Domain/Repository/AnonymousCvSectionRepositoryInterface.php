@@ -6,6 +6,7 @@ namespace App\Portfolio\AnonymousCv\Domain\Repository;
 
 use App\Portfolio\AnonymousCv\Domain\Entity\AnonymousCvSection;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Abstraction (DIP) : la couche Application ne connaît jamais Doctrine
@@ -13,7 +14,7 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
  */
 interface AnonymousCvSectionRepositoryInterface
 {
-    public function findOneById(int $id): ?AnonymousCvSection;
+    public function findOneById(Uuid $id): ?AnonymousCvSection;
 
     /**
      * @return list<AnonymousCvSection> triées par position ASC
