@@ -770,6 +770,18 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   production. If a console command must run at deploy time, declare another Job — never bring `pods/exec` back.
   The RBAC is a **manual bootstrap the pipeline never replays**: after changing it, re-run the loop in
   `k8s/README.md` §4 *before* the next deploy, or the job fails on `cannot create resource "jobs"`.
+- **`DEPLOY_MAINTENANCE_WINDOW` (repository variable) opts a deploy into a maintenance window** — added
+  for v0.11.0's irreversible integer→UUID primary-key migrations, where the new code cannot read the old
+  schema and vice versa, so no pod may serve a request while the migration runs. When it equals `true`,
+  `deploy-preprod`/`deploy-prod` in `pipeline.yml` patch `backend` and `worker` to `replicas: 0` (a
+  `kubectl patch` on `spec.replicas` — the deployer `Role` has no `deployments/scale` subresource, so
+  never `kubectl scale`), wait for their pods to disappear, run `migrate-job.yaml` against the quiet
+  database, then let `kubectl apply -k .` restore the manifests' replica counts and the existing
+  `rollout status` wait for the new pods. The frontend keeps serving; only the API returns 503 through
+  the ingress for the window's duration. It is opt-in specifically so an ordinary release without a
+  breaking schema change stays zero-downtime — **set it before pushing the release tag and unset it
+  right after the production deploy**: a forgotten `true` turns every subsequent deploy into a
+  downtime deploy for no reason.
 - **`watch-refresh-cronjob.yaml` *is* in `kustomization.yaml`'s `resources:`** — the opposite of
   `migrate-job.yaml` above, and deliberately: it wants kustomize's image transformer, since it must run the
   same image as the Deployment. It used to be **the only object in the cluster that makes outbound calls
