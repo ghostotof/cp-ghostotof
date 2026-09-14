@@ -64,6 +64,17 @@ class IncidentRepository extends ServiceEntityRepository implements IncidentRepo
         $this->getEntityManager()->flush();
     }
 
+    public function saveAll(array $incidents): void
+    {
+        $this->getEntityManager()->wrapInTransaction(function () use ($incidents): void {
+            foreach ($incidents as $incident) {
+                $this->getEntityManager()->persist($incident);
+            }
+
+            $this->getEntityManager()->flush();
+        });
+    }
+
     public function remove(Incident $incident): void
     {
         $this->getEntityManager()->remove($incident);

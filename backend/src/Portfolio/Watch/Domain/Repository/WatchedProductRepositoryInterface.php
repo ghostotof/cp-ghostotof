@@ -24,5 +24,15 @@ interface WatchedProductRepositoryInterface
 
     public function save(WatchedProduct $product): void;
 
+    /**
+     * Spec 0004 B3 : écrit plusieurs entités en une seule transaction — le
+     * besoin de `OrderAssigner::assign()`, qui déplace potentiellement tout le
+     * catalogue en un seul appel. `save()` flushe à chaque entité, donc autant
+     * de transactions que d'entités ; cette méthode n'en ouvre qu'une.
+     *
+     * @param list<WatchedProduct> $products
+     */
+    public function saveAll(array $products): void;
+
     public function remove(WatchedProduct $product): void;
 }

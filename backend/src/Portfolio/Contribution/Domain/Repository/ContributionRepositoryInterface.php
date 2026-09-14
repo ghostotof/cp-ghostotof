@@ -38,5 +38,15 @@ interface ContributionRepositoryInterface
 
     public function save(Contribution $contribution): void;
 
+    /**
+     * Spec 0004 B3 : écrit plusieurs entités en une seule transaction — le
+     * besoin de `OrderAssigner::assign()`, qui déplace potentiellement tout un
+     * périmètre en un seul appel. `save()` flushe à chaque entité, donc autant
+     * de transactions que d'entités ; cette méthode n'en ouvre qu'une.
+     *
+     * @param list<Contribution> $contributions
+     */
+    public function saveAll(array $contributions): void;
+
     public function remove(Contribution $contribution): void;
 }

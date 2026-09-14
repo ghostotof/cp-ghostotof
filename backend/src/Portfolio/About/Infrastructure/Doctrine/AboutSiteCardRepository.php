@@ -64,6 +64,17 @@ class AboutSiteCardRepository extends ServiceEntityRepository implements AboutSi
         $this->getEntityManager()->flush();
     }
 
+    public function saveAll(array $cards): void
+    {
+        $this->getEntityManager()->wrapInTransaction(function () use ($cards): void {
+            foreach ($cards as $card) {
+                $this->getEntityManager()->persist($card);
+            }
+
+            $this->getEntityManager()->flush();
+        });
+    }
+
     public function remove(AboutSiteCard $card): void
     {
         $this->getEntityManager()->remove($card);

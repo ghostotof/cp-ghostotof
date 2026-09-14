@@ -91,6 +91,17 @@ class AboutMeCardRepository extends ServiceEntityRepository implements AboutMeCa
         $this->getEntityManager()->flush();
     }
 
+    public function saveAll(array $cards): void
+    {
+        $this->getEntityManager()->wrapInTransaction(function () use ($cards): void {
+            foreach ($cards as $card) {
+                $this->getEntityManager()->persist($card);
+            }
+
+            $this->getEntityManager()->flush();
+        });
+    }
+
     public function remove(AboutMeCard $card): void
     {
         $this->getEntityManager()->remove($card);

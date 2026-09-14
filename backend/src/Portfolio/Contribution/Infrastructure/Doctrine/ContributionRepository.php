@@ -64,6 +64,17 @@ class ContributionRepository extends ServiceEntityRepository implements Contribu
         $this->getEntityManager()->flush();
     }
 
+    public function saveAll(array $contributions): void
+    {
+        $this->getEntityManager()->wrapInTransaction(function () use ($contributions): void {
+            foreach ($contributions as $contribution) {
+                $this->getEntityManager()->persist($contribution);
+            }
+
+            $this->getEntityManager()->flush();
+        });
+    }
+
     public function remove(Contribution $contribution): void
     {
         $this->getEntityManager()->remove($contribution);

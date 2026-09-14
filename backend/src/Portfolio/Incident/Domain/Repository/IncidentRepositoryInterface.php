@@ -37,5 +37,15 @@ interface IncidentRepositoryInterface
 
     public function save(Incident $incident): void;
 
+    /**
+     * Spec 0004 B3 : écrit plusieurs entités en une seule transaction — le
+     * besoin de `OrderAssigner::assign()`, qui déplace potentiellement tout un
+     * périmètre en un seul appel. `save()` flushe à chaque entité, donc autant
+     * de transactions que d'entités ; cette méthode n'en ouvre qu'une.
+     *
+     * @param list<Incident> $incidents
+     */
+    public function saveAll(array $incidents): void;
+
     public function remove(Incident $incident): void;
 }
