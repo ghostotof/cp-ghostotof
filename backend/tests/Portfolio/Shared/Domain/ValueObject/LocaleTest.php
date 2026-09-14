@@ -96,10 +96,16 @@ final class LocaleTest extends TestCase
      * Spec 0004 D2 : rien ne câble le couple FR/EN. `values()` est la source
      * unique dont dépendent les `#[Assert\Choice]` des DTO du backoffice —
      * ajouter une langue est un `case` de plus, et rien d'autre à modifier.
+     *
+     * L'attendu est donc dérivé de `Locale::cases()` et jamais écrit en dur :
+     * un test qui figerait `['fr', 'en']` rougirait à l'ajout d'une troisième
+     * langue, c'est-à-dire exactement quand tout fonctionne.
      */
     public function testValuesListsEverySupportedLocaleInDeclarationOrder(): void
     {
-        self::assertSame(['fr', 'en'], Locale::values());
-        self::assertSame(array_map(static fn (Locale $locale): string => $locale->value, Locale::cases()), Locale::values());
+        self::assertSame(
+            array_map(static fn (Locale $locale): string => $locale->value, Locale::cases()),
+            Locale::values(),
+        );
     }
 }

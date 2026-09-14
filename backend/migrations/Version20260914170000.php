@@ -33,10 +33,12 @@ use Doctrine\Migrations\AbstractMigration;
  * Aucune ligne n'est supprimée ni modifiée au-delà de cette colonne.
  *
  * `uuidv7()` (PostgreSQL 18) est volatile : elle est évaluée une fois par ligne
- * produite. La CTE `pairs` est déclarée `MATERIALIZED` pour que ce soit une
- * fois par **paire** — inlinée, elle serait réévaluée à chaque référence et les
- * deux lignes d'une même paire recevraient deux groupes différents, ce qui
- * viderait la migration de son sens sans rien faire échouer.
+ * produite, donc une fois par **paire** dans la CTE `pairs` — les deux lignes
+ * d'une même paire reçoivent bien le même groupe. PostgreSQL n'inline jamais
+ * une CTE contenant une fonction volatile, si bien que le `MATERIALIZED`
+ * explicite ne corrige aucun comportement : il rend la garantie lisible sur
+ * place, pour une propriété dont la violation serait silencieuse. Vérifié en
+ * dev après coup (autant de groupes appariés que de couples uniques).
  *
  * Réversible, contrairement aux migrations de la spec 0003 : la colonne
  * n'existait pas avant, la retirer ne perd donc que l'appariement lui-même.
