@@ -254,13 +254,22 @@ async function handleDelete(user: AdminUser): Promise<void> {
               <th scope="col">
                 {{ t('admin.users.usernameLabel') }}
               </th>
-              <th scope="col">
+              <th
+                scope="col"
+                class="col-md-2"
+              >
                 {{ t('admin.users.emailLabel') }}
               </th>
-              <th scope="col">
+              <th
+                scope="col"
+                class="col-md-2"
+              >
                 {{ t('admin.users.rolesLabel') }}
               </th>
-              <th scope="col">
+              <th
+                scope="col"
+                class="col-md-2"
+              >
                 {{ t('admin.users.statusLabel') }}
               </th>
               <th

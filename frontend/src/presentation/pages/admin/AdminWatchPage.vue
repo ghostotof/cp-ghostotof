@@ -341,7 +341,10 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                 >
                   <span class="visually-hidden">{{ t('admin.order.columnHeader') }}</span>
                 </th>
-                <th scope="col">
+                <th
+                  scope="col"
+                  class="col-md-2"
+                >
                   {{ t('admin.watch.slugLabel') }}
                 </th>
                 <th scope="col">
@@ -456,16 +459,28 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         <table class="table table-dark table-hover align-middle mb-0">
           <thead>
             <tr>
-              <th scope="col">
+              <th
+                scope="col"
+                class="col-md-2"
+              >
                 {{ t('admin.watch.vulnerabilities.identifier') }}
               </th>
-              <th scope="col">
+              <th
+                scope="col"
+                class="col-md-2"
+              >
                 {{ t('admin.watch.vulnerabilities.package') }}
               </th>
-              <th scope="col">
+              <th
+                scope="col"
+                class="col-md-1"
+              >
                 {{ t('admin.watch.vulnerabilities.severity') }}
               </th>
-              <th scope="col">
+              <th
+                scope="col"
+                class="col-md-1"
+              >
                 {{ t('admin.watch.vulnerabilities.fixedIn') }}
               </th>
               <th scope="col">
