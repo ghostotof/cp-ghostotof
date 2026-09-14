@@ -10,6 +10,8 @@ use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
 use App\Portfolio\Watch\Infrastructure\Doctrine\WatchSnapshotRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Bridge\Doctrine\Types\UuidType;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Le résultat, figé en base, du dernier rafraîchissement réussi d'une source
@@ -31,9 +33,8 @@ use Doctrine\ORM\Mapping as ORM;
 class WatchSnapshot
 {
     #[ORM\Id]
-    #[ORM\GeneratedValue]
-    #[ORM\Column]
-    private ?int $id = null;
+    #[ORM\Column(type: UuidType::NAME)]
+    private Uuid $id;
 
     #[ORM\Column(enumType: WatchSnapshotType::class, length: 30)]
     private WatchSnapshotType $type;
@@ -62,13 +63,14 @@ class WatchSnapshot
     ) {
         $this->assertPayloadIsNotEmpty($type, $payload);
 
+        $this->id = Uuid::v7();
         $this->type = $type;
         $this->payload = $payload;
         $this->refreshedAt = $refreshedAt;
         $this->sourceStatus = $sourceStatus;
     }
 
-    public function getId(): ?int
+    public function getId(): Uuid
     {
         return $this->id;
     }

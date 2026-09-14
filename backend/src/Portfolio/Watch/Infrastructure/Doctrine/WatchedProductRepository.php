@@ -8,6 +8,7 @@ use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Domain\Repository\WatchedProductRepositoryInterface;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<WatchedProduct>
@@ -19,7 +20,7 @@ class WatchedProductRepository extends ServiceEntityRepository implements Watche
         parent::__construct($registry, WatchedProduct::class);
     }
 
-    public function findOneById(int $id): ?WatchedProduct
+    public function findOneById(Uuid $id): ?WatchedProduct
     {
         return $this->find($id);
     }

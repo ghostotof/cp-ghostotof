@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Portfolio\Watch\Domain\Repository;
 
 use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Abstraction (DIP) dont dépend la couche Application : elle ne connaît jamais
@@ -12,7 +13,7 @@ use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
  */
 interface WatchedProductRepositoryInterface
 {
-    public function findOneById(int $id): ?WatchedProduct;
+    public function findOneById(Uuid $id): ?WatchedProduct;
 
     public function findOneBySlug(string $slug): ?WatchedProduct;
 
