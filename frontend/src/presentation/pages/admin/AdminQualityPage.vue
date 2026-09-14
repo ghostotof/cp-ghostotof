@@ -3,10 +3,13 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminQualityPrinciples } from '../../../application/admin/quality/useAdminQualityPrinciples'
 import { useAdminQualityTraits } from '../../../application/admin/quality/useAdminQualityTraits'
+import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
+import { applyTranslationDraft, collectProseFields } from '../../../application/admin/translation/proseFields'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseNumberInput from '../../ui/BaseNumberInput.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
+import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
 import type { AdminQualityPrinciple } from '../../../domain/admin/quality/entities/AdminQualityPrinciple'
 import type { AdminQualityTrait } from '../../../domain/admin/quality/entities/AdminQualityTrait'
@@ -47,14 +50,41 @@ watch(
   { immediate: true },
 )
 
+/**
+ * Assistant de traduction (spec 0002). Ici la locale est celle de la page,
+ * pas du formulaire : un brouillon dans l'autre langue implique donc de
+ * **basculer la page** sur la locale cible — les listes se rechargent par le
+ * watcher ci-dessus, les formulaires, eux, ne sont pas touchés par ce
+ * rechargement, et gardent le brouillon. Enregistrer crée alors l'entrée dans
+ * la locale cible, comme toute création depuis cette page. Une instance de
+ * composable par formulaire : chacun a son attente et son message d'erreur.
+ */
+const {
+  isTranslating: isTranslatingPrinciple,
+  errorReason: principleTranslationErrorReason,
+  translate: translatePrinciple,
+} = useAdminTranslation()
+const { isTranslating: isTranslatingTrait, errorReason: traitTranslationErrorReason, translate: translateTrait } = useAdminTranslation()
+
+/** Prose des principes : la clé d'icône et la position sont recopiées. */
+const PRINCIPLE_PROSE_FIELDS = ['title', 'description'] as const
+/** Un trait n'est qu'un libellé court — mais un libellé se traduit. */
+const TRAIT_PROSE_FIELDS = ['label'] as const
+
 const editingPrincipleId = ref<number | null>(null)
 const principleForm = reactive({ title: '', description: '', iconKey: '', position: 0 })
 const isSubmittingPrinciple = ref(false)
 const isEditingPrinciple = computed(() => null !== editingPrincipleId.value)
 const principleErrorText = computed(() => (principleErrorMessage.value ? t(`admin.quality.errors.${principleErrorMessage.value.reason}`) : null))
+const principleDraftSourceLocale = ref<Locale | null>(null)
+const hasPrincipleProse = computed(() => PRINCIPLE_PROSE_FIELDS.some((field) => '' !== principleForm[field].trim()))
+const principleTranslationErrorText = computed(() =>
+  principleTranslationErrorReason.value ? t(`admin.translation.errors.${principleTranslationErrorReason.value}`) : null,
+)
 
 function resetPrincipleForm(): void {
   editingPrincipleId.value = null
+  principleDraftSourceLocale.value = null
   principleForm.title = ''
   principleForm.description = ''
   principleForm.iconKey = ''
@@ -63,6 +93,7 @@ function resetPrincipleForm(): void {
 
 function startEditPrinciple(principle: AdminQualityPrinciple): void {
   editingPrincipleId.value = principle.id
+  principleDraftSourceLocale.value = null
   principleForm.title = principle.title
   principleForm.description = principle.description
   principleForm.iconKey = principle.iconKey
@@ -87,6 +118,20 @@ async function handleSubmitPrinciple(): Promise<void> {
   }
 }
 
+async function handleTranslatePrinciple(targetLocale: Locale): Promise<void> {
+  const sourceLocale = selectedLocale.value
+
+  const draft = await translatePrinciple(sourceLocale, targetLocale, collectProseFields(principleForm, PRINCIPLE_PROSE_FIELDS))
+  if (!draft) {
+    return
+  }
+
+  editingPrincipleId.value = null
+  applyTranslationDraft(principleForm, PRINCIPLE_PROSE_FIELDS, draft)
+  principleDraftSourceLocale.value = sourceLocale
+  selectedLocale.value = targetLocale
+}
+
 async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<void> {
   if (!window.confirm(t('admin.quality.principle.confirmDelete', { title: principle.title }))) {
     return
@@ -100,15 +145,22 @@ const traitForm = reactive({ label: '', position: 0 })
 const isSubmittingTrait = ref(false)
 const isEditingTrait = computed(() => null !== editingTraitId.value)
 const traitErrorText = computed(() => (traitErrorMessage.value ? t(`admin.quality.errors.${traitErrorMessage.value.reason}`) : null))
+const traitDraftSourceLocale = ref<Locale | null>(null)
+const hasTraitProse = computed(() => '' !== traitForm.label.trim())
+const traitTranslationErrorText = computed(() =>
+  traitTranslationErrorReason.value ? t(`admin.translation.errors.${traitTranslationErrorReason.value}`) : null,
+)
 
 function resetTraitForm(): void {
   editingTraitId.value = null
+  traitDraftSourceLocale.value = null
   traitForm.label = ''
   traitForm.position = 0
 }
 
 function startEditTrait(trait: AdminQualityTrait): void {
   editingTraitId.value = trait.id
+  traitDraftSourceLocale.value = null
   traitForm.label = trait.label
   traitForm.position = trait.position
 }
@@ -129,6 +181,20 @@ async function handleSubmitTrait(): Promise<void> {
   if (!traitErrorMessage.value) {
     resetTraitForm()
   }
+}
+
+async function handleTranslateTrait(targetLocale: Locale): Promise<void> {
+  const sourceLocale = selectedLocale.value
+
+  const draft = await translateTrait(sourceLocale, targetLocale, collectProseFields(traitForm, TRAIT_PROSE_FIELDS))
+  if (!draft) {
+    return
+  }
+
+  editingTraitId.value = null
+  applyTranslationDraft(traitForm, TRAIT_PROSE_FIELDS, draft)
+  traitDraftSourceLocale.value = sourceLocale
+  selectedLocale.value = targetLocale
 }
 
 async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
@@ -184,6 +250,31 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
           :label="t('admin.quality.principle.positionLabel')"
           :step="1"
         />
+
+        <div class="mb-3">
+          <TranslateEntryButton
+            :form-locale="selectedLocale"
+            :is-translating="isTranslatingPrinciple"
+            :disabled="!hasPrincipleProse || isSubmittingPrinciple"
+            @translate="handleTranslatePrinciple"
+          />
+        </div>
+
+        <p
+          v-if="principleDraftSourceLocale"
+          class="alert alert-info small"
+          role="status"
+        >
+          {{ t('admin.translation.draftNotice', { locale: principleDraftSourceLocale.toUpperCase() }) }}
+        </p>
+
+        <p
+          v-if="principleTranslationErrorText"
+          class="text-danger small"
+          role="alert"
+        >
+          {{ principleTranslationErrorText }}
+        </p>
 
         <p
           v-if="principleErrorText"
@@ -309,6 +400,31 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
           :label="t('admin.quality.trait.positionLabel')"
           :step="1"
         />
+
+        <div class="mb-3">
+          <TranslateEntryButton
+            :form-locale="selectedLocale"
+            :is-translating="isTranslatingTrait"
+            :disabled="!hasTraitProse || isSubmittingTrait"
+            @translate="handleTranslateTrait"
+          />
+        </div>
+
+        <p
+          v-if="traitDraftSourceLocale"
+          class="alert alert-info small"
+          role="status"
+        >
+          {{ t('admin.translation.draftNotice', { locale: traitDraftSourceLocale.toUpperCase() }) }}
+        </p>
+
+        <p
+          v-if="traitTranslationErrorText"
+          class="text-danger small"
+          role="alert"
+        >
+          {{ traitTranslationErrorText }}
+        </p>
 
         <p
           v-if="traitErrorText"
