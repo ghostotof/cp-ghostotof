@@ -164,6 +164,9 @@ type (`symfony/doctrine-bridge`'s `UuidType`, `symfony/uid` `8.1.*` a direct dep
 `VARCHAR(36)`. Every item operation declares `requirements: ['id' => Requirement::UUID]`
 (`Symfony\Component\Routing\Requirement`), so a malformed `{id}` is a 404 from the router before the
 firewall or any Provider runs; Providers/Processors read it via `ResolvesUriVariables::uriVariableUuid()`.
+`tests/Security/ItemRouteRequirementTest.php` pins this invariant by walking the compiled router and
+asserting every `/api` route whose path contains `{id}` declares it, with an explicit, justified allow-list
+for API Platform's internal `{id}` paths that aren't entities.
 `Requirement::UUID` is case-sensitive (lowercase hex), so an upper-case UUID in a URL is a router 404 too —
 `toRfc4122()` always emits lowercase, don't widen the regex. DTOs expose `id` as an RFC 4122 string
 (`$entity->getId()->toRfc4122()`), never the `Uuid` object — a read/write DTO's `id` stays
