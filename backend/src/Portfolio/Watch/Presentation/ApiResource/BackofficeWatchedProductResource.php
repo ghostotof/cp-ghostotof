@@ -14,6 +14,7 @@ use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Infrastructure\ApiPlatform\BackofficeWatchedProductProcessor;
 use App\Portfolio\Watch\Infrastructure\ApiPlatform\BackofficeWatchedProductProvider;
 use App\Portfolio\Watch\Infrastructure\Validator\WatchedProductSlugExists;
+use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -33,6 +34,7 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Get(
             uriTemplate: '/backoffice/watch/products/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeWatchedProductProvider::class,
         ),
         new Post(
@@ -47,11 +49,13 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Put(
             uriTemplate: '/backoffice/watch/products/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeWatchedProductProvider::class,
             processor: BackofficeWatchedProductProcessor::class,
         ),
         new Delete(
             uriTemplate: '/backoffice/watch/products/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeWatchedProductProvider::class,
             processor: BackofficeWatchedProductProcessor::class,
         ),
@@ -64,7 +68,7 @@ final class BackofficeWatchedProductResource
     public const string CREATION_GROUP = 'watched_product:create';
 
     public function __construct(
-        public ?int $id = null,
+        public ?string $id = null,
         /**
          * Identifiant du produit chez endoflife.date. Le motif reprend ce que le
          * catalogue du fournisseur accepte réellement (minuscules, chiffres,
@@ -104,7 +108,7 @@ final class BackofficeWatchedProductResource
     public static function fromEntity(WatchedProduct $product): self
     {
         return new self(
-            id: $product->getId(),
+            id: $product->getId()->toRfc4122(),
             slug: $product->getSlug(),
             label: $product->getLabel(),
             versionSource: $product->getVersionSource()->value,
