@@ -6,6 +6,7 @@ namespace App\Shared\Infrastructure\ApiPlatform;
 
 use App\Portfolio\Shared\Domain\Exception\InvalidLocaleException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Les variables d'URI d'API Platform proviennent toujours de segments de
@@ -40,6 +41,29 @@ trait ResolvesUriVariables
         \assert(\is_string($value));
 
         return $value;
+    }
+
+    /**
+     * Résout un segment `{id}` en Uuid. Le segment est déjà borné par
+     * `requirements: ['id' => Requirement::UUID]` sur l'opération (un segment
+     * malformé est un 404 du routeur) ; la garde ci-dessous est un second
+     * niveau, explicite plutôt qu'un `assert()` : en production
+     * (`zend.assertions=-1`) un `assert()` est compilé hors binaire et cette
+     * branche deviendrait silencieuse.
+     *
+     * @param array<string, mixed> $uriVariables
+     *
+     * @throws \InvalidArgumentException si le segment est absent ou n'est pas un UUID valide
+     */
+    private function uriVariableUuid(array $uriVariables, string $key = 'id'): Uuid
+    {
+        $value = $uriVariables[$key] ?? null;
+
+        if (!\is_string($value) || !Uuid::isValid($value)) {
+            throw new \InvalidArgumentException(sprintf('La variable d\'URI "%s" doit être un UUID valide.', $key));
+        }
+
+        return Uuid::fromString($value);
     }
 
     /**

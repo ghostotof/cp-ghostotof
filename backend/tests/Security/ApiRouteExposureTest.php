@@ -412,6 +412,13 @@ final class ApiRouteExposureTest extends WebTestCase
                 'token' => str_repeat('a', 64),
                 'status' => '404',
                 'index' => 'index',
+                // UUID fixe et valide au sens de `Requirement::UUID` (nibble de
+                // version 7, variante 8) : les tâches suivantes posent des
+                // `requirements: ['id' => Requirement::UUID]` sur les
+                // opérations d'item, et un `1` y serait un 404 du routeur
+                // (RouterListener, priorité 32) avant même le firewall
+                // (priorité 8) — le test perdrait sa portée sur ces routes.
+                'id' => '019968a0-0000-7000-8000-000000000001',
                 default => '1',
             },
             $url,
