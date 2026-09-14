@@ -17,9 +17,13 @@ final readonly class QualityTraitAdministrator implements QualityTraitAdministra
     ) {
     }
 
-    public function create(Locale $locale, string $label, int $position): QualityTraitEntity
-    {
-        $trait = new QualityTraitEntity($locale, $label, $position);
+    public function create(
+        Locale $locale,
+        string $label,
+        int $position,
+        ?Uuid $translationGroup = null,
+    ): QualityTraitEntity {
+        $trait = new QualityTraitEntity($locale, $label, $position, $translationGroup);
 
         $this->qualityTraitRepository->save($trait);
 

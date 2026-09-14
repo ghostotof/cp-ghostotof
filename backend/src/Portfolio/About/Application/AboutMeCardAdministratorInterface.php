@@ -12,7 +12,21 @@ use Symfony\Component\Uid\Uuid;
 
 interface AboutMeCardAdministratorInterface
 {
-    public function create(Locale $locale, AboutMeCardCategory $category, string $title, string $description, ?string $iconKey, int $position): AboutMeCard;
+    /**
+     * `$translationGroup` (spec 0004 D1) : groupe d'une entrée existante quand
+     * on crée sa version dans une autre langue, `null` pour un contenu neuf —
+     * l'entité s'en forge alors un. La position reste passée ici ; elle en
+     * sortira en B2, quand l'endpoint d'ordre deviendra son seul écrivain.
+     */
+    public function create(
+        Locale $locale,
+        AboutMeCardCategory $category,
+        string $title,
+        string $description,
+        ?string $iconKey,
+        int $position,
+        ?Uuid $translationGroup = null,
+    ): AboutMeCard;
 
     /**
      * @throws AboutMeCardNotFoundException si l'id est inconnu

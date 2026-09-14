@@ -8,6 +8,7 @@ use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
 use App\Portfolio\Contribution\Domain\Repository\ContributionRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Presentation\Command\GuardsExistingContent;
+use App\Shared\Presentation\Command\TranslationGroupIndex;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -51,6 +52,8 @@ final class SeedContributionsContentCommand extends Command
             return Command::SUCCESS;
         }
 
+        $translationGroups = new TranslationGroupIndex();
+
         foreach ($this->content() as $localeValue => $contributions) {
             $locale = Locale::from($localeValue);
 
@@ -68,6 +71,7 @@ final class SeedContributionsContentCommand extends Command
                     $contribution['summary'],
                     $contribution['body'],
                     $position,
+                    $translationGroups->forIndex('contribution', $position),
                 );
             }
 

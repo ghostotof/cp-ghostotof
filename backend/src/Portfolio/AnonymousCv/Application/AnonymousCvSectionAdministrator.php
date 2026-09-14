@@ -24,8 +24,9 @@ final readonly class AnonymousCvSectionAdministrator implements AnonymousCvSecti
         int $yearsOfExperience,
         string $achievements,
         int $position,
+        ?Uuid $translationGroup = null,
     ): AnonymousCvSection {
-        $section = new AnonymousCvSection($locale, $title, $skills, $yearsOfExperience, $achievements, $position);
+        $section = new AnonymousCvSection($locale, $title, $skills, $yearsOfExperience, $achievements, $position, $translationGroup);
 
         $this->sectionRepository->save($section);
 

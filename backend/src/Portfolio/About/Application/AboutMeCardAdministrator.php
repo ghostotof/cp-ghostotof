@@ -18,9 +18,16 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
     ) {
     }
 
-    public function create(Locale $locale, AboutMeCardCategory $category, string $title, string $description, ?string $iconKey, int $position): AboutMeCard
-    {
-        $card = new AboutMeCard($locale, $category, $title, $description, $iconKey, $position);
+    public function create(
+        Locale $locale,
+        AboutMeCardCategory $category,
+        string $title,
+        string $description,
+        ?string $iconKey,
+        int $position,
+        ?Uuid $translationGroup = null,
+    ): AboutMeCard {
+        $card = new AboutMeCard($locale, $category, $title, $description, $iconKey, $position, $translationGroup);
 
         $this->aboutMeCardRepository->save($card);
 
