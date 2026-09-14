@@ -435,7 +435,7 @@ Content management for all of the above, plus user administration, gated end-to-
   exception as a generic 500 instead of a meaningful 4xx. When two exceptions share a status code but the
   frontend must tell them apart (e.g. the two `PUT …/roles` 409s: self-modification vs last-super-admin), make
   the exception `implements ApiPlatform\Metadata\Exception\ProblemExceptionInterface` and
-  `use App\Security\User\Domain\Exception\HasProblemType` (declare `problemType()` → a stable kebab slug +
+  `use App\Shared\Domain\Exception\HasProblemType` (declare `problemType()` → a stable kebab slug +
   `problemStatus()`): API Platform then emits `type: /errors/<slug>` in the problem+json, which the client keys
   on instead of substring-matching the localized `detail`.
 
