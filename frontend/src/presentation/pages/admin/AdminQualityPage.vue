@@ -13,6 +13,7 @@ import {
   groupByTranslationGroup,
   type TranslationGroupRow,
 } from '../../../domain/admin/shared/ordering/groupByTranslationGroup'
+import { orderRowsByDraft } from '../../../domain/admin/shared/ordering/orderRowsByDraft'
 import {
   firstEntry,
   hasSibling,
@@ -254,19 +255,8 @@ const { registerHandleCell: registerPrincipleHandleCell, moveRow: movePrincipleR
   useOrderHandleFocus(movePrincipleInDraft)
 const { registerHandleCell: registerTraitHandleCell, moveRow: moveTraitRow } = useOrderHandleFocus(moveTraitInDraft)
 
-/**
- * Les lignes dans l'ordre du **brouillon**, pas dans celui du serveur : c'est
- * le glisser-déposer en cours que l'admin doit voir, l'ordre serveur ne
- * revenant qu'après « Annuler » ou un enregistrement.
- */
-function orderedBy<T>(rows: readonly TranslationGroupRow<T>[], draft: readonly string[]): TranslationGroupRow<T>[] {
-  const byKey = new Map(rows.map((row) => [row.key, row]))
-
-  return draft.map((key) => byKey.get(key)).filter((row): row is TranslationGroupRow<T> => undefined !== row)
-}
-
-const orderedPrincipleRows = computed(() => orderedBy(principleRows.value, principleOrderDraft.value))
-const orderedTraitRows = computed(() => orderedBy(traitRows.value, traitOrderDraft.value))
+const orderedPrincipleRows = computed(() => orderRowsByDraft(principleRows.value, principleOrderDraft.value))
+const orderedTraitRows = computed(() => orderRowsByDraft(traitRows.value, traitOrderDraft.value))
 
 /**
  * « Version de » : les options du sélecteur (D2, cf.

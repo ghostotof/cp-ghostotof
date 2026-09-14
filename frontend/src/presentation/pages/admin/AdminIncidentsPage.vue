@@ -12,6 +12,7 @@ import {
   groupByTranslationGroup,
   type TranslationGroupRow,
 } from '../../../domain/admin/shared/ordering/groupByTranslationGroup'
+import { orderRowsByDraft } from '../../../domain/admin/shared/ordering/orderRowsByDraft'
 import {
   firstEntry,
   hasSibling,
@@ -124,18 +125,7 @@ const {
 
 const { draggingIndex, onDragStart, onDragOver, onDrop, onDragEnd } = useRowDragAndDrop(moveInDraft)
 
-/**
- * Les lignes dans l'ordre du **brouillon**, pas dans celui du serveur : c'est
- * le glisser-déposer en cours que l'admin doit voir, l'ordre serveur ne
- * revenant qu'après « Annuler » ou un enregistrement.
- */
-const orderedRows = computed(() => {
-  const byKey = new Map(rows.value.map((row) => [row.key, row]))
-
-  return orderDraft.value
-    .map((key) => byKey.get(key))
-    .filter((row): row is TranslationGroupRow<AdminIncident> => undefined !== row)
-})
+const orderedRows = computed(() => orderRowsByDraft(rows.value, orderDraft.value))
 
 /**
  * Tant que l'ordre est modifié, toute mutation est verrouillée (D6) : elle

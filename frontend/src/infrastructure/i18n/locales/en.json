@@ -116,13 +116,21 @@
       "delete": "Delete",
       "loading": "Loading…",
       "loadError": "Loading failed. Please try again later.",
+      "localeHelp": "Language of this entry: the one it will be saved in, and the one the translation assistant starts from. The table below shows every language.",
+      "translationOfLabel": "Version of",
+      "translationOfNone": "— none —",
+      "contentLabel": "Content",
       "errors": {
         "not-found": "This item no longer exists.",
         "validation": "The form contains errors. Please check the fields.",
-        "unknown": "Something went wrong. Please try again later."
+        "unknown": "Something went wrong. Please try again later.",
+        "translation-already-exists": "This content already has a version in that language.",
+        "unknown-translation-group": "The content to attach this version to no longer exists. Please reload the page."
       },
       "settings": {
         "title": "About page texts",
+        "localeLabel": "Language of the About page texts",
+        "localeHelp": "These texts are one record per language: switching language loads the other version. The cards below each carry their own.",
         "siteEyebrowLabel": "\"About this site\" section title",
         "meEyebrowLabel": "\"About me\" section title",
         "technicalSubtitleLabel": "\"Technically\" subtitle",
@@ -137,8 +145,7 @@
         "titleLabel": "Title",
         "descriptionLabel": "Description",
         "iconKeyLabel": "Icon",
-        "positionLabel": "Position",
-        "empty": "No card registered for this language yet.",
+        "empty": "No card registered yet.",
         "confirmDelete": "Delete card \"{title}\"?"
       },
       "meCard": {
@@ -153,8 +160,7 @@
         "titleLabel": "Title",
         "descriptionLabel": "Description",
         "iconKeyLabel": "Icon",
-        "positionLabel": "Position",
-        "empty": "No card registered for this language/category yet.",
+        "empty": "No card registered in this category yet.",
         "confirmDelete": "Delete card \"{title}\"?"
       }
     },
