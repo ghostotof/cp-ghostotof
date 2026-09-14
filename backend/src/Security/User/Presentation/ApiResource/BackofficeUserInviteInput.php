@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\User\Presentation\ApiResource;
 
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -20,7 +21,7 @@ final readonly class BackofficeUserInviteInput
         #[Assert\Length(max: 180)]
         public string $email = '',
         #[Assert\NotBlank]
-        #[Assert\Choice(choices: ['fr', 'en'])]
+        #[Assert\Choice(callback: [Locale::class, 'values'])]
         public string $locale = '',
     ) {
     }

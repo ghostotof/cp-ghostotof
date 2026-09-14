@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\Put;
 use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
 use App\Portfolio\Quality\Infrastructure\ApiPlatform\BackofficeQualityPrincipleProcessor;
 use App\Portfolio\Quality\Infrastructure\ApiPlatform\BackofficeQualityPrincipleProvider;
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -60,8 +61,15 @@ final class BackofficeQualityPrincipleResource
     public function __construct(
         public ?string $id = null,
         #[Assert\NotBlank]
-        #[Assert\Choice(choices: ['fr', 'en'])]
+        #[Assert\Choice(callback: [Locale::class, 'values'])]
         public ?string $locale = null,
+        /**
+         * Spec 0004 D1 : groupe de traduction, en RFC 4122 — les entrées qui le
+         * partagent sont le même contenu dans des langues différentes. Exposé
+         * en lecture dès maintenant ; le Processor l'ignore encore, le côté
+         * écriture (et sa contrainte de validation) arrive en B2.
+         */
+        public ?string $translationGroup = null,
         #[Assert\NotBlank]
         #[Assert\Length(max: 180)]
         public string $title = '',
@@ -86,6 +94,7 @@ final class BackofficeQualityPrincipleResource
         return new self(
             id: $principle->getId()->toRfc4122(),
             locale: $principle->getLocale()->value,
+            translationGroup: $principle->getTranslationGroup()->toRfc4122(),
             title: $principle->getTitle(),
             description: $principle->getDescription(),
             iconKey: $principle->getIconKey(),

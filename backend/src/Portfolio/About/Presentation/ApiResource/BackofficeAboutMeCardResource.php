@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\Put;
 use App\Portfolio\About\Domain\Entity\AboutMeCard;
 use App\Portfolio\About\Infrastructure\ApiPlatform\BackofficeAboutMeCardProcessor;
 use App\Portfolio\About\Infrastructure\ApiPlatform\BackofficeAboutMeCardProvider;
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -61,8 +62,15 @@ final class BackofficeAboutMeCardResource
     public function __construct(
         public ?string $id = null,
         #[Assert\NotBlank]
-        #[Assert\Choice(choices: ['fr', 'en'])]
+        #[Assert\Choice(callback: [Locale::class, 'values'])]
         public ?string $locale = null,
+        /**
+         * Spec 0004 D1 : groupe de traduction, en RFC 4122 — les entrées qui le
+         * partagent sont le même contenu dans des langues différentes. Exposé
+         * en lecture dès maintenant ; le Processor l'ignore encore, le côté
+         * écriture (et sa contrainte de validation) arrive en B2.
+         */
+        public ?string $translationGroup = null,
         #[Assert\NotBlank]
         #[Assert\Choice(choices: ['technical', 'personal', 'hobby'])]
         public ?string $category = null,
@@ -89,6 +97,7 @@ final class BackofficeAboutMeCardResource
         return new self(
             id: $card->getId()->toRfc4122(),
             locale: $card->getLocale()->value,
+            translationGroup: $card->getTranslationGroup()->toRfc4122(),
             category: $card->getCategory()->value,
             title: $card->getTitle(),
             description: $card->getDescription(),
