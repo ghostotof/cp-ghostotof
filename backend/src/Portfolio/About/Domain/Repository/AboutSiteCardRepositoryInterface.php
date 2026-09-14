@@ -6,6 +6,7 @@ namespace App\Portfolio\About\Domain\Repository;
 
 use App\Portfolio\About\Domain\Entity\AboutSiteCard;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Abstraction (DIP) dont dépend la couche Application
@@ -14,7 +15,7 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
  */
 interface AboutSiteCardRepositoryInterface
 {
-    public function findOneById(int $id): ?AboutSiteCard;
+    public function findOneById(Uuid $id): ?AboutSiteCard;
 
     /**
      * @return list<AboutSiteCard> triées par position ASC

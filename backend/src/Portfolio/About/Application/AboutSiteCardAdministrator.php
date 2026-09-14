@@ -8,6 +8,7 @@ use App\Portfolio\About\Domain\Entity\AboutSiteCard;
 use App\Portfolio\About\Domain\Exception\AboutSiteCardNotFoundException;
 use App\Portfolio\About\Domain\Repository\AboutSiteCardRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 final readonly class AboutSiteCardAdministrator implements AboutSiteCardAdministratorInterface
 {
@@ -25,7 +26,7 @@ final readonly class AboutSiteCardAdministrator implements AboutSiteCardAdminist
         return $card;
     }
 
-    public function update(int $id, string $title, string $description, ?string $iconKey, int $position): AboutSiteCard
+    public function update(Uuid $id, string $title, string $description, ?string $iconKey, int $position): AboutSiteCard
     {
         $card = $this->aboutSiteCardRepository->findOneById($id);
 
@@ -39,7 +40,7 @@ final readonly class AboutSiteCardAdministrator implements AboutSiteCardAdminist
         return $card;
     }
 
-    public function delete(int $id): void
+    public function delete(Uuid $id): void
     {
         $card = $this->aboutSiteCardRepository->findOneById($id);
 

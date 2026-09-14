@@ -29,14 +29,14 @@ final readonly class BackofficeAboutSiteCardProcessor implements ProcessorInterf
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeAboutSiteCardResource
     {
         if ($operation instanceof Delete) {
-            $this->aboutSiteCardAdministrator->delete($this->uriVariableInt($uriVariables, 'id'));
+            $this->aboutSiteCardAdministrator->delete($this->uriVariableUuid($uriVariables));
 
             return null;
         }
 
         if ($operation instanceof Put) {
             $card = $this->aboutSiteCardAdministrator->update(
-                $this->uriVariableInt($uriVariables, 'id'),
+                $this->uriVariableUuid($uriVariables),
                 $data->title,
                 $data->description,
                 $data->iconKey,

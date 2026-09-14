@@ -10,6 +10,7 @@ use App\Portfolio\About\Domain\Exception\AboutSiteCardNotFoundException;
 use App\Portfolio\About\Domain\Repository\AboutSiteCardRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\Uuid;
 
 final class AboutSiteCardAdministratorTest extends TestCase
 {
@@ -30,12 +31,12 @@ final class AboutSiteCardAdministratorTest extends TestCase
         $card = new AboutSiteCard(Locale::FR, 'Architecture', 'Description.', 'layers', 0);
 
         $repository = $this->createMock(AboutSiteCardRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(1)->willReturn($card);
+        $repository->expects(self::once())->method('findOneById')->with($card->getId())->willReturn($card);
         $repository->expects(self::once())->method('save')->with($card);
 
         $administrator = new AboutSiteCardAdministrator($repository);
 
-        $updated = $administrator->update(1, 'Stack', 'New description.', 'server', 1);
+        $updated = $administrator->update($card->getId(), 'Stack', 'New description.', 'server', 1);
 
         self::assertSame('Stack', $updated->getTitle());
     }
@@ -49,7 +50,7 @@ final class AboutSiteCardAdministratorTest extends TestCase
 
         $this->expectException(AboutSiteCardNotFoundException::class);
 
-        $administrator->update(404, 'x', 'x', 'x', 0);
+        $administrator->update(Uuid::v7(), 'x', 'x', 'x', 0);
     }
 
     public function testDeleteRemovesCard(): void
@@ -57,12 +58,12 @@ final class AboutSiteCardAdministratorTest extends TestCase
         $card = new AboutSiteCard(Locale::FR, 'Architecture', 'Description.', 'layers', 0);
 
         $repository = $this->createMock(AboutSiteCardRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(1)->willReturn($card);
+        $repository->expects(self::once())->method('findOneById')->with($card->getId())->willReturn($card);
         $repository->expects(self::once())->method('remove')->with($card);
 
         $administrator = new AboutSiteCardAdministrator($repository);
 
-        $administrator->delete(1);
+        $administrator->delete($card->getId());
     }
 
     public function testDeleteThrowsWhenCardNotFound(): void
@@ -74,6 +75,6 @@ final class AboutSiteCardAdministratorTest extends TestCase
 
         $this->expectException(AboutSiteCardNotFoundException::class);
 
-        $administrator->delete(404);
+        $administrator->delete(Uuid::v7());
     }
 }

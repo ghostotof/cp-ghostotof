@@ -9,6 +9,7 @@ use App\Portfolio\About\Domain\Exception\AboutMeCardNotFoundException;
 use App\Portfolio\About\Domain\Repository\AboutMeCardRepositoryInterface;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 final readonly class AboutMeCardAdministrator implements AboutMeCardAdministratorInterface
 {
@@ -26,7 +27,7 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
         return $card;
     }
 
-    public function update(int $id, string $title, string $description, ?string $iconKey, int $position): AboutMeCard
+    public function update(Uuid $id, string $title, string $description, ?string $iconKey, int $position): AboutMeCard
     {
         $card = $this->aboutMeCardRepository->findOneById($id);
 
@@ -40,7 +41,7 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
         return $card;
     }
 
-    public function delete(int $id): void
+    public function delete(Uuid $id): void
     {
         $card = $this->aboutMeCardRepository->findOneById($id);
 
