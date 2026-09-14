@@ -8,13 +8,17 @@ import {
 import type { AdminAnonymousCvSection } from '../../../../src/domain/admin/anonymousCv/entities/AdminAnonymousCvSection'
 import type { AdminAnonymousCvSectionRepository } from '../../../../src/domain/admin/anonymousCv/repositories/AdminAnonymousCvSectionRepository'
 import { AdminAnonymousCvSectionError } from '../../../../src/domain/admin/anonymousCv/errors/AdminAnonymousCvSectionError'
+import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 
 const SECTION_ID = '019968a0-0000-7000-8000-000000000003'
+const GROUP_ID = '019968b0-0000-7000-8000-000000000003'
 const SECTION: AdminAnonymousCvSection = {
-  id: SECTION_ID, locale: 'fr', title: 'Backend', skills: 'Symfony', yearsOfExperience: 12, achievements: 'Réalisations.', position: 0,
+  id: SECTION_ID, locale: 'fr', translationGroup: GROUP_ID, title: 'Backend', skills: 'Symfony',
+  yearsOfExperience: 12, achievements: 'Réalisations.', position: 0,
 }
 const INPUT = {
-  locale: 'fr', title: 'Backend', skills: 'Symfony', yearsOfExperience: 12, achievements: 'Réalisations.', position: 0,
+  locale: 'fr', translationGroup: null, title: 'Backend', skills: 'Symfony', yearsOfExperience: 12,
+  achievements: 'Réalisations.',
 }
 
 function createStubRepository(overrides: Partial<AdminAnonymousCvSectionRepository> = {}): AdminAnonymousCvSectionRepository {
@@ -23,6 +27,7 @@ function createStubRepository(overrides: Partial<AdminAnonymousCvSectionReposito
     create: vi.fn(async () => SECTION),
     update: vi.fn(async () => SECTION),
     remove: vi.fn(async () => undefined),
+    reorder: vi.fn(async () => undefined),
     ...overrides,
   }
 }
@@ -96,6 +101,34 @@ describe('useAdminAnonymousCvSections', () => {
 
     expect(composable.hasError.value).toBe(true)
     expect(composable.sections.value).toEqual([])
+  })
+
+  it('délègue reorder() au repository sans recharger la liste', async () => {
+    const repository = createStubRepository()
+    const composable = mountWithComposable(repository)
+    await flushPromises()
+    vi.mocked(repository.list).mockClear()
+
+    await composable.reorder([GROUP_ID])
+
+    expect(repository.reorder).toHaveBeenCalledWith([GROUP_ID])
+    // useOrderDraft recharge lui-même après un enregistrement réussi ; le faire
+    // ici aussi doublerait l'appel.
+    expect(repository.list).not.toHaveBeenCalled()
+  })
+
+  it("laisse remonter l'AdminOrderError telle quelle, sans la convertir", async () => {
+    const repository = createStubRepository({
+      reorder: vi.fn(async () => Promise.reject(new AdminOrderError('stale-order', 'obsolète'))),
+    })
+    const composable = mountWithComposable(repository)
+    await flushPromises()
+
+    const error = await composable.reorder([GROUP_ID]).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(AdminOrderError)
+    expect((error as AdminOrderError).reason).toBe('stale-order')
+    expect(composable.errorMessage.value).toBeNull()
   })
 
   it("échoue explicitement si le repository n'a pas été fourni", () => {
