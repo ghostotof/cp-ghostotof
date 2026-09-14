@@ -69,7 +69,8 @@ forme dans les URLs et les DTO.
 - **D6 — Un `{id}` malformé est un 404 du routeur, pas un cas du Provider.** Chaque opération
   d'item déclare `requirements: ['id' => Requirement::UUID]` (`Symfony\Component\Routing\Requirement`).
   Le trait `ResolvesUriVariables` remplace `uriVariableInt()` par `uriVariableUuid(): Uuid` (avec
-  `assert(Uuid::isValid(...))` en garde de second niveau). Ce `requirements` est aussi ce qui, en
+  une garde explicite (`\InvalidArgumentException`) en second niveau, indépendante de
+  `zend.assertions`). Ce `requirements` est aussi ce qui, en
   spec 0004, empêchera `PUT …/order` d'être capturé par `PUT …/{id}`.
 - **D7 — Les DTO exposent l'id en `string` RFC 4122**, `fromEntity` convertit par
   `$entity->getId()->toRfc4122()`. Le domaine manipule `Uuid`, la frontière HTTP manipule des
@@ -324,6 +325,13 @@ supprime pas la fenêtre : c'est alors l'ancien code qui mappe `id` en `integer`
 `release-notes-v0.11.0.md` § « Fenêtre de bascule » : fenêtre de maintenance explicite (`kubectl scale
 deploy/backend --replicas=0`, Job `backend-migrate`, puis `apply -k` / `rollout status`) ou fenêtre
 assumée à une heure creuse, mesurée en préprod.
+
+**CI** : `test-backend` échouait sur les deux tests d'assertion de `ResolvesUriVariablesTest` —
+GitHub Actions et la production tournent avec `zend.assertions=-1`, le conteneur de dev avec `1`. La
+garde `assert()` de `uriVariableUuid()` est devenue une exception explicite ; suite complète rejouée
+localement avec `-d zend.assertions=-1` : 668/668. Le point différé de la revue finale sur l'`assert()`
+inactif en prod est ainsi clos ; l'issue #137 (test d'invariant `requirements`) reste utile pour la
+discipline.
 
 **Audit de sensibilité avant publication** : aucun e-mail, aucune adresse, aucun nom de compte, aucun
 secret. Le document décrit le schéma des tables et le flux d'invitation au même niveau de détail que
