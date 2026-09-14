@@ -43,7 +43,7 @@ final readonly class BackofficeQualityTraitProvider implements ProviderInterface
             return array_map(BackofficeQualityTraitResource::fromEntity(...), $traits);
         }
 
-        $trait = $this->qualityTraitRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
+        $trait = $this->qualityTraitRepository->findOneById($this->uriVariableUuid($uriVariables));
 
         return null !== $trait ? BackofficeQualityTraitResource::fromEntity($trait) : null;
     }

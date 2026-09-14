@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\Put;
 use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Infrastructure\ApiPlatform\BackofficeExperienceTechnologyProcessor;
 use App\Portfolio\Experience\Infrastructure\ApiPlatform\BackofficeExperienceTechnologyProvider;
+use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -31,6 +32,7 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Get(
             uriTemplate: '/backoffice/experience/technologies/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeExperienceTechnologyProvider::class,
         ),
         new Post(
@@ -39,11 +41,13 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Put(
             uriTemplate: '/backoffice/experience/technologies/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeExperienceTechnologyProvider::class,
             processor: BackofficeExperienceTechnologyProcessor::class,
         ),
         new Delete(
             uriTemplate: '/backoffice/experience/technologies/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeExperienceTechnologyProvider::class,
             processor: BackofficeExperienceTechnologyProcessor::class,
         ),
@@ -52,7 +56,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class BackofficeExperienceTechnologyResource
 {
     public function __construct(
-        public ?int $id = null,
+        public ?string $id = null,
         #[Assert\NotBlank]
         #[Assert\Length(max: 180)]
         public string $name = '',
@@ -78,7 +82,7 @@ final class BackofficeExperienceTechnologyResource
     public static function fromEntity(ExperienceTechnology $technology): self
     {
         return new self(
-            id: $technology->getId(),
+            id: $technology->getId()->toRfc4122(),
             name: $technology->getName(),
             years: $technology->getYears(),
             iconKey: $technology->getIconKey(),

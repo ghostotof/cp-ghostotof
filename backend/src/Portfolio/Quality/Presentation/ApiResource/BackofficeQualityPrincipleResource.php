@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\Put;
 use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
 use App\Portfolio\Quality\Infrastructure\ApiPlatform\BackofficeQualityPrincipleProcessor;
 use App\Portfolio\Quality\Infrastructure\ApiPlatform\BackofficeQualityPrincipleProvider;
+use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -33,6 +34,7 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Get(
             uriTemplate: '/backoffice/quality/principles/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeQualityPrincipleProvider::class,
         ),
         new Post(
@@ -41,11 +43,13 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Put(
             uriTemplate: '/backoffice/quality/principles/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeQualityPrincipleProvider::class,
             processor: BackofficeQualityPrincipleProcessor::class,
         ),
         new Delete(
             uriTemplate: '/backoffice/quality/principles/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeQualityPrincipleProvider::class,
             processor: BackofficeQualityPrincipleProcessor::class,
         ),
@@ -54,7 +58,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class BackofficeQualityPrincipleResource
 {
     public function __construct(
-        public ?int $id = null,
+        public ?string $id = null,
         #[Assert\NotBlank]
         #[Assert\Choice(choices: ['fr', 'en'])]
         public ?string $locale = null,
@@ -80,7 +84,7 @@ final class BackofficeQualityPrincipleResource
     public static function fromEntity(QualityPrinciple $principle): self
     {
         return new self(
-            id: $principle->getId(),
+            id: $principle->getId()->toRfc4122(),
             locale: $principle->getLocale()->value,
             title: $principle->getTitle(),
             description: $principle->getDescription(),

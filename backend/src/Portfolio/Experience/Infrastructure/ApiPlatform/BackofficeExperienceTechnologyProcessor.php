@@ -30,14 +30,14 @@ final readonly class BackofficeExperienceTechnologyProcessor implements Processo
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeExperienceTechnologyResource
     {
         if ($operation instanceof Delete) {
-            $this->experienceTechnologyAdministrator->delete($this->uriVariableInt($uriVariables, 'id'));
+            $this->experienceTechnologyAdministrator->delete($this->uriVariableUuid($uriVariables));
 
             return null;
         }
 
         if ($operation instanceof Put) {
             $technology = $this->experienceTechnologyAdministrator->update(
-                $this->uriVariableInt($uriVariables, 'id'),
+                $this->uriVariableUuid($uriVariables),
                 $data->name,
                 $data->years,
                 $data->iconKey,
