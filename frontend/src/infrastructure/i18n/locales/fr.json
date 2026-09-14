@@ -268,13 +268,14 @@
       "save": "Enregistrer",
       "cancel": "Annuler",
       "localeLabel": "Langue",
+      "translationOfLabel": "Version de",
+      "translationOfNone": "— aucune —",
+      "contentLabel": "Contenu",
       "titleLabel": "Domaine de compétence",
       "skillsLabel": "Compétences (technologies, pratiques)",
       "yearsLabel": "Années d'expérience",
       "achievementsLabel": "Réalisations",
       "achievementsHelp": "Obligatoire. Ce qui a été réalisé avec cette compétence — les années par technologie sont déjà publiques, ce sont les réalisations qui justifient ce palier. Paragraphes séparés par une ligne vide.",
-      "positionLabel": "Position",
-      "actions": "Actions",
       "editAction": "Modifier",
       "deleteAction": "Supprimer",
       "confirmDelete": "Supprimer la section « {title} » ?",
@@ -284,7 +285,9 @@
       "errors": {
         "not-found": "Cette section n'existe plus.",
         "validation": "Certains champs sont invalides.",
-        "unknown": "Une erreur est survenue. Réessayez plus tard."
+        "unknown": "Une erreur est survenue. Réessayez plus tard.",
+        "translation-already-exists": "Ce contenu a déjà une version dans cette langue.",
+        "unknown-translation-group": "Le contenu auquel rattacher cette version n'existe plus. Rechargez la page."
       }
     },
     "incidents": {
