@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Security\User\Domain\Exception;
+namespace App\Shared\Domain\Exception;
 
 /**
  * Rend une exception métier auto-descriptive pour API Platform (RFC 7807) : le

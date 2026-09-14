@@ -65,8 +65,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project state
 
 This repository started as a freshly generated project skeleton (single "Init" commit). Real backend code now
-exists — the `Security` bounded context (`User` + `Authentication`) and six `Portfolio` bounded contexts
-(`Experience`, `Quality`, `About`, `Contribution`, `Incident`, `Watch`, see Backend architecture below) — and follows a DDD structure under
+exists — the `Security` bounded context (`User` + `Authentication`), six `Portfolio` bounded contexts
+(`Experience`, `Quality`, `About`, `Contribution`, `Incident`, `Watch`, see Backend architecture below) and an
+`Ai` context being built (spec 0002, ADR 0004 — see `Ai/` below) — and follows a DDD structure under
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
 over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
 recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
@@ -368,6 +369,28 @@ folder), so entities live inside their bounded context instead of a shared top-l
   - A missing record is not an error: the products show without a version, which the page already
     renders. Failing a build or a refresh over a renamed manifest would be out of proportion.
 
+- **`Ai/`** — everything that talks to a language model, and nothing else does (ADR 0004,
+  `docs/adr/0004-assistance-ia.md`; spec `.claude/specs/0002-ai-translation-assistant.md`). Sub-context per
+  usage: `Ai/Translation/` (phase 1, the backoffice FR/EN translation assistant,
+  `POST /api/backoffice/translations`, `ROLE_SUPER`) and later `Ai/Mcp/` (phase 2, a read-only MCP server
+  reserved to `ROLE_TRUSTED`). The bundle is **Symfony AI**, pinned in **exact version** (`symfony/ai-bundle`,
+  `symfony/ai-anthropic-platform`, `symfony/ai-agent`, all `0.13.0`, no `^` while 0.x); the platform and the
+  `translator` agent (`claude-sonnet-5`, `max_tokens` 4096 — the Anthropic wire name, the bridge merges
+  options as-is —, `tools: false`, system prompt in `config/ai/prompts/translator.txt`) are declared in
+  `config/packages/ai.yaml` on a dedicated scoped client `ai.http_client` (`framework.yaml`: timeout 40 s,
+  `max_redirects: 0`). Rules that must hold, in the ADR's words: **only one class imports `Symfony\AI\*`**
+  (`Infrastructure/SymfonyAi/…`, behind an application interface); **no model call from a public render
+  path**, a visitor-triggered Messenger handler or a render CronJob — backoffice only, synchronous, with a
+  timeout; **only backoffice-authored content meant for publication may be sent** to a provider, never
+  `cpg_user`, a token, the nominative CV or a contact message; **a suggestion is never persisted** without a
+  human action (the endpoint reads and writes nothing, the frontend fills a *new* form); **cost is bounded by
+  construction** (per-account quota, `max_tokens`, timeout); **no test goes on the wire** (`InMemoryPlatform`,
+  platform swapped in the test container, dummy `ANTHROPIC_API_KEY` forced in `phpunit.dist.xml`). Token
+  usage and duration are logged, the content never is. `claude-sonnet-5` rejects `temperature`/`top_p`/`top_k`
+  (400): no sampling option anywhere. The Flex recipes come from the official `symfony/recipes` (they apply
+  despite `allow-contrib: false`); the `ai_anthropic_platform.yaml` they generate is merged into `ai.yaml`,
+  delete it again if a recipe update recreates it.
+
 ### Backoffice (`ROLE_SUPER`)
 
 Content management for all of the above, plus user administration, gated end-to-end behind `ROLE_SUPER`
@@ -435,7 +458,7 @@ Content management for all of the above, plus user administration, gated end-to-
   exception as a generic 500 instead of a meaningful 4xx. When two exceptions share a status code but the
   frontend must tell them apart (e.g. the two `PUT …/roles` 409s: self-modification vs last-super-admin), make
   the exception `implements ApiPlatform\Metadata\Exception\ProblemExceptionInterface` and
-  `use App\Security\User\Domain\Exception\HasProblemType` (declare `problemType()` → a stable kebab slug +
+  `use App\Shared\Domain\Exception\HasProblemType` (declare `problemType()` → a stable kebab slug +
   `problemStatus()`): API Platform then emits `type: /errors/<slug>` in the problem+json, which the client keys
   on instead of substring-matching the localized `detail`.
 
@@ -699,9 +722,10 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   `k8s/README.md` §4 *before* the next deploy, or the job fails on `cannot create resource "jobs"`.
 - **`watch-refresh-cronjob.yaml` *is* in `kustomization.yaml`'s `resources:`** — the opposite of
   `migrate-job.yaml` above, and deliberately: it wants kustomize's image transformer, since it must run the
-  same image as the Deployment. It is also **the only object in the cluster that makes outbound calls to
-  third parties**; the namespace's NetworkPolicies restrict ingress only, so nothing extra is needed today —
-  but adding an egress policy would break this Job first.
+  same image as the Deployment. It used to be **the only object in the cluster that makes outbound calls
+  to third parties**; since ADR 0004 the `backend` Deployment does too (`api.anthropic.com`, from the
+  backoffice only). The namespace's NetworkPolicies restrict ingress only, so nothing extra is needed today —
+  but adding an egress policy would break this Job and the translation assistant first.
 - **The two ConfigMaps hash differently, and each on purpose** (issue #18). `backend-nginx-conf` is a
   **`configMapGenerator`**: its content hash is part of its name, so editing `k8s/base/backend-nginx.conf`
   changes the name, hence the pod template, hence triggers a rollout — which is the only way the
@@ -845,7 +869,8 @@ value, `APP_SECRET=` empty) stays tracked now. `CONTACT_SENDER_EMAIL` / `CONTACT
 there too (audit I4 — real addresses in a public repo feed harvesters and reveal the Scaleway TEM sending
 identity); their values come from outside the repo: `.env.local` in dev, Secret Manager in preprod/prod, and
 **`phpunit.dist.xml` in test**, since the test env never loads `.env.local` — with `force="true"`, without
-which Dotenv overwrites them with the empty value from `.env`. Beware: `init-symfony.sh` returns early when
+which Dotenv overwrites them with the empty value from `.env`. `ANTHROPIC_API_KEY` (ADR 0004) follows the
+exact same route, with a dummy forced value in test: no test may reach the real API. Beware: `init-symfony.sh` returns early when
 `composer.json` exists, so an already-initialised checkout needs those two lines added to `.env.local` by hand.
 Don't re-add either file to git — extend `docker/php/init-symfony.sh`
 instead if a fresh-clone default needs to change. Locally, `init-symfony.sh` generates both `.env.local` (dev)
@@ -920,3 +945,8 @@ ADRs:
   discretion rather than secrecy) and puts the CV behind `ROLE_TRUSTED`. Read it before touching
   `access_control`, `CpgUser::getRoles()` or `BaseAccessController`: it turns on the fact that `getRoles()`
   grants `ROLE_USER` unconditionally, which is why a tier was added *above* rather than below.
+- `docs/adr/0004-assistance-ia.md` — **statut `accepté` (2026-09-14), phase 1 en cours** (spec 0002, issues
+  `spec-0002`). Rules for anything that calls a language model: one importing class behind an interface,
+  bundle pinned exact, no call from a public render path, only publishable backoffice content leaves, human in
+  the loop, bounded cost, offline tests; D7 fixes phase 2 (MCP server, `ROLE_TRUSTED`) pending an amendment.
+  Read it before adding any `Symfony\AI` usage or a new `ai.agent`.

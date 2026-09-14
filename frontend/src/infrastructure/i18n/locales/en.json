@@ -294,6 +294,17 @@
         "unknown": "An error occurred. Please try again later."
       }
     },
+    "translation": {
+      "proposeVersion": "Suggest the {locale} version",
+      "inProgress": "Translating…",
+      "draftNotice": "AI-generated draft from the {locale} version: review and correct it before saving. Nothing is saved until you click Save.",
+      "errors": {
+        "validation": "The content to translate is invalid (empty or too long field).",
+        "rate-limited": "Hourly quota of the assistant reached for your account. Try again later.",
+        "unavailable": "The translation assistant is unavailable. Try again later.",
+        "unknown": "The translation failed. Try again later."
+      }
+    },
     "watch": {
       "create": "Add a watched product",
       "edit": "Edit watched product",

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Security\User\Domain\Exception;
 
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
+use App\Shared\Domain\Exception\HasProblemType;
 use App\Security\User\Domain\Entity\CpgUser;
 
 /**

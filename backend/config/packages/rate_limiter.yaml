@@ -31,3 +31,14 @@ framework:
             policy: 'sliding_window'
             limit: 20
             interval: '1 hour'
+
+        # Quota de l'assistant de traduction du backoffice (ADR 0004, D5 —
+        # POST /api/backoffice/translations). Premier limiteur du projet sur une
+        # route authentifiée : la clé est le compte (username), pas l'IP. Avec
+        # le plafond de jetons et le timeout du client HTTP, c'est ce qui borne
+        # la dépense chez le fournisseur même sur une boucle côté UI ou un
+        # compte ROLE_SUPER compromis (cf. SymfonyTranslationRateLimiter).
+        translation_assistant:
+            policy: 'sliding_window'
+            limit: 30
+            interval: '1 hour'
