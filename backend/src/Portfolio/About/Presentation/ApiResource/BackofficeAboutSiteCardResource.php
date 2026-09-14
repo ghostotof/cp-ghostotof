@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\Put;
 use App\Portfolio\About\Domain\Entity\AboutSiteCard;
 use App\Portfolio\About\Infrastructure\ApiPlatform\BackofficeAboutSiteCardProcessor;
 use App\Portfolio\About\Infrastructure\ApiPlatform\BackofficeAboutSiteCardProvider;
+use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -33,6 +34,7 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Get(
             uriTemplate: '/backoffice/about/site-cards/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeAboutSiteCardProvider::class,
         ),
         new Post(
@@ -41,11 +43,13 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Put(
             uriTemplate: '/backoffice/about/site-cards/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeAboutSiteCardProvider::class,
             processor: BackofficeAboutSiteCardProcessor::class,
         ),
         new Delete(
             uriTemplate: '/backoffice/about/site-cards/{id}',
+            requirements: ['id' => Requirement::UUID],
             provider: BackofficeAboutSiteCardProvider::class,
             processor: BackofficeAboutSiteCardProcessor::class,
         ),
@@ -54,7 +58,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 final class BackofficeAboutSiteCardResource
 {
     public function __construct(
-        public ?int $id = null,
+        public ?string $id = null,
         #[Assert\NotBlank]
         #[Assert\Choice(choices: ['fr', 'en'])]
         public ?string $locale = null,
@@ -79,7 +83,7 @@ final class BackofficeAboutSiteCardResource
     public static function fromEntity(AboutSiteCard $card): self
     {
         return new self(
-            id: $card->getId(),
+            id: $card->getId()->toRfc4122(),
             locale: $card->getLocale()->value,
             title: $card->getTitle(),
             description: $card->getDescription(),

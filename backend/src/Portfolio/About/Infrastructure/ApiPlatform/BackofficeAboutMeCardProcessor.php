@@ -30,14 +30,14 @@ final readonly class BackofficeAboutMeCardProcessor implements ProcessorInterfac
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeAboutMeCardResource
     {
         if ($operation instanceof Delete) {
-            $this->aboutMeCardAdministrator->delete($this->uriVariableInt($uriVariables, 'id'));
+            $this->aboutMeCardAdministrator->delete($this->uriVariableUuid($uriVariables));
 
             return null;
         }
 
         if ($operation instanceof Put) {
             $card = $this->aboutMeCardAdministrator->update(
-                $this->uriVariableInt($uriVariables, 'id'),
+                $this->uriVariableUuid($uriVariables),
                 $data->title,
                 $data->description,
                 $data->iconKey,

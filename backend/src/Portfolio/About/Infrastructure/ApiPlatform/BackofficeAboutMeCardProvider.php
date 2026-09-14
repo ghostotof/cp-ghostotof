@@ -48,7 +48,7 @@ final readonly class BackofficeAboutMeCardProvider implements ProviderInterface
             return array_map(BackofficeAboutMeCardResource::fromEntity(...), $cards);
         }
 
-        $card = $this->aboutMeCardRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
+        $card = $this->aboutMeCardRepository->findOneById($this->uriVariableUuid($uriVariables));
 
         return null !== $card ? BackofficeAboutMeCardResource::fromEntity($card) : null;
     }
