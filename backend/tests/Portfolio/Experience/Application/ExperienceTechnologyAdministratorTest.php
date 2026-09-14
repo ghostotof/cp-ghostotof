@@ -10,21 +10,22 @@ use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsE
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException;
 use App\Portfolio\Experience\Domain\Repository\ExperienceTechnologyRepositoryInterface;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\Uuid;
 
 final class ExperienceTechnologyAdministratorTest extends TestCase
 {
     public function testUpdateReplacesPropertiesAndSaves(): void
     {
-        $technology = $this->technologyWithId('PHP', 1);
+        $technology = new ExperienceTechnology('PHP', 1.0);
 
         $repository = $this->createMock(ExperienceTechnologyRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(1)->willReturn($technology);
+        $repository->expects(self::once())->method('findOneById')->with($technology->getId())->willReturn($technology);
         $repository->expects(self::once())->method('findOneByName')->with('Symfony')->willReturn(null);
         $repository->expects(self::once())->method('save')->with($technology);
 
         $administrator = new ExperienceTechnologyAdministrator($repository);
 
-        $updated = $administrator->update(1, 'Symfony', 9.5, 'symfony', null);
+        $updated = $administrator->update($technology->getId(), 'Symfony', 9.5, 'symfony', null);
 
         self::assertSame('Symfony', $updated->getName());
         self::assertSame(9.5, $updated->getYears());
@@ -39,13 +40,13 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
 
         $this->expectException(ExperienceTechnologyNotFoundException::class);
 
-        $administrator->update(404, 'Symfony', 9.5, null, null);
+        $administrator->update(Uuid::v7(), 'Symfony', 9.5, null, null);
     }
 
     public function testUpdateThrowsWhenNameCollidesWithAnotherTechnology(): void
     {
-        $technology = $this->technologyWithId('PHP', 1);
-        $otherTechnology = $this->technologyWithId('Symfony', 2);
+        $technology = new ExperienceTechnology('PHP', 1.0);
+        $otherTechnology = new ExperienceTechnology('Symfony', 1.0);
 
         $repository = self::createStub(ExperienceTechnologyRepositoryInterface::class);
         $repository->method('findOneById')->willReturn($technology);
@@ -55,12 +56,20 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
 
         $this->expectException(ExperienceTechnologyAlreadyExistsException::class);
 
-        $administrator->update(1, 'Symfony', 9.5, null, null);
+        $administrator->update($technology->getId(), 'Symfony', 9.5, null, null);
     }
 
+    /**
+     * L'id vient de l'URL, donc d'un `Uuid` fraîchement reconstruit, jamais la
+     * même instance que celui porté par l'entité : la comparaison doit se
+     * faire par valeur (`equals()`), pas par identité (`!==`), faute de quoi
+     * le contrôle d'unicité refuserait toute mise à jour, y compris quand le
+     * nom ne change pas.
+     */
     public function testUpdateAllowsKeepingTheSameNameOnTheSameTechnology(): void
     {
-        $technology = $this->technologyWithId('PHP', 1);
+        $technology = new ExperienceTechnology('PHP', 1.0);
+        $sameIdFromTheUrl = Uuid::fromString($technology->getId()->toRfc4122());
 
         $repository = self::createStub(ExperienceTechnologyRepositoryInterface::class);
         $repository->method('findOneById')->willReturn($technology);
@@ -68,22 +77,22 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
 
         $administrator = new ExperienceTechnologyAdministrator($repository);
 
-        $updated = $administrator->update(1, 'PHP', 14.0, null, null);
+        $updated = $administrator->update($sameIdFromTheUrl, 'PHP', 14.0, null, null);
 
         self::assertSame(14.0, $updated->getYears());
     }
 
     public function testDeleteRemovesTechnology(): void
     {
-        $technology = $this->technologyWithId('PHP', 1);
+        $technology = new ExperienceTechnology('PHP', 1.0);
 
         $repository = $this->createMock(ExperienceTechnologyRepositoryInterface::class);
-        $repository->expects(self::once())->method('findOneById')->with(1)->willReturn($technology);
+        $repository->expects(self::once())->method('findOneById')->with($technology->getId())->willReturn($technology);
         $repository->expects(self::once())->method('remove')->with($technology);
 
         $administrator = new ExperienceTechnologyAdministrator($repository);
 
-        $administrator->delete(1);
+        $administrator->delete($technology->getId());
     }
 
     public function testDeleteThrowsWhenIdUnknown(): void
@@ -95,16 +104,6 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
 
         $this->expectException(ExperienceTechnologyNotFoundException::class);
 
-        $administrator->delete(404);
-    }
-
-    private function technologyWithId(string $name, int $id): ExperienceTechnology
-    {
-        $technology = new ExperienceTechnology($name, 1.0);
-
-        $reflection = new \ReflectionProperty(ExperienceTechnology::class, 'id');
-        $reflection->setValue($technology, $id);
-
-        return $technology;
+        $administrator->delete(Uuid::v7());
     }
 }
