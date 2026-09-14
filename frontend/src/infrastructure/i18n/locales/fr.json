@@ -294,6 +294,17 @@
         "unknown": "Une erreur est survenue. Réessayez plus tard."
       }
     },
+    "translation": {
+      "proposeVersion": "Proposer la version {locale}",
+      "inProgress": "Traduction en cours…",
+      "draftNotice": "Brouillon généré par IA à partir de la version {locale} : relisez et corrigez avant d'enregistrer. Rien n'est enregistré tant que vous ne cliquez pas sur Enregistrer.",
+      "errors": {
+        "validation": "Le contenu à traduire est invalide (champ vide ou trop long).",
+        "rate-limited": "Quota horaire de l'assistant atteint pour votre compte. Réessayez plus tard.",
+        "unavailable": "L'assistant de traduction est indisponible. Réessayez plus tard.",
+        "unknown": "La traduction a échoué. Réessayez plus tard."
+      }
+    },
     "watch": {
       "create": "Ajouter un produit surveillé",
       "edit": "Modifier le produit surveillé",
