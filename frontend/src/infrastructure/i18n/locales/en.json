@@ -52,6 +52,23 @@
       "anonymousCv": "CV without identity",
       "watch": "Watch"
     },
+    "order": {
+      "moveHandle": "Move: {label}",
+      "moved": "Moved to position {position} of {count}",
+      "status": {
+        "clean": "Order · up to date",
+        "dirty": "Order · modified, not saved"
+      },
+      "save": "Save order",
+      "cancel": "Cancel",
+      "errors": {
+        "stale-order": "The list changed in the meantime: the order was reloaded, try again.",
+        "unknown": "Saving the order failed. Please try again later."
+      },
+      "lockedHint": "Save or cancel the order first.",
+      "missingTranslation": "Missing translation",
+      "createVersion": "Create the {locale} version"
+    },
     "quality": {
       "actions": "Actions",
       "save": "Save",
