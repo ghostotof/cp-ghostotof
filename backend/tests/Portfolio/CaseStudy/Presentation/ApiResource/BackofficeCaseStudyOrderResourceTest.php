@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Portfolio\Incident\Presentation\ApiResource;
+namespace App\Tests\Portfolio\CaseStudy\Presentation\ApiResource;
 
-use App\Portfolio\Incident\Application\IncidentAdministratorInterface;
+use App\Portfolio\CaseStudy\Application\CaseStudyAdministratorInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
@@ -16,22 +16,20 @@ use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
- * Spec 0004 B4 : PUT /api/backoffice/incidents/order. Représentant des neuf
- * ressources d'ordre — les huit autres reprennent la même grille, seuls le
- * chemin, le périmètre et le nom de la clé changent.
+ * Spec 0004 B4 : PUT /api/backoffice/case-studies/order. Même grille que
+ * BackofficeIncidentOrderResourceTest, qui porte le commentaire de fond :
+ * le nouvel ordre se relit sur la collection de backoffice **et** sur les
+ * endpoints publics des deux langues — un ordre qui divergerait entre le FR et
+ * l'EN contredirait D5.
  *
- * Deux choses s'y vérifient et une seule ne suffirait pas :
- * la collection de backoffice rend le nouvel ordre, et **les deux endpoints
- * publics** aussi. Un ordre juste en base mais invisible côté visiteur ne
- * serait pas la fonctionnalité demandée ; un ordre qui divergerait entre le FR
- * et l'EN contredirait D5 (« un déplacement suit le contenu quelle que soit la
- * langue »).
+ * `GET /api/case-studies/{locale}` exige ROLE_USER (ADR 0003 D5) : la session
+ * ROLE_SUPER du test le couvre par le role_hierarchy.
  */
-final class BackofficeIncidentOrderResourceTest extends WebTestCase
+final class BackofficeCaseStudyOrderResourceTest extends WebTestCase
 {
     use HttpJson;
 
-    private const string ORDER_PATH = '/api/backoffice/incidents/order';
+    private const string ORDER_PATH = '/api/backoffice/case-studies/order';
     private const string SUPER_USERNAME = 'super';
     private const string PLAIN_USERNAME = 'jane';
 
@@ -46,36 +44,24 @@ final class BackofficeIncidentOrderResourceTest extends WebTestCase
     protected function tearDown(): void
     {
         $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
-        $connection->executeStatement('DELETE FROM incident');
+        $connection->executeStatement('DELETE FROM case_study');
         $connection->executeStatement('DELETE FROM cpg_user');
         parent::tearDown();
     }
 
-    /**
-     * Le cas nominal, relu aux trois endroits qui comptent.
-     */
     public function testReorderingIsReflectedOnTheBackofficeCollectionAndBothPublicEndpoints(): void
     {
         $client = self::createClient();
         $this->registerSuperAdmin($client);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        [$first, $second] = $this->seedTwoTranslatedIncidents($client);
+        [$first, $second] = $this->seedTwoTranslatedEntries($client);
 
-        $client->request('PUT', self::ORDER_PATH, server: [
-            'CONTENT_TYPE' => 'application/json',
-            'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: self::jsonBody(['groups' => [$second, $first]]));
+        $this->putOrder($client, $csrfToken, ['groups' => [$second, $first]]);
 
         self::assertResponseStatusCodeSame(204);
 
-        // `output: false` : la réponse ne porte rien. Relu dans une variable
-        // plutôt qu'en ligne — une assertion sur l'appel lui-même rétrécirait
-        // le type de retour de getContent() pour tout le reste de la méthode.
-        $emptyBody = $client->getResponse()->getContent();
-        self::assertSame('', $emptyBody);
-
-        $client->request('GET', '/api/backoffice/incidents?locale=fr');
+        $client->request('GET', '/api/backoffice/case-studies?locale=fr');
         self::assertResponseIsSuccessful();
         $collection = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertIsArray($collection);
@@ -84,28 +70,24 @@ final class BackofficeIncidentOrderResourceTest extends WebTestCase
         self::assertSame([$second, $first], array_column($collection, 'translationGroup'));
         self::assertSame([0, 1], array_column($collection, 'position'));
 
-        $client->request('GET', '/api/incidents/fr');
+        $client->request('GET', '/api/case-studies/fr');
         self::assertResponseIsSuccessful();
-        $french = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
-        self::assertSame(['Second', 'Premier'], array_column($french, 'title'));
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame(['Second', 'Premier'], array_column($payload, 'title'));
 
-        $client->request('GET', '/api/incidents/en');
+        $client->request('GET', '/api/case-studies/en');
         self::assertResponseIsSuccessful();
-        $english = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
-        self::assertSame(['Second, in English', 'First'], array_column($english, 'title'));
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame(['Second, in English', 'First'], array_column($payload, 'title'));
     }
 
-    /**
-     * Spec 0004 D4 : une clé inconnue ne se range pas silencieusement, elle
-     * signale que la liste envoyée ne décrit plus le périmètre du serveur.
-     */
     public function testAnUnknownKeyIsRejected(): void
     {
         $client = self::createClient();
         $this->registerSuperAdmin($client);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        [$first, $second] = $this->seedTwoTranslatedIncidents($client);
+        [$first, $second] = $this->seedTwoTranslatedEntries($client);
 
         $body = $this->putOrder($client, $csrfToken, ['groups' => [$second, $first, self::UNKNOWN_KEY]]);
 
@@ -113,17 +95,13 @@ final class BackofficeIncidentOrderResourceTest extends WebTestCase
         self::assertSame('/errors/unknown-order-entry', $body['type'] ?? null);
     }
 
-    /**
-     * L'autre moitié de la règle d'ensemble exact : une entrée du périmètre
-     * absente de la liste est un refus, pas une entrée reléguée à la fin.
-     */
     public function testAMissingKeyIsRejected(): void
     {
         $client = self::createClient();
         $this->registerSuperAdmin($client);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        [$first] = $this->seedTwoTranslatedIncidents($client);
+        [$first] = $this->seedTwoTranslatedEntries($client);
 
         $body = $this->putOrder($client, $csrfToken, ['groups' => [$first]]);
 
@@ -133,8 +111,7 @@ final class BackofficeIncidentOrderResourceTest extends WebTestCase
 
     /**
      * 403 et non 401 : sur une mutation, le double-submit CSRF
-     * (CsrfCookieRequestSubscriber, priorité 20) tranche avant même que le
-     * firewall n'ait à constater l'absence de jeton.
+     * (CsrfCookieRequestSubscriber, priorité 20) tranche avant le firewall.
      */
     public function testAnonymousRequestIsForbidden(): void
     {
@@ -145,10 +122,6 @@ final class BackofficeIncidentOrderResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(403);
     }
 
-    /**
-     * ADR 0003 : le palier de base porte du contenu publiable, jamais
-     * l'administration de ce contenu.
-     */
     public function testBaseTierTokenIsForbidden(): void
     {
         $client = self::createClient();
@@ -176,7 +149,7 @@ final class BackofficeIncidentOrderResourceTest extends WebTestCase
         $this->registerSuperAdmin($client);
         $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        [$first, $second] = $this->seedTwoTranslatedIncidents($client);
+        [$first, $second] = $this->seedTwoTranslatedEntries($client);
 
         $client->request('PUT', self::ORDER_PATH, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['groups' => [$second, $first]]));
 
@@ -184,10 +157,10 @@ final class BackofficeIncidentOrderResourceTest extends WebTestCase
     }
 
     /**
-     * Les trois refus que la validation du DTO tranche avant le domaine. Le
-     * dernier — une valeur qui n'est même pas une chaîne — mérite son cas :
-     * `Assert\Uuid` lève une UnexpectedValueException (500) sur un tableau, ce
-     * que `Assert\Sequentially` évite en s'arrêtant au `Type`.
+     * Les refus que la validation du DTO tranche avant le domaine. Le dernier
+     * — une valeur qui n'est même pas une chaîne — mérite son cas : `Assert\Uuid`
+     * lève une UnexpectedValueException (500) sur un tableau, ce que
+     * `Assert\Sequentially` évite en s'arrêtant au `Type`.
      *
      * @param array<string, mixed> $payload
      */
@@ -198,7 +171,7 @@ final class BackofficeIncidentOrderResourceTest extends WebTestCase
         $this->registerSuperAdmin($client);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $this->seedTwoTranslatedIncidents($client);
+        $this->seedTwoTranslatedEntries($client);
 
         $this->putOrder($client, $csrfToken, $payload);
 
@@ -218,19 +191,18 @@ final class BackofficeIncidentOrderResourceTest extends WebTestCase
     }
 
     /**
-     * Deux contenus, chacun en FR et en EN : c'est la seule forme qui permette
-     * de vérifier que l'ordre suit le contenu et non la ligne.
+     * Deux études de cas, chacune en FR et en EN.
      *
-     * @return array{string, string} les groupes, dans leur ordre initial
+     * @return array{string, string} les clés d'ordre, dans leur ordre initial
      */
-    private function seedTwoTranslatedIncidents(KernelBrowser $client): array
+    private function seedTwoTranslatedEntries(KernelBrowser $client): array
     {
-        $administrator = $client->getContainer()->get(IncidentAdministratorInterface::class);
+        $administrator = $client->getContainer()->get(CaseStudyAdministratorInterface::class);
 
-        $first = $administrator->create(Locale::FR, 'Premier', 'v0.1.0', new \DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv');
-        $second = $administrator->create(Locale::FR, 'Second', 'v0.2.0', new \DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv');
-        $administrator->create(Locale::EN, 'First', 'v0.1.0', new \DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv', $first->getTranslationGroup());
-        $administrator->create(Locale::EN, 'Second, in English', 'v0.2.0', new \DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv', $second->getTranslationGroup());
+        $first = $administrator->create(Locale::FR, 'Premier', 'problème', 'solution', 'compromis', 'résultat');
+        $second = $administrator->create(Locale::FR, 'Second', 'problème', 'solution', 'compromis', 'résultat');
+        $administrator->create(Locale::EN, 'First', 'problem', 'solution', 'tradeoffs', 'result', $first->getTranslationGroup());
+        $administrator->create(Locale::EN, 'Second, in English', 'problem', 'solution', 'tradeoffs', 'result', $second->getTranslationGroup());
 
         self::assertSame(0, $first->getPosition());
         self::assertSame(1, $second->getPosition());
