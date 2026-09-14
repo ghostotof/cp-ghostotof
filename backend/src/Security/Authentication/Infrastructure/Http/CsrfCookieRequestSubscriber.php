@@ -68,7 +68,9 @@ final readonly class CsrfCookieRequestSubscriber
      */
     private const array EXCLUDED_PATH_PREFIXES = ['/api/account/password-setup/'];
 
-    private const string COOKIE_NAME = 'XSRF-TOKEN';
+    // Le nom vient de la fabrique qui pose le cookie (issue #87) : lu et écrit
+    // sous une seule constante.
+    private const string COOKIE_NAME = AuthCookieFactory::XSRF_TOKEN;
     private const string HEADER_NAME = 'X-XSRF-TOKEN';
 
     public function __construct(private CsrfCookieTokenSigner $csrfCookieTokenSigner)

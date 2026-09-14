@@ -243,6 +243,19 @@ mid-migration.
     `login_check` response body — includes `roles` alongside `username`, needed by the frontend to gate `/admin`
     without waiting for a full `checkAuth()` round-trip) and `CookieLogoutListener.php` (expires both cookies on
     `/api/logout`).
+  - **`Infrastructure/Http/AuthCookieFactory.php` is the only place that builds a `BEARER` or `XSRF-TOKEN`
+    cookie** (issue #87): names (`AuthCookieFactory::BEARER` / `::XSRF_TOKEN`, also what
+    `CsrfCookieRequestSubscriber` reads), `Path=/`, no `Domain`, `SameSite=Lax`, `HttpOnly` on `BEARER`
+    only, `Secure` iff `prod`. `bearer()` / `xsrf()` take an optional expiry (session cookie without),
+    `expired()` mirrors the issued attributes with a past date — a cleared cookie whose attributes differ
+    from the set one is *not* removed by the browser, which is the drift the factory exists to prevent. The
+    three sites (`LoginSuccessSubscriber`, `BaseAccessController`, `CookieLogoutListener`) go through it;
+    the one exception is the login `BEARER`, still set by Lexik from `lexik_jwt_authentication.yaml`
+    (`set_cookies` + `when@prod`), and `tests/Security/Authentication/AuthCookieAttributesTest.php` pins
+    that config to the factory by comparing the real `Set-Cookie` of login, base-access and logout per
+    name. Any new auth cookie goes through the factory, never `Cookie::create()` or `clearCookie()`
+    inline. `__Host-` prefixing is a separate, preprod-tested step (it renames what Lexik and the frontend
+    read by name).
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
     listener at priority 20 (must run *above* the Security firewall's priority 8 — see the class docblock).
   - `Infrastructure/Http/LoginCsrfRequestListener.php` — **login-CSRF guard** (issue #76) on the two anonymous
