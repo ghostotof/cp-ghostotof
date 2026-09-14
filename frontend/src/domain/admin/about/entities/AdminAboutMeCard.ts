@@ -8,7 +8,7 @@ export type AdminAboutMeCardCategory = 'technical' | 'personal' | 'hobby'
  * carte dans technicalCards/personalCards/hobbiesCards côté affichage public.
  */
 export interface AdminAboutMeCard {
-  readonly id: number
+  readonly id: string
   readonly locale: Locale
   readonly category: AdminAboutMeCardCategory
   readonly title: string

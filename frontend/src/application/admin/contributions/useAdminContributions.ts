@@ -16,8 +16,8 @@ export interface UseAdminContributionsResult {
   errorMessage: Ref<AdminContributionError | null>
   load: () => Promise<void>
   create: (input: AdminContributionInput) => Promise<void>
-  update: (id: number, input: AdminContributionInput) => Promise<void>
-  remove: (id: number) => Promise<void>
+  update: (id: string, input: AdminContributionInput) => Promise<void>
+  remove: (id: string) => Promise<void>
 }
 
 /**
@@ -75,9 +75,9 @@ export function useAdminContributions(): UseAdminContributionsResult {
 
   const create = (input: AdminContributionInput): Promise<void> => runMutation(() => repository.create(input))
 
-  const update = (id: number, input: AdminContributionInput): Promise<void> => runMutation(() => repository.update(id, input))
+  const update = (id: string, input: AdminContributionInput): Promise<void> => runMutation(() => repository.update(id, input))
 
-  const remove = (id: number): Promise<void> => runMutation(() => repository.remove(id))
+  const remove = (id: string): Promise<void> => runMutation(() => repository.remove(id))
 
   void load()
 

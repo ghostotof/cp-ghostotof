@@ -8,7 +8,7 @@ import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 
 interface BackofficeQualityPrincipleApiResponse {
-  id: number
+  id: string
   locale: string
   title: string
   description: string
@@ -47,13 +47,13 @@ export class HttpAdminQualityPrincipleRepository implements AdminQualityPrincipl
     return this.toEntity((await response.json()) as BackofficeQualityPrincipleApiResponse)
   }
 
-  async update(id: number, input: AdminQualityPrincipleInput): Promise<AdminQualityPrinciple> {
+  async update(id: string, input: AdminQualityPrincipleInput): Promise<AdminQualityPrinciple> {
     const response = await this.mutate('PUT', `${BASE_PATH}/${id}`, input)
 
     return this.toEntity((await response.json()) as BackofficeQualityPrincipleApiResponse)
   }
 
-  async remove(id: number): Promise<void> {
+  async remove(id: string): Promise<void> {
     await this.mutate('DELETE', `${BASE_PATH}/${id}`)
   }
 

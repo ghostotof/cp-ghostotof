@@ -15,10 +15,10 @@ export interface UseAdminUsersResult {
   load: () => Promise<void>
   /** Retourne le compte créé, ou `null` si l'invitation a échoué (errorMessage renseigné). */
   invite: (email: string, locale: Locale) => Promise<AdminUser | null>
-  setSuperAdmin: (id: number, grant: boolean) => Promise<void>
-  resendInvitation: (id: number, locale: Locale) => Promise<void>
-  remove: (id: number) => Promise<void>
-  changePassword: (id: number, newPassword: string) => Promise<void>
+  setSuperAdmin: (id: string, grant: boolean) => Promise<void>
+  resendInvitation: (id: string, locale: Locale) => Promise<void>
+  remove: (id: string) => Promise<void>
+  changePassword: (id: string, newPassword: string) => Promise<void>
 }
 
 /**
@@ -86,15 +86,15 @@ export function useAdminUsers(): UseAdminUsersResult {
     }
   }
 
-  const setSuperAdmin = (id: number, grant: boolean): Promise<void> =>
+  const setSuperAdmin = (id: string, grant: boolean): Promise<void> =>
     runAction(() => repository.setSuperAdmin(id, grant), true)
 
-  const resendInvitation = (id: number, locale: Locale): Promise<void> =>
+  const resendInvitation = (id: string, locale: Locale): Promise<void> =>
     runAction(() => repository.resendInvitation(id, locale), false)
 
-  const remove = (id: number): Promise<void> => runAction(() => repository.remove(id), true)
+  const remove = (id: string): Promise<void> => runAction(() => repository.remove(id), true)
 
-  const changePassword = (id: number, newPassword: string): Promise<void> =>
+  const changePassword = (id: string, newPassword: string): Promise<void> =>
     runAction(() => repository.changePassword(id, newPassword), false)
 
   void load()

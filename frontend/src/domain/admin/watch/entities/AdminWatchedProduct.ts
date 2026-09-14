@@ -5,7 +5,7 @@
  * source de version, nécessaires au formulaire d'édition.
  */
 export interface AdminWatchedProduct {
-  readonly id: number
+  readonly id: string
   /** Identifiant du produit chez endoflife.date. Immuable après création. */
   readonly slug: string
   readonly label: string

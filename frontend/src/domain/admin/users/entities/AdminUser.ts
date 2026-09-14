@@ -6,7 +6,7 @@
  * `email` n'est renseigné que pour les comptes créés par invitation.
  */
 export interface AdminUser {
-  readonly id: number
+  readonly id: string
   readonly username: string
   readonly email: string | null
   readonly roles: readonly string[]

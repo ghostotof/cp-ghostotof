@@ -18,12 +18,12 @@ export interface AdminUserRepository {
   invite(email: string, locale: Locale): Promise<AdminUser>
 
   /** Accorde (`grant = true`) ou retire le rôle ROLE_SUPER. */
-  setSuperAdmin(id: number, grant: boolean): Promise<void>
+  setSuperAdmin(id: string, grant: boolean): Promise<void>
 
   /** Régénère le jeton et renvoie l'e-mail d'invitation (comptes en attente uniquement). */
-  resendInvitation(id: number, locale: Locale): Promise<void>
+  resendInvitation(id: string, locale: Locale): Promise<void>
 
-  remove(id: number): Promise<void>
+  remove(id: string): Promise<void>
 
-  changePassword(id: number, newPassword: string): Promise<void>
+  changePassword(id: string, newPassword: string): Promise<void>
 }

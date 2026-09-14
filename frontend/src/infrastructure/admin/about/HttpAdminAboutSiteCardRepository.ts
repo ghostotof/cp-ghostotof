@@ -8,7 +8,7 @@ import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 
 interface BackofficeAboutSiteCardApiResponse {
-  id: number
+  id: string
   locale: string
   title: string
   description: string
@@ -47,13 +47,13 @@ export class HttpAdminAboutSiteCardRepository implements AdminAboutSiteCardRepos
     return this.toEntity((await response.json()) as BackofficeAboutSiteCardApiResponse)
   }
 
-  async update(id: number, input: AdminAboutSiteCardInput): Promise<AdminAboutSiteCard> {
+  async update(id: string, input: AdminAboutSiteCardInput): Promise<AdminAboutSiteCard> {
     const response = await this.mutate('PUT', `${BASE_PATH}/${id}`, input)
 
     return this.toEntity((await response.json()) as BackofficeAboutSiteCardApiResponse)
   }
 
-  async remove(id: number): Promise<void> {
+  async remove(id: string): Promise<void> {
     await this.mutate('DELETE', `${BASE_PATH}/${id}`)
   }
 

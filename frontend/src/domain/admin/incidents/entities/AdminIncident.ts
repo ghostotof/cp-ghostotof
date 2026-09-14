@@ -1,6 +1,6 @@
 /** Forme à plat éditable d'un incident, distincte du contrat public (id, locale, position en plus). */
 export interface AdminIncident {
-  readonly id: number
+  readonly id: string
   readonly locale: string
   readonly title: string
   readonly version: string

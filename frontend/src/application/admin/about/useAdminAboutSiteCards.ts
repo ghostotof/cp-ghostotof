@@ -17,8 +17,8 @@ export interface UseAdminAboutSiteCardsResult {
   errorMessage: Ref<AdminAboutError | null>
   load: (locale: Locale) => Promise<void>
   create: (input: AdminAboutSiteCardInput) => Promise<void>
-  update: (id: number, input: AdminAboutSiteCardInput) => Promise<void>
-  remove: (id: number) => Promise<void>
+  update: (id: string, input: AdminAboutSiteCardInput) => Promise<void>
+  remove: (id: string) => Promise<void>
 }
 
 /**
@@ -73,9 +73,9 @@ export function useAdminAboutSiteCards(): UseAdminAboutSiteCardsResult {
 
   const create = (input: AdminAboutSiteCardInput): Promise<void> => runMutation(() => repository.create(input))
 
-  const update = (id: number, input: AdminAboutSiteCardInput): Promise<void> => runMutation(() => repository.update(id, input))
+  const update = (id: string, input: AdminAboutSiteCardInput): Promise<void> => runMutation(() => repository.update(id, input))
 
-  const remove = (id: number): Promise<void> => runMutation(() => repository.remove(id))
+  const remove = (id: string): Promise<void> => runMutation(() => repository.remove(id))
 
   return { cards, isLoading, hasError, errorMessage, load, create, update, remove }
 }

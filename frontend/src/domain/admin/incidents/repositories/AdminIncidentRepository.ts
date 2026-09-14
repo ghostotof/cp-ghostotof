@@ -21,7 +21,7 @@ export interface AdminIncidentRepository {
 
   create(input: AdminIncidentInput): Promise<AdminIncident>
 
-  update(id: number, input: AdminIncidentInput): Promise<AdminIncident>
+  update(id: string, input: AdminIncidentInput): Promise<AdminIncident>
 
-  remove(id: number): Promise<void>
+  remove(id: string): Promise<void>
 }

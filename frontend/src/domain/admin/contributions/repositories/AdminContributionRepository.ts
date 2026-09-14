@@ -23,7 +23,7 @@ export interface AdminContributionRepository {
 
   create(input: AdminContributionInput): Promise<AdminContribution>
 
-  update(id: number, input: AdminContributionInput): Promise<AdminContribution>
+  update(id: string, input: AdminContributionInput): Promise<AdminContribution>
 
-  remove(id: number): Promise<void>
+  remove(id: string): Promise<void>
 }

@@ -21,7 +21,7 @@ export interface AdminQualityPrincipleRepository {
 
   create(input: AdminQualityPrincipleInput): Promise<AdminQualityPrinciple>
 
-  update(id: number, input: AdminQualityPrincipleInput): Promise<AdminQualityPrinciple>
+  update(id: string, input: AdminQualityPrincipleInput): Promise<AdminQualityPrinciple>
 
-  remove(id: number): Promise<void>
+  remove(id: string): Promise<void>
 }
