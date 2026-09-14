@@ -8,6 +8,7 @@ use App\Portfolio\Quality\Domain\Entity\QualityTrait as QualityTraitEntity;
 use App\Portfolio\Quality\Domain\Exception\QualityTraitNotFoundException;
 use App\Portfolio\Quality\Domain\Repository\QualityTraitRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 final readonly class QualityTraitAdministrator implements QualityTraitAdministratorInterface
 {
@@ -25,7 +26,7 @@ final readonly class QualityTraitAdministrator implements QualityTraitAdministra
         return $trait;
     }
 
-    public function update(int $id, string $label, int $position): QualityTraitEntity
+    public function update(Uuid $id, string $label, int $position): QualityTraitEntity
     {
         $trait = $this->qualityTraitRepository->findOneById($id);
 
@@ -39,7 +40,7 @@ final readonly class QualityTraitAdministrator implements QualityTraitAdministra
         return $trait;
     }
 
-    public function delete(int $id): void
+    public function delete(Uuid $id): void
     {
         $trait = $this->qualityTraitRepository->findOneById($id);
 

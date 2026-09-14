@@ -43,7 +43,7 @@ final readonly class BackofficeQualityPrincipleProvider implements ProviderInter
             return array_map(BackofficeQualityPrincipleResource::fromEntity(...), $principles);
         }
 
-        $principle = $this->qualityPrincipleRepository->findOneById($this->uriVariableInt($uriVariables, 'id'));
+        $principle = $this->qualityPrincipleRepository->findOneById($this->uriVariableUuid($uriVariables));
 
         return null !== $principle ? BackofficeQualityPrincipleResource::fromEntity($principle) : null;
     }

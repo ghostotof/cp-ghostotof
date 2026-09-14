@@ -6,6 +6,7 @@ namespace App\Portfolio\Quality\Domain\Repository;
 
 use App\Portfolio\Quality\Domain\Entity\QualityTrait as QualityTraitEntity;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Abstraction (DIP) dont dépend la couche Application
@@ -15,7 +16,7 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
  */
 interface QualityTraitRepositoryInterface
 {
-    public function findOneById(int $id): ?QualityTraitEntity;
+    public function findOneById(Uuid $id): ?QualityTraitEntity;
 
     /**
      * @return list<QualityTraitEntity> triées par position ASC

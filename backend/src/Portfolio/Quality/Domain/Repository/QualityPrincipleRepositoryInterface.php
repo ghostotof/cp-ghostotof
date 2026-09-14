@@ -6,6 +6,7 @@ namespace App\Portfolio\Quality\Domain\Repository;
 
 use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Abstraction (DIP) dont dépend la couche Application
@@ -15,7 +16,7 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
  */
 interface QualityPrincipleRepositoryInterface
 {
-    public function findOneById(int $id): ?QualityPrinciple;
+    public function findOneById(Uuid $id): ?QualityPrinciple;
 
     /**
      * @return list<QualityPrinciple> triées par position ASC
