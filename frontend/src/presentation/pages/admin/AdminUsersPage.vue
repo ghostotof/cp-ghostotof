@@ -17,7 +17,7 @@ const inviteEmail = ref('')
 const inviteLocale = ref('fr')
 const isInviting = ref(false)
 const invitedUsername = ref<string | null>(null)
-const resendSuccessForUserId = ref<number | null>(null)
+const resendSuccessForUserId = ref<string | null>(null)
 
 const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: LOCALE_NATIVE_NAMES[locale] }))
 
@@ -48,10 +48,10 @@ async function handleInvite(): Promise<void> {
 // affichées côte à côte : trop de boutons, colonne large et illisible. Elles
 // sont regroupées derrière un bouton « ⋯ » qui ouvre un menu ; un seul menu
 // ouvert à la fois (openMenuForUserId).
-const openMenuForUserId = ref<number | null>(null)
+const openMenuForUserId = ref<string | null>(null)
 const actionsColumnRef = ref<HTMLElement | null>(null)
 
-function toggleMenu(userId: number): void {
+function toggleMenu(userId: string): void {
   openMenuForUserId.value = openMenuForUserId.value === userId ? null : userId
 }
 
@@ -118,7 +118,7 @@ async function handleResend(user: AdminUser): Promise<void> {
 }
 
 // --- Changement de mot de passe ---
-const changingPasswordForUserId = ref<number | null>(null)
+const changingPasswordForUserId = ref<string | null>(null)
 const newPassword = ref('')
 const isSubmittingPassword = ref(false)
 const passwordChanged = ref(false)
