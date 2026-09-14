@@ -559,6 +559,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
             :form-locale="principleForm.locale"
             :is-translating="isTranslatingPrinciple"
             :disabled="!hasPrincipleProse || isSubmittingPrinciple || isAnyOrderDirty"
+            :aria-describedby="lockedHintId"
             @translate="handleTranslatePrinciple"
           />
         </div>
@@ -771,6 +772,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
             :form-locale="traitForm.locale"
             :is-translating="isTranslatingTrait"
             :disabled="!hasTraitProse || isSubmittingTrait || isAnyOrderDirty"
+            :aria-describedby="lockedHintId"
             @translate="handleTranslateTrait"
           />
         </div>

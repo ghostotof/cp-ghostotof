@@ -379,6 +379,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
             :form-locale="form.locale"
             :is-translating="isTranslating"
             :disabled="!hasProseToTranslate || isSubmitting || isOrderDirty"
+            :aria-describedby="lockedHintId"
             @translate="handleTranslate"
           />
         </div>

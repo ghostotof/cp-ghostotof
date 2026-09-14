@@ -318,6 +318,7 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
           :form-locale="form.locale"
           :is-translating="isTranslating"
           :disabled="!hasProseToTranslate || isSubmitting || isLocked"
+          :aria-describedby="lockedHintId"
           @translate="handleTranslate"
         />
       </div>
