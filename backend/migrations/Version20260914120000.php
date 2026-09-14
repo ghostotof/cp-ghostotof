@@ -34,6 +34,11 @@ final class Version20260914120000 extends AbstractMigration
 
     public function up(Schema $schema): void
     {
+        $this->abortIf(
+            version_compare($this->connection->getServerVersion(), '18', '<'),
+            'Spec 0003 D5 : uuidv7() exige PostgreSQL 18.',
+        );
+
         // 1. cpg_user : nouvelle colonne, remplie en v7 monotone dans l'ordre des anciens ids
         $this->addSql('ALTER TABLE cpg_user ADD id_uuid UUID');
         $this->addSql(<<<'SQL'

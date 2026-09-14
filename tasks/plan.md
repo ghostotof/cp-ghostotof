@@ -65,11 +65,11 @@ Reprises des specs (§2), rappelées ici parce qu'elles décident de l'ordre :
 - [x] `debug:router` : `requirements` sur chaque item, aucune route synthétisée
 
 ### Frontend
-- [ ] Task 7 — `id: string` sur entités, repositories, composables, pages, 26 specs — [#126](https://github.com/ghostotof/cp-ghostotof/issues/126)
+- [x] Task 7 — `id: string` sur entités, repositories, composables, pages, 26 specs — [#126](https://github.com/ghostotof/cp-ghostotof/issues/126)
 
 ### Checkpoint A2 — parcours complet
-- [ ] `make front-test`, `make front-lint`, `make front-build` verts
-- [ ] Dans un vrai navigateur, stack dev migrée : lister / éditer / supprimer sur une ressource admin, URLs en UUID
+- [x] `make front-test`, `make front-lint`, `make front-build` verts
+- [x] Dans un vrai navigateur, stack dev migrée : lister / éditer / supprimer sur une ressource admin, URLs en UUID — reste à faire par Christophe — fait le 2026-09-14 (incidents : liste, création, édition PUT, suppression DELETE, URLs en UUID)
 - [ ] Revue avec Christophe avant la release : la migration est irréversible
 
 ### Documentation et release
