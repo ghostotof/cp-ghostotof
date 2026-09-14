@@ -18,6 +18,7 @@ export interface UseAdminIncidentsResult {
   create: (input: AdminIncidentInput) => Promise<void>
   update: (id: string, input: AdminIncidentInput) => Promise<void>
   remove: (id: string) => Promise<void>
+  reorder: (keys: readonly string[]) => Promise<void>
 }
 
 /**
@@ -77,7 +78,16 @@ export function useAdminIncidents(): UseAdminIncidentsResult {
 
   const remove = (id: string): Promise<void> => runMutation(() => repository.remove(id))
 
+  /**
+   * Volontairement hors de `runMutation` : ni rechargement ni absorption de
+   * l'erreur ici. `useOrderDraft` recharge lui-même après un enregistrement
+   * réussi, et il a besoin de recevoir l'`AdminOrderError` telle quelle pour
+   * distinguer un ordre obsolète (D4) d'une panne — la convertir en
+   * `AdminIncidentError` lui retirerait cette information.
+   */
+  const reorder = (keys: readonly string[]): Promise<void> => repository.reorder(keys)
+
   void load()
 
-  return { incidents, isLoading, hasError, errorMessage, load, create, update, remove }
+  return { incidents, isLoading, hasError, errorMessage, load, create, update, remove, reorder }
 }
