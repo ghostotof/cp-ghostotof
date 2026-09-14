@@ -46,15 +46,22 @@ trait ResolvesUriVariables
     /**
      * Résout un segment `{id}` en Uuid. Le segment est déjà borné par
      * `requirements: ['id' => Requirement::UUID]` sur l'opération (un segment
-     * malformé est un 404 du routeur) ; l'assertion est une garde de second
-     * niveau.
+     * malformé est un 404 du routeur) ; la garde ci-dessous est un second
+     * niveau, explicite plutôt qu'un `assert()` : en production
+     * (`zend.assertions=-1`) un `assert()` est compilé hors binaire et cette
+     * branche deviendrait silencieuse.
      *
      * @param array<string, mixed> $uriVariables
+     *
+     * @throws \InvalidArgumentException si le segment est absent ou n'est pas un UUID valide
      */
     private function uriVariableUuid(array $uriVariables, string $key = 'id'): Uuid
     {
         $value = $uriVariables[$key] ?? null;
-        \assert(\is_string($value) && Uuid::isValid($value));
+
+        if (!\is_string($value) || !Uuid::isValid($value)) {
+            throw new \InvalidArgumentException(sprintf('La variable d\'URI "%s" doit être un UUID valide.', $key));
+        }
 
         return Uuid::fromString($value);
     }
