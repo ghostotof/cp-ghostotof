@@ -262,3 +262,12 @@ body {
   min-height: 2.5rem;
   padding-block: 0.25rem;
 }
+
+/* Le texte de la ligne (titre, « Traduction manquante ») prend ce qui reste
+   après le badge et se replie sur place : avec une base `auto`, un titre plus
+   large que l'espace restant passerait en entier sous le badge, ce qui double
+   la hauteur de la ligne et décale ses boutons dans la colonne d'actions. */
+.admin-locale-line__text {
+  flex: 1 1 0;
+  min-width: 0;
+}

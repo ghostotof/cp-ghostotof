@@ -516,10 +516,10 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                     >{{ line.locale.toUpperCase() }}</span>
                     <span class="visually-hidden">{{ line.nativeName }}</span>
                     <template v-if="line.entry">
-                      <span class="text-white">{{ line.entry.title }}</span>
+                      <span class="text-white admin-locale-line__text">{{ line.entry.title }}</span>
                     </template>
                     <template v-else>
-                      <span class="text-body-secondary">{{ t('admin.order.missingTranslation') }}</span>
+                      <span class="text-body-secondary admin-locale-line__text">{{ t('admin.order.missingTranslation') }}</span>
                     </template>
                   </div>
                 </td>

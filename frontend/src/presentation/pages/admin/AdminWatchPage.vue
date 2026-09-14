@@ -352,7 +352,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                 </th>
                 <th
                   scope="col"
-                  class="col-md-2"
+                  class="col-md-3"
                 >
                   {{ t('admin.watch.versionSourceLabel') }}
                 </th>
