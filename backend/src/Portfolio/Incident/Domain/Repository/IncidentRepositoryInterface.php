@@ -26,6 +26,15 @@ interface IncidentRepositoryInterface
      */
     public function findAll(): array;
 
+    /**
+     * Spec 0004 D1 : les versions d'un même contenu, toutes langues
+     * confondues. L'index unique (translation_group, locale) garantit au plus
+     * une entrée par langue, donc au plus `count(Locale::cases())` résultats.
+     *
+     * @return list<Incident> triés par locale ASC
+     */
+    public function findByTranslationGroup(Uuid $translationGroup): array;
+
     public function save(Incident $incident): void;
 
     public function remove(Incident $incident): void;

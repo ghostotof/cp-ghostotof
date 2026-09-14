@@ -27,6 +27,15 @@ interface ContributionRepositoryInterface
      */
     public function findAll(): array;
 
+    /**
+     * Spec 0004 D1 : les versions d'un même contenu, toutes langues
+     * confondues. L'index unique (translation_group, locale) garantit au plus
+     * une entrée par langue, donc au plus `count(Locale::cases())` résultats.
+     *
+     * @return list<Contribution> triées par locale ASC
+     */
+    public function findByTranslationGroup(Uuid $translationGroup): array;
+
     public function save(Contribution $contribution): void;
 
     public function remove(Contribution $contribution): void;

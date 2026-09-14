@@ -17,9 +17,15 @@ final readonly class QualityPrincipleAdministrator implements QualityPrincipleAd
     ) {
     }
 
-    public function create(Locale $locale, string $title, string $description, string $iconKey, int $position): QualityPrinciple
-    {
-        $principle = new QualityPrinciple($locale, $title, $description, $iconKey, $position);
+    public function create(
+        Locale $locale,
+        string $title,
+        string $description,
+        string $iconKey,
+        int $position,
+        ?Uuid $translationGroup = null,
+    ): QualityPrinciple {
+        $principle = new QualityPrinciple($locale, $title, $description, $iconKey, $position, $translationGroup);
 
         $this->qualityPrincipleRepository->save($principle);
 

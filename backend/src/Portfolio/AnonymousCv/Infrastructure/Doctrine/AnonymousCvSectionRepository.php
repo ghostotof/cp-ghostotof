@@ -9,6 +9,7 @@ use App\Portfolio\AnonymousCv\Domain\Repository\AnonymousCvSectionRepositoryInte
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -43,6 +44,16 @@ class AnonymousCvSectionRepository extends ServiceEntityRepository implements An
             ->orderBy('section.locale', 'ASC')
             ->addOrderBy('section.position', 'ASC')
             ->addOrderBy('section.id', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function findByTranslationGroup(Uuid $translationGroup): array
+    {
+        return $this->createQueryBuilder('section')
+            ->andWhere('section.translationGroup = :translationGroup')
+            ->setParameter('translationGroup', $translationGroup, UuidType::NAME)
+            ->orderBy('section.locale', 'ASC')
             ->getQuery()
             ->getResult();
     }

@@ -9,6 +9,7 @@ use App\Portfolio\Quality\Domain\Repository\QualityPrincipleRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -43,6 +44,16 @@ class QualityPrincipleRepository extends ServiceEntityRepository implements Qual
             ->orderBy('principle.locale', 'ASC')
             ->addOrderBy('principle.position', 'ASC')
             ->addOrderBy('principle.id', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function findByTranslationGroup(Uuid $translationGroup): array
+    {
+        return $this->createQueryBuilder('principle')
+            ->andWhere('principle.translationGroup = :translationGroup')
+            ->setParameter('translationGroup', $translationGroup, UuidType::NAME)
+            ->orderBy('principle.locale', 'ASC')
             ->getQuery()
             ->getResult();
     }

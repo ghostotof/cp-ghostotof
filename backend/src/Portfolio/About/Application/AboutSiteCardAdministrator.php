@@ -17,9 +17,15 @@ final readonly class AboutSiteCardAdministrator implements AboutSiteCardAdminist
     ) {
     }
 
-    public function create(Locale $locale, string $title, string $description, ?string $iconKey, int $position): AboutSiteCard
-    {
-        $card = new AboutSiteCard($locale, $title, $description, $iconKey, $position);
+    public function create(
+        Locale $locale,
+        string $title,
+        string $description,
+        ?string $iconKey,
+        int $position,
+        ?Uuid $translationGroup = null,
+    ): AboutSiteCard {
+        $card = new AboutSiteCard($locale, $title, $description, $iconKey, $position, $translationGroup);
 
         $this->aboutSiteCardRepository->save($card);
 

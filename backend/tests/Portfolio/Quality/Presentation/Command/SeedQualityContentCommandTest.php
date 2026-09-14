@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Portfolio\Quality\Presentation\Command;
 
+use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
+use App\Portfolio\Quality\Domain\Entity\QualityTrait as QualityTraitEntity;
 use App\Portfolio\Quality\Domain\Repository\QualityPrincipleRepositoryInterface;
 use App\Portfolio\Quality\Domain\Repository\QualityTraitRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -93,6 +95,68 @@ final class SeedQualityContentCommandTest extends KernelTestCase
         $this->commandTester()->execute(['--force' => true]);
 
         self::assertCount(3, $principleRepository->findByLocale(Locale::FR));
+    }
+
+    /**
+     * Spec 0004 D1 : ce que le peuplement doit garantir et que rien d'autre ne
+     * dit — l'entrée FR et l'entrée EN de même index sont **le même contenu**,
+     * elles portent donc le même groupe de traduction. C'est ce lien que la
+     * migration a dû déduire sur l'existant ; sur une base neuve, il naît ici.
+     *
+     * La seconde assertion garde l'autre bord : autant de groupes que
+     * d'entrées par locale. Un partage trop large — un seul groupe pour toute
+     * la table — satisferait la première et serait tout aussi faux.
+     */
+    public function testFrenchAndEnglishEntriesOfTheSameIndexShareATranslationGroup(): void
+    {
+        $this->commandTester()->execute([]);
+
+        $repositories = [
+            'principes' => self::getContainer()->get(QualityPrincipleRepositoryInterface::class),
+            'traits' => self::getContainer()->get(QualityTraitRepositoryInterface::class),
+        ];
+
+        foreach ($repositories as $label => $repository) {
+            $french = $repository->findByLocale(Locale::FR);
+            $english = $repository->findByLocale(Locale::EN);
+
+            self::assertNotEmpty($french);
+            self::assertSameSize($french, $english);
+
+            $groups = [];
+
+            foreach ($french as $index => $entry) {
+                self::assertTrue(
+                    $entry->getTranslationGroup()->equals($english[$index]->getTranslationGroup()),
+                    sprintf('[%s] Les entrées de position %d ne partagent pas leur groupe.', $label, $index),
+                );
+
+                $groups[] = $entry->getTranslationGroup()->toRfc4122();
+            }
+
+            self::assertSameSize($groups, array_unique($groups));
+        }
+    }
+
+    /**
+     * Les deux périmètres de cette commande numérotent chacun depuis zéro :
+     * sans le `$scope` de TranslationGroupIndex, le principe 0 et le trait 0
+     * partageraient un groupe et se prétendraient traductions l'un de l'autre.
+     */
+    public function testPrinciplesAndTraitsNeverShareAGroup(): void
+    {
+        $this->commandTester()->execute([]);
+
+        $principleGroups = array_map(
+            static fn (QualityPrinciple $principle): string => $principle->getTranslationGroup()->toRfc4122(),
+            self::getContainer()->get(QualityPrincipleRepositoryInterface::class)->findByLocale(Locale::FR),
+        );
+        $traitGroups = array_map(
+            static fn (QualityTraitEntity $trait): string => $trait->getTranslationGroup()->toRfc4122(),
+            self::getContainer()->get(QualityTraitRepositoryInterface::class)->findByLocale(Locale::FR),
+        );
+
+        self::assertSame([], array_intersect($principleGroups, $traitGroups));
     }
 
     private function commandTester(): CommandTester

@@ -27,8 +27,9 @@ final readonly class IncidentAdministrator implements IncidentAdministratorInter
         string $resolution,
         string $invariant,
         int $position,
+        ?Uuid $translationGroup = null,
     ): Incident {
-        $incident = new Incident($locale, $title, $version, $occurredAt, $impact, $rootCause, $resolution, $invariant, $position);
+        $incident = new Incident($locale, $title, $version, $occurredAt, $impact, $rootCause, $resolution, $invariant, $position, $translationGroup);
 
         $this->incidentRepository->save($incident);
 

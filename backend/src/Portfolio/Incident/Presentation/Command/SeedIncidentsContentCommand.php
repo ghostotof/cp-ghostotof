@@ -8,6 +8,7 @@ use App\Portfolio\Incident\Application\IncidentAdministratorInterface;
 use App\Portfolio\Incident\Domain\Repository\IncidentRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Presentation\Command\GuardsExistingContent;
+use App\Shared\Presentation\Command\TranslationGroupIndex;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -55,6 +56,8 @@ final class SeedIncidentsContentCommand extends Command
             return Command::SUCCESS;
         }
 
+        $translationGroups = new TranslationGroupIndex();
+
         foreach ($this->content() as $localeValue => $incidents) {
             $locale = Locale::from($localeValue);
 
@@ -73,6 +76,7 @@ final class SeedIncidentsContentCommand extends Command
                     $incident['resolution'],
                     $incident['invariant'],
                     $position,
+                    $translationGroups->forIndex('incident', $position),
                 );
             }
 

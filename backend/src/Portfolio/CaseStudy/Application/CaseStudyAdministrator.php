@@ -25,8 +25,9 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
         string $tradeoffs,
         string $measuredResult,
         int $position,
+        ?Uuid $translationGroup = null,
     ): CaseStudy {
-        $caseStudy = new CaseStudy($locale, $title, $problem, $solution, $tradeoffs, $measuredResult, $position);
+        $caseStudy = new CaseStudy($locale, $title, $problem, $solution, $tradeoffs, $measuredResult, $position, $translationGroup);
 
         $this->caseStudyRepository->save($caseStudy);
 

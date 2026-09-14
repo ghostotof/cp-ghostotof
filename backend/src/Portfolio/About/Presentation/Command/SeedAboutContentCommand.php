@@ -14,6 +14,7 @@ use App\Portfolio\About\Domain\Repository\AboutSiteCardRepositoryInterface;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Presentation\Command\GuardsExistingContent;
+use App\Shared\Presentation\Command\TranslationGroupIndex;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -60,14 +61,16 @@ final class SeedAboutContentCommand extends Command
             return Command::SUCCESS;
         }
 
+        $translationGroups = new TranslationGroupIndex();
+
         foreach ($this->content() as $localeValue => $content) {
             $locale = Locale::from($localeValue);
 
             $this->upsertSettings($locale, $content);
-            $this->reseedSiteCards($locale, $content['site']['cards']);
-            $this->reseedMeCards($locale, AboutMeCardCategory::TECHNICAL, $content['me']['technicalCards']);
-            $this->reseedMeCards($locale, AboutMeCardCategory::PERSONAL, $content['me']['personalCards']);
-            $this->reseedMeCards($locale, AboutMeCardCategory::HOBBY, $content['me']['hobbiesCards']);
+            $this->reseedSiteCards($locale, $content['site']['cards'], $translationGroups);
+            $this->reseedMeCards($locale, AboutMeCardCategory::TECHNICAL, $content['me']['technicalCards'], $translationGroups);
+            $this->reseedMeCards($locale, AboutMeCardCategory::PERSONAL, $content['me']['personalCards'], $translationGroups);
+            $this->reseedMeCards($locale, AboutMeCardCategory::HOBBY, $content['me']['hobbiesCards'], $translationGroups);
 
             $io->success(sprintf(
                 '[%s] Réglages à jour, %d carte(s) site, %d carte(s) technique(s), %d carte(s) personnelle(s), %d carte(s) loisir(s).',
@@ -126,28 +129,51 @@ final class SeedAboutContentCommand extends Command
     /**
      * @param list<array{title: string, description: string, iconKey: ?string}> $cards
      */
-    private function reseedSiteCards(Locale $locale, array $cards): void
+    private function reseedSiteCards(Locale $locale, array $cards, TranslationGroupIndex $translationGroups): void
     {
         foreach ($this->aboutSiteCardRepository->findByLocale($locale) as $existing) {
             $this->aboutSiteCardRepository->remove($existing);
         }
 
         foreach ($cards as $position => $card) {
-            $this->aboutSiteCardAdministrator->create($locale, $card['title'], $card['description'], $card['iconKey'], $position);
+            $this->aboutSiteCardAdministrator->create(
+                $locale,
+                $card['title'],
+                $card['description'],
+                $card['iconKey'],
+                $position,
+                $translationGroups->forIndex('site-card', $position),
+            );
         }
     }
 
     /**
      * @param list<array{title: string, description: string, iconKey: ?string}> $cards
      */
-    private function reseedMeCards(Locale $locale, AboutMeCardCategory $category, array $cards): void
-    {
+    private function reseedMeCards(
+        Locale $locale,
+        AboutMeCardCategory $category,
+        array $cards,
+        TranslationGroupIndex $translationGroups,
+    ): void {
         foreach ($this->aboutMeCardRepository->findByLocaleAndCategory($locale, $category) as $existing) {
             $this->aboutMeCardRepository->remove($existing);
         }
 
+        // Le périmètre d'ordre des cartes « moi » est la catégorie (toutes
+        // langues confondues) : les groupes se numérotent donc par catégorie,
+        // sans quoi la carte 0 « technique » et la carte 0 « loisir » se
+        // prétendraient traductions l'une de l'autre.
         foreach ($cards as $position => $card) {
-            $this->aboutMeCardAdministrator->create($locale, $category, $card['title'], $card['description'], $card['iconKey'], $position);
+            $this->aboutMeCardAdministrator->create(
+                $locale,
+                $category,
+                $card['title'],
+                $card['description'],
+                $card['iconKey'],
+                $position,
+                $translationGroups->forIndex('me-card:'.$category->value, $position),
+            );
         }
     }
 

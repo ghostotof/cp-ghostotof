@@ -27,6 +27,15 @@ interface AboutSiteCardRepositoryInterface
      */
     public function findAll(): array;
 
+    /**
+     * Spec 0004 D1 : les versions d'un même contenu, toutes langues
+     * confondues. L'index unique (translation_group, locale) garantit au plus
+     * une entrée par langue, donc au plus `count(Locale::cases())` résultats.
+     *
+     * @return list<AboutSiteCard> triées par locale ASC
+     */
+    public function findByTranslationGroup(Uuid $translationGroup): array;
+
     public function save(AboutSiteCard $card): void;
 
     public function remove(AboutSiteCard $card): void;

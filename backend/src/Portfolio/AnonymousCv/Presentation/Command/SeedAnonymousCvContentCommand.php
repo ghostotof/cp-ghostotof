@@ -8,6 +8,7 @@ use App\Portfolio\AnonymousCv\Application\AnonymousCvSectionAdministratorInterfa
 use App\Portfolio\AnonymousCv\Domain\Repository\AnonymousCvSectionRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Presentation\Command\GuardsExistingContent;
+use App\Shared\Presentation\Command\TranslationGroupIndex;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -57,6 +58,8 @@ final class SeedAnonymousCvContentCommand extends Command
             return Command::SUCCESS;
         }
 
+        $translationGroups = new TranslationGroupIndex();
+
         foreach ($this->content() as $localeValue => $sections) {
             $locale = Locale::from($localeValue);
 
@@ -72,6 +75,7 @@ final class SeedAnonymousCvContentCommand extends Command
                     $section['yearsOfExperience'],
                     $section['achievements'],
                     $position,
+                    $translationGroups->forIndex('anonymous-cv-section', $position),
                 );
             }
 

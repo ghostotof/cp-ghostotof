@@ -26,8 +26,9 @@ final readonly class ContributionAdministrator implements ContributionAdministra
         string $summary,
         string $body,
         int $position,
+        ?Uuid $translationGroup = null,
     ): Contribution {
-        $contribution = new Contribution($locale, $title, $project, $reference, $url, $summary, $body, $position);
+        $contribution = new Contribution($locale, $title, $project, $reference, $url, $summary, $body, $position, $translationGroup);
 
         $this->contributionRepository->save($contribution);
 

@@ -8,6 +8,7 @@ use App\Portfolio\CaseStudy\Application\CaseStudyAdministratorInterface;
 use App\Portfolio\CaseStudy\Domain\Repository\CaseStudyRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Presentation\Command\GuardsExistingContent;
+use App\Shared\Presentation\Command\TranslationGroupIndex;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -57,6 +58,8 @@ final class SeedCaseStudyContentCommand extends Command
             return Command::SUCCESS;
         }
 
+        $translationGroups = new TranslationGroupIndex();
+
         foreach ($this->content() as $localeValue => $caseStudies) {
             $locale = Locale::from($localeValue);
 
@@ -73,6 +76,7 @@ final class SeedCaseStudyContentCommand extends Command
                     $caseStudy['tradeoffs'],
                     $caseStudy['measuredResult'],
                     $position,
+                    $translationGroups->forIndex('case-study', $position),
                 );
             }
 

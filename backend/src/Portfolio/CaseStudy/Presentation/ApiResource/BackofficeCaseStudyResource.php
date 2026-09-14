@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\Put;
 use App\Portfolio\CaseStudy\Domain\Entity\CaseStudy;
 use App\Portfolio\CaseStudy\Infrastructure\ApiPlatform\BackofficeCaseStudyProcessor;
 use App\Portfolio\CaseStudy\Infrastructure\ApiPlatform\BackofficeCaseStudyProvider;
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -58,8 +59,15 @@ final class BackofficeCaseStudyResource
     public function __construct(
         public ?string $id = null,
         #[Assert\NotBlank]
-        #[Assert\Choice(choices: ['fr', 'en'])]
+        #[Assert\Choice(callback: [Locale::class, 'values'])]
         public ?string $locale = null,
+        /**
+         * Spec 0004 D1 : groupe de traduction, en RFC 4122 — les entrées qui le
+         * partagent sont le même contenu dans des langues différentes. Exposé
+         * en lecture dès maintenant ; le Processor l'ignore encore, le côté
+         * écriture (et sa contrainte de validation) arrive en B2.
+         */
+        public ?string $translationGroup = null,
         #[Assert\NotBlank]
         #[Assert\Length(max: 255)]
         public string $title = '',
@@ -85,6 +93,7 @@ final class BackofficeCaseStudyResource
         return new self(
             id: $caseStudy->getId()->toRfc4122(),
             locale: $caseStudy->getLocale()->value,
+            translationGroup: $caseStudy->getTranslationGroup()->toRfc4122(),
             title: $caseStudy->getTitle(),
             problem: $caseStudy->getProblem(),
             solution: $caseStudy->getSolution(),

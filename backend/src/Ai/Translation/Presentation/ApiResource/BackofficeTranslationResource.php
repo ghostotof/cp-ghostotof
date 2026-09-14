@@ -7,6 +7,7 @@ namespace App\Ai\Translation\Presentation\ApiResource;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Post;
 use App\Ai\Translation\Infrastructure\ApiPlatform\BackofficeTranslationProcessor;
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
@@ -49,10 +50,10 @@ final class BackofficeTranslationResource
      */
     public function __construct(
         #[Assert\NotBlank]
-        #[Assert\Choice(choices: ['fr', 'en'])]
+        #[Assert\Choice(callback: [Locale::class, 'values'])]
         public ?string $sourceLocale = null,
         #[Assert\NotBlank]
-        #[Assert\Choice(choices: ['fr', 'en'])]
+        #[Assert\Choice(callback: [Locale::class, 'values'])]
         public ?string $targetLocale = null,
         #[Assert\Count(min: 1, max: self::MAX_FIELDS)]
         #[Assert\All([

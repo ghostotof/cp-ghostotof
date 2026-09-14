@@ -9,6 +9,7 @@ use App\Portfolio\CaseStudy\Domain\Repository\CaseStudyRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -43,6 +44,16 @@ class CaseStudyRepository extends ServiceEntityRepository implements CaseStudyRe
             ->orderBy('caseStudy.locale', 'ASC')
             ->addOrderBy('caseStudy.position', 'ASC')
             ->addOrderBy('caseStudy.id', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function findByTranslationGroup(Uuid $translationGroup): array
+    {
+        return $this->createQueryBuilder('caseStudy')
+            ->andWhere('caseStudy.translationGroup = :translationGroup')
+            ->setParameter('translationGroup', $translationGroup, UuidType::NAME)
+            ->orderBy('caseStudy.locale', 'ASC')
             ->getQuery()
             ->getResult();
     }
