@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Domain\Entity;
 
+use App\Portfolio\Shared\Domain\Orderable;
 use App\Portfolio\Watch\Domain\Exception\InvalidWatchedProductException;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use App\Portfolio\Watch\Infrastructure\Doctrine\WatchedProductRepository;
@@ -28,7 +29,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Entity(repositoryClass: WatchedProductRepository::class)]
 #[ORM\Table(name: 'watched_product')]
 #[ORM\UniqueConstraint(name: 'uniq_watched_product_slug', columns: ['slug'])]
-class WatchedProduct
+class WatchedProduct implements Orderable
 {
     /**
      * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
@@ -145,5 +146,21 @@ class WatchedProduct
         if (null === $version || '' === trim($version)) {
             throw InvalidWatchedProductException::manualVersionRequired($slug);
         }
+    }
+
+    /**
+     * Spec 0004 D5 : sans locale (D6 du contexte Watch), un produit surveillé
+     * n'a pas de groupe de traduction — il se range donc sous son propre id.
+     * C'est la seule implémentation d'`Orderable` dont la clé n'est pas un
+     * groupe, et sa ressource d'ordre prendra des `ids`, pas des `groups`.
+     */
+    public function orderingKey(): string
+    {
+        return $this->id->toRfc4122();
+    }
+
+    public function moveToPosition(int $position): void
+    {
+        $this->position = $position;
     }
 }
