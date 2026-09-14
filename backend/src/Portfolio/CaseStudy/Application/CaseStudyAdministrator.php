@@ -8,6 +8,7 @@ use App\Portfolio\CaseStudy\Domain\Entity\CaseStudy;
 use App\Portfolio\CaseStudy\Domain\Exception\CaseStudyNotFoundException;
 use App\Portfolio\CaseStudy\Domain\Repository\CaseStudyRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
 
 final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInterface
 {
@@ -33,7 +34,7 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
     }
 
     public function update(
-        int $id,
+        Uuid $id,
         string $title,
         string $problem,
         string $solution,
@@ -53,7 +54,7 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
         return $caseStudy;
     }
 
-    public function delete(int $id): void
+    public function delete(Uuid $id): void
     {
         $caseStudy = $this->caseStudyRepository->findOneById($id);
 
