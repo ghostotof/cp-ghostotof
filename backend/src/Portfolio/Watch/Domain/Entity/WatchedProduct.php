@@ -30,6 +30,11 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\UniqueConstraint(name: 'uniq_watched_product_slug', columns: ['slug'])]
 class WatchedProduct
 {
+    /**
+     * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
+     * non par la base au flush. Une entité connaît donc son identité dès sa
+     * construction — elle se compare et se teste sans persistance.
+     */
     #[ORM\Id]
     #[ORM\Column(type: UuidType::NAME)]
     private Uuid $id;

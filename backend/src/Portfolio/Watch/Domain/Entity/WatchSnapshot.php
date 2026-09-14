@@ -32,6 +32,11 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\UniqueConstraint(name: 'uniq_watch_snapshot_type', columns: ['type'])]
 class WatchSnapshot
 {
+    /**
+     * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
+     * non par la base au flush. Une entité connaît donc son identité dès sa
+     * construction — elle se compare et se teste sans persistance.
+     */
     #[ORM\Id]
     #[ORM\Column(type: UuidType::NAME)]
     private Uuid $id;

@@ -314,6 +314,17 @@ Points différés à la revue finale (Task 8), non corrigés ici :
 - `uriVariableUuid()` s'appuie sur `assert()`, inactif en production (`zend.assertions=-1`) —
   inoffensif tant que `requirements` est posé sur chaque opération, ce qui est le cas aujourd'hui.
 
+**2026-09-14** — Écart relevé à la revue finale de la phase A (Task 8), non anticipé par la rédaction :
+le §8 parle de la preuve préprod, pas de la fenêtre de bascule migration/rollout. Le pipeline applique
+les manifests puis attend `rollout status` avant de lancer le Job `backend-migrate` ; entre les deux, le
+nouveau code (qui mappe `id` en `uuid`) lit une colonne encore `integer` et lève une
+`ConversionException` sur toute route qui hydrate une entité. L'ordre inverse (Job avant rollout) ne
+supprime pas la fenêtre : c'est alors l'ancien code qui mappe `id` en `integer` face à une colonne déjà
+`uuid`. Les deux ordres cassent. Décision de procédure laissée à l'auteur du projet, documentée dans
+`release-notes-v0.11.0.md` § « Fenêtre de bascule » : fenêtre de maintenance explicite (`kubectl scale
+deploy/backend --replicas=0`, Job `backend-migrate`, puis `apply -k` / `rollout status`) ou fenêtre
+assumée à une heure creuse, mesurée en préprod.
+
 **Audit de sensibilité avant publication** : aucun e-mail, aucune adresse, aucun nom de compte, aucun
 secret. Le document décrit le schéma des tables et le flux d'invitation au même niveau de détail que
 `CLAUDE.md` et l'ADR 0001, déjà publics.
