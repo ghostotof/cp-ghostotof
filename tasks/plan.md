@@ -42,37 +42,37 @@ Reprises de la spec (§2), rappelées ici parce qu'elles décident de l'ordre :
 ## Task List
 
 ### Phase 1 — Socle (bundle, configuration, ADR)
-- [ ] Task 1 — Socle Symfony AI : bundle 0.13.0 pinné, plateforme Anthropic, agent `translator`, `ANTHROPIC_API_KEY` hors dépôt — [#91](https://github.com/ghostotof/cp-ghostotof/issues/91)
-- [ ] Task 2 — ADR 0004 « Assistance IA » (D1–D7, dont la phase 2 `ROLE_TRUSTED`) + `CLAUDE.md` — [#92](https://github.com/ghostotof/cp-ghostotof/issues/92) (parallélisable avec la Task 1)
+- [x] Task 1 — Socle Symfony AI : bundle 0.13.0 pinné, plateforme Anthropic, agent `translator`, `ANTHROPIC_API_KEY` hors dépôt — [#91](https://github.com/ghostotof/cp-ghostotof/issues/91)
+- [x] Task 2 — ADR 0004 « Assistance IA » (D1–D7, dont la phase 2 `ROLE_TRUSTED`) + `CLAUDE.md` — [#92](https://github.com/ghostotof/cp-ghostotof/issues/92) (parallélisable avec la Task 1)
 
 ### Checkpoint 1 — le bundle tient dans le projet
-- [ ] `make back-quality` vert avec le bundle installé (PHPStan max, Rector, Psalm), `make back-test` vert
-- [ ] `debug:container ai.agent.translator` et `ai.http_client` existent ; kernel `test` sans clé réelle
+- [x] `make back-quality` vert avec le bundle installé (PHPStan max, Rector, Psalm), `make back-test` vert
+- [x] `debug:container ai.agent.translator` et `ai.http_client` existent ; kernel `test` sans clé réelle
 - [ ] ADR 0004 relue par Christophe
-- [ ] Un appel `ai:agent:call translator` réussi en dev (une fois, payant)
+- [x] Un appel réel réussi en dev (via `curl` sur l'endpoint, 200 en 3,8 s, 2026-09-14)
 
 ### Phase 2 — Backend : traducteur, ressource, quota
-- [ ] Task 3 — Traducteur : VO, `ContentTranslatorInterface`, `SymfonyAiContentTranslator` (sortie structurée validée, jetons journalisés) + tests unitaires — [#93](https://github.com/ghostotof/cp-ghostotof/issues/93)
-- [ ] Task 4 — Ressource `POST /api/backoffice/translations` (DTO validé, processeur, 503 `translation-unavailable`, `HasProblemType` → `Shared/`) + tests fonctionnels — [#94](https://github.com/ghostotof/cp-ghostotof/issues/94)
-- [ ] Task 5 — Quota 30/h par compte : limiteur, 429 + `Retry-After`, consommé après validation et avant l'appel + tests — [#95](https://github.com/ghostotof/cp-ghostotof/issues/95)
+- [x] Task 3 — Traducteur : VO, `ContentTranslatorInterface`, `SymfonyAiContentTranslator` (sortie structurée validée, jetons journalisés) + tests unitaires — [#93](https://github.com/ghostotof/cp-ghostotof/issues/93)
+- [x] Task 4 — Ressource `POST /api/backoffice/translations` (DTO validé, processeur, 503 `translation-unavailable`, `HasProblemType` → `Shared/`) + tests fonctionnels — [#94](https://github.com/ghostotof/cp-ghostotof/issues/94)
+- [x] Task 5 — Quota 30/h par compte : limiteur, 429 + `Retry-After`, consommé après validation et avant l'appel + tests — [#95](https://github.com/ghostotof/cp-ghostotof/issues/95)
 
 ### Checkpoint 2 — contrat d'API figé et cloisonné
-- [ ] `make back-test` vert, dont 401 / 403 palier de base / 403 sans CSRF / 200 / chaque 422 / 429 / 503
-- [ ] `ApiRouteExposureTest` vert **sans** entrée d'allow-list ; `debug:router` : une seule route
-- [ ] Aucun test ne sort sur le réseau (clé factice dans `phpunit.dist.xml`)
-- [ ] Revue avec Christophe du contrat avant d'écrire le frontend
+- [x] `make back-test` vert, dont 403 anonyme (CSRF avant firewall) / 403 palier de base / 403 sans CSRF / 200 / chaque 422 / 429 / 503
+- [x] `ApiRouteExposureTest` vert **sans** entrée d'allow-list ; `debug:router` : une seule route
+- [x] Aucun test ne sort sur le réseau (clé factice dans `phpunit.dist.xml`)
+- [x] Revue avec Christophe du contrat avant d'écrire le frontend — validé le 2026-09-14
 
 ### Phase 3 — Déploiement du secret (indépendante, à faire avant le premier déploiement preprod)
-- [ ] Task 6 — `ANTHROPIC_API_KEY` dans Scaleway Secret Manager (**action humaine**) + `ExternalSecret` preprod/prod + `k8s/README.md` ; timeouts ingress/nginx vérifiés ≥ 40 s — [#96](https://github.com/ghostotof/cp-ghostotof/issues/96)
+- [x] Task 6 — `ANTHROPIC_API_KEY` dans Scaleway Secret Manager (**action humaine**) + `ExternalSecret` preprod/prod + `k8s/README.md` ; timeouts ingress/nginx vérifiés ≥ 40 s — [#96](https://github.com/ghostotof/cp-ghostotof/issues/96)
 
 ### Phase 4 — Frontend : première tranche verticale (Incidents)
-- [ ] Task 7 — Tranche `admin/translation` : domaine, `HttpAdminTranslationRepository`, `useAdminTranslation` + specs — [#97](https://github.com/ghostotof/cp-ghostotof/issues/97)
-- [ ] Task 8 — `TranslateEntryButton.vue` + clés i18n `admin.translation.*` + spec — [#98](https://github.com/ghostotof/cp-ghostotof/issues/98)
-- [ ] Task 9 — Branchement sur `AdminIncidentsPage.vue` (brouillon en création, champs non prose conservés, bannière, erreurs) + `main.ts` + spec + axe — [#99](https://github.com/ghostotof/cp-ghostotof/issues/99)
+- [x] Task 7 — Tranche `admin/translation` : domaine, `HttpAdminTranslationRepository`, `useAdminTranslation` + specs — [#97](https://github.com/ghostotof/cp-ghostotof/issues/97)
+- [x] Task 8 — `TranslateEntryButton.vue` + clés i18n `admin.translation.*` + spec — [#98](https://github.com/ghostotof/cp-ghostotof/issues/98)
+- [x] Task 9 — Branchement sur `AdminIncidentsPage.vue` (brouillon en création, champs non prose conservés, bannière, erreurs) + `main.ts` + spec + axe — [#99](https://github.com/ghostotof/cp-ghostotof/issues/99)
 
 ### Checkpoint 3 — parcours complet de bout en bout
-- [ ] Suites backend et frontend vertes, `make front-lint` et `make front-build` verts
-- [ ] **Dans un vrai navigateur (Chrome), stack dev, clé dans `.env.local`** : un incident FR → bouton → brouillon EN relu → enregistré → visible sur `/en/incidents`
+- [x] Suites backend et frontend vertes, `make front-lint` et `make front-build` verts
+- [x] **Dans un vrai navigateur (Chrome), stack dev, clé dans `.env.local`** : un incident FR → bouton → brouillon EN relu → enregistré → visible sur `/en/incidents` — fait le 2026-09-14 (cf. issue #99)
 - [ ] Déploiement preprod : `ExternalSecret` en `SecretSynced`, un appel réel réussi depuis le backoffice preprod
 - [ ] Revue avec Christophe avant de brancher les autres pages
 
