@@ -24,8 +24,23 @@ const selectedLocale = ref<Locale>('fr')
       />
     </div>
 
-    <AdminAboutSettingsForm :locale="selectedLocale" />
-    <AdminAboutSiteCardsSection :locale="selectedLocale" />
-    <AdminAboutMeCardsSection :locale="selectedLocale" />
+    <!--
+      Chaque section peut demander la bascule de la locale de page : c'est ce
+      que fait l'assistant de traduction, dont le brouillon s'enregistre dans
+      la locale cible (même mécanique que la page Qualité, ici déléguée aux
+      enfants puisque les formulaires y vivent).
+    -->
+    <AdminAboutSettingsForm
+      :locale="selectedLocale"
+      @switch-locale="selectedLocale = $event"
+    />
+    <AdminAboutSiteCardsSection
+      :locale="selectedLocale"
+      @switch-locale="selectedLocale = $event"
+    />
+    <AdminAboutMeCardsSection
+      :locale="selectedLocale"
+      @switch-locale="selectedLocale = $event"
+    />
   </div>
 </template>

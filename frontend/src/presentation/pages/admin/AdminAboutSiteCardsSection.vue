@@ -5,10 +5,14 @@ import { useAdminAboutSiteCards } from '../../../application/admin/about/useAdmi
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseNumberInput from '../../ui/BaseNumberInput.vue'
+import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
+import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
+import { applyTranslationDraft, collectProseFields } from '../../../application/admin/translation/proseFields'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import type { AdminAboutSiteCard } from '../../../domain/admin/about/entities/AdminAboutSiteCard'
 
 const props = defineProps<{ locale: Locale }>()
+const emit = defineEmits<{ switchLocale: [locale: Locale] }>()
 
 const { t } = useI18n()
 
@@ -22,8 +26,38 @@ const isSubmitting = ref(false)
 const isEditing = computed(() => null !== editingId.value)
 const errorText = computed(() => (errorMessage.value ? t(`admin.about.errors.${errorMessage.value.reason}`) : null))
 
+/**
+ * Assistant de traduction (spec 0002) : un brouillon dans l'autre langue
+ * demande au parent de basculer la page sur la locale cible (la liste se
+ * recharge, le formulaire garde le brouillon) et passe en création ;
+ * Enregistrer crée alors la carte dans cette locale.
+ */
+const { isTranslating, errorReason: translationErrorReason, translate } = useAdminTranslation()
+/** Prose d'une carte du site ; la clé d'icône et la position sont recopiées. */
+const PROSE_FIELDS = ['title', 'description'] as const
+const draftSourceLocale = ref<Locale | null>(null)
+const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
+const translationErrorText = computed(() =>
+  translationErrorReason.value ? t(`admin.translation.errors.${translationErrorReason.value}`) : null,
+)
+
+async function handleTranslate(targetLocale: Locale): Promise<void> {
+  const sourceLocale = props.locale
+
+  const draft = await translate(sourceLocale, targetLocale, collectProseFields(form, PROSE_FIELDS))
+  if (!draft) {
+    return
+  }
+
+  editingId.value = null
+  applyTranslationDraft(form, PROSE_FIELDS, draft)
+  draftSourceLocale.value = sourceLocale
+  emit('switchLocale', targetLocale)
+}
+
 function resetForm(): void {
   editingId.value = null
+  draftSourceLocale.value = null
   form.title = ''
   form.description = ''
   form.iconKey = ''
@@ -32,6 +66,7 @@ function resetForm(): void {
 
 function startEdit(card: AdminAboutSiteCard): void {
   editingId.value = card.id
+  draftSourceLocale.value = null
   form.title = card.title
   form.description = card.description
   form.iconKey = card.iconKey ?? ''
@@ -104,6 +139,31 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
         :label="t('admin.about.siteCard.positionLabel')"
         :step="1"
       />
+
+      <div class="mb-3">
+        <TranslateEntryButton
+          :form-locale="locale"
+          :is-translating="isTranslating"
+          :disabled="!hasProseToTranslate || isSubmitting"
+          @translate="handleTranslate"
+        />
+      </div>
+
+      <p
+        v-if="draftSourceLocale"
+        class="alert alert-info small"
+        role="status"
+      >
+        {{ t('admin.translation.draftNotice', { locale: draftSourceLocale.toUpperCase() }) }}
+      </p>
+
+      <p
+        v-if="translationErrorText"
+        class="text-danger small"
+        role="alert"
+      >
+        {{ translationErrorText }}
+      </p>
 
       <p
         v-if="errorText"
