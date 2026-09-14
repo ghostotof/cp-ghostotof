@@ -354,7 +354,6 @@
       "versionSourceLabel": "Origine de la version",
       "versionLabel": "Version installée",
       "versionFromRuntimeHelp": "La version est lue directement dans le processus qui sert le site : elle ne se saisit pas.",
-      "positionLabel": "Position",
       "actions": "Actions",
       "editAction": "Modifier",
       "deleteAction": "Supprimer",

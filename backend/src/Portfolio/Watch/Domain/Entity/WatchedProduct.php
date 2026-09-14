@@ -110,18 +110,20 @@ class WatchedProduct implements Orderable
         return $this->position;
     }
 
+    /**
+     * Ne touche pas à la position (spec 0004, D3) : modifier une entrée ne la
+     * déplace pas, seul `moveToPosition()` — appelé par `OrderAssigner` — le fait.
+     */
     public function update(
         string $label,
         VersionSource $versionSource,
         ?string $version,
-        int $position,
     ): void {
         $this->assertVersionMatchesSource($this->slug, $versionSource, $version);
 
         $this->label = $label;
         $this->versionSource = $versionSource;
         $this->version = $version;
-        $this->position = $position;
     }
 
     /**

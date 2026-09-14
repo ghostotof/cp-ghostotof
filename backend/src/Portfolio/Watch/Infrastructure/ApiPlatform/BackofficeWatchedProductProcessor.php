@@ -46,7 +46,6 @@ final readonly class BackofficeWatchedProductProcessor implements ProcessorInter
                 $data->label,
                 $versionSource,
                 $version,
-                $data->position,
             );
         } elseif ($operation instanceof Post) {
             $product = $this->watchedProductAdministrator->create(
@@ -54,7 +53,6 @@ final readonly class BackofficeWatchedProductProcessor implements ProcessorInter
                 $data->label,
                 $versionSource,
                 $version,
-                $data->position,
             );
         } else {
             throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));

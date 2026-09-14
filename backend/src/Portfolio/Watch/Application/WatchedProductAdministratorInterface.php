@@ -17,6 +17,9 @@ use Symfony\Component\Uid\Uuid;
 interface WatchedProductAdministratorInterface
 {
     /**
+     * Spec 0004 D3 : la position ne se saisit pas, l'entrée neuve se range en
+     * fin de catalogue ; seul `reorder()` déplace.
+     *
      * @throws WatchedProductSlugAlreadyUsedException si le produit est déjà suivi
      * @throws InvalidWatchedProductException         si la version contredit sa source
      */
@@ -25,7 +28,6 @@ interface WatchedProductAdministratorInterface
         string $label,
         VersionSource $versionSource,
         ?string $version,
-        int $position,
     ): WatchedProduct;
 
     /**
@@ -39,7 +41,6 @@ interface WatchedProductAdministratorInterface
         string $label,
         VersionSource $versionSource,
         ?string $version,
-        int $position,
     ): WatchedProduct;
 
     /**
