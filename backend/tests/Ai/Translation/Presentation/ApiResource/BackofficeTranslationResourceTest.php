@@ -27,7 +27,11 @@ final class BackofficeTranslationResourceTest extends WebTestCase
 
     private const string SUPER_USERNAME = 'super';
     private const string PLAIN_USERNAME = 'jane';
+    private const string OTHER_SUPER_USERNAME = 'other-super';
     private const string PATH = '/api/backoffice/translations';
+
+    /** Doit refléter rate_limiter.yaml (translation_assistant.limit). */
+    private const int QUOTA = 30;
 
     /** Service concret derrière le client scoped `ai.http_client` (cf. framework.yaml). */
     private const string AI_HTTP_CLIENT_INNER = 'ai.http_client.scoping.inner';
@@ -178,6 +182,75 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(503);
     }
 
+    public function testTheThirtyFirstCallInTheHourIsRateLimitedWithRetryAfter(): void
+    {
+        $client = $this->superClient();
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $this->stubAnthropicRepeatedly($client, fn (): MockResponse => $this->anthropicMessage('{"title":"a","impact":"b"}'));
+
+        for ($i = 0; $i < self::QUOTA; ++$i) {
+            $this->post($client, $csrfToken, $this->validPayload());
+            self::assertResponseStatusCodeSame(200, \sprintf('Appel n°%d', $i + 1));
+        }
+
+        $this->post($client, $csrfToken, $this->validPayload());
+
+        self::assertResponseStatusCodeSame(429);
+        self::assertResponseHasHeader('Retry-After');
+        self::assertGreaterThan(0, (int) $client->getResponse()->headers->get('Retry-After'));
+    }
+
+    public function testAnInvalidPayloadDoesNotConsumeTheQuota(): void
+    {
+        $client = $this->superClient();
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $this->stubAnthropicRepeatedly($client, fn (): MockResponse => $this->anthropicMessage('{"title":"a","impact":"b"}'));
+
+        for ($i = 0; $i < self::QUOTA; ++$i) {
+            $this->post($client, $csrfToken, ['sourceLocale' => 'fr', 'targetLocale' => 'fr', 'fields' => ['title' => 'x']]);
+            self::assertResponseStatusCodeSame(422);
+        }
+
+        $this->post($client, $csrfToken, $this->validPayload());
+
+        self::assertResponseStatusCodeSame(200);
+    }
+
+    public function testAProviderFailureStillConsumesTheQuota(): void
+    {
+        $client = $this->superClient();
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $this->stubAnthropicRepeatedly($client, static fn (): MockResponse => new MockResponse('{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}', ['http_code' => 529]));
+
+        for ($i = 0; $i < self::QUOTA; ++$i) {
+            $this->post($client, $csrfToken, $this->validPayload());
+            self::assertResponseStatusCodeSame(503);
+        }
+
+        $this->post($client, $csrfToken, $this->validPayload());
+
+        // L'appel a eu lieu (et a coûté) : il compte, même en échec.
+        self::assertResponseStatusCodeSame(429);
+    }
+
+    public function testTheQuotaIsPerAccountNotShared(): void
+    {
+        $client = $this->superClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::OTHER_SUPER_USERNAME, TestCredentials::variant('other-super'), [CpgUser::ROLE_SUPER]);
+        $this->stubAnthropicRepeatedly($client, fn (): MockResponse => $this->anthropicMessage('{"title":"a","impact":"b"}'));
+
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        for ($i = 0; $i <= self::QUOTA; ++$i) {
+            $this->post($client, $csrfToken, $this->validPayload());
+        }
+        self::assertResponseStatusCodeSame(429);
+
+        $csrfToken = $this->loginAs($client, self::OTHER_SUPER_USERNAME, TestCredentials::variant('other-super'));
+        $this->post($client, $csrfToken, $this->validPayload());
+
+        self::assertResponseStatusCodeSame(200);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -197,6 +270,9 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         // client HTTP substitué après la connexion serait perdu et la requête
         // suivante partirait réellement vers api.anthropic.com (401 → 503).
         $client->disableReboot();
+        // Le limiteur translation_assistant est backé par le filesystem
+        // (cache.rate_limiter), donc partagé entre tests : repartir de zéro.
+        self::getContainer()->get('cache.rate_limiter')->clear();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
 
         return $client;
@@ -255,6 +331,19 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         ));
 
         return $captured;
+    }
+
+    /**
+     * Comme stubAnthropic(), mais rend une réponse neuve à chaque appel — un
+     * MockResponse ne se consomme qu'une fois.
+     *
+     * @param \Closure(): MockResponse $factory
+     */
+    private function stubAnthropicRepeatedly(KernelBrowser $client, \Closure $factory): void
+    {
+        $client->getContainer()->set(self::AI_HTTP_CLIENT_INNER, new MockHttpClient(
+            static fn (): MockResponse => $factory(),
+        ));
     }
 
     private function obtainBaseAccess(KernelBrowser $client): string

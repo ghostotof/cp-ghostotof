@@ -29,6 +29,7 @@ api_platform:
         # le service est indisponible, la requête était bonne — et un `type`
         # stable /errors/translation-unavailable pour le frontend.
         App\Ai\Translation\Domain\Exception\TranslationUnavailableException: 503
+        App\Ai\Translation\Domain\Exception\TranslationRateLimitExceededException: 429
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException: 409
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException: 404
         App\Portfolio\Contribution\Domain\Exception\ContributionNotFoundException: 404
