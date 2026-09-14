@@ -16,6 +16,22 @@ enum Locale: string
     case EN = 'en';
 
     /**
+     * Les valeurs des langues gérées, dans l'ordre de déclaration.
+     *
+     * Spec 0004 D2 : rien ne doit câbler le couple FR/EN. Les DTO du
+     * backoffice bornent leur champ `locale` avec
+     * `#[Assert\Choice(callback: [Locale::class, 'values'])]` plutôt qu'avec
+     * une liste littérale `['fr', 'en']` — ajouter une langue devient alors un
+     * `case` de plus ici, et rien d'autre.
+     *
+     * @return list<string>
+     */
+    public static function values(): array
+    {
+        return array_column(self::cases(), 'value');
+    }
+
+    /**
      * Variante de `from()` pour les valeurs venues de l'extérieur (segment
      * d'URL, argument de commande…) : lève une exception métier explicite
      * plutôt qu'un `\ValueError` générique.
