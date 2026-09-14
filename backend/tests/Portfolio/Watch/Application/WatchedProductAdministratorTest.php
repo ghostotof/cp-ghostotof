@@ -13,6 +13,7 @@ use App\Portfolio\Watch\Domain\Repository\WatchedProductRepositoryInterface;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\Uuid;
 
 final class WatchedProductAdministratorTest extends TestCase
 {
@@ -62,7 +63,7 @@ final class WatchedProductAdministratorTest extends TestCase
         $this->repository->method('findOneById')->willReturn($product);
         $this->repository->expects(self::once())->method('save');
 
-        $updated = $this->administrator->update(1, 'postgresql', 'PostgreSQL 18', VersionSource::MANUAL, '18.6', 4);
+        $updated = $this->administrator->update($product->getId(), 'postgresql', 'PostgreSQL 18', VersionSource::MANUAL, '18.6', 4);
 
         self::assertSame('PostgreSQL 18', $updated->getLabel());
         self::assertSame('18.6', $updated->getVersion());
@@ -77,12 +78,13 @@ final class WatchedProductAdministratorTest extends TestCase
      */
     public function testItRefusesToChangeTheSlugOfAnExistingProduct(): void
     {
-        $this->repository->method('findOneById')->willReturn($this->postgres());
+        $product = $this->postgres();
+        $this->repository->method('findOneById')->willReturn($product);
         $this->repository->expects(self::never())->method('save');
 
         $this->expectException(WatchedProductSlugIsImmutableException::class);
 
-        $this->administrator->update(1, 'mariadb', 'MariaDB', VersionSource::MANUAL, '11.4', 2);
+        $this->administrator->update($product->getId(), 'mariadb', 'MariaDB', VersionSource::MANUAL, '11.4', 2);
     }
 
     public function testUpdatingAnUnknownProductIsReported(): void
@@ -92,7 +94,7 @@ final class WatchedProductAdministratorTest extends TestCase
 
         $this->expectException(WatchedProductNotFoundException::class);
 
-        $this->administrator->update(999, 'postgresql', 'PostgreSQL', VersionSource::MANUAL, '18.4', 0);
+        $this->administrator->update(Uuid::v7(), 'postgresql', 'PostgreSQL', VersionSource::MANUAL, '18.4', 0);
     }
 
     public function testItRemovesAnExistingProduct(): void
@@ -101,7 +103,7 @@ final class WatchedProductAdministratorTest extends TestCase
         $this->repository->method('findOneById')->willReturn($product);
         $this->repository->expects(self::once())->method('remove')->with($product);
 
-        $this->administrator->delete(1);
+        $this->administrator->delete($product->getId());
     }
 
     public function testDeletingAnUnknownProductIsReported(): void
@@ -111,6 +113,6 @@ final class WatchedProductAdministratorTest extends TestCase
 
         $this->expectException(WatchedProductNotFoundException::class);
 
-        $this->administrator->delete(999);
+        $this->administrator->delete(Uuid::v7());
     }
 }

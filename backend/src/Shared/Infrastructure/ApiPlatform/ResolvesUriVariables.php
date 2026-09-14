@@ -24,17 +24,6 @@ trait ResolvesUriVariables
     /**
      * @param array<string, mixed> $uriVariables
      */
-    private function uriVariableInt(array $uriVariables, string $key): int
-    {
-        $value = $uriVariables[$key] ?? null;
-        \assert(\is_string($value) || \is_int($value));
-
-        return (int) $value;
-    }
-
-    /**
-     * @param array<string, mixed> $uriVariables
-     */
     private function uriVariableString(array $uriVariables, string $key): string
     {
         $value = $uriVariables[$key] ?? null;

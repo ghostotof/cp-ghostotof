@@ -29,7 +29,7 @@ final readonly class BackofficeWatchedProductProcessor implements ProcessorInter
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeWatchedProductResource
     {
         if ($operation instanceof Delete) {
-            $this->watchedProductAdministrator->delete($this->uriVariableInt($uriVariables, 'id'));
+            $this->watchedProductAdministrator->delete($this->uriVariableUuid($uriVariables));
 
             return null;
         }
@@ -41,7 +41,7 @@ final readonly class BackofficeWatchedProductProcessor implements ProcessorInter
 
         if ($operation instanceof Put) {
             $product = $this->watchedProductAdministrator->update(
-                $this->uriVariableInt($uriVariables, 'id'),
+                $this->uriVariableUuid($uriVariables),
                 $data->slug,
                 $data->label,
                 $versionSource,
