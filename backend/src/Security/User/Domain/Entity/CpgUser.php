@@ -7,9 +7,11 @@ namespace App\Security\User\Domain\Entity;
 use App\Security\User\Domain\Exception\InvalidUsernameException;
 use App\Security\User\Infrastructure\Doctrine\CpgUserRepository;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Serializer\Attribute\Ignore;
+use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -54,10 +56,14 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
     /** Lettres, chiffres, ".", "_" ou "-", 3 à 60 caractères. */
     public const string USERNAME_PATTERN = '/^[a-zA-Z0-9_.-]{3,60}$/';
 
+    /**
+     * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
+     * non par la base au flush. Une entité connaît donc son identité dès sa
+     * construction — elle se compare et se teste sans persistance.
+     */
     #[ORM\Id]
-    #[ORM\GeneratedValue]
-    #[ORM\Column]
-    private ?int $id = null;
+    #[ORM\Column(type: UuidType::NAME)]
+    private Uuid $id;
 
     #[ORM\Column(length: 60, unique: true)]
     #[Assert\NotBlank]
@@ -105,11 +111,12 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
             throw InvalidUsernameException::forUsername($username);
         }
 
+        $this->id = Uuid::v7();
         $this->username = $username;
         $this->password = $hashedPassword;
     }
 
-    public function getId(): ?int
+    public function getId(): Uuid
     {
         return $this->id;
     }
