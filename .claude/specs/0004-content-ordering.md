@@ -1,6 +1,6 @@
 # SPEC — Ordre des contenus par glisser-déposer et groupes de traduction (phase B)
 
-> Statut : **design validé en session le 2026-09-14**, à découper en tâches.
+> Statut : **livrée** — design validé en session le 2026-09-14, B1 à B12 (issues #141–#152, PR #155–#168) le même jour, release `v0.12.0`.
 > Dépend de la spec 0003 (clés primaires UUID), livrée et en production **avant** le début de cette
 > phase. Livraison prévue : `v0.12.0`.
 >
@@ -347,6 +347,32 @@ l'extension à d'autres langues traitée par D2 et la voie A → B de D1 ; DnD n
 d'ordre à ensemble exact ; tableau « une ligne par groupe, langues empilées » choisi sur maquette
 (option A, dates sans retour à la ligne). Décision connexe prise pendant ce design et sortie en
 spec 0003, livrée avant : clés primaires UUID sur toutes les entités.
+
+**2026-09-14, livraison** — B1 à B12 sur une pile de PR (#155 → #168), une par tâche. Trois écarts
+avec la rédaction initiale, tous consignés dans le code :
+
+- **B2 ne couvrait que les huit ressources localisées** ; Watch acceptait encore `position` à
+  l'écriture. Corrigé en B11 : `WatchedProductAdministrator::create()` range en fin de catalogue,
+  `update()` ne déplace plus, DTO `writable: false`, un corps qui porte encore `position` est accepté
+  et ignoré (test fonctionnel).
+- **Une locale par formulaire** (revue B9) : un sélecteur de locale de page partagé par deux
+  formulaires écrasait silencieusement la locale d'une entrée en édition dans l'autre panneau. Les
+  pages Qualité et À propos ont chacune un sélecteur par formulaire ; celui en tête de la page À
+  propos ne pilote que le singleton des réglages.
+- **`BackofficeAboutMeCardResource.category`** bornée par `AboutMeCardCategory::values()` et non plus
+  par une liste littérale (D2, même règle que `Locale::values()`), fait en B12.
+
+Vérifié en fin de phase : `beforeunload` testé une fois (Incidents, avec `enableAutoUnmount` — une
+page laissée montée gardait son écouteur et faisait mentir le test) ; `debug:router | grep /order`
+liste neuf routes, aucune synthétisée ; `ApiRouteExposureTest` et `AccessControlAnchoringTest`
+inchangés et verts.
+
+**Déploiement** : la migration `Version20260914170000` est réversible, mais le rollout ordinaire ne
+suffit pas — le pipeline standard fait le rollout **avant** le Job de migration, et le nouveau code
+lit `translation_group` sur toutes les lectures publiques. `DEPLOY_MAINTENANCE_WINDOW=true` est donc
+requis pour `v0.12.0` (migration à zéro réplica, puis rollout), comme pour `v0.11.0`, et retiré
+après la prod. Backend et frontend se déploient ensemble : un `PUT` de l'ancien frontend, sans
+`translationGroup`, détacherait une traduction.
 
 **Audit de sensibilité avant publication** : aucun e-mail, aucune adresse, aucun nom de compte, aucun
 secret. Les titres d'incidents cités en exemple dans les maquettes sont ceux du contenu public déjà

@@ -67,7 +67,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This repository started as a freshly generated project skeleton (single "Init" commit). Real backend code now
 exists — the `Security` bounded context (`User` + `Authentication`), six `Portfolio` bounded contexts
 (`Experience`, `Quality`, `About`, `Contribution`, `Incident`, `Watch`, see Backend architecture below) and an
-`Ai` context whose first sub-context, `Translation`, is delivered (spec 0002, ADR 0004, v0.10.0/v0.10.1 — see `Ai/` below) — and follows a DDD structure under
+`Ai` context whose first sub-context, `Translation`, is delivered (spec 0002, ADR 0004, v0.10.0/v0.10.1 — see `Ai/` below); every entity has a UUID v7 key (spec 0003, v0.11.0) and every ordered content is
+reordered by drag-and-drop with an explicit FR/EN link in the database (spec 0004, v0.12.0, see
+`Portfolio/Shared/` below) — and follows a DDD structure under
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
 over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
 recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
@@ -274,6 +276,34 @@ mid-migration.
   - There used to be a blanket `ValueError: 404` mapping. It has been **removed and must not come back**: it
     disguised *every* `ValueError` in the HTTP stack as a plausible "404 Not Found", which is exactly how a
     real defect goes unnoticed.
+  - **Content ordering and translation groups** (spec 0004, `v0.12.0`) also live here, because nine
+    contexts share one rule. The eight localized entities with a position (`QualityPrinciple`,
+    `QualityTrait`, `AboutSiteCard`, `AboutMeCard`, `Contribution`, `Incident`, `AnonymousCvSection`,
+    `CaseStudy`) carry `translation_group uuid NOT NULL` with a unique `(translation_group, locale)`
+    index (D1): two rows of the same group are the same content in two languages, and the group is an
+    **identifier, not an entity** — the day something needs to hang *on the group*, that UUID becomes
+    the primary key of a new table and the rows already reference it. **Nothing hard-wires the FR/EN
+    pair** (D2): every locale `#[Assert\Choice]` points at `Locale::values()`, `AboutMeCardCategory`'s
+    at its own `values()`, the frontend renders its language badges from `SUPPORTED_LOCALES` — a third
+    language is a third row per group. **`position` is never typed in** (D3): it is out of every write
+    DTO (`#[ApiProperty(writable: false)]`, a body still carrying it is accepted and ignored) and every
+    `create`/`update` signature; `Domain/Service/ContentPlacement` derives it (a new entry without a
+    group takes `max + 1` of its scope, one attached to a group **inherits the group's position**;
+    `reattach()` on a `PUT` with `translationGroup: null` detaches and keeps the position, and is a
+    no-op on an entry already alone). `WatchedProduct` is not localized, so it is `Orderable` on its
+    own id, and its `Administrator` computes the end of the catalogue itself. The **only writer of
+    `position` is `PUT /api/backoffice/<x>/order`** (`Backoffice<X>OrderResource`, `read: false`,
+    `output: false`, 204, one per context, `{groups: [uuid…]}` — `{ids: […]}` for Watch, plus
+    `category` for me-cards): `Domain/Service/OrderAssigner` enforces the **exact-set rule** (D4) —
+    an unknown key is 422 `unknown-order-entry`, a missing one 422 `incomplete-order`, both
+    `ProblemExceptionInterface` slugs the frontend keys on — and renumbers `0…n-1` on every entity
+    sharing a key. That 422 is not validation, it is optimistic concurrency without a version column:
+    a row created or deleted between the page load and the save changes the set, the server refuses,
+    the frontend reloads and says so. Never relax it to "ignore unknown keys". The
+    `Version20260914170000` migration paired the existing FR/EN rows by `position` (and `category`)
+    **only when the pair was unique on both sides**, giving every other row its own group — a wrong
+    link would survive every proofreading, an isolated row is one "Version of" click away — and it is
+    the first migration of the UUID era that is **reversible**.
 - **`Portfolio/Experience/`**, **`Portfolio/Quality/`**, **`Portfolio/About/`**, **`Portfolio/Contribution/`**,
   **`Portfolio/Incident/`** — DB-backed
   content that used to be (or, for `Experience`, always was) hardcoded in the frontend. Each follows the same
@@ -462,7 +492,14 @@ Content management for all of the above, plus user administration, gated end-to-
   (`Post`/`Put`/`Delete`) under `Infrastructure/ApiPlatform/`. Collection reads use a `?locale=` query filter
   (unlike the public `{locale}` path param — collections aren't per-locale routes). **`Put`/`Delete` operations
   need an explicit `provider:` set, not just `processor:`** — otherwise API Platform's default provider tries to
-  resolve the DTO via Doctrine directly and 404s before ever reaching the processor.
+  resolve the DTO via Doctrine directly and 404s before ever reaching the processor. Since `v0.12.0` the
+  localized collections (Quality, About cards) are read **without** the `?locale=` filter by the admin
+  pages, which display every language in one grouped table (spec 0004 D8); the filter still exists.
+  Each ordered context adds a one-operation `Backoffice<X>OrderResource` (`Put …/order`, `read: false`,
+  `output: false`, 204) whose input uses the `CarriesOrderedKeys` trait — `keys()` returns the
+  validated `list<string>` and is the only thing the Processor reads; mirror that rather than
+  re-validating the array by hand (`debug:router | grep /order` must list exactly one route per context,
+  none synthesised).
 - **A read-only resource with no Doctrine identifier needs `#[ApiProperty(identifier: false)]`** on its
   `id` field — `BackofficeVulnerabilityResource` (`GetCollection /backoffice/watch/vulnerabilities`,
   read straight from the snapshot) is the case in point. Without it API Platform infers `id` as the
@@ -608,6 +645,38 @@ slice is the **public** counterpart: route `/(fr|en)/set-password/:token` (`meta
 `useAccountPasswordSetup` state machine (`checking|ready|submitting|done|invalid|expired|error`), talks to the
 public `/api/account/password-setup/{token}` endpoints.
 
+**Ordering and translation groups** (spec 0004, `v0.12.0`): every ordered admin page (Incidents,
+Contributions, Anonymous CV, Quality ×2, About site cards + one table per me-card category, Watch) is
+wired on the same shared bricks, and a new page must reuse them rather than grow its own copy —
+they carry the security-neutral but a11y-critical behaviour (keyboard alternative, focus return,
+status announcement) that a fork would silently lose:
+- `domain/admin/shared/ordering/` — `groupByTranslationGroup` (entries × `SUPPORTED_LOCALES` → one row
+  per group with `byLocale`/`missing`), `orderRowsByDraft`, `moveKey`, `translationGroupSelection`
+  (`translationGroupOptions`/`firstEntry`/`hasSibling`/`rowLines`, the "Version of" rule: entries of
+  **any other locale** whose group lacks the form's locale — nothing names FR or EN), all framework-free.
+- `application/admin/shared/` — `useOrderDraft` (the draft follows the server keys until the first
+  `move`, then detaches until `reset`/`save`; on a 422 `stale-order` it reloads and re-syncs, on any
+  other error it keeps the draft so the admin can retry), `useRowDragAndDrop` (native HTML5, the
+  dragged index lives in the composable, **never in `dataTransfer`** — jsdom has none, and that is
+  what keeps the flow testable with plain events), `useOrderHandleFocus` (one instance **per table**,
+  focus back on the moved row's handle after ↑/↓; the `ref` callback is a stable function keyed on
+  `data-order-key`, never an inline lambda).
+- `presentation/ui/admin/OrderHandle.vue` (a real `<button>`, ↑/↓, `role="status"` announcement) and
+  `OrderToolbar.vue` (status, Cancel, "Save order", the order error), i18n under `admin.order.*`.
+- **Page rules**: the table shows **every language** (D8 — the row is the group, languages stacked in the
+  cell, a missing one gets "Create the XX version" which opens a creation already attached to the group
+  with the non-prose fields copied); **one locale per form**, never a page-level locale selector shared
+  by several forms (B9 lesson: it silently overwrote the locale of an entry being edited in the other
+  panel; About's top selector only drives the *settings* singleton). While the order draft is dirty,
+  **every mutation is disabled** (Edit, Delete, Create version, submit, the translate button) with a
+  visible hint referenced by `aria-describedby` — never a `title`, Bootstrap's `.btn:disabled` has
+  `pointer-events: none` — and leaving the route asks `window.confirm`, closing the tab goes through
+  `beforeunload` (tested once for the phase, on Incidents, with `enableAutoUnmount` — a page left
+  mounted keeps its listener). `startEdit` sends back the group it read whenever the entry has a
+  sibling, otherwise `''` → `null`, which `ContentPlacement::reattach` treats as a no-op on a lone
+  entry. The `Position` number field is gone from every form; `BaseNumberInput` survives only for
+  genuinely numeric content (years of experience).
+
 **Translation assistant** (ADR 0004 phase 1, spec 0002): one more admin slice, `domain/admin/translation`
 (`TranslationDraft`, `AdminTranslationError` with reasons `validation|rate-limited|unavailable|unknown`)
 → `infrastructure/admin/translation/HttpAdminTranslationRepository.ts` (`POST /api/backoffice/translations`)
@@ -617,15 +686,19 @@ exposes `errorReason`; **it never touches a form nor persists anything**, ADR 00
 `applyTranslationDraft` leaves a field absent from the draft untouched) → `presentation/ui/admin/
 TranslateEntryButton.vue` (label follows the form's locale, `aria-busy` while calling, emits `translate`).
 **Each page alone decides which of its fields are prose** (spec D2 — the backend is content-agnostic) and
-what to do with the draft. Two semantics, and the split is deliberate: on per-entry pages (Incidents,
-Contributions, Anonymous CV, About site/me cards) the form switches to *creation* in the target locale, the
-non-prose fields (`version`, `occurredAt`, `position`, `iconKey`…) are kept and a `role="status"` banner
-names the draft's source locale; on page-locale pages (Quality, About) the assistant switches the **page**
-locale to the target instead, since the list shown must match the form being saved. About *settings* is a
-singleton per locale, so its draft is **deferred**: parked in `pendingDraft`, applied on the return of
-`load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server would
-overwrite it). Never use `v-html` on text coming back from the model: it goes through the form fields, then
-`RichText.vue`. The case-studies admin page does not exist yet (issue #104); the button lands there with it.
+what to do with the draft. Since spec 0004 every per-entry form (Incidents, Contributions, Anonymous CV,
+Quality principles/traits, About site/me cards) behaves the same way: the form switches to *creation* in
+the target locale, the non-prose fields (`version`, `occurredAt`, `iconKey`…) are kept, **the source
+entry's `translationGroup` is kept too** (spec 0004 D9, `sourceGroup` — distinct from the selector's
+value, so a lone source still attaches its draft) so saving the proposed version links it with no
+extra gesture, and a `role="status"` banner names the draft's source locale. The old "page-locale"
+semantics is gone with the page-level selector (one locale per form, see above). About *settings* is
+the one singleton per locale, so its draft is **deferred**: parked in `pendingDraft`, applied on the
+return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server
+would overwrite it). The button is disabled while an order draft is dirty (a draft the locked form could
+not save would burn quota for nothing). Never use `v-html` on text coming back from the model: it goes
+through the form fields, then `RichText.vue`. The case-studies admin page does not exist yet (issue
+#104); the button lands there with it.
 
 - `presentation/ui/{BaseTextInput,BaseTextarea,BaseNumberInput,BaseSelect}.vue` — the project's first reusable
   form components, used by every admin form. Reach for these before writing a new raw `<input>` in `admin/*`.

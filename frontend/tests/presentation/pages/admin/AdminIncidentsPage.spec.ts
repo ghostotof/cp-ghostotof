@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount, type DOMWrapper, type VueWrapper } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount, type DOMWrapper, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { defineComponent, h } from 'vue'
 import { RouterView } from 'vue-router'
@@ -155,6 +155,11 @@ async function dragRow(wrapper: VueWrapper, from: number, to: number): Promise<v
 }
 
 describe('AdminIncidentsPage', () => {
+  // Chaque page démontée après son test : sans cela, une page laissée montée
+  // avec un ordre modifié garde son écouteur `beforeunload` et fait mentir le
+  // test suivant sur cet événement global.
+  enableAutoUnmount(afterEach)
+
   afterEach(() => {
     vi.restoreAllMocks()
   })
@@ -208,8 +213,6 @@ describe('AdminIncidentsPage', () => {
     expect(rows(wrapper)[1].text()).toContain('Panne du broker RabbitMQ')
     expect(rows(wrapper)[1].get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
     expect(document.activeElement).toBe(rows(wrapper)[1].get('button').element)
-
-    wrapper.unmount()
   })
 
   it('verrouille toutes les mutations tant que l\'ordre est modifié, et les libère sur Annuler', async () => {
@@ -415,6 +418,34 @@ describe('AdminIncidentsPage', () => {
 
     expect(confirmSpy).toHaveBeenCalledOnce()
     expect(router.currentRoute.value.path).toBe('/admin/incidents')
+  })
+
+  /**
+   * La fermeture de l'onglet ne passe pas par le routeur : c'est `beforeunload`
+   * qui porte l'avertissement (D6), et le navigateur affiche sa propre boîte
+   * quand l'événement est annulé. Le gestionnaire est identique sur les six
+   * pages ordonnées ; il est vérifié une fois, ici, sur la première d'entre
+   * elles — y compris son retrait au démontage, sans quoi la page suivante
+   * hériterait d'un avertissement fantôme.
+   */
+  it('annule beforeunload seulement tant que l\'ordre est modifié, et se détache au démontage', async () => {
+    const { wrapper } = await mountPage()
+
+    const clean = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(clean)
+    expect(clean.defaultPrevented).toBe(false)
+
+    await dragRow(wrapper, 0, 2)
+
+    const dirty = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(dirty)
+    expect(dirty.defaultPrevented).toBe(true)
+
+    wrapper.unmount()
+
+    const afterUnmount = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(afterUnmount)
+    expect(afterUnmount.defaultPrevented).toBe(false)
   })
 
   it('quitte la route sans rien demander quand l\'ordre est à jour', async () => {

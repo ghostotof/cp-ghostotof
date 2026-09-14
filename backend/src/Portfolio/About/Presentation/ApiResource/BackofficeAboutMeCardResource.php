@@ -12,6 +12,7 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use App\Portfolio\About\Domain\Entity\AboutMeCard;
+use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\About\Infrastructure\ApiPlatform\BackofficeAboutMeCardProcessor;
 use App\Portfolio\About\Infrastructure\ApiPlatform\BackofficeAboutMeCardProvider;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -75,8 +76,13 @@ final class BackofficeAboutMeCardResource
          */
         #[Assert\Uuid]
         public ?string $translationGroup = null,
+        /**
+         * Bornée par l'enum, pas par une liste recopiée (spec 0004, D2 — même
+         * règle que `Locale::values()` sur `locale`) : une catégorie ajoutée
+         * dans `AboutMeCardCategory` est acceptée ici sans second geste.
+         */
         #[Assert\NotBlank]
-        #[Assert\Choice(choices: ['technical', 'personal', 'hobby'])]
+        #[Assert\Choice(callback: [AboutMeCardCategory::class, 'values'])]
         public ?string $category = null,
         #[Assert\NotBlank]
         #[Assert\Length(max: 180)]

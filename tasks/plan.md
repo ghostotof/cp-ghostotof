@@ -107,8 +107,14 @@ Ordre de construction de la spec (§3), une PR par tâche, label `spec-0004` :
 - [x] Task B8 — CV sans identité — [#148](https://github.com/ghostotof/cp-ghostotof/issues/148)
 - [x] Task B9 — Qualité (principes, traits ; le tableau affiche toutes les langues) — [#149](https://github.com/ghostotof/cp-ghostotof/issues/149)
 - [x] Task B10 — À propos (cartes site ; cartes moi par catégorie) — [#150](https://github.com/ghostotof/cp-ghostotof/issues/150)
-- [ ] Task B11 — Watch (ids, sans groupe) — [#151](https://github.com/ghostotof/cp-ghostotof/issues/151)
-- [ ] Task B12 — Documentation (`CLAUDE.md`, spec 0002 amendée « le groupe est recopié »), release `v0.12.0`, préprod vérifiée FR et EN — [#152](https://github.com/ghostotof/cp-ghostotof/issues/152)
+- [x] Task B11 — Watch (ids, sans groupe ; la position sort aussi du contrat d'écriture backend, oubli de B2) — [#151](https://github.com/ghostotof/cp-ghostotof/issues/151)
+- [x] Task B12 — Documentation (`CLAUDE.md`, spec 0002 amendée « le groupe est recopié », spec 0004 §10, `Choice` de la catégorie sur l'enum, test `beforeunload`) — [#152](https://github.com/ghostotof/cp-ghostotof/issues/152)
+
+### Checkpoint B3 — `v0.12.0` en production
+- [ ] Pile #155 → #168 mergée dans `develop` dans l'ordre, avec retargeting avant suppression de branche ; `develop` → `main`
+- [ ] `DEPLOY_MAINTENANCE_WINDOW=true` posée **avant** le tag (le rollout standard précède la migration, cf. spec 0004 §10), retirée après la prod
+- [ ] Tag `v0.12.0 --cleanup=verbatim` avec les notes ; préprod : migration jouée, appariement vérifié sur les données seedées (un groupe par contenu bilingue), un réordonnancement relu sur `/api/<x>/fr` **et** `/api/<x>/en`
+- [ ] Prod : migration jouée, appariement vérifié (orphelins signalés), pages publiques inchangées ; release publiée par `create-release` — [#152](https://github.com/ghostotof/cp-ghostotof/issues/152)
 
 ## Risks and Mitigations
 
