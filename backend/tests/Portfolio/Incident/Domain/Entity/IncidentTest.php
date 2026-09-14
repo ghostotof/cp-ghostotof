@@ -87,7 +87,6 @@ final class IncidentTest extends TestCase
             'Nouvelle cause.',
             'Nouvelle résolution.',
             'Nouvel invariant.',
-            3,
         );
 
         self::assertSame('Nouveau titre', $incident->getTitle());
@@ -97,7 +96,10 @@ final class IncidentTest extends TestCase
         self::assertSame('Nouvelle cause.', $incident->getRootCause());
         self::assertSame('Nouvelle résolution.', $incident->getResolution());
         self::assertSame('Nouvel invariant.', $incident->getInvariant());
-        self::assertSame(3, $incident->getPosition());
+        // Spec 0004 D3 : `update()` ne touche plus à la position — elle ne se
+        // saisit pas, seuls le rattachement à un groupe et l'endpoint d'ordre
+        // l'écrivent.
+        self::assertSame(0, $incident->getPosition());
         // Changer la langue d'un incident revient à en créer un autre.
         self::assertSame(Locale::FR, $incident->getLocale());
     }

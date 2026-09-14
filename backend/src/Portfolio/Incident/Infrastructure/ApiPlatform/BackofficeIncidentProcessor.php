@@ -13,6 +13,7 @@ use App\Portfolio\Incident\Application\IncidentAdministratorInterface;
 use App\Portfolio\Incident\Presentation\ApiResource\BackofficeIncidentResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @implements ProcessorInterface<BackofficeIncidentResource, BackofficeIncidentResource|null>
@@ -48,7 +49,7 @@ final readonly class BackofficeIncidentProcessor implements ProcessorInterface
                 $data->rootCause,
                 $data->resolution,
                 $data->invariant,
-                $data->position,
+                self::translationGroup($data),
             );
         } elseif ($operation instanceof Post) {
             // Locale::from : valeur déjà bornée par #[Assert\Choice]. Un
@@ -62,12 +63,22 @@ final readonly class BackofficeIncidentProcessor implements ProcessorInterface
                 $data->rootCause,
                 $data->resolution,
                 $data->invariant,
-                $data->position,
+                self::translationGroup($data),
             );
         } else {
             throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
         }
 
         return BackofficeIncidentResource::fromEntity($incident);
+    }
+
+    /**
+     * Le groupe est une chaîne RFC 4122 à la frontière, un Uuid dans le domaine
+     * (spec 0003 D7). `Uuid::fromString` accepte d'autres formats, mais
+     * `#[Assert\Uuid]` a déjà borné le champ en amont.
+     */
+    private static function translationGroup(BackofficeIncidentResource $data): ?Uuid
+    {
+        return null === $data->translationGroup ? null : Uuid::fromString($data->translationGroup);
     }
 }

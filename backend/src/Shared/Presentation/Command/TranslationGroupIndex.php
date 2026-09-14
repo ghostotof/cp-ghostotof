@@ -14,9 +14,13 @@ use Symfony\Component\Uid\Uuid;
  * **aligné par index** (`foreach ($items as $position => $item)`, la n-ième
  * entrée FR et la n-ième entrée EN disent la même chose) : l'index suffit donc
  * à les apparier, exactement comme la migration apparie l'existant sur la
- * position. Cette classe est ce rapprochement, et rien d'autre — le premier
- * appel pour un couple (périmètre, index) forge le groupe, les suivants le
- * retrouvent.
+ * position. Cette classe est ce rapprochement, et rien d'autre.
+ *
+ * Elle **retient** un groupe au lieu de le forger (spec 0004 D3) : la première
+ * langue crée son entrée sans groupe — l'entité s'en forge un — et on note
+ * celui-ci pour les langues suivantes. Forger le groupe ici, avant toute
+ * entrée, produirait un groupe que rien ne porte encore : exactement ce que
+ * `UnknownTranslationGroupException` refuse.
  *
  * Le `$scope` sépare les périmètres d'une même commande qui numérotent chacun
  * depuis zéro : « principes » et « traits » pour Qualité, les cartes site et
@@ -32,8 +36,20 @@ final class TranslationGroupIndex
     /** @var array<string, array<int, Uuid>> */
     private array $groups = [];
 
-    public function forIndex(string $scope, int $index): Uuid
+    /**
+     * Le groupe déjà connu pour ce couple, ou `null` s'il reste à naître.
+     */
+    public function forIndex(string $scope, int $index): ?Uuid
     {
-        return $this->groups[$scope][$index] ??= Uuid::v7();
+        return $this->groups[$scope][$index] ?? null;
+    }
+
+    /**
+     * Retient le groupe de la première entrée créée pour ce couple. Les appels
+     * suivants ne l'écrasent pas : c'est la première langue qui fait foi.
+     */
+    public function remember(string $scope, int $index, Uuid $translationGroup): void
+    {
+        $this->groups[$scope][$index] ??= $translationGroup;
     }
 }
