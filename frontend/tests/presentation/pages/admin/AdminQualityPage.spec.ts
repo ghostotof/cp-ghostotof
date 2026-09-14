@@ -9,6 +9,10 @@ import type { AdminQualityTraitRepository } from '../../../../src/domain/admin/q
 import type { AdminQualityPrinciple } from '../../../../src/domain/admin/quality/entities/AdminQualityPrinciple'
 import type { AdminQualityTrait } from '../../../../src/domain/admin/quality/entities/AdminQualityTrait'
 import { AdminQualityError } from '../../../../src/domain/admin/quality/errors/AdminQualityError'
+import { ADMIN_TRANSLATION_REPOSITORY } from '../../../../src/application/admin/translation/useAdminTranslation'
+import type { AdminTranslationRepository } from '../../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
+import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
+import { expectNoAccessibilityViolation } from '../../../support/axe'
 
 const PRINCIPLE: AdminQualityPrinciple = { id: 1, locale: 'fr', title: 'DDD', description: 'Description DDD', iconKey: 'boxes', position: 0 }
 const TRAIT: AdminQualityTrait = { id: 1, locale: 'fr', label: 'Testé', position: 0 }
@@ -33,9 +37,17 @@ function createStubTraitRepository(overrides: Partial<AdminQualityTraitRepositor
   }
 }
 
+function createTranslationRepository(fields: Record<string, string>, overrides: Partial<AdminTranslationRepository> = {}): AdminTranslationRepository {
+  return {
+    translate: vi.fn(async () => ({ sourceLocale: 'fr' as const, targetLocale: 'en' as const, fields })),
+    ...overrides,
+  }
+}
+
 async function mountPage(
   principleRepository: AdminQualityPrincipleRepository = createStubPrincipleRepository(),
   traitRepository: AdminQualityTraitRepository = createStubTraitRepository(),
+  translationRepository: AdminTranslationRepository = createTranslationRepository({ title: 'DDD', description: 'DDD description' }),
 ) {
   const wrapper = mount(AdminQualityPage, {
     global: {
@@ -43,6 +55,7 @@ async function mountPage(
       provide: {
         [ADMIN_QUALITY_PRINCIPLE_REPOSITORY as symbol]: principleRepository,
         [ADMIN_QUALITY_TRAIT_REPOSITORY as symbol]: traitRepository,
+        [ADMIN_TRANSLATION_REPOSITORY as symbol]: translationRepository,
       },
     },
   })
@@ -121,7 +134,10 @@ describe('AdminQualityPage', () => {
     const principleRepository = createStubPrincipleRepository()
     const wrapper = await mountPage(principleRepository)
 
-    await wrapper.get('button.btn-outline-light').trigger('click')
+    // Par libellé et non par classe : le bouton de traduction partage
+    // `btn-outline-light` et précède désormais « Modifier » dans le DOM.
+    const editButton = wrapper.findAll('button').find((button) => 'Modifier' === button.text())
+    await editButton?.trigger('click')
 
     expect((wrapper.get('#admin-quality-principle-title').element as HTMLInputElement).value).toBe('DDD')
 
@@ -175,5 +191,113 @@ describe('AdminQualityPage', () => {
     await flushPromises()
 
     expect(wrapper.get('[role="alert"]').text()).toBe('Le formulaire contient des erreurs. Vérifiez les champs.')
+  })
+
+  describe('assistant de traduction', () => {
+    type Wrapper = Awaited<ReturnType<typeof mountPage>>
+
+    function translateButtons(wrapper: Wrapper) {
+      return wrapper.findAll('button').filter((candidate) => candidate.text().includes('Proposer la version'))
+    }
+
+    async function editFirst(wrapper: Wrapper, formIndex: number): Promise<void> {
+      const editButtons = wrapper.findAll('button').filter((button) => 'Modifier' === button.text())
+      await editButtons[formIndex]?.trigger('click')
+    }
+
+    it('propose un bouton par formulaire, principes et traits', async () => {
+      const wrapper = await mountPage()
+
+      expect(translateButtons(wrapper)).toHaveLength(2)
+    })
+
+    it('principe : envoie titre et description, jamais la clé d\'icône ni la position, depuis la locale de la page', async () => {
+      const translation = createTranslationRepository({ title: 'DDD', description: 'DDD description' })
+      const wrapper = await mountPage(createStubPrincipleRepository(), createStubTraitRepository(), translation)
+      await editFirst(wrapper, 0)
+
+      await translateButtons(wrapper)[0]?.trigger('click')
+      await flushPromises()
+
+      expect(translation.translate).toHaveBeenCalledWith('fr', 'en', { title: 'DDD', description: 'Description DDD' })
+    })
+
+    it('principe : bascule la page sur la locale cible (listes rechargées) et le formulaire en création, icône et position conservées', async () => {
+      const principleRepository = createStubPrincipleRepository()
+      const traitRepository = createStubTraitRepository()
+      const wrapper = await mountPage(principleRepository, traitRepository)
+      await editFirst(wrapper, 0)
+      vi.mocked(principleRepository.list).mockClear()
+      vi.mocked(traitRepository.list).mockClear()
+
+      await translateButtons(wrapper)[0]?.trigger('click')
+      await flushPromises()
+
+      expect((wrapper.get('#admin-quality-locale').element as HTMLSelectElement).value).toBe('en')
+      expect(principleRepository.list).toHaveBeenCalledWith('en')
+      expect(traitRepository.list).toHaveBeenCalledWith('en')
+      expect(wrapper.findAll('h2')[0]?.text()).toBe('Ajouter un principe')
+      expect((wrapper.get('#admin-quality-principle-title').element as HTMLInputElement).value).toBe('DDD')
+      expect((wrapper.get('#admin-quality-principle-description').element as HTMLTextAreaElement).value).toBe('DDD description')
+      expect((wrapper.get('#admin-quality-principle-icon-key').element as HTMLInputElement).value).toBe('boxes')
+      expect((wrapper.get('#admin-quality-principle-position').element as HTMLInputElement).value).toBe('0')
+      expect(wrapper.get('[role="status"]').text()).toContain('Brouillon généré par IA')
+      expect(principleRepository.create).not.toHaveBeenCalled()
+      expect(principleRepository.update).not.toHaveBeenCalled()
+    })
+
+    it('principe : Enregistrer crée alors l\'entrée dans la locale cible', async () => {
+      const principleRepository = createStubPrincipleRepository()
+      const wrapper = await mountPage(principleRepository)
+      await editFirst(wrapper, 0)
+      await translateButtons(wrapper)[0]?.trigger('click')
+      await flushPromises()
+
+      await wrapper.findAll('form')[0]?.trigger('submit.prevent')
+      await flushPromises()
+
+      expect(principleRepository.update).not.toHaveBeenCalled()
+      expect(principleRepository.create).toHaveBeenCalledWith({ locale: 'en', title: 'DDD', description: 'DDD description', iconKey: 'boxes', position: 0 })
+    })
+
+    it('trait : envoie le libellé et bascule de la même façon', async () => {
+      const translation = createTranslationRepository({ label: 'Tested' })
+      const traitRepository = createStubTraitRepository()
+      const wrapper = await mountPage(createStubPrincipleRepository(), traitRepository, translation)
+      await editFirst(wrapper, 1)
+
+      await translateButtons(wrapper)[1]?.trigger('click')
+      await flushPromises()
+
+      expect(translation.translate).toHaveBeenCalledWith('fr', 'en', { label: 'Testé' })
+      expect((wrapper.get('#admin-quality-locale').element as HTMLSelectElement).value).toBe('en')
+      expect(wrapper.findAll('h2')[1]?.text()).toBe('Ajouter un trait')
+      expect((wrapper.get('#admin-quality-trait-label').element as HTMLInputElement).value).toBe('Tested')
+      expect(traitRepository.create).not.toHaveBeenCalled()
+    })
+
+    it('en échec, la page reste sur sa locale et le formulaire intact', async () => {
+      const translation = createTranslationRepository({}, {
+        translate: vi.fn(async () => { throw new AdminTranslationError('unavailable', 'Indisponible.') }),
+      })
+      const wrapper = await mountPage(createStubPrincipleRepository(), createStubTraitRepository(), translation)
+      await editFirst(wrapper, 0)
+
+      await translateButtons(wrapper)[0]?.trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('[role="alert"]').text()).toContain('indisponible')
+      expect((wrapper.get('#admin-quality-locale').element as HTMLSelectElement).value).toBe('fr')
+      expect(wrapper.findAll('h2')[0]?.text()).toBe('Modifier le principe')
+    })
+
+    it('ne présente aucune violation d\'accessibilité avec un brouillon rendu', async () => {
+      const wrapper = await mountPage()
+      await editFirst(wrapper, 0)
+      await translateButtons(wrapper)[0]?.trigger('click')
+      await flushPromises()
+
+      await expectNoAccessibilityViolation(wrapper)
+    })
   })
 })
