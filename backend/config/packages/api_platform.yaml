@@ -24,6 +24,11 @@ api_platform:
         # défensive pour éviter un 500 générique si ce handler était un jour
         # invoqué de façon synchrone depuis un Processor API Platform.
         App\Contact\Domain\Exception\ContactMessageDeliveryException: 503
+        # Assistant de traduction (ADR 0004) : fournisseur injoignable, délai
+        # dépassé ou réponse hors schéma. 503 comme la remise d'un e-mail —
+        # le service est indisponible, la requête était bonne — et un `type`
+        # stable /errors/translation-unavailable pour le frontend.
+        App\Ai\Translation\Domain\Exception\TranslationUnavailableException: 503
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException: 409
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException: 404
         App\Portfolio\Contribution\Domain\Exception\ContributionNotFoundException: 404
