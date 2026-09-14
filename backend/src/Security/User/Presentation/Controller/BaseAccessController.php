@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace App\Security\User\Presentation\Controller;
 
+use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
 use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
 use App\Security\User\Domain\ValueObject\GuestUser;
 use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
-use Symfony\Component\HttpFoundation\Cookie;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
 
@@ -20,12 +19,12 @@ use Symfony\Component\Routing\Attribute\Route;
  * CsrfCookieRequestSubscriber::EXCLUDED_PATHS (appelant anonyme, aucun cookie
  * XSRF-TOKEN préexistant à double-soumettre).
  *
- * Pose les cookies BEARER + XSRF-TOKEN à la main plutôt que de passer par le
+ * Pose les cookies BEARER + XSRF-TOKEN lui-même plutôt que de passer par le
  * firewall "login" (json_login) : il n'y a ni identifiant ni mot de passe à
- * vérifier ici, donc pas d'authenticator Symfony à faire intervenir. Même
- * shape de cookies que LoginSuccessSubscriber/lexik_jwt_authentication.yaml,
- * mais durée de vie volontairement plus courte (D6 : « jeton court, sans
- * renouvellement »).
+ * vérifier ici, donc pas d'authenticator Symfony à faire intervenir. Leurs
+ * attributs viennent d'AuthCookieFactory (issue #87), les mêmes qu'au login ;
+ * seule la durée de vie est volontairement plus courte (D6 : « jeton court,
+ * sans renouvellement »).
  */
 final readonly class BaseAccessController
 {
@@ -35,7 +34,7 @@ final readonly class BaseAccessController
     public function __construct(
         private JWTTokenManagerInterface $jwtTokenManager,
         private CsrfCookieTokenSigner $csrfCookieTokenSigner,
-        #[Autowire('%kernel.environment%')] private string $environment,
+        private AuthCookieFactory $authCookieFactory,
     ) {
     }
 
@@ -59,25 +58,11 @@ final readonly class BaseAccessController
             'expiresAt' => (new \DateTimeImmutable('@'.$expiresAt))->format(\DateTimeInterface::ATOM),
         ]);
 
-        $isProd = 'prod' === $this->environment;
-
-        $response->headers->setCookie(
-            Cookie::create('BEARER', $jwt)
-                ->withExpires($expiresAt)
-                ->withPath('/')
-                ->withSecure($isProd)
-                ->withHttpOnly(true)
-                ->withSameSite(Cookie::SAMESITE_LAX),
-        );
-
-        $response->headers->setCookie(
-            Cookie::create('XSRF-TOKEN', $this->csrfCookieTokenSigner->issue())
-                ->withExpires($expiresAt)
-                ->withPath('/')
-                ->withSecure($isProd)
-                ->withHttpOnly(false)
-                ->withSameSite(Cookie::SAMESITE_LAX),
-        );
+        // Les deux cookies meurent avec le jeton : rien à « terminer » côté
+        // navigateur passé les 15 minutes, et le XSRF-TOKEN n'a pas de raison
+        // de survivre au BEARER qu'il accompagne.
+        $response->headers->setCookie($this->authCookieFactory->bearer($jwt, $expiresAt));
+        $response->headers->setCookie($this->authCookieFactory->xsrf($this->csrfCookieTokenSigner->issue(), $expiresAt));
 
         return $response;
     }

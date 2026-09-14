@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Jwt;
 
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
-use Symfony\Component\HttpFoundation\Cookie;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Security\Http\Event\LogoutEvent;
@@ -17,10 +16,15 @@ use Symfony\Component\Security\Http\Event\LogoutEvent;
  * défaut. C'est ce listener qui construit la réponse et expire les deux cookies
  * posés au login (BEARER + XSRF-TOKEN, cf. LoginSuccessSubscriber) — sans lui,
  * le LogoutListener de Symfony lève une exception ("no response was set").
+ *
+ * Les cookies expirés viennent d'AuthCookieFactory (issue #87) : un cookie
+ * « supprimé » dont Path, Secure ou SameSite diffèrent de la pose n'est pas
+ * supprimé par le navigateur, et c'est ici que ce drift coûterait le plus —
+ * une déconnexion qui ne déconnecte pas.
  */
 final readonly class CookieLogoutListener implements EventSubscriberInterface
 {
-    public function __construct(#[Autowire('%kernel.environment%')] private string $environment)
+    public function __construct(private AuthCookieFactory $authCookieFactory)
     {
     }
 
@@ -35,9 +39,8 @@ final readonly class CookieLogoutListener implements EventSubscriberInterface
     {
         $response = new JsonResponse(null, Response::HTTP_NO_CONTENT);
 
-        $secure = 'prod' === $this->environment;
-        $response->headers->clearCookie('BEARER', '/', null, $secure, true, Cookie::SAMESITE_LAX);
-        $response->headers->clearCookie('XSRF-TOKEN', '/', null, $secure, false, Cookie::SAMESITE_LAX);
+        $response->headers->setCookie($this->authCookieFactory->expired(AuthCookieFactory::BEARER));
+        $response->headers->setCookie($this->authCookieFactory->expired(AuthCookieFactory::XSRF_TOKEN));
 
         $event->setResponse($response);
     }
