@@ -1,7 +1,8 @@
 # ADR 0004 — Assistance IA : un fournisseur de modèles sans en devenir l'otage (`Ai/`)
 
-- Statut : **accepté** (2026-09-14) — phase 1 en cours (spec `.claude/specs/0002-ai-translation-assistant.md`,
-  issues `spec-0002`) ; D7 (phase 2) à préciser par amendement avant d'écrire du code
+- Statut : **accepté** (2026-09-14) — **phase 1 livrée** le même jour (spec
+  `.claude/specs/0002-ai-translation-assistant.md`, issues `spec-0002` fermées, releases v0.10.0 puis
+  v0.10.1 en production) ; D7 (phase 2) à préciser par amendement avant d'écrire du code
 - Date : 2026-09-14
 - Portée : `src/Ai/` (nouveau contexte borné), `config/packages/ai.yaml`, `config/ai/prompts/`,
   `config/packages/framework.yaml` (client HTTP `ai.http_client`), `config/packages/rate_limiter.yaml`,
@@ -164,8 +165,21 @@ JWT existant, liste des outils) sera précisé par amendement avant tout code :
 - **Un invariant de `CLAUDE.md` corrigé** : le CronJob de veille n'est plus le seul objet à appeler
   des tiers.
 - **Un coût récurrent nouveau**, de l'ordre du centime par traduction, plafonné par D5.
-- **Un bouton par page admin localisée**, branché page par page (Incidents d'abord) ; la page admin
-  des études de cas, qui manque, est une tâche à part (issue #104).
+- **Un bouton par page admin localisée**, branché page par page — Incidents (v0.10.0), puis
+  Contributions, CV sans identité, Qualité et À propos (v0.10.1). Deux sémantiques ont été tranchées au
+  branchement : sur une page « par entrée », le formulaire bascule en création dans la locale cible ;
+  sur une page « à locale de page » (Qualité, À propos), c'est la page qui change de locale, et le
+  singleton des réglages À propos reçoit son brouillon en différé, une fois la locale cible chargée.
+  La page admin des études de cas, qui manque, est une tâche à part (issue #104) ; le bouton y
+  arrivera avec elle.
+- **Les tests unitaires passent par un faux agent** (`FakeAgent`, implémentation de test de
+  `AgentInterface`) plutôt que par `InMemoryPlatform` : c'est l'agent que le traducteur reçoit, la
+  plateforme n'est jamais vue de la classe. **Le remplacement dans les tests fonctionnels s'est fait
+  au niveau du client HTTP**, pas de la plateforme (D6 admettait les deux) : le service concret derrière le client scoped,
+  `ai.http_client.scoping.inner`, est remplacé par un `MockHttpClient` au format de l'API Messages,
+  et le `KernelBrowser` doit être en `disableReboot()`, sinon le kernel reconstruit entre la
+  connexion et l'appel perd la substitution et la requête part réellement — la clé factice de
+  `phpunit.dist.xml` la fait alors échouer en 401, ce qui est le filet prévu.
 
 ## Alternatives écartées
 
