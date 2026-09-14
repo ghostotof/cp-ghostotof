@@ -80,7 +80,15 @@ jobs:
           php bin/console doctrine:migrations:migrate --no-interaction
       - name: PHPUnit
         working-directory: backend
-        run: php bin/phpunit
+        run: php bin/phpunit --log-junit "$RUNNER_TEMP/junit.xml"
+      # Carte de synthèse sur la page du run, dans l'esprit de celle que Vitest
+      # écrit lui-même (reporter github-actions intégré) : PHPUnit n'en produit
+      # pas, le script la construit depuis le rapport JUnit. `if: always()` :
+      # c'est précisément quand ça échoue qu'elle sert. Le statut du job reste
+      # celui de l'étape PHPUnit.
+      - name: Résumé PHPUnit
+        if: always()
+        run: php .github/scripts/summary-phpunit.php "$RUNNER_TEMP/junit.xml" >> "$GITHUB_STEP_SUMMARY"
 
   test-frontend:
     runs-on: ubuntu-latest
@@ -137,7 +145,13 @@ jobs:
         run: composer install --no-interaction --prefer-dist
       - name: Psalm (analyse de teinte, bloquant)
         working-directory: backend
-        run: vendor/bin/psalm.phar --taint-analysis --no-cache --no-progress --output-format=github
+        # `shell: bash` explicite pour `pipefail` : sans lui, le `tee` masquerait
+        # le code de sortie de Psalm et le job passerait au vert avec des erreurs.
+        shell: bash
+        run: vendor/bin/psalm.phar --taint-analysis --no-cache --no-progress --output-format=github | tee "$RUNNER_TEMP/psalm.log"
+      - name: Résumé Psalm
+        if: always()
+        run: .github/scripts/summary-annotations.sh "Psalm (analyse de teinte)" "$RUNNER_TEMP/psalm.log" '^Psalm was able to infer types' >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # phpstan-backend — analyse statique PHPStan (niveau max + strict-rules +
@@ -169,7 +183,11 @@ jobs:
         run: php bin/console cache:warmup --env=dev
       - name: PHPStan (niveau max, bloquant)
         working-directory: backend
-        run: vendor/bin/phpstan analyse --no-progress --error-format=github
+        shell: bash   # pipefail, cf. sast-backend
+        run: vendor/bin/phpstan analyse --no-progress --error-format=github | tee "$RUNNER_TEMP/phpstan.log"
+      - name: Résumé PHPStan
+        if: always()
+        run: .github/scripts/summary-annotations.sh "PHPStan (niveau max)" "$RUNNER_TEMP/phpstan.log" >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # rector-backend — Rector en --dry-run (bloquant) : le code doit rester
@@ -192,7 +210,13 @@ jobs:
         run: composer install --no-interaction --prefer-dist
       - name: Rector (--dry-run, bloquant)
         working-directory: backend
-        run: vendor/bin/rector process --dry-run --no-progress-bar
+        shell: bash   # pipefail, cf. sast-backend
+        # Sortie JSON plutôt que console : les diffs sont repris dans la carte
+        # de synthèse (blocs repliés), plus lisibles là que dans le log.
+        run: vendor/bin/rector process --dry-run --no-progress-bar --output-format=json | tee "$RUNNER_TEMP/rector.json"
+      - name: Résumé Rector
+        if: always()
+        run: php .github/scripts/summary-rector.php "$RUNNER_TEMP/rector.json" >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # build — une image prod + une image preprod, backend et frontend.
