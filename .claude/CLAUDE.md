@@ -291,8 +291,9 @@ mid-migration.
     group takes `max + 1` of its scope, one attached to a group **inherits the group's position**;
     `reattach()` on a `PUT` with `translationGroup: null` detaches and keeps the position, and is a
     no-op on an entry already alone). `WatchedProduct` is not localized, so it is `Orderable` on its
-    own id, and its `Administrator` computes the end of the catalogue itself. The **only writer of
-    `position` is `PUT /api/backoffice/<x>/order`** (`Backoffice<X>OrderResource`, `read: false`,
+    own id, and its `Administrator` computes the end of the catalogue itself. The **only client-driven
+    writer of `position` is `PUT /api/backoffice/<x>/order`** (`ContentPlacement` derives it server-side,
+    no request body ever chooses it) (`Backoffice<X>OrderResource`, `read: false`,
     `output: false`, 204, one per context, `{groups: [uuid…]}` — `{ids: […]}` for Watch, plus
     `category` for me-cards): `Domain/Service/OrderAssigner` enforces the **exact-set rule** (D4) —
     an unknown key is 422 `unknown-order-entry`, a missing one 422 `incomplete-order`, both

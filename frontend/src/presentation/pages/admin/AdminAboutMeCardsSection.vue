@@ -381,6 +381,7 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
           :form-locale="form.locale"
           :is-translating="isTranslating"
           :disabled="!hasProseToTranslate || isSubmitting || isLocked"
+          :aria-describedby="lockedHintId"
           @translate="handleTranslate"
         />
       </div>

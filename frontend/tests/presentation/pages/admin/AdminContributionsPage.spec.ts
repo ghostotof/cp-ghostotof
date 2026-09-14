@@ -231,6 +231,9 @@ describe('AdminContributionsPage', () => {
     // Un appel au modèle produirait un brouillon que le formulaire verrouillé ne
     // pourrait pas enregistrer : du quota dépensé pour rien (ADR 0004).
     expect(translateButton(wrapper).attributes('disabled')).toBeDefined()
+    // Le seul bouton dont la désactivation n'a aucun rapport visible avec l'ordre :
+    // c'est celui qui a le plus besoin de l'aide.
+    expect(translateButton(wrapper).attributes('aria-describedby')).toBe('admin-order-locked-hint')
 
     await buttonLabelled(wrapper, 'Annuler').trigger('click')
 

@@ -165,6 +165,7 @@ async function handleSubmit(): Promise<void> {
           :form-locale="locale"
           :is-translating="isTranslating"
           :disabled="!hasProseToTranslate || isSubmitting || isLocked"
+          :aria-describedby="lockedHintId"
           @translate="handleTranslate"
         />
       </div>
