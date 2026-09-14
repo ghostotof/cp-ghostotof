@@ -5,7 +5,6 @@ import type {
   AdminQualityTraitRepository,
 } from '../../../domain/admin/quality/repositories/AdminQualityTraitRepository'
 import { AdminQualityError } from '../../../domain/admin/quality/errors/AdminQualityError'
-import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
 
 export const ADMIN_QUALITY_TRAIT_REPOSITORY: InjectionKey<AdminQualityTraitRepository> = Symbol('AdminQualityTraitRepository')
@@ -15,15 +14,22 @@ export interface UseAdminQualityTraitsResult {
   isLoading: Ref<boolean>
   hasError: Ref<boolean>
   errorMessage: Ref<AdminQualityError | null>
-  load: (locale: Locale) => Promise<void>
+  load: () => Promise<void>
   create: (input: AdminQualityTraitInput) => Promise<void>
   update: (id: string, input: AdminQualityTraitInput) => Promise<void>
   remove: (id: string) => Promise<void>
+  reorder: (keys: readonly string[]) => Promise<void>
 }
 
 /**
- * Pas de dépendance à useI18n() (cf. useAdminExperienceTechnologies) : la page appelante
- * possède le sélecteur de locale et pilote load(locale).
+ * Pas de dépendance à useI18n() (cf. useAdminExperienceTechnologies) : la page
+ * appelante traduit `errorMessage.reason`, ce qui garde ce composable testable
+ * sans instance i18n.
+ *
+ * `load()` ne prend plus de locale depuis la spec 0004 (D8) : le tableau du
+ * backoffice affiche toutes les langues, le sélecteur de la page ne pilote
+ * plus que les formulaires. La liste se charge donc une fois, à la création du
+ * composable, et non plus à chaque changement de langue.
  */
 export function useAdminQualityTraits(): UseAdminQualityTraitsResult {
   const repository = inject(ADMIN_QUALITY_TRAIT_REPOSITORY)
@@ -39,16 +45,14 @@ export function useAdminQualityTraits(): UseAdminQualityTraitsResult {
   const hasError = ref(false)
   const errorMessage = ref<AdminQualityError | null>(null)
   const requestGuard = createStaleRequestGuard()
-  let currentLocale: Locale | null = null
 
-  const load = async (locale: Locale): Promise<void> => {
-    currentLocale = locale
+  const load = async (): Promise<void> => {
     const token = requestGuard.begin()
     isLoading.value = true
     hasError.value = false
 
     try {
-      const result = await repository.list(locale)
+      const result = await repository.list()
       if (!requestGuard.isCurrent(token)) return
       traits.value = result
     } catch {
@@ -63,9 +67,7 @@ export function useAdminQualityTraits(): UseAdminQualityTraitsResult {
 
     try {
       await mutation()
-      if (currentLocale) {
-        await load(currentLocale)
-      }
+      await load()
     } catch (error) {
       errorMessage.value = error instanceof AdminQualityError ? error : new AdminQualityError('unknown', 'Unknown error')
     }
@@ -77,5 +79,16 @@ export function useAdminQualityTraits(): UseAdminQualityTraitsResult {
 
   const remove = (id: string): Promise<void> => runMutation(() => repository.remove(id))
 
-  return { traits, isLoading, hasError, errorMessage, load, create, update, remove }
+  /**
+   * Volontairement hors de `runMutation` : ni rechargement ni absorption de
+   * l'erreur ici. `useOrderDraft` recharge lui-même après un enregistrement
+   * réussi, et il a besoin de recevoir l'`AdminOrderError` telle quelle pour
+   * distinguer un ordre obsolète (D4) d'une panne — la convertir en
+   * `AdminQualityError` lui retirerait cette information.
+   */
+  const reorder = (keys: readonly string[]): Promise<void> => repository.reorder(keys)
+
+  void load()
+
+  return { traits, isLoading, hasError, errorMessage, load, create, update, remove, reorder }
 }
