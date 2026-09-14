@@ -3,6 +3,10 @@ import { HttpAdminExperienceTechnologyRepository } from '../../../../src/infrast
 import { AdminExperienceTechnologyError } from '../../../../src/domain/admin/technologies/errors/AdminExperienceTechnologyError'
 
 const API_BASE_URL = 'https://api.example.test'
+const TECHNOLOGY_ID = '019968a0-0000-7000-8000-000000000041'
+const SECOND_TECHNOLOGY_ID = '019968a0-0000-7000-8000-000000000042'
+const NEW_TECHNOLOGY_ID = '019968a0-0000-7000-8000-000000000043'
+const MISSING_TECHNOLOGY_ID = '019968a0-0000-7000-8000-000000000999'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -20,7 +24,7 @@ describe('HttpAdminExperienceTechnologyRepository', () => {
 
   it('list() appelle GET avec credentials include, sans header CSRF, et mappe la réponse (iconKey/relatedTechnologyName absents => null)', async () => {
     const fetchMock = vi.fn(async () =>
-      jsonResponse(200, [{ id: 1, name: 'PHP', years: 13.5 }, { id: 2, name: 'Symfony', years: 9.5, iconKey: 'symfony', relatedTechnologyName: null, isSecondary: false }]),
+      jsonResponse(200, [{ id: TECHNOLOGY_ID, name: 'PHP', years: 13.5 }, { id: SECOND_TECHNOLOGY_ID, name: 'Symfony', years: 9.5, iconKey: 'symfony', relatedTechnologyName: null, isSecondary: false }]),
     )
     vi.stubGlobal('fetch', fetchMock)
 
@@ -33,13 +37,13 @@ describe('HttpAdminExperienceTechnologyRepository', () => {
       credentials: 'include',
     })
     expect(technologies).toEqual([
-      { id: 1, name: 'PHP', years: 13.5, iconKey: null, relatedTechnologyName: null, isSecondary: false },
-      { id: 2, name: 'Symfony', years: 9.5, iconKey: 'symfony', relatedTechnologyName: null, isSecondary: false },
+      { id: TECHNOLOGY_ID, name: 'PHP', years: 13.5, iconKey: null, relatedTechnologyName: null, isSecondary: false },
+      { id: SECOND_TECHNOLOGY_ID, name: 'Symfony', years: 9.5, iconKey: 'symfony', relatedTechnologyName: null, isSecondary: false },
     ])
   })
 
   it('create() envoie POST avec le header CSRF et le corps JSON', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse(201, { id: 3, name: 'Vue', years: 3 }))
+    const fetchMock = vi.fn(async () => jsonResponse(201, { id: NEW_TECHNOLOGY_ID, name: 'Vue', years: 3 }))
     vi.stubGlobal('fetch', fetchMock)
 
     const repository = new HttpAdminExperienceTechnologyRepository(API_BASE_URL)
@@ -61,14 +65,14 @@ describe('HttpAdminExperienceTechnologyRepository', () => {
   })
 
   it('update() envoie PUT vers /{id} avec le header CSRF', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse(200, { id: 3, name: 'Vue 3', years: 3 }))
+    const fetchMock = vi.fn(async () => jsonResponse(200, { id: NEW_TECHNOLOGY_ID, name: 'Vue 3', years: 3 }))
     vi.stubGlobal('fetch', fetchMock)
 
     const repository = new HttpAdminExperienceTechnologyRepository(API_BASE_URL)
-    await repository.update(3, { name: 'Vue 3', years: 3, iconKey: null, relatedTechnologyName: null, isSecondary: false })
+    await repository.update(NEW_TECHNOLOGY_ID, { name: 'Vue 3', years: 3, iconKey: null, relatedTechnologyName: null, isSecondary: false })
 
     expect(fetchMock).toHaveBeenCalledWith(
-      `${API_BASE_URL}/api/backoffice/experience/technologies/3`,
+      `${API_BASE_URL}/api/backoffice/experience/technologies/${NEW_TECHNOLOGY_ID}`,
       expect.objectContaining({ method: 'PUT', headers: expect.objectContaining({ 'X-XSRF-TOKEN': 'csrf-token-value' }) }),
     )
   })
@@ -78,10 +82,10 @@ describe('HttpAdminExperienceTechnologyRepository', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const repository = new HttpAdminExperienceTechnologyRepository(API_BASE_URL)
-    await repository.remove(3)
+    await repository.remove(NEW_TECHNOLOGY_ID)
 
     expect(fetchMock).toHaveBeenCalledWith(
-      `${API_BASE_URL}/api/backoffice/experience/technologies/3`,
+      `${API_BASE_URL}/api/backoffice/experience/technologies/${NEW_TECHNOLOGY_ID}`,
       expect.objectContaining({ method: 'DELETE', headers: expect.objectContaining({ 'X-XSRF-TOKEN': 'csrf-token-value' }) }),
     )
   })
@@ -101,7 +105,7 @@ describe('HttpAdminExperienceTechnologyRepository', () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(404, { detail: 'Not Found' })))
 
     const repository = new HttpAdminExperienceTechnologyRepository(API_BASE_URL)
-    const error = await repository.update(999, { name: 'X', years: 1, iconKey: null, relatedTechnologyName: null, isSecondary: false }).catch((caught: unknown) => caught)
+    const error = await repository.update(MISSING_TECHNOLOGY_ID, { name: 'X', years: 1, iconKey: null, relatedTechnologyName: null, isSecondary: false }).catch((caught: unknown) => caught)
 
     expect(error).toBeInstanceOf(AdminExperienceTechnologyError)
     expect((error as AdminExperienceTechnologyError).reason).toBe('not-found')

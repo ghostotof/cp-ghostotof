@@ -9,8 +9,9 @@ import type { AdminAnonymousCvSection } from '../../../../src/domain/admin/anony
 import type { AdminAnonymousCvSectionRepository } from '../../../../src/domain/admin/anonymousCv/repositories/AdminAnonymousCvSectionRepository'
 import { AdminAnonymousCvSectionError } from '../../../../src/domain/admin/anonymousCv/errors/AdminAnonymousCvSectionError'
 
+const SECTION_ID = '019968a0-0000-7000-8000-000000000003'
 const SECTION: AdminAnonymousCvSection = {
-  id: 1, locale: 'fr', title: 'Backend', skills: 'Symfony', yearsOfExperience: 12, achievements: 'Réalisations.', position: 0,
+  id: SECTION_ID, locale: 'fr', title: 'Backend', skills: 'Symfony', yearsOfExperience: 12, achievements: 'Réalisations.', position: 0,
 }
 const INPUT = {
   locale: 'fr', title: 'Backend', skills: 'Symfony', yearsOfExperience: 12, achievements: 'Réalisations.', position: 0,
@@ -68,9 +69,9 @@ describe('useAdminAnonymousCvSections', () => {
     await flushPromises()
     vi.mocked(repository.list).mockClear()
 
-    await composable.remove(1)
+    await composable.remove(SECTION_ID)
 
-    expect(repository.remove).toHaveBeenCalledWith(1)
+    expect(repository.remove).toHaveBeenCalledWith(SECTION_ID)
     expect(repository.list).toHaveBeenCalledOnce()
   })
 
@@ -81,7 +82,7 @@ describe('useAdminAnonymousCvSections', () => {
     const composable = mountWithComposable(repository)
     await flushPromises()
 
-    await composable.update(1, INPUT)
+    await composable.update(SECTION_ID, INPUT)
 
     expect(composable.errorMessage.value?.reason).toBe('validation')
     expect(composable.hasError.value).toBe(false)

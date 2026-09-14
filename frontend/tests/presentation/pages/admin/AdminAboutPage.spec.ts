@@ -26,9 +26,12 @@ const SETTINGS: AdminAboutSettings = {
   hobbiesSubtitle: 'En dehors du travail',
 }
 
-const SITE_CARD: AdminAboutSiteCard = { id: 1, locale: 'fr', title: 'Architecture', description: 'Description architecture', iconKey: 'layers', position: 0 }
+const SITE_CARD_ID = '019968a0-0000-7000-8000-000000000001'
+const ME_CARD_ID = '019968a0-0000-7000-8000-000000000002'
 
-const ME_CARD: AdminAboutMeCard = { id: 1, locale: 'fr', category: 'technical', title: 'Dev senior', description: 'Description dev', iconKey: 'code', position: 0 }
+const SITE_CARD: AdminAboutSiteCard = { id: SITE_CARD_ID, locale: 'fr', title: 'Architecture', description: 'Description architecture', iconKey: 'layers', position: 0 }
+
+const ME_CARD: AdminAboutMeCard = { id: ME_CARD_ID, locale: 'fr', category: 'technical', title: 'Dev senior', description: 'Description dev', iconKey: 'code', position: 0 }
 
 function createStubSettingsRepository(overrides: Partial<AdminAboutSettingsRepository> = {}): AdminAboutSettingsRepository {
   return {
@@ -190,7 +193,7 @@ describe('AdminAboutPage', () => {
     await wrapper.findAll('form')[1]?.trigger('submit.prevent')
     await flushPromises()
 
-    expect(siteCardRepository.update).toHaveBeenCalledWith(1, {
+    expect(siteCardRepository.update).toHaveBeenCalledWith(SITE_CARD_ID, {
       locale: 'fr',
       title: 'Architecture (mise à jour)',
       description: 'Description architecture',
@@ -229,7 +232,7 @@ describe('AdminAboutPage', () => {
     await deleteButtons[0]?.trigger('click')
     await flushPromises()
 
-    expect(siteCardRepository.remove).toHaveBeenCalledWith(1)
+    expect(siteCardRepository.remove).toHaveBeenCalledWith(SITE_CARD_ID)
   })
 
   it("affiche un message traduit si une mutation de carte échoue", async () => {

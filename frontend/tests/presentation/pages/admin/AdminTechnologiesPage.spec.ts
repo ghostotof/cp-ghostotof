@@ -7,7 +7,8 @@ import type { AdminExperienceTechnologyRepository } from '../../../../src/domain
 import type { AdminExperienceTechnology } from '../../../../src/domain/admin/technologies/entities/AdminExperienceTechnology'
 import { AdminExperienceTechnologyError } from '../../../../src/domain/admin/technologies/errors/AdminExperienceTechnologyError'
 
-const PHP: AdminExperienceTechnology = { id: 1, name: 'PHP', years: 13.5, iconKey: null, relatedTechnologyName: null, isSecondary: false }
+const PHP_ID = '019968a0-0000-7000-8000-000000000001'
+const PHP: AdminExperienceTechnology = { id: PHP_ID, name: 'PHP', years: 13.5, iconKey: null, relatedTechnologyName: null, isSecondary: false }
 
 function createStubRepository(overrides: Partial<AdminExperienceTechnologyRepository> = {}): AdminExperienceTechnologyRepository {
   return {
@@ -83,7 +84,7 @@ describe('AdminTechnologiesPage', () => {
     await wrapper.get('form').trigger('submit.prevent')
     await flushPromises()
 
-    expect(repository.update).toHaveBeenCalledWith(1, { name: 'PHP 8', years: 13.5, iconKey: null, relatedTechnologyName: null, isSecondary: false })
+    expect(repository.update).toHaveBeenCalledWith(PHP_ID, { name: 'PHP 8', years: 13.5, iconKey: null, relatedTechnologyName: null, isSecondary: false })
   })
 
   it('supprime après confirmation', async () => {
@@ -95,7 +96,7 @@ describe('AdminTechnologiesPage', () => {
     await deleteButton?.trigger('click')
     await flushPromises()
 
-    expect(repository.remove).toHaveBeenCalledWith(1)
+    expect(repository.remove).toHaveBeenCalledWith(PHP_ID)
   })
 
   it('n\'appelle pas remove() si la confirmation est refusée', async () => {

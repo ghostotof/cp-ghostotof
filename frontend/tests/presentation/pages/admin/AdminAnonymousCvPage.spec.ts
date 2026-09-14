@@ -11,8 +11,9 @@ import type { AdminAnonymousCvSection } from '../../../../src/domain/admin/anony
 import { AdminAnonymousCvSectionError } from '../../../../src/domain/admin/anonymousCv/errors/AdminAnonymousCvSectionError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 
+const SECTION_ID = '019968a0-0000-7000-8000-000000000001'
 const SECTION: AdminAnonymousCvSection = {
-  id: 1, locale: 'fr', title: 'Backend PHP / Symfony', skills: 'Symfony 7', yearsOfExperience: 12, achievements: 'API multi-tenant.', position: 0,
+  id: SECTION_ID, locale: 'fr', title: 'Backend PHP / Symfony', skills: 'Symfony 7', yearsOfExperience: 12, achievements: 'API multi-tenant.', position: 0,
 }
 
 function createStubRepository(overrides: Partial<AdminAnonymousCvSectionRepository> = {}): AdminAnonymousCvSectionRepository {
@@ -123,7 +124,7 @@ describe('AdminAnonymousCvPage', () => {
     await wrapper.get('form').trigger('submit.prevent')
     await flushPromises()
 
-    expect(repository.update).toHaveBeenCalledWith(1, {
+    expect(repository.update).toHaveBeenCalledWith(SECTION_ID, {
       locale: 'fr',
       title: 'Backend',
       skills: 'Symfony 7',
@@ -142,7 +143,7 @@ describe('AdminAnonymousCvPage', () => {
     await deleteButton?.trigger('click')
     await flushPromises()
 
-    expect(repository.remove).toHaveBeenCalledWith(1)
+    expect(repository.remove).toHaveBeenCalledWith(SECTION_ID)
   })
 
   it("n'appelle pas remove() si la confirmation est refusée", async () => {
