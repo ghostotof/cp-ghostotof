@@ -1,125 +1,144 @@
-# Plan — Assistant de traduction FR/EN du backoffice (spec 0002, Symfony AI phase 1)
+# Plan — Clés primaires UUID (spec 0003) puis ordre des contenus par glisser-déposer (spec 0004)
 
 ## Overview
 
-Mettre en œuvre `.claude/specs/0002-ai-translation-assistant.md` : depuis un formulaire du
-backoffice (`ROLE_SUPER`), un bouton demande à `claude-sonnet-5`, via `symfony/ai-bundle` pinné en
-`0.13.0`, la traduction de tous les champs de prose d'une entrée, puis pré-remplit un **nouveau**
-formulaire dans la locale cible. Rien n'est persisté sans le bouton d'enregistrement habituel. Le
-socle posé (contexte `src/Ai/`, plateforme configurée, ADR 0004) est celui de la phase 2 (serveur MCP
-réservé à `ROLE_TRUSTED`, spec distincte à venir).
+Deux specs, deux releases, dans cet ordre et pas autrement :
 
-Le plan précédent (suite de l'ADR 0003, entièrement livré au 2026-09-13) est remplacé par celui-ci ;
-il reste lisible dans l'historique git de ce fichier.
+- **Phase A — spec 0003** (`.claude/specs/0003-uuid-primary-keys.md`) : toute entité porte une clé
+  primaire UUID v7 posée au constructeur. Quatorze entités, une clé étrangère, des migrations
+  irréversibles sur des tables peuplées en production. Livrée **seule** en `v0.11.0`, après passage
+  préprod vérifié.
+- **Phase B — spec 0004** (`.claude/specs/0004-content-ordering.md`) : glisser-déposer natif avec
+  alternative clavier, bouton « Enregistrer l'ordre », champ `Position` supprimé, lien FR/EN explicite
+  en base (`translation_group`) pour que l'ordre suive quelle que soit la langue, endpoint d'ordre à
+  ensemble exact partagé par neuf ressources. Livrée en `v0.12.0`, construite sur des UUID.
 
-**Tracker** : GitHub Issues (`docs/agents/issue-tracker.md`), label `spec-0002`
-(`gh issue list --label spec-0002`). Chaque tâche ci-dessous est une issue qui porte ses critères
-d'acceptation, ses vérifications, ses dépendances et ses fichiers ; cette liste n'est qu'un index
-ordonné. Git flow : branche `feature/ai-translation-assistant` depuis `develop` (la spec y est déjà
-committée), **une PR par tâche, empilée** (cf. mémoire « Une PR par tâche, stack empilée » :
-retargeter avant de supprimer une branche).
+Le plan précédent (spec 0002, assistant de traduction, entièrement livré au 2026-09-14) est remplacé
+par celui-ci ; il reste lisible dans l'historique git de ce fichier.
+
+**Tracker** : GitHub Issues (`docs/agents/issue-tracker.md`), labels `spec-0003` et `spec-0004`
+(`gh issue list --label spec-0003`). Chaque tâche est une issue qui porte sa description détaillée
+(extraits de code, SQL de migration), ses critères d'acceptation, ses vérifications, ses dépendances
+et ses fichiers ; cette liste n'est qu'un index ordonné. Git flow : une branche `feature/uuid-<n>-<slug>`
+par tâche depuis `develop`, **une PR par tâche, empilée** (cf. mémoire « Une PR par tâche, stack
+empilée » : retargeter avant de supprimer une branche).
 
 ## Architecture Decisions
 
-Reprises de la spec (§2), rappelées ici parce qu'elles décident de l'ordre :
+Reprises des specs (§2), rappelées ici parce qu'elles décident de l'ordre :
 
-- **Le socle d'abord, la logique ensuite** (Task 1 → 3) : le bundle est en 0.x ; savoir tôt s'il
-  passe PHPStan `max` + Rector sur un projet Symfony 8.1 est le risque n°1, donc il se lève avant
-  d'écrire une ligne de domaine.
-- **Backend complet avant le frontend** (Task 3–5 → 7–9) : le contrat d'API est figé par les tests
-  fonctionnels de la Task 4 ; le frontend s'y adosse sans aller-retour.
-- **Le déploiement du secret est indépendant** (Task 6, dépend seulement de Task 1) et comporte une
-  action humaine (créer les secrets dans Scaleway Secret Manager) qui doit précéder le premier
-  déploiement preprod de la tranche, sinon `backend-secrets` reste incomplet et le Deployment ne
-  démarre pas. Elle est signalée tôt pour ne pas bloquer le checkpoint 3.
-- **Incidents d'abord, puis une page par PR** (Task 9, puis 10–13) : la page la plus riche valide
-  la mécanique ; les suivantes ne sont que du câblage, et deux d'entre elles ont une question de
-  sémantique (About : singleton de réglages ; Quality : traits à champ unique) à trancher au moment
-  de les brancher, pas avant.
-- **`HasProblemType` quitte `Security/User` pour `Shared/`** dans la Task 4, amélioration ciblée
-  justifiée par un troisième consommateur — pas un refactor d'opportunité.
+- **Une migration par tâche backend, pas une seule** — écart avec la rédaction initiale de la spec
+  0003 (D4), amendée : la CI construit la base de test par `doctrine:migrations:migrate`, donc une
+  tâche ne peut être verte que si elle embarque la migration de ses propres tables. Cinq migrations
+  irréversibles jouées d'un bloc à la release valent exactement une seule pour le déploiement.
+- **Un contexte = une tâche verticale et verte** (Tasks 2–6) : entité, repository, `Administrator`,
+  ressource, migration, tests. Découper par couche laisserait la suite rouge entre deux PR (un DTO
+  `?int $id` face à un `getId(): Uuid` ne compile pas).
+- **`Security/User` en premier** (Task 2) : le seul contexte avec une clé étrangère et un message
+  Messenger (`SendAccountInvitationMessage.userId` passe d'entier à chaîne, oubli de la spec
+  consigné dans son journal). C'est là que le risque se lève ; les quatre suivants sont mécaniques.
+- **`uriVariableInt()` coexiste avec `uriVariableUuid()`** jusqu'à la Task 6, qui la supprime avec
+  son dernier consommateur.
+- **Le placeholder UUID de `ApiRouteExposureTest` dès la Task 1** : avec les `requirements` UUID,
+  `/api/backoffice/x/1` serait un 404 du routeur avant le firewall et le test perdrait sa portée.
+  Posé avant que le premier `requirements` n'arrive, il est inoffensif avec des ids entiers.
+- **Le frontend après tout le backend** (Task 7) : un seul contrat, un seul changement de types.
+- **La phase B ne démarre pas avant `v0.11.0` en production** : ses issues seront ouvertes à ce
+  moment-là, sur le code réellement migré.
 
-## Task List
+## Task List — Phase A (spec 0003, `v0.11.0`)
 
-### Phase 1 — Socle (bundle, configuration, ADR)
-- [x] Task 1 — Socle Symfony AI : bundle 0.13.0 pinné, plateforme Anthropic, agent `translator`, `ANTHROPIC_API_KEY` hors dépôt — [#91](https://github.com/ghostotof/cp-ghostotof/issues/91)
-- [x] Task 2 — ADR 0004 « Assistance IA » (D1–D7, dont la phase 2 `ROLE_TRUSTED`) + `CLAUDE.md` — [#92](https://github.com/ghostotof/cp-ghostotof/issues/92) (parallélisable avec la Task 1)
+### Socle
+- [ ] Task 1 — `symfony/uid` direct, `uriVariableUuid()`, placeholder UUID de `ApiRouteExposureTest` — [#120](https://github.com/ghostotof/cp-ghostotof/issues/120)
 
-### Checkpoint 1 — le bundle tient dans le projet
-- [x] `make back-quality` vert avec le bundle installé (PHPStan max, Rector, Psalm), `make back-test` vert
-- [x] `debug:container ai.agent.translator` et `ai.http_client` existent ; kernel `test` sans clé réelle
-- [ ] ADR 0004 relue par Christophe
-- [x] Un appel réel réussi en dev (via `curl` sur l'endpoint, 200 en 3,8 s, 2026-09-14)
+### Backend, un contexte par PR (chacune avec sa migration)
+- [ ] Task 2 — `Security/User` : `CpgUser`, `PasswordSetupToken` (FK), message Messenger, 4 ressources — [#121](https://github.com/ghostotof/cp-ghostotof/issues/121)
+- [ ] Task 3 — `Experience` + `Quality` (comparaison d'ids par `equals()` dans l'unicité de nom) — [#122](https://github.com/ghostotof/cp-ghostotof/issues/122)
+- [ ] Task 4 — `About` : settings, cartes site, cartes moi — [#123](https://github.com/ghostotof/cp-ghostotof/issues/123)
+- [ ] Task 5 — `Contribution`, `Incident`, `AnonymousCv`, `CaseStudy` — [#124](https://github.com/ghostotof/cp-ghostotof/issues/124)
+- [ ] Task 6 — `Watch` (`WatchedProduct`, `WatchSnapshot`) + suppression de `uriVariableInt()` — [#125](https://github.com/ghostotof/cp-ghostotof/issues/125)
 
-### Phase 2 — Backend : traducteur, ressource, quota
-- [x] Task 3 — Traducteur : VO, `ContentTranslatorInterface`, `SymfonyAiContentTranslator` (sortie structurée validée, jetons journalisés) + tests unitaires — [#93](https://github.com/ghostotof/cp-ghostotof/issues/93)
-- [x] Task 4 — Ressource `POST /api/backoffice/translations` (DTO validé, processeur, 503 `translation-unavailable`, `HasProblemType` → `Shared/`) + tests fonctionnels — [#94](https://github.com/ghostotof/cp-ghostotof/issues/94)
-- [x] Task 5 — Quota 30/h par compte : limiteur, 429 + `Retry-After`, consommé après validation et avant l'appel + tests — [#95](https://github.com/ghostotof/cp-ghostotof/issues/95)
+### Checkpoint A1 — contrat d'API figé
+- [ ] `make back-test` et `make back-quality` verts ; `grep -rn 'uriVariableInt\|?int \$id\|getId(): ?int' backend/src backend/tests` vide
+- [ ] `ApiRouteExposureTest` et `AccessControlAnchoringTest` verts, avec pour seule modification le placeholder
+- [ ] `doctrine:schema:validate` `[OK]` sur une base de dev migrée depuis un état seedé + une invitation ; ordre `ORDER BY id` conservé sur chaque table
+- [ ] `debug:router` : `requirements` sur chaque item, aucune route synthétisée
 
-### Checkpoint 2 — contrat d'API figé et cloisonné
-- [x] `make back-test` vert, dont 403 anonyme (CSRF avant firewall) / 403 palier de base / 403 sans CSRF / 200 / chaque 422 / 429 / 503
-- [x] `ApiRouteExposureTest` vert **sans** entrée d'allow-list ; `debug:router` : une seule route
-- [x] Aucun test ne sort sur le réseau (clé factice dans `phpunit.dist.xml`)
-- [x] Revue avec Christophe du contrat avant d'écrire le frontend — validé le 2026-09-14
+### Frontend
+- [ ] Task 7 — `id: string` sur entités, repositories, composables, pages, 26 specs — [#126](https://github.com/ghostotof/cp-ghostotof/issues/126)
 
-### Phase 3 — Déploiement du secret (indépendante, à faire avant le premier déploiement preprod)
-- [x] Task 6 — `ANTHROPIC_API_KEY` dans Scaleway Secret Manager (**action humaine**) + `ExternalSecret` preprod/prod + `k8s/README.md` ; timeouts ingress/nginx vérifiés ≥ 40 s — [#96](https://github.com/ghostotof/cp-ghostotof/issues/96)
+### Checkpoint A2 — parcours complet
+- [ ] `make front-test`, `make front-lint`, `make front-build` verts
+- [ ] Dans un vrai navigateur, stack dev migrée : lister / éditer / supprimer sur une ressource admin, URLs en UUID
+- [ ] Revue avec Christophe avant la release : la migration est irréversible
 
-### Phase 4 — Frontend : première tranche verticale (Incidents)
-- [x] Task 7 — Tranche `admin/translation` : domaine, `HttpAdminTranslationRepository`, `useAdminTranslation` + specs — [#97](https://github.com/ghostotof/cp-ghostotof/issues/97)
-- [x] Task 8 — `TranslateEntryButton.vue` + clés i18n `admin.translation.*` + spec — [#98](https://github.com/ghostotof/cp-ghostotof/issues/98)
-- [x] Task 9 — Branchement sur `AdminIncidentsPage.vue` (brouillon en création, champs non prose conservés, bannière, erreurs) + `main.ts` + spec + axe — [#99](https://github.com/ghostotof/cp-ghostotof/issues/99)
+### Documentation et release
+- [ ] Task 8 — `CLAUDE.md`, spec, notes de release ; préprod vérifiée (rollout, Job `migrate`, backoffice, invitation, endpoints publics) **puis** prod — [#127](https://github.com/ghostotof/cp-ghostotof/issues/127)
 
-### Checkpoint 3 — parcours complet de bout en bout
-- [x] Suites backend et frontend vertes, `make front-lint` et `make front-build` verts
-- [x] **Dans un vrai navigateur (Chrome), stack dev, clé dans `.env.local`** : un incident FR → bouton → brouillon EN relu → enregistré → visible sur `/en/incidents` — fait le 2026-09-14 (cf. issue #99)
-- [x] Déploiement preprod : v0.10.0 déployée en preprod puis en prod le 2026-09-14, pipeline verte
-- [x] Revue avec Christophe avant de brancher les autres pages — « la CI est verte, c'est en prod, enchaîne » (2026-09-14)
+### Checkpoint A3 — `v0.11.0` en production
+- [ ] Pipeline verte de bout en bout, release GitHub publiée avec le corps des notes
+- [ ] `messenger:failed:show` vide avant et après le déploiement prod
+- [ ] Feu vert pour ouvrir les issues de la phase B
 
-### Phase 5 — Les autres pages, une PR chacune (câblage seulement)
-- [x] Task 10 — Contributions (`title`, `summary`, `body` — vérifier que les `` `backticks` `` survivent) — [#100](https://github.com/ghostotof/cp-ghostotof/issues/100)
-- [x] Task 11 — CV sans identité (`title`, `skills`, `achievements` ; palier de base, rien de nominatif) — [#101](https://github.com/ghostotof/cp-ghostotof/issues/101)
-- [x] Task 12 — About : réglages (singleton par locale, sémantique à trancher), cartes site, cartes moi — [#102](https://github.com/ghostotof/cp-ghostotof/issues/102)
-- [x] Task 13 — Quality : principes, traits (champ unique, à trancher) — [#103](https://github.com/ghostotof/cp-ghostotof/issues/103)
+## Task List — Phase B (spec 0004, `v0.12.0`) — index prévisionnel, issues à ouvrir après le checkpoint A3
 
-### Checkpoint 4 — phase 1 livrée
-- [x] Toutes les pages admin localisées disposent du bouton (hors études de cas, issue #104)
-- [x] `CLAUDE.md` et ADR 0004 à jour de ce qui a réellement été livré (2026-09-14)
-- [x] Prêt pour la spec de la phase 2 (serveur MCP `ROLE_TRUSTED`) — reste l'amendement de la D7 et la relecture humaine de l'ADR (checkpoint 1)
+Ordre de construction de la spec (§3), une PR par tâche, label `spec-0004` :
+
+### Backend
+- [ ] Task B1 — Groupes de traduction : `translationGroup` sur les 8 entités localisées, interface `Orderable`, migration réversible avec appariement, seeds, `Assert\Choice` sur `Locale::cases()`
+- [ ] Task B2 — Écriture : `position` retirée des DTO/`create`/`update`, `translationGroup` nullable, héritage de position, `TranslationAlreadyExistsException` (409)
+- [ ] Task B3 — `OrderAssigner` (`Portfolio/Shared`), exceptions 422, `reorder()` sur les 9 `Administrator` + tests unitaires
+- [ ] Task B4 — Les 9 ressources `Backoffice<X>OrderResource` (`PUT …/order`, 204) + tests fonctionnels (ordre relu sur backoffice **et** endpoints publics FR/EN)
+
+### Checkpoint B1 — contrat d'ordre figé et cloisonné
+- [ ] `ApiRouteExposureTest` inchangé et vert ; `debug:router | grep /order` : neuf routes, aucune synthétisée
+- [ ] Un réordonnancement backoffice se lit sur `/api/<x>/fr` **et** `/api/<x>/en`
+
+### Frontend
+- [ ] Task B5 — Briques partagées : `domain/admin/shared/ordering/`, `useOrderDraft`, `useRowDragAndDrop`, `OrderHandle.vue`, `OrderToolbar.vue`, clés `admin.order.*`
+- [ ] Task B6 — Page Incidents complète : tableau groupé, « Version de », « Créer la version », assistant rattaché, garde de route, axe
+
+### Checkpoint B2 — première tranche verticale dans un vrai navigateur
+- [ ] Glisser, ↑/↓ au clavier, enregistrer, 422 obsolète, « Créer la version EN », assistant → groupe
+- [ ] Revue avec Christophe avant de dérouler les autres pages
+
+### Les autres pages, une PR chacune
+- [ ] Task B7 — Contributions
+- [ ] Task B8 — CV sans identité
+- [ ] Task B9 — Qualité (principes, traits ; le tableau affiche toutes les langues)
+- [ ] Task B10 — À propos (cartes site ; cartes moi par catégorie)
+- [ ] Task B11 — Watch (ids, sans groupe)
+- [ ] Task B12 — Documentation (`CLAUDE.md`, spec 0002 amendée « le groupe est recopié »), release `v0.12.0`, préprod vérifiée FR et EN
 
 ## Risks and Mitigations
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Le bundle 0.13 ne passe pas PHPStan `max` + strict-rules, ou Rector le réécrit | Medium | Task 1 isolée et en premier ; un éventuel `ignoreErrors` scopé à `Infrastructure/SymfonyAi/` (Task 3), jamais de baseline ; `rector.php` skip ciblé si besoin |
-| Le remplacement de la plateforme dans le conteneur de test ne fonctionne pas (service déjà instancié, alias) | Low | Repli prévu dans la Task 4 : `ai.http_client` remplacé par un `MockHttpClient` au format Anthropic |
-| Le bridge Anthropic n'honore pas `response_format` comme attendu (sortie non structurée) | Medium | La validation serveur de la Task 3 transforme le cas en 503 explicite ; l'essai réel du checkpoint 1 le révèle avant le frontend |
-| Coût : boucle UI ou usage abusif d'un compte `ROLE_SUPER` | Low | Quota 30/h par compte, `max_tokens` 4096, timeout 40 s (Task 5 / Task 1) |
-| Timeout mural : nginx ou ingress coupent avant les 40 s | Low | Vérifié dans la Task 6 (défauts à 60 s, aucune annotation) ; le 503 reste le comportement dégradé |
-| Secrets Scaleway non créés avant le déploiement preprod | Medium (Deployment bloqué) | Action humaine signalée dans la Task 6 et au checkpoint 3 ; la faire dès la Task 1 mergée |
-| Injection de prompt via le contenu à traduire | Low (auteur = super-admin, humain relit) | Prompt système explicite, sortie structurée, aucune persistance automatique ; risque résiduel accepté dans l'ADR 0004 |
-| Une page admin (About, Quality) n'a pas la même sémantique de « création » | Low | Questions posées dans les issues #102 / #103, à trancher au moment du branchement |
+| La migration de `cpg_user` échoue en prod (contrainte, nom de PK différent de `<table>_pkey`) | High (déploiement bloqué, données intactes : rien n'est supprimé avant que la nouvelle colonne soit remplie) | Noms de contraintes vérifiés par `\d` en dev (Task 2), passage préprod avec logs du Job `migrate` (Task 8) ; l'ordre des `addSql` remplit puis remappe la FK avant toute suppression |
+| Un `SendAccountInvitationMessage` en file au déploiement, avec un `userId` entier | Medium (une invitation perdue, à renvoyer) | `messenger:failed:show` vide avant de déployer, aucune invitation pendant la fenêtre (Task 8) |
+| `===` entre deux `Uuid` laissé quelque part (comparaison d'objets) | Medium (un contrôle d'unicité ou d'auto-modification devient toujours vrai/faux) | Les trois sites connus sont nommés dans les issues #121 et #122 ; les tests « se supprimer soi-même → 409 » et « renommer sans changer de nom → 200 » sont la garde ; `grep -rn "=== \$.*getId()\|getId() ===" backend/src` au checkpoint A1 |
+| `uuidv7(interval)` absent (image Postgres < 18 en dev ou en CI) | Medium | `POSTGRES_TAG=18.6-alpine` partout (dev, CI, k8s) ; la Task 2 échoue immédiatement en dev si ce n'est pas le cas |
+| `ApiRouteExposureTest` perd sa portée sans qu'on le voie (404 routeur pris pour un refus) | High (le garde-fou de sécurité devient muet) | Placeholder UUID dès la Task 1, et le test assert des 401/403 précis, jamais « non 200 » |
+| Rector réécrit les constructeurs ou le mapping | Low | `composer rector` à chaque PR ; `rector.php` skip ciblé si nécessaire, jamais de baseline PHPStan |
+| Phase B : appariement de migration incorrect sur des données éditées en prod | Low (aucune perte, un lien faux) | Appariement seulement sur couple unique, sinon groupe propre ; « Version de » permet de corriger depuis l'admin |
 
 ## Open Questions
 
-1. **Il n'existe pas de page admin pour les études de cas** (routes admin : technologies, about,
-   quality, contributions, incidents, anonymous-cv, watch, users) alors que l'ADR 0003 prévoit leur
-   saisie par le backoffice et que le contenu rédigé attend d'y être saisi. Hors périmètre de cette
-   spec. **Confirmé par Christophe le 2026-09-14 → issue [#104](https://github.com/ghostotof/cp-ghostotof/issues/104)**
-   (label `adr-0003`, hors de ce plan). L'assistant s'y branchera ensuite (Task 14, même forme que
-   la Task 9, issue à ouvrir quand la page existera).
-2. **Modèle par environnement** : `claude-sonnet-5` partout, ou un modèle moins cher en preprod ?
-   Parti pris : le même partout (preprod doit reproduire prod, y compris la qualité de la sortie
-   structurée) ; à revoir si le coût preprod devient visible.
-3. **Une clé Anthropic par environnement ou une seule** : à décider par Christophe à la Task 6
-   (recommandation : une par environnement, révocable séparément, comme les clés mailer scopées).
+1. **Nom de la contrainte de clé primaire en prod** : PostgreSQL nomme `<table>_pkey` par défaut et
+   Doctrine ne la renomme pas, mais la Task 2 le vérifie sur la base de dev (`\d cpg_user`) avant
+   d'écrire la migration ; si un nom diffère, le `DROP CONSTRAINT` le reprend.
+2. **Une seule migration ou une par tâche** : tranché (une par tâche, voir Architecture Decisions),
+   spec 0003 amendée.
+3. **Phase B, tables des cartes « moi »** : un tableau par catégorie (spec D8) ; à confirmer à
+   l'ouverture de la Task B10 si la page À propos reste lisible avec trois tableaux plus celui des
+   cartes site.
 
 ## Verification (avant de considérer ce plan prêt)
 
-- [x] Chaque tâche a des critères d'acceptation (dans son issue GitHub)
-- [x] Chaque tâche a une étape de vérification (dans son issue GitHub)
-- [x] Dépendances identifiées et ordonnées (1 → 3 → 4 → 5 → 7 → 8 → 9 → 10–13 ; 2 et 6 en parallèle)
-- [x] Tâches enregistrées dans le tracker désigné (GitHub Issues #91–#103, pas `tasks/todo.md`)
-- [x] Aucune tâche ne touche plus de ~5 fichiers de logique (la Task 1 en touche 9, tous de configuration ; la Task 12 est annoncée M et découpable)
+- [x] Chaque tâche de la phase A a des critères d'acceptation (dans son issue GitHub)
+- [x] Chaque tâche de la phase A a une étape de vérification (dans son issue GitHub)
+- [x] Dépendances identifiées et ordonnées (1 → 2 → 3 → 4 → 5 → 6 → 7 → 8, empilées)
+- [x] Tâches enregistrées dans le tracker désigné (GitHub Issues #120–#127, label `spec-0003`)
+- [ ] Aucune tâche ne touche plus de ~5 fichiers de logique — **faux ici et assumé** : une tâche = un contexte vertical, donc 10 à 25 fichiers mécaniques ; la Task 2 est la seule à contenir de la logique (FK, message, `equals()`)
 - [x] Checkpoints entre les phases
-- [x] Revue humaine du plan (Christophe) — ordre et découpage validés le 2026-09-14
+- [ ] Revue humaine du plan (Christophe) — ordre et découpage
