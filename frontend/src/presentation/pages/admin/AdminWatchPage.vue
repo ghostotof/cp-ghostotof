@@ -1,15 +1,21 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { onBeforeRouteLeave } from 'vue-router'
 import { useAdminWatchedProducts } from '../../../application/admin/watch/useAdminWatchedProducts'
 import { useAdminVulnerabilities } from '../../../application/admin/watch/useAdminVulnerabilities'
+import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
+import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
+import { useRowDragAndDrop } from '../../../application/admin/shared/useRowDragAndDrop'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
-import BaseNumberInput from '../../ui/BaseNumberInput.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
+import OrderHandle from '../../ui/admin/OrderHandle.vue'
+import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import type { AdminWatchedProduct } from '../../../domain/admin/watch/entities/AdminWatchedProduct'
 
 const { t } = useI18n()
-const { products, isLoading, hasError, errorMessage, create, update, remove } = useAdminWatchedProducts()
+const { products, isLoading, hasError, errorMessage, load, create, update, remove, reorder } =
+  useAdminWatchedProducts()
 const {
   vulnerabilities,
   isLoading: isLoadingVulnerabilities,
@@ -25,12 +31,17 @@ const VERSION_SOURCES = ['manual', 'runtime_php', 'runtime_symfony'] as const
 
 const editingId = ref<string | null>(null)
 
+/**
+ * Le champ numérique `Position` a disparu (spec 0004, D3) — la position ne se
+ * saisit plus, seul `PUT …/order` l'écrit. Pas de locale ni de « Version de »
+ * non plus : ce contexte n'est pas localisé, une version n'est pas une
+ * traduction.
+ */
 interface WatchedProductForm {
   slug: string
   label: string
   versionSource: string
   version: string
-  position: number
 }
 
 const form = reactive<WatchedProductForm>({
@@ -38,7 +49,6 @@ const form = reactive<WatchedProductForm>({
   label: '',
   versionSource: 'manual',
   version: '',
-  position: 0,
 })
 const isSubmitting = ref(false)
 
@@ -64,13 +74,59 @@ function sourceLabel(source: string): string {
     : source
 }
 
+/**
+ * Une ligne par produit, la clé d'ordre étant l'id (spec 0004 : Watch sans
+ * groupe). La liste du serveur arrive déjà triée par position ; le brouillon
+ * ne fait que la réarranger le temps du glisser-déposer.
+ */
+const {
+  draft: orderDraft,
+  isDirty: isOrderDirty,
+  isSaving: isOrderSaving,
+  errorReason: orderErrorReason,
+  move: moveInDraft,
+  reset: resetOrder,
+  save: saveOrder,
+} = useOrderDraft({
+  serverKeys: () => products.value.map((product) => product.id),
+  reorder,
+  reload: load,
+})
+
+const { draggingIndex, onDragStart, onDragOver, onDrop, onDragEnd } = useRowDragAndDrop(moveInDraft)
+
+const orderedProducts = computed(() => {
+  const byId = new Map(products.value.map((product) => [product.id, product]))
+
+  // Une clé du brouillon sans produit est ignorée plutôt que rendue vide —
+  // même règle que `orderRowsByDraft`, qui ne s'applique qu'aux lignes groupées.
+  return orderDraft.value
+    .map((id) => byId.get(id))
+    .filter((product): product is AdminWatchedProduct => undefined !== product)
+})
+
+/**
+ * Tant que l'ordre est modifié, toute mutation est verrouillée (D6) : elle
+ * rechargerait la liste et perdrait le brouillon sans prévenir.
+ *
+ * L'aide est **rendue visible** sous la barre d'ordre, jamais portée par un
+ * `title` : Bootstrap pose `pointer-events: none` sur `.btn:disabled`, donc
+ * l'infobulle d'un bouton désactivé ne s'affiche jamais au survol. Les boutons
+ * la désignent par `aria-describedby` — et seulement quand elle existe, sinon
+ * la référence pendante serait elle-même une erreur d'accessibilité.
+ */
+const LOCKED_HINT_ID = 'admin-order-locked-hint'
+
+const lockedHintId = computed(() => (isOrderDirty.value ? LOCKED_HINT_ID : undefined))
+
+const { registerHandleCell, moveRow } = useOrderHandleFocus(moveInDraft)
+
 function resetForm(): void {
   editingId.value = null
   form.slug = ''
   form.label = ''
   form.versionSource = 'manual'
   form.version = ''
-  form.position = 0
 }
 
 function startEdit(product: AdminWatchedProduct): void {
@@ -79,12 +135,12 @@ function startEdit(product: AdminWatchedProduct): void {
   form.label = product.label
   form.versionSource = product.versionSource
   form.version = product.version ?? ''
-  form.position = product.position
 }
 
 async function handleSubmit(): Promise<void> {
   isSubmitting.value = true
 
+  // D3 : aucun `position` n'est jamais envoyé.
   const input = {
     slug: form.slug,
     label: form.label,
@@ -92,7 +148,6 @@ async function handleSubmit(): Promise<void> {
     // Une version saisie puis abandonnée au profit d'une source runtime ne doit
     // pas être renvoyée : le domaine la refuserait, à juste titre.
     version: isManualVersion.value && '' !== form.version.trim() ? form.version : null,
-    position: form.position,
   }
 
   if (null !== editingId.value) {
@@ -115,6 +170,29 @@ async function handleDelete(product: AdminWatchedProduct): Promise<void> {
 
   await remove(product.id)
 }
+
+/**
+ * Quitter la page avec un ordre modifié l'abandonnerait sans rien dire : la
+ * navigation interne demande confirmation (D6), la fermeture de l'onglet passe
+ * par `beforeunload`, que le navigateur traduit en sa propre boîte de dialogue.
+ */
+function confirmLeaving(): boolean {
+  return !isOrderDirty.value || window.confirm(t('admin.order.leaveConfirm'))
+}
+
+onBeforeRouteLeave(() => confirmLeaving())
+
+function warnBeforeUnload(event: BeforeUnloadEvent): void {
+  if (!isOrderDirty.value) {
+    return
+  }
+
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
+onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload))
 </script>
 
 <template>
@@ -182,13 +260,6 @@ async function handleDelete(product: AdminWatchedProduct): Promise<void> {
           {{ t('admin.watch.versionFromRuntimeHelp') }}
         </p>
 
-        <BaseNumberInput
-          id="admin-watch-position"
-          v-model="form.position"
-          :label="t('admin.watch.positionLabel')"
-          required
-        />
-
         <p
           v-if="errorText"
           class="text-danger small"
@@ -201,7 +272,8 @@ async function handleDelete(product: AdminWatchedProduct): Promise<void> {
           <button
             type="submit"
             class="btn btn-gradient"
-            :disabled="isSubmitting"
+            :disabled="isSubmitting || isOrderDirty"
+            :aria-describedby="lockedHintId"
           >
             {{ t('admin.watch.save') }}
           </button>
@@ -236,68 +308,104 @@ async function handleDelete(product: AdminWatchedProduct): Promise<void> {
         {{ t('admin.watch.loadError') }}
       </p>
       <p
-        v-else-if="0 === products.length"
+        v-else-if="0 === orderedProducts.length"
         class="text-body-secondary mb-0"
       >
         {{ t('admin.watch.empty') }}
       </p>
-      <div
-        v-else
-        class="table-responsive"
-      >
-        <table class="table table-dark table-hover align-middle mb-0">
-          <thead>
-            <tr>
-              <th scope="col">
-                {{ t('admin.watch.slugLabel') }}
-              </th>
-              <th scope="col">
-                {{ t('admin.watch.labelLabel') }}
-              </th>
-              <th scope="col">
-                {{ t('admin.watch.versionSourceLabel') }}
-              </th>
-              <th scope="col">
-                {{ t('admin.watch.versionLabel') }}
-              </th>
-              <th scope="col">
-                {{ t('admin.watch.positionLabel') }}
-              </th>
-              <th scope="col">
-                <span class="visually-hidden">{{ t('admin.watch.actions') }}</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="product in products"
-              :key="product.id"
-            >
-              <td>{{ product.slug }}</td>
-              <td>{{ product.label }}</td>
-              <td>{{ sourceLabel(product.versionSource) }}</td>
-              <td>{{ product.version ?? '—' }}</td>
-              <td>{{ product.position }}</td>
-              <td class="text-end">
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-light me-2"
-                  @click="startEdit(product)"
+      <template v-else>
+        <OrderToolbar
+          class="mb-3"
+          :is-dirty="isOrderDirty"
+          :is-saving="isOrderSaving"
+          :error-reason="orderErrorReason"
+          @save="saveOrder"
+          @cancel="resetOrder"
+        />
+
+        <p
+          v-if="isOrderDirty"
+          :id="LOCKED_HINT_ID"
+          class="form-text mb-3"
+        >
+          {{ t('admin.order.lockedHint') }}
+        </p>
+
+        <div class="table-responsive">
+          <table class="table table-dark align-middle mb-0">
+            <thead>
+              <tr>
+                <th scope="col">
+                  <span class="visually-hidden">{{ t('admin.order.columnHeader') }}</span>
+                </th>
+                <th scope="col">
+                  {{ t('admin.watch.slugLabel') }}
+                </th>
+                <th scope="col">
+                  {{ t('admin.watch.labelLabel') }}
+                </th>
+                <th scope="col">
+                  {{ t('admin.watch.versionSourceLabel') }}
+                </th>
+                <th scope="col">
+                  {{ t('admin.watch.versionLabel') }}
+                </th>
+                <th scope="col">
+                  <span class="visually-hidden">{{ t('admin.watch.actions') }}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(product, index) in orderedProducts"
+                :key="product.id"
+                draggable="true"
+                :class="{ 'opacity-50': index === draggingIndex }"
+                @dragstart="onDragStart(index)"
+                @dragover="onDragOver"
+                @drop="onDrop(index)"
+                @dragend="onDragEnd"
+              >
+                <td
+                  :ref="registerHandleCell"
+                  :data-order-key="product.id"
                 >
-                  {{ t('admin.watch.editAction') }}
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-danger"
-                  @click="handleDelete(product)"
-                >
-                  {{ t('admin.watch.deleteAction') }}
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+                  <OrderHandle
+                    :index="index"
+                    :count="orderedProducts.length"
+                    :label="product.label"
+                    @move="(from, to) => moveRow(product.id, from, to)"
+                  />
+                </td>
+                <td>{{ product.slug }}</td>
+                <td>{{ product.label }}</td>
+                <td>{{ sourceLabel(product.versionSource) }}</td>
+                <td>{{ product.version ?? '—' }}</td>
+                <td class="text-end text-nowrap">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-light me-2"
+                    :disabled="isOrderDirty"
+                    :aria-describedby="lockedHintId"
+                    @click="startEdit(product)"
+                  >
+                    {{ t('admin.watch.editAction') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-danger"
+                    :disabled="isOrderDirty"
+                    :aria-describedby="lockedHintId"
+                    @click="handleDelete(product)"
+                  >
+                    {{ t('admin.watch.deleteAction') }}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
     </div>
 
     <!-- Détail des vulnérabilités : visible ici et nulle part ailleurs. La

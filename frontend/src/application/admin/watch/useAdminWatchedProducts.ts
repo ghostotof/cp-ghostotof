@@ -19,6 +19,7 @@ export interface UseAdminWatchedProductsResult {
   create: (input: AdminWatchedProductInput) => Promise<void>
   update: (id: string, input: AdminWatchedProductInput) => Promise<void>
   remove: (id: string) => Promise<void>
+  reorder: (ids: readonly string[]) => Promise<void>
 }
 
 /**
@@ -82,7 +83,15 @@ export function useAdminWatchedProducts(): UseAdminWatchedProductsResult {
 
   const remove = (id: string): Promise<void> => runMutation(() => repository.remove(id))
 
+  /**
+   * Volontairement hors de `runMutation` : ni rechargement ni absorption de
+   * l'erreur ici. `useOrderDraft` recharge lui-même après un enregistrement
+   * réussi, et il a besoin de recevoir l'`AdminOrderError` telle quelle pour
+   * distinguer un ordre obsolète (D4) d'une panne.
+   */
+  const reorder = (ids: readonly string[]): Promise<void> => repository.reorder(ids)
+
   void load()
 
-  return { products, isLoading, hasError, errorMessage, load, create, update, remove }
+  return { products, isLoading, hasError, errorMessage, load, create, update, remove, reorder }
 }
