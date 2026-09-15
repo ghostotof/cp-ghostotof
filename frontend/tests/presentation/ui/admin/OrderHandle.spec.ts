@@ -17,13 +17,37 @@ describe('OrderHandle', () => {
     expect(wrapper.get('button').attributes('aria-label')).toBe('Déplacer : Panne réseau')
   })
 
-  it("ArrowDown émet un déplacement vers le bas et l'annonce", async () => {
+  it('ArrowDown émet un déplacement vers le bas', async () => {
     const wrapper = mountHandle({ index: 0, count: 3, label: 'Panne réseau' })
 
     await wrapper.get('button').trigger('keydown', { key: 'ArrowDown' })
 
     expect(wrapper.emitted('move')).toEqual([[0, 1]])
-    expect(wrapper.get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+  })
+
+  /**
+   * Issue #170 F2 : rien n'indiquait qu'↑/↓ déplacent, et Entrée/Espace ne
+   * font rien sur ce bouton. L'aide est décrite (`aria-describedby`), pas
+   * ajoutée au nom : le nom reste « Déplacer : … », court, la description
+   * vient après pour qui la demande.
+   */
+  it("décrit l'usage des flèches par aria-describedby vers une aide rendue", () => {
+    const wrapper = mountHandle({ index: 0, count: 3, label: 'Panne réseau' })
+
+    const hintId = wrapper.get('button').attributes('aria-describedby')
+    expect(hintId).toBeTruthy()
+    expect(wrapper.get(`#${hintId}`).text()).toBe('Flèches haut et bas pour déplacer la ligne.')
+  })
+
+  /**
+   * Issue #170 F3 : l'annonce ne vit plus dans la ligne déplacée — une région
+   * live re-parentée au même cycle de rendu peut être avalée par le lecteur
+   * d'écran. Elle est portée par la barre d'ordre, une par tableau.
+   */
+  it("ne porte aucune région live : l'annonce appartient à la barre du tableau", () => {
+    const wrapper = mountHandle({ index: 0, count: 3, label: 'Panne réseau' })
+
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
   })
 
   it('ArrowUp émet un déplacement vers le haut', async () => {
@@ -38,7 +62,6 @@ describe('OrderHandle', () => {
     const first = mountHandle({ index: 0, count: 3, label: 'Panne réseau' })
     await first.get('button').trigger('keydown', { key: 'ArrowUp' })
     expect(first.emitted('move')).toBeUndefined()
-    expect(first.get('[role="status"]').text()).toBe('')
 
     const last = mountHandle({ index: 2, count: 3, label: 'Panne réseau' })
     await last.get('button').trigger('keydown', { key: 'ArrowDown' })

@@ -680,8 +680,13 @@ status announcement) that a fork would silently lose:
   what keeps the flow testable with plain events), `useOrderHandleFocus` (one instance **per table**,
   focus back on the moved row's handle after ↑/↓; the `ref` callback is a stable function keyed on
   `data-order-key`, never an inline lambda).
-- `presentation/ui/admin/OrderHandle.vue` (a real `<button>`, ↑/↓, `role="status"` announcement) and
-  `OrderToolbar.vue` (status, Cancel, "Save order", the order error), i18n under `admin.order.*`.
+- `presentation/ui/admin/OrderHandle.vue` (a real `<button>`, ↑/↓, the arrows described by
+  `aria-describedby` to a rendered hint, issue #170 F2) and `OrderToolbar.vue` (status, Cancel, "Save
+  order", the order error, **and the one `role="status"` live region of the table**, fed by
+  `useOrderHandleFocus().lastMove` — it used to live in the handle, i.e. inside the moved `<tr>`, which
+  is re-parented in the same render cycle and can swallow the announcement, #170 F3; Cancel stays
+  enabled while an order error is shown, so a `stale-order` alert can be dismissed, #170 F4), i18n
+  under `admin.order.*`.
 - **Page rules**: the table shows **every language** (D8 — the row is the group, languages stacked in the
   content cell, a missing one reads "Missing translation"); **the per-language actions live in a last
   "Actions" column** (Edit/Delete, or "Create the XX version" which opens a creation already attached to
@@ -693,8 +698,9 @@ status announcement) that a fork would silently lose:
   **every mutation is disabled** (Edit, Delete, Create version, submit, the translate button) with a
   visible hint referenced by `aria-describedby` — never a `title`, Bootstrap's `.btn:disabled` has
   `pointer-events: none` — and leaving the route asks `window.confirm`, closing the tab goes through
-  `beforeunload` (tested once for the phase, on Incidents, with `enableAutoUnmount` — a page left
-  mounted keeps its listener). `startEdit` sends back the group it read whenever the entry has a
+  `beforeunload` — both in `application/admin/shared/useUnsavedOrderGuard(isDirty)` (#170 F5), tested once
+  in its own spec with `enableAutoUnmount` (a page left mounted keeps its listener); a page calls it,
+  never re-implements it. `startEdit` sends back the group it read whenever the entry has a
   sibling, otherwise `''` → `null`, which `ContentPlacement::reattach` treats as a no-op on a lone
   entry. The `Position` number field is gone from every form; `BaseNumberInput` survives only for
   genuinely numeric content (years of experience).

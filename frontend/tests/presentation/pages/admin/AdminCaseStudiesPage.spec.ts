@@ -217,7 +217,9 @@ describe('AdminCaseStudiesPage', () => {
     await flushPromises()
 
     expect(rows(wrapper)[1].text()).toContain('Un moteur de tarification asynchrone')
-    expect(rows(wrapper)[1].get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+    // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
+    expect(rows(wrapper)[1].find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
     expect(document.activeElement).toBe(rows(wrapper)[1].get('button').element)
 
     wrapper.unmount()

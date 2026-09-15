@@ -16,6 +16,11 @@ namespace App\Portfolio\Shared\Presentation\ApiResource;
  * qu'un filtrage silencieux qui réordonnerait un périmètre amputé.
  *
  * Même patron que BackofficeTranslationResource::validatedFields().
+ *
+ * Écart connu et assumé (#170, D3-a) : les neuf DTO posent `Assert\NotBlank`
+ * sur la liste, donc un `PUT` vide est un 422, là où `OrderAssigner` accepte
+ * un périmètre vide (rien à ordonner, rien à refuser). Sans conséquence : un
+ * tableau vide n'affiche pas de barre d'ordre, personne n'envoie cette liste.
  */
 trait CarriesOrderedKeys
 {

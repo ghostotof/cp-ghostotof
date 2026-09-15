@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { onBeforeRouteLeave } from 'vue-router'
+import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import AdminAboutSettingsForm from './AdminAboutSettingsForm.vue'
 import AdminAboutSiteCardsSection from './AdminAboutSiteCardsSection.vue'
@@ -54,28 +54,7 @@ const isMeCardsOrderDirty = ref(false)
 const isAnyOrderDirty = computed(() => isSiteCardsOrderDirty.value || isMeCardsOrderDirty.value)
 const lockedHintId = computed(() => (isAnyOrderDirty.value ? LOCKED_HINT_ID : undefined))
 
-/**
- * Quitter la page avec un ordre modifié l'abandonnerait sans rien dire : la
- * navigation interne demande confirmation (D6), la fermeture de l'onglet passe
- * par `beforeunload`, que le navigateur traduit en sa propre boîte de dialogue.
- */
-function confirmLeaving(): boolean {
-  return !isAnyOrderDirty.value || window.confirm(t('admin.order.leaveConfirm'))
-}
-
-onBeforeRouteLeave(() => confirmLeaving())
-
-function warnBeforeUnload(event: BeforeUnloadEvent): void {
-  if (!isAnyOrderDirty.value) {
-    return
-  }
-
-  event.preventDefault()
-  event.returnValue = ''
-}
-
-onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
-onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload))
+useUnsavedOrderGuard(isAnyOrderDirty)
 </script>
 
 <template>

@@ -55,6 +55,7 @@
     },
     "order": {
       "moveHandle": "Déplacer : {label}",
+      "handleHint": "Flèches haut et bas pour déplacer la ligne.",
       "moved": "Déplacé en position {position} sur {count}",
       "status": {
         "clean": "Ordre · à jour",

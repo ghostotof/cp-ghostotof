@@ -34,6 +34,11 @@ final readonly class ContentPlacement
      * Position d'une entrée neuve sans groupe : après la dernière du
      * périmètre, 0 si le périmètre est vide.
      *
+     * Les commandes `app:*:seed` l'appellent une fois par entrée créée, avec
+     * le périmètre rechargé à chaque fois : O(N²) en lectures, négligeable
+     * pour des tables de dix entrées, à garder en tête si un seed devait un
+     * jour en compter des centaines (#170, M3).
+     *
      * @param list<TranslatableContent> $scope toutes les entrées du périmètre, toutes langues confondues
      */
     public function atEndOf(array $scope): int
