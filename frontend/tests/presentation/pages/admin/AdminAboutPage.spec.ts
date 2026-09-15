@@ -423,7 +423,9 @@ describe('AdminAboutPage', () => {
       await flushPromises()
 
       expect(rowsOf(wrapper, SITE)[1].text()).toContain('Architecture')
-      expect(rowsOf(wrapper, SITE)[1].get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+      // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
+      expect(rowsOf(wrapper, SITE)[1].find('[role="status"]').exists()).toBe(false)
+      expect(panelOf(wrapper, SITE_PANEL).get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
       expect(document.activeElement).toBe(rowsOf(wrapper, SITE)[1].get('button').element)
 
       wrapper.unmount()
@@ -499,7 +501,9 @@ describe('AdminAboutPage', () => {
         await flushPromises()
 
         expect(rowsOf(wrapper, which)[1].text()).toContain(ME_FIXTURES[category].titles[0])
-        expect(rowsOf(wrapper, which)[1].get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+        // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
+        expect(rowsOf(wrapper, which)[1].find('[role="status"]').exists()).toBe(false)
+        expect(meSectionOf(wrapper, category).get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
         expect(document.activeElement).toBe(rowsOf(wrapper, which)[1].get('button').element)
 
         wrapper.unmount()

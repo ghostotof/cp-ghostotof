@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { onBeforeRouteLeave } from 'vue-router'
+import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
 import { useAdminIncidents } from '../../../application/admin/incidents/useAdminIncidents'
 import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
 import { applyTranslationDraft, collectProseFields } from '../../../application/admin/translation/proseFields'
@@ -141,7 +141,7 @@ const LOCKED_HINT_ID = 'admin-order-locked-hint'
 
 const lockedHintId = computed(() => (isOrderDirty.value ? LOCKED_HINT_ID : undefined))
 
-const { registerHandleCell, moveRow } = useOrderHandleFocus(moveInDraft)
+const { registerHandleCell, moveRow, lastMove } = useOrderHandleFocus(moveInDraft, () => orderedRows.value.length)
 
 /**
  * « Version de » : les options du sélecteur (D2, cf.
@@ -279,28 +279,7 @@ async function handleDelete(incident: AdminIncident): Promise<void> {
   await remove(incident.id)
 }
 
-/**
- * Quitter la page avec un ordre modifié l'abandonnerait sans rien dire : la
- * navigation interne demande confirmation (D6), la fermeture de l'onglet passe
- * par `beforeunload`, que le navigateur traduit en sa propre boîte de dialogue.
- */
-function confirmLeaving(): boolean {
-  return !isOrderDirty.value || window.confirm(t('admin.order.leaveConfirm'))
-}
-
-onBeforeRouteLeave(() => confirmLeaving())
-
-function warnBeforeUnload(event: BeforeUnloadEvent): void {
-  if (!isOrderDirty.value) {
-    return
-  }
-
-  event.preventDefault()
-  event.returnValue = ''
-}
-
-onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
-onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload))
+useUnsavedOrderGuard(isOrderDirty)
 </script>
 
 <template>
@@ -317,6 +296,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         <BaseSelect
           id="admin-incident-locale"
           v-model="form.locale"
+          :disabled="isEditing"
           :label="t('admin.incidents.localeLabel')"
           :options="localeOptions"
         />
@@ -470,6 +450,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
           :is-dirty="isOrderDirty"
           :is-saving="isOrderSaving"
           :error-reason="orderErrorReason"
+          :last-move="lastMove"
           @save="saveOrder"
           @cancel="resetOrder"
         />

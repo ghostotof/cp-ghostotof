@@ -22,7 +22,7 @@ describe('useOrderHandleFocus', () => {
 
   it('déplace la ligne puis rend le focus à la poignée de cette ligne', async () => {
     const move = vi.fn()
-    const { registerHandleCell, moveRow } = useOrderHandleFocus(move)
+    const { registerHandleCell, moveRow } = useOrderHandleFocus(move, () => 3)
     const { cell, button } = createHandleCell(GROUP_ONE)
 
     registerHandleCell(cell)
@@ -34,7 +34,7 @@ describe('useOrderHandleFocus', () => {
 
   it("déplace quand même une ligne dont la cellule n'a pas été enregistrée", async () => {
     const move = vi.fn()
-    const { moveRow } = useOrderHandleFocus(move)
+    const { moveRow } = useOrderHandleFocus(move, () => 3)
 
     await moveRow(GROUP_TWO, 1, 0)
 
@@ -44,7 +44,7 @@ describe('useOrderHandleFocus', () => {
 
   it('ignore un élément sans clé de ligne', async () => {
     const move = vi.fn()
-    const { registerHandleCell, moveRow } = useOrderHandleFocus(move)
+    const { registerHandleCell, moveRow } = useOrderHandleFocus(move, () => 3)
     const orphan = document.createElement('td')
     const button = document.createElement('button')
     orphan.appendChild(button)
@@ -58,7 +58,7 @@ describe('useOrderHandleFocus', () => {
 
   it('purge les cellules détachées quand Vue rappelle la `ref` avec null', async () => {
     const move = vi.fn()
-    const { registerHandleCell, moveRow } = useOrderHandleFocus(move)
+    const { registerHandleCell, moveRow } = useOrderHandleFocus(move, () => 3)
     const first = createHandleCell(GROUP_ONE)
     const second = createHandleCell(GROUP_TWO)
     registerHandleCell(first.cell)
@@ -77,5 +77,19 @@ describe('useOrderHandleFocus', () => {
     // La ligne toujours montée, elle, reste enregistrée.
     await moveRow(GROUP_TWO, 1, 0)
     expect(document.activeElement).toBe(second.button)
+  })
+
+  /**
+   * Issue #170 F3 : le composable expose le dernier déplacement, que la barre
+   * du tableau annonce — la poignée ne porte plus de région live.
+   */
+  it('expose le dernier déplacement (position humaine, taille du tableau)', async () => {
+    const { lastMove, moveRow } = useOrderHandleFocus(vi.fn(), () => 3)
+
+    expect(lastMove.value).toBeNull()
+
+    await moveRow(GROUP_ONE, 0, 1)
+
+    expect(lastMove.value).toEqual({ position: 2, count: 3 })
   })
 })

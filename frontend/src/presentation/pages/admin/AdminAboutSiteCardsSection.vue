@@ -139,7 +139,7 @@ const {
 watch(isOrderDirty, (isDirty) => emit('orderDirtyChange', isDirty), { immediate: true })
 
 const { draggingIndex, onDragStart, onDragOver, onDrop, onDragEnd } = useRowDragAndDrop(moveInDraft)
-const { registerHandleCell, moveRow } = useOrderHandleFocus(moveInDraft)
+const { registerHandleCell, moveRow, lastMove } = useOrderHandleFocus(moveInDraft, () => orderedRows.value.length)
 
 const orderedRows = computed(() => orderRowsByDraft(rows.value, orderDraft.value))
 
@@ -278,6 +278,7 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
       <BaseSelect
         id="admin-about-site-card-locale"
         v-model="form.locale"
+        :disabled="isEditing"
         :label="t('admin.localeLabel')"
         :options="localeOptions"
       />
@@ -398,6 +399,7 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
         :is-dirty="isOrderDirty"
         :is-saving="isSavingOrder"
         :error-reason="orderErrorReason"
+        :last-move="lastMove"
         @save="saveOrder"
         @cancel="resetOrder"
       />

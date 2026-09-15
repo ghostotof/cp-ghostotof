@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 /**
@@ -8,13 +8,19 @@ import { useI18n } from 'vue-i18n'
  * l'alternative clavier obligatoire au glisser-déposer, pas une commodité.
  * Le déplacement lui-même (glisser-déposer ou clavier) est décidé par le
  * parent via l'événement `move` ; cette poignée ne connaît que sa position
- * et la taille du tableau, ce qui suffit à borner ↑/↓ et à formuler
- * l'annonce.
+ * et la taille du tableau, ce qui suffit à borner ↑/↓.
  *
- * La zone `role="status"` annonce la nouvelle position après chaque
- * déplacement clavier : le glisser-déposer natif ne prévient jamais les
- * technologies d'assistance de lui-même, et un déplacement silencieux
- * laisserait un utilisateur de lecteur d'écran sans retour.
+ * L'usage des flèches est **décrit** (`aria-describedby` vers une aide
+ * rendue, issue #170 F2) et non ajouté au nom : le nom reste court, la
+ * description vient après pour qui la demande. Entrée et Espace n'ont
+ * volontairement aucun effet — un bouton qui « fait quelque chose » au clic
+ * sans dire quoi serait pire que rien.
+ *
+ * La poignée n'annonce plus le déplacement elle-même : une région live qui
+ * vit dans la ligne déplacée est re-parentée au même cycle de rendu et peut
+ * être avalée par le lecteur d'écran (#170 F3). L'annonce est portée par
+ * `OrderToolbar`, une région stable par tableau, alimentée par
+ * `useOrderHandleFocus`.
  */
 const props = defineProps<{
   index: number
@@ -26,7 +32,7 @@ const emit = defineEmits<{ move: [from: number, to: number] }>()
 
 const { t } = useI18n()
 
-const announcement = ref('')
+const hintId = useId()
 
 function moveBy(delta: number): void {
   const to = props.index + delta
@@ -35,7 +41,6 @@ function moveBy(delta: number): void {
   }
 
   emit('move', props.index, to)
-  announcement.value = t('admin.order.moved', { position: to + 1, count: props.count })
 }
 </script>
 
@@ -45,14 +50,15 @@ function moveBy(delta: number): void {
       type="button"
       class="btn btn-sm btn-outline-light"
       :aria-label="t('admin.order.moveHandle', { label })"
+      :aria-describedby="hintId"
       @keydown.up.prevent="moveBy(-1)"
       @keydown.down.prevent="moveBy(1)"
     >
       <span aria-hidden="true">⠿</span>
     </button>
     <span
-      role="status"
+      :id="hintId"
       class="visually-hidden"
-    >{{ announcement }}</span>
+    >{{ t('admin.order.handleHint') }}</span>
   </div>
 </template>

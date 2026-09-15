@@ -302,7 +302,9 @@ describe('AdminQualityPage', () => {
       await flushPromises()
 
       expect(rowsOf(wrapper, PRINCIPLES)[1].text()).toContain('DDD')
-      expect(rowsOf(wrapper, PRINCIPLES)[1].get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+      // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
+      expect(rowsOf(wrapper, PRINCIPLES)[1].find('[role="status"]').exists()).toBe(false)
+      expect(panelOf(wrapper, PRINCIPLES).get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
       expect(document.activeElement).toBe(rowsOf(wrapper, PRINCIPLES)[1].get('button').element)
 
       wrapper.unmount()
@@ -356,7 +358,9 @@ describe('AdminQualityPage', () => {
       await flushPromises()
 
       expect(rowsOf(wrapper, TRAITS)[1].text()).toContain('Testé')
-      expect(rowsOf(wrapper, TRAITS)[1].get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+      // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
+      expect(rowsOf(wrapper, TRAITS)[1].find('[role="status"]').exists()).toBe(false)
+      expect(panelOf(wrapper, TRAITS).get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
       expect(document.activeElement).toBe(rowsOf(wrapper, TRAITS)[1].get('button').element)
 
       wrapper.unmount()
