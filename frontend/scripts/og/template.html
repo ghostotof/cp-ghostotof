@@ -1,7 +1,12 @@
 <!doctype html>
 <!--
-  Gabarit de la carte Open Graph (1200x630). Rendu en PNG par
-  frontend/scripts/og/generate.sh -> frontend/public/og.png (`npm run og:generate`).
+  Gabarit des cartes de partage, rendu en PNG par frontend/scripts/og/generate.sh
+  (`npm run og:generate`) en deux variantes : la carte Open Graph du site
+  (frontend/public/og.png, 1200x630, titre = identité) et la prévisualisation
+  sociale du dépôt GitHub (.github/social-preview.png, 1280x640, titre =
+  pseudonyme). Les trois espaces réservés __WIDTH__, __HEIGHT__ et __HEADLINE__
+  sont substitués par le script dans une copie temporaire ; ce fichier n'est
+  jamais rendu tel quel, et le <h1> n'est donc pas ici, mais dans le script.
 
   Ce fichier n'est JAMAIS servi : il vit dans scripts/ et non dans public/,
   que Vite recopie tel quel dans dist/.
@@ -16,7 +21,7 @@
 <html lang="fr"><head><meta charset="utf-8">
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  html,body{width:1200px;height:630px}
+  html,body{width:__WIDTH__px;height:__HEIGHT__px}
   body{background:radial-gradient(900px 620px at 88% 8%, rgba(109,59,240,.42), rgba(11,8,24,0) 62%),radial-gradient(700px 560px at 4% 96%, rgba(74,42,203,.34), rgba(11,8,24,0) 60%),#0B0818;font-family:"DejaVu Sans","Liberation Sans",system-ui,sans-serif;
        color:#EDEAF6;position:relative;overflow:hidden}
   .glow{position:absolute;border-radius:50%;filter:blur(90px)}
@@ -56,7 +61,7 @@
 
   <div class="mid">
     <div class="eyebrow">Développeur PHP / Symfony senior</div>
-    <h1>Christophe <span class="acc">Piton</span></h1>
+    <h1>__HEADLINE__</h1>
     <div class="sub"><b>API Symfony 8</b> découplée d'un front <b>Vue 3 / TypeScript</b>,<br>déployée sur <b>Kubernetes</b> via GitHub Actions.</div>
   </div>
 
