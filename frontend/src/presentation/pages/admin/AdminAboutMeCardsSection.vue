@@ -153,13 +153,15 @@ function createCategoryOrder(category: AdminAboutMeCardCategory) {
     reload: load,
   })
 
+  const orderedRows = computed(() => orderRowsByDraft(rows.value, draft.draft.value))
+
   return {
     category,
     rows,
-    orderedRows: computed(() => orderRowsByDraft(rows.value, draft.draft.value)),
+    orderedRows,
     draft,
     drag: useRowDragAndDrop(draft.move),
-    focus: useOrderHandleFocus(draft.move),
+    focus: useOrderHandleFocus(draft.move, () => orderedRows.value.length),
   }
 }
 
@@ -220,9 +222,9 @@ function resetForm(): void {
 
 // Le groupe lu est repris tel quel dès qu'il porte une traduction : le
 // formulaire le renvoie alors à l'enregistrement, et le lien FR/EN survit à
-// l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::reattach`
-// traite le `null` en non-geste (`count($members) === 1`), le groupe est
-// conservé. Le sélecteur affiche donc « aucune » sans conséquence.
+// l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::detach`
+// traite une entrée seule en non-geste (`count($members) === 1`), le groupe
+// est conservé. Le sélecteur affiche donc « aucune » sans conséquence.
 function startEdit(card: AdminAboutMeCard): void {
   editingId.value = card.id
   draftSourceLocale.value = null
@@ -335,6 +337,7 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
       <BaseSelect
         id="admin-about-me-card-locale"
         v-model="form.locale"
+        :disabled="isEditing"
         :label="t('admin.localeLabel')"
         :options="localeOptions"
       />
@@ -472,6 +475,7 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
             :is-dirty="order.draft.isDirty.value"
             :is-saving="order.draft.isSaving.value"
             :error-reason="order.draft.errorReason.value"
+            :last-move="order.focus.lastMove.value"
             @save="order.draft.save"
             @cancel="order.draft.reset"
           />

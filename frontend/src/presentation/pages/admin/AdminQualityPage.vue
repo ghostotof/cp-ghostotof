@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { onBeforeRouteLeave } from 'vue-router'
+import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
 import { useAdminQualityPrinciples } from '../../../application/admin/quality/useAdminQualityPrinciples'
 import { useAdminQualityTraits } from '../../../application/admin/quality/useAdminQualityTraits'
 import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
@@ -251,9 +251,16 @@ const {
   onDragEnd: onTraitDragEnd,
 } = useRowDragAndDrop(moveTraitInDraft)
 
-const { registerHandleCell: registerPrincipleHandleCell, moveRow: movePrincipleRow } =
-  useOrderHandleFocus(movePrincipleInDraft)
-const { registerHandleCell: registerTraitHandleCell, moveRow: moveTraitRow } = useOrderHandleFocus(moveTraitInDraft)
+const {
+  registerHandleCell: registerPrincipleHandleCell,
+  moveRow: movePrincipleRow,
+  lastMove: principleLastMove,
+} = useOrderHandleFocus(movePrincipleInDraft, () => orderedPrincipleRows.value.length)
+const {
+  registerHandleCell: registerTraitHandleCell,
+  moveRow: moveTraitRow,
+  lastMove: traitLastMove,
+} = useOrderHandleFocus(moveTraitInDraft, () => orderedTraitRows.value.length)
 
 const orderedPrincipleRows = computed(() => orderRowsByDraft(principleRows.value, principleOrderDraft.value))
 const orderedTraitRows = computed(() => orderRowsByDraft(traitRows.value, traitOrderDraft.value))
@@ -308,9 +315,9 @@ function resetTraitForm(): void {
 
 // Le groupe lu est repris tel quel dès qu'il porte une traduction : le
 // formulaire le renvoie alors à l'enregistrement, et le lien FR/EN survit à
-// l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::reattach`
-// traite le `null` en non-geste (`count($members) === 1`), le groupe est
-// conservé. Le sélecteur affiche donc « aucune » sans conséquence.
+// l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::detach`
+// traite une entrée seule en non-geste (`count($members) === 1`), le groupe
+// est conservé. Le sélecteur affiche donc « aucune » sans conséquence.
 function startEditPrinciple(principle: AdminQualityPrinciple): void {
   editingPrincipleId.value = principle.id
   principleDraftSourceLocale.value = null
@@ -467,28 +474,7 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
   await removeTrait(trait.id)
 }
 
-/**
- * Quitter la page avec un ordre modifié l'abandonnerait sans rien dire : la
- * navigation interne demande confirmation (D6), la fermeture de l'onglet passe
- * par `beforeunload`, que le navigateur traduit en sa propre boîte de dialogue.
- */
-function confirmLeaving(): boolean {
-  return !isAnyOrderDirty.value || window.confirm(t('admin.order.leaveConfirm'))
-}
-
-onBeforeRouteLeave(() => confirmLeaving())
-
-function warnBeforeUnload(event: BeforeUnloadEvent): void {
-  if (!isAnyOrderDirty.value) {
-    return
-  }
-
-  event.preventDefault()
-  event.returnValue = ''
-}
-
-onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
-onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload))
+useUnsavedOrderGuard(isAnyOrderDirty)
 </script>
 
 <template>
@@ -518,6 +504,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         <BaseSelect
           id="admin-quality-principle-locale"
           v-model="principleForm.locale"
+          :disabled="isEditingPrinciple"
           :label="t('admin.localeLabel')"
           :options="localeOptions"
         />
@@ -639,6 +626,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
           :is-dirty="isPrincipleOrderDirty"
           :is-saving="isSavingPrincipleOrder"
           :error-reason="principleOrderErrorReason"
+          :last-move="principleLastMove"
           @save="savePrincipleOrder"
           @cancel="resetPrincipleOrder"
         />
@@ -774,6 +762,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         <BaseSelect
           id="admin-quality-trait-locale"
           v-model="traitForm.locale"
+          :disabled="isEditingTrait"
           :label="t('admin.localeLabel')"
           :options="localeOptions"
         />
@@ -878,6 +867,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
           :is-dirty="isTraitOrderDirty"
           :is-saving="isSavingTraitOrder"
           :error-reason="traitOrderErrorReason"
+          :last-move="traitLastMove"
           @save="saveTraitOrder"
           @cancel="resetTraitOrder"
         />

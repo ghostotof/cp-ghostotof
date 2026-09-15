@@ -1,4 +1,10 @@
-import { nextTick, type ComponentPublicInstance } from 'vue'
+import { nextTick, ref, type ComponentPublicInstance, type Ref } from 'vue'
+
+/** Le dernier déplacement clavier, en position humaine (1-based), pour l'annonce. */
+export interface OrderMove {
+  position: number
+  count: number
+}
 
 export interface UseOrderHandleFocusResult {
   /**
@@ -12,6 +18,13 @@ export interface UseOrderHandleFocusResult {
   registerHandleCell: (el: Element | ComponentPublicInstance | null) => void
   /** Déplace la ligne puis rend le focus à sa poignée, une fois le DOM à jour. */
   moveRow: (key: string, from: number, to: number) => Promise<void>
+  /**
+   * Le dernier déplacement, que `OrderToolbar` annonce dans la région live du
+   * tableau (#170 F3) — hors de la ligne déplacée, dont le re-parentage au
+   * même cycle de rendu pouvait faire avaler l'annonce. `null` avant le
+   * premier déplacement.
+   */
+  lastMove: Ref<OrderMove | null>
 }
 
 /**
@@ -23,8 +36,12 @@ export interface UseOrderHandleFocusResult {
  * et traits), ce qui est précisément pourquoi cette mécanique est un composable
  * partagé et non quinze lignes recopiées dans chaque page.
  */
-export function useOrderHandleFocus(move: (from: number, to: number) => void): UseOrderHandleFocusResult {
+export function useOrderHandleFocus(
+  move: (from: number, to: number) => void,
+  count: () => number,
+): UseOrderHandleFocusResult {
   const handleCells = new Map<string, HTMLElement>()
+  const lastMove = ref<OrderMove | null>(null)
 
   function registerHandleCell(el: Element | ComponentPublicInstance | null): void {
     if (!(el instanceof HTMLElement)) {
@@ -50,9 +67,10 @@ export function useOrderHandleFocus(move: (from: number, to: number) => void): U
 
   async function moveRow(key: string, from: number, to: number): Promise<void> {
     move(from, to)
+    lastMove.value = { position: to + 1, count: count() }
     await nextTick()
     handleCells.get(key)?.querySelector('button')?.focus()
   }
 
-  return { registerHandleCell, moveRow }
+  return { registerHandleCell, moveRow, lastMove }
 }

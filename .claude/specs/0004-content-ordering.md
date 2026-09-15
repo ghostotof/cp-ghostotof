@@ -157,8 +157,9 @@ B1 à B6 forment la première tranche verticale complète ; B7 à B11 n'ajoutent
   position** ; la réponse 201 l'expose.
 - `POST` avec un groupe qui a déjà cette locale → 409, `type: /errors/translation-already-exists`.
 - `POST` avec un groupe inconnu du périmètre → 422.
-- `PUT` avec `translationGroup: null` sur une entrée groupée → l'entrée reçoit un groupe frais, sa
-  position est conservée. `PUT` avec un autre groupe → rattachement, position héritée, 409 si la
+- `PUT` avec `translationGroup: null` sur une entrée groupée → l'entrée reçoit un groupe frais et
+  part en fin de périmètre (*amendé le 2026-09-15, issue #169* : « position conservée » laissait deux
+  entrées d'une même langue sur une position dès que l'ancien groupe la recevait à nouveau). `PUT` avec un autre groupe → rattachement, position héritée, 409 si la
   locale y existe déjà.
 - Un corps contenant `position` est ignoré (champ absent du DTO), jamais 400.
 
@@ -330,6 +331,10 @@ grep -rn "'fr', 'en'" backend/src/*/*/Presentation/ApiResource                  
 - Persister quoi que ce soit au dépôt (D6).
 - Ajouter une dépendance de glisser-déposer (D7).
 - Promouvoir le groupe en entité (D1, voie prévue) : c'est une spec à part.
+- Distinguer « ne rien changer » de « détacher » sur le `PUT` (champ absent ≠ `null`, #170 R1) : le
+  frontend renvoie le groupe lu quand l'entrée a une traduction, `null` sinon ; une traduction créée
+  entre le chargement et l'enregistrement est donc détachée par ce `PUT`. Mono-admin, cas rare,
+  **limite acceptée** — la lever change le contrat d'écriture, spec à part.
 
 ### Jamais
 
@@ -376,7 +381,22 @@ requis pour `v0.12.0` (migration à zéro réplica, puis rollout), comme pour `v
 après la prod. Backend et frontend se déploient ensemble : un `PUT` de l'ancien frontend, sans
 `translationGroup`, détacherait une traduction.
 
+*Amendement du 2026-09-15 (issue #175)* : l'ordre standard du pipeline est désormais **migration
+d'abord, rollout ensuite**, sans arrêter les pods. Une release comme `v0.12.0` (colonne ajoutée,
+remplie par la migration) ne demande plus la fenêtre de maintenance ; celle-ci reste réservée aux
+migrations que l'ancien code ne peut pas lire non plus (`v0.11.0`).
+
 **Audit de sensibilité avant publication** : aucun e-mail, aucune adresse, aucun nom de compte, aucun
 secret. Les titres d'incidents cités en exemple dans les maquettes sont ceux du contenu public déjà
 servi par `/api/incidents/{locale}`. Le document décrit le cloisonnement `ROLE_SUPER` au même niveau
 que `CLAUDE.md` et les specs précédentes.
+
+**Suivis de la revue finale, clos le 2026-09-15** (issues #169 et #170) : une entrée détachée part en
+fin de périmètre (`ContentPlacement::detach`, une position par clé tenue par construction, garde sur
+un groupe hétérogène) ; l'aide ↑/↓ de la poignée est décrite (`aria-describedby`) ; l'annonce du
+déplacement clavier vit dans `OrderToolbar`, une région live stable par tableau, plus dans la ligne
+re-parentée ; « Annuler » reste actif tant qu'une erreur d'ordre est posée ; la garde « quitter la
+page » est le composable `useUnsavedOrderGuard`, testé une fois ; `locale` est désactivée en édition
+(le `PUT` l'ignore, documenté sur les huit ressources) ; `down()` de la migration sans `DROP INDEX`
+redondant, `'fr'`/`'en'` en dur expliqués ; D3-a et M3 notés dans le code. R1 est une limite
+acceptée (§9). F3 reste à confirmer à l'oreille dans un vrai lecteur d'écran.

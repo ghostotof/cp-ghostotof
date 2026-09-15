@@ -135,7 +135,12 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         yield 'nom de champ commençant par un chiffre' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['1title' => 'x']]];
         yield 'nom de champ trop long' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => [str_repeat('a', 41) => 'x']]];
         yield 'valeur vide' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['title' => '   ']]];
-        yield 'valeur non textuelle' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['title' => ['x']]]];
+        // Issue #159 : jamais un 500, quelle que soit la forme de la valeur.
+        yield 'valeur non textuelle : liste' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['title' => ['x']]]];
+        yield 'valeur non textuelle : objet' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['title' => ['nested' => 'x']]]];
+        yield 'valeur non textuelle : entier' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['title' => 123]]];
+        yield 'valeur non textuelle : booléen' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['title' => true]]];
+        yield 'valeur nulle' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['title' => null]]];
         yield 'valeur trop longue' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['title' => str_repeat('a', 20_001)]]];
         yield 'total trop long' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['a' => str_repeat('a', 20_000), 'b' => str_repeat('b', 20_000), 'c' => 'c']]];
     }
@@ -155,6 +160,25 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         $this->post($client, $csrfToken, $payload);
 
         self::assertResponseStatusCodeSame(422);
+    }
+
+    /**
+     * Une valeur non textuelle donne exactement une violation, sur le champ
+     * fautif : avec `Sequentially`, `Type` arrête la chaîne avant que `Length`
+     * n'ajoute la sienne, générique (« This value should be of type string »).
+     */
+    public function testANonTextualValueYieldsASingleViolationOnItsField(): void
+    {
+        $client = $this->superClient();
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $this->post($client, $csrfToken, ['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['title' => ['x']]]);
+
+        self::assertResponseStatusCodeSame(422);
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        self::assertCount(1, $body['violations']);
+        self::assertSame('fields[title]', $body['violations'][0]['propertyPath']);
     }
 
     public function testProviderFailureIsA503WithAStableProblemType(): void

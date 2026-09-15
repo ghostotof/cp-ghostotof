@@ -34,6 +34,11 @@ final readonly class ContentPlacement
      * Position d'une entrée neuve sans groupe : après la dernière du
      * périmètre, 0 si le périmètre est vide.
      *
+     * Les commandes `app:*:seed` l'appellent une fois par entrée créée, avec
+     * le périmètre rechargé à chaque fois : O(N²) en lectures, négligeable
+     * pour des tables de dix entrées, à garder en tête si un seed devait un
+     * jour en compter des centaines (#170, M3).
+     *
      * @param list<TranslatableContent> $scope toutes les entrées du périmètre, toutes langues confondues
      */
     public function atEndOf(array $scope): int
@@ -67,35 +72,57 @@ final readonly class ContentPlacement
         }
 
         // Toutes les entrées d'un groupe partagent sa position (invariant tenu
-        // par ce service et, à partir de B3, par OrderAssigner) : la première
-        // vaut pour toutes.
-        return $members[0]->getPosition();
+        // par ce service et par OrderAssigner) : la première vaut pour toutes.
+        // Un groupe qui ne le respecte pas est un défaut du pipeline, pas une
+        // saisie — il surface (500) plutôt que d'être arbitré en silence.
+        $position = $members[0]->getPosition();
+        foreach ($members as $member) {
+            if ($member->getPosition() !== $position) {
+                throw new \LogicException(\sprintf('Le groupe de traduction %s porte plusieurs positions.', $translationGroup->toRfc4122()));
+            }
+        }
+
+        return $position;
     }
 
     /**
-     * Applique à une entrée existante le groupe demandé par un `PUT`.
+     * `PUT` avec `translationGroup: null` : sépare l'entrée de ses traductions
+     * — groupe neuf — et l'envoie **en fin de périmètre** (issue #169). La
+     * laisser à sa position paraissait plus doux (« séparée, pas déplacée »),
+     * mais l'ancien groupe pouvait alors recevoir à nouveau cette langue par
+     * « Créer la version », héritant de la même position : deux clés sur une
+     * position, et un ordre public qui ne coïncide plus avec le tableau. Une
+     * position par clé est l'invariant que tient ce service, et il ne se tient
+     * qu'en déplaçant ce qu'on détache.
      *
-     * `null` détache : l'entrée reçoit un groupe neuf et **garde sa position**
-     * — on l'a séparée de ses traductions, pas déplacée. Détacher une entrée
-     * déjà seule ne fait rien, plutôt que de lui forger un groupe neuf pour
-     * rien.
+     * Détacher une entrée déjà seule ne fait rien, plutôt que de lui forger un
+     * groupe neuf et de la déplacer pour rien — c'est ce que le frontend envoie
+     * pour toute entrée sans traduction.
      *
-     * @param list<TranslatableContent> $members entrées du groupe demandé — ou, si `$translationGroup`
-     *                                           est `null`, du groupe actuel de `$entry`
+     * @param list<TranslatableContent> $members entrées du groupe actuel de `$entry`
+     * @param list<TranslatableContent> $scope   toutes les entrées du périmètre, toutes langues confondues
+     */
+    public function detach(TranslatableContent $entry, array $members, array $scope): void
+    {
+        if (\count($members) <= 1) {
+            return;
+        }
+
+        $entry->moveToPosition($this->atEndOf($scope));
+        $entry->detachFromTranslationGroup();
+    }
+
+    /**
+     * `PUT` avec un `translationGroup` : rattache l'entrée à ce groupe, dont
+     * elle hérite la position. Son propre groupe est un non-geste.
+     *
+     * @param list<TranslatableContent> $members entrées du groupe demandé
      *
      * @throws UnknownTranslationGroupException
      * @throws TranslationAlreadyExistsException
      */
-    public function reattach(TranslatableContent $entry, ?Uuid $translationGroup, array $members): void
+    public function reattach(TranslatableContent $entry, Uuid $translationGroup, array $members): void
     {
-        if (null === $translationGroup) {
-            if (\count($members) > 1) {
-                $entry->detachFromTranslationGroup();
-            }
-
-            return;
-        }
-
         if ($translationGroup->equals($entry->getTranslationGroup())) {
             return;
         }

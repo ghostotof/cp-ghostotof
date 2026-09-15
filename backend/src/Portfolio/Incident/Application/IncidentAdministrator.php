@@ -56,11 +56,21 @@ final readonly class IncidentAdministrator implements IncidentAdministratorInter
             throw IncidentNotFoundException::forId($id);
         }
 
-        $this->contentPlacement->reattach(
-            $incident,
-            $translationGroup,
-            $this->incidentRepository->findByTranslationGroup($translationGroup ?? $incident->getTranslationGroup()),
-        );
+        if (null === $translationGroup) {
+            // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
+            // le chargement du périmètre — le même qu'à la création sans groupe.
+            $this->contentPlacement->detach(
+                $incident,
+                $this->incidentRepository->findByTranslationGroup($incident->getTranslationGroup()),
+                $this->incidentRepository->findAll(),
+            );
+        } else {
+            $this->contentPlacement->reattach(
+                $incident,
+                $translationGroup,
+                $this->incidentRepository->findByTranslationGroup($translationGroup),
+            );
+        }
         $incident->update($title, $version, $occurredAt, $impact, $rootCause, $resolution, $invariant);
         $this->incidentRepository->save($incident);
 

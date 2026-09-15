@@ -139,7 +139,7 @@ const {
 watch(isOrderDirty, (isDirty) => emit('orderDirtyChange', isDirty), { immediate: true })
 
 const { draggingIndex, onDragStart, onDragOver, onDrop, onDragEnd } = useRowDragAndDrop(moveInDraft)
-const { registerHandleCell, moveRow } = useOrderHandleFocus(moveInDraft)
+const { registerHandleCell, moveRow, lastMove } = useOrderHandleFocus(moveInDraft, () => orderedRows.value.length)
 
 const orderedRows = computed(() => orderRowsByDraft(rows.value, orderDraft.value))
 
@@ -173,9 +173,9 @@ function resetForm(): void {
 
 // Le groupe lu est repris tel quel dès qu'il porte une traduction : le
 // formulaire le renvoie alors à l'enregistrement, et le lien FR/EN survit à
-// l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::reattach`
-// traite le `null` en non-geste (`count($members) === 1`), le groupe est
-// conservé. Le sélecteur affiche donc « aucune » sans conséquence.
+// l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::detach`
+// traite une entrée seule en non-geste (`count($members) === 1`), le groupe
+// est conservé. Le sélecteur affiche donc « aucune » sans conséquence.
 function startEdit(card: AdminAboutSiteCard): void {
   editingId.value = card.id
   draftSourceLocale.value = null
@@ -278,6 +278,7 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
       <BaseSelect
         id="admin-about-site-card-locale"
         v-model="form.locale"
+        :disabled="isEditing"
         :label="t('admin.localeLabel')"
         :options="localeOptions"
       />
@@ -398,6 +399,7 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
         :is-dirty="isOrderDirty"
         :is-saving="isSavingOrder"
         :error-reason="orderErrorReason"
+        :last-move="lastMove"
         @save="saveOrder"
         @cancel="resetOrder"
       />

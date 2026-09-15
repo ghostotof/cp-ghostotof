@@ -75,4 +75,33 @@ describe('OrderToolbar', () => {
     await expectNoAccessibilityViolation(mountToolbar({ isDirty: true, isSaving: false, errorReason: null }))
     await expectNoAccessibilityViolation(mountToolbar({ isDirty: false, isSaving: false, errorReason: 'unknown' }))
   })
+
+  /**
+   * Issue #170 F3 : une seule région live par tableau, stable dans le DOM —
+   * la poignée n'annonce plus depuis la ligne déplacée.
+   */
+  it('annonce le dernier déplacement clavier dans une région status', () => {
+    const wrapper = mountToolbar({ isDirty: true, isSaving: false, errorReason: null, lastMove: { position: 2, count: 3 } })
+
+    expect(wrapper.get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+  })
+
+  it("rend la région status vide, mais présente, tant qu'aucun déplacement clavier n'a eu lieu", () => {
+    const wrapper = mountToolbar({ isDirty: false, isSaving: false, errorReason: null })
+
+    expect(wrapper.get('[role="status"]').text()).toBe('')
+  })
+
+  /**
+   * Issue #170 F4 : après un 422 obsolète, le brouillon est resynchronisé
+   * (plus « modifié ») mais l'alerte reste ; sans Annuler actif, elle ne peut
+   * plus être effacée.
+   */
+  it("garde Annuler actif quand une erreur est posée, même l'ordre à jour", () => {
+    const wrapper = mountToolbar({ isDirty: false, isSaving: false, errorReason: 'stale-order' })
+
+    const [cancel, save] = wrapper.findAll('button')
+    expect(cancel?.attributes('disabled')).toBeUndefined()
+    expect(save?.attributes('disabled')).toBeDefined()
+  })
 })

@@ -55,6 +55,7 @@
     },
     "order": {
       "moveHandle": "Move: {label}",
+      "handleHint": "Up and down arrows move the row.",
       "moved": "Moved to position {position} of {count}",
       "status": {
         "clean": "Order · up to date",

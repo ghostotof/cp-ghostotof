@@ -216,7 +216,9 @@ describe('AdminIncidentsPage', () => {
     await flushPromises()
 
     expect(rows(wrapper)[1].text()).toContain('Panne du broker RabbitMQ')
-    expect(rows(wrapper)[1].get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
+    // Issue #170 F3 : l'annonce vit dans la barre du tableau, pas dans la ligne déplacée.
+    expect(rows(wrapper)[1].find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.get('[role="status"]').text()).toBe('Déplacé en position 2 sur 3')
     expect(document.activeElement).toBe(rows(wrapper)[1].get('button').element)
   })
 
@@ -264,6 +266,28 @@ describe('AdminIncidentsPage', () => {
     const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text())
     expect(alerts.some((text) => text.includes('La liste a changé entre-temps'))).toBe(true)
     expect(wrapper.text()).toContain('Ordre · à jour')
+
+    // Issue #170 F4 : l'ordre est à jour, mais l'alerte doit pouvoir être
+    // effacée — Annuler reste actif tant qu'elle est posée.
+    const cancel = wrapper.findAll('button').find((button) => 'Annuler' === button.text() && undefined === button.attributes('disabled'))
+    expect(cancel).toBeDefined()
+    await cancel?.trigger('click')
+    expect(wrapper.findAll('[role="alert"]').some((alert) => alert.text().includes('La liste a changé entre-temps'))).toBe(false)
+  })
+
+  /**
+   * Issue #170 R2 : `locale` est ignorée par le `PUT` (le serveur ne change
+   * jamais la langue d'une entrée) ; la proposer en édition serait un no-op
+   * silencieux. Le champ est désactivé, pas caché : la langue reste lisible.
+   */
+  it('désactive le sélecteur de langue en édition, et le libère en création', async () => {
+    const { wrapper } = await mountPage()
+
+    await buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), 'Modifier').trigger('click')
+    expect(wrapper.get('#admin-incident-locale').attributes('disabled')).toBeDefined()
+
+    await buttonLabelled(wrapper, 'Annuler').trigger('click')
+    expect(wrapper.get('#admin-incident-locale').attributes('disabled')).toBeUndefined()
   })
 
   it('« Créer la version EN » ouvre une création rattachée, version et date recopiées, prose vide', async () => {
@@ -300,7 +324,7 @@ describe('AdminIncidentsPage', () => {
 
     // FR_TWO est seule dans son groupe : le sélecteur affiche « aucune » et le
     // formulaire envoie donc `translationGroup: null`. Ce n'est pas un
-    // détachement — `ContentPlacement::reattach` traite le `null` en non-geste
+    // détachement — `ContentPlacement::detach` traite une entrée seule en non-geste
     // quand l'entrée n'a pas de sœur (`count($members) === 1`), ce que pince
     // `ContentPlacementTest::testDetachingAnEntryWithoutTranslationsDoesNothing`.
     // Ces deux tests forment le contrat entre les deux moitiés : les casser

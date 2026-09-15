@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { onBeforeRouteLeave } from 'vue-router'
+import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
 import { useAdminAnonymousCvSections } from '../../../application/admin/anonymousCv/useAdminAnonymousCvSections'
 import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
 import { applyTranslationDraft, collectProseFields } from '../../../application/admin/translation/proseFields'
@@ -140,7 +140,7 @@ const LOCKED_HINT_ID = 'admin-order-locked-hint'
 
 const lockedHintId = computed(() => (isOrderDirty.value ? LOCKED_HINT_ID : undefined))
 
-const { registerHandleCell, moveRow } = useOrderHandleFocus(moveInDraft)
+const { registerHandleCell, moveRow, lastMove } = useOrderHandleFocus(moveInDraft, () => orderedRows.value.length)
 
 /**
  * « Version de » : les options du sélecteur (D2, cf.
@@ -178,9 +178,9 @@ function startEdit(section: AdminAnonymousCvSection): void {
   form.locale = section.locale as Locale
   // Le groupe lu est repris tel quel dès qu'il porte une traduction : le
   // formulaire le renvoie alors à l'enregistrement, et le lien FR/EN survit à
-  // l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::reattach`
-  // traite le `null` en non-geste (`count($members) === 1`), le groupe est
-  // conservé. Le sélecteur affiche donc « aucune » sans conséquence.
+  // l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::detach`
+  // traite une entrée seule en non-geste (`count($members) === 1`), le groupe
+  // est conservé. Le sélecteur affiche donc « aucune » sans conséquence.
   form.translationGroup = hasSibling(sections.value, section) ? section.translationGroup : ''
   form.title = section.title
   form.skills = section.skills
@@ -266,28 +266,7 @@ async function handleDelete(section: AdminAnonymousCvSection): Promise<void> {
   await remove(section.id)
 }
 
-/**
- * Quitter la page avec un ordre modifié l'abandonnerait sans rien dire : la
- * navigation interne demande confirmation (D6), la fermeture de l'onglet passe
- * par `beforeunload`, que le navigateur traduit en sa propre boîte de dialogue.
- */
-function confirmLeaving(): boolean {
-  return !isOrderDirty.value || window.confirm(t('admin.order.leaveConfirm'))
-}
-
-onBeforeRouteLeave(() => confirmLeaving())
-
-function warnBeforeUnload(event: BeforeUnloadEvent): void {
-  if (!isOrderDirty.value) {
-    return
-  }
-
-  event.preventDefault()
-  event.returnValue = ''
-}
-
-onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
-onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload))
+useUnsavedOrderGuard(isOrderDirty)
 </script>
 
 <template>
@@ -310,6 +289,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         <BaseSelect
           id="admin-anonymous-cv-locale"
           v-model="form.locale"
+          :disabled="isEditing"
           :label="t('admin.anonymousCv.localeLabel')"
           :options="localeOptions"
         />
@@ -443,6 +423,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
           :is-dirty="isOrderDirty"
           :is-saving="isOrderSaving"
           :error-reason="orderErrorReason"
+          :last-move="lastMove"
           @save="saveOrder"
           @cancel="resetOrder"
         />

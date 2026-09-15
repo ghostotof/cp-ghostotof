@@ -43,11 +43,21 @@ final readonly class QualityPrincipleAdministrator implements QualityPrincipleAd
             throw QualityPrincipleNotFoundException::forId($id);
         }
 
-        $this->contentPlacement->reattach(
-            $principle,
-            $translationGroup,
-            $this->qualityPrincipleRepository->findByTranslationGroup($translationGroup ?? $principle->getTranslationGroup()),
-        );
+        if (null === $translationGroup) {
+            // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
+            // le chargement du périmètre — le même qu'à la création sans groupe.
+            $this->contentPlacement->detach(
+                $principle,
+                $this->qualityPrincipleRepository->findByTranslationGroup($principle->getTranslationGroup()),
+                $this->qualityPrincipleRepository->findAll(),
+            );
+        } else {
+            $this->contentPlacement->reattach(
+                $principle,
+                $translationGroup,
+                $this->qualityPrincipleRepository->findByTranslationGroup($translationGroup),
+            );
+        }
         $principle->update($title, $description, $iconKey);
         $this->qualityPrincipleRepository->save($principle);
 

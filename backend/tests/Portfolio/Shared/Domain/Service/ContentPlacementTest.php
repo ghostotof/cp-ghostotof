@@ -76,18 +76,56 @@ final class ContentPlacementTest extends TestCase
     }
 
     /**
-     * Détacher sépare de ses traductions ; cela ne déplace pas.
+     * Issue #169 : détacher sépare de ses traductions ET envoie l'entrée en fin
+     * de périmètre. La garder à sa position laisserait deux clés sur la même
+     * position dès que l'ancien groupe reçoit à nouveau cette langue.
      */
-    public function testDetachingKeepsThePositionAndForgesAFreshGroup(): void
+    public function testDetachingForgesAFreshGroupAndMovesToTheEndOfTheScope(): void
     {
         $group = Uuid::v7();
         $entry = new FakeTranslatableContent(Locale::FR, 4, $group);
         $sibling = new FakeTranslatableContent(Locale::EN, 4, $group);
+        $scope = [new FakeTranslatableContent(Locale::FR, 0), $entry, $sibling, new FakeTranslatableContent(Locale::EN, 7)];
 
-        (new ContentPlacement())->reattach($entry, null, [$entry, $sibling]);
+        (new ContentPlacement())->detach($entry, [$entry, $sibling], $scope);
 
         self::assertFalse($group->equals($entry->getTranslationGroup()));
-        self::assertSame(4, $entry->getPosition());
+        self::assertSame(8, $entry->getPosition());
+        self::assertSame(4, $sibling->getPosition(), 'La traduction restée dans le groupe ne bouge pas.');
+    }
+
+    /**
+     * Régression #169, le scénario complet : détacher FR de G1, puis « créer la
+     * version FR » sur G1 — la nouvelle FR hérite de la position de G1, et la
+     * FR détachée ne doit pas la partager.
+     */
+    public function testDetachingThenRecreatingTheLocaleNeverYieldsTwoEntriesOnOnePosition(): void
+    {
+        $placement = new ContentPlacement();
+        $group = Uuid::v7();
+        $french = new FakeTranslatableContent(Locale::FR, 0, $group);
+        $english = new FakeTranslatableContent(Locale::EN, 0, $group);
+        $scope = [$french, $english, new FakeTranslatableContent(Locale::FR, 1), new FakeTranslatableContent(Locale::EN, 1)];
+
+        $placement->detach($french, [$french, $english], $scope);
+        $recreated = $placement->inGroup($group, Locale::FR, [$english]);
+
+        self::assertNotSame($french->getPosition(), $recreated);
+    }
+
+    /**
+     * Toutes les entrées d'un groupe partagent sa position ; `inGroup()` en
+     * dépend. Un groupe hétérogène est un défaut du pipeline, pas une saisie :
+     * il doit surfacer, pas être arbitré en silence par `$members[0]`.
+     */
+    public function testAGroupWhoseMembersDisagreeOnThePositionIsABug(): void
+    {
+        $group = Uuid::v7();
+        $members = [new FakeTranslatableContent(Locale::FR, 3, $group), new FakeTranslatableContent(Locale::EN, 5, $group)];
+
+        $this->expectException(\LogicException::class);
+
+        (new ContentPlacement())->inGroup($group, Locale::EN, $members);
     }
 
     /**
@@ -100,9 +138,10 @@ final class ContentPlacementTest extends TestCase
         $group = Uuid::v7();
         $entry = new FakeTranslatableContent(Locale::FR, 4, $group);
 
-        (new ContentPlacement())->reattach($entry, null, [$entry]);
+        (new ContentPlacement())->detach($entry, [$entry], [$entry, new FakeTranslatableContent(Locale::FR, 9)]);
 
         self::assertTrue($group->equals($entry->getTranslationGroup()));
+        self::assertSame(4, $entry->getPosition());
     }
 
     public function testReattachingToItsOwnGroupIsANoOp(): void

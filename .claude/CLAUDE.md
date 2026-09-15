@@ -97,7 +97,20 @@ properties) — extend that skip list rather than fighting a rule inline. One sk
 demands the rewrite, PHPStan rejects it), so it can never be satisfied — leave it skipped. Psalm
 *is* installed (`psalm/phar`, `backend/psalm.xml`) but **only** for taint analysis (`composer psalm`, CI job
 `sast-backend`, audit point M4) — `errorLevel="8"`, it is not and must not become a second type-checker
-alongside PHPStan; don't reach for Psalm annotations or raise its level. The
+alongside PHPStan; don't reach for Psalm annotations or raise its level. **Symfony Language Tools**
+(issue #90) is the fourth check: `symfony lsp:check` (`make back-lsp`, part of `make back-quality`, CI job
+`lsp-check-backend`) boots the kernel in `dev` (`backend/.symfony-lsp.json`, `releaseMetadata: false` so
+it makes no call to symfony.com) and validates what PHPStan cannot see: service ids, route names,
+Messenger transports, firewalls, constraint options, bundle config keys, Twig paths. It needs no database
+(a refused connection is fine — a *DNS* failure once segfaulted the checker, don't point it at an
+unresolvable host). It requires Symfony CLI ≥ 5.20.0 (`.env`, `versions.lock`); the CLI downloads the
+latest stable Language Tools into its own cache (`symfony lsp:cache-dir`), so that part is **not pinned**
+— which is why the job is blocking only on the `--fail-on` list of low-false-positive codes and is *not*
+in `build-images`' `needs` yet (re-evaluate after a few weeks). No baseline: the repo is clean apart from
+three `config.unknown_key` **warnings** on `ai.yaml` (`ai.agent.translator.model.name/options`), keys that
+Symfony accepts because the bundle declares `model` as a `variableNode` (its only rule: a string, or an array
+with `name`) — Language Tools cannot know the keys under it, a false positive by construction, left visible
+rather than baselined. The
 frontend has moved past the default scaffold: it follows a layered clean architecture (see below) and has
 Vitest configured with `npm test`. A `ROLE_SUPER`-gated backoffice (`/admin` on the frontend, `/api/backoffice/*`
 on the backend) lets an authenticated super-admin manage all of the above content plus user accounts — see the
@@ -302,8 +315,11 @@ mid-migration.
     DTO (`#[ApiProperty(writable: false)]`, a body still carrying it is accepted and ignored) and every
     `create`/`update` signature; `Domain/Service/ContentPlacement` derives it (a new entry without a
     group takes `max + 1` of its scope, one attached to a group **inherits the group's position**;
-    `reattach()` on a `PUT` with `translationGroup: null` detaches and keeps the position, and is a
-    no-op on an entry already alone). `WatchedProduct` is not localized, so it is `Orderable` on its
+    `detach()` on a `PUT` with `translationGroup: null` detaches **and moves the entry to the end of
+    its scope** (issue #169 — keeping the position let the old group receive that locale again via
+    "Create the XX version" and inherit the same position: two keys on one position), and is a no-op
+    on an entry already alone; `reattach()` with a group inherits its position; `inGroup()` throws a
+    `LogicException` on a group whose members disagree on the position, a pipeline bug, never a 4xx). `WatchedProduct` is not localized, so it is `Orderable` on its
     own id, and its `Administrator` computes the end of the catalogue itself. The **only client-driven
     writer of `position` is `PUT /api/backoffice/<x>/order`** (`ContentPlacement` derives it server-side,
     no request body ever chooses it) (`Backoffice<X>OrderResource`, `read: false`,
@@ -677,8 +693,13 @@ status announcement) that a fork would silently lose:
   what keeps the flow testable with plain events), `useOrderHandleFocus` (one instance **per table**,
   focus back on the moved row's handle after ↑/↓; the `ref` callback is a stable function keyed on
   `data-order-key`, never an inline lambda).
-- `presentation/ui/admin/OrderHandle.vue` (a real `<button>`, ↑/↓, `role="status"` announcement) and
-  `OrderToolbar.vue` (status, Cancel, "Save order", the order error), i18n under `admin.order.*`.
+- `presentation/ui/admin/OrderHandle.vue` (a real `<button>`, ↑/↓, the arrows described by
+  `aria-describedby` to a rendered hint, issue #170 F2) and `OrderToolbar.vue` (status, Cancel, "Save
+  order", the order error, **and the one `role="status"` live region of the table**, fed by
+  `useOrderHandleFocus().lastMove` — it used to live in the handle, i.e. inside the moved `<tr>`, which
+  is re-parented in the same render cycle and can swallow the announcement, #170 F3; Cancel stays
+  enabled while an order error is shown, so a `stale-order` alert can be dismissed, #170 F4), i18n
+  under `admin.order.*`.
 - **Page rules**: the table shows **every language** (D8 — the row is the group, languages stacked in the
   content cell, a missing one reads "Missing translation"); **the per-language actions live in a last
   "Actions" column** (Edit/Delete, or "Create the XX version" which opens a creation already attached to
@@ -690,8 +711,9 @@ status announcement) that a fork would silently lose:
   **every mutation is disabled** (Edit, Delete, Create version, submit, the translate button) with a
   visible hint referenced by `aria-describedby` — never a `title`, Bootstrap's `.btn:disabled` has
   `pointer-events: none` — and leaving the route asks `window.confirm`, closing the tab goes through
-  `beforeunload` (tested once for the phase, on Incidents, with `enableAutoUnmount` — a page left
-  mounted keeps its listener). `startEdit` sends back the group it read whenever the entry has a
+  `beforeunload` — both in `application/admin/shared/useUnsavedOrderGuard(isDirty)` (#170 F5), tested once
+  in its own spec with `enableAutoUnmount` (a page left mounted keeps its listener); a page calls it,
+  never re-implements it. `startEdit` sends back the group it read whenever the entry has a
   sibling, otherwise `''` → `null`, which `ContentPlacement::reattach` treats as a no-op on a lone
   entry. The `Position` number field is gone from every form; `BaseNumberInput` survives only for
   genuinely numeric content (years of experience).
@@ -866,22 +888,42 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   production. If a console command must run at deploy time, declare another Job — never bring `pods/exec` back.
   The RBAC is a **manual bootstrap the pipeline never replays**: after changing it, re-run the loop in
   `k8s/README.md` §4 *before* the next deploy, or the job fails on `cannot create resource "jobs"`.
+- **The standard deploy runs the migration *before* the rollout, with the old pods still serving**
+  (issue #175, expand/contract). Doctrine selects every mapped column on each hydration, so with the
+  old order (rollout, then Job) any release that adds a field made the new pods `SELECT` a column the
+  table didn't have yet: every route touching it answered 500 for the one to two minutes the Job took
+  (observed in preprod on v0.12.0). In `deploy-preprod`/`deploy-prod` the `Deploy` step now goes:
+  `kustomize build -o` + apply of **`backend-config` alone** (the migrate Job reads it by literal name,
+  outside kustomize, so without this it would run on the *previous* release's configuration and a
+  variable added by this release would be missing; running pods don't re-read their env, so this
+  changes nothing for them — the filename `v1_configmap_backend-config.yaml` is stable because the
+  ConfigMap has `disableNameSuffixHash`), then `migrate-job.yaml` with the release image (300 s
+  timeout), then `kubectl apply -k .` + `rollout status`. **Fail-closed**: a failed Job exits before the
+  `apply`, so the previous release keeps serving on the old schema, which is exactly the safe state
+  (PostgreSQL DDL is transactional and Doctrine wraps each migration in its own transaction) — fix the
+  migration, cut a new tag. The discipline that makes this order safe, to respect in every migration:
+  a column added `NOT NULL` has a default or is filled by the migration itself
+  (`Version20260914170000` is the model); **never drop or rename a column in the release that stops
+  reading it**, only in the next one; a Messenger message in flight at deploy time must stay readable
+  by both versions (v0.11.0's `SendAccountInvitationMessage.userId` note). Only migrations the old code
+  cannot survive fall outside this order — see the maintenance window below.
 - **`DEPLOY_MAINTENANCE_WINDOW` (repository variable) opts a deploy into a maintenance window** — added
   for v0.11.0's irreversible integer→UUID primary-key migrations, where the new code cannot read the old
-  schema and vice versa, so no pod may serve a request while the migration runs. When it equals `true`,
+  schema **and vice versa**, so no pod may serve a request while the migration runs. That is the only
+  case that needs it since #175; an additive migration doesn't. When it equals `true`,
   `deploy-preprod`/`deploy-prod` in `pipeline.yml` patch `backend` and `worker` to `replicas: 0` (a
   `kubectl patch` on `spec.replicas` — the deployer `Role` has no `deployments/scale` subresource, so
   never `kubectl scale`), wait for their pods to disappear, run `migrate-job.yaml` against the quiet
   database, then let `kubectl apply -k .` restore the manifests' replica counts and the existing
   `rollout status` wait for the new pods. The frontend keeps serving; only the API returns 503 through
-  the ingress for the window's duration. It is opt-in specifically so an ordinary release without a
-  breaking schema change stays zero-downtime — **set it before pushing the release tag and unset it
-  right after the production deploy**: a forgotten `true` turns every subsequent deploy into a
-  downtime deploy for no reason. **Fail-closed on a migration failure**: the script exits before
-  reaching `kubectl apply -k .`, so `backend`/`worker` stay at 0 replicas until someone intervenes —
-  deliberate, never serve traffic against a half-migrated schema. To recover: if the migration wrote
-  nothing (PostgreSQL DDL is transactional), `kubectl apply -k .` on that overlay redeploys the
-  previous image against the still-old schema; otherwise fix the migration and cut a new tag.
+  the ingress for the window's duration. It is opt-in specifically so an ordinary release stays
+  zero-downtime — **set it before pushing the release tag and unset it right after the production
+  deploy**: a forgotten `true` turns every subsequent deploy into a downtime deploy for no reason.
+  **Fail-closed on a migration failure**: the script exits before reaching `kubectl apply -k .`, so
+  `backend`/`worker` stay at 0 replicas until someone intervenes — deliberate, never serve traffic
+  against a half-migrated schema. To recover: if the migration wrote nothing, `kubectl apply -k .` on
+  that overlay redeploys the previous image against the still-old schema; otherwise fix the migration
+  and cut a new tag.
 - **`watch-refresh-cronjob.yaml` *is* in `kustomization.yaml`'s `resources:`** — the opposite of
   `migrate-job.yaml` above, and deliberately: it wants kustomize's image transformer, since it must run the
   same image as the Deployment. It used to be **the only object in the cluster that makes outbound calls
@@ -988,7 +1030,8 @@ make front-test        # vitest run, in the container
 make front-lint        # eslint, in the container
 make front-build       # vue-tsc -b + vite build, in the container
 make back-test         # phpunit, in the container
-make back-quality      # phpstan + rector + psalm, in the container
+make back-quality      # phpstan + rector + psalm + lsp:check, in the container
+make back-lsp          # symfony lsp:check alone (Symfony Language Tools)
 ```
 
 `make init` and `make front-init` (re)run the Symfony/Vite project scaffolding — both are already applied in
@@ -1059,7 +1102,7 @@ make front-test     # vitest run
 make front-lint     # eslint
 make front-build    # vue-tsc -b + vite build
 make back-test      # phpunit
-make back-quality   # phpstan + rector + psalm
+make back-quality   # phpstan + rector + psalm + lsp:check
 ```
 
 The host's Node version must not influence the project's behaviour. The container pins `NODE_TAG`; a
