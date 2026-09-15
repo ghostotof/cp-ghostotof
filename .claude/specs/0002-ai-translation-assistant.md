@@ -1,8 +1,9 @@
 # SPEC — Assistant de traduction FR/EN du backoffice (`Ai/Translation`, Symfony AI)
 
 > Statut : **livrée** (rédigée le 2026-09-14, design validé en session le même jour, M1–M6 en production le même jour, v0.10.0 puis v0.10.1).
-> Phase 1 de l'intégration de Symfony AI au projet ; la phase 2 (serveur MCP réservé à
-> `ROLE_TRUSTED`) fera l'objet d'une spec distincte, mais ce document en prépare le socle (§2, D1 et D8).
+> Phase 1 de l'intégration de Symfony AI au projet ; la phase 2 (assistant « interrogez mon parcours »
+> réservé à `ROLE_TRUSTED`, sur Scaleway — ADR 0004 D7 amendée le 2026-09-15, le serveur MCP initialement
+> prévu est écarté) fera l'objet d'une spec distincte, mais ce document en prépare le socle (§2, D1 et D8).
 >
 > ⚠️ **Ce fichier vit dans un dépôt public** (`.claude/` est versionné, hors `CLAUDE.local.md`).
 > Toute spec déposée ici est publiée au prochain push : aucun secret, aucune adresse réelle, aucun
@@ -54,7 +55,8 @@ compte du palier de base ou nominatif n'y a accès, ni directement ni par effet 
 ## 2. Décisions structurantes
 
 - **D1 — Un contexte borné `src/Ai/`**, avec un sous-contexte `Translation` (phase 1) et, plus tard,
-  `Mcp` (phase 2). La configuration de plateforme (`config/packages/ai.yaml`, clé d'API) est
+  `Mcp` (phase 2 — renommé `Assistant` par l'amendement du 2026-09-15 de l'ADR 0004 : la phase 2
+  est un chatbot, pas un serveur MCP). La configuration de plateforme (`config/packages/ai.yaml`, clé d'API) est
   déclarée une fois et partagée. Rien d'IA ne s'enfouit dans `Portfolio/*`.
 - **D2 — Un endpoint générique, agnostique du contenu** : `POST /api/backoffice/translations` reçoit
   un dictionnaire `nom → texte` et le renvoie traduit. Le backend ignore ce qu'il traduit ; le
@@ -251,7 +253,8 @@ Tests miroir sous `tests/` (`tests/infrastructure/admin/translation/…`, `tests
   suggestion n'est jamais persistée sans action humaine ; plafonds de coût (quota par compte, jetons,
   timeout) ; tests hors ligne, aucun test ne sort sur le réseau ; **phase 2** réservée à
   `ROLE_TRUSTED`, sous `src/Ai/Mcp/`, dont les outils passent par les providers existants et jamais
-  par les repositories, à préciser par amendement.
+  par les repositories, à préciser par amendement — *amendée le 2026-09-15 : `src/Ai/Assistant/`,
+  un chatbot sur le site plutôt qu'un serveur MCP, le corpus passe toujours par les providers*.
 - **`CLAUDE.md`** : nouveau paragraphe « `Ai/` » sous « Backend architecture », mention du contexte
   dans « Project state », correction de l'invariant d'egress (§2), ajout de `ANTHROPIC_API_KEY` à la
   liste des variables servies hors dépôt.
@@ -376,4 +379,5 @@ page qui bascule de locale, et les réglages À propos reçoivent leur brouillon
 cette spec : la page admin des études de cas (#104), sur laquelle le bouton se branchera.
 
 Prochaine étape : spec de la phase 2 (serveur MCP réservé à `ROLE_TRUSTED`), précédée de l'amendement de
-la D7 de l'ADR 0004.
+la D7 de l'ADR 0004. *2026-09-15 : amendement fait — la phase 2 devient l'assistant « interrogez mon
+parcours » sur Scaleway, le serveur MCP est écarté ; la spec 0005 reste à écrire.*
