@@ -57,9 +57,16 @@ final class BackofficeTranslationResource
         public ?string $targetLocale = null,
         #[Assert\Count(min: 1, max: self::MAX_FIELDS)]
         #[Assert\All([
-            new Assert\Type('string'),
-            new Assert\NotBlank(normalizer: 'trim'),
-            new Assert\Length(max: self::MAX_FIELD_LENGTH),
+            // `Sequentially` (issue #159, même choix que les ressources d'ordre) :
+            // une valeur non textuelle s'arrête au `Type`, avec une seule
+            // violation, au lieu d'atteindre `Length` — qui lève une
+            // UnexpectedValueException que le validateur convertit certes en
+            // violation, mais générique et en double.
+            new Assert\Sequentially([
+                new Assert\Type('string'),
+                new Assert\NotBlank(normalizer: 'trim'),
+                new Assert\Length(max: self::MAX_FIELD_LENGTH),
+            ]),
         ])]
         public array $fields = [],
     ) {
