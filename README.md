@@ -46,8 +46,7 @@ de la préprod à la prod.
 Les décisions sont écrites avant le code, avec leurs alternatives écartées, dans
 [`docs/adr/`](docs/adr/) ; les spécifications qui les mettent en œuvre dans
 [`.claude/specs/`](.claude/specs/) ; les invariants opérationnels appris en production (et ce qui
-ne doit plus jamais être défait) dans [`.claude/CLAUDE.md`](.claude/CLAUDE.md). Le registre RGPD
-des traitements est dans [`docs/rgpd/`](docs/rgpd/registre-traitements.md).
+ne doit plus jamais être défait) dans [`.claude/CLAUDE.md`](.claude/CLAUDE.md).
 
 ## Développement local
 
@@ -110,6 +109,14 @@ make build-front-preprod TAG=1.2.3
 Sans `TAG`, le SHA court du commit courant est utilisé : chaque image reste traçable jusqu'à la
 révision exacte du code qu'elle contient. Toutes les versions d'images et d'outils sont figées dans
 `.env` et `versions.lock` ; seule exception, Composer, épinglé sur sa branche majeure.
+
+## RGPD
+
+Le registre des traitements de données personnelles (formulaire de contact,
+authentification, logs techniques...) est tenu dans
+[`docs/rgpd/registre-traitements.md`](docs/rgpd/registre-traitements.md). Les
+pages publiques « Mentions légales » et « Politique de confidentialité » du
+frontend en sont le résumé destiné aux visiteurs.
 
 ## Sécurité
 
