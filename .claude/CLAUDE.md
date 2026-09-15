@@ -461,8 +461,12 @@ mid-migration.
 - **`Ai/`** — everything that talks to a language model, and nothing else does (ADR 0004,
   `docs/adr/0004-assistance-ia.md`; spec `.claude/specs/0002-ai-translation-assistant.md`). Sub-context per
   usage: `Ai/Translation/` (phase 1, **delivered 2026-09-14**, v0.10.0 then v0.10.1: the backoffice FR/EN
-  translation assistant, `POST /api/backoffice/translations`, `ROLE_SUPER`) and later `Ai/Mcp/` (phase 2, a
-  read-only MCP server reserved to `ROLE_TRUSTED`, spec still to write — ADR 0004 D7 must be amended first). The bundle is **Symfony AI**, pinned in **exact version** (`symfony/ai-bundle`,
+  translation assistant, `POST /api/backoffice/translations`, `ROLE_SUPER`) and later `Ai/Assistant/` (phase 2,
+  **D7 amended on 2026-09-15**: a conversational "ask about my career" assistant on the site, reserved to
+  `ROLE_TRUSTED`, on Scaleway Generative APIs — the site's own host, `fr-par` — which is the one operator the
+  nominative CV may reach (D3 amended); corpus injected in the context from the tier's existing providers,
+  no tools, no vector store, nothing persisted, streamed response; the MCP server originally planned is
+  now an *alternative écartée*; spec still to write, nothing built). The bundle is **Symfony AI**, pinned in **exact version** (`symfony/ai-bundle`,
   `symfony/ai-anthropic-platform`, `symfony/ai-agent`, all `0.13.0`, no `^` while 0.x); the platform and the
   `translator` agent (`claude-sonnet-5`, `max_tokens` 4096 — the Anthropic wire name, the bridge merges
   options as-is —, `tools: false`, system prompt in `config/ai/prompts/translator.txt`) are declared in
@@ -1155,5 +1159,7 @@ ADRs:
   `spec-0002` closed, v0.10.0/v0.10.1 in production the same day; the case-studies admin page, #104, joined
   on 2026-09-14, so every admin form now has the button). Rules for anything that calls a language model: one importing class behind an interface,
   bundle pinned exact, no call from a public render path, only publishable backoffice content leaves, human in
-  the loop, bounded cost, offline tests; D7 fixes phase 2 (MCP server, `ROLE_TRUSTED`) pending an amendment.
-  Read it before adding any `Symfony\AI` usage or a new `ai.agent`.
+  the loop, bounded cost, offline tests. **Amended 2026-09-15**: D7 is now the `ROLE_TRUSTED` career
+  assistant on Scaleway (not an MCP server), D3 lets the nominative CV reach a model operated by the site's
+  host or self-hosted only, D2 admits calls on behalf of `ROLE_TRUSTED` (never the base tier), D5 adds a
+  bounded input. Read it before adding any `Symfony\AI` usage or a new `ai.agent`.
