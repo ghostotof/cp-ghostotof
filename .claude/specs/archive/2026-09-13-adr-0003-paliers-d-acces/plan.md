@@ -1,0 +1,129 @@
+# Plan — Suite de l'ADR 0003 (paliers d'accès)
+
+## Overview
+
+Le socle de l'ADR 0003 (D1, D2, D4, D7 — rôle `ROLE_TRUSTED`, `role_hierarchy`,
+bascule `access_control` CV/`me`, octroi nominatif via l'invitation backoffice)
+est **déjà implémenté et mergé** dans `develop` (PR #41, 2026-09-12). Ce plan
+couvre ce qui reste : D6 (le mécanisme d'accès au palier de base, sans
+identifiants), D5 (le contenu que ce palier doit porter) et l'état d'auth à
+trois cas côté frontend.
+
+**Tracker** : ce projet désigne GitHub Issues (`docs/agents/issue-tracker.md`)
+— chaque tâche ci-dessous est un issue GitHub, pas une ligne dans
+`tasks/todo.md`. La liste ci-dessous est un index ordonné vers ces issues.
+
+## Architecture Decisions
+
+- **Ordre retenu : D6 (mécanisme) avant D5 (contenu), mais la première tranche
+  de D5 arrive immédiatement après** — livrer le bouton sans rien derrière
+  serait exactement le défaut que l'ADR nomme (« un bouton qui ne donne
+  rien »). Le checkpoint 2 est le premier moment où le parcours est complet
+  de bout en bout.
+- **D5 est scindé en 3 tâches de contenu indépendantes**, dans l'ordre de
+  valeur donné par l'ADR : études de cas techniques d'abord (la plus
+  actionnable), puis CV sans identité, puis parcours anonymisé — ce dernier
+  n'est **pas** encore découpé en tâche (voir Open Questions), l'ADR le
+  qualifie lui-même de « plus délicat » du lot.
+- **Le texte réel des études de cas et du CV anonymisé reste la matière de
+  Christophe**, pas quelque chose à inventer — même caveat que pour la
+  rubrique Contributions (cf. mémoire projet). Les tâches d'ingénierie ne
+  livrent que le squelette (entité, endpoint, backoffice, seed vide/exemple) ;
+  la saisie réelle est un travail éditorial séparé, hors scope ingénieur.
+
+## Open Questions
+
+1. **Mécanique exacte d'émission du jeton D6** : `lexik_jwt_authentication`
+   émet aujourd'hui un JWT à partir d'un `CpgUser` authentifié via le
+   firewall `login`. D6 demande un jeton **sans compte matérialisé en
+   base** — probable piste : un objet `UserInterface` léger, non-Doctrine,
+   passé directement à `lexik_jwt_authentication.jwt_manager` (service
+   `JWTTokenManagerInterface::create()`), en dehors du firewall `login`
+   existant. À valider avant d'attaquer la tâche 2 — candidat pour une
+   passe `doubt-driven-development` tant l'approche n'a pas de précédent
+   dans ce code.
+2. **Nom de la ressource/route D6** — proposé dans ce plan :
+   `POST /api/account/base-access`, à confirmer (cohérence avec
+   `/api/account/password-setup/*` déjà existant).
+3. **« Parcours anonymisé » (3e contenu D5)** — **tranché le 2026-09-13 :
+   abandonné.** Trois options présentées (s'abstenir / version grossière
+   sans dates / version détaillée) ; Christophe a retenu l'abstention, sur
+   la recommandation que la séquence temporelle est l'empreinte la plus
+   ré-identifiante et que la chronologie est justement ce que le palier
+   nominatif apporte. Acté dans l'ADR (amendement de D5).
+4. **`CreateCpgUserCommand::ALLOWED_ROLES`** — **tranché le 2026-09-13 :
+   reste `[ROLE_SUPER]`.** L'invitation lie l'octroi de `ROLE_TRUSTED` à une
+   adresse e-mail (nominatif au sens de D1) ; un compte CLI n'a qu'un
+   `username`. Écrit dans le code, l'ADR (précision sous D1) et pincé par
+   un test (`--role ROLE_TRUSTED` refusé).
+
+## Task List
+
+Chaque tâche est un issue GitHub labellé `adr-0003` (`gh issue list --label adr-0003`).
+
+### Phase 1 — D6 : mécanisme d'accès au palier de base
+- [x] Task 1 — Rate limiter dédié à l'endpoint d'accès de base — [#46](https://github.com/ghostotof/cp-ghostotof/issues/46) (`feature/adr0003-base-access-rate-limiter`, commit `54bb642`)
+- [x] Task 2 — `POST /api/account/base-access` : jeton `ROLE_USER` sans compte — [#47](https://github.com/ghostotof/cp-ghostotof/issues/47) (`feature/adr0003-base-access-rate-limiter`, commit `04c1b2c`)
+- [x] Task 3 — Test de régression : le jeton n'ouvre jamais `/api/cv`/`/api/me` — [#48](https://github.com/ghostotof/cp-ghostotof/issues/48) (`feature/adr0003-base-access-regression-test`, commit `b7ec52a`)
+
+### Checkpoint 1
+- [x] Rate limiter actif et testé
+- [x] Endpoint pose un cookie BEARER exploitable par le frontend
+- [x] `/api/cv` et `/api/me` refusent toujours ce jeton (403)
+- [x] Suite complète (backend) verte, PHPStan max + Rector verts
+
+### Phase 2 — D5 (1/3) : études de cas techniques — première tranche verticale complète
+- [x] Task 4 — Bounded context `Portfolio/CaseStudy` (entité + migration + repository) — [#49](https://github.com/ghostotof/cp-ghostotof/issues/49) (`feature/adr0003-case-study-entity`, commit `ffd4590`)
+- [x] Task 5 — Ressource publique `GET /api/case-studies/{locale}` (`ROLE_USER`) — [#50](https://github.com/ghostotof/cp-ghostotof/issues/50) (`feature/adr0003-case-study-public-resource`, commit `4a25438`)
+- [x] Task 6 — Ressource backoffice CRUD (`ROLE_SUPER`) — [#51](https://github.com/ghostotof/cp-ghostotof/issues/51) (`feature/adr0003-case-study-backoffice`, commit `79a1057`)
+- [x] Task 7 — Commande `app:case-studies:seed` (contenu placeholder, `GuardsExistingContent`) — [#52](https://github.com/ghostotof/cp-ghostotof/issues/52) (`feature/adr0003-case-study-seed`, commit `da359be`)
+- [x] Task 8 — Tranche frontend (page + composable + garde d'accès palier de base) — [#53](https://github.com/ghostotof/cp-ghostotof/issues/53) (`feature/adr0003-case-study-frontend`, commit `4d4c3d6`)
+
+### Checkpoint 2 — parcours complet de bout en bout
+- [x] Un visiteur anonyme obtient le jeton (Phase 1) et atteint une vraie page de contenu (Phase 2) — vérifié dans un vrai navigateur (Chrome), pas seulement en test automatisé
+- [x] axe-core sur la nouvelle page, suite frontend + backend vertes
+- [x] Revue avec Christophe avant de poursuivre — confirmée le 2026-09-13 (« on va continuer l'ADR 0003 »)
+
+### Phase 3 — État d'auth à trois cas (frontend)
+- [x] Task 9 — `hasRole`/garde de routeur/`AppHeader` : 3e cas (palier de base), CTA vers Task 2 — [#54](https://github.com/ghostotof/cp-ghostotof/issues/54) (`feature/adr0003-auth-tiers-frontend`, commit `9bc03fc`)
+- [x] Task 13 — Action « Terminer cet accès » pour le palier de base (dépend de Task 9) — [#65](https://github.com/ghostotof/cp-ghostotof/issues/65) (`feature/adr0003-end-base-access`, commit `0bd72c3`)
+
+### Phase 4 — D5, contenus restants (priorité plus basse, indépendants)
+- [x] Task 10 — CV sans identité (même forme que Task 4–7, second type de contenu) — [#55](https://github.com/ghostotof/cp-ghostotof/issues/55) (`feature/adr0003-anonymous-cv`, commits `34ca837` → seed ; décision : nouveau contexte `Portfolio/AnonymousCv`, pas une extension de `CaseStudy`)
+- [x] Task 14 — Tranche frontend du CV sans identité (page publique + backoffice, même forme que Task 8) — [#68](https://github.com/ghostotof/cp-ghostotof/issues/68) (`feature/adr0003-anonymous-cv-frontend`, commits `64b2f3a` → `9dea988` ; a aussi ajouté le lien de navigation manquant vers `/case-studies`)
+- [x] (hors tâche, design) Navigation principale à neuf entrées : menu « Dossiers » — [#70](https://github.com/ghostotof/cp-ghostotof/issues/70) (`feature/adr0003-nav-dossiers`, PR #75, fermée le 2026-09-13)
+- [x] (hors tâche, design) « Dossiers » remplacé par deux groupes homogènes, « Parcours » et « Retours d'expérience », libellé « CV sans identité » unifié menu/page — [#88](https://github.com/ghostotof/cp-ghostotof/issues/88) (`feature/adr0003-nav-two-groups`)
+- [x] Parcours anonymisé — **abandonné, décision du 2026-09-13** (ADR 0003 D5 amendée : la séquence temporelle est l'élément le plus ré-identifiant, la chronologie reste au palier nominatif). D5 = deux contenus.
+
+### Phase 5 — Housekeeping
+- [x] Task 12 — Trancher `CreateCpgUserCommand::ALLOWED_ROLES` (voir Open Questions §4) — [#56](https://github.com/ghostotof/cp-ghostotof/issues/56) (`feature/adr0003-cli-allowed-roles` : statu quo confirmé, documenté et pincé par un test)
+
+### Phase 6 — Suites de la revue de sécurité du 2026-09-13 (`main..develop`)
+- [x] Task 15 — Chemin décodé dans les trois listeners `kernel.request` (CSRF + deux rate limiters contournables par `%XX`) + zone nginx `baseaccess` — [#77](https://github.com/ghostotof/cp-ghostotof/issues/77) (`feature/adr0003-path-encoding-bypass`) — **bloquant avant le merge `develop → main`**
+- [x] Login-CSRF de rétrogradation sur `POST /api/account/base-access` (faible) — [#76](https://github.com/ghostotof/cp-ghostotof/issues/76) — en-tête `X-Requested-With` exigé (`LoginCsrfRequestListener`), PR #81 mergée le 2026-09-13, issue fermée
+- [x] Points de faible sévérité regroupés — [#78](https://github.com/ghostotof/cp-ghostotof/issues/78) — pt 1 à 5 mergés (PR #80, #82, #83, #84), pt 6 traité pour sa seule partie corrigeable (PR #85)
+  - [x] pt 1 — invariant n°6 : `BASE_TIER_PATHS` dans `ApiRouteExposureTest`, le jeton D6 n'ouvre rien d'autre (`feature/adr0003-base-tier-coverage`)
+  - [x] pt 2 — ancres `(/|$)` sur les cinq regex `access_control` + `AccessControlAnchoringTest` (`feature/adr0003-access-control-anchors`)
+  - [x] pt 3 — rétrogradation SUPER→TRUSTED : `ROLE_TRUSTED` conservé seulement si `email` non nul (décision du 2026-09-13), `CpgUserRoleAdministrator::rolesAfterDemotion` + tests unitaire et fonctionnel (`feature/adr0003-demotion-nominative-trusted`)
+  - [x] pt 4 — comptes invités pré-existants : vérification faite en prod par Christophe le 2026-09-13, rien à promouvoir
+  - [x] pt 5 — nom du compte partagé retiré du docblock de la migration, de `CLAUDE.md` et d'une fixture Vitest ; le compte ne reste pas en prod (décision du 2026-09-13, `feature/adr0003-demo-account-name`)
+  - [x] pt 6 — `curl -u` dans `audit-prod.sh` remplacé par un fichier de configuration curl en 600 (`feature/adr0003-audit-basic-auth-argv`, PR #85). Les deux autres sous-points sont des limites acceptées, non planifiées : compteurs anti-abus par IP exacte (un `/64` IPv6 les contourne) et locaux au pod (×2 réplicas en prod, remis à zéro au redémarrage) ; drapeau `Secure` recalculé depuis `kernel.environment` à trois endroits (candidat à un `AuthCookieFactory` unique, `__Host-` en prod, dans une tâche dédiée si elle est ouverte)
+
+## Risks and Mitigations
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| Mécanique JWT sans compte (Task 2) plus complexe que prévu, aucun précédent dans le code | Medium | Résoudre l'Open Question #1 avant d'écrire du code ; envisager une passe doubt-driven-development |
+| Jeton de base mal scoppé accorde plus que `ROLE_USER` par erreur | High (sécurité) | Task 3 écrite et rouge **avant** Task 2 (même discipline que la PR #41) |
+| Contenu Task 7/10 jamais fourni par Christophe (précédent : Contributions à 1/3) | Low (produit, pas sécurité) | Seed en placeholder explicite, ne bloque pas le merge des tâches d'ingénierie |
+| Chaque tâche part de `develop` mais celui-ci évolue vite (cf. session du 12/09) | Low | Rebase avant PR si `develop` a bougé, comme fait pour la PR #41 |
+
+## Verification (avant de considérer ce plan prêt)
+
+- [x] Chaque tâche a des critères d'acceptation (dans son issue GitHub)
+- [x] Chaque tâche a une étape de vérification (dans son issue GitHub)
+- [x] Dépendances identifiées et ordonnées (Phase 1 → 2 → 3 → 4 → 5)
+- [x] Tâches enregistrées dans le tracker désigné (GitHub Issues, pas `tasks/todo.md`)
+- [x] Aucune tâche ne touche plus de ~5 fichiers (le « Parcours anonymisé » n'est justement pas découpé faute d'info)
+- [x] Checkpoints entre les phases à risque
+- [x] Revue humaine du plan (Christophe) — confirmée au Checkpoint 2, le 2026-09-13
