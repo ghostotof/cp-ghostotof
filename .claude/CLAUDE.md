@@ -969,6 +969,9 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   `--cleanup=verbatim`**: git's default cleanup for tag messages strips every line starting with
   `#`, so Markdown headings silently vanish between the file and the tag. v0.7.1 lost all three of
   its section headings that way, and the release had to be edited afterwards to restore them.
+  The first line of the notes is itself a Markdown heading (`# vX.Y.Z — …`), and `create-release`
+  strips the leading `#` before using it as the release title — without that, six releases
+  (v0.11.0 to v0.13.1) showed a literal `#` in their title and had to be renamed by hand.
 
   ```bash
   git tag -a vX.Y.Z --cleanup=verbatim -F notes.md
