@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 DC := docker compose
 
-.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality build-front-prod build-front-preprod get-secret
+.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality back-lsp build-front-prod build-front-preprod get-secret
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -105,10 +105,22 @@ front-build: ## Vérifie les types (vue-tsc) et construit le bundle, dans le con
 back-test: ## Lance les tests backend (PHPUnit) dans le conteneur
 	$(DC) exec -u dev backend php bin/phpunit
 
-back-quality: ## Lance PHPStan, Rector (dry-run) et Psalm dans le conteneur
+back-quality: ## Lance PHPStan, Rector (dry-run), Psalm et lsp:check dans le conteneur
 	$(DC) exec -u dev backend composer phpstan
 	$(DC) exec -u dev backend composer rector
 	$(DC) exec -u dev backend composer psalm
+	$(MAKE) back-lsp
+
+# Symfony Language Tools (issue #90) : les chaînes que PHPStan ne voit pas —
+# services, routes, transports Messenger, firewalls, clés de config des bundles,
+# chemins Twig. Même politique de blocage que le job CI lsp-check-backend
+# (LSP_FAIL_ON), pour qu'un vert local vaille un vert CI. Le CLI télécharge la
+# dernière version stable de Language Tools dans son cache à la première
+# exécution (cf. `symfony lsp:cache-dir`).
+LSP_FAIL_ON = service.not_found,parameter.not_found,route.not_found,route.missing_parameters,security.unknown_firewall,security.unknown_provider,messenger.unknown_bus,messenger.unknown_transport,messenger.invalid_handler_signature,template.not_found,validation.unknown_constraint_option,env.unknown_processor,env.incompatible_type,config.invalid_type
+
+back-lsp: ## Lance symfony lsp:check (diagnostics Symfony) dans le conteneur
+	$(DC) exec -u dev backend symfony lsp:check --fail-on=$(LSP_FAIL_ON)
 
 front-init: ## Crée le projet Vite en mode INTERACTIF (à lancer une seule fois)
 	$(DC) run --rm frontend npm create vite@$(shell grep '^CREATE_VITE_VERSION=' .env | cut -d= -f2) .

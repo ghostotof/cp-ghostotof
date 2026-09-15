@@ -219,6 +219,61 @@ jobs:
         run: php .github/scripts/summary-rector.php "$RUNNER_TEMP/rector.json" >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
+  # lsp-check-backend — Symfony Language Tools en mode headless (issue #90) :
+  # boote le kernel (env dev, comme phpstan-backend) et valide les chaînes que
+  # PHPStan ignore — identifiants de services, noms de routes, transports
+  # Messenger, firewalls, options de contraintes, clés de config des bundles,
+  # templates Twig des e-mails. Aucune base : une connexion refusée n'empêche
+  # pas l'analyse (vérifié en dev).
+  #
+  # Politique (bêta, réévaluer après quelques semaines) : bloquant SEULEMENT
+  # sur les codes à faible taux de faux positifs (--fail-on, même liste que
+  # `make back-lsp`) ; le reste n'est qu'annotation. Le job ne conditionne pas
+  # `build-images` : un rouge se voit sur la PR sans bloquer une release —
+  # Language Tools n'est pas figé (le CLI prend la dernière stable à chaque
+  # run), une nouvelle règle ne doit pas retenir une mise en production.
+  # Le CLI, lui, est figé : même version que le conteneur dev (.env).
+  # ---------------------------------------------------------------------------
+  lsp-check-backend:
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV: dev
+      COMPOSER_ALLOW_SUPERUSER: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.5'
+          extensions: intl, pdo_pgsql
+          coverage: none
+      - name: Composer install
+        working-directory: backend
+        run: composer install --no-interaction --prefer-dist
+      - name: Génère le keypair JWT (boot du kernel)
+        working-directory: backend
+        run: php bin/console lexik:jwt:generate-keypair --skip-if-exists --no-interaction
+      - name: Installe le CLI Symfony (version de .env, la même que le conteneur dev)
+        run: |
+          version=$(sed -n 's/^SYMFONY_CLI_VERSION=//p' .env)
+          test -n "$version"
+          curl -fsSL -o "$RUNNER_TEMP/symfony-cli.tar.gz" \
+            "https://github.com/symfony-cli/symfony-cli/releases/download/v${version}/symfony-cli_linux_amd64.tar.gz"
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$RUNNER_TEMP/symfony-cli.tar.gz" -C "$RUNNER_TEMP/bin" symfony
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/bin/symfony" version
+      - name: symfony lsp:check (bloquant sur les codes listés)
+        working-directory: backend
+        shell: bash   # pipefail, cf. sast-backend
+        run: |
+          symfony lsp:check --format=github \
+            --fail-on=service.not_found,parameter.not_found,route.not_found,route.missing_parameters,security.unknown_firewall,security.unknown_provider,messenger.unknown_bus,messenger.unknown_transport,messenger.invalid_handler_signature,template.not_found,validation.unknown_constraint_option,env.unknown_processor,env.incompatible_type,config.invalid_type \
+            | tee "$RUNNER_TEMP/lsp-check.log"
+      - name: Résumé lsp:check
+        if: always()
+        run: .github/scripts/summary-annotations.sh "Symfony Language Tools (lsp:check)" "$RUNNER_TEMP/lsp-check.log" '^::notice title=Symfony diagnostics summary' >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
   # build — une image prod + une image preprod, backend et frontend.
   # Uniquement sur tag (équivalent `.only-tag` de l'ancien pipeline GitLab).
   # ---------------------------------------------------------------------------

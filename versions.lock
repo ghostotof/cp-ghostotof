@@ -1,5 +1,6 @@
 # Versions résolues le 2026-08-08T00:54:54+02:00
 # Correctifs de sécurité appliqués le 2026-09-09 : php, postgres, rabbitmq, node.
+# symfony-cli monté à 5.20.0 le 2026-09-15 (issue #90) : prérequis de `symfony lsp:check`.
 php=8.5.10-fpm-alpine3.24
 nginx=1.30.4-alpine
 postgres=18.6-alpine
@@ -9,7 +10,7 @@ composer=2
 # Composer n'est pas figé exactement : seule la branche majeure est épinglée.
 # Version disponible à la génération (pour référence) :
 composer-resolved=2.10.2
-symfony-cli=5.17.1
+symfony-cli=5.20.0
 ext-amqp=2.2.0
 ext-xdebug=3.5.3
 symfony=8.1

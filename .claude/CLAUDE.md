@@ -97,7 +97,20 @@ properties) — extend that skip list rather than fighting a rule inline. One sk
 demands the rewrite, PHPStan rejects it), so it can never be satisfied — leave it skipped. Psalm
 *is* installed (`psalm/phar`, `backend/psalm.xml`) but **only** for taint analysis (`composer psalm`, CI job
 `sast-backend`, audit point M4) — `errorLevel="8"`, it is not and must not become a second type-checker
-alongside PHPStan; don't reach for Psalm annotations or raise its level. The
+alongside PHPStan; don't reach for Psalm annotations or raise its level. **Symfony Language Tools**
+(issue #90) is the fourth check: `symfony lsp:check` (`make back-lsp`, part of `make back-quality`, CI job
+`lsp-check-backend`) boots the kernel in `dev` (`backend/.symfony-lsp.json`, `releaseMetadata: false` so
+it makes no call to symfony.com) and validates what PHPStan cannot see: service ids, route names,
+Messenger transports, firewalls, constraint options, bundle config keys, Twig paths. It needs no database
+(a refused connection is fine — a *DNS* failure once segfaulted the checker, don't point it at an
+unresolvable host). It requires Symfony CLI ≥ 5.20.0 (`.env`, `versions.lock`); the CLI downloads the
+latest stable Language Tools into its own cache (`symfony lsp:cache-dir`), so that part is **not pinned**
+— which is why the job is blocking only on the `--fail-on` list of low-false-positive codes and is *not*
+in `build-images`' `needs` yet (re-evaluate after a few weeks). No baseline: the repo is clean apart from
+three `config.unknown_key` **warnings** on `ai.yaml` (`ai.agent.translator.model.name/options`), keys that
+Symfony accepts because the bundle declares `model` as a `variableNode` (its only rule: a string, or an array
+with `name`) — Language Tools cannot know the keys under it, a false positive by construction, left visible
+rather than baselined. The
 frontend has moved past the default scaffold: it follows a layered clean architecture (see below) and has
 Vitest configured with `npm test`. A `ROLE_SUPER`-gated backoffice (`/admin` on the frontend, `/api/backoffice/*`
 on the backend) lets an authenticated super-admin manage all of the above content plus user accounts — see the
@@ -1017,7 +1030,8 @@ make front-test        # vitest run, in the container
 make front-lint        # eslint, in the container
 make front-build       # vue-tsc -b + vite build, in the container
 make back-test         # phpunit, in the container
-make back-quality      # phpstan + rector + psalm, in the container
+make back-quality      # phpstan + rector + psalm + lsp:check, in the container
+make back-lsp          # symfony lsp:check alone (Symfony Language Tools)
 ```
 
 `make init` and `make front-init` (re)run the Symfony/Vite project scaffolding — both are already applied in
@@ -1088,7 +1102,7 @@ make front-test     # vitest run
 make front-lint     # eslint
 make front-build    # vue-tsc -b + vite build
 make back-test      # phpunit
-make back-quality   # phpstan + rector + psalm
+make back-quality   # phpstan + rector + psalm + lsp:check
 ```
 
 The host's Node version must not influence the project's behaviour. The container pins `NODE_TAG`; a
