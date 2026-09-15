@@ -373,10 +373,12 @@ final class BackofficeIncidentResourceTest extends WebTestCase
 
     /**
      * `PUT` avec `translationGroup: null` : l'entrée est séparée de ses
-     * traductions — groupe neuf — mais elle n'a pas bougé, sa position est
-     * conservée. Sa traduction, elle, n'est pas touchée.
+     * traductions — groupe neuf — et part en fin de périmètre (issue #169 :
+     * la laisser en place laissait deux entrées d'une même langue sur une
+     * position dès que l'ancien groupe la recevait à nouveau). Sa traduction,
+     * elle, n'est pas touchée.
      */
-    public function testPutWithANullTranslationGroupDetachesAndKeepsThePosition(): void
+    public function testPutWithANullTranslationGroupDetachesAndMovesToTheEnd(): void
     {
         $client = self::createClient();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
@@ -393,7 +395,7 @@ final class BackofficeIncidentResourceTest extends WebTestCase
         ]);
 
         self::assertResponseIsSuccessful();
-        self::assertSame(1, $updated['position']);
+        self::assertSame(2, $updated['position']);
         self::assertNotSame($english->getTranslationGroup()->toRfc4122(), $updated['translationGroup']);
 
         $repository = self::getContainer()->get(IncidentRepositoryInterface::class);

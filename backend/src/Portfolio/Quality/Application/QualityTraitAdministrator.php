@@ -41,11 +41,21 @@ final readonly class QualityTraitAdministrator implements QualityTraitAdministra
             throw QualityTraitNotFoundException::forId($id);
         }
 
-        $this->contentPlacement->reattach(
-            $trait,
-            $translationGroup,
-            $this->qualityTraitRepository->findByTranslationGroup($translationGroup ?? $trait->getTranslationGroup()),
-        );
+        if (null === $translationGroup) {
+            // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
+            // le chargement du périmètre — le même qu'à la création sans groupe.
+            $this->contentPlacement->detach(
+                $trait,
+                $this->qualityTraitRepository->findByTranslationGroup($trait->getTranslationGroup()),
+                $this->qualityTraitRepository->findAll(),
+            );
+        } else {
+            $this->contentPlacement->reattach(
+                $trait,
+                $translationGroup,
+                $this->qualityTraitRepository->findByTranslationGroup($translationGroup),
+            );
+        }
         $trait->update($label);
         $this->qualityTraitRepository->save($trait);
 

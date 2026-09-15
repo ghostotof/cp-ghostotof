@@ -304,7 +304,7 @@ describe('AdminAnonymousCvPage', () => {
 
     // FR_TWO est seule dans son groupe : le sélecteur affiche « aucune » et le
     // formulaire envoie donc `translationGroup: null`. Ce n'est pas un
-    // détachement — `ContentPlacement::reattach` traite le `null` en non-geste
+    // détachement — `ContentPlacement::detach` traite une entrée seule en non-geste
     // quand l'entrée n'a pas de sœur (`count($members) === 1`), ce que pince
     // `ContentPlacementTest::testDetachingAnEntryWithoutTranslationsDoesNothing`.
     // Ces deux tests forment le contrat entre les deux moitiés : les casser

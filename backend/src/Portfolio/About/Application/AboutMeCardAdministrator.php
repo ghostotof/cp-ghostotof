@@ -45,11 +45,21 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
             throw AboutMeCardNotFoundException::forId($id);
         }
 
-        $this->contentPlacement->reattach(
-            $card,
-            $translationGroup,
-            $this->membersOf($translationGroup ?? $card->getTranslationGroup(), $card->getCategory()),
-        );
+        if (null === $translationGroup) {
+            // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
+            // le chargement du périmètre — le même qu'à la création sans groupe.
+            $this->contentPlacement->detach(
+                $card,
+                $this->membersOf($card->getTranslationGroup(), $card->getCategory()),
+                $this->aboutMeCardRepository->findByCategory($card->getCategory()),
+            );
+        } else {
+            $this->contentPlacement->reattach(
+                $card,
+                $translationGroup,
+                $this->membersOf($translationGroup, $card->getCategory()),
+            );
+        }
         $card->update($title, $description, $iconKey);
         $this->aboutMeCardRepository->save($card);
 

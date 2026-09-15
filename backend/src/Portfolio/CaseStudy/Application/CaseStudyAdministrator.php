@@ -52,11 +52,21 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
             throw CaseStudyNotFoundException::forId($id);
         }
 
-        $this->contentPlacement->reattach(
-            $caseStudy,
-            $translationGroup,
-            $this->caseStudyRepository->findByTranslationGroup($translationGroup ?? $caseStudy->getTranslationGroup()),
-        );
+        if (null === $translationGroup) {
+            // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
+            // le chargement du périmètre — le même qu'à la création sans groupe.
+            $this->contentPlacement->detach(
+                $caseStudy,
+                $this->caseStudyRepository->findByTranslationGroup($caseStudy->getTranslationGroup()),
+                $this->caseStudyRepository->findAll(),
+            );
+        } else {
+            $this->contentPlacement->reattach(
+                $caseStudy,
+                $translationGroup,
+                $this->caseStudyRepository->findByTranslationGroup($translationGroup),
+            );
+        }
         $caseStudy->update($title, $problem, $solution, $tradeoffs, $measuredResult);
         $this->caseStudyRepository->save($caseStudy);
 

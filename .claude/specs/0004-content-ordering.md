@@ -157,8 +157,9 @@ B1 à B6 forment la première tranche verticale complète ; B7 à B11 n'ajoutent
   position** ; la réponse 201 l'expose.
 - `POST` avec un groupe qui a déjà cette locale → 409, `type: /errors/translation-already-exists`.
 - `POST` avec un groupe inconnu du périmètre → 422.
-- `PUT` avec `translationGroup: null` sur une entrée groupée → l'entrée reçoit un groupe frais, sa
-  position est conservée. `PUT` avec un autre groupe → rattachement, position héritée, 409 si la
+- `PUT` avec `translationGroup: null` sur une entrée groupée → l'entrée reçoit un groupe frais et
+  part en fin de périmètre (*amendé le 2026-09-15, issue #169* : « position conservée » laissait deux
+  entrées d'une même langue sur une position dès que l'ancien groupe la recevait à nouveau). `PUT` avec un autre groupe → rattachement, position héritée, 409 si la
   locale y existe déjà.
 - Un corps contenant `position` est ignoré (champ absent du DTO), jamais 400.
 
