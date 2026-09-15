@@ -646,7 +646,11 @@ jobs:
           # Le corps de la release vient de l'annotation du tag : c'est le seul
           # texte écrit au moment de décider du contenu de la version, donc le
           # seul qui puisse la décrire honnêtement. Première ligne = titre.
-          TITLE="$(git tag -l --format='%(contents:subject)' "$TAG")"
+          # Les notes sont rédigées en Markdown avec `--cleanup=verbatim`, donc
+          # cette première ligne est un titre `# vX.Y.Z — …` : sans retirer le
+          # `#`, GitHub l'affichait tel quel dans le titre de la release (les six
+          # releases v0.11.0 à v0.13.1 l'ont eu, renommées à la main).
+          TITLE="$(git tag -l --format='%(contents:subject)' "$TAG" | sed -E 's/^#+[[:space:]]*//')"
           BODY="$(git tag -l --format='%(contents:body)' "$TAG")"
 
           if [ -n "$BODY" ]; then

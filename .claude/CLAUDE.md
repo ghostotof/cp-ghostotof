@@ -969,6 +969,9 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   `--cleanup=verbatim`**: git's default cleanup for tag messages strips every line starting with
   `#`, so Markdown headings silently vanish between the file and the tag. v0.7.1 lost all three of
   its section headings that way, and the release had to be edited afterwards to restore them.
+  The first line of the notes is itself a Markdown heading (`# vX.Y.Z — …`), and `create-release`
+  strips the leading `#` before using it as the release title — without that, six releases
+  (v0.11.0 to v0.13.1) showed a literal `#` in their title and had to be renamed by hand.
 
   ```bash
   git tag -a vX.Y.Z --cleanup=verbatim -F notes.md
@@ -1141,6 +1144,24 @@ run `make build` — these are baked into the dev image's `dev` user, not read a
 ### Issue tracker
 
 Issues live in GitHub Issues for this repo. See `docs/agents/issue-tracker.md`.
+
+### Task plans (`tasks/`)
+
+The planning skill writes `tasks/plan.md` and `tasks/todo.md` at the repo root. **They live on the
+feature branch, for the duration of the feature, and never reach `develop`** (rule set on
+2026-09-15): `tasks/` does not exist on `develop` or `main`, and a PR that still carries it is not
+ready to merge. Workflow:
+
+1. During the feature, commit `tasks/` on the feature branch as needed (checkpoints, ticked tasks).
+2. In the merge into `develop` that **fully closes** the feature, copy `plan.md` and `todo.md` to
+   `.claude/specs/archive/<YYYY-MM-DD>-<slug>/` (closing date, one folder per feature — see the
+   `README.md` there for the existing ones) and `git rm -r tasks/` in that same PR.
+3. A plan whose feature is still open is not archived; a feature that spans several PRs keeps
+   `tasks/` on its branches until the last one.
+
+The archived files are frozen: they describe the plan as it stood at closing, ticked boxes,
+checkpoints and open questions included. The five plans written before the rule existed were
+extracted from git history and archived in one go (PR #189).
 
 ### Domain docs
 
