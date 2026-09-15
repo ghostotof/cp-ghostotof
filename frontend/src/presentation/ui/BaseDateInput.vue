@@ -5,6 +5,14 @@
  * qui n'affecte que l'affichage : c'est exactement le format attendu par le
  * contrat HTTP, aucune conversion n'est donc nécessaire de part et d'autre.
  */
+/**
+ * Issue #164 : les attributs non déclarés (`aria-describedby` vers un texte
+ * d'aide, `disabled`…) doivent atteindre le champ, pas le `<div>` racine.
+ * Sans `inheritAttrs: false`, Vue les poserait sur le conteneur et
+ * l'association champ → aide n'existerait pas pour un lecteur d'écran.
+ */
+defineOptions({ inheritAttrs: false })
+
 withDefaults(
   defineProps<{
     modelValue: string
@@ -32,6 +40,7 @@ function onInput(event: Event): void {
     </label>
     <input
       :id="id"
+      v-bind="$attrs"
       type="date"
       class="form-control"
       :value="modelValue"
