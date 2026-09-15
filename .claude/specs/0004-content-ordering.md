@@ -376,6 +376,11 @@ requis pour `v0.12.0` (migration à zéro réplica, puis rollout), comme pour `v
 après la prod. Backend et frontend se déploient ensemble : un `PUT` de l'ancien frontend, sans
 `translationGroup`, détacherait une traduction.
 
+*Amendement du 2026-09-15 (issue #175)* : l'ordre standard du pipeline est désormais **migration
+d'abord, rollout ensuite**, sans arrêter les pods. Une release comme `v0.12.0` (colonne ajoutée,
+remplie par la migration) ne demande plus la fenêtre de maintenance ; celle-ci reste réservée aux
+migrations que l'ancien code ne peut pas lire non plus (`v0.11.0`).
+
 **Audit de sensibilité avant publication** : aucun e-mail, aucune adresse, aucun nom de compte, aucun
 secret. Les titres d'incidents cités en exemple dans les maquettes sont ceux du contenu public déjà
 servi par `/api/incidents/{locale}`. Le document décrit le cloisonnement `ROLE_SUPER` au même niveau

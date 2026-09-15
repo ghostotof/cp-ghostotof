@@ -866,22 +866,42 @@ differs per environment; `make build-front-prod`/`build-front-preprod` no longer
   production. If a console command must run at deploy time, declare another Job — never bring `pods/exec` back.
   The RBAC is a **manual bootstrap the pipeline never replays**: after changing it, re-run the loop in
   `k8s/README.md` §4 *before* the next deploy, or the job fails on `cannot create resource "jobs"`.
+- **The standard deploy runs the migration *before* the rollout, with the old pods still serving**
+  (issue #175, expand/contract). Doctrine selects every mapped column on each hydration, so with the
+  old order (rollout, then Job) any release that adds a field made the new pods `SELECT` a column the
+  table didn't have yet: every route touching it answered 500 for the one to two minutes the Job took
+  (observed in preprod on v0.12.0). In `deploy-preprod`/`deploy-prod` the `Deploy` step now goes:
+  `kustomize build -o` + apply of **`backend-config` alone** (the migrate Job reads it by literal name,
+  outside kustomize, so without this it would run on the *previous* release's configuration and a
+  variable added by this release would be missing; running pods don't re-read their env, so this
+  changes nothing for them — the filename `v1_configmap_backend-config.yaml` is stable because the
+  ConfigMap has `disableNameSuffixHash`), then `migrate-job.yaml` with the release image (300 s
+  timeout), then `kubectl apply -k .` + `rollout status`. **Fail-closed**: a failed Job exits before the
+  `apply`, so the previous release keeps serving on the old schema, which is exactly the safe state
+  (PostgreSQL DDL is transactional and Doctrine wraps each migration in its own transaction) — fix the
+  migration, cut a new tag. The discipline that makes this order safe, to respect in every migration:
+  a column added `NOT NULL` has a default or is filled by the migration itself
+  (`Version20260914170000` is the model); **never drop or rename a column in the release that stops
+  reading it**, only in the next one; a Messenger message in flight at deploy time must stay readable
+  by both versions (v0.11.0's `SendAccountInvitationMessage.userId` note). Only migrations the old code
+  cannot survive fall outside this order — see the maintenance window below.
 - **`DEPLOY_MAINTENANCE_WINDOW` (repository variable) opts a deploy into a maintenance window** — added
   for v0.11.0's irreversible integer→UUID primary-key migrations, where the new code cannot read the old
-  schema and vice versa, so no pod may serve a request while the migration runs. When it equals `true`,
+  schema **and vice versa**, so no pod may serve a request while the migration runs. That is the only
+  case that needs it since #175; an additive migration doesn't. When it equals `true`,
   `deploy-preprod`/`deploy-prod` in `pipeline.yml` patch `backend` and `worker` to `replicas: 0` (a
   `kubectl patch` on `spec.replicas` — the deployer `Role` has no `deployments/scale` subresource, so
   never `kubectl scale`), wait for their pods to disappear, run `migrate-job.yaml` against the quiet
   database, then let `kubectl apply -k .` restore the manifests' replica counts and the existing
   `rollout status` wait for the new pods. The frontend keeps serving; only the API returns 503 through
-  the ingress for the window's duration. It is opt-in specifically so an ordinary release without a
-  breaking schema change stays zero-downtime — **set it before pushing the release tag and unset it
-  right after the production deploy**: a forgotten `true` turns every subsequent deploy into a
-  downtime deploy for no reason. **Fail-closed on a migration failure**: the script exits before
-  reaching `kubectl apply -k .`, so `backend`/`worker` stay at 0 replicas until someone intervenes —
-  deliberate, never serve traffic against a half-migrated schema. To recover: if the migration wrote
-  nothing (PostgreSQL DDL is transactional), `kubectl apply -k .` on that overlay redeploys the
-  previous image against the still-old schema; otherwise fix the migration and cut a new tag.
+  the ingress for the window's duration. It is opt-in specifically so an ordinary release stays
+  zero-downtime — **set it before pushing the release tag and unset it right after the production
+  deploy**: a forgotten `true` turns every subsequent deploy into a downtime deploy for no reason.
+  **Fail-closed on a migration failure**: the script exits before reaching `kubectl apply -k .`, so
+  `backend`/`worker` stay at 0 replicas until someone intervenes — deliberate, never serve traffic
+  against a half-migrated schema. To recover: if the migration wrote nothing, `kubectl apply -k .` on
+  that overlay redeploys the previous image against the still-old schema; otherwise fix the migration
+  and cut a new tag.
 - **`watch-refresh-cronjob.yaml` *is* in `kustomization.yaml`'s `resources:`** — the opposite of
   `migrate-job.yaml` above, and deliberately: it wants kustomize's image transformer, since it must run the
   same image as the Deployment. It used to be **the only object in the cluster that makes outbound calls
