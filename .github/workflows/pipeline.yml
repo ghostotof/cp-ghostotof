@@ -306,9 +306,20 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
             imagemagick fonts-dejavu-core fonts-liberation
-      - name: Régénération de la carte Open Graph (frontend/public/og.png)
+      - name: Régénération des cartes de partage (og.png + .github/social-preview.png)
         working-directory: frontend
         run: npm run og:generate
+      # La variante GitHub (titre = pseudonyme) n'entre dans aucune image : elle
+      # est publiée comme artefact de la release, à télécharger puis téléverser
+      # à la main dans Settings → General → Social preview — GitHub n'a pas
+      # d'API pour ce réglage. Régénérée ici pour rester alignée sur le gabarit.
+      - name: Artefact — prévisualisation sociale du dépôt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: social-preview
+          path: .github/social-preview.png
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Build & push (prod + preprod, backend + frontend)
         env:
