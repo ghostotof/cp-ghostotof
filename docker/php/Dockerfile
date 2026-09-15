@@ -115,7 +115,10 @@ RUN set -eux; \
         adduser -u "${UID}" -G "${GROUP_NAME}" -s /bin/bash -D dev; \
     fi; \
     USER_NAME="$(getent passwd "${UID}" | cut -d: -f1)"; \
-    mkdir -p /var/www/backend "/home/${USER_NAME}/.composer" "/home/${USER_NAME}/.symfony5"; \
+    # `.config/symfony-cli` et non `.symfony5` : depuis le CLI 5.17 l'ancien
+    # répertoire est « hérité » et provoque un avertissement à chaque commande
+    # (issue #90, arrivé avec `lsp:check`). Le cache de Language Tools y vit aussi.
+    mkdir -p /var/www/backend "/home/${USER_NAME}/.composer" "/home/${USER_NAME}/.config/symfony-cli"; \
     chown -R "${UID}:${GID}" /var/www "/home/${USER_NAME}"
 
 COPY docker/php/php.dev.ini  /usr/local/etc/php/conf.d/zz-app.ini
