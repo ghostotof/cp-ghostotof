@@ -243,6 +243,19 @@ mid-migration.
     `login_check` response body — includes `roles` alongside `username`, needed by the frontend to gate `/admin`
     without waiting for a full `checkAuth()` round-trip) and `CookieLogoutListener.php` (expires both cookies on
     `/api/logout`).
+  - **`Infrastructure/Http/AuthCookieFactory.php` is the only place that builds a `BEARER` or `XSRF-TOKEN`
+    cookie** (issue #87): names (`AuthCookieFactory::BEARER` / `::XSRF_TOKEN`, also what
+    `CsrfCookieRequestSubscriber` reads), `Path=/`, no `Domain`, `SameSite=Lax`, `HttpOnly` on `BEARER`
+    only, `Secure` iff `prod`. `bearer()` / `xsrf()` take an optional expiry (session cookie without),
+    `expired()` mirrors the issued attributes with a past date — a cleared cookie whose attributes differ
+    from the set one is *not* removed by the browser, which is the drift the factory exists to prevent. The
+    three sites (`LoginSuccessSubscriber`, `BaseAccessController`, `CookieLogoutListener`) go through it;
+    the one exception is the login `BEARER`, still set by Lexik from `lexik_jwt_authentication.yaml`
+    (`set_cookies` + `when@prod`), and `tests/Security/Authentication/AuthCookieAttributesTest.php` pins
+    that config to the factory by comparing the real `Set-Cookie` of login, base-access and logout per
+    name. Any new auth cookie goes through the factory, never `Cookie::create()` or `clearCookie()`
+    inline. `__Host-` prefixing is a separate, preprod-tested step (it renames what Lexik and the frontend
+    read by name).
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
     listener at priority 20 (must run *above* the Security firewall's priority 8 — see the class docblock).
   - `Infrastructure/Http/LoginCsrfRequestListener.php` — **login-CSRF guard** (issue #76) on the two anonymous
@@ -637,7 +650,9 @@ from the backoffice) — purely static content still belongs in `infrastructure/
 Content/user management UI, mirrored per-resource under `domain/admin/<resource>/{entities,repositories,errors}`
 → `infrastructure/admin/<resource>/Http*Repository.ts` → `application/admin/<resource>/use*.ts` →
 `presentation/pages/admin/Admin*Page.vue` (form + Bootstrap table, `window.confirm()` for deletes — no modals).
-Existing resources: `technologies`, `quality` (principles + traits), `contributions`, `incidents`, `about` (settings + site cards +
+Existing resources: `technologies`, `quality` (principles + traits), `contributions`, `incidents`, `anonymousCv`,
+`caseStudies` (the two base-tier contents of ADR 0003 D5, both prose-only, editorial rule reminded above the
+form: no client or employer name — no filter does it for you), `about` (settings + site cards +
 me cards), `watch` (tracked products + the `ROLE_SUPER`-only vulnerability detail, read-only), `users` (list + **invite by email** + change-password + promote/demote + resend invitation + delete;
 direct username+password creation stays CLI-only). `AdminUsersPage.vue` disables the delete and role buttons on
 the current user's own row (compared by `username` via `useAuth()`); the `email` column shows the linked address
@@ -701,8 +716,9 @@ the one singleton per locale, so its draft is **deferred**: parked in `pendingDr
 return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server
 would overwrite it). The button is disabled while an order draft is dirty (a draft the locked form could
 not save would burn quota for nothing). Never use `v-html` on text coming back from the model: it goes
-through the form fields, then `RichText.vue`. The case-studies admin page does not exist yet (issue
-#104); the button lands there with it.
+through the form fields, then `RichText.vue`. The case-studies admin page (`/admin/case-studies`, issue #104,
+closed 2026-09-14) is wired exactly like the anonymous-CV one — every field is prose, so "Create the XX
+version" copies nothing and the assistant sends all five fields.
 
 - `presentation/ui/{BaseTextInput,BaseTextarea,BaseNumberInput,BaseSelect}.vue` — the project's first reusable
   form components, used by every admin form. Reach for these before writing a new raw `<input>` in `admin/*`.
@@ -1086,14 +1102,15 @@ ADRs:
 - `docs/adr/0001-admin-user-provisioning.md` (invitation-by-email flow, `email` now stored, Twig for emails)
 - `docs/adr/0002-veille-technique.md` (`Portfolio/Watch`: outbound calls out of the render path, snapshot in
   DB, public aggregate vs `ROLE_SUPER` detail, manifest built at `docker build`)
-- `docs/adr/0003-paliers-d-acces.md` — **statut `accepté`, implémenté** (D1/D2/D4/D6/D7, D5 réduit à deux
-  contenus par amendement du 2026-09-13; `tasks/plan.md` lists the housekeeping left). Makes `ROLE_USER` the bottom tier (one click, no credentials,
+- `docs/adr/0003-paliers-d-acces.md` — **statut `accepté`, implémenté et clos** (D1/D2/D4/D6/D7, D5 réduit à deux
+  contenus par amendement du 2026-09-13; closed 2026-09-15, see its « Clôture » section — what is left is
+  editorial content entry, not engineering). Makes `ROLE_USER` the bottom tier (one click, no credentials,
   discretion rather than secrecy) and puts the CV behind `ROLE_TRUSTED`. Read it before touching
   `access_control`, `CpgUser::getRoles()` or `BaseAccessController`: it turns on the fact that `getRoles()`
   grants `ROLE_USER` unconditionally, which is why a tier was added *above* rather than below.
 - `docs/adr/0004-assistance-ia.md` — **statut `accepté` (2026-09-14), phase 1 livrée** (spec 0002, issues
-  `spec-0002` closed, v0.10.0/v0.10.1 in production the same day; the case-studies admin page, #104, is the one
-  form still without the button). Rules for anything that calls a language model: one importing class behind an interface,
+  `spec-0002` closed, v0.10.0/v0.10.1 in production the same day; the case-studies admin page, #104, joined
+  on 2026-09-14, so every admin form now has the button). Rules for anything that calls a language model: one importing class behind an interface,
   bundle pinned exact, no call from a public render path, only publishable backoffice content leaves, human in
   the loop, bounded cost, offline tests; D7 fixes phase 2 (MCP server, `ROLE_TRUSTED`) pending an amendment.
   Read it before adding any `Symfony\AI` usage or a new `ai.agent`.

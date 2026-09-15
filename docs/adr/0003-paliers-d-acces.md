@@ -1,9 +1,10 @@
 # ADR 0003 — Trois paliers d'accès : anonyme, invité, approuvé
 
-- Statut : **accepté** (2026-09-12) — socle D1/D2/D4/D7 mergé (PR #41), D6 (PR #46-48), D5 1/3
-  études de cas (PR #49-53) et D5 2/3 CV sans identité (PR #69, #71) mergés les 2026-09-12/13.
-  **D5 3/3 (parcours anonymisé) est abandonné, décision du 2026-09-13** — voir D5. Suivi dans
-  `tasks/plan.md` et les issues `adr-0003`.
+- Statut : **accepté, mis en œuvre** (2026-09-12, clos le 2026-09-15) — socle D1/D2/D4/D7 mergé
+  (PR #41), D6 (PR #46-48), D5 1/3 études de cas (PR #49-53) et D5 2/3 CV sans identité (PR #69, #71)
+  mergés les 2026-09-12/13. **D5 3/3 (parcours anonymisé) est abandonné, décision du 2026-09-13** —
+  voir D5. En production depuis `v0.9.0` (2026-09-13). Voir « Clôture » en fin de document pour ce
+  qui a suivi la release et ce qui reste éditorial.
 - Date : 2026-09-10
 - Portée : `config/packages/security.yaml`, `src/Security/User`, `src/Security/Authentication`,
   `tests/Security/ApiRouteExposureTest.php`, frontend `presentation/pages/LoginPage.vue` + garde de
@@ -218,3 +219,37 @@ qu'à l'usage.
 - **`ROLE_MEMBER`** : n'exprime pas l'octroi et suggère une communauté qui n'existe pas.
 - **Ne rien changer et rendre le CV public.** Cohérent et défendable, mais contraire à l'objectif n°9,
   qui est une contrainte du projet et non une préférence d'implémentation.
+
+## Clôture (2026-09-15)
+
+Tout ce que cette décision demandait est en place, et ce qui manque n'est plus de l'ingénierie.
+
+**Livré après la release `v0.9.0`**, sur les suites de la revue de sécurité du 2026-09-13 (issue #78) :
+
+- le login-CSRF de D6 (issue #76, amendement ci-dessus) ; le décodage canonique du chemin dans
+  les listeners `kernel.request` (issue #77, `CanonicalPath`) ; l'ancrage `(/|$)` de chaque règle
+  d'`access_control` et le profil « palier de base » d'`ApiRouteExposureTest` (issue #78) ;
+- l'échéance du jeton D6 observée côté frontend (`expiresAt` dans la réponse, minuterie, retombée
+  sur 401) et « Terminer cet accès » (issue #65) ;
+- la page d'administration des études de cas (issue #104, PR #178, 2026-09-15), la seule des deux
+  ressources de D5 qui n'avait pas encore la sienne ;
+- la fabrique unique des cookies d'authentification (issue #87, PR #179) : `BEARER` et
+  `XSRF-TOKEN` n'ont plus qu'un seul lieu d'écriture, et un test compare les `Set-Cookie` réels
+  du login, du palier de base et du logout.
+
+**Les conséquences annoncées ont toutes été tirées** : `ApiRouteExposureTest` a son troisième
+profil ; la migration Doctrine a porté les comptes existants à `ROLE_TRUSTED` ; l'objectif n°9 est
+reformulé dans `CLAUDE.md` ; l'ADR 0001 est amendée ; la carte « Confidentialité » d'« À propos »
+ne promet plus de compte invité (vérifié en production le 2026-09-15, FR et EN) ; l'en-tête distingue
+trois états.
+
+**Ce qui reste est éditorial, et hors dépôt.** Le mécanisme sans le contenu est « un bouton qui
+ne donne rien » (coût assumé, ci-dessus) : les deux contenus de D5 attendent leur saisie dans le
+backoffice — neuf sections pour le CV sans identité, sept études de cas dont trois attendent des
+chiffres que seul l'auteur peut fournir — puis la suppression de l'entrée `[Exemple]` que le seed
+laisse. Aucun compte n'a `ROLE_TRUSTED` hors `ROLE_SUPER` : c'est l'état attendu tant que personne
+n'a été invité nominativement.
+
+Le suivi par `tasks/plan.md` est terminé — le fichier porte désormais le plan des specs 0003 et
+0004 ; l'historique de cette ADR reste lisible dans celui du fichier et dans les issues fermées du
+label `adr-0003`.

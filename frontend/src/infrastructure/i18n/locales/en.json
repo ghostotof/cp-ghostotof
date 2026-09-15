@@ -50,6 +50,7 @@
       "contributions": "Contributions",
       "incidents": "Incidents",
       "anonymousCv": "CV without identity",
+      "caseStudies": "Case studies",
       "watch": "Watch"
     },
     "order": {
@@ -294,6 +295,37 @@
       "loadError": "Failed to load sections. Please try again later.",
       "errors": {
         "not-found": "This section no longer exists.",
+        "validation": "Some fields are invalid.",
+        "unknown": "An error occurred. Please try again later.",
+        "translation-already-exists": "This content already has a version in that language.",
+        "unknown-translation-group": "The content to attach this version to no longer exists. Reload the page."
+      }
+    },
+    "caseStudies": {
+      "create": "Add a case study",
+      "edit": "Edit case study",
+      "listTitle": "Registered case studies",
+      "identityHelp": "No client name, employer name or contact details: this is where, at input time, the study stays non-identifying. No filter will do it for you.",
+      "save": "Save",
+      "cancel": "Cancel",
+      "localeLabel": "Language",
+      "translationOfLabel": "Translation of",
+      "translationOfNone": "— none —",
+      "contentLabel": "Content",
+      "titleLabel": "Title",
+      "problemLabel": "Problem (and its constraints)",
+      "solutionLabel": "Chosen solution",
+      "tradeoffsLabel": "Trade-offs",
+      "measuredResultLabel": "Measured result",
+      "measuredResultHelp": "Required. A number, a duration, a before/after: this is what sets a case study apart from a story. Paragraphs separated by a blank line.",
+      "editAction": "Edit",
+      "deleteAction": "Delete",
+      "confirmDelete": "Delete case study \"{title}\"?",
+      "empty": "No case study registered yet.",
+      "loading": "Loading case studies…",
+      "loadError": "Failed to load case studies. Please try again later.",
+      "errors": {
+        "not-found": "This case study no longer exists.",
         "validation": "Some fields are invalid.",
         "unknown": "An error occurred. Please try again later.",
         "translation-already-exists": "This content already has a version in that language.",
@@ -555,6 +587,10 @@
     "adminAnonymousCv": {
       "title": "Administration — CV without identity",
       "description": "Manage the sections of the CV without identity (base tier)."
+    },
+    "adminCaseStudies": {
+      "title": "Administration — Case studies",
+      "description": "Manage the case studies (base tier)."
     },
     "adminIncidents": {
       "title": "Administration — Incidents",
