@@ -26,4 +26,19 @@ describe('BaseTextarea', () => {
 
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['Nouveau texte'])
   })
+
+  /**
+   * Issue #164 : un attribut passé par le parent (`aria-describedby` vers un
+   * texte d'aide) doit atterrir sur le champ, pas sur le `<div>` racine —
+   * sinon l'association champ → aide n'existe pas pour un lecteur d'écran.
+   */
+  it("pose les attributs du parent sur le champ, pas sur le conteneur", () => {
+    const wrapper = mount(BaseTextarea, {
+      props: { modelValue: '', label: 'Corps', id: 'body' },
+      attrs: { 'aria-describedby': 'help-text' },
+    })
+
+    expect(wrapper.get('textarea').attributes('aria-describedby')).toBe('help-text')
+    expect(wrapper.element.getAttribute('aria-describedby')).toBeNull()
+  })
 })
