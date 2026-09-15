@@ -61,6 +61,13 @@ final class BackofficeAboutSiteCardResource
 {
     public function __construct(
         public ?string $id = null,
+        /**
+         * Lue à la création seulement. Le `PUT` l'ignore (#170, R2) : une
+         * entrée ne change jamais de langue — elle appartient à un groupe de
+         * traduction où sa langue est unique —, et le formulaire d'édition
+         * désactive le champ. Toujours validée, pour qu'un corps incohérent
+         * soit un 422 et non un silence.
+         */
         #[Assert\NotBlank]
         #[Assert\Choice(callback: [Locale::class, 'values'])]
         public ?string $locale = null,

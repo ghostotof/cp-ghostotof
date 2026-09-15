@@ -32,6 +32,12 @@ use Doctrine\Migrations\AbstractMigration;
  *
  * Aucune ligne n'est supprimée ni modifiée au-delà de cette colonne.
  *
+ * Les CTE nomment `'fr'` et `'en'` en dur : l'appariement porte sur les lignes
+ * qui existaient à cette date, et ces deux langues étaient les seules. Ce
+ * n'est pas un contre-exemple de D2 (rien ne câble la paire FR/EN dans le
+ * code vivant) — une troisième langue arrivera par le backoffice, groupe par
+ * groupe, jamais par cette migration (#170, M2).
+ *
  * `uuidv7()` (PostgreSQL 18) est volatile : elle est évaluée une fois par ligne
  * produite, donc une fois par **paire** dans la CTE `pairs` — les deux lignes
  * d'une même paire reçoivent bien le même groupe. PostgreSQL n'inline jamais
@@ -77,7 +83,8 @@ final class Version20260914170000 extends AbstractMigration
     public function down(Schema $schema): void
     {
         foreach (array_keys(self::TABLES) as $table) {
-            $this->addSql(sprintf('DROP INDEX uniq_%s_translation_group_locale', $table));
+            // Le DROP COLUMN emporte l'index unique qui porte la colonne
+            // (PostgreSQL) ; un DROP INDEX préalable serait redondant (#170, M1).
             $this->addSql(sprintf('ALTER TABLE %s DROP COLUMN translation_group', $table));
         }
     }
