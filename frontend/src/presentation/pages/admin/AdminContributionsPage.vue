@@ -182,9 +182,9 @@ function startEdit(contribution: AdminContribution): void {
   form.locale = contribution.locale as Locale
   // Le groupe lu est repris tel quel dès qu'il porte une traduction : le
   // formulaire le renvoie alors à l'enregistrement, et le lien FR/EN survit à
-  // l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::reattach`
-  // traite le `null` en non-geste (`count($members) === 1`), le groupe est
-  // conservé. Le sélecteur affiche donc « aucune » sans conséquence.
+  // l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::detach`
+  // traite une entrée seule en non-geste (`count($members) === 1`), le groupe
+  // est conservé. Le sélecteur affiche donc « aucune » sans conséquence.
   form.translationGroup = hasSibling(contributions.value, contribution) ? contribution.translationGroup : ''
   form.title = contribution.title
   form.project = contribution.project

@@ -54,11 +54,21 @@ final readonly class ContributionAdministrator implements ContributionAdministra
             throw ContributionNotFoundException::forId($id);
         }
 
-        $this->contentPlacement->reattach(
-            $contribution,
-            $translationGroup,
-            $this->contributionRepository->findByTranslationGroup($translationGroup ?? $contribution->getTranslationGroup()),
-        );
+        if (null === $translationGroup) {
+            // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
+            // le chargement du périmètre — le même qu'à la création sans groupe.
+            $this->contentPlacement->detach(
+                $contribution,
+                $this->contributionRepository->findByTranslationGroup($contribution->getTranslationGroup()),
+                $this->contributionRepository->findAll(),
+            );
+        } else {
+            $this->contentPlacement->reattach(
+                $contribution,
+                $translationGroup,
+                $this->contributionRepository->findByTranslationGroup($translationGroup),
+            );
+        }
         $contribution->update($title, $project, $reference, $url, $summary, $body);
         $this->contributionRepository->save($contribution);
 

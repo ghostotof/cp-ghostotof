@@ -50,11 +50,21 @@ final readonly class AnonymousCvSectionAdministrator implements AnonymousCvSecti
             throw AnonymousCvSectionNotFoundException::forId($id);
         }
 
-        $this->contentPlacement->reattach(
-            $section,
-            $translationGroup,
-            $this->sectionRepository->findByTranslationGroup($translationGroup ?? $section->getTranslationGroup()),
-        );
+        if (null === $translationGroup) {
+            // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
+            // le chargement du périmètre — le même qu'à la création sans groupe.
+            $this->contentPlacement->detach(
+                $section,
+                $this->sectionRepository->findByTranslationGroup($section->getTranslationGroup()),
+                $this->sectionRepository->findAll(),
+            );
+        } else {
+            $this->contentPlacement->reattach(
+                $section,
+                $translationGroup,
+                $this->sectionRepository->findByTranslationGroup($translationGroup),
+            );
+        }
         $section->update($title, $skills, $yearsOfExperience, $achievements);
         $this->sectionRepository->save($section);
 

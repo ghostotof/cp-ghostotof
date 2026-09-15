@@ -43,11 +43,21 @@ final readonly class AboutSiteCardAdministrator implements AboutSiteCardAdminist
             throw AboutSiteCardNotFoundException::forId($id);
         }
 
-        $this->contentPlacement->reattach(
-            $card,
-            $translationGroup,
-            $this->aboutSiteCardRepository->findByTranslationGroup($translationGroup ?? $card->getTranslationGroup()),
-        );
+        if (null === $translationGroup) {
+            // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
+            // le chargement du périmètre — le même qu'à la création sans groupe.
+            $this->contentPlacement->detach(
+                $card,
+                $this->aboutSiteCardRepository->findByTranslationGroup($card->getTranslationGroup()),
+                $this->aboutSiteCardRepository->findAll(),
+            );
+        } else {
+            $this->contentPlacement->reattach(
+                $card,
+                $translationGroup,
+                $this->aboutSiteCardRepository->findByTranslationGroup($translationGroup),
+            );
+        }
         $card->update($title, $description, $iconKey);
         $this->aboutSiteCardRepository->save($card);
 

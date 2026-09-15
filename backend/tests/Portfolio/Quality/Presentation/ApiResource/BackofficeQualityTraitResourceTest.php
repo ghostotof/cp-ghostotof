@@ -291,10 +291,12 @@ final class BackofficeQualityTraitResourceTest extends WebTestCase
 
     /**
      * `PUT` avec `translationGroup: null` : l'entrée est séparée de ses
-     * traductions — groupe neuf — mais elle n'a pas bougé, sa position est
-     * conservée. Sa traduction, elle, n'est pas touchée.
+     * traductions — groupe neuf — et part en fin de périmètre (issue #169 :
+     * la laisser en place laissait deux entrées d'une même langue sur une
+     * position dès que l'ancien groupe la recevait à nouveau). Sa traduction,
+     * elle, n'est pas touchée.
      */
-    public function testPutWithANullTranslationGroupDetachesAndKeepsThePosition(): void
+    public function testPutWithANullTranslationGroupDetachesAndMovesToTheEnd(): void
     {
         [$client, $csrfToken] = $this->superClient();
 
@@ -309,7 +311,7 @@ final class BackofficeQualityTraitResourceTest extends WebTestCase
         ]);
 
         self::assertResponseIsSuccessful();
-        self::assertSame(1, $updated['position']);
+        self::assertSame(2, $updated['position']);
         self::assertNotSame($english->getTranslationGroup()->toRfc4122(), $updated['translationGroup']);
 
         $reloaded = self::getContainer()->get(QualityTraitRepositoryInterface::class)->findOneById($english->getId());
