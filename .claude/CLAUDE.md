@@ -340,7 +340,12 @@ mid-migration.
     Monolog `test` handler on the channel, `when@test`, found among `monolog.logger.security_audit`'s
     handlers — that logger is public in every env, so phpstan-symfony's dev dump knows it); the kernel
     reboots between requests, so the handler holds the *last* request's records. `Psr\Log\Test\TestLogger`
-    no longer ships with psr/log 3, unit tests use Monolog's `TestHandler`.
+    no longer ships with psr/log 3, unit tests use Monolog's `TestHandler`. One transitional rule: while the
+    password-setup token still travels in the URL path (audit A7, until Task 4.1 moves it to the body),
+    `path` on `/api/account/password-setup/<token>` is logged as `…/password-setup/{token}`
+    (`TOKEN_BEARING_PATH_PATTERN`) — remove that redaction with T4.1, not before. A use case logs only
+    an *effective* action: `CpgUserRoleAdministrator`'s idempotent no-op writes nothing, a refused
+    action writes nothing (the unit tests pin `never()` on every error path).
 - **`Portfolio/Shared/`** — `Domain/ValueObject/Locale.php`, the `enum Locale: string { FR = 'fr'; EN = 'en' }`
   shared by every `Portfolio/*` context. Two entry points, and the distinction matters (audit I3):
   - **`Locale::fromString()` for anything coming from outside** (a `{locale}` URL segment, a command

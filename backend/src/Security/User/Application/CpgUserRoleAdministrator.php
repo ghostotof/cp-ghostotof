@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\User\Application;
 
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CannotModifyOwnRolesException;
@@ -15,6 +16,7 @@ final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministrato
 {
     public function __construct(
         private CpgUserRepositoryInterface $cpgUserRepository,
+        private SecurityAuditLoggerInterface $auditLogger,
     ) {
     }
 
@@ -47,6 +49,9 @@ final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministrato
 
         $user->setRoles($grant ? [CpgUser::ROLE_SUPER] : $this->rolesAfterDemotion($user));
         $this->cpgUserRepository->save($user);
+        // Journal de sécurité (D5) : seulement sur un changement effectif —
+        // l'état déjà atteint est sorti plus haut sans rien écrire.
+        $this->auditLogger->roleChanged($user, $grant);
     }
 
     /**

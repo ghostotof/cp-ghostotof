@@ -288,8 +288,23 @@ final class SecurityAuditLoggerTest extends TestCase
             'userId' => $target->getId()->toRfc4122(),
             'actor' => 'anonymous',
             'ip' => self::IP,
-            'path' => '/api/account/password-setup/x',
+            'path' => '/api/account/password-setup/{token}',
         ], $this->singleRecord()->context);
+    }
+
+    /**
+     * Tant que le jeton d'invitation voyage dans le chemin de l'URL (A7, D6 :
+     * son déplacement dans le corps est la Task 4.1), le chemin d'une
+     * activation EST un secret. Le segment est remplacé par `{token}` — la
+     * route reste lisible, le jeton n'y est plus. À simplifier après T4.1.
+     */
+    public function testATokenBearingPasswordSetupPathIsRedacted(): void
+    {
+        $this->pushRequest('/api/account/password-setup/SENTINEL-INVITATION-TOKEN-7d2b', 'POST');
+
+        $this->auditLogger->accountActivated(new CpgUser('jane', ''));
+
+        self::assertSame('/api/account/password-setup/{token}', $this->singleRecord()->context['path']);
     }
 
     /**
@@ -338,8 +353,10 @@ final class SecurityAuditLoggerTest extends TestCase
             'email' => 'sentinel.person@example.com',
         ];
 
+        // Le chemin porte le jeton d'invitation, comme sur le parcours
+        // d'activation tant que T4.1 n'est pas livrée.
         $request = Request::create(
-            '/api/login_check',
+            '/api/account/password-setup/'.$sentinels['invitation token'],
             'POST',
             server: [
                 'REMOTE_ADDR' => self::IP,

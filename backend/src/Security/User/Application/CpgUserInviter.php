@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Security\User\Application;
 
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
@@ -29,6 +30,7 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
         private UsernameGenerator $usernameGenerator,
         private MessageBusInterface $messageBus,
         private ClockInterface $clock,
+        private SecurityAuditLoggerInterface $auditLogger,
     ) {
     }
 
@@ -60,6 +62,11 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
         }
 
         $this->dispatchInvitation($user, $locale);
+        // Journal de sécurité (D5) : après le save() et le dispatch réussis.
+        // L'auteur (le ROLE_SUPER qui invite) est lu par le logger dans le
+        // jeton de sécurité de la requête, le compte est nommé par son
+        // identifiant et son id — jamais par l'e-mail.
+        $this->auditLogger->userInvited($user);
 
         return $user;
     }
@@ -71,6 +78,7 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
         }
 
         $this->dispatchInvitation($user, $locale);
+        $this->auditLogger->userReinvited($user);
     }
 
     /**

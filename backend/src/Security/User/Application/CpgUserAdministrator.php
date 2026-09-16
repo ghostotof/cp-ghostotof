@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\User\Application;
 
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CannotDeleteOwnAccountException;
@@ -17,6 +18,7 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
     public function __construct(
         private CpgUserRepositoryInterface $cpgUserRepository,
         private UserPasswordHasherInterface $passwordHasher,
+        private SecurityAuditLoggerInterface $auditLogger,
     ) {
     }
 
@@ -44,6 +46,9 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
         }
 
         $this->cpgUserRepository->remove($user);
+        // Journal de sécurité (D5) : l'entité est encore en main après le
+        // remove(), c'est elle qui nomme le compte supprimé.
+        $this->auditLogger->userDeleted($user);
     }
 
     public function changePassword(Uuid $id, string $newPlainPassword): void
@@ -56,5 +61,7 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
 
         $user->setPassword($this->passwordHasher->hashPassword($user, $newPlainPassword));
         $this->cpgUserRepository->save($user);
+        // Le compte, jamais le mot de passe (D5).
+        $this->auditLogger->passwordChanged($user);
     }
 }

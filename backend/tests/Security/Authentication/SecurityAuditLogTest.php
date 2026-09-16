@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\Authentication;
 
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Security\User\Application\CpgUserInviterInterface;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\InvitesUsers;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
@@ -26,6 +29,7 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 final class SecurityAuditLogTest extends WebTestCase
 {
     use HttpJson;
+    use InvitesUsers;
     use ReadsSecurityAuditLog;
 
     private const string SUPER_USERNAME = 'super';
@@ -233,6 +237,127 @@ final class SecurityAuditLogTest extends WebTestCase
         self::assertResponseIsSuccessful();
         self::assertSame([], self::securityAuditEvents('backoffice-access-denied'));
         self::assertSame([], self::securityAuditEvents('csrf-rejected'));
+    }
+
+    // ----- 3.2b : actions d'administration et activation, avec l'auteur -----
+
+    public function testInvitingAUserIsRecordedWithTheAccountIdAndTheActingAdmin(): void
+    {
+        $client = $this->clientWithSuperUser();
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('POST', '/api/backoffice/users', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody(['email' => 'jean.dupont@example.com', 'locale' => 'fr']));
+
+        self::assertResponseStatusCodeSame(201);
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+
+        self::assertSame([
+            'event' => 'user-invited',
+            'user' => 'jean.dupont',
+            'userId' => $body['id'],
+            'actor' => self::SUPER_USERNAME,
+            'ip' => '127.0.0.1',
+            'path' => '/api/backoffice/users',
+        ], self::singleSecurityAuditEvent('user-invited'));
+    }
+
+    public function testResendingAnInvitationIsRecorded(): void
+    {
+        $client = $this->clientWithSuperUser();
+        $invited = self::getContainer()->get(CpgUserInviterInterface::class)->invite('jean.dupont@example.com', Locale::FR);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('POST', sprintf('/api/backoffice/users/%s/invitation', $invited->getId()->toRfc4122()), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody(['locale' => 'en']));
+
+        self::assertResponseStatusCodeSame(202);
+        $event = self::singleSecurityAuditEvent('user-reinvited');
+        self::assertSame('jean.dupont', $event['user']);
+        self::assertSame($invited->getId()->toRfc4122(), $event['userId']);
+        self::assertSame(self::SUPER_USERNAME, $event['actor']);
+    }
+
+    public function testGrantingSuperAdminIsRecordedWithTheDirection(): void
+    {
+        $client = $this->clientWithSuperUser();
+        $jane = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('PUT', sprintf('/api/backoffice/users/%s/roles', $jane->getId()->toRfc4122()), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody(['superAdmin' => true]));
+
+        self::assertResponseStatusCodeSame(204);
+        self::assertSame([
+            'event' => 'role-changed',
+            'user' => self::PLAIN_USERNAME,
+            'userId' => $jane->getId()->toRfc4122(),
+            'superAdmin' => true,
+            'actor' => self::SUPER_USERNAME,
+            'ip' => '127.0.0.1',
+            'path' => sprintf('/api/backoffice/users/%s/roles', $jane->getId()->toRfc4122()),
+        ], self::singleSecurityAuditEvent('role-changed'));
+    }
+
+    public function testChangingAPasswordIsRecordedWithoutThePassword(): void
+    {
+        $client = $this->clientWithSuperUser();
+        $jane = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('PUT', sprintf('/api/backoffice/users/%s/password', $jane->getId()->toRfc4122()), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody(['password' => TestCredentials::variant('new')]));
+
+        self::assertResponseStatusCodeSame(204);
+        $event = self::singleSecurityAuditEvent('password-changed');
+        self::assertSame(self::PLAIN_USERNAME, $event['user']);
+        self::assertSame($jane->getId()->toRfc4122(), $event['userId']);
+        self::assertSame(self::SUPER_USERNAME, $event['actor']);
+        self::assertStringNotContainsString(TestCredentials::variant('new'), json_encode(self::securityAuditRecords(), \JSON_THROW_ON_ERROR));
+    }
+
+    public function testDeletingAUserIsRecorded(): void
+    {
+        $client = $this->clientWithSuperUser();
+        $jane = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('DELETE', sprintf('/api/backoffice/users/%s', $jane->getId()->toRfc4122()), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
+
+        self::assertResponseStatusCodeSame(204);
+        $event = self::singleSecurityAuditEvent('user-deleted');
+        self::assertSame(self::PLAIN_USERNAME, $event['user']);
+        self::assertSame($jane->getId()->toRfc4122(), $event['userId']);
+        self::assertSame(self::SUPER_USERNAME, $event['actor']);
+    }
+
+    /**
+     * L'activation est anonyme (lien e-mail) et le jeton voyage encore dans
+     * le chemin (A7, jusqu'à T4.1) : la ligne nomme le compte, jamais le jeton.
+     */
+    public function testActivatingAnAccountIsRecordedAnonymouslyWithoutTheToken(): void
+    {
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $token = $this->inviteAndCollectSetupToken('newcomer@example.com', Locale::FR);
+
+        $client->request('POST', '/api/account/password-setup/'.$token, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => TestCredentials::variant('setup')]));
+
+        self::assertResponseStatusCodeSame(204);
+        $event = self::singleSecurityAuditEvent('account-activated');
+        self::assertSame('newcomer', $event['user']);
+        self::assertSame('anonymous', $event['actor']);
+        self::assertSame('/api/account/password-setup/{token}', $event['path']);
+        self::assertStringNotContainsString($token, json_encode(self::securityAuditRecords(), \JSON_THROW_ON_ERROR));
     }
 
     private function clientWithPlainUser(): KernelBrowser
