@@ -1157,7 +1157,7 @@ run `make build` — these are baked into the dev image's `dev` user, not read a
 
 Issues live in GitHub Issues for this repo. See `docs/agents/issue-tracker.md`.
 
-### Task plans (`tasks/`)
+### Task plans (`tasks/`) and spec archiving
 
 The planning skill writes `tasks/plan.md` and `tasks/todo.md` at the repo root. **They live on the
 feature branch, for the duration of the feature, and never reach `develop`** (rule set on
@@ -1165,15 +1165,23 @@ feature branch, for the duration of the feature, and never reach `develop`** (ru
 ready to merge. Workflow:
 
 1. During the feature, commit `tasks/` on the feature branch as needed (checkpoints, ticked tasks).
-2. In the merge into `develop` that **fully closes** the feature, copy `plan.md` and `todo.md` to
+2. In the merge into `develop` that **fully closes** the feature, build the archive folder
    `.claude/specs/archive/<YYYY-MM-DD>-<slug>/` (closing date, one folder per feature — see the
-   `README.md` there for the existing ones) and `git rm -r tasks/` in that same PR.
+   `README.md` there for the existing ones) with, **since 2026-09-16** (issue #192):
+   - the spec itself, `git mv`ed from `.claude/specs/<NNNN>-<slug>.md` (so `.claude/specs/` only
+     lists specs still open — a "livrée" status line is no longer what tells them apart), and
+   - the **whole `tasks/` directory**, `git mv`ed as-is to a `tasks/` subfolder (not just
+     `plan.md`/`todo.md`: whatever else the feature parked there, checkpoints, notes, goes with it),
+   which removes `tasks/` from the tree in that same PR. Update the README's table there, and fix
+   the links that pointed at the spec's old path (`CLAUDE.md`, ADRs, other specs — grep for it).
 3. A plan whose feature is still open is not archived; a feature that spans several PRs keeps
-   `tasks/` on its branches until the last one.
+   `tasks/` on its branches until the last one. A feature with no spec (an audit remediation, an
+   ADR-only change) archives `tasks/` alone.
 
 The archived files are frozen: they describe the plan as it stood at closing, ticked boxes,
 checkpoints and open questions included. The five plans written before the rule existed were
-extracted from git history and archived in one go (PR #189).
+extracted from git history and archived in one go (PR #189), as flat `plan.md`/`todo.md` files
+next to no spec — that older layout is left as is, not migrated.
 
 ### Domain docs
 
