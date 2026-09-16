@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\Authentication\Infrastructure\Http;
 
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\Authentication\Infrastructure\Http\LoginCsrfRequestListener;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -24,7 +25,34 @@ final class LoginCsrfRequestListenerTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->listener = new LoginCsrfRequestListener();
+        $this->listener = new LoginCsrfRequestListener(self::createStub(SecurityAuditLoggerInterface::class));
+    }
+
+    /**
+     * D5 : un rejet laisse une ligne `csrf-rejected`, un passage aucune.
+     */
+    #[DataProvider('guardedPaths')]
+    public function testARejectionIsRecordedInTheSecurityAuditLog(string $path): void
+    {
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('csrfRejected');
+
+        $this->expectException(AccessDeniedHttpException::class);
+
+        (new LoginCsrfRequestListener($auditLogger))->__invoke($this->mainRequestEvent(Request::create($path, 'POST')));
+    }
+
+    #[DataProvider('guardedPaths')]
+    public function testAnAcceptedRequestLeavesNoRecord(string $path): void
+    {
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('csrfRejected');
+
+        (new LoginCsrfRequestListener($auditLogger))->__invoke($this->mainRequestEvent(
+            Request::create($path, 'POST', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']),
+        ));
+
+        $this->addToAssertionCount(1);
     }
 
     /**

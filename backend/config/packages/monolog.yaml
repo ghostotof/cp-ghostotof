@@ -45,6 +45,16 @@ when@test:
                 type: stream
                 path: "%kernel.logs_dir%/%kernel.environment%.log"
                 level: debug
+            # Journal de sécurité relu par les tests fonctionnels
+            # (tests/Support/ReadsSecurityAuditLog.php) : un TestHandler
+            # Monolog garde les enregistrements en mémoire, retrouvé parmi les
+            # handlers du logger public `monolog.logger.security_audit`. Même
+            # canal et même niveau qu'en prod, donc ce que les tests lisent est
+            # ce qui sortirait en JSON sur stderr.
+            security_audit_test:
+                type: test
+                level: info
+                channels: ["security_audit"]
 
 # `when@prod` couvre la production ET la préprod : les deux tournent avec
 # APP_ENV=prod (l'image `preprod` est construite FROM `production`, elle ne

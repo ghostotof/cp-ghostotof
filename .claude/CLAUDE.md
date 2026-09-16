@@ -315,6 +315,32 @@ mid-migration.
     limiter. The four listeners (`CsrfCookieRequestSubscriber`, `LoginCsrfRequestListener`,
     `BaseAccessRateLimitRequestListener`, `PasswordSetupRateLimitRequestListener`) go through the helper,
     and each has a `%XX` regression test.
+  - **`Infrastructure/Log/SecurityAuditLogger.php` is the single entry point of the security audit log**
+    (3rd audit, A5/D5, Monolog channel `security_audit`, `info`, JSON on stderr in prod — see
+    `monolog.yaml`). Implements `Application/SecurityAuditLoggerInterface`, one method per event:
+    `login-succeeded`, `login-failed`, `login-throttled`, `logged-out`, `base-access-issued`,
+    `csrf-rejected`, `backoffice-access-denied`, `user-invited`, `user-reinvited`, `role-changed`
+    (`superAdmin` bool), `password-changed`, `user-deleted`, `account-activated`. Every record carries
+    `event` (the stable kebab-case key to filter on), `actor` (identifier from the token storage, or
+    `anonymous`), `ip`, `path` (canonical), plus `user` and — for an existing account — `userId` (RFC 4122).
+    **Never a password, a token (JWT, XSRF, invitation), an e-mail, a request body or a serialized
+    exception** in any context: an invited account is named by `username` + `userId`, not by its e-mail.
+    `SecurityAuditLoggerTest::testNoContextValueEverCarriesAPasswordATokenOrAnEmail` pins that with
+    sentinel values run through every method; extend it when adding one. Who calls what:
+    `Infrastructure/Log/SecurityEventsSubscriber` for `LoginSuccessEvent`/`LoginFailureEvent` (**`login`
+    firewall only** — the `api` firewall re-authenticates the JWT on every request and dispatches the
+    same events), `LogoutEvent`, and the backoffice 403 on `kernel.exception` at priority 0 (after the
+    firewall's `ExceptionListener` at 1, which wraps the voter's `AccessDeniedException` in an
+    `AccessDeniedHttpException` — that `previous` is required, so the CSRF guards' bare
+    `AccessDeniedHttpException` isn't logged twice; an anonymous hit is a 401 that never reaches it); the
+    two CSRF guards call `csrfRejected()` right before throwing (actor is `anonymous` there by
+    construction — priority 20 runs before the firewall); `BaseAccessController` logs the `guest-…`
+    identifier, never the token; the `Security/User/Application` use cases log after the successful
+    action. Functional tests read the records through `tests/Support/ReadsSecurityAuditLog.php` (a
+    Monolog `test` handler on the channel, `when@test`, found among `monolog.logger.security_audit`'s
+    handlers — that logger is public in every env, so phpstan-symfony's dev dump knows it); the kernel
+    reboots between requests, so the handler holds the *last* request's records. `Psr\Log\Test\TestLogger`
+    no longer ships with psr/log 3, unit tests use Monolog's `TestHandler`.
 - **`Portfolio/Shared/`** — `Domain/ValueObject/Locale.php`, the `enum Locale: string { FR = 'fr'; EN = 'en' }`
   shared by every `Portfolio/*` context. Two entry points, and the distinction matters (audit I3):
   - **`Locale::fromString()` for anything coming from outside** (a `{locale}` URL segment, a command
