@@ -27,7 +27,15 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 
 ## Phase 2 — A2/A3/A4 : GitHub et RBAC · MOYENNE
 - [x] 2.1 `tools/github-settings.sh` : alertes Dependabot + security updates, PVR, `sha_pinning_required` ; `SECURITY.md` (PVR = canal principal)
-- [ ] 2.2 Environnements `preprod` (`release/*`) et `production` (`main`) avec politique de branche ; `environment:` sur `smoke-test-preprod`, `audit-preprod`, `rollback-preprod`, `finalize-release` ; secrets déplacés (`gh secret set --env`, manuel guidé) puis supprimés au niveau dépôt
+- [x] 2.2 Environnements `preprod` (`release/*`) et `production` (`main`) avec politique de branche (étape d du script) ; étape k : vérification de présence des secrets d'environnement ; `environment:` sur `smoke-test-preprod`, `audit-preprod`, `rollback-preprod`, `finalize-release` ; correctifs Dependabot automatiques désactivés (option 1 : leurs PR visent `main`, jamais mergeable hors flux de release), alertes conservées
+  - **Reste à faire à la main** (l'API ne relit pas la valeur d'un secret), entre deux releases, dans cet ordre — détail et vérifications dans le README en bas de `tools/github-settings.sh` :
+    ```bash
+    gh secret set KUBE_CONFIG_PREPROD --env preprod    < kubeconfig-preprod
+    gh secret set PREPROD_BASIC_AUTH  --env preprod    --body '<identifiant>:<mot-de-passe>'
+    gh secret set KUBE_CONFIG_PROD    --env production < kubeconfig-prod
+    gh secret set RELEASE_DEPLOY_KEY  --env production < release_bot
+    ```
+    puis `tools/github-settings.sh` (étape k verte côté environnement), puis — **seulement après un run de release complet vert** — `gh secret delete` des quatre mêmes noms au niveau dépôt, et un dernier passage du script.
 - [ ] 2.3 `tools/rotate-deployer-token.sh` (token lié, durée Q4) ; `secret-token.yaml` retiré + `Secret` durable supprimé du cluster ; `k8s/README.md` §4 et CLAUDE.md décrivent le privilège réel (D4)
 - [ ] **CHECKPOINT 2** — shellcheck/actionlint verts ; script rejoué sans diff ; un `deploy-preprod` vert avec secrets d'environnement + token lié ; onglet Security montre les alertes
 

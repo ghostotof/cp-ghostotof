@@ -43,5 +43,5 @@ Analyse statique (PHPStan niveau maximal, Psalm en analyse de flux de données, 
 avec règles d'accessibilité), tests d'exposition des routes qui refusent par défaut toute route
 non justifiée, secrets hors dépôt (Secret Manager), actions GitHub figées sur un SHA — l'épinglage
 est imposé par le dépôt, une action référencée par un tag ou une branche est refusée —, alertes
-Dependabot et correctifs de sécurité automatiques actifs, images `read-only` sous un utilisateur non
+Dependabot actives, images `read-only` sous un utilisateur non
 privilégié. Les décisions et leurs raisons sont dans `docs/adr/`.

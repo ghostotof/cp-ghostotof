@@ -602,6 +602,12 @@ jobs:
     needs: [deploy-preprod]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
+    # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
+    # l'environnement, et sa politique de branche borne d'où ils sont lisibles
+    # (audit 2026-09-16, A4).
+    environment:
+      name: preprod
+      url: https://preprod.cp-ghostotof.com
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Smoke tests
@@ -648,6 +654,12 @@ jobs:
     needs: [deploy-preprod]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
+    # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
+    # l'environnement, et sa politique de branche borne d'où ils sont lisibles
+    # (audit 2026-09-16, A4).
+    environment:
+      name: preprod
+      url: https://preprod.cp-ghostotof.com
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Audit préprod
@@ -668,6 +680,12 @@ jobs:
     needs: [smoke-test-preprod, audit-preprod]
     if: failure() && startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
+    # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
+    # l'environnement, et sa politique de branche borne d'où ils sont lisibles
+    # (audit 2026-09-16, A4).
+    environment:
+      name: preprod
+      url: https://preprod.cp-ghostotof.com
     steps:
       - name: Configure kubectl
         run: |
@@ -874,6 +892,12 @@ jobs:
     needs: [deploy-prod]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # Comme deploy-prod : RELEASE_DEPLOY_KEY est un secret de l'environnement
+    # `production`, servi au seul job qui le déclare, et la politique de branche
+    # de l'environnement le borne à `main` (audit 2026-09-16, A4).
+    environment:
+      name: production
+      url: https://cp-ghostotof.com
     permissions:
       # gh release create ; les push, eux, passent par la deploy key.
       contents: write

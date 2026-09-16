@@ -15,23 +15,34 @@
 #      c'est-à-dire le run de la branche release/*), pas de suppression, pas
 #      de force-push ;
 #   c. ruleset `develop` : PR obligatoire, checks requis = la phase 1 ;
-#   d. environnement `production` : reviewer requis retiré (le merge est le
-#      stop humain), secrets conservés (ils ne sont pas touchés par cet appel) ;
+#   d. environnements `production` (branche `main`) et `preprod` (branches
+#      `release/*`) : aucun reviewer requis (le merge est le stop humain), et
+#      une politique de branche de déploiement — sans elle, n'importe quelle
+#      branche du dépôt pouvait lire les secrets de l'environnement (constat
+#      A4) ; les secrets eux-mêmes ne sont pas touchés par cet appel ;
 #   e. (rien à faire : delete_branch_on_merge, voir a) ;
 #   f. ruleset tags `v*` : création, mise à jour, suppression, force-push
 #      interdits — seul le job pose un tag ;
-#   g. vérifie, sans les créer, la deploy key `release-bot` (écriture) et le
-#      secret RELEASE_DEPLOY_KEY : la paire se génère hors dépôt, voir le
-#      README en bas de ce fichier ;
-#   h. alertes de vulnérabilité Dependabot et correctifs de sécurité
-#      automatiques : elles étaient désactivées, donc les quatre écosystèmes
-#      suivis par `dependabot.yml` ne remontaient rien (constat A2) ;
+#   g. vérifie, sans la créer, la deploy key `release-bot` (écriture) : la
+#      paire se génère hors dépôt, voir le README en bas de ce fichier ; le
+#      secret RELEASE_DEPLOY_KEY est vérifié à l'étape k ;
+#   h. alertes de vulnérabilité Dependabot **actives** (elles étaient
+#      désactivées, donc les quatre écosystèmes suivis par `dependabot.yml` ne
+#      remontaient rien, constat A2) et correctifs de sécurité automatiques
+#      **désactivés** : leurs PR visent la branche par défaut `main`, qui
+#      n'accepte qu'une PR validée par `smoke-test-preprod`/`audit-preprod`,
+#      donc elles ne seraient jamais mergeables (voir l'étape h) ;
 #   i. Private Vulnerability Reporting : le canal de signalement privé annoncé
 #      par SECURITY.md, qui n'expose rien avant qu'un correctif existe ;
 #   j. épinglage SHA imposé aux actions (`sha_pinning_required`) : le dépôt
 #      épingle déjà à la main, GitHub refuse désormais un tag ou une branche.
 #      `allowed_actions` reste `all` (question Q8 tranchée : c'est l'épinglage
 #      qui protège, pas une liste blanche d'actions mutables).
+#   k. secrets d'environnement : vérification de présence seulement. L'API ne
+#      relit pas la valeur d'un secret, donc le script ne peut pas les
+#      déplacer — il signale ce qui manque dans l'environnement et ce qui
+#      traîne encore au niveau dépôt ; les commandes sont dans le README en
+#      bas de ce fichier.
 #
 # Le seul acteur de bypass des trois rulesets est le type « Deploy keys »
 # (actor_type DeployKey) : un dépôt personnel refuse l'application
@@ -45,7 +56,7 @@ repo=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) repo="${2:?}"; shift ;;
-    -h|--help) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,51p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "github-settings.sh : option inconnue « $1 »" >&2; exit 2 ;;
   esac
   shift
@@ -115,25 +126,51 @@ upsert_ruleset "tags v* — posés par la pipeline" "$(cat <<JSON
 JSON
 )"
 
-# ---- d. environnement production --------------------------------------------
-step "d. Environnement production — plus de reviewer requis (le merge est le stop)"
-# PUT remplace les règles de protection ; les secrets de l'environnement sont
-# une autre ressource et ne bougent pas. deployment_branch_policy était null.
-gh api -X PUT "$api/environments/production" --input - <<<'{"wait_timer":0,"prevent_self_review":false,"reviewers":[],"deployment_branch_policy":null}' >/dev/null
-gh api "$api/environments/production" --jq '"   règles de protection : \([.protection_rules[].type] | join(",")) (vide = aucune)"'
+# ---- d. environnements et politiques de branche de déploiement ----------------
+# env_branch_policy <environnement> <motif de branche>
+# Idempotent : le PUT (re)pose les règles de protection — aucun reviewer, le
+# merge de la PR de release est le stop humain (spec 0006, D6/D7) — et bascule
+# l'environnement sur `custom_branch_policies` ; le motif n'est créé que s'il
+# n'est pas déjà listé (l'API n'a pas d'upsert et accepterait un doublon).
+# Le PUT crée l'environnement s'il n'existe pas ; il ne touche pas ses secrets,
+# qui sont une autre ressource.
+env_branch_policy() {
+  local env="$1" pattern="$2"
+  gh api -X PUT "$api/environments/$env" --input - >/dev/null <<'JSON'
+{"wait_timer":0,"prevent_self_review":false,"reviewers":[],
+ "deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}
+JSON
+  if gh api "$api/environments/$env/deployment-branch-policies" \
+       --jq '.branch_policies[].name' | grep -qxF "$pattern"; then
+    ok "environnement $env : politique de branche « $pattern » déjà en place"
+  else
+    gh api -X POST "$api/environments/$env/deployment-branch-policies" \
+      -f name="$pattern" -f type=branch >/dev/null
+    ok "environnement $env : politique de branche « $pattern » créée"
+  fi
+  printf '   %s : règles de protection = ' "$env"
+  gh api "$api/environments/$env" --jq '[.protection_rules[].type] | join(",") | if . == "" then "aucune" else . end'
+  printf '   %s : branches de déploiement autorisées = ' "$env"
+  gh api "$api/environments/$env/deployment-branch-policies" --jq '[.branch_policies[].name] | join(",")'
+}
+
+step "d. Environnements — aucun reviewer requis, et d'où leurs secrets sont lisibles"
+# deployment_branch_policy valait null : tout `environment: production` déclaré
+# sur n'importe quelle branche servait KUBE_CONFIG_PROD (constat A4). La
+# politique borne production à `main` et preprod aux branches `release/*`,
+# c'est-à-dire exactement les deux branches d'où la pipeline déploie.
+env_branch_policy production main
+env_branch_policy preprod 'release/*'
 
 # ---- g. deploy key et secret, vérifiés seulement ------------------------------
-step "g. Deploy key release-bot et secret RELEASE_DEPLOY_KEY (vérification)"
+step "g. Deploy key release-bot (vérification ; le secret est vu à l'étape k)"
 if gh api "$api/keys" --jq '.[] | select(.title=="release-bot" and .read_only==false) | .id' | grep -q .; then
   ok "deploy key « release-bot » en écriture présente"
 else
   warn "deploy key « release-bot » absente ou en lecture seule — voir le README ci-dessous"
 fi
-if gh secret list --repo "$repo" | awk '{print $1}' | grep -qx RELEASE_DEPLOY_KEY; then
-  ok "secret RELEASE_DEPLOY_KEY présent"
-else
-  warn "secret RELEASE_DEPLOY_KEY absent — finalize-release échouera explicitement"
-fi
+# Le secret RELEASE_DEPLOY_KEY, lui, est vérifié à l'étape k : il appartient
+# désormais à l'environnement `production`, pas au dépôt.
 
 # ---- h. alertes Dependabot et correctifs de sécurité automatiques -------------
 step "h. Dependabot — alertes de vulnérabilité et correctifs de sécurité automatiques"
@@ -147,10 +184,17 @@ if gh api "$api/vulnerability-alerts" >/dev/null 2>&1; then
 else
   warn "alertes de vulnérabilité toujours inactives (GET -> 404) — droits du jeton ?"
 fi
-# Les correctifs automatiques dépendent des alertes ci-dessus ; leur lecture,
-# elle, renvoie du JSON.
-gh api -X PUT "$api/automated-security-fixes" >/dev/null
-gh api "$api/automated-security-fixes" --jq '"   correctifs automatiques : enabled=\(.enabled) paused=\(.paused)"'
+# Les correctifs de sécurité automatiques, eux, sont DÉSACTIVÉS (option 1
+# retenue le 2026-09-16) : leurs PR sont ouvertes sur la branche par défaut,
+# `main`, qui n'accepte qu'une PR validée par `smoke-test-preprod` et
+# `audit-preprod` — des checks qu'une branche `dependabot/**` ne produit pas.
+# Elles seraient donc ingérables à vie, et hors du flux de release (spec 0006).
+# Ce qui reste : les alertes ci-dessus préviennent, les mises à jour groupées
+# hebdomadaires de `dependabot.yml` visent `develop` (`target-branch`), et
+# `composer audit` + `npm audit` bloquent la CI. Le DELETE répond 204 ; la
+# lecture, elle, renvoie du JSON.
+gh api -X DELETE "$api/automated-security-fixes" >/dev/null
+gh api "$api/automated-security-fixes" --jq '"   correctifs automatiques : enabled=\(.enabled) paused=\(.paused) (enabled=false attendu)"'
 
 # ---- i. Private Vulnerability Reporting --------------------------------------
 step "i. Private Vulnerability Reporting — canal principal annoncé par SECURITY.md"
@@ -174,6 +218,33 @@ gh api -X PUT "$api/actions/permissions" \
   -F sha_pinning_required=true >/dev/null
 gh api "$api/actions/permissions" --jq '"   enabled=\(.enabled) allowed_actions=\(.allowed_actions) sha_pinning_required=\(.sha_pinning_required)"'
 
+# ---- k. secrets d'environnement (vérification seulement) ----------------------
+# env_secret <environnement> <nom>
+# L'API ne relit jamais la valeur d'un secret : ce script ne peut donc pas les
+# déplacer, seulement dire où ils sont. Deux vérifications, pas une : un secret
+# posé au niveau environnement pendant que l'homonyme subsiste au niveau dépôt
+# ne protège rien — `secrets.X` continue de se résoudre sur le dépôt pour tout
+# job qui ne déclare pas l'environnement.
+env_secret() {
+  local env="$1" name="$2"
+  if gh secret list --repo "$repo" --env "$env" | awk '{print $1}' | grep -qxF "$name"; then
+    ok "$name : présent dans l'environnement $env"
+  else
+    warn "$name : absent de l'environnement $env — « gh secret set $name --env $env » (README ci-dessous)"
+  fi
+  if gh secret list --repo "$repo" | awk '{print $1}' | grep -qxF "$name"; then
+    warn "$name : existe encore au niveau dépôt — « gh secret delete $name » une fois le run suivant vert"
+  else
+    ok "$name : absent du niveau dépôt"
+  fi
+}
+
+step "k. Secrets d'environnement — présence seulement (les valeurs ne sont pas lisibles)"
+env_secret preprod KUBE_CONFIG_PREPROD
+env_secret preprod PREPROD_BASIC_AUTH
+env_secret production KUBE_CONFIG_PROD
+env_secret production RELEASE_DEPLOY_KEY
+
 printf '\nTerminé.\n'
 
 # ---------------------------------------------------------------------------
@@ -188,4 +259,35 @@ printf '\nTerminé.\n'
 # Rotation : supprimer l'ancienne clé (`gh repo deploy-key delete <id>`),
 # rejouer les cinq lignes. La clé donne l'écriture sur ce seul dépôt et
 # contourne ses rulesets : même niveau de garde que les kubeconfigs.
+#
+# README — déplacer les secrets vers leur environnement (étape k, à la main)
+#
+# L'API ne relit pas la valeur d'un secret : chaque valeur est recollée depuis
+# sa source d'origine (kubeconfig du déployeur, ligne htpasswd au format
+# `utilisateur:mot_de_passe`, clé privée `release_bot`). Dans cet ordre, et
+# entre deux releases — déplacer un secret pendant un run le casserait :
+#
+#   1. poser la copie au niveau environnement (le dépôt garde la sienne, donc
+#      rien ne casse tant que l'étape 3 n'est pas faite) :
+#
+#        gh secret set KUBE_CONFIG_PREPROD --env preprod   < chemin/du/kubeconfig-preprod
+#        gh secret set PREPROD_BASIC_AUTH  --env preprod   --body '<identifiant>:<mot-de-passe>'
+#        gh secret set KUBE_CONFIG_PROD    --env production < chemin/du/kubeconfig-prod
+#        gh secret set RELEASE_DEPLOY_KEY  --env production < chemin/de/la/cle/release_bot
+#
+#   2. rejouer `tools/github-settings.sh` : l'étape k doit afficher « présent
+#      dans l'environnement » pour les quatre, et l'avertissement « existe
+#      encore au niveau dépôt » pour les quatre aussi (c'est attendu ici) ;
+#
+#   3. seulement après un run de release complet **vert** avec les secrets
+#      d'environnement (deploy-preprod, smoke-test-preprod, audit-preprod, puis
+#      deploy-prod et finalize-release), supprimer les copies du dépôt :
+#
+#        gh secret delete KUBE_CONFIG_PREPROD
+#        gh secret delete PREPROD_BASIC_AUTH
+#        gh secret delete KUBE_CONFIG_PROD
+#        gh secret delete RELEASE_DEPLOY_KEY
+#
+#   4. rejouer le script une dernière fois : l'étape k doit être entièrement
+#      verte (« absent du niveau dépôt » pour les quatre).
 # ---------------------------------------------------------------------------

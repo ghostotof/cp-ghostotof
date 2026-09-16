@@ -66,8 +66,28 @@ détail des jobs.
    Puis construire un kubeconfig autonome à partir du token durable
    (`Secret` `github-actions-deployer-token`, type `kubernetes.io/service-account-token`)
    et du endpoint/CA du cluster (`kubectl config view --raw`), et le stocker
-   comme secret GitHub Actions (`KUBE_CONFIG_PREPROD` / `KUBE_CONFIG_PROD`,
-   Settings > Secrets and variables > Actions) — jamais commité.
+   comme secret GitHub Actions — jamais commité.
+
+   > **Ce sont des secrets d'environnement, pas des secrets de dépôt**
+   > (3e audit du 2026-09-16, constat A4) : un secret de dépôt est servi à
+   > *n'importe quel* job de *n'importe quelle* branche, y compris une
+   > `feature/*` ou une PR d'un fork — le kubeconfig du déployeur de production
+   > y compris. Un secret d'environnement n'est servi qu'aux jobs qui déclarent
+   > cet `environment:`, et la politique de branche de l'environnement
+   > (`tools/github-settings.sh`, étape d : `main` pour `production`,
+   > `release/*` pour `preprod`) borne les branches d'où il est lisible.
+   >
+   > ```bash
+   > gh secret set KUBE_CONFIG_PREPROD --env preprod    < kubeconfig-preprod
+   > gh secret set KUBE_CONFIG_PROD    --env production < kubeconfig-prod
+   > ```
+   >
+   > `tools/github-settings.sh` (étape k) vérifie leur présence et avertit tant
+   > qu'un homonyme subsiste au niveau dépôt — tant qu'il y est, il continue de
+   > servir les jobs qui ne déclarent pas d'environnement, donc la garde ne vaut
+   > rien. Le supprimer (`gh secret delete KUBE_CONFIG_PROD`) une fois le run de
+   > release suivant vert. Même règle pour `PREPROD_BASIC_AUTH` (preprod) et
+   > `RELEASE_DEPLOY_KEY` (production).
 5. **Installer External Secrets Operator** (Helm) : synchronise les Secrets
    Kubernetes depuis **Scaleway Secret Manager** (région `fr-par` — hébergement
    France garanti), au lieu d'un `kubectl create secret` manuel non versionné.
@@ -268,8 +288,12 @@ mêmes identifiants que le htpasswd ci-dessus, au format
 `utilisateur:mot_de_passe` (celui que `curl -u` attend, pas le hash bcrypt) :
 
 ```bash
-gh secret set PREPROD_BASIC_AUTH --body '<identifiant>:<mot-de-passe>'
+gh secret set PREPROD_BASIC_AUTH --env preprod --body '<identifiant>:<mot-de-passe>'
 ```
+
+`--env preprod` : c'est un secret d'environnement, servi aux seuls jobs qui
+déclarent `environment: preprod` et depuis les seules branches `release/*`
+(constat A4, cf. §4 ci-dessus).
 
 Absent côté `audit-prod` (la vraie prod, non protégée) : le script s'exécute
 alors sans `-u`, comportement inchangé.
