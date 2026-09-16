@@ -430,6 +430,31 @@ est basse pour parcourir une grosse table) invalide silencieusement tous les
 cookies "Permanent login" en cours ; il suffit de recocher la case à la
 prochaine connexion, aucune action corrective nécessaire.
 
+## Journal de sécurité (Monolog, canaux `security` et `security_audit`)
+
+Depuis le 3e audit (2026-09-16, constat A5, plan phase 3), le backend émet ses événements de
+sécurité en JSON sur stderr, à partir du niveau `info`, sur deux canaux : `security` (celui de
+Symfony : « Authenticator failed », etc.) et `security_audit` (le nôtre, `SecurityAuditLogger` :
+`login-failed`, `login-throttled`, `csrf-rejected`, `backoffice-access-denied`, `user-invited`,
+`role-changed`, `user-deleted`, `account-activated`…). Le reste suit `LOG_LEVEL` (`warning` par
+défaut, `debug` dans l'image préprod). Chaque ligne `security_audit` porte `event`, l'identifiant
+visé (`user`, `userId`), l'auteur (`actor`), `ip` et `path` — jamais un mot de passe, un jeton ni
+un e-mail (un test le pince).
+
+Lecture sur un pod, canal d'audit seulement, une ligne lisible par événement :
+
+```bash
+kubectl -n preprod logs deploy/backend -c php-fpm --tail=500 \
+  | grep '"channel":"security_audit"' \
+  | jq -r '[.datetime, .context.event, .context.user // "-", .context.actor, .context.ip, .context.path] | @tsv'
+```
+
+Vérification après un déploiement (checkpoint 3 du plan) : un `POST /api/login_check` erroné
+contre la préprod doit produire une ligne `login-failed` avec l'IP publique de l'appelant (pas
+`100.64.x.x` ni celle du LB, cf. ADR 0005 D6/D7), et le sixième essai une ligne `login-throttled`.
+Les logs de pod ne sont conservés que par Kubernetes (rotation locale, perdus au remplacement du
+pod) : la rétention et le statut RGPD de ces lignes sont traités dans `docs/rgpd/` (plan, T5.8).
+
 ## Limites connues (acceptables pour un projet portfolio, à retravailler sinon)
 
 - Postgres et RabbitMQ tournent en pod (1 réplique, PVC) plutôt que sur des
