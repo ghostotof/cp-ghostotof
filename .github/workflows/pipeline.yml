@@ -8,8 +8,9 @@ name: Pipeline
 #      merge d'une branche de release, qui est le seul stop humain.
 # Un tag Git ne déclenche plus rien : il est posé par la phase 3, après la prod.
 #
-# Phases 2 et 3 : en cours de réécriture (tâches T5 à T8 de la spec) — les jobs
-# encore gardés par `refs/tags/` ci-dessous sont morts jusque-là.
+# Fin de phase 2 (préprod) et phase 3 : en cours de réécriture (tâches T6 à T8
+# de la spec) — les jobs encore gardés par `refs/tags/` ci-dessous sont morts
+# jusque-là.
 
 on:
   push:
@@ -329,16 +330,60 @@ jobs:
           args: -color
 
   # ---------------------------------------------------------------------------
-  # build — une image prod + une image preprod, backend et frontend.
-  # Uniquement sur tag (équivalent `.only-tag` de l'ancien pipeline GitLab).
+  # Phase 2 — sur `release/**` seulement (spec 0006, D2/D3/D6)
   # ---------------------------------------------------------------------------
+  # release-version — la confrontation à trois de D2 : la version calculée par
+  # tools/next-version.sh (Conventional Commits depuis le dernier tag de main),
+  # le nom de la branche `release/<version>` et le titre `# v<version> — …` de
+  # RELEASE_NOTES.md doivent dire la même chose. Un désaccord est un run rouge
+  # qui nomme les trois valeurs — on renomme la branche, on ne « corrige » pas
+  # la CI. Ses sorties nomment les images de tout le reste de la phase.
+  release-version:
+    needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests]
+    if: startsWith(github.ref, 'refs/heads/release/')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      image_tag: ${{ steps.check.outputs.image_tag }}
+      release_sha: ${{ steps.check.outputs.release_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # next-version.sh compte les commits main..HEAD et lit le dernier tag
+          # joignable depuis origin/main : il lui faut l'historique, pas le
+          # seul commit de tête.
+          fetch-depth: 0
+      - name: Version calculée = nom de branche = titre des notes
+        id: check
+        run: |
+          computed="$(tools/next-version.sh)"
+          echo "Version calculée depuis les commits : $computed"
+          tools/verify-release-merge.sh --no-merge \
+            --expect-branch "$GITHUB_REF_NAME" \
+            --expect-version "$computed" | tee -a "$GITHUB_OUTPUT"
+      - name: Résumé
+        run: |
+          {
+            echo "## Release \`${{ steps.check.outputs.version }}\`"
+            echo
+            echo "- branche \`$GITHUB_REF_NAME\`, commit \`${{ steps.check.outputs.release_sha }}\`"
+            echo "- images \`${{ steps.check.outputs.image_tag }}\` et \`${{ steps.check.outputs.image_tag }}-preprod\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # build-images — une image prod + une image preprod, backend et frontend,
+  # nommées `<version>-<sha court>` (D3) : immuables, jamais réécrites. Si les
+  # quatre manifestes existent déjà (re-run d'un commit déjà construit), le job
+  # ne fait rien et reste vert ; si certains seulement existent, l'état est
+  # incohérent et le job échoue plutôt que de compléter à l'aveugle.
   build-images:
-    needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend]
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [release-version]
+    if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    env:
+      TAG: ${{ needs.release-version.outputs.image_tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -346,6 +391,25 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Les images existent-elles déjà sur GHCR ?
+        id: existing
+        run: |
+          present=0
+          for image in "$IMAGE_BACKEND:$TAG" "$IMAGE_BACKEND:$TAG-preprod" \
+                       "$IMAGE_FRONTEND:$TAG" "$IMAGE_FRONTEND:$TAG-preprod"; do
+            if docker manifest inspect "$image" >/dev/null 2>&1; then
+              echo "présente : $image"; present=$((present + 1))
+            else
+              echo "absente  : $image"
+            fi
+          done
+          case "$present" in
+            0) echo "state=absent" >> "$GITHUB_OUTPUT" ;;
+            4) echo "state=present" >> "$GITHUB_OUTPUT"
+               echo "Les quatre images \`$TAG\` existent déjà : rien à construire." >> "$GITHUB_STEP_SUMMARY" ;;
+            *) echo "::error::$present image(s) sur 4 existent déjà sous $TAG — état incohérent, rien n'est reconstruit ni complété."
+               exit 1 ;;
+          esac
       # La carte Open Graph est régénérée ICI, juste avant la construction de
       # l'image frontend, et non commitée « en espérant » qu'elle soit à jour :
       # l'image publiée porte donc toujours une carte cohérente avec le gabarit
@@ -357,11 +421,13 @@ jobs:
       # fallback silencieux sur une police manquante décalerait la mise en page
       # sans faire échouer le job.
       - name: Dépendances de rendu de la carte Open Graph
+        if: steps.existing.outputs.state == 'absent'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
             imagemagick fonts-dejavu-core fonts-liberation
       - name: Régénération des cartes de partage (og.png + .github/social-preview.png)
+        if: steps.existing.outputs.state == 'absent'
         working-directory: frontend
         run: npm run og:generate
       # La variante GitHub (titre = pseudonyme) n'entre dans aucune image : elle
@@ -369,16 +435,15 @@ jobs:
       # à la main dans Settings → General → Social preview — GitHub n'a pas
       # d'API pour ce réglage. Régénérée ici pour rester alignée sur le gabarit.
       - name: Artefact — prévisualisation sociale du dépôt
+        if: steps.existing.outputs.state == 'absent'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: social-preview
           path: .github/social-preview.png
           if-no-files-found: error
           retention-days: 90
-
       - name: Build & push (prod + preprod, backend + frontend)
-        env:
-          TAG: ${{ github.ref_name }}
+        if: steps.existing.outputs.state == 'absent'
         run: |
           make build-prod           IMAGE="$IMAGE_BACKEND"        TAG="$TAG"
           make build-preprod        IMAGE="$IMAGE_BACKEND"        TAG="$TAG"
@@ -388,6 +453,12 @@ jobs:
           docker push "$IMAGE_BACKEND:$TAG-preprod"
           docker push "$IMAGE_FRONTEND:$TAG"
           docker push "$IMAGE_FRONTEND:$TAG-preprod"
+          {
+            echo "Images construites et poussées :"
+            for image in "$IMAGE_BACKEND:$TAG" "$IMAGE_BACKEND:$TAG-preprod" "$IMAGE_FRONTEND:$TAG" "$IMAGE_FRONTEND:$TAG-preprod"; do
+              echo "- \`$image\`"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # deploy-preprod
