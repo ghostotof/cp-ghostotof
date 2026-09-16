@@ -7,9 +7,6 @@ name: Pipeline
 #   3. prod + tag + release GitHub + nettoyage — sur `main` seulement, c'est-à-dire au
 #      merge d'une branche de release, qui est le seul stop humain.
 # Un tag Git ne déclenche plus rien : il est posé par la phase 3, après la prod.
-#
-# Phase 3 : le tag, la release GitHub et le nettoyage (finalize-release) arrivent
-# avec la tâche T8 de la spec.
 
 on:
   push:
@@ -315,6 +312,7 @@ jobs:
         run: |
           tools/tests/next-version.test.sh
           tools/tests/verify-release-merge.test.sh
+          tools/tests/finalize-release.test.sh
       # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.
@@ -845,6 +843,64 @@ jobs:
   # Pas de dépendance à audit-prod : ce job est `continue-on-error`, sa
   # conclusion vaut « success » même en échec — l'y accrocher donnerait
   # l'illusion d'un contrôle supplémentaire sans en être un.
+  # ---------------------------------------------------------------------------
+  # finalize-release — après la prod verte (spec 0006, D8) : tag annoté sur le
+  # commit de release depuis RELEASE_NOTES.md, release GitHub, copie des notes
+  # en docs/releases/, suppression de la branche release/*, fast-forward de
+  # develop. Six étapes idempotentes dans tools/finalize-release.sh (testé sur
+  # dépôt temporaire par tools-tests) ; un re-run reprend là où ça s'est arrêté.
+  #
+  # Les push passent par la deploy key `release-bot` (secret RELEASE_DEPLOY_KEY,
+  # D9 g), seul acteur de bypass des rulesets de main, develop et des tags v* :
+  # un dépôt personnel refuse l'application github-actions en bypass (T3).
+  # Conséquence : ces push DÉCLENCHENT les workflows, contrairement à ceux du
+  # GITHUB_TOKEN — le commit de copie porte `[skip ci]` (sans quoi il relancerait
+  # la phase 3, que la garde 1 de deploy-prod refuserait, mais en rouge), le push
+  # sur develop relance une phase 1 (sain), le push du tag ne lance rien.
+  # ---------------------------------------------------------------------------
+  finalize-release:
+    needs: [deploy-prod]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      # gh release create ; les push, eux, passent par la deploy key.
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          # Le checkout laisse sinon le GITHUB_TOKEN en extraheader http : on
+          # pousse par SSH, ce token n'a rien à faire dans la configuration.
+          persist-credentials: false
+      - name: Deploy key release-bot (SSH, clé d'hôte GitHub épinglée)
+        env:
+          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
+        run: |
+          if [ -z "$RELEASE_DEPLOY_KEY" ]; then
+            echo "::error::secret RELEASE_DEPLOY_KEY absent : voir la spec 0006, D9 (g), et tools/github-settings-wizard.sh"
+            exit 1
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$RELEASE_DEPLOY_KEY" > ~/.ssh/release_bot
+          chmod 600 ~/.ssh/release_bot
+          # Clé d'hôte publiée par GitHub (`gh api meta --jq .ssh_keys`), épinglée
+          # plutôt que ssh-keyscan : pas de confiance au premier contact.
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > ~/.ssh/known_hosts
+          git remote set-url origin "git@github.com:$GITHUB_REPOSITORY.git"
+          echo "GIT_SSH_COMMAND=ssh -i $HOME/.ssh/release_bot -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes" >> "$GITHUB_ENV"
+      - name: Tag, release GitHub, copie des notes, nettoyage, develop
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.deploy-prod.outputs.version }}
+          RELEASE_SHA: ${{ needs.deploy-prod.outputs.release_sha }}
+        run: |
+          echo "## Finalisation de la release \`$VERSION\`" >> "$GITHUB_STEP_SUMMARY"
+          tools/finalize-release.sh --version "$VERSION" --release-sha "$RELEASE_SHA" \
+            --summary "$GITHUB_STEP_SUMMARY"
+      - name: Effacer la clé
+        if: always()
+        run: rm -f ~/.ssh/release_bot
+
   # ---------------------------------------------------------------------------
   # audit-prod — vérification post-promotion, non bloquant (pas de rollback
   # auto en prod, contrairement à rollback-preprod).

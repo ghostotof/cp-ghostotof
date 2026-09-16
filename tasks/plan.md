@@ -89,7 +89,7 @@ T3 contrats externes vérifiés ─────┤
 
 ### Phase D — Phase 3 sur `main` (M4)
 - [x] Tâche 7 (#201) : `deploy-prod` gardé (D7), plus de reconstruction, `create-release` retiré
-- [ ] Tâche 8 (#202) : `finalize-release` (D8), six étapes idempotentes
+- [x] Tâche 8 (#202) : `finalize-release` (D8), six étapes idempotentes
 
 ### Phase E — Réglages et documentation (M5)
 - [ ] Tâche 9 (#203) : wizard des réglages GitHub (D9) et exécution

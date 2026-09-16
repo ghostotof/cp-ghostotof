@@ -167,14 +167,15 @@ ses push déclenchent les workflows. L'artefact
 `social-preview` reste produit par `build-images` (T5) et rattaché ici.
 
 **Critères d'acceptation :**
-- [ ] Un re-run après succès complet ne fait rien et reste vert (chaque étape a son test
-      d'existence).
-- [ ] Un tag `vX.Y.Z` existant sur un autre commit fait échouer l'étape 1.
+- [x] Un re-run après succès complet ne fait rien et reste vert (chaque étape a son test
+      d'existence) — cas « re-run » du test.
+- [x] Un tag `vX.Y.Z` existant sur un autre commit fait échouer l'étape 1 — cas « tag ailleurs ».
 
 **Vérification :**
-- [ ] Les six étapes sont testables à la main sur un dépôt temporaire avec le script extrait
+- [x] Les six étapes sont testables sur un dépôt temporaire avec le script extrait
       `tools/finalize-release.sh` (le job ne fait que l'appeler, comme T2) ;
-      `tools/tests/finalize-release.test.sh` vert.
+      `tools/tests/finalize-release.test.sh` vert : 20 cas (nominal, re-run, develop divergé →
+      code 0, tag ailleurs, copie différente, version ≠ notes), exécuté par `tools-tests`.
 
 **Dépendances :** T7. **Fichiers :** `.github/workflows/pipeline.yml`, `tools/finalize-release.sh`,
 `tools/tests/finalize-release.test.sh`. **Taille :** M.
@@ -208,7 +209,11 @@ rulesets. Chaque étape est idempotente et vérifiable par `gh api`.
 (le bloc `git tag -a` remplacé par le cycle D10, les leçons gardées : image périmée, notes
 Markdown et `--cleanup=verbatim` désormais dans le job, titre sans `#`), « Commands »
 (`TAG=1.2.3` → `TAG=0.14.0-abc1234`). `README.md` ligne « Livraison ». `k8s/README.md` lignes 4–5.
-En-tête de `pipeline.yml` si pas déjà fait en T4. Spec 0006 : statut « livrée » (sauf M6),
+En-tête de `pipeline.yml` si pas déjà fait en T4. **À écrire aussi** (appris en T8) : GitHub saute
+le run `push` d'un commit dont le message contient `[skip ci]`, `[ci skip]`, `[no ci]`,
+`[skip actions]` ou `[actions skip]` — ne jamais citer ces marqueurs en toutes lettres dans un
+message de commit ou de merge, seul le commit de copie de `finalize-release` doit le porter.
+Spec 0006 : statut « livrée » (sauf M6),
 puis `git mv` de la spec et de `tasks/` dans `.claude/specs/archive/2026-MM-JJ-spec-0006-flux-de-release/`
 avec mise à jour du README de l'archive.
 
