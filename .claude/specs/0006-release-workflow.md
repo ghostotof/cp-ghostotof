@@ -1,7 +1,7 @@
 # SPEC — Flux de release par branche `release/*` et pipeline en trois phases
 
-> Statut : **brouillon** (rédigée le 2026-09-16, design validé en session le même jour, à relire
-> avant tout plan de tâches).
+> Statut : **validée** (rédigée le 2026-09-16, design puis texte validés en session le même jour,
+> points « à valider avant le plan » du §10 compris ; plan de tâches à suivre).
 > Remplace le flux « tag = déclencheur » en place depuis la première release : la mise en prod
 > devient le merge d'une branche `release/<version>` dans `main`, le tag une conséquence posée par
 > la pipeline, jamais plus un geste manuel ni un déclencheur.
