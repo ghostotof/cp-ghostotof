@@ -1,4 +1,10 @@
-# Plan — Remédiation du 3e audit de sécurité (2026-09-16)
+# Plan — Remédiation du 3e audit de sécurité (2026-09-16) — lot 1
+
+> **Lot 1 clos le 2026-09-16** : phases 0 à 3 livrées (phase 1 en production par v0.14.1, phases 2 et 3
+> livrées par la release qui a suivi). Les phases 4, 5 et 6 continuent dans un second lot, sur une
+> nouvelle branche de feature avec son propre `tasks/` (copié de ce plan, réduit aux phases restantes),
+> pour que `develop` reçoive la remédiation par étapes sans jamais porter `tasks/`. Les checkpoints 2 et
+> 3 se ferment sur la release du lot 1 (secrets d'environnement, journal observé sur un pod).
 
 Source : audit complet du 2026-09-16 (session Claude), périmètre GitHub + code + Docker/nginx +
 Kubernetes préprod/prod + tests en lecture seule sur `cp-ghostotof.com`. Numérotation reprise
