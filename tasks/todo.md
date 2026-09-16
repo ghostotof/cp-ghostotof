@@ -26,7 +26,7 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [x] **CHECKPOINT 1** — gates verts ; préprod verte au 3e run (throttling au 6e) ; `v0.14.1` posé ; prod vérifiée (6e login erroné → « Too many ») ; reste : entrée post-mortem publique (Q6, éditorial)
 
 ## Phase 2 — A2/A3/A4 : GitHub et RBAC · MOYENNE
-- [ ] 2.1 `tools/github-settings.sh` : alertes Dependabot + security updates, PVR, `sha_pinning_required` ; `SECURITY.md` (PVR = canal principal)
+- [x] 2.1 `tools/github-settings.sh` : alertes Dependabot + security updates, PVR, `sha_pinning_required` ; `SECURITY.md` (PVR = canal principal)
 - [ ] 2.2 Environnements `preprod` (`release/*`) et `production` (`main`) avec politique de branche ; `environment:` sur `smoke-test-preprod`, `audit-preprod`, `rollback-preprod`, `finalize-release` ; secrets déplacés (`gh secret set --env`, manuel guidé) puis supprimés au niveau dépôt
 - [ ] 2.3 `tools/rotate-deployer-token.sh` (token lié, durée Q4) ; `secret-token.yaml` retiré + `Secret` durable supprimé du cluster ; `k8s/README.md` §4 et CLAUDE.md décrivent le privilège réel (D4)
 - [ ] **CHECKPOINT 2** — shellcheck/actionlint verts ; script rejoué sans diff ; un `deploy-preprod` vert avec secrets d'environnement + token lié ; onglet Security montre les alertes

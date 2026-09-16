@@ -2,8 +2,9 @@
 #
 # github-settings.sh
 # ---------------------------------------------------------------------------
-# Applique les réglages GitHub du flux de release (spec 0006, D9), de façon
-# IDEMPOTENTE, avec `gh` : à rejouer après tout changement, ou sur un fork.
+# Applique les réglages GitHub du flux de release (spec 0006, D9) et les réglages
+# de sécurité du dépôt (3e audit du 2026-09-16, constats A2 et A14, décision D3),
+# de façon IDEMPOTENTE, avec `gh` : à rejouer après tout changement, ou sur un fork.
 #
 #   a. merge des PR par commit de merge seulement (squash et rebase
 #      désactivés : deploy-prod retrouve la release par HEAD^2, qui n'existe
@@ -21,7 +22,16 @@
 #      interdits — seul le job pose un tag ;
 #   g. vérifie, sans les créer, la deploy key `release-bot` (écriture) et le
 #      secret RELEASE_DEPLOY_KEY : la paire se génère hors dépôt, voir le
-#      README en bas de ce fichier.
+#      README en bas de ce fichier ;
+#   h. alertes de vulnérabilité Dependabot et correctifs de sécurité
+#      automatiques : elles étaient désactivées, donc les quatre écosystèmes
+#      suivis par `dependabot.yml` ne remontaient rien (constat A2) ;
+#   i. Private Vulnerability Reporting : le canal de signalement privé annoncé
+#      par SECURITY.md, qui n'expose rien avant qu'un correctif existe ;
+#   j. épinglage SHA imposé aux actions (`sha_pinning_required`) : le dépôt
+#      épingle déjà à la main, GitHub refuse désormais un tag ou une branche.
+#      `allowed_actions` reste `all` (question Q8 tranchée : c'est l'épinglage
+#      qui protège, pas une liste blanche d'actions mutables).
 #
 # Le seul acteur de bypass des trois rulesets est le type « Deploy keys »
 # (actor_type DeployKey) : un dépôt personnel refuse l'application
@@ -35,7 +45,7 @@ repo=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) repo="${2:?}"; shift ;;
-    -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "github-settings.sh : option inconnue « $1 »" >&2; exit 2 ;;
   esac
   shift
@@ -124,6 +134,45 @@ if gh secret list --repo "$repo" | awk '{print $1}' | grep -qx RELEASE_DEPLOY_KE
 else
   warn "secret RELEASE_DEPLOY_KEY absent — finalize-release échouera explicitement"
 fi
+
+# ---- h. alertes Dependabot et correctifs de sécurité automatiques -------------
+step "h. Dependabot — alertes de vulnérabilité et correctifs de sécurité automatiques"
+# Ces deux ressources n'ont pas de corps : le PUT répond 204, et le GET de
+# `vulnerability-alerts` répond 204 si c'est actif, 404 sinon — d'où la
+# relecture sur le code de retour et non sur un champ JSON. Rejouer le PUT sur
+# un réglage déjà actif est un no-op côté GitHub.
+gh api -X PUT "$api/vulnerability-alerts" >/dev/null
+if gh api "$api/vulnerability-alerts" >/dev/null 2>&1; then
+  ok "alertes de vulnérabilité actives (GET -> 204)"
+else
+  warn "alertes de vulnérabilité toujours inactives (GET -> 404) — droits du jeton ?"
+fi
+# Les correctifs automatiques dépendent des alertes ci-dessus ; leur lecture,
+# elle, renvoie du JSON.
+gh api -X PUT "$api/automated-security-fixes" >/dev/null
+gh api "$api/automated-security-fixes" --jq '"   correctifs automatiques : enabled=\(.enabled) paused=\(.paused)"'
+
+# ---- i. Private Vulnerability Reporting --------------------------------------
+step "i. Private Vulnerability Reporting — canal principal annoncé par SECURITY.md"
+gh api -X PUT "$api/private-vulnerability-reporting" >/dev/null
+gh api "$api/private-vulnerability-reporting" --jq '"   enabled=\(.enabled)"'
+
+# ---- j. épinglage SHA imposé aux actions --------------------------------------
+step "j. Actions — épinglage SHA imposé, allowed_actions inchangé"
+# Le PUT remplace l'objet entier : on relit d'abord `enabled` et
+# `allowed_actions` pour les renvoyer tels quels, sinon activer l'épinglage
+# rouvrirait ou restreindrait silencieusement l'usage des actions.
+actions_enabled="$(gh api "$api/actions/permissions" --jq .enabled)"
+actions_allowed="$(gh api "$api/actions/permissions" --jq .allowed_actions)"
+# `allowed_actions` est absent quand les actions sont désactivées : on retombe
+# alors sur la valeur du dépôt (Q8) plutôt que d'envoyer un littéral « null ».
+if [ "$actions_allowed" = "null" ] || [ -z "$actions_allowed" ]; then
+  actions_allowed="all"
+fi
+gh api -X PUT "$api/actions/permissions" \
+  -F enabled="$actions_enabled" -f allowed_actions="$actions_allowed" \
+  -F sha_pinning_required=true >/dev/null
+gh api "$api/actions/permissions" --jq '"   enabled=\(.enabled) allowed_actions=\(.allowed_actions) sha_pinning_required=\(.sha_pinning_required)"'
 
 printf '\nTerminé.\n'
 
