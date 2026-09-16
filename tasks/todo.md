@@ -75,14 +75,14 @@ amendée pour `dependabot/**`.
 
 **Critères d'acceptation :**
 - [x] Un push sur la branche de la tâche lance exactement sept jobs (six + `tools-tests`) — run 35091593978, un seul événement `push`, plus de `pull_request`.
-- [~] Un second push annule le premier run ; un tag de test (`test-t4`, supprimé ensuite)
-      ne lance rien.
-- [ ] Les jobs gardés par `refs/tags/` sont toujours présents et jamais lancés (état
-      transitoire assumé jusqu'à T8).
+- [x] Un second push annule le premier run (35091593978 `cancelled` au push de 1b05e96) ; un tag de
+      test (`test-t4` sur e81691d, supprimé ensuite) n'a lancé aucun run.
+- [x] Les jobs gardés par `refs/tags/` sont toujours présents et jamais lancés (`skipped` sur le run
+      35091734168 ; état transitoire assumé jusqu'à T8).
 
 **Vérification :**
-- [ ] `gh run list --branch <branche>` et `gh run view` consignés dans la PR.
-- [ ] `actionlint` propre en local sur le fichier.
+- [x] `gh run list --branch <branche>` et `gh run view` consignés dans la PR #209.
+- [x] `actionlint` propre en local sur le fichier (image v1.7.12 figée par digest).
 
 **Dépendances :** T1, T2 (pour `tools-tests`). **Fichiers :** `.github/workflows/pipeline.yml`,
 `.claude/specs/0006-release-workflow.md`. **Taille :** S.
