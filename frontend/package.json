@@ -20,10 +20,10 @@
     "vue-router": "^5.3.1"
   },
   "devDependencies": {
-    "@iconify-json/lucide": "^1.2.129",
-    "@iconify-json/simple-icons": "^1.2.94",
+    "@iconify-json/lucide": "^1.2.132",
+    "@iconify-json/simple-icons": "^1.2.96",
     "@intlify/eslint-plugin-vue-i18n": "^4.5.1",
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.5.1",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/eslint-config-typescript": "^14.9.0",
     "@vue/test-utils": "^2.5.0",
@@ -36,7 +36,7 @@
     "jsdom": "^30.0.1",
     "typescript": "~6.0.2",
     "unplugin-icons": "^23.0.1",
-    "vite": "^8.2.2",
+    "vite": "^8.3.0",
     "vitest": "^5.0.0",
     "vue-tsc": "^3.3.11"
   }
