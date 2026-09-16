@@ -28,6 +28,14 @@ rules:
   # l'exécution de code arbitraire en production, bien au-delà du seul besoin
   # « jouer les migrations ». Ne pas le réintroduire : si une commande console
   # doit tourner au déploiement, en faire un Job déclaré, auditable en revue.
+  #
+  # À dire tel quel (3e audit, constat A3, décision D4) : ce retrait ferme le
+  # shell interactif, PAS la lecture des secrets. `jobs create` + `pods/log`
+  # ci-dessous suffisent à lire tout Secret du namespace (un Job qui affiche
+  # son environnement, puis ses logs), et `externalsecrets create/update`
+  # à en faire synchroniser d'autres depuis Secret Manager. Ce Role est un
+  # déployeur complet du namespace ; la frontière est le jeton, lié et à
+  # durée limitée (tools/rotate-deployer-token.sh), pas la liste des verbes.
   - apiGroups: ['']
     resources: ['services', 'configmaps', 'persistentvolumeclaims']
     verbs: ['get', 'list', 'watch', 'create', 'update', 'patch']

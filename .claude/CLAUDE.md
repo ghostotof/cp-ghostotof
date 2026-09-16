@@ -926,10 +926,15 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
   it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would
-  resolve to `docker.io/library/backend`). The deployer `Role` no longer has `pods/exec: create`: that verb
-  granted a shell in any pod of the namespace, i.e. every mounted secret and arbitrary code execution in
-  production. If a console command must run at deploy time, declare another Job — never bring `pods/exec` back.
-  The RBAC is a **manual bootstrap the pipeline never replays**: after changing it, re-run the loop in
+  resolve to `docker.io/library/backend`). The deployer `Role` no longer has `pods/exec: create`, so the
+  CI identity cannot open an interactive shell in a pod — but **that is not a secret boundary** (3rd audit,
+  A3/D4): `jobs create` + `pods/log` + `externalsecrets create/update` read every Secret of the namespace
+  by construction (a Job that prints its environment is enough). The Role is a full deployer of its
+  namespace; what bounds the exposure is the **token**, not the verb list: a bound, 90-day token
+  (`kubectl create token`) issued by `tools/rotate-deployer-token.sh <preprod|prod>`, published as an
+  environment secret, rotated quarterly — never the durable `kubernetes.io/service-account-token` Secret
+  it replaced. If a console command must run at deploy time, declare another Job — never bring `pods/exec`
+  back. The RBAC is a **manual bootstrap the pipeline never replays**: after changing it, re-run the loop in
   `k8s/README.md` §4 *before* the next deploy, or the job fails on `cannot create resource "jobs"`.
 - **The standard deploy runs the migration *before* the rollout, with the old pods still serving**
   (issue #175, expand/contract). Doctrine selects every mapped column on each hydration, so with the
