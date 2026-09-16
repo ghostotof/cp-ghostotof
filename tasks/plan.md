@@ -1,8 +1,11 @@
 # Plan de mise en œuvre — spec 0006, flux de release par branche `release/*`
 
 **Spec** : `.claude/specs/0006-release-workflow.md` (validée le 2026-09-16, PR #194).
-**Branche de travail** : `feature/release-workflow-spec` (spec + ce plan), puis une branche par
-tâche, empilées, PR vers `develop` (une PR par tâche, cf. mémoire « stack empilée »).
+**Branche de travail** : `feature/release-workflow-spec` (spec + ce plan, PR #194 vers `develop`,
+qui sera la PR de clôture), puis une branche par tâche, empilées : la PR de chaque tâche vise la
+branche de la tâche précédente (T1 vise la branche de la spec), jamais `develop` (règle du
+2026-09-16, `CLAUDE.md` « Task plans and spec archiving » ; retargeter la PR suivante avant de
+supprimer une branche mergée).
 **Suivi** : une issue GitHub par tâche, label `spec-0006` ; ce fichier est l'index, `todo.md` la
 liste cochable. Les deux vivent sur les branches de la feature et s'archivent avec la spec au merge
 de clôture (règle du 2026-09-16, issue #192 : `git mv` de la spec et de `tasks/` entier).

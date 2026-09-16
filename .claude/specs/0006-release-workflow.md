@@ -157,7 +157,7 @@ pipeline qui construit quatre images pour chaque tentative.
 | M5 | Réglages D9 (wizard), docs : `CLAUDE.md` (objectif 10, « Deployment invariants »), `README.md` (ligne « Livraison »), `k8s/README.md` | M4 | plus aucune mention de `git tag -a` comme geste humain |
 | M6 | Première release réelle sous le nouveau flux | M5 | release publiée par la machine, `main == prod`, `develop` fast-forwardée |
 
-M2 à M4 se livrent en **trois PR empilées** vers `develop` (une branche par milestone, chacune sur la précédente) :
+M2 à M4 se livrent en **trois PR empilées** sur la branche de la spec (une branche par milestone, chacune sur la précédente, `develop` ne recevant que la PR de clôture) :
 la pipeline reste cohérente à chaque PR (une phase de plus, jamais une phase cassée). Entre M4 et
 M6, l'ancien flux (tag manuel) n'existe plus : la première release **est** le test de M6, elle se
 fait en préprod d'abord par construction.

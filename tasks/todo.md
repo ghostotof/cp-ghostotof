@@ -1,7 +1,8 @@
 # Todo — spec 0006, flux de release
 
-Issues GitHub `spec-0006` : numéros à reporter à la création. Une branche et une PR par tâche,
-empilées vers `develop`.
+Issues GitHub `spec-0006` : numéros reportés. Une branche et une PR par tâche, empilées : la PR
+de chaque tâche vise la branche de la tâche précédente, T1 vise `feature/release-workflow-spec` ;
+`develop` ne reçoit que la PR #194, à la clôture.
 
 ## Tâche 1 (#195) : `tools/next-version.sh` et son test
 
