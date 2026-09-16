@@ -180,7 +180,7 @@ ses push déclenchent les workflows. L'artefact
 **Dépendances :** T7. **Fichiers :** `.github/workflows/pipeline.yml`, `tools/finalize-release.sh`,
 `tools/tests/finalize-release.test.sh`. **Taille :** M.
 
-## Tâche 9 (#203) : wizard des réglages GitHub (D9) et exécution
+## Tâche 9 (#203) : réglages GitHub (D9) — script idempotent `tools/github-settings.sh`, exécuté
 
 **Description :** `tools/github-settings-wizard.sh` (skill `wizard`) guide, dans l'ordre : merge
 commit seul ; ruleset `main` (PR, checks `smoke-test-preprod` + `audit-preprod`, pas de
@@ -192,14 +192,17 @@ privée en secret `RELEASE_DEPLOY_KEY`, effacer le fichier local ; bypass `Deplo
 rulesets. Chaque étape est idempotente et vérifiable par `gh api`.
 
 **Critères d'acceptation :**
-- [ ] Après exécution, `gh api repos/…` montre `allow_squash_merge: false`,
-      `allow_rebase_merge: false` ; les rulesets existent ; l'environnement `production` n'a
-      plus de `required_reviewers`.
-- [ ] Un push direct sur `main` est refusé par GitHub (test : `git push origin HEAD:main --dry-run`
-      ne suffit pas, faire un vrai push d'une branche jetable et constater le refus).
+- [x] Après exécution, `gh api repos/…` montre `allow_squash_merge: false`,
+      `allow_rebase_merge: false` ; trois rulesets actifs (main 23545297, develop 23545300, tags
+      23545301, bypass `DeployKey`) ; `production` sans règle de protection. Deploy key
+      `release-bot` 163489899 en écriture, secret `RELEASE_DEPLOY_KEY` posé, fichiers `shred`.
+- [x] Un push direct sur `main` est refusé par GitHub (vrai push fast-forward d'un commit vide :
+      GH013 « Changes must be made through a pull request », « 2 of 2 required status checks are
+      expected ») ; idem `develop` (« repository rule violations ») ; un tag `v0.0.0-test` manuel :
+      « Cannot create ref due to creations being restricted ».
 
 **Vérification :**
-- [ ] Sorties `gh api` consignées dans la PR.
+- [x] Sorties `gh api` consignées dans la PR.
 
 **Dépendances :** T3, T8. **Fichiers :** `tools/github-settings-wizard.sh`. **Taille :** S.
 
