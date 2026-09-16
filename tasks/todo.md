@@ -10,6 +10,20 @@ Gates par checkpoint : `make back-quality && make back-test` ; frontend (si touc
 `make front-lint && make front-test && make front-build` ; k8s (si touché) `kubectl kustomize`
 prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=warning` + `actionlint`.
 
+## Point de reprise (2026-09-16, soir)
+
+- **Tout est local** : la branche `feature/security-audit-3-remediation-lot-2` n'est **pas poussée**,
+  aucune PR, rien en préprod ni en prod pour ce lot. Ne pousser qu'à la demande explicite de Christophe.
+- Production : v0.15.0 (lot 1 complet). `develop` = `main` + la copie des notes v0.15.0.
+- **Décision en attente** avant tout code : T4.1 en agent **Fable** (confirmation de Christophe
+  obligatoire avant le lancement), T4.1 en agent **Opus**, ou la **phase 5 d'abord** sur Opus.
+- Méthode : un agent par tâche, dans l'ordre du plan, relecture du diff et gates par l'orchestrateur,
+  un commit par tâche ; une branche de tâche par phase, empilée sur celle-ci, fusionnée **en local**
+  tant que Christophe n'a pas demandé de push.
+- Secrets : toute commande qui pose une valeur secrète se lance dans un terminal séparé, par fichier
+  ou stdin, jamais via `!` ni `--body`.
+- Reliquat manuel restant : R.4 (après la prochaine release verte), R.5, R.6, R.7.
+
 ## Reliquat du lot 1 — à la main de Christophe (hors code)
 - [x] R.1 GitGuardian : incident 37338519 (fixtures de `rotate-deployer-token.test.sh`) marqué faux positif le 2026-09-16
 - [x] R.2 Rotation faite le 2026-09-16 : `preprod` (18:09 UTC) et `prod` (18:10 UTC), 90 jours accordés par Kapsule sans troncature (Q4 confirmée), `can-i` jobs=yes / pods/exec=no sur les deux ; `KUBE_CONFIG_PREPROD` posé sur l'environnement `preprod`, `KUBE_CONFIG_PROD` sur `production`. Expiration : 2026-12-15
