@@ -11,7 +11,7 @@ Gates par checkpoint : `make back-quality && make back-test` ; frontend (si touc
 prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=warning` + `actionlint`.
 
 ## Reliquat du lot 1 — à la main de Christophe (hors code)
-- [ ] R.1 GitGuardian : incident 37338519 (fixtures de `rotate-deployer-token.test.sh`) marqué faux positif
+- [x] R.1 GitGuardian : incident 37338519 (fixtures de `rotate-deployer-token.test.sh`) marqué faux positif le 2026-09-16
 - [x] R.2 Rotation faite le 2026-09-16 : `preprod` (18:09 UTC) et `prod` (18:10 UTC), 90 jours accordés par Kapsule sans troncature (Q4 confirmée), `can-i` jobs=yes / pods/exec=no sur les deux ; `KUBE_CONFIG_PREPROD` posé sur l'environnement `preprod`, `KUBE_CONFIG_PROD` sur `production`. Expiration : 2026-12-15
 - [x] R.3a `PREPROD_BASIC_AUTH` posé sur l'environnement `preprod` (2026-09-16 18:25 UTC), **avec le nouveau mot de passe** de R.3c
 - [x] R.3b Clé `release-bot` régénérée le 2026-09-16 (l'ancienne privée avait été détruite après upload, un secret GitHub est illisible) : ancienne deploy key 163489899 supprimée, nouvelle posée en écriture, `RELEASE_DEPLOY_KEY` posé sur `production` et **supprimé du niveau dépôt** ; `tools/github-settings.sh` : étapes a–k vertes, 4 secrets présents dans leur environnement. Première utilisation réelle : `finalize-release` de la prochaine release
