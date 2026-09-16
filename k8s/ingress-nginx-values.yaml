@@ -1,0 +1,38 @@
+# Valeurs Helm du prérequis ingress-nginx (k8s/README.md, prérequis n°2).
+# Hors kustomize et hors pipeline : appliqué une fois, à la main, sur le
+# cluster (un seul cluster pour préprod + prod, donc un seul ingress).
+#
+#   helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+#     --namespace ingress-nginx --create-namespace --version 4.15.1 \
+#     --reuse-values -f k8s/ingress-nginx-values.yaml
+#
+# Pourquoi ce fichier existe (audit du 2026-09-16, constat A25, ADR 0005) :
+# le Load Balancer Scaleway est un proxy complet. Sans proxy-protocol, le
+# contrôleur ingress voit comme client l'une des deux adresses du LB, jamais
+# le visiteur, et c'est cette adresse qu'il transmet dans X-Forwarded-For.
+# Tout ce qui limite par IP en aval — les zones nginx du sidecar backend, le
+# login_throttling et les quotas Symfony — comptait donc Internet entier sous
+# deux clés : un compte pouvait être verrouillé pour tout le monde par 25
+# essais, et le formulaire de contact n'acceptait que 5 messages par heure
+# pour tout le site. Le proxy-protocol v2 fait passer l'adresse réelle du
+# visiteur dans l'en-tête de connexion ; ingress-nginx la lit
+# (use-proxy-protocol) et la propage.
+#
+# Les deux réglages vont ensemble, dans la même commande : un contrôleur qui
+# attend le proxy-protocol sans LB qui l'envoie (ou l'inverse) casse tout le
+# trafic — d'où un `helm upgrade` unique et quelques secondes d'erreurs le
+# temps que le CCM Scaleway reconfigure le backend du LB.
+controller:
+  config:
+    # ingress-nginx lit l'en-tête PROXY et en fait $remote_addr, donc la
+    # valeur de X-Forwarded-For envoyée aux pods.
+    use-proxy-protocol: "true"
+  service:
+    annotations:
+      # Cloud Controller Manager Scaleway : active le proxy-protocol v2 sur
+      # le backend du LB (les sondes de santé restent en TCP).
+      service.beta.kubernetes.io/scw-loadbalancer-proxy-protocol-v2: "true"
+      # Posée par le CCM à la création du LB et relue ici pour que Helm ne la
+      # perde jamais : sans elle, le CCM créerait un NOUVEAU LB, avec une
+      # nouvelle IP publique — et le DNS pointerait dans le vide.
+      service.beta.kubernetes.io/scw-loadbalancer-id: fr-par-1/4b33d794-921c-41a7-be7e-0b84dea74844
