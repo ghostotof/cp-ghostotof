@@ -222,6 +222,15 @@ entre identifiant inconnu et mot de passe faux. Test fonctionnel : les deux cas 
 avec le même corps ; test unitaire : le hasher est appelé une fois pour un inconnu, jamais pour
 un mot de passe faux. **Scope :** XS. **Fichiers :** 1 listener + 2 tests.
 
+### Task 5.10 : rotation du mot de passe Basic Auth de la préprod, documentée
+`k8s/README.md` §2bis ne décrit que la création (`scw secret secret create`, qui échoue sur un secret
+existant). Ajouter la rotation : nouvelle version (`scw secret version create <id> data=@fichier`),
+`force-sync` de l'ExternalSecret, secret GitHub d'environnement posé par fichier, désactivation des
+anciennes révisions, vérification en navigation privée. Remplacer `--body '<identifiant>:<mot-de-passe>'`
+et `data="$(cat …)"` par des lectures de fichier, avec la consigne « terminal séparé » : la valeur ne
+doit apparaître ni dans les arguments d'un processus ni dans une session d'agent (incident du
+2026-09-16, identifiants collés dans le transcript, mot de passe changé aussitôt). **Scope :** XS.
+
 ### Task 5.8 : `docs/rgpd` et CLAUDE.md
 Mettre à jour `docs/rgpd/` (nouveaux journaux de sécurité : quoi, combien de temps —
 rétention des logs de pod), CLAUDE.md (Monolog, password-setup en POST, en-têtes, réglages
@@ -253,7 +262,7 @@ rétention 14 j), procédure de restauration testée en préprod. **Scope :** L 
 | Une ligne `cache_items` par (IP, limiteur) fait grossir la table | Moyen | T1.5 prune quotidien ; lifetime = fenêtre glissante (≤ 1 h) |
 | Le smoke test consomme le throttling de l'IP du runner pendant 15 min | Faible | Identifiant dédié ; l'audit ne se logue jamais |
 | Déplacer les secrets d'environnement casse un run en cours | Moyen | Faire T2.2 entre deux releases, vérifier sur la suivante |
-| Token lié : durée max imposée par Kapsule inconnue | Moyen | Q4 ; repli = 8760 h si accepté, sinon rotation plus fréquente |
+| Token lié : durée max imposée par Kapsule | — | Levé le 2026-09-16 : 90 jours accordés sans troncature |
 | Ancien lien d'invitation en circulation à la sortie de T4.2 | Faible | Route `:token?` conservée 48 h ; les jetons expirent en 48 h |
 | `automountServiceAccountToken: false` casse un pod qui parlait à l'API | Faible | Aucun ne le fait (vérifié : ESO est hors namespace) ; rollout préprod |
 | Publication du plan avant le correctif A1 (dépôt public) | Élevé | Q1 : ne pousser cette branche qu'après `v0.14.1` en prod |
@@ -265,8 +274,8 @@ rétention 14 j), procédure de restauration testée en préprod. **Scope :** L 
 - **Q2 — Xdebug en préprod** : ~~conserver ou retirer ?~~ **Décidé le 2026-09-16 : conservé et sécurisé** (T5.4).
 - **Q3 — HSTS `preload`** : **décidé le 2026-09-16 : non** (engagement sur tous les sous-domaines,
   retrait long, gain marginal derrière le 308 + HSTS un an). À reconsidérer plus tard.
-- **Q4 — Durée du token lié** : **décidé : 90 jours** (rotation trimestrielle), à confronter à la
-  durée max acceptée par Kapsule lors de T2.3.
+- **Q4 — Durée du token lié** : **décidé : 90 jours** (rotation trimestrielle), **confirmé le 2026-09-16** :
+  Kapsule a accordé les 2160 h demandées, sans troncature, sur `preprod` comme sur `prod`.
 - **Q5 — Adminer préprod** : **décidé : `replicas: 0`** par défaut, comme en prod (T5.5).
 - **Q6 — Journal des incidents** : **décidé : oui**, entrée post-mortem A1 à saisir dans le
   backoffice après `v0.14.1` (invariant : « aucun état sur le filesystem du pod »).

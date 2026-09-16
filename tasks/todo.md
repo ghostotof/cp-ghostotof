@@ -12,10 +12,14 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 
 ## Reliquat du lot 1 — à la main de Christophe (hors code)
 - [ ] R.1 GitGuardian : incident 37338519 (fixtures de `rotate-deployer-token.test.sh`) marqué faux positif
-- [ ] R.2 `tools/rotate-deployer-token.sh preprod` puis `prod` (noter une éventuelle troncature → Q4)
-- [ ] R.3 `gh secret set PREPROD_BASIC_AUTH --env preprod`, `gh secret set RELEASE_DEPLOY_KEY --env production`, puis `tools/github-settings.sh` (étape k : 4 présents)
+- [x] R.2 Rotation faite le 2026-09-16 : `preprod` (18:09 UTC) et `prod` (18:10 UTC), 90 jours accordés par Kapsule sans troncature (Q4 confirmée), `can-i` jobs=yes / pods/exec=no sur les deux ; `KUBE_CONFIG_PREPROD` posé sur l'environnement `preprod`, `KUBE_CONFIG_PROD` sur `production`. Expiration : 2026-12-15
+- [x] R.3a `PREPROD_BASIC_AUTH` posé sur l'environnement `preprod` (2026-09-16 18:25 UTC), **avec le nouveau mot de passe** de R.3c
+- [ ] R.3b `gh secret set RELEASE_DEPLOY_KEY --env production < <clé>` (terminal séparé), puis `tools/github-settings.sh` (étape k : 4 présents)
+- [x] R.3c Mot de passe Basic Auth de la préprod changé le 2026-09-16 : les identifiants avaient été collés dans le transcript de la session (consigne `--body` fautive, cf. mémoire « secrets hors session »). Nouvelle version rév. 3 de `preprod-basic-auth-htpasswd` (Secret Manager, 18:23:58 UTC), ExternalSecret resynchronisé à 18:24:23 UTC (`force-sync`)
+- [ ] R.3d (hygiène) désactiver les révisions 1 et 2 de `preprod-basic-auth-htpasswd` : `scw secret version disable 7c7df94b-6b57-4a17-b54d-5639e061015b revision=1 region=fr-par` (idem `revision=2`) ; vérifier en navigation privée que l'ancien mot de passe est refusé sur la préprod
+- [ ] R.3e le `PREPROD_BASIC_AUTH` **de dépôt** porte l'ancien mot de passe, devenu inopérant : les jobs qui le lisent déclarent tous `environment: preprod`, dont le secret prime ; il part avec les autres en R.4 (ou dès maintenant, sans risque)
 - [ ] R.4 Après le prochain run de release vert : suppression des 2 Secrets durables et des 4 secrets de dépôt, `tools/github-settings.sh` (étape k tout vert) → **CHECKPOINT 2 du lot 1**
-- [ ] R.5 Rappels agenda « Prochaine rotation » (×2)
+- [ ] R.5 Un rappel agenda le **2026-12-08** : relancer les deux rotations (`preprod` et `prod` expirent le 2026-12-15)
 - [ ] R.6 Post-mortem public saisi dans le backoffice (Q6, champs par mail)
 - [ ] R.7 Onglet Security : alertes Dependabot visibles ; notifications « Security alerts » routées
 
@@ -34,6 +38,7 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [ ] 5.6 Labels PSA (`enforce: baseline`, `audit`/`warn: restricted`) sur les deux namespaces ; `automountServiceAccountToken: false` sur tous les pod specs ; rollout réel en préprod
 - [ ] 5.7 `framework.session.enabled: false` ; firewall `login` → `^/api/login_check$` ; `AccessControlAnchoringTest` étendu aux firewalls
 - [ ] 5.9 Hachage factice sur identifiant inconnu (A10) : listener `LoginFailureEvent` + tests (temps égalisés, 401 identiques)
+- [ ] 5.10 `k8s/README.md` §2bis : documenter la **rotation** du mot de passe Basic Auth (nouvelle version via `scw secret version create <id> data=@fichier`, pas `secret create` ; `force-sync` ESO ; secret GitHub d'environnement posé par fichier) et remplacer `--body '<identifiant>:<mot-de-passe>'` et `data="$(cat …)"` par des lectures de fichier, en précisant « terminal séparé, jamais dans une session d'agent »
 - [ ] 5.8 `docs/rgpd/` (rétention des journaux), CLAUDE.md, `k8s/README.md` à jour ; A9 (pas de révocation JWT) consigné comme risque accepté dans l'ADR 0003 (Q9)
 - [ ] **CHECKPOINT 5** — tous gates verts ; `audit-prod.sh` étendu vert en préprod ; PR de clôture vers `develop` avec archivage de `tasks/` sous `.claude/specs/archive/<date>-remediation-audit-securite-3/`
 
