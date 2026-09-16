@@ -41,7 +41,7 @@ de la préprod à la prod.
 |---|---|---|
 | Backend | Symfony 8.1, API Platform 4.3, Doctrine 3 / PostgreSQL, Messenger / RabbitMQ, JWT en cookie httpOnly + double-submit CSRF | PHPStan `max` + `strict-rules` sans baseline, Rector, Psalm (flux de données), Symfony Language Tools, PHPUnit |
 | Frontend | Vue 3, TypeScript, Vite, Vue Router, vue-i18n, Bootstrap 5, architecture en couches (`domain` → `infrastructure` → `application` → `presentation`) | Vitest + axe-core, ESLint avec règles d'accessibilité et d'i18n, `vue-tsc` |
-| Livraison | Images multi-stage (`preprod` construite `FROM production`), Kubernetes (Kapsule), kustomize, External Secrets, migrations en Job **avant** le rollout | Pipeline GitHub Actions déclenché par tag : tests → analyse → images → préprod → smoke test → prod → release ; CodeQL ; Dependabot ; actions figées sur un SHA |
+| Livraison | Images multi-stage (`preprod` construite `FROM production`), Kubernetes (Kapsule), kustomize, External Secrets, migrations en Job **avant** le rollout | Pipeline GitHub Actions en trois phases : qualité sur chaque push ; images immuables `<version>-<sha>` + préprod + smoke test + audit sur chaque push d'une branche `release/*` ; prod, tag et release GitHub au merge de cette branche dans `main` (seul stop humain, rulesets GitHub) ; CodeQL ; Dependabot ; actions figées sur un SHA |
 
 Les décisions sont écrites avant le code, avec leurs alternatives écartées, dans
 [`docs/adr/`](docs/adr/) ; les spécifications qui les mettent en œuvre dans
@@ -100,14 +100,15 @@ est promue de la préprod vers la prod, seul `API_URL` diffère. Il doit être l
 **sans** suffixe `/api` (le code l'ajoute lui-même).
 
 ```bash
-make build-prod          TAG=1.2.3
-make build-preprod       TAG=1.2.3
-make build-front-prod    TAG=1.2.3
-make build-front-preprod TAG=1.2.3
+make build-prod          TAG=0.14.0-2c86b65
+make build-preprod       TAG=0.14.0-2c86b65
+make build-front-prod    TAG=0.14.0-2c86b65
+make build-front-preprod TAG=0.14.0-2c86b65
 ```
 
-Sans `TAG`, le SHA court du commit courant est utilisé : chaque image reste traçable jusqu'à la
-révision exacte du code qu'elle contient. Toutes les versions d'images et d'outils sont figées dans
+Sans `TAG`, le SHA court du commit courant est utilisé ; la pipeline passe `<version>-<sha court>`,
+jamais une version nue, et ne réécrit jamais une image existante : chaque image reste traçable
+jusqu'à la révision exacte du code qu'elle contient. Toutes les versions d'images et d'outils sont figées dans
 `.env` et `versions.lock` ; seule exception, Composer, épinglé sur sa branche majeure.
 
 ## RGPD

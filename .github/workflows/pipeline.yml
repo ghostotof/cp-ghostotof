@@ -1,6 +1,7 @@
 name: Pipeline
 
-# Trois phases, gardées par la branche (spec 0006, .claude/specs/0006-release-workflow.md) :
+# Trois phases, gardées par la branche (spec 0006,
+# .claude/specs/archive/2026-09-16-spec-0006-flux-de-release/0006-release-workflow.md) :
 #   1. qualité — sur chaque push de chaque branche listée ci-dessous ;
 #   2. images + préprod + smoke-test/audit + rollback auto — sur `release/**` seulement,
 #      et le run s'arrête là ;

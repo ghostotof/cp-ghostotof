@@ -1,7 +1,8 @@
 # SPEC — Flux de release par branche `release/*` et pipeline en trois phases
 
-> Statut : **validée** (rédigée le 2026-09-16, design puis texte validés en session le même jour,
-> points « à valider avant le plan » du §10 compris ; plan de tâches à suivre).
+> Statut : **livrée** (rédigée, validée et implémentée le 2026-09-16, M1 à M5 ; M6, la première
+> release réelle sous ce flux, se joue après le merge de clôture et son résultat est consigné dans
+> l'issue #205). Archivée avec son plan de tâches (`tasks/`) selon la règle du même jour (#192).
 > Remplace le flux « tag = déclencheur » en place depuis la première release : la mise en prod
 > devient le merge d'une branche `release/<version>` dans `main`, le tag une conséquence posée par
 > la pipeline, jamais plus un geste manuel ni un déclencheur.
@@ -332,3 +333,11 @@ au prix d'un secret ; (2) aucun push du robot sur une branche protégée, copie 
 l'humain et PR `main` → `develop` ouverte par le job ; (3) rulesets sans « PR obligatoire »,
 la garde D7 seule refuse un push direct. **Choix : (1)**, D8 et D9 amendées en conséquence
 (deploy key `release-bot`, secret `RELEASE_DEPLOY_KEY`, `[skip ci]` désormais indispensable).
+
+**2026-09-16, clôture (T10)** — M1 à M5 livrés le jour même, en dix PR empilées sur la branche
+de la spec (#206–#214), chaque tâche vérifiée en CI et, pour la phase 2, par de vraies branches
+`release/*` de test (préprod déployée, rollback déclenché). Écarts à la spec, tous notés dans le
+plan : `dependabot/**` ajouté aux déclencheurs (D5) ; T9 est un script idempotent
+(`tools/github-settings.sh`) plutôt qu'un wizard interactif, exécuté en session ; `[skip ci]`
+devient obligatoire sur le commit de copie (deploy key, D8) ; les gardes distantes de D7
+exigent le SHA complet. La phase 3 n'a pas tourné en vrai avant M6, comme prévu au §3.

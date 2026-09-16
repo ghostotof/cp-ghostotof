@@ -2,8 +2,9 @@
 
 Manifests Kustomize : `base/` (commun) + `overlays/{preprod,prod}/` (namespace,
 domaine, réplicas, config). Le pipeline GitHub Actions (`.github/workflows/pipeline.yml`)
-applique ces overlays sur tag Git — voir les commentaires de ce fichier pour le détail
-des jobs.
+applique l'overlay `preprod` à chaque push d'une branche `release/*` et l'overlay `prod` au
+merge de cette branche dans `main` (spec 0006) — voir les commentaires de ce fichier pour le
+détail des jobs.
 
 ## Prérequis cluster (une fois, hors CI)
 
@@ -116,7 +117,7 @@ done
 Les 2 packages (`cp-ghostotof-backend`, `cp-ghostotof-frontend`) sont rendus
 **publics** sur github.com (Settings du package > Change visibility >
 Public — impossible à automatiser via API/CLI, bascule manuelle unique
-faite une fois le premier tag construit). Le pull d'image ne nécessite donc
+faite une fois la première image construite). Le pull d'image ne nécessite donc
 aucun `imagePullSecrets` ni PAT : les Deployments backend/frontend
 (`k8s/base/{backend,frontend}-deployment.yaml`) n'en référencent plus.
 

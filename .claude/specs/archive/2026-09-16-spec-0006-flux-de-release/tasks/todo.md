@@ -221,11 +221,11 @@ puis `git mv` de la spec et de `tasks/` dans `.claude/specs/archive/2026-MM-JJ-s
 avec mise à jour du README de l'archive.
 
 **Critères d'acceptation :**
-- [ ] `grep -rn 'git tag' .claude/CLAUDE.md README.md k8s/README.md` ne montre plus de geste humain.
-- [ ] `tasks/` n'existe plus sur la branche ; l'archive contient la spec et `tasks/`.
+- [x] `grep -rn 'git tag' .claude/CLAUDE.md README.md k8s/README.md` ne montre plus de geste humain.
+- [x] `tasks/` n'existe plus sur la branche ; l'archive contient la spec et `tasks/`.
 
 **Vérification :**
-- [ ] Relecture humaine des trois docs.
+- [ ] Relecture humaine des trois docs — à la revue de la PR de clôture #194.
 
 **Dépendances :** T9. **Fichiers :** `.claude/CLAUDE.md`, `README.md`, `k8s/README.md`,
 `.claude/specs/archive/…`. **Taille :** M.

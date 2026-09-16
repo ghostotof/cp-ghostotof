@@ -33,6 +33,7 @@ l'époque le fichier n'avait pas été renouvelé et portait encore celui de l'a
 | `2026-09-13-adr-0003-paliers-d-acces` | ADR 0003, paliers d'accès, suivis #76/#77/#78 | `82e06e4` |
 | `2026-09-14-spec-0002-assistant-traduction` | Spec 0002, assistant de traduction (Symfony AI phase 1) | `51d06b8` |
 | `2026-09-15-specs-0003-0004-uuid-ordre-des-contenus` | Specs 0003 et 0004, UUID v7 puis ordre des contenus | `c4076d8` |
+| `2026-09-16-spec-0006-flux-de-release` | Spec 0006, flux de release par branche `release/*` et pipeline en trois phases — **première archive dans la nouvelle disposition** : la spec elle-même + `tasks/` entier | (déplacés par `git mv`, PR #194) |
 
 Ces cinq dossiers gardent donc l'ancienne disposition — `plan.md` et `todo.md` à plat, sans la spec,
 qui est restée dans `.claude/specs/` avec un statut « livrée » — et ne sont pas migrés.

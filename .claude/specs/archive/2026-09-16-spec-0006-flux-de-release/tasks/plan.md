@@ -93,14 +93,14 @@ T3 contrats externes vérifiés ─────┤
 
 ### Phase E — Réglages et documentation (M5)
 - [x] Tâche 9 (#203) : réglages GitHub (D9), script idempotent `tools/github-settings.sh` exécuté le 2026-09-16
-- [ ] Tâche 10 (#204) : documentation (`CLAUDE.md`, `README.md`, `k8s/README.md`, en-tête de
+- [x] Tâche 10 (#204) : documentation (`CLAUDE.md`, `README.md`, `k8s/README.md`, en-tête de
       `pipeline.yml`) + archivage spec/`tasks/` (PR de clôture)
 
 ### Checkpoint 3 — Prêt pour la première release
 - [x] Squash/rebase impossibles, push direct sur `main`/`develop` refusé, reviewer retiré de
       `production`, ruleset tags `v*`.
-- [ ] Plus aucun `git tag -a` comme geste humain dans les docs.
-- [ ] Revue humaine, merge de clôture (spec + `tasks/` archivés).
+- [x] Plus aucun `git tag -a` comme geste humain dans les docs.
+- [ ] Revue humaine, merge de clôture (spec + `tasks/` archivés) — PR #194.
 
 ### Phase F — Première release (M6)
 - [ ] Tâche 11 (#205) : `release/0.14.0` (ou la version calculée), `RELEASE_NOTES.md`, PR, merge,
@@ -127,3 +127,7 @@ T3 contrats externes vérifiés ─────┤
 - Aucune bloquante. Les cinq points « à valider avant le plan » de la spec §10 sont considérés
   validés par le « ok » du 2026-09-16 ; l'écart Dependabot ci-dessus est à reporter dans la spec
   en Tâche 4.
+
+**Note d'archivage (2026-09-16)** : ce plan est figé au merge de clôture (T10), T11 encore
+ouverte par construction — la première release sous le nouveau flux se joue après ce merge ; son
+résultat est consigné dans l'issue #205 et dans la mémoire de session, pas ici.
