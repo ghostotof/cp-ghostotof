@@ -13,7 +13,7 @@ en `0.x`), `feat` → mineur, sinon correctif ; aucun commit → échec explicit
 **Critères d'acceptation :**
 - [ ] Les cas de la spec §4 M1 passent (`0.13.3`, `0.14.0`, majeur ramené, `2.0.0` en `1.x`,
       « rien à livrer », merge ignoré, commit hors convention ignoré avec avertissement).
-- [ ] `tools/next-version.sh` sur `develop` aujourd'hui répond `0.14.0`.
+- [ ] `tools/next-version.sh` sur `develop` aujourd'hui répond `0.13.3` (un seul commit `docs` depuis `v0.13.2`).
 
 **Vérification :**
 - [ ] `tools/tests/next-version.test.sh` vert, sur un dépôt temporaire, sans toucher au dépôt courant.
