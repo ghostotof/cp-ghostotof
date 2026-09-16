@@ -999,8 +999,17 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's
-  `trusted_proxies: private_ranges`. `docker/nginx/default.conf` and `k8s/base/backend-nginx.conf` are
-  mirrors of each other: change both.
+  `trusted_proxies: private_ranges` **including `100.64.0.0/10`** (RFC 6598, the Kapsule pod range —
+  the ingress pod's actual IP; it was missing until v0.14.1, so `real_ip` never applied and every zone
+  really was one global counter, audit 2026-09-16 A25), with `real_ip_recursive on`.
+  `docker/nginx/default.conf` and `k8s/base/backend-nginx.conf` are mirrors of each other: change both.
+  **And the client IP must survive the Scaleway Load Balancer**, which is a full proxy: without
+  PROXY protocol, ingress-nginx sees one of the LB's two addresses as the client and forwards *that*
+  in `X-Forwarded-For`, so Symfony's `login_throttling` and quotas keyed the whole internet on two
+  addresses. `k8s/ingress-nginx-values.yaml` (`use-proxy-protocol` + the
+  `scw-loadbalancer-proxy-protocol-v2` annotation, applied together by one `helm upgrade`) is the
+  cluster prerequisite that fixes it — see ADR 0005 D6/D7. `tools/smoke-login-throttling.sh` is what
+  proves the whole chain end to end: six attempts from one machine must land on one key.
 - **A release is a branch, the merge is the stop, the tag is a consequence** (spec 0006,
   2026-09-16, replacing the "tag = trigger" flow that cost v0.7.0 a stale image, v0.7.1 its
   Markdown headings and v0.11.0–v0.13.1 a literal `#` in their titles). The pipeline has three

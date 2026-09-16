@@ -81,6 +81,40 @@ limiteur déclaré et `cache.app` sont adossés à Doctrine DBAL, jamais à un `
 Il ne reproduit pas l'incident (il ne le peut pas) ; il refuse la configuration qui l'a
 permis.
 
+## Second constat, révélé par le filet : l'adresse du visiteur ne traversait pas la chaîne
+
+Le smoke test de D4 a refusé la première préprod corrigée : six connexions erronées, aucune
+freinée — alors que la même image, en lecture seule, freinait bien contre une base locale. La
+table `cache_items` de la préprod contenait pourtant les états. Décodés, ils montraient **deux
+compteurs globaux distincts pour une seule machine cliente** : l'adresse IP vue par Symfony
+changeait d'une requête à l'autre.
+
+La cause est en amont de tout ce que ce dépôt déploie. Le Load Balancer Scaleway est un proxy
+complet : sans proxy-protocol, ingress-nginx voit comme client l'une des deux adresses du LB
+et la transmet dans `X-Forwarded-For`. Symfony (dont `private_ranges` inclut `100.64.0.0/10`,
+la plage des pods du cluster) remontait donc jusqu'au LB et prenait son adresse pour celle du
+visiteur. Le sidecar nginx, lui, ne faisait pas confiance à `100.64.0.0/10` : `real_ip` ne
+s'appliquait jamais et toutes ses zones comptaient sous **une seule** clé, l'adresse du pod
+ingress — le déni de service que l'audit C7 croyait avoir écarté, en place depuis le premier
+déploiement, invisible parce que le trafic n'a jamais approché les plafonds.
+
+Conséquence pratique, et raison de ne pas livrer D1 seule : avec un stockage qui fonctionne
+enfin et des adresses qui ne distinguent personne, vingt-cinq essais de mot de passe auraient
+verrouillé la connexion pour tout le monde pendant un quart d'heure, et le formulaire de
+contact n'aurait accepté que cinq messages par heure pour tout le site.
+
+**D6 — Le proxy-protocol v2 est un prérequis du cluster**, déclaré dans
+`k8s/ingress-nginx-values.yaml` (annotation `scw-loadbalancer-proxy-protocol-v2` sur le Service
+du contrôleur, `use-proxy-protocol` dans sa configuration), appliqué par `helm upgrade` en une
+seule commande — les deux réglages vont ensemble ou le trafic casse.
+
+**D7 — Les plages de confiance du sidecar incluent `100.64.0.0/10`** (RFC 6598, les pods
+Kapsule), avec `real_ip_recursive on` pour remonter une chaîne à plusieurs sauts jusqu'à la
+première adresse hors de confiance. Les deux confs nginx restent miroirs.
+
+Le smoke test de D4 couvre aussi ce cas sans rien y ajouter : six essais d'une seule machine
+doivent tomber sur une seule clé. C'est ce qu'il a prouvé en refusant la première livraison.
+
 ## Alternatives écartées
 
 - **Un `emptyDir` sur `var/cache`.** Réparerait l'écriture, mais chaque réplica aurait ses
