@@ -183,9 +183,10 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
     private function freshClient(): KernelBrowser
     {
         $client = self::createClient();
-        // Le quota est stocké sur le cache filesystem "cache.rate_limiter" et
-        // survit au redémarrage de kernel (même IP 127.0.0.1 pour tous les
-        // tests fonctionnels) : on repart d'un quota vierge à chaque test.
+        // Le quota est stocké dans le pool "cache.rate_limiter" (Doctrine DBAL
+        // depuis l'ADR 0005, table cache_items de la base de test) et survit au
+        // redémarrage de kernel (même IP 127.0.0.1 pour tous les tests
+        // fonctionnels) : on repart d'un quota vierge à chaque test.
         self::getContainer()->get('cache.rate_limiter')->clear();
 
         return $client;

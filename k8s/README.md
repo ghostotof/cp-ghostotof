@@ -11,6 +11,20 @@ détail des jobs.
 1. **Créer le cluster Kapsule** (console Scaleway ou `scw k8s cluster create`),
    un seul cluster pour préprod + prod (séparées par namespace).
 2. **Installer ingress-nginx** (Helm) : expose les Ingress `k8s/base/ingress.yaml`.
+   **Avec `k8s/ingress-nginx-values.yaml`**, qui active le proxy-protocol v2 côté
+   Load Balancer Scaleway et côté contrôleur (audit du 2026-09-16, constat A25,
+   ADR 0005) : sans lui, l'adresse vue par tout ce qui limite par IP — zones
+   nginx du sidecar, `login_throttling`, quotas Symfony — est celle du LB, la
+   même pour tout Internet. Vérification après application : six connexions
+   erronées depuis une seule machine (`tools/smoke-login-throttling.sh`) sont
+   freinées à la sixième, et l'access log du sidecar (`kubectl logs deploy/backend
+   -c nginx`) montre l'IP publique du visiteur, pas `100.64.x.x` ni celle du LB.
+   ```bash
+   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+   helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+     --namespace ingress-nginx --create-namespace --version 4.15.1 \
+     --reuse-values -f k8s/ingress-nginx-values.yaml
+   ```
 3. **Installer cert-manager** + un `ClusterIssuer` nommé `letsencrypt` (référencé
    par l'annotation `cert-manager.io/cluster-issuer` de l'Ingress) : gère les
    certificats TLS Let's Encrypt automatiquement.

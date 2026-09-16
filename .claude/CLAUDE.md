@@ -907,6 +907,22 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
 
 ### Deployment invariants (learned the hard way — don't undo these)
 
+- **No application state on the pod's filesystem** (ADR 0005, audit of 2026-09-16, constat A1,
+  hotfix v0.14.1). Pods run `readOnlyRootFilesystem: true` with only `var/log` mounted, and
+  Symfony's default `cache.app` was a `FilesystemAdapter` under `var/cache/prod/pools`: its
+  `save()` returned `false` **silently**, so `cache.rate_limiter` (every rate limiter, including
+  `login_throttling`) and the prod Doctrine result cache never persisted anything — 14 wrong
+  logins in a row on production were never throttled, while `LoginThrottlingTest` was green
+  (CI's disk is writable). `cache.app` is now `cache.adapter.doctrine_dbal` in **every** env
+  (`cache.yaml`), table `cache_items` created by migration `Version20260916180000`, pruned
+  daily by `cache:pool:prune` in the housekeeping CronJob (`messenger-purge-cronjob.yaml`, name
+  kept: `apply -k` never deletes a renamed object). `tests/Security/RateLimiterStorageTest`
+  pins it (every limiter + `cache.app` DBAL-backed, never Filesystem — add a new limiter to its
+  list); `tools/smoke-login-throttling.sh`, run by `smoke-test-preprod`, is the only check that
+  exercises a real pod (6 wrong logins, the 6th must say "Too many failed login attempts")
+  and the nginx `login` zone (10 r/m, burst 10, both confs) is the backstop if the storage ever
+  fails again. Anything that "just writes a file" at runtime (a lock, a session, a render cache)
+  falls under the same rule: DB, a dedicated service, or nowhere.
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
   it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would
@@ -970,9 +986,11 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   `CreateContainerConfigError` (incident v0.6.0). The rule that decides: **hash it if kustomize owns
   every reference to it, don't if anything outside kustomize names it.** Verify a config change
   actually landed with `kubectl exec … -c nginx -- nginx -T | grep <the new directive>`.
-- **Four nginx rate-limit zones, two different jobs.** `contact` (10 r/m), `pwsetup` (20 r/m) and
-  `baseaccess` (20 r/m, issue #77 — each call signs an RS256 JWT) protect a *side effect* — sending mail,
-  guessing a token, minting a token. `publicapi` (600 r/m, burst 200, on
+- **Five nginx rate-limit zones, two different jobs.** `contact` (10 r/m), `pwsetup` (20 r/m),
+  `baseaccess` (20 r/m, issue #77 — each call signs an RS256 JWT) and `login` (10 r/m, burst 10,
+  ADR 0005 — the backstop under Symfony's `login_throttling`, which is the real ceiling) protect a
+  *side effect* — sending mail, guessing a token, minting a token, guessing a password.
+  `publicapi` (600 r/m, burst 200, on
   `location /`) protects the *resource*: without it every public read reaches PHP and Postgres as
   often as asked. Its ceiling is deliberately far above real use — behind a mobile carrier's CGNAT
   thousands of visitors share one address, and a tight cap would cut them all off at once, which is
@@ -981,8 +999,17 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's
-  `trusted_proxies: private_ranges`. `docker/nginx/default.conf` and `k8s/base/backend-nginx.conf` are
-  mirrors of each other: change both.
+  `trusted_proxies: private_ranges` **including `100.64.0.0/10`** (RFC 6598, the Kapsule pod range —
+  the ingress pod's actual IP; it was missing until v0.14.1, so `real_ip` never applied and every zone
+  really was one global counter, audit 2026-09-16 A25), with `real_ip_recursive on`.
+  `docker/nginx/default.conf` and `k8s/base/backend-nginx.conf` are mirrors of each other: change both.
+  **And the client IP must survive the Scaleway Load Balancer**, which is a full proxy: without
+  PROXY protocol, ingress-nginx sees one of the LB's two addresses as the client and forwards *that*
+  in `X-Forwarded-For`, so Symfony's `login_throttling` and quotas keyed the whole internet on two
+  addresses. `k8s/ingress-nginx-values.yaml` (`use-proxy-protocol` + the
+  `scw-loadbalancer-proxy-protocol-v2` annotation, applied together by one `helm upgrade`) is the
+  cluster prerequisite that fixes it — see ADR 0005 D6/D7. `tools/smoke-login-throttling.sh` is what
+  proves the whole chain end to end: six attempts from one machine must land on one key.
 - **A release is a branch, the merge is the stop, the tag is a consequence** (spec 0006,
   2026-09-16, replacing the "tag = trigger" flow that cost v0.7.0 a stale image, v0.7.1 its
   Markdown headings and v0.11.0–v0.13.1 a literal `#` in their titles). The pipeline has three
@@ -1258,3 +1285,8 @@ ADRs:
   assistant on Scaleway (not an MCP server), D3 lets the nominative CV reach a model operated by the site's
   host or self-hosted only, D2 admits calls on behalf of `ROLE_TRUSTED` (never the base tier), D5 adds a
   bounded input. Read it before adding any `Symfony\AI` usage or a new `ai.agent`.
+- `docs/adr/0005-etat-hors-du-pod.md` — **statut `accepté` (2026-09-16), livré par le hotfix v0.14.1**.
+  No application state on the pod's filesystem: `cache.app` on Doctrine DBAL, why an `emptyDir`
+  or a PHPUnit test would not have done, and the two backstops (nginx `login` zone, preprod
+  smoke test that exercises the throttling). Read it before touching `cache.yaml`, adding a
+  rate limiter, or mounting anything under `var/`.

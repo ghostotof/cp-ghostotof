@@ -3,16 +3,31 @@ framework:
         # Unique name of your app: used to compute stable namespaces for cache keys.
         #prefix_seed: your_vendor_name/app_name
 
-        # The "app" cache stores to the filesystem by default.
-        # The data in this cache should persist between deploys.
-        # Other options include:
-
-        # Redis
-        #app: cache.adapter.redis
-        #default_redis_provider: redis://localhost
-
-        # APCu (not recommended with heavy random-write workloads as memory fragmentation can cause perf issues)
-        #app: cache.adapter.apcu
+        # ADR 0005 — aucun état applicatif sur le système de fichiers du pod.
+        #
+        # `cache.app` est le socle de `cache.rate_limiter` (donc de *tous* les
+        # limiteurs : login_throttling, contact, password-setup, base-access,
+        # assistant de traduction) et du cache de résultats Doctrine (when@prod
+        # dans doctrine.yaml). Par défaut c'est un FilesystemAdapter sous
+        # var/cache/<env>/pools : en production le pod est en
+        # readOnlyRootFilesystem, seul var/log est monté, et l'écriture échouait
+        # en silence (`save()` rend false, sans exception). Chaque requête
+        # repartait d'un compteur vide — quatorze logins erronés d'affilée sans
+        # jamais atteindre le throttling (audit du 2026-09-16, constat A1).
+        #
+        # Doctrine DBAL, sur la connexion de DATABASE_URL : partagé entre les
+        # réplicas (un emptyDir resterait propre à chaque pod, les compteurs
+        # seraient divisés par deux), durable au redémarrage, aucun service à
+        # ajouter. La table `cache_items` est créée par migration, pas par le
+        # `createTable()` paresseux de l'adaptateur, pour rester sous Doctrine
+        # Migrations comme le reste du schéma ; `cache:pool:prune` la purge
+        # quotidiennement (CronJob housekeeping). Même adaptateur dans tous les
+        # environnements : dev et CI exercent la migration et le même chemin
+        # d'écriture que la prod. tests/Security/RateLimiterStorageTest pince
+        # ce choix ; `cache.system` (métadonnées, réchauffé au docker build)
+        # reste sur le filesystem, il n'est que lu en prod.
+        app: cache.adapter.doctrine_dbal
+        default_doctrine_dbal_provider: database_connection
 
         # Namespaced pools use the above "app" backend by default
         #pools:
