@@ -74,8 +74,8 @@ shell de T1/T2 + `actionlint` (figé sur un SHA). L'en-tête de `pipeline.yml` r
 amendée pour `dependabot/**`.
 
 **Critères d'acceptation :**
-- [ ] Un push sur la branche de la tâche lance exactement sept jobs (six + `tools-tests`).
-- [ ] Un second push annule le premier run ; un tag de test (`test-t4`, supprimé ensuite)
+- [x] Un push sur la branche de la tâche lance exactement sept jobs (six + `tools-tests`) — run 35091593978, un seul événement `push`, plus de `pull_request`.
+- [~] Un second push annule le premier run ; un tag de test (`test-t4`, supprimé ensuite)
       ne lance rien.
 - [ ] Les jobs gardés par `refs/tags/` sont toujours présents et jamais lancés (état
       transitoire assumé jusqu'à T8).
