@@ -143,12 +143,15 @@ success --workflow pipeline.yml` non vide → déploiement inchangé avec `$IMAG
 `audit-prod` suit, non bloquant. `create-release` supprimé (remplacé en T8).
 
 **Critères d'acceptation :**
-- [ ] Toute garde en échec sort **avant** `Configure kubectl` (le kubeconfig n'est même pas écrit).
-- [ ] Les messages d'échec nomment la garde et les valeurs.
+- [x] Toute garde en échec sort **avant** `Configure kubectl` (le kubeconfig n'est même pas écrit) :
+      gardes 1–3 puis setup-kustomize puis kubeconfig, dans cet ordre.
+- [x] Les messages d'échec nomment la garde et les valeurs (script T2 ; `::error::absente : <image>` ;
+      « aucun run vert … sur release/<version> pour le commit <sha> »).
 
 **Vérification :**
-- [ ] `actionlint` propre ; lecture croisée du job avec la spec D7 ; pas de run réel possible
-      avant T11 (risque accepté, plan §Risques).
+- [x] `actionlint` propre ; lecture croisée du job avec la spec D7 ; gardes distantes testées en local
+      sur les traces de T6 (run retrouvé après suppression de la branche, **SHA complet obligatoire**
+      pour `--commit`, image supprimée = absente) ; pas de run réel possible avant T11.
 
 **Dépendances :** T6, T2. **Fichiers :** `.github/workflows/pipeline.yml`. **Taille :** S.
 

@@ -8,8 +8,8 @@ name: Pipeline
 #      merge d'une branche de release, qui est le seul stop humain.
 # Un tag Git ne déclenche plus rien : il est posé par la phase 3, après la prod.
 #
-# Phase 3 : en cours de réécriture (tâches T7 et T8 de la spec) — les jobs
-# encore gardés par `refs/tags/` ci-dessous sont morts jusque-là.
+# Phase 3 : le tag, la release GitHub et le nettoyage (finalize-release) arrivent
+# avec la tâche T8 de la spec.
 
 on:
   push:
@@ -669,19 +669,88 @@ jobs:
           kubectl -n preprod rollout undo deployment/frontend
 
   # ---------------------------------------------------------------------------
-  # deploy-prod — approbation manuelle (protection de l'environnement
-  # `production`, reviewer requis configuré côté GitHub), aucun rebuild :
-  # promeut l'image déjà construite et validée en préprod.
+  # Phase 3 — sur `main` seulement (spec 0006, D7/D8)
+  # ---------------------------------------------------------------------------
+  # deploy-prod — un push sur `main` est le merge d'une branche de release :
+  # c'est le stop humain. Le job ne construit JAMAIS d'image : il retrouve
+  # celle que la préprod a validée, ou refuse. Trois gardes, toutes AVANT
+  # d'écrire le kubeconfig, chacune nommant ce qu'elle a lu :
+  #   1. HEAD est un commit de merge (tools/verify-release-merge.sh) — un push
+  #      direct, ou le commit de copie des notes poussé par finalize-release,
+  #      n'ont rien à déployer ; HEAD^2 est le commit de la release et son
+  #      RELEASE_NOTES.md donne la version, donc le nom des images ;
+  #   2. les quatre images existent sur GHCR ;
+  #   3. un run de ce workflow sur `release/<version>` s'est conclu `success`
+  #      pour ce commit exact (préprod, smoke tests et audit verts) — le run
+  #      survit à la suppression de la branche, `--commit` veut le SHA complet.
+  # Le déploiement lui-même est inchangé (migration avant rollout, fenêtre de
+  # maintenance opt-in). L'environnement `production` garde ses secrets ; son
+  # reviewer requis est retiré par la spec (D9 d) : deux stops pour une
+  # personne, c'est un de trop.
   # ---------------------------------------------------------------------------
   deploy-prod:
-    needs: [smoke-test-preprod, audit-preprod]
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests]
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     environment:
       name: production
       url: https://cp-ghostotof.com
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      image_tag: ${{ steps.release.outputs.image_tag }}
+      release_sha: ${{ steps.release.outputs.release_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # HEAD^2 et `git show HEAD^2:RELEASE_NOTES.md` : il faut les parents.
+          fetch-depth: 0
+      - name: "Garde 1 — HEAD est le merge d'une release, version lue dans ses notes"
+        id: release
+        run: |
+          tools/verify-release-merge.sh > "$RUNNER_TEMP/release.env"
+          cat "$RUNNER_TEMP/release.env"
+          cat "$RUNNER_TEMP/release.env" >> "$GITHUB_OUTPUT"
+      - name: "Garde 2 — les quatre images validées existent sur GHCR"
+        env:
+          TAG: ${{ steps.release.outputs.image_tag }}
+        run: |
+          missing=0
+          for image in "$IMAGE_BACKEND:$TAG" "$IMAGE_BACKEND:$TAG-preprod" \
+                       "$IMAGE_FRONTEND:$TAG" "$IMAGE_FRONTEND:$TAG-preprod"; do
+            if docker manifest inspect "$image" >/dev/null 2>&1; then
+              echo "présente : $image"
+            else
+              echo "::error::absente : $image"; missing=$((missing + 1))
+            fi
+          done
+          if [ "$missing" -gt 0 ]; then
+            echo "::error::$missing image(s) manquante(s) pour $TAG : rien n'est déployé, rien n'est reconstruit."
+            exit 1
+          fi
+      - name: "Garde 3 — un run de release vert existe pour ce commit"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_SHA: ${{ steps.release.outputs.release_sha }}
+        run: |
+          runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow pipeline.yml \
+                    --branch "release/$VERSION" --commit "$RELEASE_SHA" --status success \
+                    --json databaseId,url --jq '.[] | "\(.databaseId) \(.url)"')"
+          if [ -z "$runs" ]; then
+            echo "::error::aucun run vert du workflow sur release/$VERSION pour le commit $RELEASE_SHA : la préprod n'a pas validé ce commit, rien n'est déployé."
+            exit 1
+          fi
+          echo "Run(s) de release vert(s) : $runs"
+          {
+            echo "## Production ← release \`$VERSION\`"
+            echo
+            echo "- commit de release \`$RELEASE_SHA\`, images \`${{ steps.release.outputs.image_tag }}\`"
+            echo "- validé par : $runs"
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: imranismail/setup-kustomize@53f941b41dca13ed61874bbc6b4b6e1562877530 # v3.0.0
       - name: Configure kubectl
         run: |
@@ -690,7 +759,7 @@ jobs:
       - name: Deploy
         working-directory: k8s/overlays/prod
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ steps.release.outputs.image_tag }}
           MAINTENANCE_WINDOW: ${{ vars.DEPLOY_MAINTENANCE_WINDOW }}
         run: |
           kustomize edit set image "backend=$IMAGE_BACKEND:$TAG" "frontend=$IMAGE_FRONTEND:$TAG"
@@ -777,68 +846,12 @@ jobs:
   # conclusion vaut « success » même en échec — l'y accrocher donnerait
   # l'illusion d'un contrôle supplémentaire sans en être un.
   # ---------------------------------------------------------------------------
-  create-release:
-    needs: [deploy-prod]
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    # Seul job à écrire dans le dépôt : permission élevée ici, pas globalement.
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # Nécessaire pour lire l'annotation du tag : un checkout superficiel
-          # ne récupère pas l'objet tag lui-même, seulement le commit.
-          fetch-depth: 0
-      - name: Publier la release GitHub
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-
-          # Idempotent : un re-run du workflow ne doit pas échouer sur une
-          # release déjà publiée.
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG déjà publiée — rien à faire."
-            exit 0
-          fi
-
-          # Le corps de la release vient de l'annotation du tag : c'est le seul
-          # texte écrit au moment de décider du contenu de la version, donc le
-          # seul qui puisse la décrire honnêtement. Première ligne = titre.
-          # Les notes sont rédigées en Markdown avec `--cleanup=verbatim`, donc
-          # cette première ligne est un titre `# vX.Y.Z — …` : sans retirer le
-          # `#`, GitHub l'affichait tel quel dans le titre de la release (les six
-          # releases v0.11.0 à v0.13.1 l'ont eu, renommées à la main).
-          TITLE="$(git tag -l --format='%(contents:subject)' "$TAG" | sed -E 's/^#+[[:space:]]*//')"
-          BODY="$(git tag -l --format='%(contents:body)' "$TAG")"
-
-          if [ -n "$BODY" ]; then
-            printf '%s' "$BODY" > /tmp/release-notes.md
-            gh release create "$TAG" \
-              --verify-tag --latest \
-              --title "${TITLE:-$TAG}" \
-              --notes-file /tmp/release-notes.md
-          else
-            # Tag sans annotation détaillée (ou tag léger) : on retombe sur les
-            # notes générées par GitHub plutôt que de publier une release vide.
-            echo "Tag $TAG sans corps d'annotation — notes générées automatiquement."
-            gh release create "$TAG" \
-              --verify-tag --latest \
-              --title "${TITLE:-$TAG}" \
-              --generate-notes
-          fi
-
-          echo "Release publiée : $(gh release view "$TAG" --json url --jq .url)"
-
-  # ---------------------------------------------------------------------------
   # audit-prod — vérification post-promotion, non bloquant (pas de rollback
   # auto en prod, contrairement à rollback-preprod).
   # ---------------------------------------------------------------------------
   audit-prod:
     needs: [deploy-prod]
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.ref == 'refs/heads/main'
     continue-on-error: true
     runs-on: ubuntu-latest
     steps:
