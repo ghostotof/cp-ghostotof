@@ -315,6 +315,7 @@ jobs:
           tools/tests/verify-release-merge.test.sh
           tools/tests/finalize-release.test.sh
           tools/tests/smoke-login-throttling.test.sh
+          tools/tests/rotate-deployer-token.test.sh
       # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.

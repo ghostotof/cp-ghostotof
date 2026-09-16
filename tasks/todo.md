@@ -36,7 +36,14 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
     gh secret set RELEASE_DEPLOY_KEY  --env production < release_bot
     ```
     puis `tools/github-settings.sh` (étape k verte côté environnement), puis — **seulement après un run de release complet vert** — `gh secret delete` des quatre mêmes noms au niveau dépôt, et un dernier passage du script.
-- [ ] 2.3 `tools/rotate-deployer-token.sh` (token lié, durée Q4) ; `secret-token.yaml` retiré + `Secret` durable supprimé du cluster ; `k8s/README.md` §4 et CLAUDE.md décrivent le privilège réel (D4)
+- [x] 2.3 `tools/rotate-deployer-token.sh` (token lié 2160h = 90 j, Q4 ; `exp` du JWT décodé pour détecter une troncature par le control-plane ; `can-i create jobs`=yes / `create pods/exec`=no avant publication ; jeton par fichier/stdin seulement) + test hors ligne dans `tools-tests` ; `secret-token.yaml` retiré du kustomization et supprimé ; `k8s/README.md` §4 et CLAUDE.md décrivent le privilège réel (D4) ; `role.yaml`/`serviceaccount.yaml` commentés en conséquence
+  - **Reste à faire à la main** (le mode auto refuse les écritures cluster/GitHub ; seul le `--dry-run` a été joué contre `cp-ghostotof-preprod`), dans cet ordre :
+    1. `tools/rotate-deployer-token.sh preprod` puis `… prod` — **lire l'avertissement `TRONQUÉE` s'il apparaît** : la durée max de Kapsule est inconnue, c'est la durée accordée qui fixe le calendrier (Q4 à confronter ici) ;
+    2. `gh secret set PREPROD_BASIC_AUTH --env preprod …` et `RELEASE_DEPLOY_KEY --env production` (reste de 2.2), puis `tools/github-settings.sh` (étape k : 4 présents dans l'environnement) ;
+    3. un run de release complet vert avec les secrets d'environnement (= CHECKPOINT 2) ;
+    4. `kubectl --context cp-ghostotof-preprod -n preprod delete secret github-actions-deployer-token` et idem `prod` ; `kubectl -n prod get secret github-actions-deployer-token` → NotFound ;
+    5. `gh secret delete` des quatre noms au niveau dépôt, dernier passage de `tools/github-settings.sh` ;
+    6. deux rappels calendaires à la date « Prochaine rotation » affichée par le script.
 - [ ] **CHECKPOINT 2** — shellcheck/actionlint verts ; script rejoué sans diff ; un `deploy-preprod` vert avec secrets d'environnement + token lié ; onglet Security montre les alertes
 
 ## Phase 3 — A5 : journal de sécurité · MOYENNE

@@ -263,16 +263,18 @@ printf '\nTerminé.\n'
 # README — déplacer les secrets vers leur environnement (étape k, à la main)
 #
 # L'API ne relit pas la valeur d'un secret : chaque valeur est recollée depuis
-# sa source d'origine (kubeconfig du déployeur, ligne htpasswd au format
-# `utilisateur:mot_de_passe`, clé privée `release_bot`). Dans cet ordre, et
+# sa source d'origine (un kubeconfig du déployeur FRAIS — le script de rotation
+# en émet un autour d'un jeton lié, plus jamais l'ancien fichier au jeton
+# durable —, ligne htpasswd au format `utilisateur:mot_de_passe`, clé privée
+# `release_bot`). Dans cet ordre, et
 # entre deux releases — déplacer un secret pendant un run le casserait :
 #
 #   1. poser la copie au niveau environnement (le dépôt garde la sienne, donc
 #      rien ne casse tant que l'étape 3 n'est pas faite) :
 #
-#        gh secret set KUBE_CONFIG_PREPROD --env preprod   < chemin/du/kubeconfig-preprod
+#        tools/rotate-deployer-token.sh preprod   # → KUBE_CONFIG_PREPROD --env preprod (jeton lié, T2.3)
+#        tools/rotate-deployer-token.sh prod      # → KUBE_CONFIG_PROD    --env production
 #        gh secret set PREPROD_BASIC_AUTH  --env preprod   --body '<identifiant>:<mot-de-passe>'
-#        gh secret set KUBE_CONFIG_PROD    --env production < chemin/du/kubeconfig-prod
 #        gh secret set RELEASE_DEPLOY_KEY  --env production < chemin/de/la/cle/release_bot
 #
 #   2. rejouer `tools/github-settings.sh` : l'étape k doit afficher « présent
