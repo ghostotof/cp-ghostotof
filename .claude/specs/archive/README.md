@@ -6,13 +6,20 @@ racine du dépôt. Ces deux fichiers vivent **sur la branche de la feature, le t
 et ne doivent **jamais atteindre `develop`** : le dossier `tasks/` n'existe pas sur `develop` ni sur
 `main`.
 
-Règle, telle que fixée le 2026-09-15 (voir `.claude/CLAUDE.md`, « Task plans ») :
+Règle, fixée le 2026-09-15 et élargie le 2026-09-16 (issue #192, voir `.claude/CLAUDE.md`, « Task plans and
+spec archiving ») :
 
 1. Pendant la feature, `tasks/` est committé sur la branche de la feature, au besoin.
-2. Au merge dans `develop` qui **clôt complètement** la feature, le plan et la todo sont copiés ici,
-   dans un sous-dossier `AAAA-MM-JJ-<slug>/` daté du jour de clôture, puis `tasks/` est supprimé
-   dans ce même merge.
-3. Un plan en cours sur une feature encore ouverte n'est pas archivé.
+2. Au merge dans `develop` qui **clôt complètement** la feature, un sous-dossier `AAAA-MM-JJ-<slug>/`
+   daté du jour de clôture reçoit, par `git mv` :
+   - **la spec elle-même**, déplacée depuis `.claude/specs/<NNNN>-<slug>.md` — `.claude/specs/` ne
+     liste ainsi que les specs encore ouvertes ;
+   - **le dossier `tasks/` en entier**, tel quel, dans un sous-dossier `tasks/` — et pas seulement
+     `plan.md`/`todo.md` : tout ce que la feature y a rangé (checkpoints, notes) part avec.
+   Ce déplacement supprime `tasks/` de l'arbre dans ce même merge. Mettre à jour le tableau
+   ci-dessous et les liens qui visaient l'ancien chemin de la spec (`CLAUDE.md`, ADR, autres specs).
+3. Un plan en cours sur une feature encore ouverte n'est pas archivé. Une feature sans spec
+   (remédiation d'audit, ADR seule) archive `tasks/` seul.
 
 Les cinq premiers plans (2026-09-03 → 2026-09-15) ont vécu dans `tasks/` sur `develop` avant que
 cette règle n'existe ; ils ont été extraits de l'historique git (`git show <commit>:tasks/plan.md`)
@@ -26,6 +33,10 @@ l'époque le fichier n'avait pas été renouvelé et portait encore celui de l'a
 | `2026-09-13-adr-0003-paliers-d-acces` | ADR 0003, paliers d'accès, suivis #76/#77/#78 | `82e06e4` |
 | `2026-09-14-spec-0002-assistant-traduction` | Spec 0002, assistant de traduction (Symfony AI phase 1) | `51d06b8` |
 | `2026-09-15-specs-0003-0004-uuid-ordre-des-contenus` | Specs 0003 et 0004, UUID v7 puis ordre des contenus | `c4076d8` |
+| `2026-09-16-spec-0006-flux-de-release` | Spec 0006, flux de release par branche `release/*` et pipeline en trois phases — **première archive dans la nouvelle disposition** : la spec elle-même + `tasks/` entier | (déplacés par `git mv`, PR #194) |
+
+Ces cinq dossiers gardent donc l'ancienne disposition — `plan.md` et `todo.md` à plat, sans la spec,
+qui est restée dans `.claude/specs/` avec un statut « livrée » — et ne sont pas migrés.
 
 Ces fichiers sont figés : ils décrivent l'état du plan au moment de la clôture, avec ses cases
 cochées, ses checkpoints et ses questions ouvertes. On ne les met pas à jour.
