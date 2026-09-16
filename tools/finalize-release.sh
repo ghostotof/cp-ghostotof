@@ -58,7 +58,10 @@ done
 [ -n "$version" ] || { echo "finalize-release.sh : --version manquant" >&2; exit 2; }
 [ -n "$release_sha" ] || { echo "finalize-release.sh : --release-sha manquant" >&2; exit 2; }
 
-g() { git -C "$repo" "$@"; }
+# Identité fixe pour tout ce que le script écrit (tag annoté, commit de
+# copie) : le runner n'a pas de user.name/user.email, et un `git tag -a`
+# sans identité échoue avec « Committer identity unknown ».
+g() { git -C "$repo" -c user.name="release-bot" -c user.email="release-bot@users.noreply.github.com" "$@"; }
 die() { echo "finalize-release.sh : $*" >&2; exit 1; }
 say() {
   echo "- $*"
@@ -121,8 +124,7 @@ else
   mkdir -p "$repo/$notes_dir"
   printf '%s\n' "$notes" > "$repo/$target"
   g add "$target"
-  g -c user.name="release-bot" -c user.email="release-bot@users.noreply.github.com" \
-    commit --quiet -m "docs(releases): notes de la version $tag [skip ci]" -m "Copie de RELEASE_NOTES.md au commit de release ${release_sha:0:7}, par finalize-release."
+  g commit --quiet -m "docs(releases): notes de la version $tag [skip ci]" -m "Copie de RELEASE_NOTES.md au commit de release ${release_sha:0:7}, par finalize-release."
   g push --quiet "$remote" "HEAD:refs/heads/$main" || die "push de la copie des notes sur $main refusé par $remote (main a bougé ? re-run après vérification)"
   say "\`$target\` : copié et poussé sur \`$main\`"
 fi
