@@ -325,10 +325,10 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          make build-prod           IMAGE=$IMAGE_BACKEND        TAG=$TAG
-          make build-preprod        IMAGE=$IMAGE_BACKEND        TAG=$TAG
-          make build-front-prod     FRONT_IMAGE=$IMAGE_FRONTEND TAG=$TAG
-          make build-front-preprod  FRONT_IMAGE=$IMAGE_FRONTEND TAG=$TAG
+          make build-prod           IMAGE="$IMAGE_BACKEND"        TAG="$TAG"
+          make build-preprod        IMAGE="$IMAGE_BACKEND"        TAG="$TAG"
+          make build-front-prod     FRONT_IMAGE="$IMAGE_FRONTEND" TAG="$TAG"
+          make build-front-preprod  FRONT_IMAGE="$IMAGE_FRONTEND" TAG="$TAG"
           docker push "$IMAGE_BACKEND:$TAG"
           docker push "$IMAGE_BACKEND:$TAG-preprod"
           docker push "$IMAGE_FRONTEND:$TAG"
@@ -357,7 +357,7 @@ jobs:
           TAG: ${{ github.ref_name }}
           MAINTENANCE_WINDOW: ${{ vars.DEPLOY_MAINTENANCE_WINDOW }}
         run: |
-          kustomize edit set image backend=$IMAGE_BACKEND:$TAG-preprod frontend=$IMAGE_FRONTEND:$TAG-preprod
+          kustomize edit set image "backend=$IMAGE_BACKEND:$TAG-preprod" "frontend=$IMAGE_FRONTEND:$TAG-preprod"
           # Ordre standard (issue #175) : MIGRATION D'ABORD, ROLLOUT ENSUITE, sans
           # arrêter les pods (schéma expand/contract). Doctrine sélectionne toutes
           # les colonnes mappées à chaque hydratation : avec l'ordre inverse, dès
@@ -544,7 +544,7 @@ jobs:
           TAG: ${{ github.ref_name }}
           MAINTENANCE_WINDOW: ${{ vars.DEPLOY_MAINTENANCE_WINDOW }}
         run: |
-          kustomize edit set image backend=$IMAGE_BACKEND:$TAG frontend=$IMAGE_FRONTEND:$TAG
+          kustomize edit set image "backend=$IMAGE_BACKEND:$TAG" "frontend=$IMAGE_FRONTEND:$TAG"
           # Ordre standard (issue #175) : MIGRATION D'ABORD, ROLLOUT ENSUITE, sans
           # arrêter les pods (schéma expand/contract). Doctrine sélectionne toutes
           # les colonnes mappées à chaque hydratation : avec l'ordre inverse, dès
