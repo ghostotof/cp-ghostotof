@@ -75,7 +75,7 @@ T3 contrats externes vérifiés ─────┤
 - [ ] Revue humaine.
 
 ### Phase B — Phase 1 de la pipeline (M2)
-- [ ] Tâche 4 (#198) : déclencheurs D5, `concurrency`, `run-name`, job `tools-tests` (+ `actionlint`)
+- [x] Tâche 4 (#198) : déclencheurs D5, `concurrency`, `run-name`, job `tools-tests` (+ `actionlint`)
 
 ### Phase C — Phase 2 sur `release/**` (M3)
 - [ ] Tâche 5 (#199) : job `release-version` et `build-images` en `<version>-<sha>` sans réécriture

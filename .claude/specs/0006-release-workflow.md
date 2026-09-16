@@ -77,13 +77,17 @@ pipeline qui construit quatre images pour chaque tentative.
   `docs/releases/vX.Y.Z.md` par le job de finalisation (§D8) : le dépôt accumule son changelog,
   le tag et la release GitHub restent l'archive de référence.
 - **D5 — Déclencheurs.** Le workflow écoute `push` sur `main`, `develop`, `feature/**`, `fix/**`,
-  `hotfix/**`, `release/**` et **plus aucun tag** (un tag `v*` ne déclenche rien : il est une
-  conséquence). Le déclencheur `pull_request` est retiré : chaque PR est interne au dépôt et les
-  checks d'un push sur la branche source s'affichent sur la PR par SHA de tête, donc le
-  conserver doublerait chaque run de phase 1. Un `concurrency` par `github.ref` annule le run
+  `hotfix/**`, `release/**`, **`dependabot/**`** et **plus aucun tag** (un tag `v*` ne déclenche
+  rien : il est une conséquence). Le déclencheur `pull_request` est retiré : chaque PR est
+  interne au dépôt et les checks d'un push sur la branche source s'affichent sur la PR par SHA
+  de tête, donc le conserver doublerait chaque run de phase 1 (constaté en T3 : deux runs par
+  commit). `dependabot/**` est là pour la même raison (amendement T4) : Dependabot cible
+  `develop` et pousse ses branches dans le dépôt, sans cette entrée ses PR n'auraient plus
+  aucun check ; ses runs tournent avec un token en lecture seule et sans secret, ce dont la
+  phase 1 n'a pas besoin. Un `concurrency` par `github.ref` annule le run
   précédent sur `feature/*`, `fix/*`, `hotfix/*`, `develop` et `release/*` ; **jamais sur
-  `main`** : un déploiement prod en cours va au bout. `run-name` affiche la branche et, sur
-  `release/*`, la version calculée et le SHA court.
+  `main`** : un déploiement prod en cours va au bout. `run-name` affiche la branche (qui porte
+  la version sur `release/*`) et le SHA du commit.
 - **D6 — Trois phases, gardées par la branche.**
   - *Phase 1, toujours* : `test-backend`, `test-frontend`, `sast-backend`, `phpstan-backend`,
     `rector-backend`, `lsp-check-backend`, inchangés.
