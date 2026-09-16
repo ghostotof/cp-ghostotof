@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Http;
 
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Shared\Infrastructure\Http\CanonicalPath;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
@@ -47,6 +48,10 @@ final readonly class LoginCsrfRequestListener
     /** @var list<string> */
     private const array GUARDED_PATHS = ['/api/login_check', '/api/account/base-access'];
 
+    public function __construct(private SecurityAuditLoggerInterface $auditLogger)
+    {
+    }
+
     public function __invoke(RequestEvent $event): void
     {
         if (!$event->isMainRequest()) {
@@ -64,6 +69,9 @@ final readonly class LoginCsrfRequestListener
         $header = $request->headers->get(self::HEADER_NAME);
 
         if (!\is_string($header) || '' === $header) {
+            // Journal de sécurité (D5) : le chemin dit lequel des deux gardes a parlé.
+            $this->auditLogger->csrfRejected();
+
             throw new AccessDeniedHttpException(\sprintf('En-tête %s requis sur cette route.', self::HEADER_NAME));
         }
     }

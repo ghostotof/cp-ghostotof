@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\Authentication\Infrastructure\Http;
 
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\Authentication\Infrastructure\Http\CsrfCookieRequestSubscriber;
 use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
 use PHPUnit\Framework\TestCase;
@@ -30,7 +31,45 @@ final class CsrfCookieRequestSubscriberTest extends TestCase
     protected function setUp(): void
     {
         $this->signer = new CsrfCookieTokenSigner(self::SECRET);
-        $this->subscriber = new CsrfCookieRequestSubscriber($this->signer);
+        $this->subscriber = new CsrfCookieRequestSubscriber($this->signer, self::createStub(SecurityAuditLoggerInterface::class));
+    }
+
+    /**
+     * D5 : chaque rejet laisse une ligne `csrf-rejected` dans le journal de
+     * sécurité, juste avant l'exception — et un passage n'en laisse aucune.
+     */
+    public function testARejectionIsRecordedInTheSecurityAuditLog(): void
+    {
+        $request = Request::create('/api/backoffice/experience/technologies', 'POST', server: ['HTTP_X_XSRF_TOKEN' => 'attacker-value'], cookies: ['XSRF-TOKEN' => 'legitimate-value']);
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('csrfRejected');
+
+        $this->expectException(AccessDeniedHttpException::class);
+
+        (new CsrfCookieRequestSubscriber($this->signer, $auditLogger))->__invoke($this->mainRequestEvent($request));
+    }
+
+    public function testAnUnsignedTokenRejectionIsRecordedToo(): void
+    {
+        $request = Request::create('/api/backoffice/experience/technologies', 'POST', server: ['HTTP_X_XSRF_TOKEN' => 'unsigned'], cookies: ['XSRF-TOKEN' => 'unsigned']);
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('csrfRejected');
+
+        $this->expectException(AccessDeniedHttpException::class);
+
+        (new CsrfCookieRequestSubscriber($this->signer, $auditLogger))->__invoke($this->mainRequestEvent($request));
+    }
+
+    public function testAnAcceptedRequestLeavesNoRecord(): void
+    {
+        $token = $this->signer->issue();
+        $request = Request::create('/api/backoffice/experience/technologies', 'POST', server: ['HTTP_X_XSRF_TOKEN' => $token], cookies: ['XSRF-TOKEN' => $token]);
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('csrfRejected');
+
+        (new CsrfCookieRequestSubscriber($this->signer, $auditLogger))->__invoke($this->mainRequestEvent($request));
+
+        $this->addToAssertionCount(1);
     }
 
     public function testSafeMethodIsNeverChecked(): void

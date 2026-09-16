@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\User\Presentation\Controller;
 
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
 use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
 use App\Security\User\Domain\ValueObject\GuestUser;
@@ -35,6 +36,7 @@ final readonly class BaseAccessController
         private JWTTokenManagerInterface $jwtTokenManager,
         private CsrfCookieTokenSigner $csrfCookieTokenSigner,
         private AuthCookieFactory $authCookieFactory,
+        private SecurityAuditLoggerInterface $auditLogger,
     ) {
     }
 
@@ -63,6 +65,11 @@ final readonly class BaseAccessController
         // de survivre au BEARER qu'il accompagne.
         $response->headers->setCookie($this->authCookieFactory->bearer($jwt, $expiresAt));
         $response->headers->setCookie($this->authCookieFactory->xsrf($this->csrfCookieTokenSigner->issue(), $expiresAt));
+
+        // Journal de sécurité (D5) : l'identifiant `guest-…` du jeton, jamais
+        // le jeton lui-même — c'est lui qu'on retrouvera comme auteur d'un
+        // éventuel 403 backoffice pendant ses 15 minutes.
+        $this->auditLogger->baseAccessIssued($guest->getUserIdentifier());
 
         return $response;
     }
