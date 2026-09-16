@@ -115,36 +115,52 @@ pipeline qui construit quatre images pour chaque tentative.
   6. `git merge --ff-only main` dans `develop`, push ; fast-forward impossible → **arrêt propre**,
      le résumé demande une PR `main` → `develop`. Aucune étape n'annule les précédentes ; un
      re-run reprend là où ça s'est arrêté.
-  Le job est le seul à porter `contents: write` ; il pousse avec `GITHUB_TOKEN`, dont les push
-  **ne déclenchent aucun workflow** (règle GitHub), ce qui rend le `[skip ci]` de l'étape 4 une
-  ceinture en plus des bretelles de D7.
+  Le job pousse **avec une clé de déploiement dédiée** (`RELEASE_DEPLOY_KEY`, clé privée SSH en
+  secret du dépôt, sa moitié publique déclarée deploy key en écriture), seul acteur de bypass
+  des rulesets de D9 — un ruleset de dépôt personnel refuse l'application `github-actions`
+  (vérifié le 2026-09-16, §10). Il n'a donc pas besoin de `contents: write` pour pousser, mais
+  le garde pour `gh release create`. Les push d'une deploy key **déclenchent les workflows**,
+  contrairement à ceux de `GITHUB_TOKEN` : le `[skip ci]` de l'étape 4 est **indispensable**
+  (sans lui, le commit de copie relance la phase 3, que D7 refuserait, mais un run rouge pour
+  rien), le push de l'étape 6 relance une phase 1 sur `develop` (sain), et le push du tag ne
+  lance rien puisque plus aucun tag n'est un déclencheur.
 - **D9 — Réglages GitHub, manuels, avant la première release.** (a) Merge de PR : **commit de
   merge seulement**, squash et rebase désactivés (sinon `HEAD^2` n'existe pas et D7 ne retrouve
   plus l'image). (b) `main` protégée par un ruleset : PR obligatoire, check requis =
-  `audit-preprod` et `smoke-test-preprod` sur le SHA de tête, suppression interdite, force-push
-  interdit, **bypass pour l'application `github-actions`** (le commit de copie de D8 doit passer,
-  à vérifier en M1, repli si refusé : la copie se fait sur `develop` seulement). (c) `develop`
-  protégée : PR obligatoire, check requis = la phase 1. (d) Environnement `production` : les
-  secrets restent, le **reviewer requis est retiré** — le merge est le stop, deux stops pour une
-  personne c'est un de trop. (e) `delete_branch_on_merge` reste à `false` : c'est D8 qui supprime
-  la branche, après la prod, pas le merge. (f) Un ruleset sur les tags `v*` : création réservée
-  à `github-actions`, suppression et déplacement interdits à tous.
+  `audit-preprod` et `smoke-test-preprod` sur le SHA de tête, `allowed_merge_methods: [merge]`
+  (la règle `pull_request` d'un ruleset le porte, en plus du réglage global), suppression
+  interdite, force-push interdit, **bypass : les deploy keys** (`actor_type: DeployKey`, seul
+  acteur accepté sur un dépôt personnel — `github-actions` est refusé, §10). (c) `develop`
+  protégée : PR obligatoire, check requis = la phase 1, même bypass. (d) Environnement
+  `production` : les secrets restent, le **reviewer requis est retiré** — le merge est le stop,
+  deux stops pour une personne c'est un de trop. (e) `delete_branch_on_merge` reste à `false` :
+  c'est D8 qui supprime la branche, après la prod, pas le merge. (f) Un ruleset sur les tags
+  `v*` : création, suppression et déplacement interdits à tous, bypass deploy keys — seul le job
+  pose un tag. (g) La deploy key `release-bot` : paire ed25519 générée hors dépôt, publique en
+  deploy key **avec écriture**, privée en secret `RELEASE_DEPLOY_KEY` ; à faire tourner comme
+  les kubeconfigs, jamais réutilisée ailleurs.
 - **D10 — Le flux de fin, vu de l'humain, tient en six gestes.** `git switch develop && git
   pull` ; `git switch -c release/$(tools/next-version.sh)` ; écrire `RELEASE_NOTES.md` ; ouvrir
   la PR vers `main` en brouillon ; retoucher jusqu'au vert ; passer la PR en prête et merger. Tout
   le reste est la machine. Il n'y a plus de `git tag` dans `CLAUDE.md`.
 
-### Contrats externes (à vérifier en M1)
+### Contrats externes (vérifiés le 2026-09-16, T3)
 
-- Les push faits avec `GITHUB_TOKEN` ne déclenchent pas de workflow : documenté par GitHub,
-  stable, à citer dans le job. Le `[skip ci]` reste par défense en profondeur.
-- Un ruleset accepte l'application `github-actions` dans sa liste de bypass : **à confirmer** sur
-  ce dépôt (compte personnel). Sinon, repli de D9 (b).
-- `gh run list --commit <sha> --branch <branche> --status success --workflow pipeline.yml`
-  suffit à D7 (b) avec `actions: read` ; à confirmer que le run annulé par `concurrency` n'est
-  pas compté (il est `cancelled`, pas `success`).
-- L'existence d'un manifeste sur GHCR se vérifie par `docker manifest inspect` après `login`
-  (`packages: read`), sans pull.
+- **Push `GITHUB_TOKEN`** : « events triggered by the `GITHUB_TOKEN` will not create a new
+  workflow run », exceptions `workflow_dispatch`, `repository_dispatch` et les PR créées par un
+  workflow (docs GitHub, « Trigger a workflow »). Sans objet pour D8 depuis le choix de la deploy
+  key, mais vrai pour tout ce que le job ferait encore avec ce token. `[skip ci]` s'applique aux
+  événements `push` et `pull_request` (docs « Skip workflow runs »).
+- **Bypass de ruleset** : `actor_type: Integration` avec l'application `github-actions` (id
+  15368) → **422 « Actor GitHub Actions integration must be part of the ruleset source or owner
+  organization »** sur ce dépôt personnel. `actor_type: DeployKey` → accepté, sur un ruleset de
+  branche comme de tag (créés en `enforcement: disabled`, relus, supprimés). D'où D8/D9.
+- **`gh run list --workflow pipeline.yml --branch <b> --commit <sha> --status success`** :
+  fonctionne (gh 2.46 et suivants) ; un run `in_progress` ou `cancelled` n'est pas compté
+  (vérifié sur un commit en cours et sur un run annulé). Un commit a aujourd'hui deux runs, `push`
+  et `pull_request` : le doublon que D5 retire.
+- **`docker manifest inspect ghcr.io/…:<tag>`** : code 0 si le manifeste existe, « manifest
+  unknown » sinon, **sans login** puisque les paquets sont publics (k8s/README §1bis).
 
 ## 3. Carte des capacités (ordre de construction)
 
@@ -302,6 +318,13 @@ possible : 200 derniers commits 100 % Conventional Commits.
 **Audit de sensibilité avant publication** : aucun secret, aucune adresse, aucun nom de
 personne ; les noms de domaine cités sont ceux déjà présents dans `pipeline.yml` public.
 
-**À valider avant le plan** : le retrait du déclencheur `pull_request` (D5), l'exception hotfix
-(D1), le repli de D9 (b) si le bypass `github-actions` est refusé, `actionlint` en phase 1 (§8),
-et l'extraction des gardes dans `tools/verify-release-merge.sh` (§8).
+**Validés le 2026-09-16** (avant le plan) : le retrait du déclencheur `pull_request` (D5),
+l'exception hotfix (D1), `actionlint` en phase 1 (§8), l'extraction des gardes dans
+`tools/verify-release-merge.sh` (§8).
+
+**2026-09-16, T3** — Contrats externes vérifiés (§2). Le bypass `github-actions` étant refusé,
+trois sorties ont été comparées : (1) deploy key en bypass, tout automatique et tout verrouillé
+au prix d'un secret ; (2) aucun push du robot sur une branche protégée, copie des notes par
+l'humain et PR `main` → `develop` ouverte par le job ; (3) rulesets sans « PR obligatoire »,
+la garde D7 seule refuse un push direct. **Choix : (1)**, D8 et D9 amendées en conséquence
+(deploy key `release-bot`, secret `RELEASE_DEPLOY_KEY`, `[skip ci]` désormais indispensable).

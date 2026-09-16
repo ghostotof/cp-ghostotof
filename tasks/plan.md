@@ -64,9 +64,9 @@ T3 contrats externes vérifiés ─────┤
 ## Liste des tâches
 
 ### Phase A — Socle testable hors CI (M1)
-- [ ] Tâche 1 (#195) : `tools/next-version.sh` et son test
-- [ ] Tâche 2 (#196) : `tools/verify-release-merge.sh` et son test
-- [ ] Tâche 3 (#197) : contrats externes vérifiés et consignés (§2 « Contrats externes »)
+- [x] Tâche 1 (#195) : `tools/next-version.sh` et son test
+- [x] Tâche 2 (#196) : `tools/verify-release-merge.sh` et son test
+- [x] Tâche 3 (#197) : contrats externes vérifiés et consignés (§2 « Contrats externes »)
 
 ### Checkpoint 1 — Socle
 - [ ] Les deux scripts répondent aux cas du §4 M1 et aux gardes D7 sur un dépôt temporaire.
@@ -115,7 +115,7 @@ T3 contrats externes vérifiés ─────┤
 
 | Risque | Impact | Parade |
 |---|---|---|
-| Le ruleset de `main` refuse le push de `github-actions` (commit de copie D8) | Moyen : `finalize-release` s'arrête à l'étape 4 | Tâche 3 le vérifie avant ; repli D9 (b) : copie sur `develop` seulement |
+| ~~Le ruleset de `main` refuse le push de `github-actions`~~ **Confirmé en T3** : refusé sur un dépôt personnel | Réglé : le job pousse avec une deploy key en bypass (choix du 2026-09-16, spec D8/D9) | Secret `RELEASE_DEPLOY_KEY` à créer en T9 ; `[skip ci]` obligatoire sur le commit de copie (T8) |
 | Phase 3 jamais jouée avant la première vraie release | Élevé si une garde est fausse : prod non déployée (jamais mal déployée, fail-closed) | Gardes testées unitairement (T2) ; première release faite un jour calme, `rollback-preprod` déjà validé en T6 ; l'ancien chemin `kustomize`/migration est inchangé |
 | `concurrency` annule un run pendant `deploy-preprod` | Faible : préprod à moitié déployée quelques minutes | Le run suivant redéploie ; jamais d'annulation sur `main` |
 | Deux releases ouvertes en même temps | Moyen : même version calculée, images en collision impossible (SHA différent) mais préprod écrasée | Règle documentée : une release à la fois ; le run le dit si une autre `release/*` existe (avertissement, pas blocage) |
