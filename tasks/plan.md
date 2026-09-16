@@ -61,9 +61,9 @@ T3 contrats externes vérifiés ─────┤
 ## Liste des tâches
 
 ### Phase A — Socle testable hors CI (M1)
-- [ ] Tâche 1 : `tools/next-version.sh` et son test
-- [ ] Tâche 2 : `tools/verify-release-merge.sh` et son test
-- [ ] Tâche 3 : contrats externes vérifiés et consignés (§2 « Contrats externes »)
+- [ ] Tâche 1 (#195) : `tools/next-version.sh` et son test
+- [ ] Tâche 2 (#196) : `tools/verify-release-merge.sh` et son test
+- [ ] Tâche 3 (#197) : contrats externes vérifiés et consignés (§2 « Contrats externes »)
 
 ### Checkpoint 1 — Socle
 - [ ] Les deux scripts répondent aux cas du §4 M1 et aux gardes D7 sur un dépôt temporaire.
@@ -72,11 +72,11 @@ T3 contrats externes vérifiés ─────┤
 - [ ] Revue humaine.
 
 ### Phase B — Phase 1 de la pipeline (M2)
-- [ ] Tâche 4 : déclencheurs D5, `concurrency`, `run-name`, job `tools-tests` (+ `actionlint`)
+- [ ] Tâche 4 (#198) : déclencheurs D5, `concurrency`, `run-name`, job `tools-tests` (+ `actionlint`)
 
 ### Phase C — Phase 2 sur `release/**` (M3)
-- [ ] Tâche 5 : job `release-version` et `build-images` en `<version>-<sha>` sans réécriture
-- [ ] Tâche 6 : préprod, smoke, audit, rollback gardés par `release/**`, run qui s'arrête
+- [ ] Tâche 5 (#199) : job `release-version` et `build-images` en `<version>-<sha>` sans réécriture
+- [ ] Tâche 6 (#200) : préprod, smoke, audit, rollback gardés par `release/**`, run qui s'arrête
 
 ### Checkpoint 2 — Une release déploie la préprod et s'arrête
 - [ ] `release/0.x.y` de test : run vert, quatre images sur GHCR, préprod sur `-preprod`, aucun
@@ -85,12 +85,12 @@ T3 contrats externes vérifiés ─────┤
 - [ ] Revue humaine.
 
 ### Phase D — Phase 3 sur `main` (M4)
-- [ ] Tâche 7 : `deploy-prod` gardé (D7), plus de reconstruction, `create-release` retiré
-- [ ] Tâche 8 : `finalize-release` (D8), six étapes idempotentes
+- [ ] Tâche 7 (#201) : `deploy-prod` gardé (D7), plus de reconstruction, `create-release` retiré
+- [ ] Tâche 8 (#202) : `finalize-release` (D8), six étapes idempotentes
 
 ### Phase E — Réglages et documentation (M5)
-- [ ] Tâche 9 : wizard des réglages GitHub (D9) et exécution
-- [ ] Tâche 10 : documentation (`CLAUDE.md`, `README.md`, `k8s/README.md`, en-tête de
+- [ ] Tâche 9 (#203) : wizard des réglages GitHub (D9) et exécution
+- [ ] Tâche 10 (#204) : documentation (`CLAUDE.md`, `README.md`, `k8s/README.md`, en-tête de
       `pipeline.yml`) + archivage spec/`tasks/` (PR de clôture)
 
 ### Checkpoint 3 — Prêt pour la première release
@@ -100,7 +100,7 @@ T3 contrats externes vérifiés ─────┤
 - [ ] Revue humaine, merge de clôture (spec + `tasks/` archivés).
 
 ### Phase F — Première release (M6)
-- [ ] Tâche 11 : `release/0.14.0` (ou la version calculée), `RELEASE_NOTES.md`, PR, merge,
+- [ ] Tâche 11 (#205) : `release/0.14.0` (ou la version calculée), `RELEASE_NOTES.md`, PR, merge,
       contrôle des sept résultats de D8
 
 ### Checkpoint final

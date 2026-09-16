@@ -3,7 +3,7 @@
 Issues GitHub `spec-0006` : numéros à reporter à la création. Une branche et une PR par tâche,
 empilées vers `develop`.
 
-## Tâche 1 : `tools/next-version.sh` et son test
+## Tâche 1 (#195) : `tools/next-version.sh` et son test
 
 **Description :** Le calcul de version D2, seule implémentation : dernier tag `v*` joignable
 depuis `origin/main`, commits `main..HEAD` hors merges, `BREAKING`/`!` → majeur (ramené à mineur
@@ -22,7 +22,7 @@ en `0.x`), `feat` → mineur, sinon correctif ; aucun commit → échec explicit
 **Dépendances :** aucune. **Fichiers :** `tools/next-version.sh`, `tools/tests/next-version.test.sh`.
 **Taille :** S.
 
-## Tâche 2 : `tools/verify-release-merge.sh` et son test
+## Tâche 2 (#196) : `tools/verify-release-merge.sh` et son test
 
 **Description :** Les gardes locales de D7 : `HEAD` est un commit de merge (sinon échec nommant
 le SHA), `RELEASE_SHA=HEAD^2`, `RELEASE_NOTES.md` lu à `RELEASE_SHA`, titre `# vX.Y.Z — …`
@@ -42,7 +42,7 @@ Tâche 5 (même titre attendu).
 **Dépendances :** aucune. **Fichiers :** `tools/verify-release-merge.sh`,
 `tools/tests/verify-release-merge.test.sh`. **Taille :** S.
 
-## Tâche 3 : contrats externes vérifiés
+## Tâche 3 (#197) : contrats externes vérifiés
 
 **Description :** Répondre aux quatre points « Contrats externes » de la spec §2, avec preuve
 (commande `gh api` ou doc GitHub citée), et l'écrire dans la spec §10. Le plus important : un
@@ -62,7 +62,7 @@ dépôt ? Test possible sans effet : `gh api --method POST repos/…/rulesets` a
 ## Checkpoint 1 — Socle (après T1–T3)
 - [ ] Tests shell verts en local ; contrats consignés ; revue humaine.
 
-## Tâche 4 : déclencheurs, `concurrency`, `run-name`, job `tools-tests`
+## Tâche 4 (#198) : déclencheurs, `concurrency`, `run-name`, job `tools-tests`
 
 **Description :** `on.push.branches` = `main`, `develop`, `feature/**`, `fix/**`, `hotfix/**`,
 `release/**`, `dependabot/**` ; plus de `tags`, plus de `pull_request`. `concurrency` par
@@ -86,7 +86,7 @@ amendée pour `dependabot/**`.
 **Dépendances :** T1, T2 (pour `tools-tests`). **Fichiers :** `.github/workflows/pipeline.yml`,
 `.claude/specs/0006-release-workflow.md`. **Taille :** S.
 
-## Tâche 5 : `release-version` et `build-images` sur `release/**`
+## Tâche 5 (#199) : `release-version` et `build-images` sur `release/**`
 
 **Description :** Job `release-version` (`if: startsWith(github.ref, 'refs/heads/release/')`,
 `needs` la phase 1) : `tools/next-version.sh` vs nom de branche vs titre de `RELEASE_NOTES.md`,
@@ -107,7 +107,7 @@ noms.
 
 **Dépendances :** T4. **Fichiers :** `.github/workflows/pipeline.yml`. **Taille :** S.
 
-## Tâche 6 : préprod, smoke, audit, rollback sur `release/**`
+## Tâche 6 (#200) : préprod, smoke, audit, rollback sur `release/**`
 
 **Description :** `deploy-preprod`, `smoke-test-preprod`, `audit-preprod`, `rollback-preprod`
 regardés sur `refs/heads/release/`, `TAG` lu depuis la sortie de `release-version`. Les étapes
@@ -128,7 +128,7 @@ regardés sur `refs/heads/release/`, `TAG` lu depuis la sortie de `release-versi
 ## Checkpoint 2 — Une release déploie la préprod et s'arrête (après T4–T6)
 - [ ] Critères §4 M2 et M3 de la spec cochés avec preuves ; revue humaine.
 
-## Tâche 7 : `deploy-prod` gardé sur `main`
+## Tâche 7 (#201) : `deploy-prod` gardé sur `main`
 
 **Description :** `deploy-prod` `if: github.ref == 'refs/heads/main'`, `needs` la phase 1,
 sans `environment.reviewers` (réglage côté GitHub en T9), étapes : `tools/verify-release-merge.sh`
@@ -146,7 +146,7 @@ success --workflow pipeline.yml` non vide → déploiement inchangé avec `$IMAG
 
 **Dépendances :** T6, T2. **Fichiers :** `.github/workflows/pipeline.yml`. **Taille :** S.
 
-## Tâche 8 : `finalize-release`
+## Tâche 8 (#202) : `finalize-release`
 
 **Description :** Job `needs: [deploy-prod]`, `permissions: contents: write`, `fetch-depth: 0`,
 les six étapes de D8 dans l'ordre, chacune idempotente, chacune écrivant une ligne dans
@@ -167,7 +167,7 @@ avec la demande de PR `main` → `develop`. Commit de copie avec `[skip ci]`. L'
 **Dépendances :** T7. **Fichiers :** `.github/workflows/pipeline.yml`, `tools/finalize-release.sh`,
 `tools/tests/finalize-release.test.sh`. **Taille :** M.
 
-## Tâche 9 : wizard des réglages GitHub (D9) et exécution
+## Tâche 9 (#203) : wizard des réglages GitHub (D9) et exécution
 
 **Description :** `tools/github-settings-wizard.sh` (skill `wizard`) guide, dans l'ordre : merge
 commit seul ; ruleset `main` (PR, checks `smoke-test-preprod` + `audit-preprod`, pas de
@@ -187,7 +187,7 @@ checks phase 1) ; retrait du reviewer de `production` ; ruleset tags `v*` ; vér
 
 **Dépendances :** T3, T8. **Fichiers :** `tools/github-settings-wizard.sh`. **Taille :** S.
 
-## Tâche 10 : documentation et archivage (PR de clôture)
+## Tâche 10 (#204) : documentation et archivage (PR de clôture)
 
 **Description :** `CLAUDE.md` : objectif 10 réécrit (branches D1), « Deployment invariants »
 (le bloc `git tag -a` remplacé par le cycle D10, les leçons gardées : image périmée, notes
@@ -210,7 +210,7 @@ avec mise à jour du README de l'archive.
 ## Checkpoint 3 — Prêt pour la première release (après T7–T10)
 - [ ] Critères §4 M4 (partie statique) et M5 cochés ; merge de clôture dans `develop`.
 
-## Tâche 11 : première release sous le nouveau flux (M6)
+## Tâche 11 (#205) : première release sous le nouveau flux (M6)
 
 **Description :** Depuis `develop` à jour : `tools/next-version.sh`, `release/<version>`,
 `RELEASE_NOTES.md` (les changements depuis v0.13.2 : #192, spec 0006, le flux lui-même), PR vers
