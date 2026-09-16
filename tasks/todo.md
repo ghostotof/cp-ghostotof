@@ -97,14 +97,17 @@ certains présents → échec (état incohérent), aucun → build + push. Résu
 noms.
 
 **Critères d'acceptation :**
-- [ ] `release/<bonne version>` + titre cohérent : vert, images poussées.
-- [ ] Nom de branche ou titre en désaccord : `release-version` rouge, message nommant les
-      trois valeurs, `build-images` non lancé.
-- [ ] Re-run du même commit : `build-images` vert sans push.
+- [x] `release/<bonne version>` + titre cohérent : vert, images poussées (run 35093215245 sur
+      `release/0.14.0` @ 2c86b65, quatre images `0.14.0-2c86b65`).
+- [x] Nom de branche ou titre en désaccord : `release-version` rouge, message nommant les
+      trois valeurs, `build-images` non lancé (run 35093217771 sur `release/0.13.3`).
+- [x] Re-run du même commit : `build-images` vert sans push (tentative 2 du run 35093215245,
+      quatre « présente », étapes de build `skipped`).
 
 **Vérification :**
-- [ ] `gh api` sur les packages GHCR montre les quatre tags `<version>-<sha>`.
-- [ ] Runs consignés dans la PR ; branche `release/*` de test supprimée.
+- [x] `gh api` sur les packages GHCR montre les quatre tags `<version>-<sha>`.
+- [x] Runs consignés dans la PR #210 ; branches `release/*` de test supprimées, images de test
+      retirées de GHCR.
 
 **Dépendances :** T4. **Fichiers :** `.github/workflows/pipeline.yml`. **Taille :** S.
 

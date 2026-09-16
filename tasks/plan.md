@@ -78,7 +78,7 @@ T3 contrats externes vérifiés ─────┤
 - [x] Tâche 4 (#198) : déclencheurs D5, `concurrency`, `run-name`, job `tools-tests` (+ `actionlint`)
 
 ### Phase C — Phase 2 sur `release/**` (M3)
-- [ ] Tâche 5 (#199) : job `release-version` et `build-images` en `<version>-<sha>` sans réécriture
+- [x] Tâche 5 (#199) : job `release-version` et `build-images` en `<version>-<sha>` sans réécriture
 - [ ] Tâche 6 (#200) : préprod, smoke, audit, rollback gardés par `release/**`, run qui s'arrête
 
 ### Checkpoint 2 — Une release déploie la préprod et s'arrête
