@@ -1,7 +1,8 @@
 # Todo — spec 0006, flux de release
 
-Issues GitHub `spec-0006` : numéros à reporter à la création. Une branche et une PR par tâche,
-empilées vers `develop`.
+Issues GitHub `spec-0006` : numéros reportés. Une branche et une PR par tâche, empilées : la PR
+de chaque tâche vise la branche de la tâche précédente, T1 vise `feature/release-workflow-spec` ;
+`develop` ne reçoit que la PR #194, à la clôture.
 
 ## Tâche 1 (#195) : `tools/next-version.sh` et son test
 
@@ -42,7 +43,7 @@ Tâche 5 (même titre attendu).
 **Dépendances :** aucune. **Fichiers :** `tools/verify-release-merge.sh`,
 `tools/tests/verify-release-merge.test.sh`. **Taille :** S.
 
-## Tâche 3 (#197) : contrats externes vérifiés
+## Tâche 3 (#197) : contrats externes vérifiés — fait le 2026-09-16, choix (1) deploy key
 
 **Description :** Répondre aux quatre points « Contrats externes » de la spec §2, avec preuve
 (commande `gh api` ou doc GitHub citée), et l'écrire dans la spec §10. Le plus important : un
@@ -151,7 +152,10 @@ success --workflow pipeline.yml` non vide → déploiement inchangé avec `$IMAG
 **Description :** Job `needs: [deploy-prod]`, `permissions: contents: write`, `fetch-depth: 0`,
 les six étapes de D8 dans l'ordre, chacune idempotente, chacune écrivant une ligne dans
 `$GITHUB_STEP_SUMMARY`. Étape 6 en `--ff-only`, échec de fast-forward = arrêt propre **vert**
-avec la demande de PR `main` → `develop`. Commit de copie avec `[skip ci]`. L'artefact
+avec la demande de PR `main` → `develop`. Les push (tag, copie, `develop`) se font par SSH avec
+la deploy key (`RELEASE_DEPLOY_KEY`, `webfactory/ssh-agent` figé sur un SHA ou `GIT_SSH_COMMAND`
+avec un fichier temporaire à droits 600) : **`[skip ci]` obligatoire** sur le commit de copie,
+ses push déclenchent les workflows. L'artefact
 `social-preview` reste produit par `build-images` (T5) et rattaché ici.
 
 **Critères d'acceptation :**
@@ -172,8 +176,11 @@ avec la demande de PR `main` → `develop`. Commit de copie avec `[skip ci]`. L'
 **Description :** `tools/github-settings-wizard.sh` (skill `wizard`) guide, dans l'ordre : merge
 commit seul ; ruleset `main` (PR, checks `smoke-test-preprod` + `audit-preprod`, pas de
 suppression ni force-push, bypass `github-actions` ou repli de T3) ; ruleset `develop` (PR,
-checks phase 1) ; retrait du reviewer de `production` ; ruleset tags `v*` ; vérifie
-`delete_branch_on_merge: false`. Chaque étape est idempotente et vérifiable par `gh api`.
+checks phase 1) ; retrait du reviewer de `production` ; ruleset tags `v*` (création, suppression,
+déplacement interdits) ; vérifie `delete_branch_on_merge: false`. **Avant les rulesets** : générer la
+paire ed25519 `release-bot` hors dépôt, déclarer la publique en deploy key avec écriture, poser la
+privée en secret `RELEASE_DEPLOY_KEY`, effacer le fichier local ; bypass `DeployKey` sur les trois
+rulesets. Chaque étape est idempotente et vérifiable par `gh api`.
 
 **Critères d'acceptation :**
 - [ ] Après exécution, `gh api repos/…` montre `allow_squash_merge: false`,

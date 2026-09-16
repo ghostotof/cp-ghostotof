@@ -1165,6 +1165,12 @@ feature branch, for the duration of the feature, and never reach `develop`** (ru
 ready to merge. Workflow:
 
 1. During the feature, commit `tasks/` on the feature branch as needed (checkpoints, ticked tasks).
+   **Every task of a spec lands on the feature branch that carries the spec, never directly on
+   `develop`** (rule set on 2026-09-16): a task gets its own branch, stacked on the previous
+   task's, and its PR targets the previous task's branch (the first one targets the spec's
+   branch); when a task merges, the next PR is retargeted **before** its base is deleted (see
+   the stacked-PR trap in memory). `develop` receives the feature **once**, through the PR the
+   spec's branch opened at the start, which becomes the closing PR of step 2.
 2. In the merge into `develop` that **fully closes** the feature, build the archive folder
    `.claude/specs/archive/<YYYY-MM-DD>-<slug>/` (closing date, one folder per feature — see the
    `README.md` there for the existing ones) with, **since 2026-09-16** (issue #192):
