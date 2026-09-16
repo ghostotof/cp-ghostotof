@@ -315,8 +315,11 @@ jobs:
         run: |
           tools/tests/next-version.test.sh
           tools/tests/verify-release-merge.test.sh
+      # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
+      # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
+      # ce job n'a pas vocation à réécrire.
       - name: shellcheck (préinstallé sur le runner)
-        run: shellcheck -x tools/*.sh tools/tests/*.sh
+        run: shellcheck -x --severity=warning tools/*.sh tools/tests/*.sh
       # Image officielle, figée sur le digest de son index multi-arch (v1.7.12).
       # Elle embarque shellcheck et pyflakes, donc les `run:` de ce fichier sont
       # analysés aussi.
