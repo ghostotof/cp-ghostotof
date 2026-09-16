@@ -64,8 +64,14 @@ for attempt in $(seq 1 "$attempts"); do
   status="${response##*$'\n'}"
   body="${response%$'\n'*}"
 
+  # Le corps est toujours montré, tronqué : un 401 de la Basic Auth de
+  # l'ingress (HTML nginx) et un 401 de l'application (JSON Lexik) se
+  # ressemblent au code près, et c'est la première chose à savoir quand ce
+  # test échoue.
+  excerpt="$(printf '%s' "$body" | tr '\n' ' ' | cut -c1-160)"
+
   if [ "$status" != "401" ]; then
-    echo "tentative $attempt : $status reçu, 401 attendu (corps : ${body:0:200})" >&2
+    echo "tentative $attempt : $status reçu, 401 attendu (corps : $excerpt)" >&2
     exit 1
   fi
 
@@ -74,11 +80,11 @@ for attempt in $(seq 1 "$attempts"); do
     echo "tentative $attempt : throttling actif (« Too many failed login attempts »)"
     break
   fi
-  echo "tentative $attempt : 401, pas encore freinée"
+  echo "tentative $attempt : 401, pas encore freinée (corps : $excerpt)"
 done
 
 if [ "$throttled_at" -eq 0 ]; then
-  echo "ÉCHEC : $attempts logins erronés sans jamais atteindre le throttling — l'état des limiteurs n'est pas persisté (ADR 0005, audit 2026-09-16 A1)." >&2
+  echo "ÉCHEC : $attempts logins erronés sans jamais atteindre le throttling — l'état des limiteurs n'est pas persisté (ADR 0005, audit 2026-09-16 A1). Si les corps ci-dessus ne sont pas le JSON de l'application, le 401 vient d'ailleurs (Basic Auth de l'ingress ?)." >&2
   exit 1
 fi
 
