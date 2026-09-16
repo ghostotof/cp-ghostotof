@@ -1,0 +1,231 @@
+# Todo — spec 0006, flux de release
+
+Issues GitHub `spec-0006` : numéros à reporter à la création. Une branche et une PR par tâche,
+empilées vers `develop`.
+
+## Tâche 1 : `tools/next-version.sh` et son test
+
+**Description :** Le calcul de version D2, seule implémentation : dernier tag `v*` joignable
+depuis `origin/main`, commits `main..HEAD` hors merges, `BREAKING`/`!` → majeur (ramené à mineur
+en `0.x`), `feat` → mineur, sinon correctif ; aucun commit → échec explicite. Le script fait son
+`git fetch origin main --tags` sauf `--no-fetch` (pour le test).
+
+**Critères d'acceptation :**
+- [ ] Les cas de la spec §4 M1 passent (`0.13.3`, `0.14.0`, majeur ramené, `2.0.0` en `1.x`,
+      « rien à livrer », merge ignoré, commit hors convention ignoré avec avertissement).
+- [ ] `tools/next-version.sh` sur `develop` aujourd'hui répond `0.14.0`.
+
+**Vérification :**
+- [ ] `tools/tests/next-version.test.sh` vert, sur un dépôt temporaire, sans toucher au dépôt courant.
+- [ ] `shellcheck` propre sur les deux fichiers.
+
+**Dépendances :** aucune. **Fichiers :** `tools/next-version.sh`, `tools/tests/next-version.test.sh`.
+**Taille :** S.
+
+## Tâche 2 : `tools/verify-release-merge.sh` et son test
+
+**Description :** Les gardes locales de D7 : `HEAD` est un commit de merge (sinon échec nommant
+le SHA), `RELEASE_SHA=HEAD^2`, `RELEASE_NOTES.md` lu à `RELEASE_SHA`, titre `# vX.Y.Z — …`
+obligatoire, `VERSION` extraite, `IMAGE_TAG=<version>-<sha court>`. Sortie au format
+`clé=valeur` pour `$GITHUB_OUTPUT`. Optionnellement `--check-branch release/<version>` pour la
+Tâche 5 (même titre attendu).
+
+**Critères d'acceptation :**
+- [ ] Non-merge → échec ; merge sans `RELEASE_NOTES.md` → échec ; titre mal formé → échec ;
+      cas nominal → les trois valeurs.
+- [ ] Le message d'échec nomme toujours la valeur lue et la valeur attendue.
+
+**Vérification :**
+- [ ] `tools/tests/verify-release-merge.test.sh` vert sur un dépôt temporaire.
+- [ ] `shellcheck` propre.
+
+**Dépendances :** aucune. **Fichiers :** `tools/verify-release-merge.sh`,
+`tools/tests/verify-release-merge.test.sh`. **Taille :** S.
+
+## Tâche 3 : contrats externes vérifiés
+
+**Description :** Répondre aux quatre points « Contrats externes » de la spec §2, avec preuve
+(commande `gh api` ou doc GitHub citée), et l'écrire dans la spec §10. Le plus important : un
+ruleset accepte-t-il l'application `github-actions` (`actor_type: Integration`) en bypass sur ce
+dépôt ? Test possible sans effet : `gh api --method POST repos/…/rulesets` avec
+`enforcement: disabled`, puis suppression.
+
+**Critères d'acceptation :**
+- [ ] Les quatre réponses sont dans la spec §10 avec la date et la preuve.
+- [ ] Si le bypass est refusé, D9 (b) est amendée vers son repli dans la même PR.
+
+**Vérification :**
+- [ ] Le ruleset de test n'existe plus (`gh api repos/…/rulesets` vide ou inchangé).
+
+**Dépendances :** aucune. **Fichiers :** `.claude/specs/0006-release-workflow.md`. **Taille :** XS.
+
+## Checkpoint 1 — Socle (après T1–T3)
+- [ ] Tests shell verts en local ; contrats consignés ; revue humaine.
+
+## Tâche 4 : déclencheurs, `concurrency`, `run-name`, job `tools-tests`
+
+**Description :** `on.push.branches` = `main`, `develop`, `feature/**`, `fix/**`, `hotfix/**`,
+`release/**`, `dependabot/**` ; plus de `tags`, plus de `pull_request`. `concurrency` par
+`github.ref` avec `cancel-in-progress` sauf sur `main`. `run-name` avec la branche (la version
+et le SHA sur `release/**` viennent en T5, `run-name` ne peut pas exécuter le script : afficher
+`release/<version>` suffit, le nom de branche la porte). Nouveau job `tools-tests` : les tests
+shell de T1/T2 + `actionlint` (figé sur un SHA). L'en-tête de `pipeline.yml` réécrit. Spec D5
+amendée pour `dependabot/**`.
+
+**Critères d'acceptation :**
+- [ ] Un push sur la branche de la tâche lance exactement sept jobs (six + `tools-tests`).
+- [ ] Un second push annule le premier run ; un tag de test (`test-t4`, supprimé ensuite)
+      ne lance rien.
+- [ ] Les jobs gardés par `refs/tags/` sont toujours présents et jamais lancés (état
+      transitoire assumé jusqu'à T8).
+
+**Vérification :**
+- [ ] `gh run list --branch <branche>` et `gh run view` consignés dans la PR.
+- [ ] `actionlint` propre en local sur le fichier.
+
+**Dépendances :** T1, T2 (pour `tools-tests`). **Fichiers :** `.github/workflows/pipeline.yml`,
+`.claude/specs/0006-release-workflow.md`. **Taille :** S.
+
+## Tâche 5 : `release-version` et `build-images` sur `release/**`
+
+**Description :** Job `release-version` (`if: startsWith(github.ref, 'refs/heads/release/')`,
+`needs` la phase 1) : `tools/next-version.sh` vs nom de branche vs titre de `RELEASE_NOTES.md`,
+sorties `version`, `image_tag`. `build-images` `needs: [release-version]`, gardé pareil, `TAG=<version>-<sha>` ;
+avant le build, `docker manifest inspect` sur les quatre noms : tous présents → no-op vert,
+certains présents → échec (état incohérent), aucun → build + push. Résumé du run avec les quatre
+noms.
+
+**Critères d'acceptation :**
+- [ ] `release/<bonne version>` + titre cohérent : vert, images poussées.
+- [ ] Nom de branche ou titre en désaccord : `release-version` rouge, message nommant les
+      trois valeurs, `build-images` non lancé.
+- [ ] Re-run du même commit : `build-images` vert sans push.
+
+**Vérification :**
+- [ ] `gh api` sur les packages GHCR montre les quatre tags `<version>-<sha>`.
+- [ ] Runs consignés dans la PR ; branche `release/*` de test supprimée.
+
+**Dépendances :** T4. **Fichiers :** `.github/workflows/pipeline.yml`. **Taille :** S.
+
+## Tâche 6 : préprod, smoke, audit, rollback sur `release/**`
+
+**Description :** `deploy-preprod`, `smoke-test-preprod`, `audit-preprod`, `rollback-preprod`
+regardés sur `refs/heads/release/`, `TAG` lu depuis la sortie de `release-version`. Les étapes
+`kustomize`/seed/migration inchangées. Le run se termine après `audit-preprod`. Avertissement
+(pas d'échec) si une autre branche `release/*` existe sur le dépôt.
+
+**Critères d'acceptation :**
+- [ ] Sur une `release/*` de test : préprod tourne avec `<version>-<sha>-preprod`
+      (`kubectl get deploy backend -o jsonpath`), smoke et audit verts, aucun job en attente.
+- [ ] Un smoke test forcé en échec (variante jetable) déclenche `rollback-preprod`.
+
+**Vérification :**
+- [ ] Runs et `jsonpath` consignés dans la PR ; branche de test supprimée ; préprod remise sur la
+      release courante si besoin (`rollout undo`).
+
+**Dépendances :** T5. **Fichiers :** `.github/workflows/pipeline.yml`. **Taille :** S.
+
+## Checkpoint 2 — Une release déploie la préprod et s'arrête (après T4–T6)
+- [ ] Critères §4 M2 et M3 de la spec cochés avec preuves ; revue humaine.
+
+## Tâche 7 : `deploy-prod` gardé sur `main`
+
+**Description :** `deploy-prod` `if: github.ref == 'refs/heads/main'`, `needs` la phase 1,
+sans `environment.reviewers` (réglage côté GitHub en T9), étapes : `tools/verify-release-merge.sh`
+→ `docker manifest inspect` ×4 → `gh run list --branch release/<version> --commit <sha> --status
+success --workflow pipeline.yml` non vide → déploiement inchangé avec `$IMAGE:<image_tag>`.
+`audit-prod` suit, non bloquant. `create-release` supprimé (remplacé en T8).
+
+**Critères d'acceptation :**
+- [ ] Toute garde en échec sort **avant** `Configure kubectl` (le kubeconfig n'est même pas écrit).
+- [ ] Les messages d'échec nomment la garde et les valeurs.
+
+**Vérification :**
+- [ ] `actionlint` propre ; lecture croisée du job avec la spec D7 ; pas de run réel possible
+      avant T11 (risque accepté, plan §Risques).
+
+**Dépendances :** T6, T2. **Fichiers :** `.github/workflows/pipeline.yml`. **Taille :** S.
+
+## Tâche 8 : `finalize-release`
+
+**Description :** Job `needs: [deploy-prod]`, `permissions: contents: write`, `fetch-depth: 0`,
+les six étapes de D8 dans l'ordre, chacune idempotente, chacune écrivant une ligne dans
+`$GITHUB_STEP_SUMMARY`. Étape 6 en `--ff-only`, échec de fast-forward = arrêt propre **vert**
+avec la demande de PR `main` → `develop`. Commit de copie avec `[skip ci]`. L'artefact
+`social-preview` reste produit par `build-images` (T5) et rattaché ici.
+
+**Critères d'acceptation :**
+- [ ] Un re-run après succès complet ne fait rien et reste vert (chaque étape a son test
+      d'existence).
+- [ ] Un tag `vX.Y.Z` existant sur un autre commit fait échouer l'étape 1.
+
+**Vérification :**
+- [ ] Les six étapes sont testables à la main sur un dépôt temporaire avec le script extrait
+      `tools/finalize-release.sh` (le job ne fait que l'appeler, comme T2) ;
+      `tools/tests/finalize-release.test.sh` vert.
+
+**Dépendances :** T7. **Fichiers :** `.github/workflows/pipeline.yml`, `tools/finalize-release.sh`,
+`tools/tests/finalize-release.test.sh`. **Taille :** M.
+
+## Tâche 9 : wizard des réglages GitHub (D9) et exécution
+
+**Description :** `tools/github-settings-wizard.sh` (skill `wizard`) guide, dans l'ordre : merge
+commit seul ; ruleset `main` (PR, checks `smoke-test-preprod` + `audit-preprod`, pas de
+suppression ni force-push, bypass `github-actions` ou repli de T3) ; ruleset `develop` (PR,
+checks phase 1) ; retrait du reviewer de `production` ; ruleset tags `v*` ; vérifie
+`delete_branch_on_merge: false`. Chaque étape est idempotente et vérifiable par `gh api`.
+
+**Critères d'acceptation :**
+- [ ] Après exécution, `gh api repos/…` montre `allow_squash_merge: false`,
+      `allow_rebase_merge: false` ; les rulesets existent ; l'environnement `production` n'a
+      plus de `required_reviewers`.
+- [ ] Un push direct sur `main` est refusé par GitHub (test : `git push origin HEAD:main --dry-run`
+      ne suffit pas, faire un vrai push d'une branche jetable et constater le refus).
+
+**Vérification :**
+- [ ] Sorties `gh api` consignées dans la PR.
+
+**Dépendances :** T3, T8. **Fichiers :** `tools/github-settings-wizard.sh`. **Taille :** S.
+
+## Tâche 10 : documentation et archivage (PR de clôture)
+
+**Description :** `CLAUDE.md` : objectif 10 réécrit (branches D1), « Deployment invariants »
+(le bloc `git tag -a` remplacé par le cycle D10, les leçons gardées : image périmée, notes
+Markdown et `--cleanup=verbatim` désormais dans le job, titre sans `#`), « Commands »
+(`TAG=1.2.3` → `TAG=0.14.0-abc1234`). `README.md` ligne « Livraison ». `k8s/README.md` lignes 4–5.
+En-tête de `pipeline.yml` si pas déjà fait en T4. Spec 0006 : statut « livrée » (sauf M6),
+puis `git mv` de la spec et de `tasks/` dans `.claude/specs/archive/2026-MM-JJ-spec-0006-flux-de-release/`
+avec mise à jour du README de l'archive.
+
+**Critères d'acceptation :**
+- [ ] `grep -rn 'git tag' .claude/CLAUDE.md README.md k8s/README.md` ne montre plus de geste humain.
+- [ ] `tasks/` n'existe plus sur la branche ; l'archive contient la spec et `tasks/`.
+
+**Vérification :**
+- [ ] Relecture humaine des trois docs.
+
+**Dépendances :** T9. **Fichiers :** `.claude/CLAUDE.md`, `README.md`, `k8s/README.md`,
+`.claude/specs/archive/…`. **Taille :** M.
+
+## Checkpoint 3 — Prêt pour la première release (après T7–T10)
+- [ ] Critères §4 M4 (partie statique) et M5 cochés ; merge de clôture dans `develop`.
+
+## Tâche 11 : première release sous le nouveau flux (M6)
+
+**Description :** Depuis `develop` à jour : `tools/next-version.sh`, `release/<version>`,
+`RELEASE_NOTES.md` (les changements depuis v0.13.2 : #192, spec 0006, le flux lui-même), PR vers
+`main` en brouillon, attendre le run vert (préprod contrôlée à la main), passer en prête, merger
+en commit de merge. Surveiller `deploy-prod` puis `finalize-release`.
+
+**Critères d'acceptation :**
+- [ ] Tag `v<version>` sur `HEAD^2` ; release GitHub avec titre sans `#` et corps ;
+      `docs/releases/v<version>.md` sur `main` ; `release/<version>` supprimée ; `develop == main`.
+- [ ] `audit-prod` vert ; `DEPLOY_MAINTENANCE_WINDOW` resté à `false`.
+
+**Vérification :**
+- [ ] Les sept résultats consignés dans l'issue ; spec passée en « livrée », mémoire mise à jour.
+
+**Dépendances :** T10 mergée. **Fichiers :** `RELEASE_NOTES.md`, `docs/releases/`. **Taille :** S (procédure).
+
+## Checkpoint final
+- [ ] Tout M6 vert ; issue de la tâche 11 fermée ; label `spec-0006` sans issue ouverte.
