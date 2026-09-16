@@ -58,7 +58,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
      username in a public repository is half a credential, `login_throttling` or not — the former
      shared demo account was removed from production for that reason, and its name scrubbed from here
      and from the migration docblock that mentioned it.
-10. The modifications must follow the git flow planned for this project on GitHub (main branch "main", next release "develop", new feature "feature", etc...)
+10. The modifications must follow the project's git flow (spec 0006, archived under
+    `.claude/specs/archive/2026-09-16-spec-0006-flux-de-release/`): `main` is exactly what runs in
+    production and only advances by the merge of a `release/<X.Y.Z>` branch; `develop` is the
+    integration branch; `feature/*`, `fix/*` and `hotfix/*` are cut from an up-to-date `develop`
+    and return to it by PR (a hotfix differs only in that its release is cut right away — if
+    `develop` then carries unfinished features, the release branch is cut from `main` with the
+    hotfix cherry-picked, the one exception to "a release starts from `develop`"); a `release/*`
+    branch is cut from `develop`, named after the version `tools/next-version.sh` computes, and
+    ends in `main`. Never push to `main` or `develop` directly and never tag by hand: GitHub
+    rulesets refuse both, and the pipeline does the tagging (see "Deployment invariants").
+    A spec's tasks stack on the spec's own feature branch, `develop` receives the feature once
+    (see "Task plans and spec archiving").
 11. The resulting can be shown during an interview.
 12. The resulting must be fully multilingual (French, English)
 
@@ -972,29 +983,65 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's
   `trusted_proxies: private_ranges`. `docker/nginx/default.conf` and `k8s/base/backend-nginx.conf` are
   mirrors of each other: change both.
-- **The release notes live in the tag annotation.** `create-release` publishes the GitHub Release
-  automatically once `deploy-prod` succeeds — never earlier: a release announces that a version
-  *runs*, not that it compiled (v0.7.0 took four pipeline runs to reach production). The body is the
-  annotated tag's message minus its first line, which becomes the title; a tag with only a subject
-  falls back to GitHub's generated notes. So write the real notes into `git tag -a`, not afterwards
-  into the GitHub UI — otherwise the automation publishes a thin release. **Tag with
-  `--cleanup=verbatim`**: git's default cleanup for tag messages strips every line starting with
-  `#`, so Markdown headings silently vanish between the file and the tag. v0.7.1 lost all three of
-  its section headings that way, and the release had to be edited afterwards to restore them.
-  The first line of the notes is itself a Markdown heading (`# vX.Y.Z — …`), and `create-release`
-  strips the leading `#` before using it as the release title — without that, six releases
-  (v0.11.0 to v0.13.1) showed a literal `#` in their title and had to be renamed by hand.
-
-  ```bash
-  git tag -a vX.Y.Z --cleanup=verbatim -F notes.md
-  ```
-- **A reused Git tag serves a stale image.** Pods default to `imagePullPolicy: IfNotPresent`, and a
-  Git tag is mutable: re-cutting `vX.Y.Z` after a failed release makes the node reuse the image it
-  already cached under that name. Release v0.7.0 spent two pipeline runs on this — a migration fix
-  looked ineffective because the migrate Job kept running the *previous* build while reporting the
-  right tag (registry digest and `imageID` on the pod differed). `k8s/base/migrate-job.yaml` now
-  pins `imagePullPolicy: Always`, which is the right trade for a Job that must execute exactly the
-  release's code. For anything else, prefer cutting a fresh tag over re-cutting one.
+- **A release is a branch, the merge is the stop, the tag is a consequence** (spec 0006,
+  2026-09-16, replacing the "tag = trigger" flow that cost v0.7.0 a stale image, v0.7.1 its
+  Markdown headings and v0.11.0–v0.13.1 a literal `#` in their titles). The pipeline has three
+  phases gated by the branch: quality on every push of `main`, `develop`, `feature/**`, `fix/**`,
+  `hotfix/**`, `release/**`, `dependabot/**` (no `pull_request` event: the push's checks show on
+  the PR, listening to both doubled every run); on `release/**` only, `release-version` →
+  `build-images` → `deploy-preprod` → smoke tests + audit (→ `rollback-preprod`), and **the run
+  stops there**; on `main` only, `deploy-prod` → `finalize-release` + `audit-prod`. Rules that
+  hold, each with its guard:
+  - **The version is computed, never chosen** — `tools/next-version.sh` (Conventional Commits
+    since the last `v*` tag reachable from `origin/main`: `!`/`BREAKING CHANGE` → major, demoted
+    to minor while in `0.x`; `feat` → minor; else patch; nothing conventional → "rien à livrer").
+    The branch is named `release/<that version>`, `RELEASE_NOTES.md` at the repo root starts with
+    `# v<that version> — <title>` (em dash, strict), and `release-version` fails naming the three
+    values if they disagree: rename the branch, don't touch the CI. `git fetch --tags` first, or
+    the script may answer a version already shipped.
+  - **Images are `<version>-<7-char sha>` and `-preprod`, immutable.** `build-images` inspects the
+    four manifests first: all present → green no-op (re-run), none → build + push, some → fail.
+    That is what makes the old "reused tag serves a stale image" incident impossible;
+    `k8s/base/migrate-job.yaml` keeps `imagePullPolicy: Always` anyway. `preprod` is still built
+    `FROM production`.
+  - **Every push on `release/*` redeploys preprod** (migration before rollout, seed, smoke tests,
+    audit, rollback on failure, unchanged) and produces no pending approval. The preprod is
+    unique, so one release at a time; a second `release/*` branch is warned about, not blocked.
+  - **`main` only moves by the merge-commit of the release PR** (rulesets: PR required, merge
+    method `merge` only — squash/rebase are disabled repo-wide because `deploy-prod` finds the
+    release as `HEAD^2` —, `smoke-test-preprod` + `audit-preprod` required on the head SHA, no
+    deletion, no force-push). `deploy-prod` never builds: three guards **before** the kubeconfig
+    is even written — HEAD is a merge and `HEAD^2`'s `RELEASE_NOTES.md` gives the version
+    (`tools/verify-release-merge.sh`), the four images exist on GHCR, a `success` run of the
+    workflow exists for `release/<version>` at that exact commit (`gh run list --commit` wants
+    the **full** SHA; the run survives the branch's deletion). The `production` environment keeps
+    its secrets but no longer requires a reviewer: the merge is the stop.
+  - **`finalize-release` runs after a green prod**, six idempotent steps in
+    `tools/finalize-release.sh` (a re-run changes nothing): annotated tag `vX.Y.Z` on `HEAD^2`
+    with `RELEASE_NOTES.md` read *at that commit* as the annotation (`--cleanup=verbatim`, so the
+    Markdown headings survive; the first line minus its `#` becomes the release title, the rest
+    its body); push of the tag; GitHub Release; copy of the notes to `docs/releases/vX.Y.Z.md`
+    committed on `main` with `[skip ci]`, the root file staying in place for the next release;
+    deletion of `release/X.Y.Z`; `git push main:develop`, whose non-fast-forward refusal is the
+    intended clean stop (green, the summary asks for a `main` → `develop` PR). Its pushes use the
+    **`release-bot` deploy key** (secret `RELEASE_DEPLOY_KEY`, host key pinned from `gh api
+    meta`, checkout with `persist-credentials: false`), the only bypass actor of the three
+    rulesets (`main`, `develop`, tags `v*` — a personal repo refuses the `github-actions` app as
+    a bypass actor). Deploy-key pushes **do** trigger workflows, unlike `GITHUB_TOKEN`'s, hence
+    the `[skip ci]` on the copy commit. Rotation and the whole D9 setup: `tools/github-settings.sh`
+    (idempotent) and its README.
+  - **Never write `[skip ci]`, `[ci skip]`, `[no ci]`, `[skip actions]` or `[actions skip]` in a
+    commit or merge message** — GitHub silently skips the push's run (it happened to the very
+    commit that introduced `finalize-release`). Only the copy commit above carries it.
+  - **Pipeline `run:` steps are `bash -e` without `pipefail`**: never `cmd | tee >> $GITHUB_OUTPUT`,
+    a failing `cmd` goes unnoticed (write to a file, then append). The runner has no git
+    identity: scripts that tag or commit pass `-c user.name`/`user.email`. Both learned in T5/T8.
+  - **What to do by hand, in order**: `git switch develop && git pull && git fetch --tags`;
+    `git switch -c release/$(tools/next-version.sh)`; write `RELEASE_NOTES.md`; open the PR to
+    `main` as a draft; iterate until the run is green (a `fix/*` PR targets the release branch);
+    mark ready, merge. Nothing else — no `git tag`, no approval click, no `develop` sync unless
+    the summary asks for it. Everything is testable offline: `tools/tests/*.test.sh` (run by the
+    `tools-tests` job on temporary git repositories, shellcheck at `warning`+, actionlint pinned).
 - **Postgres/RabbitMQ carry state on a PVC** — a `kubectl apply --dry-run=server` proves nothing about runtime
   behaviour on an already-initialised volume. Release v0.5.0 put RabbitMQ in `CrashLoopBackOff` in production
   (~15 min of `POST /api/contact` returning 500) by adding `runAsNonRoot`/`fsGroup`: Erlang refuses to start
@@ -1057,13 +1104,14 @@ make back-lsp          # symfony lsp:check alone (Symfony Language Tools)
 this repo; `init-symfony` is idempotent (no-ops if `../backend/composer.json` exists) but `front-init` is
 interactive and only meant to be run once.
 
-Build/deploy images (no Compose, produce registry artifacts — default `TAG` is the short git SHA):
+Build/deploy images (no Compose, produce registry artifacts — default `TAG` is the short git SHA;
+the pipeline passes `<version>-<sha>`, e.g. `0.14.0-2c86b65`, never a bare version):
 
 ```bash
 make build-prod                                              # backend prod image
 make build-preprod                                            # backend preprod image (prod + Xdebug)
-make build-front-prod API_URL=https://api.example.com TAG=1.2.3     # frontend prod image
-make build-front-preprod API_URL=https://api-preprod.example.com TAG=1.2.3
+make build-front-prod API_URL=https://api.example.com TAG=0.14.0-2c86b65     # frontend prod image
+make build-front-preprod API_URL=https://api-preprod.example.com TAG=0.14.0-2c86b65
 ```
 
 ### Backend day-to-day (inside `make sh`)
@@ -1165,6 +1213,12 @@ feature branch, for the duration of the feature, and never reach `develop`** (ru
 ready to merge. Workflow:
 
 1. During the feature, commit `tasks/` on the feature branch as needed (checkpoints, ticked tasks).
+   **Every task of a spec lands on the feature branch that carries the spec, never directly on
+   `develop`** (rule set on 2026-09-16): a task gets its own branch, stacked on the previous
+   task's, and its PR targets the previous task's branch (the first one targets the spec's
+   branch); when a task merges, the next PR is retargeted **before** its base is deleted (see
+   the stacked-PR trap in memory). `develop` receives the feature **once**, through the PR the
+   spec's branch opened at the start, which becomes the closing PR of step 2.
 2. In the merge into `develop` that **fully closes** the feature, build the archive folder
    `.claude/specs/archive/<YYYY-MM-DD>-<slug>/` (closing date, one folder per feature — see the
    `README.md` there for the existing ones) with, **since 2026-09-16** (issue #192):
