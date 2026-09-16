@@ -314,6 +314,7 @@ jobs:
           tools/tests/next-version.test.sh
           tools/tests/verify-release-merge.test.sh
           tools/tests/finalize-release.test.sh
+          tools/tests/smoke-login-throttling.test.sh
       # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.
@@ -602,6 +603,7 @@ jobs:
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Smoke tests
         run: |
           curl -fsS https://preprod.cp-ghostotof.com/healthz
@@ -610,6 +612,15 @@ jobs:
             echo "GET /api/me a répondu $status (401 attendu, non authentifié) : l'API ne semble pas avoir démarré correctement"
             exit 1
           fi
+      # ADR 0005 (audit du 2026-09-16, A1) : l'anti-brute-force du login ne se
+      # prouve que contre un pod réel — la CI, disque inscriptible, ne verra
+      # jamais un stockage de limiteur qui échoue en silence. Six logins
+      # erronés, le sixième doit être freiné. Basic Auth de la préprod via le
+      # même secret que audit-preprod.
+      - name: Throttling du login (exerce le stockage partagé des limiteurs)
+        env:
+          AUDIT_BASIC_AUTH: ${{ secrets.PREPROD_BASIC_AUTH }}
+        run: tools/smoke-login-throttling.sh https://preprod.cp-ghostotof.com
       - name: Configure kubectl
         run: |
           mkdir -p ~/.kube
