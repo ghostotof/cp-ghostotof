@@ -79,12 +79,12 @@ T3 contrats externes vérifiés ─────┤
 
 ### Phase C — Phase 2 sur `release/**` (M3)
 - [x] Tâche 5 (#199) : job `release-version` et `build-images` en `<version>-<sha>` sans réécriture
-- [ ] Tâche 6 (#200) : préprod, smoke, audit, rollback gardés par `release/**`, run qui s'arrête
+- [x] Tâche 6 (#200) : préprod, smoke, audit, rollback gardés par `release/**`, run qui s'arrête
 
 ### Checkpoint 2 — Une release déploie la préprod et s'arrête
-- [ ] `release/0.x.y` de test : run vert, quatre images sur GHCR, préprod sur `-preprod`, aucun
+- [x] `release/0.x.y` de test : run vert, quatre images sur GHCR, préprod sur `-preprod`, aucun
       job en attente ; branche de test supprimée.
-- [ ] Un push de feature ne lance que la phase 1 ; un tag ne lance rien.
+- [x] Un push de feature ne lance que la phase 1 ; un tag ne lance rien.
 - [ ] Revue humaine.
 
 ### Phase D — Phase 3 sur `main` (M4)
