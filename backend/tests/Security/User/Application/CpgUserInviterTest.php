@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Application;
 
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Application\CpgUserInviter;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Entity\CpgUser;
@@ -14,6 +15,7 @@ use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Service\UsernameGenerator;
 use Doctrine\DBAL\Driver\Exception as DriverException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Messenger\Envelope;
@@ -50,14 +52,27 @@ final class CpgUserInviterTest extends TestCase
             },
         );
 
+        // Journal de sécurité (D5) : une ligne `user-invited` pour le compte
+        // créé, après le save() et le dispatch — jamais avant.
+        $logged = null;
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('userInvited')->willReturnCallback(
+            static function (CpgUser $user) use (&$logged): void {
+                $logged = $user;
+            },
+        );
+
         $inviter = new CpgUserInviter(
             $cpgUserRepository,
             new UsernameGenerator($cpgUserRepository),
             $messageBus,
             $clock,
+            $auditLogger,
         );
 
         $user = $inviter->invite('jean.dupont@example.com', Locale::FR);
+
+        self::assertSame($user, $logged);
 
         self::assertSame('jean.dupont', $user->getUsername());
         self::assertSame('jean.dupont@example.com', $user->getEmail());
@@ -87,6 +102,7 @@ final class CpgUserInviterTest extends TestCase
             new UsernameGenerator($cpgUserRepository),
             $messageBus,
             new MockClock(),
+            $this->auditLoggerExpectingNothing(),
         );
 
         $this->expectException(EmailAlreadyUsedException::class);
@@ -114,6 +130,7 @@ final class CpgUserInviterTest extends TestCase
             new UsernameGenerator($cpgUserRepository),
             $messageBus,
             new MockClock('2026-09-03 12:00:00'),
+            $this->auditLoggerExpectingNothing(),
         );
 
         $this->expectException(EmailAlreadyUsedException::class);
@@ -139,11 +156,15 @@ final class CpgUserInviterTest extends TestCase
             },
         );
 
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('userReinvited')->with($user);
+
         $inviter = new CpgUserInviter(
             $cpgUserRepository,
             new UsernameGenerator($cpgUserRepository),
             $messageBus,
             new MockClock(),
+            $auditLogger,
         );
 
         $inviter->reinvite($user, Locale::EN);
@@ -170,10 +191,23 @@ final class CpgUserInviterTest extends TestCase
             new UsernameGenerator($cpgUserRepository),
             $messageBus,
             new MockClock(),
+            $this->auditLoggerExpectingNothing(),
         );
 
         $this->expectException(AccountNotAwaitingActivationException::class);
 
         $inviter->reinvite($user, Locale::FR);
+    }
+
+    /**
+     * Sur un refus, rien n'a eu lieu : le journal ne doit rien dire.
+     */
+    private function auditLoggerExpectingNothing(): SecurityAuditLoggerInterface&MockObject
+    {
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('userInvited');
+        $auditLogger->expects(self::never())->method('userReinvited');
+
+        return $auditLogger;
     }
 }

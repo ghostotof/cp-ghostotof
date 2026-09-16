@@ -1,29 +1,33 @@
-# v0.14.1 — Correctif de sécurité : les limiteurs de débit retrouvent leur état
+# v0.15.0 — Journal de sécurité, secrets par environnement, jeton de déploiement rotatif
 
-Hotfix issu de l'audit de sécurité du 2026-09-16. En production, aucun limiteur de débit
-Symfony ne fonctionnait : l'anti-brute-force du login, les quotas du formulaire de contact,
-du parcours de définition de mot de passe, de l'accès au palier de base et de l'assistant de
-traduction laissaient tout passer. Seules les zones nginx freinaient encore, et il n'y en
-avait pas sur le login.
+Lot 1 de la remédiation du 3e audit de sécurité (2026-09-16), phases 2 et 3. La phase 1 (limiteurs
+de débit et adresse du visiteur) est en production depuis v0.14.1.
 
-## Cause et correctif (ADR 0005)
+## Journal de sécurité (phase 3)
 
-- Le pool `cache.app`, dont hérite le stockage de tous les limiteurs, écrivait sur le système de
-  fichiers du pod — en lecture seule en production. L'écriture échouait en silence et chaque
-  requête repartait d'un compteur vide.
-- `cache.app` est désormais adossé à Doctrine DBAL (table `cache_items`, créée par migration,
-  purgée chaque nuit) : partagé entre les réplicas, durable, sans service supplémentaire.
-- Un test de conteneur refuse toute configuration qui ramènerait un limiteur sur le disque.
+- Monolog est installé : en production, les canaux `security` et `security_audit` sortent en JSON
+  sur stderr dès le niveau `info`, le reste suit `LOG_LEVEL` (`warning` par défaut).
+- `SecurityAuditLogger` trace treize événements : connexion réussie, ratée ou freinée, déconnexion,
+  jeton du palier de base, rejet CSRF, refus d'accès au backoffice, invitation, changement de rôle,
+  changement de mot de passe, suppression de compte, activation. Chaque ligne porte l'événement,
+  l'identifiant visé, l'auteur, l'adresse IP et le chemin, et jamais un mot de passe, un jeton ni un
+  e-mail : un test le garantit.
+- Lecture sur un pod documentée dans `k8s/README.md` (`kubectl logs … | jq`).
 
-## Deux filets, indépendants du stockage
+## Dépôt GitHub et accès au cluster (phase 2)
 
-- Une zone nginx dédiée à `POST /api/login_check` (10 requêtes par minute, rafale de 10), en
-  amont de PHP.
-- Le smoke test de la préprod exerce désormais réellement le throttling : six connexions
-  erronées, la sixième doit être freinée, sinon la release ne va pas en production.
+- Alertes de vulnérabilité Dependabot et signalement privé (Private Vulnerability Reporting)
+  activés ; `SECURITY.md` en fait le canal principal. Épinglage SHA des actions imposé par le dépôt.
+  Les correctifs automatiques Dependabot restent désactivés : leurs PR viseraient `main`, hors du
+  flux de release.
+- Les secrets de déploiement deviennent des secrets d'environnement : `preprod` n'est lisible que
+  depuis `release/*`, `production` que depuis `main`. Tous les jobs qui les lisent déclarent leur
+  environnement.
+- Le jeton du déployeur GitHub Actions n'est plus un secret Kubernetes sans expiration mais un jeton
+  lié, renouvelé tous les 90 jours par `tools/rotate-deployer-token.sh`, qui vérifie ses droits
+  avant de le publier. Le modèle de privilège réel du déployeur est documenté tel quel.
+- Tout est appliqué par `tools/github-settings.sh`, idempotent.
 
-## Documentation
+## Sans changement fonctionnel
 
-- `docs/adr/0005-etat-hors-du-pod.md` : aucun état applicatif sur le système de fichiers du
-  pod, et pourquoi ni un volume par pod ni un test PHPUnit n'auraient suffi.
-- `CLAUDE.md` : nouvel invariant de déploiement.
+Le site est celui de v0.14.1 ; cette version ne modifie ni le contenu ni le frontend.

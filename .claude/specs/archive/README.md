@@ -34,6 +34,7 @@ l'époque le fichier n'avait pas été renouvelé et portait encore celui de l'a
 | `2026-09-14-spec-0002-assistant-traduction` | Spec 0002, assistant de traduction (Symfony AI phase 1) | `51d06b8` |
 | `2026-09-15-specs-0003-0004-uuid-ordre-des-contenus` | Specs 0003 et 0004, UUID v7 puis ordre des contenus | `c4076d8` |
 | `2026-09-16-spec-0006-flux-de-release` | Spec 0006, flux de release par branche `release/*` et pipeline en trois phases — **première archive dans la nouvelle disposition** : la spec elle-même + `tasks/` entier | (déplacés par `git mv`, PR #194) |
+| `2026-09-16-remediation-audit-securite-3-lot-1` | Troisième audit de sécurité, lot 1 : phases 0–3 (A1/A25 en prod par v0.14.1, réglages GitHub et RBAC, journal de sécurité) ; phases 4–6 dans un lot 2 avec son propre `tasks/` | (déplacé par `git mv`, PR #219) |
 
 Ces cinq dossiers gardent donc l'ancienne disposition — `plan.md` et `todo.md` à plat, sans la spec,
 qui est restée dans `.claude/specs/` avec un statut « livrée » — et ne sont pas migrés.

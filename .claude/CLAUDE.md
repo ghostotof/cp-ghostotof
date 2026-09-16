@@ -121,7 +121,21 @@ in `build-images`' `needs` yet (re-evaluate after a few weeks). No baseline: the
 three `config.unknown_key` **warnings** on `ai.yaml` (`ai.agent.translator.model.name/options`), keys that
 Symfony accepts because the bundle declares `model` as a `variableNode` (its only rule: a string, or an array
 with `name`) — Language Tools cannot know the keys under it, a false positive by construction, left visible
-rather than baselined. The
+rather than baselined. **Monolog** is installed (`symfony/monolog-bundle`, audit 2026-09-16 constat A5 —
+without it, HttpKernel's fallback logger emitted nothing below `warning` and no security event left a
+trace at all). `backend/config/packages/monolog.yaml`: in `when@prod` (which covers preprod and prod,
+same `APP_ENV`) every handler is a `stream` to `php://stderr` with `monolog.formatter.json`, because
+Kubernetes only collects a container's stdout/stderr — `kubectl logs … | jq` is the whole tooling. The
+`security` (Symfony's own) and `security_audit` (ours, declared in `monolog.channels`) channels get
+their own handler at a hard-coded `info`, never `fingers_crossed`: a run of failed logins with no error
+after it is exactly the trace worth keeping, and buffering would discard it. Everything else goes to
+the `main` handler at `%env(default:app.log_level:LOG_LEVEL)%` (`LOG_LEVEL=warning` in `backend/.env`,
+`debug` in the preprod image), which excludes those two channels so an event is emitted **once**. The
+`default:` processor takes a *parameter name*, hence `app.log_level` in `services.yaml` — `default:warning:`
+would look for a parameter called `warning` and fail at compile time. No duplication with
+`error_log = /proc/self/fd/2` (`php.prod.ini`) either: Monolog writes to fd 2 itself, `error_log` only
+ever receives the engine's own errors. The events are emitted by `SecurityAuditLogger` (see Phase 3 of
+the remediation plan). The
 frontend has moved past the default scaffold: it follows a layered clean architecture (see below) and has
 Vitest configured with `npm test`. A `ROLE_SUPER`-gated backoffice (`/admin` on the frontend, `/api/backoffice/*`
 on the backend) lets an authenticated super-admin manage all of the above content plus user accounts — see the
@@ -301,6 +315,37 @@ mid-migration.
     limiter. The four listeners (`CsrfCookieRequestSubscriber`, `LoginCsrfRequestListener`,
     `BaseAccessRateLimitRequestListener`, `PasswordSetupRateLimitRequestListener`) go through the helper,
     and each has a `%XX` regression test.
+  - **`Infrastructure/Log/SecurityAuditLogger.php` is the single entry point of the security audit log**
+    (3rd audit, A5/D5, Monolog channel `security_audit`, `info`, JSON on stderr in prod — see
+    `monolog.yaml`). Implements `Application/SecurityAuditLoggerInterface`, one method per event:
+    `login-succeeded`, `login-failed`, `login-throttled`, `logged-out`, `base-access-issued`,
+    `csrf-rejected`, `backoffice-access-denied`, `user-invited`, `user-reinvited`, `role-changed`
+    (`superAdmin` bool), `password-changed`, `user-deleted`, `account-activated`. Every record carries
+    `event` (the stable kebab-case key to filter on), `actor` (identifier from the token storage, or
+    `anonymous`), `ip`, `path` (canonical), plus `user` and — for an existing account — `userId` (RFC 4122).
+    **Never a password, a token (JWT, XSRF, invitation), an e-mail, a request body or a serialized
+    exception** in any context: an invited account is named by `username` + `userId`, not by its e-mail.
+    `SecurityAuditLoggerTest::testNoContextValueEverCarriesAPasswordATokenOrAnEmail` pins that with
+    sentinel values run through every method; extend it when adding one. Who calls what:
+    `Infrastructure/Log/SecurityEventsSubscriber` for `LoginSuccessEvent`/`LoginFailureEvent` (**`login`
+    firewall only** — the `api` firewall re-authenticates the JWT on every request and dispatches the
+    same events), `LogoutEvent`, and the backoffice 403 on `kernel.exception` at priority 0 (after the
+    firewall's `ExceptionListener` at 1, which wraps the voter's `AccessDeniedException` in an
+    `AccessDeniedHttpException` — that `previous` is required, so the CSRF guards' bare
+    `AccessDeniedHttpException` isn't logged twice; an anonymous hit is a 401 that never reaches it); the
+    two CSRF guards call `csrfRejected()` right before throwing (actor is `anonymous` there by
+    construction — priority 20 runs before the firewall); `BaseAccessController` logs the `guest-…`
+    identifier, never the token; the `Security/User/Application` use cases log after the successful
+    action. Functional tests read the records through `tests/Support/ReadsSecurityAuditLog.php` (a
+    Monolog `test` handler on the channel, `when@test`, found among `monolog.logger.security_audit`'s
+    handlers — that logger is public in every env, so phpstan-symfony's dev dump knows it); the kernel
+    reboots between requests, so the handler holds the *last* request's records. `Psr\Log\Test\TestLogger`
+    no longer ships with psr/log 3, unit tests use Monolog's `TestHandler`. One transitional rule: while the
+    password-setup token still travels in the URL path (audit A7, until Task 4.1 moves it to the body),
+    `path` on `/api/account/password-setup/<token>` is logged as `…/password-setup/{token}`
+    (`TOKEN_BEARING_PATH_PATTERN`) — remove that redaction with T4.1, not before. A use case logs only
+    an *effective* action: `CpgUserRoleAdministrator`'s idempotent no-op writes nothing, a refused
+    action writes nothing (the unit tests pin `never()` on every error path).
 - **`Portfolio/Shared/`** — `Domain/ValueObject/Locale.php`, the `enum Locale: string { FR = 'fr'; EN = 'en' }`
   shared by every `Portfolio/*` context. Two entry points, and the distinction matters (audit I3):
   - **`Locale::fromString()` for anything coming from outside** (a `{locale}` URL segment, a command
@@ -926,10 +971,15 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
   it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would
-  resolve to `docker.io/library/backend`). The deployer `Role` no longer has `pods/exec: create`: that verb
-  granted a shell in any pod of the namespace, i.e. every mounted secret and arbitrary code execution in
-  production. If a console command must run at deploy time, declare another Job — never bring `pods/exec` back.
-  The RBAC is a **manual bootstrap the pipeline never replays**: after changing it, re-run the loop in
+  resolve to `docker.io/library/backend`). The deployer `Role` no longer has `pods/exec: create`, so the
+  CI identity cannot open an interactive shell in a pod — but **that is not a secret boundary** (3rd audit,
+  A3/D4): `jobs create` + `pods/log` + `externalsecrets create/update` read every Secret of the namespace
+  by construction (a Job that prints its environment is enough). The Role is a full deployer of its
+  namespace; what bounds the exposure is the **token**, not the verb list: a bound, 90-day token
+  (`kubectl create token`) issued by `tools/rotate-deployer-token.sh <preprod|prod>`, published as an
+  environment secret, rotated quarterly — never the durable `kubernetes.io/service-account-token` Secret
+  it replaced. If a console command must run at deploy time, declare another Job — never bring `pods/exec`
+  back. The RBAC is a **manual bootstrap the pipeline never replays**: after changing it, re-run the loop in
   `k8s/README.md` §4 *before* the next deploy, or the job fails on `cannot create resource "jobs"`.
 - **The standard deploy runs the migration *before* the rollout, with the old pods still serving**
   (issue #175, expand/contract). Doctrine selects every mapped column on each hydration, so with the

@@ -23,6 +23,13 @@ parameters:
     # là où var/ est le seul répertoire inscriptible en production.
     app.watch_package_manifest_path: '%kernel.project_dir%/config/watch/package-manifest.json'
     app.watch_deployed_versions_path: '%kernel.project_dir%/config/watch/deployed-versions.json'
+    # Repli du niveau de journalisation des environnements déployés
+    # (config/packages/monolog.yaml). Le processeur `default:` de Symfony attend
+    # un NOM DE PARAMÈTRE, pas une valeur littérale : `%env(default:warning:LOG_LEVEL)%`
+    # chercherait un paramètre « warning » et échouerait à la compilation.
+    # La valeur courante vient de LOG_LEVEL (backend/.env, `debug` dans l'image
+    # préprod) ; ce paramètre ne sert que si la variable disparaît.
+    app.log_level: 'warning'
 
 services:
     # default configuration for services in *this* file

@@ -63,11 +63,94 @@ détail des jobs.
    >   --as=system:serviceaccount:preprod:github-actions-deployer   # no attendu
    > ```
 
-   Puis construire un kubeconfig autonome à partir du token durable
-   (`Secret` `github-actions-deployer-token`, type `kubernetes.io/service-account-token`)
-   et du endpoint/CA du cluster (`kubectl config view --raw`), et le stocker
-   comme secret GitHub Actions (`KUBE_CONFIG_PREPROD` / `KUBE_CONFIG_PROD`,
-   Settings > Secrets and variables > Actions) — jamais commité.
+   **Puis le jeton du pipeline — lié, à durée limitée, régénéré par script**
+   (3e audit du 2026-09-16, constat A3, décision D4). Le kubeconfig que le
+   pipeline reçoit n'est plus construit à la main autour d'un Secret
+   `kubernetes.io/service-account-token` (un jeton qui n'expire jamais : une
+   fuite du secret GitHub valait un accès permanent) ; il l'est par
+   `tools/rotate-deployer-token.sh`, autour d'un jeton **lié** (`kubectl
+   create token`, 90 jours — question Q4, rotation trimestrielle), et posé
+   directement comme secret d'environnement :
+   ```bash
+   tools/rotate-deployer-token.sh preprod            # → KUBE_CONFIG_PREPROD, environnement `preprod`
+   tools/rotate-deployer-token.sh prod               # → KUBE_CONFIG_PROD,    environnement `production`
+   tools/rotate-deployer-token.sh preprod --dry-run  # tout sauf l'émission et la publication
+   ```
+   Le script lit le endpoint et la CA dans le kubeconfig courant (jamais
+   l'identité admin), émet le jeton, l'**essaie avant de le publier**
+   (`auth can-i create jobs` → `yes`, `create pods/exec` → `no`, sinon rien
+   n'est publié), le passe à `gh secret set` par stdin — il n'apparaît ni sur
+   la sortie ni dans un argument de processus — et affiche la date
+   d'expiration avec la date de la prochaine rotation. Le fichier temporaire
+   est supprimé à la sortie.
+
+   **Durée réellement accordée.** L'API tronque *en silence* une demande
+   au-delà de `--service-account-max-token-expiration` du control-plane —
+   valeur inconnue sur Kapsule (managé). Le script décode donc le champ `exp`
+   du JWT émis (payload base64, sans signature ni secret) et avertit
+   `durée TRONQUÉE` si elle est inférieure à la demande : dans ce cas, c'est
+   la durée accordée qui fixe le calendrier, pas les 90 jours. Vérifier ce
+   point à la **première** rotation.
+
+   **Périodicité.** Tous les 90 jours, par environnement : poser deux
+   rappels calendaires à la date « Prochaine rotation » que le script affiche
+   (sept jours avant l'expiration). Un jeton expiré se voit à la première
+   étape `Configure kubectl` d'un déploiement (`Unauthorized`) — relancer le
+   script, rien d'autre à réparer. Rotation suivante : l'ancien jeton lié
+   expire seul, rien à supprimer.
+
+   **Première rotation, sans interruption.** Le Secret durable
+   `github-actions-deployer-token` reste valide tant qu'il existe, donc le
+   pipeline continue de fonctionner pendant la bascule. Dans l'ordre :
+   1. `tools/rotate-deployer-token.sh preprod`, puis `… prod` ;
+   2. `tools/github-settings.sh` : l'étape k doit voir `KUBE_CONFIG_PREPROD`
+      et `KUBE_CONFIG_PROD` présents dans leur environnement ;
+   3. un run de release complet **vert** (`deploy-preprod` → `deploy-prod`) :
+      les jobs déclarant `environment:` reçoivent le secret d'environnement,
+      donc le nouveau jeton, par priorité sur l'homonyme de dépôt ;
+   4. seulement alors, supprimer le Secret durable des deux namespaces —
+      `kubectl apply` ne supprime jamais ce qu'un manifeste ne déclare plus,
+      il faut le faire explicitement :
+      ```bash
+      kubectl --context cp-ghostotof-preprod -n preprod delete secret github-actions-deployer-token
+      kubectl --context cp-ghostotof-prod    -n prod    delete secret github-actions-deployer-token
+      ```
+      et `gh secret delete KUBE_CONFIG_PREPROD` / `KUBE_CONFIG_PROD` au niveau
+      **dépôt** (leur valeur est l'ancien jeton durable, désormais révoqué).
+
+   **Ce que ce jeton permet — le modèle réel, pas le souhaité.** Le `Role`
+   du déployeur cumule `jobs create`, `pods/log`, `deployments update` et
+   `externalsecrets create/update` : c'est, par construction, la lecture de
+   **tout Secret du namespace** — un Job qui affiche son environnement, puis
+   ses logs, suffit ; un ExternalSecret en fait synchroniser d'autres depuis
+   Secret Manager. Le retrait de `pods/exec` (audit C8) ferme le shell
+   interactif, pas cette lecture ; ce n'est pas une frontière. Réduire le
+   Role sans casser `kubectl apply -k` n'est pas possible : un déployeur
+   applique des Deployments, et un Deployment monte des Secrets. Ce qui
+   borne l'exposition, c'est donc le **jeton** : lié, 90 jours, dans un
+   secret d'environnement que seule une branche `release/*` (preprod) ou
+   `main` (production) peut lire (constat A4, ci-dessous). Une fuite vaut au
+   plus le reste de la période, pour un namespace, et se révoque en
+   relançant le script — l'ancien jeton reste techniquement valide jusqu'à
+   son `exp` ; pour couper court, supprimer et recréer le ServiceAccount
+   (les jetons liés sont invalidés avec lui, rejouer ensuite la boucle
+   ci-dessus).
+
+   > **Ce sont des secrets d'environnement, pas des secrets de dépôt**
+   > (3e audit du 2026-09-16, constat A4) : un secret de dépôt est servi à
+   > *n'importe quel* job de *n'importe quelle* branche, y compris une
+   > `feature/*` ou une PR d'un fork — le kubeconfig du déployeur de production
+   > y compris. Un secret d'environnement n'est servi qu'aux jobs qui déclarent
+   > cet `environment:`, et la politique de branche de l'environnement
+   > (`tools/github-settings.sh`, étape d : `main` pour `production`,
+   > `release/*` pour `preprod`) borne les branches d'où il est lisible.
+   > C'est le script de rotation qui pose les deux `KUBE_CONFIG_*` à ce
+   > niveau ; `tools/github-settings.sh` (étape k) vérifie leur présence et
+   > avertit tant qu'un homonyme subsiste au niveau dépôt — tant qu'il y est,
+   > il continue de servir les jobs qui ne déclarent pas d'environnement, donc
+   > la garde ne vaut rien. Le supprimer (`gh secret delete KUBE_CONFIG_PROD`)
+   > une fois le run de release suivant vert. Même règle pour
+   > `PREPROD_BASIC_AUTH` (preprod) et `RELEASE_DEPLOY_KEY` (production).
 5. **Installer External Secrets Operator** (Helm) : synchronise les Secrets
    Kubernetes depuis **Scaleway Secret Manager** (région `fr-par` — hébergement
    France garanti), au lieu d'un `kubectl create secret` manuel non versionné.
@@ -268,8 +351,12 @@ mêmes identifiants que le htpasswd ci-dessus, au format
 `utilisateur:mot_de_passe` (celui que `curl -u` attend, pas le hash bcrypt) :
 
 ```bash
-gh secret set PREPROD_BASIC_AUTH --body '<identifiant>:<mot-de-passe>'
+gh secret set PREPROD_BASIC_AUTH --env preprod --body '<identifiant>:<mot-de-passe>'
 ```
+
+`--env preprod` : c'est un secret d'environnement, servi aux seuls jobs qui
+déclarent `environment: preprod` et depuis les seules branches `release/*`
+(constat A4, cf. §4 ci-dessus).
 
 Absent côté `audit-prod` (la vraie prod, non protégée) : le script s'exécute
 alors sans `-u`, comportement inchangé.
@@ -342,6 +429,31 @@ redémarrage du pod (ex. OOMKill, la limite `resources.limits.memory: 128Mi`
 est basse pour parcourir une grosse table) invalide silencieusement tous les
 cookies "Permanent login" en cours ; il suffit de recocher la case à la
 prochaine connexion, aucune action corrective nécessaire.
+
+## Journal de sécurité (Monolog, canaux `security` et `security_audit`)
+
+Depuis le 3e audit (2026-09-16, constat A5, plan phase 3), le backend émet ses événements de
+sécurité en JSON sur stderr, à partir du niveau `info`, sur deux canaux : `security` (celui de
+Symfony : « Authenticator failed », etc.) et `security_audit` (le nôtre, `SecurityAuditLogger` :
+`login-failed`, `login-throttled`, `csrf-rejected`, `backoffice-access-denied`, `user-invited`,
+`role-changed`, `user-deleted`, `account-activated`…). Le reste suit `LOG_LEVEL` (`warning` par
+défaut, `debug` dans l'image préprod). Chaque ligne `security_audit` porte `event`, l'identifiant
+visé (`user`, `userId`), l'auteur (`actor`), `ip` et `path` — jamais un mot de passe, un jeton ni
+un e-mail (un test le pince).
+
+Lecture sur un pod, canal d'audit seulement, une ligne lisible par événement :
+
+```bash
+kubectl -n preprod logs deploy/backend -c php-fpm --tail=500 \
+  | grep '"channel":"security_audit"' \
+  | jq -r '[.datetime, .context.event, .context.user // "-", .context.actor, .context.ip, .context.path] | @tsv'
+```
+
+Vérification après un déploiement (checkpoint 3 du plan) : un `POST /api/login_check` erroné
+contre la préprod doit produire une ligne `login-failed` avec l'IP publique de l'appelant (pas
+`100.64.x.x` ni celle du LB, cf. ADR 0005 D6/D7), et le sixième essai une ligne `login-throttled`.
+Les logs de pod ne sont conservés que par Kubernetes (rotation locale, perdus au remplacement du
+pod) : la rétention et le statut RGPD de ces lignes sont traités dans `docs/rgpd/` (plan, T5.8).
 
 ## Limites connues (acceptables pour un projet portfolio, à retravailler sinon)
 

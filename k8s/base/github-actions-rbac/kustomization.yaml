@@ -1,9 +1,13 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+# Pas de Secret `kubernetes.io/service-account-token` ici (3e audit,
+# constat A3, décision D4) : le jeton du pipeline est un jeton LIÉ à durée
+# limitée, émis par `tools/rotate-deployer-token.sh` (`kubectl create token`),
+# jamais un objet du cluster. Un Secret durable ne se périme pas — c'est
+# précisément ce qu'on a retiré.
 resources:
   - serviceaccount.yaml
-  - secret-token.yaml
   - role.yaml
   - rolebinding.yaml
   - clusterrole.yaml

@@ -26,6 +26,7 @@
         "symfony/http-client": "8.1.*",
         "symfony/mailer": "8.1.*",
         "symfony/messenger": "8.1.*",
+        "symfony/monolog-bundle": "^4.1",
         "symfony/rate-limiter": "8.1.*",
         "symfony/runtime": "8.1.*",
         "symfony/scaleway-mailer": "8.1.*",

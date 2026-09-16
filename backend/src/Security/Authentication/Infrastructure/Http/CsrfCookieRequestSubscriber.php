@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Http;
 
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Shared\Infrastructure\Http\CanonicalPath;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpFoundation\Request;
@@ -73,8 +74,10 @@ final readonly class CsrfCookieRequestSubscriber
     private const string COOKIE_NAME = AuthCookieFactory::XSRF_TOKEN;
     private const string HEADER_NAME = 'X-XSRF-TOKEN';
 
-    public function __construct(private CsrfCookieTokenSigner $csrfCookieTokenSigner)
-    {
+    public function __construct(
+        private CsrfCookieTokenSigner $csrfCookieTokenSigner,
+        private SecurityAuditLoggerInterface $auditLogger,
+    ) {
     }
 
     public function __invoke(RequestEvent $event): void
@@ -97,6 +100,10 @@ final readonly class CsrfCookieRequestSubscriber
         // comme une correspondance valide, d'où le rejet explicite des
         // chaînes vides en plus du cas `null`.
         if (!\is_string($cookieToken) || !\is_string($headerToken) || '' === $cookieToken || '' === $headerToken || !hash_equals($cookieToken, $headerToken)) {
+            // Journal de sécurité (D5) : une ligne par rejet, avant l'exception.
+            // Auteur `anonymous` par construction — on est avant le firewall.
+            $this->auditLogger->csrfRejected();
+
             throw new AccessDeniedHttpException('En-tête CSRF manquant ou invalide.');
         }
 
@@ -105,6 +112,8 @@ final readonly class CsrfCookieRequestSubscriber
         // (point d'audit B1). Un XSRF-TOKEN forgé et recopié à l'identique
         // dans l'en-tête passe la condition ci-dessus mais échoue ici.
         if (!$this->csrfCookieTokenSigner->isValid($cookieToken)) {
+            $this->auditLogger->csrfRejected();
+
             throw new AccessDeniedHttpException('Jeton CSRF non signé ou signature invalide.');
         }
     }
