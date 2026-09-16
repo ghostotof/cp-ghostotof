@@ -92,12 +92,12 @@ T3 contrats externes vérifiés ─────┤
 - [x] Tâche 8 (#202) : `finalize-release` (D8), six étapes idempotentes
 
 ### Phase E — Réglages et documentation (M5)
-- [ ] Tâche 9 (#203) : wizard des réglages GitHub (D9) et exécution
+- [x] Tâche 9 (#203) : réglages GitHub (D9), script idempotent `tools/github-settings.sh` exécuté le 2026-09-16
 - [ ] Tâche 10 (#204) : documentation (`CLAUDE.md`, `README.md`, `k8s/README.md`, en-tête de
       `pipeline.yml`) + archivage spec/`tasks/` (PR de clôture)
 
 ### Checkpoint 3 — Prêt pour la première release
-- [ ] Squash/rebase impossibles, push direct sur `main`/`develop` refusé, reviewer retiré de
+- [x] Squash/rebase impossibles, push direct sur `main`/`develop` refusé, reviewer retiré de
       `production`, ruleset tags `v*`.
 - [ ] Plus aucun `git tag -a` comme geste humain dans les docs.
 - [ ] Revue humaine, merge de clôture (spec + `tasks/` archivés).
