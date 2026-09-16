@@ -1,31 +1,29 @@
-# v0.14.0 — Flux de release par branche `release/*`, pipeline en trois phases
+# v0.14.1 — Correctif de sécurité : les limiteurs de débit retrouvent leur état
 
-Première version livrée par le nouveau flux : cette release a été préparée sur une branche
-`release/0.14.0`, déployée en préprod à chaque push, et mise en production par le merge de sa
-PR dans `main`. Le tag et cette page ont été posés par la pipeline, après la prod.
+Hotfix issu de l'audit de sécurité du 2026-09-16. En production, aucun limiteur de débit
+Symfony ne fonctionnait : l'anti-brute-force du login, les quotas du formulaire de contact,
+du parcours de définition de mot de passe, de l'accès au palier de base et de l'assistant de
+traduction laissaient tout passer. Seules les zones nginx freinaient encore, et il n'y en
+avait pas sur le login.
 
-## Flux de release (spec 0006)
+## Cause et correctif (ADR 0005)
 
-- La version se calcule (`tools/next-version.sh`, Conventional Commits) et la CI la confronte au
-  nom de branche et au titre des notes ; un désaccord est un run rouge.
-- Les images sont nommées `<version>-<sha court>`, immuables, jamais réécrites.
-- Chaque push sur `release/*` construit, déploie la préprod, passe smoke tests et audit, et
-  s'arrête là ; le merge dans `main` est le seul stop humain.
-- Sur `main`, `deploy-prod` retrouve l'image validée en préprod (trois gardes avant tout accès
-  au cluster) et ne construit jamais ; `finalize-release` pose le tag annoté, publie la release,
-  copie les notes dans `docs/releases/`, supprime la branche et avance `develop`.
-- Réglages GitHub : merge par commit de merge seul, rulesets sur `main`, `develop` et les tags
-  `v*`, reviewer retiré de l'environnement `production`, deploy key `release-bot`.
+- Le pool `cache.app`, dont hérite le stockage de tous les limiteurs, écrivait sur le système de
+  fichiers du pod — en lecture seule en production. L'écriture échouait en silence et chaque
+  requête repartait d'un compteur vide.
+- `cache.app` est désormais adossé à Doctrine DBAL (table `cache_items`, créée par migration,
+  purgée chaque nuit) : partagé entre les réplicas, durable, sans service supplémentaire.
+- Un test de conteneur refuse toute configuration qui ramènerait un limiteur sur le disque.
 
-## Documentation et outillage
+## Deux filets, indépendants du stockage
 
-- Règle d'archivage des specs : le dossier d'archive reçoit la spec et le dossier `tasks/` entier
-  (#192) ; les tâches d'une spec s'empilent sur la branche de la spec, `develop` reçoit la
-  clôture seule.
-- Nouveau job `tools-tests` : tests des scripts de release sur dépôt temporaire, shellcheck,
-  actionlint figé sur un digest.
-- `CLAUDE.md`, `README.md` et `k8s/README.md` décrivent le nouveau flux.
+- Une zone nginx dédiée à `POST /api/login_check` (10 requêtes par minute, rafale de 10), en
+  amont de PHP.
+- Le smoke test de la préprod exerce désormais réellement le throttling : six connexions
+  erronées, la sixième doit être freinée, sinon la release ne va pas en production.
 
-## Sans changement applicatif
+## Documentation
 
-Le code du site est celui de v0.13.2 ; cette version ne modifie ni le backend ni le frontend.
+- `docs/adr/0005-etat-hors-du-pod.md` : aucun état applicatif sur le système de fichiers du
+  pod, et pourquoi ni un volume par pod ni un test PHPUnit n'auraient suffi.
+- `CLAUDE.md` : nouvel invariant de déploiement.
