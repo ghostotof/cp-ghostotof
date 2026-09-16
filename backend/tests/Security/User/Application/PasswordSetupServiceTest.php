@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\User\Application;
 
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Application\PasswordSetupService;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
@@ -29,7 +30,11 @@ final class PasswordSetupServiceTest extends TestCase
             ->with(hash('sha256', self::CLEAR_TOKEN))
             ->willReturn($this->usableToken($clock));
 
-        $this->service($tokenRepository, self::createStub(CpgUserRepositoryInterface::class), self::createStub(UserPasswordHasherInterface::class), $clock)
+        // Valider n'active rien : le journal ne doit rien dire.
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('accountActivated');
+
+        $this->service($tokenRepository, self::createStub(CpgUserRepositoryInterface::class), self::createStub(UserPasswordHasherInterface::class), $clock, $auditLogger)
             ->validate(self::CLEAR_TOKEN);
     }
 
@@ -92,7 +97,11 @@ final class PasswordSetupServiceTest extends TestCase
             ->with($user, TestCredentials::variant('setup'))
             ->willReturn('hashed-new-password');
 
-        $this->service($tokenRepository, $cpgUserRepository, $hasher, $clock)
+        // Journal de sécurité (D5) : `account-activated` pour ce compte, une fois.
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('accountActivated')->with($user);
+
+        $this->service($tokenRepository, $cpgUserRepository, $hasher, $clock, $auditLogger)
             ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
 
         self::assertSame('hashed-new-password', $user->getPassword());
@@ -118,9 +127,12 @@ final class PasswordSetupServiceTest extends TestCase
         $cpgUserRepository = $this->createMock(CpgUserRepositoryInterface::class);
         $cpgUserRepository->expects(self::never())->method('save');
 
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('accountActivated');
+
         $this->expectException(PasswordSetupTokenExpiredException::class);
 
-        $this->service($tokenRepository, $cpgUserRepository, clock: $clock)
+        $this->service($tokenRepository, $cpgUserRepository, clock: $clock, auditLogger: $auditLogger)
             ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
     }
 
@@ -139,12 +151,14 @@ final class PasswordSetupServiceTest extends TestCase
         ?CpgUserRepositoryInterface $cpgUserRepository = null,
         ?UserPasswordHasherInterface $hasher = null,
         ?MockClock $clock = null,
+        ?SecurityAuditLoggerInterface $auditLogger = null,
     ): PasswordSetupService {
         return new PasswordSetupService(
             $tokenRepository,
             $cpgUserRepository ?? self::createStub(CpgUserRepositoryInterface::class),
             $hasher ?? self::createStub(UserPasswordHasherInterface::class),
             $clock ?? new MockClock(),
+            $auditLogger ?? self::createStub(SecurityAuditLoggerInterface::class),
         );
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\User\Application;
 
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Application\CpgUserAdministrator;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException;
@@ -11,6 +12,7 @@ use App\Security\User\Domain\Exception\CannotDeleteOwnAccountException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Tests\Support\TestCredentials;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Uid\Uuid;
@@ -29,7 +31,10 @@ final class CpgUserAdministratorTest extends TestCase
         $repository->expects(self::never())->method('countByRole');
         $repository->expects(self::once())->method('remove')->with($targetUser);
 
-        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class));
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('userDeleted')->with($targetUser);
+
+        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class), $auditLogger);
 
         $administrator->delete($targetUser->getId(), $actingUser);
     }
@@ -44,7 +49,7 @@ final class CpgUserAdministratorTest extends TestCase
         $repository->expects(self::once())->method('countByRole')->with(CpgUser::ROLE_SUPER)->willReturn(1);
         $repository->expects(self::never())->method('remove');
 
-        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class));
+        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class), $this->auditLoggerExpectingNothing());
 
         $this->expectException(CannotDeleteLastSuperAdminException::class);
 
@@ -61,7 +66,10 @@ final class CpgUserAdministratorTest extends TestCase
         $repository->expects(self::once())->method('countByRole')->with(CpgUser::ROLE_SUPER)->willReturn(2);
         $repository->expects(self::once())->method('remove')->with($targetUser);
 
-        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class));
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('userDeleted')->with($targetUser);
+
+        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class), $auditLogger);
 
         $administrator->delete($targetUser->getId(), $actingUser);
     }
@@ -82,7 +90,7 @@ final class CpgUserAdministratorTest extends TestCase
         $repository->expects(self::never())->method('findOneById');
         $repository->expects(self::never())->method('remove');
 
-        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class));
+        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class), $this->auditLoggerExpectingNothing());
 
         $this->expectException(CannotDeleteOwnAccountException::class);
 
@@ -96,7 +104,7 @@ final class CpgUserAdministratorTest extends TestCase
         $repository = self::createStub(CpgUserRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
-        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class));
+        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class), $this->auditLoggerExpectingNothing());
 
         $this->expectException(CpgUserNotFoundException::class);
 
@@ -117,7 +125,10 @@ final class CpgUserAdministratorTest extends TestCase
             ->with($user, TestCredentials::variant('new'))
             ->willReturn('new-hashed-password');
 
-        $administrator = new CpgUserAdministrator($repository, $hasher);
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('passwordChanged')->with($user);
+
+        $administrator = new CpgUserAdministrator($repository, $hasher, $auditLogger);
 
         $administrator->changePassword($user->getId(), TestCredentials::variant('new'));
 
@@ -131,7 +142,7 @@ final class CpgUserAdministratorTest extends TestCase
 
         $hasher = self::createStub(UserPasswordHasherInterface::class);
 
-        $administrator = new CpgUserAdministrator($repository, $hasher);
+        $administrator = new CpgUserAdministrator($repository, $hasher, $this->auditLoggerExpectingNothing());
 
         $this->expectException(CpgUserNotFoundException::class);
 
@@ -153,5 +164,17 @@ final class CpgUserAdministratorTest extends TestCase
         $user->setRoles([CpgUser::ROLE_SUPER]);
 
         return $user;
+    }
+
+    /**
+     * Journal de sécurité (D5) : sur un refus, rien n'a eu lieu.
+     */
+    private function auditLoggerExpectingNothing(): SecurityAuditLoggerInterface&MockObject
+    {
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('userDeleted');
+        $auditLogger->expects(self::never())->method('passwordChanged');
+
+        return $auditLogger;
     }
 }

@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\User\Application;
 
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Application\CpgUserRoleAdministrator;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CannotModifyOwnRolesException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
 
@@ -25,7 +27,7 @@ final class CpgUserRoleAdministratorTest extends TestCase
         $repository->expects(self::never())->method('countByRole');
         $repository->expects(self::once())->method('save')->with($target);
 
-        (new CpgUserRoleAdministrator($repository))->setSuperAdmin($target->getId(), true, $actingUser);
+        (new CpgUserRoleAdministrator($repository, $this->auditLoggerExpectingRoleChange($target, true)))->setSuperAdmin($target->getId(), true, $actingUser);
 
         self::assertContains(CpgUser::ROLE_SUPER, $target->getRoles());
     }
@@ -41,7 +43,7 @@ final class CpgUserRoleAdministratorTest extends TestCase
         $repository->expects(self::once())->method('countByRole')->with(CpgUser::ROLE_SUPER)->willReturn(2);
         $repository->expects(self::once())->method('save')->with($target);
 
-        (new CpgUserRoleAdministrator($repository))->setSuperAdmin($target->getId(), false, $actingUser);
+        (new CpgUserRoleAdministrator($repository, $this->auditLoggerExpectingRoleChange($target, false)))->setSuperAdmin($target->getId(), false, $actingUser);
 
         self::assertNotContains(CpgUser::ROLE_SUPER, $target->getRoles());
         // ADR 0003 D1 : un compte invité a été accordé nominativement (son
@@ -67,7 +69,7 @@ final class CpgUserRoleAdministratorTest extends TestCase
         $repository->expects(self::once())->method('countByRole')->with(CpgUser::ROLE_SUPER)->willReturn(2);
         $repository->expects(self::once())->method('save')->with($target);
 
-        (new CpgUserRoleAdministrator($repository))->setSuperAdmin($target->getId(), false, $actingUser);
+        (new CpgUserRoleAdministrator($repository, $this->auditLoggerExpectingRoleChange($target, false)))->setSuperAdmin($target->getId(), false, $actingUser);
 
         self::assertSame(['ROLE_USER'], $target->getRoles());
     }
@@ -84,7 +86,7 @@ final class CpgUserRoleAdministratorTest extends TestCase
 
         $this->expectException(CannotDemoteLastSuperAdminException::class);
 
-        (new CpgUserRoleAdministrator($repository))->setSuperAdmin($target->getId(), false, $actingUser);
+        (new CpgUserRoleAdministrator($repository, $this->auditLoggerExpectingNothing()))->setSuperAdmin($target->getId(), false, $actingUser);
     }
 
     /**
@@ -104,7 +106,7 @@ final class CpgUserRoleAdministratorTest extends TestCase
 
         $this->expectException(CannotModifyOwnRolesException::class);
 
-        (new CpgUserRoleAdministrator($repository))->setSuperAdmin($sameIdFromTheUrl, false, $actingUser);
+        (new CpgUserRoleAdministrator($repository, $this->auditLoggerExpectingNothing()))->setSuperAdmin($sameIdFromTheUrl, false, $actingUser);
     }
 
     public function testThrowsWhenUserNotFound(): void
@@ -116,7 +118,7 @@ final class CpgUserRoleAdministratorTest extends TestCase
 
         $this->expectException(CpgUserNotFoundException::class);
 
-        (new CpgUserRoleAdministrator($repository))->setSuperAdmin(Uuid::v7(), true, $actingUser);
+        (new CpgUserRoleAdministrator($repository, $this->auditLoggerExpectingNothing()))->setSuperAdmin(Uuid::v7(), true, $actingUser);
     }
 
     public function testGrantIsIdempotentWhenTheUserIsAlreadySuperAdmin(): void
@@ -129,7 +131,7 @@ final class CpgUserRoleAdministratorTest extends TestCase
         $repository->expects(self::never())->method('countByRole');
         $repository->expects(self::never())->method('save');
 
-        (new CpgUserRoleAdministrator($repository))->setSuperAdmin($target->getId(), true, $actingUser);
+        (new CpgUserRoleAdministrator($repository, $this->auditLoggerExpectingNothing()))->setSuperAdmin($target->getId(), true, $actingUser);
     }
 
     public function testRevokeIsIdempotentWhenTheUserIsNotSuperAdmin(): void
@@ -143,7 +145,7 @@ final class CpgUserRoleAdministratorTest extends TestCase
         $repository->expects(self::never())->method('countByRole');
         $repository->expects(self::never())->method('save');
 
-        (new CpgUserRoleAdministrator($repository))->setSuperAdmin($target->getId(), false, $actingUser);
+        (new CpgUserRoleAdministrator($repository, $this->auditLoggerExpectingNothing()))->setSuperAdmin($target->getId(), false, $actingUser);
     }
 
     /**
@@ -161,5 +163,29 @@ final class CpgUserRoleAdministratorTest extends TestCase
         $user->setRoles([CpgUser::ROLE_SUPER]);
 
         return $user;
+    }
+
+    /**
+     * Journal de sécurité (D5) : une ligne `role-changed` par changement
+     * effectif, avec le sens (accordé / retiré).
+     */
+    private function auditLoggerExpectingRoleChange(CpgUser $target, bool $superAdmin): SecurityAuditLoggerInterface&MockObject
+    {
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('roleChanged')->with($target, $superAdmin);
+
+        return $auditLogger;
+    }
+
+    /**
+     * Refus ou état déjà atteint : rien n'a changé, le journal ne dit rien —
+     * une ligne « rôle changé » sans changement serait un mensonge.
+     */
+    private function auditLoggerExpectingNothing(): SecurityAuditLoggerInterface&MockObject
+    {
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('roleChanged');
+
+        return $auditLogger;
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\User\Application;
 
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException;
 use App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException;
@@ -19,6 +20,7 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         private CpgUserRepositoryInterface $cpgUserRepository,
         private UserPasswordHasherInterface $passwordHasher,
         private ClockInterface $clock,
+        private SecurityAuditLoggerInterface $auditLogger,
     ) {
     }
 
@@ -40,6 +42,9 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
 
         $this->cpgUserRepository->save($user);
         $this->passwordSetupTokenRepository->save($token);
+        // Journal de sécurité (D5) : le compte activé, jamais le jeton ni le
+        // mot de passe. Parcours anonyme : l'auteur sera « anonymous ».
+        $this->auditLogger->accountActivated($user);
     }
 
     private function usableTokenOrFail(string $clearToken): PasswordSetupToken
