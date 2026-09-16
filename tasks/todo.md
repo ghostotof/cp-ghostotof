@@ -119,13 +119,15 @@ regardés sur `refs/heads/release/`, `TAG` lu depuis la sortie de `release-versi
 (pas d'échec) si une autre branche `release/*` existe sur le dépôt.
 
 **Critères d'acceptation :**
-- [ ] Sur une `release/*` de test : préprod tourne avec `<version>-<sha>-preprod`
-      (`kubectl get deploy backend -o jsonpath`), smoke et audit verts, aucun job en attente.
-- [ ] Un smoke test forcé en échec (variante jetable) déclenche `rollback-preprod`.
+- [x] Sur une `release/*` de test : préprod déployée avec `0.14.0-243e3b0-preprod` (run 35094176950 :
+      `kustomize edit set image`, migration puis `rollout` réussis dans le journal — pas de kubectl
+      local sur le cluster), smoke et audit verts, `deploy-prod` skipped, aucun job en attente.
+- [x] Un smoke test forcé en échec (commit 1de8fcb sur la branche de test) déclenche
+      `rollback-preprod` (run 35094908186 : smoke `failure`, rollback `success`).
 
 **Vérification :**
-- [ ] Runs et `jsonpath` consignés dans la PR ; branche de test supprimée ; préprod remise sur la
-      release courante si besoin (`rollout undo`).
+- [x] Runs consignés dans la PR #211 ; branche de test supprimée ; la préprod reste sur l'image de
+      test `0.14.0-243e3b0-preprod` après le rollback (même code applicatif que v0.13.2 + #192).
 
 **Dépendances :** T5. **Fichiers :** `.github/workflows/pipeline.yml`. **Taille :** S.
 
