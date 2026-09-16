@@ -47,7 +47,7 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [ ] **CHECKPOINT 2** — shellcheck/actionlint verts ; script rejoué sans diff ; un `deploy-preprod` vert avec secrets d'environnement + token lié ; onglet Security montre les alertes
 
 ## Phase 3 — A5 : journal de sécurité · MOYENNE
-- [ ] 3.1 `symfony/monolog-bundle` ; `monolog.yaml` prod/préprod = JSON sur stderr, canaux `security`/`app` à `info`, reste `warning`, `LOG_LEVEL` respecté ; pas de doublon avec `error_log`
+- [x] 3.1 `symfony/monolog-bundle` 4.1 ; `monolog.yaml` prod/préprod = JSON sur stderr, canaux `security` (Symfony) et `security_audit` (le nôtre, canal déclaré — nommé ainsi plutôt qu'`app` pour ne pas se confondre avec le canal par défaut) à `info` sur leur propre handler, reste à `%env(default:app.log_level:LOG_LEVEL)%` (défaut `warning`, `debug` dans l'image préprod) ; handler `main` excluant les deux canaux = pas de doublon ; pas de doublon non plus avec `error_log`
 - [ ] 3.2a `SecurityAuditLogger` : login succès/échec/throttling, logout, base-access, rejets CSRF, 403 backoffice — tests `TestLogger` + fonctionnels ; aucun secret dans les contextes (test dédié)
 - [ ] 3.2b Actions d'administration journalisées avec l'auteur : invitation/réinvitation, rôle, mot de passe, suppression, activation — tests
 - [ ] 3.3 Vérification préprod (`kubectl logs … | jq`) documentée dans `k8s/README.md`

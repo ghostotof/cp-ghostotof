@@ -121,7 +121,21 @@ in `build-images`' `needs` yet (re-evaluate after a few weeks). No baseline: the
 three `config.unknown_key` **warnings** on `ai.yaml` (`ai.agent.translator.model.name/options`), keys that
 Symfony accepts because the bundle declares `model` as a `variableNode` (its only rule: a string, or an array
 with `name`) — Language Tools cannot know the keys under it, a false positive by construction, left visible
-rather than baselined. The
+rather than baselined. **Monolog** is installed (`symfony/monolog-bundle`, audit 2026-09-16 constat A5 —
+without it, HttpKernel's fallback logger emitted nothing below `warning` and no security event left a
+trace at all). `backend/config/packages/monolog.yaml`: in `when@prod` (which covers preprod and prod,
+same `APP_ENV`) every handler is a `stream` to `php://stderr` with `monolog.formatter.json`, because
+Kubernetes only collects a container's stdout/stderr — `kubectl logs … | jq` is the whole tooling. The
+`security` (Symfony's own) and `security_audit` (ours, declared in `monolog.channels`) channels get
+their own handler at a hard-coded `info`, never `fingers_crossed`: a run of failed logins with no error
+after it is exactly the trace worth keeping, and buffering would discard it. Everything else goes to
+the `main` handler at `%env(default:app.log_level:LOG_LEVEL)%` (`LOG_LEVEL=warning` in `backend/.env`,
+`debug` in the preprod image), which excludes those two channels so an event is emitted **once**. The
+`default:` processor takes a *parameter name*, hence `app.log_level` in `services.yaml` — `default:warning:`
+would look for a parameter called `warning` and fail at compile time. No duplication with
+`error_log = /proc/self/fd/2` (`php.prod.ini`) either: Monolog writes to fd 2 itself, `error_log` only
+ever receives the engine's own errors. The events are emitted by `SecurityAuditLogger` (see Phase 3 of
+the remediation plan). The
 frontend has moved past the default scaffold: it follows a layered clean architecture (see below) and has
 Vitest configured with `npm test`. A `ROLE_SUPER`-gated backoffice (`/admin` on the frontend, `/api/backoffice/*`
 on the backend) lets an authenticated super-admin manage all of the above content plus user accounts — see the

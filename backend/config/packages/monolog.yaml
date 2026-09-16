@@ -1,0 +1,111 @@
+# Journalisation applicative et journal de sécurité (audit 2026-09-16, constat A5).
+#
+# Avant Monolog, le logger de secours de HttpKernel n'émettait qu'à partir de
+# `warning` : aucun événement de sécurité (login raté, rejet CSRF, 403 sur le
+# backoffice, action d'administration) ne laissait de trace exploitable. Ce
+# fichier pose le socle ; les événements eux-mêmes sont émis par
+# `SecurityAuditLogger` (Phase 3 du plan de remédiation).
+monolog:
+    channels:
+        # Canal dédié aux événements d'audit que le code applicatif émet
+        # explicitement (`#[WithMonologChannel('security_audit')]`). Il est
+        # volontairement DISTINCT du canal `security` déclaré par SecurityBundle :
+        # ce dernier porte la mécanique du framework (firewall, authentificateurs,
+        # voters), le nôtre porte la décision métier qu'on veut pouvoir relire.
+        # Les deux sont journalisés, au même niveau, dans le même flux.
+        - security_audit
+        - deprecation # Deprecations are logged in the dedicated "deprecation" channel when it exists
+
+when@dev:
+    monolog:
+        handlers:
+            main:
+                type: stream
+                path: "%kernel.logs_dir%/%kernel.environment%.log"
+                level: debug
+                # `!event` seulement : `security` et `security_audit` restent
+                # visibles dans var/log/dev.log, c'est là qu'on vérifie qu'un
+                # événement est bien émis avant de déployer.
+                channels: ["!event"]
+            console:
+                type: console
+                process_psr_3_messages: false
+                channels: ["!event", "!doctrine", "!console"]
+
+when@test:
+    monolog:
+        handlers:
+            main:
+                type: fingers_crossed
+                action_level: error
+                handler: nested
+                excluded_http_codes: [404, 405]
+                channels: ["!event"]
+            nested:
+                type: stream
+                path: "%kernel.logs_dir%/%kernel.environment%.log"
+                level: debug
+
+# `when@prod` couvre la production ET la préprod : les deux tournent avec
+# APP_ENV=prod (l'image `preprod` est construite FROM `production`, elle ne
+# change que LOG_LEVEL=debug et Xdebug, cf. docker/php/Dockerfile).
+when@prod:
+    monolog:
+        handlers:
+            # Tout le reste de l'application. Une ligne JSON par enregistrement sur
+            # la sortie d'erreur : c'est ce que Kubernetes collecte (il ne lit que
+            # stdout/stderr des conteneurs), donc `kubectl logs deploy/backend -c
+            # php-fpm | jq 'select(.channel == "security")'` fonctionne sans aucune
+            # infrastructure de collecte. Un fichier dans var/log/ serait au
+            # contraire invisible — et perdu au redémarrage du pod, le système de
+            # fichiers étant en lecture seule hors de var/.
+            #
+            # Pas de doublon avec `error_log = /proc/self/fd/2` (docker/php/php.prod.ini) :
+            # Monolog écrit lui-même sur le descripteur 2 via son propre handler,
+            # tandis qu'`error_log` ne reçoit que les erreurs émises par le moteur
+            # PHP (erreur fatale à la compilation, avertissement de démarrage) —
+            # celles qui, par définition, ne passent jamais par le conteneur Symfony.
+            # Aucun enregistrement Monolog n'est donc repris par `error_log`.
+            main:
+                type: stream
+                path: php://stderr
+                # Sobre en production, verbeux en préprod sans rebuild : l'image
+                # `preprod` positionne LOG_LEVEL=debug. Le défaut vient de
+                # `backend/.env` (LOG_LEVEL=warning) ; `default:app.log_level:` est
+                # le filet si la variable disparaît de l'environnement.
+                level: "%env(default:app.log_level:LOG_LEVEL)%"
+                formatter: monolog.formatter.json
+                # Les deux canaux de sécurité ont leur propre handler ci-dessous :
+                # les exclure ici est ce qui évite qu'un même événement sorte deux
+                # fois (et, à LOG_LEVEL=debug, avec deux niveaux d'effet différents).
+                channels: ["!security", "!security_audit", "!deprecation"]
+            # Journal de sécurité. Deux différences assumées avec `main` :
+            #
+            #  - `level: info` en dur, jamais LOG_LEVEL : un login raté est un
+            #    `info`, et la trace doit exister en production, où LOG_LEVEL vaut
+            #    `warning`. Le périmètre est étroit (deux canaux), donc le volume
+            #    reste borné — ce n'est pas un passage global en mode verbeux.
+            #  - pas de `fingers_crossed` : le tampon de la recette ne vide les
+            #    messages que si une erreur survient ensuite. Or ici l'absence
+            #    d'erreur est le cas courant, et c'est justement la série
+            #    d'événements sans erreur (dix logins ratés d'affilée) qu'on veut
+            #    pouvoir relire. Bufferiser reviendrait à jeter la trace.
+            security:
+                type: stream
+                path: php://stderr
+                level: info
+                formatter: monolog.formatter.json
+                channels: ["security", "security_audit"]
+            console:
+                type: console
+                process_psr_3_messages: false
+                # Mêmes exclusions que `main` : en commande (CronJob de veille,
+                # commandes d'administration), la ligne JSON du handler `security`
+                # reste la seule trace de l'événement, pas une seconde copie
+                # formatée pour un humain.
+                channels: ["!event", "!doctrine", "!security", "!security_audit"]
+            deprecation:
+                type: stream
+                channels: [deprecation]
+                path: php://stderr
+                formatter: monolog.formatter.json
