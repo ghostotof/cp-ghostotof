@@ -15,14 +15,15 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [x] 0.2 Q1–Q9 tranchées le 2026-09-16 (voir `tasks/plan.md`) ; cette branche n'est poussée qu'après `v0.14.1` en prod (Q1)
 - [x] **CHECKPOINT 0** — plan validé par Christophe le 2026-09-16
 
-## Phase 1 — A1 : stockage des limiteurs hors du pod · HAUTE · `hotfix/rate-limiter-storage`
-- [ ] 1.1 `framework.cache.app: cache.adapter.doctrine_dbal` (tous envs) + migration `cache_items` réversible ; pools Doctrine `when@prod` simplifiés
-- [ ] 1.2 `tests/Security/RateLimiterStorageTest` : `cache.rate_limiter`/`cache.app` = DBAL, jamais Filesystem (docblock = récit de l'incident)
-- [ ] 1.3 Zone nginx `login` (10 r/m, burst 5) sur `location ^~ /api/login_check` dans `docker/nginx/default.conf` **et** `k8s/base/backend-nginx.conf`
-- [ ] 1.4 `tools/smoke-login-throttling.sh` (+ test hors ligne) appelé par `smoke-test-preprod` : 6 logins erronés, le 6e doit dire « Too many failed login attempts »
-- [ ] 1.5 `cache:pool:prune` ajouté au CronJob quotidien (`messenger-purge-cronjob.yaml`, rename éventuel propre dans `kustomization.yaml`)
-- [ ] 1.6 `docs/adr/0005-etat-hors-du-pod.md` + CLAUDE.md (invariant, test, smoke test)
-- [ ] **CHECKPOINT 1** — gates verts ; `release/0.14.1` : smoke test throttling vert en préprod ; merge `main` ; `v0.14.1` posé ; 6 logins erronés sur la prod → « Too many » ; décision Q6 (post-mortem public)
+## Phase 1 — A1 : stockage des limiteurs hors du pod · HAUTE · `hotfix/rate-limiter-storage` — **LIVRÉE, v0.14.1 (2026-09-16)**
+- [x] 1.1 `framework.cache.app: cache.adapter.doctrine_dbal` (tous envs) + migration `cache_items` (`Version20260916180000`)
+- [x] 1.2 `tests/Security/RateLimiterStorageTest`
+- [x] 1.3 Zone nginx `login` (10 r/m, burst 10) dans les deux confs
+- [x] 1.4 `tools/smoke-login-throttling.sh` (+ test hors ligne) dans `smoke-test-preprod` — a refusé deux déploiements et révélé A25
+- [x] 1.5 `cache:pool:prune` dans le CronJob de ménage (nom conservé)
+- [x] 1.6 ADR 0005 (D1–D7) + CLAUDE.md
+- [x] 1.7 A25 : `100.64.0.0/10` + `real_ip_recursive on` (deux confs) ; `k8s/ingress-nginx-values.yaml` (proxy-protocol v2) appliqué par `helm upgrade` (révision 2) ; README k8s
+- [x] **CHECKPOINT 1** — gates verts ; préprod verte au 3e run (throttling au 6e) ; `v0.14.1` posé ; prod vérifiée (6e login erroné → « Too many ») ; reste : entrée post-mortem publique (Q6, éditorial)
 
 ## Phase 2 — A2/A3/A4 : GitHub et RBAC · MOYENNE
 - [ ] 2.1 `tools/github-settings.sh` : alertes Dependabot + security updates, PVR, `sha_pinning_required` ; `SECURITY.md` (PVR = canal principal)

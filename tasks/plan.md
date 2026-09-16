@@ -111,6 +111,7 @@ Gates à repasser à chaque checkpoint :
 | A22 | `.claude/settings.local.json` non ignoré | Faible | Élevée | T5.3 |
 | A23 | `framework.session: true` inutile ; pattern firewall `login` sans ancre | Info | Élevée | T5.7 |
 | A24 | `og:title` avec le nom réel | Info | — | Choix documenté, rien à faire |
+| A25 | IP cliente perdue : LB Scaleway sans proxy-protocol (Symfony voyait 2 IP de LB), sidecar nginx sans `100.64.0.0/10` (zones = 1 compteur global) — révélé par le smoke test de T1.4 | Élevée | Élevée (confirmé) | Phase 1, livré v0.14.1 (ADR 0005 D6/D7, `k8s/ingress-nginx-values.yaml`) |
 
 ---
 
@@ -141,6 +142,12 @@ Phase 6 (différable) : T6.1 sauvegardes Postgres
 ---
 
 ## Phase 1 — A1 : stockage des limiteurs hors du pod · priorité HAUTE · `hotfix/rate-limiter-storage`
+
+> **Livrée le 2026-09-16, v0.14.1 en production** (PR #217 → develop, PR #218 → main). Le smoke
+> test T1.4 a refusé les deux premiers déploiements et révélé A25 (proxy-protocol absent sur le LB,
+> `100.64.0.0/10` absent des plages de confiance nginx), corrigé dans la même release : `helm
+> upgrade` avec `k8s/ingress-nginx-values.yaml` (révision 2, lancé à la main, LB inchangé) et
+> `real_ip_recursive on` + RFC 6598 dans les deux confs. Vérifié en prod : 6e login erroné freiné.
 
 ### Task 1.1 : `cache.app` sur Doctrine DBAL + migration `cache_items`
 **Description :** `config/packages/cache.yaml` : `framework.cache.app: cache.adapter.doctrine_dbal`
