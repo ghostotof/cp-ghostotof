@@ -8,9 +8,8 @@ name: Pipeline
 #      merge d'une branche de release, qui est le seul stop humain.
 # Un tag Git ne déclenche plus rien : il est posé par la phase 3, après la prod.
 #
-# Fin de phase 2 (préprod) et phase 3 : en cours de réécriture (tâches T6 à T8
-# de la spec) — les jobs encore gardés par `refs/tags/` ci-dessous sont morts
-# jusque-là.
+# Phase 3 : en cours de réécriture (tâches T7 et T8 de la spec) — les jobs
+# encore gardés par `refs/tags/` ci-dessous sont morts jusque-là.
 
 on:
   push:
@@ -472,11 +471,15 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
-  # deploy-preprod
+  # deploy-preprod — chaque push d'une branche `release/**` déploie la préprod
+  # avec les images `<version>-<sha>-preprod` que build-images vient de
+  # construire (ou de retrouver). La préprod est unique : une seule release
+  # ouverte à la fois — une seconde branche `release/*` n'est pas bloquée, mais
+  # signalée, parce que ses push écraseraient la préprod de la première.
   # ---------------------------------------------------------------------------
   deploy-preprod:
-    needs: [build-images]
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [release-version, build-images]
+    if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
     environment:
       name: preprod
@@ -484,6 +487,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: imranismail/setup-kustomize@53f941b41dca13ed61874bbc6b4b6e1562877530 # v3.0.0
+      - name: Une seule release ouverte à la fois ?
+        run: |
+          others="$(git ls-remote --heads origin 'refs/heads/release/*' | awk '{print $2}' | sed 's#^refs/heads/##' | grep -vx "$GITHUB_REF_NAME" || true)"
+          if [ -n "$others" ]; then
+            echo "::warning::D'autres branches de release existent ($(echo "$others" | tr '\n' ' ')) : la préprod est unique, chaque push de l'une écrase le déploiement de l'autre."
+          fi
       - name: Configure kubectl
         run: |
           mkdir -p ~/.kube
@@ -491,7 +500,7 @@ jobs:
       - name: Deploy
         working-directory: k8s/overlays/preprod
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ needs.release-version.outputs.image_tag }}
           MAINTENANCE_WINDOW: ${{ vars.DEPLOY_MAINTENANCE_WINDOW }}
         run: |
           kustomize edit set image "backend=$IMAGE_BACKEND:$TAG-preprod" "frontend=$IMAGE_FRONTEND:$TAG-preprod"
@@ -550,7 +559,8 @@ jobs:
           #    En mode standard, la release précédente reste en service sur
           #    l'ancien schéma — exactement l'état sûr (le DDL PostgreSQL est
           #    transactionnel, Doctrine joue chaque migration dans sa
-          #    transaction). Corriger la migration, publier un nouveau tag. En
+          #    transaction). Corriger la migration sur la branche de release,
+          #    pousser : nouvelles images, nouveau déploiement. En
           #    fenêtre de maintenance, `backend` et `worker` restent à 0 replica
           #    jusqu'à intervention manuelle (voulu : jamais de trafic sur un
           #    schéma à moitié migré) ; si la migration n'a rien écrit,
@@ -584,11 +594,13 @@ jobs:
             || { kubectl -n preprod logs job/backend-seed --tail=200; exit 1; }
 
   # ---------------------------------------------------------------------------
-  # test-preprod — smoke tests + audit boîte noire (gate bloquant)
+  # test-preprod — smoke tests + audit boîte noire. Le run de release s'arrête
+  # après eux : un vert ici autorise le merge de la PR vers `main`, qui est le
+  # stop humain (spec 0006, D6/D7) — plus d'approbation d'environnement.
   # ---------------------------------------------------------------------------
   smoke-test-preprod:
     needs: [deploy-preprod]
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
     steps:
       - name: Smoke tests
@@ -609,7 +621,7 @@ jobs:
       # fonctionnel, seule la publication d'un message (POST /api/contact)
       # échouait réellement. `rollout status` échoue/timeout si le déploiement
       # n'atteint jamais l'état Ready, ce qui aurait fait échouer ce job et
-      # déclenché rollback-preprod avant même d'arriver au gate deploy-prod.
+      # déclenché rollback-preprod — et laissé la PR vers `main` rouge.
       # Postgres ajouté par cohérence : /api/me ne le sollicite pas non plus
       # (rejet 401 avant toute requête DB pour une requête non authentifiée),
       # donc une régression équivalente sur postgres.yaml passerait tout aussi
@@ -620,11 +632,11 @@ jobs:
           kubectl -n preprod rollout status deployment/rabbitmq --timeout=60s
           kubectl -n preprod rollout status deployment/worker --timeout=60s
 
-  # Gate bloquant : une régression de sécurité en préprod empêche d'atteindre
-  # le gate d'approbation manuelle de deploy-prod (cf. son `needs`).
+  # Gate bloquant : une régression de sécurité en préprod laisse la PR vers
+  # `main` rouge (check requis du ruleset), donc pas de merge, donc pas de prod.
   audit-preprod:
     needs: [deploy-preprod]
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -644,7 +656,7 @@ jobs:
   # ---------------------------------------------------------------------------
   rollback-preprod:
     needs: [smoke-test-preprod, audit-preprod]
-    if: failure() && startsWith(github.ref, 'refs/tags/')
+    if: failure() && startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
     steps:
       - name: Configure kubectl
@@ -737,7 +749,8 @@ jobs:
           #    En mode standard, la release précédente reste en service sur
           #    l'ancien schéma — exactement l'état sûr (le DDL PostgreSQL est
           #    transactionnel, Doctrine joue chaque migration dans sa
-          #    transaction). Corriger la migration, publier un nouveau tag. En
+          #    transaction). Corriger la migration sur la branche de release,
+          #    pousser : nouvelles images, nouveau déploiement. En
           #    fenêtre de maintenance, `backend` et `worker` restent à 0 replica
           #    jusqu'à intervention manuelle (voulu : jamais de trafic sur un
           #    schéma à moitié migré) ; si la migration n'a rien écrit,
