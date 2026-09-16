@@ -167,14 +167,15 @@ ses push déclenchent les workflows. L'artefact
 `social-preview` reste produit par `build-images` (T5) et rattaché ici.
 
 **Critères d'acceptation :**
-- [ ] Un re-run après succès complet ne fait rien et reste vert (chaque étape a son test
-      d'existence).
-- [ ] Un tag `vX.Y.Z` existant sur un autre commit fait échouer l'étape 1.
+- [x] Un re-run après succès complet ne fait rien et reste vert (chaque étape a son test
+      d'existence) — cas « re-run » du test.
+- [x] Un tag `vX.Y.Z` existant sur un autre commit fait échouer l'étape 1 — cas « tag ailleurs ».
 
 **Vérification :**
-- [ ] Les six étapes sont testables à la main sur un dépôt temporaire avec le script extrait
+- [x] Les six étapes sont testables sur un dépôt temporaire avec le script extrait
       `tools/finalize-release.sh` (le job ne fait que l'appeler, comme T2) ;
-      `tools/tests/finalize-release.test.sh` vert.
+      `tools/tests/finalize-release.test.sh` vert : 20 cas (nominal, re-run, develop divergé →
+      code 0, tag ailleurs, copie différente, version ≠ notes), exécuté par `tools-tests`.
 
 **Dépendances :** T7. **Fichiers :** `.github/workflows/pipeline.yml`, `tools/finalize-release.sh`,
 `tools/tests/finalize-release.test.sh`. **Taille :** M.
