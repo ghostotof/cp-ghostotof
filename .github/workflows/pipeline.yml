@@ -353,6 +353,9 @@ jobs:
           # joignable depuis origin/main : il lui faut l'historique, pas le
           # seul commit de tête.
           fetch-depth: 0
+      # Pas de `| tee` vers $GITHUB_OUTPUT : le shell par défaut des `run:` est
+      # `bash -e` SANS pipefail, un échec du script serait masqué par tee et le
+      # job passerait au vert avec des sorties vides (vu au premier essai).
       - name: Version calculée = nom de branche = titre des notes
         id: check
         run: |
@@ -360,7 +363,9 @@ jobs:
           echo "Version calculée depuis les commits : $computed"
           tools/verify-release-merge.sh --no-merge \
             --expect-branch "$GITHUB_REF_NAME" \
-            --expect-version "$computed" | tee -a "$GITHUB_OUTPUT"
+            --expect-version "$computed" > "$RUNNER_TEMP/release.env"
+          cat "$RUNNER_TEMP/release.env"
+          cat "$RUNNER_TEMP/release.env" >> "$GITHUB_OUTPUT"
       - name: Résumé
         run: |
           {
@@ -394,6 +399,12 @@ jobs:
       - name: Les images existent-elles déjà sur GHCR ?
         id: existing
         run: |
+          # Une sortie vide de release-version donnerait des images `:` et
+          # `:-preprod` : on refuse avant de toucher au registre.
+          if [ -z "$TAG" ]; then
+            echo "::error::image_tag vide : release-version n'a pas produit de version."
+            exit 1
+          fi
           present=0
           for image in "$IMAGE_BACKEND:$TAG" "$IMAGE_BACKEND:$TAG-preprod" \
                        "$IMAGE_FRONTEND:$TAG" "$IMAGE_FRONTEND:$TAG-preprod"; do
