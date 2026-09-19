@@ -26,9 +26,10 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
   tant que Christophe n'a pas demandé de push.
 - Secrets : toute commande qui pose une valeur secrète se lance dans un terminal séparé, par fichier
   ou stdin, jamais via `!` ni `--body`.
-- Reliquat manuel restant : **R.4 fait le 2026-09-19 (checkpoint 2 atteint)**. R.5 (agenda), R.6
-  (saisie du post-mortem, brouillon prêt) et R.7 (routage des notifications) sont irréductiblement
-  manuels : aucun n'est un changement de code, aucun ne passe par une branche ni une release.
+- Reliquat manuel : **R.1 à R.6 tous faits au 2026-09-19**, dont R.4 = checkpoint 2 du lot 1.
+  **Ne reste que R.7**, réduit au routage des notifications « Security alerts » (réglage du compte
+  personnel, sans API) — les alertes Dependabot, elles, sont déjà actives. Aucun de ces points
+  n'était un changement de code : ni branche, ni release.
 
 ## Reliquat du lot 1 — à la main de Christophe (hors code)
 - [x] R.1 GitGuardian : incident 37338519 (fixtures de `rotate-deployer-token.test.sh`) marqué faux positif le 2026-09-16
@@ -39,8 +40,8 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [x] R.3d Révisions 1 et 2 de `preprod-basic-auth-htpasswd` désactivées le 2026-09-16 (vérifié : rév. 3 seule `enabled`, `latest`)
 - [x] R.3e `PREPROD_BASIC_AUTH` de dépôt supprimé le 2026-09-16 (ancien mot de passe, inopérant) ; ses deux lecteurs, `smoke-test-preprod` et `audit-preprod`, déclarent `environment: preprod`
 - [x] R.4 **Fait le 2026-09-19** → **CHECKPOINT 2 du lot 1 atteint**. Condition levée d'abord : la release v0.15.1 est passée verte de bout en bout, `finalize-release` compris, donc la clé `release-bot` régénérée en R.3b a servi pour de vrai (tag, commit de notes, synchro `main` → `develop`). Vérifié avant suppression : les quatre jobs lisant `KUBE_CONFIG_*` (`deploy-preprod`, `deploy-prod`, `rollback-preprod`, `smoke-test-preprod`) déclarent tous leur `environment`, et aucun ServiceAccount ni pod ne référençait les Secrets durables. Supprimés : les 2 secrets de dépôt `KUBE_CONFIG_PREPROD`/`KUBE_CONFIG_PROD` (datés du 2026-09-01) et les 2 Secrets `github-actions-deployer-token` des namespaces `preprod` et `prod` ; les ServiceAccounts sont intacts et tous les pods sont restés `Running`. `tools/github-settings.sh` rejoué : étapes a–k vertes, **étape k entièrement verte** (4 secrets présents dans leur environnement, 4 absents du niveau dépôt)
-- [ ] R.5 Un rappel agenda le **2026-12-08** : relancer les deux rotations (`preprod` et `prod` expirent le 2026-12-15). Purement personnel — aucune API, à poser dans l'agenda de Christophe. Commande le jour venu : `tools/rotate-deployer-token.sh preprod` puis `… prod`, dans un terminal séparé
-- [ ] R.6 Post-mortem public saisi dans le backoffice (Q6 : l'incident **A1**, invariant « aucun état sur le filesystem du pod »). **Brouillon FR + EN prêt le 2026-09-19 dans `tasks/postmortem-a1.md`** — reste la saisie dans `/admin/incidents` : créer l'entrée française, puis « Créer la version EN » pour que les deux partagent le groupe de traduction. `version` = `v0.14.1`, `occurredAt` = `2026-09-16`
+- [x] R.5 **Fait le 2026-09-19** : rappel agenda posé par Christophe pour le **2026-12-08** (les jetons `preprod` et `prod` expirent le 2026-12-15). Commande le jour venu : `tools/rotate-deployer-token.sh preprod` puis `… prod`, dans un terminal séparé
+- [x] R.6 **Fait le 2026-09-19** : post-mortem de l'incident **A1** (invariant « aucun état sur le filesystem du pod », décision Q6). Contenu rédigé en FR et EN — titre, impact, cause racine, résolution, invariant —, versionné dans `tasks/postmortem-a1.md` et envoyé par mail champ par champ pour la saisie dans `/admin/incidents` (entrée française puis « Créer la version EN », pour que les deux partagent le groupe de traduction). `version` = `v0.14.1`, `occurredAt` = `2026-09-16`
 - [ ] R.7 Onglet Security : **alertes Dependabot déjà actives** (vérifié le 2026-09-19, l'API répond 204 ; `dependabot_security_updates: disabled` est la décision documentée, ces PR viseraient `main`). Ne reste que le **routage des notifications « Security alerts »**, réglage du compte personnel sans API : github.com/settings/notifications
 
 ## Phase 4 — A6/A7 : parcours mot de passe et e-mail · MOYENNE
