@@ -10,11 +10,15 @@ Gates par checkpoint : `make back-quality && make back-test` ; frontend (si touc
 `make front-lint && make front-test && make front-build` ; k8s (si touché) `kubectl kustomize`
 prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=warning` + `actionlint`.
 
-## Point de reprise (2026-09-16, soir)
+## Point de reprise (2026-09-19)
 
 - **Tout est local** : la branche `feature/security-audit-3-remediation-lot-2` n'est **pas poussée**,
   aucune PR, rien en préprod ni en prod pour ce lot. Ne pousser qu'à la demande explicite de Christophe.
-- Production : v0.15.0 (lot 1 complet). `develop` = `main` + la copie des notes v0.15.0.
+  Rebasée le 2026-09-19 sur `develop` (`771f394`) — elle n'apporte toujours que `tasks/`.
+- Production : **v0.15.1**, livrée le 2026-09-19 (hotfix d'intitulé, sans rapport avec ce lot).
+  Le lot 1 reste intégralement livré par v0.14.1 et v0.15.0. `develop` = `main` + les quatre montées
+  de version Dependabot du 2026-09-19 (CodeQL 4.38.0 ; backend patch api-platform/doctrine/symfony ;
+  frontend mineur vite 8.3.0 ; `unplugin-icons` 24, rendu des icônes vérifié avant fusion).
 - **Décision en attente** avant tout code : T4.1 en agent **Fable** (confirmation de Christophe
   obligatoire avant le lancement), T4.1 en agent **Opus**, ou la **phase 5 d'abord** sur Opus.
 - Méthode : un agent par tâche, dans l'ordre du plan, relecture du diff et gates par l'orchestrateur,
@@ -22,7 +26,7 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
   tant que Christophe n'a pas demandé de push.
 - Secrets : toute commande qui pose une valeur secrète se lance dans un terminal séparé, par fichier
   ou stdin, jamais via `!` ni `--body`.
-- Reliquat manuel restant : R.4 (après la prochaine release verte), R.5, R.6, R.7.
+- Reliquat manuel restant : **R.4 — sa condition est levée** (voir ci-dessous), R.5, R.6, R.7.
 
 ## Reliquat du lot 1 — à la main de Christophe (hors code)
 - [x] R.1 GitGuardian : incident 37338519 (fixtures de `rotate-deployer-token.test.sh`) marqué faux positif le 2026-09-16
@@ -32,7 +36,7 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [x] R.3c Mot de passe Basic Auth de la préprod changé le 2026-09-16 : les identifiants avaient été collés dans le transcript de la session (consigne `--body` fautive, cf. mémoire « secrets hors session »). Nouvelle version rév. 3 de `preprod-basic-auth-htpasswd` (Secret Manager, 18:23:58 UTC), ExternalSecret resynchronisé à 18:24:23 UTC (`force-sync`)
 - [x] R.3d Révisions 1 et 2 de `preprod-basic-auth-htpasswd` désactivées le 2026-09-16 (vérifié : rév. 3 seule `enabled`, `latest`)
 - [x] R.3e `PREPROD_BASIC_AUTH` de dépôt supprimé le 2026-09-16 (ancien mot de passe, inopérant) ; ses deux lecteurs, `smoke-test-preprod` et `audit-preprod`, déclarent `environment: preprod`
-- [ ] R.4 Après le prochain run de release vert : suppression des 2 Secrets durables et des 2 secrets de dépôt restants (`KUBE_CONFIG_PREPROD`, `KUBE_CONFIG_PROD` ; `RELEASE_DEPLOY_KEY` et `PREPROD_BASIC_AUTH` déjà faits), `tools/github-settings.sh` (étape k tout vert) → **CHECKPOINT 2 du lot 1**
+- [ ] R.4 **Condition levée le 2026-09-19** : la release v0.15.1 est passée verte de bout en bout, `finalize-release` compris — la clé `release-bot` régénérée en R.3b a donc servi pour de vrai (tag, commit de notes, synchro `main` → `develop`), ce qui était le point à valider avant de supprimer quoi que ce soit. Reste à faire, à la main et dans un terminal séparé : suppression des 2 Secrets durables et des 2 secrets de dépôt restants (`KUBE_CONFIG_PREPROD`, `KUBE_CONFIG_PROD` ; `RELEASE_DEPLOY_KEY` et `PREPROD_BASIC_AUTH` déjà faits), puis `tools/github-settings.sh` (étape k tout vert) → **CHECKPOINT 2 du lot 1**
 - [ ] R.5 Un rappel agenda le **2026-12-08** : relancer les deux rotations (`preprod` et `prod` expirent le 2026-12-15)
 - [ ] R.6 Post-mortem public saisi dans le backoffice (Q6, champs par mail)
 - [ ] R.7 Onglet Security : alertes Dependabot visibles ; notifications « Security alerts » routées
