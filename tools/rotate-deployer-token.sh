@@ -180,10 +180,19 @@ jwt_exp() {
 expires_at="$(jwt_exp "$token_file")"
 [[ "$expires_at" =~ ^[0-9]+$ ]] || die "impossible de lire l'expiration (« exp ») du jeton émis"
 granted_seconds=$((expires_at - now))
-# Tolérance d'une minute : l'horloge locale et celle du control-plane ne sont
-# pas synchronisées à la seconde.
+# `now` est relevé avant l'appel au cluster, `exp` vient de sa réponse : les
+# quelques secondes de latence entre les deux rendent `granted_seconds`
+# légèrement inférieur à la durée réellement accordée. Les affichages ci-dessous
+# arrondissent donc à l'unité la plus proche (+ une demi-unité avant la division
+# entière) au lieu de tronquer, sans quoi un jeton de 90 jours s'annonce
+# « 89 jours » et 24 h accordées s'annoncent « 23 h » — un message qui ment d'une
+# unité à chaque rotation, et deux cas de test qui ne passent que si le script
+# démarre dans la même seconde que son appelant.
+#
+# Tolérance d'une minute sur le seuil : l'horloge locale et celle du
+# control-plane ne sont pas synchronisées à la seconde.
 if [ $((requested_seconds - granted_seconds)) -gt 60 ]; then
-  warn "durée TRONQUÉE par le cluster : $duration demandée, $((granted_seconds / 3600)) h accordées (maximum du control-plane, --service-account-max-token-expiration). Poser la rotation sur la durée accordée, pas sur celle demandée."
+  warn "durée TRONQUÉE par le cluster : $duration demandée, $(( (granted_seconds + 1800) / 3600 )) h accordées (maximum du control-plane, --service-account-max-token-expiration). Poser la rotation sur la durée accordée, pas sur celle demandée."
 fi
 
 # ---- 4. kubeconfig autonome -----------------------------------------------------
@@ -240,7 +249,7 @@ fi
 # ---- 7. échéances ----------------------------------------------------------------
 expires_human="$(date -u -d "@$expires_at" '+%Y-%m-%d %H:%M UTC')"
 rotate_by="$(date -u -d "@$((expires_at - ROTATION_LEAD_DAYS * 86400))" '+%Y-%m-%d')"
-say "Expiration du jeton : $expires_human ($((granted_seconds / 86400)) jours)."
+say "Expiration du jeton : $expires_human ($(( (granted_seconds + 43200) / 86400 )) jours)."
 say "Prochaine rotation : avant le $rotate_by — relancer « $0 $env_name »."
 if [ "$dry_run" -eq 0 ]; then
   say "Si le Secret durable existe encore (première rotation) : après un déploiement vert avec ce jeton,"

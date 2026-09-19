@@ -243,6 +243,30 @@ else
   fail "troncature" "rc=$rc ; err : $(cat "$TMP/err") ; appels : $(cat "$TMP/truncated.args")"
 fi
 
+# --- Dérive d'horloge : les durées s'arrondissent, elles ne se tronquent pas ----
+# Le script relève son `now` après celui du test, et en usage réel quelques
+# secondes séparent ce relevé de l'`exp` que renvoie le cluster : `granted_seconds`
+# vaut donc toujours un peu moins que la durée ronde réellement accordée. Les deux
+# cas ci-dessus ne le voyaient pas — ils ne passaient que si le script démarrait
+# dans la même seconde que le test, d'où un tools-tests rouge une fois sur trois.
+# Ces deux-là forcent la dérive à 5 s : sans arrondi, ils lisent « 23 h » et
+# « 89 jours ».
+FAKE_TOKEN="$(jwt $((now + 24 * 3600 - 5)))"
+run skew_hours preprod
+if [ "$rc" -eq 0 ] && grep -q '24 h accordées' "$TMP/err"; then
+  pass "exp à 5 s près de 24 h → « 24 h accordées », jamais « 23 h »"
+else
+  fail "arrondi des heures sous dérive" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+
+FAKE_TOKEN="$(jwt $((now + ninety_days - 5)))"
+run skew_days preprod
+if [ "$rc" -eq 0 ] && grep -q '90 jours' "$TMP/out" && ! grep -q 'TRONQUÉE' "$TMP/err"; then
+  pass "exp à 5 s près de 90 jours → « 90 jours », sans troncature signalée"
+else
+  fail "arrondi des jours sous dérive" "rc=$rc ; out : $(cat "$TMP/out") ; err : $(cat "$TMP/err")"
+fi
+
 # --- Durée au-delà de Q4 → avertissement --------------------------------------
 FAKE_TOKEN="$(jwt $((now + 8760 * 3600)))"
 run long preprod --duration 8760h
