@@ -1,33 +1,33 @@
-# v0.15.0 — Journal de sécurité, secrets par environnement, jeton de déploiement rotatif
+# v0.15.1 — L'intitulé du site devient « Ingénieur logiciel senior PHP / Symfony »
 
-Lot 1 de la remédiation du 3e audit de sécurité (2026-09-16), phases 2 et 3. La phase 1 (limiteurs
-de débit et adresse du visiteur) est en production depuis v0.14.1.
+Correctif de libellé. Aucun changement de comportement, aucune migration, backend inchangé.
 
-## Journal de sécurité (phase 3)
+## Un seul intitulé, partout
 
-- Monolog est installé : en production, les canaux `security` et `security_audit` sortent en JSON
-  sur stderr dès le niveau `info`, le reste suit `LOG_LEVEL` (`warning` par défaut).
-- `SecurityAuditLogger` trace treize événements : connexion réussie, ratée ou freinée, déconnexion,
-  jeton du palier de base, rejet CSRF, refus d'accès au backoffice, invitation, changement de rôle,
-  changement de mot de passe, suppression de compte, activation. Chaque ligne porte l'événement,
-  l'identifiant visé, l'auteur, l'adresse IP et le chemin, et jamais un mot de passe, un jeton ni un
-  e-mail : un test le garantit.
-- Lecture sur un pod documentée dans `k8s/README.md` (`kubectl logs … | jq`).
+La page d'accueil annonçait « Développeur PHP / Symfony senior », et « Senior PHP / Symfony
+Developer » en anglais. Elle annonce désormais « Ingénieur logiciel senior PHP / Symfony » et
+« Senior Software Engineer (PHP/Symfony) ».
 
-## Dépôt GitHub et accès au cluster (phase 2)
+Le même intitulé vivait à quatre endroits, tous alignés dans cette version — un lien partagé
+n'annonce pas autre chose que la page qu'il ouvre :
 
-- Alertes de vulnérabilité Dependabot et signalement privé (Private Vulnerability Reporting)
-  activés ; `SECURITY.md` en fait le canal principal. Épinglage SHA des actions imposé par le dépôt.
-  Les correctifs automatiques Dependabot restent désactivés : leurs PR viseraient `main`, hors du
-  flux de release.
-- Les secrets de déploiement deviennent des secrets d'environnement : `preprod` n'est lisible que
-  depuis `release/*`, `production` que depuis `main`. Tous les jobs qui les lisent déclarent leur
-  environnement.
-- Le jeton du déployeur GitHub Actions n'est plus un secret Kubernetes sans expiration mais un jeton
-  lié, renouvelé tous les 90 jours par `tools/rotate-deployer-token.sh`, qui vérifie ses droits
-  avant de le publier. Le modèle de privilège réel du déployeur est documenté tel quel.
-- Tout est appliqué par `tools/github-settings.sh`, idempotent.
+- le titre en tête de la page d'accueil, dans les deux langues ;
+- le titre de l'onglet et du résultat de recherche (`seo.home.title`), qui portait encore un
+  troisième libellé hérité, « Développeur Web Senior » ;
+- les métadonnées Open Graph (`og:title`, `og:image:alt`) et le `<title>` statique qui sert de
+  repli avant que le routeur n'ait appliqué le titre de la page ;
+- la carte de partage elle-même, régénérée depuis son gabarit `frontend/scripts/og/template.html`.
 
-## Sans changement fonctionnel
+## Outillage
 
-Le site est celui de v0.14.1 ; cette version ne modifie ni le contenu ni le frontend.
+`tools/rotate-deployer-token.sh` annonçait une unité de moins que la durée réellement accordée —
+« 89 jours » pour un jeton de 90, « 23 h » pour 24 h : les quelques secondes séparant le relevé de
+l'horloge locale de la réponse du cluster étaient tronquées au lieu d'être arrondies. Le message
+disait donc faux à chaque rotation, sur la seule commande dont la sortie sert à programmer la
+rotation suivante. Le même défaut rendait deux cas de `tools-tests` dépendants de la seconde à
+laquelle le script démarrait, soit un job rouge environ une fois sur trois.
+
+## Ce que cette version ne change pas
+
+La carte « À propos de moi » de la page À propos porte encore l'ancien intitulé : c'est du contenu
+éditorial, administré depuis le backoffice, que le code ne pilote pas.
