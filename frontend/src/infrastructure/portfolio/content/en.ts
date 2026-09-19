@@ -2,7 +2,7 @@ import type { PortfolioLocaleContent } from './PortfolioLocaleContent'
 
 const en: PortfolioLocaleContent = {
   hero: {
-    eyebrow: 'Senior PHP / Symfony Developer',
+    eyebrow: 'Senior Software Engineer (PHP/Symfony)',
     titleLead: 'This site is',
     titleAccent: 'its own demonstration.',
     description:
