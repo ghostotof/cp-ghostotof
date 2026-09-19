@@ -30,6 +30,16 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
   Le lot 1 n'a donc plus rien d'ouvert, ni en code ni à la main. Aucun de ces sept points n'était un
   changement de code : ni branche, ni release.
 - **Reste donc uniquement le lot 2 lui-même** (phases 4 et 5), dont pas une ligne n'est écrite.
+- **Reprise prévue le lundi 2026-09-21.** Évaluation du 2026-09-19 : rien dans le lot 2 ne justifie de
+  travailler en urgence. Le lot 1, en production, couvre ce qui était réellement ouvert (limiteurs
+  opérants, IP cliente correcte, journal d'audit) ; le lot 2 durcit, il ne bouche pas de trou béant.
+  **Une seule mesure d'ici là : ne pas émettre d'invitation de compte** — A7 n'a de surface que pendant
+  la vie d'un jeton, et un jeton n'existe que si une invitation est partie. Non vérifiés faute d'accès
+  depuis la session : l'état DNS de SPF/DMARC (résolution sortante bloquée) et le nombre de jetons
+  actifs en prod (lecture en base refusée).
+- **Ordre conseillé à la reprise**, si l'on suit le risque plutôt que la numérotation : T4.1 puis T4.2
+  (le seul point à surface réelle), T4.3 en parallèle car manuel et lent (deux semaines de rapports
+  DMARC avant `p=reject`), la phase 5 ensuite.
 
 ## Reliquat du lot 1 — à la main de Christophe (hors code) — CLOS le 2026-09-19
 - [x] R.1 GitGuardian : incident 37338519 (fixtures de `rotate-deployer-token.test.sh`) marqué faux positif le 2026-09-16
