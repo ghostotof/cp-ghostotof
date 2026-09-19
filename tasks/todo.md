@@ -26,12 +26,12 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
   tant que Christophe n'a pas demandé de push.
 - Secrets : toute commande qui pose une valeur secrète se lance dans un terminal séparé, par fichier
   ou stdin, jamais via `!` ni `--body`.
-- Reliquat manuel : **R.1 à R.6 tous faits au 2026-09-19**, dont R.4 = checkpoint 2 du lot 1.
-  **Ne reste que R.7**, réduit au routage des notifications « Security alerts » (réglage du compte
-  personnel, sans API) — les alertes Dependabot, elles, sont déjà actives. Aucun de ces points
-  n'était un changement de code : ni branche, ni release.
+- **Reliquat manuel du lot 1 : intégralement clos le 2026-09-19** (R.1 à R.7), checkpoint 2 compris.
+  Le lot 1 n'a donc plus rien d'ouvert, ni en code ni à la main. Aucun de ces sept points n'était un
+  changement de code : ni branche, ni release.
+- **Reste donc uniquement le lot 2 lui-même** (phases 4 et 5), dont pas une ligne n'est écrite.
 
-## Reliquat du lot 1 — à la main de Christophe (hors code)
+## Reliquat du lot 1 — à la main de Christophe (hors code) — CLOS le 2026-09-19
 - [x] R.1 GitGuardian : incident 37338519 (fixtures de `rotate-deployer-token.test.sh`) marqué faux positif le 2026-09-16
 - [x] R.2 Rotation faite le 2026-09-16 : `preprod` (18:09 UTC) et `prod` (18:10 UTC), 90 jours accordés par Kapsule sans troncature (Q4 confirmée), `can-i` jobs=yes / pods/exec=no sur les deux ; `KUBE_CONFIG_PREPROD` posé sur l'environnement `preprod`, `KUBE_CONFIG_PROD` sur `production`. Expiration : 2026-12-15
 - [x] R.3a `PREPROD_BASIC_AUTH` posé sur l'environnement `preprod` (2026-09-16 18:25 UTC), **avec le nouveau mot de passe** de R.3c
@@ -42,7 +42,7 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [x] R.4 **Fait le 2026-09-19** → **CHECKPOINT 2 du lot 1 atteint**. Condition levée d'abord : la release v0.15.1 est passée verte de bout en bout, `finalize-release` compris, donc la clé `release-bot` régénérée en R.3b a servi pour de vrai (tag, commit de notes, synchro `main` → `develop`). Vérifié avant suppression : les quatre jobs lisant `KUBE_CONFIG_*` (`deploy-preprod`, `deploy-prod`, `rollback-preprod`, `smoke-test-preprod`) déclarent tous leur `environment`, et aucun ServiceAccount ni pod ne référençait les Secrets durables. Supprimés : les 2 secrets de dépôt `KUBE_CONFIG_PREPROD`/`KUBE_CONFIG_PROD` (datés du 2026-09-01) et les 2 Secrets `github-actions-deployer-token` des namespaces `preprod` et `prod` ; les ServiceAccounts sont intacts et tous les pods sont restés `Running`. `tools/github-settings.sh` rejoué : étapes a–k vertes, **étape k entièrement verte** (4 secrets présents dans leur environnement, 4 absents du niveau dépôt)
 - [x] R.5 **Fait le 2026-09-19** : rappel agenda posé par Christophe pour le **2026-12-08** (les jetons `preprod` et `prod` expirent le 2026-12-15). Commande le jour venu : `tools/rotate-deployer-token.sh preprod` puis `… prod`, dans un terminal séparé
 - [x] R.6 **Fait le 2026-09-19** : post-mortem de l'incident **A1** (invariant « aucun état sur le filesystem du pod », décision Q6). Contenu rédigé en FR et EN — titre, impact, cause racine, résolution, invariant —, versionné dans `tasks/postmortem-a1.md` et envoyé par mail champ par champ pour la saisie dans `/admin/incidents` (entrée française puis « Créer la version EN », pour que les deux partagent le groupe de traduction). `version` = `v0.14.1`, `occurredAt` = `2026-09-16`
-- [ ] R.7 Onglet Security : **alertes Dependabot déjà actives** (vérifié le 2026-09-19, l'API répond 204 ; `dependabot_security_updates: disabled` est la décision documentée, ces PR viseraient `main`). Ne reste que le **routage des notifications « Security alerts »**, réglage du compte personnel sans API : github.com/settings/notifications
+- [x] R.7 **Fait le 2026-09-19** : alertes Dependabot actives (vérifié, l'API répond 204 et `dependabot/alerts` renvoie une liste — 0 alerte ouverte à cette date), et **routage des notifications « Security alerts » posé** par Christophe (préférences du compte + abonnement au dépôt). Rappel pour plus tard : `dependabot_security_updates` reste **volontairement désactivé** — ces PR viseraient `main`, qui n'accepte qu'une PR validée par `smoke-test-preprod`/`audit-preprod`, elles ne seraient jamais mergeables. Ne pas l'activer en passant sur la page Code security
 
 ## Phase 4 — A6/A7 : parcours mot de passe et e-mail · MOYENNE
 - [ ] 4.1 API : `POST /api/account/password-setup/validate {token}` + `POST /api/account/password-setup {token, password}` ; `GET …/{token}` supprimé ; listeners rate-limit/CSRF, 2 confs nginx, `ApiRouteExposureTest::PUBLIC_PATHS`, tests fonctionnels (429 avant validation conservé)
