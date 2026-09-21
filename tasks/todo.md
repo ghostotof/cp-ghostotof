@@ -56,9 +56,18 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 
 ## Phase 4 — A6/A7 : parcours mot de passe et e-mail · MOYENNE
 - [x] 4.1 (fait le 2026-09-21, local) API : `POST /api/account/password-setup/validate {token}` + `POST /api/account/password-setup {token, password}` ; `GET …/{token}` supprimé ; listeners rate-limit/CSRF, 2 confs nginx, `ApiRouteExposureTest::PUBLIC_PATHS`, tests fonctionnels (429 avant validation conservé ; 422/404/410 sur les deux POST) ; retrait de `TOKEN_BEARING_PATH_PATTERN` de `SecurityAuditLogger`
-- [ ] 4.2 Lien e-mail `…/set-password#<token>` ; route `set-password/:token?` ; page lit le fragment (puis l'efface via `replaceState`), repli sur le param 48 h ; `HttpAccountRepository` ; specs Vitest ; parcours bout en bout en dev
+- [x] 4.2 (fait le 2026-09-21, local ; parcours bout en bout **non fait en dev** — pas de navigateur ni de catcher mail, reporté au checkpoint 4) Lien e-mail `…/set-password#<token>` ; route `set-password/:token?` ; page lit le fragment (puis l'efface via `replaceState`), repli sur le param 48 h ; `HttpAccountRepository` ; specs Vitest ; parcours bout en bout en dev
 - [ ] 4.3 (manuel) DKIM TEM vérifié ; `_dmarc` `p=quarantine` + `rua` sur une adresse du domaine ; SPF `-all` ; passage à `p=reject` planifié après deux semaines de rapports propres
 - [ ] 4.4 (suivi, release **suivante**, ≥ 48 h après T4.2 en prod) retrait du repli `set-password/:token?` côté frontend
+- [ ] **À rejouer au checkpoint 4, en préprod, dans un vrai navigateur** (doutes de l'agent de T4.2) :
+  (a) `router.replace` dans `onMounted` au tout premier chargement, avec le routeur réel et ses gardes —
+  l'URL doit être nettoyée (fragment **et** ancien lien `/set-password/<jeton>`), le formulaire rester
+  utilisable ; (b) un `complete` avec une phrase de passe longue a répondu **422** en dev pendant la sonde
+  de l'agent, cause non élucidée (quoting shell probable ; les contraintes de `password` n'ont pas changé
+  et le parcours fonctionne en prod aujourd'hui) — lire le corps du 422 s'il se reproduit ; (c) rappel :
+  `NotCompromisedPassword` est actif en dev, tout parcours manuel y appelle `api.pwnedpasswords.com`
+  (préfixe SHA-1 de 5 caractères, k-anonymat) ; `MAILER_DSN` de dev pointe sur un `mailpit` qui n'est pas
+  dans le compose
 - [ ] **CHECKPOINT 4** — gates backend + frontend verts ; invitation validée en préprod ; `dig` + e-mail réel `DKIM/DMARC: PASS`
 
 ## Phase 5 — Hygiène code et infra · FAIBLE
