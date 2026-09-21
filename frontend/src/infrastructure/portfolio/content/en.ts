@@ -154,7 +154,7 @@ const en: PortfolioLocaleContent = {
       {
         heading: 'Recipients',
         paragraphs: [
-          "Contact form data is sent to the publisher's mailbox, via the email delivery provider used in production (Scaleway, France), which also delivers account invitations, then through an email forwarding service (Cloudflare). An invited account's email address is visible to the publisher only. When you choose a password, an anonymous fragment of its hash (5 characters) is checked against a database of compromised passwords (Have I Been Pwned); neither the password nor your identity is transmitted. No data is sold, rented, or shared with third parties for commercial purposes.",
+          "Contact form data is sent to the publisher's mailbox, via the email delivery provider used in production (Scaleway, France), which also delivers account invitations; that mailbox is hosted in France (OVHcloud). An invited account's email address is visible to the publisher only. When you choose a password, an anonymous fragment of its hash (5 characters) is checked against a database of compromised passwords (Have I Been Pwned); neither the password nor your identity is transmitted. No data is sold, rented, or shared with third parties for commercial purposes.",
         ],
       },
       {
@@ -167,7 +167,7 @@ const en: PortfolioLocaleContent = {
       {
         heading: 'Transfers outside the European Union',
         paragraphs: [
-          "Hosting, the database and email delivery are located in France. One exception: contact form messages are relayed to the publisher's mailbox by Cloudflare, Inc. (United States), a transfer covered by the EU–US Data Privacy Framework and, failing that, by the European Commission's standard contractual clauses.",
+          "No data is transferred outside the European Union: hosting, the database, email delivery and the publisher's mailbox are all located in France.",
         ],
       },
     ],

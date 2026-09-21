@@ -154,7 +154,7 @@ const fr: PortfolioLocaleContent = {
       {
         heading: 'Destinataires',
         paragraphs: [
-          "Les données du formulaire de contact sont transmises à la boîte email de l'éditeur, via le prestataire technique d'envoi d'emails utilisé en production (Scaleway, France), qui achemine aussi les invitations de compte, puis via un service de redirection d'emails (Cloudflare). L'adresse email d'un compte invité n'est visible que de l'éditeur. Lorsque vous choisissez un mot de passe, un fragment anonyme de son empreinte (5 caractères) est comparé à une base de mots de passe compromis (Have I Been Pwned) ; ni le mot de passe ni votre identité ne sont transmis. Aucune donnée n'est vendue, louée ou transmise à des tiers à des fins commerciales.",
+          "Les données du formulaire de contact sont transmises à la boîte email de l'éditeur, via le prestataire technique d'envoi d'emails utilisé en production (Scaleway, France), qui achemine aussi les invitations de compte ; cette boîte est hébergée en France (OVHcloud). L'adresse email d'un compte invité n'est visible que de l'éditeur. Lorsque vous choisissez un mot de passe, un fragment anonyme de son empreinte (5 caractères) est comparé à une base de mots de passe compromis (Have I Been Pwned) ; ni le mot de passe ni votre identité ne sont transmis. Aucune donnée n'est vendue, louée ou transmise à des tiers à des fins commerciales.",
         ],
       },
       {
@@ -167,7 +167,7 @@ const fr: PortfolioLocaleContent = {
       {
         heading: 'Transferts hors Union européenne',
         paragraphs: [
-          "L'hébergement, la base de données et l'envoi des emails sont situés en France. Seule exception : les messages du formulaire de contact sont relayés vers la boîte de l'éditeur par Cloudflare, Inc. (États-Unis), transfert encadré par le Data Privacy Framework UE–États-Unis et, à défaut, par les clauses contractuelles types de la Commission européenne.",
+          "Aucun transfert de données hors de l'Union européenne n'est effectué : l'hébergement, la base de données, l'envoi des emails et la boîte de réception de l'éditeur sont situés en France.",
         ],
       },
     ],
