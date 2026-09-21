@@ -10,36 +10,38 @@ Gates par checkpoint : `make back-quality && make back-test` ; frontend (si touc
 `make front-lint && make front-test && make front-build` ; k8s (si touché) `kubectl kustomize`
 prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=warning` + `actionlint`.
 
-## Point de reprise (2026-09-19)
+## Point de reprise (2026-09-21, fin de journée)
 
-- **Tout est local** : la branche `feature/security-audit-3-remediation-lot-2` n'est **pas poussée**,
-  aucune PR, rien en préprod ni en prod pour ce lot. Ne pousser qu'à la demande explicite de Christophe.
-  Rebasée le 2026-09-19 sur `develop` (`771f394`) — elle n'apporte toujours que `tasks/`.
-- Production : **v0.15.1**, livrée le 2026-09-19 (hotfix d'intitulé, sans rapport avec ce lot).
-  Le lot 1 reste intégralement livré par v0.14.1 et v0.15.0. `develop` = `main` + les quatre montées
-  de version Dependabot du 2026-09-19 (CodeQL 4.38.0 ; backend patch api-platform/doctrine/symfony ;
-  frontend mineur vite 8.3.0 ; `unplugin-icons` 24, rendu des icônes vérifié avant fusion).
-- **Décision prise le 2026-09-21** : Fable là où le plan le demande (T4.1, T4.2), Opus pour le reste,
-  tâches enchaînées par délégation dans l'ordre conseillé (T4.1 → T4.2 → phase 5 ; T4.3 manuel en parallèle).
-- Méthode : un agent par tâche, dans l'ordre du plan, relecture du diff et gates par l'orchestrateur,
-  un commit par tâche ; une branche de tâche par phase, empilée sur celle-ci, fusionnée **en local**
-  tant que Christophe n'a pas demandé de push.
+- **Tout le code du lot 2 est écrit, relu, passé aux gates et committé — en local seulement.** Les
+  branches `…-lot-2-phase-4` et `…-lot-2-phase-5` sont fusionnées (`--no-ff`) dans
+  `feature/security-audit-3-remediation-lot-2`. **Rien n'est poussé, aucune PR, rien en préprod ni en
+  prod.** Ne pousser qu'à la demande explicite de Christophe.
+- Gates repassés d'un seul tenant sur la tête de branche le 2026-09-21 : backend 1138 tests +
+  PHPStan/Rector/Psalm/lsp:check, frontend lint + 959 tests + build, kustomize prod et préprod,
+  shellcheck, actionlint, les 5 tests d'outils — tout vert (1 notice PHPUnit antérieure, contexte Watch).
+- Méthode suivie : un agent par tâche (Fable pour T4.1/T4.2, Opus pour la phase 5), diff relu et gates
+  repassés par l'orchestrateur, un commit par tâche. Trailer Fable sur tous les commits.
+- **Ce qui reste, et qui dépend de Christophe :**
+  1. **Décider du push** de la branche du lot et de l'ouverture de la PR vers `develop` (la PR de clôture
+     archive `tasks/` sous `.claude/specs/archive/<date>-remediation-audit-securite-3-lot-2/`).
+  2. **Avant de promouvoir, savoir que cette release redémarre Postgres et RabbitMQ** (T5.6, pod template
+     modifié, stratégie `Recreate`) : courte indisponibilité franche de l'API, en préprod puis en prod,
+     une fois. Procédure de validation préprod en 7 étapes dans `k8s/README.md`.
+  3. **Checkpoint 4** (préprod, vrai navigateur) : parcours d'invitation complet, URL nettoyée pour le
+     lien en fragment **et** pour un ancien lien, voir la case dédiée plus bas.
+  4. **Checkpoint 5** (préprod) : `audit-prod.sh` étendu vert ; rollout réel d'Adminer 5 (`kubectl patch`
+     replicas=1, `rollout status`, logs) ; labels PSA en `warn`/`audit` avant `enforce`.
+  5. **T4.3 (DNS mail)**, manuel, deux semaines de rapports DMARC avant `p=reject` — à lancer tôt.
+  6. **Secret Xdebug** `preprod-backend-xdebug-trigger` à créer dans Secret Manager, terminal séparé,
+     sans contrainte d'ordre (d'ici là l'ExternalSecret est `Ready: False`, attendu).
+  7. **T4.4** dans la release **suivante**, ≥ 48 h après T4.2 en prod : retrait du repli `:token?`.
+  8. **Arbitrages en attente** : `collect_denormalization_errors` (T5.1) ; bcrypt `cost: 13` (T5.9) ;
+     les trois autres secrets en argument dans `k8s/README.md` (T5.10) ; firewall `dev` sous `when@dev`
+     (T5.7) ; le correctif de pipeline ajouté en T5.6 (attente de postgres/rabbitmq/worker) à confirmer ;
+     **registre RGPD §3 à reprendre** (il nie stocker des e-mails).
+  9. Consigne inchangée tant que T4.1/T4.2 ne sont pas en prod : **ne pas émettre d'invitation de compte**.
 - Secrets : toute commande qui pose une valeur secrète se lance dans un terminal séparé, par fichier
   ou stdin, jamais via `!` ni `--body`.
-- **Reliquat manuel du lot 1 : intégralement clos le 2026-09-19** (R.1 à R.7), checkpoint 2 compris.
-  Le lot 1 n'a donc plus rien d'ouvert, ni en code ni à la main. Aucun de ces sept points n'était un
-  changement de code : ni branche, ni release.
-- **Reste donc uniquement le lot 2 lui-même** (phases 4 et 5), dont pas une ligne n'est écrite.
-- **Reprise prévue le lundi 2026-09-21.** Évaluation du 2026-09-19 : rien dans le lot 2 ne justifie de
-  travailler en urgence. Le lot 1, en production, couvre ce qui était réellement ouvert (limiteurs
-  opérants, IP cliente correcte, journal d'audit) ; le lot 2 durcit, il ne bouche pas de trou béant.
-  **Une seule mesure d'ici là : ne pas émettre d'invitation de compte** — A7 n'a de surface que pendant
-  la vie d'un jeton, et un jeton n'existe que si une invitation est partie. Non vérifiés faute d'accès
-  depuis la session : l'état DNS de SPF/DMARC (résolution sortante bloquée) et le nombre de jetons
-  actifs en prod (lecture en base refusée).
-- **Ordre conseillé à la reprise**, si l'on suit le risque plutôt que la numérotation : T4.1 puis T4.2
-  (le seul point à surface réelle), T4.3 en parallèle car manuel et lent (deux semaines de rapports
-  DMARC avant `p=reject`), la phase 5 ensuite.
 
 ## Reliquat du lot 1 — à la main de Christophe (hors code) — CLOS le 2026-09-19
 - [x] R.1 GitGuardian : incident 37338519 (fixtures de `rotate-deployer-token.test.sh`) marqué faux positif le 2026-09-16
