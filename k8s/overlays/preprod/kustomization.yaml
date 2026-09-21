@@ -71,6 +71,10 @@ replicas:
     count: 0
 
 patches:
+  # Profilage Xdebug (constat A12, T5.4) : variables d'armement + emptyDir de
+  # sortie, sur le seul conteneur php-fpm du Deployment backend. Rien de tout
+  # cela n'existe dans l'overlay prod.
+  - path: backend-xdebug.yaml
   - target:
       kind: Ingress
       name: cp-ghostotof

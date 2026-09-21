@@ -287,6 +287,12 @@ scw secret version create secret-id=<id> data="cp_ghostotof" region=fr-par
 # preprod-backend-contact-email, preprod-backend-anthropic-api-key
 ```
 
+**Deux secrets ont leur propre recette, plus bas**, parce qu'ils ne sont pas de
+simples valeurs à recopier : `preprod-basic-auth-htpasswd` (§2bis) et
+`preprod-backend-xdebug-trigger` (« Profilage Xdebug en préprod »). Ce dernier
+est en outre **facultatif** : tant qu'il n'existe pas, tout fonctionne, seul le
+profilage est indisponible.
+
 **Clé Anthropic** (`<env>-backend-anthropic-api-key`, ADR 0004) — une clé de
 compte de service créée dans la console Claude Platform (Settings > API keys),
 idéalement une par environnement pour pouvoir les révoquer séparément, rattachée
@@ -642,6 +648,198 @@ cookies "Permanent login" en cours ; il suffit de recocher la case à la
 prochaine connexion, aucune action corrective nécessaire. Avec les deux
 environnements à zéro pod par défaut, "Permanent login" ne sert donc plus
 guère qu'à l'intérieur d'une même session d'intervention.
+
+## Profilage Xdebug en préprod (3e audit, constat A12)
+
+L'image `…-preprod` embarque Xdebug (`docker/php/Dockerfile`, stage `preprod`).
+La question « le garder ou le retirer ? » a été tranchée le 2026-09-16 :
+**gardé, mais fermé par défaut et armé par un secret**.
+
+Ce qu'était l'état constaté, et qu'il ne faut pas laisser revenir :
+`xdebug.trigger_value = ${XDEBUG_TRIGGER_SECRET}` avec une variable jamais
+définie. PHP remplace alors l'interpolation par une chaîne **vide**, et une
+`trigger_value` vide signifie pour Xdebug « n'importe quelle valeur
+déclenche ». Le réglage censé restreindre le déclenchement l'ouvrait donc à
+quiconque passe le Basic Auth de l'ingress — pour un coût CPU non négligeable.
+Et, dans le même temps, le profil ne pouvait s'écrire nulle part
+(`readOnlyRootFilesystem`, ADR 0005) : la fonctionnalité était à la fois
+ouverte et inutilisable.
+
+Le montage actuel, en trois pièces :
+
+| Pièce | Où | Rôle |
+|---|---|---|
+| `xdebug.mode = "off"` | `docker/php/xdebug.preprod.ini` (dans l'image) | Extension chargée mais **inerte**. C'est l'état par défaut. |
+| Secret `backend-xdebug-trigger` | `k8s/overlays/preprod/external-secrets.yaml` | L'interrupteur : fournit `XDEBUG_MODE=profile` **et** la valeur de déclenchement. |
+| `emptyDir` sur `var/profiler` | `k8s/overlays/preprod/backend-xdebug.yaml` | Le seul endroit inscriptible où un profil peut atterrir. |
+
+Points qui portent la sécurité de l'ensemble, à ne pas défaire :
+
+- **Le verrou est sur `xdebug.mode`, pas sur `xdebug.trigger_value`.** Une
+  valeur de déclenchement absente dégénère en « ouvert à tous » ; un mode
+  absent dégénère en « rien ne se passe ». On fait donc reposer la propriété
+  sur le second.
+- **Secret dédié, monté `optional: true`**, et non une clé de plus dans
+  `backend-secrets` : le backend démarre même sans lui (et sans lui, le
+  profilage est impossible), là où une clé manquante dans `backend-secrets`
+  empêcherait ESO de le synchroniser et le pod de démarrer. Il n'est au
+  passage injecté ni dans le worker, ni dans les Jobs de migration et de seed,
+  ni dans les CronJobs, qui partagent `backend-secrets` et n'ont rien à
+  profiler — avec `xdebug.mode = "off"` dans l'image, ces pods tournent avec
+  une extension totalement inerte.
+- **Mode `profile` seul, jamais `trace`.** Une trace Xdebug écrit les
+  **arguments** des appels de fonction en clair dans le `.xt` — le mot de passe
+  d'un `POST /api/login_check` s'y retrouverait tel quel (vérifié). Un profil
+  cachegrind, lui, ne contient que des chemins de fichiers, des noms de
+  fonctions, des numéros de ligne et des compteurs de temps et de mémoire :
+  **aucune valeur de variable**. C'est ce qui rend un profil récupérable sans
+  précaution particulière.
+- **Rien de tout cela n'existe en prod** : ni Secret, ni variable, ni volume,
+  ni même Xdebug (l'image de prod ne l'embarque pas). Vérifiable :
+  `kubectl kustomize k8s/overlays/prod | grep -ic xdebug` doit répondre `0`.
+
+### Créer le secret de déclenchement
+
+> **⚠ Terminal séparé, jamais dans une session d'agent** — mêmes règles qu'au
+> §2bis : la valeur ne transite que par fichier, jamais par un argument de
+> commande ni par une substitution `$(…)`.
+
+Le secret Scaleway n'est **pas** un prérequis de déploiement : l'`ExternalSecret`
+et le montage `optional` peuvent être déployés avant qu'il existe, le backend
+démarre, seul le profilage reste indisponible. C'est exactement la propriété
+recherchée — mais elle a une contrepartie à connaître : tant que le secret
+n'existe pas, l'`ExternalSecret` `backend-xdebug-trigger` reste en `Ready:
+False` dans `kubectl get externalsecret -n preprod`. C'est normal et sans
+conséquence sur le reste ; ne pas le confondre avec une panne.
+
+`tr -d '\n'` n'est pas un détail : `scw secret version create data=@fichier`
+pousse les octets du fichier **tels quels**, saut de ligne final compris, et un
+cookie ne peut pas contenir de saut de ligne — le déclencheur ne
+correspondrait alors jamais. Le `trim` du template de l'`ExternalSecret` est la
+ceinture ; ceci sont les bretelles.
+
+```bash
+umask 077
+TMP=$(mktemp -d)
+openssl rand -hex 32 | tr -d '\n' > "$TMP/xdebug-trigger"
+wc -c < "$TMP/xdebug-trigger"        # 64 attendu, et surtout pas 65
+
+scw secret secret create name=preprod-backend-xdebug-trigger path=/ region=fr-par
+scw secret version create <secret-id> data=@"$TMP/xdebug-trigger" region=fr-par
+```
+
+Puis forcer la synchronisation et redémarrer le backend — contrairement au
+Basic Auth (relu à chaud par ingress-nginx), une variable d'environnement
+n'est lue qu'au démarrage du processus :
+
+```bash
+kubectl annotate externalsecret backend-xdebug-trigger -n preprod \
+  force-sync=$(date +%s) --overwrite
+kubectl get externalsecret backend-xdebug-trigger -n preprod \
+  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}{"\n"}'     # True
+kubectl rollout restart deployment/backend -n preprod
+kubectl rollout status deployment/backend -n preprod --timeout=120s
+```
+
+Vérifier que Xdebug est bien **armé mais fermé**, sans jamais afficher la
+valeur (`grep -c` compte, il n'imprime rien) :
+
+```bash
+kubectl exec -n preprod deploy/backend -c php-fpm -- \
+  sh -c 'php --ri xdebug | grep -E "Profiler|Tracing|Step Debugger"'
+# Profiler : enabled — Tracing et Step Debugger : disabled
+kubectl exec -n preprod deploy/backend -c php-fpm -- \
+  sh -c 'php -r "exit(strlen(ini_get(\"xdebug.trigger_value\")) >= 32 ? 0 : 1);"' \
+  && echo "valeur de declenchement non vide"
+```
+
+Garder `$TMP/xdebug-trigger` le temps de la session de profilage (c'est de là
+que `curl` le lira), puis le détruire comme au §2bis, étape 7.
+
+### Déclencher un profil
+
+Xdebug 3.5 cherche le déclencheur dans un **cookie**, un paramètre **GET/POST**
+ou une **variable d'environnement** — **pas dans un en-tête HTTP**. Vérifié en
+image : `XDEBUG_TRIGGER: <valeur>` en en-tête ne produit rien. Les noms acceptés
+sont `XDEBUG_TRIGGER` (générique) et `XDEBUG_PROFILE` (profileur seulement) ;
+`XDEBUG_SESSION` ne déclenche pas le profileur.
+
+**Le cookie, jamais la query string** : nginx journalise l'URL complète dans son
+log d'accès, y compris `?XDEBUG_PROFILE=…`. Le secret finirait donc dans les
+logs du pod, c'est-à-dire exactement là où on ne veut pas de secret.
+
+Tout passe par un fichier de configuration `curl` (`-K`), pour que ni les
+identifiants Basic Auth ni le déclencheur n'apparaissent dans `ps` ou dans
+l'historique du shell. `$TMP/credentials` est le couple produit au §2bis :
+
+```bash
+umask 077
+{
+  printf 'user = "'; tr -d '\n' < "$TMP/credentials"; printf '"\n'
+  printf 'cookie = "XDEBUG_PROFILE='; tr -d '\n' < "$TMP/xdebug-trigger"; printf '"\n'
+} > "$TMP/curlrc"
+
+curl -K "$TMP/curlrc" -sS -o /dev/null -w '%{http_code}\n' \
+  https://preprod.cp-ghostotof.com/api/watch
+```
+
+Une requête sans ce cookie — ou avec une mauvaise valeur — n'écrit rien et ne
+coûte rien : c'est la propriété que le secret achète.
+
+### Récupérer, lire, puis oublier les profils
+
+Lister puis rapatrier. **`kubectl cp` passe par `exec` + `tar`** : il faut donc
+un kubeconfig d'**administrateur humain**, pas celui du déployeur CI, dont le
+`Role` n'a plus `pods/exec` depuis le point d'audit C8. `tar` est bien présent
+dans l'image (`/bin/tar`, GNU tar, fourni par le socle Alpine).
+
+```bash
+POD=$(kubectl get pod -n preprod -l app.kubernetes.io/name=backend \
+        -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n preprod "$POD" -c php-fpm -- ls -l /var/www/backend/var/profiler
+kubectl cp -c php-fpm "preprod/$POD:var/www/backend/var/profiler" ./profils
+```
+
+Le chemin source est écrit **sans le `/` initial** : avec un chemin absolu,
+`tar` avertit qu'il le supprime, et le fichier atterrit de toute façon au même
+endroit — autant éviter l'avertissement.
+
+Lecture : `kcachegrind` (KDE) ou `qcachegrind` (Qt, multiplateforme), ou
+`webgrind` si on préfère un navigateur.
+
+Durée de vie : le répertoire est un **`emptyDir`**, il disparaît avec le pod —
+au prochain déploiement, au prochain `rollout restart`, à la première
+éviction. **C'est voulu** : un profil décrit la structure interne du code, on
+ne le laisse pas s'accumuler indéfiniment sur un environnement accessible. Le
+`sizeLimit: 256Mi` borne ce qu'un profilage lancé en boucle peut consommer sur
+le stockage éphémère du nœud. Corollaire : ce qu'on veut garder, on le
+rapatrie tout de suite. Et si la préprod tournait un jour à plus d'un replica,
+le profil se trouve sur le pod **qui a servi la requête**, pas forcément le
+premier de la liste.
+
+### Désarmer, faire tourner le secret
+
+**Désarmer** (fin d'une campagne de profilage, doute sur la valeur) : pousser
+une nouvelle version **courte**, et laisser le garde du template faire le
+reste — moins de 32 caractères et il écrit `XDEBUG_MODE=off`, ce qui referme
+l'extension sans toucher à un manifeste.
+
+```bash
+printf 'off' > "$TMP/xdebug-trigger"
+scw secret version create <secret-id> data=@"$TMP/xdebug-trigger" region=fr-par
+kubectl annotate externalsecret backend-xdebug-trigger -n preprod \
+  force-sync=$(date +%s) --overwrite
+kubectl rollout restart deployment/backend -n preprod
+```
+
+**Faire tourner** la valeur : même enchaînement que la rotation du Basic Auth
+(§2bis) — nouvelle version du secret existant (`scw secret secret create`
+échoue sur un nom déjà pris), `force-sync`, **`rollout restart` du backend**
+(indispensable ici, contrairement au Basic Auth), puis désactivation des
+anciennes révisions (`scw secret version disable <secret-id> revision=<n>`),
+et destruction du répertoire temporaire. Quand : après chaque session de
+profilage si la valeur a circulé, et sans délai si elle a pu apparaître dans un
+transcript ou un journal.
 
 ## Journal de sécurité (Monolog, canaux `security` et `security_audit`)
 

@@ -271,9 +271,13 @@ RUN set -eux; \
     apk del --no-network .build-deps; \
     rm -rf /tmp/pear
 
-# Xdebug en mode `profile`/`trace` uniquement, jamais `debug` : on mesure sans
-# ouvrir de port d'attachement sur un environnement partagé.
-# Le déclenchement est manuel (XDEBUG_TRIGGER), donc sans coût quand inutilisé.
+# Xdebug DÉSACTIVÉ dans l'image (`xdebug.mode = "off"`), jamais `debug` : on
+# mesure sans ouvrir de port d'attachement sur un environnement partagé.
+# L'armement vient du cluster et de lui seul — variables `XDEBUG_MODE` et
+# `XDEBUG_TRIGGER_SECRET` issues du Secret `backend-xdebug-trigger` de la
+# préprod (3e audit, constat A12). Sans ce Secret, l'extension est chargée mais
+# inerte : aucun déclencheur ne profile quoi que ce soit, et le coût est nul.
+# Voir docker/php/xdebug.preprod.ini et k8s/README.md.
 COPY docker/php/xdebug.preprod.ini /usr/local/etc/php/conf.d/zz-xdebug.ini
 
 # APP_DEBUG reste à 0 : la préprod doit se comporter comme la production.
