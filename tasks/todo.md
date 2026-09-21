@@ -72,7 +72,7 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 
 ## Phase 5 — Hygiène code et infra · FAIBLE
 - [x] 5.1 (fait le 2026-09-21, local) `ApiJsonErrorFormatListener` sur **`kernel.exception`** (D8 amendée : `kernel.request` cassait la négociation de contenu, 406 sur `/api/docs`) ; `Content-Type: application/json`, corps RFC 7807 ; corps malformé 500 → 400 (`exception_to_status` écrasait les défauts d'API Platform). **À arbitrer par Christophe** : `collect_denormalization_errors` (mauvais type → 422 avec `violations` ; testé sans régression, non activé)
-- [ ] 5.2 CSP + HSTS sur `/assets/`, `/healthz`, `/config.js` (front) et HSTS sur `/healthz` (backend k8s) ; `audit-prod.sh` vérifie `/config.js` + un asset  ; pas de `preload` (Q3)
+- [x] 5.2 (fait le 2026-09-21, local ; prouvé sur conteneur nginx jetable, **pas** sur la chaîne réelle ingress → pod : à confirmer par `audit-prod.sh` en préprod au checkpoint 5 — il ne juge désormais que la réponse finale, il peut donc rougir là où seule une redirection portait les en-têtes) CSP + HSTS sur `/assets/`, `/healthz`, `/config.js` (front) et HSTS sur `/healthz` (backend k8s) ; `audit-prod.sh` vérifie `/config.js` + un asset  ; pas de `preload` (Q3)
 - [ ] 5.3 `.dockerignore` (`backend/config/jwt/`, `backend/.env.test`) ; `.gitignore` (`/.claude/settings.local.json`) ; `frontend/public/.well-known/security.txt` + check dans `audit-prod.sh`
 - [ ] 5.4 Xdebug préprod (Q2 : conservé) : `XDEBUG_TRIGGER_SECRET` via ESO + `emptyDir` `var/profiler` + procédure dans `k8s/README.md` ; un déclencheur sans la bonne valeur ne profile rien
 - [ ] 5.5 Adminer `5.5.1-standalone` (`.env`, `versions.lock`, `k8s/base/adminer.yaml`) ; préprod `replicas: 0` par défaut (Q5)
@@ -82,6 +82,12 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [ ] 5.10 `k8s/README.md` §2bis : documenter la **rotation** du mot de passe Basic Auth (nouvelle version via `scw secret version create <id> data=@fichier`, pas `secret create` ; `force-sync` ESO ; secret GitHub d'environnement posé par fichier) et remplacer `--body '<identifiant>:<mot-de-passe>'` et `data="$(cat …)"` par des lectures de fichier, en précisant « terminal séparé, jamais dans une session d'agent »
 - [ ] 5.8 `docs/rgpd/` (rétention des journaux), CLAUDE.md, `k8s/README.md` à jour ; A9 (pas de révocation JWT) consigné comme risque accepté dans l'ADR 0003 (Q9)
 - [ ] **CHECKPOINT 5** — tous gates verts ; `audit-prod.sh` étendu vert en préprod ; PR de clôture vers `develop` avec archivage de `tasks/` sous `.claude/specs/archive/<date>-remediation-audit-securite-3-lot-2/`
+
+## Suivis relevés pendant le lot (hors périmètre, à trier)
+- [ ] `audit-prod.sh` n'a aucun test sous `tools/tests/` ; `check_security_headers` est désormais une fonction pure, testable hors ligne (agent T5.2)
+- [ ] La régression A16 n'a aucun garde avant déploiement : un job CI lançant l'image nginx du frontend et vérifiant les en-têtes par location l'attraperait au merge (agent T5.2)
+- [ ] `/healthz` renvoie deux `Content-Type` (`add_header Content-Type` s'ajoute au type par défaut) sur les deux nginx ; `default_type text/plain;` serait la forme correcte. Antérieur au lot, sans effet sur la sonde (agent T5.2)
+- [ ] `WatchedProductAdministratorTest::testTheFirstProductOfAnEmptyCatalogueTakesPositionZero` : notice PHPUnit (mock sans expectation), antérieure au lot
 
 ## Phase 6 — Hors plan (Q7 : spec séparée)
 - [ ] 6.1 Sauvegardes Postgres : bucket + clés ESO / CronJob `pg_dump` (rétention 14 j) / restauration testée en préprod — à découper quand planifié
