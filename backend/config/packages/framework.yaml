@@ -14,8 +14,25 @@ framework:
     trusted_proxies: private_ranges
     trusted_headers: ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-forwarded-port', 'x-forwarded-prefix']
 
-    # Note that the session will be started ONLY if you read or write from it.
-    session: true
+    # Aucune session, dans aucun environnement (audit 2026-09-16, constat A23).
+    # L'application est sans état de bout en bout : les deux firewalls sont
+    # `stateless: true`, l'authentification tient dans un JWT en cookie, il n'y
+    # a ni formulaire Symfony, ni message flash, ni `getSession()` dans `src/`.
+    #
+    # La désactiver n'est pas qu'un nettoyage. Le gestionnaire par défaut écrit
+    # les sessions sous `%kernel.cache_dir%/sessions`, donc sous `var/`, alors
+    # que les pods tournent en `readOnlyRootFilesystem` avec le seul `var/log`
+    # monté (ADR 0005) : une session démarrée par mégarde en production serait
+    # exactement le défaut que l'ADR proscrit — une écriture qui échoue sans
+    # bruit. Sans session, l'erreur est franche (`SessionNotFoundException`) et
+    # apparaît en test ou en développement, pas en production.
+    #
+    # Corollaire à connaître avant de réactiver quoi que ce soit : un formulaire
+    # Symfony (`framework.form`) ou une protection CSRF à jeton en session en
+    # auraient besoin. Le CSRF de ce projet est un double-submit par cookie
+    # (CsrfCookieRequestSubscriber), sans état par construction.
+    # StatelessSessionTest pince l'invariant.
+    session: false
 
     http_client:
         scoped_clients:
@@ -37,5 +54,7 @@ framework:
 when@test:
     framework:
         test: true
-        session:
-            storage_factory_id: session.storage.factory.mock_file
+        # Pas de `session.storage_factory_id: session.storage.factory.mock_file`
+        # ici : la session est désactivée partout (voir plus haut), l'environnement
+        # de test compris — c'est précisément là qu'on veut voir échouer un code
+        # qui en démarrerait une.

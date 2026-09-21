@@ -30,8 +30,19 @@ security:
         # Point d'entrée du login : reçoit {"username": ..., "password": ...} en JSON et
         # délègue la génération/pose du JWT (cookie httpOnly "BEARER") aux handlers
         # Lexik. Stateless : aucune session n'est créée côté serveur.
+        #
+        # Le pattern est borné sur `check_path` exactement (audit 2026-09-16,
+        # constat A23). Il valait `^/api/login`, qui capturait aussi
+        # `/api/login_checkx`, `/api/loginfoo` ou un futur `/api/login-history` :
+        # ce firewall n'a qu'un `json_login` cloué sur `check_path` et ne lit
+        # **aucun** JWT, une route ajoutée sous ce préfixe y serait donc traitée
+        # en anonyme, le cookie BEARER du visiteur jamais regardé. Le firewall
+        # décide sur le chemin décodé (rawurldecode, comme le routeur, issue
+        # #77) : `/api/login%5Fcheck` reste bien le login, throttling et garde
+        # anti-CSRF compris. AccessControlAnchoringTest pince la borne,
+        # LoginFirewallScopeTest le comportement.
         login:
-            pattern: ^/api/login
+            pattern: ^/api/login_check$
             stateless: true
             provider: cpg_users
             # Anti-brute-force : au-delà de 5 tentatives infructueuses en 15 min,
@@ -54,6 +65,14 @@ security:
         # est intercepté par le composant Security avant tout contrôleur : c'est
         # App\Security\Authentication\Infrastructure\Jwt\CookieLogoutListener qui
         # construit la réponse (cookies BEARER + XSRF-TOKEN expirés).
+        #
+        # Le pattern reste volontairement nu (`^/api`, sans `(/|$)`), à rebours
+        # du resserrement du firewall ci-dessus : c'est l'attrape-tout de l'API,
+        # et le borner ferait sortir les chemins voisins (`/apix…`) de *tout*
+        # firewall — donc aussi de tout access_control, l'AccessListener étant un
+        # listener de firewall. Ce serait retirer de la protection, à rebours de
+        # « protégé par défaut ». Inscrit à ce titre dans l'allow-list
+        # d'AccessControlAnchoringTest, avec la même justification.
         api:
             pattern: ^/api
             stateless: true
