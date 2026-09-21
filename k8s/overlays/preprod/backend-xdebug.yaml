@@ -1,0 +1,71 @@
+# Profilage Xdebug — PRÉPRODUCTION UNIQUEMENT (3e audit, constat A12, tâche T5.4).
+#
+# Ce patch n'existe que dans cet overlay : le rendu de `k8s/overlays/prod` ne
+# contient aucune occurrence de « xdebug », ni variable, ni volume, ni Secret.
+#
+# Deux apports, et ils vont ensemble :
+#
+#  1. Les deux variables qui ARMENT Xdebug, prises dans le Secret dédié
+#     `backend-xdebug-trigger` (cf. external-secrets.yaml) en `optional: true`.
+#     Secret absent → les deux variables sont absentes → l'image reste sur
+#     `xdebug.mode = "off"` (docker/php/xdebug.preprod.ini) et le profilage est
+#     IMPOSSIBLE. Le backend démarre normalement dans cet état : c'est tout
+#     l'intérêt d'un Secret séparé plutôt qu'une clé de plus dans
+#     `backend-secrets`, dont l'absence empêcherait le pod de démarrer et qui
+#     serait au passage injecté dans le worker, les deux Jobs et les deux
+#     CronJobs, qui n'ont rien à profiler.
+#
+#     `env` nommément, et non `envFrom` : le manifeste rendu dit exactement
+#     quelles variables entrent dans le conteneur, et `envFrom` est une liste
+#     sans clé de fusion — un patch de fusion stratégique l'aurait REMPLACÉE,
+#     donc effacé `backend-config` et `backend-secrets`.
+#
+#  2. Le répertoire d'écriture des profils. Le pod tourne en
+#     `readOnlyRootFilesystem: true` (ADR 0005) : sans ce volume, Xdebug
+#     n'écrirait nulle part et la fonctionnalité serait ouverte ET inutilisable,
+#     ce qui était l'état constaté. `emptyDir` et non un volume persistant :
+#     un profil est un artefact de diagnostic, il meurt avec le pod — voulu,
+#     c'est ce qui borne la durée de vie d'un fichier qui décrit le code.
+#     `sizeLimit` borne ce que le stockage éphémère du nœud peut encaisser si
+#     un profilage est lancé en boucle.
+#
+# Aucun `securityContext` n'est touché : l'`emptyDir` est inscriptible par
+# l'uid 10001 grâce au `fsGroup: 10001` déjà posé sur le pod (même mécanisme
+# que les volumes `var-log` et `shared-public` existants).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  template:
+    spec:
+      containers:
+        - name: php-fpm
+          env:
+            # Prime sur `xdebug.mode` de l'ini (vérifié : `php --ri xdebug`
+            # annonce « Enabled Features (through 'XDEBUG_MODE' env variable) »).
+            # Valeur produite par le template de l'ExternalSecret : `profile`
+            # si la valeur distante fait au moins 32 caractères, `off` sinon.
+            - name: XDEBUG_MODE
+              valueFrom:
+                secretKeyRef:
+                  name: backend-xdebug-trigger
+                  key: XDEBUG_MODE
+                  optional: true
+            # Interpolée dans `xdebug.trigger_value` par l'analyseur d'ini de
+            # PHP au démarrage du master php-fpm. Absente → chaîne vide →
+            # « n'importe quelle valeur déclenche » : c'est précisément pour ça
+            # que le verrou est sur XDEBUG_MODE et pas ici.
+            - name: XDEBUG_TRIGGER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: backend-xdebug-trigger
+                  key: XDEBUG_TRIGGER_SECRET
+                  optional: true
+          volumeMounts:
+            - name: xdebug-profiler
+              mountPath: /var/www/backend/var/profiler
+      volumes:
+        - name: xdebug-profiler
+          emptyDir:
+            sizeLimit: 256Mi

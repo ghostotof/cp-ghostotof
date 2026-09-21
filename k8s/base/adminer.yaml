@@ -7,8 +7,11 @@
 #
 # Point d'audit B2 : en prod, l'overlay met ce Deployment à 0 replica
 # (k8s/overlays/prod/kustomization.yaml) — aucun pod Adminer ne tourne en
-# prod. Réactivation ponctuelle : `kubectl scale deploy/adminer --replicas=1
-# -n prod`, puis remise à 0 après usage.
+# prod. Depuis le 3e audit (question Q5, 2026-09-21) la PRÉPROD fait pareil
+# (k8s/overlays/preprod/kustomization.yaml) : les deux environnements partent
+# donc à zéro pod, et `replicas: 1` ci-dessous n'est plus qu'un défaut
+# théorique du base/ — aucun overlay ne l'utilise.
+# Réactivation ponctuelle et remise à zéro : voir k8s/README.md.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -25,13 +28,14 @@ spec:
       labels:
         app.kubernetes.io/name: adminer
     spec:
+      automountServiceAccountToken: false
       # Point d'audit I6 : filtre d'appels système par défaut du runtime.
       securityContext:
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: adminer
-          image: adminer:4.8.1-standalone # garder synchronisé avec ADMINER_TAG dans ../.env
+          image: adminer:5.5.1-standalone # garder synchronisé avec ADMINER_TAG dans ../.env
           ports:
             - containerPort: 8080
           env:
@@ -42,16 +46,26 @@ spec:
             - name: ADMINER_DEFAULT_SERVER
               value: database
           volumeMounts:
-            # /tmp doit rester inscriptible malgré readOnlyRootFilesystem
-            # ci-dessous. Adminer y écrit les fichiers uploadés temporaires.
+            # SEUL chemin écrit au runtime par l'image 5.x, et il doit rester
+            # inscriptible malgré readOnlyRootFilesystem ci-dessous. Vérifié
+            # image en main sur adminer:5.5.1-standalone :
+            #   - `session.save_path` n'a plus de valeur (l'image 4.8.1, sous
+            #     Debian/PHP 7.4, la forçait à /var/lib/php/sessions — ce
+            #     répertoire n'existe plus du tout ici, le volume dédié qu'on
+            #     y montait a donc été supprimé) : PHP retombe sur
+            #     sys_get_temp_dir(), soit /tmp ;
+            #   - `get_temp_dir()` d'adminer.php = upload_tmp_dir (non défini)
+            #     ?: sys_get_temp_dir() — donc /tmp aussi pour les fichiers
+            #     temporaires d'import et pour /tmp/adminer.key (clé du cookie
+            #     "Permanent login") et /tmp/adminer-invalid (compteur de
+            #     tentatives de connexion ratées).
+            # Sans ce volume, session_start() échoue ("Read-only file system"),
+            # la connexion devient impossible ET les avertissements PHP sont
+            # émis avant les en-têtes : Adminer perd sa CSP, X-Frame-Options,
+            # X-Content-Type-Options et Referrer-Policy ("Cannot modify header
+            # information"). Vérifié par un lancement local avec et sans tmpfs.
             - name: tmp
               mountPath: /tmp
-            # session.save_path réel de cette image (vérifié via `php -i`) —
-            # PAS /tmp. Sans ce volume, PHP ne peut jamais persister la
-            # session malgré un /tmp inscriptible, et Adminer répond
-            # systématiquement "Session expirée" dès la tentative de connexion.
-            - name: php-sessions
-              mountPath: /var/lib/php/sessions
           resources:
             requests:
               cpu: 20m
@@ -61,7 +75,14 @@ spec:
               memory: 128Mi
           securityContext:
             runAsNonRoot: true
-            runAsUser: 1000
+            # UID de l'utilisateur `adminer` de l'image 5.x (l'image 4.8.1
+            # utilisait 999, et ce manifest disait 1000 : ça marchait parce
+            # qu'un emptyDir est créé en 0777, pas parce que l'UID était le
+            # bon). Même convention que postgres.yaml (runAsUser: 70 = l'UID
+            # de l'image). Testé : 100 et 1000 fonctionnent tous les deux,
+            # on prend celui de l'image.
+            runAsUser: 100
+            runAsGroup: 101
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
             capabilities:
@@ -78,9 +99,14 @@ spec:
             periodSeconds: 10
       volumes:
         - name: tmp
-          emptyDir: {}
-        - name: php-sessions
-          emptyDir: {}
+          # `medium` non précisé = stockage éphémère du nœud (pas la RAM) : un
+          # import SQL passe par ce répertoire et ne doit pas être facturé sur
+          # les 128Mi de limits.memory. sizeLimit dimensionné sur le
+          # upload_max_filesize / post_max_size de l'image (128M) plus la marge
+          # des sessions (~10Ko chacune) ; au-delà, le kubelet évince le pod,
+          # ce qui est le comportement voulu pour un outil d'admin ponctuel.
+          emptyDir:
+            sizeLimit: 256Mi
 ---
 apiVersion: v1
 kind: Service

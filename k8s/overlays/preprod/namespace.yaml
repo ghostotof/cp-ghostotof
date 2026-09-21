@@ -1,4 +1,43 @@
+# Point d'audit A17 — Pod Security Admission. Ces labels sont appliqués par le
+# pipeline avec le reste de l'overlay : le ClusterRole du déployeur CI porte
+# `namespaces: [get, patch]` restreint par `resourceNames: [preprod, prod]`
+# (k8s/base/github-actions-rbac/clusterrole.yaml), ce qui suffit exactement à
+# les poser sur un namespace déjà créé. Il n'a PAS `create` : le namespace
+# lui-même reste un bootstrap manuel (cf. k8s/README.md, prérequis n°6).
+#
+# `enforce: baseline` et non `restricted` : RabbitMQ (k8s/base/rabbitmq.yaml)
+# ne déclare aucun `securityContext` de conteneur — pas de `runAsNonRoot`, pas
+# de `capabilities.drop: [ALL]`, pas d'`allowPrivilegeEscalation: false` —, il
+# est donc refusé par `restricted` et accepté par `baseline`, qui n'interdit
+# pas l'exécution en root. C'est le constat A18, assumé : la release v0.5.0 a
+# mis ce broker en CrashLoopBackOff en prod en touchant à son utilisateur
+# d'exécution, et `enforce: restricted` reproduirait l'incident sous une autre
+# forme — le pod ne serait même plus admis.
+#
+# `audit`/`warn: restricted` : la contrainte stricte reste évaluée et
+# rapportée (journal d'audit du control-plane pour `audit`, avertissement dans
+# la réponse de l'API pour `warn`), sans jamais rien bloquer. Tous les autres
+# workloads passent déjà `restricted` ; seul RabbitMQ ressortira, ce qui est
+# le but : le jour où il sera durci, ces avertissements disparaîtront et le
+# passage d'`enforce` à `restricted` sera visiblement sans risque.
+#
+# `-version: latest` et non une version épinglée : la version du control-plane
+# n'est écrite nulle part dans ce dépôt (Kapsule est managé, Scaleway le monte
+# de version sans nous prévenir), et en inventer une fixerait la politique sur
+# un état qui n'est peut-être pas celui du cluster. Contrepartie assumée : une
+# version de Kubernetes qui ajouterait un contrôle à `baseline` pourrait faire
+# refuser un pod au premier déploiement d'après la mise à jour. Le jour où la
+# version est connue (`kubectl version`), épingler `enforce-version` sur la
+# mineure courante et laisser `audit`/`warn` sur `latest` est la variante
+# recommandée par Kubernetes — voir k8s/README.md.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: preprod
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest

@@ -86,6 +86,12 @@ Gates à repasser à chaque checkpoint :
 - **D8 — erreurs sous `/api` toujours en JSON** (A15) : un listener `kernel.request` force
   `_format=json` pour tout chemin `/api` (via `CanonicalPath`), les 404 hors API Platform
   sortent en `application/problem+json` au lieu de la page HTML Symfony.
+  **Amendée le 2026-09-21 (T5.1)** : le listener est sur **`kernel.exception`** (priorité -100, entre
+  l'`ExceptionListener` d'API Platform à -96 et l'`ErrorListener` de Symfony à -128), pas sur
+  `kernel.request`. Mesuré : poser le format sur toute requête `/api` fait répondre **406** à
+  `GET /api/docs` et `GET /api` sans en-tête `Accept` (`ContentNegotiationTrait` relit le format déjà
+  posé). Le `Content-Type` est `application/json` (le corps reste un document RFC 7807) : `jsonproblem`
+  n'est pas un format de requête Symfony. L'intention de D8 est tenue, sa lettre a bougé.
 
 ---
 
@@ -218,6 +224,15 @@ préprod montant un `emptyDir` sur `var/profiler` (sinon le profil ne s'écrit j
 `k8s/README.md` : comment déclencher un profil (`XDEBUG_TRIGGER=<secret>` en cookie ou
 en-tête) et le récupérer (`kubectl cp`). Vérifier qu'un `XDEBUG_TRIGGER` sans la bonne
 valeur ne profile rien. **Scope :** S.
+**Réalisé autrement, le 2026-09-21** — la preuve exigée a invalidé le plan ci-dessus sur deux points.
+(1) Le verrou ne peut pas être `xdebug.trigger_value` : une variable absente y donne une valeur vide,
+et pour Xdebug une valeur vide veut dire « n'importe quel déclencheur » ; le verrou est donc
+`xdebug.mode = "off"` dans l'image, armé par `XDEBUG_MODE` issu d'un Secret **dédié et optionnel**
+(`backend-xdebug-trigger`, `ExternalSecret` séparé, template `profile` seulement si le secret fait au
+moins 32 caractères), et non une clé de `backend-secrets` — le backend démarre sans lui, et ni le worker
+ni les Jobs ni les CronJobs ne le reçoivent. (2) Le mode `trace` est retiré : une trace écrit les
+arguments des appels, donc le mot de passe d'un login profilé. (3) Xdebug 3.5 ne lit pas les en-têtes
+HTTP : le déclencheur est un cookie, passé par `curl -K`.
 
 ### Task 5.5 : Adminer 5.5.1
 `ADMINER_TAG=5.5.1-standalone` (`.env`, `versions.lock`, `k8s/base/adminer.yaml`) ; vérifier
