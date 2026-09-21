@@ -71,7 +71,7 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [ ] **CHECKPOINT 4** — gates backend + frontend verts ; invitation validée en préprod ; `dig` + e-mail réel `DKIM/DMARC: PASS`
 
 ## Phase 5 — Hygiène code et infra · FAIBLE
-- [ ] 5.1 `ApiJsonFormatRequestListener` (`/api` → `_format=json`) + test 404 `application/problem+json`
+- [x] 5.1 (fait le 2026-09-21, local) `ApiJsonErrorFormatListener` sur **`kernel.exception`** (D8 amendée : `kernel.request` cassait la négociation de contenu, 406 sur `/api/docs`) ; `Content-Type: application/json`, corps RFC 7807 ; corps malformé 500 → 400 (`exception_to_status` écrasait les défauts d'API Platform). **À arbitrer par Christophe** : `collect_denormalization_errors` (mauvais type → 422 avec `violations` ; testé sans régression, non activé)
 - [ ] 5.2 CSP + HSTS sur `/assets/`, `/healthz`, `/config.js` (front) et HSTS sur `/healthz` (backend k8s) ; `audit-prod.sh` vérifie `/config.js` + un asset  ; pas de `preload` (Q3)
 - [ ] 5.3 `.dockerignore` (`backend/config/jwt/`, `backend/.env.test`) ; `.gitignore` (`/.claude/settings.local.json`) ; `frontend/public/.well-known/security.txt` + check dans `audit-prod.sh`
 - [ ] 5.4 Xdebug préprod (Q2 : conservé) : `XDEBUG_TRIGGER_SECRET` via ESO + `emptyDir` `var/profiler` + procédure dans `k8s/README.md` ; un déclencheur sans la bonne valeur ne profile rien

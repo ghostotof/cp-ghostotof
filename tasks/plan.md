@@ -86,6 +86,12 @@ Gates à repasser à chaque checkpoint :
 - **D8 — erreurs sous `/api` toujours en JSON** (A15) : un listener `kernel.request` force
   `_format=json` pour tout chemin `/api` (via `CanonicalPath`), les 404 hors API Platform
   sortent en `application/problem+json` au lieu de la page HTML Symfony.
+  **Amendée le 2026-09-21 (T5.1)** : le listener est sur **`kernel.exception`** (priorité -100, entre
+  l'`ExceptionListener` d'API Platform à -96 et l'`ErrorListener` de Symfony à -128), pas sur
+  `kernel.request`. Mesuré : poser le format sur toute requête `/api` fait répondre **406** à
+  `GET /api/docs` et `GET /api` sans en-tête `Accept` (`ContentNegotiationTrait` relit le format déjà
+  posé). Le `Content-Type` est `application/json` (le corps reste un document RFC 7807) : `jsonproblem`
+  n'est pas un format de requête Symfony. L'intention de D8 est tenue, sa lettre a bougé.
 
 ---
 
