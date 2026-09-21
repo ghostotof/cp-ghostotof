@@ -46,7 +46,9 @@ security:
             stateless: true
             provider: cpg_users
             # Anti-brute-force : au-delà de 5 tentatives infructueuses en 15 min,
-            # les suivantes sont rejetées en 429 sans même vérifier le mot de
+            # les suivantes sont rejetées en 401 (« Too many failed login attempts »,
+            # c'est le failure handler de Lexik qui façonne la réponse : pas un
+            # 429, cf. LoginThrottlingTest) sans même vérifier le mot de
             # passe. Symfony limite par IP *et* par couple (IP, identifiant),
             # via le composant rate-limiter (stockage cache, compatible avec ce
             # firewall stateless). Complémentaire du rate limiter "contact_form".
