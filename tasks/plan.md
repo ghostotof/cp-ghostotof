@@ -141,7 +141,14 @@ Reliquat lot 1 (à la main, hors code) : checkpoint 2 (rotation, secrets d'envir
 `CsrfCookieRequestSubscriber::EXCLUDED_PATH_PREFIXES`, les deux confs nginx (`location ^~
 /api/account/password-setup`), `ApiRouteExposureTest::PUBLIC_PATHS` (nouvelles entrées
 justifiées, ancienne retirée), tests fonctionnels.
-**Acceptance :** [ ] `debug:router` : plus aucune route `password-setup/{token}` ; [ ] 11e POST → 429 avant validation (test C1 conservé) ; [ ] `ApiRouteExposureTest` vert.
+Précisions ajoutées le 2026-09-21 : le champ `token` des deux DTO porte `#[Assert\NotBlank]` +
+`#[Assert\Length(max: 255)]` — corps sans jeton ou jeton vide → **422** (validation), jeton inconnu →
+**404**, expiré ou déjà utilisé → **410**, à l'identique sur les deux POST ; le quota par IP reste
+consommé par le listener **avant** désérialisation, donc un 422 consomme aussi. Le jeton n'étant plus
+dans aucun chemin, **retirer `TOKEN_BEARING_PATH_PATTERN`** de `SecurityAuditLogger` (et le test qui
+l'épingle) : la règle transitoire du CLAUDE.md tombe avec cette tâche. Le frontend reste sur l'ancien
+contrat jusqu'à T4.2 : les deux tâches partent dans la même release, jamais l'une sans l'autre.
+**Acceptance :** [ ] `debug:router` : plus aucune route `password-setup/{token}` ; [ ] 11e POST → 429 avant validation (test C1 conservé) ; [ ] `ApiRouteExposureTest` vert ; [ ] 422/404/410 testés sur les deux POST ; [ ] plus de rédaction de chemin dans `SecurityAuditLogger`, et un test prouve que le jeton du corps n'apparaît dans aucun enregistrement.
 **Verification :** `make back-quality && make back-test`.
 **Dependencies :** aucune (contrat défini ici, consommé en T4.2). **Fichiers :** 2 ressources, provider/processor, 2 listeners, 2 confs nginx, tests. **Scope :** M.
 
@@ -163,6 +170,13 @@ rua=mailto:dmarc@cp-ghostotof.com` (alias Email Routing vers la boîte de ton ch
 deux semaines de rapports propres (tâche de suivi, hors dépôt).
 **Acceptance :** [ ] `dig TXT _dmarc.cp-ghostotof.com` → `p=quarantine`, `rua` sans Gmail ; [ ] une invitation reçue sur Gmail affiche `DKIM: PASS`, `DMARC: PASS` dans « Afficher l'original ».
 **Dependencies :** aucune. **Scope :** manuel.
+
+### Task 4.4 : retrait du repli `set-password/:token?` (suivi, hors release de T4.2)
+Ajoutée le 2026-09-21. Le repli de 48 h est le dernier endroit où un jeton peut encore voyager dans un
+chemin d'URL (côté frontend : access logs du nginx et de l'ingress). Une fois T4.2 en production depuis
+plus de 48 h (durée de vie d'un jeton), la route redevient `set-password` sans paramètre, la lecture de
+`route.params.token` disparaît de `SetPasswordPage.vue` avec ses specs. À faire dans la release
+**suivante**, jamais dans celle de T4.2. **Scope :** XS. **Dependencies :** T4.2 en prod + 48 h.
 
 ### CHECKPOINT 4
 - [ ] gates backend + frontend verts ; parcours d'invitation validé en préprod
@@ -220,7 +234,12 @@ Listener sur `LoginFailureEvent` (firewall `login`) : si l'exception est une
 un hachage d'une chaîne fixe avec le hasher de `CpgUser` pour égaliser le temps de réponse
 entre identifiant inconnu et mot de passe faux. Test fonctionnel : les deux cas répondent 401
 avec le même corps ; test unitaire : le hasher est appelé une fois pour un inconnu, jamais pour
-un mot de passe faux. **Scope :** XS. **Fichiers :** 1 listener + 2 tests.
+un mot de passe faux. **Étendu le 2026-09-21** (vérifié dans le code : aucun `UserChecker`, et un
+compte invité non activé a un hachage vide, donc `password_verify` échoue sans rien calculer) : le
+hachage factice est aussi calculé quand l'utilisateur existe mais `isPendingActivation()`, sinon un
+compte en attente se distingue d'un compte actif par le temps de réponse. Test unitaire : hasher appelé
+une fois pour un inconnu **et** pour un compte en attente, jamais pour un compte actif.
+**Scope :** XS. **Fichiers :** 1 listener + 2 tests.
 
 ### Task 5.10 : rotation du mot de passe Basic Auth de la préprod, documentée
 `k8s/README.md` §2bis ne décrit que la création (`scw secret secret create`, qui échoue sur un secret

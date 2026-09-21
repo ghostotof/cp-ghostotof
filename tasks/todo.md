@@ -19,8 +19,8 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
   Le lot 1 reste intégralement livré par v0.14.1 et v0.15.0. `develop` = `main` + les quatre montées
   de version Dependabot du 2026-09-19 (CodeQL 4.38.0 ; backend patch api-platform/doctrine/symfony ;
   frontend mineur vite 8.3.0 ; `unplugin-icons` 24, rendu des icônes vérifié avant fusion).
-- **Décision en attente** avant tout code : T4.1 en agent **Fable** (confirmation de Christophe
-  obligatoire avant le lancement), T4.1 en agent **Opus**, ou la **phase 5 d'abord** sur Opus.
+- **Décision prise le 2026-09-21** : Fable là où le plan le demande (T4.1, T4.2), Opus pour le reste,
+  tâches enchaînées par délégation dans l'ordre conseillé (T4.1 → T4.2 → phase 5 ; T4.3 manuel en parallèle).
 - Méthode : un agent par tâche, dans l'ordre du plan, relecture du diff et gates par l'orchestrateur,
   un commit par tâche ; une branche de tâche par phase, empilée sur celle-ci, fusionnée **en local**
   tant que Christophe n'a pas demandé de push.
@@ -55,9 +55,10 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [x] R.7 **Fait le 2026-09-19** : alertes Dependabot actives (vérifié, l'API répond 204 et `dependabot/alerts` renvoie une liste — 0 alerte ouverte à cette date), et **routage des notifications « Security alerts » posé** par Christophe (préférences du compte + abonnement au dépôt). Rappel pour plus tard : `dependabot_security_updates` reste **volontairement désactivé** — ces PR viseraient `main`, qui n'accepte qu'une PR validée par `smoke-test-preprod`/`audit-preprod`, elles ne seraient jamais mergeables. Ne pas l'activer en passant sur la page Code security
 
 ## Phase 4 — A6/A7 : parcours mot de passe et e-mail · MOYENNE
-- [ ] 4.1 API : `POST /api/account/password-setup/validate {token}` + `POST /api/account/password-setup {token, password}` ; `GET …/{token}` supprimé ; listeners rate-limit/CSRF, 2 confs nginx, `ApiRouteExposureTest::PUBLIC_PATHS`, tests fonctionnels (429 avant validation conservé)
+- [ ] 4.1 API : `POST /api/account/password-setup/validate {token}` + `POST /api/account/password-setup {token, password}` ; `GET …/{token}` supprimé ; listeners rate-limit/CSRF, 2 confs nginx, `ApiRouteExposureTest::PUBLIC_PATHS`, tests fonctionnels (429 avant validation conservé ; 422/404/410 sur les deux POST) ; retrait de `TOKEN_BEARING_PATH_PATTERN` de `SecurityAuditLogger`
 - [ ] 4.2 Lien e-mail `…/set-password#<token>` ; route `set-password/:token?` ; page lit le fragment (puis l'efface via `replaceState`), repli sur le param 48 h ; `HttpAccountRepository` ; specs Vitest ; parcours bout en bout en dev
 - [ ] 4.3 (manuel) DKIM TEM vérifié ; `_dmarc` `p=quarantine` + `rua` sur une adresse du domaine ; SPF `-all` ; passage à `p=reject` planifié après deux semaines de rapports propres
+- [ ] 4.4 (suivi, release **suivante**, ≥ 48 h après T4.2 en prod) retrait du repli `set-password/:token?` côté frontend
 - [ ] **CHECKPOINT 4** — gates backend + frontend verts ; invitation validée en préprod ; `dig` + e-mail réel `DKIM/DMARC: PASS`
 
 ## Phase 5 — Hygiène code et infra · FAIBLE
@@ -68,10 +69,10 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [ ] 5.5 Adminer `5.5.1-standalone` (`.env`, `versions.lock`, `k8s/base/adminer.yaml`) ; préprod `replicas: 0` par défaut (Q5)
 - [ ] 5.6 Labels PSA (`enforce: baseline`, `audit`/`warn: restricted`) sur les deux namespaces ; `automountServiceAccountToken: false` sur tous les pod specs ; rollout réel en préprod
 - [ ] 5.7 `framework.session.enabled: false` ; firewall `login` → `^/api/login_check$` ; `AccessControlAnchoringTest` étendu aux firewalls
-- [ ] 5.9 Hachage factice sur identifiant inconnu (A10) : listener `LoginFailureEvent` + tests (temps égalisés, 401 identiques)
+- [ ] 5.9 Hachage factice sur identifiant inconnu (A10) : listener `LoginFailureEvent` + tests (temps égalisés, 401 identiques) ; couvre aussi le compte en attente d'activation (hachage vide)
 - [ ] 5.10 `k8s/README.md` §2bis : documenter la **rotation** du mot de passe Basic Auth (nouvelle version via `scw secret version create <id> data=@fichier`, pas `secret create` ; `force-sync` ESO ; secret GitHub d'environnement posé par fichier) et remplacer `--body '<identifiant>:<mot-de-passe>'` et `data="$(cat …)"` par des lectures de fichier, en précisant « terminal séparé, jamais dans une session d'agent »
 - [ ] 5.8 `docs/rgpd/` (rétention des journaux), CLAUDE.md, `k8s/README.md` à jour ; A9 (pas de révocation JWT) consigné comme risque accepté dans l'ADR 0003 (Q9)
-- [ ] **CHECKPOINT 5** — tous gates verts ; `audit-prod.sh` étendu vert en préprod ; PR de clôture vers `develop` avec archivage de `tasks/` sous `.claude/specs/archive/<date>-remediation-audit-securite-3/`
+- [ ] **CHECKPOINT 5** — tous gates verts ; `audit-prod.sh` étendu vert en préprod ; PR de clôture vers `develop` avec archivage de `tasks/` sous `.claude/specs/archive/<date>-remediation-audit-securite-3-lot-2/`
 
 ## Phase 6 — Hors plan (Q7 : spec séparée)
 - [ ] 6.1 Sauvegardes Postgres : bucket + clés ESO / CronJob `pg_dump` (rétention 14 j) / restauration testée en préprod — à découper quand planifié
