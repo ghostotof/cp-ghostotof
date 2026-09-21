@@ -75,7 +75,7 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [x] 5.2 (fait le 2026-09-21, local ; prouvé sur conteneur nginx jetable, **pas** sur la chaîne réelle ingress → pod : à confirmer par `audit-prod.sh` en préprod au checkpoint 5 — il ne juge désormais que la réponse finale, il peut donc rougir là où seule une redirection portait les en-têtes) CSP + HSTS sur `/assets/`, `/healthz`, `/config.js` (front) et HSTS sur `/healthz` (backend k8s) ; `audit-prod.sh` vérifie `/config.js` + un asset  ; pas de `preload` (Q3)
 - [x] 5.3 (fait le 2026-09-21, local ; PVR vérifié actif, donc le `Contact:` est vivant ; `Expires` = 2027-09-01, l'audit échouera passé cette date) `.dockerignore` (`backend/config/jwt/`, `backend/.env.test`) ; `.gitignore` (`/.claude/settings.local.json`) ; `frontend/public/.well-known/security.txt` + check dans `audit-prod.sh`
 - [ ] 5.4 Xdebug préprod (Q2 : conservé) : `XDEBUG_TRIGGER_SECRET` via ESO + `emptyDir` `var/profiler` + procédure dans `k8s/README.md` ; un déclencheur sans la bonne valeur ne profile rien
-- [ ] 5.5 Adminer `5.5.1-standalone` (`.env`, `versions.lock`, `k8s/base/adminer.yaml`) ; préprod `replicas: 0` par défaut (Q5)
+- [x] 5.5 (fait le 2026-09-21, local ; prouvé sur conteneur jetable aux contraintes du pod, **pas de rollout réel** : au checkpoint 5, `kubectl patch` replicas=1 en préprod + `rollout status` + logs, puis laisser le déploiement suivant le rééteindre) Adminer `5.5.1-standalone` (`.env`, `versions.lock`, `k8s/base/adminer.yaml`) ; préprod `replicas: 0` par défaut (Q5)
 - [ ] 5.6 Labels PSA (`enforce: baseline`, `audit`/`warn: restricted`) sur les deux namespaces ; `automountServiceAccountToken: false` sur tous les pod specs ; rollout réel en préprod
 - [x] 5.7 (fait le 2026-09-21, local ; firewall `api` laissé `^/api` exprès ; profiler/WDT de dev non exercés sur un serveur réel — à regarder au prochain `make up`) `framework.session.enabled: false` ; firewall `login` → `^/api/login_check$` ; `AccessControlAnchoringTest` étendu aux firewalls
 - [ ] 5.9 Hachage factice sur identifiant inconnu (A10) : listener `LoginFailureEvent` + tests (temps égalisés, 401 identiques) ; couvre aussi le compte en attente d'activation (hachage vide)
@@ -98,6 +98,8 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 
 - [ ] Le firewall `dev` (`security: false`, `^/(_profiler|_wdt|assets|build)/`) existe dans **tous** les environnements, prod comprise : inerte aujourd'hui (aucune route dessous), mais il désactiverait la sécurité d'une future route `/assets/…` ou `/build/…`. Remède : le placer sous `when@dev`. Sévérité faible, confiance élevée (agent T5.7)
 - [ ] T5.8 : le CLAUDE.md ne décrit pas le firewall `dev` réel ; nginx `location ^~ /api/login_check` est un préfixe, plus large que le firewall désormais exact (bénin) (agent T5.7)
+
+- [ ] Adminer : `memory_limit = 1G` dans l'image contre `limits.memory: 128Mi` (antérieur, risque d'OOMKill un peu accru avec PHP 8.4) ; `sizeLimit: 256Mi` sur `/tmp` est un choix, pas une mesure (agent T5.5)
 
 ## Phase 6 — Hors plan (Q7 : spec séparée)
 - [ ] 6.1 Sauvegardes Postgres : bucket + clés ESO / CronJob `pg_dump` (rétention 14 j) / restauration testée en préprod — à découper quand planifié
