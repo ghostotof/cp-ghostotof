@@ -26,6 +26,10 @@ spec:
       labels:
         app.kubernetes.io/name: rabbitmq
     spec:
+      # Ce nœud est seul (`replicas: 1`, aucune configuration de cluster) : il
+      # n'utilise pas `rabbit_peer_discovery_k8s` et ne consulte donc jamais
+      # l'API Kubernetes — le jeton du ServiceAccount peut partir sans risque.
+      automountServiceAccountToken: false
       # Point d'audit I6 : seccomp SEULEMENT — filtre d'appels système, il ne
       # touche ni à l'utilisateur d'exécution ni aux permissions de fichiers.
       #

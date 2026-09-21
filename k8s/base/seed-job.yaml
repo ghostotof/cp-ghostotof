@@ -58,6 +58,7 @@ spec:
       labels:
         app.kubernetes.io/name: backend-seed
     spec:
+      automountServiceAccountToken: false
       restartPolicy: Never
       securityContext:
         fsGroup: 10001

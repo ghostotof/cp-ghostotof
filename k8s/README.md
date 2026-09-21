@@ -159,9 +159,18 @@ détail des jobs.
    helm upgrade --install external-secrets external-secrets/external-secrets \
      --namespace external-secrets --create-namespace
    ```
-6. **Créer les namespaces** — fait automatiquement par `kubectl apply -k`
-   (`namespace.yaml` est dans les resources de chaque overlay), pas besoin de
-   le faire à la main.
+6. **Créer les namespaces** — `namespace.yaml` est dans les `resources:` de
+   chaque overlay, donc `kubectl apply -k` les maintient à jour (leurs labels
+   Pod Security Admission compris, cf. « Durcissement des pods » ci-dessous).
+   Mais la **création** reste manuelle, avec un kubeconfig d'administrateur :
+   le `ClusterRole` du déployeur CI ne porte que `get`/`patch` sur
+   `namespaces`, restreint par `resourceNames` — pas `create`. Et de toute
+   façon le namespace doit exister avant l'étape 4, qui y pose le
+   ServiceAccount du pipeline.
+   ```bash
+   kubectl create namespace preprod
+   kubectl create namespace prod
+   ```
 
 ## Secrets — Scaleway Secret Manager, jamais dans git
 
@@ -659,14 +668,208 @@ contre la préprod doit produire une ligne `login-failed` avec l'IP publique de 
 Les logs de pod ne sont conservés que par Kubernetes (rotation locale, perdus au remplacement du
 pod) : la rétention et le statut RGPD de ces lignes sont traités dans `docs/rgpd/` (plan, T5.8).
 
+## Durcissement des pods (jeton de ServiceAccount et Pod Security Admission)
+
+Deux changements posés le 2026-09-21 (3e audit, constat A17, tâche T5.6). Ils
+sont **déclaratifs et versionnés** — aucune commande à jouer en routine —, mais
+le premier déploiement qui les emporte **redémarre tous les workloads**, y
+compris Postgres et RabbitMQ. La validation en préprod décrite plus bas n'est
+donc pas facultative.
+
+### `automountServiceAccountToken: false` sur les dix pod specs
+
+Par défaut, Kubernetes monte le jeton du ServiceAccount `default` dans
+`/var/run/secrets/kubernetes.io/serviceaccount` de **chaque** conteneur. Un
+attaquant qui obtient l'exécution de code dans un pod y trouve une identité
+utilisable contre l'API du cluster, gratuitement.
+
+Aucun pod de ce dépôt n'en a l'usage — vérifié plutôt que supposé :
+
+- aucun pod spec ne déclare de `serviceAccountName` : tous tournent sous
+  `default`, dont le RBAC est vide ;
+- aucune image ne contient `kubectl` ni de client Kubernetes (ni dans
+  `composer.json`, ni dans `package.json`, ni dans `docker/`), et rien ne lit
+  `/var/run/secrets/kubernetes.io` ni `KUBERNETES_SERVICE_HOST` ;
+- RabbitMQ est un **nœud seul** (`replicas: 1`, aucune configuration de
+  cluster, aucun `enabled_plugins` monté) : il n'utilise pas
+  `rabbit_peer_discovery_k8s`, le seul mécanisme par lequel ce broker
+  interroge l'API ;
+- External Secrets Operator est le seul composant qui parle réellement à
+  l'API, et il tourne dans son **propre** namespace (`external-secrets`) avec
+  son propre ServiceAccount : les `SecretStore`/`ExternalSecret` d'ici sont
+  des objets qu'il lit, pas des pods à nous ;
+- le ServiceAccount `github-actions-deployer` est porté par le pipeline (un
+  kubeconfig), jamais par un pod.
+
+Le champ est posé au niveau du **pod spec** (`spec.template.spec`, et
+`spec.jobTemplate.spec.template.spec` pour les CronJob), pas sur le
+ServiceAccount `default` que ce dépôt ne gère pas. Les dix objets concernés :
+`backend`, `worker`, `frontend`, `postgres`, `rabbitmq`, `adminer`, les
+CronJob `watch-refresh` et `contact-failed-messages-purge`, **et les deux Jobs
+hors kustomize** `migrate-job.yaml` / `seed-job.yaml` — ces derniers ne passent
+par aucun transformateur, ils ont donc été modifiés directement.
+
+### Labels Pod Security Admission sur les deux namespaces
+
+Portés par `k8s/overlays/{preprod,prod}/namespace.yaml`, donc **appliqués par
+le pipeline** : le `ClusterRole` du déployeur a `namespaces: [get, patch]`
+restreint par `resourceNames: [preprod, prod]`, ce qui suffit exactement à
+poser des labels sur un namespace existant.
+
+| Mode | Profil | Effet |
+|---|---|---|
+| `enforce` | `baseline` | un pod non conforme est **refusé** à la création |
+| `audit` | `restricted` | consigné dans le journal d'audit du control-plane |
+| `warn` | `restricted` | avertissement renvoyé à l'appelant de l'API |
+
+**Pourquoi `enforce: baseline` et pas `restricted`.** RabbitMQ
+(`k8s/base/rabbitmq.yaml`) ne déclare aucun `securityContext` de conteneur : il
+viole trois contrôles `restricted` — `runAsNonRoot` absent,
+`allowPrivilegeEscalation` pas à `false`, `capabilities.drop` ne contenant pas
+`ALL`. C'est le constat A18, **assumé** : la release v0.5.0 a mis ce broker en
+CrashLoopBackOff en production en touchant justement à son utilisateur
+d'exécution (cookie Erlang, cf. l'en-tête du manifeste). `enforce: restricted`
+reproduirait l'incident en pire — le pod ne serait même plus admis. Tous les
+autres workloads, Jobs et CronJob compris, satisfont déjà `restricted` : quand
+RabbitMQ sera durci, le passage d'`enforce` à `restricted` sera un simple
+changement de mot.
+
+**Pourquoi `-version: latest`.** La version du control-plane n'est écrite nulle
+part dans ce dépôt et Kapsule est managé (Scaleway le monte de version sans
+préavis) : épingler une valeur inventée figerait la politique sur un état qui
+n'est peut-être pas celui du cluster. Contrepartie assumée : une version de
+Kubernetes qui ajouterait un contrôle à `baseline` pourrait faire refuser un
+pod au premier déploiement suivant la mise à jour. La variante recommandée par
+Kubernetes, une fois la version connue (`kubectl version`), est d'épingler
+`enforce-version` sur la mineure courante et de laisser `audit`/`warn` sur
+`latest` — pour ces deux-là, `latest` est justement ce qu'on veut : un nouveau
+contrôle doit être **signalé**, pas masqué.
+
+### Validation en préprod, exigée avant promotion en prod
+
+Les deux changements modifient le pod template de chaque Deployment : le
+prochain `kubectl apply -k` **recrée tous les pods**. Postgres et RabbitMQ sont
+en `strategy: Recreate` (leur PVC est `ReadWriteOnce`, deux pods ne peuvent pas
+le partager) : l'ancien pod est arrêté **avant** que le nouveau démarre, donc
+base et broker sont franchement indisponibles le temps du redémarrage. Rien ici
+ne touche à un uid, un gid, un `fsGroup` ni à un mode de fichier — ce n'est donc
+pas le mécanisme de l'incident v0.5.0 —, mais la règle du projet (« Postgres et
+RabbitMQ portent leur état sur un PVC, un `apply --dry-run=server` ne prouve
+rien ») s'applique telle quelle.
+
+Ce à quoi s'attendre : les messages Messenger en file survivent (queue AMQP
+durable, messages persistants, PVC intact) et le `failure_transport` est en
+base (`doctrine://default?queue_name=failed`), pas dans le broker ; le worker
+perd sa connexion, `messenger:consume` sort, le conteneur est relancé et un
+message non acquitté est redélivré. Côté Postgres, les connexions en cours sont
+coupées : quelques requêtes peuvent répondre 500 pendant la reprise.
+
+Dans l'ordre, avec un kubeconfig **d'administrateur**, sur la préprod, **avant**
+de fusionner la release :
+
+1. **Hors ligne.** Le rendu doit passer et les dix pod specs porter le champ :
+   ```bash
+   kubectl kustomize k8s/overlays/preprod >/dev/null && echo rendu-ok
+   kubectl kustomize k8s/overlays/preprod | grep -c 'automountServiceAccountToken: false'   # 8 attendu
+   grep -c 'automountServiceAccountToken: false' k8s/base/migrate-job.yaml k8s/base/seed-job.yaml
+   ```
+2. **Lire les avertissements sans rien bloquer.** Poser d'abord `audit` et
+   `warn` seuls. Au moment où un label PSA est posé ou modifié, l'API évalue
+   les pods **déjà présents** et renvoie les violations en avertissements :
+   c'est la vérification la plus utile, et `--dry-run=server` permet de la
+   faire sans rien changer.
+   ```bash
+   # Simulation : liste les pods existants qui violeraient chaque profil.
+   kubectl label --dry-run=server --overwrite namespace preprod \
+     pod-security.kubernetes.io/enforce=restricted     # doit signaler rabbitmq
+   kubectl label --dry-run=server --overwrite namespace preprod \
+     pod-security.kubernetes.io/enforce=baseline       # ne doit RIEN signaler
+   # Pose réelle des deux modes non bloquants.
+   kubectl label --overwrite namespace preprod \
+     pod-security.kubernetes.io/audit=restricted \
+     pod-security.kubernetes.io/audit-version=latest \
+     pod-security.kubernetes.io/warn=restricted \
+     pod-security.kubernetes.io/warn-version=latest
+   ```
+   La simulation `baseline` **doit** être muette. Si elle ne l'est pas, ne pas
+   poser `enforce` : c'est qu'un workload a dérivé depuis la dernière revue.
+3. **Poser `enforce`** seulement après :
+   ```bash
+   kubectl label --overwrite namespace preprod \
+     pod-security.kubernetes.io/enforce=baseline \
+     pod-security.kubernetes.io/enforce-version=latest
+   kubectl get namespace preprod -o jsonpath='{.metadata.labels}' | tr ',' '\n'
+   ```
+4. **Déployer la release sur la préprod** (push sur `release/*`), puis attendre
+   chaque workload — y compris ceux que la pipeline n'attend pas elle-même :
+   ```bash
+   for d in postgres rabbitmq backend worker frontend; do
+     kubectl -n preprod rollout status deployment/$d --timeout=180s
+   done
+   ```
+   > **La pipeline attend désormais aussi les workloads à état.** Après
+   > `kubectl apply -k .`, `deploy-preprod` et `deploy-prod` font le
+   > `rollout status` de `postgres`, `rabbitmq` et `worker` en plus de
+   > `backend`/`frontend`. Sans cela, `backend-seed` (`backoffLimit: 0`)
+   > partait pendant que Postgres, en `Recreate`, n'était pas encore revenu
+   > (détachement puis rattachement du PVC) et échouait sur une connexion
+   > refusée ; et en production un RabbitMQ qui ne remonte pas laissait le
+   > déploiement vert — le scénario de l'incident v0.5.0. Un pod template de
+   > Postgres ou de RabbitMQ qui change, c'est donc une courte indisponibilité
+   > franche de l'API (l'ancien pod s'arrête avant que le nouveau démarre) :
+   > à savoir avant de promouvoir.
+5. **Lire les journaux des deux workloads à état** — c'est là que se verrait un
+   refus de démarrage sur volume déjà initialisé :
+   ```bash
+   kubectl -n preprod logs deployment/rabbitmq --tail=100   # « Server startup complete »
+   kubectl -n preprod logs deployment/postgres --tail=100   # « database system is ready to accept connections »
+   ```
+6. **Vérifier que le jeton n'est plus monté** dans un pod quelconque :
+   ```bash
+   POD=$(kubectl -n preprod get pod -l app.kubernetes.io/name=backend -o name | head -1)
+   kubectl -n preprod get "$POD" \
+     -o jsonpath='{.spec.volumes[*].name}{"\n"}' | tr ' ' '\n' | grep kube-api-access || echo "aucun volume de jeton — attendu"
+   ```
+   Le volume projeté `kube-api-access-xxxxx` ne doit plus exister, et donc
+   `/var/run/secrets/kubernetes.io/serviceaccount` non plus.
+7. **Enfin seulement**, fusionner la release : `deploy-prod` posera les mêmes
+   labels et rejouera le même redémarrage sur la prod. Attention, la pipeline
+   n'attend en prod que `backend` et `frontend` — surveiller `postgres`,
+   `rabbitmq` et `worker` à la main avec la boucle de l'étape 4 sur `prod`.
+
+### Retour arrière
+
+- **Un pod refusé par `enforce`** : retirer le seul label bloquant remet tout
+  en ordre immédiatement, les deux autres modes ne bloquent rien.
+  ```bash
+  kubectl label namespace preprod pod-security.kubernetes.io/enforce-
+  kubectl label namespace preprod pod-security.kubernetes.io/enforce-version-
+  ```
+  Correctif temporaire : le prochain `kubectl apply -k` du pipeline les
+  **repose**. Pour que le retrait tienne, il faut aussi les enlever de
+  `k8s/overlays/<env>/namespace.yaml` et déployer.
+- **`automountServiceAccountToken`** n'a pas d'équivalent à chaud : il vit dans
+  le pod template, un `kubectl patch` serait écrasé au déploiement suivant. Le
+  retour arrière est un revert du commit puis un déploiement — avec, là encore,
+  un redémarrage de tous les workloads.
+
 ## Limites connues (acceptables pour un projet portfolio, à retravailler sinon)
 
 - Postgres et RabbitMQ tournent en pod (1 réplique, PVC) plutôt que sur des
   services managés Scaleway : pas de sauvegarde automatique.
-- Pas de Pod Security Admission `restricted` au niveau namespace : les
-  Deployments applicatifs (backend, frontend) respectent déjà ce profil
-  (`runAsNonRoot`, `readOnlyRootFilesystem`, capacités supprimées), mais
-  postgres/rabbitmq utilisent leurs images officielles telles quelles.
+- Pod Security Admission est posé (cf. « Durcissement des pods » ci-dessus)
+  mais `enforce` est à `baseline`, pas à `restricted` : **RabbitMQ** est le
+  seul workload qui reste en deçà (aucun `securityContext` de conteneur —
+  `runAsNonRoot`, `allowPrivilegeEscalation: false` et
+  `capabilities.drop: [ALL]` tous absents), constat A18 assumé après
+  l'incident v0.5.0. `restricted` reste évalué en `audit`/`warn`, donc la
+  dérive est visible. Le durcir demande de gérer explicitement le cookie
+  Erlang (initContainer qui le régénère et le `chmod`) et un vrai rollout de
+  préprod.
+- `readOnlyRootFilesystem` manque aussi sur postgres et rabbitmq (leurs images
+  officielles écrivent hors du PVC). Ce n'est **pas** un contrôle PSA — ni
+  `baseline` ni `restricted` ne l'exigent —, donc aucun label ne le signalera :
+  c'est un durcissement à faire à la main le jour venu.
 - Deux bootstraps manuels `kubectl create secret` (hors ESO, cf. section
   "Prérequis cluster" ci-dessus) : `scaleway-eso-auth` (auth ESO elle-même,
   forcément hors du système qu'elle authentifie) et `cv-pdf` (dépasse la

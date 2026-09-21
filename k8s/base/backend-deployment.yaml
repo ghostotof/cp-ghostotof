@@ -20,6 +20,12 @@ spec:
       labels:
         app.kubernetes.io/name: backend
     spec:
+      # Point d'audit A17 — aucun pod de ce dépôt ne parle à l'API Kubernetes,
+      # le jeton du ServiceAccount `default` n'a donc rien à faire dans le
+      # conteneur. Posé à l'identique sur les dix pod specs du dépôt (y compris
+      # les deux Jobs hors kustomize) ; explication complète et procédure de
+      # vérification dans k8s/README.md, section « Durcissement des pods ».
+      automountServiceAccountToken: false
       # Packages GHCR rendus publics (cf. k8s/README.md §1bis) : pull
       # anonyme, plus besoin d'imagePullSecrets.
       securityContext:

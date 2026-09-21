@@ -30,6 +30,7 @@ spec:
       labels:
         app.kubernetes.io/name: worker
     spec:
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 10001
         # Point d'audit I6 : filtre d'appels système par défaut du runtime.

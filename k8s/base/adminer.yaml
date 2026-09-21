@@ -28,6 +28,7 @@ spec:
       labels:
         app.kubernetes.io/name: adminer
     spec:
+      automountServiceAccountToken: false
       # Point d'audit I6 : filtre d'appels système par défaut du runtime.
       securityContext:
         seccompProfile:
