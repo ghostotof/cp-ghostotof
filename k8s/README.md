@@ -316,50 +316,192 @@ l'opérateur, partagée et changeante — impossible à allowlister sans soit
 laisser passer une partie du réseau de l'opérateur, soit devoir la mettre à
 jour en permanence.
 
-Générer le fichier htpasswd (bcrypt, via une image jetable — pas besoin
-d'installer `htpasswd` en local) :
+> **⚠ Terminal séparé, jamais dans une session d'agent.** Toute commande de
+> cette section qui manipule la valeur — mot de passe, fichier htpasswd,
+> couple `identifiant:mot-de-passe` — se lance dans un terminal à part, et ne
+> transmet cette valeur que **par fichier ou par stdin**. Jamais via le
+> préfixe `!` d'une session Claude Code, jamais `gh secret set --body '…'`,
+> jamais `data="$(cat …)"` : une substitution de commande remet la valeur dans
+> les arguments du processus, donc visible dans `ps` et dans l'historique du
+> shell. Ces deux formes figuraient ici jusqu'au 2026-09-16 ; jouées dans une
+> session d'agent, elles ont recopié les identifiants en clair dans le
+> transcript, et le mot de passe a été changé dans la foulée (reliquat R.3c du
+> lot 1). Les recettes ci-dessous sont écrites pour que la valeur ne quitte
+> jamais un fichier d'un répertoire temporaire privé.
+
+#### Générer le mot de passe et le fichier htpasswd
+
+Bloc commun à la première installation et à la rotation. `umask 077` avant
+`mktemp -d` : le répertoire et tout ce qu'on y écrit ne sont lisibles que par
+le compte courant. Le hachage est bcrypt (`-B`), celui qu'accepte déjà
+l'ingress ; `-i` fait lire le mot de passe sur stdin, là où `-b` l'aurait mis
+dans la ligne de commande. `httpd:alpine` évite d'installer `htpasswd` en
+local (`-i` sur `docker run`, sinon stdin n'est pas transmis).
 
 ```bash
-docker run --rm httpd:alpine htpasswd -nbB '<identifiant>' '<mot-de-passe>' > /tmp/preprod.htpasswd
-cat /tmp/preprod.htpasswd
-# <identifiant>:$2y$05$...
+umask 077
+TMP=$(mktemp -d)
+openssl rand -base64 24 > "$TMP/password"
+docker run --rm -i httpd:alpine htpasswd -niB '<identifiant>' < "$TMP/password" > "$TMP/htpasswd"
+# Le couple attendu par curl -u, sans saut de ligne final :
+{ printf '%s:' '<identifiant>'; tr -d '\n' < "$TMP/password"; } > "$TMP/credentials"
 ```
 
-Uploader le **contenu complet du fichier** (pas juste le mot de passe) dans
-Scaleway Secret Manager :
+Vérifications, sans jamais afficher la valeur :
+
+```bash
+cut -d: -f1 "$TMP/htpasswd"                 # l'identifiant, et rien d'autre
+cut -d: -f2 "$TMP/htpasswd" | cut -c1-4     # $2y$ attendu (bcrypt)
+docker run --rm -i -v "$TMP:/w:ro" httpd:alpine \
+  htpasswd -vi /w/htpasswd '<identifiant>' < "$TMP/password"   # sortie : mot de passe correct
+```
+
+L'alphabet base64 ne contient ni `:` ni guillemet : le couple reste
+découpable par `curl -u` et par le fichier de config que construisent
+`tools/audit-prod.sh` et `tools/smoke-login-throttling.sh`.
+
+#### Première installation
+
+Uploader le **contenu complet du fichier htpasswd** (pas juste le mot de
+passe) dans Scaleway Secret Manager — `data=@<fichier>` fait lire le fichier
+par la CLI, rien ne passe par un argument :
 
 ```bash
 scw secret secret create name=preprod-basic-auth-htpasswd path=/ region=fr-par
-scw secret version create secret-id=<id> data="$(cat /tmp/preprod.htpasswd)" region=fr-par
-shred -u /tmp/preprod.htpasswd
+scw secret version create <secret-id> data=@"$TMP/htpasswd" region=fr-par
 ```
 
 ESO synchronise le Secret `preprod-basic-auth` sous 1h maximum (forcer avec
 `kubectl annotate externalsecret preprod-basic-auth -n preprod
 force-sync=$(date +%s) --overwrite` pour ne pas attendre). **Contrairement
-aux autres Secrets** (cf. « Rotation » ci-dessous), **aucun redémarrage de
-pod n'est nécessaire** : le contrôleur ingress-nginx surveille lui-même le
-Secret référencé par `auth-secret` et recharge sa configuration nginx dès
-qu'il change.
+aux autres Secrets** (cf. « Rotation / mise à jour d'un Secret » ci-dessous),
+**aucun redémarrage de pod n'est nécessaire** : le contrôleur ingress-nginx
+surveille lui-même le Secret référencé par `auth-secret` et recharge sa
+configuration nginx dès qu'il change.
 
 **Secret GitHub Actions associé** (créé côté GitHub, jamais dans ce dépôt) :
-le job `audit-preprod` du pipeline (`tools/audit-prod.sh`) fait des requêtes
-anonymes sur la préprod pour vérifier ses en-têtes de sécurité et l'absence
-de chemins sensibles exposés — sans identifiants, il ne recevrait que des
-401 et prendrait chacun pour une fuite. `PREPROD_BASIC_AUTH` porte les
-mêmes identifiants que le htpasswd ci-dessus, au format
-`utilisateur:mot_de_passe` (celui que `curl -u` attend, pas le hash bcrypt) :
+les jobs `audit-preprod` (`tools/audit-prod.sh`) et `smoke-test-preprod`
+(`tools/smoke-login-throttling.sh`) interrogent la préprod — sans
+identifiants, l'audit ne recevrait que des 401 et prendrait chacun pour une
+fuite. `PREPROD_BASIC_AUTH` porte les mêmes identifiants que le htpasswd
+ci-dessus, au format `utilisateur:mot_de_passe` (celui que `curl -u` attend,
+pas le hash bcrypt). Sans `--body`, `gh secret set` lit la valeur sur stdin :
 
 ```bash
-gh secret set PREPROD_BASIC_AUTH --env preprod --body '<identifiant>:<mot-de-passe>'
+gh secret set PREPROD_BASIC_AUTH --env preprod < "$TMP/credentials"
 ```
 
-`--env preprod` : c'est un secret d'environnement, servi aux seuls jobs qui
-déclarent `environment: preprod` et depuis les seules branches `release/*`
-(constat A4, cf. §4 ci-dessus).
+`--env preprod` : c'est un secret d'**environnement**, servi aux seuls jobs
+qui déclarent `environment: preprod` et depuis les seules branches `release/*`
+(constat A4, cf. §4 ci-dessus). Pas un secret de dépôt : l'homonyme qui
+traînait à ce niveau a été supprimé le 2026-09-16 (reliquat R.3e), parce qu'un
+secret de dépôt est servi à n'importe quel job de n'importe quelle branche et
+vide la garde de son sens.
+
+Puis détruire le répertoire temporaire (cf. étape 7 de la rotation).
 
 Absent côté `audit-prod` (la vraie prod, non protégée) : le script s'exécute
 alors sans `-u`, comportement inchangé.
+
+#### Rotation du mot de passe
+
+Quand : fuite suspectée, exposition dans un transcript ou un journal, départ
+d'une personne qui connaissait le mot de passe. Pas de calendrier imposé —
+contrairement au jeton du déployeur (§4), ce mot de passe ne protège qu'un
+environnement de préproduction et n'expire pas de lui-même.
+
+Le secret Scaleway existe déjà : c'est une **nouvelle version** qu'on crée,
+pas un nouveau secret — `scw secret secret create` échoue sur un nom déjà
+pris. Vérifier la syntaxe exacte avec `scw secret version create --help`,
+elle évolue.
+
+1. **Générer la nouvelle valeur** dans un répertoire temporaire privé : jouer
+   le bloc « Générer le mot de passe et le fichier htpasswd » ci-dessus, avec
+   le **même identifiant** (le changer obligerait à modifier aussi le couple
+   attendu par la CI, sans rien gagner). Vérification : les trois commandes
+   `cut`/`htpasswd -vi` du même bloc.
+
+2. **Créer une nouvelle version du secret existant.** Retrouver son
+   identifiant par son nom, puis pousser le fichier :
+
+   ```bash
+   scw secret secret list name=preprod-basic-auth-htpasswd region=fr-par
+   # relever l'ID de la ligne correspondante, puis :
+   scw secret version create <secret-id> data=@"$TMP/htpasswd" region=fr-par
+   scw secret version list <secret-id> region=fr-par
+   ```
+
+   Vérification : la nouvelle révision apparaît, `enabled` et `latest`.
+   (`scw secret version create` accepte `disable-previous=true`, qui ferait
+   l'étape 5 d'un coup — on ne s'en sert pas : la désactivation vaut
+   révocation, et on la veut *après* le `force-sync` de l'étape 3, pas avant.)
+
+3. **Forcer la resynchronisation de l'ExternalSecret.** Relever d'abord la
+   `resourceVersion` du Secret Kubernetes, pour pouvoir constater le
+   changement sans regarder le contenu :
+
+   ```bash
+   kubectl get secret preprod-basic-auth -n preprod -o jsonpath='{.metadata.resourceVersion}{"\n"}'
+   kubectl annotate externalsecret preprod-basic-auth -n preprod force-sync=$(date +%s) --overwrite
+   kubectl get externalsecret preprod-basic-auth -n preprod \
+     -o jsonpath='{.status.conditions[?(@.type=="Ready")].status} {.status.refreshTime}{"\n"}'
+   kubectl get secret preprod-basic-auth -n preprod -o jsonpath='{.metadata.resourceVersion}{"\n"}'
+   ```
+
+   Vérification : `True` et un `refreshTime` de l'instant, et une
+   `resourceVersion` **différente** de celle relevée avant. Ne jamais faire
+   `-o yaml` ni `| base64 -d` sur ce Secret : cela remettrait le hash — et,
+   pour d'autres secrets, la valeur — dans le terminal et son historique.
+   Aucun `rollout restart` ici : ingress-nginx recharge tout seul (cf.
+   ci-dessus).
+
+4. **Poser le secret GitHub d'environnement**, par stdin :
+
+   ```bash
+   gh secret set PREPROD_BASIC_AUTH --env preprod < "$TMP/credentials"
+   gh secret list --env preprod
+   ```
+
+   Vérification : `gh secret list` affiche la date de mise à jour (jamais la
+   valeur). C'est bien le secret de l'environnement `preprod`, pas un secret
+   de dépôt — voir la note de la première installation.
+
+5. **Désactiver les anciennes révisions** dans Secret Manager — c'est ce qui
+   révoque réellement l'ancienne valeur. Après l'étape 3, jamais avant :
+   l'ExternalSecret doit déjà avoir resynchronisé sur la nouvelle révision.
+
+   ```bash
+   scw secret version disable <secret-id> revision=<n> region=fr-par
+   scw secret version list <secret-id> status.0=enabled region=fr-par
+   ```
+
+   Vérification : la seconde commande ne renvoie plus qu'une seule révision.
+
+6. **Vérifier de bout en bout.** En **navigation privée** (une fenêtre
+   ordinaire rejouerait les identifiants mémorisés) : l'ancien mot de passe
+   doit être refusé, le nouveau accepté sur `https://preprod.cp-ghostotof.com`.
+   Puis côté CI, relancer les deux jobs qui lisent le secret — ils échouent en
+   masse si le couple ne correspond plus au htpasswd :
+
+   ```bash
+   # les <job-id> attendus par --job ne sont pas les numéros de l'URL du navigateur :
+   gh run view <run-id> --json jobs --jq '.jobs[] | {name, databaseId}'
+   gh run rerun <run-id> --job <job-id>   # smoke-test-preprod, puis audit-preprod
+   ```
+
+   ou, plus simplement, attendre le prochain push sur une branche `release/*`,
+   qui les rejoue de toute façon.
+
+7. **Détruire le répertoire temporaire** :
+
+   ```bash
+   shred -u "$TMP"/* 2>/dev/null; rm -rf "$TMP"
+   ```
+
+   `shred` ne garantit rien sur un SSD ni sur un système de fichiers journalisé
+   (wear levelling, copies au fil des journaux et des instantanés) : la seule
+   garantie réelle reste que la valeur n'a jamais quitté ce répertoire, et
+   qu'elle est révoquée dès l'étape 5.
 
 ## Rotation / mise à jour d'un Secret
 
