@@ -51,23 +51,28 @@ final readonly class CsrfCookieRequestSubscriber
      * - /api/account/base-access (ADR 0003 D6) : même raisonnement — l'appelant
      *   est anonyme par définition (c'est le but de l'endpoint) et n'a donc
      *   aucun cookie XSRF-TOKEN préexistant à double-soumettre.
+     * - /api/account/password-setup et …/password-setup/validate : parcours
+     *   public de définition de mot de passe via lien e-mail. L'appelant est
+     *   anonyme (le compte n'est pas encore activé) : il n'a aucun cookie
+     *   XSRF-TOKEN à double-submit, et aucune autorité ambiante qu'un CSRF
+     *   pourrait détourner — même raisonnement que /api/contact. Chemins
+     *   EXACTS (audit A7, D6 : plus de `{token}` dans le chemin, donc plus de
+     *   préfixe) : une exclusion par préfixe sortirait du contrôle CSRF toute
+     *   route sœur future (`…/password-setup-autre`) sans que personne l'ait
+     *   décidé.
      *
-     * Les deux premières POSENT un cookie BEARER : être hors double-submit ne
-     * les met pas hors CSRF pour autant (login-CSRF, issue #76). Elles sont
-     * gardées par LoginCsrfRequestListener, qui exige un en-tête personnalisé.
+     * /api/login_check et /api/account/base-access POSENT un cookie BEARER :
+     * être hors double-submit ne les met pas hors CSRF pour autant (login-CSRF,
+     * issue #76). Elles sont gardées par LoginCsrfRequestListener, qui exige un
+     * en-tête personnalisé.
      */
-    private const array EXCLUDED_PATHS = ['/api/login_check', '/api/contact', '/api/account/base-access'];
-
-    /**
-     * - /api/account/password-setup/ : parcours public de définition de mot de
-     *   passe via lien e-mail. L'appelant est anonyme (le compte n'est pas
-     *   encore activé) : il n'a aucun cookie XSRF-TOKEN à double-submit, et
-     *   aucune autorité ambiante qu'un CSRF pourrait détourner — même
-     *   raisonnement que /api/contact.
-     *
-     * @var list<string>
-     */
-    private const array EXCLUDED_PATH_PREFIXES = ['/api/account/password-setup/'];
+    private const array EXCLUDED_PATHS = [
+        '/api/login_check',
+        '/api/contact',
+        '/api/account/base-access',
+        '/api/account/password-setup',
+        '/api/account/password-setup/validate',
+    ];
 
     // Le nom vient de la fabrique qui pose le cookie (issue #87) : lu et écrit
     // sous une seule constante.
@@ -133,13 +138,6 @@ final readonly class CsrfCookieRequestSubscriber
             return false;
         }
 
-        if (\in_array($path, self::EXCLUDED_PATHS, true)) {
-            return false;
-        }
-
-        return array_all(
-            self::EXCLUDED_PATH_PREFIXES,
-            static fn (string $prefix): bool => !str_starts_with($path, $prefix),
-        );
+        return !\in_array($path, self::EXCLUDED_PATHS, true);
     }
 }

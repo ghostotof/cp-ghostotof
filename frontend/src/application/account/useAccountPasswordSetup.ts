@@ -9,7 +9,7 @@ export const ACCOUNT_REPOSITORY: InjectionKey<AccountRepository> = Symbol('Accou
  * - `ready`      : lien exploitable, formulaire affichable ;
  * - `submitting` : soumission du mot de passe en cours ;
  * - `done`       : mot de passe défini, on peut rediriger vers /login ;
- * - `invalid`    : lien corrompu (404), état terminal, pas de formulaire ;
+ * - `invalid`    : lien corrompu (404) ou sans jeton, état terminal, pas de formulaire ;
  * - `expired`    : lien expiré ou déjà utilisé (410), état terminal ;
  * - `error`      : échec non récupérable de la *validation* (rate-limited /
  *                  réseau) — le formulaire n'a jamais été montré.
@@ -44,6 +44,15 @@ export function useAccountPasswordSetup(): UseAccountPasswordSetupResult {
   }
 
   const validate = async (token: string): Promise<void> => {
+    // Pas de jeton (lien tronqué, ou page rechargée après que l'URL a été
+    // nettoyée) : il n'y a rien à vérifier. On conclut sans appeler le backend,
+    // qui répondrait 422 en entamant pour rien le quota par IP.
+    if ('' === token) {
+      state.value = 'invalid'
+      errorReason.value = 'invalid'
+      return
+    }
+
     state.value = 'checking'
     errorReason.value = null
 

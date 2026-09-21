@@ -66,7 +66,8 @@ final class ApiRouteExposureTest extends WebTestCase
 
         // --- Parcours publics par conception.
         '/api/contact' => 'Formulaire de contact anonyme (honeypot + rate limit IP).',
-        '/api/account/password-setup/{token}' => 'Définition du mot de passe via lien e-mail : l\'appelant n\'a pas encore de compte utilisable (rate limit IP).',
+        '/api/account/password-setup' => 'Définition du mot de passe via lien e-mail (POST {token, password}) : l\'appelant n\'a pas encore de compte utilisable, il ne peut donc pas être authentifié. Le jeton du corps (64 hex, à usage unique, 48 h) est la seule preuve exigée ; la réponse est un 204 sans corps, aucune donnée servie. Rate limit IP avant désérialisation (PasswordSetupRateLimitRequestListener) + zone nginx pwsetup.',
+        '/api/account/password-setup/validate' => 'Vérifie qu\'un jeton d\'invitation est encore exploitable avant d\'afficher le formulaire (POST {token}, audit A7/D6 : le jeton voyage dans le corps, plus jamais dans un chemin). Même appelant sans compte que ci-dessus ; ne répond que par un statut (204/404/410), sans corps, sans nom de compte ni e-mail. Partage le quota IP de la route précédente.',
         '/api/account/base-access' => 'ADR 0003 D6 : émet un jeton ROLE_USER (palier de base, publiable/non-identifiant) sans authentification — c\'est exactement l\'objet de l\'endpoint. Rate limité par IP (BaseAccessRateLimitRequestListener). N\'ouvre jamais /api/cv ni /api/me (ROLE_TRUSTED requis), voir BaseAccessControllerTest.',
         '/api/login_check' => 'Point d\'entrée du login : par définition atteint sans être authentifié.',
 

@@ -8,12 +8,12 @@ use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProcessorInterface;
 use App\Security\User\Application\PasswordSetupServiceInterface;
 use App\Security\User\Presentation\ApiResource\AccountPasswordSetupResource;
-use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
 /**
- * POST /api/account/password-setup/{token} : délègue à
- * PasswordSetupService::complete (hache le mot de passe, active le compte,
- * consomme le jeton). Réponse 204, aucun corps.
+ * POST /api/account/password-setup : délègue à PasswordSetupService::complete
+ * (hache le mot de passe, active le compte, consomme le jeton). Le jeton est
+ * lu dans le corps, jamais dans le chemin (audit A7, D6). Réponse 204, aucun
+ * corps.
  *
  * La limitation de débit par IP est appliquée en amont par
  * PasswordSetupRateLimitRequestListener (kernel.request, décision D1) : ne pas
@@ -23,8 +23,6 @@ use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
  */
 final readonly class AccountPasswordSetupProcessor implements ProcessorInterface
 {
-    use ResolvesUriVariables;
-
     public function __construct(
         private PasswordSetupServiceInterface $passwordSetupService,
     ) {
@@ -32,7 +30,7 @@ final readonly class AccountPasswordSetupProcessor implements ProcessorInterface
 
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): mixed
     {
-        $this->passwordSetupService->complete($this->uriVariableString($uriVariables, 'token'), $data->password);
+        $this->passwordSetupService->complete($data->token, $data->password);
 
         return null;
     }
