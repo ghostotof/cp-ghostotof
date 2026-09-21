@@ -700,5 +700,11 @@
       "checkedAt": "checked on {date}",
       "stale": "Scan overdue: it has not completed for over a day. A vulnerability published since then is missing from it."
     }
+  },
+  "cookieNotice": {
+    "label": "Cookie information",
+    "message": "This site sets no cookie on a plain visit. Only strictly necessary technical cookies are set if you log in or request instant access, so there is nothing to accept or refuse.",
+    "learnMore": "Learn more",
+    "dismiss": "Got it"
   }
 }

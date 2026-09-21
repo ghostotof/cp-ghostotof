@@ -121,6 +121,7 @@ const fr: PortfolioLocaleContent = {
         paragraphs: [
           "Les messages du formulaire de contact ne sont pas conservés en base de données au-delà de leur transmission par email, sauf en cas d'échec d'envoi (voir « Durée de conservation »).",
           "Le site n'utilise aucun cookie de mesure d'audience, de publicité ou de traceur tiers, et ne réalise aucun profilage ni décision automatisée.",
+          "Le bandeau d'information affiché à la première visite ne recueille aucun consentement, puisqu'aucun traceur ne l'exige : le fait que vous l'ayez fermé est simplement mémorisé dans votre navigateur (localStorage), jamais transmis au serveur.",
         ],
       },
       {

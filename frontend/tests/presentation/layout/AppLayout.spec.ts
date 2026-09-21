@@ -108,4 +108,14 @@ describe('AppLayout', () => {
     expect(aboutWrapper.find('#hero').exists()).toBe(false)
     expect(aboutWrapper.text()).toContain(STUB_ABOUT_CONTENT.site.eyebrow)
   })
+
+  it("rend le bandeau d'information cookies après le pied de page, sans passer devant le lien d'évitement", async () => {
+    localStorage.clear()
+    const wrapper = await mountLayout()
+
+    const notice = wrapper.get('section.cookie-notice')
+    const footer = wrapper.get('footer')
+    expect(footer.element.compareDocumentPosition(notice.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(wrapper.get('a, button').classes()).toContain('skip-link')
+  })
 })
