@@ -341,8 +341,9 @@ final class SecurityAuditLogTest extends WebTestCase
     }
 
     /**
-     * L'activation est anonyme (lien e-mail) et le jeton voyage encore dans
-     * le chemin (A7, jusqu'à T4.1) : la ligne nomme le compte, jamais le jeton.
+     * L'activation est anonyme (lien e-mail) et le jeton voyage dans le corps
+     * (A7, D6) : la ligne nomme le compte, jamais le jeton — ni dans le chemin,
+     * ni ailleurs dans l'enregistrement.
      */
     public function testActivatingAnAccountIsRecordedAnonymouslyWithoutTheToken(): void
     {
@@ -350,13 +351,50 @@ final class SecurityAuditLogTest extends WebTestCase
         self::getContainer()->get('cache.rate_limiter')->clear();
         $token = $this->inviteAndCollectSetupToken('newcomer@example.com', Locale::FR);
 
-        $client->request('POST', '/api/account/password-setup/'.$token, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => TestCredentials::variant('setup')]));
+        $client->request('POST', '/api/account/password-setup', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['token' => $token, 'password' => TestCredentials::variant('setup')]));
 
         self::assertResponseStatusCodeSame(204);
         $event = self::singleSecurityAuditEvent('account-activated');
         self::assertSame('newcomer', $event['user']);
         self::assertSame('anonymous', $event['actor']);
-        self::assertSame('/api/account/password-setup/{token}', $event['path']);
+        self::assertSame('/api/account/password-setup', $event['path']);
+        $this->assertTokenAppearsInNoSecurityAuditRecord($token);
+    }
+
+    /**
+     * Les refus du parcours (jeton inconnu, expiré, corps invalide) et la
+     * simple validation n'écrivent rien dans le journal d'audit — et surtout
+     * pas le jeton reçu, qu'il soit bon ou mauvais.
+     */
+    public function testNoPasswordSetupRequestEverLeaksItsTokenIntoTheAuditLog(): void
+    {
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $token = $this->inviteAndCollectSetupToken('newcomer@example.com', Locale::FR);
+        $unknown = bin2hex(random_bytes(32));
+        $server = ['CONTENT_TYPE' => 'application/json'];
+
+        // Le kernel redémarre entre deux requêtes : le TestHandler ne détient
+        // que les enregistrements de la dernière, on vérifie donc après chacune.
+        $client->request('POST', '/api/account/password-setup/validate', server: $server, content: self::jsonBody(['token' => $token]));
+        self::assertResponseStatusCodeSame(204);
+        $this->assertTokenAppearsInNoSecurityAuditRecord($token);
+
+        $client->request('POST', '/api/account/password-setup/validate', server: $server, content: self::jsonBody(['token' => $unknown]));
+        self::assertResponseStatusCodeSame(404);
+        $this->assertTokenAppearsInNoSecurityAuditRecord($unknown);
+
+        $client->request('POST', '/api/account/password-setup', server: $server, content: self::jsonBody(['token' => $token, 'password' => 'short']));
+        self::assertResponseStatusCodeSame(422);
+        $this->assertTokenAppearsInNoSecurityAuditRecord($token);
+
+        $client->request('POST', '/api/account/password-setup', server: $server, content: self::jsonBody(['token' => $unknown, 'password' => TestCredentials::variant('setup')]));
+        self::assertResponseStatusCodeSame(404);
+        $this->assertTokenAppearsInNoSecurityAuditRecord($unknown);
+    }
+
+    private function assertTokenAppearsInNoSecurityAuditRecord(string $token): void
+    {
         self::assertStringNotContainsString($token, json_encode(self::securityAuditRecords(), \JSON_THROW_ON_ERROR));
     }
 

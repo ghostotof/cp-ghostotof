@@ -8,6 +8,7 @@ use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\Authentication\Infrastructure\Http\CsrfCookieRequestSubscriber;
 use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -99,15 +100,54 @@ final class CsrfCookieRequestSubscriberTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    public function testUnsafeMethodOnAccountPasswordSetupIsExcluded(): void
+    /**
+     * Endpoint public (définition de mot de passe via lien e-mail) : l'appelant
+     * est anonyme, il n'a pas de cookie XSRF-TOKEN à double-submit.
+     */
+    #[DataProvider('passwordSetupPaths')]
+    public function testUnsafeMethodOnAccountPasswordSetupIsExcluded(string $path): void
     {
-        // Endpoint public (définition de mot de passe via lien e-mail) :
-        // l'appelant est anonyme, il n'a pas de cookie XSRF-TOKEN à double-submit.
-        $request = Request::create('/api/account/password-setup/'.bin2hex(random_bytes(32)), 'POST');
+        $request = Request::create($path, 'POST');
 
         $this->subscriber->__invoke($this->mainRequestEvent($request));
 
         $this->addToAssertionCount(1);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function passwordSetupPaths(): iterable
+    {
+        yield 'définition du mot de passe' => ['/api/account/password-setup'];
+        yield 'validation du jeton' => ['/api/account/password-setup/validate'];
+        // Issue #77 : le routeur décode, l'exclusion doit voir le même chemin.
+        yield 'forme encodée' => ['/api/account/password%2Dsetup/validate'];
+    }
+
+    /**
+     * L'exclusion porte sur deux chemins EXACTS (audit A7, D6), pas sur un
+     * préfixe : une route voisine, présente ou future, reste sous contrôle
+     * CSRF tant que personne n'a décidé du contraire.
+     */
+    #[DataProvider('pathsNextToPasswordSetup')]
+    public function testPathsNextToAccountPasswordSetupStayUnderCsrfCheck(string $path): void
+    {
+        $request = Request::create($path, 'POST');
+
+        $this->expectException(AccessDeniedHttpException::class);
+
+        $this->subscriber->__invoke($this->mainRequestEvent($request));
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function pathsNextToPasswordSetup(): iterable
+    {
+        yield 'route sœur au même préfixe' => ['/api/account/password-setup-autre'];
+        yield 'sous-chemin inconnu (ancien contrat, jeton dans le chemin)' => ['/api/account/password-setup/'.str_repeat('a', 64)];
+        yield 'barre oblique finale' => ['/api/account/password-setup/'];
     }
 
     public function testUnsafeMethodOutsideApiIsNeverChecked(): void
