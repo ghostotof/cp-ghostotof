@@ -224,6 +224,15 @@ préprod montant un `emptyDir` sur `var/profiler` (sinon le profil ne s'écrit j
 `k8s/README.md` : comment déclencher un profil (`XDEBUG_TRIGGER=<secret>` en cookie ou
 en-tête) et le récupérer (`kubectl cp`). Vérifier qu'un `XDEBUG_TRIGGER` sans la bonne
 valeur ne profile rien. **Scope :** S.
+**Réalisé autrement, le 2026-09-21** — la preuve exigée a invalidé le plan ci-dessus sur deux points.
+(1) Le verrou ne peut pas être `xdebug.trigger_value` : une variable absente y donne une valeur vide,
+et pour Xdebug une valeur vide veut dire « n'importe quel déclencheur » ; le verrou est donc
+`xdebug.mode = "off"` dans l'image, armé par `XDEBUG_MODE` issu d'un Secret **dédié et optionnel**
+(`backend-xdebug-trigger`, `ExternalSecret` séparé, template `profile` seulement si le secret fait au
+moins 32 caractères), et non une clé de `backend-secrets` — le backend démarre sans lui, et ni le worker
+ni les Jobs ni les CronJobs ne le reçoivent. (2) Le mode `trace` est retiré : une trace écrit les
+arguments des appels, donc le mot de passe d'un login profilé. (3) Xdebug 3.5 ne lit pas les en-têtes
+HTTP : le déclencheur est un cookie, passé par `curl -K`.
 
 ### Task 5.5 : Adminer 5.5.1
 `ADMINER_TAG=5.5.1-standalone` (`.env`, `versions.lock`, `k8s/base/adminer.yaml`) ; vérifier
