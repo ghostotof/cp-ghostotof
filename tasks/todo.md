@@ -78,7 +78,7 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [x] 5.5 (fait le 2026-09-21, local ; prouvé sur conteneur jetable aux contraintes du pod, **pas de rollout réel** : au checkpoint 5, `kubectl patch` replicas=1 en préprod + `rollout status` + logs, puis laisser le déploiement suivant le rééteindre) Adminer `5.5.1-standalone` (`.env`, `versions.lock`, `k8s/base/adminer.yaml`) ; préprod `replicas: 0` par défaut (Q5)
 - [ ] 5.6 Labels PSA (`enforce: baseline`, `audit`/`warn: restricted`) sur les deux namespaces ; `automountServiceAccountToken: false` sur tous les pod specs ; rollout réel en préprod
 - [x] 5.7 (fait le 2026-09-21, local ; firewall `api` laissé `^/api` exprès ; profiler/WDT de dev non exercés sur un serveur réel — à regarder au prochain `make up`) `framework.session.enabled: false` ; firewall `login` → `^/api/login_check$` ; `AccessControlAnchoringTest` étendu aux firewalls
-- [ ] 5.9 Hachage factice sur identifiant inconnu (A10) : listener `LoginFailureEvent` + tests (temps égalisés, 401 identiques) ; couvre aussi le compte en attente d'activation (hachage vide)
+- [x] 5.9 (fait le 2026-09-21, local ; écart mesuré avant correction ~273 ms au coût de prod, 0,65 ms après) Hachage factice sur identifiant inconnu (A10) : listener `LoginFailureEvent` + tests (temps égalisés, 401 identiques) ; couvre aussi le compte en attente d'activation (hachage vide)
 - [x] 5.10 (fait le 2026-09-21, local ; recette `htpasswd -niB`/`-vi` rejouée avec un mot de passe factice) `k8s/README.md` §2bis : documenter la **rotation** du mot de passe Basic Auth (nouvelle version via `scw secret version create <id> data=@fichier`, pas `secret create` ; `force-sync` ESO ; secret GitHub d'environnement posé par fichier) et remplacer `--body '<identifiant>:<mot-de-passe>'` et `data="$(cat …)"` par des lectures de fichier, en précisant « terminal séparé, jamais dans une session d'agent »
 - [ ] 5.8 `docs/rgpd/` (rétention des journaux), CLAUDE.md, `k8s/README.md` à jour ; A9 (pas de révocation JWT) consigné comme risque accepté dans l'ADR 0003 (Q9)
 - [ ] **CHECKPOINT 5** — tous gates verts ; `audit-prod.sh` étendu vert en préprod ; PR de clôture vers `develop` avec archivage de `tasks/` sous `.claude/specs/archive/<date>-remediation-audit-securite-3-lot-2/`
@@ -100,6 +100,9 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [ ] T5.8 : le CLAUDE.md ne décrit pas le firewall `dev` réel ; nginx `location ^~ /api/login_check` est un préfixe, plus large que le firewall désormais exact (bénin) (agent T5.7)
 
 - [ ] Adminer : `memory_limit = 1G` dans l'image contre `limits.memory: 128Mi` (antérieur, risque d'OOMKill un peu accru avec PHP 8.4) ; `sizeLimit: 256Mi` sur `/tmp` est un choix, pas une mesure (agent T5.5)
+
+- [ ] **À arbitrer par Christophe** : bcrypt `cost: 13` (défaut Symfony) = ~273 ms par login, réussi compris ; l'OWASP recommande 10–12. C'est aussi ce qui fixe le coût d'un login raté sur identifiant inconnu depuis T5.9 (borné par la zone nginx `login` 10 r/m et 25 tentatives/IP/15 min). Levier si la saturation de FPM inquiète : nginx, pas le listener (agent T5.9)
+- [ ] Le throttling du login répond **401** (« Too many failed login attempts », via le failure handler Lexik), pas 429 : comportement antérieur, à corriger dans la doc si elle dit 429 (agent T5.9)
 
 ## Phase 6 — Hors plan (Q7 : spec séparée)
 - [ ] 6.1 Sauvegardes Postgres : bucket + clés ESO / CronJob `pg_dump` (rétention 14 j) / restauration testée en préprod — à découper quand planifié
