@@ -518,59 +518,121 @@ rechargés à chaud).
 route Ingress** : c'est un Service `ClusterIP` interne au cluster, jamais
 exposé sur Internet.
 
-**Prod (point d'audit B2)** : l'overlay `prod` met ce Deployment à
-`replicas: 0` (`k8s/overlays/prod/kustomization.yaml`) — aucun pod Adminer ne
-tourne en prod, pour ne pas garder une UI d'accès direct à la base en
-permanence. Pour une intervention ponctuelle :
+**Zéro pod par défaut dans les deux environnements.** En prod depuis le point
+d'audit B2 (`k8s/overlays/prod/kustomization.yaml`), et **en préprod depuis le
+3e audit** (question Q5, tranchée le 2026-09-21,
+`k8s/overlays/preprod/kustomization.yaml`) : les deux overlays mettent ce
+Deployment à `replicas: 0`. Garder en permanence une UI d'accès direct à la
+base n'apporte rien — et la préprod n'est pas un environnement de moindre
+valeur de ce point de vue : elle porte les mêmes structures que la prod, et le
+Basic Auth de son Ingress ne protège pas un `port-forward`.
+
+Pour une intervention ponctuelle (`$NS` = `preprod` ou `prod`) :
 
 ```bash
-kubectl scale deploy/adminer --replicas=1 -n prod
-kubectl port-forward svc/adminer 8081:8080 -n prod
-# ... puis, une fois terminé :
-kubectl scale deploy/adminer --replicas=0 -n prod
+# 1. allumer
+kubectl patch deploy/adminer -n $NS --type=merge -p '{"spec":{"replicas":1}}'
+kubectl rollout status deploy/adminer -n $NS --timeout=60s
+
+# 2. accéder
+kubectl port-forward svc/adminer 8081:8080 -n $NS
+
+# 3. éteindre une fois terminé
+kubectl patch deploy/adminer -n $NS --type=merge -p '{"spec":{"replicas":0}}'
 ```
 
-**Préprod** : Adminer tourne normalement, accès à la demande :
+`kubectl patch` sur `spec.replicas` plutôt que `kubectl scale` : c'est la même
+raison que la fenêtre de maintenance décrite plus haut — le `Role` du déployeur
+CI n'a pas la sous-ressource `deployments/scale`. Avec un kubeconfig
+d'administrateur, `kubectl scale` marche aussi ; la commande ci-dessus a
+l'avantage de fonctionner dans les deux cas.
 
-```bash
-kubectl port-forward svc/adminer 8081:8080 -n preprod
-```
+**Le prochain `kubectl apply -k` de la pipeline remet `replicas: 0`** : un
+Adminer qu'on aurait oublié allumé s'éteint tout seul au déploiement suivant.
+C'est une propriété voulue, pas un effet de bord — mais elle a un corollaire :
+si le pod disparaît au milieu d'une session, c'est probablement un déploiement
+qui est passé, il suffit de le rallumer. Aucun `rollout status`, smoke test,
+sonde ou étape de `pipeline.yml` n'attend un pod Adminer vivant (vérifié :
+aucune occurrence d'`adminer` dans `.github/workflows/pipeline.yml` ni dans
+`tools/`), la mise à zéro en préprod ne casse donc rien dans la chaîne.
 
-puis ouvrir `http://localhost:8081` — champ "Serveur" pré-rempli (`database`),
-identifiants à saisir à la main (`kubectl get secret postgres-credentials -n
+Une fois le `port-forward` établi, ouvrir `http://localhost:8081` — champ
+"Serveur" pré-rempli (`database`, via `ADMINER_DEFAULT_SERVER`, variable
+toujours honorée par l'image 5.x), identifiants à saisir à la main
+(`kubectl get secret postgres-credentials -n
 <preprod|prod> -o jsonpath='{.data.POSTGRES_USER}' | base64 -d`, idem pour
 `POSTGRES_PASSWORD`). L'accès est donc conditionné à la possession d'un
 kubeconfig valide sur le cluster (même niveau de confiance qu'un `kubectl
 exec`), pas d'un simple mot de passe web.
 
-Testé en conditions réelles (préprod et prod) : `securityContext.runAsUser:
-1000` + `readOnlyRootFilesystem: true` fonctionnent, à une réserve près déjà
-corrigée — le `session.save_path` réel de l'image `adminer:4.8.1-standalone`
-est `/var/lib/php/sessions` (vérifié via `php -i` dans le pod), pas `/tmp`.
-Sans un `emptyDir` dédié monté sur ce chemin, PHP ne peut jamais persister la
-session malgré un `/tmp` inscriptible, et Adminer répond systématiquement
-"Session expirée" dès la tentative de connexion — `k8s/base/adminer.yaml`
-monte donc deux `emptyDir` distincts (`tmp` et `php-sessions`).
+### Version de l'image et `readOnlyRootFilesystem`
+
+**Depuis le 2026-09-21 (3e audit, constat A11), l'image est
+`adminer:5.5.1-standalone`** (auparavant `4.8.1-standalone`, figée en 2021,
+non maintenue et porteuse de CVE connues). Le changement de version est aussi
+un changement de base : Debian + PHP 7.4 → **Alpine + PHP 8.4.25**. Trois
+conséquences concrètes pour ce manifest, toutes vérifiées image en main :
+
+- **Un seul chemin écrit au runtime : `/tmp`.** La 4.8.1 forçait
+  `session.save_path = /var/lib/php/sessions` ; en 5.x ce répertoire n'existe
+  plus du tout et `session.save_path` n'a plus de valeur, donc PHP retombe sur
+  `sys_get_temp_dir()` = `/tmp`. C'est aussi ce que renvoie le `get_temp_dir()`
+  d'`adminer.php` (`upload_tmp_dir` non défini `?: sys_get_temp_dir()`), qui
+  sert aux fichiers temporaires d'import, à `/tmp/adminer.key` et à
+  `/tmp/adminer-invalid`. Le second `emptyDir` (`php-sessions`) a donc été
+  **supprimé** ; il ne reste que `tmp`, avec un `sizeLimit: 256Mi` (l'image
+  autorise un `upload_max_filesize` de 128M).
+- **Sans ce volume, ce n'est pas seulement la connexion qui casse.**
+  `session_start()` échoue en « Read-only file system », et comme
+  l'avertissement PHP est émis **avant** les en-têtes, Adminer n'envoie plus
+  ni CSP, ni `X-Frame-Options`, ni `X-Content-Type-Options`, ni
+  `Referrer-Policy` (« Cannot modify header information »). Vérifié par un
+  lancement local avec et sans `tmpfs`.
+- **`runAsUser` passe de 1000 à 100**, l'UID de l'utilisateur `adminer` de
+  l'image 5.x (c'était 999 en 4.8.1 — le `1000` du manifest ne correspondait
+  à rien, ça marchait parce qu'un `emptyDir` est créé en 0777). Même
+  convention que `postgres.yaml` (`runAsUser: 70`). `runAsGroup: 101` est
+  ajouté explicitement : sans lui le conteneur tourne en GID 0, ce qui n'est
+  pas nécessaire ici.
+
+Le reste du `securityContext` est inchangé et confirmé compatible avec la 5.x :
+`runAsNonRoot`, `readOnlyRootFilesystem: true`, `allowPrivilegeEscalation:
+false`, `capabilities.drop: [ALL]`, `seccompProfile: RuntimeDefault`.
+
+À ne pas faire : **`ADMINER_DESIGN` et `ADMINER_PLUGINS` sont incompatibles
+avec `readOnlyRootFilesystem`**. L'`entrypoint.sh` de l'image les traite en
+écrivant dans `/var/www/html` (`ln -sf designs/…/adminer.css .` et
+`php plugin-loader.php … > plugins-enabled/…`), sous `set -e` : le conteneur
+refuse de démarrer. Seul `touch .adminer-init`, en fin d'entrypoint, est
+protégé par un `|| true` — le message `touch: .adminer-init: Read-only file
+system` dans les logs du pod est donc normal et sans conséquence. Si un thème
+ou un plugin devenait nécessaire, il faudrait un `emptyDir` sur
+`/var/www/html` pré-rempli par un initContainer, pas un relâchement du
+`readOnlyRootFilesystem`.
 
 Pour rester connecté plus longtemps qu'une session de navigateur, cocher
 **"Permanent login"** sur le formulaire de connexion : ce n'est pas un
 réglage PHP mais une fonctionnalité native d'Adminer (`adminer.php`), qui
 pose un cookie `adminer_permanent` valable 30 jours (`2592000`s, codé en
-dur dans `cookie()`). Vérifié par lecture du code source de l'image
-`adminer:4.8.1-standalone` : le cookie de session (`adminer_sid`) est lui
-codé en dur avec une durée de vie `0` (`session_set_cookie_params`,
-paramètre `array(0, ...)`), donc **aucun réglage `session.ini` /
+dur dans `cookie()`, toujours vrai en 5.5.1 — relu dans `adminer.php` et
+observé sur le `Set-Cookie` `adminer_permanent` d'une réponse réelle).
+Le cookie de session (`adminer_sid`) est lui codé en dur avec une durée de
+vie `0` (`session_set_cookie_params(0, cookie_path(), "", HTTPS, true)` en
+5.5.1, `array(0, ...)` en 4.8.1), donc **aucun réglage `session.ini` /
 `session.gc_maxlifetime` côté PHP n'a d'effet** sur cette expiration rapide
 — à ne pas retenter. Le port-forward reste bien sûr requis dans tous les
 cas, "Permanent login" ne change rien à ça, il évite seulement d'avoir à
 ressaisir les identifiants PostgreSQL à chaque nouvel onglet/navigateur.
 
 Limite à connaître : la clé de déchiffrement de ce cookie est stockée dans
-`/tmp/adminer.key`, un chemin non persisté (pas de volume dédié) — un
-redémarrage du pod (ex. OOMKill, la limite `resources.limits.memory: 128Mi`
-est basse pour parcourir une grosse table) invalide silencieusement tous les
+`/tmp/adminer.key`, donc dans l'`emptyDir` — qui disparaît avec le pod. Tout
+ce qui recrée le pod (OOMKill — la limite `resources.limits.memory: 128Mi`
+est basse pour parcourir une grosse table —, mais aussi et surtout le retour
+à `replicas: 0` au déploiement suivant) invalide silencieusement tous les
 cookies "Permanent login" en cours ; il suffit de recocher la case à la
-prochaine connexion, aucune action corrective nécessaire.
+prochaine connexion, aucune action corrective nécessaire. Avec les deux
+environnements à zéro pod par défaut, "Permanent login" ne sert donc plus
+guère qu'à l'intérieur d'une même session d'intervention.
 
 ## Journal de sécurité (Monolog, canaux `security` et `security_audit`)
 
