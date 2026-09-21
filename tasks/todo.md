@@ -79,7 +79,7 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [ ] 5.6 Labels PSA (`enforce: baseline`, `audit`/`warn: restricted`) sur les deux namespaces ; `automountServiceAccountToken: false` sur tous les pod specs ; rollout réel en préprod
 - [ ] 5.7 `framework.session.enabled: false` ; firewall `login` → `^/api/login_check$` ; `AccessControlAnchoringTest` étendu aux firewalls
 - [ ] 5.9 Hachage factice sur identifiant inconnu (A10) : listener `LoginFailureEvent` + tests (temps égalisés, 401 identiques) ; couvre aussi le compte en attente d'activation (hachage vide)
-- [ ] 5.10 `k8s/README.md` §2bis : documenter la **rotation** du mot de passe Basic Auth (nouvelle version via `scw secret version create <id> data=@fichier`, pas `secret create` ; `force-sync` ESO ; secret GitHub d'environnement posé par fichier) et remplacer `--body '<identifiant>:<mot-de-passe>'` et `data="$(cat …)"` par des lectures de fichier, en précisant « terminal séparé, jamais dans une session d'agent »
+- [x] 5.10 (fait le 2026-09-21, local ; recette `htpasswd -niB`/`-vi` rejouée avec un mot de passe factice) `k8s/README.md` §2bis : documenter la **rotation** du mot de passe Basic Auth (nouvelle version via `scw secret version create <id> data=@fichier`, pas `secret create` ; `force-sync` ESO ; secret GitHub d'environnement posé par fichier) et remplacer `--body '<identifiant>:<mot-de-passe>'` et `data="$(cat …)"` par des lectures de fichier, en précisant « terminal séparé, jamais dans une session d'agent »
 - [ ] 5.8 `docs/rgpd/` (rétention des journaux), CLAUDE.md, `k8s/README.md` à jour ; A9 (pas de révocation JWT) consigné comme risque accepté dans l'ADR 0003 (Q9)
 - [ ] **CHECKPOINT 5** — tous gates verts ; `audit-prod.sh` étendu vert en préprod ; PR de clôture vers `develop` avec archivage de `tasks/` sous `.claude/specs/archive/<date>-remediation-audit-securite-3-lot-2/`
 
@@ -92,6 +92,9 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [ ] L'image backend de prod embarque tout `backend/` (`tests/`, `phpunit.dist.xml`, `psalm.xml`, `rector.php`, `.phpunit.cache`) : ni secret ni fichier de poste, mais poids mort et surface marginale (agent T5.3)
 - [ ] `security.txt` : `Canonical` pointe la prod, y compris quand l'image est servie en préprod (artefact unique promu tel quel) — accepté, l'audit ne vérifie pas `Canonical` ; `date -u -d` de l'audit est GNU (faux « illisible » sur macOS) (agent T5.3)
 - [ ] Pas de `robots.txt` : `/robots.txt` retombe sur le fallback SPA en 200 (agent T5.3)
+
+- [ ] **Même défaut que T5.10, ailleurs dans `k8s/README.md`, à valider point par point par Christophe avant correction** (agent T5.10) : (a) `kubectl create secret generic scaleway-eso-auth --from-literal=access-key=… --from-literal=secret-key=…` → `--from-file` (clé `SecretManagerReadOnly` : lecture de tous les secrets du projet ; sévérité moyenne) ; (b) `kubectl patch secret scaleway-eso-auth … -p '{"stringData":…}'` → `--patch-file` (moyenne) ; (c) `kubectl create secret docker-registry ghcr-registry … --docker-password=<PAT>`, bloc conditionnel probablement jamais joué (faible)
+- [ ] Étape 3 de la rotation : `status.refreshTime` et la condition `Ready` de l'ExternalSecret n'ont pas pu être vérifiés hors cluster ; la comparaison de `resourceVersion` reste valable seule — à confirmer à la première rotation réelle (agent T5.10)
 
 ## Phase 6 — Hors plan (Q7 : spec séparée)
 - [ ] 6.1 Sauvegardes Postgres : bucket + clés ESO / CronJob `pg_dump` (rétention 14 j) / restauration testée en préprod — à découper quand planifié
