@@ -77,7 +77,7 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [ ] 5.4 Xdebug préprod (Q2 : conservé) : `XDEBUG_TRIGGER_SECRET` via ESO + `emptyDir` `var/profiler` + procédure dans `k8s/README.md` ; un déclencheur sans la bonne valeur ne profile rien
 - [ ] 5.5 Adminer `5.5.1-standalone` (`.env`, `versions.lock`, `k8s/base/adminer.yaml`) ; préprod `replicas: 0` par défaut (Q5)
 - [ ] 5.6 Labels PSA (`enforce: baseline`, `audit`/`warn: restricted`) sur les deux namespaces ; `automountServiceAccountToken: false` sur tous les pod specs ; rollout réel en préprod
-- [ ] 5.7 `framework.session.enabled: false` ; firewall `login` → `^/api/login_check$` ; `AccessControlAnchoringTest` étendu aux firewalls
+- [x] 5.7 (fait le 2026-09-21, local ; firewall `api` laissé `^/api` exprès ; profiler/WDT de dev non exercés sur un serveur réel — à regarder au prochain `make up`) `framework.session.enabled: false` ; firewall `login` → `^/api/login_check$` ; `AccessControlAnchoringTest` étendu aux firewalls
 - [ ] 5.9 Hachage factice sur identifiant inconnu (A10) : listener `LoginFailureEvent` + tests (temps égalisés, 401 identiques) ; couvre aussi le compte en attente d'activation (hachage vide)
 - [x] 5.10 (fait le 2026-09-21, local ; recette `htpasswd -niB`/`-vi` rejouée avec un mot de passe factice) `k8s/README.md` §2bis : documenter la **rotation** du mot de passe Basic Auth (nouvelle version via `scw secret version create <id> data=@fichier`, pas `secret create` ; `force-sync` ESO ; secret GitHub d'environnement posé par fichier) et remplacer `--body '<identifiant>:<mot-de-passe>'` et `data="$(cat …)"` par des lectures de fichier, en précisant « terminal séparé, jamais dans une session d'agent »
 - [ ] 5.8 `docs/rgpd/` (rétention des journaux), CLAUDE.md, `k8s/README.md` à jour ; A9 (pas de révocation JWT) consigné comme risque accepté dans l'ADR 0003 (Q9)
@@ -95,6 +95,9 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 
 - [ ] **Même défaut que T5.10, ailleurs dans `k8s/README.md`, à valider point par point par Christophe avant correction** (agent T5.10) : (a) `kubectl create secret generic scaleway-eso-auth --from-literal=access-key=… --from-literal=secret-key=…` → `--from-file` (clé `SecretManagerReadOnly` : lecture de tous les secrets du projet ; sévérité moyenne) ; (b) `kubectl patch secret scaleway-eso-auth … -p '{"stringData":…}'` → `--patch-file` (moyenne) ; (c) `kubectl create secret docker-registry ghcr-registry … --docker-password=<PAT>`, bloc conditionnel probablement jamais joué (faible)
 - [ ] Étape 3 de la rotation : `status.refreshTime` et la condition `Ready` de l'ExternalSecret n'ont pas pu être vérifiés hors cluster ; la comparaison de `resourceVersion` reste valable seule — à confirmer à la première rotation réelle (agent T5.10)
+
+- [ ] Le firewall `dev` (`security: false`, `^/(_profiler|_wdt|assets|build)/`) existe dans **tous** les environnements, prod comprise : inerte aujourd'hui (aucune route dessous), mais il désactiverait la sécurité d'une future route `/assets/…` ou `/build/…`. Remède : le placer sous `when@dev`. Sévérité faible, confiance élevée (agent T5.7)
+- [ ] T5.8 : le CLAUDE.md ne décrit pas le firewall `dev` réel ; nginx `location ^~ /api/login_check` est un préfixe, plus large que le firewall désormais exact (bénin) (agent T5.7)
 
 ## Phase 6 — Hors plan (Q7 : spec séparée)
 - [ ] 6.1 Sauvegardes Postgres : bucket + clés ESO / CronJob `pg_dump` (rétention 14 j) / restauration testée en préprod — à découper quand planifié
