@@ -80,7 +80,7 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [x] 5.7 (fait le 2026-09-21, local ; firewall `api` laissé `^/api` exprès ; profiler/WDT de dev non exercés sur un serveur réel — à regarder au prochain `make up`) `framework.session.enabled: false` ; firewall `login` → `^/api/login_check$` ; `AccessControlAnchoringTest` étendu aux firewalls
 - [x] 5.9 (fait le 2026-09-21, local ; écart mesuré avant correction ~273 ms au coût de prod, 0,65 ms après) Hachage factice sur identifiant inconnu (A10) : listener `LoginFailureEvent` + tests (temps égalisés, 401 identiques) ; couvre aussi le compte en attente d'activation (hachage vide)
 - [x] 5.10 (fait le 2026-09-21, local ; recette `htpasswd -niB`/`-vi` rejouée avec un mot de passe factice) `k8s/README.md` §2bis : documenter la **rotation** du mot de passe Basic Auth (nouvelle version via `scw secret version create <id> data=@fichier`, pas `secret create` ; `force-sync` ESO ; secret GitHub d'environnement posé par fichier) et remplacer `--body '<identifiant>:<mot-de-passe>'` et `data="$(cat …)"` par des lectures de fichier, en précisant « terminal séparé, jamais dans une session d'agent »
-- [ ] 5.8 `docs/rgpd/` (rétention des journaux), CLAUDE.md, `k8s/README.md` à jour ; A9 (pas de révocation JWT) consigné comme risque accepté dans l'ADR 0003 (Q9)
+- [x] 5.8 (fait le 2026-09-21, local) `docs/rgpd/` (rétention des journaux), CLAUDE.md, `k8s/README.md` à jour ; A9 (pas de révocation JWT) consigné comme risque accepté dans l'ADR 0003 (Q9)
 - [ ] **CHECKPOINT 5** — tous gates verts ; `audit-prod.sh` étendu vert en préprod ; PR de clôture vers `develop` avec archivage de `tasks/` sous `.claude/specs/archive/<date>-remediation-audit-securite-3-lot-2/`
 
 ## Suivis relevés pendant le lot (hors périmètre, à trier)
@@ -108,6 +108,10 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [ ] `smoke-test-preprod` : `rollout status deployment/postgres --timeout=60s` peut être juste après un `Recreate` avec rattachement de volume (confiance faible) (agent T5.6)
 
 - [ ] Xdebug : le `trim` et le `template` de l'ExternalSecret n'ont pas pu être testés hors cluster (défaillance fermée : Secret non créé → `off`) — à constater quand le secret sera créé (`Ready: True`) ; `profiler_output_name` sans `%r` : deux requêtes du même worker dans la même seconde s'écrasent (agent T5.4)
+
+- [ ] **Registre RGPD §3 « Authentification » factuellement faux, à reprendre par Christophe** (agent T5.8, sévérité moyenne à élevée, confiance élevée) : il affirme « l'unique utilisateur authentifié » et « aucun email n'est stocké », alors que `CpgUser.email` existe depuis l'ADR 0001 pour tout compte invité, et le traitement « invitation de compte » (e-mail + jeton + envoi par Scaleway TEM) n'y figure pas ; les cookies du palier de base et le risque A9 non plus. Non corrigé : base légale et destinataires d'un traitement d'adresses e-mail sont sa décision
+- [ ] Registre RGPD §5/§6 : durée de conservation des journaux de pod à chiffrer — aucun collecteur dans `k8s/`, la borne est la rotation kubelet de Kapsule (`containerLogMaxSize`/`containerLogMaxFiles`), valeur à confirmer chez l'hébergeur (agent T5.8)
+- [ ] CLAUDE.md, tableau « Services and ports (dev) » : `adminer` « dev uniquement » est vrai du compose, mais un Adminer à 0 réplica existe en préprod et prod (agent T5.8, cosmétique)
 
 ## Phase 6 — Hors plan (Q7 : spec séparée)
 - [ ] 6.1 Sauvegardes Postgres : bucket + clés ESO / CronJob `pg_dump` (rétention 14 j) / restauration testée en préprod — à découper quand planifié
