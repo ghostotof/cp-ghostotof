@@ -199,6 +199,79 @@ for path in /robots.txt /sitemap.xml /favicon.ico /humans.txt; do
 done
 
 # ---------------------------------------------------------------------------
+# 6bis. security.txt (RFC 9116) : le canal de signalement publié (constat A14).
+#
+#    Contrairement à la section 6, celle-ci est BLOQUANTE. Un security.txt
+#    absent laisse un chercheur ouvrir une issue publique sur une faille
+#    exploitable ; un security.txt périmé est pire, puisqu'il donne un canal
+#    que son lecteur croit valide. La RFC borne d'ailleurs la validité par un
+#    champ obligatoire, Expires : le vérifier activement ici est ce qui
+#    transforme « il faudra penser à le renouveler » en un gate de pipeline.
+#
+#    Le fichier est servi par la location `^~ /.well-known/` du nginx frontend
+#    (docker/node/nginx.conf), qui fait `try_files $uri =404` : un fichier
+#    manquant donne un vrai 404, jamais le fallback SPA. On peut donc se fier
+#    au code HTTP sans la ruse de comparaison de taille de la section 7.
+# ---------------------------------------------------------------------------
+section "security.txt (RFC 9116)"
+SECURITY_TXT_URL="${BASE}/.well-known/security.txt"
+SECURITY_TXT_RAW="$(tr 'A-Z' 'a-z' <<< "$(fetch_headers "$SECURITY_TXT_URL")")"
+SECURITY_TXT_CODE="$(sed -n 's/^x-audit-http-code: //p' <<< "$SECURITY_TXT_RAW" | tr -d '\r' | tail -1)"
+# `tail -1` : avec -L, le dump empile les en-têtes des redirections traversées
+# (une 308 de l'ingress porte son propre Content-Type) — seule la dernière
+# réponse compte, même raison que dans check_security_headers.
+SECURITY_TXT_TYPE="$(sed -n 's/^content-type:[[:space:]]*//p' <<< "$SECURITY_TXT_RAW" | tr -d '\r' | tail -1)"
+
+if [ "$SECURITY_TXT_CODE" = "200" ]; then
+  printf '  \033[32mOK\033[0m      HTTP 200 sur /.well-known/security.txt\n'
+else
+  printf '  \033[31mECHEC\033[0m   HTTP %s sur /.well-known/security.txt   <-- attendu 200 !\n' "${SECURITY_TXT_CODE:-?}"
+  FAILURES=$((FAILURES + 1))
+fi
+
+# La RFC impose text/plain. Un application/octet-stream (type par défaut quand
+# nginx ne reconnaît pas l'extension) ferait télécharger le fichier au lieu de
+# l'afficher, et plusieurs outils d'analyse le refusent alors purement et
+# simplement. Le paramètre charset éventuel est ignoré par ce test.
+case "$SECURITY_TXT_TYPE" in
+  text/plain*)
+    printf '  \033[32mOK\033[0m      Content-Type: %s\n' "$SECURITY_TXT_TYPE" ;;
+  *)
+    printf '  \033[31mECHEC\033[0m   Content-Type: %s   <-- text/plain attendu !\n' "${SECURITY_TXT_TYPE:-absent}"
+    FAILURES=$((FAILURES + 1)) ;;
+esac
+
+SECURITY_TXT_BODY="$(curl -sS "${CURL_OPTS[@]}" -L "$SECURITY_TXT_URL")"
+
+# Champs obligatoires de la RFC 9116. Les noms de champs y sont
+# insensibles à la casse, d'où le grep -i, ancré en début de ligne pour ne pas
+# compter une occurrence citée dans un commentaire.
+if grep -qiE '^contact:[[:space:]]*[^[:space:]]' <<< "$SECURITY_TXT_BODY"; then
+  printf '  \033[32mOK\033[0m      champ Contact présent\n'
+else
+  printf '  \033[31mECHEC\033[0m   champ Contact absent   <-- obligatoire (RFC 9116) !\n'
+  FAILURES=$((FAILURES + 1))
+fi
+
+SECURITY_TXT_EXPIRES="$(grep -iE '^expires:' <<< "$SECURITY_TXT_BODY" | head -1 \
+  | sed -e 's/^[Ee][Xx][Pp][Ii][Rr][Ee][Ss]:[[:space:]]*//' -e 's/[[:space:]]*$//' | tr -d '\r')"
+if [ -z "$SECURITY_TXT_EXPIRES" ]; then
+  printf '  \033[31mECHEC\033[0m   champ Expires absent   <-- obligatoire (RFC 9116) !\n'
+  FAILURES=$((FAILURES + 1))
+elif ! SECURITY_TXT_EXPIRES_TS="$(date -u -d "$SECURITY_TXT_EXPIRES" +%s 2>/dev/null)"; then
+  # Une date que `date` ne sait pas lire n'est pas une date valide au sens de
+  # la RFC (horodatage ISO 8601) : échec franc plutôt que saut silencieux.
+  printf '  \033[31mECHEC\033[0m   Expires illisible : %s   <-- horodatage ISO 8601 attendu !\n' "$SECURITY_TXT_EXPIRES"
+  FAILURES=$((FAILURES + 1))
+elif [ "$SECURITY_TXT_EXPIRES_TS" -le "$(date -u +%s)" ]; then
+  printf '  \033[31mECHEC\033[0m   Expires dépassé : %s   <-- fichier à renouveler !\n' "$SECURITY_TXT_EXPIRES"
+  FAILURES=$((FAILURES + 1))
+else
+  printf '  \033[32mOK\033[0m      Expires: %s (encore %s jours)\n' "$SECURITY_TXT_EXPIRES" \
+    "$(( (SECURITY_TXT_EXPIRES_TS - $(date -u +%s)) / 86400 ))"
+fi
+
+# ---------------------------------------------------------------------------
 # 7. Chemins sensibles Symfony/Docker : ceux-ci DOIVENT renvoyer 404 en prod.
 #    Un 200 sur /.env ou /_profiler serait une fuite critique.
 #
