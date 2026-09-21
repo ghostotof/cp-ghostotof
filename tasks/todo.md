@@ -73,7 +73,7 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 ## Phase 5 — Hygiène code et infra · FAIBLE
 - [x] 5.1 (fait le 2026-09-21, local) `ApiJsonErrorFormatListener` sur **`kernel.exception`** (D8 amendée : `kernel.request` cassait la négociation de contenu, 406 sur `/api/docs`) ; `Content-Type: application/json`, corps RFC 7807 ; corps malformé 500 → 400 (`exception_to_status` écrasait les défauts d'API Platform). **À arbitrer par Christophe** : `collect_denormalization_errors` (mauvais type → 422 avec `violations` ; testé sans régression, non activé)
 - [x] 5.2 (fait le 2026-09-21, local ; prouvé sur conteneur nginx jetable, **pas** sur la chaîne réelle ingress → pod : à confirmer par `audit-prod.sh` en préprod au checkpoint 5 — il ne juge désormais que la réponse finale, il peut donc rougir là où seule une redirection portait les en-têtes) CSP + HSTS sur `/assets/`, `/healthz`, `/config.js` (front) et HSTS sur `/healthz` (backend k8s) ; `audit-prod.sh` vérifie `/config.js` + un asset  ; pas de `preload` (Q3)
-- [ ] 5.3 `.dockerignore` (`backend/config/jwt/`, `backend/.env.test`) ; `.gitignore` (`/.claude/settings.local.json`) ; `frontend/public/.well-known/security.txt` + check dans `audit-prod.sh`
+- [x] 5.3 (fait le 2026-09-21, local ; PVR vérifié actif, donc le `Contact:` est vivant ; `Expires` = 2027-09-01, l'audit échouera passé cette date) `.dockerignore` (`backend/config/jwt/`, `backend/.env.test`) ; `.gitignore` (`/.claude/settings.local.json`) ; `frontend/public/.well-known/security.txt` + check dans `audit-prod.sh`
 - [ ] 5.4 Xdebug préprod (Q2 : conservé) : `XDEBUG_TRIGGER_SECRET` via ESO + `emptyDir` `var/profiler` + procédure dans `k8s/README.md` ; un déclencheur sans la bonne valeur ne profile rien
 - [ ] 5.5 Adminer `5.5.1-standalone` (`.env`, `versions.lock`, `k8s/base/adminer.yaml`) ; préprod `replicas: 0` par défaut (Q5)
 - [ ] 5.6 Labels PSA (`enforce: baseline`, `audit`/`warn: restricted`) sur les deux namespaces ; `automountServiceAccountToken: false` sur tous les pod specs ; rollout réel en préprod
@@ -88,6 +88,10 @@ prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=
 - [ ] La régression A16 n'a aucun garde avant déploiement : un job CI lançant l'image nginx du frontend et vérifiant les en-têtes par location l'attraperait au merge (agent T5.2)
 - [ ] `/healthz` renvoie deux `Content-Type` (`add_header Content-Type` s'ajoute au type par défaut) sur les deux nginx ; `default_type text/plain;` serait la forme correcte. Antérieur au lot, sans effet sur la sonde (agent T5.2)
 - [ ] `WatchedProductAdministratorTest::testTheFirstProductOfAnEmptyCatalogueTakesPositionZero` : notice PHPUnit (mock sans expectation), antérieure au lot
+
+- [ ] L'image backend de prod embarque tout `backend/` (`tests/`, `phpunit.dist.xml`, `psalm.xml`, `rector.php`, `.phpunit.cache`) : ni secret ni fichier de poste, mais poids mort et surface marginale (agent T5.3)
+- [ ] `security.txt` : `Canonical` pointe la prod, y compris quand l'image est servie en préprod (artefact unique promu tel quel) — accepté, l'audit ne vérifie pas `Canonical` ; `date -u -d` de l'audit est GNU (faux « illisible » sur macOS) (agent T5.3)
+- [ ] Pas de `robots.txt` : `/robots.txt` retombe sur le fallback SPA en 200 (agent T5.3)
 
 ## Phase 6 — Hors plan (Q7 : spec séparée)
 - [ ] 6.1 Sauvegardes Postgres : bucket + clés ESO / CronJob `pg_dump` (rétention 14 j) / restauration testée en préprod — à découper quand planifié
