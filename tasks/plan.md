@@ -189,7 +189,15 @@ plus de 48 h (durée de vie d'un jeton), la route redevient `set-password` sans 
 ### Task 5.1 : erreurs `/api` en JSON (D8)
 `Shared/Infrastructure/Http/ApiJsonFormatRequestListener` (priorité haute, `CanonicalPath`,
 `setRequestFormat('json')` sur `/api`) ; test fonctionnel : `GET /api/inexistant` →
-`application/problem+json`, 404. **Scope :** XS. **Fichiers :** 1 listener + 1 test.
+`application/problem+json`, 404.
+**Ajouté le 2026-09-21, constat de l'agent de T4.1, à vérifier puis traiter ici** : un corps JSON
+malformé ou un champ du mauvais type (`{"token":123}`, `not-json`, `{"name":123}` sur `/api/contact`)
+répond **500** au lieu de 400 sur les POST publics. Cause probable : le `exception_to_status` du projet
+remplace les valeurs par défaut d'API Platform au lieu de les compléter (`SerializerExceptionInterface`
+et `InvalidArgumentException` → 400 perdus). Un anonyme peut produire des 500 à volonté (borné par les
+quotas). Reproduire par un test fonctionnel, rétablir les 400, vérifier qu'aucune trace ne sort en prod.
+Sévérité faible à moyenne, confiance moyenne (constaté en dev, cause non confirmée).
+**Scope :** S. **Fichiers :** 1 listener + tests, `api_platform.yaml`.
 
 ### Task 5.2 : en-têtes nginx complets sur toutes les locations
 `docker/node/nginx.conf` : ajouter CSP + HSTS sur `/assets/`, `/healthz`, `/config.js`
