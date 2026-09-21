@@ -2,9 +2,9 @@
  * `reason` catégorise l'échec du parcours public de définition de mot de passe
  * pour que la présentation choisisse le bon message traduit
  * (cf. i18n `account.setPassword.errors.*`) sans connaître le détail HTTP :
- * - `invalid`       : jeton inconnu (lien corrompu) — 404 ;
+ * - `invalid`       : jeton absent, malformé ou inconnu (lien corrompu) — 404, ou 422 à la vérification ;
  * - `expired`       : lien expiré ou déjà utilisé — 410 ;
- * - `weak-password` : mot de passe rejeté par le backend — 422 ;
+ * - `weak-password` : mot de passe rejeté par le backend — 422 à la soumission ;
  * - `rate-limited`  : trop de tentatives depuis cette adresse IP — 429 ;
  * - `unknown`       : autre échec (réseau, 5xx…).
  */

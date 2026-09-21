@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAccountPasswordSetup } from '../../application/account/useAccountPasswordSetup'
 import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
@@ -11,14 +11,64 @@ const MIN_PASSWORD_LENGTH = 8
 
 const { t, locale: i18nLocale } = useI18n()
 const route = useRoute()
+const router = useRouter()
 const { state, errorReason, validate, submit } = useAccountPasswordSetup()
 
 const password = ref('')
 const confirmation = ref('')
 const localFormError = ref<string | null>(null)
 
-function token(): string {
+/**
+ * Jeton du lien d'invitation. Il ne vit QUE dans cette variable : ni
+ * localStorage ni sessionStorage, et plus dans l'URL une fois lu (cf.
+ * `takeTokenFromUrl`). Volontairement pas un `ref` : rien ne l'affiche.
+ */
+let setupToken = ''
+
+/**
+ * Lit le jeton dans l'URL d'arrivée. Le fragment d'abord (`set-password#<jeton>`,
+ * audit A7 / décision D6 : jamais envoyé au serveur), le segment de chemin
+ * sinon (repli de compatibilité des liens déjà envoyés, retiré en T4.4). Le
+ * fragment prime si les deux sont présents. `route.hash` est le
+ * `location.hash` vu par vue-router.
+ */
+function readTokenFromUrl(): string {
+  const fromHash = route.hash.startsWith('#') ? route.hash.slice(1) : ''
+  if ('' !== fromHash) {
+    return fromHash
+  }
+
   return typeof route.params.token === 'string' ? route.params.token : ''
+}
+
+/**
+ * Lit le jeton puis l'efface de l'URL affichée : il ne doit survivre ni dans
+ * la barre d'adresse, ni dans l'historique, ni dans un copier-coller de l'URL.
+ *
+ * `router.replace` plutôt que `history.replaceState` : vue-router range dans
+ * `history.state` le `fullPath` courant (`current`), fragment et segment
+ * compris. Un `replaceState` qui préserverait cet état — indispensable pour ne
+ * pas casser le routeur — y préserverait donc aussi le jeton, et laisserait
+ * `route.fullPath` / `route.params.token` le porter en mémoire. Passer par le
+ * routeur réécrit l'URL, `history.state` et la route courante d'un seul geste
+ * cohérent, et rejoue `afterEach` (canonical/hreflang recalculés). Même
+ * enregistrement de route avant et après : le composant n'est pas remonté,
+ * `setupToken` survit.
+ */
+async function takeTokenFromUrl(): Promise<string> {
+  const found = readTokenFromUrl()
+  const urlCarriesSomething = '' !== route.hash || ('' !== route.params.token && undefined !== route.params.token)
+
+  if (urlCarriesSomething) {
+    try {
+      await router.replace({ name: 'set-password', params: { locale: currentLocale(), token: '' }, hash: '' })
+    } catch {
+      // Un échec de navigation ne doit pas priver la personne de son
+      // formulaire : le jeton est lu, on continue avec.
+    }
+  }
+
+  return found
 }
 
 function currentLocale(): Locale {
@@ -43,10 +93,14 @@ const apiErrorText = computed(() => {
 })
 
 function retry(): void {
-  void validate(token())
+  void validate(setupToken)
 }
 
-onMounted(retry)
+onMounted(async () => {
+  setupToken = await takeTokenFromUrl()
+  // Jeton vide -> `invalid` sans appel réseau (cf. useAccountPasswordSetup).
+  await validate(setupToken)
+})
 
 async function handleSubmit(): Promise<void> {
   localFormError.value = null
@@ -60,7 +114,7 @@ async function handleSubmit(): Promise<void> {
     return
   }
 
-  await submit(token(), password.value)
+  await submit(setupToken, password.value)
 }
 </script>
 

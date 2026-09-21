@@ -90,8 +90,13 @@ final readonly class SendAccountInvitationHandler
             ));
         });
 
+        // Le jeton voyage dans le FRAGMENT du lien, jamais dans son chemin
+        // (audit A7, décision D6) : un navigateur n'envoie pas le fragment au
+        // serveur, il n'atteint donc ni les access logs du nginx frontend ni
+        // ceux de l'ingress. La page le lit côté client, puis l'efface de
+        // l'URL (cf. SetPasswordPage.vue).
         $setupUrl = sprintf(
-            '%s/%s/set-password/%s',
+            '%s/%s/set-password#%s',
             rtrim($this->frontendBaseUrl, '/'),
             $locale->value,
             $clearToken,

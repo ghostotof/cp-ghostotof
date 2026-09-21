@@ -19,6 +19,11 @@ declare module 'vue-router' {
     roles?: readonly string[]
     /** Exclut la page de l'indexation (`<meta name="robots" content="noindex, nofollow">`). */
     noindex?: boolean
+    /**
+     * Chemin (sans la locale ni barre initiale) à publier dans canonical/hreflang
+     * à la place du chemin réel — pour une route dont l'URL peut porter un secret.
+     */
+    canonicalPath?: string
   }
 }
 
@@ -58,7 +63,10 @@ export const router = createRouter({
     if (savedPosition) {
       return savedPosition
     }
-    if (to.hash) {
+    // Le fragment de set-password est un jeton, pas une ancre : ne pas le
+    // traiter en sélecteur (en dev, vue-router l'écrirait dans un avertissement
+    // console « élément introuvable »).
+    if (to.hash && 'set-password' !== to.name) {
       return { el: to.hash, behavior: 'smooth' }
     }
     return { top: 0 }
@@ -143,10 +151,22 @@ export const router = createRouter({
           // Parcours public : une personne invitée définit son mot de passe via
           // le lien reçu par e-mail. Pas de requiresAuth (le compte n'est pas
           // encore activé) ; noindex (lien à usage unique, rien à indexer).
-          path: 'set-password/:token',
+          //
+          // Le jeton arrive dans le FRAGMENT (`set-password#<jeton>`, audit A7,
+          // décision D6) : jamais envoyé au serveur, donc absent des access
+          // logs. `:token?` n'est qu'un repli de compatibilité pour les liens
+          // `set-password/<jeton>` envoyés avant ce changement (durée de vie
+          // 48 h) — son retrait est la tâche T4.4. `canonicalPath` empêche ce
+          // segment d'être recopié dans canonical/hreflang (cf. seo.ts).
+          path: 'set-password/:token?',
           name: 'set-password',
           component: SetPasswordPage,
-          meta: { titleKey: 'seo.setPassword.title', descriptionKey: 'seo.setPassword.description', noindex: true },
+          meta: {
+            titleKey: 'seo.setPassword.title',
+            descriptionKey: 'seo.setPassword.description',
+            noindex: true,
+            canonicalPath: 'set-password',
+          },
         },
         {
           path: 'legal-notice',

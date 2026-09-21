@@ -37,13 +37,13 @@ final class AccountInvitationTemplateTest extends KernelTestCase
     {
         $html = $this->twig->render('emails/account_invitation.html.twig', [
             'username' => '<b>jean</b>',
-            'setupUrl' => 'https://front.test/fr/set-password/deadbeef',
+            'setupUrl' => 'https://front.test/fr/set-password#deadbeef',
             'strings' => self::STRINGS,
         ]);
 
         self::assertStringContainsString('CP-Ghostotof', $html);
         self::assertStringContainsString('Définir mon mot de passe', $html);
-        self::assertStringContainsString('https://front.test/fr/set-password/deadbeef', $html);
+        self::assertStringContainsString('https://front.test/fr/set-password#deadbeef', $html);
 
         self::assertStringContainsString('&lt;b&gt;jean&lt;/b&gt;', $html);
         self::assertStringNotContainsString('<b>jean</b>', $html);
@@ -53,13 +53,13 @@ final class AccountInvitationTemplateTest extends KernelTestCase
     {
         $text = $this->twig->render('emails/account_invitation.txt.twig', [
             'username' => 'jean',
-            'setupUrl' => 'https://front.test/fr/set-password/deadbeef',
+            'setupUrl' => 'https://front.test/fr/set-password#deadbeef',
             'strings' => self::STRINGS,
         ]);
 
         self::assertStringContainsString('CP-Ghostotof', $text);
         self::assertStringContainsString('jean', $text);
-        self::assertStringContainsString('https://front.test/fr/set-password/deadbeef', $text);
+        self::assertStringContainsString('https://front.test/fr/set-password#deadbeef', $text);
         self::assertStringContainsString('48 heures', $text);
     }
 }

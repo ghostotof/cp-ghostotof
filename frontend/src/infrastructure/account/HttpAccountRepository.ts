@@ -2,10 +2,15 @@ import type { AccountRepository } from '../../domain/account/repositories/Accoun
 import { PasswordSetupLinkError } from '../../domain/account/errors/PasswordSetupLinkError'
 
 /**
- * Implémentation HTTP de AccountRepository. Comme HttpContactRepository,
- * l'endpoint (`/api/account/password-setup/{token}`) est public : aucune
- * session, pas de `credentials: 'include'` ni de header CSRF (exclu du
- * double-submit côté backend, cf. CsrfCookieRequestSubscriber).
+ * Implémentation HTTP de AccountRepository. Comme HttpContactRepository, les
+ * deux endpoints sont publics : aucune session, pas de `credentials: 'include'`
+ * ni de header CSRF (chemins exclus du double-submit côté backend, cf.
+ * CsrfCookieRequestSubscriber).
+ *
+ * Le jeton voyage TOUJOURS dans le corps JSON, jamais dans l'URL (audit A7,
+ * décision D6) : un chemin finit dans les access logs du sidecar nginx et de
+ * l'ingress, un corps non. D'où un POST même pour la simple vérification —
+ * ne pas revenir à un `GET …/{token}`.
  */
 export class HttpAccountRepository implements AccountRepository {
   private readonly apiBaseUrl: string
@@ -15,30 +20,37 @@ export class HttpAccountRepository implements AccountRepository {
   }
 
   async validateSetupToken(token: string): Promise<void> {
-    const response = await fetch(this.endpoint(token), { method: 'GET' })
+    const response = await this.post('/api/account/password-setup/validate', { token })
 
     if (!response.ok) {
-      throw this.toError(response.status)
+      // Ici le backend ne valide que le jeton (absent, vide, trop long) : un
+      // 422 désigne donc un lien corrompu, pas un mot de passe refusé.
+      throw this.toError(response.status, 'invalid')
     }
   }
 
   async completePasswordSetup(token: string, password: string): Promise<void> {
-    const response = await fetch(this.endpoint(token), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
-    })
+    const response = await this.post('/api/account/password-setup', { token, password })
 
     if (!response.ok) {
-      throw this.toError(response.status)
+      // Le jeton a déjà passé validate() : un 422 ne peut plus viser que le
+      // mot de passe (longueur, mot de passe compromis…).
+      throw this.toError(response.status, 'weak-password')
     }
   }
 
-  private endpoint(token: string): string {
-    return `${this.apiBaseUrl}/api/account/password-setup/${encodeURIComponent(token)}`
+  private post(path: string, body: Record<string, string>): Promise<Response> {
+    return fetch(`${this.apiBaseUrl}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
   }
 
-  private toError(status: number): PasswordSetupLinkError {
+  /**
+   * @param unprocessableReason sens d'un 422, qui dépend de l'endpoint appelé
+   */
+  private toError(status: number, unprocessableReason: 'invalid' | 'weak-password'): PasswordSetupLinkError {
     if (404 === status) {
       return new PasswordSetupLinkError('invalid', 'Invalid password setup link')
     }
@@ -46,7 +58,10 @@ export class HttpAccountRepository implements AccountRepository {
       return new PasswordSetupLinkError('expired', 'Password setup link expired or already used')
     }
     if (422 === status) {
-      return new PasswordSetupLinkError('weak-password', 'The password was rejected')
+      return new PasswordSetupLinkError(
+        unprocessableReason,
+        'invalid' === unprocessableReason ? 'Malformed password setup link' : 'The password was rejected',
+      )
     }
     if (429 === status) {
       return new PasswordSetupLinkError('rate-limited', 'Too many attempts')
