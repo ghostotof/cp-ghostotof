@@ -932,16 +932,25 @@ autres workloads, Jobs et CronJob compris, satisfont déjà `restricted` : quand
 RabbitMQ sera durci, le passage d'`enforce` à `restricted` sera un simple
 changement de mot.
 
-**Pourquoi `-version: latest`.** La version du control-plane n'est écrite nulle
-part dans ce dépôt et Kapsule est managé (Scaleway le monte de version sans
-préavis) : épingler une valeur inventée figerait la politique sur un état qui
-n'est peut-être pas celui du cluster. Contrepartie assumée : une version de
-Kubernetes qui ajouterait un contrôle à `baseline` pourrait faire refuser un
-pod au premier déploiement suivant la mise à jour. La variante recommandée par
-Kubernetes, une fois la version connue (`kubectl version`), est d'épingler
-`enforce-version` sur la mineure courante et de laisser `audit`/`warn` sur
-`latest` — pour ces deux-là, `latest` est justement ce qu'on veut : un nouveau
-contrôle doit être **signalé**, pas masqué.
+**Pourquoi `enforce-version: v1.36` et `audit`/`warn-version: latest`.** La
+mineure du control-plane a été relevée le 2026-09-22 (`kubectl version` :
+Server `v1.36.1` ; `scw k8s cluster list` : `auto_upgrade=false`, une montée
+de version est donc un geste explicite). Épingler le seul mode bloquant fige
+la sémantique validée en préprod : une version de Kubernetes qui ajouterait un
+contrôle à `baseline` ne refusera pas un pod au premier déploiement suivant la
+mise à jour. `audit`/`warn` restent sur `latest` — pour ces deux-là, c'est
+justement ce qu'on veut : non bloquants, ils sont le pré-avis de ce qu'un
+futur `enforce` refuserait, et un nouveau contrôle doit être **signalé**, pas
+masqué. (Jusqu'au 2026-09-22 les trois étaient sur `latest`, faute de version
+connue dans le dépôt.)
+
+**Après une montée de version du cluster** (c'est la seule maintenance de ces
+labels) : relancer la simulation `--dry-run=server` ci-dessous avec la
+nouvelle mineure (`pod-security.kubernetes.io/enforce-version=v1.NN`), puis
+déplacer l'épingle dans `k8s/overlays/{preprod,prod}/namespace.yaml`, préprod
+d'abord. Une épingle plus ancienne que le cluster n'est pas une erreur —
+l'admission connaît toutes les versions passées — mais elle n'applique pas les
+contrôles ajoutés depuis, ce que `warn` signalera.
 
 ### Validation en préprod, exigée avant promotion en prod
 
@@ -995,7 +1004,7 @@ de fusionner la release :
    ```bash
    kubectl label --overwrite namespace preprod \
      pod-security.kubernetes.io/enforce=baseline \
-     pod-security.kubernetes.io/enforce-version=latest
+     pod-security.kubernetes.io/enforce-version=v1.36   # la mineure du cluster, cf. plus haut
    kubectl get namespace preprod -o jsonpath='{.metadata.labels}' | tr ',' '\n'
    ```
 4. **Déployer la release sur la préprod** (push sur `release/*`), puis attendre

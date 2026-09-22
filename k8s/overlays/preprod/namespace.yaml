@@ -21,22 +21,24 @@
 # le but : le jour où il sera durci, ces avertissements disparaîtront et le
 # passage d'`enforce` à `restricted` sera visiblement sans risque.
 #
-# `-version: latest` et non une version épinglée : la version du control-plane
-# n'est écrite nulle part dans ce dépôt (Kapsule est managé, Scaleway le monte
-# de version sans nous prévenir), et en inventer une fixerait la politique sur
-# un état qui n'est peut-être pas celui du cluster. Contrepartie assumée : une
-# version de Kubernetes qui ajouterait un contrôle à `baseline` pourrait faire
-# refuser un pod au premier déploiement d'après la mise à jour. Le jour où la
-# version est connue (`kubectl version`), épingler `enforce-version` sur la
-# mineure courante et laisser `audit`/`warn` sur `latest` est la variante
-# recommandée par Kubernetes — voir k8s/README.md.
+# `enforce-version: v1.36` — la mineure du control-plane relevée le 2026-09-22
+# (`kubectl version` : Server v1.36.1, Kapsule `auto_upgrade=false`, donc une
+# montée de version est un geste explicite, jamais une surprise). Épinglé, le
+# mode bloquant garde la sémantique validée en préprod : une version de
+# Kubernetes qui ajouterait un contrôle à `baseline` ne refusera pas un pod au
+# premier déploiement d'après la mise à jour. `audit`/`warn` restent sur
+# `latest`, et c'est voulu : non bloquants, ils sont le pré-avis de ce qu'un
+# futur `enforce` refuserait — un nouveau contrôle doit être signalé, pas masqué.
+# Après une montée de version du cluster : relancer la simulation
+# `--dry-run=server` de k8s/README.md, puis déplacer cette épingle sur la
+# nouvelle mineure, préprod d'abord.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: preprod
   labels:
     pod-security.kubernetes.io/enforce: baseline
-    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/enforce-version: v1.36
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/audit-version: latest
     pod-security.kubernetes.io/warn: restricted

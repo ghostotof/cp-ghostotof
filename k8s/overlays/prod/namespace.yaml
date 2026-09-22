@@ -1,8 +1,9 @@
 # Point d'audit A17 — Pod Security Admission. Jumeau de
 # k8s/overlays/preprod/namespace.yaml : mêmes labels, mêmes raisons (RabbitMQ
 # interdit `enforce: restricted`, constat A18 assumé ; `audit`/`warn` gardent
-# la contrainte stricte en observation ; `-version: latest` faute de version
-# de control-plane connue). Le commentaire détaillé est dans l'overlay
+# la contrainte stricte en observation ; `enforce-version` épinglé sur la
+# mineure du control-plane, v1.36 au 2026-09-22, `audit`/`warn` sur `latest`).
+# Le commentaire détaillé est dans l'overlay
 # préprod, et la procédure de pose et de validation dans k8s/README.md,
 # section « Durcissement des pods ».
 #
@@ -16,7 +17,7 @@ metadata:
   name: prod
   labels:
     pod-security.kubernetes.io/enforce: baseline
-    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/enforce-version: v1.36
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/audit-version: latest
     pod-security.kubernetes.io/warn: restricted
