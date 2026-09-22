@@ -93,39 +93,67 @@ final class MalformedRequestBodyTest extends WebTestCase
     /**
      * Le type JSON, lui, est vérifié à la dénormalisation, avant la validation :
      * un entier ou un `null` là où le DTO attend une chaîne ne produit pas de
-     * violation Assert mais une NotNormalizableValueException. Elle relève du
-     * même 400 — le client s'est trompé de type, le serveur n'a pas échoué.
+     * violation Assert mais une NotNormalizableValueException. Depuis
+     * l'arbitrage du 2026-09-22 (issue #239, `collect_denormalization_errors`),
+     * API Platform la **collecte** au lieu de l'interrompre et la présente
+     * comme une violation de validation : **422**, avec le champ fautif nommé
+     * dans `violations`, exactement la forme que le frontend sait déjà
+     * afficher pour un Assert. Un mauvais type et une valeur invalide sont la
+     * même erreur du point de vue de l'auteur : « ce champ n'est pas bon ».
      */
     #[DataProvider('wronglyTypedBodies')]
-    public function testAWronglyTypedFieldOnAPublicPostAnswers400(string $path, string $body): void
+    public function testAWronglyTypedFieldOnAPublicPostAnswers422NamingTheField(string $path, string $body, string $field): void
     {
         $client = $this->clientWithFreshQuotas();
 
         $client->request('POST', $path, server: ['CONTENT_TYPE' => 'application/json'], content: $body);
+
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+        $this->assertProblemBodyWithoutInternals($client, 422);
+        self::assertContains($field, $this->violatedFields($client));
+    }
+
+    /**
+     * @return iterable<string, array{string, string, string}>
+     */
+    public static function wronglyTypedBodies(): iterable
+    {
+        yield 'contact, name entier' => ['/api/contact', '{"name":123,"email":"jane@example.com","message":"Bonjour, un message assez long."}', 'name'];
+        yield 'contact, message tableau' => ['/api/contact', '{"name":"Jane","email":"jane@example.com","message":["a","b"]}', 'message'];
+        yield 'validate, token entier' => ['/api/account/password-setup/validate', '{"token":123}', 'token'];
+        yield 'validate, token null' => ['/api/account/password-setup/validate', '{"token":null}', 'token'];
+        yield 'setup, password entier' => ['/api/account/password-setup', '{"token":"abc","password":42}', 'password'];
+    }
+
+    /**
+     * Le défaut n'était pas propre au périmètre public : la même
+     * désérialisation sert les ressources de backoffice. Un compte ROLE_SUPER
+     * authentifié (login + double-submit CSRF) obtient le même 400 sur un
+     * corps qui n'est pas du JSON.
+     */
+    public function testAMalformedBodyOnAnAuthenticatedBackofficePostAnswers400(): void
+    {
+        $client = $this->clientWithFreshQuotas();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)
+            ->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAsSuper($client);
+
+        $client->request('POST', '/api/backoffice/experience/technologies', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: 'not-json');
 
         self::assertSame(400, $client->getResponse()->getStatusCode());
         $this->assertProblemBodyWithoutInternals($client);
     }
 
     /**
-     * @return iterable<string, array{string, string}>
+     * Et le même 422 nommant le champ sur un type erroné : c'est surtout là
+     * que la forme compte, les formulaires d'administration affichent les
+     * violations champ par champ.
      */
-    public static function wronglyTypedBodies(): iterable
-    {
-        yield 'contact, name entier' => ['/api/contact', '{"name":123,"email":"jane@example.com","message":"Bonjour, un message assez long."}'];
-        yield 'contact, message tableau' => ['/api/contact', '{"name":"Jane","email":"jane@example.com","message":["a","b"]}'];
-        yield 'validate, token entier' => ['/api/account/password-setup/validate', '{"token":123}'];
-        yield 'validate, token null' => ['/api/account/password-setup/validate', '{"token":null}'];
-        yield 'setup, password entier' => ['/api/account/password-setup', '{"token":"abc","password":42}'];
-    }
-
-    /**
-     * Le défaut n'était pas propre au périmètre public : la même
-     * désérialisation sert les ressources de backoffice. Un compte ROLE_SUPER
-     * authentifié (login + double-submit CSRF) obtient le même 400.
-     */
-    #[DataProvider('malformedBackofficeBodies')]
-    public function testAMalformedBodyOnAnAuthenticatedBackofficePostAnswers400(string $body): void
+    #[DataProvider('wronglyTypedBackofficeBodies')]
+    public function testAWronglyTypedFieldOnAnAuthenticatedBackofficePostAnswers422NamingTheField(string $body, string $field): void
     {
         $client = $this->clientWithFreshQuotas();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)
@@ -137,18 +165,18 @@ final class MalformedRequestBodyTest extends WebTestCase
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: $body);
 
-        self::assertSame(400, $client->getResponse()->getStatusCode());
-        $this->assertProblemBodyWithoutInternals($client);
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+        $this->assertProblemBodyWithoutInternals($client, 422);
+        self::assertContains($field, $this->violatedFields($client));
     }
 
     /**
-     * @return iterable<string, array{string}>
+     * @return iterable<string, array{string, string}>
      */
-    public static function malformedBackofficeBodies(): iterable
+    public static function wronglyTypedBackofficeBodies(): iterable
     {
-        yield 'corps non JSON' => ['not-json'];
-        yield 'name entier' => ['{"name":123,"years":1.0}'];
-        yield 'years chaîne non numérique' => ['{"name":"PHP","years":"beaucoup"}'];
+        yield 'name entier' => ['{"name":123,"years":1.0}', 'name'];
+        yield 'years chaîne non numérique' => ['{"name":"PHP","years":"beaucoup"}', 'years'];
     }
 
     /**
@@ -191,7 +219,7 @@ final class MalformedRequestBodyTest extends WebTestCase
      * Le corps reste un document problem+json analysable, et l'échec d'une
      * requête fautive n'a pas à raconter la pile interne.
      */
-    private function assertProblemBodyWithoutInternals(KernelBrowser $client): void
+    private function assertProblemBodyWithoutInternals(KernelBrowser $client, int $expectedStatus = 400): void
     {
         $response = $client->getResponse();
         self::assertStringContainsString('json', (string) $response->headers->get('Content-Type'));
@@ -199,7 +227,31 @@ final class MalformedRequestBodyTest extends WebTestCase
         $body = json_decode((string) $response->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertIsArray($body);
         self::assertArrayHasKey('status', $body);
-        self::assertSame(400, $body['status']);
+        self::assertSame($expectedStatus, $body['status']);
+    }
+
+    /**
+     * Les `propertyPath` du tableau `violations` d'un 422 — la clé sur
+     * laquelle le frontend accroche chaque message à son champ.
+     *
+     * @return list<string>
+     */
+    private function violatedFields(KernelBrowser $client): array
+    {
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        self::assertArrayHasKey('violations', $body);
+        self::assertIsArray($body['violations']);
+
+        $fields = [];
+        foreach ($body['violations'] as $violation) {
+            self::assertIsArray($violation);
+            self::assertArrayHasKey('propertyPath', $violation);
+            self::assertIsString($violation['propertyPath']);
+            $fields[] = $violation['propertyPath'];
+        }
+
+        return $fields;
     }
 
     /**

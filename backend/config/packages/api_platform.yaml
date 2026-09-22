@@ -129,6 +129,18 @@ api_platform:
         stateless: true
         cache_headers:
             vary: ['Content-Type', 'Authorization', 'Origin']
+        # Arbitrage du 2026-09-22 (reliquat du 3e audit, issue #239). Sans
+        # cette option, la première NotNormalizableValueException interrompt la
+        # désérialisation et remonte via l'entrée `ExceptionInterface: 400`
+        # ci-dessus : un champ du mauvais type JSON (`{"name":123}`) répondait
+        # un 400 anonyme, sans dire quel champ. Avec elle, le Serializer
+        # collecte ces erreurs (PartialDenormalizationException) et API
+        # Platform les convertit en ValidationException : **422** avec un
+        # tableau `violations` nommant le champ, la forme que les formulaires
+        # du frontend affichent déjà pour un Assert. Le JSON illisible, lui,
+        # reste un 400 (NotEncodableValueException, rien à collecter).
+        # MalformedRequestBodyTest épingle les deux frontières.
+        collect_denormalization_errors: true
 
 when@prod:
     api_platform:
