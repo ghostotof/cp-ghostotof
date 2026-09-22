@@ -260,7 +260,7 @@ mid-migration.
     then **only** dispatches `SendAccountInvitationMessage`) · `PasswordSetupService` (`validate` / `complete`
     the public flow) · `CpgUserAdministrator` (delete / change-password) · `CpgUserRoleAdministrator`
     (`setSuperAdmin`, idempotent, anti-lockout guards; on demotion `ROLE_TRUSTED` is kept **only if the account
-    has an `email`** — nominative grant, ADR 0003 D1, issue #78 pt 3 — a CLI account falls back to the base tier) · `PasswordSetupRateLimiterInterface` (calqued on the
+    has an `email`** — nominative grant, ADR 0003 D1, issue #78 pt 3 — a CLI account falls back to the base tier) · `PendingInvitationPurger` (deletes pending accounts invited more than N days ago — 30 by default —, never a `ROLE_SUPER` one ; `app:user:purge-pending-invitations`, daily in the housekeeping CronJob, `--dry-run` for a hand run ; retention must be strictly positive, `InvalidPurgeRetentionException` → exit 2, a negative `--older-than` would otherwise purge every pending account ; issue #238) · `PasswordSetupRateLimiterInterface` (calqued on the
     Contact rate limiter). Presenters: `CpgUserPresenter` (`/api/me`), `CpgUserAdminPresenter`
     (backoffice list — `id`, `username`, `email`, `roles`, `status`).
   - **The invitation token is created by the Messenger handler, never by the use case** (audit C2):
@@ -377,7 +377,8 @@ mid-migration.
     `monolog.yaml`). Implements `Application/SecurityAuditLoggerInterface`, one method per event:
     `login-succeeded`, `login-failed`, `login-throttled`, `logged-out`, `base-access-issued`,
     `csrf-rejected`, `backoffice-access-denied`, `user-invited`, `user-reinvited`, `role-changed`
-    (`superAdmin` bool), `password-changed`, `user-deleted`, `account-activated`. Every record carries
+    (`superAdmin` bool), `password-changed`, `user-deleted`, `account-activated`, `user-purged`
+    (`actor: system` — the one event whose actor is not read from the token storage; `record()` takes an explicit actor for CLI callers). Every record carries
     `event` (the stable kebab-case key to filter on), `actor` (identifier from the token storage, or
     `anonymous`), `ip`, `path` (canonical), plus `user` and — for an existing account — `userId` (RFC 4122).
     **Never a password, a token (JWT, XSRF, invitation), an e-mail, a request body or a serialized
@@ -392,7 +393,7 @@ mid-migration.
     `AccessDeniedHttpException` isn't logged twice; an anonymous hit is a 401 that never reaches it); the
     two CSRF guards call `csrfRejected()` right before throwing (actor is `anonymous` there by
     construction — priority 20 runs before the firewall); `BaseAccessController` logs the `guest-…`
-    identifier, never the token; the `Security/User/Application` use cases log after the successful
+    identifier, never the token; the `Security/User/Application` use cases and the housekeeping `PendingInvitationPurger` log after the successful
     action. Functional tests read the records through `tests/Support/ReadsSecurityAuditLog.php` (a
     Monolog `test` handler on the channel, `when@test`, found among `monolog.logger.security_audit`'s
     handlers — that logger is public in every env, so phpstan-symfony's dev dump knows it); the kernel
