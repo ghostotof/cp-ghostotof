@@ -81,13 +81,24 @@ l'ADR 0001 (`docs/adr/0001-admin-user-provisioning.md`) : l'**accès de base** s
 | **Cookies posés** | `BEARER` (JWT, `HttpOnly`, `Secure` en prod, `SameSite=Lax`) ; `XSRF-TOKEN` (lisible en JS, protection CSRF par double soumission, `Secure` en prod, `SameSite=Lax`). Posés **uniquement** à la connexion ou à la demande d'accès de base, jamais à la simple visite ; strictement nécessaires, donc exemptés de consentement (mêmes références qu'au §3.1). Aucun bandeau ni recueil de consentement n'est donc requis ; l'information est donnée par la politique de confidentialité |
 | **Durée de conservation** | Jeton de connexion : **1 heure** (`token_ttl: 3600`) ; cookies expirés explicitement à la déconnexion (`CookieLogoutListener`). **Limite connue** : la déconnexion ne révoque pas le jeton, qui reste techniquement valide jusqu'à son expiration s'il a été copié auparavant (risque accepté, ADR 0003, amendement du 2026-09-21) |
 
-## 4. Préférence de langue
+## 4. Préférences mémorisées dans le navigateur
+
+### 4.1 Préférence de langue
 
 | | |
 |---|---|
 | **Composant concerné** | `frontend/src/presentation/router/preferredLocale.ts` (`localStorage`, clé `LOCALE_STORAGE_KEY`) |
 | **Finalité** | Mémoriser la langue choisie par le visiteur entre deux visites |
 | **Base légale** | Non applicable — donnée non identifiante, stockage purement fonctionnel côté navigateur, aucun consentement requis |
+| **Durée de conservation** | Jusqu'à suppression par l'utilisateur (stockage navigateur local, jamais transmis au serveur) |
+
+### 4.2 Bandeau d'information sur les cookies
+
+| | |
+|---|---|
+| **Composants concernés** | `frontend/src/application/cookieNotice/useCookieNotice.ts` (`localStorage`, clé `cookieNoticeDismissed`), `frontend/src/presentation/layout/CookieNotice.vue` |
+| **Finalité** | Informer le visiteur que le site ne pose que des traceurs strictement nécessaires, et ne pas réafficher cette information une fois lue. **Bandeau d'information, pas de recueil de consentement** : tous les traceurs du site sont exemptés (§3), il n'y a donc ni acceptation ni refus, et la valeur mémorisée ne conditionne rien |
+| **Base légale** | Non applicable — donnée non identifiante (`1`), stockage purement fonctionnel côté navigateur, aucun consentement requis |
 | **Durée de conservation** | Jusqu'à suppression par l'utilisateur (stockage navigateur local, jamais transmis au serveur) |
 
 ## 5. Logs techniques
