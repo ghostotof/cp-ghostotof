@@ -193,7 +193,10 @@ are there for secrecy rather than size (audit A13/A22): `backend/config/jwt/` �
 generated its dev RS256 keypair would otherwise ship `private.pem` in an image layer, and the deployed
 keys come from the `jwt-keys` Secret at runtime anyway — and `backend/.env.test`, `.claude/`, `tasks/`,
 `.superpowers/`, which carry local configuration, real identity (`CLAUDE.local.md`) or uncorrected audit
-findings. Never `COPY` something out of one of those; widen the ignore list instead.
+findings. Never `COPY` something out of one of those; widen the ignore list instead. Development tooling
+files are also excluded: `backend/tests/`, PHPStan/Psalm/Rector/PHPUnit/LSP configuration files, and
+Composer/Flex recipe files — the production image has no test suite, and adding a new quality tool means
+adding its config file to the ignore list.
 
 ### Backend architecture (`../backend/src`)
 

@@ -2,9 +2,27 @@
 .gitignore
 .env.local
 .env.*.local
-*.md
+**/*.md
 Makefile
 versions.lock
+
+# Outillage de développement et de qualité : suite de tests, configurations
+# d'analyse (PHPStan, Psalm, Rector, PHPUnit, Language Server Protocol) et
+# recettes Flex de Composer. Aucun usage à l'exécution. Réduction de surface
+# et de poids pour un artefact déployé.
+#
+# Vérification : aucun COPY ni aucune commande du Dockerfile ne référence ces
+# fichiers ; la CI les exécute sur son runner (ubuntu-latest), pas dans l'image.
+backend/tests/
+backend/.phpunit.cache/
+backend/phpunit.dist.xml
+backend/phpstan.dist.neon
+backend/psalm.xml
+backend/rector.php
+backend/.symfony-lsp.json
+backend/compose.yaml
+backend/compose.override.yaml
+backend/.editorconfig
 
 backend/vendor/
 backend/var/
