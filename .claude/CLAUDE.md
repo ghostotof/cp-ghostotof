@@ -684,7 +684,12 @@ Content management for all of the above, plus user administration, gated end-to-
   answered **500 on every POST, public ones included**, i.e. an anonymous caller could manufacture 500s at
   will and drown real server errors in the logs. And resolution takes the **first matching entry**, with
   `is_a()` matching interfaces and parents too, so a broad entry must stay **below** the precise ones: add a
-  new exception *above* those three restored defaults, never after. `MalformedRequestBodyTest` pins the 400s.
+  new exception *above* those three restored defaults, never after. Since 2026-09-22 (issue #239)
+  `defaults.collect_denormalization_errors: true` narrows what that 400 covers: a **wrongly-typed field**
+  (`{"name":123}`) is collected instead of aborting the deserialization and comes out as a **422 with
+  `violations` naming the field**, the same shape the admin forms already render for an `Assert`; only
+  unreadable JSON stays a 400. `MalformedRequestBodyTest` pins both boundaries. The API Platform metadata
+  pool survives a change to that option — `rm -rf var/cache/test` before trusting a red test.
 - **Errors under `/api` come out as JSON, never as Symfony's HTML page** (audit A15). Two families escaped
   API Platform's own error handling: the router's 404/405 (raised before API Platform exists for that
   request) and the 403s of our own `kernel.request` guards on non-API-Platform routes (`POST /api/logout`
