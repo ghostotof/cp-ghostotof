@@ -10,6 +10,22 @@ Gates par checkpoint : `make back-quality && make back-test` ; frontend (si touc
 `make front-lint && make front-test && make front-build` ; k8s (si touché) `kubectl kustomize`
 prod **et** préprod ; scripts/pipeline (si touchés) `shellcheck -x --severity=warning` + `actionlint`.
 
+## Clôture (2026-09-23) — poussée et PR vers `develop`
+
+- Décision de Christophe : pousser la branche du lot telle quelle, **une seule PR de clôture** vers
+  `develop` (les branches de phase, déjà fusionnées en `--no-ff`, ne sont pas poussées). Les checkpoints
+  4 et 5 se jouent en préprod, donc après ce merge et la coupe d'une `release/*` : leurs cases restent
+  ouvertes dans cette archive, c'est l'état du plan à la clôture.
+- Ajouté depuis le point de reprise : commit `136d6fd` — registre RGPD §3 repris (accès de base,
+  invitation, authentification), §7/§8 complétés, page publique FR/EN corrigée (elle affirmait « aucun
+  transfert hors UE ») ; l'arbitrage « registre RGPD §3 » du point 8 est donc traité. Restent à relire :
+  la base légale de l'invitation (intérêt légitime) et l'absence de purge des invitations jamais activées.
+- T4.3 **découplée du checkpoint 4** : le DNS et la messagerie du domaine migrent chez des prestataires
+  français (issue #231) ; DMARC se durcit dans la nouvelle zone. L'exposition de l'adresse nominative
+  dans le `rua` a été corrigée le 2026-09-22 (`_dmarc` = `v=DMARC1; p=none`).
+- Redémarrage de Postgres/RabbitMQ (point 2) : coupure acceptée pour cette release ; une release future
+  la supprimera définitivement (notée en mémoire de projet).
+
 ## Point de reprise (2026-09-21, fin de journée)
 
 - **Tout le code du lot 2 est écrit, relu, passé aux gates et committé — en local seulement.** Les
