@@ -316,11 +316,12 @@ jobs:
           tools/tests/finalize-release.test.sh
           tools/tests/smoke-login-throttling.test.sh
           tools/tests/rotate-deployer-token.test.sh
+          tools/tests/security-headers.test.sh
       # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.
       - name: shellcheck (préinstallé sur le runner)
-        run: shellcheck -x --severity=warning tools/*.sh tools/tests/*.sh
+        run: shellcheck -x --severity=warning tools/*.sh tools/lib/*.sh tools/tests/*.sh
       # Image officielle, figée sur le digest de son index multi-arch (v1.7.12).
       # Elle embarque shellcheck et pyflakes, donc les `run:` de ce fichier sont
       # analysés aussi.
