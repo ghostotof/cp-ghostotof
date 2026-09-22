@@ -331,6 +331,25 @@ jobs:
           args: -color
 
   # ---------------------------------------------------------------------------
+  # frontend-image-headers — garde contre la régression A16 (audit du
+  # 2026-09-16) : en nginx, un bloc `location` qui déclare son propre
+  # add_header n'hérite plus d'AUCUN add_header du bloc `server` parent, pas
+  # seulement de celui qu'il redéfinit. C'est ainsi que /assets/, /config.js et
+  # /healthz du frontend ont été servis sans CSP ni HSTS pendant des mois, sans
+  # qu'aucun test rougisse — `tools/audit-prod.sh` ne l'attrape qu'après
+  # déploiement, sur la préprod. Ce job construit l'image nginx du frontend et
+  # vérifie les 7 en-têtes sur un chemin par location (tools/check-frontend-
+  # image-headers.sh), donc AVANT merge. Docker est disponible nativement sur
+  # ubuntu-latest, aucun service ni appel réseau externe requis.
+  # ---------------------------------------------------------------------------
+  frontend-image-headers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Image frontend de prod + vérification des en-têtes par location
+        run: make front-image-headers
+
+  # ---------------------------------------------------------------------------
   # Phase 2 — sur `release/**` seulement (spec 0006, D2/D3/D6)
   # ---------------------------------------------------------------------------
   # release-version — la confrontation à trois de D2 : la version calculée par
@@ -340,7 +359,7 @@ jobs:
   # qui nomme les trois valeurs — on renomme la branche, on ne « corrige » pas
   # la CI. Ses sorties nomment les images de tout le reste de la phase.
   release-version:
-    needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests]
+    needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests, frontend-image-headers]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
     outputs:
@@ -730,7 +749,7 @@ jobs:
   # personne, c'est un de trop.
   # ---------------------------------------------------------------------------
   deploy-prod:
-    needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests]
+    needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests, frontend-image-headers]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

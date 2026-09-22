@@ -1161,7 +1161,10 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   mounted by `subPath`, a second file would need a second mount — so there the headers are repeated
   explicitly on `location = /healthz`; keep the two in step. `tools/audit-prod.sh` checks `/`,
   `/config.js`, `/healthz` and an asset discovered from the home page, judging only the **final**
-  response.
+  response. A pre-merge guard now catches this before deploy: `tools/check-frontend-image-headers.sh`
+  runs the built frontend image locally and checks the 7 headers on one path per `location`, wired
+  into the `frontend-image-headers` CI job on every push. A new `location` added to `nginx.conf`
+  gets its path added to that script, or it isn't covered.
 - **`/.well-known/security.txt` is published and expires** (RFC 9116, audit A14):
   `frontend/public/.well-known/security.txt`, served `text/plain; charset=utf-8` by the `^~ /.well-known/`
   location (declared first and with `^~` so the hidden-files rule doesn't swallow it; `charset` is not an
