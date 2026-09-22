@@ -1,0 +1,10 @@
+# Les pages sans contenu à indexer : authentification, définition de mot de
+# passe (le lien porte un jeton en fragment), page « accès refusé » et le
+# backoffice. Le préfixe de langue est un joker : une langue de plus n'a rien à
+# ajouter ici. Le reste du site est indexable ; les pages qui doivent rester
+# hors index le disent elles-mêmes (meta robots posée par le routeur).
+User-agent: *
+Disallow: /*/login
+Disallow: /*/set-password
+Disallow: /*/forbidden
+Disallow: /*/admin
