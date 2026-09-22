@@ -45,18 +45,23 @@ final class AccessControlAnchoringTest extends KernelTestCase
     private const string FIREWALL_CONTEXT_ID_PREFIX = 'security.firewall.map.context.';
 
     /**
-     * Terminaisons acceptées pour un pattern de firewall : fin de chaîne,
-     * séparateur ou fin, séparateur seul. Toutes bornent le pattern sur la
-     * droite, c'est-à-dire empêchent `^/api/login` de capturer `/api/loginfoo`.
+     * Terminaisons acceptées pour un pattern de firewall : fin de chaîne, ou
+     * séparateur ou fin. Toutes deux bornent le pattern sur la droite,
+     * c'est-à-dire empêchent `^/api/login` de capturer `/api/loginfoo`.
      *
-     * Le simple `/` final est celui du firewall `dev`
-     * (`^/(_profiler|_wdt|assets|build)/`) : il borne bel et bien — `/_profilerx`
-     * n'est pas capturé — au prix de ne pas couvrir le chemin nu `/_profiler`,
-     * ce qui est sans conséquence pour un firewall `security: false`.
+     * Le firewall `dev` du squelette (`^/(_profiler|_wdt|assets|build)/`,
+     * `security: false`) était le seul à finir par un simple `/`, toléré pour
+     * lui. Il est supprimé depuis l'arbitrage du 2026-09-22 (issue #239) — voir
+     * testTheSkeletonDevToolingFirewallIsGone — et la tolérance avec lui.
      *
      * @var list<string>
      */
-    private const array ACCEPTED_PATTERN_ENDINGS = ['$', '(/|$)', '/'];
+    private const array ACCEPTED_PATTERN_ENDINGS = ['$', '(/|$)'];
+
+    /**
+     * Nom du firewall du squelette Symfony réservé à l'outillage de dev.
+     */
+    private const string DEV_TOOLING_FIREWALL = 'dev';
 
     /**
      * Firewalls dispensés de la borne de fin, avec leur justification.
@@ -161,6 +166,38 @@ final class AccessControlAnchoringTest extends KernelTestCase
                 );
             }
         }
+    }
+
+    /**
+     * Le firewall `dev` du squelette (`security: false` sur
+     * `^/(_profiler|_wdt|assets|build)/`) existait dans **tous** les
+     * environnements, prod comprise, alors que rien de ce qu'il nomme n'est
+     * installé ici (ni WebProfilerBundle, ni AssetMapper) : aucune de ces
+     * routes n'existe, dans aucun environnement. Le réserver à `dev` par un
+     * bloc `when@dev` est impossible — SecurityBundle refuse qu'un firewall
+     * soit ajouté depuis un second bloc de config (« define all elements for
+     * this path in one config file »). Il est donc **supprimé** (arbitrage du
+     * 2026-09-22, issue #239), et ce test l'empêche de revenir.
+     *
+     * Ce que cette suppression apporte, et ce qu'elle n'apporte **pas** : un
+     * chemin `security: false` et un chemin hors de tout firewall sont servis
+     * pareil — sans authentificateur ni access_control (l'AccessListener est
+     * un listener de firewall). La config cesse simplement de déclarer un
+     * firewall pour un outillage qu'elle n'a pas, et cette classe cesse de
+     * tolérer la terminaison `/` que lui seul justifiait. Si WebProfilerBundle
+     * était installé un jour, ses routes vivraient hors firewall, ce qui est
+     * exactement ce que `security: false` leur donnait ; et une future route
+     * hors `/api` se protège avec son propre firewall, jamais implicitement.
+     */
+    public function testTheSkeletonDevToolingFirewallIsGone(): void
+    {
+        self::bootKernel();
+
+        self::assertArrayNotHasKey(
+            self::DEV_TOOLING_FIREWALL,
+            $this->firewallPathPatterns(),
+            'Le firewall "dev" du squelette (outillage de développement absent du projet, security: false) est de retour dans security.yaml : il a été supprimé à dessein, voir la docblock de ce test.',
+        );
     }
 
     /**

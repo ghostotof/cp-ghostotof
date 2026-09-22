@@ -22,10 +22,15 @@ security:
                 providers: [guest_users, cpg_users]
 
     firewalls:
-        # Ensure dev tools and static assets are always allowed
-        dev:
-            pattern: ^/(_profiler|_wdt|assets|build)/
-            security: false
+        # Pas de firewall `dev` (`^/(_profiler|_wdt|assets|build)/`,
+        # `security: false`) : celui du squelette Symfony a été supprimé le
+        # 2026-09-22 (reliquat du 3e audit, T5.7, issue #239). Ni
+        # WebProfilerBundle ni AssetMapper ne sont installés, aucune de ces
+        # routes n'existe dans aucun environnement, et le réserver à `dev` par
+        # un bloc `when@dev` est refusé par SecurityBundle (un firewall ne peut
+        # pas être ajouté depuis un second bloc de config). Fonctionnellement
+        # neutre : un chemin hors de tout firewall est servi comme un chemin
+        # `security: false`. AccessControlAnchoringTest l'empêche de revenir.
 
         # Point d'entrée du login : reçoit {"username": ..., "password": ...} en JSON et
         # délègue la génération/pose du JWT (cookie httpOnly "BEARER") aux handlers
