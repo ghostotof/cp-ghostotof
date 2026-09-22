@@ -310,11 +310,6 @@ final class SecurityAuditLoggerTest extends TestCase
     }
 
     /**
-     * Hors requête HTTP (commande, handler Messenger) : ni IP ni chemin, mais
-     * l'événement sort quand même — l'absence de requête n'est pas une raison
-     * de perdre la trace.
-     */
-    /**
      * La purge (issue #238) est déclenchée par une commande CLI planifiée,
      * jamais par une action humaine : l'acteur est donc `system`, jamais le
      * jeton de sécurité de la requête courante (il n'y en a pas) ni
@@ -337,6 +332,11 @@ final class SecurityAuditLoggerTest extends TestCase
         ], $this->singleRecord()->context);
     }
 
+    /**
+     * Hors requête HTTP (commande, handler Messenger) : ni IP ni chemin, mais
+     * l'événement sort quand même — l'absence de requête n'est pas une raison
+     * de perdre la trace.
+     */
     public function testWithoutARequestIpAndPathAreNull(): void
     {
         $this->auditLogger->userDeleted(new CpgUser('jane', 'hashed-password'));

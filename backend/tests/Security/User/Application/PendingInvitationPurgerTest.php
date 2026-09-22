@@ -31,7 +31,7 @@ final class PendingInvitationPurgerTest extends TestCase
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
         $repository->expects(self::once())
-            ->method('findPendingActivationInvitedBefore')
+            ->method('findAwaitingPasswordSetupInvitedBefore')
             ->with(new \DateTimeImmutable('2026-08-23 10:00:00', new \DateTimeZone('UTC')))
             ->willReturn([$first, $second]);
         $repository->expects(self::exactly(2))->method('remove')
@@ -59,7 +59,7 @@ final class PendingInvitationPurgerTest extends TestCase
         $stale = $this->pendingUser('stale-invitee');
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
-        $repository->method('findPendingActivationInvitedBefore')->willReturn([$stale]);
+        $repository->method('findAwaitingPasswordSetupInvitedBefore')->willReturn([$stale]);
         $repository->expects(self::never())->method('remove');
 
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
@@ -83,7 +83,7 @@ final class PendingInvitationPurgerTest extends TestCase
         $superInvitee->setRoles([CpgUser::ROLE_SUPER]);
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
-        $repository->method('findPendingActivationInvitedBefore')->willReturn([$superInvitee]);
+        $repository->method('findAwaitingPasswordSetupInvitedBefore')->willReturn([$superInvitee]);
         $repository->expects(self::never())->method('remove');
 
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
@@ -108,7 +108,7 @@ final class PendingInvitationPurgerTest extends TestCase
         $clock = new MockClock(self::NOW);
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
-        $repository->method('findPendingActivationInvitedBefore')->willReturn([]);
+        $repository->method('findAwaitingPasswordSetupInvitedBefore')->willReturn([]);
         $repository->expects(self::never())->method('remove');
 
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
@@ -125,12 +125,97 @@ final class PendingInvitationPurgerTest extends TestCase
         self::assertSame([], $result->skipped);
     }
 
+    /**
+     * I4 (défense en profondeur) : même si le dépôt renvoyait un jour un
+     * compte qui ne devrait plus l'être (réécriture bâclée du SQL, régression
+     * de findAwaitingPasswordSetupInvitedBefore()), le purgeur revérifie le
+     * prédicat sur l'entité reçue et ne le supprime ni ne le journalise
+     * jamais.
+     */
+    public function testAnAccountReturnedByTheRepositoryButNotActuallyAwaitingPasswordSetupIsNeverRemoved(): void
+    {
+        $clock = new MockClock(self::NOW);
+
+        $passwordAlreadySet = new CpgUser('password-already-set', 'a-real-hash');
+        $passwordAlreadySet->markInvited(new \DateTimeImmutable('-40 days'));
+
+        $alreadyActivated = new CpgUser('already-activated', 'a-real-hash');
+        $alreadyActivated->markInvited(new \DateTimeImmutable('-40 days'));
+        $alreadyActivated->markActivated(new \DateTimeImmutable('-5 days'));
+
+        $repository = $this->createMock(CpgUserRepositoryInterface::class);
+        $repository->method('findAwaitingPasswordSetupInvitedBefore')
+            ->willReturn([$passwordAlreadySet, $alreadyActivated]);
+        $repository->expects(self::never())->method('remove');
+
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('userPurged');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects(self::never())->method('warning');
+
+        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
+
+        $result = $purger->purge(new \DateInterval('P30D'));
+
+        self::assertSame([], $result->purged);
+        self::assertSame([], $result->skipped);
+    }
+
+    /**
+     * M6 (plancher de rétention) : "1 day" est la plus courte durée acceptée
+     * — le seuil calculé (maintenant − 1 jour) reste strictement antérieur à
+     * maintenant, donc valide, même si rien n'est trouvé à purger ici.
+     */
+    public function testARetentionOfExactlyOneDayIsAcceptedTheMinimumAllowed(): void
+    {
+        $clock = new MockClock(self::NOW);
+
+        $repository = $this->createMock(CpgUserRepositoryInterface::class);
+        $repository->expects(self::once())->method('findAwaitingPasswordSetupInvitedBefore')->willReturn([]);
+
+        $auditLogger = self::createStub(SecurityAuditLoggerInterface::class);
+        $logger = self::createStub(LoggerInterface::class);
+
+        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
+
+        $result = $purger->purge(new \DateInterval('P1D'));
+
+        self::assertSame([], $result->purged);
+    }
+
+    /**
+     * M6 : en dessous d'un jour ("1 hour"), la durée de rétention est refusée
+     * — un lancement manuel imprudent ne doit pas pouvoir purger la quasi-
+     * totalité des comptes en attente d'un coup.
+     */
+    public function testARetentionShorterThanOneDayIsRejectedBeforeAnyRepositoryAccess(): void
+    {
+        $clock = new MockClock(self::NOW);
+
+        $repository = $this->createMock(CpgUserRepositoryInterface::class);
+        $repository->expects(self::never())->method('findAwaitingPasswordSetupInvitedBefore');
+        $repository->expects(self::never())->method('remove');
+
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('userPurged');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects(self::never())->method('warning');
+
+        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
+
+        $this->expectException(InvalidPurgeRetentionException::class);
+
+        $purger->purge(new \DateInterval('PT1H'));
+    }
+
     public function testANegativeIntervalIsRejectedBeforeAnyRepositoryAccess(): void
     {
         $clock = new MockClock(self::NOW);
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
-        $repository->expects(self::never())->method('findPendingActivationInvitedBefore');
+        $repository->expects(self::never())->method('findAwaitingPasswordSetupInvitedBefore');
         $repository->expects(self::never())->method('remove');
 
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
@@ -155,7 +240,7 @@ final class PendingInvitationPurgerTest extends TestCase
         $clock = new MockClock(self::NOW);
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
-        $repository->expects(self::never())->method('findPendingActivationInvitedBefore');
+        $repository->expects(self::never())->method('findAwaitingPasswordSetupInvitedBefore');
         $repository->expects(self::never())->method('remove');
 
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);

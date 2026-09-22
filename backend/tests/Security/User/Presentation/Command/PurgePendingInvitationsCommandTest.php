@@ -150,6 +150,24 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
         self::assertSame([], self::securityAuditEvents('user-purged'));
     }
 
+    /**
+     * I4 : un compte créé en ligne de commande (app:user:create) n'a jamais
+     * été invité — même avec une rétention minimale ("1 day", M6), et même
+     * s'il n'est pas ROLE_SUPER, il ne doit jamais ressortir : ce n'est pas
+     * une invitation en attente.
+     */
+    public function testADirectlyCreatedAccountWithNoInvitationIsNeverPurgedEvenWithTheShortestAllowedRetention(): void
+    {
+        $cliAccount = new CpgUser('cli-created-account', 'hashed-password');
+        $this->userRepository->save($cliAccount);
+
+        $exitCode = $this->commandTester()->execute(['--older-than' => '1 day']);
+
+        self::assertSame(0, $exitCode);
+        self::assertNotNull($this->userRepository->findOneByUsername('cli-created-account'));
+        self::assertSame([], self::securityAuditEvents('user-purged'));
+    }
+
     public function testFailsOnInvalidInterval(): void
     {
         $tester = $this->commandTester();

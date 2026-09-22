@@ -138,13 +138,22 @@ final class CpgUserInviterTest extends TestCase
         $inviter->invite('race@example.com', Locale::FR);
     }
 
-    public function testReinviteRedispatchesForAPendingAccount(): void
+    /**
+     * Round de correction (C1) : la relance doit repousser le délai de purge
+     * (issue #238) exactement comme la première invitation, en remettant
+     * `invitedAt` à l'instant de l'horloge et en sauvegardant *avant* de
+     * redispatcher — sinon le seuil de 30 jours court toujours depuis la
+     * toute première invitation.
+     */
+    public function testReinviteResetsInvitedAtToNowAndSavesBeforeDispatching(): void
     {
+        $clock = new MockClock('2026-09-22 08:00:00');
         $user = new CpgUser('newcomer', '');
         $user->setEmail('newcomer@example.com');
         $user->markInvited(new \DateTimeImmutable('2026-09-01 09:00:00'));
 
-        $cpgUserRepository = self::createStub(CpgUserRepositoryInterface::class);
+        $cpgUserRepository = $this->createMock(CpgUserRepositoryInterface::class);
+        $cpgUserRepository->expects(self::once())->method('save')->with($user);
 
         $dispatched = null;
         $messageBus = $this->createMock(MessageBusInterface::class);
@@ -163,12 +172,13 @@ final class CpgUserInviterTest extends TestCase
             $cpgUserRepository,
             new UsernameGenerator($cpgUserRepository),
             $messageBus,
-            new MockClock(),
+            $clock,
             $auditLogger,
         );
 
         $inviter->reinvite($user, Locale::EN);
 
+        self::assertEquals($clock->now(), $user->getInvitedAt());
         self::assertInstanceOf(SendAccountInvitationMessage::class, $dispatched);
         self::assertSame($user->getId()->toRfc4122(), $dispatched->userId);
         self::assertSame('en', $dispatched->locale);

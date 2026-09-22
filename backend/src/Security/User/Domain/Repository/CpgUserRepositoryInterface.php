@@ -26,14 +26,19 @@ interface CpgUserRepositoryInterface
     public function findAll(): array;
 
     /**
-     * Comptes en attente d'activation (CpgUser::isPendingActivation())
-     * invités avant $threshold, du plus ancien au plus récent. Alimente
-     * PendingInvitationPurger (issue #238) : "en attente depuis trop
-     * longtemps" se détermine en base, jamais par un findAll() filtré en PHP.
+     * Comptes en attente de définition de mot de passe
+     * (CpgUser::isAwaitingPasswordSetup()) invités avant $threshold, du plus
+     * ancien au plus récent. Alimente PendingInvitationPurger (issue #238) :
+     * "en attente depuis trop longtemps" se détermine en base, jamais par un
+     * findAll() filtré en PHP. Round de correction (I2) : renommée depuis
+     * findPendingActivationInvitedBefore() — le prédicat exige en plus un mot
+     * de passe vide, pour exclure un compte invité dont le mot de passe a été
+     * posé depuis le backoffice (CpgUserAdministrator::changePassword(), sans
+     * jamais markActivated()) et qui se connecte donc déjà.
      *
      * @return list<CpgUser>
      */
-    public function findPendingActivationInvitedBefore(\DateTimeImmutable $threshold): array;
+    public function findAwaitingPasswordSetupInvitedBefore(\DateTimeImmutable $threshold): array;
 
     /**
      * Nombre d'utilisateurs possédant le rôle donné (rôles implicites inclus,

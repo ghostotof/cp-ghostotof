@@ -30,8 +30,9 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * App\Security\User\Application\PendingInvitationPurger ; cette commande n'en
  * est que l'habillage CLI, planifié quotidiennement par
  * k8s/base/messenger-purge-cronjob.yaml. Round de correction (revue) : le
- * purgeur refuse tout seuil qui ne serait pas strictement dans le passé
- * (--older-than négatif ou nul), exit Command::INVALID ici.
+ * purgeur refuse tout seuil de rétention inférieur à un jour (--older-than
+ * négatif, nul, ou simplement trop court, ex. "1 hour"), exit
+ * Command::INVALID ici.
  */
 #[AsCommand(
     name: 'app:user:purge-pending-invitations',
@@ -53,7 +54,7 @@ final class PurgePendingInvitationsCommand extends Command
                 'older-than',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'Âge minimal de la dernière invitation, exprimé en intervalle relatif PHP, durée strictement positive (ex. "30 days", "12 hours").',
+                'Âge minimal de la dernière invitation, exprimé en intervalle relatif PHP, durée d\'au moins un jour (ex. "30 days", "1 day").',
                 self::DEFAULT_MAX_AGE,
             )
             ->addOption(

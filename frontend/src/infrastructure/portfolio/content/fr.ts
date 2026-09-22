@@ -148,7 +148,7 @@ const fr: PortfolioLocaleContent = {
         heading: 'Durée de conservation',
         paragraphs: [
           "Les messages du formulaire de contact ne sont pas conservés au-delà de l'envoi de l'email de notification. En cas d'échec d'envoi (serveur de messagerie temporairement indisponible), le message est stocké pour permettre une nouvelle tentative, puis supprimé automatiquement au plus tard au bout de 30 jours. Les données techniques (adresse IP pour la limitation de débit, journaux serveur) sont conservées sur des durées courtes, détaillées dans le registre des traitements tenu par l'éditeur.",
-          "Un compte sur invitation et l'adresse email associée sont conservés tant que l'accès vous est accordé ; ils sont supprimés à la fin du besoin ou sur simple demande de votre part. Le lien d'invitation est valable 48 heures et ne peut servir qu'une fois.",
+          "Un compte sur invitation et l'adresse email associée sont conservés tant que l'accès vous est accordé ; ils sont supprimés à la fin du besoin ou sur simple demande de votre part. Le lien d'invitation est valable 48 heures et ne peut servir qu'une fois. Une invitation jamais activée est supprimée automatiquement 30 jours après son envoi (ou son dernier renvoi).",
         ],
       },
       {

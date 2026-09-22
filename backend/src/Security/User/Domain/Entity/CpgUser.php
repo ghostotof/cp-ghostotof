@@ -166,6 +166,22 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
         return null !== $this->invitedAt && null === $this->activatedAt;
     }
 
+    /**
+     * Round de correction (I2, issue #238) : un compte invité dont le mot de
+     * passe n'a *jamais* été défini — la définition littérale d'« invitation
+     * jamais activée » que retient la purge automatique
+     * (PendingInvitationPurger). Se distingue délibérément de
+     * isPendingActivation() : CpgUserAdministrator::changePassword() peut
+     * poser un mot de passe sur un compte invité sans jamais appeler
+     * markActivated() (ce n'est pas la personne qui a défini le sien via le
+     * lien reçu) — un tel compte reste isPendingActivation() vrai mais se
+     * connecte déjà, et ne doit jamais être purgé.
+     */
+    public function isAwaitingPasswordSetup(): bool
+    {
+        return $this->isPendingActivation() && '' === $this->password;
+    }
+
     public function getUserIdentifier(): string
     {
         // Le constructeur garantit un username de 3 a 60 caracteres

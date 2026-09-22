@@ -44,12 +44,18 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
         return $this->findBy([], ['username' => 'ASC']);
     }
 
-    public function findPendingActivationInvitedBefore(\DateTimeImmutable $threshold): array
+    public function findAwaitingPasswordSetupInvitedBefore(\DateTimeImmutable $threshold): array
     {
         return $this->createQueryBuilder('u')
             ->andWhere('u.invitedAt IS NOT NULL')
             ->andWhere('u.activatedAt IS NULL')
             ->andWhere('u.invitedAt < :threshold')
+            // Round de correction (I2, issue #238) : un mot de passe non vide
+            // veut dire qu'un ROLE_SUPER l'a posé depuis le backoffice
+            // (CpgUserAdministrator::changePassword(), qui ne marque jamais
+            // activatedAt) — le compte se connecte déjà et ne doit plus
+            // ressortir ici, même s'il reste isPendingActivation() vrai.
+            ->andWhere("u.password = ''")
             ->setParameter('threshold', $threshold, Types::DATETIME_IMMUTABLE)
             ->orderBy('u.invitedAt', 'ASC')
             ->getQuery()

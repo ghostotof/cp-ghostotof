@@ -11,9 +11,14 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
  * Test d'intégration Doctrine (base `_test`) de
- * `findPendingActivationInvitedBefore()`, la méthode dont se sert
+ * `findAwaitingPasswordSetupInvitedBefore()`, la méthode dont se sert
  * PendingInvitationPurger (issue #238) pour retrouver les comptes en attente
- * d'activation invités depuis trop longtemps.
+ * de définition de mot de passe invités depuis trop longtemps. Round de
+ * correction (I2) : renommée depuis `findPendingActivationInvitedBefore()` et
+ * son prédicat SQL complété d'un mot de passe vide — un compte invité dont le
+ * mot de passe a été posé depuis le backoffice
+ * (CpgUserAdministrator::changePassword(), sans jamais markActivated()) reste
+ * `isPendingActivation()` vrai mais ne doit plus être purgeable.
  */
 final class CpgUserRepositoryTest extends KernelTestCase
 {
@@ -47,7 +52,7 @@ final class CpgUserRepositoryTest extends KernelTestCase
      * puis activé (donc plus en attente). Avec un seuil à -30 jours, seul le
      * premier doit ressortir.
      */
-    public function testFindPendingActivationInvitedBeforeOnlyReturnsStalePendingAccounts(): void
+    public function testFindAwaitingPasswordSetupInvitedBeforeOnlyReturnsStalePendingAccounts(): void
     {
         $stale = new CpgUser('stale-invitee', '');
         $stale->setEmail('stale@example.com');
@@ -68,13 +73,13 @@ final class CpgUserRepositoryTest extends KernelTestCase
         $this->em->flush();
         $this->em->clear();
 
-        $found = $this->repository->findPendingActivationInvitedBefore(new \DateTimeImmutable('-30 days'));
+        $found = $this->repository->findAwaitingPasswordSetupInvitedBefore(new \DateTimeImmutable('-30 days'));
 
         self::assertCount(1, $found);
         self::assertSame('stale-invitee', $found[0]->getUsername());
     }
 
-    public function testFindPendingActivationInvitedBeforeReturnsEmptyListWhenNothingIsStale(): void
+    public function testFindAwaitingPasswordSetupInvitedBeforeReturnsEmptyListWhenNothingIsStale(): void
     {
         $recent = new CpgUser('recent-invitee', '');
         $recent->setEmail('recent@example.com');
@@ -83,14 +88,49 @@ final class CpgUserRepositoryTest extends KernelTestCase
         $this->em->flush();
         $this->em->clear();
 
-        self::assertSame([], $this->repository->findPendingActivationInvitedBefore(new \DateTimeImmutable('-30 days')));
+        self::assertSame([], $this->repository->findAwaitingPasswordSetupInvitedBefore(new \DateTimeImmutable('-30 days')));
+    }
+
+    /**
+     * I2 : un compte invité peut se voir poser un mot de passe depuis le
+     * backoffice (CpgUserAdministrator::changePassword()) sans jamais être
+     * marqué activé — il se connecte déjà et ne doit plus jamais être purgé,
+     * même très ancien.
+     */
+    public function testFindAwaitingPasswordSetupInvitedBeforeExcludesAnAccountWhosePasswordWasSetFromTheBackoffice(): void
+    {
+        $passwordSet = new CpgUser('password-set-invitee', 'a-real-hash-set-from-the-backoffice');
+        $passwordSet->setEmail('password-set@example.com');
+        $passwordSet->markInvited(new \DateTimeImmutable('-40 days'));
+        $this->em->persist($passwordSet);
+        $this->em->flush();
+        $this->em->clear();
+
+        self::assertSame([], $this->repository->findAwaitingPasswordSetupInvitedBefore(new \DateTimeImmutable('-30 days')));
+    }
+
+    /**
+     * I4 (défense en profondeur, symétrique au test unitaire du purgeur) : un
+     * compte créé en ligne de commande (app:user:create) n'a jamais été
+     * invité — invitedAt reste null pour toujours, quel que soit l'âge du
+     * compte — et ne doit donc jamais ressortir, y compris avec un seuil très
+     * large (dans le futur).
+     */
+    public function testFindAwaitingPasswordSetupInvitedBeforeNeverReturnsAnAccountCreatedWithoutAnyInvitation(): void
+    {
+        $cliAccount = new CpgUser('cli-created-account', 'hashed-password');
+        $this->em->persist($cliAccount);
+        $this->em->flush();
+        $this->em->clear();
+
+        self::assertSame([], $this->repository->findAwaitingPasswordSetupInvitedBefore(new \DateTimeImmutable('+1 day')));
     }
 
     /**
      * L'ordre (`ORDER BY invitedAt ASC`) importe : le purgeur journalise et
      * agit dans un ordre stable plutôt que dans l'ordre arbitraire du moteur.
      */
-    public function testFindPendingActivationInvitedBeforeOrdersFromOldestToMostRecent(): void
+    public function testFindAwaitingPasswordSetupInvitedBeforeOrdersFromOldestToMostRecent(): void
     {
         $newer = new CpgUser('older-of-the-stale-two', '');
         $newer->setEmail('newer-stale@example.com');
@@ -105,7 +145,7 @@ final class CpgUserRepositoryTest extends KernelTestCase
         $this->em->flush();
         $this->em->clear();
 
-        $found = $this->repository->findPendingActivationInvitedBefore(new \DateTimeImmutable('-30 days'));
+        $found = $this->repository->findAwaitingPasswordSetupInvitedBefore(new \DateTimeImmutable('-30 days'));
 
         self::assertCount(2, $found);
         self::assertSame('newer-of-the-stale-two', $found[0]->getUsername());

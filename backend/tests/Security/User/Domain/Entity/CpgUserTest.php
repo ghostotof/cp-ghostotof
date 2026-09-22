@@ -115,4 +115,61 @@ final class CpgUserTest extends TestCase
 
         self::assertFalse($user->isPendingActivation());
     }
+
+    /**
+     * Round de correction (I2, issue #238) : un compte fraîchement invité, au
+     * mot de passe encore vide, est bien « en attente de définition de mot de
+     * passe » — la définition littérale que retient la purge automatique.
+     */
+    public function testANewlyInvitedAccountIsAwaitingPasswordSetup(): void
+    {
+        $user = new CpgUser('jane', '');
+        $user->markInvited(new \DateTimeImmutable('2026-09-03 12:00:00'));
+
+        self::assertTrue($user->isAwaitingPasswordSetup());
+    }
+
+    /**
+     * I2 : CpgUserAdministrator::changePassword() peut poser un mot de passe
+     * sur un compte invité sans jamais appeler markActivated() — un tel compte
+     * reste isPendingActivation() bien qu'il se connecte déjà. Il ne doit
+     * jamais être purgeable : isAwaitingPasswordSetup() doit dire faux, alors
+     * même qu'isPendingActivation() dit encore vrai.
+     */
+    public function testAnAccountWhosePasswordWasSetFromTheBackofficeIsNotAwaitingPasswordSetup(): void
+    {
+        $user = new CpgUser('jane', '');
+        $user->markInvited(new \DateTimeImmutable('2026-09-03 12:00:00'));
+
+        $user->setPassword('a-real-hash-set-from-the-backoffice');
+
+        self::assertTrue($user->isPendingActivation());
+        self::assertFalse($user->isAwaitingPasswordSetup());
+    }
+
+    /**
+     * Un compte CLI n'a jamais été invité : ni en attente d'activation, ni en
+     * attente de mot de passe.
+     */
+    public function testACliCreatedAccountIsNeverAwaitingPasswordSetup(): void
+    {
+        $user = new CpgUser('jane', 'hashed-password');
+
+        self::assertFalse($user->isAwaitingPasswordSetup());
+    }
+
+    /**
+     * Un compte déjà activé (mot de passe défini via le lien) n'est plus en
+     * attente, même si — par construction — son mot de passe ne peut alors
+     * plus être vide.
+     */
+    public function testAnActivatedAccountIsNotAwaitingPasswordSetup(): void
+    {
+        $user = new CpgUser('jane', '');
+        $user->markInvited(new \DateTimeImmutable('2026-09-03 12:00:00'));
+        $user->setPassword('a-real-hash');
+        $user->markActivated(new \DateTimeImmutable('2026-09-04 09:30:00'));
+
+        self::assertFalse($user->isAwaitingPasswordSetup());
+    }
 }
