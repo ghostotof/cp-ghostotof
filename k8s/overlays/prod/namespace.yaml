@@ -1,4 +1,23 @@
+# Point d'audit A17 — Pod Security Admission. Jumeau de
+# k8s/overlays/preprod/namespace.yaml : mêmes labels, mêmes raisons (RabbitMQ
+# interdit `enforce: restricted`, constat A18 assumé ; `audit`/`warn` gardent
+# la contrainte stricte en observation ; `-version: latest` faute de version
+# de control-plane connue). Le commentaire détaillé est dans l'overlay
+# préprod, et la procédure de pose et de validation dans k8s/README.md,
+# section « Durcissement des pods ».
+#
+# Ordre à respecter : ces labels sont validés en préprod avant d'être promus
+# ici. Un `enforce` qui refuse un pod se voit au rollout, pas au `kubectl
+# apply` — le namespace est mis à jour avec succès, et c'est la création du
+# pod suivant qui échoue.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: prod
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest

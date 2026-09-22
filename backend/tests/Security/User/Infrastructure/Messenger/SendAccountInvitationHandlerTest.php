@@ -79,12 +79,17 @@ final class SendAccountInvitationHandlerTest extends TestCase
         self::assertSame('newcomer', $context['username']);
         self::assertArrayHasKey('strings', $context);
 
-        // Le lien porte le jeton EN CLAIR ; seul son SHA-256 est persisté.
+        // Le lien porte le jeton EN CLAIR ; seul son SHA-256 est persisté. Il
+        // voyage dans le FRAGMENT (audit A7, décision D6) : un fragment n'est
+        // jamais envoyé au serveur, donc absent des access logs du nginx
+        // frontend et de l'ingress — contrairement à un segment de chemin.
+        self::assertIsString($context['setupUrl']);
         self::assertSame(1, preg_match(
-            '#^https://front\.test/fr/set-password/([0-9a-f]{64})$#',
+            '~^https://front\.test/fr/set-password#([0-9a-f]{64})$~',
             $context['setupUrl'],
             $matches,
         ));
+        self::assertStringNotContainsString('/set-password/', $context['setupUrl']);
         self::assertSame($savedToken->getTokenHash(), hash('sha256', $matches[1]));
     }
 

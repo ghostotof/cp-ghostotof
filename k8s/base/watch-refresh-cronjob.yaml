@@ -47,6 +47,7 @@ spec:
           labels:
             app.kubernetes.io/name: watch-refresh
         spec:
+          automountServiceAccountToken: false
           restartPolicy: OnFailure
           securityContext:
             fsGroup: 10001

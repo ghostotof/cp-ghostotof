@@ -1,0 +1,10 @@
+# Politique complète : https://github.com/ghostotof/cp-ghostotof/blob/main/SECURITY.md
+# Ce fichier expire à la date ci-dessous. tools/audit-prod.sh échoue sur un
+# Expires dépassé : c'est le rappel de renouvellement, il n'y en a pas d'autre.
+
+Contact: https://github.com/ghostotof/cp-ghostotof/security/advisories/new
+Contact: https://cp-ghostotof.com/fr/contact
+Expires: 2027-09-01T00:00:00Z
+Preferred-Languages: fr, en
+Canonical: https://cp-ghostotof.com/.well-known/security.txt
+Policy: https://github.com/ghostotof/cp-ghostotof/blob/main/SECURITY.md

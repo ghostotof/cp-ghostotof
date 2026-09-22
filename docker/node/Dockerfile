@@ -67,6 +67,11 @@ FROM nginx:${NGINX_TAG} AS production
 EXPOSE 8080
 
 COPY docker/node/nginx.conf /etc/nginx/conf.d/default.conf
+# Source unique des en-têtes de sécurité, incluse par le bloc server ET par
+# chaque location qui pose son propre add_header (constat A16). Volontairement
+# HORS de conf.d/, que le nginx.conf de l'image inclut déjà en `*.conf` : posé
+# là, ce fichier serait interprété une seconde fois au niveau `http`.
+COPY docker/node/security-headers.conf /etc/nginx/security-headers.conf
 COPY --from=build /out/app /usr/share/nginx/html
 
 # gettext fournit envsubst, utilisé par docker-entrypoint.sh pour générer

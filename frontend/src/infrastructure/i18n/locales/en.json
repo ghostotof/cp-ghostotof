@@ -493,7 +493,7 @@
       "successHeading": "Password set",
       "successBody": "Your account is ready. You can now log in.",
       "toLogin": "Go to login",
-      "invalid": "This password setup link is not valid.",
+      "invalid": "This password setup link is not valid. Open it again from the invitation email.",
       "expired": "This link has expired or has already been used. Ask the person who invited you for a new one.",
       "errors": {
         "tooShort": "The password must be at least {min} characters long.",

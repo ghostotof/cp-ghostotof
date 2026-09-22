@@ -87,13 +87,28 @@ trait InvitesUsers
         $email = end($messages);
         self::assertInstanceOf(Email::class, $email);
 
-        $body = ($email->getTextBody() ?? '').($email->getHtmlBody() ?? '');
-        self::assertSame(
-            1,
-            preg_match('#/set-password/([0-9a-f]{64})#', $body, $matches),
-            'Lien de définition de mot de passe introuvable dans l\'e-mail d\'invitation.',
-        );
+        // Le jeton voyage dans le fragment du lien (audit A7, décision D6),
+        // plus dans un segment de chemin. Les deux versions de l'e-mail sont
+        // vérifiées séparément : concaténer les corps laisserait passer un
+        // template (texte ou HTML) qui aurait perdu son lien.
+        $tokens = [];
+        foreach (['texte' => $email->getTextBody(), 'HTML' => $email->getHtmlBody()] as $label => $body) {
+            self::assertIsString($body, sprintf('Version %s de l\'e-mail d\'invitation absente.', $label));
+            self::assertSame(
+                1,
+                preg_match('~/set-password#([0-9a-f]{64})~', $body, $matches),
+                sprintf('Lien de définition de mot de passe introuvable dans la version %s de l\'e-mail d\'invitation.', $label),
+            );
+            self::assertStringNotContainsString(
+                '/set-password/',
+                $body,
+                sprintf('La version %s de l\'e-mail porte encore le jeton dans un chemin d\'URL.', $label),
+            );
+            $tokens[] = $matches[1];
+        }
 
-        return $matches[1];
+        self::assertSame($tokens[0], $tokens[1], 'Les versions texte et HTML de l\'e-mail ne portent pas le même jeton.');
+
+        return $tokens[0];
     }
 }

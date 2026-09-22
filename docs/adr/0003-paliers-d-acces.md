@@ -4,7 +4,9 @@
   (PR #41), D6 (PR #46-48), D5 1/3 études de cas (PR #49-53) et D5 2/3 CV sans identité (PR #69, #71)
   mergés les 2026-09-12/13. **D5 3/3 (parcours anonymisé) est abandonné, décision du 2026-09-13** —
   voir D5. En production depuis `v0.9.0` (2026-09-13). Voir « Clôture » en fin de document pour ce
-  qui a suivi la release et ce qui reste éditorial.
+  qui a suivi la release et ce qui reste éditorial. **Amendée le 2026-09-21** (3e audit, constat
+  A9) : le risque accepté « le logout ne révoque pas le jeton » est consigné en fin de
+  « Conséquences ».
 - Date : 2026-09-10
 - Portée : `config/packages/security.yaml`, `src/Security/User`, `src/Security/Authentication`,
   `tests/Security/ApiRouteExposureTest.php`, frontend `presentation/pages/LoginPage.vue` + garde de
@@ -196,6 +198,44 @@ qu'à l'usage.
   distinguent déjà connecté et non connecté ; il faudra trois cas au lieu de deux.
 - **Coût assumé : le contenu du palier intermédiaire n'existe pas encore.** Livrer le mécanisme sans
   le contenu produirait un bouton qui ne donne rien, ce qui est pire que l'absence de bouton.
+
+### Risque accepté — le logout ne révoque pas le jeton (amendement du 2026-09-21, 3e audit, constat A9)
+
+Les faits, relevés dans le code. Le jeton de connexion nominative est un JWT RS256 de
+**3600 secondes** (`token_ttl` et `set_cookies.BEARER.lifetime` dans
+`config/packages/lexik_jwt_authentication.yaml`) ; le jeton du palier de base en vaut **900**
+(`BaseAccessController::TOKEN_TTL_SECONDS`, D6). `POST /api/logout` est intercepté par le firewall
+`api`, qui est `stateless` : `CookieLogoutListener` construit un 204 et **expire les deux cookies
+`BEARER` et `XSRF-TOKEN` dans le navigateur**, via les attributs exacts de la pose
+(`AuthCookieFactory::expired()`, issue #87). Il n'écrit **aucun état côté serveur** : aucune liste
+de révocation n'est consultée à l'authentification, et le payload ne porte pas de `jti`.
+
+Conséquence, et c'est le risque : **un jeton copié avant la déconnexion reste valable jusqu'à son
+échéance**, au plus une heure pour un compte nominatif, quinze minutes pour le palier de base. Se
+déconnecter ferme la session du navigateur, pas celle d'un porteur qui détiendrait déjà la valeur.
+
+Pourquoi c'est accepté ici. Le `BEARER` est `HttpOnly` — hors de portée d'un script, donc d'un XSS
+—, `Secure` en production et `SameSite=Lax` ; l'extraction par l'en-tête `Authorization` est
+désactivée, le cookie est le seul transport. Pour le copier, il faut déjà tenir la machine ou le
+navigateur, et dans ce cas la révocation du jeton n'est plus la première des questions. La fenêtre
+est courte et sans renouvellement. En face, une liste de révocation réintroduirait exactement ce que
+ces deux firewalls évitent : un état serveur **consulté à chaque requête** — donc une lecture de
+base ou de cache sur le chemin de toutes les routes authentifiées, à rebours du sans-état, et, s'il
+fallait le stocker ailleurs que dans la base, à rebours de l'ADR 0005. Pour un site qui compte
+quelques comptes nominatifs, le coût permanent dépasse le gain.
+
+Ce qui rouvre la décision : un rôle donnant accès à des données plus sensibles que le CV ; un
+allongement du `token_ttl` ; un vol de jeton constaté ou seulement soupçonné ; ou un nombre de
+comptes qui cesse d'être anecdotique. Les deux remèdes, avec leur prix :
+
+- **liste de `jti` révoqués en base** — le payload doit d'abord porter un `jti`, qu'il n'a pas
+  aujourd'hui ; coût permanent d'une lecture par requête authentifiée, plus une purge des entrées
+  expirées (le CronJob de maintenance en fait déjà une pour `cache_items`). C'est la révocation
+  ciblée, la seule qui n'affecte qu'un jeton ;
+- **rotation de la clé de signature RS256** (`lexik:jwt:generate-keypair --overwrite`, puis
+  remplacement du Secret `jwt-keys` et redéploiement) — coupe-circuit global, immédiat, sans aucun
+  état ajouté, mais il invalide **tous** les jetons en cours, y compris ceux du palier de base. À
+  réserver à l'incident ; c'est la réponse à « un jeton a fuité et on ne sait pas lequel ».
 
 ## Alternatives écartées
 

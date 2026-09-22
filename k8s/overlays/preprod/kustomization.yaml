@@ -57,7 +57,24 @@ images:
   - name: frontend
     newTag: unset-by-ci
 
+# Question Q5 du 3e audit, tranchée le 2026-09-21 : la préprod s'aligne sur la
+# prod. Adminer (UI d'admin BDD, sans authentification propre au-delà des
+# identifiants Postgres) n'a aucune raison de tourner en permanence, même sans
+# route Ingress — la préprod contient les mêmes structures que la prod et son
+# accès n'est protégé que par le Basic Auth de l'Ingress, qui ne couvre pas un
+# port-forward. Deployment et Service restent définis (aucun pod).
+# Réactivation ponctuelle : voir k8s/README.md — et le prochain
+# `kubectl apply -k` de la pipeline remet 0, ce qui est la propriété voulue :
+# un Adminer oublié allumé s'éteint tout seul au déploiement suivant.
+replicas:
+  - name: adminer
+    count: 0
+
 patches:
+  # Profilage Xdebug (constat A12, T5.4) : variables d'armement + emptyDir de
+  # sortie, sur le seul conteneur php-fpm du Deployment backend. Rien de tout
+  # cela n'existe dans l'overlay prod.
+  - path: backend-xdebug.yaml
   - target:
       kind: Ingress
       name: cp-ghostotof

@@ -61,10 +61,14 @@ export function applySeoMeta(to: RouteLocationNormalized): void {
     return
   }
 
-  const pathWithoutLocale = to.path.slice(`/${locale}`.length)
+  // `meta.canonicalPath` prime sur le chemin réel : une route dont l'URL peut
+  // porter un secret (repli `set-password/:token?`, audit A7) ne doit jamais
+  // le voir recopié dans le DOM, même le temps d'un rendu et même en noindex.
+  const canonicalPath = to.meta.canonicalPath
+  const pathWithoutLocale = typeof canonicalPath === 'string' ? `/${canonicalPath}` : to.path.slice(`/${locale}`.length)
   const origin = window.location.origin
 
-  upsertLink('canonical', `${origin}${to.path}`)
+  upsertLink('canonical', `${origin}/${locale}${pathWithoutLocale}`)
   for (const supportedLocale of SUPPORTED_LOCALES) {
     upsertLink('alternate', `${origin}/${supportedLocale}${pathWithoutLocale}`, supportedLocale)
   }

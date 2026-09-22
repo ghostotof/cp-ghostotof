@@ -31,6 +31,7 @@ spec:
       labels:
         app.kubernetes.io/name: postgres
     spec:
+      automountServiceAccountToken: false
       # fsGroup 70 = groupe "postgres" de l'image officielle (vérifié :
       # `id postgres` -> uid=70 gid=70) : le volume est monté déjà accessible
       # en écriture à ce groupe, l'entrypoint (qui gère lui-même le cas

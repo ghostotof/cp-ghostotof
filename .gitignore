@@ -6,6 +6,12 @@
 # ne doit jamais être commité ni servir de source avant authentification.
 /.claude/CLAUDE.local.md
 
+# Configuration Claude Code propre au poste : permissions accordées, chemins
+# locaux (constat A22, audit du 2026-09-16). Elle n'était ignorée que par le
+# ~/.config/git/ignore du poste — un autre clone l'aurait vue « non suivie »
+# et aurait pu la committer dans un dépôt public.
+/.claude/settings.local.json
+
 # Ressources privées servies uniquement via une route API protégée (ex. CV,
 # cf. App\Portfolio\Cv) : jamais dans Git, déposées manuellement en local et
 # montées par l'orchestrateur en environnement déployé (jamais copiées dans

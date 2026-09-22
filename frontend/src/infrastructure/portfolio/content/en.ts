@@ -97,7 +97,7 @@ const en: PortfolioLocaleContent = {
   privacyPolicy: {
     eyebrow: 'Privacy',
     title: 'Privacy policy',
-    lastUpdated: 'Last updated: September 2, 2026',
+    lastUpdated: 'Last updated: September 21, 2026',
     sections: [
       {
         heading: 'Data controller',
@@ -110,9 +110,10 @@ const en: PortfolioLocaleContent = {
         paragraphs: ['Depending on how you use the site, the following data may be collected:'],
         list: [
           'Contact form: name, email address and message you voluntarily enter.',
-          'Authentication: username and password, for individually granted accounts (no public sign-up is offered, no shared account).',
-          'IP address: used transiently to rate-limit abuse of the contact form.',
-          'Language preference: stored locally in your browser (localStorage), never sent to the server.',
+          'Invited account: if the publisher grants you named access, your email address (to which the invitation is sent), a username derived from that address, and the password you choose, stored as a hash. No public sign-up is offered, no shared account.',
+          'Instant access: no account is created and no data about you is recorded; access relies on an anonymous token valid for 15 minutes.',
+          "IP address: used to rate-limit abuse (contact form, login, instant access, password setup) and recorded in the server's technical and security logs.",
+          'Browser local storage (localStorage): your language preference and, where applicable, the expiry time of your instant access. These values are never sent to the server.',
         ],
       },
       {
@@ -128,29 +129,31 @@ const en: PortfolioLocaleContent = {
         list: [
           'Responding to your contact requests — pre-contractual measures or legitimate interest.',
           'Securing the site and preventing abuse (rate limiting, technical logs) — legitimate interest.',
-          'Letting you authenticate — performance of the requested service.',
+          "Inviting you to hold named access — the publisher's legitimate interest in granting individual access rather than a shared credential.",
+          'Letting you authenticate or use instant access — performance of the requested service.',
         ],
       },
       {
         heading: 'Cookies',
         paragraphs: [
-          'This site only sets cookies strictly necessary for its operation, exempt from consent under CNIL (French data protection authority) guidance:',
+          'This site sets no cookie on a plain visit. Two strictly necessary cookies are set only when you log in or request instant access; they are exempt from consent under CNIL (French data protection authority) guidance, which is why no consent banner is shown:',
         ],
         list: [
-          'BEARER — authentication token (JWT), httpOnly, not readable from JavaScript, expires on logout or token expiry.',
-          'XSRF-TOKEN — CSRF protection token, readable from JavaScript, only set after login, expires on logout.',
+          'BEARER — authentication token (JWT), httpOnly, not readable from JavaScript, expires on logout or token expiry (1 hour for an account, 15 minutes for instant access).',
+          'XSRF-TOKEN — CSRF protection token, readable from JavaScript, set together with the previous one, expires with it.',
         ],
       },
       {
         heading: 'Retention period',
         paragraphs: [
           "Contact form messages are not kept beyond sending the notification email. If delivery fails (mail server temporarily unavailable), the message is stored so it can be retried, then automatically deleted after 30 days at the latest. Technical data (IP address for rate limiting, server logs) is kept for short periods, detailed in the processing register maintained by the publisher.",
+          'An invited account and its email address are kept for as long as access is granted to you; they are deleted when no longer needed or simply at your request. The invitation link is valid for 48 hours and can be used only once.',
         ],
       },
       {
         heading: 'Recipients',
         paragraphs: [
-          "Contact form data is sent to the publisher's mailbox, via the email delivery provider used in production. No data is sold, rented, or shared with third parties for commercial purposes.",
+          "Contact form data is sent to the publisher's mailbox, via the email delivery provider used in production (Scaleway, France), which also delivers account invitations, then through an email forwarding service (Cloudflare). An invited account's email address is visible to the publisher only. When you choose a password, an anonymous fragment of its hash (5 characters) is checked against a database of compromised passwords (Have I Been Pwned); neither the password nor your identity is transmitted. No data is sold, rented, or shared with third parties for commercial purposes.",
         ],
       },
       {
@@ -162,7 +165,9 @@ const en: PortfolioLocaleContent = {
       },
       {
         heading: 'Transfers outside the European Union',
-        paragraphs: ['No data transfer outside the European Union currently takes place.'],
+        paragraphs: [
+          "Hosting, the database and email delivery are located in France. One exception: contact form messages are relayed to the publisher's mailbox by Cloudflare, Inc. (United States), a transfer covered by the EU–US Data Privacy Framework and, failing that, by the European Commission's standard contractual clauses.",
+        ],
       },
     ],
   },

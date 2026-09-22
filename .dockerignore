@@ -11,8 +11,24 @@ backend/var/
 backend/.env.local
 backend/.env.dev
 backend/.env.*.local
+# `backend/.env` reste DANS le contexte : Symfony le charge à l'exécution et
+# c'est lui qui porte les valeurs par défaut (aucun secret réel, cf. CLAUDE.md).
+# `.env.test` en revanche n'a de sens que pour la suite de tests, jamais dans
+# une image déployée. Il n'est pas versionné (backend/.gitignore), donc il
+# n'existe que sur un poste — raison de plus pour ne pas le laisser entrer.
+backend/.env.test
 backend/public/assets/
 backend/public/bundles/
+
+# Clés JWT locales (constat A13, audit du 2026-09-16). `COPY backend/ ./` au
+# stage `production` embarquait `config/jwt/private.pem` dans une couche de
+# l'image dès lors que le poste en possédait une — la clé de signature RS256
+# de l'environnement de développement, livrable dans un registre.
+# Le build n'en a aucun besoin : la CI construit déjà sans (les .pem sont
+# gitignorés, cf. backend/.gitignore) et en déployé les clés arrivent au
+# RUNTIME par le Secret `jwt-keys`, monté sur config/jwt par les Deployments
+# `backend` et `worker` (k8s/base/*-deployment.yaml).
+backend/config/jwt/
 
 # Ressources privées (ex. CV) : jamais embarquées dans l'image, montées par
 # l'orchestrateur en environnement déployé. Voir .gitignore.
@@ -24,3 +40,16 @@ frontend/dist/
 k8s/
 .idea/
 .vscode/
+
+# Répertoires de travail locaux : aucun COPY ne les référence, ils n'ont donc
+# rien à faire dans le contexte envoyé au démon — et chacun porte du contenu
+# qui n'est pas destiné à voyager avec un artefact.
+#   .claude/       CLAUDE.local.md contient l'identité et les coordonnées
+#                  réelles (gitignoré, cf. objectif n°9), settings.local.json
+#                  la configuration de poste (constat A22).
+#   tasks/         plans de remédiation en cours, y compris des constats
+#                  d'audit non encore corrigés.
+#   .superpowers/  maquettes de session de l'outillage d'assistance.
+.claude/
+tasks/
+.superpowers/

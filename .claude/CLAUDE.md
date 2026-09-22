@@ -185,8 +185,15 @@ prod run the identical PHP engine:
   `frontend/package-lock.json` coexist — the manifest describes exactly what the image deploys and cannot
   drift from it. Keep that `COPY`/`RUN` pair *after* the big install layer so an npm bump doesn't invalidate it.
 - **`preprod`** — built **`FROM production`** (not a parallel build) so its application layers are byte-identical
-  to prod; only adds Xdebug in profiling-trigger mode (`XDEBUG_TRIGGER`, never `debug` mode) and verbose logs.
+  to prod; only adds Xdebug (**inert in the image**, see "Deployment invariants") and verbose logs.
   Pipeline order is dev → preprod → prod regardless of declaration order in the Dockerfile.
+
+The build context is the **repo root**, so `.dockerignore` is what keeps things out of it, and two entries
+are there for secrecy rather than size (audit A13/A22): `backend/config/jwt/` — a workstation that has
+generated its dev RS256 keypair would otherwise ship `private.pem` in an image layer, and the deployed
+keys come from the `jwt-keys` Secret at runtime anyway — and `backend/.env.test`, `.claude/`, `tasks/`,
+`.superpowers/`, which carry local configuration, real identity (`CLAUDE.local.md`) or uncorrected audit
+findings. Never `COPY` something out of one of those; widen the ignore list instead.
 
 ### Backend architecture (`../backend/src`)
 
@@ -264,17 +271,30 @@ mid-migration.
     `emails/account_invitation.*`, subject + localized strings built here);
     `RateLimiter/SymfonyPasswordSetupRateLimiter.php`;
     `Http/PasswordSetupRateLimitRequestListener.php` (audit C1 — a `kernel.request` listener at priority 15
-    that consumes the per-IP quota for `GET`/`POST` on `/api/account/password-setup/` **before** API Platform
-    deserializes or validates anything; consuming it again in the Provider/Processor would halve the effective
+    that consumes the per-IP quota on **`POST`** for the two exact paths of the flow **before** API Platform
+    deserializes or validates anything; consuming it again in the Processor would halve the effective
     quota, so don't) + `Http/PasswordSetupRateLimitRetryAfterListener.php` (adds `Retry-After` on the 429);
-    the API Platform providers/processors.
+    the API Platform processors.
   - `Presentation/Command/CreateCpgUserCommand.php` (`app:user:create`, `--role` allow-list) and
     `Presentation/Controller/CurrentUserController.php` (`GET /api/me`). Everything else is API Platform
-    resources — see "Backoffice" below for the `ROLE_SUPER` ones, plus the **public** (no auth, no CSRF,
-    IP rate-limited) `AccountPasswordSetupStatusResource` (`GET /api/account/password-setup/{token}`) and
-    `AccountPasswordSetupResource` (`POST …`, 204). `^/api/account/password-setup/` is a `EXCLUDED_PATH_PREFIXES`
-    entry in `CsrfCookieRequestSubscriber` (anonymous caller, nothing to double-submit — same rationale as
-    `/api/contact`).
+    resources — see "Backoffice" below for the `ROLE_SUPER` ones, plus the two **public** (no auth, no CSRF,
+    IP rate-limited) ones of the set-password flow.
+  - **A secret never travels in a URL path** (audit A7, T4.1/T4.2). `AccountPasswordSetupValidationResource`
+    (`POST /api/account/password-setup/validate` `{token}`) and `AccountPasswordSetupResource`
+    (`POST /api/account/password-setup` `{token, password}`) both carry the token **in the body**, both
+    answer 204, and both answer identically on failure — missing/blank/over-255 token 422, unknown 404,
+    expired *or already used* 410 (merged on purpose: a distinct status would say a link had served).
+    They replace `GET|POST /api/account/password-setup/{token}`, removed along with
+    `AccountPasswordSetupStatusResource` and `AccountPasswordSetupProvider`; a `GET` cannot carry a secret
+    anywhere but its URL, and a URL is written to the nginx sidecar's and the ingress's access logs, a body
+    is not. **Never reintroduce a `{token}` in a `uriTemplate`.** Consequences to keep aligned: the two
+    paths are listed **exactly** (not as a prefix) in `CsrfCookieRequestSubscriber::EXCLUDED_PATHS` and in
+    `PasswordSetupRateLimitRequestListener::RATE_LIMITED_PATHS` — a prefix would silently exempt a future
+    sibling route such as `…/password-setup-other`; both have their own justified `PUBLIC_PATHS` entry in
+    `ApiRouteExposureTest`; the nginx `pwsetup` zone is `location ^~ /api/account/password-setup` (no
+    trailing slash, both confs) so it covers the root path too.
+    `AccountPasswordSetupResourceTest` pins the status matrix and the fact that no trailing-slash variant
+    is served.
 - **`Security/Authentication/`** — login/logout/JWT/CSRF mechanics, deliberately kept out of `User/`: this is
   infrastructure wiring around Symfony Security + LexikJWTAuthenticationBundle, not a domain concept of its own.
   - `Infrastructure/Jwt/LoginSuccessSubscriber.php` (attaches the `XSRF-TOKEN` cookie, shapes the
@@ -308,13 +328,47 @@ mid-migration.
     `nelmio_cors.yaml` lists the header in `allow_headers`; the frontend sends it via
     `infrastructure/http/loginCsrfHeader.ts` on both calls. Functional tests therefore pass
     `'HTTP_X_REQUESTED_WITH' => 'fetch'` in `server:` on every login/base-access request.
-  - **Any `kernel.request` listener that matches on the path must use `App\Shared\Infrastructure\Http\CanonicalPath::of()`,
+  - **Any listener that decides on the request path must use `App\Shared\Infrastructure\Http\CanonicalPath::of()`,
     never `getPathInfo()` directly** (issue #77). `getPathInfo()` is *not* decoded, while the router, the
     firewalls and `access_control` all decide on `rawurldecode()`: `POST /%61pi/logout` reached the
     `LogoutListener` without ever passing the CSRF check, and `/api/account/base%2Daccess` escaped its rate
-    limiter. The four listeners (`CsrfCookieRequestSubscriber`, `LoginCsrfRequestListener`,
-    `BaseAccessRateLimitRequestListener`, `PasswordSetupRateLimitRequestListener`) go through the helper,
-    and each has a `%XX` regression test.
+    limiter. Five sites go through the helper — the four `kernel.request` guards
+    (`CsrfCookieRequestSubscriber`, `LoginCsrfRequestListener`, `BaseAccessRateLimitRequestListener`,
+    `PasswordSetupRateLimitRequestListener`), each with a `%XX` regression test, plus
+    `Shared/Infrastructure/Http/ApiJsonErrorFormatListener` on `kernel.exception` (see "Errors under `/api`"
+    below) — and `SecurityAuditLogger` logs the canonical form for the same reason.
+  - **The `login` firewall is anchored on its `check_path`, the `api` one deliberately is not** (audit A23,
+    `security.yaml`). `login` is `^/api/login_check$`: it holds a `json_login` and reads **no** JWT, so any
+    route ever added under a looser `^/api/login` would be served anonymously, the visitor's `BEARER` never
+    looked at. `api` stays the bare `^/api` **on purpose** — anchoring it would push a neighbour like
+    `/apix` out of *every* firewall, hence out of every `access_control` (the `AccessListener` is a firewall
+    listener), i.e. remove protection rather than add it; it is allow-listed with that justification in
+    `tests/Security/AccessControlAnchoringTest.php`, which pins firewall patterns as well as access rules.
+    `tests/Security/Authentication/LoginFirewallScopeTest.php` pins the behaviour.
+  - **No session, in any environment** (`framework.session: false`, audit A23). Nothing needs one — both
+    firewalls are `stateless`, auth is a JWT in a cookie, the CSRF is a double-submit cookie, there is no
+    Symfony form. The point is not tidiness: the default handler writes under `var/`, and on a
+    `readOnlyRootFilesystem` pod that is exactly the silent failure ADR 0005 exists to forbid. Without a
+    session the error is loud (`SessionNotFoundException`) and surfaces in test or dev instead. Re-enabling
+    `framework.form` or a session-token CSRF would need one — `tests/Security/StatelessSessionTest.php`
+    pins the invariant, including in `test`.
+  - **`Infrastructure/Security/FailedLoginTimingEqualizer.php` — a failed login must not be timeable**
+    (audit A10). The three failures already return the same 401, but not in the same time: a known active
+    account paid a full bcrypt/argon `verify()`, while an **unknown identifier** (the user is never loaded)
+    and an **account pending activation** (empty hash, `password_verify($p, '')` returns at once) cost
+    nothing — the gap said which identifiers exist and which are pending invitations. On `LoginFailureEvent`,
+    `login` firewall only, priority **-100** (after the throttling counter and the audit log, neither of
+    which should wait on a hash), it pays a dummy `hash()` of a constant with `CpgUser`'s configured hasher
+    in **those two cases only**: never for an active account (the real hash already happened — a second one
+    would recreate the gap the other way), never for the throttling (its answer must stay cheap), never for
+    a blank password (refused before any DB access, identically for everyone). `hash()` of a constant, not
+    `verify()` against a frozen hash, so it follows `password_hashers: auto` if the algorithm or cost
+    changes. The submitted password is never read. The response is untouched — the three 401s must stay
+    byte-identical, which is the other half of non-enumeration.
+    `FailedLoginTimingEqualizerTest` + `tests/Security/Authentication/LoginFailureTimingTest.php` pin it.
+    Related fact worth knowing: `login_throttling` answers **401** with `Too many failed login attempts`,
+    not 429 — it is Lexik's failure handler that shapes the response (`LoginThrottlingTest`,
+    `tools/smoke-login-throttling.sh`).
   - **`Infrastructure/Log/SecurityAuditLogger.php` is the single entry point of the security audit log**
     (3rd audit, A5/D5, Monolog channel `security_audit`, `info`, JSON on stderr in prod — see
     `monolog.yaml`). Implements `Application/SecurityAuditLoggerInterface`, one method per event:
@@ -340,10 +394,10 @@ mid-migration.
     Monolog `test` handler on the channel, `when@test`, found among `monolog.logger.security_audit`'s
     handlers — that logger is public in every env, so phpstan-symfony's dev dump knows it); the kernel
     reboots between requests, so the handler holds the *last* request's records. `Psr\Log\Test\TestLogger`
-    no longer ships with psr/log 3, unit tests use Monolog's `TestHandler`. One transitional rule: while the
-    password-setup token still travels in the URL path (audit A7, until Task 4.1 moves it to the body),
-    `path` on `/api/account/password-setup/<token>` is logged as `…/password-setup/{token}`
-    (`TOKEN_BEARING_PATH_PATTERN`) — remove that redaction with T4.1, not before. A use case logs only
+    no longer ships with psr/log 3, unit tests use Monolog's `TestHandler`. `path` is logged **verbatim**
+    (canonical form), with no redaction, and that is only correct because **no route carries a secret in
+    its path** any more (audit A7 — the set-password token moved into the body, see `Security/User` above).
+    A route that ever needed one would be the bug, not a reason to add a redaction back here. A use case logs only
     an *effective* action: `CpgUserRoleAdministrator`'s idempotent no-op writes nothing, a refused
     action writes nothing (the unit tests pin `never()` on every error path).
 - **`Portfolio/Shared/`** — `Domain/ValueObject/Locale.php`, the `enum Locale: string { FR = 'fr'; EN = 'en' }`
@@ -558,7 +612,8 @@ Content management for all of the above, plus user administration, gated end-to-
   `/api/cv-export` is *not* `ROLE_TRUSTED` by accident and a future `/api/case-studies-drafts` is *not*
   `ROLE_USER` by accident. A sibling path therefore inherits no implicit protection — write its rule, or
   `ApiRouteExposureTest` flags it. `tests/Security/AccessControlAnchoringTest.php` pins the anchors against
-  the compiled `AccessMap`; keep the pattern when adding a rule.
+  the compiled `AccessMap`; keep the pattern when adding a rule. The same test also pins the **firewall**
+  patterns, which follow a different rule and for a stated reason — see `Security/Authentication` above.
 - **Non-negotiable rule for every new endpoint — "never send what the caller isn't entitled to"**: the API must
   never return protected data to an unauthenticated or unauthorized caller, *even when the frontend does not
   display it*. Hiding a field client-side is presentation, never protection — anyone can call the endpoint
@@ -622,6 +677,25 @@ Content management for all of the above, plus user administration, gated end-to-
   `use App\Shared\Domain\Exception\HasProblemType` (declare `problemType()` → a stable kebab slug +
   `problemStatus()`): API Platform then emits `type: /errors/<slug>` in the problem+json, which the client keys
   on instead of substring-matching the localized `detail`.
+  **Two traps of that map, both paid for** (audit A15): declaring `exception_to_status` **replaces** API
+  Platform's defaults instead of extending them, so the three it ships with are restored explicitly at the
+  **end** of the list (`Serializer\ExceptionInterface: 400`, `ApiPlatform\Metadata\Exception\InvalidArgumentException: 400`,
+  `Doctrine\ORM\OptimisticLockException: 409`) — without them, unparsable JSON or a wrongly-typed field
+  answered **500 on every POST, public ones included**, i.e. an anonymous caller could manufacture 500s at
+  will and drown real server errors in the logs. And resolution takes the **first matching entry**, with
+  `is_a()` matching interfaces and parents too, so a broad entry must stay **below** the precise ones: add a
+  new exception *above* those three restored defaults, never after. `MalformedRequestBodyTest` pins the 400s.
+- **Errors under `/api` come out as JSON, never as Symfony's HTML page** (audit A15). Two families escaped
+  API Platform's own error handling: the router's 404/405 (raised before API Platform exists for that
+  request) and the 403s of our own `kernel.request` guards on non-API-Platform routes (`POST /api/logout`
+  without the CSRF header, `POST /api/login_check` without `X-Requested-With`).
+  `Shared/Infrastructure/Http/ApiJsonErrorFormatListener` sets `json` as the request format for any
+  canonical path under `/api` (exactly `/api` or `/api/…`, never `/apix`), and
+  Symfony's `ProblemNormalizer` then renders RFC 7807. Two things to leave alone: it is on **`kernel.exception`
+  at priority -100**, *not* `kernel.request` — setting the format on every request breaks API Platform's
+  content negotiation, and `GET /api/docs` without an `Accept` header answered **406** — and -100 sits
+  between API Platform's own `ExceptionListener` (-96) and Symfony's `ErrorListener` (-128), so it never
+  runs on errors API Platform already handled. `ApiJsonErrorFormatListenerTest` + `ApiErrorFormatTest` pin it.
 
 ### Seeding (`app:*:seed`)
 
@@ -733,9 +807,25 @@ me cards), `watch` (tracked products + the `ROLE_SUPER`-only vulnerability detai
 direct username+password creation stays CLI-only). `AdminUsersPage.vue` disables the delete and role buttons on
 the current user's own row (compared by `username` via `useAuth()`); the `email` column shows the linked address
 or a dash. The `domain/account` + `application/account/useAccountPasswordSetup` + `presentation/pages/SetPasswordPage.vue`
-slice is the **public** counterpart: route `/(fr|en)/set-password/:token` (`meta.noindex`, no `requiresAuth`),
-`useAccountPasswordSetup` state machine (`checking|ready|submitting|done|invalid|expired|error`), talks to the
-public `/api/account/password-setup/{token}` endpoints.
+slice is the **public** counterpart: route `/(fr|en)/set-password/:token?` (`meta.noindex`, no `requiresAuth`),
+`useAccountPasswordSetup` state machine (`checking|ready|submitting|done|invalid|expired|error`), talking to the
+two public `POST /api/account/password-setup(/validate)` endpoints — a 422 on `validate` means "invalid link",
+a 422 on the completion means "password refused", and they must keep being told apart.
+
+**The invitation token reaches the page in the URL *fragment*, and leaves the URL immediately** (audit A7,
+T4.2). The emailed link is `…/{locale}/set-password#<token>`: a fragment is never sent to the server, so it
+reaches neither the frontend nginx's access log nor the ingress's — the same reason the token moved out of the
+API path. Three things follow, none of them optional:
+- the page reads the fragment **first** and `:token?` only as a 48 h fallback for links already sent (its
+  removal is a planned follow-up); the token then lives **in memory only**;
+- it is erased from the URL with **`router.replace`, never `history.replaceState`** — vue-router stores the
+  `fullPath` in `history.state`, so a `replaceState` that preserved that state would preserve the token with it;
+- routes whose URL may carry a secret declare `meta.canonicalPath`, which `presentation/router/seo.ts` uses
+  instead of the real path: otherwise `<link rel="canonical">` and every `hreflang` alternate would republish
+  the token in the DOM (the leak predated the fragment, with the old `:token` segment). The router's
+  scroll/anchor handling also skips the `set-password` hash — it is a token, not an anchor.
+No token at all ⇒ `invalid` with **no network call**. `SetPasswordPage.spec.ts` and `router/seo.spec.ts` pin
+all of it.
 
 **Ordering and translation groups** (spec 0004, `v0.12.0`): every ordered admin page (Incidents,
 Contributions, Anonymous CV, Quality ×2, About site cards + one table per me-card category, Watch) is
@@ -1060,6 +1150,58 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   `scw-loadbalancer-proxy-protocol-v2` annotation, applied together by one `helm upgrade`) is the
   cluster prerequisite that fixes it — see ADR 0005 D6/D7. `tools/smoke-login-throttling.sh` is what
   proves the whole chain end to end: six attempts from one machine must land on one key.
+- **An `add_header` inside a `location` cancels the inheritance of *every* `add_header` of the parent
+  block**, not just the one it redefines (audit A16). That is how `/assets/`, `/config.js` and `/healthz`
+  of the frontend came to be served with no CSP and no HSTS, and `/index.html` with no HSTS, while the
+  `server` block declared all seven headers. The frontend's seven headers now live in **one file**,
+  `docker/node/security-headers.conf` (copied to `/etc/nginx/security-headers.conf`, deliberately *not*
+  under `conf.d/`, which the image already includes at `http` level), `include`d at `server` level **and**
+  in every `location` that sets a header of its own. Adding such a `location` means adding the `include`,
+  or it ships bare. The backend sidecar cannot share that file — `backend-nginx.conf` is a ConfigMap
+  mounted by `subPath`, a second file would need a second mount — so there the headers are repeated
+  explicitly on `location = /healthz`; keep the two in step. `tools/audit-prod.sh` checks `/`,
+  `/config.js`, `/healthz` and an asset discovered from the home page, judging only the **final**
+  response.
+- **`/.well-known/security.txt` is published and expires** (RFC 9116, audit A14):
+  `frontend/public/.well-known/security.txt`, served `text/plain; charset=utf-8` by the `^~ /.well-known/`
+  location (declared first and with `^~` so the hidden-files rule doesn't swallow it; `charset` is not an
+  `add_header`, so header inheritance stays intact). `tools/audit-prod.sh` **fails on a past `Expires`** —
+  that failure *is* the renewal reminder, there is no other. Contacts point at the repository's private
+  advisory form and the site's contact page, the same policy as `SECURITY.md`.
+- **Xdebug is inert in the preprod image and armed only from outside it** (audit A12). `xdebug.mode = "off"`
+  is baked in; the only thing that arms it is `XDEBUG_MODE`, supplied by the **dedicated, optional** Secret
+  `backend-xdebug-trigger` (its own `ExternalSecret`, mounted on preprod's `php-fpm` container alone, whose
+  template yields `profile` only if the secret is at least 32 characters — absent, empty or short means
+  `off`, and the backend starts fine without it). **The lock is on the mode, never on `trigger_value`**:
+  an undefined env var interpolates to the empty string, and an empty `xdebug.trigger_value` means "any
+  value triggers" — the setting meant to restrict profiling was opening it to anyone past the Basic Auth.
+  **`profile` only, never `trace`**: a function trace writes call *arguments* verbatim, so a profiled
+  `POST /api/login_check` would put a password on disk. Output goes to an `emptyDir` on `var/profiler`
+  (read-only root, ADR 0005) with a timestamp+PID filename carrying nothing from the request, and the
+  trigger travels in a **cookie** — Xdebug 3.5 does not read HTTP headers, and nginx logs the query string.
+  Production receives none of this. Procedure in `k8s/README.md`.
+- **No pod mounts a ServiceAccount token, and both namespaces carry Pod Security Admission labels**
+  (audit A17). `automountServiceAccountToken: false` on all ten pod specs, the Jobs outside kustomize
+  included — none of them talks to the Kubernetes API (RabbitMQ does no peer discovery here, ESO runs in
+  its own namespace), so the default `default`-SA token was pure standing credential. The `preprod` and
+  `prod` `Namespace` objects set `enforce: baseline` with `audit`/`warn: restricted`: RabbitMQ declares no
+  container `securityContext` (constat A18, accepted — v0.5.0 already put it in `CrashLoopBackOff` by
+  touching its run user) so `restricted` in `enforce` would refuse the pod outright, while `audit`/`warn`
+  keep the strict policy reported without blocking. **Namespaces are created by hand**: the CI identity has
+  `get`/`patch` on them, never `create`. A PSA refusal is *not* visible at `kubectl apply` — the namespace
+  updates fine and the next pod creation fails — so validate in preprod first.
+  Because this change rewrites the pod template of the `Recreate` workloads, `deploy-preprod`/`deploy-prod`
+  now also `rollout status` **`postgres`, `rabbitmq` and `worker`** after `apply -k`, not just
+  `backend`/`frontend`: without the wait the seed Job ran against a database that hadn't come back, and in
+  prod a downed broker left the deploy green. Accept the corollary: such a change is a short, frank outage
+  of those two stateful workloads.
+- **A secret is never passed as a process argument, and never typed in an agent session.** Arguments are
+  readable in `ps`, in the shell history and in the transcript of an assistant session — that is what
+  forced the 2026-09-16 password change. Rotation procedures (`k8s/README.md` §2bis for the preprod Basic
+  Auth, and the Xdebug secret above) go through files (`umask 077` + `mktemp -d`) and stdin: `htpasswd -niB`
+  reading stdin, `scw secret … data=@file`, `gh secret set` from stdin — never `htpasswd -b`,
+  `data="$(cat …)"` or `gh secret set --body`. Run them in a **separate terminal**, never behind a `!`
+  prefix in a Claude Code session.
 - **A release is a branch, the merge is the stop, the tag is a consequence** (spec 0006,
   2026-09-16, replacing the "tag = trigger" flow that cost v0.7.0 a stale image, v0.7.1 its
   Markdown headings and v0.11.0–v0.13.1 a literal `#` in their titles). The pipeline has three
@@ -1327,6 +1469,11 @@ ADRs:
   discretion rather than secrecy) and puts the CV behind `ROLE_TRUSTED`. Read it before touching
   `access_control`, `CpgUser::getRoles()` or `BaseAccessController`: it turns on the fact that `getRoles()`
   grants `ROLE_USER` unconditionally, which is why a tier was added *above* rather than below.
+  **Amended 2026-09-21** (3rd audit, A9), end of « Conséquences »: the accepted risk that **`POST /api/logout`
+  does not revoke the JWT** — it only expires the cookies, the firewalls are stateless and the payload has no
+  `jti`, so a token copied beforehand stays valid until it expires (1 h for a login token, 15 min for the base
+  tier). Read it before adding a revocation list, lengthening `token_ttl`, or gating anything more sensitive
+  than the CV; it also names the two remedies and what each one costs.
 - `docs/adr/0004-assistance-ia.md` — **statut `accepté` (2026-09-14), phase 1 livrée** (spec 0002, issues
   `spec-0002` closed, v0.10.0/v0.10.1 in production the same day; the case-studies admin page, #104, joined
   on 2026-09-14, so every admin form now has the button). Rules for anything that calls a language model: one importing class behind an interface,

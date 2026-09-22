@@ -84,6 +84,31 @@ describe('router — garde /admin (ROLE_SUPER)', () => {
     expect(router.currentRoute.value.params.token).toBe('deadbeef')
   })
 
+  it('route publique set-password : le segment de jeton est optionnel (lien à fragment, audit A7)', async () => {
+    await primeAuthState(null)
+
+    await router.push('/en/set-password#deadbeef')
+
+    expect(router.currentRoute.value.name).toBe('set-password')
+    // Paramètre optionnel absent : vue-router ne le renseigne pas.
+    expect(router.currentRoute.value.params.token ?? '').toBe('')
+    expect(router.currentRoute.value.hash).toBe('#deadbeef')
+    expect(router.currentRoute.value.meta.noindex).toBe(true)
+    expect(router.currentRoute.value.meta.requiresAuth).toBeUndefined()
+  })
+
+  it('route publique set-password : le canonical et les hreflang du vrai routeur ne portent jamais le jeton du repli', async () => {
+    await primeAuthState(null)
+
+    await router.push('/fr/set-password/deadbeefcafe')
+
+    const hrefs = Array.from(document.head.querySelectorAll('link')).map((link) => link.getAttribute('href') ?? '')
+    expect(hrefs.length).toBeGreaterThan(0)
+    for (const href of hrefs) {
+      expect(href).not.toContain('deadbeefcafe')
+    }
+  })
+
   it('attend la résolution de checkAuth() avant de trancher (évite une redirection prématurée au rechargement de page)', async () => {
     let resolveMe: (session: AuthSession) => void = () => {}
     const repository: AuthRepository = {

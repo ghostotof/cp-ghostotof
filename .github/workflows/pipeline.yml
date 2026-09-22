@@ -576,6 +576,17 @@ jobs:
           kubectl apply -k .
           kubectl -n preprod rollout status deployment/backend --timeout=180s
           kubectl -n preprod rollout status deployment/frontend --timeout=180s
+          # Les workloads à état aussi (3e audit, T5.6). Ils sont en `Recreate` :
+          # quand leur pod template change, l'ancien pod s'arrête AVANT que le
+          # nouveau démarre (PVC ReadWriteOnce), et backend/frontend peuvent être
+          # prêts pendant que la base ne répond pas encore. Sans cette attente,
+          # un Job lancé juste après (le seed en préprod) échoue sur une connexion
+          # refusée, et en production un RabbitMQ qui ne remonte pas laisserait le
+          # déploiement vert — le scénario de l'incident v0.5.0. Instantané quand
+          # rien n'a changé.
+          kubectl -n preprod rollout status deployment/postgres --timeout=300s
+          kubectl -n preprod rollout status deployment/rabbitmq --timeout=300s
+          kubectl -n preprod rollout status deployment/worker --timeout=180s
           # Peuplement du contenu de référence, préprod UNIQUEMENT. La
           # production n'est JAMAIS peuplée automatiquement — décision arrêtée
           # le 2026-09-09 (issue #17), pas un provisoire : son contenu est rédigé
@@ -863,6 +874,17 @@ jobs:
           kubectl apply -k .
           kubectl -n prod rollout status deployment/backend --timeout=180s
           kubectl -n prod rollout status deployment/frontend --timeout=180s
+          # Les workloads à état aussi (3e audit, T5.6). Ils sont en `Recreate` :
+          # quand leur pod template change, l'ancien pod s'arrête AVANT que le
+          # nouveau démarre (PVC ReadWriteOnce), et backend/frontend peuvent être
+          # prêts pendant que la base ne répond pas encore. Sans cette attente,
+          # un Job lancé juste après (le seed en préprod) échoue sur une connexion
+          # refusée, et en production un RabbitMQ qui ne remonte pas laisserait le
+          # déploiement vert — le scénario de l'incident v0.5.0. Instantané quand
+          # rien n'a changé.
+          kubectl -n prod rollout status deployment/postgres --timeout=300s
+          kubectl -n prod rollout status deployment/rabbitmq --timeout=300s
+          kubectl -n prod rollout status deployment/worker --timeout=180s
 
   # ---------------------------------------------------------------------------
   # create-release — publie la release GitHub une fois la prod effectivement

@@ -81,29 +81,90 @@ done
 
 # ---------------------------------------------------------------------------
 # 4. En-têtes de sécurité : on liste ce qui est PRÉSENT, puis ce qui MANQUE.
+#
+#    Sur PLUSIEURS réponses, pas seulement la page d'accueil. C'est le constat
+#    A16 (audit du 2026-09-16) : en nginx, un bloc `location` qui déclare son
+#    propre add_header n'hérite plus d'AUCUN add_header du bloc server. Les
+#    locations qui posent un Cache-Control (/assets/, /config.js) ou un
+#    Content-Type (/healthz) sortaient donc sans CSP ni HSTS, pendant que `/`
+#    les portait — un audit mené sur la seule page d'accueil ne pouvait pas le
+#    voir, et c'est exactement ce que cette section corrige.
 # ---------------------------------------------------------------------------
-section "En-têtes de sécurité"
-HEADERS="$(tr 'A-Z' 'a-z' <<< "$HEADERS_RAW")"
 
-# Bloquants : doivent toujours être présents en prod. content-security-policy
-# y est passé en mode enforce (Content-Security-Policy, plus Report-Only) sur
-# les deux nginx — c'est donc désormais un gate CI comme les autres.
-for h in strict-transport-security x-content-type-options \
-         referrer-policy permissions-policy x-frame-options cross-origin-opener-policy \
-         content-security-policy; do
-  if grep -q "^${h}:" <<< "$HEADERS"; then
-    printf '  \033[32mOK\033[0m      %s\n' "$h"
-  else
-    printf '  \033[31mABSENT\033[0m  %s   <-- à corriger !\n' "$h"
+# Liste unique, attendue sur CHACUNE des réponses vérifiées ci-dessous.
+# content-security-policy est en mode enforce (plus Report-Only) sur les deux
+# nginx : c'est donc un gate CI comme les autres.
+SECURITY_HEADERS=(strict-transport-security x-content-type-options
+                  referrer-policy permissions-policy x-frame-options
+                  cross-origin-opener-policy content-security-policy)
+
+# En-têtes d'une URL, suivis d'une pseudo-ligne portant le code HTTP final.
+# Le préfixe `x-audit-` ne peut entrer en collision avec aucun en-tête
+# vérifié : les tests ci-dessous ancrent leurs grep sur `^<nom>:`.
+fetch_headers() {
+  curl -sS "${CURL_OPTS[@]}" -D - -o /dev/null -L -w 'x-audit-http-code: %{http_code}\n' "$1"
+}
+
+# $1 = libellé affiché, $2 = sortie brute de fetch_headers.
+check_security_headers() {
+  local label="$1" raw headers code h
+  raw="$(tr 'A-Z' 'a-z' <<< "$2")"
+  # Les en-têtes de la réponse finale seulement : avec -L, `curl -D -` empile
+  # aussi ceux des redirections traversées, et une 308 de l'ingress porte, elle,
+  # ses propres en-têtes — de quoi valider une réponse qui, elle, n'en a aucun.
+  # (Pas d'intervalle `{3}` dans le motif awk : mawk, l'awk par défaut du
+  # runner CI, ne les a pas toujours supportés.)
+  headers="$(awk '/^http\/[0-9.]+ [0-9][0-9][0-9]/ { buf = "" } { buf = buf $0 "\n" } END { printf "%s", buf }' <<< "$raw")"
+  # Code de la réponse finale : la pseudo-ligne de fetch_headers si elle est
+  # là, sinon la ligne de statut — la fonction reste utilisable sur un dump
+  # d'en-têtes obtenu autrement (c'est le cas pour `/`, dont le dump sert aussi
+  # à la section « Fuites d'information »).
+  code="$(sed -n 's/^x-audit-http-code: //p' <<< "$raw" | tail -1)"
+  [ -n "$code" ] || code="$(sed -n 's|^http/[0-9.]* \([0-9][0-9][0-9]\).*|\1|p' <<< "$headers" | tail -1)"
+
+  printf '  \033[1m%s\033[0m  (HTTP %s)\n' "$label" "${code:-?}"
+  for h in "${SECURITY_HEADERS[@]}"; do
+    if grep -q "^${h}:" <<< "$headers"; then
+      printf '    \033[32mOK\033[0m      %s\n' "$h"
+    else
+      printf '    \033[31mABSENT\033[0m  %s   <-- à corriger !\n' "$h"
+      FAILURES=$((FAILURES + 1))
+    fi
+  done
+
+  # Un en-tête Content-Security-Policy-Report-Only résiduel (sans le CSP
+  # enforce) signalerait un retour en arrière non intentionnel.
+  if grep -q '^content-security-policy-report-only:' <<< "$headers" \
+     && ! grep -q '^content-security-policy:' <<< "$headers"; then
+    printf '    \033[31mReport-Only SEUL\033[0m  content-security-policy   <-- enforce attendu !\n'
     FAILURES=$((FAILURES + 1))
   fi
-done
+}
 
-# Un en-tête Content-Security-Policy-Report-Only résiduel (sans le CSP enforce)
-# signalerait un retour en arrière non intentionnel.
-if grep -q '^content-security-policy-report-only:' <<< "$HEADERS" \
-   && ! grep -q '^content-security-policy:' <<< "$HEADERS"; then
-  printf '  \033[31mReport-Only SEUL\033[0m  content-security-policy   <-- enforce attendu !\n'
+section "En-têtes de sécurité"
+HEADERS="$(tr 'A-Z' 'a-z' <<< "$HEADERS_RAW")"
+check_security_headers "/  (document SPA)" "$HEADERS_RAW"
+
+# config.js : régénéré au démarrage du conteneur (docker/node/docker-entrypoint.sh),
+# servi no-store. C'est ce Cache-Control qui coupait l'héritage des en-têtes.
+check_security_headers "/config.js" "$(fetch_headers "${BASE}/config.js")"
+
+# Sonde de vivacité : servie par un `return 200` qui pose son propre
+# Content-Type — même cause, même effet.
+check_security_headers "/healthz" "$(fetch_headers "${BASE}/healthz")"
+
+# Un asset RÉEL, découvert dans la page d'accueil. Jamais un nom en dur : Vite
+# place un hash de contenu dans chaque nom de fichier, un chemin figé ici
+# cesserait de correspondre à quoi que ce soit dès le déploiement suivant et
+# vérifierait alors les en-têtes d'un 404 en croyant vérifier ceux d'un asset.
+ASSET_PATH="$(grep -oE '/assets/[A-Za-z0-9._/-]+\.(js|css)' <<< "$(curl -sS "${CURL_OPTS[@]}" -L "$BASE")" | head -1)"
+if [ -n "$ASSET_PATH" ]; then
+  check_security_headers "$ASSET_PATH" "$(fetch_headers "${BASE}${ASSET_PATH}")"
+else
+  # Échec bloquant, et non un saut silencieux : ne pas avoir trouvé d'asset
+  # n'est pas la même chose que ne pas en avoir cherché. Une page d'accueil
+  # sans référence /assets/… signale de toute façon un déploiement cassé.
+  printf '  \033[31mINTROUVABLE\033[0m  aucun /assets/… référencé par la page daccueil   <-- à vérifier !\n'
   FAILURES=$((FAILURES + 1))
 fi
 
@@ -136,6 +197,79 @@ section "Fichiers publics"
 for path in /robots.txt /sitemap.xml /favicon.ico /humans.txt; do
   printf '%-16s %s\n' "$path" "$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code}' "${BASE}${path}")"
 done
+
+# ---------------------------------------------------------------------------
+# 6bis. security.txt (RFC 9116) : le canal de signalement publié (constat A14).
+#
+#    Contrairement à la section 6, celle-ci est BLOQUANTE. Un security.txt
+#    absent laisse un chercheur ouvrir une issue publique sur une faille
+#    exploitable ; un security.txt périmé est pire, puisqu'il donne un canal
+#    que son lecteur croit valide. La RFC borne d'ailleurs la validité par un
+#    champ obligatoire, Expires : le vérifier activement ici est ce qui
+#    transforme « il faudra penser à le renouveler » en un gate de pipeline.
+#
+#    Le fichier est servi par la location `^~ /.well-known/` du nginx frontend
+#    (docker/node/nginx.conf), qui fait `try_files $uri =404` : un fichier
+#    manquant donne un vrai 404, jamais le fallback SPA. On peut donc se fier
+#    au code HTTP sans la ruse de comparaison de taille de la section 7.
+# ---------------------------------------------------------------------------
+section "security.txt (RFC 9116)"
+SECURITY_TXT_URL="${BASE}/.well-known/security.txt"
+SECURITY_TXT_RAW="$(tr 'A-Z' 'a-z' <<< "$(fetch_headers "$SECURITY_TXT_URL")")"
+SECURITY_TXT_CODE="$(sed -n 's/^x-audit-http-code: //p' <<< "$SECURITY_TXT_RAW" | tr -d '\r' | tail -1)"
+# `tail -1` : avec -L, le dump empile les en-têtes des redirections traversées
+# (une 308 de l'ingress porte son propre Content-Type) — seule la dernière
+# réponse compte, même raison que dans check_security_headers.
+SECURITY_TXT_TYPE="$(sed -n 's/^content-type:[[:space:]]*//p' <<< "$SECURITY_TXT_RAW" | tr -d '\r' | tail -1)"
+
+if [ "$SECURITY_TXT_CODE" = "200" ]; then
+  printf '  \033[32mOK\033[0m      HTTP 200 sur /.well-known/security.txt\n'
+else
+  printf '  \033[31mECHEC\033[0m   HTTP %s sur /.well-known/security.txt   <-- attendu 200 !\n' "${SECURITY_TXT_CODE:-?}"
+  FAILURES=$((FAILURES + 1))
+fi
+
+# La RFC impose text/plain. Un application/octet-stream (type par défaut quand
+# nginx ne reconnaît pas l'extension) ferait télécharger le fichier au lieu de
+# l'afficher, et plusieurs outils d'analyse le refusent alors purement et
+# simplement. Le paramètre charset éventuel est ignoré par ce test.
+case "$SECURITY_TXT_TYPE" in
+  text/plain*)
+    printf '  \033[32mOK\033[0m      Content-Type: %s\n' "$SECURITY_TXT_TYPE" ;;
+  *)
+    printf '  \033[31mECHEC\033[0m   Content-Type: %s   <-- text/plain attendu !\n' "${SECURITY_TXT_TYPE:-absent}"
+    FAILURES=$((FAILURES + 1)) ;;
+esac
+
+SECURITY_TXT_BODY="$(curl -sS "${CURL_OPTS[@]}" -L "$SECURITY_TXT_URL")"
+
+# Champs obligatoires de la RFC 9116. Les noms de champs y sont
+# insensibles à la casse, d'où le grep -i, ancré en début de ligne pour ne pas
+# compter une occurrence citée dans un commentaire.
+if grep -qiE '^contact:[[:space:]]*[^[:space:]]' <<< "$SECURITY_TXT_BODY"; then
+  printf '  \033[32mOK\033[0m      champ Contact présent\n'
+else
+  printf '  \033[31mECHEC\033[0m   champ Contact absent   <-- obligatoire (RFC 9116) !\n'
+  FAILURES=$((FAILURES + 1))
+fi
+
+SECURITY_TXT_EXPIRES="$(grep -iE '^expires:' <<< "$SECURITY_TXT_BODY" | head -1 \
+  | sed -e 's/^[Ee][Xx][Pp][Ii][Rr][Ee][Ss]:[[:space:]]*//' -e 's/[[:space:]]*$//' | tr -d '\r')"
+if [ -z "$SECURITY_TXT_EXPIRES" ]; then
+  printf '  \033[31mECHEC\033[0m   champ Expires absent   <-- obligatoire (RFC 9116) !\n'
+  FAILURES=$((FAILURES + 1))
+elif ! SECURITY_TXT_EXPIRES_TS="$(date -u -d "$SECURITY_TXT_EXPIRES" +%s 2>/dev/null)"; then
+  # Une date que `date` ne sait pas lire n'est pas une date valide au sens de
+  # la RFC (horodatage ISO 8601) : échec franc plutôt que saut silencieux.
+  printf '  \033[31mECHEC\033[0m   Expires illisible : %s   <-- horodatage ISO 8601 attendu !\n' "$SECURITY_TXT_EXPIRES"
+  FAILURES=$((FAILURES + 1))
+elif [ "$SECURITY_TXT_EXPIRES_TS" -le "$(date -u +%s)" ]; then
+  printf '  \033[31mECHEC\033[0m   Expires dépassé : %s   <-- fichier à renouveler !\n' "$SECURITY_TXT_EXPIRES"
+  FAILURES=$((FAILURES + 1))
+else
+  printf '  \033[32mOK\033[0m      Expires: %s (encore %s jours)\n' "$SECURITY_TXT_EXPIRES" \
+    "$(( (SECURITY_TXT_EXPIRES_TS - $(date -u +%s)) / 86400 ))"
+fi
 
 # ---------------------------------------------------------------------------
 # 7. Chemins sensibles Symfony/Docker : ceux-ci DOIVENT renvoyer 404 en prod.

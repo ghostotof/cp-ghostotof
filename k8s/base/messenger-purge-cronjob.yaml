@@ -36,6 +36,7 @@ spec:
           labels:
             app.kubernetes.io/name: contact-failed-messages-purge
         spec:
+          automountServiceAccountToken: false
           restartPolicy: OnFailure
           securityContext:
             fsGroup: 10001
