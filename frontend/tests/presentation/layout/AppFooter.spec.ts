@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import AppFooter from '../../../src/presentation/layout/AppFooter.vue'
@@ -32,6 +32,10 @@ async function mountFooter(initialPath = '/fr') {
 }
 
 describe('AppFooter', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   it('affiche un lien vers les mentions légales et un lien vers la politique de confidentialité', async () => {
     const wrapper = await mountFooter()
 
@@ -50,5 +54,39 @@ describe('AppFooter', () => {
     const wrapper = await mountFooter()
 
     expect(wrapper.text()).toContain('CP-Ghostotof')
+  })
+
+  describe('version déployée', () => {
+    it("n'affiche rien quand la version est inconnue (npm run dev)", async () => {
+      vi.stubEnv('VITE_APP_VERSION', '')
+      const wrapper = await mountFooter()
+
+      expect(wrapper.find('[data-testid="app-version"]').exists()).toBe(false)
+    })
+
+    it('affiche la version de la release en lien vers sa page GitHub, le build en infobulle', async () => {
+      vi.stubEnv('VITE_APP_VERSION', '0.17.0-2c86b65')
+      const wrapper = await mountFooter()
+
+      const link = wrapper.find('a[data-testid="app-version"]')
+      expect(link.exists()).toBe(true)
+      expect(link.text()).toContain('v0.17.0')
+      expect(link.attributes('href')).toBe('https://github.com/ghostotof/cp-ghostotof/releases/tag/v0.17.0')
+      expect(link.attributes('title')).toContain('2c86b65')
+      // Lien externe : même annonce que BaseButton pour les lecteurs d'écran.
+      expect(link.attributes('target')).toBe('_blank')
+      expect(link.find('.visually-hidden').text()).toBe('(nouvelle fenêtre)')
+    })
+
+    it("affiche un build local (tag = SHA) en texte, sans lien : il n'a pas de release", async () => {
+      vi.stubEnv('VITE_APP_VERSION', 'a1b2c3d')
+      const wrapper = await mountFooter()
+
+      const version = wrapper.find('[data-testid="app-version"]')
+      expect(version.element.tagName).toBe('SPAN')
+      expect(version.text()).toContain('a1b2c3d')
+      expect(version.text()).not.toContain('va1b2c3d')
+      expect(wrapper.find('a[data-testid="app-version"]').exists()).toBe(false)
+    })
   })
 })

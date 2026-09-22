@@ -1047,6 +1047,15 @@ via `window.__APP_CONFIG__` (`frontend/src/infrastructure/config/getApiUrl.ts`, 
 image — like the backend — is built once and promoted from preprod to prod unchanged, only the `API_URL` env var
 differs per environment; `make build-front-prod`/`build-front-preprod` no longer take an `API_URL` argument.
 
+**The version shown in the footer is the opposite case, and deliberately so**: it is a property of the *image*,
+not of the environment, so it is fixed at **build** time — `make build-front-*` passes `--build-arg
+APP_VERSION=$(TAG)` (the pipeline's `<version>-<sha>`), `docker/node/Dockerfile` exports it as
+`VITE_APP_VERSION`, Vite inlines it, and `infrastructure/config/getAppVersion.ts` (the mirror of `getApiUrl.ts`)
+parses it into `{version, build, releaseUrl}`. `AppFooter.vue` renders `v0.17.0` as a link to the GitHub release
+(build sha in the `title`); a tag that isn't a release (a local build on a bare sha) shows as plain text, and an
+empty value (`npm run dev`) shows nothing. Don't move it to `config.js`: a promoted image *must* announce the same
+version in preprod and prod, which is exactly what build-time gives for free.
+
 **Share cards** (`frontend/scripts/og/`): one HTML template rendered by system Chrome + ImageMagick
 (`npm run og:generate`, no Playwright — see the script's header) into **two variants** of the same design
 that differ only by headline and size: `frontend/public/og.png` (1200×630, the site's `og:image`,
