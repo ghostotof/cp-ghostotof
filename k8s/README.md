@@ -190,6 +190,16 @@ avec une policy limitée à `SecretManagerReadOnly` sur le projet concerné,
 puis générer une clé API pour cette application (console Scaleway : IAM >
 Applications). Reporter les deux valeurs obtenues :
 
+> **⚠ Terminal séparé, valeurs par fichier — même règle que la §2bis.** La
+> clé `SecretManagerReadOnly` lit *tous* les secrets du projet : une fois
+> passée en argument (`--from-literal=…`, `-p '{"stringData":…}'`), elle
+> reste dans `ps`, dans l'historique du shell et dans le transcript d'une
+> session d'agent. Les recettes ci-dessous (reprises le 2026-09-22, reliquat
+> du 3e audit, issue #239) la font entrer par `read -rs` — lecture silencieuse,
+> rien sur la ligne de commande — dans un répertoire temporaire privé, puis
+> `kubectl` lit ce fichier. `printf` est une commande interne du shell : la
+> valeur n'apparaît dans les arguments d'aucun processus.
+
 ```bash
 # projectId : identifiant de projet, ne permet rien à lui seul — écrit en clair
 # dans k8s/base/secretstore.yaml.
@@ -198,23 +208,37 @@ Applications). Reporter les deux valeurs obtenues :
 # désormais DEUX clés (point d'audit C4). accessKey n'est pas un secret au sens
 # IAM, mais dans un dépôt public elle désigne nommément l'identité qui a accès
 # au Secret Manager : on ne la publie plus.
+umask 077
+TMP=$(mktemp -d)
+read -rsp 'Access key : ' V && printf '%s' "$V" > "$TMP/access-key" && echo
+read -rsp 'Secret key : ' V && printf '%s' "$V" > "$TMP/secret-key" && echo
+unset V
+
 for NS in preprod prod; do
   kubectl create secret generic scaleway-eso-auth -n $NS \
-    --from-literal=access-key="<SCALEWAY_ACCESS_KEY>" \
-    --from-literal=secret-key="<SCALEWAY_SECRET_KEY>"
+    --from-file=access-key="$TMP/access-key" \
+    --from-file=secret-key="$TMP/secret-key"
 done
+rm -rf "$TMP"
 ```
 
 > **Migration depuis un cluster existant** : le Secret ne portait que
 > `secret-key`. Ajouter la clé manquante avant d'appliquer le nouveau
 > `secretstore.yaml`, sinon le SecretStore passe en `NotReady` et les
-> ExternalSecrets cessent de se rafraîchir :
+> ExternalSecrets cessent de se rafraîchir. Le correctif JSON est assemblé par
+> redirections (`--patch-file`), la clé ne passe par aucun argument :
 >
 > ```bash
+> umask 077
+> TMP=$(mktemp -d)
+> read -rsp 'Access key : ' V && printf '%s' "$V" > "$TMP/access-key" && echo
+> unset V
+> { printf '{"stringData":{"access-key":"'; cat "$TMP/access-key"; printf '"}}'; } > "$TMP/patch.json"
+>
 > for NS in preprod prod; do
->   kubectl patch secret scaleway-eso-auth -n $NS --type merge \
->     -p "{\"stringData\":{\"access-key\":\"<SCALEWAY_ACCESS_KEY>\"}}"
+>   kubectl patch secret scaleway-eso-auth -n $NS --type merge --patch-file "$TMP/patch.json"
 > done
+> rm -rf "$TMP"
 > kubectl get secretstore scaleway-secret-manager -n prod -o jsonpath='{.status.conditions}'
 > ```
 
@@ -229,15 +253,27 @@ aucun `imagePullSecrets` ni PAT : les Deployments backend/frontend
 
 Si les packages redeviennent privés un jour, un Secret Kubernetes de type
 `docker-registry` (PAT scope `read:packages`, même logique que
-`scaleway-eso-auth` ci-dessus) redevient nécessaire :
+`scaleway-eso-auth` ci-dessus) redevient nécessaire. `kubectl create secret
+docker-registry` n'accepte le mot de passe qu'en argument
+(`--docker-password`), ce que la règle de la §2bis interdit : on construit
+soi-même le `.dockerconfigjson` qu'il aurait produit — `{"auths":{"ghcr.io":
+{"auth":"<base64 de identifiant:PAT>"}}}` — par redirections, et on le donne
+par fichier à un Secret `generic` du même type :
 
 ```bash
+umask 077
+TMP=$(mktemp -d)
+read -rsp 'PAT GitHub (read:packages) : ' V && printf '%s' "$V" > "$TMP/pat" && echo
+unset V
+{ printf 'ghostotof:'; cat "$TMP/pat"; } | base64 -w0 > "$TMP/auth"
+{ printf '{"auths":{"ghcr.io":{"auth":"'; cat "$TMP/auth"; printf '"}}}'; } > "$TMP/config.json"
+
 for NS in preprod prod; do
-  kubectl create secret docker-registry ghcr-registry -n $NS \
-    --docker-server=ghcr.io \
-    --docker-username=ghostotof \
-    --docker-password=<PAT>
+  kubectl create secret generic ghcr-registry -n $NS \
+    --type=kubernetes.io/dockerconfigjson \
+    --from-file=.dockerconfigjson="$TMP/config.json"
 done
+rm -rf "$TMP"
 ```
 — et il faudrait alors réajouter `imagePullSecrets: [ghcr-registry]` dans
 les deux Deployments.
