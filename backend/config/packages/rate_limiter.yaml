@@ -10,7 +10,7 @@ framework:
             limit: 5
             interval: '1 hour'
 
-        # Anti-brute-force sur GET/POST /api/account/password-setup/{token}
+        # Anti-brute-force sur POST /api/account/password-setup et …/validate
         # (endpoint public, sans authentification ni CSRF). Borne les tentatives
         # de deviner un jeton valide ou de forcer un mot de passe sur un jeton
         # connu mais pas encore consommé. Clé : l'IP de l'appelant

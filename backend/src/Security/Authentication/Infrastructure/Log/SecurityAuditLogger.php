@@ -9,7 +9,6 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Infrastructure\Http\CanonicalPath;
 use Monolog\Attribute\WithMonologChannel;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
 
@@ -35,15 +34,6 @@ use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInt
 final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
 {
     private const string ANONYMOUS = 'anonymous';
-
-    /**
-     * Le jeton de définition de mot de passe voyage encore dans le chemin de
-     * l'URL (constat A7 ; son déplacement dans le corps est la Task 4.1, D6).
-     * Le chemin d'une activation est donc un secret : le segment est remplacé
-     * par `{token}` pour que la route reste lisible sans que le jeton y soit.
-     * À retirer avec T4.1, quand plus aucune route ne portera de jeton.
-     */
-    private const string TOKEN_BEARING_PATH_PATTERN = '#^(/api/account/password-setup/)[^/]+$#';
 
     public function __construct(
         private LoggerInterface $logger,
@@ -141,16 +131,10 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
             ...$subject,
             'actor' => $this->tokenStorage->getToken()?->getUserIdentifier() ?? self::ANONYMOUS,
             'ip' => $request?->getClientIp(),
-            'path' => null !== $request ? $this->loggablePath($request) : null,
+            // Décodé (issue #77) : la forme que le routeur et le firewall ont vue.
+            // Jamais réécrit : aucune route ne porte de secret dans son chemin
+            // (audit A7, D6 — le jeton d'activation voyage dans le corps).
+            'path' => null !== $request ? CanonicalPath::of($request) : null,
         ]);
-    }
-
-    /**
-     * Décodé (issue #77) — la forme que le routeur et le firewall ont vue —,
-     * puis débarrassé du seul segment qui soit un secret.
-     */
-    private function loggablePath(Request $request): string
-    {
-        return (string) preg_replace(self::TOKEN_BEARING_PATH_PATTERN, '$1{token}', CanonicalPath::of($request));
     }
 }

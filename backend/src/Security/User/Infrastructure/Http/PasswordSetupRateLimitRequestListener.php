@@ -11,8 +11,9 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
 
 /**
  * Borne le débit par IP du parcours public de définition de mot de passe
- * (GET/POST /api/account/password-setup/{token}) AVANT toute désérialisation ou
- * validation par API Platform.
+ * (POST /api/account/password-setup et POST …/password-setup/validate) AVANT
+ * toute désérialisation ou validation par API Platform : un corps invalide
+ * (422) consomme le quota comme un autre.
  *
  * Point d'audit C1 (décision D1) : le comptage vivait auparavant dans
  * AccountPasswordSetupProvider / AccountPasswordSetupProcessor, c'est-à-dire
@@ -33,16 +34,31 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
 #[AsEventListener(event: RequestEvent::class, priority: 15)]
 final readonly class PasswordSetupRateLimitRequestListener
 {
-    private const string PATH_PREFIX = '/api/account/password-setup/';
-
     /**
-     * GET (consultation du statut du jeton) et POST (définition du mot de passe)
-     * sont les deux seules méthodes exposées sur ce préfixe : toutes deux
-     * doivent partager le même quota par IP.
+     * Les deux routes du parcours, et elles seules (audit A7, D6 : le jeton
+     * est dans le corps, il n'y a plus de segment variable). Comparaison
+     * EXACTE plutôt que par préfixe, pour rester aligné sur le routeur :
+     * - un préfixe `/api/account/password-setup` engloberait par accident une
+     *   route sœur (`…/password-setup-autre`) ;
+     * - un préfixe `…/password-setup/` manquerait la route racine ;
+     * - le routeur ne sert ni variante à barre oblique finale (pas de
+     *   redirection pour une route POST) ni suffixe `.{_format}` : aucun autre
+     *   chemin n'atteint ces deux opérations
+     *   (AccountPasswordSetupResourceTest::testTrailingSlashVariantsAreNotServed).
+     * Ajouter une route au parcours = l'ajouter ici, sinon elle n'a pas de quota.
      *
      * @var list<string>
      */
-    private const array RATE_LIMITED_METHODS = ['GET', 'POST'];
+    private const array RATE_LIMITED_PATHS = [
+        '/api/account/password-setup',
+        '/api/account/password-setup/validate',
+    ];
+
+    /**
+     * POST seul : c'est l'unique méthode exposée sur ces deux chemins, toute
+     * autre est un 405 du routeur qui ne touche ni jeton ni base.
+     */
+    private const string RATE_LIMITED_METHOD = 'POST';
 
     public function __construct(
         private PasswordSetupRateLimiterInterface $rateLimiter,
@@ -59,11 +75,11 @@ final readonly class PasswordSetupRateLimitRequestListener
 
         // Chemin décodé (CanonicalPath, issue #77) : `password%2Dsetup` est
         // routé vers la ressource, il doit consommer le même quota.
-        if (!str_starts_with(CanonicalPath::of($request), self::PATH_PREFIX)) {
+        if (!\in_array(CanonicalPath::of($request), self::RATE_LIMITED_PATHS, true)) {
             return;
         }
 
-        if (!\in_array($request->getMethod(), self::RATE_LIMITED_METHODS, true)) {
+        if (self::RATE_LIMITED_METHOD !== $request->getMethod()) {
             return;
         }
 

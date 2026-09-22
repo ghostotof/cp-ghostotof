@@ -17,6 +17,21 @@ api_platform:
         json: ['application/json']
     # Sans cette entrée, ContactRateLimitExceededException remonterait en 500
     # (exception métier non reconnue par API Platform) au lieu du 429 attendu.
+    #
+    # ATTENTION, deux pièges de cette clé, l'un et l'autre vérifiés dans le
+    # vendor de la version installée :
+    #
+    #  1. déclarer `exception_to_status` **remplace** la valeur par défaut
+    #     d'API Platform, elle ne la complète pas (`->defaultValue([...])` dans
+    #     Configuration::addExceptionToStatusSection, vendor/api-platform/symfony/
+    #     Bundle/DependencyInjection/Configuration.php:622). Les trois entrées
+    #     par défaut sont donc rétablies en fin de liste ci-dessous ;
+    #  2. la résolution prend la **première** entrée qui correspond, dans
+    #     l'ordre de déclaration, et `is_a($exception, $class, true)` reconnaît
+    #     aussi les interfaces et les classes parentes (ErrorListener::getStatusCode,
+    #     vendor/api-platform/symfony/EventListener/ErrorListener.php:167). Une
+    #     entrée large doit donc rester **après** les entrées précises — d'où la
+    #     place des défauts, tout en bas.
     exception_to_status:
         App\Contact\Domain\Exception\ContactRateLimitExceededException: 429
         # Aujourd'hui seulement levée dans SendContactMessageHandler (worker
@@ -94,6 +109,22 @@ api_platform:
         App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException: 404
         App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException: 410
         App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException: 429
+        # --- Défauts d'API Platform, rétablis à l'identique (audit A15 / T5.1) ---
+        # Écrasés depuis toujours par la simple présence de la clé ci-dessus.
+        # Conséquence mesurée : sur n'importe quel POST public, un corps qui
+        # n'est pas du JSON (« Syntax error ») ou un champ du mauvais type
+        # (`{"token":123}`) remontait en **500**, alors que la requête est
+        # fautive, pas le serveur — un anonyme pouvait donc produire des 500 à
+        # volonté (borné seulement par les quotas par IP) et noyer les vraies
+        # erreurs serveur dans les journaux.
+        #
+        # ExceptionInterface du Serializer couvre les deux cas :
+        # NotEncodableValueException (JSON illisible) et
+        # NotNormalizableValueException (mauvais type d'attribut). Elle reste
+        # volontairement en dernier : c'est l'entrée la plus large de la liste.
+        Symfony\Component\Serializer\Exception\ExceptionInterface: 400
+        ApiPlatform\Metadata\Exception\InvalidArgumentException: 400
+        Doctrine\ORM\OptimisticLockException: 409
     defaults:
         stateless: true
         cache_headers:

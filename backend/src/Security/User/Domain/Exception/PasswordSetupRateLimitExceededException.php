@@ -7,7 +7,7 @@ namespace App\Security\User\Domain\Exception;
 /**
  * Levée lorsqu'un même client (identifié par IP, cf.
  * App\Security\User\Infrastructure\RateLimiter\SymfonyPasswordSetupRateLimiter)
- * dépasse le quota d'appels autorisé sur /api/account/password-setup/{token}.
+ * dépasse le quota d'appels autorisé sur /api/account/password-setup.
  * Mappée sur HTTP 429 via exception_to_status (cf. api_platform.yaml) ;
  * l'en-tête Retry-After est posé par PasswordSetupRateLimitRetryAfterListener.
  */

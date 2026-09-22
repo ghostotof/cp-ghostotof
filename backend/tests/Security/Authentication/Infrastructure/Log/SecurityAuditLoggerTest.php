@@ -277,7 +277,7 @@ final class SecurityAuditLoggerTest extends TestCase
      */
     public function testAccountActivatedIsPerformedAnonymously(): void
     {
-        $this->pushRequest('/api/account/password-setup/x', 'POST');
+        $this->pushRequest('/api/account/password-setup', 'POST');
         $target = new CpgUser('jane', '');
 
         $this->auditLogger->accountActivated($target);
@@ -288,23 +288,25 @@ final class SecurityAuditLoggerTest extends TestCase
             'userId' => $target->getId()->toRfc4122(),
             'actor' => 'anonymous',
             'ip' => self::IP,
-            'path' => '/api/account/password-setup/{token}',
+            'path' => '/api/account/password-setup',
         ], $this->singleRecord()->context);
     }
 
     /**
-     * Tant que le jeton d'invitation voyage dans le chemin de l'URL (A7, D6 :
-     * son déplacement dans le corps est la Task 4.1), le chemin d'une
-     * activation EST un secret. Le segment est remplacé par `{token}` — la
-     * route reste lisible, le jeton n'y est plus. À simplifier après T4.1.
+     * Le chemin journalisé est le chemin canonique, tel quel : depuis T4.1
+     * (audit A7, D6) plus aucune route ne porte de jeton dans son chemin, la
+     * rédaction transitoire `…/password-setup/{token}` a donc disparu. Un
+     * chemin n'est plus jamais réécrit — si une route devait un jour porter un
+     * secret dans son URL, c'est la route qu'il faudrait corriger, pas le
+     * journal.
      */
-    public function testATokenBearingPasswordSetupPathIsRedacted(): void
+    public function testThePathIsLoggedCanonicalAndNeverRewritten(): void
     {
-        $this->pushRequest('/api/account/password-setup/SENTINEL-INVITATION-TOKEN-7d2b', 'POST');
+        $this->pushRequest('/api/account/password%2Dsetup/validate', 'POST');
 
-        $this->auditLogger->accountActivated(new CpgUser('jane', ''));
+        $this->auditLogger->csrfRejected();
 
-        self::assertSame('/api/account/password-setup/{token}', $this->singleRecord()->context['path']);
+        self::assertSame('/api/account/password-setup/validate', $this->singleRecord()->context['path']);
     }
 
     /**
@@ -353,10 +355,10 @@ final class SecurityAuditLoggerTest extends TestCase
             'email' => 'sentinel.person@example.com',
         ];
 
-        // Le chemin porte le jeton d'invitation, comme sur le parcours
-        // d'activation tant que T4.1 n'est pas livrée.
+        // Le jeton d'invitation voyage dans le corps (A7, D6), comme le mot de
+        // passe : jamais dans le chemin, que le journal recopie tel quel.
         $request = Request::create(
-            '/api/account/password-setup/'.$sentinels['invitation token'],
+            '/api/account/password-setup',
             'POST',
             server: [
                 'REMOTE_ADDR' => self::IP,
@@ -365,7 +367,7 @@ final class SecurityAuditLoggerTest extends TestCase
                 'HTTP_X_REQUESTED_WITH' => $sentinels['requested-with header'],
                 'HTTP_AUTHORIZATION' => 'Bearer '.$sentinels['bearer JWT'],
             ],
-            content: json_encode(['username' => 'jane', 'password' => $sentinels['password']], \JSON_THROW_ON_ERROR),
+            content: json_encode(['username' => 'jane', 'password' => $sentinels['password'], 'token' => $sentinels['invitation token']], \JSON_THROW_ON_ERROR),
         );
         $request->cookies->set('BEARER', $sentinels['bearer JWT']);
         $request->cookies->set('XSRF-TOKEN', $sentinels['XSRF cookie']);

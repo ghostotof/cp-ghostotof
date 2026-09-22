@@ -22,6 +22,7 @@ spec:
       labels:
         app.kubernetes.io/name: frontend
     spec:
+      automountServiceAccountToken: false
       # Packages GHCR rendus publics (cf. k8s/README.md §1bis) : pull
       # anonyme, plus besoin d'imagePullSecrets.
       securityContext:

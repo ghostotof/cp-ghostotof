@@ -97,7 +97,7 @@ const fr: PortfolioLocaleContent = {
   privacyPolicy: {
     eyebrow: 'Vie privée',
     title: 'Politique de confidentialité',
-    lastUpdated: 'Dernière mise à jour : 2 septembre 2026',
+    lastUpdated: 'Dernière mise à jour : 21 septembre 2026',
     sections: [
       {
         heading: 'Responsable du traitement',
@@ -110,9 +110,10 @@ const fr: PortfolioLocaleContent = {
         paragraphs: ['Selon la façon dont vous utilisez le site, les données suivantes peuvent être collectées :'],
         list: [
           'Formulaire de contact : nom, adresse email et message que vous saisissez volontairement.',
-          "Authentification : nom d'utilisateur et mot de passe, pour les comptes accordés individuellement (aucune inscription publique n'est proposée, aucun compte partagé).",
-          "Adresse IP : utilisée de façon transitoire pour limiter les abus sur le formulaire de contact.",
-          'Préférence de langue : mémorisée localement dans votre navigateur (localStorage), jamais transmise au serveur.',
+          "Compte sur invitation : si l'éditeur vous accorde un accès nominatif, votre adresse email (à laquelle l'invitation est envoyée), un nom d'utilisateur dérivé de cette adresse et le mot de passe que vous choisissez, conservé sous forme hachée. Aucune inscription publique n'est proposée, aucun compte partagé.",
+          "Accès instantané : aucun compte n'est créé et aucune donnée vous concernant n'est enregistrée ; l'accès repose sur un jeton anonyme valable 15 minutes.",
+          "Adresse IP : utilisée pour limiter les abus (formulaire de contact, connexion, accès instantané, définition du mot de passe) et consignée dans les journaux techniques et de sécurité du serveur.",
+          "Stockage local du navigateur (localStorage) : votre préférence de langue et, le cas échéant, l'heure d'expiration de votre accès instantané. Ces valeurs ne sont jamais transmises au serveur.",
         ],
       },
       {
@@ -128,29 +129,31 @@ const fr: PortfolioLocaleContent = {
         list: [
           'Répondre à vos demandes de contact — mesures précontractuelles ou intérêt légitime.',
           'Sécuriser le site et prévenir les abus (limitation de débit, journaux techniques) — intérêt légitime.',
-          'Vous permettre de vous authentifier — exécution du service demandé.',
+          "Vous inviter à disposer d'un accès nominatif — intérêt légitime de l'éditeur à accorder un accès individuel plutôt qu'un identifiant partagé.",
+          "Vous permettre de vous authentifier ou d'utiliser l'accès instantané — exécution du service demandé.",
         ],
       },
       {
         heading: 'Cookies',
         paragraphs: [
-          'Ce site pose uniquement des cookies strictement nécessaires à son fonctionnement, exemptés de consentement par les recommandations de la CNIL :',
+          "Ce site ne pose aucun cookie lors d'une simple visite. Deux cookies strictement nécessaires sont posés uniquement lorsque vous vous connectez ou demandez l'accès instantané ; ils sont exemptés de consentement par les recommandations de la CNIL, raison pour laquelle aucun bandeau de consentement ne vous est présenté :",
         ],
         list: [
-          'BEARER — jeton d’authentification (JWT), httpOnly, non lisible en JavaScript, expire à la déconnexion ou à l’expiration du jeton.',
-          'XSRF-TOKEN — jeton de protection contre les attaques CSRF, lisible en JavaScript, posé uniquement après connexion, expire à la déconnexion.',
+          'BEARER — jeton d’authentification (JWT), httpOnly, non lisible en JavaScript, expire à la déconnexion ou à l’expiration du jeton (1 heure pour un compte, 15 minutes pour l’accès instantané).',
+          'XSRF-TOKEN — jeton de protection contre les attaques CSRF, lisible en JavaScript, posé en même temps que le précédent, expire avec lui.',
         ],
       },
       {
         heading: 'Durée de conservation',
         paragraphs: [
           "Les messages du formulaire de contact ne sont pas conservés au-delà de l'envoi de l'email de notification. En cas d'échec d'envoi (serveur de messagerie temporairement indisponible), le message est stocké pour permettre une nouvelle tentative, puis supprimé automatiquement au plus tard au bout de 30 jours. Les données techniques (adresse IP pour la limitation de débit, journaux serveur) sont conservées sur des durées courtes, détaillées dans le registre des traitements tenu par l'éditeur.",
+          "Un compte sur invitation et l'adresse email associée sont conservés tant que l'accès vous est accordé ; ils sont supprimés à la fin du besoin ou sur simple demande de votre part. Le lien d'invitation est valable 48 heures et ne peut servir qu'une fois.",
         ],
       },
       {
         heading: 'Destinataires',
         paragraphs: [
-          "Les données du formulaire de contact sont transmises à la boîte email de l'éditeur, via le prestataire technique d'envoi d'emails utilisé en production. Aucune donnée n'est vendue, louée ou transmise à des tiers à des fins commerciales.",
+          "Les données du formulaire de contact sont transmises à la boîte email de l'éditeur, via le prestataire technique d'envoi d'emails utilisé en production (Scaleway, France), qui achemine aussi les invitations de compte, puis via un service de redirection d'emails (Cloudflare). L'adresse email d'un compte invité n'est visible que de l'éditeur. Lorsque vous choisissez un mot de passe, un fragment anonyme de son empreinte (5 caractères) est comparé à une base de mots de passe compromis (Have I Been Pwned) ; ni le mot de passe ni votre identité ne sont transmis. Aucune donnée n'est vendue, louée ou transmise à des tiers à des fins commerciales.",
         ],
       },
       {
@@ -162,7 +165,9 @@ const fr: PortfolioLocaleContent = {
       },
       {
         heading: 'Transferts hors Union européenne',
-        paragraphs: ["Aucun transfert de données hors de l'Union européenne n'est effectué à ce jour."],
+        paragraphs: [
+          "L'hébergement, la base de données et l'envoi des emails sont situés en France. Seule exception : les messages du formulaire de contact sont relayés vers la boîte de l'éditeur par Cloudflare, Inc. (États-Unis), transfert encadré par le Data Privacy Framework UE–États-Unis et, à défaut, par les clauses contractuelles types de la Commission européenne.",
+        ],
       },
     ],
   },

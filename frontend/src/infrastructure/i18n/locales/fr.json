@@ -493,7 +493,7 @@
       "successHeading": "Mot de passe défini",
       "successBody": "Votre compte est prêt. Vous pouvez maintenant vous connecter.",
       "toLogin": "Aller à la connexion",
-      "invalid": "Ce lien de définition de mot de passe n'est pas valide.",
+      "invalid": "Ce lien de définition de mot de passe n'est pas valide. Ouvrez-le à nouveau depuis l'e-mail d'invitation.",
       "expired": "Ce lien a expiré ou a déjà été utilisé. Contactez la personne qui vous a invité pour en recevoir un nouveau.",
       "errors": {
         "tooShort": "Le mot de passe doit contenir au moins {min} caractères.",

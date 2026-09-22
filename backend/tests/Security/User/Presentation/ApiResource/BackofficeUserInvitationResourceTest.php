@@ -141,7 +141,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
         $token = $this->invite();
 
         // La personne définit son mot de passe -> compte activé.
-        $client->request('POST', '/api/account/password-setup/'.$token, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['password' => TestCredentials::variant('setup')]));
+        $client->request('POST', '/api/account/password-setup', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody(['token' => $token, 'password' => TestCredentials::variant('setup')]));
         self::assertResponseStatusCodeSame(204);
 
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());

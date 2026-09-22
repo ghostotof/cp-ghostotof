@@ -67,6 +67,17 @@ describe('useAccountPasswordSetup', () => {
     expect(composable.state.value).toBe('invalid')
   })
 
+  it("validate() : jeton vide -> invalid, sans aucun appel au backend (rien à vérifier, et le quota par IP n'est pas entamé)", async () => {
+    const repository = createStubRepository()
+    const composable = mountWithComposable(repository)
+
+    await composable.validate('')
+
+    expect(composable.state.value).toBe('invalid')
+    expect(composable.errorReason.value).toBe('invalid')
+    expect(repository.validateSetupToken).not.toHaveBeenCalled()
+  })
+
   it('validate() : 410 -> expired', async () => {
     const composable = mountWithComposable(
       createStubRepository({ validateSetupToken: vi.fn(async () => Promise.reject(new PasswordSetupLinkError('expired', 'x'))) }),
