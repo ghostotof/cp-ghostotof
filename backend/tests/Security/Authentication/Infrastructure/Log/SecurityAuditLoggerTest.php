@@ -314,6 +314,29 @@ final class SecurityAuditLoggerTest extends TestCase
      * l'événement sort quand même — l'absence de requête n'est pas une raison
      * de perdre la trace.
      */
+    /**
+     * La purge (issue #238) est déclenchée par une commande CLI planifiée,
+     * jamais par une action humaine : l'acteur est donc `system`, jamais le
+     * jeton de sécurité de la requête courante (il n'y en a pas) ni
+     * `anonymous` (qui dirait « quelqu'un de non identifié », faux ici).
+     */
+    public function testUserPurgedNamesTheAccountAndTheReasonWithSystemAsActor(): void
+    {
+        $target = new CpgUser('stale-invitee', '');
+
+        $this->auditLogger->userPurged($target);
+
+        self::assertSame([
+            'event' => 'user-purged',
+            'user' => 'stale-invitee',
+            'userId' => $target->getId()->toRfc4122(),
+            'reason' => 'invitation-expired',
+            'actor' => 'system',
+            'ip' => null,
+            'path' => null,
+        ], $this->singleRecord()->context);
+    }
+
     public function testWithoutARequestIpAndPathAreNull(): void
     {
         $this->auditLogger->userDeleted(new CpgUser('jane', 'hashed-password'));
@@ -395,9 +418,10 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->passwordChanged($invited);
         $this->auditLogger->userDeleted($invited);
         $this->auditLogger->accountActivated($invited);
+        $this->auditLogger->userPurged($invited);
 
         $records = $this->handler->getRecords();
-        self::assertCount(13, $records);
+        self::assertCount(14, $records);
 
         foreach ($records as $record) {
             $serialized = json_encode([$record->message, $record->context, $record->extra], \JSON_THROW_ON_ERROR);

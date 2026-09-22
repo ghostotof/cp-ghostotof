@@ -43,6 +43,18 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
         return $this->findBy([], ['username' => 'ASC']);
     }
 
+    public function findPendingActivationInvitedBefore(\DateTimeImmutable $threshold): array
+    {
+        return $this->createQueryBuilder('u')
+            ->andWhere('u.invitedAt IS NOT NULL')
+            ->andWhere('u.activatedAt IS NULL')
+            ->andWhere('u.invitedAt < :threshold')
+            ->setParameter('threshold', $threshold)
+            ->orderBy('u.invitedAt', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
     /**
      * `roles` est une colonne JSON : plutôt qu'un `WHERE` portable
      * hasardeux sur du JSON, on filtre en PHP. La table `cpg_user` n'est

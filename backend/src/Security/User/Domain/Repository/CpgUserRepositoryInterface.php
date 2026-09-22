@@ -26,6 +26,16 @@ interface CpgUserRepositoryInterface
     public function findAll(): array;
 
     /**
+     * Comptes en attente d'activation (CpgUser::isPendingActivation())
+     * invités avant $threshold, du plus ancien au plus récent. Alimente
+     * PendingInvitationPurger (issue #238) : "en attente depuis trop
+     * longtemps" se détermine en base, jamais par un findAll() filtré en PHP.
+     *
+     * @return list<CpgUser>
+     */
+    public function findPendingActivationInvitedBefore(\DateTimeImmutable $threshold): array;
+
+    /**
      * Nombre d'utilisateurs possédant le rôle donné (rôles implicites inclus,
      * cf. CpgUser::getRoles()). Utilisé par la garde anti-lockout du dernier
      * ROLE_SUPER (cf. CpgUserAdministrator::delete).

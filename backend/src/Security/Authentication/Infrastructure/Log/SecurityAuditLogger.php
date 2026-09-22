@@ -35,6 +35,9 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
 {
     private const string ANONYMOUS = 'anonymous';
 
+    /** Acteur d'un événement déclenché par une commande CLI planifiée, jamais par une personne. */
+    private const string SYSTEM = 'system';
+
     public function __construct(
         private LoggerInterface $logger,
         private RequestStack $requestStack,
@@ -107,6 +110,20 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         $this->record('account-activated', 'Account activated.', $this->account($user));
     }
 
+    public function userPurged(CpgUser $user): void
+    {
+        // Acteur forcé à `system` : cet événement naît d'une commande CLI
+        // planifiée, hors de toute requête HTTP — le jeton de sécurité
+        // courant n'existe pas, et le lire donnerait `anonymous`, qui
+        // suggérerait à tort une action humaine non identifiée.
+        $this->record(
+            'user-purged',
+            'Compte en attente d\'activation purgé (invitation expirée).',
+            [...$this->account($user), 'reason' => 'invitation-expired'],
+            self::SYSTEM,
+        );
+    }
+
     /**
      * Un compte se nomme par son identifiant de connexion et son id : jamais
      * par son e-mail, donnée personnelle qui n'a rien à faire dans un journal
@@ -121,15 +138,18 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
 
     /**
      * @param array<string, bool|string|null> $subject ce que l'événement vise, clés choisies par l'appelant
+     * @param string|null                     $actor   acteur imposé par l'appelant (ex. `system` pour une
+     *                                                 commande CLI) ; sinon lu dans le jeton de sécurité de
+     *                                                 la requête courante, `anonymous` à défaut de jeton
      */
-    private function record(string $event, string $message, array $subject = []): void
+    private function record(string $event, string $message, array $subject = [], ?string $actor = null): void
     {
         $request = $this->requestStack->getMainRequest();
 
         $this->logger->info($message, [
             'event' => $event,
             ...$subject,
-            'actor' => $this->tokenStorage->getToken()?->getUserIdentifier() ?? self::ANONYMOUS,
+            'actor' => $actor ?? $this->tokenStorage->getToken()?->getUserIdentifier() ?? self::ANONYMOUS,
             'ip' => $request?->getClientIp(),
             // Décodé (issue #77) : la forme que le routeur et le firewall ont vue.
             // Jamais réécrit : aucune route ne porte de secret dans son chemin
