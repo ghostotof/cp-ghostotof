@@ -258,6 +258,9 @@ SECURITY_TXT_EXPIRES="$(grep -iE '^expires:' <<< "$SECURITY_TXT_BODY" | head -1 
 if [ -z "$SECURITY_TXT_EXPIRES" ]; then
   printf '  \033[31mECHEC\033[0m   champ Expires absent   <-- obligatoire (RFC 9116) !\n'
   FAILURES=$((FAILURES + 1))
+# date -d est GNU : le script tourne en CI (ubuntu-latest) et sur Linux du propriétaire.
+# Sur macOS, -d veut dire autre chose ; gdate de GNU coreutils serait l'équivalent.
+# Comportement accepté : hors périmètre (pas de détection d'OS ni de repli).
 elif ! SECURITY_TXT_EXPIRES_TS="$(date -u -d "$SECURITY_TXT_EXPIRES" +%s 2>/dev/null)"; then
   # Une date que `date` ne sait pas lire n'est pas une date valide au sens de
   # la RFC (horodatage ISO 8601) : échec franc plutôt que saut silencieux.
