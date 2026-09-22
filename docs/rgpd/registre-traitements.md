@@ -10,12 +10,12 @@ titre non professionnel (cf. `docs/rgpd/registre-traitements.md` et les
 mentions légales pour le détail du statut), joignable à
 `contact@cp-ghostotof.com`.
 
-**Dernière mise à jour** : 2026-09-21 (3e audit de sécurité : ajout du §6 « Journal
+**Dernière mise à jour** : 2026-09-22 (3e audit de sécurité : ajout du §6 « Journal
 d'audit de sécurité », stockage des compteurs de limitation de débit au §2, précisions
 sur les journaux techniques au §5 ; §3 repris en entier — accès de base, invitation par
 e-mail et comptes nominatifs, que l'ancienne rédaction niait ; §7 et §8 complétés en
 conséquence ; §1 et §8 : boîte de contact hébergée en France, fin du transfert hors UE,
-issue #231).
+issue #231 ; §5 : rotation des journaux mesurée sur les nœuds, Cockpit décrit).
 
 ---
 
@@ -110,7 +110,7 @@ l'ADR 0001 (`docs/adr/0001-admin-user-provisioning.md`) : l'**accès de base** s
 | **Finalité** | Sécurité, diagnostic, détection d'incidents |
 | **Base légale** | Intérêt légitime (art. 6-1-f RGPD) |
 | **Données collectées** | Adresse IP, user-agent, URL et méthode HTTP, code de réponse. **Aucun secret dans une URL** : depuis le 3e audit (constat A7, tâches T4.1/T4.2), le jeton de définition de mot de passe voyage dans le corps de la requête côté API et dans le **fragment** du lien côté e-mail — un fragment n'est jamais transmis au serveur. Aucun journal d'accès, ni du sidecar, ni du frontend, ni de l'ingress, ne peut donc plus contenir un jeton d'invitation exploitable |
-| **Durée de conservation** | Bornée par la rotation des journaux de conteneur du nœud (réglage kubelet) et par le cycle de vie du pod : les journaux d'un pod remplacé disparaissent avec lui. **Aucun collecteur ni agrégateur de journaux n'est déployé** (aucun objet de ce type dans `k8s/`) : il n'existe ni export, ni archivage, ni copie hors du nœud. La valeur exacte de rotation n'est pas maîtrisée depuis ce dépôt (Kubernetes Kapsule est managé par l'hébergeur) — **à confirmer auprès de l'hébergeur et à consigner ici**. Pour mémoire, la recommandation CNIL usuelle pour des journaux de sécurité est de 6 à 12 mois maximum |
+| **Durée de conservation** | Bornée par la rotation des journaux de conteneur du nœud et par le cycle de vie du pod. **Valeurs relevées le 2026-09-22** sur les deux nœuds Kapsule de production (`kubelet` : `containerLogMaxSize: 10Mi`, `containerLogMaxFiles: 5`) : au plus **50 Mio par conteneur**, le fichier le plus ancien étant supprimé au-delà. Ce plafond est théorique au regard du volume réel (de l'ordre de 15 à 60 Ko par pod et par jour) ; la borne effective est le **remplacement du pod** : chaque release recrée les pods et leurs journaux disparaissent avec eux, soit une conservation de quelques jours à quelques semaines en pratique. Le seul cas où elle pourrait excéder la recommandation CNIL usuelle (6 à 12 mois maximum pour des journaux de sécurité) serait une année entière sans release ni redémarrage — un redémarrage des déploiements suffit alors. **Aucun collecteur ni agrégateur de journaux n'est déployé** (aucun objet de ce type dans `k8s/`) : il n'existe ni export, ni archivage, ni copie des journaux des pods hors du nœud. Le projet Scaleway dispose d'une source « Scaleway Logs » dans Cockpit (rétention 7 jours, région `fr-par`), qui reçoit uniquement les journaux des **produits managés** de l'hébergeur, pas ceux des pods ; reste à vérifier dans Cockpit si le Load Balancer y verse des journaux d'accès portant des adresses IP clientes — si oui, il sera consigné ici comme destinataire, avec cette rétention de 7 jours |
 
 ## 6. Journal d'audit de sécurité
 
