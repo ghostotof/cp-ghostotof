@@ -623,7 +623,9 @@ Content management for all of the above, plus user administration, gated end-to-
   `/api/backoffice*` path can ever be allow-listed, and that the whole backoffice answers 403 to an
   authenticated account lacking `ROLE_SUPER` (authenticated ≠ authorized). Adding a public endpoint therefore
   means adding an entry to `PUBLIC_PATHS` **with a written justification**; if you can't justify it, it isn't
-  public. The same test carries `BASE_TIER_PATHS` (issue #78, invariant n°6): with a base-tier token
+  public. `tests/Security/RouterScopeTest.php` closes the boundary on the other side: any route compiled
+  outside `/api` must be justified in its own `NON_API_PATHS` allow-list and protected by its own firewall
+  and `access_control` rule, or the suite turns red. The same test carries `BASE_TIER_PATHS` (issue #78, invariant n°6): with a base-tier token
   (`POST /api/account/base-access`, `ROLE_USER`) **every** route outside `PUBLIC_PATHS ∪ BASE_TIER_PATHS`
   must answer 403, and every listed entry must actually open — so a new `ROLE_USER` content route needs its
   own justified entry there, and a `ROLE_USER` rule on an identifying route turns the suite red. Never
