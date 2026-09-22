@@ -7,6 +7,7 @@ namespace App\Security\User\Infrastructure\Doctrine;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Component\Security\Core\Exception\UnsupportedUserException;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
@@ -49,7 +50,7 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
             ->andWhere('u.invitedAt IS NOT NULL')
             ->andWhere('u.activatedAt IS NULL')
             ->andWhere('u.invitedAt < :threshold')
-            ->setParameter('threshold', $threshold)
+            ->setParameter('threshold', $threshold, Types::DATETIME_IMMUTABLE)
             ->orderBy('u.invitedAt', 'ASC')
             ->getQuery()
             ->getResult();

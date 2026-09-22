@@ -6,6 +6,7 @@ namespace App\Security\User\Application;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\InvalidPurgeRetentionException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
@@ -22,7 +23,18 @@ final readonly class PendingInvitationPurger implements PendingInvitationPurgerI
 
     public function purge(\DateInterval $maxAge, bool $dryRun = false): PendingInvitationPurgeResult
     {
-        $threshold = $this->clock->now()->sub($maxAge);
+        $now = $this->clock->now();
+        $threshold = $now->sub($maxAge);
+
+        // Garde métier, avant toute lecture du dépôt : un intervalle négatif
+        // (double négation côté appelant, ex. "--older-than=-30 days") ou nul
+        // ("0 days") place le seuil dans le futur ou sur l'instant présent —
+        // ce qui purgerait tous les comptes en attente au lieu des seuls
+        // comptes réellement anciens. Protège tout appelant, pas seulement la
+        // commande CLI qui, elle, ne fait qu'attraper l'exception.
+        if ($threshold >= $now) {
+            throw InvalidPurgeRetentionException::forThreshold($threshold, $now);
+        }
 
         $purged = [];
         $skipped = [];

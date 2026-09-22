@@ -7,6 +7,7 @@ namespace App\Tests\Security\User\Application;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Application\PendingInvitationPurger;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\InvalidPurgeRetentionException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -122,6 +123,54 @@ final class PendingInvitationPurgerTest extends TestCase
 
         self::assertSame([], $result->purged);
         self::assertSame([], $result->skipped);
+    }
+
+    public function testANegativeIntervalIsRejectedBeforeAnyRepositoryAccess(): void
+    {
+        $clock = new MockClock(self::NOW);
+
+        $repository = $this->createMock(CpgUserRepositoryInterface::class);
+        $repository->expects(self::never())->method('findPendingActivationInvitedBefore');
+        $repository->expects(self::never())->method('remove');
+
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('userPurged');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects(self::never())->method('warning');
+
+        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
+
+        // Double négation possible côté appelant ("--older-than=-30 days") :
+        // \DateInterval::createFromDateString('-30 days') produit un
+        // intervalle dont \DateTimeImmutable::sub() avance l'horloge au lieu
+        // de la reculer — le seuil se retrouve dans le futur.
+        $this->expectException(InvalidPurgeRetentionException::class);
+
+        $purger->purge(\DateInterval::createFromDateString('-30 days'));
+    }
+
+    public function testAZeroLengthIntervalIsRejectedBeforeAnyRepositoryAccess(): void
+    {
+        $clock = new MockClock(self::NOW);
+
+        $repository = $this->createMock(CpgUserRepositoryInterface::class);
+        $repository->expects(self::never())->method('findPendingActivationInvitedBefore');
+        $repository->expects(self::never())->method('remove');
+
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('userPurged');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects(self::never())->method('warning');
+
+        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
+
+        // Un intervalle nul place le seuil exactement sur "maintenant" :
+        // rejeté au même titre qu'un intervalle négatif.
+        $this->expectException(InvalidPurgeRetentionException::class);
+
+        $purger->purge(new \DateInterval('PT0S'));
     }
 
     private function pendingUser(string $username): CpgUser
