@@ -1162,9 +1162,11 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   explicitly on `location = /healthz`; keep the two in step. `tools/audit-prod.sh` checks `/`,
   `/config.js`, `/healthz` and an asset discovered from the home page, judging only the **final**
   response. A pre-merge guard now catches this before deploy: `tools/check-frontend-image-headers.sh`
-  runs the built frontend image locally and checks the 7 headers on one path per `location`, wired
-  into the `frontend-image-headers` CI job on every push. A new `location` added to `nginx.conf`
-  gets its path added to that script, or it isn't covered.
+  runs the built frontend image locally and checks the 7 headers on at least one path that really
+  lands in each `location`, wired into the `frontend-image-headers` CI job on every push. `/` itself
+  is served by `= /index.html` (`try_files … /index.html` is an internal rewrite that redoes location
+  matching), so `location /` is probed with a root static file (`/favicon.svg`) instead. A new
+  `location` added to `nginx.conf` gets its path added to that script, or it isn't covered.
 - **`/.well-known/security.txt` is published and expires** (RFC 9116, audit A14):
   `frontend/public/.well-known/security.txt`, served `text/plain; charset=utf-8` by the `^~ /.well-known/`
   location (declared first and with `^~` so the hidden-files rule doesn't swallow it; `charset` is not an

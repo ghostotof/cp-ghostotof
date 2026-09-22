@@ -14,12 +14,26 @@
 # pas seulement sur `/`. Les 8 locations actuelles et leur chemin de test :
 #   `= /healthz`                          -> /healthz
 #   `/assets/`                            -> l'asset réel découvert + /assets/missing-file.js (404)
-#   `= /index.html`                       -> /index.html
+#   `= /index.html`                       -> /index.html, / et /route/inconnue (voir note)
 #   `= /config.js`                        -> /config.js
 #   `^~ /.well-known/`                    -> /.well-known/security.txt
 #   `~ /\.`                               -> /.hidden (404)
 #   `~* \.(env|ya?ml|...)$`               -> /anything.env (404)
-#   `/`                                   -> / et /route/inconnue (repli SPA)
+#   `/`                                   -> /favicon.svg (fichier statique racine)
+#
+# Note sur `/` et `location /` : `/` et `/route/inconnue` ne sont JAMAIS servis
+# par `location /` elle-même. Son `try_files $uri $uri/ /index.html;` fait un
+# rewrite interne vers /index.html dès que rien ne correspond, et ce rewrite
+# refait tout le location matching depuis le début — la réponse part donc
+# réellement de `location = /index.html`. C'est le comportement voulu (ces deux
+# chemins prouvent que le repli SPA atterrit bien sur le bon document), mais ça
+# veut dire qu'aucun des deux n'exerce vraiment `location /` : un `add_header`
+# ajouté SEULEMENT dans ce bloc (la régression A16 sous sa forme exacte) ne
+# casserait ni `/` ni `/route/inconnue`. La seule réponse réellement servie par
+# `location /` est un fichier statique présent à la racine du build et non
+# repris par une autre location — `/favicon.svg` (frontend/public/,
+# référencé par frontend/index.html) — c'est ce chemin qui couvre cette
+# location.
 #
 # Règle à respecter : ajouter une `location` dans docker/node/nginx.conf, c'est
 # ajouter son chemin dans la liste CHECKS ci-dessous — sinon elle n'est pas
@@ -48,7 +62,11 @@ CURL_OPTS=(--connect-timeout 2 --max-time 5)
 CID="$(docker run -d --rm -e API_URL=http://api.invalid -p 127.0.0.1::8080 "$IMAGE")"
 trap 'docker stop "$CID" > /dev/null 2>&1 || true' EXIT
 
-HOST_PORT="$(docker port "$CID" 8080/tcp | head -1)"
+# `|| true` : sous `set -o pipefail`, un `docker port` qui échoue (conteneur
+# mort au démarrage) ferait échouer tout le pipe, et `set -e` couperait le
+# script avant même le message d'erreur et le `docker logs` de secours
+# juste en dessous — qui sont précisément ce qui doit s'afficher dans ce cas.
+HOST_PORT="$(docker port "$CID" 8080/tcp | head -1 || true)"
 if [ -z "$HOST_PORT" ]; then
   echo "Impossible de lire le port publié par le conteneur $CID." >&2
   docker logs "$CID" >&2 || true
@@ -100,7 +118,12 @@ check_path() {
 # Un asset réel, jamais un nom en dur (Vite hache le nom de chaque fichier) :
 # découvert dans le HTML de `/`, comme dans tools/audit-prod.sh.
 HOME_HTML="$(curl -sS "${CURL_OPTS[@]}" "${BASE}/")"
-ASSET_PATH="$(grep -oE '/assets/[A-Za-z0-9._/-]+\.(js|css)' <<< "$HOME_HTML" | head -1)"
+# `|| true` : même piège que HOST_PORT ci-dessus — un `grep` sans
+# correspondance renvoie 1, ce qui sous `pipefail`/`set -e` tuerait le script
+# avant même d'atteindre le `if [ -n "$ASSET_PATH" ]` et son message
+# INTROUVABLE juste plus bas (le cas que ce garde a précisément pour rôle de
+# signaler, pas de faire disparaître silencieusement).
+ASSET_PATH="$(grep -oE '/assets/[A-Za-z0-9._/-]+\.(js|css)' <<< "$HOME_HTML" | head -1 || true)"
 
 echo "Image testée : $IMAGE (conteneur $CID, ${BASE})"
 echo
@@ -110,13 +133,16 @@ check_path "/index.html" "200" "/index.html"
 check_path "/config.js" "200" "/config.js"
 check_path "/healthz" "200" "/healthz"
 check_path "/.well-known/security.txt" "200" "/.well-known/security.txt"
+# La seule réponse réellement servie par `location /` (voir la note en-tête) :
+# un fichier statique de la racine du build, jamais rewrité vers index.html.
+check_path "/favicon.svg" "200" "/favicon.svg (fichier statique racine — la vraie location /)"
 
 if [ -n "$ASSET_PATH" ]; then
   check_path "$ASSET_PATH" "200" "$ASSET_PATH (asset réel)"
 else
   # Échec bloquant, et non un saut silencieux : ne pas avoir trouvé d'asset
   # n'est pas la même chose que ne pas en avoir cherché (cf. audit-prod.sh).
-  printf '  \033[31mINTROUVABLE\033[0m  aucun /assets/…  référencé par la page d accueil   <-- à vérifier !\n'
+  printf '  \033[31mINTROUVABLE\033[0m  aucun /assets/…  référencé par la page d'\''accueil   <-- à vérifier !\n'
   FAILURES=$((FAILURES + 1))
 fi
 
