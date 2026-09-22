@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { usePortfolioContent } from '../../application/portfolio/usePortfolioContent'
 import AppHeader from './AppHeader.vue'
 import AppFooter from './AppFooter.vue'
+import CookieNotice from './CookieNotice.vue'
 
 /**
  * Chrome commun à toutes les pages (en-tête + navigation + pied de page). Rendu
@@ -33,5 +34,6 @@ const { t } = useI18n()
       <RouterView />
     </main>
     <AppFooter :site-identity="siteIdentity" />
+    <CookieNotice />
   </div>
 </template>

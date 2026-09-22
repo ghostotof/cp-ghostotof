@@ -121,6 +121,7 @@ const en: PortfolioLocaleContent = {
         paragraphs: [
           'Contact form messages are not stored in a database beyond being forwarded by email, except when delivery fails (see "Retention period").',
           'The site uses no audience-measurement, advertising, or third-party tracking cookies, and performs no profiling or automated decision-making.',
+          'The information banner shown on a first visit collects no consent, since no tracker requires one: the fact that you closed it is simply remembered in your browser (localStorage) and never sent to the server.',
         ],
       },
       {

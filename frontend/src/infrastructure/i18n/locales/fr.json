@@ -700,5 +700,11 @@
       "checkedAt": "vérifié le {date}",
       "stale": "Analyse en retard : elle n'a pas abouti depuis plus d'un jour. Une faille publiée depuis n'y figure pas."
     }
+  },
+  "cookieNotice": {
+    "label": "Information sur les cookies",
+    "message": "Ce site ne dépose aucun cookie lors d'une simple visite. Seuls des cookies techniques, strictement nécessaires, sont posés si vous vous connectez ou demandez l'accès instantané : il n'y a donc rien à accepter ni à refuser.",
+    "learnMore": "En savoir plus",
+    "dismiss": "Compris"
   }
 }
