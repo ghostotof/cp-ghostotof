@@ -148,7 +148,7 @@ const en: PortfolioLocaleContent = {
         heading: 'Retention period',
         paragraphs: [
           "Contact form messages are not kept beyond sending the notification email. If delivery fails (mail server temporarily unavailable), the message is stored so it can be retried, then automatically deleted after 30 days at the latest. Technical data (IP address for rate limiting, server logs) is kept for short periods, detailed in the processing register maintained by the publisher.",
-          'An invited account and its email address are kept for as long as access is granted to you; they are deleted when no longer needed or simply at your request. The invitation link is valid for 48 hours and can be used only once.',
+          'An invited account and its email address are kept for as long as access is granted to you; they are deleted when no longer needed or simply at your request. The invitation link is valid for 48 hours and can be used only once. An invitation that is never activated is deleted automatically 30 days after it was sent (or last re-sent).',
         ],
       },
       {
