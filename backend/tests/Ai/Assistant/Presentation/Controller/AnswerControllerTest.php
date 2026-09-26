@@ -430,27 +430,53 @@ final class AnswerControllerTest extends WebTestCase
     }
 
     /**
-     * Spec 0005 M4 : au-delà de 64 Kio, le corps est refusé avant d'être
-     * désérialisé (nginx, lui, laisse passer jusqu'à 1 Mo). Une conversation
-     * valide complétée d'espaces — du JSON toujours valide — mesure la borne
-     * à l'octet près.
+     * La borne de taille ne doit refuser aucune conversation que les bornes
+     * D6 acceptent : la plus longue (11 messages à leur longueur maximale),
+     * écrite tout en caractères de quatre octets, sérialisée comme le fait
+     * `JSON.stringify` côté frontend — sans échappement `\u`. Environ 104 Ko :
+     * au-delà des 64 Kio d'origine, d'où la borne amendée à 128 Kio.
      */
-    public function testABodyOfExactly64KibibytesIsAccepted(): void
+    public function testTheLongestValidConversationInFourByteCharactersIsAccepted(): void
     {
         [$client, $csrfToken] = $this->trustedClient();
         $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
 
-        $this->postRaw($client, $csrfToken, $this->paddedBody(65536));
+        $messages = [];
+        for ($rank = 0; $rank < 11; ++$rank) {
+            $messages[] = 0 === $rank % 2
+                ? ['role' => 'user', 'content' => str_repeat('😀', 1000)]
+                : ['role' => 'assistant', 'content' => str_repeat('😀', 4000)];
+        }
+        $body = json_encode(['locale' => 'fr', 'messages' => $messages], \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE);
+        self::assertGreaterThan(100_000, \strlen($body));
+
+        $this->postRaw($client, $csrfToken, $body);
 
         self::assertSame(200, $client->getResponse()->getStatusCode());
     }
 
-    public function testABodyBeyond64KibibytesIsA413ProblemAndNeverReachesTheProvider(): void
+    /**
+     * Spec 0005 M4 : au-delà de 128 Kio, le corps est refusé avant d'être
+     * désérialisé (nginx, lui, laisse passer jusqu'à 1 Mo). Une conversation
+     * valide complétée d'espaces — du JSON toujours valide — mesure la borne
+     * à l'octet près.
+     */
+    public function testABodyOfExactly128KibibytesIsAccepted(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
+
+        $this->postRaw($client, $csrfToken, $this->paddedBody(131072));
+
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+    }
+
+    public function testABodyBeyond128KibibytesIsA413ProblemAndNeverReachesTheProvider(): void
     {
         [$client, $csrfToken] = $this->trustedClient();
         $this->stubProviders($client, new MockResponse($this->scalewayStream('jamais lu'), $this->sseHeaders()));
 
-        $this->postRaw($client, $csrfToken, $this->paddedBody(65537));
+        $this->postRaw($client, $csrfToken, $this->paddedBody(131073));
 
         $response = $client->getResponse();
         self::assertSame(413, $response->getStatusCode());
@@ -468,7 +494,7 @@ final class AnswerControllerTest extends WebTestCase
         $client->request('POST', '/api/%61ssistant/answers', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: $this->paddedBody(65537));
+        ], content: $this->paddedBody(131073));
 
         self::assertSame(413, $client->getResponse()->getStatusCode());
         self::assertSame([], $this->scalewayRequests);
@@ -483,7 +509,7 @@ final class AnswerControllerTest extends WebTestCase
         $client = self::createClient();
         $csrfToken = $this->obtainBaseAccess($client);
 
-        $this->postRaw($client, $csrfToken, $this->paddedBody(65537));
+        $this->postRaw($client, $csrfToken, $this->paddedBody(131073));
 
         self::assertSame(403, $client->getResponse()->getStatusCode());
     }

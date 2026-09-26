@@ -605,7 +605,8 @@ mid-migration.
   `QuotaGuardedCareerAssistant`, an `#[AsDecorator]` of `CareerAssistantInterface` — which is why
   `services.yaml` aliases the interface explicitly: with two implementations the automatic single-impl alias
   disappears and the decorator has nothing to decorate — so a 422 never costs quota, 429
-  `/errors/rate-limited` + `Retry-After`; body over 64 KiB → 413 `/errors/request-too-large`, judged by
+  `/errors/rate-limited` + `Retry-After`; body over 128 KiB (the longest valid conversation in 4-byte characters is ~104 kB — 64 KiB, the spec's
+  first figure, refused it) → 413 `/errors/request-too-large`, judged by
   `AssistantRequestSizeListener` at priority 4, *after* the firewall, so an anonymous or base-tier caller only
   ever learns it is refused). Task 2 facts
   to keep: **the service composes its own system message** (preamble file + corpus rendered by

@@ -239,8 +239,9 @@ a sa branche, tirée de la branche mère `feature/spec-0005-career-assistant`, e
 - Client HTTP simulé en échec → 503, `type: /errors/assistant-unavailable`.
 - `ApiRouteExposureTest` vert **sans** modification de `PUBLIC_PATHS` ni de `BASE_TIER_PATHS` ;
   `AccessControlAnchoringTest` vert ; `debug:router | grep assistant` liste exactement une route.
-- Le corps de requête est refusé au-delà de 64 Ko (`client_max_body_size` nginx reste à 1 Mo ; la
-  borne applicative vient des longueurs D6).
+- Le corps de requête est refusé au-delà de 128 Kio, en 413 (`client_max_body_size` nginx reste à
+  1 Mo ; la borne applicative vient des longueurs D6 — *amendé le 2026-09-26, voir le journal : 64 Ko
+  refusait une conversation valide*).
 - Tests fonctionnels : `ai.scaleway.http_client.scoping.inner` remplacé par un `MockHttpClient`
   renvoyant un flux SSE au format OpenAI-compatible (`data: {"choices":[{"delta":{"content":"…"}}]}`
   … `data: [DONE]`), avec `$client->disableReboot()` (leçon de la spec 0002). La clé factice de
@@ -634,3 +635,14 @@ abandon 200 avant, 429 après) ; garde-fou du `detail` réécrit par jetons PHP 
 `ProblemExceptionInterface` de `src/`, six messages dynamiques de backoffice admis avec justification.
 Limite restante et assumée : en dev, le 429 de nginx n'a pas d'en-tête CORS (Vite sur un autre port),
 le statut y est illisible pour `fetch` ; en préprod et en prod, même origine.
+
+**2026-09-26 (tâche 3, fin d'étape)** — Deux bornes de D6 et M4 se contredisaient, corrigées sur une
+branche de fix avant la relecture. (1) **12 messages était inatteignable** : l'alternance stricte entre
+un premier et un dernier message `user` rend le compte impair, la plus longue conversation valide en
+comptait 11. Borne ramenée à **11** (6 questions, 5 réponses), testée atteignable ; la fenêtre glissante
+du frontend passe à 11 avec elle — à 12, elle aurait commencé par une réponse, donc un 422 à chaque
+envoi en fenêtre pleine. (2) **64 Ko refusait une conversation valide** : 26 000 caractères de 4 octets
+pèsent 104 000 octets. Borne portée à **128 Kio**, testée sur la plus longue conversation valide tout en
+emoji, sérialisée sans échappement `\u` comme `JSON.stringify` ; un client qui échapperait chaque emoji
+(12 octets) pourrait encore la dépasser, limite assumée. Le 413 (`/errors/request-too-large`) est jugé
+après le firewall : un anonyme ou le palier de base ne reçoit que son refus d'accès.
