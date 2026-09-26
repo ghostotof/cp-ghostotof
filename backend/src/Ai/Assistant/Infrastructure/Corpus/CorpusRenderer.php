@@ -37,9 +37,10 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
 {
     private const string OPENING_TAG = '<documents>';
     private const string CLOSING_TAG = '</documents>';
-    // Quantificateurs possessifs : sans eux, les deux `\s*` se partagent la même
-    // suite d'espaces et le retour arrière devient quadratique (contre-audit).
-    private const string TAG_CHEVRON = '#[<＜](?=\s*+[/／]?+\s*+documents)#iu';
+    /** Caractères d'une balise qui peuvent précéder le mot `documents`. */
+    private const array ASCII_TAG_BYTES = [' ', "\t", "\n", "\v", "\f", '/', '<'];
+    private const array MULTIBYTE_TAG_CHARACTERS = ['／', '＜', "\u{00A0}", "\u{3000}"];
+    private const array CHEVRONS = ['<', '＜'];
 
     /**
      * @param ProviderInterface<AnonymousCvSectionResource> $anonymousCvProvider
@@ -201,11 +202,10 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
      * Fins de ligne unifiées (préfixe byte-identique, D8) et balises du bloc
      * neutralisées : une donnée ne referme pas le bloc de documents.
      *
-     * On retire le chevron qui introduit `documents` (espaces, barre, casse et
-     * pleine chasse comprises) plutôt que la balise entière : une balise non
-     * fermée n'avale ainsi aucun texte, et sans chevron ce n'est plus qu'un mot.
-     * En boucle, parce qu'un retrait peut en rapprocher un autre
-     * (`<<documents` redevient `<documents`).
+     * On retire les chevrons qui introduisent `documents` (espaces, barres,
+     * casse et pleine chasse comprises) plutôt que la balise entière : une
+     * balise non fermée n'avale ainsi aucun texte, et sans chevron ce n'est plus
+     * qu'un mot. Voir neutraliseTags() pour le coût.
      *
      * Cette neutralisation n'est **pas exhaustive** et ne prétend pas l'être :
      * entités HTML, caractères de largeur nulle, homoglyphes (`‹`, `〈`…) ou
@@ -215,13 +215,64 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
      */
     private static function text(string $value): string
     {
-        $value = str_replace(["\r\n", "\r"], "\n", $value);
-        do {
-            $previous = $value;
-            $value = self::replace(self::TAG_CHEVRON, '', $value);
-        } while ($value !== $previous);
+        return trim(self::neutraliseTags(str_replace(["\r\n", "\r"], "\n", $value)));
+    }
 
-        return trim($value);
+    /**
+     * Linéaire par construction, et c'est le point (troisième passe d'audit) :
+     * une regex en boucle ne retirait qu'un chevron par passe, si bien que k
+     * chevrons en cascade devant `documents` coûtaient k passes sur tout le
+     * texte, à chaque appel de l'assistant. Ici, le texte est découpé sur le mot,
+     * puis la séquence d'espaces, de barres et de chevrons qui précède chaque
+     * occurrence perd tous ses chevrons : chaque octet est lu une fois, et aucun
+     * retrait ne peut en rapprocher un autre.
+     */
+    private static function neutraliseTags(string $value): string
+    {
+        $parts = preg_split('/(documents)/iu', $value, -1, \PREG_SPLIT_DELIM_CAPTURE)
+            ?: throw new CorpusRenderingException(\sprintf('Rendu du corpus impossible : %s.', preg_last_error_msg()));
+
+        for ($index = 0, $last = \count($parts) - 1; $index < $last; $index += 2) {
+            $piece = $parts[$index];
+            $start = self::tagRunStart($piece);
+            $parts[$index] = substr($piece, 0, $start).str_replace(self::CHEVRONS, '', substr($piece, $start));
+        }
+
+        return implode('', $parts);
+    }
+
+    /** Début de la séquence de caractères de balise qui termine le morceau. */
+    private static function tagRunStart(string $piece): int
+    {
+        $start = \strlen($piece);
+        while ($start > 0) {
+            if (\in_array($piece[$start - 1], self::ASCII_TAG_BYTES, true)) {
+                --$start;
+
+                continue;
+            }
+
+            $character = self::multibyteTagCharacterEndingAt($piece, $start);
+            if (null === $character) {
+                break;
+            }
+
+            $start -= \strlen($character);
+        }
+
+        return $start;
+    }
+
+    private static function multibyteTagCharacterEndingAt(string $piece, int $end): ?string
+    {
+        foreach (self::MULTIBYTE_TAG_CHARACTERS as $character) {
+            $length = \strlen($character);
+            if ($end >= $length && substr($piece, $end - $length, $length) === $character) {
+                return $character;
+            }
+        }
+
+        return null;
     }
 
     /**

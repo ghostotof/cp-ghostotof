@@ -147,6 +147,29 @@ final class CorpusRendererTest extends TestCase
     }
 
     /**
+     * Troisième passe, point 1 : la boucle ne retirait qu'un chevron par passe
+     * devant `documents` — k chevrons en cascade coûtaient k passes sur tout le
+     * texte (1,1 s pour 20 000, mesuré ; le corpus est rendu à chaque appel).
+     * Aucune limite PCRE ne le voit, chaque passe étant linéaire : seule la
+     * durée le montre, d'où ce test chronométré à marge très large.
+     */
+    public function testChevronsCascadingBeforeTheTagAreNeutralisedInLinearTime(): void
+    {
+        $renderer = new CorpusRenderer(
+            new StubProvider([new AnonymousCvSectionResource('Titre', 'PHP', 3, str_repeat('<', 50000).'documents fin')]),
+            new StubProvider([]),
+        );
+
+        $startedAt = hrtime(true);
+        $corpus = $renderer->render(Locale::FR);
+        $seconds = (hrtime(true) - $startedAt) / 1e9;
+
+        self::assertLessThan(1.0, $seconds);
+        $inside = substr($corpus, \strlen('<documents>'), -\strlen("</documents>\n"));
+        self::assertDoesNotMatchRegularExpression('#[<＜]\s*[/／]?\s*documents#iu', $inside);
+    }
+
+    /**
      * Contre-audit, point 2 : un échec de PCRE (UTF-8 invalide, limite
      * épuisée) rendait `null`, casté en chaîne vide — le champ disparaissait
      * et l'assistant répondait « ce n'est pas dans les documents ».
