@@ -75,38 +75,39 @@ describe('router — garde /admin (ROLE_SUPER)', () => {
     expect(router.currentRoute.value.name).toBe('admin-technologies')
   })
 
-  it('route publique set-password : accessible sans authentification (le garde ne la bloque pas)', async () => {
-    await primeAuthState(null)
-
-    await router.push('/fr/set-password/deadbeef')
-
-    expect(router.currentRoute.value.name).toBe('set-password')
-    expect(router.currentRoute.value.params.token).toBe('deadbeef')
-  })
-
-  it('route publique set-password : le segment de jeton est optionnel (lien à fragment, audit A7)', async () => {
+  it('route publique set-password : accessible sans authentification, le jeton dans le fragment (audit A7)', async () => {
     await primeAuthState(null)
 
     await router.push('/en/set-password#deadbeef')
 
     expect(router.currentRoute.value.name).toBe('set-password')
-    // Paramètre optionnel absent : vue-router ne le renseigne pas.
-    expect(router.currentRoute.value.params.token ?? '').toBe('')
+    expect(router.currentRoute.value.params.token).toBeUndefined()
     expect(router.currentRoute.value.hash).toBe('#deadbeef')
     expect(router.currentRoute.value.meta.noindex).toBe(true)
     expect(router.currentRoute.value.meta.requiresAuth).toBeUndefined()
   })
 
-  it('route publique set-password : le canonical et les hreflang du vrai routeur ne portent jamais le jeton du repli', async () => {
+  it("un ancien lien à segment (`set-password/<jeton>`) n'est plus une route : 404 (T4.4, repli retiré)", async () => {
     await primeAuthState(null)
 
     await router.push('/fr/set-password/deadbeefcafe')
+
+    // Le segment est retiré du routeur : un secret ne peut plus arriver par le
+    // chemin, donc plus jamais dans un access log ni dans canonical/hreflang.
+    expect(router.currentRoute.value.name).toBe('not-found')
+  })
+
+  it('route publique set-password : le canonical et les hreflang du vrai routeur ne portent jamais le jeton du fragment', async () => {
+    await primeAuthState(null)
+
+    await router.push('/fr/set-password#deadbeefcafe')
 
     const hrefs = Array.from(document.head.querySelectorAll('link')).map((link) => link.getAttribute('href') ?? '')
     expect(hrefs.length).toBeGreaterThan(0)
     for (const href of hrefs) {
       expect(href).not.toContain('deadbeefcafe')
     }
+    expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe(`${window.location.origin}/fr/set-password`)
   })
 
   it('attend la résolution de checkAuth() avant de trancher (évite une redirection prématurée au rechargement de page)', async () => {

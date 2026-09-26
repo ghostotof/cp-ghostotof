@@ -35,10 +35,11 @@ describe('applySeoMeta — robots', () => {
 })
 
 /**
- * Audit A7 : le repli `set-password/:token?` porte encore le jeton dans
- * `to.path` le temps d'un rendu (la page nettoie l'URL juste après). Le
- * canonical et les hreflang sont construits depuis `to.path` : sans
- * `meta.canonicalPath`, le jeton serait recopié dans le DOM.
+ * Audit A7 : le jeton de set-password arrive dans le fragment. Le canonical et
+ * les hreflang sont construits depuis `to.path`, qui ne contient jamais le
+ * fragment — c'est ce qui garantit, sans mécanisme dédié, qu'il ne soit pas
+ * recopié dans le DOM (l'ancien `meta.canonicalPath` du repli à segment a été
+ * retiré en T4.4 avec ce repli).
  */
 describe('applySeoMeta — canonical/hreflang', () => {
   const TOKEN = 'c'.repeat(64)
@@ -63,13 +64,15 @@ describe('applySeoMeta — canonical/hreflang', () => {
     )
   })
 
-  it('meta.canonicalPath remplace le chemin réel : le jeton du repli ne fuit dans aucun lien', () => {
+  it('le fragment de set-password (le jeton) ne fuit dans aucun lien : canonical et hreflang suivent le chemin seul', () => {
     applySeoMeta(
       fakeRoute({
         name: 'set-password',
-        path: `/en/set-password/${TOKEN}`,
-        params: { locale: 'en', token: TOKEN },
-        meta: { noindex: true, canonicalPath: 'set-password' },
+        path: '/en/set-password',
+        hash: `#${TOKEN}`,
+        fullPath: `/en/set-password#${TOKEN}`,
+        params: { locale: 'en' },
+        meta: { noindex: true },
       }),
     )
 

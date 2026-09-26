@@ -61,11 +61,11 @@ export function applySeoMeta(to: RouteLocationNormalized): void {
     return
   }
 
-  // `meta.canonicalPath` prime sur le chemin réel : une route dont l'URL peut
-  // porter un secret (repli `set-password/:token?`, audit A7) ne doit jamais
-  // le voir recopié dans le DOM, même le temps d'un rendu et même en noindex.
-  const canonicalPath = to.meta.canonicalPath
-  const pathWithoutLocale = typeof canonicalPath === 'string' ? `/${canonicalPath}` : to.path.slice(`/${locale}`.length)
+  // Construit depuis `to.path`, qui ne contient jamais le fragment : le jeton
+  // de set-password (`#<jeton>`, audit A7) ne peut donc pas être recopié dans
+  // le DOM. Aucune route ne porte de secret dans son chemin — si une devait le
+  // faire un jour, ce serait le bug à corriger, pas une raison de filtrer ici.
+  const pathWithoutLocale = to.path.slice(`/${locale}`.length)
   const origin = window.location.origin
 
   upsertLink('canonical', `${origin}/${locale}${pathWithoutLocale}`)
