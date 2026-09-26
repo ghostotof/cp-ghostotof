@@ -599,8 +599,9 @@ mid-migration.
   plus `SCALEWAY_AI_PROJECT_ID` on the same route; task 2 (#261) done: `POST /api/assistant/answers`,
   `ROLE_TRUSTED`, `AnswerController` → `CareerAssistantInterface` → `SymfonyAiCareerAssistant`; task 3 (#262)
   done: D6 bounds in the `Conversation`/`ConversationMessage` VOs → 422 `/errors/invalid-conversation` — strict
-  alternation between a first and a last `user` message makes the count odd, so **11** is the longest valid
-  conversation under the bound of 12; quota `career_assistant` (30/h, key `username`) consumed by
+  alternation between a first and a last `user` message makes the count odd, so the bound is **11** (D6
+  amended from 12, which no valid conversation could reach — keep it odd, and keep the frontend's sliding
+  window at the same odd count, or its first message is an answer and every full-window send is a 422); quota `career_assistant` (30/h, key `username`) consumed by
   `QuotaGuardedCareerAssistant`, an `#[AsDecorator]` of `CareerAssistantInterface` — which is why
   `services.yaml` aliases the interface explicitly: with two implementations the automatic single-impl alias
   disappears and the decorator has nothing to decorate — so a 422 never costs quota, 429

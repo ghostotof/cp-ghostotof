@@ -57,14 +57,20 @@ final class ConversationTest extends TestCase
         yield 'retours à la ligne et tabulation' => ["\n\t\n"];
     }
 
-    /**
-     * La borne est de 12, mais l'alternance stricte entre un premier et un
-     * dernier message de la personne rend le compte impair : 11 est la plus
-     * longue conversation valide, 13 la première que seul le compte refuse.
-     */
     public function testElevenMessagesAreAccepted(): void
     {
         self::assertCount(11, new Conversation($this->alternating(11)));
+    }
+
+    /**
+     * L'alternance stricte entre un premier et un dernier message de la
+     * personne rend le compte impair : une borne paire serait inatteignable
+     * (la spec disait 12, amendée à 11). La borne écrite est celle qu'une
+     * conversation peut réellement atteindre.
+     */
+    public function testTheMessageBoundIsReachable(): void
+    {
+        self::assertCount(Conversation::MAX_MESSAGES, new Conversation($this->alternating(Conversation::MAX_MESSAGES)));
     }
 
     public function testThirteenMessagesAreRefused(): void

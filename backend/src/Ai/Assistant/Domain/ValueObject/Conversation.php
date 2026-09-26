@@ -12,11 +12,12 @@ use App\Ai\Assistant\Domain\Exception\InvalidConversationException;
  *
  * Bornes de coût (D6) : au plus MAX_MESSAGES messages, alternance stricte,
  * premier et dernier message de la personne. Le compte est donc toujours
- * impair : avec 12, la plus longue conversation valide en compte 11.
+ * impair, et la borne l'est aussi pour rester atteignable : 11, soit six
+ * questions et cinq réponses (D6 amendée, la spec disait 12).
  */
 final readonly class Conversation implements \Countable
 {
-    public const int MAX_MESSAGES = 12;
+    public const int MAX_MESSAGES = 11;
 
     /** @var non-empty-list<ConversationMessage> */
     private array $messages;
