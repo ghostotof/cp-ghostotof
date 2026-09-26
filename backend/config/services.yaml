@@ -75,6 +75,10 @@ services:
             $httpClient: '@ai.scaleway.http_client'
             $modelCatalog: '@ai.platform.model_catalog.scaleway'
             $eventDispatcher: '@event_dispatcher'
+            # Projet explicite dans le chemin : sans lui, l'API vise le projet par
+            # défaut de l'organisation et une clé d'application IAM restreinte à
+            # un autre projet reçoit un 403 (premier appel réel, 2026-09-26).
+            $baseUrl: 'https://api.scaleway.ai/%env(SCALEWAY_AI_PROJECT_ID)%'
         tags:
             - ai.platform: { name: 'scaleway' }
 

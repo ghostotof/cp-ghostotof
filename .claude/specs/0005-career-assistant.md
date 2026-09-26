@@ -507,4 +507,11 @@ byte-identique de D8 en bénéficie sans configuration. **Modèle** : `mistral-s
 confirmé dans la console (0,15 € / 0,35 € par M de jetons, contexte 128k, température par défaut
 0,15 — la spec n'en fixe aucune, D3), absent de la liste des modèles en fin de vie et cible de
 redirection de trois modèles retirés ; sortie maximale 32k en Serverless, au-dessus des 1 024 de D6 ;
-pas de modèle de repli nécessaire à ce stade. *Reste : l'appel réel `ai:agent:call career_assistant`.*
+pas de modèle de repli nécessaire à ce stade. **Appel réel réussi** après un correctif : le premier
+essai répondait `Error "unknown": "Unknown error"`. Un appel direct a montré un **403 FORBIDDEN** —
+sans projet dans le chemin, `api.scaleway.ai/v1` vise le projet par défaut de l'organisation, où la
+politique de l'application IAM ne donne aucun droit. Le projet entre donc dans le `baseUrl` de la
+plateforme (`SCALEWAY_AI_PROJECT_ID`, même circuit que la clé ; à câbler en préprod/prod avec #264).
+Second constat : le bridge 0.13.0 ne lit pas le format d'erreur de Scaleway
+(`{"status","error","message"}`) et réduit tout échec à « unknown » — la tâche 2 doit journaliser le
+statut HTTP d'un échec, faute de quoi le diagnostic redevient aveugle ; à signaler en amont avec D2.

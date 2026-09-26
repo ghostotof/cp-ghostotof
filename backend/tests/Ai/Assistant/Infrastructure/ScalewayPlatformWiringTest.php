@@ -34,6 +34,9 @@ final class ScalewayPlatformWiringTest extends KernelTestCase
     /** Valeur forcée par phpunit.dist.xml. */
     private const string TEST_API_KEY = 'scw-test-not-a-real-key';
 
+    /** Valeur forcée par phpunit.dist.xml. */
+    private const string TEST_PROJECT_ID = '00000000-0000-4000-8000-000000000000';
+
     /** @var list<array{method: string, url: string, options: array<mixed>}> */
     private array $requests = [];
 
@@ -48,7 +51,10 @@ final class ScalewayPlatformWiringTest extends KernelTestCase
 
         $request = $this->requests[0];
         self::assertSame('POST', $request['method']);
-        self::assertSame('https://api.scaleway.ai/v1/chat/completions', $request['url']);
+        // Le projet dans le chemin est obligatoire : sans lui, api.scaleway.ai vise
+        // le projet par défaut de l'organisation, où la clé d'une application IAM
+        // restreinte à un autre projet reçoit un 403 (constaté au premier appel réel).
+        self::assertSame('https://api.scaleway.ai/'.self::TEST_PROJECT_ID.'/v1/chat/completions', $request['url']);
         self::assertContains('Authorization: Bearer '.self::TEST_API_KEY, $this->headers($request['options']));
 
         // Bornes du client dédié (framework.yaml) : elles n'arrivent jusqu'ici

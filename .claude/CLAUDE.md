@@ -591,7 +591,12 @@ mid-migration.
   now an *alternative écartée*; **in progress** on the branch `feature/spec-0005-career-assistant`, spec
   `.claude/specs/0005-career-assistant.md`, task 1 (#260) done: the `career_assistant` agent in `ai.yaml`,
   `mistral-small-3.2-24b-instruct-2506`, `max_tokens` 1024, `tools: false`, prompt preamble in
-  `config/ai/prompts/career_assistant.txt`, key `SCALEWAY_AI_API_KEY` routed exactly like `ANTHROPIC_API_KEY`).
+  `config/ai/prompts/career_assistant.txt`, key `SCALEWAY_AI_API_KEY` routed exactly like `ANTHROPIC_API_KEY`,
+  plus `SCALEWAY_AI_PROJECT_ID` on the same route). **The project id is part of the platform's `baseUrl`**
+  (`https://api.scaleway.ai/<project>/v1/...`): without it the API targets the organisation's default project,
+  and a key held by an IAM application whose policy is scoped to another project gets a **403** — which the
+  0.13.0 bridge reports as `Error "unknown": "Unknown error"`, hiding the status. When that message shows up,
+  call the API directly and read the status before suspecting anything else.
   **The Scaleway platform is declared in `services.yaml` (`app.ai.platform.scaleway`, the bridge's
   `Factory::createPlatform`), not in `ai.yaml`** (spec 0005 D2): `symfony/ai-bundle` 0.13.0 hard-codes the
   default `http_client` for a `scaleway` platform and ignores its `http_client` option, so the ADR's dedicated

@@ -75,6 +75,9 @@ ANTHROPIC_API_KEY=
 # Clé Scaleway Generative APIs de l'assistant de parcours (spec 0005). Vide par
 # défaut : sans clé, seul l'assistant échoue, rien d'autre.
 SCALEWAY_AI_API_KEY=
+# Projet Scaleway de cette clé (Paramètres du projet -> Project ID) : sans lui,
+# l'API répond 403 à une clé d'application restreinte à un projet.
+SCALEWAY_AI_PROJECT_ID=
 LOCALENV
 
 # .env.local n'est jamais chargé par Symfony en environnement test (comportement
