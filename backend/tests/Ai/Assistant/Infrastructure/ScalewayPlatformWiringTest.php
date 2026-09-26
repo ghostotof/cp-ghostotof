@@ -20,8 +20,8 @@ use Symfony\Component\HttpClient\Response\MockResponse;
  * plateforme est donc déclarée dans services.yaml avec le client scoped
  * `ai.scaleway.http_client`. Ce test remplace le client concret derrière ce
  * scope par un MockHttpClient : si la plateforme repassait par `http_client`,
- * la requête partirait ailleurs et le test échouerait (et, faute de réseau
- * sortant autorisé en test, jamais silencieusement).
+ * le client scoped n'aurait plus de consommateur, Symfony le retirerait du
+ * conteneur et le remplacement échouerait — le test casse avant tout appel.
  *
  * Aucun appel ne sort : le vrai bridge (URL, en-têtes, corps, conversion de la
  * réponse) est exercé, seul le transport est simulé.
