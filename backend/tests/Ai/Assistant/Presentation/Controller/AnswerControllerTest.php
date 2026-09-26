@@ -288,6 +288,34 @@ final class AnswerControllerTest extends WebTestCase
         self::assertSame([], $this->scalewayRequests);
     }
 
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function nonJsonBodies(): iterable
+    {
+        yield 'formulaire' => ['application/x-www-form-urlencoded', 'locale=fr&messages[0][role]=user&messages[0][content]=Bonjour'];
+        yield 'XML' => ['application/xml', '<response><locale>fr</locale><messages><role>user</role><content>Bonjour</content></messages></response>'];
+    }
+
+    /**
+     * Relecture de sécurité, point 7 : l'endpoint ne parle que JSON. Un autre
+     * format n'est pas désérialisé du tout (surface réduite), il est refusé
+     * avant d'atteindre le fournisseur.
+     */
+    #[DataProvider('nonJsonBodies')]
+    public function testANonJsonBodyIsUnsupported(string $contentType, string $body): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('jamais lu'), $this->sseHeaders()));
+
+        $client->request('POST', self::PATH, server: [
+            'CONTENT_TYPE' => $contentType,
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: $body);
+
+        self::assertSame(415, $client->getResponse()->getStatusCode());
+    }
+
     public function testAnUnparsableBodyIsAClientError(): void
     {
         [$client, $csrfToken] = $this->trustedClient();

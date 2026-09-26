@@ -44,8 +44,10 @@ final readonly class AnswerController
     ) {
     }
 
+    // JSON seulement : un autre format (formulaire, XML) serait sinon
+    // désérialisé et validé, une surface dont l'endpoint n'a aucun usage (415).
     #[Route('/api/assistant/answers', name: 'api_assistant_answers', methods: ['POST'])]
-    public function __invoke(#[MapRequestPayload] AnswerRequest $request): EventStreamResponse
+    public function __invoke(#[MapRequestPayload(acceptFormat: 'json')] AnswerRequest $request): EventStreamResponse
     {
         // `from` et non `fromString` : la valeur est bornée par Assert\Choice,
         // elle ne vient pas d'une URL (spec §9).
