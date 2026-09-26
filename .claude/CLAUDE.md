@@ -611,8 +611,12 @@ mid-migration.
   body into its message (issue #269 tracks the same defect on the translator); and every assistant exception
   a client can cause implements `ProblemExceptionInterface`, since `exception_to_status` has no effect on
   this route — with a **literal** message only, since the listener returns it as `detail`
-  (`ProblemDetailStaysStaticTest` scans `src/`), and `#[WithLogLevel(INFO)]` when it is the client's
-  fault, or the kernel logs it `critical`. `ai.scaleway.http_client` also carries `max_duration: 50`,
+  (`ProblemDetailStaysStaticTest` parses every `ProblemExceptionInterface` of `src/` by tokens; a
+  dynamic message elsewhere needs a justified entry in its allow-list), and a `log_level` in
+  `framework.exceptions` — never `#[WithLogLevel]`, which would make the domain depend on HttpKernel —
+  or the kernel logs it `critical`. The corpus's `<documents>` neutralisation is **linear by
+  construction** (split on the word, chevrons stripped from the run before it): a regex in a loop was
+  quadratic on cascading chevrons, and nothing but a timing test sees that. `ai.scaleway.http_client` also carries `max_duration: 50`,
   `timeout` being an idle timeout only, kept under the 60 s of `fastcgi_read_timeout` and the ingress
   so their HTML 504 never beats the typed 503. The endpoint takes JSON only (`acceptFormat`, 415). **The project id is part of the platform's `baseUrl`**
   (`https://api.scaleway.ai/<project>/v1/...`): without it the API targets the organisation's default project,
@@ -1215,7 +1219,10 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   `try_files … /index.php` the internal redirect to `location ~ ^/index\.php` would leave that directive
   behind. Measured on 2026-09-26: `X-Accel-Buffering: no` (set by `EventStreamResponse`) already suffices
   for the sidecar, which consumes it — the ingress never sees it and relies on its own `proxy-buffering`,
-  `off` by default. The location is kept as defence in depth, and carries the `assistant` zones above.
+  `off` by default. The location is kept as defence in depth, and carries the `assistant` zones above,
+  `fastcgi_ignore_client_abort on` (PHP holds its worker after a client abort, so the `limit_conn`
+  slot must too) and an `error_page 429` that answers problem+json `/errors/rate-limited` — Symfony's
+  own 429s are not intercepted.
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's

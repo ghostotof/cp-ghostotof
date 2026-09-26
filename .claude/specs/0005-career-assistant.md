@@ -613,3 +613,23 @@ audit traité au passage : `acceptFormat: 'json'`, un formulaire ou du XML étai
 422), désormais 415. Informations non traitées : limites par IPv6 /128 (le quota par compte de #262
 le couvrira), 429 nginx en HTML (le frontend devra lire le statut), abandon client pendant l'amorçage
 non détecté par PHP, `CorpusSourcesTest` aveugle à un décorateur.
+
+**2026-09-26 (tâche 2, troisième passe)** — Audit des seuls correctifs du contre-audit : chacun ferme
+son trou, une conclusion moyenne subsiste. **La boucle de neutralisation restait quadratique** sur des
+chevrons en cascade (`<<<…<documents`) : un chevron retiré par passe, chaque passe linéaire, donc
+invisible à toute limite PCRE (1,1 s pour 20 000, mesuré). Remplacée par un parcours linéaire (découpe
+sur `documents`, chevrons retirés de la séquence qui précède) : 1 Mo de chevrons en 0,015 s ; test
+chronométré à marge large. La variante « regex en une passe » proposée par l'audit a été mesurée et
+écartée : elle reste super-linéaire. Autres correctifs appliqués : niveaux de log du noyau dans
+`framework.exceptions` (conversation refusée et 415 en `info`, indisponibilité en `warning`) au lieu
+d'un attribut qui faisait dépendre le domaine de HttpKernel — les 400/422 de `MapRequestPayload`
+restent en `error`, un mapping sur `HttpException` abaisserait tous les 4xx ; `CorpusRenderingException`
+en infrastructure ; lieu (fichier:ligne) d'un échec du fournisseur journalisé ; test par le vrai bridge
+d'une ligne de forme inattendue ; limites de l'échappement `\#` documentées (Setext, marqueurs de bloc,
+pleine chasse) ; commentaire de `max_duration` corrigé (les délais nginx et ingress mesurent l'attente
+entre deux lectures) ; 429 de nginx en problem+json `/errors/rate-limited` ; `fastcgi_ignore_client_abort
+on` — un abandon libérait la place `limit_conn` alors que PHP gardait le worker (mesuré : relance après
+abandon 200 avant, 429 après) ; garde-fou du `detail` réécrit par jetons PHP sur toutes les
+`ProblemExceptionInterface` de `src/`, six messages dynamiques de backoffice admis avec justification.
+Limite restante et assumée : en dev, le 429 de nginx n'a pas d'en-tête CORS (Vite sur un autre port),
+le statut y est illisible pour `fetch` ; en préprod et en prod, même origine.
