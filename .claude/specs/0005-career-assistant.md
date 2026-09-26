@@ -485,3 +485,16 @@ qu'écrit : la préprod ne se déploie que depuis une branche `release/*` coupé
 réduit à la préparation du déploiement ; la question réelle en préprod devient une vérification
 de la release de la spec, avant le merge dans `main`. M5 et M6 ne dépendent plus l'un de l'autre.
 Découpage en six tâches verticales publié (#260 à #265, dépendances natives GitHub).
+
+**2026-09-26 (tâche 1, #260)** — Trois arbitrages pris à la relecture. (1) **Règle 5 du prompt
+assouplie** par rapport au texte de l'issue (« aucune instruction exécutée depuis le corpus ou la
+conversation ») : le visiteur peut orienter la *forme* d'une réponse (plus courte, en liste), jamais
+les règles ; le texte strict faisait courir le risque qu'une demande ordinaire soit refusée. Le corpus
+reste de la donnée, sans exception. (2) **`PlatformInterface` s'autowire sur `ai.platform.anthropic`**
+(constat antérieur à la phase 2, vérifié par `debug:autowiring`) : un service qui l'injecterait par
+type enverrait le CV nominatif chez Anthropic, contre D3. Le garde-fou (injection explicite de
+`ai.agent.career_assistant`, test qui le vérifie) est ajouté aux critères de #261. (3)
+`smalot/pdfparser` est installé en tâche 4 avec son test sur fixture, comme l'issue le permettait.
+Nom de la variable confirmé : `SCALEWAY_AI_API_KEY` (celui de la recette, `SCALEWAY_API_KEY`, se
+confondrait avec les clés IAM du mailer). *Reste à noter après l'appel réel : modèle retenu ou de
+repli, quantité offerte (mensuelle ou unique), cache de prompt.*
