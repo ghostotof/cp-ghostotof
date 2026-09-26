@@ -59,7 +59,7 @@ final class AssistantExceptionLogLevelTest extends TestCase
     }
 
     /**
-     * @return array<class-string, array{log_level: ?string, status_code: ?int}>
+     * @return array<class-string, array{log_level: ?string, status_code: null, log_channel: null}>
      */
     private function exceptionsMapping(): array
     {
@@ -68,7 +68,7 @@ final class AssistantExceptionLogLevelTest extends TestCase
 
         $mapping = [];
         foreach ($config['framework']['exceptions'] ?? [] as $class => $options) {
-            $mapping[$class] = ['log_level' => $options['log_level'] ?? null, 'status_code' => null];
+            $mapping[$class] = ['log_level' => $options['log_level'] ?? null, 'status_code' => null, 'log_channel' => null];
         }
 
         return $mapping;

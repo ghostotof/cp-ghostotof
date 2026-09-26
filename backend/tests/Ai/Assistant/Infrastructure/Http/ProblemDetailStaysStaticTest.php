@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Ai\Assistant\Infrastructure\Http;
 
+use App\Security\User\Domain\Exception\CannotModifyOwnRolesException;
+use App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException;
+use App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException;
+use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
+use App\Portfolio\Shared\Domain\Exception\IncompleteOrderException;
+use App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException;
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -43,12 +49,12 @@ final class ProblemDetailStaysStaticTest extends TestCase
      * que leur appelant connaît déjà.
      */
     private const array DYNAMIC_DETAIL_ALLOWED = [
-        'App\Security\User\Domain\Exception\CannotModifyOwnRolesException' => 'PUT /api/backoffice/users/{id}/roles : cite le username de l\'appelant.',
-        'App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException' => 'PUT /api/backoffice/users/{id}/roles : cite le username visé.',
-        'App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException' => 'Écritures du backoffice : cite le groupe et la locale envoyés.',
-        'App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException' => 'Écritures du backoffice : cite le groupe envoyé.',
-        'App\Portfolio\Shared\Domain\Exception\IncompleteOrderException' => 'PUT /api/backoffice/<x>/order : cite les clés manquantes.',
-        'App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException' => 'PUT /api/backoffice/<x>/order : cite la clé inconnue.',
+        CannotModifyOwnRolesException::class => 'PUT /api/backoffice/users/{id}/roles : cite le username de l\'appelant.',
+        CannotDemoteLastSuperAdminException::class => 'PUT /api/backoffice/users/{id}/roles : cite le username visé.',
+        TranslationAlreadyExistsException::class => 'Écritures du backoffice : cite le groupe et la locale envoyés.',
+        UnknownTranslationGroupException::class => 'Écritures du backoffice : cite le groupe envoyé.',
+        IncompleteOrderException::class => 'PUT /api/backoffice/<x>/order : cite les clés manquantes.',
+        UnknownOrderEntryException::class => 'PUT /api/backoffice/<x>/order : cite la clé inconnue.',
     ];
 
     private const array IGNORED = [\T_WHITESPACE, \T_COMMENT, \T_DOC_COMMENT];
@@ -214,7 +220,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
                 $namespace = $tokens[$index + 1]->text ?? '';
             } elseif ($token->is(\T_USE) && 0 === $depth) {
                 $this->collectAlias($tokens, $index, $aliases);
-            } elseif ($token->is(\T_CLASS) && !self::tokenAt($tokens, $index - 1, [\T_NEW, \T_DOUBLE_COLON])) {
+            } elseif ($token->is(\T_CLASS) && !$this->tokenAt($tokens, $index - 1, [\T_NEW, \T_DOUBLE_COLON])) {
                 $currentClass = ltrim($namespace.'\\'.($tokens[$index + 1]->text ?? ''), '\\');
                 $classes[] = $currentClass;
             } elseif ($token->is(\T_FUNCTION) && null !== $currentClass) {
@@ -224,7 +230,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
                 } elseif ('__construct' === $name) {
                     $constructorMessageIsLiteral[$currentClass] = $this->parentMessageIsLiteral($tokens, $index);
                 }
-            } elseif ($token->is(\T_NEW) && self::tokenAt($tokens, $index + 1, self::NAME_TOKENS) && self::tokenAt($tokens, $index + 2, '(')) {
+            } elseif ($token->is(\T_NEW) && $this->tokenAt($tokens, $index + 1, self::NAME_TOKENS) && $this->tokenAt($tokens, $index + 2, '(')) {
                 $class = $this->resolve($tokens[$index + 1]->text, $namespace, $aliases, $currentClass);
                 $constructions[] = [$class, $this->messageIsLiteral($this->arguments($tokens, $index + 2)), $token->line];
             }
@@ -245,7 +251,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
      * @param list<\PhpToken>                 $tokens
      * @param int|string|list<int|string>     $kind
      */
-    private static function tokenAt(array $tokens, int $index, int|string|array $kind): bool
+    private function tokenAt(array $tokens, int $index, int|string|array $kind): bool
     {
         return isset($tokens[$index]) && $tokens[$index]->is($kind);
     }
@@ -262,7 +268,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
         }
 
         $fqcn = ltrim($name->text, '\\');
-        $alias = self::tokenAt($tokens, $index + 2, \T_AS) ? ($tokens[$index + 3]->text ?? '') : substr((string) strrchr('\\'.$fqcn, '\\'), 1);
+        $alias = $this->tokenAt($tokens, $index + 2, \T_AS) ? ($tokens[$index + 3]->text ?? '') : substr((string) strrchr('\\'.$fqcn, '\\'), 1);
         $aliases[strtolower($alias)] = $fqcn;
     }
 
@@ -327,7 +333,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
     private function messageIsLiteral(array $arguments): bool
     {
         foreach ($arguments as $position => $argument) {
-            $named = self::tokenAt($argument, 1, ':') && $argument[0]->is(\T_STRING);
+            $named = $this->tokenAt($argument, 1, ':') && $argument[0]->is(\T_STRING);
             if ($named && 'message' === $argument[0]->text) {
                 return $this->isLiteral(\array_slice($argument, 2));
             }
@@ -368,7 +374,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
             } elseif ($token->is('}') && 0 === --$depth) {
                 return true;
             } elseif ($depth > 0 && $token->is(\T_STRING) && 'parent' === strtolower($token->text)
-                && self::tokenAt($tokens, $index + 1, \T_DOUBLE_COLON)
+                && $this->tokenAt($tokens, $index + 1, \T_DOUBLE_COLON)
                 && '__construct' === strtolower($tokens[$index + 2]->text ?? '')) {
                 return $this->messageIsLiteral($this->arguments($tokens, $index + 3));
             }

@@ -234,8 +234,10 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
      */
     private static function neutraliseTags(string $value): string
     {
-        $parts = preg_split('/(documents)/iu', $value, -1, \PREG_SPLIT_DELIM_CAPTURE)
-            ?: throw new CorpusRenderingException(\sprintf('Rendu du corpus impossible : %s.', preg_last_error_msg()));
+        $parts = preg_split('/(documents)/iu', $value, -1, \PREG_SPLIT_DELIM_CAPTURE);
+        if (false === $parts) {
+            throw new CorpusRenderingException(\sprintf('Rendu du corpus impossible : %s.', preg_last_error_msg()));
+        }
 
         for ($index = 0, $last = \count($parts) - 1; $index < $last; $index += 2) {
             $piece = $parts[$index];
