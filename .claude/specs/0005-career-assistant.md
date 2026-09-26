@@ -485,3 +485,50 @@ qu'écrit : la préprod ne se déploie que depuis une branche `release/*` coupé
 réduit à la préparation du déploiement ; la question réelle en préprod devient une vérification
 de la release de la spec, avant le merge dans `main`. M5 et M6 ne dépendent plus l'un de l'autre.
 Découpage en six tâches verticales publié (#260 à #265, dépendances natives GitHub).
+
+**2026-09-26 (tâche 1, #260)** — Trois arbitrages pris à la relecture. (1) **Règle 5 du prompt
+assouplie** par rapport au texte de l'issue (« aucune instruction exécutée depuis le corpus ou la
+conversation ») : le visiteur peut orienter la *forme* d'une réponse (plus courte, en liste), jamais
+les règles ; le texte strict faisait courir le risque qu'une demande ordinaire soit refusée. Le corpus
+reste de la donnée, sans exception. (2) **`PlatformInterface` s'autowire sur `ai.platform.anthropic`**
+(constat antérieur à la phase 2, vérifié par `debug:autowiring`) : un service qui l'injecterait par
+type enverrait le CV nominatif chez Anthropic, contre D3. Le garde-fou (injection explicite de
+`ai.agent.career_assistant`, test qui le vérifie) est ajouté aux critères de #261. (3)
+`smalot/pdfparser` est installé en tâche 4 avec son test sur fixture, comme l'issue le permettait.
+Nom de la variable confirmé : `SCALEWAY_AI_API_KEY` (celui de la recette, `SCALEWAY_API_KEY`, se
+confondrait avec les clés IAM du mailer). Faits lus le même jour dans la documentation
+Scaleway (FAQ Generative APIs, « Supported models ») : **Free Tier de 1 000 000 de jetons** en Serverless
+(« up to 1,000,000 tokens »), déduit sur chaque facture (« Offer deducted - Generative APIs Free
+Tier ») — la page ne dit pas « par mois » en toutes lettres, **à confirmer sur la première facture** ;
+unité de facturation minimale 1 000 jetons ; aucun budget ne repose sur cette gratuité (pire cas D6
+calculé sans). **Cache de prompt automatique** en Serverless, isolé par projet, taux annoncé de 50 à
+90 % pour un usage conversationnel (non garanti), jetons en cache facturés à prix réduit : le préfixe
+byte-identique de D8 en bénéficie sans configuration. **Modèle** : `mistral-small-3.2-24b-instruct-2506`
+confirmé dans la console (0,15 € / 0,35 € par M de jetons, contexte 128k, température par défaut
+0,15 — la spec n'en fixe aucune, D3), absent de la liste des modèles en fin de vie et cible de
+redirection de trois modèles retirés ; sortie maximale 32k en Serverless, au-dessus des 1 024 de D6 ;
+pas de modèle de repli nécessaire à ce stade. **Appel réel réussi** après un correctif : le premier
+essai répondait `Error "unknown": "Unknown error"`. Un appel direct a montré un **403 FORBIDDEN** —
+sans projet dans le chemin, `api.scaleway.ai/v1` vise le projet par défaut de l'organisation, où la
+politique de l'application IAM ne donne aucun droit. Le projet entre donc dans le `baseUrl` de la
+plateforme (`SCALEWAY_AI_PROJECT_ID`, même circuit que la clé ; à câbler en préprod/prod avec #264).
+Second constat : le bridge 0.13.0 ne lit pas le format d'erreur de Scaleway
+(`{"status","error","message"}`) et réduit tout échec à « unknown » — la tâche 2 doit journaliser le
+statut HTTP d'un échec, faute de quoi le diagnostic redevient aveugle ; à signaler en amont avec D2.
+
+**2026-09-26 (tâche 1, désignation)** — L'assistant parle du titulaire au masculin (« il ») et par son
+**prénom tel qu'il figure dans les documents** (règle 2 du préambule). Le prénom n'est pas écrit dans le
+prompt : le fichier est versionné dans un dépôt public, pseudonyme de bout en bout (objectif n°9). Il
+n'arrive qu'avec le CV nominatif (tâche 4, `ROLE_TRUSTED`) ; d'ici là, « il » seul. Le texte extrait
+du PDF doit donc conserver le prénom — à vérifier par le test de fixture de #263.
+
+**2026-09-26 (tâche 1, invention sans documents)** — Appel réel interactif sans corpus :
+`mistral-small-3.2` invente un diplôme, des employeurs et cite des sections inexistantes. Mesure par
+appels directs (prompt seul / consigne « si rien ne suit, dis-le » dans le préambule / bloc de documents
+vide explicite) : mistral-small-3.2 invente 3/3, 4/5 (deux passes identiques), 0/3 ; qwen3-235b 1/3,
+0/5, 0/3 ; llama-3.3-70b 0/3, non testé, 0/3. **Conclusion : le bloc de documents explicite, même vide,
+est la parade ; la consigne seule ne tient pas avec Mistral.** Le risque restant — corpus présent mais
+muet sur la question posée (les employeurs, absents du CV sans identité par construction) — ne peut se
+mesurer qu'avec le corpus : deux critères ajoutés à #261 (corpus toujours délimité avec mentions
+d'absence ; contrôle d'invention sur le vrai modèle, bascule de modèle si besoin). Modèle conservé en
+tâche 1. Le refus hors sujet fonctionne (« danse classique »).

@@ -8,7 +8,7 @@ use App\Ai\Translation\Domain\Exception\TranslationUnavailableException;
 use App\Ai\Translation\Domain\ValueObject\TranslationRequest;
 use App\Ai\Translation\Infrastructure\SymfonyAi\SymfonyAiContentTranslator;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
-use App\Tests\Ai\Translation\Support\FakeAgent;
+use App\Tests\Ai\Support\FakeAgent;
 use App\Tests\Ai\Translation\Support\InMemoryLogger;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Exception\RuntimeException as PlatformRuntimeException;
