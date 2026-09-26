@@ -86,7 +86,12 @@ Chacun est à noter au journal de la spec (§10) dans la tâche 5.
    comportement est vérifié à l'appel réel (tâche 4).
 5. **nginx.** `try_files … /index.php` fait une redirection interne vers `location ~ ^/index\.php`,
    si bien qu'un `fastcgi_buffering off` posé dans `location ^~ /api/assistant/` **ne s'appliquerait
-   pas**. La location fait donc son propre `fastcgi_pass`. Autre fait : `EventStreamResponse` pose déjà
+   pas**. La location fait donc son propre `fastcgi_pass`.
+   *Mesuré le 2026-09-26 : avant la location, 63 fragments étalés sur 0,44 s pour un corps de ~3 Ko,
+   sous les tampons FastCGI par défaut (4 à 8 Ko) — l'en-tête suffit. Location gardée sur
+   décision (défense en profondeur) ; trafic prouvé dessus (502 avec un `fastcgi_pass` cassé).
+   Jetons présents en flux (`promptTokens` 662) : l'écart n°4 est levé, Scaleway honore
+   `stream_options`.* Autre fait : `EventStreamResponse` pose déjà
    `X-Accel-Buffering: no`, que nginx honore aussi pour FastCGI. L'expérience de la tâche 4 dit si
    l'en-tête suffit déjà ; **si oui, s'arrêter et demander** s'il faut garder la location (défense
    en profondeur, et critère de l'issue) ou s'en passer.
@@ -2468,7 +2473,7 @@ modèle (clé et projet déjà dans `backend/.env.local`, tâche 1).
 - Créer, hors dépôt : `$SCRATCH/assistant-login.sh`, `$SCRATCH/ask.sh` (dans le dossier scratchpad
   de la session)
 
-- [ ] **Étape 1 : un compte de dev et une session, sans secret dans la conversation**
+- [x] **Étape 1 : un compte de dev et une session, sans secret dans la conversation**
 
 Le compte de dev `ROLE_TRUSTED` et sa connexion sont faits **par Christophe, dans un terminal
 séparé** (règle : jamais de mot de passe en argument ni dans une session d'agent). Le script
@@ -2504,7 +2509,7 @@ jq -n --arg l "$locale" --arg q "$question" '{locale: $l, messages: [{role: "use
       --data @- http://localhost:8080/api/assistant/answers
 ```
 
-- [ ] **Étape 2 : l'expérience rouge, avant de toucher nginx**
+- [x] **Étape 2 : l'expérience rouge, avant de toucher nginx**
 
 S'assurer que le corpus de dev est peuplé : `app:anonymous-cv:seed` et `app:case-studies:seed`
 (ils déclinent si la base a déjà du contenu).
@@ -2522,7 +2527,7 @@ même milliseconde** en fin de réponse (tampon) ? Noter le résultat.
 Vérifier aussi que `done` porte des jetons non nuls (sinon : Scaleway ignore `stream_options`, le
 noter au journal).
 
-- [ ] **Étape 3 : la location, dans les deux fichiers**
+- [x] **Étape 3 : la location, dans les deux fichiers**
 
 Dans `docker/nginx/default.conf`, après `location ^~ /api/login_check { … }` :
 
@@ -2557,14 +2562,14 @@ docker compose exec web nginx -t && docker compose exec web nginx -s reload
 docker compose exec web nginx -T | grep -A12 'location ^~ /api/assistant/'
 ```
 
-- [ ] **Étape 4 : l'expérience verte**
+- [x] **Étape 4 : l'expérience verte**
 
 Relancer la commande de l'étape 2. Attendu : des `delta` étalés dans le temps, puis un `done`.
 Vérifier aussi que les autres routes répondent toujours (`curl -s -o /dev/null -w '%{http_code}'
 http://localhost:8080/api/watch` → 200) et qu'une question anonyme sur l'assistant reste refusée
 (403).
 
-- [ ] **Étape 5 : commit**
+- [x] **Étape 5 : commit**
 
 ```bash
 git add docker/nginx/default.conf k8s/base/backend-nginx.conf
