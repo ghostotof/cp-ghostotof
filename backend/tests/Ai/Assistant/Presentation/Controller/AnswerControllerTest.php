@@ -430,6 +430,65 @@ final class AnswerControllerTest extends WebTestCase
     }
 
     /**
+     * Spec 0005 M4 : au-delà de 64 Kio, le corps est refusé avant d'être
+     * désérialisé (nginx, lui, laisse passer jusqu'à 1 Mo). Une conversation
+     * valide complétée d'espaces — du JSON toujours valide — mesure la borne
+     * à l'octet près.
+     */
+    public function testABodyOfExactly64KibibytesIsAccepted(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
+
+        $this->postRaw($client, $csrfToken, $this->paddedBody(65536));
+
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+    }
+
+    public function testABodyBeyond64KibibytesIsA413ProblemAndNeverReachesTheProvider(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('jamais lu'), $this->sseHeaders()));
+
+        $this->postRaw($client, $csrfToken, $this->paddedBody(65537));
+
+        $response = $client->getResponse();
+        self::assertSame(413, $response->getStatusCode());
+        $problem = json_decode((string) $response->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame('/errors/request-too-large', $problem['type']);
+        self::assertSame([], $this->scalewayRequests);
+    }
+
+    /** Issue #77 : un chemin encodé est jugé sur sa forme décodée. */
+    public function testAnEncodedPathDoesNotEscapeTheSizeBound(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('jamais lu'), $this->sseHeaders()));
+
+        $client->request('POST', '/api/%61ssistant/answers', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: $this->paddedBody(65537));
+
+        self::assertSame(413, $client->getResponse()->getStatusCode());
+        self::assertSame([], $this->scalewayRequests);
+    }
+
+    /**
+     * La taille ne se juge qu'une fois l'accès accordé : un anonyme reçoit
+     * son refus d'accès, jamais une réponse sur la forme de sa requête.
+     */
+    public function testAnOversizedBodyFromTheBaseTierIsStillForbidden(): void
+    {
+        $client = self::createClient();
+        $csrfToken = $this->obtainBaseAccess($client);
+
+        $this->postRaw($client, $csrfToken, $this->paddedBody(65537));
+
+        self::assertSame(403, $client->getResponse()->getStatusCode());
+    }
+
+    /**
      * @return iterable<string, array{string, string}>
      */
     public static function nonJsonBodies(): iterable
@@ -539,6 +598,22 @@ final class AnswerControllerTest extends WebTestCase
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody($payload));
+    }
+
+    private function postRaw(KernelBrowser $client, string $csrfToken, string $body): void
+    {
+        $client->request('POST', self::PATH, server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: $body);
+    }
+
+    /** Le corps de payload(), complété d'espaces jusqu'à $bytes octets. */
+    private function paddedBody(int $bytes): string
+    {
+        $body = self::jsonBody($this->payload());
+
+        return $body.str_repeat(' ', $bytes - \strlen($body));
     }
 
     /** Flux Chat Completions compatible OpenAI, tel que Scaleway le diffuse. */

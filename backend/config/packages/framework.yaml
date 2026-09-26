@@ -27,6 +27,9 @@ framework:
         # Quota horaire atteint (D6) : le comportement attendu de la borne.
         App\Ai\Assistant\Domain\Exception\AssistantRateLimitExceededException:
             log_level: info
+        # Corps au-delà de 64 Kio (spec 0005 M4) : erreur du client.
+        App\Ai\Assistant\Infrastructure\Http\RequestBodyTooLargeException:
+            log_level: info
         # Panne d'un tiers : la cause (classe, statut) est déjà sur `ai_usage`.
         # `warning` reste visible en production (LOG_LEVEL=warning).
         App\Ai\Assistant\Domain\Exception\AssistantUnavailableException:

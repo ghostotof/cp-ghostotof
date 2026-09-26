@@ -7,6 +7,7 @@ namespace App\Tests\Ai\Assistant\Infrastructure;
 use App\Ai\Assistant\Domain\Exception\AssistantRateLimitExceededException;
 use App\Ai\Assistant\Domain\Exception\AssistantUnavailableException;
 use App\Ai\Assistant\Domain\Exception\InvalidConversationException;
+use App\Ai\Assistant\Infrastructure\Http\RequestBodyTooLargeException;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
@@ -40,6 +41,7 @@ final class AssistantExceptionLogLevelTest extends TestCase
         yield 'conversation refusée (422)' => [new InvalidConversationException('La conversation est vide.'), Level::Info];
         yield 'fournisseur indisponible (503)' => [new AssistantUnavailableException(), Level::Warning];
         yield 'quota atteint (429)' => [new AssistantRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Info];
+        yield 'corps trop volumineux (413)' => [new RequestBodyTooLargeException(), Level::Info];
         yield 'format refusé (415)' => [new UnsupportedMediaTypeHttpException('Unsupported format.'), Level::Info];
     }
 
