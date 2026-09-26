@@ -1,9 +1,13 @@
-# Ménage quotidien de la base, deux commandes :
+# Ménage quotidien de la base, trois commandes :
 #
 # 1. `app:contact:purge-failed-messages` — rétention des messages de contact
 #    en échec (point d'audit B6, 30 jours par défaut) — voir
 #    src/Contact/Presentation/Command/PurgeFailedContactMessagesCommand.php.
-# 2. `cache:pool:prune` — purge des entrées expirées de `cache_items`, la table
+# 2. `app:user:purge-pending-invitations` — RGPD (issue #238) : supprime les
+#    comptes invités jamais activés au-delà de 30 jours depuis leur dernière
+#    invitation — voir
+#    src/Security/User/Presentation/Command/PurgePendingInvitationsCommand.php.
+# 3. `cache:pool:prune` — purge des entrées expirées de `cache_items`, la table
 #    Doctrine DBAL du cache applicatif (ADR 0005 : l'état des limiteurs de
 #    débit et le cache de résultats vivent en base, pas sur le disque du pod).
 #    L'adaptateur n'efface jamais une ligne expirée de lui-même : sans cette
@@ -52,6 +56,7 @@ spec:
                 - |
                   set -e
                   php bin/console app:contact:purge-failed-messages --no-interaction
+                  php bin/console app:user:purge-pending-invitations --no-interaction
                   php bin/console cache:pool:prune --no-interaction
               envFrom:
                 - configMapRef:

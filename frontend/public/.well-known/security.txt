@@ -1,6 +1,9 @@
 # Politique complète : https://github.com/ghostotof/cp-ghostotof/blob/main/SECURITY.md
 # Ce fichier expire à la date ci-dessous. tools/audit-prod.sh échoue sur un
 # Expires dépassé : c'est le rappel de renouvellement, il n'y en a pas d'autre.
+# Canonical : image construite une fois, promue telle quelle de la préprod vers
+# la production. L'URL de Canonical reste celle de la prod même en préprod (fait
+# par construction). L'audit ne vérifie pas Canonical : accepté.
 
 Contact: https://github.com/ghostotof/cp-ghostotof/security/advisories/new
 Contact: https://cp-ghostotof.com/fr/contact

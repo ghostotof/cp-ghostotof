@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 DC := docker compose
 
-.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality back-lsp build-front-prod build-front-preprod get-secret
+.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality back-lsp build-front-prod build-front-preprod front-image-headers get-secret
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -137,6 +137,7 @@ build-front-prod: ## Construit l'image frontend de production (TAG=...)
 	  --target production \
 	  --build-arg NODE_TAG=$(shell grep '^NODE_TAG=' .env | cut -d= -f2) \
 	  --build-arg NGINX_TAG=$(shell grep '^NGINX_TAG=' .env | cut -d= -f2) \
+	  --build-arg APP_VERSION=$(TAG) \
 	  -f docker/node/Dockerfile \
 	  -t $(FRONT_IMAGE):$(TAG) .
 
@@ -145,8 +146,13 @@ build-front-preprod: ## Construit l'image frontend de préprod (= prod + source 
 	  --target preprod \
 	  --build-arg NODE_TAG=$(shell grep '^NODE_TAG=' .env | cut -d= -f2) \
 	  --build-arg NGINX_TAG=$(shell grep '^NGINX_TAG=' .env | cut -d= -f2) \
+	  --build-arg APP_VERSION=$(TAG) \
 	  -f docker/node/Dockerfile \
 	  -t $(FRONT_IMAGE):$(TAG)-preprod .
+
+front-image-headers: ## Construit l'image frontend de prod et vérifie les 7 en-têtes de sécurité, location par location (garde A16)
+	$(MAKE) build-front-prod FRONT_IMAGE=$(FRONT_IMAGE) TAG=$(TAG)
+	tools/check-frontend-image-headers.sh $(FRONT_IMAGE):$(TAG)
 
 # --- Secrets Kubernetes (préprod/prod) ---------------------------------------
 # Lit les Secrets déjà présents dans le cluster (remplis par External Secrets

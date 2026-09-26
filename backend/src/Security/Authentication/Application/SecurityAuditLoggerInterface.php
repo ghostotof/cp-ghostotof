@@ -18,7 +18,9 @@ use App\Security\User\Domain\Entity\CpgUser;
  *  - les deux gardes CSRF : juste avant de lever leur exception ;
  *  - l'émission d'un jeton du palier de base : BaseAccessController ;
  *  - les actions d'administration et l'activation d'un compte : les cas
- *    d'usage de Security\User\Application, après l'action réussie.
+ *    d'usage de Security\User\Application, après l'action réussie ;
+ *  - la purge automatique des invitations jamais activées (issue #238) :
+ *    PendingInvitationPurger, une par compte supprimé.
  *
  * Ce qui sort, et rien d'autre : `event` (kebab-case, stable — c'est la clé
  * sur laquelle on filtre), l'identifiant visé (`user`, plus `userId` quand un
@@ -67,4 +69,13 @@ interface SecurityAuditLoggerInterface
 
     /** Fin du parcours d'invitation : mot de passe défini, compte utilisable. */
     public function accountActivated(CpgUser $user): void;
+
+    /**
+     * Compte en attente d'activation supprimé par la purge automatique
+     * (PendingInvitationPurger, issue #238) faute d'activation dans le délai.
+     * Déclenché par une commande CLI planifiée, jamais par une action
+     * humaine : l'acteur journalisé est `system`, jamais le jeton de sécurité
+     * de la requête courante (il n'y en a pas).
+     */
+    public function userPurged(CpgUser $user): void;
 }

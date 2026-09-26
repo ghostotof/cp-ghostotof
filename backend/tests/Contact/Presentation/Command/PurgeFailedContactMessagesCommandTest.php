@@ -65,7 +65,39 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
         $exitCode = $tester->execute(['--older-than' => 'not-an-interval']);
 
         self::assertSame(2, $exitCode); // Command::INVALID
-        self::assertStringContainsString('Intervalle invalide', $tester->getDisplay());
+        self::assertStringContainsString('illisible', $tester->getDisplay());
+    }
+
+    /**
+     * Issue #248 : `new \DateTimeImmutable('-'.$olderThan)` acceptait la
+     * double négation "--30 days" (interprétée "+30 days") et purgeait tout,
+     * y compris un message en échec récent. `RetentionPeriod` doit refuser
+     * cette expression avant que la moindre suppression ait lieu.
+     */
+    public function testRejectsANegativeOlderThanInsteadOfPurgingEverything(): void
+    {
+        $this->failedTransport->send(new Envelope($this->message('recent@example.com')));
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute(['--older-than' => '-30 days']);
+
+        self::assertSame(2, $exitCode); // Command::INVALID
+        self::assertStringContainsString('strictement positive', $tester->getDisplay());
+        self::assertSame(1, $this->countByRecipient('recent@example.com'));
+    }
+
+    /**
+     * Issue #248, même défaut sous une autre forme : une durée nulle place le
+     * seuil exactement à `now`, ce qui purge tout aussi.
+     */
+    public function testRejectsAZeroOlderThan(): void
+    {
+        $this->failedTransport->send(new Envelope($this->message('recent@example.com')));
+
+        $exitCode = $this->commandTester()->execute(['--older-than' => '0 days']);
+
+        self::assertSame(2, $exitCode); // Command::INVALID
+        self::assertSame(1, $this->countByRecipient('recent@example.com'));
     }
 
     private function message(string $senderEmail): SendContactMessageMessage

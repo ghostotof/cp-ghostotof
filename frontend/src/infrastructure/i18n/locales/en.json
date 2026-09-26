@@ -20,6 +20,9 @@
     "openMenu": "Open menu",
     "closeMenu": "Close menu",
     "footerCopyright": "© {year} {brand} — All rights reserved.",
+    "footerVersion": "v{version}",
+    "footerVersionTitle": "Deployed version",
+    "footerVersionBuild": "Deployed version · build {build}",
     "skipToContent": "Skip to main content",
     "mainNavigation": "Main navigation",
     "mobileNavigation": "Mobile navigation",
@@ -471,7 +474,21 @@
       "submit": "Send",
       "submitting": "Sending…",
       "success": "Your message has been sent, thank you!",
-      "error": "Sending the message failed. Please try again later.",
+      "errors": {
+        "validation": "Your message was not sent: please correct the fields flagged above.",
+        "validationGeneric": "Your entry was refused. Please check the information you provided.",
+        "rateLimited": "Too many messages sent from this address. Please try again in a few minutes.",
+        "unknown": "Sending the message failed. Please try again later."
+      },
+      "hints": {
+        "name": "2 characters minimum",
+        "message": "10 characters minimum"
+      },
+      "fieldErrors": {
+        "name": "The name must be between 2 and 100 characters, with no line break.",
+        "email": "This email address is not valid.",
+        "message": "The message must be between 10 and 5000 characters."
+      },
       "privacyNoticePrefix": "Your data is only used to reply to you. It is not retained when the message goes through; if delivery fails, the message is queued and then deleted automatically within 30 days."
     }
   },

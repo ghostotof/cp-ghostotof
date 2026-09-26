@@ -193,7 +193,10 @@ are there for secrecy rather than size (audit A13/A22): `backend/config/jwt/` �
 generated its dev RS256 keypair would otherwise ship `private.pem` in an image layer, and the deployed
 keys come from the `jwt-keys` Secret at runtime anyway — and `backend/.env.test`, `.claude/`, `tasks/`,
 `.superpowers/`, which carry local configuration, real identity (`CLAUDE.local.md`) or uncorrected audit
-findings. Never `COPY` something out of one of those; widen the ignore list instead.
+findings. Never `COPY` something out of one of those; widen the ignore list instead. Development tooling
+files are also excluded: `backend/tests/`, PHPStan/Psalm/Rector/PHPUnit/LSP configuration files, and
+Composer/Flex recipe files — the production image has no test suite, and adding a new quality tool means
+adding its config file to the ignore list.
 
 ### Backend architecture (`../backend/src`)
 
@@ -257,7 +260,13 @@ mid-migration.
     then **only** dispatches `SendAccountInvitationMessage`) · `PasswordSetupService` (`validate` / `complete`
     the public flow) · `CpgUserAdministrator` (delete / change-password) · `CpgUserRoleAdministrator`
     (`setSuperAdmin`, idempotent, anti-lockout guards; on demotion `ROLE_TRUSTED` is kept **only if the account
-    has an `email`** — nominative grant, ADR 0003 D1, issue #78 pt 3 — a CLI account falls back to the base tier) · `PasswordSetupRateLimiterInterface` (calqued on the
+    has an `email`** — nominative grant, ADR 0003 D1, issue #78 pt 3 — a CLI account falls back to the base
+    tier) · `PendingInvitationPurger` (deletes accounts whose password hash is still empty — the literal
+    definition of "never activated", issue #238, so a password set for the person from the backoffice
+    exempts the account — invited more than N days ago, 30 by default, never a `ROLE_SUPER` one;
+    `app:user:purge-pending-invitations`, daily in the housekeeping CronJob, `--dry-run` for a hand run;
+    retention ≥ 1 day, `InvalidPurgeRetentionException` → exit 2, a shorter one would otherwise purge nearly
+    every pending account in one manual run) · `PasswordSetupRateLimiterInterface` (calqued on the
     Contact rate limiter). Presenters: `CpgUserPresenter` (`/api/me`), `CpgUserAdminPresenter`
     (backoffice list — `id`, `username`, `email`, `roles`, `status`).
   - **The invitation token is created by the Messenger handler, never by the use case** (audit C2):
@@ -374,7 +383,9 @@ mid-migration.
     `monolog.yaml`). Implements `Application/SecurityAuditLoggerInterface`, one method per event:
     `login-succeeded`, `login-failed`, `login-throttled`, `logged-out`, `base-access-issued`,
     `csrf-rejected`, `backoffice-access-denied`, `user-invited`, `user-reinvited`, `role-changed`
-    (`superAdmin` bool), `password-changed`, `user-deleted`, `account-activated`. Every record carries
+    (`superAdmin` bool), `password-changed`, `user-deleted`, `account-activated`, `user-purged`
+    (`actor: system` — the one event whose actor is not read from the token storage; `record()` takes an
+    explicit actor for CLI callers). Every record carries
     `event` (the stable kebab-case key to filter on), `actor` (identifier from the token storage, or
     `anonymous`), `ip`, `path` (canonical), plus `user` and — for an existing account — `userId` (RFC 4122).
     **Never a password, a token (JWT, XSRF, invitation), an e-mail, a request body or a serialized
@@ -389,8 +400,9 @@ mid-migration.
     `AccessDeniedHttpException` isn't logged twice; an anonymous hit is a 401 that never reaches it); the
     two CSRF guards call `csrfRejected()` right before throwing (actor is `anonymous` there by
     construction — priority 20 runs before the firewall); `BaseAccessController` logs the `guest-…`
-    identifier, never the token; the `Security/User/Application` use cases log after the successful
-    action. Functional tests read the records through `tests/Support/ReadsSecurityAuditLog.php` (a
+    identifier, never the token; the `Security/User/Application` use cases and the housekeeping
+    `PendingInvitationPurger` log after the successful action. Functional tests read the records through
+    `tests/Support/ReadsSecurityAuditLog.php` (a
     Monolog `test` handler on the channel, `when@test`, found among `monolog.logger.security_audit`'s
     handlers — that logger is public in every env, so phpstan-symfony's dev dump knows it); the kernel
     reboots between requests, so the handler holds the *last* request's records. `Psr\Log\Test\TestLogger`
@@ -623,7 +635,9 @@ Content management for all of the above, plus user administration, gated end-to-
   `/api/backoffice*` path can ever be allow-listed, and that the whole backoffice answers 403 to an
   authenticated account lacking `ROLE_SUPER` (authenticated ≠ authorized). Adding a public endpoint therefore
   means adding an entry to `PUBLIC_PATHS` **with a written justification**; if you can't justify it, it isn't
-  public. The same test carries `BASE_TIER_PATHS` (issue #78, invariant n°6): with a base-tier token
+  public. `tests/Security/RouterScopeTest.php` closes the boundary on the other side: any route compiled
+  outside `/api` must be justified in its own `NON_API_PATHS` allow-list and protected by its own firewall
+  and `access_control` rule, or the suite turns red. The same test carries `BASE_TIER_PATHS` (issue #78, invariant n°6): with a base-tier token
   (`POST /api/account/base-access`, `ROLE_USER`) **every** route outside `PUBLIC_PATHS ∪ BASE_TIER_PATHS`
   must answer 403, and every listed entry must actually open — so a new `ROLE_USER` content route needs its
   own justified entry there, and a `ROLE_USER` rule on an identifying route turns the suite red. Never
@@ -684,7 +698,12 @@ Content management for all of the above, plus user administration, gated end-to-
   answered **500 on every POST, public ones included**, i.e. an anonymous caller could manufacture 500s at
   will and drown real server errors in the logs. And resolution takes the **first matching entry**, with
   `is_a()` matching interfaces and parents too, so a broad entry must stay **below** the precise ones: add a
-  new exception *above* those three restored defaults, never after. `MalformedRequestBodyTest` pins the 400s.
+  new exception *above* those three restored defaults, never after. Since 2026-09-22 (issue #239)
+  `defaults.collect_denormalization_errors: true` narrows what that 400 covers: a **wrongly-typed field**
+  (`{"name":123}`) is collected instead of aborting the deserialization and comes out as a **422 with
+  `violations` naming the field**, the same shape the admin forms already render for an `Assert`; only
+  unreadable JSON stays a 400. `MalformedRequestBodyTest` pins both boundaries. The API Platform metadata
+  pool survives a change to that option — `rm -rf var/cache/test` before trusting a red test.
 - **Errors under `/api` come out as JSON, never as Symfony's HTML page** (audit A15). Two families escaped
   API Platform's own error handling: the router's 404/405 (raised before API Platform exists for that
   request) and the 403s of our own `kernel.request` guards on non-API-Platform routes (`POST /api/logout`
@@ -1028,6 +1047,15 @@ via `window.__APP_CONFIG__` (`frontend/src/infrastructure/config/getApiUrl.ts`, 
 image — like the backend — is built once and promoted from preprod to prod unchanged, only the `API_URL` env var
 differs per environment; `make build-front-prod`/`build-front-preprod` no longer take an `API_URL` argument.
 
+**The version shown in the footer is the opposite case, and deliberately so**: it is a property of the *image*,
+not of the environment, so it is fixed at **build** time — `make build-front-*` passes `--build-arg
+APP_VERSION=$(TAG)` (the pipeline's `<version>-<sha>`), `docker/node/Dockerfile` exports it as
+`VITE_APP_VERSION`, Vite inlines it, and `infrastructure/config/getAppVersion.ts` (the mirror of `getApiUrl.ts`)
+parses it into `{version, build, releaseUrl}`. `AppFooter.vue` renders `v0.17.0` as a link to the GitHub release
+(build sha in the `title`); a tag that isn't a release (a local build on a bare sha) shows as plain text, and an
+empty value (`npm run dev`) shows nothing. Don't move it to `config.js`: a promoted image *must* announce the same
+version in preprod and prod, which is exactly what build-time gives for free.
+
 **Share cards** (`frontend/scripts/og/`): one HTML template rendered by system Chrome + ImageMagick
 (`npm run og:generate`, no Playwright — see the script's header) into **two variants** of the same design
 that differ only by headline and size: `frontend/public/og.png` (1200×630, the site's `og:image`,
@@ -1161,7 +1189,12 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   mounted by `subPath`, a second file would need a second mount — so there the headers are repeated
   explicitly on `location = /healthz`; keep the two in step. `tools/audit-prod.sh` checks `/`,
   `/config.js`, `/healthz` and an asset discovered from the home page, judging only the **final**
-  response.
+  response. A pre-merge guard now catches this before deploy: `tools/check-frontend-image-headers.sh`
+  runs the built frontend image locally and checks the 7 headers on at least one path that really
+  lands in each `location`, wired into the `frontend-image-headers` CI job on every push. `/` itself
+  is served by `= /index.html` (`try_files … /index.html` is an internal rewrite that redoes location
+  matching), so `location /` is probed with a root static file (`/favicon.svg`) instead. A new
+  `location` added to `nginx.conf` gets its path added to that script, or it isn't covered.
 - **`/.well-known/security.txt` is published and expires** (RFC 9116, audit A14):
   `frontend/public/.well-known/security.txt`, served `text/plain; charset=utf-8` by the `^~ /.well-known/`
   location (declared first and with `^~` so the hidden-files rule doesn't swallow it; `charset` is not an

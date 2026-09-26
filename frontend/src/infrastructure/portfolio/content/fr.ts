@@ -148,13 +148,13 @@ const fr: PortfolioLocaleContent = {
         heading: 'Durée de conservation',
         paragraphs: [
           "Les messages du formulaire de contact ne sont pas conservés au-delà de l'envoi de l'email de notification. En cas d'échec d'envoi (serveur de messagerie temporairement indisponible), le message est stocké pour permettre une nouvelle tentative, puis supprimé automatiquement au plus tard au bout de 30 jours. Les données techniques (adresse IP pour la limitation de débit, journaux serveur) sont conservées sur des durées courtes, détaillées dans le registre des traitements tenu par l'éditeur.",
-          "Un compte sur invitation et l'adresse email associée sont conservés tant que l'accès vous est accordé ; ils sont supprimés à la fin du besoin ou sur simple demande de votre part. Le lien d'invitation est valable 48 heures et ne peut servir qu'une fois.",
+          "Un compte sur invitation et l'adresse email associée sont conservés tant que l'accès vous est accordé ; ils sont supprimés à la fin du besoin ou sur simple demande de votre part. Le lien d'invitation est valable 48 heures et ne peut servir qu'une fois. Une invitation jamais activée est supprimée automatiquement 30 jours après son envoi (ou son dernier renvoi).",
         ],
       },
       {
         heading: 'Destinataires',
         paragraphs: [
-          "Les données du formulaire de contact sont transmises à la boîte email de l'éditeur, via le prestataire technique d'envoi d'emails utilisé en production (Scaleway, France), qui achemine aussi les invitations de compte, puis via un service de redirection d'emails (Cloudflare). L'adresse email d'un compte invité n'est visible que de l'éditeur. Lorsque vous choisissez un mot de passe, un fragment anonyme de son empreinte (5 caractères) est comparé à une base de mots de passe compromis (Have I Been Pwned) ; ni le mot de passe ni votre identité ne sont transmis. Aucune donnée n'est vendue, louée ou transmise à des tiers à des fins commerciales.",
+          "Les données du formulaire de contact sont transmises à la boîte email de l'éditeur, via le prestataire technique d'envoi d'emails utilisé en production (Scaleway, France), qui achemine aussi les invitations de compte ; cette boîte est hébergée en France (OVHcloud). L'adresse email d'un compte invité n'est visible que de l'éditeur. Lorsque vous choisissez un mot de passe, un fragment anonyme de son empreinte (5 caractères) est comparé à une base de mots de passe compromis (Have I Been Pwned) ; ni le mot de passe ni votre identité ne sont transmis. Aucune donnée n'est vendue, louée ou transmise à des tiers à des fins commerciales.",
         ],
       },
       {
@@ -167,7 +167,7 @@ const fr: PortfolioLocaleContent = {
       {
         heading: 'Transferts hors Union européenne',
         paragraphs: [
-          "L'hébergement, la base de données et l'envoi des emails sont situés en France. Seule exception : les messages du formulaire de contact sont relayés vers la boîte de l'éditeur par Cloudflare, Inc. (États-Unis), transfert encadré par le Data Privacy Framework UE–États-Unis et, à défaut, par les clauses contractuelles types de la Commission européenne.",
+          "Aucun transfert de données hors de l'Union européenne n'est effectué : l'hébergement, la base de données, l'envoi des emails et la boîte de réception de l'éditeur sont situés en France.",
         ],
       },
     ],

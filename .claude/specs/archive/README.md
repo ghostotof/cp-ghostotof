@@ -42,3 +42,4 @@ qui est restée dans `.claude/specs/` avec un statut « livrée » — et ne son
 
 Ces fichiers sont figés : ils décrivent l'état du plan au moment de la clôture, avec ses cases
 cochées, ses checkpoints et ses questions ouvertes. On ne les met pas à jour.
+| `2026-09-22-purge-pending-invitations` | Issue #238, purge automatique des invitations jamais activées (RGPD, minimisation) : `tasks/` seul, feature sans spec — design validé en session, 3 tâches par sous-agents, revue finale de branche qui a corrigé le plan (la relance repousse le délai, hachage vide requis, plancher d'un jour) | (déplacé par `git mv`, PR de clôture) |

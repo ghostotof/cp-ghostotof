@@ -7,6 +7,7 @@ namespace App\Security\User\Infrastructure\Doctrine;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Component\Security\Core\Exception\UnsupportedUserException;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
@@ -41,6 +42,24 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
     public function findAll(): array
     {
         return $this->findBy([], ['username' => 'ASC']);
+    }
+
+    public function findAwaitingPasswordSetupInvitedBefore(\DateTimeImmutable $threshold): array
+    {
+        return $this->createQueryBuilder('u')
+            ->andWhere('u.invitedAt IS NOT NULL')
+            ->andWhere('u.activatedAt IS NULL')
+            ->andWhere('u.invitedAt < :threshold')
+            // Round de correction (I2, issue #238) : un mot de passe non vide
+            // veut dire qu'un ROLE_SUPER l'a posé depuis le backoffice
+            // (CpgUserAdministrator::changePassword(), qui ne marque jamais
+            // activatedAt) — le compte se connecte déjà et ne doit plus
+            // ressortir ici, même s'il reste isPendingActivation() vrai.
+            ->andWhere("u.password = ''")
+            ->setParameter('threshold', $threshold, Types::DATETIME_IMMUTABLE)
+            ->orderBy('u.invitedAt', 'ASC')
+            ->getQuery()
+            ->getResult();
     }
 
     /**

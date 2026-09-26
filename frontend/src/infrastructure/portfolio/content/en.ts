@@ -148,13 +148,13 @@ const en: PortfolioLocaleContent = {
         heading: 'Retention period',
         paragraphs: [
           "Contact form messages are not kept beyond sending the notification email. If delivery fails (mail server temporarily unavailable), the message is stored so it can be retried, then automatically deleted after 30 days at the latest. Technical data (IP address for rate limiting, server logs) is kept for short periods, detailed in the processing register maintained by the publisher.",
-          'An invited account and its email address are kept for as long as access is granted to you; they are deleted when no longer needed or simply at your request. The invitation link is valid for 48 hours and can be used only once.',
+          'An invited account and its email address are kept for as long as access is granted to you; they are deleted when no longer needed or simply at your request. The invitation link is valid for 48 hours and can be used only once. An invitation that is never activated is deleted automatically 30 days after it was sent (or last re-sent).',
         ],
       },
       {
         heading: 'Recipients',
         paragraphs: [
-          "Contact form data is sent to the publisher's mailbox, via the email delivery provider used in production (Scaleway, France), which also delivers account invitations, then through an email forwarding service (Cloudflare). An invited account's email address is visible to the publisher only. When you choose a password, an anonymous fragment of its hash (5 characters) is checked against a database of compromised passwords (Have I Been Pwned); neither the password nor your identity is transmitted. No data is sold, rented, or shared with third parties for commercial purposes.",
+          "Contact form data is sent to the publisher's mailbox, via the email delivery provider used in production (Scaleway, France), which also delivers account invitations; that mailbox is hosted in France (OVHcloud). An invited account's email address is visible to the publisher only. When you choose a password, an anonymous fragment of its hash (5 characters) is checked against a database of compromised passwords (Have I Been Pwned); neither the password nor your identity is transmitted. No data is sold, rented, or shared with third parties for commercial purposes.",
         ],
       },
       {
@@ -167,7 +167,7 @@ const en: PortfolioLocaleContent = {
       {
         heading: 'Transfers outside the European Union',
         paragraphs: [
-          "Hosting, the database and email delivery are located in France. One exception: contact form messages are relayed to the publisher's mailbox by Cloudflare, Inc. (United States), a transfer covered by the EU–US Data Privacy Framework and, failing that, by the European Commission's standard contractual clauses.",
+          "No data is transferred outside the European Union: hosting, the database, email delivery and the publisher's mailbox are all located in France.",
         ],
       },
     ],

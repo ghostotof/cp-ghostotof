@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Contact\Presentation\Command;
 
+use App\Shared\Domain\Exception\InvalidRetentionPeriodException;
+use App\Shared\Domain\ValueObject\RetentionPeriod;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\TableNotFoundException;
+use Psr\Clock\ClockInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -39,8 +42,10 @@ final class PurgeFailedContactMessagesCommand extends Command
     /** Table par défaut du transport Doctrine Messenger (aucun table_name= dans le DSN). */
     private const string MESSENGER_TABLE = 'messenger_messages';
 
-    public function __construct(private readonly Connection $connection)
-    {
+    public function __construct(
+        private readonly Connection $connection,
+        private readonly ClockInterface $clock,
+    ) {
         parent::__construct();
     }
 
@@ -50,7 +55,7 @@ final class PurgeFailedContactMessagesCommand extends Command
             'older-than',
             null,
             InputOption::VALUE_REQUIRED,
-            'Âge minimal des messages à purger, exprimé en intervalle relatif PHP (ex. "30 days", "12 hours").',
+            'Âge minimal des messages à purger, exprimé en intervalle relatif PHP, strictement positif (ex. "30 days", "12 hours").',
             self::DEFAULT_MAX_AGE,
         );
     }
@@ -60,15 +65,16 @@ final class PurgeFailedContactMessagesCommand extends Command
         $io = new SymfonyStyle($input, $output);
         $rawOlderThan = $input->getOption('older-than');
         \assert(\is_string($rawOlderThan));
-        $olderThan = trim($rawOlderThan);
 
         try {
-            $threshold = new \DateTimeImmutable('-'.$olderThan);
-        } catch (\DateMalformedStringException|\Exception) {
-            $io->error(sprintf('Intervalle invalide : "%s". Exemples valides : "30 days", "12 hours".', $olderThan));
+            $retentionPeriod = RetentionPeriod::fromString($rawOlderThan, $this->clock->now());
+        } catch (InvalidRetentionPeriodException $exception) {
+            $io->error($exception->getMessage());
 
             return Command::INVALID;
         }
+
+        $threshold = $retentionPeriod->threshold();
 
         try {
             $deleted = $this->connection->executeStatement(
