@@ -10,11 +10,13 @@ titre non professionnel (cf. `docs/rgpd/registre-traitements.md` et les
 mentions légales pour le détail du statut), joignable à
 `contact@cp-ghostotof.com`.
 
-**Dernière mise à jour** : 2026-09-21 (3e audit de sécurité : ajout du §6 « Journal
-d'audit de sécurité », stockage des compteurs de limitation de débit au §2, précisions
-sur les journaux techniques au §5 ; §3 repris en entier — accès de base, invitation par
-e-mail et comptes nominatifs, que l'ancienne rédaction niait ; §7 et §8 complétés en
-conséquence).
+**Dernière mise à jour** : 2026-09-26 (§1 et §8 : boîte de contact hébergée en France
+et zone DNS chez Scaleway, fin du transfert hors UE — Cloudflare retiré ce jour, issue
+#231 ; §5 : rotation des journaux mesurée sur les nœuds, Cockpit décrit. Précédente :
+2026-09-22, 3e audit de sécurité — ajout du §6 « Journal d'audit de sécurité », stockage
+des compteurs de limitation de débit au §2, précisions sur les journaux techniques au §5,
+§3 repris en entier — accès de base, invitation par e-mail et comptes nominatifs, que
+l'ancienne rédaction niait —, §7 et §8 complétés en conséquence).
 
 ---
 
@@ -27,7 +29,7 @@ conséquence).
 | **Base légale** | Mesures précontractuelles prises à la demande de la personne concernée (art. 6-1-b RGPD) ; à défaut, intérêt légitime à pouvoir échanger avec un visiteur qui en fait la demande |
 | **Données collectées** | Nom, adresse email, message (champ libre) |
 | **Durée de conservation** | **Cas nominal : aucune persistance en base.** Le message transite par une file RabbitMQ (transport `async`) jusqu'à son envoi par email, puis est supprimé de la file. **Cas d'échec d'envoi** (SMTP indisponible, retries épuisés) : le message est routé vers le transport `failed` (`failure_transport: failed` dans `config/packages/messenger.yaml`), stocké en base dans la table `messenger_messages` — il contient alors le nom, l'email et le message du visiteur. **Rétention : 30 jours maximum**, appliquée par la commande `app:contact:purge-failed-messages` (paramètre `--older-than`, défaut `30 days`), exécutée quotidiennement par le CronJob `contact-failed-messages-purge` (03:17). L'email effectivement envoyé est par ailleurs conservé dans la boîte `contact@cp-ghostotof.com`, selon la politique du fournisseur de messagerie retenu en production. |
-| **Destinataires** | L'éditeur du site, via la boîte `contact@cp-ghostotof.com` (variable `CONTACT_RECIPIENT_EMAIL`). Sous-traitants techniques : **Scaleway SAS — Transactional Email** (envoi du message de notification, `MAILER_DSN=scaleway+api://…`, infrastructure en France) et **Cloudflare, Inc. — Email Routing** (redirection de `contact@cp-ghostotof.com` vers la boîte réelle de l'éditeur, société établie aux États-Unis, cf. §8). En dev, `MAILER_DSN=null://null` (aucun envoi). |
+| **Destinataires** | L'éditeur du site, via la boîte `contact@cp-ghostotof.com` (variable `CONTACT_RECIPIENT_EMAIL`). Sous-traitants techniques : **Scaleway SAS — Transactional Email** (envoi du message de notification, `MAILER_DSN=scaleway+api://…`, infrastructure en France) et **OVHcloud** (hébergement de la boîte `contact@cp-ghostotof.com`, infrastructure en France, cf. §8). En dev, `MAILER_DSN=null://null` (aucun envoi). |
 | **Mesures de sécurité** | Validation stricte côté API (`Assert\Email`, longueurs bornées), honeypot anti-bot, rate limiting (cf. §2), transport chiffré vers le serveur SMTP (dépend du DSN de production) |
 
 ## 2. Anti-spam / limitation de débit des endpoints publics
@@ -109,7 +111,7 @@ l'ADR 0001 (`docs/adr/0001-admin-user-provisioning.md`) : l'**accès de base** s
 | **Finalité** | Sécurité, diagnostic, détection d'incidents |
 | **Base légale** | Intérêt légitime (art. 6-1-f RGPD) |
 | **Données collectées** | Adresse IP, user-agent, URL et méthode HTTP, code de réponse. **Aucun secret dans une URL** : depuis le 3e audit (constat A7, tâches T4.1/T4.2), le jeton de définition de mot de passe voyage dans le corps de la requête côté API et dans le **fragment** du lien côté e-mail — un fragment n'est jamais transmis au serveur. Aucun journal d'accès, ni du sidecar, ni du frontend, ni de l'ingress, ne peut donc plus contenir un jeton d'invitation exploitable |
-| **Durée de conservation** | Bornée par la rotation des journaux de conteneur du nœud (réglage kubelet) et par le cycle de vie du pod : les journaux d'un pod remplacé disparaissent avec lui. **Aucun collecteur ni agrégateur de journaux n'est déployé** (aucun objet de ce type dans `k8s/`) : il n'existe ni export, ni archivage, ni copie hors du nœud. La valeur exacte de rotation n'est pas maîtrisée depuis ce dépôt (Kubernetes Kapsule est managé par l'hébergeur) — **à confirmer auprès de l'hébergeur et à consigner ici**. Pour mémoire, la recommandation CNIL usuelle pour des journaux de sécurité est de 6 à 12 mois maximum |
+| **Durée de conservation** | Bornée par la rotation des journaux de conteneur du nœud et par le cycle de vie du pod. **Valeurs relevées le 2026-09-22** sur les deux nœuds Kapsule de production (`kubelet` : `containerLogMaxSize: 10Mi`, `containerLogMaxFiles: 5`) : au plus **50 Mio par conteneur**, le fichier le plus ancien étant supprimé au-delà. Ce plafond est théorique au regard du volume réel (de l'ordre de 15 à 60 Ko par pod et par jour) ; la borne effective est le **remplacement du pod** : chaque release recrée les pods et leurs journaux disparaissent avec eux, soit une conservation de quelques jours à quelques semaines en pratique. Le seul cas où elle pourrait excéder la recommandation CNIL usuelle (6 à 12 mois maximum pour des journaux de sécurité) serait une année entière sans release ni redémarrage — un redémarrage des déploiements suffit alors. **Aucun collecteur ni agrégateur de journaux n'est déployé** (aucun objet de ce type dans `k8s/`) : il n'existe ni export, ni archivage, ni copie des journaux des pods hors du nœud. Le projet Scaleway dispose d'une source « Scaleway Logs » dans Cockpit (rétention 7 jours, région `fr-par`), qui reçoit uniquement les journaux des **produits managés** de l'hébergeur, pas ceux des pods ; reste à vérifier dans Cockpit si le Load Balancer y verse des journaux d'accès portant des adresses IP clientes — si oui, il sera consigné ici comme destinataire, avec cette rétention de 7 jours |
 
 ## 6. Journal d'audit de sécurité
 
@@ -154,9 +156,13 @@ Pwned, service hébergé derrière Cloudflare, hors UE possible). Seul un préfi
 personnelle, il n'y a donc pas de transfert au sens du RGPD ; l'appel est consigné ici
 par transparence.
 
-**Réception / redirection de `contact@cp-ghostotof.com`** : Cloudflare, Inc.
-(Email Routing), société établie aux **États-Unis**. Transfert encadré par
-l'**EU–US Data Privacy Framework** (Cloudflare y est certifié) ; à défaut, les
-clauses contractuelles types de la Commission européenne s'appliquent au titre
-du DPA Cloudflare. Le service se limite à relayer le message vers la boîte de
-l'éditeur ; aucune conservation durable côté Cloudflare au-delà du routage.
+**Réception de `contact@cp-ghostotof.com`** : boîte aux lettres hébergée par
+**OVHcloud** (OVH SAS, 2 rue Kellermann, 59100 Roubaix), infrastructure en
+**France**. Il s'agit d'une vraie boîte et non d'une redirection : le message
+n'est relayé vers aucun autre fournisseur. Aucun transfert hors Union européenne.
+
+**Zone DNS du domaine** : Scaleway SAS (Domains and DNS). Aucune donnée
+personnelle n'y est traitée ; mentionnée ici parce que la zone et la redirection
+des e-mails reposaient jusqu'en septembre 2026 sur Cloudflare, Inc. (États-Unis),
+prestataire depuis écarté pour supprimer ce transfert plutôt que l'encadrer
+(issue #231).
