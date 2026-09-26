@@ -344,11 +344,12 @@ mid-migration.
     never `getPathInfo()` directly** (issue #77). `getPathInfo()` is *not* decoded, while the router, the
     firewalls and `access_control` all decide on `rawurldecode()`: `POST /%61pi/logout` reached the
     `LogoutListener` without ever passing the CSRF check, and `/api/account/base%2Daccess` escaped its rate
-    limiter. Five sites go through the helper — the four `kernel.request` guards
+    limiter. The `kernel.request` guards go through the helper
     (`CsrfCookieRequestSubscriber`, `LoginCsrfRequestListener`, `BaseAccessRateLimitRequestListener`,
-    `PasswordSetupRateLimitRequestListener`), each with a `%XX` regression test, plus
-    `Shared/Infrastructure/Http/ApiJsonErrorFormatListener` on `kernel.exception` (see "Errors under `/api`"
-    below) — and `SecurityAuditLogger` logs the canonical form for the same reason.
+    `PasswordSetupRateLimitRequestListener`, `AssistantRequestSizeListener`), each with a `%XX`
+    regression test; two `kernel.exception` listeners use it too, the assistant's
+    `AssistantProblemResponseListener` and `Shared/Infrastructure/Http/ApiJsonErrorFormatListener` (see
+    "Errors under `/api`" below) — and `SecurityAuditLogger` logs the canonical form for the same reason.
   - **The `login` firewall is anchored on its `check_path`, the `api` one deliberately is not** (audit A23,
     `security.yaml`). `login` is `^/api/login_check$`: it holds a `json_login` and reads **no** JWT, so any
     route ever added under a looser `^/api/login` would be served anonymously, the visitor's `BEARER` never
@@ -596,7 +597,16 @@ mid-migration.
   `mistral-small-3.2-24b-instruct-2506`, `max_tokens` 1024, `tools: false`, prompt preamble in
   `config/ai/prompts/career_assistant.txt`, key `SCALEWAY_AI_API_KEY` routed exactly like `ANTHROPIC_API_KEY`,
   plus `SCALEWAY_AI_PROJECT_ID` on the same route; task 2 (#261) done: `POST /api/assistant/answers`,
-  `ROLE_TRUSTED`, `AnswerController` → `CareerAssistantInterface` → `SymfonyAiCareerAssistant`). Task 2 facts
+  `ROLE_TRUSTED`, `AnswerController` → `CareerAssistantInterface` → `SymfonyAiCareerAssistant`; task 3 (#262)
+  done: D6 bounds in the `Conversation`/`ConversationMessage` VOs → 422 `/errors/invalid-conversation` — strict
+  alternation between a first and a last `user` message makes the count odd, so **11** is the longest valid
+  conversation under the bound of 12; quota `career_assistant` (30/h, key `username`) consumed by
+  `QuotaGuardedCareerAssistant`, an `#[AsDecorator]` of `CareerAssistantInterface` — which is why
+  `services.yaml` aliases the interface explicitly: with two implementations the automatic single-impl alias
+  disappears and the decorator has nothing to decorate — so a 422 never costs quota, 429
+  `/errors/rate-limited` + `Retry-After`; body over 64 KiB → 413 `/errors/request-too-large`, judged by
+  `AssistantRequestSizeListener` at priority 4, *after* the firewall, so an anonymous or base-tier caller only
+  ever learns it is refused). Task 2 facts
   to keep: **the service composes its own system message** (preamble file + corpus rendered by
   `CorpusRenderer`, D8) because `SystemPromptInputProcessor` skips `ai.yaml`'s prompt as soon as the
   `MessageBag` carries one; **the agent is injected by id** (`ai.agent.career_assistant`), never
