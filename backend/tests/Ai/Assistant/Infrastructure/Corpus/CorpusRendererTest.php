@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Ai\Assistant\Infrastructure\Corpus;
 
-use App\Ai\Assistant\Domain\Exception\CorpusRenderingException;
 use App\Ai\Assistant\Infrastructure\Corpus\CorpusRenderer;
+use App\Ai\Assistant\Infrastructure\Corpus\CorpusRenderingException;
 use App\Portfolio\AnonymousCv\Presentation\ApiResource\AnonymousCvSectionResource;
 use App\Portfolio\CaseStudy\Presentation\ApiResource\CaseStudyResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;

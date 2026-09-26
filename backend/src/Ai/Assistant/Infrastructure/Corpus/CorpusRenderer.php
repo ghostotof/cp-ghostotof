@@ -7,7 +7,6 @@ namespace App\Ai\Assistant\Infrastructure\Corpus;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\State\ProviderInterface;
 use App\Ai\Assistant\Application\Corpus\CorpusRendererInterface;
-use App\Ai\Assistant\Domain\Exception\CorpusRenderingException;
 use App\Portfolio\AnonymousCv\Infrastructure\ApiPlatform\AnonymousCvProvider;
 use App\Portfolio\AnonymousCv\Presentation\ApiResource\AnonymousCvSectionResource;
 use App\Portfolio\CaseStudy\Infrastructure\ApiPlatform\CaseStudyProvider;
