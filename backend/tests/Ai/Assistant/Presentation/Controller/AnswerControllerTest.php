@@ -397,6 +397,13 @@ final class AnswerControllerTest extends WebTestCase
         self::assertGreaterThan(0, (int) $retryAfter);
         self::assertLessThanOrEqual(3600, (int) $retryAfter);
         self::assertCount(self::QUOTA, $this->scalewayRequests);
+        // Le refus est tracé sur le canal qui sort des pods de production.
+        $refusals = array_values(array_filter(
+            $this->aiUsageRecords(),
+            static fn (LogRecord $record): bool => 'rate-limited' === ($record->context['outcome'] ?? null),
+        ));
+        self::assertCount(1, $refusals);
+        self::assertSame(self::TRUSTED_USERNAME, $refusals[0]->context['account'] ?? null);
     }
 
     public function testTheQuotaIsKeptPerAccount(): void
