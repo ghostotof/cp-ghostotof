@@ -128,6 +128,36 @@ final class SymfonyAiCareerAssistantTest extends TestCase
         self::assertSame('during-stream', $this->logger->records[0]['context']['stage'] ?? null);
     }
 
+    /**
+     * Le bridge décode chaque ligne SSE avec JSON_THROW_ON_ERROR : une ligne
+     * tronquée par le fournisseur ou un proxy est une panne du fournisseur,
+     * pas un 500.
+     */
+    public function testAMalformedProviderLineBeforeTheFirstFragmentIsUnavailable(): void
+    {
+        $agent = new FakeStreamingAgent([], failure: new \JsonException('Syntax error'));
+
+        try {
+            $this->assistant($agent)->answer($this->conversation(), Locale::FR);
+            self::fail('AssistantUnavailableException attendue.');
+        } catch (AssistantUnavailableException) {
+        }
+
+        self::assertSame('before-first-fragment', $this->logger->records[0]['context']['stage'] ?? null);
+    }
+
+    public function testAMalformedProviderLineDuringTheStreamIsUnavailable(): void
+    {
+        $agent = new FakeStreamingAgent(['Il a ', 'conçu'], failure: new \JsonException('Syntax error'), failAfter: 1);
+        $stream = $this->assistant($agent)->answer($this->conversation(), Locale::FR);
+
+        [$received, $failure] = $this->consume($stream);
+
+        self::assertSame(['Il a '], $received);
+        self::assertInstanceOf(AssistantUnavailableException::class, $failure);
+        self::assertSame('during-stream', $this->logger->records[0]['context']['stage'] ?? null);
+    }
+
     /** Point de relecture n°2 : aucun fragment est une réponse vide, pas une panne. */
     public function testAnAnswerWithoutAnyTextFragmentEndsNormally(): void
     {

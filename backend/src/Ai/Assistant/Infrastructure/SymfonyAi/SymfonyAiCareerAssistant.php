@@ -35,6 +35,9 @@ use Symfony\Contracts\HttpClient\Exception\HttpExceptionInterface;
  * Jamais de contenu dans un log (D10) : ni question, ni réponse, ni corpus,
  * ni message d'exception du fournisseur, que le bridge remplit avec le corps
  * de la réponse. Le statut HTTP de l'échec, lui, est journalisé.
+ *
+ * Une ligne SSE illisible (le bridge la décode avec JSON_THROW_ON_ERROR) est
+ * une panne du fournisseur comme une autre : 503 ou événement `error`.
  */
 final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterface
 {
@@ -68,7 +71,7 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
             // partirait qu'une fois le statut 200 envoyé, et un fournisseur
             // injoignable ne pourrait plus devenir un 503.
             $fragments->current();
-        } catch (PlatformException|AgentException|HttpClientException $exception) {
+        } catch (PlatformException|AgentException|HttpClientException|\JsonException $exception) {
             throw $this->unavailable($exception, $conversation, 'before-first-fragment');
         }
 
@@ -112,7 +115,7 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
                 yield $fragments->current();
                 $fragments->next();
             }
-        } catch (PlatformException|AgentException|HttpClientException $exception) {
+        } catch (PlatformException|AgentException|HttpClientException|\JsonException $exception) {
             throw $this->unavailable($exception, $conversation, 'during-stream');
         }
 
