@@ -581,7 +581,7 @@ mid-migration.
     renders. Failing a build or a refresh over a renamed manifest would be out of proportion.
 
 - **`Ai/`** — everything that talks to a language model, and nothing else does (ADR 0004,
-  `docs/adr/0004-assistance-ia.md`; spec `.claude/specs/0002-ai-translation-assistant.md`). Sub-context per
+  `docs/adr/0004-assistance-ia.md`; spec `.claude/specs/archive/2026-09-14-spec-0002-assistant-traduction/0002-ai-translation-assistant.md`). Sub-context per
   usage: `Ai/Translation/` (phase 1, **delivered 2026-09-14**, v0.10.0 then v0.10.1: the backoffice FR/EN
   translation assistant, `POST /api/backoffice/translations`, `ROLE_SUPER`) and later `Ai/Assistant/` (phase 2,
   **D7 amended on 2026-09-15**: a conversational "ask about my career" assistant on the site, reserved to
@@ -1489,8 +1489,11 @@ ready to merge. Workflow:
 
 The archived files are frozen: they describe the plan as it stood at closing, ticked boxes,
 checkpoints and open questions included. The five plans written before the rule existed were
-extracted from git history and archived in one go (PR #189), as flat `plan.md`/`todo.md` files
-next to no spec — that older layout is left as is, not migrated.
+extracted from git history and archived in one go (PR #189), as flat `plan.md`/`todo.md` files —
+that flat layout is left as is, not migrated — and their specs (0001 to 0004) joined them on
+2026-09-26, so `.claude/specs/` really does list only the open specs (spec 0001's plan came from a
+since-deleted `.claude/plans/`, the location that predated `tasks/`). A "livrée" status line inside
+a spec is never what tells open from closed; its location is.
 
 ### Domain docs
 

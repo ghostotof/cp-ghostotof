@@ -251,7 +251,7 @@ Tests miroir sous `tests/` (`tests/domain/admin/shared/ordering/…`, `tests/app
 
 ### Ce qui est touché en dehors du contexte
 
-- **`.claude/specs/0002-ai-translation-assistant.md`** : D2 et M5, « `position` est recopiée » →
+- **`.claude/specs/archive/2026-09-14-spec-0002-assistant-traduction/0002-ai-translation-assistant.md`** : D2 et M5, « `position` est recopiée » →
   « le groupe est recopié » ; la ligne « Lien persistant `translationGroup` : hors périmètre » du §1
   renvoie vers cette spec.
 - **`CLAUDE.md`** : sous « Backend architecture », le groupe de traduction (D1, D2), « la position

@@ -43,7 +43,7 @@ compte du palier de base ou nominatif n'y a accès, ni directement ni par effet 
 - Traduction automatique à l'enregistrement, ou synchronisation FR↔EN après coup : l'assistant
   produit un brouillon, jamais une mise à jour silencieuse.
 - Lien persistant entre une entrée FR et son pendant EN (`translationGroup`) : non nécessaire au
-  brouillon en v1. **Livré depuis par la spec 0004** (`.claude/specs/0004-content-ordering.md`, D1 et
+  brouillon en v1. **Livré depuis par la spec 0004** (`.claude/specs/archive/2026-09-15-specs-0003-0004-uuid-ordre-des-contenus/0004-content-ordering.md`, D1 et
   D9, `v0.12.0`) : le brouillon est rattaché au groupe de l'entrée source, l'enregistrer le lie.
 - Autres fournisseurs (Ollama en cluster, Mistral…) : le bundle les permet par configuration, mais
   aucun n'est câblé ni testé en v1.
