@@ -592,3 +592,24 @@ place (leur retrait n'a pas été décidé) ; renommer `Role`, `Labels` en VO, f
 `ApiJsonErrorFormatListener`, test de route unique, niveau `error` de la fin en échec (D10 dit `info`).
 Rappel de la relecture : aucune release entre la tâche 2 et la tâche 3, faute de quota ; la structure
 des branches le garantit (`develop` ne reçoit la spec qu'à la clôture).
+
+**2026-09-26 (tâche 2, contre-audit)** — Audit de sécurité des seuls correctifs A à I : chacun ferme
+le trou annoncé, aucune conclusion critique ni haute, mais **une régression introduite par C** : les
+deux `\s*` de la regex de neutralisation, sur la même suite d'espaces, la rendaient quadratique
+(7,9 s pour un chevron suivi de 100 000 espaces, mesuré ; le corpus est rendu à chaque appel).
+Correctifs retenus et appliqués : regex en quantificateurs possessifs (test déterministe par une
+`pcre.backtrack_limit` basse) ; un échec PCRE lève `CorpusRenderingException` au lieu de vider le
+champ ; un `#` en tête de ligne d'un champ de prose est échappé (seul le rendu fabrique les
+intertitres) ; test des balises renforcé (barre pleine chasse) ; docblock : la neutralisation n'est
+**pas exhaustive** (entités, largeur nulle, homoglyphes passent), la parade réelle est la règle 6 et
+l'auteur `ROLE_SUPER` ; `\TypeError` du bridge (JSON valide de forme inattendue) traité en panne du
+fournisseur ; `InvalidConversationException` journalisée en `info` par le noyau
+(`#[WithLogLevel]`), sans quoi chaque 422 serait un `critical` ; `max_duration` ramené à **50 s**, sous
+les 60 s de `fastcgi_read_timeout` et de l'ingress ; `limit_conn` à **1 flux par pod** — les zones
+vivent dans chaque sidecar, deux pods en prod donnaient 4 flux par IP (mesuré en dev : 2 flux
+simultanés, le second refusé) ; garde-fou `ProblemDetailStaysStaticTest` (une exception rendue au
+client ne reçoit qu'un message littéral, vérifié rouge sur un message dynamique). Point 7 du premier
+audit traité au passage : `acceptFormat: 'json'`, un formulaire ou du XML étaient désérialisés (400,
+422), désormais 415. Informations non traitées : limites par IPv6 /128 (le quota par compte de #262
+le couvrira), 429 nginx en HTML (le frontend devra lire le statut), abandon client pendant l'amorçage
+non détecté par PHP, `CorpusSourcesTest` aveugle à un décorateur.

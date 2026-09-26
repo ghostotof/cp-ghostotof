@@ -610,8 +610,11 @@ mid-migration.
   kernel's `ErrorListener` logs the whole `previous` chain, and the bridge copies the provider's response
   body into its message (issue #269 tracks the same defect on the translator); and every assistant exception
   a client can cause implements `ProblemExceptionInterface`, since `exception_to_status` has no effect on
-  this route. `ai.scaleway.http_client` also carries `max_duration: 60`, `timeout` being an idle timeout
-  only. **The project id is part of the platform's `baseUrl`**
+  this route — with a **literal** message only, since the listener returns it as `detail`
+  (`ProblemDetailStaysStaticTest` scans `src/`), and `#[WithLogLevel(INFO)]` when it is the client's
+  fault, or the kernel logs it `critical`. `ai.scaleway.http_client` also carries `max_duration: 50`,
+  `timeout` being an idle timeout only, kept under the 60 s of `fastcgi_read_timeout` and the ingress
+  so their HTML 504 never beats the typed 503. The endpoint takes JSON only (`acceptFormat`, 415). **The project id is part of the platform's `baseUrl`**
   (`https://api.scaleway.ai/<project>/v1/...`): without it the API targets the organisation's default project,
   and a key held by an IAM application whose policy is scoped to another project gets a **403** — which the
   0.13.0 bridge reports as `Error "unknown": "Unknown error"`, hiding the status. When that message shows up,
@@ -1197,8 +1200,9 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
 - **Six nginx rate-limit zones, two different jobs.** `contact` (10 r/m), `pwsetup` (20 r/m),
   `baseaccess` (20 r/m, issue #77 — each call signs an RS256 JWT), `login` (10 r/m, burst 10,
   ADR 0005 — the backstop under Symfony's `login_throttling`, which is the real ceiling) and
-  `assistant` (10 r/m, burst 5, plus `limit_conn assistantconn 2` — each call is billed and each
-  stream holds one of the 8 php-fpm workers) protect a *side effect* — sending mail, guessing a token,
+  `assistant` (10 r/m, burst 5, plus `limit_conn assistantconn 1` — each call is billed and each
+  stream holds one of a pod's 8 php-fpm workers; the zones live in each sidecar, so an IP gets N times
+  these ceilings with N backend pods) protect a *side effect* — sending mail, guessing a token,
   minting a token, guessing a password, spending money.
   `publicapi` (600 r/m, burst 200, on
   `location /`) protects the *resource*: without it every public read reaches PHP and Postgres as
