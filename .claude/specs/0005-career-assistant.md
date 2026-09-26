@@ -81,7 +81,7 @@ compte compris) n'atteignent l'assistant — ni directement, ni par effet de bor
   (raison). `access_control` `{ path: ^/api/assistant(/|$), roles: ROLE_TRUSTED }`, **placée après
   `^/api/backoffice` et avant les règles `ROLE_USER`**, sur un préfixe qui n'est pas `^/api/cv`.
   Double-submit CSRF exigé comme toute mutation `/api` (aucune entrée dans `EXCLUDED_PATHS`).
-- **D5 — Corpus rendu par un composant unique** (`Application/Corpus/CorpusRenderer`), en Markdown
+- **D5 — Corpus rendu par un composant unique** (`Infrastructure/Corpus/CorpusRenderer`, derrière `Application/Corpus/CorpusRendererInterface`), en Markdown
   déterministe : une locale (celle de la requête), sections dans un ordre fixe (CV nominatif, CV
   sans identité, études de cas), entrées triées par `position`, intertitres nommés dans la langue
   du corpus, **aucun champ technique** (id, groupe de traduction, locale). Les sources sont lues
@@ -288,9 +288,9 @@ Application/
   CareerAssistantInterface.php               # answer(Conversation, Locale): iterable<string>
   AssistantRateLimiterInterface.php
   Corpus/CorpusRendererInterface.php         # render(Locale): string
-  Corpus/CorpusRenderer.php                  # providers publics + PdfTextExtractor → Markdown
   Corpus/PdfTextExtractorInterface.php       # extract(): ?string (null si fichier absent)
 Infrastructure/
+  Corpus/CorpusRenderer.php                  # providers publics + PdfTextExtractor → Markdown
   SymfonyAi/SymfonyAiCareerAssistant.php     # seule classe qui importe le bundle ; stream: true
   Pdf/SmalotPdfTextExtractor.php             # smalot/pdfparser + normalisation, sans cache (D7)
   RateLimiter/SymfonyAssistantRateLimiter.php  # limiter.career_assistant, clé = username
@@ -532,3 +532,104 @@ muet sur la question posée (les employeurs, absents du CV sans identité par co
 mesurer qu'avec le corpus : deux critères ajoutés à #261 (corpus toujours délimité avec mentions
 d'absence ; contrôle d'invention sur le vrai modèle, bascule de modèle si besoin). Modèle conservé en
 tâche 1. Le refus hors sujet fonctionne (« danse classique »).
+
+**2026-09-26 (tâche 2, #261)** — Une question en flux de bout en bout, sur le vrai modèle.
+**Contrôle d'invention** avec `mistral-small-3.2-24b-instruct-2506`, sur le corpus de dev (contenu
+d'exemple des seeds : une section de CV sans identité, une étude de cas, par langue) : quatre questions
+dont la réponse n'est pas dans le corpus (employeurs, diplôme et école, année de début, ville d'études),
+en français et en anglais, trois passes — **0 invention sur 24 réponses**, toutes du type « les documents
+ne le précisent pas ». Deux questions dont la réponse est dans le corpus (l'étude de cas, la section de
+compétences), deux passes : la bonne section est citée (règle 4). Une imprécision, pas une invention :
+à une question hors corpus, une réponse a dit que les documents « ne couvrent pas » compétences et
+études de cas, ce qui est faux sur leur structure. **Modèle conservé.** Limite du contrôle : un corpus
+d'exemple est pauvre, le risque de déduction (un employeur reconstitué à partir d'une réalisation) ne se
+mesure qu'avec du contenu réel — à refaire en préprod à la release de la spec, et après la tâche 4 (CV
+nominatif). Un appel sur 26 a répondu **503 avant le premier fragment** : `TransportException` 40 s
+après la requête sortante, c'est-à-dire le timeout de `ai.scaleway.http_client` ; le chemin d'échec a
+fonctionné et journalisé comme prévu (`stage: before-first-fragment`, `providerStatus: null`). Le
+visiteur attend donc jusqu'à 40 s avant l'erreur : à garder en tête pour la page (tâche 6).
+**nginx** : sans la location, 63 fragments étalés sur 0,44 s pour un corps d'environ 3 Ko — l'en-tête
+`X-Accel-Buffering: no` d'`EventStreamResponse` suffit, nginx l'honore aussi pour FastCGI. La location
+`^~ /api/assistant/` (avec son propre `fastcgi_pass`, sans quoi la redirection interne de `try_files`
+laisserait le `fastcgi_buffering off` derrière elle) est gardée par décision, en défense en profondeur ;
+le trafic y passe bien (502 avec un `fastcgi_pass` volontairement cassé). **Jetons en flux** : présents
+(`promptTokens` ~630 à 670), Scaleway honore `stream_options.include_usage`. **Écarts à la spec et à
+l'issue** : (1) un anonyme reçoit 403, pas 401, le double-submit CSRF tranchant avant le firewall ; le
+401 est testé avec un `XSRF-TOKEN` sans `BEARER` ; (2) les DTO publics n'exposant pas `position`, le
+rendu du corpus conserve l'ordre des providers (`ORDER BY position, id`), pincé par un test noyau ; (3)
+`SystemPromptInputProcessor` n'injecte pas le prompt de `ai.yaml` si le `MessageBag` porte déjà un
+message système : le service compose lui-même « préambule + corpus » (D8) en lisant le même fichier ;
+(4) les jetons en flux exigent `stream_options: {include_usage: true}` (confirmé, voir plus haut) ; (5)
+la location nginx et son `fastcgi_pass` propre (voir plus haut) ; (6) un échec journalise le statut HTTP
+du fournisseur, jamais le message de l'exception, où le bridge recopie le corps de la réponse ; (7) une
+coupure par le client n'écrit aucune ligne `info`, limite acceptée en v1 ; (8) la route n'étant pas une
+opération API Platform, `AssistantProblemResponseListener` rend ses `ProblemExceptionInterface` en
+problem+json (sans lui, 500) ; (9) `EventSourceHttpClient`, créé en dur par le bridge, rejoue le même
+`POST` 10 s après une coupure en plein flux — seconde génération facturée hors quota —, refusé par
+`ReplayRefusingHttpClient` ; **à signaler en amont** avec D2. **Tests** : `KernelBrowser` capture le
+corps diffusé sur `getInternalResponse()`, pas sur `getResponse()` ; aucun autre contournement.
+
+**2026-09-26 (tâche 2, relecture)** — Quatre relectures (`/code-review`, standards, spec, audit de
+sécurité), aucune conclusion critique ni haute. Neuf correctifs retenus et appliqués, un commit
+chacun, test rouge vérifié d'abord : (A) un `\JsonException` du bridge, qui décode chaque ligne SSE
+avec `JSON_THROW_ON_ERROR`, échappait aux trois familles attrapées — 500 ou flux coupé sans `error` ;
+(B) `AssistantUnavailableException` chaînait l'exception du bridge, dont le message recopie le corps de
+la réponse du fournisseur, et l'`ErrorListener` du noyau journalise toute la chaîne — D10 violée hors
+du logger de la classe ; même défaut côté traduction, suivi en #269 ; (C) la neutralisation de
+`<documents>` se contournait par imbrication (`</docu</documents>ments>`), espaces, attribut, saut de
+ligne et chevrons pleine chasse — le chevron qui introduit `documents` est retiré en boucle, un titre
+multiligne reste sur son intertitre ; (D) `InvalidConversationException` devient une
+`ProblemExceptionInterface` (422 `/errors/invalid-conversation`), sans quoi les bornes D6 de #262
+sortiraient en 500 ; (E) commentaire faux sur `X-Accel-Buffering`, que nginx consomme (vérifié : le
+client ne le reçoit pas) ; (F) zone nginx `assistant` (10 r/min, rafale 5) et `limit_conn` à 2 flux
+par IP — mesuré en dev : 20 POST rapides, 6 passent et 14 en 429 ; 3 flux simultanés, le 3e refusé par
+`assistantconn` ; (G) canal Monolog `ai_usage` à niveau fixe : l'usage était un `info` du canal
+applicatif, invisible en production (`LOG_LEVEL=warning`) ; (H) `max_duration: 60` sur le client
+Scaleway, `timeout` n'étant qu'un délai d'inactivité ; (I) `CorpusRenderer` passe sous
+`Infrastructure/Corpus/` (il lit des Providers et DTO d'autres contextes), D5 et §5 alignées. Non
+retenus : les entrées `exception_to_status` de l'assistant, sans effet sur ce contrôleur, restent en
+place (leur retrait n'a pas été décidé) ; renommer `Role`, `Labels` en VO, fusion avec
+`ApiJsonErrorFormatListener`, test de route unique, niveau `error` de la fin en échec (D10 dit `info`).
+Rappel de la relecture : aucune release entre la tâche 2 et la tâche 3, faute de quota ; la structure
+des branches le garantit (`develop` ne reçoit la spec qu'à la clôture).
+
+**2026-09-26 (tâche 2, contre-audit)** — Audit de sécurité des seuls correctifs A à I : chacun ferme
+le trou annoncé, aucune conclusion critique ni haute, mais **une régression introduite par C** : les
+deux `\s*` de la regex de neutralisation, sur la même suite d'espaces, la rendaient quadratique
+(7,9 s pour un chevron suivi de 100 000 espaces, mesuré ; le corpus est rendu à chaque appel).
+Correctifs retenus et appliqués : regex en quantificateurs possessifs (test déterministe par une
+`pcre.backtrack_limit` basse) ; un échec PCRE lève `CorpusRenderingException` au lieu de vider le
+champ ; un `#` en tête de ligne d'un champ de prose est échappé (seul le rendu fabrique les
+intertitres) ; test des balises renforcé (barre pleine chasse) ; docblock : la neutralisation n'est
+**pas exhaustive** (entités, largeur nulle, homoglyphes passent), la parade réelle est la règle 6 et
+l'auteur `ROLE_SUPER` ; `\TypeError` du bridge (JSON valide de forme inattendue) traité en panne du
+fournisseur ; `InvalidConversationException` journalisée en `info` par le noyau
+(`#[WithLogLevel]`), sans quoi chaque 422 serait un `critical` ; `max_duration` ramené à **50 s**, sous
+les 60 s de `fastcgi_read_timeout` et de l'ingress ; `limit_conn` à **1 flux par pod** — les zones
+vivent dans chaque sidecar, deux pods en prod donnaient 4 flux par IP (mesuré en dev : 2 flux
+simultanés, le second refusé) ; garde-fou `ProblemDetailStaysStaticTest` (une exception rendue au
+client ne reçoit qu'un message littéral, vérifié rouge sur un message dynamique). Point 7 du premier
+audit traité au passage : `acceptFormat: 'json'`, un formulaire ou du XML étaient désérialisés (400,
+422), désormais 415. Informations non traitées : limites par IPv6 /128 (le quota par compte de #262
+le couvrira), 429 nginx en HTML (le frontend devra lire le statut), abandon client pendant l'amorçage
+non détecté par PHP, `CorpusSourcesTest` aveugle à un décorateur.
+
+**2026-09-26 (tâche 2, troisième passe)** — Audit des seuls correctifs du contre-audit : chacun ferme
+son trou, une conclusion moyenne subsiste. **La boucle de neutralisation restait quadratique** sur des
+chevrons en cascade (`<<<…<documents`) : un chevron retiré par passe, chaque passe linéaire, donc
+invisible à toute limite PCRE (1,1 s pour 20 000, mesuré). Remplacée par un parcours linéaire (découpe
+sur `documents`, chevrons retirés de la séquence qui précède) : 1 Mo de chevrons en 0,015 s ; test
+chronométré à marge large. La variante « regex en une passe » proposée par l'audit a été mesurée et
+écartée : elle reste super-linéaire. Autres correctifs appliqués : niveaux de log du noyau dans
+`framework.exceptions` (conversation refusée et 415 en `info`, indisponibilité en `warning`) au lieu
+d'un attribut qui faisait dépendre le domaine de HttpKernel — les 400/422 de `MapRequestPayload`
+restent en `error`, un mapping sur `HttpException` abaisserait tous les 4xx ; `CorpusRenderingException`
+en infrastructure ; lieu (fichier:ligne) d'un échec du fournisseur journalisé ; test par le vrai bridge
+d'une ligne de forme inattendue ; limites de l'échappement `\#` documentées (Setext, marqueurs de bloc,
+pleine chasse) ; commentaire de `max_duration` corrigé (les délais nginx et ingress mesurent l'attente
+entre deux lectures) ; 429 de nginx en problem+json `/errors/rate-limited` ; `fastcgi_ignore_client_abort
+on` — un abandon libérait la place `limit_conn` alors que PHP gardait le worker (mesuré : relance après
+abandon 200 avant, 429 après) ; garde-fou du `detail` réécrit par jetons PHP sur toutes les
+`ProblemExceptionInterface` de `src/`, six messages dynamiques de backoffice admis avec justification.
+Limite restante et assumée : en dev, le 429 de nginx n'a pas d'en-tête CORS (Vite sur un autre port),
+le statut y est illisible pour `fetch` ; en préprod et en prod, même origine.

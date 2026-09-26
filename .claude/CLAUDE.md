@@ -130,7 +130,10 @@ Kubernetes only collects a container's stdout/stderr — `kubectl logs … | jq`
 their own handler at a hard-coded `info`, never `fingers_crossed`: a run of failed logins with no error
 after it is exactly the trace worth keeping, and buffering would discard it. Everything else goes to
 the `main` handler at `%env(default:app.log_level:LOG_LEVEL)%` (`LOG_LEVEL=warning` in `backend/.env`,
-`debug` in the preprod image), which excludes those two channels so an event is emitted **once**. The
+`debug` in the preprod image), which excludes those two channels so an event is emitted **once**. A
+third channel follows the same rule, `ai_usage` (spec 0005): the career assistant's token usage and
+duration, never any content, on its own `info` handler — as an `info` of the default channel it never
+left a production pod (`AiUsageLogChannelTest` pins the prod config). The
 `default:` processor takes a *parameter name*, hence `app.log_level` in `services.yaml` — `default:warning:`
 would look for a parameter called `warning` and fail at compile time. No duplication with
 `error_log = /proc/self/fd/2` (`php.prod.ini`) either: Monolog writes to fd 2 itself, `error_log` only
@@ -592,7 +595,30 @@ mid-migration.
   `.claude/specs/0005-career-assistant.md`, task 1 (#260) done: the `career_assistant` agent in `ai.yaml`,
   `mistral-small-3.2-24b-instruct-2506`, `max_tokens` 1024, `tools: false`, prompt preamble in
   `config/ai/prompts/career_assistant.txt`, key `SCALEWAY_AI_API_KEY` routed exactly like `ANTHROPIC_API_KEY`,
-  plus `SCALEWAY_AI_PROJECT_ID` on the same route). **The project id is part of the platform's `baseUrl`**
+  plus `SCALEWAY_AI_PROJECT_ID` on the same route; task 2 (#261) done: `POST /api/assistant/answers`,
+  `ROLE_TRUSTED`, `AnswerController` → `CareerAssistantInterface` → `SymfonyAiCareerAssistant`). Task 2 facts
+  to keep: **the service composes its own system message** (preamble file + corpus rendered by
+  `CorpusRenderer`, D8) because `SystemPromptInputProcessor` skips `ai.yaml`'s prompt as soon as the
+  `MessageBag` carries one; **the agent is injected by id** (`ai.agent.career_assistant`), never
+  `PlatformInterface` by type, which autowires to Anthropic (D3); the stream is `text/event-stream` with JSON
+  `data` — `delta` `{text}`, then `done` `{promptTokens, completionTokens, durationMs}` or `error`
+  `{reason}` — and a provider failure **before the first fragment** is a 503 problem+json
+  (`/errors/assistant-unavailable`, rendered by `AssistantProblemResponseListener`, the route not being an API
+  Platform operation), the call being primed before the 200 is sent; `ReplayRefusingHttpClient` stops the
+  bridge's `EventSourceHttpClient` from replaying a cut stream (a second, billed generation). Two rules from
+  the task's security review: **`AssistantUnavailableException` never chains the bridge's exception** — the
+  kernel's `ErrorListener` logs the whole `previous` chain, and the bridge copies the provider's response
+  body into its message (issue #269 tracks the same defect on the translator); and every assistant exception
+  a client can cause implements `ProblemExceptionInterface`, since `exception_to_status` has no effect on
+  this route — with a **literal** message only, since the listener returns it as `detail`
+  (`ProblemDetailStaysStaticTest` parses every `ProblemExceptionInterface` of `src/` by tokens; a
+  dynamic message elsewhere needs a justified entry in its allow-list), and a `log_level` in
+  `framework.exceptions` — never `#[WithLogLevel]`, which would make the domain depend on HttpKernel —
+  or the kernel logs it `critical`. The corpus's `<documents>` neutralisation is **linear by
+  construction** (split on the word, chevrons stripped from the run before it): a regex in a loop was
+  quadratic on cascading chevrons, and nothing but a timing test sees that. `ai.scaleway.http_client` also carries `max_duration: 50`,
+  `timeout` being an idle timeout only, kept under the 60 s of `fastcgi_read_timeout` and the ingress
+  so their HTML 504 never beats the typed 503. The endpoint takes JSON only (`acceptFormat`, 415). **The project id is part of the platform's `baseUrl`**
   (`https://api.scaleway.ai/<project>/v1/...`): without it the API targets the organisation's default project,
   and a key held by an IAM application whose policy is scoped to another project gets a **403** — which the
   0.13.0 bridge reports as `Error "unknown": "Unknown error"`, hiding the status. When that message shows up,
@@ -1175,16 +1201,28 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   `CreateContainerConfigError` (incident v0.6.0). The rule that decides: **hash it if kustomize owns
   every reference to it, don't if anything outside kustomize names it.** Verify a config change
   actually landed with `kubectl exec … -c nginx -- nginx -T | grep <the new directive>`.
-- **Five nginx rate-limit zones, two different jobs.** `contact` (10 r/m), `pwsetup` (20 r/m),
-  `baseaccess` (20 r/m, issue #77 — each call signs an RS256 JWT) and `login` (10 r/m, burst 10,
-  ADR 0005 — the backstop under Symfony's `login_throttling`, which is the real ceiling) protect a
-  *side effect* — sending mail, guessing a token, minting a token, guessing a password.
+- **Six nginx rate-limit zones, two different jobs.** `contact` (10 r/m), `pwsetup` (20 r/m),
+  `baseaccess` (20 r/m, issue #77 — each call signs an RS256 JWT), `login` (10 r/m, burst 10,
+  ADR 0005 — the backstop under Symfony's `login_throttling`, which is the real ceiling) and
+  `assistant` (10 r/m, burst 5, plus `limit_conn assistantconn 1` — each call is billed and each
+  stream holds one of a pod's 8 php-fpm workers; the zones live in each sidecar, so an IP gets N times
+  these ceilings with N backend pods) protect a *side effect* — sending mail, guessing a token,
+  minting a token, guessing a password, spending money.
   `publicapi` (600 r/m, burst 200, on
   `location /`) protects the *resource*: without it every public read reaches PHP and Postgres as
   often as asked. Its ceiling is deliberately far above real use — behind a mobile carrier's CGNAT
   thousands of visitors share one address, and a tight cap would cut them all off at once, which is
   the very DoS audit C7 was about. `/healthz` uses an exact-match `location =`, so kubelet probes are
   never capped.
+- **`location ^~ /api/assistant/` does its own `fastcgi_pass`** (spec 0005 D9, both confs). The career
+  assistant streams `text/event-stream`, so the location sets `fastcgi_buffering off`; through
+  `try_files … /index.php` the internal redirect to `location ~ ^/index\.php` would leave that directive
+  behind. Measured on 2026-09-26: `X-Accel-Buffering: no` (set by `EventStreamResponse`) already suffices
+  for the sidecar, which consumes it — the ingress never sees it and relies on its own `proxy-buffering`,
+  `off` by default. The location is kept as defence in depth, and carries the `assistant` zones above,
+  `fastcgi_ignore_client_abort on` (PHP holds its worker after a client abort, so the `limit_conn`
+  slot must too) and an `error_page 429` that answers problem+json `/errors/rate-limited` — Symfony's
+  own 429s are not intercepted.
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's
