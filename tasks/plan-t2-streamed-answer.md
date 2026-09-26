@@ -170,7 +170,7 @@ docker/nginx/default.conf, k8s/base/backend-nginx.conf # + location ^~ /api/assi
 - Produit : `CorpusRendererInterface::render(Locale $locale): string`, un document délimité par
   `<documents>` … `</documents>\n`.
 
-- [ ] **Étape 1 : doubles de test**
+- [x] **Étape 1 : doubles de test**
 
 `backend/tests/Ai/Assistant/Support/StubProvider.php` :
 
@@ -216,7 +216,7 @@ final class StubProvider implements ProviderInterface
 }
 ```
 
-- [ ] **Étape 2 : écrire le test unitaire qui échoue**
+- [x] **Étape 2 : écrire le test unitaire qui échoue**
 
 `backend/tests/Ai/Assistant/Application/Corpus/CorpusRendererTest.php` :
 
@@ -335,7 +335,7 @@ final class CorpusRendererTest extends TestCase
 Le test en anglais réutilise les mêmes données (contenu en français) : ce qu'il pince, ce sont les
 intertitres, pas la traduction du contenu.
 
-- [ ] **Étape 3 : écrire les trois snapshots**
+- [x] **Étape 3 : écrire les trois snapshots**
 
 `__snapshots__/fr.md` (se termine par un seul `\n` après `</documents>`) :
 
@@ -502,12 +502,12 @@ Aucun document disponible pour cette section.
 </documents>
 ```
 
-- [ ] **Étape 4 : lancer le test pour vérifier qu'il échoue**
+- [x] **Étape 4 : lancer le test pour vérifier qu'il échoue**
 
 Commande : `docker compose exec -T backend php bin/phpunit tests/Ai/Assistant/Application/Corpus/CorpusRendererTest.php`
 Attendu : ÉCHEC, `Class "App\Ai\Assistant\Application\Corpus\CorpusRenderer" not found`.
 
-- [ ] **Étape 5 : implémentation minimale**
+- [x] **Étape 5 : implémentation minimale**
 
 `CorpusRendererInterface.php` :
 
@@ -732,11 +732,11 @@ Si PHPStan refuse les formes `array{…, ...}` (formes non scellées) en `max`, 
 avec la forme complète renvoyée par `labels()`, déclarée une fois via un `@phpstan-type Labels` en
 tête de classe. Ne pas relâcher en `array<string, string>`.
 
-- [ ] **Étape 6 : lancer le test pour vérifier qu'il passe**
+- [x] **Étape 6 : lancer le test pour vérifier qu'il passe**
 
 Commande : identique à l'étape 4. Attendu : SUCCÈS, 7 tests.
 
-- [ ] **Étape 7 : tests noyau, sources et ordre (rouges d'abord)**
+- [x] **Étape 7 : tests noyau, sources et ordre (rouges d'abord)**
 
 Dans `backend/config/services.yaml`, bloc `when@test`, ajouter sous le commentaire existant :
 
@@ -881,7 +881,7 @@ removed or inlined »). Après : les 10 tests VERTS.
 `private EntityManagerInterface $em` au constructeur du renderer, constater l'ÉCHEC des deux tests,
 puis retirer le paramètre.
 
-- [ ] **Étape 8 : qualité locale puis commit**
+- [x] **Étape 8 : qualité locale puis commit**
 
 Commande : `docker compose exec -T backend composer phpstan -- src/Ai tests/Ai` puis
 `docker compose exec -T backend vendor/bin/rector process --dry-run src/Ai tests/Ai`
