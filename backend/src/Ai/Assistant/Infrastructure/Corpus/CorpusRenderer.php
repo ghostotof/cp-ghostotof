@@ -191,6 +191,12 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
      * Un champ de prose ne fabrique pas de structure : un `#` en début de ligne
      * est échappé, seul le rendu pose les intertitres que le modèle cite
      * (règle 4 du préambule).
+     *
+     * Pas exhaustif non plus, comme la neutralisation des balises : un
+     * intertitre Setext (ligne soulignée de `===` ou `---`), un `#` après un
+     * marqueur de bloc (`> # X`, `- # X`), un `＃` pleine chasse ou précédé
+     * d'une espace insécable passent. Contrepartie assumée : un `#` légitime en
+     * tête de ligne (`#1`) arrive au modèle sous la forme `\#1`.
      */
     private static function prose(string $value): string
     {

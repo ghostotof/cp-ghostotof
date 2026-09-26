@@ -75,9 +75,11 @@ framework:
                 # `timeout` est un délai d'inactivité : un flux qui goutte (un
                 # fragment toutes les 39 s) le repousserait sans fin et tiendrait un
                 # worker php-fpm. Plafond total, large au-dessus d'une réponse de
-                # 1 024 jetons (spec 0005 D6), et sous les 60 s de
-                # `fastcgi_read_timeout` (nginx) et de l'ingress : au-delà, leur 504
-                # HTML pourrait devancer le 503 typé de l'assistant.
+                # 1 024 jetons (spec 0005 D6). `fastcgi_read_timeout` (nginx) et le
+                # délai de lecture de l'ingress, 60 s par défaut, mesurent l'attente
+                # entre deux lectures, pas un total : le risque d'un 504 HTML avant le
+                # 503 typé n'existe qu'avant le premier octet, et cette attente-là
+                # est bornée ici sous 60 s.
                 max_duration: 50
                 max_redirects: 0
 
