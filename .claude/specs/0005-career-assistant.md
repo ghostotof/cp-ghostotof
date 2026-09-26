@@ -521,3 +521,14 @@ statut HTTP d'un échec, faute de quoi le diagnostic redevient aveugle ; à sign
 prompt : le fichier est versionné dans un dépôt public, pseudonyme de bout en bout (objectif n°9). Il
 n'arrive qu'avec le CV nominatif (tâche 4, `ROLE_TRUSTED`) ; d'ici là, « il » seul. Le texte extrait
 du PDF doit donc conserver le prénom — à vérifier par le test de fixture de #263.
+
+**2026-09-26 (tâche 1, invention sans documents)** — Appel réel interactif sans corpus :
+`mistral-small-3.2` invente un diplôme, des employeurs et cite des sections inexistantes. Mesure par
+appels directs (prompt seul / consigne « si rien ne suit, dis-le » dans le préambule / bloc de documents
+vide explicite) : mistral-small-3.2 invente 3/3, 4/5 (deux passes identiques), 0/3 ; qwen3-235b 1/3,
+0/5, 0/3 ; llama-3.3-70b 0/3, non testé, 0/3. **Conclusion : le bloc de documents explicite, même vide,
+est la parade ; la consigne seule ne tient pas avec Mistral.** Le risque restant — corpus présent mais
+muet sur la question posée (les employeurs, absents du CV sans identité par construction) — ne peut se
+mesurer qu'avec le corpus : deux critères ajoutés à #261 (corpus toujours délimité avec mentions
+d'absence ; contrôle d'invention sur le vrai modèle, bascule de modèle si besoin). Modèle conservé en
+tâche 1. Le refus hors sujet fonctionne (« danse classique »).
