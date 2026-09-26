@@ -81,7 +81,7 @@ compte compris) n'atteignent l'assistant — ni directement, ni par effet de bor
   (raison). `access_control` `{ path: ^/api/assistant(/|$), roles: ROLE_TRUSTED }`, **placée après
   `^/api/backoffice` et avant les règles `ROLE_USER`**, sur un préfixe qui n'est pas `^/api/cv`.
   Double-submit CSRF exigé comme toute mutation `/api` (aucune entrée dans `EXCLUDED_PATHS`).
-- **D5 — Corpus rendu par un composant unique** (`Application/Corpus/CorpusRenderer`), en Markdown
+- **D5 — Corpus rendu par un composant unique** (`Infrastructure/Corpus/CorpusRenderer`, derrière `Application/Corpus/CorpusRendererInterface`), en Markdown
   déterministe : une locale (celle de la requête), sections dans un ordre fixe (CV nominatif, CV
   sans identité, études de cas), entrées triées par `position`, intertitres nommés dans la langue
   du corpus, **aucun champ technique** (id, groupe de traduction, locale). Les sources sont lues
@@ -288,9 +288,9 @@ Application/
   CareerAssistantInterface.php               # answer(Conversation, Locale): iterable<string>
   AssistantRateLimiterInterface.php
   Corpus/CorpusRendererInterface.php         # render(Locale): string
-  Corpus/CorpusRenderer.php                  # providers publics + PdfTextExtractor → Markdown
   Corpus/PdfTextExtractorInterface.php       # extract(): ?string (null si fichier absent)
 Infrastructure/
+  Corpus/CorpusRenderer.php                  # providers publics + PdfTextExtractor → Markdown
   SymfonyAi/SymfonyAiCareerAssistant.php     # seule classe qui importe le bundle ; stream: true
   Pdf/SmalotPdfTextExtractor.php             # smalot/pdfparser + normalisation, sans cache (D7)
   RateLimiter/SymfonyAssistantRateLimiter.php  # limiter.career_assistant, clé = username

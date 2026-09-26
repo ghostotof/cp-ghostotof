@@ -121,5 +121,5 @@ when@test:
         # renderer de l'assistant (spec 0005 D5). Service privé : inliné ou
         # retiré à la compilation, il serait introuvable dans le conteneur de
         # test sans ceci.
-        App\Ai\Assistant\Application\Corpus\CorpusRenderer:
+        App\Ai\Assistant\Infrastructure\Corpus\CorpusRenderer:
             public: true

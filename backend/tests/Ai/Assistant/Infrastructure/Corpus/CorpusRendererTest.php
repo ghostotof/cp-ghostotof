@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Ai\Assistant\Application\Corpus;
+namespace App\Tests\Ai\Assistant\Infrastructure\Corpus;
 
-use App\Ai\Assistant\Application\Corpus\CorpusRenderer;
+use App\Ai\Assistant\Infrastructure\Corpus\CorpusRenderer;
 use App\Portfolio\AnonymousCv\Presentation\ApiResource\AnonymousCvSectionResource;
 use App\Portfolio\CaseStudy\Presentation\ApiResource\CaseStudyResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
