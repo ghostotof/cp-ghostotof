@@ -19,11 +19,6 @@ declare module 'vue-router' {
     roles?: readonly string[]
     /** Exclut la page de l'indexation (`<meta name="robots" content="noindex, nofollow">`). */
     noindex?: boolean
-    /**
-     * Chemin (sans la locale ni barre initiale) à publier dans canonical/hreflang
-     * à la place du chemin réel — pour une route dont l'URL peut porter un secret.
-     */
-    canonicalPath?: string
   }
 }
 
@@ -154,18 +149,17 @@ export const router = createRouter({
           //
           // Le jeton arrive dans le FRAGMENT (`set-password#<jeton>`, audit A7,
           // décision D6) : jamais envoyé au serveur, donc absent des access
-          // logs. `:token?` n'est qu'un repli de compatibilité pour les liens
-          // `set-password/<jeton>` envoyés avant ce changement (durée de vie
-          // 48 h) — son retrait est la tâche T4.4. `canonicalPath` empêche ce
-          // segment d'être recopié dans canonical/hreflang (cf. seo.ts).
-          path: 'set-password/:token?',
+          // logs. Aucun segment de chemin ne le porte plus : l'ancien repli
+          // `set-password/:token?` (liens envoyés avant le fragment, 48 h de
+          // vie) a été retiré en T4.4 — un tel lien est aujourd'hui un 404, et
+          // c'est voulu : un secret ne doit pas pouvoir arriver par le chemin.
+          path: 'set-password',
           name: 'set-password',
           component: SetPasswordPage,
           meta: {
             titleKey: 'seo.setPassword.title',
             descriptionKey: 'seo.setPassword.description',
             noindex: true,
-            canonicalPath: 'set-password',
           },
         },
         {

@@ -21,18 +21,18 @@ function createStubRepository(overrides: Partial<AccountRepository> = {}): Accou
 /**
  * Historique web (et non mémoire) : le nettoyage de l'URL se juge sur
  * `window.location` et `window.history.state`, ce que voit réellement le
- * navigateur. Même forme de route que presentation/router/index.ts
- * (`:token?`, repli de compatibilité des liens déjà envoyés).
+ * navigateur. Même forme de route que presentation/router/index.ts : le jeton
+ * n'arrive que par le fragment, aucun segment de chemin ne le porte (T4.4).
  */
 function createTestRouter(): Router {
   return createRouter({
     history: createWebHistory(),
     routes: [
       {
-        path: '/:locale(fr|en)/set-password/:token?',
+        path: '/:locale(fr|en)/set-password',
         name: 'set-password',
         component: SetPasswordPage,
-        meta: { noindex: true, canonicalPath: 'set-password' },
+        meta: { noindex: true },
       },
       { path: '/:locale(fr|en)/login', name: 'login', component: StubPage },
     ],
@@ -71,7 +71,6 @@ afterEach(() => {
 
 describe('SetPasswordPage — lecture du jeton et nettoyage de l\'URL (audit A7)', () => {
   const TOKEN = 'a'.repeat(64)
-  const OTHER_TOKEN = 'b'.repeat(64)
 
   it('lit le jeton dans le fragment du lien', async () => {
     const repository = createStubRepository()
@@ -80,37 +79,18 @@ describe('SetPasswordPage — lecture du jeton et nettoyage de l\'URL (audit A7)
     expect(repository.validateSetupToken).toHaveBeenCalledWith(TOKEN)
   })
 
-  it("repli de compatibilité : lit le jeton dans le segment de chemin d'un ancien lien", async () => {
-    const repository = createStubRepository()
-    await mountPage(repository, `/fr/set-password/${TOKEN}`)
-
-    expect(repository.validateSetupToken).toHaveBeenCalledWith(TOKEN)
-  })
-
-  it('le fragment prime quand le lien porte les deux', async () => {
-    const repository = createStubRepository()
-    await mountPage(repository, `/fr/set-password/${OTHER_TOKEN}#${TOKEN}`)
-
-    expect(repository.validateSetupToken).toHaveBeenCalledTimes(1)
-    expect(repository.validateSetupToken).toHaveBeenCalledWith(TOKEN)
-  })
-
   it.each([
     ['fragment', `/fr/set-password#${TOKEN}`],
-    ['segment de chemin (repli)', `/fr/set-password/${TOKEN}`],
-    ['les deux', `/fr/set-password/${OTHER_TOKEN}#${TOKEN}`],
   ])("efface le jeton de l'URL affichée après lecture — %s", async (_label, path) => {
     await mountPage(createStubRepository(), path)
 
     expect(window.location.pathname).toBe('/fr/set-password')
     expect(window.location.hash).toBe('')
     expect(window.location.href).not.toContain(TOKEN)
-    expect(window.location.href).not.toContain(OTHER_TOKEN)
   })
 
   it.each([
     ['fragment', `/fr/set-password#${TOKEN}`],
-    ['segment de chemin (repli)', `/fr/set-password/${TOKEN}`],
   ])("ne laisse le jeton ni dans history.state ni dans la route courante, et l'état de vue-router reste cohérent — %s", async (_label, path) => {
     const { router } = await mountPage(createStubRepository(), path)
 
@@ -148,9 +128,9 @@ describe('SetPasswordPage — lecture du jeton et nettoyage de l\'URL (audit A7)
 
   it("rendue par <RouterView> comme dans l'application : le nettoyage ne remonte pas la page, le jeton en mémoire survit", async () => {
     const repository = createStubRepository()
-    window.history.replaceState(null, '', `/fr/set-password/${TOKEN}`)
+    window.history.replaceState(null, '', `/fr/set-password#${TOKEN}`)
     const router = createTestRouter()
-    await router.push(`/fr/set-password/${TOKEN}`)
+    await router.push(`/fr/set-password#${TOKEN}`)
     await router.isReady()
 
     const wrapper = mount(
@@ -180,7 +160,7 @@ describe('SetPasswordPage — lecture du jeton et nettoyage de l\'URL (audit A7)
     expect(JSON.stringify({ ...window.sessionStorage })).not.toContain(TOKEN)
   })
 
-  it('aucun jeton (ni fragment ni segment) : lien invalide, sans appel au backend', async () => {
+  it('aucun jeton (pas de fragment) : lien invalide, sans appel au backend', async () => {
     const repository = createStubRepository()
     const { wrapper } = await mountPage(repository, '/fr/set-password')
 
@@ -201,7 +181,6 @@ describe('SetPasswordPage — lecture du jeton et nettoyage de l\'URL (audit A7)
 
   it.each([
     ['fragment', `/fr/set-password#${TOKEN}`],
-    ['segment de chemin (repli)', `/fr/set-password/${TOKEN}`],
   ])('le jeton n\'apparaît dans aucun canonical/hreflang, ni dans le titre — %s', async (_label, path) => {
     await mountPage(createStubRepository(), path)
 
