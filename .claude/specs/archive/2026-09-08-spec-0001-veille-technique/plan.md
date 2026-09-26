@@ -1,6 +1,6 @@
 # PLAN — Radar de veille technique
 
-**Spec** : [`.claude/specs/0001-tech-watch.md`](../specs/0001-tech-watch.md) · **Branche** : `feature/tech-watch`
+**Spec** : [`.claude/specs/archive/2026-09-08-spec-0001-veille-technique/0001-tech-watch.md`](./0001-tech-watch.md) · **Branche** : `feature/tech-watch`
 · **Établi le** : 2026-09-07
 
 ---
