@@ -20,9 +20,18 @@ use Symfony\Component\Validator\Constraints as Assert;
  * `Sequentially` partout où une contrainte suivante supposerait le type : sans
  * lui, NotBlank(normalizer: trim) sur un tableau serait une TypeError, donc un
  * 500 au lieu d'un 422.
+ *
+ * Le nombre de messages est vérifié avant chacun d'eux (audit de la tâche 3,
+ * F6) : un corps de 128 Kio porte ~4 000 messages minuscules, que `All`
+ * parcourait tous (~113 ms mesurés) avant que le VO n'en refuse plus de 11.
+ * Le plafond reste volontairement large : une conversation simplement trop
+ * longue garde le 422 typé `/errors/invalid-conversation` du VO, seul un
+ * corps absurde reçoit ici le 422 de validation.
  */
 final class AnswerRequest
 {
+    public const int MAX_MESSAGES_VALIDATED = 50;
+
     /**
      * @param array<mixed> $messages
      */
@@ -30,13 +39,15 @@ final class AnswerRequest
         #[Assert\NotBlank]
         #[Assert\Choice(callback: [Locale::class, 'values'])]
         public string $locale = '',
-        #[Assert\Count(min: 1)]
-        #[Assert\All([
-            new Assert\Sequentially([
-                new Assert\Type('array'),
-                new Assert\Collection(fields: [
-                    'role' => new Assert\Sequentially([new Assert\Type('string'), new Assert\Choice(callback: [Role::class, 'values'])]),
-                    'content' => new Assert\Sequentially([new Assert\Type('string'), new Assert\NotBlank(normalizer: 'trim')]),
+        #[Assert\Sequentially([
+            new Assert\Count(min: 1, max: self::MAX_MESSAGES_VALIDATED),
+            new Assert\All([
+                new Assert\Sequentially([
+                    new Assert\Type('array'),
+                    new Assert\Collection(fields: [
+                        'role' => new Assert\Sequentially([new Assert\Type('string'), new Assert\Choice(callback: [Role::class, 'values'])]),
+                        'content' => new Assert\Sequentially([new Assert\Type('string'), new Assert\NotBlank(normalizer: 'trim')]),
+                    ]),
                 ]),
             ]),
         ])]

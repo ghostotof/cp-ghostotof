@@ -335,6 +335,14 @@ final class AnswerControllerTest extends WebTestCase
             ['role' => 'assistant', 'content' => str_repeat('a', 4001)],
             ['role' => 'user', 'content' => 'Question ?'],
         ]];
+        // Chaque message sous sa propre borne, le total au-dessus :
+        // 5 × 1 000 + 4 × 2 800 = 16 200 caractères.
+        yield 'conversation de plus de 16 000 caractères' => [array_map(
+            static fn (int $rank): array => 0 === $rank % 2
+                ? ['role' => 'user', 'content' => str_repeat('a', 1000)]
+                : ['role' => 'assistant', 'content' => str_repeat('a', 2800)],
+            range(0, 8),
+        )];
         yield "premier message de l'assistant" => [[
             ['role' => 'assistant', 'content' => 'Bonjour.'],
             ['role' => 'user', 'content' => 'Question ?'],
@@ -389,6 +397,13 @@ final class AnswerControllerTest extends WebTestCase
         self::assertGreaterThan(0, (int) $retryAfter);
         self::assertLessThanOrEqual(3600, (int) $retryAfter);
         self::assertCount(self::QUOTA, $this->scalewayRequests);
+        // Le refus est tracé sur le canal qui sort des pods de production.
+        $refusals = array_values(array_filter(
+            $this->aiUsageRecords(),
+            static fn (LogRecord $record): bool => 'rate-limited' === ($record->context['outcome'] ?? null),
+        ));
+        self::assertCount(1, $refusals);
+        self::assertSame(self::TRUSTED_USERNAME, $refusals[0]->context['account'] ?? null);
     }
 
     public function testTheQuotaIsKeptPerAccount(): void
@@ -431,10 +446,11 @@ final class AnswerControllerTest extends WebTestCase
 
     /**
      * La borne de taille ne doit refuser aucune conversation que les bornes
-     * D6 acceptent : la plus longue (11 messages à leur longueur maximale),
+     * D6 acceptent : la plus longue (11 messages, 16 000 caractères au total),
      * écrite tout en caractères de quatre octets, sérialisée comme le fait
-     * `JSON.stringify` côté frontend — sans échappement `\u`. Environ 104 Ko :
-     * au-delà des 64 Kio d'origine, d'où la borne amendée à 128 Kio.
+     * `JSON.stringify` côté frontend — sans échappement `\u`. Environ 64 Ko ;
+     * les 128 Kio laissent la marge d'un contenu échappé (caractères de
+     * contrôle en `\u00XX`, six octets chacun).
      */
     public function testTheLongestValidConversationInFourByteCharactersIsAccepted(): void
     {
@@ -445,10 +461,10 @@ final class AnswerControllerTest extends WebTestCase
         for ($rank = 0; $rank < 11; ++$rank) {
             $messages[] = 0 === $rank % 2
                 ? ['role' => 'user', 'content' => str_repeat('😀', 1000)]
-                : ['role' => 'assistant', 'content' => str_repeat('😀', 4000)];
+                : ['role' => 'assistant', 'content' => str_repeat('😀', 2000)];
         }
         $body = json_encode(['locale' => 'fr', 'messages' => $messages], \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE);
-        self::assertGreaterThan(100_000, \strlen($body));
+        self::assertGreaterThan(64_000, \strlen($body));
 
         $this->postRaw($client, $csrfToken, $body);
 

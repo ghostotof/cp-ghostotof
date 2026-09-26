@@ -13,6 +13,7 @@ use App\Ai\Assistant\Domain\ValueObject\ConversationMessage;
 use App\Ai\Assistant\Domain\ValueObject\Role;
 use App\Ai\Assistant\Infrastructure\RateLimiter\QuotaGuardedCareerAssistant;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Tests\Ai\Translation\Support\InMemoryLogger;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorage;
 use Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken;
@@ -31,9 +32,12 @@ final class QuotaGuardedCareerAssistantTest extends TestCase
      */
     private \ArrayObject $journal;
 
+    private InMemoryLogger $logger;
+
     protected function setUp(): void
     {
         $this->journal = new \ArrayObject();
+        $this->logger = new InMemoryLogger();
     }
 
     public function testTheQuotaOfTheAuthenticatedAccountIsConsumedBeforeTheCall(): void
@@ -63,12 +67,38 @@ final class QuotaGuardedCareerAssistantTest extends TestCase
     }
 
     /**
+     * Audit de la tâche 3, F5 : un refus de quota journalisé par le noyau en
+     * `info` ne sort jamais d'un pod de production. Il est donc tracé sur
+     * `ai_usage`, à niveau fixe, avec le compte — rien du contenu (D10).
+     */
+    public function testARefusalIsLoggedWithTheAccountAndNothingOfTheContent(): void
+    {
+        try {
+            $this->guarded(accepts: false)->answer($this->conversation(), Locale::FR);
+            self::fail('Une exception était attendue.');
+        } catch (AssistantRateLimitExceededException) {
+        }
+
+        self::assertCount(1, $this->logger->records);
+        self::assertSame('info', $this->logger->records[0]['level']);
+        self::assertSame(['outcome' => 'rate-limited', 'account' => 'trusted'], $this->logger->records[0]['context']);
+        self::assertStringNotContainsString('Question', $this->logger->dump());
+    }
+
+    public function testAnAcceptedCallIsNotLoggedHere(): void
+    {
+        $this->guarded(accepts: true)->answer($this->conversation(), Locale::FR);
+
+        self::assertSame([], $this->logger->records);
+    }
+
+    /**
      * La route est réservée à ROLE_TRUSTED par l'access_control : sans compte,
      * c'est un défaut de câblage, jamais un appel gratuit.
      */
     public function testWithoutAnAuthenticatedAccountNothingIsCalled(): void
     {
-        $guarded = new QuotaGuardedCareerAssistant($this->decorated(), $this->rateLimiter(true), new TokenStorage());
+        $guarded = new QuotaGuardedCareerAssistant($this->decorated(), $this->rateLimiter(true), new TokenStorage(), $this->logger);
 
         try {
             $guarded->answer($this->conversation(), Locale::FR);
@@ -83,7 +113,7 @@ final class QuotaGuardedCareerAssistantTest extends TestCase
         $tokenStorage = new TokenStorage();
         $tokenStorage->setToken(new UsernamePasswordToken(new InMemoryUser('trusted', null, ['ROLE_TRUSTED']), 'api', ['ROLE_TRUSTED']));
 
-        return new QuotaGuardedCareerAssistant($this->decorated(), $this->rateLimiter($accepts), $tokenStorage);
+        return new QuotaGuardedCareerAssistant($this->decorated(), $this->rateLimiter($accepts), $tokenStorage, $this->logger);
     }
 
     private function decorated(): CareerAssistantInterface

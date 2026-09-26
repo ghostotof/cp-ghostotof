@@ -114,6 +114,32 @@ final class ConversationTest extends TestCase
         new ConversationMessage(Role::Assistant, str_repeat('a', 4001));
     }
 
+    /**
+     * Borne totale (D6 amendée, audit F2) : le coût se paie en jetons sur la
+     * conversation entière, que les seules bornes par message laissaient
+     * monter à 26 000 caractères. 6 × 1 000 + 5 × 2 000 = 16 000 exactement.
+     */
+    public function testAConversationOfSixteenThousandCharactersIsAccepted(): void
+    {
+        self::assertCount(11, new Conversation($this->filled(assistantLength: 2000)));
+    }
+
+    public function testAConversationBeyondSixteenThousandCharactersIsRefused(): void
+    {
+        $messages = $this->filled(assistantLength: 2000);
+        $messages[9] = new ConversationMessage(Role::Assistant, str_repeat('a', 2001));
+
+        $this->expectException(InvalidConversationException::class);
+
+        new Conversation(array_values($messages));
+    }
+
+    /** La borne totale compte des caractères, comme les bornes par message. */
+    public function testTheTotalBoundCountsCharactersNotBytes(): void
+    {
+        self::assertCount(11, new Conversation($this->filled(assistantLength: 2000, character: 'é')));
+    }
+
     public function testAConversationStartingWithTheAssistantIsRefused(): void
     {
         $this->expectException(InvalidConversationException::class);
@@ -159,6 +185,24 @@ final class ConversationTest extends TestCase
     public function testRoleValuesAreTheWireNames(): void
     {
         self::assertSame(['user', 'assistant'], Role::values());
+    }
+
+    /**
+     * Onze messages alternés, ceux de la personne à 1 000 caractères, ceux de
+     * l'assistant à $assistantLength.
+     *
+     * @return list<ConversationMessage>
+     */
+    private function filled(int $assistantLength, string $character = 'a'): array
+    {
+        $messages = [];
+        for ($i = 0; $i < 11; ++$i) {
+            $messages[] = 0 === $i % 2
+                ? new ConversationMessage(Role::User, str_repeat($character, 1000))
+                : new ConversationMessage(Role::Assistant, str_repeat($character, $assistantLength));
+        }
+
+        return $messages;
     }
 
     /**
