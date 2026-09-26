@@ -131,7 +131,7 @@ final class ConversationTest extends TestCase
 
         $this->expectException(InvalidConversationException::class);
 
-        new Conversation($messages);
+        new Conversation(array_values($messages));
     }
 
     /** La borne totale compte des caractères, comme les bornes par message. */
