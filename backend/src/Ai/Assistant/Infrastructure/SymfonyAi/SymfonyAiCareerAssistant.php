@@ -38,7 +38,10 @@ use Symfony\Contracts\HttpClient\Exception\HttpExceptionInterface;
  * de la réponse. Le statut HTTP de l'échec, lui, est journalisé.
  *
  * Une ligne SSE illisible (le bridge la décode avec JSON_THROW_ON_ERROR) est
- * une panne du fournisseur comme une autre : 503 ou événement `error`.
+ * une panne du fournisseur comme une autre : 503 ou événement `error`. De même
+ * pour une ligne lisible mais d'une forme inattendue, sur laquelle le bridge lève
+ * un TypeError en construisant ses objets. La classe de l'exception est
+ * journalisée : un vrai bogue de ce côté-ci reste reconnaissable.
  *
  * Journal sur le canal `ai_usage` (monolog.yaml), à niveau fixe en production :
  * sans cela, LOG_LEVEL=warning y écarterait l'usage de chaque réponse.
@@ -76,7 +79,7 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
             // partirait qu'une fois le statut 200 envoyé, et un fournisseur
             // injoignable ne pourrait plus devenir un 503.
             $fragments->current();
-        } catch (PlatformException|AgentException|HttpClientException|\JsonException $exception) {
+        } catch (PlatformException|AgentException|HttpClientException|\JsonException|\TypeError $exception) {
             throw $this->unavailable($exception, $conversation, 'before-first-fragment');
         }
 
@@ -120,7 +123,7 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
                 yield $fragments->current();
                 $fragments->next();
             }
-        } catch (PlatformException|AgentException|HttpClientException|\JsonException $exception) {
+        } catch (PlatformException|AgentException|HttpClientException|\JsonException|\TypeError $exception) {
             throw $this->unavailable($exception, $conversation, 'during-stream');
         }
 

@@ -158,6 +158,37 @@ final class SymfonyAiCareerAssistantTest extends TestCase
         self::assertSame('during-stream', $this->logger->records[0]['context']['stage'] ?? null);
     }
 
+    /**
+     * Contre-audit, point 7 : un JSON valide mais d'une forme inattendue
+     * (`delta.content` en tableau, `usage` scalaire…) fait lever au bridge un
+     * TypeError en construisant ses objets. C'est encore une panne du
+     * fournisseur, pas un 500 ni un flux coupé sans `error`.
+     */
+    public function testAnUnexpectedlyShapedProviderLineBeforeTheFirstFragmentIsUnavailable(): void
+    {
+        $agent = new FakeStreamingAgent([], failure: new \TypeError('TextDelta::__construct(): Argument #1 must be of type string'));
+
+        try {
+            $this->assistant($agent)->answer($this->conversation(), Locale::FR);
+            self::fail('AssistantUnavailableException attendue.');
+        } catch (AssistantUnavailableException) {
+        }
+
+        self::assertSame('before-first-fragment', $this->logger->records[0]['context']['stage'] ?? null);
+    }
+
+    public function testAnUnexpectedlyShapedProviderLineDuringTheStreamIsUnavailable(): void
+    {
+        $agent = new FakeStreamingAgent(['Il a ', 'conçu'], failure: new \TypeError('TextDelta::__construct(): Argument #1 must be of type string'), failAfter: 1);
+        $stream = $this->assistant($agent)->answer($this->conversation(), Locale::FR);
+
+        [$received, $failure] = $this->consume($stream);
+
+        self::assertSame(['Il a '], $received);
+        self::assertInstanceOf(AssistantUnavailableException::class, $failure);
+        self::assertSame('during-stream', $this->logger->records[0]['context']['stage'] ?? null);
+    }
+
     /** Point de relecture n°2 : aucun fragment est une réponse vide, pas une panne. */
     public function testAnAnswerWithoutAnyTextFragmentEndsNormally(): void
     {
