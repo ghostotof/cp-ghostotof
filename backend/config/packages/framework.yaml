@@ -53,6 +53,11 @@ framework:
             ai.scaleway.http_client:
                 base_uri: 'https://api.scaleway.ai'
                 timeout: 40
+                # `timeout` est un délai d'inactivité : un flux qui goutte (un
+                # fragment toutes les 39 s) le repousserait sans fin et tiendrait un
+                # worker php-fpm. Plafond total, large au-dessus d'une réponse de
+                # 1 024 jetons (spec 0005 D6).
+                max_duration: 60
                 max_redirects: 0
 
     #esi: true

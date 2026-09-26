@@ -61,6 +61,9 @@ final class ScalewayPlatformWiringTest extends KernelTestCase
         // que si la requête est bien passée par le scope `ai.scaleway.http_client`.
         self::assertEqualsWithDelta(40.0, $request['options']['timeout'], 0.0);
         self::assertSame(0, $request['options']['max_redirects']);
+        // `timeout` est un délai d'inactivité : un flux qui goutte le repousserait
+        // sans fin et tiendrait un worker php-fpm. `max_duration` borne le total.
+        self::assertEqualsWithDelta(60.0, $request['options']['max_duration'], 0.0);
     }
 
     public function testRequestBodyCarriesTheConfiguredModelBoundsAndSystemPrompt(): void
