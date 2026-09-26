@@ -202,6 +202,25 @@ final class SymfonyAiCareerAssistantTest extends TestCase
     }
 
     /**
+     * L'exception qui sort d'ici est journalisée par l'ErrorListener du noyau,
+     * chaîne `previous` comprise (formateur JSON en prod) : elle ne doit rien
+     * transporter du fournisseur, dont le bridge recopie le corps (D10).
+     */
+    public function testTheExceptionLeavingTheServiceCarriesNothingFromTheProvider(): void
+    {
+        $agent = new FakeStreamingAgent([], failure: new PlatformRuntimeException('Unexpected response code 400: "SENTINELLE-FOURNISSEUR"'));
+
+        try {
+            $this->assistant($agent)->answer($this->conversation(), Locale::FR);
+            self::fail('AssistantUnavailableException attendue.');
+        } catch (AssistantUnavailableException $exception) {
+            for ($link = $exception; null !== $link; $link = $link->getPrevious()) {
+                self::assertStringNotContainsString('SENTINELLE-FOURNISSEUR', $link->getMessage());
+            }
+        }
+    }
+
+    /**
      * Consomme le flux jusqu'au bout ou jusqu'à l'échec, et rend les deux.
      *
      * @param \Generator<int, string, mixed, mixed> $stream

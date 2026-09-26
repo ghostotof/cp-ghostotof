@@ -21,7 +21,7 @@ final class AssistantProblemResponseListenerTest extends TestCase
 {
     public function testAProblemExceptionUnderTheAssistantPathBecomesItsTypedProblem(): void
     {
-        $event = $this->event('/api/assistant/answers', new AssistantUnavailableException(new \RuntimeException('cause interne SENTINELLE')));
+        $event = $this->event('/api/assistant/answers', new AssistantUnavailableException());
 
         (new AssistantProblemResponseListener())($event);
 
@@ -35,7 +35,6 @@ final class AssistantProblemResponseListenerTest extends TestCase
             'status' => 503,
             'detail' => "L'assistant est indisponible. Réessayez plus tard.",
         ], $problem);
-        self::assertStringNotContainsString('SENTINELLE', (string) $response->getContent());
     }
 
     /** Chemin décodé comme le routeur le voit (issue #77). */

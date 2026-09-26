@@ -147,7 +147,7 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
             'messageCount' => $conversation->count(),
         ]);
 
-        return new AssistantUnavailableException($exception);
+        return new AssistantUnavailableException();
     }
 
     /**
