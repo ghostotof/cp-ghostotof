@@ -30,9 +30,12 @@ use Symfony\Component\Routing\Attribute\Route;
  * completionTokens, durationMs}, `error` {reason}) : un fragment brut
  * contenant un saut de ligne serait découpé en plusieurs lignes `data:`.
  *
- * EventStreamResponse pose lui-même `X-Accel-Buffering: no` (honoré par nginx
- * et l'ingress-nginx, qui cessent de mettre la réponse en tampon) et un
- * Cache-Control `no-store`.
+ * EventStreamResponse pose lui-même `X-Accel-Buffering: no` et un
+ * Cache-Control `no-store`. L'en-tête coupe le tampon du nginx qui sert
+ * l'application (le sidecar en production), qui le consomme : il ne va pas
+ * plus loin, le client ne le reçoit pas (vérifié en dev le 2026-09-26). Au
+ * delà, c'est le `proxy-buffering` de l'ingress-nginx, `off` par défaut et
+ * non surchargé dans k8s/, qui laisse passer le flux.
  */
 final readonly class AnswerController
 {
