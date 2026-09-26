@@ -4,7 +4,7 @@ Spec : `.claude/specs/0005-career-assistant.md`. Branche mère : `feature/spec-0
 Une branche par tâche, tirée de la mère, PR vers la mère. Le détail de chaque tâche vit dans son issue.
 
 - [x] Tâche 1 — Socle Scaleway et appel réel en dev (#260) — PR #268
-- [ ] Tâche 2 — Une question en flux de bout en bout (#261) — bloquée par #260
+- [x] Tâche 2 — Une question en flux de bout en bout (#261) — PR #270
 - [ ] Tâche 3 — Coût borné : bornes D6 et quota (#262) — bloquée par #261
 - [ ] Tâche 4 — CV nominatif dans le corpus (#263) — bloquée par #261
 - [ ] Tâche 5 — Préparation du déploiement (#264) — bloquée par #261
