@@ -10,12 +10,13 @@ titre non professionnel (cf. `docs/rgpd/registre-traitements.md` et les
 mentions légales pour le détail du statut), joignable à
 `contact@cp-ghostotof.com`.
 
-**Dernière mise à jour** : 2026-09-22 (3e audit de sécurité : ajout du §6 « Journal
-d'audit de sécurité », stockage des compteurs de limitation de débit au §2, précisions
-sur les journaux techniques au §5 ; §3 repris en entier — accès de base, invitation par
-e-mail et comptes nominatifs, que l'ancienne rédaction niait ; §7 et §8 complétés en
-conséquence ; §1 et §8 : boîte de contact hébergée en France, fin du transfert hors UE,
-issue #231 ; §5 : rotation des journaux mesurée sur les nœuds, Cockpit décrit).
+**Dernière mise à jour** : 2026-09-26 (§1 et §8 : boîte de contact hébergée en France
+et zone DNS chez Scaleway, fin du transfert hors UE — Cloudflare retiré ce jour, issue
+#231 ; §5 : rotation des journaux mesurée sur les nœuds, Cockpit décrit. Précédente :
+2026-09-22, 3e audit de sécurité — ajout du §6 « Journal d'audit de sécurité », stockage
+des compteurs de limitation de débit au §2, précisions sur les journaux techniques au §5,
+§3 repris en entier — accès de base, invitation par e-mail et comptes nominatifs, que
+l'ancienne rédaction niait —, §7 et §8 complétés en conséquence).
 
 ---
 
