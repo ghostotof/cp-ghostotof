@@ -14,6 +14,25 @@ framework:
     trusted_proxies: private_ranges
     trusted_headers: ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-forwarded-port', 'x-forwarded-prefix']
 
+    # Niveau de journalisation de l'ErrorListener du noyau, qui met sinon en
+    # `critical` toute exception hors HttpExceptionInterface et en `error` tout
+    # 4xx (tests/Ai/Assistant/Infrastructure/AssistantExceptionLogLevelTest.php).
+    # Ici plutôt qu'en `#[WithLogLevel]` : le domaine ne dépend pas de HttpKernel.
+    # Ne viser que des classes précises : un mapping sur HttpException
+    # abaisserait le niveau de tous les 4xx de l'application.
+    exceptions:
+        # Erreur du client (et, avec #262, les bornes D6) : pas un incident.
+        App\Ai\Assistant\Domain\Exception\InvalidConversationException:
+            log_level: info
+        # Panne d'un tiers : la cause (classe, statut) est déjà sur `ai_usage`.
+        # `warning` reste visible en production (LOG_LEVEL=warning).
+        App\Ai\Assistant\Domain\Exception\AssistantUnavailableException:
+            log_level: warning
+        # Format de corps refusé par #[MapRequestPayload(acceptFormat)] : seul
+        # ce résolveur lève cette classe.
+        Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException:
+            log_level: info
+
     # Aucune session, dans aucun environnement (audit 2026-09-16, constat A23).
     # L'application est sans état de bout en bout : les deux firewalls sont
     # `stateless: true`, l'authentification tient dans un JWT en cookie, il n'y
