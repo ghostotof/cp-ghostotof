@@ -62,8 +62,10 @@ final class ScalewayPlatformWiringTest extends KernelTestCase
         self::assertEqualsWithDelta(40.0, $request['options']['timeout'], 0.0);
         self::assertSame(0, $request['options']['max_redirects']);
         // `timeout` est un délai d'inactivité : un flux qui goutte le repousserait
-        // sans fin et tiendrait un worker php-fpm. `max_duration` borne le total.
-        self::assertEqualsWithDelta(60.0, $request['options']['max_duration'], 0.0);
+        // sans fin et tiendrait un worker php-fpm. `max_duration` borne le total,
+        // sous les 60 s de `fastcgi_read_timeout` et de l'ingress : sinon un 504
+        // HTML de leur part pourrait devancer notre 503 typé.
+        self::assertEqualsWithDelta(50.0, $request['options']['max_duration'], 0.0);
     }
 
     public function testRequestBodyCarriesTheConfiguredModelBoundsAndSystemPrompt(): void
