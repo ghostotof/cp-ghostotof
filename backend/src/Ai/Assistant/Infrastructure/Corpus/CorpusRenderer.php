@@ -7,6 +7,7 @@ namespace App\Ai\Assistant\Infrastructure\Corpus;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\State\ProviderInterface;
 use App\Ai\Assistant\Application\Corpus\CorpusRendererInterface;
+use App\Ai\Assistant\Domain\Exception\CorpusRenderingException;
 use App\Portfolio\AnonymousCv\Infrastructure\ApiPlatform\AnonymousCvProvider;
 use App\Portfolio\AnonymousCv\Presentation\ApiResource\AnonymousCvSectionResource;
 use App\Portfolio\CaseStudy\Infrastructure\ApiPlatform\CaseStudyProvider;
@@ -36,7 +37,9 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
 {
     private const string OPENING_TAG = '<documents>';
     private const string CLOSING_TAG = '</documents>';
-    private const string TAG_CHEVRON = '#[<＜](?=\s*[/／]?\s*documents)#iu';
+    // Quantificateurs possessifs : sans eux, les deux `\s*` se partagent la même
+    // suite d'espaces et le retour arrière devient quadratique (contre-audit).
+    private const string TAG_CHEVRON = '#[<＜](?=\s*+[/／]?+\s*+documents)#iu';
 
     /**
      * @param ProviderInterface<AnonymousCvSectionResource> $anonymousCvProvider
@@ -154,9 +157,9 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
             '## '.self::title($section->title),
             \sprintf($labels['yearsOfExperience'], $section->yearsOfExperience),
             '### '.$labels['skills'],
-            self::text($section->skills),
+            self::prose($section->skills),
             '### '.$labels['achievements'],
-            self::text($section->achievements),
+            self::prose($section->achievements),
         ]);
     }
 
@@ -168,20 +171,30 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
         return implode("\n\n", [
             '## '.self::title($caseStudy->title),
             '### '.$labels['problem'],
-            self::text($caseStudy->problem),
+            self::prose($caseStudy->problem),
             '### '.$labels['solution'],
-            self::text($caseStudy->solution),
+            self::prose($caseStudy->solution),
             '### '.$labels['tradeoffs'],
-            self::text($caseStudy->tradeoffs),
+            self::prose($caseStudy->tradeoffs),
             '### '.$labels['measuredResult'],
-            self::text($caseStudy->measuredResult),
+            self::prose($caseStudy->measuredResult),
         ]);
     }
 
     /** Un titre reste sur sa ligne d'intertitre : il n'ouvre pas de rubrique de son cru. */
     private static function title(string $value): string
     {
-        return (string) preg_replace('/\s*\n\s*/', ' ', self::text($value));
+        return self::replace('/\s*\n\s*/', ' ', self::text($value));
+    }
+
+    /**
+     * Un champ de prose ne fabrique pas de structure : un `#` en début de ligne
+     * est échappé, seul le rendu pose les intertitres que le modèle cite
+     * (règle 4 du préambule).
+     */
+    private static function prose(string $value): string
+    {
+        return self::replace('/^([ \t]*)#/m', '$1\#', self::text($value));
     }
 
     /**
@@ -193,15 +206,31 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
      * fermée n'avale ainsi aucun texte, et sans chevron ce n'est plus qu'un mot.
      * En boucle, parce qu'un retrait peut en rapprocher un autre
      * (`<<documents` redevient `<documents`).
+     *
+     * Cette neutralisation n'est **pas exhaustive** et ne prétend pas l'être :
+     * entités HTML, caractères de largeur nulle, homoglyphes (`‹`, `〈`…) ou
+     * lettres d'autres alphabets passent. Une liste d'exclusion ne sera jamais
+     * complète. La parade réelle est ailleurs : le préambule traite tout le
+     * corpus comme de la donnée (règle 6), et seul ROLE_SUPER écrit ce contenu.
      */
     private static function text(string $value): string
     {
         $value = str_replace(["\r\n", "\r"], "\n", $value);
         do {
             $previous = $value;
-            $value = (string) preg_replace(self::TAG_CHEVRON, '', $value);
+            $value = self::replace(self::TAG_CHEVRON, '', $value);
         } while ($value !== $previous);
 
         return trim($value);
+    }
+
+    /**
+     * preg_replace rend `null` en cas d'échec : casté en chaîne, le champ
+     * disparaîtrait du corpus sans que rien ne le signale.
+     */
+    private static function replace(string $pattern, string $replacement, string $value): string
+    {
+        return preg_replace($pattern, $replacement, $value)
+            ?? throw new CorpusRenderingException(\sprintf('Rendu du corpus impossible : %s.', preg_last_error_msg()));
     }
 }
