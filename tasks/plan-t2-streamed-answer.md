@@ -99,6 +99,21 @@ Chacun est à noter au journal de la spec (§10) dans la tâche 5.
    la boucle et aucune ligne `info` n'est écrite (les jetons consommés ne sont pas journalisés).
    C'est une limite acceptée en v1 ; la tâche 3 (quota) ne dépend pas de ce log.
 
+8. **Erreurs typées hors API Platform** (constaté en tâche 3, tranché le 2026-09-26). La route
+   n'étant pas une opération API Platform, ni `exception_to_status` ni `ProblemExceptionInterface`
+   ne s'y appliquent : un fournisseur indisponible sortait en **500** générique. Décision :
+   `AssistantProblemResponseListener` (`kernel.exception`, priorité -64, sous-arbre
+   `/api/assistant` seulement) rend toute `ProblemExceptionInterface` en problem+json
+   `/errors/<slug>`. Les 422 et 429 de #262 y passeront. Les deux entrées ajoutées à
+   `exception_to_status` restent utiles comme documentation, sans effet sur cette route.
+9. **Reprise SSE du bridge** (constaté en tâche 3, tranché le 2026-09-26). `EventSourceHttpClient`,
+   créé en dur par le bridge Scaleway, renvoie le même `POST` 10 s après une coupure en plein flux :
+   une seconde génération facturée, hors quota, ajoutée à la réponse partielle, et la reprise peut
+   se répéter (prouvé par une sonde : deux `POST`, 10,1 s). Décision : `ReplayRefusingHttpClient`
+   décore `ai.scaleway.http_client` et refuse un second envoi identique (méthode, URL, corps)
+   pendant une même requête HTTP, avec une remise à zéro par `kernel.reset`. **À signaler en
+   amont** (symfony/ai), avec D2.
+
 ## Points de relecture
 
 Voici les cas que la spec implique sans qu'un critère les nomme, et qui toucheraient d'abord une
@@ -1828,7 +1843,7 @@ git commit -m "feat(ai): assistant de parcours en flux, amorcé avant la répons
   `Conversation`, `ConversationMessage`, `Role` (tâche 2).
 - Produit : `POST /api/assistant/answers`, route `api_assistant_answers`, contrat du flux (en tête).
 
-- [ ] **Étape 1 : la règle d'accès, test d'abord**
+- [x] **Étape 1 : la règle d'accès, test d'abord**
 
 Dans `AccessControlAnchoringTest::provideRequestPathsAndExpectedRoles()`, après la ligne
 `/api/anonymous-cv/en` :
@@ -1858,7 +1873,7 @@ Dans `security.yaml`, juste après la règle `^/api/cv(/|$)` :
 
 Relancer : VERT.
 
-- [ ] **Étape 2 : le test fonctionnel qui échoue**
+- [x] **Étape 2 : le test fonctionnel qui échoue**
 
 `tests/Ai/Assistant/Presentation/Controller/AnswerControllerTest.php` :
 
@@ -2238,7 +2253,7 @@ Lancer : `docker compose exec -T backend php bin/phpunit tests/Ai/Assistant/Pres
 (le CSRF, puis la règle d'accès de l'étape 1, s'appliquent avant le routage du contrôleur) : c'est
 attendu, et ils resteront verts.
 
-- [ ] **Étape 3 : le DTO**
+- [x] **Étape 3 : le DTO**
 
 `src/Ai/Assistant/Presentation/Dto/AnswerRequest.php` :
 
@@ -2308,7 +2323,7 @@ final class AnswerRequest
 
 Vérifier la signature de `Locale::values()` (`src/Portfolio/Shared/Domain/ValueObject/Locale.php:29`).
 
-- [ ] **Étape 4 : le contrôleur**
+- [x] **Étape 4 : le contrôleur**
 
 `src/Ai/Assistant/Presentation/Controller/AnswerController.php` :
 
@@ -2398,7 +2413,7 @@ final readonly class AnswerController
 }
 ```
 
-- [ ] **Étape 5 : lancer les tests pour vérifier qu'ils passent**
+- [x] **Étape 5 : lancer les tests pour vérifier qu'ils passent**
 
 Commande : `docker compose exec -T backend php bin/phpunit tests/Ai/Assistant/Presentation`
 Attendu : VERT.
@@ -2417,7 +2432,7 @@ Trois écarts possibles, à traiter sur preuve et pas par supposition :
   `var/log/test.log`, puis corriger la contrainte ou le type du DTO. Ne jamais attraper l'erreur
   dans le contrôleur.
 
-- [ ] **Étape 6 : régressions de cloisonnement et route unique**
+- [x] **Étape 6 : régressions de cloisonnement et route unique**
 
 Commandes :
 
@@ -2430,7 +2445,7 @@ git diff --stat -- backend/tests/Security/ApiRouteExposureTest.php
 Attendu : `tests/Security` VERT ; `debug:router` liste **exactement une** ligne,
 `api_assistant_answers  POST  /api/assistant/answers` ; aucun diff sur `ApiRouteExposureTest.php`.
 
-- [ ] **Étape 7 : qualité puis commit**
+- [x] **Étape 7 : qualité puis commit**
 
 Commande : `make back-quality`. Attendu : PHPStan, Rector, Psalm et `lsp:check` verts (les six
 avertissements `config.unknown_key` connus sur `ai.yaml` restent les seuls).
