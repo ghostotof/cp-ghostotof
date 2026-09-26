@@ -137,6 +137,7 @@ build-front-prod: ## Construit l'image frontend de production (TAG=...)
 	  --target production \
 	  --build-arg NODE_TAG=$(shell grep '^NODE_TAG=' .env | cut -d= -f2) \
 	  --build-arg NGINX_TAG=$(shell grep '^NGINX_TAG=' .env | cut -d= -f2) \
+	  --build-arg APP_VERSION=$(TAG) \
 	  -f docker/node/Dockerfile \
 	  -t $(FRONT_IMAGE):$(TAG) .
 
@@ -145,6 +146,7 @@ build-front-preprod: ## Construit l'image frontend de préprod (= prod + source 
 	  --target preprod \
 	  --build-arg NODE_TAG=$(shell grep '^NODE_TAG=' .env | cut -d= -f2) \
 	  --build-arg NGINX_TAG=$(shell grep '^NGINX_TAG=' .env | cut -d= -f2) \
+	  --build-arg APP_VERSION=$(TAG) \
 	  -f docker/node/Dockerfile \
 	  -t $(FRONT_IMAGE):$(TAG)-preprod .
 

@@ -46,6 +46,14 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend/ ./
 
+# La VERSION, elle, est bien une propriété de l'image, pas de l'environnement :
+# le Makefile passe le TAG de la pipeline (`<version>-<sha>`), Vite l'inline
+# dans le bundle et le footer l'affiche. Une image promue de la préprod vers
+# la prod annonce donc la même version — c'est exactement ce qu'elle doit dire.
+# Vide (build hors Makefile), le footer n'affiche rien.
+ARG APP_VERSION=
+ENV VITE_APP_VERSION=${APP_VERSION}
+
 # Les source maps sont générées SYSTÉMATIQUEMENT, y compris pour la production.
 # Elles ne changent pas le bundle : ce sont des fichiers séparés. On les isole
 # ensuite pour ne les embarquer que dans l'image de préprod.

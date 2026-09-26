@@ -4,7 +4,9 @@ import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
 import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
+import { getAppVersion } from '../../infrastructure/config/getAppVersion'
 import IconDisc3 from '~icons/lucide/disc-3'
+import IconTag from '~icons/lucide/tag'
 
 defineProps<{
   siteIdentity: SiteIdentity
@@ -13,6 +15,17 @@ defineProps<{
 const { t, locale } = useI18n()
 const route = useRoute()
 const year = new Date().getFullYear()
+
+/**
+ * Version de l'image qui sert la page (fixée au build, voir getAppVersion) :
+ * la promesse du hero — « ce que vous lisez ici est exactement ce qui tourne » —
+ * rendue vérifiable d'un clic, le lien menant à la release GitHub. Null en dev,
+ * et rien n'est affiché.
+ */
+const appVersion = getAppVersion()
+const versionTitle = computed(() =>
+  appVersion?.build ? t('common.footerVersionBuild', { build: appVersion.build }) : t('common.footerVersionTitle'),
+)
 
 /** Même repli route → i18n que AppHeader.homeLink, pour rester correct sur la page 404. */
 const currentLocale = computed<Locale>(() => {
@@ -24,7 +37,44 @@ const currentLocale = computed<Locale>(() => {
 <template>
   <footer class="border-top mt-5 py-3">
     <div class="container-xl d-flex flex-column flex-sm-row align-items-center justify-content-between gap-2 gap-sm-3 small text-body-secondary">
-      <span>{{ t('common.footerCopyright', { year, brand: siteIdentity.brandName }) }}</span>
+      <span class="d-inline-flex flex-wrap align-items-center justify-content-center gap-2">
+        <span>{{ t('common.footerCopyright', { year, brand: siteIdentity.brandName }) }}</span>
+        <template v-if="appVersion">
+          <span aria-hidden="true">·</span>
+          <!-- Une release a sa page GitHub ; un build local (tag = SHA) n'en a pas, reste du
+               texte et s'affiche tel quel : le préfixe « v » n'a de sens que pour une release. -->
+          <a
+            v-if="appVersion.releaseUrl"
+            :href="appVersion.releaseUrl"
+            :title="versionTitle"
+            class="link-secondary link-underline-opacity-0 link-underline-opacity-100-hover d-inline-flex align-items-center gap-1 font-monospace"
+            data-testid="app-version"
+            rel="noopener"
+            target="_blank"
+          >
+            <IconTag
+              width="12"
+              height="12"
+              aria-hidden="true"
+            />
+            {{ t('common.footerVersion', { version: appVersion.version }) }}
+            <span class="visually-hidden">{{ t('common.opensInNewTab') }}</span>
+          </a>
+          <span
+            v-else
+            :title="versionTitle"
+            class="d-inline-flex align-items-center gap-1 font-monospace"
+            data-testid="app-version"
+          >
+            <IconTag
+              width="12"
+              height="12"
+              aria-hidden="true"
+            />
+            {{ appVersion.version }}
+          </span>
+        </template>
+      </span>
 
       <nav :aria-label="t('common.legalNavigation')">
         <ul class="list-unstyled d-flex align-items-center gap-3 mb-0">
