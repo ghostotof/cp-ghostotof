@@ -532,3 +532,39 @@ muet sur la question posée (les employeurs, absents du CV sans identité par co
 mesurer qu'avec le corpus : deux critères ajoutés à #261 (corpus toujours délimité avec mentions
 d'absence ; contrôle d'invention sur le vrai modèle, bascule de modèle si besoin). Modèle conservé en
 tâche 1. Le refus hors sujet fonctionne (« danse classique »).
+
+**2026-09-26 (tâche 2, #261)** — Une question en flux de bout en bout, sur le vrai modèle.
+**Contrôle d'invention** avec `mistral-small-3.2-24b-instruct-2506`, sur le corpus de dev (contenu
+d'exemple des seeds : une section de CV sans identité, une étude de cas, par langue) : quatre questions
+dont la réponse n'est pas dans le corpus (employeurs, diplôme et école, année de début, ville d'études),
+en français et en anglais, trois passes — **0 invention sur 24 réponses**, toutes du type « les documents
+ne le précisent pas ». Deux questions dont la réponse est dans le corpus (l'étude de cas, la section de
+compétences), deux passes : la bonne section est citée (règle 4). Une imprécision, pas une invention :
+à une question hors corpus, une réponse a dit que les documents « ne couvrent pas » compétences et
+études de cas, ce qui est faux sur leur structure. **Modèle conservé.** Limite du contrôle : un corpus
+d'exemple est pauvre, le risque de déduction (un employeur reconstitué à partir d'une réalisation) ne se
+mesure qu'avec du contenu réel — à refaire en préprod à la release de la spec, et après la tâche 4 (CV
+nominatif). Un appel sur 26 a répondu **503 avant le premier fragment** : `TransportException` 40 s
+après la requête sortante, c'est-à-dire le timeout de `ai.scaleway.http_client` ; le chemin d'échec a
+fonctionné et journalisé comme prévu (`stage: before-first-fragment`, `providerStatus: null`). Le
+visiteur attend donc jusqu'à 40 s avant l'erreur : à garder en tête pour la page (tâche 6).
+**nginx** : sans la location, 63 fragments étalés sur 0,44 s pour un corps d'environ 3 Ko — l'en-tête
+`X-Accel-Buffering: no` d'`EventStreamResponse` suffit, nginx l'honore aussi pour FastCGI. La location
+`^~ /api/assistant/` (avec son propre `fastcgi_pass`, sans quoi la redirection interne de `try_files`
+laisserait le `fastcgi_buffering off` derrière elle) est gardée par décision, en défense en profondeur ;
+le trafic y passe bien (502 avec un `fastcgi_pass` volontairement cassé). **Jetons en flux** : présents
+(`promptTokens` ~630 à 670), Scaleway honore `stream_options.include_usage`. **Écarts à la spec et à
+l'issue** : (1) un anonyme reçoit 403, pas 401, le double-submit CSRF tranchant avant le firewall ; le
+401 est testé avec un `XSRF-TOKEN` sans `BEARER` ; (2) les DTO publics n'exposant pas `position`, le
+rendu du corpus conserve l'ordre des providers (`ORDER BY position, id`), pincé par un test noyau ; (3)
+`SystemPromptInputProcessor` n'injecte pas le prompt de `ai.yaml` si le `MessageBag` porte déjà un
+message système : le service compose lui-même « préambule + corpus » (D8) en lisant le même fichier ;
+(4) les jetons en flux exigent `stream_options: {include_usage: true}` (confirmé, voir plus haut) ; (5)
+la location nginx et son `fastcgi_pass` propre (voir plus haut) ; (6) un échec journalise le statut HTTP
+du fournisseur, jamais le message de l'exception, où le bridge recopie le corps de la réponse ; (7) une
+coupure par le client n'écrit aucune ligne `info`, limite acceptée en v1 ; (8) la route n'étant pas une
+opération API Platform, `AssistantProblemResponseListener` rend ses `ProblemExceptionInterface` en
+problem+json (sans lui, 500) ; (9) `EventSourceHttpClient`, créé en dur par le bridge, rejoue le même
+`POST` 10 s après une coupure en plein flux — seconde génération facturée hors quota —, refusé par
+`ReplayRefusingHttpClient` ; **à signaler en amont** avec D2. **Tests** : `KernelBrowser` capture le
+corps diffusé sur `getInternalResponse()`, pas sur `getResponse()` ; aucun autre contournement.

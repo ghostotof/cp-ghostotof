@@ -592,7 +592,17 @@ mid-migration.
   `.claude/specs/0005-career-assistant.md`, task 1 (#260) done: the `career_assistant` agent in `ai.yaml`,
   `mistral-small-3.2-24b-instruct-2506`, `max_tokens` 1024, `tools: false`, prompt preamble in
   `config/ai/prompts/career_assistant.txt`, key `SCALEWAY_AI_API_KEY` routed exactly like `ANTHROPIC_API_KEY`,
-  plus `SCALEWAY_AI_PROJECT_ID` on the same route). **The project id is part of the platform's `baseUrl`**
+  plus `SCALEWAY_AI_PROJECT_ID` on the same route; task 2 (#261) done: `POST /api/assistant/answers`,
+  `ROLE_TRUSTED`, `AnswerController` → `CareerAssistantInterface` → `SymfonyAiCareerAssistant`). Task 2 facts
+  to keep: **the service composes its own system message** (preamble file + corpus rendered by
+  `CorpusRenderer`, D8) because `SystemPromptInputProcessor` skips `ai.yaml`'s prompt as soon as the
+  `MessageBag` carries one; **the agent is injected by id** (`ai.agent.career_assistant`), never
+  `PlatformInterface` by type, which autowires to Anthropic (D3); the stream is `text/event-stream` with JSON
+  `data` — `delta` `{text}`, then `done` `{promptTokens, completionTokens, durationMs}` or `error`
+  `{reason}` — and a provider failure **before the first fragment** is a 503 problem+json
+  (`/errors/assistant-unavailable`, rendered by `AssistantProblemResponseListener`, the route not being an API
+  Platform operation), the call being primed before the 200 is sent; `ReplayRefusingHttpClient` stops the
+  bridge's `EventSourceHttpClient` from replaying a cut stream (a second, billed generation). **The project id is part of the platform's `baseUrl`**
   (`https://api.scaleway.ai/<project>/v1/...`): without it the API targets the organisation's default project,
   and a key held by an IAM application whose policy is scoped to another project gets a **403** — which the
   0.13.0 bridge reports as `Error "unknown": "Unknown error"`, hiding the status. When that message shows up,
@@ -1185,6 +1195,12 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   thousands of visitors share one address, and a tight cap would cut them all off at once, which is
   the very DoS audit C7 was about. `/healthz` uses an exact-match `location =`, so kubelet probes are
   never capped.
+- **`location ^~ /api/assistant/` does its own `fastcgi_pass`** (spec 0005 D9, both confs). The career
+  assistant streams `text/event-stream`, so the location sets `fastcgi_buffering off`; through
+  `try_files … /index.php` the internal redirect to `location ~ ^/index\.php` would leave that directive
+  behind. Measured on 2026-09-26: `X-Accel-Buffering: no` (set by `EventStreamResponse`) already suffices,
+  the location is kept as defence in depth, with `publicapi`'s rate limit since it replaces `location /`
+  for that path.
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's

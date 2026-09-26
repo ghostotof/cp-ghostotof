@@ -2580,7 +2580,7 @@ git commit -m "feat(nginx): réponses de l'assistant sans tampon, dans les deux 
 
 ## Tâche 5 : le contrôle d'invention, la documentation, la clôture
 
-- [ ] **Étape 1 : contrôle d'invention avec le vrai modèle**
+- [x] **Étape 1 : contrôle d'invention avec le vrai modèle**
 
 Avec `ask.sh` et le corpus de dev, poser en **trois passes** chacune de ces questions, dont la
 réponse **n'est pas** dans le corpus (en fr et en en) :
@@ -2601,7 +2601,7 @@ et `llama-3.3-70b-instruct` (console Scaleway), et proposer la bascule à Christ
 changement de `model.name` dans `ai.yaml` (et dans `ScalewayPlatformWiringTest` et
 `AnswerControllerTest`), à refaire passer par le même contrôle.
 
-- [ ] **Étape 2 : journal de la spec**
+- [x] **Étape 2 : journal de la spec**
 
 Ajouter à `.claude/specs/0005-career-assistant.md` §10 une entrée « **2026-09-26 (tâche 2, #261)** »
 avec : le résultat du contrôle d'invention (questions, passes, nombre d'inventions, modèle retenu) ;
@@ -2610,7 +2610,7 @@ en flux ; les écarts 1 à 7 de ce plan ; la lecture du flux par `KernelBrowser`
 contournement. Aucun extrait de réponse qui citerait le vrai CV : le corpus de dev est fictif, mais
 on vérifie avant de copier.
 
-- [ ] **Étape 3 : CLAUDE.md**
+- [x] **Étape 3 : CLAUDE.md**
 
 Dans le paragraphe `Ai/` : la tâche 2 livrée ; le service qui compose lui-même son message système
 (écart n°3) ; l'agent injecté par id (garde D3) ; le contrat du flux (`delta`/`done`/`error`, JSON)
@@ -2618,7 +2618,7 @@ Dans le paragraphe `Ai/` : la tâche 2 livrée ; le service qui compose lui-mêm
 `/api/assistant/` et la raison de son `fastcgi_pass` propre. Une phrase chacun ; on ne recopie pas le
 plan.
 
-- [ ] **Étape 4 : vérification complète**
+- [x] **Étape 4 : vérification complète**
 
 Invoquer `superpowers:verification-before-completion`, puis :
 
@@ -2630,7 +2630,7 @@ make back-quality
 Attendu : les deux verts, sortie lue et citée. Les cases de l'issue #261 sont cochées **une par
 une**, contre la preuve correspondante.
 
-- [ ] **Étape 5 : commit, puis la suite du parcours**
+- [x] **Étape 5 : commit, puis la suite du parcours**
 
 ```bash
 git add .claude/specs/0005-career-assistant.md .claude/CLAUDE.md tasks/todo.md tasks/plan-t2-streamed-answer.md
