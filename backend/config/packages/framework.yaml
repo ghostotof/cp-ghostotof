@@ -47,6 +47,13 @@ framework:
                 base_uri: 'https://api.anthropic.com'
                 timeout: 40
                 max_redirects: 0
+            # Même bornes pour l'assistant de parcours (spec 0005, ADR 0004 D5) :
+            # consommé par la plateforme Scaleway déclarée dans services.yaml, le
+            # bundle ne sachant pas le lui transmettre (spec 0005 D2).
+            ai.scaleway.http_client:
+                base_uri: 'https://api.scaleway.ai'
+                timeout: 40
+                max_redirects: 0
 
     #esi: true
     #fragments: true

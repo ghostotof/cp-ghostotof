@@ -31,6 +31,10 @@
              plateforme est remplacée par une implémentation en mémoire ; un test
              qui atteindrait l'API réelle échouerait en 401, filet voulu. -->
         <server name="ANTHROPIC_API_KEY" value="sk-ant-test-not-a-real-key" force="true" />
+        <!-- Même filet pour la clé Scaleway de l'assistant de parcours (spec 0005) :
+             aucun test ne sort sur le réseau, et une fuite échouerait en 401. -->
+        <server name="SCALEWAY_AI_API_KEY" value="scw-test-not-a-real-key" force="true" />
+        <server name="SCALEWAY_AI_PROJECT_ID" value="00000000-0000-4000-8000-000000000000" force="true" />
     </php>
 
     <testsuites>

@@ -17,6 +17,7 @@
         "symfony/ai-agent": "0.13.0",
         "symfony/ai-anthropic-platform": "0.13.0",
         "symfony/ai-bundle": "0.13.0",
+        "symfony/ai-scaleway-platform": "0.13.0",
         "symfony/amqp-messenger": "8.1.*",
         "symfony/console": "8.1.*",
         "symfony/doctrine-messenger": "8.1.*",
