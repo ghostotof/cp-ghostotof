@@ -151,6 +151,10 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
             'outcome' => 'error',
             'stage' => $stage,
             'exception' => $exception::class,
+            // Le lieu, sans contenu (D10) : un TypeError de câblage (ou un
+            // ArgumentCountError, qui en hérite) se distingue ainsi d'une panne
+            // du bridge, qui lève depuis vendor/.
+            'origin' => basename($exception->getFile()).':'.$exception->getLine(),
             'providerStatus' => $this->providerStatus($exception),
             'messageCount' => $conversation->count(),
         ]);

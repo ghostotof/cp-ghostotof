@@ -175,6 +175,9 @@ final class SymfonyAiCareerAssistantTest extends TestCase
         }
 
         self::assertSame('before-first-fragment', $this->logger->records[0]['context']['stage'] ?? null);
+        // Troisième passe, point 8 : un ArgumentCountError (qui hérite de
+        // TypeError) de câblage se distingue d'une panne du bridge par son lieu.
+        self::assertMatchesRegularExpression('/^SymfonyAiCareerAssistantTest\.php:\d+$/', $this->logger->records[0]['context']['origin'] ?? '');
     }
 
     public function testAnUnexpectedlyShapedProviderLineDuringTheStreamIsUnavailable(): void
