@@ -10,11 +10,15 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
 
 /**
- * Refuse en 413 un corps de plus de 64 Kio sous `/api/assistant` (spec 0005
- * M4), avant toute désérialisation. nginx laisse passer jusqu'à 1 Mo
+ * Refuse en 413 un corps de plus de 128 Kio sous `/api/assistant` (spec 0005
+ * M4, amendée), avant toute désérialisation. nginx laisse passer jusqu'à 1 Mo
  * (`client_max_body_size`) ; la borne applicative découle des longueurs D6 :
- * la plus longue conversation valide (6 × 1 000 + 5 × 4 000 caractères) tient
- * sous 64 Kio tant que ses caractères font au plus deux octets en UTF-8.
+ * la plus longue conversation valide (6 × 1 000 + 5 × 4 000 = 26 000
+ * caractères) pèse au pire 104 000 octets en UTF-8 (4 octets par caractère),
+ * plus son enveloppe JSON. 64 Kio, la valeur d'origine, refusait donc une
+ * conversation valide riche en emoji. La borne suppose un JSON non échappé,
+ * celui de `JSON.stringify` : un client qui écrirait chaque emoji en `\u`
+ * (12 octets) pourrait la dépasser, et recevrait un 413 plutôt qu'une réponse.
  *
  * Priorité 4 : après le firewall (8) et son access_control. La taille ne se
  * juge qu'une fois l'accès accordé — un anonyme ou le palier de base reçoit
@@ -24,7 +28,7 @@ use Symfony\Component\HttpKernel\KernelEvents;
 #[AsEventListener(event: KernelEvents::REQUEST, priority: 4)]
 final readonly class AssistantRequestSizeListener
 {
-    public const int MAX_BODY_BYTES = 65536;
+    public const int MAX_BODY_BYTES = 131072;
 
     private const string PATH_PREFIX = '/api/assistant';
 

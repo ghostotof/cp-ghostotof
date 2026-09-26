@@ -93,7 +93,8 @@ compte compris) n'atteignent l'assistant — ni directement, ni par effet de bor
   - quota `career_assistant`, fenêtre glissante, **30 appels par heure et par compte** (clé :
     `username`), consommé **après** validation et **avant** l'appel ;
   - `max_tokens: 1024` en sortie ;
-  - **entrée bornée par le serveur** : au plus **12 messages** (6 échanges) dans `messages`, au
+  - **entrée bornée par le serveur** : au plus **11 messages** (6 questions, 5 réponses — *amendé
+    le 2026-09-26, voir le journal : 12 était inatteignable*) dans `messages`, au
     plus **1 000 caractères** par message utilisateur, **4 000** par message assistant (une réponse
     renvoyée), premier message de rôle `user`, alternance stricte `user`/`assistant`, dernier
     message `user` — sinon 422 ;
@@ -238,8 +239,9 @@ a sa branche, tirée de la branche mère `feature/spec-0005-career-assistant`, e
 - Client HTTP simulé en échec → 503, `type: /errors/assistant-unavailable`.
 - `ApiRouteExposureTest` vert **sans** modification de `PUBLIC_PATHS` ni de `BASE_TIER_PATHS` ;
   `AccessControlAnchoringTest` vert ; `debug:router | grep assistant` liste exactement une route.
-- Le corps de requête est refusé au-delà de 64 Ko (`client_max_body_size` nginx reste à 1 Mo ; la
-  borne applicative vient des longueurs D6).
+- Le corps de requête est refusé au-delà de 128 Kio, en 413 (`client_max_body_size` nginx reste à
+  1 Mo ; la borne applicative vient des longueurs D6 — *amendé le 2026-09-26, voir le journal : 64 Ko
+  refusait une conversation valide*).
 - Tests fonctionnels : `ai.scaleway.http_client.scoping.inner` remplacé par un `MockHttpClient`
   renvoyant un flux SSE au format OpenAI-compatible (`data: {"choices":[{"delta":{"content":"…"}}]}`
   … `data: [DONE]`), avec `$client->disableReboot()` (leçon de la spec 0002). La clé factice de
@@ -258,8 +260,8 @@ a sa branche, tirée de la branche mère `feature/spec-0005-career-assistant`, e
   caractères, Entrée envoie, Maj+Entrée saute une ligne), bouton « Envoyer » désactivé pendant un
   appel (`aria-busy`) ou si vide, bouton « Nouvelle conversation », bandeau permanent « L'assistant
   peut se tromper, les documents font foi » avec liens vers les trois contenus.
-- Fenêtre glissante côté client : l'affichage garde tout, la requête n'envoie que les 12 derniers
-  messages ; un message assistant tronqué à 4 000 caractères avant envoi ; l'utilisateur ne
+- Fenêtre glissante côté client : l'affichage garde tout, la requête n'envoie que les 11 derniers
+  messages (un nombre impair : la fenêtre commence ainsi par une question) ; un message assistant tronqué à 4 000 caractères avant envoi ; l'utilisateur ne
   rencontre jamais le 422 en usage normal.
 - Flux : le texte s'affiche fragment par fragment ; à `done`, le message est figé ; à `error`, un
   `role="alert"` explicite et le message partiel reste visible, marqué incomplet.
@@ -633,3 +635,14 @@ abandon 200 avant, 429 après) ; garde-fou du `detail` réécrit par jetons PHP 
 `ProblemExceptionInterface` de `src/`, six messages dynamiques de backoffice admis avec justification.
 Limite restante et assumée : en dev, le 429 de nginx n'a pas d'en-tête CORS (Vite sur un autre port),
 le statut y est illisible pour `fetch` ; en préprod et en prod, même origine.
+
+**2026-09-26 (tâche 3, fin d'étape)** — Deux bornes de D6 et M4 se contredisaient, corrigées sur une
+branche de fix avant la relecture. (1) **12 messages était inatteignable** : l'alternance stricte entre
+un premier et un dernier message `user` rend le compte impair, la plus longue conversation valide en
+comptait 11. Borne ramenée à **11** (6 questions, 5 réponses), testée atteignable ; la fenêtre glissante
+du frontend passe à 11 avec elle — à 12, elle aurait commencé par une réponse, donc un 422 à chaque
+envoi en fenêtre pleine. (2) **64 Ko refusait une conversation valide** : 26 000 caractères de 4 octets
+pèsent 104 000 octets. Borne portée à **128 Kio**, testée sur la plus longue conversation valide tout en
+emoji, sérialisée sans échappement `\u` comme `JSON.stringify` ; un client qui échapperait chaque emoji
+(12 octets) pourrait encore la dépasser, limite assumée. Le 413 (`/errors/request-too-large`) est jugé
+après le firewall : un anonyme ou le palier de base ne reçoit que son refus d'accès.

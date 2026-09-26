@@ -9,7 +9,7 @@ use App\Shared\Domain\Exception\HasProblemType;
 
 /**
  * Le corps d'une requête à l'assistant dépasse la borne applicative (spec 0005
- * M4, 64 Kio) : 413 avec un `type` stable (`/errors/request-too-large`), rendu
+ * M4, 128 Kio) : 413 avec un `type` stable (`/errors/request-too-large`), rendu
  * par AssistantProblemResponseListener. Une borne de transport, pas une règle
  * du domaine : la conversation elle-même est bornée par ses VO (D6).
  *
