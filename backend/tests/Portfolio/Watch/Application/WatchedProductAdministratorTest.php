@@ -57,6 +57,7 @@ final class WatchedProductAdministratorTest extends TestCase
     {
         $this->repository->method('findOneBySlug')->willReturn(null);
         $this->repository->method('findAllOrdered')->willReturn([]);
+        $this->repository->expects(self::once())->method('save');
 
         $product = $this->administrator->create('postgresql', 'PostgreSQL', VersionSource::MANUAL, '18.4');
 
