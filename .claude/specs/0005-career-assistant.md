@@ -515,3 +515,9 @@ plateforme (`SCALEWAY_AI_PROJECT_ID`, même circuit que la clé ; à câbler en 
 Second constat : le bridge 0.13.0 ne lit pas le format d'erreur de Scaleway
 (`{"status","error","message"}`) et réduit tout échec à « unknown » — la tâche 2 doit journaliser le
 statut HTTP d'un échec, faute de quoi le diagnostic redevient aveugle ; à signaler en amont avec D2.
+
+**2026-09-26 (tâche 1, désignation)** — L'assistant parle du titulaire au masculin (« il ») et par son
+**prénom tel qu'il figure dans les documents** (règle 2 du préambule). Le prénom n'est pas écrit dans le
+prompt : le fichier est versionné dans un dépôt public, pseudonyme de bout en bout (objectif n°9). Il
+n'arrive qu'avec le CV nominatif (tâche 4, `ROLE_TRUSTED`) ; d'ici là, « il » seul. Le texte extrait
+du PDF doit donc conserver le prénom — à vérifier par le test de fixture de #263.
