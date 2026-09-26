@@ -914,7 +914,7 @@ git commit -m "feat(ai): corpus de l'assistant rendu depuis les providers public
   - `CareerAssistantInterface::answer(Conversation $conversation, Locale $locale): \Generator<int, string, mixed, AnswerUsage>`
   - `AssistantUnavailableException` (503, `type: /errors/assistant-unavailable`), `InvalidConversationException` (422)
 
-- [ ] **Étape 1 : VO et exceptions, test d'abord**
+- [x] **Étape 1 : VO et exceptions, test d'abord**
 
 `tests/Ai/Assistant/Domain/ValueObject/ConversationTest.php` :
 
@@ -1170,7 +1170,7 @@ liste) :
 
 Relancer : les tests de `Domain` passent.
 
-- [ ] **Étape 2 : le message système, test d'abord**
+- [x] **Étape 2 : le message système, test d'abord**
 
 `tests/Ai/Assistant/Support/StubCorpusRenderer.php` :
 
@@ -1283,7 +1283,7 @@ final readonly class CareerAssistantSystemPrompt
 
 Relancer : VERT.
 
-- [ ] **Étape 3 : un agent de test qui diffuse**
+- [x] **Étape 3 : un agent de test qui diffuse**
 
 `tests/Ai/Support/FakeStreamingAgent.php` :
 
@@ -1375,7 +1375,7 @@ Vérifier dans `vendor/symfony/ai-platform/src/Result/Stream/Delta/TextDelta.php
 `vendor/symfony/ai-platform/src/Result/TextResult.php` que les constructeurs prennent bien une
 chaîne ; ajuster sinon.
 
-- [ ] **Étape 4 : le service, test d'abord**
+- [x] **Étape 4 : le service, test d'abord**
 
 `tests/Ai/Assistant/Infrastructure/SymfonyAi/SymfonyAiCareerAssistantTest.php` :
 
@@ -1578,7 +1578,7 @@ Lancer : `docker compose exec -T backend php bin/phpunit tests/Ai/Assistant/Infr
 l'accesseur de contenu du `SystemMessage` dans `vendor/symfony/ai-platform/src/Message/`, puis
 ajuster le test si besoin.
 
-- [ ] **Étape 5 : l'interface et le service**
+- [x] **Étape 5 : l'interface et le service**
 
 `src/Ai/Assistant/Application/CareerAssistantInterface.php` :
 
@@ -1790,7 +1790,7 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
 }
 ```
 
-- [ ] **Étape 6 : lancer les tests pour vérifier qu'ils passent**
+- [x] **Étape 6 : lancer les tests pour vérifier qu'ils passent**
 
 Commande : `docker compose exec -T backend php bin/phpunit tests/Ai`
 Attendu : tous VERTS, y compris `ScalewayPlatformWiringTest` et les tests de la traduction.
@@ -1799,7 +1799,7 @@ Si `testFragmentsFormTheAnswerAndTheReturnValueCarriesTheUsage` trouve des jeton
 comment `Execution::getMetadata()` fusionne ceux du `Result` en mode flux, et corriger le double de
 test (pas le service) pour qu'il reproduise ce que fait le vrai Runner.
 
-- [ ] **Étape 7 : qualité locale puis commit**
+- [x] **Étape 7 : qualité locale puis commit**
 
 Commande : `docker compose exec -T backend composer phpstan` et
 `docker compose exec -T backend composer rector`. Attendu : aucune erreur, aucun diff.
