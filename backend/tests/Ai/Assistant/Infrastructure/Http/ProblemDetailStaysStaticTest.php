@@ -54,7 +54,8 @@ final class ProblemDetailStaysStaticTest extends TestCase
     private function assistantProblemClasses(): array
     {
         $classes = [];
-        foreach (glob(self::ASSISTANT_EXCEPTIONS.'/*.php') ?: [] as $file) {
+        $files = glob(self::ASSISTANT_EXCEPTIONS.'/*.php');
+        foreach (false === $files ? [] : $files as $file) {
             $short = basename($file, '.php');
             $class = 'App\\Ai\\Assistant\\Domain\\Exception\\'.$short;
             if (is_subclass_of($class, ProblemExceptionInterface::class)) {
