@@ -21,7 +21,7 @@ framework:
     # Ne viser que des classes précises : un mapping sur HttpException
     # abaisserait le niveau de tous les 4xx de l'application.
     exceptions:
-        # Erreur du client (et, avec #262, les bornes D6) : pas un incident.
+        # Erreur du client, bornes D6 comprises : pas un incident.
         App\Ai\Assistant\Domain\Exception\InvalidConversationException:
             log_level: info
         # Panne d'un tiers : la cause (classe, statut) est déjà sur `ai_usage`.

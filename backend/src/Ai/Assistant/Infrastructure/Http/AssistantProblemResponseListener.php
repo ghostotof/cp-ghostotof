@@ -24,8 +24,7 @@ use Symfony\Component\HttpKernel\KernelEvents;
  * Limité au sous-arbre `/api/assistant` (chemin décodé, issue #77) : une route
  * API Platform garde son propre traitement. Priorité -64 : après la
  * journalisation de l'exception par Symfony (0), avant API Platform (-96) et
- * le rendu générique de Symfony (-128). Les 422 et 429 de la tâche 3 (#262)
- * passeront par ici.
+ * le rendu générique de Symfony (-128). Les 422 des bornes D6 passent par ici.
  */
 #[AsEventListener(event: KernelEvents::EXCEPTION, priority: -64)]
 final readonly class AssistantProblemResponseListener

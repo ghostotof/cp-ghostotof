@@ -13,8 +13,9 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * Corps de POST /api/assistant/answers, validé par le Validator avant tout
- * appel (spec 0005 D4). Les bornes de coût D6 (nombre de messages, longueurs,
- * alternance) arrivent avec la tâche 3 (#262), dans le VO Conversation.
+ * appel (spec 0005 D4) : forme et types ici, bornes de coût D6 (nombre de
+ * messages, longueurs, alternance) dans le VO Conversation, dont la violation
+ * est un 422 `/errors/invalid-conversation`.
  *
  * `Sequentially` partout où une contrainte suivante supposerait le type : sans
  * lui, NotBlank(normalizer: trim) sur un tableau serait une TypeError, donc un

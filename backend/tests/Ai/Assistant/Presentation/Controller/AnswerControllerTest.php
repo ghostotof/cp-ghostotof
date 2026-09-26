@@ -19,7 +19,7 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
 /**
- * POST /api/assistant/answers (spec 0005 M4, hors bornes et quota). Le vrai
+ * POST /api/assistant/answers (spec 0005 M4). Le vrai
  * bridge Scaleway est traversé : seul le transport est simulé, en flux SSE au
  * format compatible OpenAI. Le client concret du bridge Anthropic est aussi
  * remplacé, par un piège qui compte ses appels : ADR 0004 D3, le corpus ne doit
@@ -308,6 +308,58 @@ final class AnswerControllerTest extends WebTestCase
         // 400 ou 422, pas seulement « un 4xx » : un 404 ou un 403 voudrait dire
         // que la requête n'a jamais atteint la validation.
         self::assertContains($client->getResponse()->getStatusCode(), [400, 422]);
+        self::assertSame([], $this->scalewayRequests);
+    }
+
+    /**
+     * Bornes de coût D6 : chaque violation est un 422 typé, rendu avant tout
+     * appel au fournisseur.
+     *
+     * @return iterable<string, array{list<array{role: string, content: string}>}>
+     */
+    public static function conversationsOutOfBounds(): iterable
+    {
+        $alternating = static fn (int $count): array => array_map(
+            static fn (int $rank): array => ['role' => 0 === $rank % 2 ? 'user' : 'assistant', 'content' => 'Message '.$rank],
+            range(0, $count - 1),
+        );
+
+        yield '13 messages' => [$alternating(13)];
+        yield 'message utilisateur de 1 001 caractères' => [[['role' => 'user', 'content' => str_repeat('a', 1001)]]];
+        yield "message de l'assistant de 4 001 caractères" => [[
+            ['role' => 'user', 'content' => 'Question ?'],
+            ['role' => 'assistant', 'content' => str_repeat('a', 4001)],
+            ['role' => 'user', 'content' => 'Question ?'],
+        ]];
+        yield "premier message de l'assistant" => [[
+            ['role' => 'assistant', 'content' => 'Bonjour.'],
+            ['role' => 'user', 'content' => 'Question ?'],
+        ]];
+        yield 'deux messages utilisateur consécutifs' => [[
+            ['role' => 'user', 'content' => 'Première ?'],
+            ['role' => 'user', 'content' => 'Seconde ?'],
+        ]];
+        yield "dernier message de l'assistant" => [[
+            ['role' => 'user', 'content' => 'Question ?'],
+            ['role' => 'assistant', 'content' => 'Réponse.'],
+        ]];
+    }
+
+    /**
+     * @param list<array{role: string, content: string}> $messages
+     */
+    #[DataProvider('conversationsOutOfBounds')]
+    public function testAConversationOutOfBoundsIsA422ProblemAndNeverReachesTheProvider(array $messages): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('jamais lu'), $this->sseHeaders()));
+
+        $this->post($client, $csrfToken, ['locale' => 'fr', 'messages' => $messages]);
+
+        $response = $client->getResponse();
+        self::assertSame(422, $response->getStatusCode());
+        $problem = json_decode((string) $response->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame('/errors/invalid-conversation', $problem['type']);
         self::assertSame([], $this->scalewayRequests);
     }
 
