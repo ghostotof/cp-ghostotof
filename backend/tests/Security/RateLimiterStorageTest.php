@@ -49,6 +49,7 @@ final class RateLimiterStorageTest extends KernelTestCase
         yield 'account_password_setup' => ['account_password_setup'];
         yield 'base_access' => ['base_access'];
         yield 'translation_assistant' => ['translation_assistant'];
+        yield 'career_assistant' => ['career_assistant'];
         // Les deux limiteurs que `login_throttling` déclare pour le firewall
         // `login` (par couple IP+identifiant, puis par IP seule).
         yield 'login throttling (local)' => ['_login_local_login'];

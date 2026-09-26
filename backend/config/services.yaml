@@ -58,6 +58,12 @@ services:
         arguments:
             $manifestPath: '%app.watch_package_manifest_path%'
 
+    # Implémentation réelle de l'assistant de parcours, que décore
+    # QuotaGuardedCareerAssistant (quota D6, #[AsDecorator]). Alias explicite :
+    # avec deux classes implémentant l'interface, l'alias automatique d'une
+    # implémentation unique n'existe plus, et le décorateur n'aurait rien à décorer.
+    App\Ai\Assistant\Application\CareerAssistantInterface: '@App\Ai\Assistant\Infrastructure\SymfonyAi\SymfonyAiCareerAssistant'
+
     # Plateforme Scaleway Generative APIs de l'assistant de parcours (spec 0005 D2,
     # ADR 0004 D7). Déclarée ici et non dans ai.yaml : symfony/ai-bundle 0.13.0
     # (src/AiBundle.php, l. 1180, bloc `'scaleway' === $type`) passe le client

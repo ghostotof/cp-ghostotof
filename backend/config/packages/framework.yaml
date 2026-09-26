@@ -24,6 +24,9 @@ framework:
         # Erreur du client, bornes D6 comprises : pas un incident.
         App\Ai\Assistant\Domain\Exception\InvalidConversationException:
             log_level: info
+        # Quota horaire atteint (D6) : le comportement attendu de la borne.
+        App\Ai\Assistant\Domain\Exception\AssistantRateLimitExceededException:
+            log_level: info
         # Panne d'un tiers : la cause (classe, statut) est déjà sur `ai_usage`.
         # `warning` reste visible en production (LOG_LEVEL=warning).
         App\Ai\Assistant\Domain\Exception\AssistantUnavailableException:

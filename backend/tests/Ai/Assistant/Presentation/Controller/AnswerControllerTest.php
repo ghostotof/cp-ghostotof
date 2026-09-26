@@ -33,6 +33,10 @@ final class AnswerControllerTest extends WebTestCase
     private const string TRUSTED_USERNAME = 'trusted';
     private const string PLAIN_USERNAME = 'plain';
     private const string SUPER_USERNAME = 'super';
+    private const string OTHER_TRUSTED_USERNAME = 'other-trusted';
+
+    /** Doit refléter rate_limiter.yaml (career_assistant.limit). */
+    private const int QUOTA = 30;
 
     /** Services concrets derrière les clients scoped (cf. framework.yaml). */
     private const string SCALEWAY_INNER = 'ai.scaleway.http_client.scoping.inner';
@@ -363,6 +367,68 @@ final class AnswerControllerTest extends WebTestCase
         self::assertSame([], $this->scalewayRequests);
     }
 
+    public function testTheCallBeyondTheHourlyQuotaIsA429WithRetryAfterAndNeverReachesTheProvider(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
+
+        for ($call = 1; $call <= self::QUOTA; ++$call) {
+            $this->post($client, $csrfToken, $this->payload());
+            self::assertSame(200, $client->getResponse()->getStatusCode(), \sprintf('Appel n°%d refusé avant le quota.', $call));
+        }
+
+        $this->post($client, $csrfToken, $this->payload());
+
+        $response = $client->getResponse();
+        self::assertSame(429, $response->getStatusCode());
+        $problem = json_decode((string) $response->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame('/errors/rate-limited', $problem['type']);
+        $retryAfter = $response->headers->get('Retry-After');
+        self::assertNotNull($retryAfter);
+        self::assertMatchesRegularExpression('/^\d+$/', $retryAfter);
+        self::assertGreaterThan(0, (int) $retryAfter);
+        self::assertLessThanOrEqual(3600, (int) $retryAfter);
+        self::assertCount(self::QUOTA, $this->scalewayRequests);
+    }
+
+    public function testTheQuotaIsKeptPerAccount(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
+        for ($call = 1; $call <= self::QUOTA + 1; ++$call) {
+            $this->post($client, $csrfToken, $this->payload());
+        }
+        self::assertSame(429, $client->getResponse()->getStatusCode());
+
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::OTHER_TRUSTED_USERNAME, TestCredentials::plainPassword(), [CpgUser::ROLE_TRUSTED]);
+        $otherCsrfToken = $this->loginAs($client, self::OTHER_TRUSTED_USERNAME, TestCredentials::plainPassword());
+        $this->post($client, $otherCsrfToken, $this->payload());
+
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+    }
+
+    /**
+     * Une requête refusée par la validation ne coûte rien : après autant de
+     * 422 que le quota compte d'appels, un appel valide passe encore.
+     */
+    public function testARefusedConversationDoesNotConsumeTheQuota(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
+
+        for ($call = 1; $call <= self::QUOTA; ++$call) {
+            $this->post($client, $csrfToken, ['locale' => 'fr', 'messages' => [
+                ['role' => 'user', 'content' => 'Question ?'],
+                ['role' => 'assistant', 'content' => 'Réponse.'],
+            ]]);
+            self::assertSame(422, $client->getResponse()->getStatusCode());
+        }
+
+        $this->post($client, $csrfToken, $this->payload());
+
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+    }
+
     /**
      * @return iterable<string, array{string, string}>
      */
@@ -427,6 +493,9 @@ final class AnswerControllerTest extends WebTestCase
         // Sans cela, le kernel est reconstruit entre la connexion et l'appel :
         // les clients simulés seraient perdus et la requête partirait réellement.
         $client->disableReboot();
+        // Le quota vit dans cache.rate_limiter, donc en base (ADR 0005) et
+        // partagé d'un test à l'autre : chaque test repart de zéro.
+        $client->getContainer()->get('cache.rate_limiter')->clear();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::TRUSTED_USERNAME, TestCredentials::plainPassword(), [CpgUser::ROLE_TRUSTED]);
 
         return [$client, $this->loginAs($client, self::TRUSTED_USERNAME, TestCredentials::plainPassword())];
