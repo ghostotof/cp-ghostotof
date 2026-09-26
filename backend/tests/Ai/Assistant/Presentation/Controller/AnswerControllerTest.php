@@ -1,0 +1,409 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Tests\Ai\Assistant\Presentation\Controller;
+
+use App\Security\User\Application\CpgUserRegistrarInterface;
+use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Support\HttpJson;
+use App\Tests\Support\TestCredentials;
+use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Bundle\FrameworkBundle\KernelBrowser;
+use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\HttpClient\Exception\TransportException;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
+
+/**
+ * POST /api/assistant/answers (spec 0005 M4, hors bornes et quota). Le vrai
+ * bridge Scaleway est traversé : seul le transport est simulé, en flux SSE au
+ * format compatible OpenAI. Le client concret du bridge Anthropic est aussi
+ * remplacé, par un piège qui compte ses appels : ADR 0004 D3, le corpus ne doit
+ * jamais y partir.
+ */
+final class AnswerControllerTest extends WebTestCase
+{
+    use HttpJson;
+
+    private const string PATH = '/api/assistant/answers';
+    private const string TRUSTED_USERNAME = 'trusted';
+    private const string PLAIN_USERNAME = 'plain';
+    private const string SUPER_USERNAME = 'super';
+
+    /** Services concrets derrière les clients scoped (cf. framework.yaml). */
+    private const string SCALEWAY_INNER = 'ai.scaleway.http_client.scoping.inner';
+    private const string ANTHROPIC_INNER = 'ai.http_client.scoping.inner';
+
+    private const string MODEL = 'mistral-small-3.2-24b-instruct-2506';
+
+    /** @var list<array{url: string, body: mixed}> */
+    private array $scalewayRequests = [];
+
+    private int $anthropicCalls = 0;
+
+    protected function setUp(): void
+    {
+        self::ensureKernelShutdown();
+    }
+
+    protected function tearDown(): void
+    {
+        self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement('DELETE FROM cpg_user');
+        parent::tearDown();
+    }
+
+    /**
+     * 403 et non 401 : sur une mutation, le double-submit CSRF (priorité 20)
+     * tranche avant le firewall. ApiRouteExposureTest accepte l'un ou l'autre.
+     */
+    public function testAnAnonymousRequestIsRefusedByTheCsrfCheckBeforeTheFirewall(): void
+    {
+        $client = self::createClient();
+
+        $client->request('POST', self::PATH, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody($this->payload()));
+
+        self::assertResponseStatusCodeSame(403);
+    }
+
+    /** Le 401 du firewall lui-même : un XSRF signé, mais aucun cookie d'authentification. */
+    public function testAValidCsrfTokenWithoutAnAuthenticationCookieIsUnauthorized(): void
+    {
+        $client = self::createClient();
+        $csrfToken = $this->obtainBaseAccess($client);
+        $client->getCookieJar()->expire('BEARER');
+
+        $this->post($client, $csrfToken, $this->payload());
+
+        self::assertResponseStatusCodeSame(401);
+    }
+
+    public function testTheBaseTierIsForbidden(): void
+    {
+        $client = self::createClient();
+        $csrfToken = $this->obtainBaseAccess($client);
+
+        $this->post($client, $csrfToken, $this->payload());
+
+        self::assertResponseStatusCodeSame(403);
+    }
+
+    public function testARealAccountWithoutRoleTrustedIsForbidden(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
+        $csrfToken = $this->loginAs($client, self::PLAIN_USERNAME, TestCredentials::plainPassword());
+
+        $this->post($client, $csrfToken, $this->payload());
+
+        self::assertResponseStatusCodeSame(403);
+    }
+
+    public function testRoleTrustedWithoutTheCsrfHeaderIsForbidden(): void
+    {
+        [$client] = $this->trustedClient();
+
+        $client->request('POST', self::PATH, server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody($this->payload()));
+
+        self::assertResponseStatusCodeSame(403);
+    }
+
+    public function testRoleTrustedReceivesTheAnswerAsAnEventStream(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('Il a ', 'conçu des API.'), $this->sseHeaders()));
+
+        $this->post($client, $csrfToken, $this->payload());
+
+        self::assertResponseStatusCodeSame(200);
+        $headers = $client->getResponse()->headers;
+        self::assertStringStartsWith('text/event-stream', (string) $headers->get('Content-Type'));
+        self::assertSame('no', $headers->get('X-Accel-Buffering'));
+        self::assertStringContainsString('no-store', (string) $headers->get('Cache-Control'));
+
+        // Le corps diffusé n'est lisible que sur la réponse interne du navigateur
+        // de test, qui l'a capturé en l'envoyant.
+        $events = $this->events($client->getInternalResponse()->getContent());
+        self::assertCount(3, $events);
+        self::assertSame(['event' => 'delta', 'data' => ['text' => 'Il a ']], $events[0]);
+        self::assertSame(['event' => 'delta', 'data' => ['text' => 'conçu des API.']], $events[1]);
+        self::assertSame('done', $events[2]['event']);
+        $done = $events[2]['data'];
+        self::assertIsArray($done);
+        self::assertSame(812, $done['promptTokens']);
+        self::assertSame(9, $done['completionTokens']);
+        self::assertIsInt($done['durationMs']);
+    }
+
+    /** Garde D3 (relecture de #260) : le service résolu parle à Scaleway, jamais à Anthropic. */
+    public function testTheAnswerComesFromTheScalewayModelAndNeverFromAnthropic(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
+
+        $this->post($client, $csrfToken, $this->payload());
+
+        self::assertResponseStatusCodeSame(200);
+        self::assertSame(0, $this->anthropicCalls);
+        self::assertCount(1, $this->scalewayRequests);
+        self::assertStringStartsWith('https://api.scaleway.ai/', $this->scalewayRequests[0]['url']);
+
+        $body = $this->scalewayRequests[0]['body'];
+        self::assertIsArray($body);
+        self::assertSame(self::MODEL, $body['model']);
+        self::assertTrue($body['stream']);
+        self::assertSame(['include_usage' => true], $body['stream_options']);
+        $messages = $body['messages'];
+        self::assertIsArray($messages);
+        self::assertSame('system', $messages[0]['role']);
+        self::assertIsString($messages[0]['content']);
+        self::assertStringStartsWith('You are the career assistant', $messages[0]['content']);
+        self::assertStringContainsString('<documents>', $messages[0]['content']);
+        self::assertSame(['user', 'assistant', 'user'], array_column(\array_slice($messages, 1), 'role'));
+    }
+
+    public function testRoleSuperInheritsTheAccess(): void
+    {
+        $client = self::createClient();
+        $client->disableReboot();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
+
+        $this->post($client, $csrfToken, $this->payload());
+
+        self::assertResponseStatusCodeSame(200);
+    }
+
+    /**
+     * @return iterable<string, array{int}>
+     */
+    public static function providerFailuresBeforeTheFirstFragment(): iterable
+    {
+        yield 'erreur serveur' => [500];
+        yield 'refus (projet ou clé)' => [403];
+    }
+
+    #[DataProvider('providerFailuresBeforeTheFirstFragment')]
+    public function testAProviderFailureBeforeTheFirstFragmentIsA503Problem(int $status): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse(
+            self::jsonBody(['status' => $status, 'message' => 'refusé']),
+            ['http_code' => $status, 'response_headers' => ['content-type' => 'application/json']],
+        ));
+
+        $this->post($client, $csrfToken, $this->payload());
+
+        self::assertResponseStatusCodeSame(503);
+        $problem = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($problem);
+        self::assertIsString($problem['type'] ?? null);
+        self::assertStringEndsWith('/errors/assistant-unavailable', $problem['type']);
+    }
+
+    /** Point de relecture n°1 : une coupure après le 200 se voit, elle ne ressemble pas à une fin. */
+    public function testAFailureDuringTheStreamEndsWithAnErrorEventAndNoDone(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse([
+            $this->chunk(['choices' => [['index' => 0, 'delta' => ['role' => 'assistant', 'content' => 'Il a '], 'finish_reason' => null]]]),
+            new TransportException('Coupure simulée.'),
+        ], $this->sseHeaders()));
+
+        $this->post($client, $csrfToken, $this->payload());
+
+        self::assertResponseStatusCodeSame(200);
+        self::assertSame([
+            ['event' => 'delta', 'data' => ['text' => 'Il a ']],
+            ['event' => 'error', 'data' => ['reason' => 'assistant-unavailable']],
+        ], $this->events($client->getInternalResponse()->getContent()));
+
+        // EventSourceHttpClient renverrait sinon la même requête après 10 s :
+        // une seconde génération facturée (ReplayRefusingHttpClient).
+        self::assertCount(1, $this->scalewayRequests);
+    }
+
+    /**
+     * Point de relecture n°3 : un corps mal formé est un 4xx, jamais un 500.
+     *
+     * @return iterable<string, array{array<string, mixed>}>
+     */
+    public static function malformedPayloads(): iterable
+    {
+        yield 'locale hors liste' => [['locale' => 'de', 'messages' => [['role' => 'user', 'content' => 'x']]]];
+        yield 'locale absente' => [['messages' => [['role' => 'user', 'content' => 'x']]]];
+        yield 'locale non textuelle' => [['locale' => 5, 'messages' => [['role' => 'user', 'content' => 'x']]]];
+        yield 'messages absent' => [['locale' => 'fr']];
+        yield 'messages vide' => [['locale' => 'fr', 'messages' => []]];
+        yield 'messages non liste' => [['locale' => 'fr', 'messages' => 'x']];
+        yield 'élément non objet' => [['locale' => 'fr', 'messages' => ['x']]];
+        yield 'rôle absent' => [['locale' => 'fr', 'messages' => [['content' => 'x']]]];
+        yield 'rôle inconnu' => [['locale' => 'fr', 'messages' => [['role' => 'system', 'content' => 'x']]]];
+        yield 'rôle non textuel' => [['locale' => 'fr', 'messages' => [['role' => ['user'], 'content' => 'x']]]];
+        yield 'contenu numérique' => [['locale' => 'fr', 'messages' => [['role' => 'user', 'content' => 42]]]];
+        yield 'contenu tableau' => [['locale' => 'fr', 'messages' => [['role' => 'user', 'content' => ['x']]]]];
+        yield 'contenu blanc' => [['locale' => 'fr', 'messages' => [['role' => 'user', 'content' => '   ']]]];
+        yield 'clé en trop' => [['locale' => 'fr', 'messages' => [['role' => 'user', 'content' => 'x', 'name' => 'y']]]];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    #[DataProvider('malformedPayloads')]
+    public function testAMalformedBodyIsAClientErrorAndNeverReachesTheProvider(array $payload): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
+
+        $this->post($client, $csrfToken, $payload);
+
+        // 400 ou 422, pas seulement « un 4xx » : un 404 ou un 403 voudrait dire
+        // que la requête n'a jamais atteint la validation.
+        self::assertContains($client->getResponse()->getStatusCode(), [400, 422]);
+        self::assertSame([], $this->scalewayRequests);
+    }
+
+    public function testAnUnparsableBodyIsAClientError(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+
+        $client->request('POST', self::PATH, server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: '{"locale": "fr", "messages": [');
+
+        self::assertSame(400, $client->getResponse()->getStatusCode());
+    }
+
+    /** @return array{KernelBrowser, string} */
+    private function trustedClient(): array
+    {
+        $client = self::createClient();
+        // Sans cela, le kernel est reconstruit entre la connexion et l'appel :
+        // les clients simulés seraient perdus et la requête partirait réellement.
+        $client->disableReboot();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::TRUSTED_USERNAME, TestCredentials::plainPassword(), [CpgUser::ROLE_TRUSTED]);
+
+        return [$client, $this->loginAs($client, self::TRUSTED_USERNAME, TestCredentials::plainPassword())];
+    }
+
+    private function stubProviders(KernelBrowser $client, MockResponse $scalewayResponse): void
+    {
+        $client->getContainer()->set(self::SCALEWAY_INNER, new MockHttpClient(
+            function (string $method, string $url, array $options) use ($scalewayResponse): MockResponse {
+                $body = $options['body'] ?? null;
+                $this->scalewayRequests[] = ['url' => $url, 'body' => \is_string($body) ? json_decode($body, true) : null];
+
+                return $scalewayResponse;
+            },
+        ));
+        $client->getContainer()->set(self::ANTHROPIC_INNER, new MockHttpClient(
+            function (): MockResponse {
+                ++$this->anthropicCalls;
+
+                return new MockResponse('', ['http_code' => 500]);
+            },
+        ));
+    }
+
+    /** @return array<string, mixed> */
+    private function payload(): array
+    {
+        return ['locale' => 'fr', 'messages' => [
+            ['role' => 'user', 'content' => 'Quel est son domaine ?'],
+            ['role' => 'assistant', 'content' => "L'architecture logicielle."],
+            ['role' => 'user', 'content' => 'Depuis combien de temps ?'],
+        ]];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function post(KernelBrowser $client, string $csrfToken, array $payload): void
+    {
+        $client->request('POST', self::PATH, server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody($payload));
+    }
+
+    /** Flux Chat Completions compatible OpenAI, tel que Scaleway le diffuse. */
+    private function scalewayStream(string ...$fragments): string
+    {
+        $body = '';
+        foreach (array_values($fragments) as $index => $fragment) {
+            $delta = 0 === $index ? ['role' => 'assistant', 'content' => $fragment] : ['content' => $fragment];
+            $body .= $this->chunk(['choices' => [['index' => 0, 'delta' => $delta, 'finish_reason' => null]]]);
+        }
+        $body .= $this->chunk(['choices' => [['index' => 0, 'delta' => new \stdClass(), 'finish_reason' => 'stop']]]);
+        $body .= $this->chunk(['choices' => [], 'usage' => ['prompt_tokens' => 812, 'completion_tokens' => 9, 'total_tokens' => 821]]);
+
+        return $body."data: [DONE]\n\n";
+    }
+
+    /** @param array<string, mixed> $data */
+    private function chunk(array $data): string
+    {
+        return 'data: '.json_encode(
+            ['id' => 'chatcmpl-test', 'object' => 'chat.completion.chunk', 'created' => 0, 'model' => self::MODEL] + $data,
+            \JSON_THROW_ON_ERROR,
+        )."\n\n";
+    }
+
+    /** @return array{response_headers: array<string, string>} */
+    private function sseHeaders(): array
+    {
+        return ['response_headers' => ['content-type' => 'text/event-stream']];
+    }
+
+    /**
+     * Événements SSE du corps, `data` décodé.
+     *
+     * @return list<array{event: string, data: mixed}>
+     */
+    private function events(string $body): array
+    {
+        $events = [];
+        $blocks = preg_split('/\n\n+/', trim($body));
+        if (false === $blocks) {
+            self::fail('Corps SSE illisible.');
+        }
+
+        foreach ($blocks as $block) {
+            $event = 'message';
+            $data = [];
+            foreach (explode("\n", $block) as $line) {
+                if (str_starts_with($line, 'event:')) {
+                    $event = trim(substr($line, 6));
+                } elseif (str_starts_with($line, 'data:')) {
+                    $data[] = ltrim(substr($line, 5));
+                }
+            }
+            $events[] = ['event' => $event, 'data' => json_decode(implode("\n", $data), true, flags: \JSON_THROW_ON_ERROR)];
+        }
+
+        return $events;
+    }
+
+    private function obtainBaseAccess(KernelBrowser $client): string
+    {
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
+        self::assertResponseIsSuccessful();
+
+        return $client->getCookieJar()->get('XSRF-TOKEN')?->getValue() ?? self::fail('Aucun cookie XSRF-TOKEN.');
+    }
+
+    private function loginAs(KernelBrowser $client, string $username, string $password): string
+    {
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
+            'username' => $username,
+            'password' => $password,
+        ]));
+        self::assertResponseIsSuccessful();
+
+        return $client->getCookieJar()->get('XSRF-TOKEN')?->getValue() ?? self::fail('Aucun cookie XSRF-TOKEN.');
+    }
+}
