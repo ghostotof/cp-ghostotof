@@ -227,6 +227,29 @@ final class AnswerControllerTest extends WebTestCase
     }
 
     /** Point de relecture n°1 : une coupure après le 200 se voit, elle ne ressemble pas à une fin. */
+    /**
+     * Troisième passe, point 9 : le TypeError que lève le vrai bridge sur une
+     * ligne valide mais de forme inattendue (`delta.content` en tableau) devient
+     * l'événement `error`, pas un flux coupé sans rien dire.
+     */
+    public function testAnUnexpectedlyShapedProviderLineEndsWithAnErrorEvent(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse(
+            $this->chunk(['choices' => [['index' => 0, 'delta' => ['role' => 'assistant', 'content' => 'Il a '], 'finish_reason' => null]]])
+            .$this->chunk(['choices' => [['index' => 0, 'delta' => ['content' => ['inattendu']], 'finish_reason' => null]]]),
+            $this->sseHeaders(),
+        ));
+
+        $this->post($client, $csrfToken, $this->payload());
+
+        self::assertResponseStatusCodeSame(200);
+        self::assertSame([
+            ['event' => 'delta', 'data' => ['text' => 'Il a ']],
+            ['event' => 'error', 'data' => ['reason' => 'assistant-unavailable']],
+        ], $this->events($client->getInternalResponse()->getContent()));
+    }
+
     public function testAFailureDuringTheStreamEndsWithAnErrorEventAndNoDone(): void
     {
         [$client, $csrfToken] = $this->trustedClient();
