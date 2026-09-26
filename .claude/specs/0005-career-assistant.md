@@ -496,5 +496,15 @@ type enverrait le CV nominatif chez Anthropic, contre D3. Le garde-fou (injectio
 `ai.agent.career_assistant`, test qui le vérifie) est ajouté aux critères de #261. (3)
 `smalot/pdfparser` est installé en tâche 4 avec son test sur fixture, comme l'issue le permettait.
 Nom de la variable confirmé : `SCALEWAY_AI_API_KEY` (celui de la recette, `SCALEWAY_API_KEY`, se
-confondrait avec les clés IAM du mailer). *Reste à noter après l'appel réel : modèle retenu ou de
-repli, quantité offerte (mensuelle ou unique), cache de prompt.*
+confondrait avec les clés IAM du mailer). Faits lus le même jour dans la documentation
+Scaleway (FAQ Generative APIs, « Supported models ») : **Free Tier de 1 000 000 de jetons** en Serverless
+(« up to 1,000,000 tokens »), déduit sur chaque facture (« Offer deducted - Generative APIs Free
+Tier ») — la page ne dit pas « par mois » en toutes lettres, **à confirmer sur la première facture** ;
+unité de facturation minimale 1 000 jetons ; aucun budget ne repose sur cette gratuité (pire cas D6
+calculé sans). **Cache de prompt automatique** en Serverless, isolé par projet, taux annoncé de 50 à
+90 % pour un usage conversationnel (non garanti), jetons en cache facturés à prix réduit : le préfixe
+byte-identique de D8 en bénéficie sans configuration. **Modèle** : `mistral-small-3.2-24b-instruct-2506`
+confirmé dans la console (0,15 € / 0,35 € par M de jetons, contexte 128k, température par défaut
+0,15 — la spec n'en fixe aucune, D3), absent de la liste des modèles en fin de vie et cible de
+redirection de trois modèles retirés ; sortie maximale 32k en Serverless, au-dessus des 1 024 de D6 ;
+pas de modèle de repli nécessaire à ce stade. *Reste : l'appel réel `ai:agent:call career_assistant`.*
