@@ -1,6 +1,6 @@
 # SPEC — Assistant « interrogez mon parcours » (`Ai/Assistant`, Symfony AI, Scaleway)
 
-> Statut : **brouillon** (rédigée le 2026-09-15, à valider en session avant tout code).
+> Statut : **validée** le 2026-09-26 (rédigée le 2026-09-15 ; voir le journal en §10).
 > Phase 2 de l'intégration de Symfony AI, cadrée par l'ADR 0004 telle qu'amendée le 2026-09-15 (D7
 > réécrite, D2/D3/D5 retouchées). Elle succède à la spec 0002 (traduction, livrée) et en réutilise le
 > socle : contexte `src/Ai/`, `ai.yaml`, client HTTP dédié, quota par compte, tests hors ligne.
@@ -102,8 +102,13 @@ compte compris) n'atteignent l'assistant — ni directement, ni par effet de bor
   binaire à ajouter à l'image ; `ext-iconv` et `ext-zlib` sont dans l'image `php:alpine`), puis
   **normalisé** : espaces et tabulations compressés, lignes recollées en paragraphes (une ligne
   vide = un paragraphe), en-têtes ou pieds répétés d'une page à l'autre supprimés, caractères de
-  contrôle retirés. Résultat mis en cache dans `cache.app` (clé : chemin + mtime + taille du
-  fichier), **jamais persisté ailleurs, jamais journalisé**. Fichier absent → le corpus omet la
+  contrôle retirés. **Aucun cache : l'extraction est refaite à chaque requête**, et le texte
+  n'existe qu'en mémoire le temps de la requête — **jamais persisté, jamais journalisé**.
+  `cache.app` est sur Doctrine DBAL depuis l'ADR 0005 : y ranger le texte écrirait le CV nominatif
+  complet dans la table `cache_items`, donc dans la base et ses sauvegardes. Le coût de
+  l'extraction (quelques millisecondes attendues, **mesuré en M2**) est borné par le quota D6 ; si
+  la mesure le rendait gênant, un cache se rediscute par amendement, jamais sur un stockage
+  persistant. Fichier absent → le corpus omet la
   section et le prompt le dit (« le CV détaillé n'est pas disponible ») ; ce n'est pas une erreur.
 - **D8 — Prompt système en deux parties** : un préambule fixe (`config/ai/prompts/career_assistant.txt`,
   rôle, règles, refus hors sujet, langue de réponse = langue de la question, ne rien inventer, citer
@@ -149,16 +154,16 @@ compte compris) n'atteignent l'assistant — ni directement, ni par effet de bor
 - **Environnement d'exécution** : `max_execution_time = 30` en prod — sous Linux cette limite ne
   compte pas l'attente réseau, et le contrôleur n'a rien à calculer pendant le flux ; nginx et
   l'ingress coupent à 60 s ; le timeout client de 40 s reste dessous. Le limiteur de débit Symfony
-  s'appuie sur `cache.app` (système de fichiers, **local au pod**) : avec deux réplicas en prod, le
-  quota effectif est de 30/h **par pod**, donc jusqu'à 60/h par compte — limitation **déjà vraie**
-  pour `translation_assistant`, acceptée et notée ; la borne de coût est calculée avec ce facteur.
+  s'appuie sur `cache.app`, sur Doctrine DBAL depuis l'ADR 0005 (v0.14.1) : le compteur est
+  **commun à tous les pods**, le quota effectif est bien de 30/h par compte quel que soit le
+  nombre de réplicas (le pire cas ci-dessus, ≈ 85 €/mois, est calculé sur cette base).
 
 ## 3. Carte des capacités (ordre de construction)
 
 | # | Capacité | Dépend de | Livrable |
 |---|---|---|---|
 | M1 | Socle : `symfony/ai-scaleway-platform` pinné, `smalot/pdfparser`, client scoped `ai.scaleway.http_client`, plateforme déclarée en service (D2), agent `career_assistant` dans `ai.yaml`, prompt système, `SCALEWAY_AI_API_KEY` (`.env` vide, `phpunit.dist.xml` factice, `.env.local` dev, `init-symfony.sh`), **appel réel** `ai:agent:call career_assistant` en dev, vérification du cache de prompt, CLAUDE.md | — | `composer phpstan`/`rector`/`psalm`/`lsp:check` verts, kernel bootable en test sans clé réelle |
-| M2 | Corpus : `PdfTextExtractor` + normalisation + cache, `CorpusRenderer` (trois sources, Markdown déterministe), `CorpusSourcesTest` pinçant la liste des sources, test de rendu sur fixtures | M1 | Tests unitaires, un PDF de fixture (contenu fictif, aucune donnée réelle) |
+| M2 | Corpus : `PdfTextExtractor` + normalisation (sans cache, mesure de la durée), `CorpusRenderer` (trois sources, Markdown déterministe), `CorpusSourcesTest` pinçant la liste des sources, test de rendu sur fixtures | M1 | Tests unitaires, un PDF de fixture (contenu fictif, aucune donnée réelle) |
 | M3 | Assistant : VO `Conversation`/`ConversationMessage` (bornes D6), `CareerAssistantInterface` + `SymfonyAiCareerAssistant` (flux, jetons, journalisation), exceptions, limiteur `career_assistant` + `Retry-After` | M2 | Tests unitaires avec `FakeAgent` (en flux) |
 | M4 | Endpoint `POST /api/assistant/answers` : contrôleur, DTO validé, `EventStreamResponse`, `access_control`, `exception_to_status`, nginx `location` (deux fichiers), `X-Accel-Buffering` | M3 | Tests fonctionnels (401/403/403 CSRF/422/429/503/200 en flux), `ApiRouteExposureTest` inchangé et vert, `AccessControlAnchoringTest` vert |
 | M5 | Déploiement : clé Scaleway dans Secret Manager et les deux `ExternalSecret backend-secrets`, `k8s/README.md`, ConfigMap nginx (hash → rollout du sidecar), vérification `nginx -T` et d'un flux réel en préprod | M4 | Rollout préprod, une question réelle depuis un compte de test `ROLE_TRUSTED` préprod, flux visible |
@@ -186,7 +191,8 @@ M1 à M6 forment la tranche verticale complète ; il n'y a pas de M7.
   CaseStudyProvider, PdfTextExtractor}` — ajouter une source fait échouer le test tant que la
   liste attendue (avec justification écrite, comme `PUBLIC_PATHS`) n'est pas mise à jour ; aucune
   classe `Backoffice*` ni aucun `*Repository` n'y est admis (assertion sur les noms).
-- Le cache du texte extrait est invalidé si le mtime ou la taille du fichier change.
+- Le texte extrait n'est mis dans aucun cache : remplacer le PDF de fixture entre deux appels
+  change le rendu dès l'appel suivant ; la durée d'une extraction est mesurée et notée au journal.
 - Aucun log ne contient un fragment du corpus (logger de test, assertion négative).
 
 ### M3 — Assistant
@@ -272,7 +278,7 @@ Application/
   Corpus/PdfTextExtractorInterface.php       # extract(): ?string (null si fichier absent)
 Infrastructure/
   SymfonyAi/SymfonyAiCareerAssistant.php     # seule classe qui importe le bundle ; stream: true
-  Pdf/SmalotPdfTextExtractor.php             # smalot/pdfparser + normalisation + cache.app
+  Pdf/SmalotPdfTextExtractor.php             # smalot/pdfparser + normalisation, sans cache (D7)
   RateLimiter/SymfonyAssistantRateLimiter.php  # limiter.career_assistant, clé = username
   Http/AssistantRateLimitRetryAfterListener.php
 Presentation/
@@ -424,7 +430,7 @@ kubectl exec deploy/backend -c nginx -n preprod -- nginx -T | grep -A3 'assistan
   Messenger déclenché par un visiteur.
 - Le CV nominatif, ou le corpus, envoyé à Anthropic ou à tout fournisseur autre que Scaleway.
 - Une source lue par un repository ou une classe `Backoffice*`.
-- Persister une conversation, une réponse ou le texte extrait ailleurs que dans `cache.app`.
+- Persister une conversation, une réponse ou le texte extrait, `cache.app` compris.
 - Assouplir `ApiRouteExposureTest` ; ajouter la route à `BASE_TIER_PATHS`.
 - `v-html` sur un texte du modèle.
 - Un `^` sur un paquet `symfony/ai-*`.
@@ -449,3 +455,12 @@ est envoyé à l'API d'inférence de l'hébergeur : information déjà publique 
 **À valider en session** : le nom de la route (`/api/assistant/answers`), les chiffres D6, le
 libellé et l'emplacement du lien dans l'en-tête, le modèle de repli, et l'ordre des milestones
 (M5 déploiement avant M6 frontend, pour qu'une question réelle passe en préprod avant la page).
+
+**2026-09-26** — Validation en session. Les cinq points ci-dessus sont validés tels que rédigés
+(route, chiffres D6, lien « Assistant » dans la zone connectée pour le palier nominatif seulement,
+modèle de repli tranché en M1 après l'appel réel, M5 avant M6). Deux faits avaient dérivé depuis
+la rédaction et sont corrigés : le limiteur de débit n'est plus local au pod (`cache.app` sur
+Doctrine DBAL, ADR 0005), le quota de 30/h est donc global ; et, pour la même raison, le cache du
+texte extrait prévu en D7 aurait écrit le CV nominatif dans `cache_items` — **D7 est amendée :
+aucun cache**, extraction à chaque requête (options écartées : accepter la table, ou un pool APCu
+qui ajoute une extension à l'image pour un gain faible).
