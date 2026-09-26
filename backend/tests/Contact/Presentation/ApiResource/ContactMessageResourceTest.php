@@ -152,6 +152,34 @@ final class ContactMessageResourceTest extends WebTestCase
         self::assertCount(0, $this->asyncTransport()->getSent());
     }
 
+    /**
+     * Le cas relevé par l'issue #236 : un message de 9 caractères. Au-delà du
+     * statut, ce test fixe la FORME du corps du 422, dont le frontend dépend —
+     * HttpContactRepository lit `violations[].propertyPath` pour signaler le
+     * champ fautif sous le champ lui-même (il ignore `message`, écrit en
+     * français en dur ici). Un jour où API Platform changerait cette clé, le
+     * front retomberait silencieusement sur son message générique.
+     */
+    public function testATooShortMessageIsRejectedWithASingleViolationNamingItsField(): void
+    {
+        $client = $this->createClientWithFreshRateLimiter();
+
+        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
+            'name' => 'Jane Doe',
+            'email' => 'jane@example.com',
+            // 9 caractères : NotBlank passe, seul Length(min: 10) refuse.
+            'message' => 'Bonjour !',
+        ]));
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertCount(0, $this->asyncTransport()->getSent());
+
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+        self::assertArrayHasKey('violations', $body);
+        self::assertSame(['message'], array_column($body['violations'], 'propertyPath'));
+    }
+
     public function testAFilledHoneypotIsSilentlyAcceptedWithoutDispatchingAnything(): void
     {
         $client = $this->createClientWithFreshRateLimiter();
