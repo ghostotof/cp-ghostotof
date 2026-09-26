@@ -26,19 +26,14 @@ const localFormError = ref<string | null>(null)
 let setupToken = ''
 
 /**
- * Lit le jeton dans l'URL d'arrivée. Le fragment d'abord (`set-password#<jeton>`,
- * audit A7 / décision D6 : jamais envoyé au serveur), le segment de chemin
- * sinon (repli de compatibilité des liens déjà envoyés, retiré en T4.4). Le
- * fragment prime si les deux sont présents. `route.hash` est le
+ * Lit le jeton dans le fragment de l'URL d'arrivée (`set-password#<jeton>`,
+ * audit A7 / décision D6 : un fragment n'est jamais envoyé au serveur). C'est
+ * le seul endroit où il peut se trouver : le segment de chemin qui servait de
+ * repli aux anciens liens a été retiré (T4.4). `route.hash` est le
  * `location.hash` vu par vue-router.
  */
 function readTokenFromUrl(): string {
-  const fromHash = route.hash.startsWith('#') ? route.hash.slice(1) : ''
-  if ('' !== fromHash) {
-    return fromHash
-  }
-
-  return typeof route.params.token === 'string' ? route.params.token : ''
+  return route.hash.startsWith('#') ? route.hash.slice(1) : ''
 }
 
 /**
@@ -46,22 +41,20 @@ function readTokenFromUrl(): string {
  * la barre d'adresse, ni dans l'historique, ni dans un copier-coller de l'URL.
  *
  * `router.replace` plutôt que `history.replaceState` : vue-router range dans
- * `history.state` le `fullPath` courant (`current`), fragment et segment
- * compris. Un `replaceState` qui préserverait cet état — indispensable pour ne
- * pas casser le routeur — y préserverait donc aussi le jeton, et laisserait
- * `route.fullPath` / `route.params.token` le porter en mémoire. Passer par le
- * routeur réécrit l'URL, `history.state` et la route courante d'un seul geste
- * cohérent, et rejoue `afterEach` (canonical/hreflang recalculés). Même
- * enregistrement de route avant et après : le composant n'est pas remonté,
- * `setupToken` survit.
+ * `history.state` le `fullPath` courant (`current`), fragment compris. Un
+ * `replaceState` qui préserverait cet état — indispensable pour ne pas casser
+ * le routeur — y préserverait donc aussi le jeton, et laisserait
+ * `route.fullPath` le porter en mémoire. Passer par le routeur réécrit l'URL,
+ * `history.state` et la route courante d'un seul geste cohérent, et rejoue
+ * `afterEach` (canonical/hreflang recalculés). Même enregistrement de route
+ * avant et après : le composant n'est pas remonté, `setupToken` survit.
  */
 async function takeTokenFromUrl(): Promise<string> {
   const found = readTokenFromUrl()
-  const urlCarriesSomething = '' !== route.hash || ('' !== route.params.token && undefined !== route.params.token)
 
-  if (urlCarriesSomething) {
+  if ('' !== route.hash) {
     try {
-      await router.replace({ name: 'set-password', params: { locale: currentLocale(), token: '' }, hash: '' })
+      await router.replace({ name: 'set-password', params: { locale: currentLocale() }, hash: '' })
     } catch {
       // Un échec de navigation ne doit pas priver la personne de son
       // formulaire : le jeton est lu, on continue avec.

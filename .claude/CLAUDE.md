@@ -826,7 +826,7 @@ me cards), `watch` (tracked products + the `ROLE_SUPER`-only vulnerability detai
 direct username+password creation stays CLI-only). `AdminUsersPage.vue` disables the delete and role buttons on
 the current user's own row (compared by `username` via `useAuth()`); the `email` column shows the linked address
 or a dash. The `domain/account` + `application/account/useAccountPasswordSetup` + `presentation/pages/SetPasswordPage.vue`
-slice is the **public** counterpart: route `/(fr|en)/set-password/:token?` (`meta.noindex`, no `requiresAuth`),
+slice is the **public** counterpart: route `/(fr|en)/set-password` (`meta.noindex`, no `requiresAuth`),
 `useAccountPasswordSetup` state machine (`checking|ready|submitting|done|invalid|expired|error`), talking to the
 two public `POST /api/account/password-setup(/validate)` endpoints — a 422 on `validate` means "invalid link",
 a 422 on the completion means "password refused", and they must keep being told apart.
@@ -835,16 +835,19 @@ a 422 on the completion means "password refused", and they must keep being told 
 T4.2). The emailed link is `…/{locale}/set-password#<token>`: a fragment is never sent to the server, so it
 reaches neither the frontend nginx's access log nor the ingress's — the same reason the token moved out of the
 API path. Three things follow, none of them optional:
-- the page reads the fragment **first** and `:token?` only as a 48 h fallback for links already sent (its
-  removal is a planned follow-up); the token then lives **in memory only**;
+- the page reads the fragment and nothing else; the token then lives **in memory only**. The `:token?`
+  path segment that served as a 48 h fallback for links sent before the fragment was **removed** (T4.4,
+  2026-09-26): `…/set-password/<anything>` is now a router 404, and that is the point — a secret must not be
+  able to arrive through the path at all. Don't reintroduce a segment "for compatibility";
 - it is erased from the URL with **`router.replace`, never `history.replaceState`** — vue-router stores the
   `fullPath` in `history.state`, so a `replaceState` that preserved that state would preserve the token with it;
-- routes whose URL may carry a secret declare `meta.canonicalPath`, which `presentation/router/seo.ts` uses
-  instead of the real path: otherwise `<link rel="canonical">` and every `hreflang` alternate would republish
-  the token in the DOM (the leak predated the fragment, with the old `:token` segment). The router's
-  scroll/anchor handling also skips the `set-password` hash — it is a token, not an anchor.
-No token at all ⇒ `invalid` with **no network call**. `SetPasswordPage.spec.ts` and `router/seo.spec.ts` pin
-all of it.
+- `<link rel="canonical">` and the `hreflang` alternates are built by `presentation/router/seo.ts` from
+  `to.path`, which never contains the fragment, so nothing special is needed to keep the token out of the DOM
+  (the `meta.canonicalPath` override that protected the old segment went away with it — a route that ever
+  carried a secret in its path would be the bug, not a reason to bring it back). The router's scroll/anchor
+  handling skips the `set-password` hash — it is a token, not an anchor.
+No token at all ⇒ `invalid` with **no network call**. `SetPasswordPage.spec.ts`, `router/seo.spec.ts` and
+`router/adminGuard.spec.ts` (the 404 on an old segment link) pin all of it.
 
 **Ordering and translation groups** (spec 0004, `v0.12.0`): every ordered admin page (Incidents,
 Contributions, Anonymous CV, Quality ×2, About site cards + one table per me-card category, Watch) is
