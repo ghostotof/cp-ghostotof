@@ -96,8 +96,9 @@ compte compris) n'atteignent l'assistant — ni directement, ni par effet de bor
   - **entrée bornée par le serveur** : au plus **11 messages** (6 questions, 5 réponses — *amendé
     le 2026-09-26, voir le journal : 12 était inatteignable*) dans `messages`, au
     plus **1 000 caractères** par message utilisateur, **4 000** par message assistant (une réponse
-    renvoyée), premier message de rôle `user`, alternance stricte `user`/`assistant`, dernier
-    message `user` — sinon 422 ;
+    renvoyée), **16 000 caractères pour la conversation entière** (*amendé le 2026-09-26, audit
+    F2 : sans elle, le total montait à 26 000*), premier message de rôle `user`, alternance stricte
+    `user`/`assistant`, dernier message `user` — sinon 422 ;
   - timeout **40 s** sur le client dédié, sous les 60 s de nginx et de l'ingress.
 - **D7 — Le CV nominatif entre comme texte extrait du PDF**, par `smalot/pdfparser` (pur PHP, pas de
   binaire à ajouter à l'image ; `ext-iconv` et `ext-zlib` sont dans l'image `php:alpine`), puis
@@ -261,7 +262,8 @@ a sa branche, tirée de la branche mère `feature/spec-0005-career-assistant`, e
   appel (`aria-busy`) ou si vide, bouton « Nouvelle conversation », bandeau permanent « L'assistant
   peut se tromper, les documents font foi » avec liens vers les trois contenus.
 - Fenêtre glissante côté client : l'affichage garde tout, la requête n'envoie que les 11 derniers
-  messages (un nombre impair : la fenêtre commence ainsi par une question) ; un message assistant tronqué à 4 000 caractères avant envoi ; l'utilisateur ne
+  messages (un nombre impair : la fenêtre commence ainsi par une question), et retire les échanges
+  les plus anciens tant que le total dépasse 16 000 caractères ; un message assistant tronqué à 4 000 caractères avant envoi ; l'utilisateur ne
   rencontre jamais le 422 en usage normal.
 - Flux : le texte s'affiche fragment par fragment ; à `done`, le message est figé ; à `error`, un
   `role="alert"` explicite et le message partiel reste visible, marqué incomplet.
