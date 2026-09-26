@@ -35,6 +35,7 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
 {
     private const string OPENING_TAG = '<documents>';
     private const string CLOSING_TAG = '</documents>';
+    private const string TAG_CHEVRON = '#[<＜](?=\s*[/／]?\s*documents)#iu';
 
     /**
      * @param ProviderInterface<AnonymousCvSectionResource> $anonymousCvProvider
@@ -149,7 +150,7 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
     private static function anonymousCvEntry(AnonymousCvSectionResource $section, array $labels): string
     {
         return implode("\n\n", [
-            '## '.self::text($section->title),
+            '## '.self::title($section->title),
             \sprintf($labels['yearsOfExperience'], $section->yearsOfExperience),
             '### '.$labels['skills'],
             self::text($section->skills),
@@ -164,7 +165,7 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
     private static function caseStudyEntry(CaseStudyResource $caseStudy, array $labels): string
     {
         return implode("\n\n", [
-            '## '.self::text($caseStudy->title),
+            '## '.self::title($caseStudy->title),
             '### '.$labels['problem'],
             self::text($caseStudy->problem),
             '### '.$labels['solution'],
@@ -176,12 +177,30 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
         ]);
     }
 
+    /** Un titre reste sur sa ligne d'intertitre : il n'ouvre pas de rubrique de son cru. */
+    private static function title(string $value): string
+    {
+        return (string) preg_replace('/\s*\n\s*/', ' ', self::text($value));
+    }
+
     /**
      * Fins de ligne unifiées (préfixe byte-identique, D8) et balises du bloc
-     * retirées, casse comprise : une donnée ne referme pas le bloc de documents.
+     * neutralisées : une donnée ne referme pas le bloc de documents.
+     *
+     * On retire le chevron qui introduit `documents` (espaces, barre, casse et
+     * pleine chasse comprises) plutôt que la balise entière : une balise non
+     * fermée n'avale ainsi aucun texte, et sans chevron ce n'est plus qu'un mot.
+     * En boucle, parce qu'un retrait peut en rapprocher un autre
+     * (`<<documents` redevient `<documents`).
      */
     private static function text(string $value): string
     {
-        return trim(str_ireplace([self::CLOSING_TAG, self::OPENING_TAG], '', str_replace(["\r\n", "\r"], "\n", $value)));
+        $value = str_replace(["\r\n", "\r"], "\n", $value);
+        do {
+            $previous = $value;
+            $value = (string) preg_replace(self::TAG_CHEVRON, '', $value);
+        } while ($value !== $previous);
+
+        return trim($value);
     }
 }
