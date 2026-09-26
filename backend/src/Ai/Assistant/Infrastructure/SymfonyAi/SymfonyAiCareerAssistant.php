@@ -11,6 +11,7 @@ use App\Ai\Assistant\Domain\ValueObject\AnswerUsage;
 use App\Ai\Assistant\Domain\ValueObject\Conversation;
 use App\Ai\Assistant\Domain\ValueObject\Role;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Monolog\Attribute\WithMonologChannel;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\AgentInterface;
 use Symfony\AI\Agent\Exception\ExceptionInterface as AgentException;
@@ -38,7 +39,11 @@ use Symfony\Contracts\HttpClient\Exception\HttpExceptionInterface;
  *
  * Une ligne SSE illisible (le bridge la décode avec JSON_THROW_ON_ERROR) est
  * une panne du fournisseur comme une autre : 503 ou événement `error`.
+ *
+ * Journal sur le canal `ai_usage` (monolog.yaml), à niveau fixe en production :
+ * sans cela, LOG_LEVEL=warning y écarterait l'usage de chaque réponse.
  */
+#[WithMonologChannel('ai_usage')]
 final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterface
 {
     /**

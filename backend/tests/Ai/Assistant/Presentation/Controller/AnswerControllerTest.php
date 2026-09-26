@@ -9,6 +9,8 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\Handler\TestHandler;
+use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -134,6 +136,27 @@ final class AnswerControllerTest extends WebTestCase
         self::assertSame(812, $done['promptTokens']);
         self::assertSame(9, $done['completionTokens']);
         self::assertIsInt($done['durationMs']);
+    }
+
+    /**
+     * Le coût se relit en production, où LOG_LEVEL=warning écarterait un `info`
+     * du canal applicatif : l'usage part sur le canal `ai_usage`, qui a son
+     * propre handler à niveau fixe (monolog.yaml).
+     */
+    public function testTheUsageIsLoggedOnTheDedicatedChannel(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('Il a ', 'conçu des API.'), $this->sseHeaders()));
+
+        $this->post($client, $csrfToken, $this->payload());
+        $client->getInternalResponse();
+
+        $done = array_values(array_filter(
+            self::aiUsageRecords(),
+            static fn (LogRecord $record): bool => 'done' === ($record->context['outcome'] ?? null),
+        ));
+        self::assertCount(1, $done);
+        self::assertSame(812, $done[0]->context['promptTokens'] ?? null);
     }
 
     /** Garde D3 (relecture de #260) : le service résolu parle à Scaleway, jamais à Anthropic. */
@@ -278,6 +301,23 @@ final class AnswerControllerTest extends WebTestCase
     }
 
     /** @return array{KernelBrowser, string} */
+    /**
+     * Les enregistrements du canal `ai_usage`, gardés par le TestHandler que
+     * monolog.yaml y branche en test.
+     *
+     * @return list<LogRecord>
+     */
+    private static function aiUsageRecords(): array
+    {
+        foreach (self::getContainer()->get('monolog.logger.ai_usage')->getHandlers() as $handler) {
+            if ($handler instanceof TestHandler) {
+                return array_values($handler->getRecords());
+            }
+        }
+
+        self::fail('Aucun TestHandler sur le canal ai_usage : voir monolog.yaml (when@test).');
+    }
+
     private function trustedClient(): array
     {
         $client = self::createClient();
