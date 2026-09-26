@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Ai\Assistant\Infrastructure\Http;
 
 use App\Ai\Assistant\Domain\Exception\AssistantUnavailableException;
+use App\Ai\Assistant\Domain\Exception\InvalidConversationException;
 use App\Ai\Assistant\Infrastructure\Http\AssistantProblemResponseListener;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -35,6 +36,22 @@ final class AssistantProblemResponseListenerTest extends TestCase
             'status' => 503,
             'detail' => "L'assistant est indisponible. Réessayez plus tard.",
         ], $problem);
+    }
+
+    /**
+     * Une conversation qui viole ses invariants (et, en tâche 3, ses bornes
+     * D6) est une erreur du client : 422, jamais 500 (spec D4).
+     */
+    public function testAnInvalidConversationIsATypedUnprocessableProblem(): void
+    {
+        $event = $this->event('/api/assistant/answers', new InvalidConversationException('La conversation est vide.'));
+
+        (new AssistantProblemResponseListener())($event);
+
+        $response = $event->getResponse() ?? self::fail('Aucune réponse posée.');
+        self::assertSame(422, $response->getStatusCode());
+        $problem = json_decode((string) $response->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame('/errors/invalid-conversation', $problem['type'] ?? null);
     }
 
     /** Chemin décodé comme le routeur le voit (issue #77). */
