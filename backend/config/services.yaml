@@ -58,6 +58,26 @@ services:
         arguments:
             $manifestPath: '%app.watch_package_manifest_path%'
 
+    # Plateforme Scaleway Generative APIs de l'assistant de parcours (spec 0005 D2,
+    # ADR 0004 D7). Déclarée ici et non dans ai.yaml : symfony/ai-bundle 0.13.0
+    # (src/AiBundle.php, l. 1180, bloc `'scaleway' === $type`) passe le client
+    # `http_client` par défaut en dur et ignore l'option `http_client`, là où le
+    # bloc Anthropic l'honore. Or l'ADR exige le client dédié (timeout 40 s,
+    # max_redirects 0). Le jour où une version du bundle transmet l'option, cette
+    # déclaration retourne dans ai.yaml. Paresseuse comme celle du bundle : aucun
+    # objet n'est construit tant que l'agent n'est pas appelé.
+    app.ai.platform.scaleway:
+        class: Symfony\AI\Platform\Platform
+        factory: ['Symfony\AI\Platform\Bridge\Scaleway\Factory', 'createPlatform']
+        lazy: 'Symfony\AI\Platform\PlatformInterface'
+        arguments:
+            $apiKey: '%env(SCALEWAY_AI_API_KEY)%'
+            $httpClient: '@ai.scaleway.http_client'
+            $modelCatalog: '@ai.platform.model_catalog.scaleway'
+            $eventDispatcher: '@event_dispatcher'
+        tags:
+            - ai.platform: { name: 'scaleway' }
+
     # Versions relevées au `docker build` depuis les manifestes k8s, `.env` et le
     # lock npm. La racine du dépôt n'est visible qu'au build et, en dev, par les
     # montages en lecture seule du docker-compose.

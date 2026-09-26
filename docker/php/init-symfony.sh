@@ -72,6 +72,9 @@ CONTACT_RECIPIENT_EMAIL=contact@example.test
 # Clé Anthropic de l'assistant du backoffice (ADR 0004). Vide par défaut : sans
 # clé, seul le bouton de traduction du backoffice échoue (503), rien d'autre.
 ANTHROPIC_API_KEY=
+# Clé Scaleway Generative APIs de l'assistant de parcours (spec 0005). Vide par
+# défaut : sans clé, seul l'assistant échoue, rien d'autre.
+SCALEWAY_AI_API_KEY=
 LOCALENV
 
 # .env.local n'est jamais chargé par Symfony en environnement test (comportement

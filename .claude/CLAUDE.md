@@ -118,7 +118,7 @@ unresolvable host). It requires Symfony CLI ≥ 5.20.0 (`.env`, `versions.lock`)
 latest stable Language Tools into its own cache (`symfony lsp:cache-dir`), so that part is **not pinned**
 — which is why the job is blocking only on the `--fail-on` list of low-false-positive codes and is *not*
 in `build-images`' `needs` yet (re-evaluate after a few weeks). No baseline: the repo is clean apart from
-three `config.unknown_key` **warnings** on `ai.yaml` (`ai.agent.translator.model.name/options`), keys that
+six `config.unknown_key` **warnings** on `ai.yaml` (`ai.agent.{translator,career_assistant}.model.name/options`, three per agent), keys that
 Symfony accepts because the bundle declares `model` as a `variableNode` (its only rule: a string, or an array
 with `name`) — Language Tools cannot know the keys under it, a false positive by construction, left visible
 rather than baselined. **Monolog** is installed (`symfony/monolog-bundle`, audit 2026-09-16 constat A5 —
@@ -588,8 +588,21 @@ mid-migration.
   `ROLE_TRUSTED`, on Scaleway Generative APIs — the site's own host, `fr-par` — which is the one operator the
   nominative CV may reach (D3 amended); corpus injected in the context from the tier's existing providers,
   no tools, no vector store, nothing persisted, streamed response; the MCP server originally planned is
-  now an *alternative écartée*; spec still to write, nothing built). The bundle is **Symfony AI**, pinned in **exact version** (`symfony/ai-bundle`,
-  `symfony/ai-anthropic-platform`, `symfony/ai-agent`, all `0.13.0`, no `^` while 0.x); the platform and the
+  now an *alternative écartée*; **in progress** on the branch `feature/spec-0005-career-assistant`, spec
+  `.claude/specs/0005-career-assistant.md`, task 1 (#260) done: the `career_assistant` agent in `ai.yaml`,
+  `mistral-small-3.2-24b-instruct-2506`, `max_tokens` 1024, `tools: false`, prompt preamble in
+  `config/ai/prompts/career_assistant.txt`, key `SCALEWAY_AI_API_KEY` routed exactly like `ANTHROPIC_API_KEY`).
+  **The Scaleway platform is declared in `services.yaml` (`app.ai.platform.scaleway`, the bridge's
+  `Factory::createPlatform`), not in `ai.yaml`** (spec 0005 D2): `symfony/ai-bundle` 0.13.0 hard-codes the
+  default `http_client` for a `scaleway` platform and ignores its `http_client` option, so the ADR's dedicated
+  client (`ai.scaleway.http_client`, `framework.yaml`: timeout 40 s, `max_redirects: 0`) can only reach it that
+  way. Don't move it back into `ai.yaml` until a bundle version honours the option;
+  `tests/Ai/Assistant/Infrastructure/ScalewayPlatformWiringTest` pins the wiring (mock behind
+  `ai.scaleway.http_client.scoping.inner`, asserts URL, bearer, timeout, `max_redirects`, model, bounds). The
+  Scaleway recipe's `ai_scaleway_platform.yaml`/`ai_generic_platform.yaml` (the latter from the transitive
+  `symfony/ai-generic-platform`) were deleted — delete them again if a recipe update recreates them. The
+  shared test agent is `tests/Ai/Support/FakeAgent`. The bundle is **Symfony AI**, pinned in **exact version** (`symfony/ai-bundle`,
+  `symfony/ai-anthropic-platform`, `symfony/ai-scaleway-platform`, `symfony/ai-agent`, all `0.13.0`, no `^` while 0.x); the platform and the
   `translator` agent (`claude-sonnet-5`, `max_tokens` 4096 — the Anthropic wire name, the bridge merges
   options as-is —, `tools: false`, system prompt in `config/ai/prompts/translator.txt`) are declared in
   `config/packages/ai.yaml` on a dedicated scoped client `ai.http_client` (`framework.yaml`: timeout 40 s,
