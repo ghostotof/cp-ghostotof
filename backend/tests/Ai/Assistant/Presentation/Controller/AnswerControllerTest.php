@@ -152,7 +152,7 @@ final class AnswerControllerTest extends WebTestCase
         $client->getInternalResponse();
 
         $done = array_values(array_filter(
-            self::aiUsageRecords(),
+            $this->aiUsageRecords(),
             static fn (LogRecord $record): bool => 'done' === ($record->context['outcome'] ?? null),
         ));
         self::assertCount(1, $done);
@@ -300,14 +300,13 @@ final class AnswerControllerTest extends WebTestCase
         self::assertSame(400, $client->getResponse()->getStatusCode());
     }
 
-    /** @return array{KernelBrowser, string} */
     /**
      * Les enregistrements du canal `ai_usage`, gardés par le TestHandler que
      * monolog.yaml y branche en test.
      *
      * @return list<LogRecord>
      */
-    private static function aiUsageRecords(): array
+    private function aiUsageRecords(): array
     {
         foreach (self::getContainer()->get('monolog.logger.ai_usage')->getHandlers() as $handler) {
             if ($handler instanceof TestHandler) {
@@ -318,6 +317,7 @@ final class AnswerControllerTest extends WebTestCase
         self::fail('Aucun TestHandler sur le canal ai_usage : voir monolog.yaml (when@test).');
     }
 
+    /** @return array{KernelBrowser, string} */
     private function trustedClient(): array
     {
         $client = self::createClient();
