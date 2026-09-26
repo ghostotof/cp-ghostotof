@@ -166,10 +166,24 @@ compte compris) n'atteignent l'assistant — ni directement, ni par effet de bor
 | M2 | Corpus : `PdfTextExtractor` + normalisation (sans cache, mesure de la durée), `CorpusRenderer` (trois sources, Markdown déterministe), `CorpusSourcesTest` pinçant la liste des sources, test de rendu sur fixtures | M1 | Tests unitaires, un PDF de fixture (contenu fictif, aucune donnée réelle) |
 | M3 | Assistant : VO `Conversation`/`ConversationMessage` (bornes D6), `CareerAssistantInterface` + `SymfonyAiCareerAssistant` (flux, jetons, journalisation), exceptions, limiteur `career_assistant` + `Retry-After` | M2 | Tests unitaires avec `FakeAgent` (en flux) |
 | M4 | Endpoint `POST /api/assistant/answers` : contrôleur, DTO validé, `EventStreamResponse`, `access_control`, `exception_to_status`, nginx `location` (deux fichiers), `X-Accel-Buffering` | M3 | Tests fonctionnels (401/403/403 CSRF/422/429/503/200 en flux), `ApiRouteExposureTest` inchangé et vert, `AccessControlAnchoringTest` vert |
-| M5 | Déploiement : clé Scaleway dans Secret Manager et les deux `ExternalSecret backend-secrets`, `k8s/README.md`, ConfigMap nginx (hash → rollout du sidecar), vérification `nginx -T` et d'un flux réel en préprod | M4 | Rollout préprod, une question réelle depuis un compte de test `ROLE_TRUSTED` préprod, flux visible |
+| M5 | Déploiement : clé Scaleway dans Secret Manager et les deux `ExternalSecret backend-secrets`, `k8s/README.md`, ConfigMap nginx (hash → rollout du sidecar), procédure de vérification (`nginx -T`, une question réelle en flux) **exécutée pendant la release de la spec** | M4 | Overlays et README à jour, clé publiée avant la release ; en release : rollout préprod, une question réelle depuis un compte de test `ROLE_TRUSTED`, flux visible |
 | M6 | Frontend : tranche `assistant` (domaine, repository HTTP en flux, composable à machine d'états, page `/(fr|en)/assistant` derrière `requiresAuth` + `roles: [ROLE_TRUSTED]`, lien dans la zone connectée de l'en-tête, clés i18n, axe) | M4 | Specs Vitest + axe, `make front-lint`/`front-build` verts, test navigateur réel sur la stack dev |
 
 M1 à M6 forment la tranche verticale complète ; il n'y a pas de M7.
+
+### Découpage en tâches (issues, 2026-09-26)
+
+Les jalons découpent par couche ; les tâches les regroupent en tranches verticales. Chaque tâche
+a sa branche, tirée de la branche mère `feature/spec-0005-career-assistant`, et sa PR vers elle.
+
+| Tâche | Issue | Jalons couverts | Bloquée par |
+|---|---|---|---|
+| 1 — Socle Scaleway et appel réel en dev | #260 | M1 | — |
+| 2 — Une question en flux de bout en bout | #261 | M2 (sans PDF), M3 et M4 (sans bornes ni quota) | #260 |
+| 3 — Coût borné : bornes D6 et quota | #262 | M3 et M4 (bornes, quota, 422/429) | #261 |
+| 4 — CV nominatif dans le corpus | #263 | M2 (PDF) | #261 |
+| 5 — Préparation du déploiement | #264 | M5 | #261 |
+| 6 — Page Assistant | #265 | M6 | #261, #262 |
 
 ## 4. Critères d'acceptation
 
@@ -464,3 +478,10 @@ Doctrine DBAL, ADR 0005), le quota de 30/h est donc global ; et, pour la même r
 texte extrait prévu en D7 aurait écrit le CV nominatif dans `cache_items` — **D7 est amendée :
 aucun cache**, extraction à chaque requête (options écartées : accepter la table, ou un pool APCu
 qui ajoute une extension à l'image pour un gain faible).
+
+**2026-09-26 (découpage)** — L'ordre « M5 avant M6 » validé plus haut ne peut pas tenir tel
+qu'écrit : la préprod ne se déploie que depuis une branche `release/*` coupée de `develop`
+(spec 0006), et `develop` ne reçoit cette spec qu'une fois, par la branche mère. M5 est donc
+réduit à la préparation du déploiement ; la question réelle en préprod devient une vérification
+de la release de la spec, avant le merge dans `main`. M5 et M6 ne dépendent plus l'un de l'autre.
+Découpage en six tâches verticales publié (#260 à #265, dépendances natives GitHub).
