@@ -568,3 +568,27 @@ problem+json (sans lui, 500) ; (9) `EventSourceHttpClient`, créé en dur par le
 `POST` 10 s après une coupure en plein flux — seconde génération facturée hors quota —, refusé par
 `ReplayRefusingHttpClient` ; **à signaler en amont** avec D2. **Tests** : `KernelBrowser` capture le
 corps diffusé sur `getInternalResponse()`, pas sur `getResponse()` ; aucun autre contournement.
+
+**2026-09-26 (tâche 2, relecture)** — Quatre relectures (`/code-review`, standards, spec, audit de
+sécurité), aucune conclusion critique ni haute. Neuf correctifs retenus et appliqués, un commit
+chacun, test rouge vérifié d'abord : (A) un `\JsonException` du bridge, qui décode chaque ligne SSE
+avec `JSON_THROW_ON_ERROR`, échappait aux trois familles attrapées — 500 ou flux coupé sans `error` ;
+(B) `AssistantUnavailableException` chaînait l'exception du bridge, dont le message recopie le corps de
+la réponse du fournisseur, et l'`ErrorListener` du noyau journalise toute la chaîne — D10 violée hors
+du logger de la classe ; même défaut côté traduction, suivi en #269 ; (C) la neutralisation de
+`<documents>` se contournait par imbrication (`</docu</documents>ments>`), espaces, attribut, saut de
+ligne et chevrons pleine chasse — le chevron qui introduit `documents` est retiré en boucle, un titre
+multiligne reste sur son intertitre ; (D) `InvalidConversationException` devient une
+`ProblemExceptionInterface` (422 `/errors/invalid-conversation`), sans quoi les bornes D6 de #262
+sortiraient en 500 ; (E) commentaire faux sur `X-Accel-Buffering`, que nginx consomme (vérifié : le
+client ne le reçoit pas) ; (F) zone nginx `assistant` (10 r/min, rafale 5) et `limit_conn` à 2 flux
+par IP — mesuré en dev : 20 POST rapides, 6 passent et 14 en 429 ; 3 flux simultanés, le 3e refusé par
+`assistantconn` ; (G) canal Monolog `ai_usage` à niveau fixe : l'usage était un `info` du canal
+applicatif, invisible en production (`LOG_LEVEL=warning`) ; (H) `max_duration: 60` sur le client
+Scaleway, `timeout` n'étant qu'un délai d'inactivité ; (I) `CorpusRenderer` passe sous
+`Infrastructure/Corpus/` (il lit des Providers et DTO d'autres contextes), D5 et §5 alignées. Non
+retenus : les entrées `exception_to_status` de l'assistant, sans effet sur ce contrôleur, restent en
+place (leur retrait n'a pas été décidé) ; renommer `Role`, `Labels` en VO, fusion avec
+`ApiJsonErrorFormatListener`, test de route unique, niveau `error` de la fin en échec (D10 dit `info`).
+Rappel de la relecture : aucune release entre la tâche 2 et la tâche 3, faute de quota ; la structure
+des branches le garantit (`develop` ne reçoit la spec qu'à la clôture).
