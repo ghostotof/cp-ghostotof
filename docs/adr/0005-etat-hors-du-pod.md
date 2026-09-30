@@ -1,12 +1,14 @@
 # ADR 0005 — Aucun état applicatif sur le système de fichiers du pod
 
-- Statut : **accepté** (2026-09-16), livré par le hotfix `v0.14.1`
+- Statut : **accepté** (2026-09-16), livré par le hotfix `v0.14.1` ; **amendé le 2026-09-30**
+  (verrou des limiteurs, issue #272, voir la dernière section)
 - Date : 2026-09-16
 - Portée : `backend/config/packages/cache.yaml` (`framework.cache.app`), migration
   `Version20260916180000` (table `cache_items`), `k8s/base/messenger-purge-cronjob.yaml`
   (`cache:pool:prune`), les deux configurations nginx (zone `login`),
   `tools/smoke-login-throttling.sh` et le job `smoke-test-preprod`,
-  `tests/Security/RateLimiterStorageTest.php` ; objectif n°8 (sécurité)
+  `tests/Security/RateLimiterStorageTest.php`, `backend/config/packages/lock.yaml` et
+  `PostgresAdvisoryLockDsnEnvVarProcessor` (amendement) ; objectif n°8 (sécurité)
 
 ## Contexte
 
@@ -141,3 +143,79 @@ doivent tomber sur une seule clé. C'est ce qu'il a prouvé en refusant la premi
 - La leçon de méthode vaut au-delà du cache : **un durcissement qui rend une écriture
   impossible doit s'accompagner d'un test qui échoue quand cette écriture était nécessaire.**
   Le `readOnlyRootFilesystem` était juste ; il n'a pas été accompagné.
+
+## Amendement du 2026-09-30 : le stockage partagé ne suffit pas, il faut un verrou partagé (issue #272)
+
+La décision ci-dessus a rendu l'état des limiteurs **durable et partagé**, pas **atomique**.
+`symfony/lock` n'était pas installé : `RateLimiterFactory` recevait un verrou `null`, et
+`consume()` fait un lire-modifier-écrire sur `cache.app`. Deux requêtes qui lisent la même
+fenêtre écrivent chacune « n + 1 ». Reproduit en dev : vingt `consume(1)` simultanés sur la même
+clé ne décomptaient **qu'une** unité, trois passages sur trois. Tous les limiteurs étaient
+concernés, `login_throttling` compris — et les deux quotas facturés (traduction, assistant) en
+premier, puisqu'un compte peut y envoyer des salves synchronisées.
+
+- **D8 — Chaque limiteur prend un verrou, et ce verrou est partagé entre pods.** `framework.lock`
+  pointe sur un advisory lock PostgreSQL de la base de l'application
+  (`DoctrineDbalPostgreSqlStore`). Dès que le composant est configuré, les limiteurs de
+  `rate_limiter.yaml` (`lock_factory: 'auto'`) et ceux de `login_throttling` reçoivent
+  `lock.factory`. `RateLimiterStorageTest` exige ce store pour chacun.
+- **D9 — Le DSN du verrou est dérivé de `DATABASE_URL`, jamais déclaré à part.** L'env processor
+  `pg_advisory:` suffixe le schéma de `+advisory` — c'est ce suffixe qui fait choisir le store
+  advisory à `StoreFactory` ; `postgresql://` seul donnerait un `DoctrineDbalStore` à table. Tout
+  autre schéma est refusé à la première instanciation du verrou, sans reprendre l'URL.
+- **D10 — Aucune requête web n'attend un verrou indéfiniment.** L'advisory lock est de session :
+  `pg_advisory_lock()` attend sans fin, le TTL du composant Lock ne s'applique pas à ce store, et
+  `max_execution_time` ne compte pas l'attente réseau. Un détenteur disparu sans fermer son socket
+  (nœud perdu) garderait le verrou jusqu'au keepalive TCP, et huit requêtes sur la même clé
+  figeraient un pod. `www.prod.conf` pose donc `env[PGOPTIONS] = "-c lock_timeout=5s"` — le DSN
+  ne permet pas de viser la seule connexion du verrou, DBAL ne transmettant pas `options` à
+  pdo_pgsql : la borne vaut pour toutes les connexions des workers FPM, ORM compris, jamais pour
+  la console (migrations, worker Messenger, CronJobs) — et `request_terminate_timeout = 65s`,
+  juste au-dessus du `fastcgi_read_timeout`. Démontré en dev : un `consume()` attend tant que le
+  verrou est tenu, et échoue en 3,0 s sur `LockAcquiringException` avec un `lock_timeout` de 3 s.
+  `FpmLockWaitBoundTest` fige les deux directives.
+
+Alternatives écartées :
+
+- **`flock` ou `semaphore`** — c'est ce que pose la recette Flex (`LOCK_DSN=flock`). Local au
+  pod : il répare un poste de dev, la CI et un pod isolé, et laisse la production ouverte dès
+  deux réplicas. C'est exactement l'erreur de l'`emptyDir` ci-dessus, sur le verrou au lieu du
+  stockage. La recette a été défaite ; si une mise à jour la réintroduit, le test tombe.
+- **Une variable `LOCK_DSN` routée par Secret Manager.** Aucun code, mais un second secret
+  portant le mot de passe de la base, à router dans chaque `ExternalSecret` et à tenir
+  synchronisé à chaque rotation.
+- **La table `lock_keys` (`DoctrineDbalStore` sur la connexion Doctrine).** Aucun code non plus,
+  mais une migration, un `INSERT`/`DELETE` par `consume()` et un verrou non bloquant, donc une
+  attente par sondage (~100 ms) sous contention.
+- **Un compiler pass qui branche le store advisory sur la connexion de l'ORM.** Économise une
+  connexion, mais contourne le câblage du framework (l'identifiant du store n'est pas stable)
+  et casserait silencieusement à une montée de version.
+
+Conséquences :
+
+- **~1,5 ms par `consume()`** mesuré en dev (1,0 → 2,5 ms : pose et levée du verrou), plus
+  l'ouverture d'une seconde connexion PostgreSQL par requête qui atteint un limiteur — le store
+  dérivé d'un DSN a la sienne. Négligeable sur des routes à faible trafic ; à surveiller si un
+  limiteur venait à couvrir une route chaude.
+- En test, Doctrine suffixe la base de `_test` mais pas le verrou, qui se pose sur la base sans
+  suffixe : elle existe partout (`POSTGRES_DB` en CI) et un advisory lock y sérialise tout autant.
+- Un nouveau limiteur s'ajoute toujours à `RateLimiterStorageTest` : la même liste vérifie
+  désormais le stockage **et** le verrou, et un test la confronte aux services `limiter.*` du
+  conteneur — un oubli fait rougir la suite au lieu d'échapper aux deux contrôles.
+- **Un limiteur ne se consomme jamais dans une transaction Doctrine** (`wrapInTransaction`). Le
+  verrou vit sur la connexion du store, la ligne de `cache_items` sur celle de l'ORM : PostgreSQL
+  ne relie pas les deux, si bien qu'un détenteur qui attend une ligne verrouillée par une
+  transaction dont l'auteur attend le verrou ne sortirait qu'au `lock_timeout` ; et l'écriture de
+  la fenêtre, visible seulement au commit, serait publiée après la levée du verrou — la perte de
+  mise à jour de #272 reviendrait. Aucun appel actuel n'est dans une transaction.
+- Une panne du verrou (connexion refusée, `lock_timeout` atteint) répond **500** : la requête
+  est refusée, jamais laissée passer, ce qui est le bon sens de défaillance. Sur le login, elle ne
+  laisse pas d'événement `login-failed` au journal d'audit, seulement l'erreur du noyau.
+- Le canal Monolog `lock` a son propre handler plafonné à `notice` : le composant trace chaque
+  pose et levée en `debug` avec la ressource (IP ou identifiant), que la préprod
+  (`LOG_LEVEL=debug`) aurait écrite à chaque requête limitée. `LockLogChannelTest` le fige.
+- Les clés d'advisory lock sont un `crc32` de la ressource, sur 32 bits : deux ressources peuvent
+  se sérialiser l'une l'autre, et une collision est calculable sur les clés IP. Accepté : l'effet
+  est de quelques millisecondes, borné par les zones nginx et par D10.
+- Le filet réel reste `tools/smoke-login-throttling.sh` en préprod : il traverse le limiteur de
+  login, donc le verrou, sur un vrai pod et la vraie `DATABASE_URL`.

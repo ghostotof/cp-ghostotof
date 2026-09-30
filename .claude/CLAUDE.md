@@ -1089,6 +1089,32 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   and the nginx `login` zone (10 r/m, burst 10, both confs) is the backstop if the storage ever
   fails again. Anything that "just writes a file" at runtime (a lock, a session, a render cache)
   falls under the same rule: DB, a dedicated service, or nowhere.
+  **Shared storage is not atomicity: every limiter also takes a lock shared across pods**
+  (issue #272, ADR 0005 amended 2026-09-30). Without `symfony/lock`, `consume()` was a
+  non-atomic read-modify-write — 20 simultaneous calls on one key counted **one** unit.
+  `lock.yaml` sets `framework.lock: '%env(pg_advisory:DATABASE_URL)%'`: the
+  `Shared/Infrastructure/Lock/PostgresAdvisoryLockDsnEnvVarProcessor` suffixes the scheme with
+  `+advisory`, which is what makes `StoreFactory` pick `DoctrineDbalPostgreSqlStore` (advisory
+  lock, no table — a bare `postgresql://` would give the table-based `DoctrineDbalStore`); any
+  other scheme is refused, the URL never echoed. With the component configured, every
+  `rate_limiter.yaml` limiter (`lock_factory: 'auto'`) and both `login_throttling` ones get
+  `lock.factory`, and `RateLimiterStorageTest` asserts that store for each. **Never `flock` or
+  `semaphore`** (pod-local — they fix dev and CI and leave prod open from two replicas on); the
+  Flex recipe writes `LOCK_DSN=flock` into `.env` and `phpunit.dist.xml`, remove it again if a
+  recipe update brings it back. No separate `LOCK_DSN` either: it would be a second secret
+  carrying the DB password. Cost measured: ~1.5 ms per `consume()` plus a second PostgreSQL
+  connection on requests that reach a limiter. `RateLimiterStorageTest` also compares its list
+  with the container's `limiter.*` services, so a new limiter that isn't listed turns it red.
+  **The advisory lock is session-level and waits forever** — hence, in `www.prod.conf`,
+  `env[PGOPTIONS] = "-c lock_timeout=5s"` (the DSN cannot carry it: DBAL doesn't forward `options`
+  to pdo_pgsql, so it bounds every PostgreSQL lock wait of an FPM worker, ORM included, never the
+  console) and `request_terminate_timeout = 65s` (total wall time — keep it above any legitimate
+  request), pinned by `FpmLockWaitBoundTest`; `docker/php` is mounted read-only in the dev
+  container for that test. **Never consume a limiter inside `wrapInTransaction`**: the lock and
+  the `cache_items` row live on two connections PostgreSQL does not relate, which both deadlocks
+  (until `lock_timeout`) and republishes the window after the lock is released. The Monolog
+  `lock` channel has its own handler capped at `notice` (`LockLogChannelTest`): the component
+  logs every acquire/release in `debug` with the resource — an IP or a username.
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
   it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would
