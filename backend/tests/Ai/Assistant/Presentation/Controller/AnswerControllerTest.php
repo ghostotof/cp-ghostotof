@@ -19,7 +19,7 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
 /**
- * POST /api/assistant/answers (spec 0005 M4, hors bornes et quota). Le vrai
+ * POST /api/assistant/answers (spec 0005 M4). Le vrai
  * bridge Scaleway est traversé : seul le transport est simulé, en flux SSE au
  * format compatible OpenAI. Le client concret du bridge Anthropic est aussi
  * remplacé, par un piège qui compte ses appels : ADR 0004 D3, le corpus ne doit
@@ -33,6 +33,10 @@ final class AnswerControllerTest extends WebTestCase
     private const string TRUSTED_USERNAME = 'trusted';
     private const string PLAIN_USERNAME = 'plain';
     private const string SUPER_USERNAME = 'super';
+    private const string OTHER_TRUSTED_USERNAME = 'other-trusted';
+
+    /** Doit refléter rate_limiter.yaml (career_assistant.limit). */
+    private const int QUOTA = 30;
 
     /** Services concrets derrière les clients scoped (cf. framework.yaml). */
     private const string SCALEWAY_INNER = 'ai.scaleway.http_client.scoping.inner';
@@ -312,6 +316,221 @@ final class AnswerControllerTest extends WebTestCase
     }
 
     /**
+     * Bornes de coût D6 : chaque violation est un 422 typé, rendu avant tout
+     * appel au fournisseur.
+     *
+     * @return iterable<string, array{list<array{role: string, content: string}>}>
+     */
+    public static function conversationsOutOfBounds(): iterable
+    {
+        $alternating = static fn (int $count): array => array_map(
+            static fn (int $rank): array => ['role' => 0 === $rank % 2 ? 'user' : 'assistant', 'content' => 'Message '.$rank],
+            range(0, $count - 1),
+        );
+
+        yield '13 messages' => [$alternating(13)];
+        yield 'message utilisateur de 1 001 caractères' => [[['role' => 'user', 'content' => str_repeat('a', 1001)]]];
+        yield "message de l'assistant de 4 001 caractères" => [[
+            ['role' => 'user', 'content' => 'Question ?'],
+            ['role' => 'assistant', 'content' => str_repeat('a', 4001)],
+            ['role' => 'user', 'content' => 'Question ?'],
+        ]];
+        // Chaque message sous sa propre borne, le total au-dessus :
+        // 5 × 1 000 + 4 × 2 800 = 16 200 caractères.
+        yield 'conversation de plus de 16 000 caractères' => [array_map(
+            static fn (int $rank): array => 0 === $rank % 2
+                ? ['role' => 'user', 'content' => str_repeat('a', 1000)]
+                : ['role' => 'assistant', 'content' => str_repeat('a', 2800)],
+            range(0, 8),
+        )];
+        yield "premier message de l'assistant" => [[
+            ['role' => 'assistant', 'content' => 'Bonjour.'],
+            ['role' => 'user', 'content' => 'Question ?'],
+        ]];
+        yield 'deux messages utilisateur consécutifs' => [[
+            ['role' => 'user', 'content' => 'Première ?'],
+            ['role' => 'user', 'content' => 'Seconde ?'],
+        ]];
+        yield "dernier message de l'assistant" => [[
+            ['role' => 'user', 'content' => 'Question ?'],
+            ['role' => 'assistant', 'content' => 'Réponse.'],
+        ]];
+    }
+
+    /**
+     * @param list<array{role: string, content: string}> $messages
+     */
+    #[DataProvider('conversationsOutOfBounds')]
+    public function testAConversationOutOfBoundsIsA422ProblemAndNeverReachesTheProvider(array $messages): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('jamais lu'), $this->sseHeaders()));
+
+        $this->post($client, $csrfToken, ['locale' => 'fr', 'messages' => $messages]);
+
+        $response = $client->getResponse();
+        self::assertSame(422, $response->getStatusCode());
+        $problem = json_decode((string) $response->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame('/errors/invalid-conversation', $problem['type']);
+        self::assertSame([], $this->scalewayRequests);
+    }
+
+    public function testTheCallBeyondTheHourlyQuotaIsA429WithRetryAfterAndNeverReachesTheProvider(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
+
+        for ($call = 1; $call <= self::QUOTA; ++$call) {
+            $this->post($client, $csrfToken, $this->payload());
+            self::assertSame(200, $client->getResponse()->getStatusCode(), \sprintf('Appel n°%d refusé avant le quota.', $call));
+        }
+
+        $this->post($client, $csrfToken, $this->payload());
+
+        $response = $client->getResponse();
+        self::assertSame(429, $response->getStatusCode());
+        $problem = json_decode((string) $response->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame('/errors/rate-limited', $problem['type']);
+        $retryAfter = $response->headers->get('Retry-After');
+        self::assertNotNull($retryAfter);
+        self::assertMatchesRegularExpression('/^\d+$/', $retryAfter);
+        self::assertGreaterThan(0, (int) $retryAfter);
+        self::assertLessThanOrEqual(3600, (int) $retryAfter);
+        self::assertCount(self::QUOTA, $this->scalewayRequests);
+        // Le refus est tracé sur le canal qui sort des pods de production.
+        $refusals = array_values(array_filter(
+            $this->aiUsageRecords(),
+            static fn (LogRecord $record): bool => 'rate-limited' === ($record->context['outcome'] ?? null),
+        ));
+        self::assertCount(1, $refusals);
+        self::assertSame(self::TRUSTED_USERNAME, $refusals[0]->context['account'] ?? null);
+    }
+
+    public function testTheQuotaIsKeptPerAccount(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
+        for ($call = 1; $call <= self::QUOTA + 1; ++$call) {
+            $this->post($client, $csrfToken, $this->payload());
+        }
+        self::assertSame(429, $client->getResponse()->getStatusCode());
+
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::OTHER_TRUSTED_USERNAME, TestCredentials::plainPassword(), [CpgUser::ROLE_TRUSTED]);
+        $otherCsrfToken = $this->loginAs($client, self::OTHER_TRUSTED_USERNAME, TestCredentials::plainPassword());
+        $this->post($client, $otherCsrfToken, $this->payload());
+
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+    }
+
+    /**
+     * Une requête refusée par la validation ne coûte rien : après autant de
+     * 422 que le quota compte d'appels, un appel valide passe encore.
+     */
+    public function testARefusedConversationDoesNotConsumeTheQuota(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
+
+        for ($call = 1; $call <= self::QUOTA; ++$call) {
+            $this->post($client, $csrfToken, ['locale' => 'fr', 'messages' => [
+                ['role' => 'user', 'content' => 'Question ?'],
+                ['role' => 'assistant', 'content' => 'Réponse.'],
+            ]]);
+            self::assertSame(422, $client->getResponse()->getStatusCode());
+        }
+
+        $this->post($client, $csrfToken, $this->payload());
+
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+    }
+
+    /**
+     * La borne de taille ne doit refuser aucune conversation que les bornes
+     * D6 acceptent : la plus longue (11 messages, 16 000 caractères au total),
+     * écrite tout en caractères de quatre octets, sérialisée comme le fait
+     * `JSON.stringify` côté frontend — sans échappement `\u`. Environ 64 Ko ;
+     * les 128 Kio laissent la marge d'un contenu échappé (caractères de
+     * contrôle en `\u00XX`, six octets chacun).
+     */
+    public function testTheLongestValidConversationInFourByteCharactersIsAccepted(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
+
+        $messages = [];
+        for ($rank = 0; $rank < 11; ++$rank) {
+            $messages[] = 0 === $rank % 2
+                ? ['role' => 'user', 'content' => str_repeat('😀', 1000)]
+                : ['role' => 'assistant', 'content' => str_repeat('😀', 2000)];
+        }
+        $body = json_encode(['locale' => 'fr', 'messages' => $messages], \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE);
+        self::assertGreaterThan(64_000, \strlen($body));
+
+        $this->postRaw($client, $csrfToken, $body);
+
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+    }
+
+    /**
+     * Spec 0005 M4 : au-delà de 128 Kio, le corps est refusé avant d'être
+     * désérialisé (nginx, lui, laisse passer jusqu'à 1 Mo). Une conversation
+     * valide complétée d'espaces — du JSON toujours valide — mesure la borne
+     * à l'octet près.
+     */
+    public function testABodyOfExactly128KibibytesIsAccepted(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
+
+        $this->postRaw($client, $csrfToken, $this->paddedBody(131072));
+
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+    }
+
+    public function testABodyBeyond128KibibytesIsA413ProblemAndNeverReachesTheProvider(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('jamais lu'), $this->sseHeaders()));
+
+        $this->postRaw($client, $csrfToken, $this->paddedBody(131073));
+
+        $response = $client->getResponse();
+        self::assertSame(413, $response->getStatusCode());
+        $problem = json_decode((string) $response->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame('/errors/request-too-large', $problem['type']);
+        self::assertSame([], $this->scalewayRequests);
+    }
+
+    /** Issue #77 : un chemin encodé est jugé sur sa forme décodée. */
+    public function testAnEncodedPathDoesNotEscapeTheSizeBound(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('jamais lu'), $this->sseHeaders()));
+
+        $client->request('POST', '/api/%61ssistant/answers', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: $this->paddedBody(131073));
+
+        self::assertSame(413, $client->getResponse()->getStatusCode());
+        self::assertSame([], $this->scalewayRequests);
+    }
+
+    /**
+     * La taille ne se juge qu'une fois l'accès accordé : un anonyme reçoit
+     * son refus d'accès, jamais une réponse sur la forme de sa requête.
+     */
+    public function testAnOversizedBodyFromTheBaseTierIsStillForbidden(): void
+    {
+        $client = self::createClient();
+        $csrfToken = $this->obtainBaseAccess($client);
+
+        $this->postRaw($client, $csrfToken, $this->paddedBody(131073));
+
+        self::assertSame(403, $client->getResponse()->getStatusCode());
+    }
+
+    /**
      * @return iterable<string, array{string, string}>
      */
     public static function nonJsonBodies(): iterable
@@ -375,6 +594,9 @@ final class AnswerControllerTest extends WebTestCase
         // Sans cela, le kernel est reconstruit entre la connexion et l'appel :
         // les clients simulés seraient perdus et la requête partirait réellement.
         $client->disableReboot();
+        // Le quota vit dans cache.rate_limiter, donc en base (ADR 0005) et
+        // partagé d'un test à l'autre : chaque test repart de zéro.
+        $client->getContainer()->get('cache.rate_limiter')->clear();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::TRUSTED_USERNAME, TestCredentials::plainPassword(), [CpgUser::ROLE_TRUSTED]);
 
         return [$client, $this->loginAs($client, self::TRUSTED_USERNAME, TestCredentials::plainPassword())];
@@ -418,6 +640,22 @@ final class AnswerControllerTest extends WebTestCase
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody($payload));
+    }
+
+    private function postRaw(KernelBrowser $client, string $csrfToken, string $body): void
+    {
+        $client->request('POST', self::PATH, server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: $body);
+    }
+
+    /** Le corps de payload(), complété d'espaces jusqu'à $bytes octets. */
+    private function paddedBody(int $bytes): string
+    {
+        $body = self::jsonBody($this->payload());
+
+        return $body.str_repeat(' ', $bytes - \strlen($body));
     }
 
     /** Flux Chat Completions compatible OpenAI, tel que Scaleway le diffuse. */

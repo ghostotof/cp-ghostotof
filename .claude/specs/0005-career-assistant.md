@@ -93,10 +93,12 @@ compte compris) n'atteignent l'assistant — ni directement, ni par effet de bor
   - quota `career_assistant`, fenêtre glissante, **30 appels par heure et par compte** (clé :
     `username`), consommé **après** validation et **avant** l'appel ;
   - `max_tokens: 1024` en sortie ;
-  - **entrée bornée par le serveur** : au plus **12 messages** (6 échanges) dans `messages`, au
+  - **entrée bornée par le serveur** : au plus **11 messages** (6 questions, 5 réponses — *amendé
+    le 2026-09-26, voir le journal : 12 était inatteignable*) dans `messages`, au
     plus **1 000 caractères** par message utilisateur, **4 000** par message assistant (une réponse
-    renvoyée), premier message de rôle `user`, alternance stricte `user`/`assistant`, dernier
-    message `user` — sinon 422 ;
+    renvoyée), **16 000 caractères pour la conversation entière** (*amendé le 2026-09-26, audit
+    F2 : sans elle, le total montait à 26 000*), premier message de rôle `user`, alternance stricte
+    `user`/`assistant`, dernier message `user` — sinon 422 ;
   - timeout **40 s** sur le client dédié, sous les 60 s de nginx et de l'ingress.
 - **D7 — Le CV nominatif entre comme texte extrait du PDF**, par `smalot/pdfparser` (pur PHP, pas de
   binaire à ajouter à l'image ; `ext-iconv` et `ext-zlib` sont dans l'image `php:alpine`), puis
@@ -238,8 +240,9 @@ a sa branche, tirée de la branche mère `feature/spec-0005-career-assistant`, e
 - Client HTTP simulé en échec → 503, `type: /errors/assistant-unavailable`.
 - `ApiRouteExposureTest` vert **sans** modification de `PUBLIC_PATHS` ni de `BASE_TIER_PATHS` ;
   `AccessControlAnchoringTest` vert ; `debug:router | grep assistant` liste exactement une route.
-- Le corps de requête est refusé au-delà de 64 Ko (`client_max_body_size` nginx reste à 1 Mo ; la
-  borne applicative vient des longueurs D6).
+- Le corps de requête est refusé au-delà de 128 Kio, en 413 (`client_max_body_size` nginx reste à
+  1 Mo ; la borne applicative vient des longueurs D6 — *amendé le 2026-09-26, voir le journal : 64 Ko
+  refusait une conversation valide*).
 - Tests fonctionnels : `ai.scaleway.http_client.scoping.inner` remplacé par un `MockHttpClient`
   renvoyant un flux SSE au format OpenAI-compatible (`data: {"choices":[{"delta":{"content":"…"}}]}`
   … `data: [DONE]`), avec `$client->disableReboot()` (leçon de la spec 0002). La clé factice de
@@ -258,15 +261,20 @@ a sa branche, tirée de la branche mère `feature/spec-0005-career-assistant`, e
   caractères, Entrée envoie, Maj+Entrée saute une ligne), bouton « Envoyer » désactivé pendant un
   appel (`aria-busy`) ou si vide, bouton « Nouvelle conversation », bandeau permanent « L'assistant
   peut se tromper, les documents font foi » avec liens vers les trois contenus.
-- Fenêtre glissante côté client : l'affichage garde tout, la requête n'envoie que les 12 derniers
-  messages ; un message assistant tronqué à 4 000 caractères avant envoi ; l'utilisateur ne
-  rencontre jamais le 422 en usage normal.
+- Fenêtre glissante côté client : l'affichage garde tout, la requête n'envoie que les 11 derniers
+  messages (un nombre impair : la fenêtre commence ainsi par une question), et retire les échanges
+  les plus anciens tant que le total dépasse 16 000 caractères ; un message assistant tronqué à 4 000
+  caractères avant envoi — **en points de code, sans couper un caractère hors BMP** : un `slice` en
+  unités UTF-16 peut laisser une demi-paire, que `JSON.stringify` écrit `\udXXX` et que PHP refuse
+  (400) ; l'utilisateur ne rencontre jamais le 422 en usage normal.
 - Flux : le texte s'affiche fragment par fragment ; à `done`, le message est figé ; à `error`, un
   `role="alert"` explicite et le message partiel reste visible, marqué incomplet.
 - Erreurs HTTP : 401/403 → `markBaseAccessExpired()`-équivalent pour le palier nominatif (l'en-tête
   cesse d'afficher l'état connecté) et invitation à se reconnecter ; 429 → « quota atteint,
-  réessayez dans N minutes » (depuis `Retry-After`) ; 503 → « assistant indisponible » ; réseau →
-  générique. Toutes en `role="alert"`, la conversation reste intacte.
+  réessayez dans N minutes » (depuis `Retry-After`) — le 429 de la zone nginx `assistant` porte le
+  même `type` sans `Retry-After` : le message doit tenir sans durée ; 413 `/errors/request-too-large`
+  → « conversation trop longue, commencez-en une nouvelle » ; 503 → « assistant indisponible » ;
+  réseau → générique. Toutes en `role="alert"`, la conversation reste intacte.
 - **Jamais de `v-html`** : le texte du modèle est rendu par `RichText.vue` (paragraphes, `backticks`).
 - Audit axe vert ; `make front-lint` : chaînes sous `assistant.*` (fr et en), aucune `no-raw-text`.
 - Test navigateur réel sur la stack dev (règle : le propriétaire du site se connecte lui-même dans l'onglet, l'agent pilote ensuite),
@@ -278,7 +286,7 @@ a sa branche, tirée de la branche mère `feature/spec-0005-career-assistant`, e
 
 ```
 Domain/
-  ValueObject/Conversation.php               # list<ConversationMessage>, bornes D6, alternance
+  ValueObject/Conversation.php               # list<ConversationMessage>, bornes D6 (11 messages, 16 000 car.), alternance
   ValueObject/ConversationMessage.php        # role (enum Role: user|assistant), content
   ValueObject/Role.php
   Exception/InvalidConversationException.php       # 422
@@ -294,10 +302,14 @@ Infrastructure/
   SymfonyAi/SymfonyAiCareerAssistant.php     # seule classe qui importe le bundle ; stream: true
   Pdf/SmalotPdfTextExtractor.php             # smalot/pdfparser + normalisation, sans cache (D7)
   RateLimiter/SymfonyAssistantRateLimiter.php  # limiter.career_assistant, clé = username
+  RateLimiter/QuotaGuardedCareerAssistant.php  # décorateur : consomme le quota, trace le refus sur ai_usage
   Http/AssistantRateLimitRetryAfterListener.php
+  Http/AssistantProblemResponseListener.php  # rend en problem+json les ProblemExceptionInterface de /api/assistant
+  Http/AssistantRequestSizeListener.php      # 413 au-delà de 128 Kio, après le firewall
+  Http/RequestBodyTooLargeException.php      # 413 /errors/request-too-large
 Presentation/
   Controller/AnswerController.php            # POST /api/assistant/answers → EventStreamResponse
-  Dto/AnswerRequest.php                      # locale (Assert\Choice(Locale::values())), messages
+  Dto/AnswerRequest.php                      # locale (Assert\Choice(Locale::values())), messages (≤ 50 validés)
 ```
 
 `Locale` vient de `Portfolio/Shared/Domain/ValueObject/` (déjà consommé hors `Portfolio/`). Le DTO
@@ -315,7 +327,8 @@ config/packages/framework.yaml  # + http_client.scoped_clients.ai.scaleway.http_
                                 #   (base_uri https://api.scaleway.ai, timeout 40, max_redirects 0)
 config/packages/rate_limiter.yaml   # + career_assistant (sliding_window, 30 / 1 hour)
 config/packages/security.yaml   # + { path: ^/api/assistant(/|$), roles: ROLE_TRUSTED }
-config/packages/api_platform.yaml   # + 3 entrées exception_to_status (422/429/503)
+config/packages/api_platform.yaml   # + 3 entrées exception_to_status (422/429/503), sans effet sur ce
+                                    #   contrôleur hors API Platform : AssistantProblemResponseListener les rend
 docker/nginx/default.conf + k8s/base/backend-nginx.conf   # + location ^~ /api/assistant/ (fastcgi_buffering off)
 ```
 
@@ -633,3 +646,42 @@ abandon 200 avant, 429 après) ; garde-fou du `detail` réécrit par jetons PHP 
 `ProblemExceptionInterface` de `src/`, six messages dynamiques de backoffice admis avec justification.
 Limite restante et assumée : en dev, le 429 de nginx n'a pas d'en-tête CORS (Vite sur un autre port),
 le statut y est illisible pour `fetch` ; en préprod et en prod, même origine.
+
+**2026-09-26 (tâche 3, fin d'étape)** — Deux bornes de D6 et M4 se contredisaient, corrigées sur une
+branche de fix avant la relecture. (1) **12 messages était inatteignable** : l'alternance stricte entre
+un premier et un dernier message `user` rend le compte impair, la plus longue conversation valide en
+comptait 11. Borne ramenée à **11** (6 questions, 5 réponses), testée atteignable ; la fenêtre glissante
+du frontend passe à 11 avec elle — à 12, elle aurait commencé par une réponse, donc un 422 à chaque
+envoi en fenêtre pleine. (2) **64 Ko refusait une conversation valide** : 26 000 caractères de 4 octets
+pèsent 104 000 octets. Borne portée à **128 Kio**, testée sur la plus longue conversation valide tout en
+emoji, sérialisée sans échappement `\u` comme `JSON.stringify` ; un client qui échapperait chaque emoji
+(12 octets) pourrait encore la dépasser, limite assumée. Le 413 (`/errors/request-too-large`) est jugé
+après le firewall : un anonyme ou le palier de base ne reçoit que son refus d'accès.
+
+**2026-09-26 (tâche 3, relecture)** — Trois relectures (`/code-review`, standards et spec, audit de
+sécurité), aucune conclusion critique ni haute. Le passage de 64 Ko à 128 Kio (fin d'étape) a été
+**validé par le propriétaire** avant d'être appliqué, sur la base du calcul consigné plus haut.
+Correctifs retenus et appliqués, un commit chacun, test rouge vérifié d'abord : (F2) la borne se
+comptait en caractères par message et la facture se paie en jetons sur la conversation entière — le
+total montait à 26 000 caractères ; **plafond de 16 000 caractères** sur la conversation, choisi par
+le propriétaire (pire cas adverse estimé de ~320 à ~210 €/mois par compte, estimation non mesurée :
+aucun plafond en caractères ne tient seul l'objectif, c'est l'**alerte de budget Scaleway** qui ferme
+ce risque, à poser à la main) ; (F6) le DTO validait jusqu'à ~4 000 messages avant que le VO n'en
+refuse plus de 11 (**113 ms mesurés**, contre 1 ms pour la conversion) : plafond anti-abus de 50 dans
+un `Sequentially` avant `All`, large pour qu'une conversation simplement trop longue garde le 422
+typé du VO ; (F5) le refus de quota, journalisé en `info` par le noyau, ne sortait d'aucun pod de
+production : il part sur `ai_usage` avec le compte — et **`#[WithMonologChannel]` ne tient pas sur
+un décorateur** (le passage de décoration réécrit les tags : le refus partait sur le canal
+applicatif), d'où l'injection de `monolog.logger.ai_usage` par identifiant. Documentés : `@throws`
+du 429, pas de `yield` dans le décorateur, quota consommé même sur un 503 ou un corpus en échec
+(voulu : une panne ne doit pas devenir un moyen de rejouer sans compter). Reportés sur la tâche 6
+(M6) : troncature sans couper un caractère hors BMP, 413, 429 nginx sans `Retry-After`. Suivis
+ouverts : **#272** (aucun limiteur du projet ne prend de verrou, `symfony/lock` absent : des requêtes
+simultanées partagent une unité de quota — préexistant, transverse, à traiter avant la release de
+la spec ; **corrigé le 2026-09-30 par le hotfix v0.18.2**, PR #275, reporté sur cette branche par
+la fusion de `develop` : `career_assistant` prend le verrou comme les autres limiteurs) et **#273** (factoriser les quatre écouteurs `Retry-After`). Non retenus : exceptions de
+base (`\LogicException` d'un défaut de câblage, `\RuntimeException` d'une borne de transport),
+préfixe `/api/assistant` dupliqué entre deux écouteurs, horloge non injectée (couverte par #273),
+casse des identifiants, espaces Unicode dans un message, faux messages `assistant` (injection
+acceptée par conception, le corpus est celui du compte), réponse du modèle au-delà de 4 000
+caractères (la troncature M6 la couvre).
