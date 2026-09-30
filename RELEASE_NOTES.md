@@ -24,11 +24,13 @@ Correctifs de comportement examinés sans impact sur le code : `yield from` imbr
 streaming de l'assistant ne délègue jamais un générateur déjà amorcé), `array_keys()`, les
 floats sur grands nombres, et le JIT d'OPcache (inactif).
 
-Seul le tag d'image change, dans `.env` et `versions.lock`. La page `/stack` lit la version
-de PHP au runtime : elle affichera 8.5.11 dès le déploiement, sans saisie.
+Seul le tag d'image change, dans `.env` et `versions.lock`. La page `/stack` relève la
+version de PHP dans le runtime, mais au rafraîchissement quotidien de la veille (CronJob
+`watch-refresh`, 04:41 UTC), pas à chaque lecture. Elle affichera donc 8.5.11 après le
+premier rafraîchissement qui suit le déploiement, sans aucune saisie.
 
 ## À vérifier en préprod
 
-`php -v` dans un pod `backend` doit afficher 8.5.11, et `/stack` doit présenter PHP comme à
-jour. Les smoke tests passent par FPM, le limiteur de login et la base : ils couvrent les
-extensions recompilées (amqp, xdebug en préprod).
+`php -v` dans un pod `backend` doit afficher 8.5.11. `/stack` ne présente PHP comme à jour
+qu'après un rafraîchissement de la veille. Les smoke tests passent par FPM, le limiteur de
+login et la base : ils couvrent les extensions recompilées (amqp, xdebug en préprod).
