@@ -1,12 +1,14 @@
 # ADR 0005 — Aucun état applicatif sur le système de fichiers du pod
 
-- Statut : **accepté** (2026-09-16), livré par le hotfix `v0.14.1`
+- Statut : **accepté** (2026-09-16), livré par le hotfix `v0.14.1` ; **amendé le 2026-09-30**
+  (verrou des limiteurs, issue #272, voir la dernière section)
 - Date : 2026-09-16
 - Portée : `backend/config/packages/cache.yaml` (`framework.cache.app`), migration
   `Version20260916180000` (table `cache_items`), `k8s/base/messenger-purge-cronjob.yaml`
   (`cache:pool:prune`), les deux configurations nginx (zone `login`),
   `tools/smoke-login-throttling.sh` et le job `smoke-test-preprod`,
-  `tests/Security/RateLimiterStorageTest.php` ; objectif n°8 (sécurité)
+  `tests/Security/RateLimiterStorageTest.php`, `backend/config/packages/lock.yaml` et
+  `PostgresAdvisoryLockDsnEnvVarProcessor` (amendement) ; objectif n°8 (sécurité)
 
 ## Contexte
 
@@ -141,3 +143,52 @@ doivent tomber sur une seule clé. C'est ce qu'il a prouvé en refusant la premi
 - La leçon de méthode vaut au-delà du cache : **un durcissement qui rend une écriture
   impossible doit s'accompagner d'un test qui échoue quand cette écriture était nécessaire.**
   Le `readOnlyRootFilesystem` était juste ; il n'a pas été accompagné.
+
+## Amendement du 2026-09-30 : le stockage partagé ne suffit pas, il faut un verrou partagé (issue #272)
+
+La décision ci-dessus a rendu l'état des limiteurs **durable et partagé**, pas **atomique**.
+`symfony/lock` n'était pas installé : `RateLimiterFactory` recevait un verrou `null`, et
+`consume()` fait un lire-modifier-écrire sur `cache.app`. Deux requêtes qui lisent la même
+fenêtre écrivent chacune « n + 1 ». Reproduit en dev : vingt `consume(1)` simultanés sur la même
+clé ne décomptaient **qu'une** unité, trois passages sur trois. Tous les limiteurs étaient
+concernés, `login_throttling` compris — et les deux quotas facturés (traduction, assistant) en
+premier, puisqu'un compte peut y envoyer des salves synchronisées.
+
+- **D8 — Chaque limiteur prend un verrou, et ce verrou est partagé entre pods.** `framework.lock`
+  pointe sur un advisory lock PostgreSQL de la base de l'application
+  (`DoctrineDbalPostgreSqlStore`). Dès que le composant est configuré, les limiteurs de
+  `rate_limiter.yaml` (`lock_factory: 'auto'`) et ceux de `login_throttling` reçoivent
+  `lock.factory`. `RateLimiterStorageTest` exige ce store pour chacun.
+- **D9 — Le DSN du verrou est dérivé de `DATABASE_URL`, jamais déclaré à part.** L'env processor
+  `pg_advisory:` suffixe le schéma de `+advisory` — c'est ce suffixe qui fait choisir le store
+  advisory à `StoreFactory` ; `postgresql://` seul donnerait un `DoctrineDbalStore` à table. Tout
+  autre schéma est refusé à la première instanciation du verrou, sans reprendre l'URL.
+
+Alternatives écartées :
+
+- **`flock` ou `semaphore`** — c'est ce que pose la recette Flex (`LOCK_DSN=flock`). Local au
+  pod : il répare un poste de dev, la CI et un pod isolé, et laisse la production ouverte dès
+  deux réplicas. C'est exactement l'erreur de l'`emptyDir` ci-dessus, sur le verrou au lieu du
+  stockage. La recette a été défaite ; si une mise à jour la réintroduit, le test tombe.
+- **Une variable `LOCK_DSN` routée par Secret Manager.** Aucun code, mais un second secret
+  portant le mot de passe de la base, à router dans chaque `ExternalSecret` et à tenir
+  synchronisé à chaque rotation.
+- **La table `lock_keys` (`DoctrineDbalStore` sur la connexion Doctrine).** Aucun code non plus,
+  mais une migration, un `INSERT`/`DELETE` par `consume()` et un verrou non bloquant, donc une
+  attente par sondage (~100 ms) sous contention.
+- **Un compiler pass qui branche le store advisory sur la connexion de l'ORM.** Économise une
+  connexion, mais contourne le câblage du framework (l'identifiant du store n'est pas stable)
+  et casserait silencieusement à une montée de version.
+
+Conséquences :
+
+- **~1,5 ms par `consume()`** mesuré en dev (1,0 → 2,5 ms : pose et levée du verrou), plus
+  l'ouverture d'une seconde connexion PostgreSQL par requête qui atteint un limiteur — le store
+  dérivé d'un DSN a la sienne. Négligeable sur des routes à faible trafic ; à surveiller si un
+  limiteur venait à couvrir une route chaude.
+- En test, Doctrine suffixe la base de `_test` mais pas le verrou, qui se pose sur la base sans
+  suffixe : elle existe partout (`POSTGRES_DB` en CI) et un advisory lock y sérialise tout autant.
+- Un nouveau limiteur s'ajoute toujours à `RateLimiterStorageTest` : la même liste vérifie
+  désormais le stockage **et** le verrou.
+- Le filet réel reste `tools/smoke-login-throttling.sh` en préprod : il traverse le limiteur de
+  login, donc le verrou, sur un vrai pod et la vraie `DATABASE_URL`.
