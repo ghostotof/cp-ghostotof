@@ -3,7 +3,8 @@
 # symfony-cli monté à 5.20.0 le 2026-09-15 (issue #90) : prérequis de `symfony lsp:check`.
 # adminer monté à 5.5.1-standalone le 2026-09-21 (3e audit, constat A11) : la 4.8.1
 # (2021) n'est plus maintenue. Changement de base : Debian/PHP 7.4 -> Alpine/PHP 8.4.
-php=8.5.10-fpm-alpine3.24
+# php monté à 8.5.11 le 2026-09-30 : release de sécurité (12 CVE, dont OpenSSL et FPM).
+php=8.5.11-fpm-alpine3.24
 nginx=1.30.4-alpine
 postgres=18.6-alpine
 rabbitmq=4.3.5-management-alpine
