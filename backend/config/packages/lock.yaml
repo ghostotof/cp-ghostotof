@@ -10,6 +10,9 @@
 # base de l'application, jamais flock ni semaphore (locaux au pod, ADR 0005).
 # pg_advisory: dérive le DSN de DATABASE_URL (schéma suffixé de +advisory, cf.
 # PostgresAdvisoryLockDsnEnvVarProcessor) : pas de second secret à router, pas
-# de table ni de migration.
+# de table ni de migration. Pas de `resolve:` (contrairement à doctrine.yaml) :
+# une URL PostgreSQL ne contient aucun %paramètre%, et un mot de passe encodé
+# portant deux « % » serait lu comme tel — l'erreur citerait un fragment du
+# mot de passe.
 framework:
-    lock: '%env(pg_advisory:resolve:DATABASE_URL)%'
+    lock: '%env(pg_advisory:DATABASE_URL)%'

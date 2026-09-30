@@ -16,11 +16,18 @@ namespace App\Shared\Infrastructure\Lock;
  */
 final class UnsupportedLockDatabaseUrlException extends \InvalidArgumentException
 {
+    /**
+     * La syntaxe d'un schéma d'URI (RFC 3986, § 3.1). Tout ce qui s'en écarte
+     * n'est pas repris : une URL sans schéma ferait passer pour « schéma » ce
+     * qui précède un `://` plus loin, identifiants compris.
+     */
+    private const string SCHEME_SYNTAX = '/^[a-z][a-z0-9+.-]*$/i';
+
     public static function forScheme(string $scheme): self
     {
         return new self(\sprintf(
             'Le verrou des limiteurs de débit exige une URL PostgreSQL (postgresql://, postgres:// ou pgsql://) ; schéma reçu : "%s".',
-            $scheme,
+            1 === preg_match(self::SCHEME_SYNTAX, $scheme) ? $scheme : '<invalide>',
         ));
     }
 }

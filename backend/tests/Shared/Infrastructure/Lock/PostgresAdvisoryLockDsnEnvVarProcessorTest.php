@@ -70,6 +70,25 @@ final class PostgresAdvisoryLockDsnEnvVarProcessorTest extends TestCase
         }
     }
 
+    public function testAMalformedUrlNeverLeaksItsPasswordThroughTheReportedScheme(): void
+    {
+        // Sans schéma, tout ce qui précède un `://` plus loin dans la chaîne
+        // passerait pour le schéma — mot de passe compris.
+        try {
+            $this->process('app:s3cret@database/app?callback=http://example.test');
+            self::fail('Une URL sans schéma doit être refusée.');
+        } catch (UnsupportedLockDatabaseUrlException $exception) {
+            self::assertStringNotContainsString('s3cret', $exception->getMessage());
+        }
+    }
+
+    public function testItRefusesAResolvedValueThatIsNotAString(): void
+    {
+        $this->expectException(UnsupportedLockDatabaseUrlException::class);
+
+        (new PostgresAdvisoryLockDsnEnvVarProcessor())->getEnv('pg_advisory', 'DATABASE_URL', static fn (): null => null);
+    }
+
     public function testItDeclaresItsPrefixAsAString(): void
     {
         self::assertSame(['pg_advisory' => 'string'], PostgresAdvisoryLockDsnEnvVarProcessor::getProvidedTypes());

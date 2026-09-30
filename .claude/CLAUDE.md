@@ -1092,7 +1092,7 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   **Shared storage is not atomicity: every limiter also takes a lock shared across pods**
   (issue #272, ADR 0005 amended 2026-09-30). Without `symfony/lock`, `consume()` was a
   non-atomic read-modify-write — 20 simultaneous calls on one key counted **one** unit.
-  `lock.yaml` sets `framework.lock: '%env(pg_advisory:resolve:DATABASE_URL)%'`: the
+  `lock.yaml` sets `framework.lock: '%env(pg_advisory:DATABASE_URL)%'`: the
   `Shared/Infrastructure/Lock/PostgresAdvisoryLockDsnEnvVarProcessor` suffixes the scheme with
   `+advisory`, which is what makes `StoreFactory` pick `DoctrineDbalPostgreSqlStore` (advisory
   lock, no table — a bare `postgresql://` would give the table-based `DoctrineDbalStore`); any
