@@ -9,7 +9,7 @@ export interface AdminWatchedProduct {
   /** Identifiant du produit chez endoflife.date. Immuable après création. */
   readonly slug: string
   readonly label: string
-  /** « manual », « runtime_php » ou « runtime_symfony ». */
+  /** « manual », « deployed », « runtime_php » ou « runtime_symfony ». */
   readonly versionSource: string
   /** Renseignée pour la seule source « manual », nulle pour les autres. */
   readonly version: string | null
