@@ -67,6 +67,34 @@ final class RateLimiterStorageTest extends KernelTestCase
         yield 'login throttling (global)' => ['_login_global_login'];
     }
 
+    /**
+     * La liste ci-dessus est tenue à la main ; ce test la confronte au
+     * conteneur. Un limiteur ajouté (`career_assistant` à la fusion de la
+     * spec 0005, par exemple) sans y figurer ferait rougir la suite au lieu
+     * d'échapper aux contrôles de stockage et de verrou (audit du hotfix #272,
+     * constat B3).
+     */
+    public function testEveryRateLimiterOfTheContainerIsCoveredByThisTest(): void
+    {
+        self::bootKernel();
+        $container = self::getContainer();
+
+        $declared = [];
+        foreach ([...$container->getServiceIds(), ...array_keys($container->getRemovedIds())] as $id) {
+            if (1 === preg_match('/^limiter\.(?!storage\.)(.+)$/', $id, $match)) {
+                $declared[$match[1]] = true;
+            }
+        }
+        $declared = array_keys($declared);
+        sort($declared);
+
+        $covered = array_map(static fn (array $arguments): string => $arguments[0], iterator_to_array(self::provideLimiterNames(), false));
+        sort($covered);
+
+        self::assertNotEmpty($declared);
+        self::assertSame($declared, $covered, 'Chaque limiteur du conteneur doit figurer dans provideLimiterNames().');
+    }
+
     #[DataProvider('provideLimiterNames')]
     public function testEveryRateLimiterStoresItsStateInTheDatabase(string $limiterName): void
     {
