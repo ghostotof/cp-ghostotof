@@ -27,7 +27,9 @@ function osvUrl(id: string): string {
   return `https://osv.dev/vulnerability/${encodeURIComponent(id)}`
 }
 
-const VERSION_SOURCES = ['manual', 'runtime_php', 'runtime_symfony'] as const
+// Miroir de l'enum VersionSource du backend. `deployed` y manquait depuis #19,
+// ce qui rendait les produits relevés au build impossibles à modifier (#287).
+const VERSION_SOURCES = ['manual', 'deployed', 'runtime_php', 'runtime_symfony'] as const
 
 const editingId = ref<string | null>(null)
 

@@ -24,8 +24,14 @@ framework:
         # quotidiennement (CronJob housekeeping). Même adaptateur dans tous les
         # environnements : dev et CI exercent la migration et le même chemin
         # d'écriture que la prod. tests/Security/RateLimiterStorageTest pince
-        # ce choix ; `cache.system` (métadonnées, réchauffé au docker build)
-        # reste sur le filesystem, il n'est que lu en prod.
+        # ce choix. `cache.system` (métadonnées, réchauffé au docker build)
+        # reste sur le filesystem, mais il n'est PAS en lecture seule : une
+        # partie de ses clés (property-info, serializer, API Platform, requêtes
+        # DQL analysées) ne naît qu'à l'exécution. En prod, son répertoire
+        # (var/cache/prod/pools/system) est un emptyDir propre au pod, rempli
+        # au démarrage avec le cache préchauffé de l'image (issue #288, ADR 0005
+        # amendé, SystemCachePodVolumeTest). C'est un cache dérivé et jetable,
+        # pas de l'état applicatif : il peut rester local à chaque pod.
         app: cache.adapter.doctrine_dbal
         default_doctrine_dbal_provider: database_connection
 

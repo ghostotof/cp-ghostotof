@@ -1,14 +1,17 @@
 # ADR 0005 — Aucun état applicatif sur le système de fichiers du pod
 
-- Statut : **accepté** (2026-09-16), livré par le hotfix `v0.14.1` ; **amendé le 2026-09-30**
-  (verrou des limiteurs, issue #272, voir la dernière section)
+- Statut : **accepté** (2026-09-16), livré par le hotfix `v0.14.1` ; **amendé deux fois le
+  2026-09-30** (verrou des limiteurs, issue #272 ; `cache.system` inscriptible, issue #288 —
+  voir les deux dernières sections)
 - Date : 2026-09-16
 - Portée : `backend/config/packages/cache.yaml` (`framework.cache.app`), migration
   `Version20260916180000` (table `cache_items`), `k8s/base/messenger-purge-cronjob.yaml`
   (`cache:pool:prune`), les deux configurations nginx (zone `login`),
   `tools/smoke-login-throttling.sh` et le job `smoke-test-preprod`,
   `tests/Security/RateLimiterStorageTest.php`, `backend/config/packages/lock.yaml` et
-  `PostgresAdvisoryLockDsnEnvVarProcessor` (amendement) ; objectif n°8 (sécurité)
+  `PostgresAdvisoryLockDsnEnvVarProcessor` (amendement #272), le volume `cache-system` des six
+  manifestes qui exécutent l'image backend et `SystemCachePodVolumeTest` (amendement #288) ;
+  objectif n°8 (sécurité)
 
 ## Contexte
 
@@ -219,3 +222,60 @@ Conséquences :
   est de quelques millisecondes, borné par les zones nginx et par D10.
 - Le filet réel reste `tools/smoke-login-throttling.sh` en préprod : il traverse le limiteur de
   login, donc le verrou, sur un vrai pod et la vraie `DATABASE_URL`.
+
+## Amendement du 2026-09-30 : `cache.system` n'est pas en lecture seule (issue #288)
+
+D1 posait que `cache.system` « est réchauffé au `docker build` et n'est que lu ensuite ».
+C'était faux. Le préchauffage couvre l'essentiel (1 179 fichiers, ~9 Mo), mais une partie des
+clés ne naît qu'à l'exécution : property-info et serializer pour des contextes que le
+préchauffage n'énumère pas, métadonnées de propriétés d'API Platform, et, dans les Jobs CLI,
+le `ParserResult` des requêtes DQL (le *query cache* de Doctrine est sur ce pool en
+`when@prod`). Sur un disque en lecture seule, chacune de ces écritures échouait **à chaque
+requête qui la demandait** : 76 échecs pour 27 requêtes juste après un déploiement de préprod,
+35 clés distinctes, chacune ratée à nouveau à chaque passage, avec un `WARNING` du canal
+`cache` à chaque fois. Le cache ne servait jamais pour ces clés.
+
+Ce n'est pas le défaut de D1 : rien n'est faux fonctionnellement, et aucun contrôle de sécurité
+n'en dépend. Le coût est du calcul refait et des journaux bruyants, où un vrai avertissement du
+canal `cache` (celui de `cache.app`, qui signalerait le retour du constat A1) se noierait.
+
+- **D11 — `cache.system` est monté sur un `emptyDir` propre au pod, rempli au démarrage.**
+  Chaque pod qui exécute l'image backend (les deux Deployments, les deux CronJobs, les Jobs
+  `migrate` et `seed`) déclare un volume `cache-system` borné (`sizeLimit: 64Mi`), monté
+  inscriptible sur `var/cache/prod/pools/system`. Un initContainer `seed-cache-system` y copie
+  d'abord le cache préchauffé de l'image, que l'`emptyDir` masquerait sinon. Le reste de
+  `var/cache` (conteneur compilé, proxies Doctrine) reste en lecture seule.
+
+**Pourquoi ce n'est pas une exception à D1, mais sa limite.** D1 vise l'état **applicatif** :
+ce qui doit être partagé entre réplicas ou survivre à un pod. `cache.system` n'est ni l'un ni
+l'autre. Il est **dérivé** (recalculable à tout moment à partir du code), **jetable** (le
+perdre coûte un recalcul, jamais une donnée), et **identique d'un pod à l'autre** (même image,
+mêmes métadonnées). L'alternative écartée « un `emptyDir` sur `var/cache` » l'était pour les
+compteurs, qu'un volume par pod aurait divisés ; un cache de métadonnées n'a pas cette
+propriété à perdre. La règle de D1 devient donc : **l'état applicatif va en base, dans un
+service ou nulle part ; un cache dérivé et propre au pod peut vivre dans un `emptyDir`
+borné**. Une session, un verrou, un compteur ou un cache de rendu dépendant de l'utilisateur
+restent de l'état applicatif.
+
+Alternatives écartées :
+
+- **APCu en mémoire.** Rien sur le disque, conforme à la lettre de D1, mais une extension de
+  plus, un cache préchauffé qui ne sert plus (chaque pod repart de zéro), et aucune APCu en
+  CLI : les Jobs auraient gardé le défaut.
+- **Garder le comportement, filtrer les avertissements.** Le moins cher, mais le cache ne sert
+  toujours pas, et tout filtre sur le canal `cache` risque de masquer ceux de `cache.app`.
+- **Mettre le *query cache* de Doctrine sur `cache.app` (DBAL).** Ne traite qu'une des sources,
+  et un aller-retour PostgreSQL pour éviter l'analyse d'une requête DQL n'est pas un gain
+  évident.
+
+Conséquences :
+
+- Chaque démarrage de pod copie ~9 Mo (moins d'une seconde) avant le conteneur principal.
+- `SystemCachePodVolumeTest` fige le dispositif sur chaque pod spec (volume borné, montage
+  inscriptible dans chaque conteneur de l'image, initContainer de copie) et vérifie qu'aucun
+  autre manifeste n'exécute l'image backend : un pod ajouté sans le volume fait rougir la suite.
+- Le filet réel est le déploiement en préprod : le compte des `Read-only file system` dans les
+  journaux de `php-fpm` doit y tomber à zéro.
+- Leçon, dans le prolongement de celle de D1 : **un commentaire qui affirme qu'un chemin n'est
+  que lu est une hypothèse à vérifier dans les journaux d'un vrai pod**, pas une propriété du
+  code.

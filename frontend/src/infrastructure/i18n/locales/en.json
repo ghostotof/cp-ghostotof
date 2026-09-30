@@ -400,6 +400,7 @@
       "loadError": "Failed to load watched products. Please try again later.",
       "sources": {
         "manual": "Typed in",
+        "deployed": "Deployed version, read at build time",
         "runtime_php": "Running PHP version",
         "runtime_symfony": "Loaded Symfony version"
       },

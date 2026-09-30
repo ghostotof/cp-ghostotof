@@ -12,6 +12,7 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
+use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use App\Portfolio\Watch\Infrastructure\ApiPlatform\BackofficeWatchedProductProcessor;
 use App\Portfolio\Watch\Infrastructure\ApiPlatform\BackofficeWatchedProductProvider;
 use App\Portfolio\Watch\Infrastructure\Validator\WatchedProductSlugExists;
@@ -88,7 +89,7 @@ final class BackofficeWatchedProductResource
         #[Assert\Length(max: 100)]
         public string $label = '',
         #[Assert\NotBlank]
-        #[Assert\Choice(choices: ['manual', 'runtime_php', 'runtime_symfony'])]
+        #[Assert\Choice(callback: [VersionSource::class, 'values'])]
         public string $versionSource = 'manual',
         /**
          * Obligatoire pour une source « manual », interdit pour les autres —

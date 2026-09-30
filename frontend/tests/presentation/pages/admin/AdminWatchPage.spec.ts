@@ -308,6 +308,42 @@ describe('AdminWatchPage', () => {
     )
   })
 
+  /**
+   * Régression #287 : depuis #19, cinq produits du catalogue relèvent leur
+   * version au build (source « deployed »), mais le formulaire ne connaissait
+   * pas cette source. Le tableau affichait la valeur brute, et une édition
+   * renvoyait une source que le serveur refusait en 422.
+   */
+  it('édite un produit relevé au build sans lui demander de version', async () => {
+    const NGINX: AdminWatchedProduct = {
+      id: '019968a0-0000-7000-8000-000000000004',
+      slug: 'nginx',
+      label: 'nginx',
+      versionSource: 'deployed',
+      version: null,
+      position: 3,
+    }
+    const repository = createStubRepository({}, [...ALL_PRODUCTS, NGINX])
+    const { wrapper } = await mountPage(repository)
+
+    const row = rowContaining(wrapper, 'nginx')
+    expect(row.text()).toContain('Version déployée, relevée au build')
+
+    await buttonLabelled(row, 'Modifier').trigger('click')
+
+    expect((wrapper.get('#admin-watch-version-source').element as HTMLSelectElement).value).toBe('deployed')
+    expect(wrapper.find('#admin-watch-version').exists()).toBe(false)
+
+    await wrapper.find('#admin-watch-label').setValue('nginx (sidecar)')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(repository.update).toHaveBeenCalledWith(
+      NGINX.id,
+      expect.objectContaining({ label: 'nginx (sidecar)', versionSource: 'deployed', version: null }),
+    )
+  })
+
   it('demande confirmation avant de retirer un produit', async () => {
     const repository = createStubRepository()
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)

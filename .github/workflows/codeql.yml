@@ -17,6 +17,9 @@ on:
 jobs:
   analyze:
     runs-on: ubuntu-latest
+    # Habituel ~75 s, téléchargement du bundle CodeQL compris. Sans limite,
+    # GitHub laisse un job tourner 360 minutes (issue #285).
+    timeout-minutes: 30
     permissions:
       security-events: write
       packages: read
