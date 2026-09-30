@@ -610,8 +610,9 @@ mid-migration.
   disappears and the decorator has nothing to decorate — so a 422 never costs quota, 429
   `/errors/rate-limited` + `Retry-After`, the refusal logged on `ai_usage` with the account. **`#[WithMonologChannel]`
   is lost on an `#[AsDecorator]` service** (decoration rewrites its tags, the record silently went to the app
-  channel): inject `monolog.logger.<channel>` by id there. No limiter takes a lock yet (`symfony/lock` is not
-  installed, #272); body over 128 KiB (the longest valid conversation in 4-byte characters is ~104 kB — 64 KiB, the spec's
+  channel): inject `monolog.logger.<channel>` by id there. The quota takes the shared PostgreSQL advisory lock like
+  every limiter (#272, v0.18.2, ADR 0005 D8–D10 — see the ADR 0005 invariant below), so a burst of synchronised
+  calls counts one unit each; never consume it inside a Doctrine transaction; body over 128 KiB (the longest valid conversation in 4-byte characters is ~104 kB — 64 KiB, the spec's
   first figure, refused it) → 413 `/errors/request-too-large`, judged by
   `AssistantRequestSizeListener` at priority 4, *after* the firewall, so an anonymous or base-tier caller only
   ever learns it is refused). Task 2 facts

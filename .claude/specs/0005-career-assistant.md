@@ -678,7 +678,8 @@ du 429, pas de `yield` dans le décorateur, quota consommé même sur un 503 ou 
 (M6) : troncature sans couper un caractère hors BMP, 413, 429 nginx sans `Retry-After`. Suivis
 ouverts : **#272** (aucun limiteur du projet ne prend de verrou, `symfony/lock` absent : des requêtes
 simultanées partagent une unité de quota — préexistant, transverse, à traiter avant la release de
-la spec) et **#273** (factoriser les quatre écouteurs `Retry-After`). Non retenus : exceptions de
+la spec ; **corrigé le 2026-09-30 par le hotfix v0.18.2**, PR #275, reporté sur cette branche par
+la fusion de `develop` : `career_assistant` prend le verrou comme les autres limiteurs) et **#273** (factoriser les quatre écouteurs `Retry-After`). Non retenus : exceptions de
 base (`\LogicException` d'un défaut de câblage, `\RuntimeException` d'une borne de transport),
 préfixe `/api/assistant` dupliqué entre deux écouteurs, horloge non injectée (couverte par #273),
 casse des identifiants, espaces Unicode dans un message, faux messages `assistant` (injection
