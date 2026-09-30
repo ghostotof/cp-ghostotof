@@ -1103,7 +1103,18 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   Flex recipe writes `LOCK_DSN=flock` into `.env` and `phpunit.dist.xml`, remove it again if a
   recipe update brings it back. No separate `LOCK_DSN` either: it would be a second secret
   carrying the DB password. Cost measured: ~1.5 ms per `consume()` plus a second PostgreSQL
-  connection on requests that reach a limiter.
+  connection on requests that reach a limiter. `RateLimiterStorageTest` also compares its list
+  with the container's `limiter.*` services, so a new limiter that isn't listed turns it red.
+  **The advisory lock is session-level and waits forever** — hence, in `www.prod.conf`,
+  `env[PGOPTIONS] = "-c lock_timeout=5s"` (the DSN cannot carry it: DBAL doesn't forward `options`
+  to pdo_pgsql, so it bounds every PostgreSQL lock wait of an FPM worker, ORM included, never the
+  console) and `request_terminate_timeout = 65s` (total wall time — keep it above any legitimate
+  request), pinned by `FpmLockWaitBoundTest`; `docker/php` is mounted read-only in the dev
+  container for that test. **Never consume a limiter inside `wrapInTransaction`**: the lock and
+  the `cache_items` row live on two connections PostgreSQL does not relate, which both deadlocks
+  (until `lock_timeout`) and republishes the window after the lock is released. The Monolog
+  `lock` channel has its own handler capped at `notice` (`LockLogChannelTest`): the component
+  logs every acquire/release in `debug` with the resource — an IP or a username.
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
   it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would
