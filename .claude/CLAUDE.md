@@ -1317,6 +1317,12 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   - **Pipeline `run:` steps are `bash -e` without `pipefail`**: never `cmd | tee >> $GITHUB_OUTPUT`,
     a failing `cmd` goes unnoticed (write to a file, then append). The runner has no git
     identity: scripts that tag or commit pass `-c user.name`/`user.email`. Both learned in T5/T8.
+  - **Every job declares `timeout-minutes`, and so does every step calling `apt-get`** (issue
+    #285): GitHub's default is 360 minutes, and a frozen apt mirror held v0.18.3's `build-images`
+    for over 30 minutes without failing. Size a job at 3–10× its usual duration, a deploy job
+    above the sum of its internal `kubectl` waits — a timeout that cuts `deploy-prod` mid-apply
+    is worse than a slow run. `tools/check-workflow-timeouts.sh` (run by `tools-tests`) turns
+    red on a job or apt step added without one.
   - **What to do by hand, in order**: `git switch develop && git pull && git fetch --tags`;
     `git switch -c release/$(tools/next-version.sh)`; write `RELEASE_NOTES.md`; open the PR to
     `main` as a draft; iterate until the run is green (a `fix/*` PR targets the release branch);
