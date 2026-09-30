@@ -400,6 +400,7 @@
       "loadError": "Le chargement des produits surveillés a échoué. Réessayez plus tard.",
       "sources": {
         "manual": "Saisie manuelle",
+        "deployed": "Version déployée, relevée au build",
         "runtime_php": "Version de PHP exécutée",
         "runtime_symfony": "Version de Symfony chargée"
       },

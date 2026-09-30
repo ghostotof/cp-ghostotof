@@ -579,6 +579,10 @@ mid-migration.
     likewise comes from the npm lock, being a bundle dependency rather than an image.
   - A missing record is not an error: the products show without a version, which the page already
     renders. Failing a build or a refresh over a renamed manifest would be out of proportion.
+  - **The installed version is read at refresh time, not per request**: `WatchRefresher` resolves
+    it (runtime or build record) and writes it into the snapshot, so `/stack` shows a new PHP or
+    PostgreSQL only after the next `watch-refresh` run (04:41 UTC). To see it right after a deploy:
+    `kubectl create job --from=cronjob/watch-refresh <name>` in the namespace, then delete the Job.
 
 - **`Ai/`** — everything that talks to a language model, and nothing else does (ADR 0004,
   `docs/adr/0004-assistance-ia.md`; spec `.claude/specs/archive/2026-09-14-spec-0002-assistant-traduction/0002-ai-translation-assistant.md`). Sub-context per
@@ -742,6 +746,16 @@ outside `kustomization.yaml`, hence `${BACKEND_IMAGE}` + `envsubst`. It never pa
 cannot repair a divergence: if the reference content changes in code, preprod keeps the old one until
 someone forces it by hand. That is the price of harmlessness, and it is the right trade — a Job that
 can destroy nothing beats a Job that syncs and one day picks the wrong namespace.
+
+**A change to the *meaning* of reference data ships with a data migration** (issue #287). The
+guarded seed never rewrites an existing row — by design — so changing how a seeded row must look
+(a new enum value, a field that becomes derived) leaves every live environment on the old shape
+forever. #19 moved five watched products from `manual` to `deployed` in the seed only: preprod and
+prod kept their hand-typed versions, and `/stack` published PostgreSQL 18.4 for three weeks while
+the cluster ran 18.6. `Version20260930180000` is the model: it converts only the rows still in the
+old shape, is safe to replay, and `tests/Migrations/` tests it against a pre-change table. The same
+change must also reach every `Assert\Choice` and form that lists the values — bind them to the
+enum (`VersionSource::values()`, like `Locale::values()`), never to a hand-copied list.
 
 **Production is never seeded automatically** — settled 2026-09-09, issue #17. Not "not yet": the seed
 Job is wired to `deploy-preprod` and must stay there. Prod's content is authored through the

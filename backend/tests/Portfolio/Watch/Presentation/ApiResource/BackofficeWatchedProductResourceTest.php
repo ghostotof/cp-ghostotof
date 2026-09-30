@@ -376,6 +376,39 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
         self::assertNull($created['version']);
     }
 
+    /**
+     * Régression #287 : #19 a fait passer cinq produits du catalogue en source
+     * `deployed`, mais l'`Assert\Choice` du backoffice ne connaissait pas cette
+     * valeur. Un tel produit ne pouvait donc plus être modifié, même pour son
+     * seul libellé : le formulaire renvoie la source qu'il a lue, et elle était
+     * refusée en 422.
+     */
+    public function testADeployedProductCanBeEditedFromTheBackoffice(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $product = $client->getContainer()->get(WatchedProductAdministratorInterface::class)
+            ->create('postgresql', 'PostgreSQL', VersionSource::DEPLOYED, null);
+
+        $client->request('PUT', sprintf('/api/backoffice/watch/products/%s', $product->getId()->toRfc4122()), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody([
+            'slug' => 'postgresql',
+            'label' => 'PostgreSQL (base principale)',
+            'versionSource' => 'deployed',
+            'version' => '',
+        ]));
+
+        self::assertResponseIsSuccessful();
+        $updated = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame('deployed', $updated['versionSource']);
+        self::assertSame('PostgreSQL (base principale)', $updated['label']);
+        self::assertNull($updated['version']);
+    }
+
     public function testAnInvalidSlugIsRejectedByValidation(): void
     {
         $client = self::createClient();
