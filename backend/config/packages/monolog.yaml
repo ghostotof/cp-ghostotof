@@ -99,7 +99,22 @@ when@prod:
                 # Les deux canaux de sécurité ont leur propre handler ci-dessous :
                 # les exclure ici est ce qui évite qu'un même événement sorte deux
                 # fois (et, à LOG_LEVEL=debug, avec deux niveaux d'effet différents).
-                channels: ["!security", "!security_audit", "!ai_usage", "!deprecation"]
+                # `lock` aussi, pour une autre raison : voir son handler.
+                channels: ["!security", "!security_audit", "!ai_usage", "!deprecation", "!lock"]
+            # Verrou des limiteurs de débit (issue #272). Le composant Lock trace
+            # chaque pose et chaque levée en `debug`, avec la ressource —
+            # `contact_form-<ip>`, `translation_assistant-<username>`. Sous
+            # `main`, la préprod (LOG_LEVEL=debug) écrirait une IP ou un
+            # identifiant par requête limitée, hors de SecurityAuditLogger et de
+            # sa politique de contenu. Plafonné à `notice` en dur : les échecs
+            # d'acquisition ou de libération restent visibles, le trafic nominal
+            # non. LockLogChannelTest fige ce réglage.
+            lock:
+                type: stream
+                path: php://stderr
+                level: notice
+                formatter: monolog.formatter.json
+                channels: ["lock"]
             # Journal de sécurité. Deux différences assumées avec `main` :
             #
             #  - `level: info` en dur, jamais LOG_LEVEL : un login raté est un

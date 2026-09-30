@@ -10,6 +10,10 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Cache\Adapter\DoctrineDbalAdapter;
 use Symfony\Component\Cache\Adapter\FilesystemAdapter;
 use Symfony\Component\Cache\Adapter\TraceableAdapter;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\PersistingStoreInterface;
+use Symfony\Component\Lock\Store\DoctrineDbalPostgreSqlStore;
+use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\RateLimiter\Storage\CacheStorage;
 
 /**
@@ -37,6 +41,14 @@ use Symfony\Component\RateLimiter\Storage\CacheStorage;
  * Un nouveau limiteur déclaré dans `rate_limiter.yaml` s'ajoute à la liste
  * ci-dessous ; il hérite de `cache.app` sauf `cache_pool` explicite, et c'est
  * ce pool explicite qu'un oubli ici laisserait passer.
+ *
+ * Le stockage ne suffit pas : il faut aussi un **verrou partagé entre pods**
+ * (issue #272). Sans verrou, `consume()` fait un lire-modifier-écrire non
+ * atomique sur `cache.app` : vingt requêtes simultanées sur la même clé ne
+ * décomptaient qu'une seule unité (reproduit en dev, 3 passages sur 3). Le
+ * verrou doit être un advisory lock PostgreSQL — jamais `flock` ni
+ * `semaphore`, locaux au pod, qui répareraient un poste de dev et laisseraient
+ * la production ouverte dès deux réplicas.
  */
 final class RateLimiterStorageTest extends KernelTestCase
 {
@@ -55,6 +67,34 @@ final class RateLimiterStorageTest extends KernelTestCase
         yield 'login throttling (global)' => ['_login_global_login'];
     }
 
+    /**
+     * La liste ci-dessus est tenue à la main ; ce test la confronte au
+     * conteneur. Un limiteur ajouté (`career_assistant` à la fusion de la
+     * spec 0005, par exemple) sans y figurer ferait rougir la suite au lieu
+     * d'échapper aux contrôles de stockage et de verrou (audit du hotfix #272,
+     * constat B3).
+     */
+    public function testEveryRateLimiterOfTheContainerIsCoveredByThisTest(): void
+    {
+        self::bootKernel();
+        $container = self::getContainer();
+
+        $declared = [];
+        foreach ([...$container->getServiceIds(), ...array_keys($container->getRemovedIds())] as $id) {
+            if (1 === preg_match('/^limiter\.(?!storage\.)(.+)$/', $id, $match)) {
+                $declared[$match[1]] = true;
+            }
+        }
+        $declared = array_keys($declared);
+        sort($declared);
+
+        $covered = array_map(static fn (array $arguments): string => $arguments[0], iterator_to_array(self::provideLimiterNames(), false));
+        sort($covered);
+
+        self::assertNotEmpty($declared);
+        self::assertSame($declared, $covered, 'Chaque limiteur du conteneur doit figurer dans provideLimiterNames().');
+    }
+
     #[DataProvider('provideLimiterNames')]
     public function testEveryRateLimiterStoresItsStateInTheDatabase(string $limiterName): void
     {
@@ -69,6 +109,30 @@ final class RateLimiterStorageTest extends KernelTestCase
         self::assertInstanceOf(CacheItemPoolInterface::class, $pool);
 
         $this->assertPoolIsDatabaseBacked($pool, 'limiter.storage.'.$limiterName);
+    }
+
+    #[DataProvider('provideLimiterNames')]
+    public function testEveryRateLimiterSerialisesItsWritesWithALockSharedAcrossPods(string $limiterName): void
+    {
+        self::bootKernel();
+
+        $factory = self::getContainer()->get('limiter.'.$limiterName);
+        self::assertInstanceOf(RateLimiterFactory::class, $factory);
+
+        $lockFactory = (new \ReflectionProperty(RateLimiterFactory::class, 'lockFactory'))->getValue($factory);
+        self::assertInstanceOf(
+            LockFactory::class,
+            $lockFactory,
+            \sprintf('limiter.%s n\'a pas de verrou : des consume() simultanés se partagent une seule unité de quota (#272).', $limiterName),
+        );
+
+        $store = (new \ReflectionProperty(LockFactory::class, 'store'))->getValue($lockFactory);
+        self::assertInstanceOf(PersistingStoreInterface::class, $store);
+        self::assertInstanceOf(
+            DoctrineDbalPostgreSqlStore::class,
+            $store,
+            \sprintf('Le verrou de limiter.%s doit être un advisory lock PostgreSQL, partagé entre pods ; obtenu : %s.', $limiterName, $store::class),
+        );
     }
 
     public function testAppCacheStoresItsStateInTheDatabase(): void
