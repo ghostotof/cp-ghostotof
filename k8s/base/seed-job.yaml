@@ -64,6 +64,24 @@ spec:
         fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        # Issue #288 : cache.system (var/cache/prod/pools/system) doit rester
+        # inscriptible malgré readOnlyRootFilesystem. L'emptyDir `cache-system`
+        # masquerait le cache préchauffé de l'image : on l'y recopie d'abord.
+        - name: seed-cache-system
+          image: ${BACKEND_IMAGE}
+          imagePullPolicy: Always
+          command: ['sh', '-c', 'cp -a /var/www/backend/var/cache/prod/pools/system/. /cache-system/']
+          volumeMounts:
+            - name: cache-system
+              mountPath: /cache-system
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
       containers:
         - name: seed
           image: ${BACKEND_IMAGE}
@@ -95,6 +113,9 @@ spec:
           volumeMounts:
             - name: var-log
               mountPath: /var/www/backend/var/log
+            # Issue #288 : seul chemin inscriptible de var/cache, cf. le volume.
+            - name: cache-system
+              mountPath: /var/www/backend/var/cache/prod/pools/system
           resources:
             requests:
               cpu: 50m
@@ -114,3 +135,10 @@ spec:
       volumes:
         - name: var-log
           emptyDir: {}
+        # Issue #288 — cache dérivé, jetable et identique dans chaque pod : ce
+        # n'est pas de l'état applicatif (ADR 0005, amendement du 2026-09-30).
+        # Borné pour qu'un cache emballé ne remplisse pas le disque du nœud
+        # (préchauffé : ~10 Mo).
+        - name: cache-system
+          emptyDir:
+            sizeLimit: 64Mi

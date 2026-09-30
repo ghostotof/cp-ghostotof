@@ -1103,6 +1103,16 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   and the nginx `login` zone (10 r/m, burst 10, both confs) is the backstop if the storage ever
   fails again. Anything that "just writes a file" at runtime (a lock, a session, a render cache)
   falls under the same rule: DB, a dedicated service, or nowhere.
+  **One bounded exception, `cache.system`** (issue #288, ADR 0005 amended D11): it is *not*
+  read-only at runtime — property-info, serializer, API Platform property metadata and, in the
+  CLI Jobs, Doctrine's DQL `ParserResult` write keys the build warm-up never produces, and each
+  write failed on every request with a `cache` `WARNING`. Every pod running the backend image
+  mounts a bounded `emptyDir` (`cache-system`, `sizeLimit: 64Mi`) on
+  `var/cache/prod/pools/system`, seeded by a `seed-cache-system` initContainer that copies the
+  image's pre-warmed cache (the volume would hide it otherwise). That is allowed because the
+  cache is derived, disposable and identical in every pod — not application state. A new pod
+  spec running the image needs the three parts; `SystemCachePodVolumeTest` turns red otherwise
+  and also checks no other manifest runs the image.
   **Shared storage is not atomicity: every limiter also takes a lock shared across pods**
   (issue #272, ADR 0005 amended 2026-09-30). Without `symfony/lock`, `consume()` was a
   non-atomic read-modify-write — 20 simultaneous calls on one key counted **one** unit.
