@@ -419,7 +419,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         enabled?: bool|Param, // Default: true
  *     },
  *     lock?: Param|bool|string|array{ // Lock configuration
- *         enabled?: bool|Param, // Default: false
+ *         enabled?: bool|Param, // Default: true
  *         resources?: Param|string|array<string, Param|string|list<scalar|Param|null>>,
  *     },
  *     semaphore?: Param|bool|string|array{ // Semaphore configuration
@@ -914,6 +914,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         denormalization_context?: mixed,
  *         collect_denormalization_errors?: mixed,
  *         hydra_context?: mixed,
+ *         jsonld_context?: mixed,
  *         openapi?: mixed,
  *         validation_context?: mixed,
  *         filters?: mixed,
@@ -953,6 +954,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         policy?: mixed,
  *         middleware?: mixed,
  *         parameters?: array<string, array{ // Default: []
+ *             class?: scalar|Param|null, // The parameter class for a named global parameter entry.
  *             key?: mixed,
  *             schema?: mixed,
  *             open_api?: mixed,
@@ -980,6 +982,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         strict_query_parameter_validation?: mixed,
  *         hide_hydra_operation?: mixed,
  *         json_stream?: mixed,
+ *         throw_on_not_found?: mixed,
  *         extra_properties?: mixed,
  *         map?: mixed,
  *         mcp?: mixed,

@@ -1,7 +1,7 @@
 # ADR 0004 — Assistance IA : un fournisseur de modèles sans en devenir l'otage (`Ai/`)
 
 - Statut : **accepté** (2026-09-14) — **phase 1 livrée** le même jour (spec
-  `.claude/specs/0002-ai-translation-assistant.md`, issues `spec-0002` fermées, releases v0.10.0 puis
+  `.claude/specs/archive/2026-09-14-spec-0002-assistant-traduction/0002-ai-translation-assistant.md`, issues `spec-0002` fermées, releases v0.10.0 puis
   v0.10.1 en production) ; **amendée le 2026-09-15** : la phase 2 n'est plus un serveur MCP mais un
   assistant conversationnel réservé à `ROLE_TRUSTED` (D7 réécrite, D1/D2/D3/D5 retouchées, voir
   l'encadré « Amendement du 2026-09-15 » sous D7) ; spec de phase 2 à écrire avant tout code
