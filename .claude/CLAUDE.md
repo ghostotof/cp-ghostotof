@@ -1364,6 +1364,10 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   starts an Erlang node per call, which overran its 10 s timeout under CPU load — during a boot,
   precisely — and the kubelet killed a broker that had been up for 35 s (nine restarts in eight
   days in prod). A `startupProbe` gives the boot up to 5 min; `RabbitMqProbesTest` pins both.
+  The worker's `wait-for-rabbitmq` initContainer (issue #298) waits for the same port (`nc -z`,
+  BusyBox, bounded at 5 min then `exit 1`) before `messenger:consume` starts: a deploy that
+  recreates both pods used to start the worker first, which crashed on "Could not connect to the
+  AMQP server" and backed off (3 restarts in prod at v0.18.5). `WorkerWaitsForRabbitMqTest` pins it.
 
 ### Versions
 
