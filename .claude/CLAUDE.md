@@ -1360,6 +1360,10 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   change to those two workloads needs a real preprod rollout with `rollout status` + logs before promotion.
   `seccompProfile: RuntimeDefault` (audit I6) is a syscall filter and touches neither uid nor file modes, but
   the rule stands.
+  **RabbitMQ's probes are `tcpSocket` on 5672, never `rabbitmq-diagnostics`** (issue #295): the CLI
+  starts an Erlang node per call, which overran its 10 s timeout under CPU load — during a boot,
+  precisely — and the kubelet killed a broker that had been up for 35 s (nine restarts in eight
+  days in prod). A `startupProbe` gives the boot up to 5 min; `RabbitMqProbesTest` pins both.
 
 ### Versions
 
