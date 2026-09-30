@@ -54,6 +54,38 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ['ALL']
+        # Issue #298 : attendre que RabbitMQ écoute avant de lancer
+        # messenger:consume. Un déploiement qui recrée les deux pods ensemble
+        # démarrait le worker avant le broker : « Could not connect to the AMQP
+        # server », un CRITICAL, puis des relances à délai croissant (3 en prod
+        # à la v0.18.5, file sans consommateur 33 s après que le broker était
+        # prêt). Même vérification que les sondes de RabbitMQ (#295) : le port
+        # AMQP répond. Borné à 5 min, comme sa startupProbe : un broker qui ne
+        # vient jamais fait échouer le pod franchement. `nc` vient de BusyBox,
+        # déjà dans l'image. Aucun secret : le nom du Service suffit.
+        - name: wait-for-rabbitmq
+          image: backend
+          imagePullPolicy: Always
+          command:
+            - sh
+            - -c
+            - |
+              deadline=$(( $(date +%s) + 300 ))
+              until nc -z -w 2 rabbitmq 5672; do
+                if [ "$(date +%s)" -ge "$deadline" ]; then
+                  echo "rabbitmq:5672 injoignable après 300 s" >&2
+                  exit 1
+                fi
+                sleep 2
+              done
+              echo "rabbitmq:5672 joignable"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
       containers:
         - name: worker
           image: backend
