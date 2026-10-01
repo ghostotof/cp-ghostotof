@@ -1,30 +1,29 @@
-# v0.18.7 — Le report de main dans develop aboutit quand develop a avancé
+# v0.18.8 — Mises à jour de dépendances (Messenger, Vite, CodeQL)
 
-Correctif de l'outillage de release seul : `tools/finalize-release.sh`, son test et
-`CLAUDE.md`. Aucun changement de l'application, aucune migration, aucun secret nouveau. Les
-images backend et frontend sont reconstruites à l'identique du code de la v0.18.6.
+Release de maintenance : uniquement des mises à jour de version corrective proposées par
+Dependabot. Aucune migration, aucun secret nouveau, aucun changement de configuration
+Kubernetes. Les images backend et frontend sont reconstruites avec les nouvelles versions.
 
-## La consigne de report donnait une PR impossible à merger (#293)
+## Backend (#302)
 
-Quand `develop` avance pendant une release, `finalize-release` ne peut pas l'avancer en
-fast-forward sur `main` et s'arrête proprement. Son résumé demandait alors une PR
-`main` → `develop`. Cette PR ne pouvait jamais être mergée : sa tête est le commit de copie des
-notes, qui saute la CI, donc aucun check exigé par le ruleset de `develop` ne tournait dessus.
-La PR #291 (release v0.18.3) est restée bloquée ainsi.
+- `symfony/messenger`, `symfony/amqp-messenger` et `symfony/doctrine-messenger` passent de
+  8.1.7 à 8.1.8.
+- Ces composants font tourner le worker et le transport d'échec : l'envoi des messages du
+  formulaire de contact et des invitations passe par eux.
 
-- Le résumé donne maintenant les commandes qui reportent `main` par une branche
-  `fix/sync-main-vX.Y.Z` coupée depuis `develop`. Son commit de tête est un merge testé par la
-  pipeline, et la PR cible `develop` explicitement.
-- La consigne explique la reprise après un conflit de merge, ou quand la branche de report
-  existe déjà.
-- Une fois le report mergé, un nouveau passage du script répond « déjà reporté » au lieu de
-  redonner des commandes devenues inapplicables.
-- Le test exécute réellement ces commandes dans un dépôt temporaire, puis vérifie la branche
-  poussée.
+## Frontend (#301)
 
-## À vérifier
+- `vite` passe de 8.3.0 à 8.3.1, et le bundle est reconstruit avec cette version.
+- Les outils de développement passent aussi en version corrective : `jsdom` 30.1.1,
+  `eslint-plugin-vue` 10.11.1, `@types/node` 26.6.3. Ils n'entrent pas dans l'image servie.
+- Les icônes `@iconify-json/lucide` passent en 1.2.137.
 
-- Préprod : déploiement, smoke tests et audit verts, comme pour toute release. L'application ne
-  change pas.
-- Production : le job `finalize-release` utilise déjà le script corrigé. Si `develop` n'a pas
-  bougé depuis la fusion de #305, son résumé dit « avancée en fast-forward ».
+## CI (#303)
+
+- `github/codeql-action` (`init` et `analyze`) passe de 4.38.1 à 4.38.2.
+
+## À vérifier en préprod
+
+- Smoke tests et audit verts.
+- Le formulaire de contact aboutit de bout en bout : le message est consommé par le worker, qui
+  tourne sur la nouvelle version de Messenger.
