@@ -1,34 +1,30 @@
-# v0.18.6 — Le worker attend RabbitMQ avant de démarrer
+# v0.18.7 — Le report de main dans develop aboutit quand develop a avancé
 
-Correctif d'infrastructure seul : un initContainer de plus dans le pod du worker Messenger
-(`k8s/base/messenger-worker-deployment.yaml`). Les images backend et frontend sont reconstruites
-à l'identique du code de la v0.18.5. Aucune migration, aucun secret nouveau. RabbitMQ n'est
-pas touché.
+Correctif de l'outillage de release seul : `tools/finalize-release.sh`, son test et
+`CLAUDE.md`. Aucun changement de l'application, aucune migration, aucun secret nouveau. Les
+images backend et frontend sont reconstruites à l'identique du code de la v0.18.6.
 
-Le worker est recréé au déploiement : la file de messages reste brièvement sans consommateur,
-sans perte (file persistante).
+## La consigne de report donnait une PR impossible à merger (#293)
 
-## Le worker plantait quand il démarrait avant RabbitMQ (#298)
+Quand `develop` avance pendant une release, `finalize-release` ne peut pas l'avancer en
+fast-forward sur `main` et s'arrête proprement. Son résumé demandait alors une PR
+`main` → `develop`. Cette PR ne pouvait jamais être mergée : sa tête est le commit de copie des
+notes, qui saute la CI, donc aucun check exigé par le ruleset de `develop` ne tournait dessus.
+La PR #291 (release v0.18.3) est restée bloquée ainsi.
 
-Un déploiement qui recrée `rabbitmq` et `worker` ensemble lançait le worker avant que le
-broker écoute. `messenger:consume` s'arrêtait sur « Could not connect to the AMQP server »,
-un `CRITICAL` dans les journaux, puis le kubelet le relançait avec un délai croissant. Au
-déploiement de la v0.18.5 : un redémarrage en préprod, trois en production, et une file sans
-consommateur jusqu'à 33 s après que le broker était prêt.
+- Le résumé donne maintenant les commandes qui reportent `main` par une branche
+  `fix/sync-main-vX.Y.Z` coupée depuis `develop`. Son commit de tête est un merge testé par la
+  pipeline, et la PR cible `develop` explicitement.
+- La consigne explique la reprise après un conflit de merge, ou quand la branche de report
+  existe déjà.
+- Une fois le report mergé, un nouveau passage du script répond « déjà reporté » au lieu de
+  redonner des commandes devenues inapplicables.
+- Le test exécute réellement ces commandes dans un dépôt temporaire, puis vérifie la branche
+  poussée.
 
-- L'initContainer `wait-for-rabbitmq` attend que le port AMQP 5672 réponde, la même
-  vérification que les sondes de RabbitMQ (#295).
-- L'attente est bornée à 5 minutes : un broker qui ne vient jamais fait échouer le pod
-  franchement, au lieu de le bloquer.
-- `nc` vient de BusyBox, déjà dans l'image : aucune image ni aucun secret supplémentaire.
-- `WorkerWaitsForRabbitMqTest` fige ce dispositif.
+## À vérifier
 
-## À vérifier en préprod
-
-- L'initContainer `wait-for-rabbitmq` du worker se termine avec le code 0 et journalise
-  `rabbitmq:5672 joignable`.
-- `restartCount` du worker reste à 0.
-- Le formulaire de contact aboutit de bout en bout : le message est consommé par le worker.
-
-Ce déploiement ne recrée pas RabbitMQ : la preuve complète, un démarrage simultané des deux
-pods sans redémarrage du worker, viendra au premier déploiement qui les recrée ensemble.
+- Préprod : déploiement, smoke tests et audit verts, comme pour toute release. L'application ne
+  change pas.
+- Production : le job `finalize-release` utilise déjà le script corrigé. Si `develop` n'a pas
+  bougé depuis la fusion de #305, son résumé dit « avancée en fast-forward ».
