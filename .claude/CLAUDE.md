@@ -1328,7 +1328,10 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
     its body); push of the tag; GitHub Release; copy of the notes to `docs/releases/vX.Y.Z.md`
     committed on `main` with `[skip ci]`, the root file staying in place for the next release;
     deletion of `release/X.Y.Z`; `git push main:develop`, whose non-fast-forward refusal is the
-    intended clean stop (green, the summary asks for a `main` → `develop` PR). Its pushes use the
+    intended clean stop (green, the summary prints the commands to report `main` through a
+    `fix/sync-main-vX.Y.Z` branch cut from `develop`, issue #293 — **never a `main` → `develop`
+    PR**: its head is the `[skip ci]` copy commit, no required check ever runs on that SHA and the
+    PR stays `BLOCKED` forever; the branch must keep a prefix the pipeline listens to). Its pushes use the
     **`release-bot` deploy key** (secret `RELEASE_DEPLOY_KEY`, host key pinned from `gh api
     meta`, checkout with `persist-credentials: false`), the only bypass actor of the three
     rulesets (`main`, `develop`, tags `v*` — a personal repo refuses the `github-actions` app as
@@ -1351,7 +1354,7 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
     `git switch -c release/$(tools/next-version.sh)`; write `RELEASE_NOTES.md`; open the PR to
     `main` as a draft; iterate until the run is green (a `fix/*` PR targets the release branch);
     mark ready, merge. Nothing else — no `git tag`, no approval click, no `develop` sync unless
-    the summary asks for it. Everything is testable offline: `tools/tests/*.test.sh` (run by the
+    the summary asks for it (then run its `fix/sync-main-…` commands as given). Everything is testable offline: `tools/tests/*.test.sh` (run by the
     `tools-tests` job on temporary git repositories, shellcheck at `warning`+, actionlint pinned).
 - **Postgres/RabbitMQ carry state on a PVC** — a `kubectl apply --dry-run=server` proves nothing about runtime
   behaviour on an already-initialised volume. Release v0.5.0 put RabbitMQ in `CrashLoopBackOff` in production

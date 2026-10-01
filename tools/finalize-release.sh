@@ -21,7 +21,8 @@
 #   5. suppression de la branche release/<version> ; absente → rien ;
 #   6. fast-forward de develop sur main (`git push main:develop`, refusé par
 #      git si develop a divergé) ; refus → ARRÊT PROPRE, code 0, le résumé
-#      demande une PR main → develop.
+#      donne les commandes pour reporter main dans develop par une branche
+#      fix/sync-main-v<version> (jamais une PR main → develop, cf. #293).
 #
 # Le dépôt courant doit être un checkout de `main` au commit de merge (ce que
 # fait le job), avec un remote `origin` sur lequel les push passent (deploy
@@ -49,7 +50,7 @@ while [ $# -gt 0 ]; do
     --release-sha) release_sha="${2:?}"; shift ;;
     --summary) summary="${2:?}"; shift ;;
     --skip-github-release) github_release=0 ;;
-    -h|--help) sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,/^[^#]/{/^#/p}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "finalize-release.sh : option inconnue « $1 »" >&2; exit 2 ;;
   esac
   shift
@@ -66,6 +67,14 @@ die() { echo "finalize-release.sh : $*" >&2; exit 1; }
 say() {
   echo "- $*"
   if [ -n "$summary" ]; then echo "- $*" >> "$summary"; fi
+}
+# Bloc de texte lu sur stdin, recopié tel quel (sans puce) : les commandes à
+# lancer à la main, dans un bloc ```sh que le test exécute.
+say_block() {
+  local block
+  block="$(cat)"
+  printf '%s\n' "$block"
+  if [ -n "$summary" ]; then printf '%s\n' "$block" >> "$summary"; fi
 }
 
 tag="v$version"
@@ -147,5 +156,22 @@ if [ "$(g rev-parse "$remote/$develop")" = "$(g rev-parse "$remote/$main")" ]; t
 elif g push --quiet "$remote" "$remote/$main:refs/heads/$develop" 2>/dev/null; then
   say "\`$develop\` : avancée en fast-forward sur \`$main\`"
 else
-  say "\`$develop\` : **fast-forward impossible** (develop a avancé pendant la release) — ouvrir une PR \`$main\` → \`$develop\` et la merger à la main"
+  # Pas une PR main → develop : elle ne serait jamais mergeable (#293). Sa tête
+  # serait le commit de copie de l'étape 4, qui porte [skip ci] : aucun des
+  # checks exigés par le ruleset de develop ne tourne sur ce SHA. On reporte
+  # donc main dans une branche coupée depuis develop : son commit de tête est
+  # un merge sans marqueur, la pipeline teste le résultat combiné. Le préfixe
+  # doit rester l'un des déclencheurs de la pipeline (fix/**), sinon la PR
+  # n'aurait aucun check non plus.
+  sync="fix/sync-main-$tag"
+  say "\`$develop\` : **fast-forward impossible** (develop a avancé pendant la release) — reporter \`$main\` par une branche \`$sync\` coupée depuis \`$develop\`, puis la merger par PR (une PR \`$main\` → \`$develop\` resterait bloquée : sa tête porte \`[skip ci]\`, aucun check requis n'y tourne) :"
+  say_block <<EOF
+\`\`\`sh
+git fetch $remote $main $develop
+git switch -c $sync $remote/$develop
+git merge --no-ff $remote/$main -m "Merge $main ($tag) dans $develop"
+git push -u $remote $sync
+gh pr create --base $develop --head $sync --title "chore: report de $main ($tag) dans $develop" --body "Report de $main après la release $tag (fast-forward refusé par finalize-release)."
+\`\`\`
+EOF
 fi

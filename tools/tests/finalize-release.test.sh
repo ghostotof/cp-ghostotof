@@ -94,9 +94,31 @@ if run; then
   check "divergé : notes copiées quand même" "g -C '$O' cat-file -e main:docs/releases/v0.14.0.md"
   check "divergé : branche supprimée quand même" "! g -C '$O' show-ref --verify --quiet refs/heads/release/0.14.0"
   check "divergé : develop intact" "[ \"\$(g -C '$O' rev-parse develop)\" = '$DEV_BEFORE' ]"
-  check "divergé : le résumé demande une PR main → develop" "grep -q 'fast-forward impossible' '$TMP/out'"
+  check "divergé : le résumé signale le fast-forward impossible" "grep -q 'fast-forward impossible' '$TMP/out'"
 else
   fail "develop divergé → code 0" "échec inattendu : $(cat "$TMP/err")"
+fi
+
+# --- develop divergé : la consigne du résumé aboutit à une PR mergeable (#293) ---
+# Une PR main → develop ne l'est jamais : la tête de main est le commit de copie
+# des notes, qui porte [skip ci], donc aucun check requis par le ruleset de
+# develop ne tourne sur son SHA. On EXÉCUTE la consigne (bloc ```sh du résumé,
+# sans la ligne gh, faute de GitHub ici) et on vérifie la branche qu'elle pousse.
+O="$TMP/diverged/origin.git"
+cmds="$(sed -n '/^```sh$/,/^```$/p' "$TMP/out" | sed '1d;$d')"
+check "divergé : le résumé donne la marche à suivre en commandes" "[ -n \"\$cmds\" ]"
+check "divergé : la PR proposée cible develop explicitement (défaut du dépôt = main)" "printf '%s\n' \"\$cmds\" | grep -q '^gh pr create .*--base develop'"
+if [ -n "$cmds" ] && (cd "$WORK" && GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid \
+     GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid \
+     bash -euo pipefail -c "$(printf '%s\n' "$cmds" | grep -v '^gh ')") >"$TMP/sync.out" 2>&1; then
+  sync_branch="fix/sync-main-v0.14.0"
+  check "divergé : la consigne pousse $sync_branch" "g -C '$O' show-ref --verify --quiet refs/heads/$sync_branch"
+  check "divergé : préfixe fix/ couvert par les déclencheurs de la pipeline" "grep -q \"^      - 'fix/\*\*'\$\" '$(dirname "$SCRIPT")/../.github/workflows/pipeline.yml'"
+  check "divergé : le commit de tête ne saute pas la CI" "! g -C '$O' log -1 --format=%B $sync_branch | grep -Eiq '\[(skip ci|ci skip|no ci|skip actions|actions skip)\]'"
+  check "divergé : la branche contient main (copie des notes incluse)" "g -C '$O' merge-base --is-ancestor main $sync_branch"
+  check "divergé : la branche contient develop (avance en fast-forward)" "g -C '$O' merge-base --is-ancestor develop $sync_branch"
+else
+  fail "divergé : la consigne s'exécute" "$(cat "$TMP/sync.out" 2>/dev/null)"
 fi
 
 # --- Tag déjà posé ailleurs : échec à l'étape 1, rien d'autre --------------------
