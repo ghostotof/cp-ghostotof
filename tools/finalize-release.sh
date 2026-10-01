@@ -149,10 +149,16 @@ fi
 # --- 6. fast-forward de develop ----------------------------------------------
 # `git push` sans --force refuse un non-fast-forward : c'est exactement la
 # règle voulue. Le refus n'est pas une erreur du flux, c'est develop qui a
-# avancé pendant la release — une PR main → develop, à la main.
+# avancé pendant la release — le résumé donne alors les commandes du report
+# (jamais une PR main → develop, cf. le bloc `else` ci-dessous).
 g fetch --quiet "$remote" "$develop" "$main"
 if [ "$(g rev-parse "$remote/$develop")" = "$(g rev-parse "$remote/$main")" ]; then
   say "\`$develop\` : déjà au niveau de \`$main\`"
+elif g merge-base --is-ancestor "$remote/$main" "$remote/$develop"; then
+  # Le report a déjà été mergé (develop contient main et a avancé depuis) : un
+  # re-run ne doit pas redonner une consigne que la branche existante ferait
+  # échouer à `git switch -c`.
+  say "\`$develop\` : déjà reporté (contient \`$main\`)"
 elif g push --quiet "$remote" "$remote/$main:refs/heads/$develop" 2>/dev/null; then
   say "\`$develop\` : avancée en fast-forward sur \`$main\`"
 else
@@ -164,7 +170,7 @@ else
   # doit rester l'un des déclencheurs de la pipeline (fix/**), sinon la PR
   # n'aurait aucun check non plus.
   sync="fix/sync-main-$tag"
-  say "\`$develop\` : **fast-forward impossible** (develop a avancé pendant la release) — reporter \`$main\` par une branche \`$sync\` coupée depuis \`$develop\`, puis la merger par PR (une PR \`$main\` → \`$develop\` resterait bloquée : sa tête porte \`[skip ci]\`, aucun check requis n'y tourne) :"
+  say "\`$develop\` : **fast-forward impossible** (develop a avancé pendant la release) — reporter \`$main\` par une branche \`$sync\` coupée depuis \`$develop\`, puis la merger par PR (une PR \`$main\` → \`$develop\` resterait bloquée : sa tête porte \`[skip ci]\`, aucun check requis n'y tourne). En cas de conflit au \`git merge\` : le résoudre, \`git commit\`, puis reprendre au \`git push\`. Si \`$sync\` existe déjà (tentative précédente) : \`git switch $sync\` au lieu de \`git switch -c\`, puis reprendre au \`git merge\` :"
   say_block <<EOF
 \`\`\`sh
 git fetch $remote $main $develop

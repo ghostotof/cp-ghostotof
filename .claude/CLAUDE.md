@@ -1331,8 +1331,9 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
     intended clean stop (green, the summary prints the commands to report `main` through a
     `fix/sync-main-vX.Y.Z` branch cut from `develop`, issue #293 — **never a `main` → `develop`
     PR**: its head is the `[skip ci]` copy commit, no required check ever runs on that SHA and the
-    PR stays `BLOCKED` forever; the branch must keep a prefix the pipeline listens to). Its pushes use the
-    **`release-bot` deploy key** (secret `RELEASE_DEPLOY_KEY`, host key pinned from `gh api
+    PR stays `BLOCKED` forever; the branch must keep a prefix the pipeline listens to; once that
+    PR is merged, a re-run says "déjà reporté" instead of printing the commands again). Its pushes
+    use the **`release-bot` deploy key** (secret `RELEASE_DEPLOY_KEY`, host key pinned from `gh api
     meta`, checkout with `persist-credentials: false`), the only bypass actor of the three
     rulesets (`main`, `develop`, tags `v*` — a personal repo refuses the `github-actions` app as
     a bypass actor). Deploy-key pushes **do** trigger workflows, unlike `GITHUB_TOKEN`'s, hence
@@ -1354,7 +1355,8 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
     `git switch -c release/$(tools/next-version.sh)`; write `RELEASE_NOTES.md`; open the PR to
     `main` as a draft; iterate until the run is green (a `fix/*` PR targets the release branch);
     mark ready, merge. Nothing else — no `git tag`, no approval click, no `develop` sync unless
-    the summary asks for it (then run its `fix/sync-main-…` commands as given). Everything is testable offline: `tools/tests/*.test.sh` (run by the
+    the summary asks for it (then run its `fix/sync-main-…` commands as given). Everything is
+    testable offline: `tools/tests/*.test.sh` (run by the
     `tools-tests` job on temporary git repositories, shellcheck at `warning`+, actionlint pinned).
 - **Postgres/RabbitMQ carry state on a PVC** — a `kubectl apply --dry-run=server` proves nothing about runtime
   behaviour on an already-initialised volume. Release v0.5.0 put RabbitMQ in `CrashLoopBackOff` in production
