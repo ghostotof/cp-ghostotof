@@ -27,6 +27,8 @@ use Symfony\Component\HttpFoundation\Request;
  */
 final class CanonicalPath
 {
+    private const string API_PATH = '/api';
+
     private function __construct()
     {
     }
@@ -34,5 +36,18 @@ final class CanonicalPath
     public static function of(Request $request): string
     {
         return rawurldecode($request->getPathInfo());
+    }
+
+    /**
+     * La requête vise-t-elle l'API ? Ancré sur « `/api` exactement, ou
+     * `/api/…` », sur le chemin décodé : un `str_starts_with($path, '/api')`
+     * nu attraperait aussi un futur `/apix` ou `/api-docs`, qui ne sont pas
+     * l'API, et le chemin brut laisserait `/%61pi/…` passer à côté.
+     */
+    public static function isUnderApi(Request $request): bool
+    {
+        $path = self::of($request);
+
+        return self::API_PATH === $path || str_starts_with($path, self::API_PATH.'/');
     }
 }

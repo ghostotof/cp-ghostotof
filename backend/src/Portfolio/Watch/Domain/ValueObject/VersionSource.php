@@ -43,4 +43,18 @@ enum VersionSource: string
     {
         return self::MANUAL !== $this;
     }
+
+    /**
+     * Toutes les valeurs de l'enum, pour borner un champ de DTO sans liste
+     * littérale : `#[Assert\Choice(callback: [VersionSource::class, 'values'])]`.
+     * Une liste recopiée à la main avait oublié `deployed` quand #19 l'a
+     * ajouté, et un produit dans cette source ne pouvait plus être modifié au
+     * backoffice (#287). Même principe que `Locale::values()`.
+     *
+     * @return list<string>
+     */
+    public static function values(): array
+    {
+        return array_column(self::cases(), 'value');
+    }
 }

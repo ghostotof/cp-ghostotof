@@ -19,8 +19,9 @@ failures=0
 pass()  { printf '  ok   %s\n' "$1"; }
 fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1)); }
 
-# git sans configuration globale : identité fixe, pas de hooks, pas de signature.
-g() { git -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false "$@"; }
+# Isole git de l'environnement du poste et définit g() (issue #304).
+# shellcheck source=tools/tests/lib/git-isolation.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/git-isolation.sh"
 
 # new_repo <nom> <tag-initial>
 # Crée un dépôt avec un commit initial tagué sur main, puis une branche `work`.

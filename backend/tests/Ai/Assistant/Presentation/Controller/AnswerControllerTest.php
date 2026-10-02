@@ -10,6 +10,7 @@ use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Handler\TestHandler;
+use Monolog\Level;
 use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -572,14 +573,17 @@ final class AnswerControllerTest extends WebTestCase
 
     /**
      * Les enregistrements du canal `ai_usage`, gardés par le TestHandler que
-     * monolog.yaml y branche en test.
+     * monolog.yaml y branche en test. Filtré sur le niveau : la sonde de tous
+     * les canaux (`all_channels_test`, `debug`, issue #269) est elle aussi un
+     * TestHandler de ce logger, et elle porte les enregistrements de toute
+     * l'application.
      *
      * @return list<LogRecord>
      */
     private function aiUsageRecords(): array
     {
         foreach (self::getContainer()->get('monolog.logger.ai_usage')->getHandlers() as $handler) {
-            if ($handler instanceof TestHandler) {
+            if ($handler instanceof TestHandler && Level::Info === $handler->getLevel()) {
                 return array_values($handler->getRecords());
             }
         }

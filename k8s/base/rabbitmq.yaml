@@ -68,20 +68,35 @@ spec:
               # le goulot d'étranglement, pas le nœud.
               cpu: 1000m
               memory: 256Mi
+          # Issue #295 — sondes TCP sur le port AMQP, comme le RabbitMQ Cluster
+          # Operator. L'ancienne sonde `rabbitmq-diagnostics -q ping` démarrait un
+          # nœud Erlang à chaque appel : sous charge CPU, pendant un démarrage
+          # justement, elle dépassait son délai de 10 s. Le 2026-09-30, RabbitMQ
+          # était prêt à 51 s et a pourtant été tué à 86 s, neuvième redémarrage
+          # en huit jours. Une connexion TCP ne coûte rien et ne mesure pas la
+          # vitesse du CLI.
+          #
+          # startupProbe : jusqu'à 5 min (30 × 10 s) pour ouvrir le port AMQP.
+          # Tant qu'elle n'a pas réussi, les deux autres sondes sont suspendues,
+          # d'où l'absence d'initialDelaySeconds.
+          startupProbe:
+            tcpSocket:
+              port: 5672
+            periodSeconds: 10
+            failureThreshold: 30
+          # livenessProbe : ne redémarre que sur un port fermé une minute durant
+          # (3 × 20 s). Un processus Erlang qui meurt fait déjà sortir le
+          # conteneur : cette sonde ne vise que le cas d'un nœud figé.
           livenessProbe:
-            exec:
-              command: ['rabbitmq-diagnostics', '-q', 'ping']
-            # timeoutSeconds par défaut (1s) est trop court : rabbitmq-diagnostics
-            # démarre son propre nœud Erlang à chaque appel, largement >1s même
-            # sans contention CPU (observé en conditions réelles sur Kapsule).
-            timeoutSeconds: 10
-            initialDelaySeconds: 30
-            periodSeconds: 15
+            tcpSocket:
+              port: 5672
+            timeoutSeconds: 5
+            periodSeconds: 20
+            failureThreshold: 3
           readinessProbe:
-            exec:
-              command: ['rabbitmq-diagnostics', '-q', 'ping']
-            timeoutSeconds: 10
-            initialDelaySeconds: 20
+            tcpSocket:
+              port: 5672
+            timeoutSeconds: 5
             periodSeconds: 10
       volumes:
         - name: data

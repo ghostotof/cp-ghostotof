@@ -10,8 +10,11 @@ use App\Shared\Domain\Exception\HasProblemType;
 /**
  * La traduction n'a pas pu être produite : fournisseur injoignable, délai
  * dépassé, réponse hors du schéma demandé. Le message est volontairement
- * générique — la cause (message du fournisseur, sortie brute) est journalisée
- * par l'appelant, jamais renvoyée au client. Mappée 503 (ADR 0004), avec un
+ * générique — la cause (classe, statut et type d'erreur du fournisseur) est journalisée
+ * par l'appelant, jamais renvoyée au client. Elle n'est pas non plus chaînée
+ * en `previous` : l'ErrorListener du noyau et API Platform journalisent toute
+ * la chaîne, et le bridge recopie le corps de la réponse du fournisseur dans
+ * le message de son exception (issue #269). Mappée 503 (ADR 0004), avec un
  * `type` stable (`/errors/translation-unavailable`) sur lequel le frontend
  * s'appuie pour choisir son message.
  */
@@ -19,9 +22,9 @@ final class TranslationUnavailableException extends \RuntimeException implements
 {
     use HasProblemType;
 
-    public function __construct(?\Throwable $previous = null)
+    public function __construct()
     {
-        parent::__construct("L'assistant de traduction est indisponible. Réessayez plus tard.", 0, $previous);
+        parent::__construct("L'assistant de traduction est indisponible. Réessayez plus tard.");
     }
 
     protected function problemType(): string

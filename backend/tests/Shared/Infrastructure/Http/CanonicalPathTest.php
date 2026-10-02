@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Http;
 
 use App\Shared\Infrastructure\Http\CanonicalPath;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -39,5 +40,28 @@ final class CanonicalPathTest extends TestCase
     public function testTheQueryStringIsNeverPartOfThePath(): void
     {
         self::assertSame('/api/contact', CanonicalPath::of(Request::create('/api/contact?x=%61', 'POST')));
+    }
+
+    /**
+     * Ancrage « `/api` exactement, ou `/api/…` », sur le chemin décodé : un
+     * `str_starts_with($path, '/api')` nu attraperait aussi `/apix`.
+     */
+    #[DataProvider('apiMembership')]
+    public function testIsUnderApiIsAnchoredOnTheDecodedPath(string $uri, bool $expected): void
+    {
+        self::assertSame($expected, CanonicalPath::isUnderApi(Request::create($uri)));
+    }
+
+    /**
+     * @return iterable<string, array{string, bool}>
+     */
+    public static function apiMembership(): iterable
+    {
+        yield 'racine de l\'API' => ['/api', true];
+        yield 'route de l\'API' => ['/api/contact', true];
+        yield 'chemin encodé' => ['/%61pi/contact', true];
+        yield 'voisin sans séparateur' => ['/apix', false];
+        yield 'voisin avec tiret' => ['/api-docs', false];
+        yield 'hors API' => ['/inexistant', false];
     }
 }

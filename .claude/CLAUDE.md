@@ -386,7 +386,7 @@ mid-migration.
     (3rd audit, A5/D5, Monolog channel `security_audit`, `info`, JSON on stderr in prod — see
     `monolog.yaml`). Implements `Application/SecurityAuditLoggerInterface`, one method per event:
     `login-succeeded`, `login-failed`, `login-throttled`, `logged-out`, `base-access-issued`,
-    `csrf-rejected`, `backoffice-access-denied`, `user-invited`, `user-reinvited`, `role-changed`
+    `csrf-rejected`, `backoffice-access-denied`, `rate-limiter-unavailable`, `user-invited`, `user-reinvited`, `role-changed`
     (`superAdmin` bool), `password-changed`, `user-deleted`, `account-activated`, `user-purged`
     (`actor: system` — the one event whose actor is not read from the token storage; `record()` takes an
     explicit actor for CLI callers). Every record carries
@@ -403,7 +403,16 @@ mid-migration.
     `AccessDeniedHttpException` — that `previous` is required, so the CSRF guards' bare
     `AccessDeniedHttpException` isn't logged twice; an anonymous hit is a 401 that never reaches it); the
     two CSRF guards call `csrfRejected()` right before throwing (actor is `anonymous` there by
-    construction — priority 20 runs before the firewall); `BaseAccessController` logs the `guest-…`
+    construction — priority 20 runs before the firewall);
+    `Infrastructure/Http/RateLimiterLockFailureListener` logs `rate-limiter-unavailable` (issue
+    #276) when a limiter's shared lock fails on an `/api` route — acquiring, releasing, or a
+    conflict relayed by the component's in-memory store — and answers 503 problem+json with
+    `Retry-After`, never a 500. No subject: the lock resource carries the limiter's key (an IP, a
+    tried username), so neither the response nor the audit record names it, and the listener sits
+    at priority 16, above Symfony's `logKernelException` (0), writing its own `error` line with
+    the exception classes only — the raw message reaches no channel but `lock`. It catches any
+    Lock failure under `/api`: a future non-limiter lock must revisit it; `BaseAccessController`
+    logs the `guest-…`
     identifier, never the token; the `Security/User/Application` use cases and the housekeeping
     `PendingInvitationPurger` log after the successful action. Functional tests read the records through
     `tests/Support/ReadsSecurityAuditLog.php` (a
@@ -583,6 +592,10 @@ mid-migration.
     likewise comes from the npm lock, being a bundle dependency rather than an image.
   - A missing record is not an error: the products show without a version, which the page already
     renders. Failing a build or a refresh over a renamed manifest would be out of proportion.
+  - **The installed version is read at refresh time, not per request**: `WatchRefresher` resolves
+    it (runtime or build record) and writes it into the snapshot, so `/stack` shows a new PHP or
+    PostgreSQL only after the next `watch-refresh` run (04:41 UTC). To see it right after a deploy:
+    `kubectl create job --from=cronjob/watch-refresh <name>` in the namespace, then delete the Job.
 
 - **`Ai/`** — everything that talks to a language model, and nothing else does (ADR 0004,
   `docs/adr/0004-assistance-ia.md`; spec `.claude/specs/archive/2026-09-14-spec-0002-assistant-traduction/0002-ai-translation-assistant.md`). Sub-context per
@@ -805,6 +818,16 @@ outside `kustomization.yaml`, hence `${BACKEND_IMAGE}` + `envsubst`. It never pa
 cannot repair a divergence: if the reference content changes in code, preprod keeps the old one until
 someone forces it by hand. That is the price of harmlessness, and it is the right trade — a Job that
 can destroy nothing beats a Job that syncs and one day picks the wrong namespace.
+
+**A change to the *meaning* of reference data ships with a data migration** (issue #287). The
+guarded seed never rewrites an existing row — by design — so changing how a seeded row must look
+(a new enum value, a field that becomes derived) leaves every live environment on the old shape
+forever. #19 moved five watched products from `manual` to `deployed` in the seed only: preprod and
+prod kept their hand-typed versions, and `/stack` published PostgreSQL 18.4 for three weeks while
+the cluster ran 18.6. `Version20260930180000` is the model: it converts only the rows still in the
+old shape, is safe to replay, and `tests/Migrations/` tests it against a pre-change table. The same
+change must also reach every `Assert\Choice` and form that lists the values — bind them to the
+enum (`VersionSource::values()`, like `Locale::values()`), never to a hand-copied list.
 
 **Production is never seeded automatically** — settled 2026-09-09, issue #17. Not "not yet": the seed
 Job is wired to `deploy-preprod` and must stay there. Prod's content is authored through the
@@ -1152,6 +1175,16 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   and the nginx `login` zone (10 r/m, burst 10, both confs) is the backstop if the storage ever
   fails again. Anything that "just writes a file" at runtime (a lock, a session, a render cache)
   falls under the same rule: DB, a dedicated service, or nowhere.
+  **One bounded exception, `cache.system`** (issue #288, ADR 0005 amended D11): it is *not*
+  read-only at runtime — property-info, serializer, API Platform property metadata and, in the
+  CLI Jobs, Doctrine's DQL `ParserResult` write keys the build warm-up never produces, and each
+  write failed on every request with a `cache` `WARNING`. Every pod running the backend image
+  mounts a bounded `emptyDir` (`cache-system`, `sizeLimit: 64Mi`) on
+  `var/cache/prod/pools/system`, seeded by a `seed-cache-system` initContainer that copies the
+  image's pre-warmed cache (the volume would hide it otherwise). That is allowed because the
+  cache is derived, disposable and identical in every pod — not application state. A new pod
+  spec running the image needs the three parts; `SystemCachePodVolumeTest` turns red otherwise
+  and also checks no other manifest runs the image.
   **Shared storage is not atomicity: every limiter also takes a lock shared across pods**
   (issue #272, ADR 0005 amended 2026-09-30). Without `symfony/lock`, `consume()` was a
   non-atomic read-modify-write — 20 simultaneous calls on one key counted **one** unit.
@@ -1379,8 +1412,12 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
     its body); push of the tag; GitHub Release; copy of the notes to `docs/releases/vX.Y.Z.md`
     committed on `main` with `[skip ci]`, the root file staying in place for the next release;
     deletion of `release/X.Y.Z`; `git push main:develop`, whose non-fast-forward refusal is the
-    intended clean stop (green, the summary asks for a `main` → `develop` PR). Its pushes use the
-    **`release-bot` deploy key** (secret `RELEASE_DEPLOY_KEY`, host key pinned from `gh api
+    intended clean stop (green, the summary prints the commands to report `main` through a
+    `fix/sync-main-vX.Y.Z` branch cut from `develop`, issue #293 — **never a `main` → `develop`
+    PR**: its head is the `[skip ci]` copy commit, no required check ever runs on that SHA and the
+    PR stays `BLOCKED` forever; the branch must keep a prefix the pipeline listens to; once that
+    PR is merged, a re-run says "déjà reporté" instead of printing the commands again). Its pushes
+    use the **`release-bot` deploy key** (secret `RELEASE_DEPLOY_KEY`, host key pinned from `gh api
     meta`, checkout with `persist-credentials: false`), the only bypass actor of the three
     rulesets (`main`, `develop`, tags `v*` — a personal repo refuses the `github-actions` app as
     a bypass actor). Deploy-key pushes **do** trigger workflows, unlike `GITHUB_TOKEN`'s, hence
@@ -1392,11 +1429,18 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   - **Pipeline `run:` steps are `bash -e` without `pipefail`**: never `cmd | tee >> $GITHUB_OUTPUT`,
     a failing `cmd` goes unnoticed (write to a file, then append). The runner has no git
     identity: scripts that tag or commit pass `-c user.name`/`user.email`. Both learned in T5/T8.
+  - **Every job declares `timeout-minutes`, and so does every step calling `apt-get`** (issue
+    #285): GitHub's default is 360 minutes, and a frozen apt mirror held v0.18.3's `build-images`
+    for over 30 minutes without failing. Size a job at 3–10× its usual duration, a deploy job
+    above the sum of its internal `kubectl` waits — a timeout that cuts `deploy-prod` mid-apply
+    is worse than a slow run. `tools/check-workflow-timeouts.sh` (run by `tools-tests`) turns
+    red on a job or apt step added without one.
   - **What to do by hand, in order**: `git switch develop && git pull && git fetch --tags`;
     `git switch -c release/$(tools/next-version.sh)`; write `RELEASE_NOTES.md`; open the PR to
     `main` as a draft; iterate until the run is green (a `fix/*` PR targets the release branch);
     mark ready, merge. Nothing else — no `git tag`, no approval click, no `develop` sync unless
-    the summary asks for it. Everything is testable offline: `tools/tests/*.test.sh` (run by the
+    the summary asks for it (then run its `fix/sync-main-…` commands as given). Everything is
+    testable offline: `tools/tests/*.test.sh` (run by the
     `tools-tests` job on temporary git repositories, shellcheck at `warning`+, actionlint pinned).
 - **Postgres/RabbitMQ carry state on a PVC** — a `kubectl apply --dry-run=server` proves nothing about runtime
   behaviour on an already-initialised volume. Release v0.5.0 put RabbitMQ in `CrashLoopBackOff` in production
@@ -1405,6 +1449,14 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   change to those two workloads needs a real preprod rollout with `rollout status` + logs before promotion.
   `seccompProfile: RuntimeDefault` (audit I6) is a syscall filter and touches neither uid nor file modes, but
   the rule stands.
+  **RabbitMQ's probes are `tcpSocket` on 5672, never `rabbitmq-diagnostics`** (issue #295): the CLI
+  starts an Erlang node per call, which overran its 10 s timeout under CPU load — during a boot,
+  precisely — and the kubelet killed a broker that had been up for 35 s (nine restarts in eight
+  days in prod). A `startupProbe` gives the boot up to 5 min; `RabbitMqProbesTest` pins both.
+  The worker's `wait-for-rabbitmq` initContainer (issue #298) waits for the same port (`nc -z`,
+  BusyBox, bounded at 5 min then `exit 1`) before `messenger:consume` starts: a deploy that
+  recreates both pods used to start the worker first, which crashed on "Could not connect to the
+  AMQP server" and backed off (3 restarts in prod at v0.18.5). `WorkerWaitsForRabbitMqTest` pins it.
 
 ### Versions
 

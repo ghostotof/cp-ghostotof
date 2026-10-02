@@ -47,10 +47,21 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # Chaque job déclare `timeout-minutes` (issue #285) : sans lui, GitHub laisse
+  # un job tourner 360 minutes. Le 2026-09-30, un miroir apt figé a bloqué
+  # `build-images` de la release v0.18.3 plus de 30 minutes sans échouer. La
+  # limite vaut 3 à 10 fois la durée habituelle, ou la somme des attentes
+  # internes pour les déploiements, pour ne jamais couper un run sain. Les
+  # étapes apt ont en plus leur propre limite courte. Garde-fou :
+  # tools/check-workflow-timeouts.sh, exécuté par `tools-tests`.
+  # ---------------------------------------------------------------------------
+
+  # ---------------------------------------------------------------------------
   # Phase 1 — qualité, toujours exécutée
   # ---------------------------------------------------------------------------
   test-backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15 # habituel ~80 s
     services:
       database:
         image: postgres:18.4-alpine
@@ -118,6 +129,7 @@ jobs:
 
   test-frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15 # habituel ~110 s
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -141,9 +153,14 @@ jobs:
       # qu'il supposait ImageMagick 7 alors qu'Ubuntu livre la 6. Un tel écart
       # doit se voir sur une branche, pas au moment de livrer.
       - name: Dépendances de rendu de la carte Open Graph
+        # Borne courte : un miroir figé doit faire échouer l'étape, pas le job
+        # entier au bout de sa propre limite (issue #285). Les options apt
+        # réessaient un miroir lent au lieu d'attendre sans fin.
+        timeout-minutes: 5
         run: |
-          sudo apt-get update -qq
+          sudo apt-get update -qq -o Acquire::Retries=3 -o Acquire::http::Timeout=30
           sudo apt-get install -y -qq --no-install-recommends \
+            -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
             imagemagick fonts-dejavu-core fonts-liberation
       - name: Génération de la carte Open Graph (contrôle du script)
         working-directory: frontend
@@ -157,6 +174,7 @@ jobs:
   # ---------------------------------------------------------------------------
   sast-backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # habituel ~35 s
     env:
       COMPOSER_ALLOW_SUPERUSER: '1'
     steps:
@@ -188,6 +206,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phpstan-backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # habituel ~35 s
     env:
       APP_ENV: dev
       COMPOSER_ALLOW_SUPERUSER: '1'
@@ -222,6 +241,7 @@ jobs:
   # ---------------------------------------------------------------------------
   rector-backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # habituel ~40 s
     env:
       COMPOSER_ALLOW_SUPERUSER: '1'
     steps:
@@ -262,6 +282,7 @@ jobs:
   # ---------------------------------------------------------------------------
   lsp-check-backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # habituel ~30 s, téléchargement des Language Tools compris
     env:
       APP_ENV: dev
       COMPOSER_ALLOW_SUPERUSER: '1'
@@ -300,13 +321,17 @@ jobs:
         run: .github/scripts/summary-annotations.sh "Symfony Language Tools (lsp:check)" "$RUNNER_TEMP/lsp-check.log" '^::notice title=Symfony diagnostics summary' >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
-  # tools-tests — les scripts de release (spec 0006) et le lint du workflow
-  # lui-même. Les tests construisent un dépôt git temporaire et ne touchent ni
-  # au réseau ni au dépôt courant ; actionlint attrape les erreurs de syntaxe et
-  # d'expressions de ce fichier avant qu'un push de release ne les découvre.
+  # tools-tests — les scripts de tools/ (release, spec 0006 ; smoke tests ;
+  # rotation ; en-têtes) et le lint du workflow lui-même. Les tests construisent
+  # un dépôt git temporaire et ne touchent ni au réseau ni au dépôt courant ;
+  # git-config-isolation.test.sh les rejoue sous un environnement git hostile,
+  # pour qu'aucune ne dépende du poste qui la lance (#304). actionlint attrape
+  # les erreurs de syntaxe et d'expressions de ce fichier avant qu'un push de
+  # release ne les découvre.
   # ---------------------------------------------------------------------------
   tools-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # habituel ~20 s
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Tests des scripts de release (dépôt git temporaire, hors ligne)
@@ -317,11 +342,13 @@ jobs:
           tools/tests/smoke-login-throttling.test.sh
           tools/tests/rotate-deployer-token.test.sh
           tools/tests/security-headers.test.sh
+          tools/tests/check-workflow-timeouts.test.sh
+          tools/tests/git-config-isolation.test.sh
       # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.
       - name: shellcheck (préinstallé sur le runner)
-        run: shellcheck -x --severity=warning tools/*.sh tools/lib/*.sh tools/tests/*.sh
+        run: shellcheck -x --severity=warning tools/*.sh tools/lib/*.sh tools/tests/*.sh tools/tests/lib/*.sh
       # Image officielle, figée sur le digest de son index multi-arch (v1.7.12).
       # Elle embarque shellcheck et pyflakes, donc les `run:` de ce fichier sont
       # analysés aussi.
@@ -344,6 +371,7 @@ jobs:
   # ---------------------------------------------------------------------------
   frontend-image-headers:
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # habituel ~55 s, build de l'image compris
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Image frontend de prod + vérification des en-têtes par location
@@ -362,6 +390,7 @@ jobs:
     needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests, frontend-image-headers]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
+    timeout-minutes: 5 # habituel ~6 s
     outputs:
       version: ${{ steps.check.outputs.version }}
       image_tag: ${{ steps.check.outputs.image_tag }}
@@ -404,6 +433,7 @@ jobs:
     needs: [release-version]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
+    timeout-minutes: 30 # habituel ~3,5 min ; marge pour un build sans cache
     permissions:
       contents: read
       packages: write
@@ -453,9 +483,14 @@ jobs:
       # sans faire échouer le job.
       - name: Dépendances de rendu de la carte Open Graph
         if: steps.existing.outputs.state == 'absent'
+        # Borne courte : un miroir figé doit faire échouer l'étape, pas le job
+        # entier au bout de sa propre limite (issue #285). Les options apt
+        # réessaient un miroir lent au lieu d'attendre sans fin.
+        timeout-minutes: 5
         run: |
-          sudo apt-get update -qq
+          sudo apt-get update -qq -o Acquire::Retries=3 -o Acquire::http::Timeout=30
           sudo apt-get install -y -qq --no-install-recommends \
+            -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
             imagemagick fonts-dejavu-core fonts-liberation
       - name: Régénération des cartes de partage (og.png + .github/social-preview.png)
         if: steps.existing.outputs.state == 'absent'
@@ -502,6 +537,7 @@ jobs:
     needs: [release-version, build-images]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
+    timeout-minutes: 45 # attentes kubectl cumulées ≤ 31 min (fenêtre de maintenance, migration, rollouts, seed)
     environment:
       name: preprod
       url: https://preprod.cp-ghostotof.com
@@ -634,6 +670,7 @@ jobs:
     needs: [deploy-preprod]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # habituel ~30 s ; rollouts bornés à 60 s, curl à 15 s
     # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
     # l'environnement, et sa politique de branche borne d'où ils sont lisibles
     # (audit 2026-09-16, A4).
@@ -686,6 +723,7 @@ jobs:
     needs: [deploy-preprod]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # habituel ~25 s
     # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
     # l'environnement, et sa politique de branche borne d'où ils sont lisibles
     # (audit 2026-09-16, A4).
@@ -712,6 +750,7 @@ jobs:
     needs: [smoke-test-preprod, audit-preprod]
     if: failure() && startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # deux `rollout undo`, sans attente
     # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
     # l'environnement, et sa politique de branche borne d'où ils sont lisibles
     # (audit 2026-09-16, A4).
@@ -752,6 +791,7 @@ jobs:
     needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests, frontend-image-headers]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 45 # attentes kubectl cumulées ≤ 28 min (fenêtre de maintenance, migration, rollouts)
     permissions:
       contents: read
       actions: read
@@ -935,6 +975,7 @@ jobs:
     needs: [deploy-prod]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # habituel ~20 s
     # Comme deploy-prod : RELEASE_DEPLOY_KEY est un secret de l'environnement
     # `production`, servi au seul job qui le déclare, et la politique de branche
     # de l'environnement le borne à `main` (audit 2026-09-16, A4).
@@ -989,6 +1030,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     continue-on-error: true
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # habituel ~30 s
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Audit prod

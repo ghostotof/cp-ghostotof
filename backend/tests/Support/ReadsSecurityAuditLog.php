@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Support;
 
 use Monolog\Handler\TestHandler;
+use Monolog\Level;
 use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -37,8 +38,10 @@ trait ReadsSecurityAuditLog
         // du conteneur : pas d'assertInstanceOf, elle serait toujours vraie.
         $logger = self::getContainer()->get(self::SECURITY_AUDIT_LOGGER);
 
+        // Filtré sur le niveau : la sonde de tous les canaux (ReadsAllChannelsLog,
+        // `debug`) est elle aussi un TestHandler de ce logger.
         foreach ($logger->getHandlers() as $handler) {
-            if ($handler instanceof TestHandler) {
+            if ($handler instanceof TestHandler && Level::Info === $handler->getLevel()) {
                 return array_values($handler->getRecords());
             }
         }
