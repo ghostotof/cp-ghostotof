@@ -164,6 +164,24 @@ final class SecurityAuditLoggerTest extends TestCase
     }
 
     /**
+     * Issue #276 : la panne du verrou des limiteurs ne nomme ni le limiteur ni
+     * sa clé (une IP, un identifiant tenté) — le chemin dit lequel a cédé.
+     */
+    public function testRateLimiterUnavailableCarriesNoSubjectOnlyTheActorAndThePath(): void
+    {
+        $this->pushRequest('/api/login_check', 'POST');
+
+        $this->auditLogger->rateLimiterUnavailable();
+
+        self::assertSame([
+            'event' => 'rate-limiter-unavailable',
+            'actor' => 'anonymous',
+            'ip' => self::IP,
+            'path' => '/api/login_check',
+        ], $this->singleRecord()->context);
+    }
+
+    /**
      * Le chemin est journalisé sous sa forme décodée (CanonicalPath, issue
      * #77) : c'est celle que le routeur et le firewall ont réellement vue.
      */
@@ -412,6 +430,7 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->baseAccessIssued('guest-0123');
         $this->auditLogger->csrfRejected();
         $this->auditLogger->backofficeAccessDenied();
+        $this->auditLogger->rateLimiterUnavailable();
         $this->auditLogger->userInvited($invited);
         $this->auditLogger->userReinvited($invited);
         $this->auditLogger->roleChanged($invited, true);
@@ -421,7 +440,7 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->userPurged($invited);
 
         $records = $this->handler->getRecords();
-        self::assertCount(14, $records);
+        self::assertCount(15, $records);
 
         foreach ($records as $record) {
             $serialized = json_encode([$record->message, $record->context, $record->extra], \JSON_THROW_ON_ERROR);

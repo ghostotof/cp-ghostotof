@@ -211,9 +211,20 @@ Conséquences :
   transaction dont l'auteur attend le verrou ne sortirait qu'au `lock_timeout` ; et l'écriture de
   la fenêtre, visible seulement au commit, serait publiée après la levée du verrou — la perte de
   mise à jour de #272 reviendrait. Aucun appel actuel n'est dans une transaction.
-- Une panne du verrou (connexion refusée, `lock_timeout` atteint) répond **500** : la requête
-  est refusée, jamais laissée passer, ce qui est le bon sens de défaillance. Sur le login, elle ne
-  laisse pas d'événement `login-failed` au journal d'audit, seulement l'erreur du noyau.
+- Une panne du verrou (connexion refusée, `lock_timeout` atteint) refuse la requête, ne la
+  laisse jamais passer, ce qui est le bon sens de défaillance. Elle répondait **500** ; depuis
+  l'issue #276, `RateLimiterLockFailureListener` la rend en **503** problem+json
+  (`/errors/rate-limiter-unavailable`, `Retry-After: 10`, le double du `lock_timeout`) sur toute
+  route `/api`, servie par API Platform ou non. L'erreur reste journalisée par le noyau (le
+  listener est à -50, sous le `logKernelException` de Symfony à 0) : c'est un incident
+  d'infrastructure, l'exploitation doit le voir.
+  **Décision sur l'audit** : un événement dédié, `rate-limiter-unavailable`, au journal de
+  sécurité — pas `login-failed`, car aucun identifiant n'a été vérifié, et un filtre sur les
+  échecs d'authentification mélangerait les deux. Sans sujet : la ressource verrouillée contient
+  la clé du limiteur (IP, identifiant tenté), le chemin dit lequel a cédé. Une rafale de logins
+  pendant une panne du verrou reste ainsi visible au `jq` sur le canal `security_audit`, ce que
+  la seule erreur du noyau ne permettait pas de filtrer. Le message de `LockAcquiringException`,
+  qui nomme cette ressource, ne sort jamais dans la réponse.
 - Le canal Monolog `lock` a son propre handler plafonné à `notice` : le composant trace chaque
   pose et levée en `debug` avec la ressource (IP ou identifiant), que la préprod
   (`LOG_LEVEL=debug`) aurait écrite à chaque requête limitée. `LockLogChannelTest` le fige.

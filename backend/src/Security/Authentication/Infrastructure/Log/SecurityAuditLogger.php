@@ -80,6 +80,11 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         $this->record('backoffice-access-denied', 'Backoffice access denied.');
     }
 
+    public function rateLimiterUnavailable(): void
+    {
+        $this->record('rate-limiter-unavailable', 'Request refused: rate limiter lock unavailable.');
+    }
+
     public function userInvited(CpgUser $user): void
     {
         $this->record('user-invited', 'User invited.', $this->account($user));

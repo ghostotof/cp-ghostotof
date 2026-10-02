@@ -382,7 +382,9 @@ mid-migration.
     (3rd audit, A5/D5, Monolog channel `security_audit`, `info`, JSON on stderr in prod — see
     `monolog.yaml`). Implements `Application/SecurityAuditLoggerInterface`, one method per event:
     `login-succeeded`, `login-failed`, `login-throttled`, `logged-out`, `base-access-issued`,
-    `csrf-rejected`, `backoffice-access-denied`, `user-invited`, `user-reinvited`, `role-changed`
+    `csrf-rejected`, `backoffice-access-denied`, `rate-limiter-unavailable` (issue #276, the
+    limiter's shared lock failed — `RateLimiterLockFailureListener` answers 503 problem+json with
+    `Retry-After`, never a 500; no subject, the lock resource carries an IP or a username), `user-invited`, `user-reinvited`, `role-changed`
     (`superAdmin` bool), `password-changed`, `user-deleted`, `account-activated`, `user-purged`
     (`actor: system` — the one event whose actor is not read from the token storage; `record()` takes an
     explicit actor for CLI callers). Every record carries
