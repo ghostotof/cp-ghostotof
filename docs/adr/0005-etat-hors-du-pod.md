@@ -211,20 +211,27 @@ Conséquences :
   transaction dont l'auteur attend le verrou ne sortirait qu'au `lock_timeout` ; et l'écriture de
   la fenêtre, visible seulement au commit, serait publiée après la levée du verrou — la perte de
   mise à jour de #272 reviendrait. Aucun appel actuel n'est dans une transaction.
-- Une panne du verrou (connexion refusée, `lock_timeout` atteint) refuse la requête, ne la
-  laisse jamais passer, ce qui est le bon sens de défaillance. Elle répondait **500** ; depuis
-  l'issue #276, `RateLimiterLockFailureListener` la rend en **503** problem+json
-  (`/errors/rate-limiter-unavailable`, `Retry-After: 10`, le double du `lock_timeout`) sur toute
-  route `/api`, servie par API Platform ou non. L'erreur reste journalisée par le noyau (le
-  listener est à -50, sous le `logKernelException` de Symfony à 0) : c'est un incident
-  d'infrastructure, l'exploitation doit le voir.
-  **Décision sur l'audit** : un événement dédié, `rate-limiter-unavailable`, au journal de
-  sécurité — pas `login-failed`, car aucun identifiant n'a été vérifié, et un filtre sur les
-  échecs d'authentification mélangerait les deux. Sans sujet : la ressource verrouillée contient
-  la clé du limiteur (IP, identifiant tenté), le chemin dit lequel a cédé. Une rafale de logins
-  pendant une panne du verrou reste ainsi visible au `jq` sur le canal `security_audit`, ce que
-  la seule erreur du noyau ne permettait pas de filtrer. Le message de `LockAcquiringException`,
-  qui nomme cette ressource, ne sort jamais dans la réponse.
+- Une panne du verrou (connexion refusée, `lock_timeout` atteint, connexion perdue avant la
+  libération) refuse la requête, ne la laisse jamais passer, ce qui est le bon sens de
+  défaillance. Elle répondait **500** ; depuis l'issue #276, `RateLimiterLockFailureListener` la
+  rend en **503** problem+json (`/errors/rate-limiter-unavailable`, `Retry-After: 10`, au-dessus
+  du `lock_timeout` de 5 s — `FpmLockWaitBoundTest` le fige) sur **toute** route `/api` limitée,
+  servie par API Platform ou non : prise (`LockAcquiringException`), libération
+  (`LockReleasingException`) et conflit relayé par le store interne (`LockConflictedException`).
+  Le message de ces exceptions nomme la ressource verrouillée, donc la clé du limiteur (IP,
+  identifiant tenté) : il ne sort ni dans la réponse ni sur le canal principal. Le listener est à
+  la priorité 16, au-dessus du `logKernelException` de Symfony (0) qui l'aurait écrit en
+  `critical`, et journalise lui-même une ligne `error` avec les classes des exceptions et le
+  chemin — l'incident reste visible côté exploitation. Seul le canal `lock` garde le nom de la
+  ressource, au niveau `notice` (voir le point suivant).
+  **Portée** : le listener prend toute panne du composant Lock sous `/api`, pas seulement celles
+  des limiteurs — exact aujourd'hui, où ils en sont les seuls utilisateurs. Un futur verrou
+  métier impose de revoir ce listener, sans quoi sa panne serait étiquetée « limiteur ».
+  **Décision sur l'audit** : un événement dédié, `rate-limiter-unavailable`, émis au journal de
+  sécurité sur **toutes** les routes limitées, pas seulement le login — et non `login-failed`,
+  car aucun identifiant n'a été vérifié, et un filtre sur les échecs d'authentification
+  mélangerait les deux. Sans sujet : le chemin dit quel limiteur a cédé. Une rafale de requêtes
+  pendant une panne du verrou reste ainsi visible au `jq` sur le canal `security_audit`.
 - Le canal Monolog `lock` a son propre handler plafonné à `notice` : le composant trace chaque
   pose et levée en `debug` avec la ressource (IP ou identifiant), que la préprod
   (`LOG_LEVEL=debug`) aurait écrite à chaque requête limitée. `LockLogChannelTest` le fige.
