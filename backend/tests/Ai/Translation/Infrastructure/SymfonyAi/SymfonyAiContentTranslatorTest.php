@@ -12,6 +12,7 @@ use App\Tests\Ai\Translation\Support\FakeAgent;
 use App\Tests\Ai\Translation\Support\InMemoryLogger;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Exception\RuntimeException as PlatformRuntimeException;
+use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\Result\ObjectResult;
 use Symfony\AI\Platform\Result\ResultInterface;
 use Symfony\AI\Platform\Result\TextResult;
@@ -124,10 +125,9 @@ final class SymfonyAiContentTranslatorTest extends TestCase
         $translator->translate($this->request());
     }
 
-    public function testTurnsAProviderFailureIntoAnUnavailableTranslationAndLogsTheCause(): void
+    public function testTurnsAProviderFailureIntoAnUnavailableTranslation(): void
     {
-        $logger = new InMemoryLogger();
-        $translator = $this->translator(new PlatformRuntimeException('HTTP 529 overloaded'), $logger);
+        $translator = $this->translator(new PlatformRuntimeException('HTTP 529 overloaded'));
 
         try {
             $translator->translate($this->request());
@@ -135,8 +135,64 @@ final class SymfonyAiContentTranslatorTest extends TestCase
         } catch (TranslationUnavailableException $exception) {
             self::assertStringNotContainsString('529', $exception->getMessage(), 'Le message du fournisseur ne doit pas remonter au client.');
         }
+    }
 
-        self::assertStringContainsString('HTTP 529 overloaded', $logger->dump());
+    /**
+     * Issue #269 : le bridge recopie le corps de la réponse du fournisseur
+     * dans son message (« Unexpected response code 400: "<corps>" »). La
+     * cause se journalise par sa classe et son statut HTTP, jamais par ce
+     * message.
+     */
+    public function testLogsTheProviderFailureByClassAndStatusNeverByItsMessage(): void
+    {
+        $logger = new InMemoryLogger();
+        $translator = $this->translator(new PlatformRuntimeException('Unexpected response code 400: "SENTINELLE-FOURNISSEUR"'), $logger);
+
+        try {
+            $translator->translate($this->request());
+            self::fail('Une exception était attendue.');
+        } catch (TranslationUnavailableException) {
+        }
+
+        self::assertStringNotContainsString('SENTINELLE-FOURNISSEUR', $logger->dump());
+        $errors = array_values(array_filter($logger->records, static fn (array $record): bool => 'error' === $record['level']));
+        self::assertCount(1, $errors);
+        self::assertSame(PlatformRuntimeException::class, $errors[0]['context']['exception']);
+        self::assertSame(400, $errors[0]['context']['providerStatus']);
+    }
+
+    public function testLogsTheStatusOfAServerException(): void
+    {
+        $logger = new InMemoryLogger();
+        $translator = $this->translator(new ServerException(529, 'SENTINELLE-FOURNISSEUR'), $logger);
+
+        try {
+            $translator->translate($this->request());
+            self::fail('Une exception était attendue.');
+        } catch (TranslationUnavailableException) {
+        }
+
+        self::assertStringNotContainsString('SENTINELLE-FOURNISSEUR', $logger->dump());
+        self::assertSame(529, $logger->records[0]['context']['providerStatus']);
+    }
+
+    /**
+     * L'exception qui sort d'ici est journalisée par l'ErrorListener du noyau,
+     * chaîne `previous` comprise (formateur JSON en prod) : elle ne doit rien
+     * transporter du fournisseur.
+     */
+    public function testTheExceptionLeavingTheServiceCarriesNothingFromTheProvider(): void
+    {
+        $translator = $this->translator(new PlatformRuntimeException('Unexpected response code 400: "SENTINELLE-FOURNISSEUR"'));
+
+        try {
+            $translator->translate($this->request());
+            self::fail('Une exception était attendue.');
+        } catch (TranslationUnavailableException $exception) {
+            for ($link = $exception; null !== $link; $link = $link->getPrevious()) {
+                self::assertStringNotContainsString('SENTINELLE-FOURNISSEUR', $link->getMessage());
+            }
+        }
     }
 
     public function testLogsTokenUsageAndDurationButNeverTheContent(): void

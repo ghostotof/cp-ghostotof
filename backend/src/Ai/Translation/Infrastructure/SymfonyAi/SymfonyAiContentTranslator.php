@@ -12,11 +12,13 @@ use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\AgentInterface;
 use Symfony\AI\Agent\Exception\ExceptionInterface as AgentException;
 use Symfony\AI\Platform\Exception\ExceptionInterface as PlatformException;
+use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientException;
+use Symfony\Contracts\HttpClient\Exception\HttpExceptionInterface;
 
 /**
  * Seule classe du projet à importer Symfony\AI (ADR 0004, D1) : tout ce qui
@@ -27,7 +29,9 @@ use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExcep
  * serveur (D5) : une clé absente, une valeur vide ou non textuelle, un JSON
  * malformé sont une TranslationUnavailableException, jamais une réponse
  * partielle. Le texte envoyé et reçu n'est jamais journalisé — seuls les
- * jetons, la durée et le nombre de champs le sont.
+ * jetons, la durée et le nombre de champs le sont. Un échec du fournisseur
+ * se journalise par sa classe et son statut HTTP, jamais par son message,
+ * où le bridge recopie le corps de la réponse (issue #269).
  */
 final readonly class SymfonyAiContentTranslator implements ContentTranslatorInterface
 {
@@ -52,12 +56,14 @@ final readonly class SymfonyAiContentTranslator implements ContentTranslatorInte
             $content = $execution->getContent();
             $tokenUsage = $execution->getMetadata()->get('token_usage');
         } catch (PlatformException|AgentException|HttpClientException $exception) {
+            // Jamais le message : le bridge y recopie le corps de la réponse du
+            // fournisseur, qui peut citer l'entrée (issue #269).
             $this->logger->error('Assistant de traduction : le fournisseur a échoué.', [
                 'exception' => $exception::class,
-                'reason' => $exception->getMessage(),
+                'providerStatus' => $this->providerStatus($exception),
             ]);
 
-            throw new TranslationUnavailableException($exception);
+            throw new TranslationUnavailableException();
         }
 
         $fields = $this->validatedFields($content, $request->fieldNames());
@@ -127,8 +133,8 @@ final readonly class SymfonyAiContentTranslator implements ContentTranslatorInte
         if (\is_string($content)) {
             try {
                 $content = json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
-            } catch (\JsonException $exception) {
-                throw $this->rejected('JSON malformé', $exception);
+            } catch (\JsonException) {
+                throw $this->rejected('JSON malformé');
             }
         }
 
@@ -148,10 +154,33 @@ final readonly class SymfonyAiContentTranslator implements ContentTranslatorInte
         return $fields;
     }
 
-    private function rejected(string $reason, ?\Throwable $previous = null): TranslationUnavailableException
+    private function rejected(string $reason): TranslationUnavailableException
     {
         $this->logger->error('Assistant de traduction : réponse du modèle refusée.', ['reason' => $reason]);
 
-        return new TranslationUnavailableException($previous);
+        return new TranslationUnavailableException();
+    }
+
+    /**
+     * Statut HTTP du fournisseur, sans jamais lire le corps : la classe seule
+     * ne distingue pas un 529 (surcharge) d'un 401 (clé révoquée).
+     */
+    private function providerStatus(\Throwable $exception): ?int
+    {
+        if ($exception instanceof ServerException) {
+            return $exception->getStatusCode();
+        }
+
+        if ($exception instanceof HttpExceptionInterface) {
+            return $exception->getResponse()->getStatusCode();
+        }
+
+        // RuntimeException du bridge : « Unexpected response code 400: "…" ».
+        // Seul le nombre en tête est lu, jamais ce qui suit.
+        if (1 === preg_match('/^Unexpected response code (\d{3})\b/', $exception->getMessage(), $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
     }
 }

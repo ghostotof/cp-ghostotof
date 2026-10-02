@@ -10,6 +10,9 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\Formatter\JsonFormatter;
+use Monolog\Handler\TestHandler;
+use Monolog\Logger;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -193,6 +196,40 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame('/errors/translation-unavailable', $body['type']);
         self::assertStringNotContainsString('Overloaded', (string) $client->getResponse()->getContent());
+    }
+
+    /**
+     * Issue #269 : le bridge recopie le corps de la réponse du fournisseur
+     * dans le message de son exception, et ce corps peut citer l'entrée — du
+     * contenu du backoffice. Ni notre log métier ni ceux du noyau
+     * (ErrorListener, canal `request`) et d'API Platform (canal `app`), qui
+     * sérialisent toute la chaîne `previous`, ne doivent le laisser sortir.
+     */
+    public function testNoProviderResponseBodyReachesAnyLog(): void
+    {
+        $client = $this->superClient();
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $this->stubAnthropic($client, new MockResponse(
+            '{"type":"error","error":{"type":"invalid_request_error","message":"SENTINELLE-FOURNISSEUR Panne du broker RabbitMQ"}}',
+            ['http_code' => 400],
+        ));
+        $probe = new TestHandler();
+        foreach (['monolog.logger', 'monolog.logger.request'] as $channel) {
+            $logger = $client->getContainer()->get($channel);
+            self::assertInstanceOf(Logger::class, $logger);
+            $logger->pushHandler($probe);
+        }
+
+        $this->post($client, $csrfToken, $this->validPayload());
+
+        self::assertResponseStatusCodeSame(503);
+        // Garde-fou : la sonde a bien vu passer l'exception (sinon le test
+        // resterait vert sans rien vérifier).
+        self::assertTrue($probe->hasCriticalThatContains('TranslationUnavailableException'));
+        $formatter = new JsonFormatter();
+        foreach ($probe->getRecords() as $record) {
+            self::assertStringNotContainsString('SENTINELLE-FOURNISSEUR', $formatter->format($record));
+        }
     }
 
     public function testAResponseOutsideTheSchemaIsA503(): void
