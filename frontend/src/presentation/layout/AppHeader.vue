@@ -11,6 +11,7 @@ import { useAuth } from '../../application/auth/useAuth'
 import { useBaseAccess } from '../../application/baseAccess/useBaseAccess'
 import { useCvDownload } from '../../application/cv/useCvDownload'
 import LocaleSwitcher from '../ui/LocaleSwitcher.vue'
+import IconMessageCircle from '~icons/lucide/message-circle'
 import IconDownload from '~icons/lucide/download'
 import IconZap from '~icons/lucide/zap'
 import IconMenu from '~icons/lucide/menu'
@@ -341,6 +342,30 @@ function navLinkClass(link: NavigationLink) {
             </RouterLink>
           </template>
           <template v-else>
+            <!-- Assistant (#265) : proposé à tout le palier nominatif, donc
+                 aussi à ROLE_SUPER, contrairement au CV. -->
+            <RouterLink
+              :to="`${homeLink}/assistant`"
+              class="btn btn-outline-light btn-sm d-none d-sm-inline-flex align-items-center gap-2"
+            >
+              {{ t('nav.assistant') }}
+              <IconMessageCircle
+                width="16"
+                height="16"
+                aria-hidden="true"
+              />
+            </RouterLink>
+            <RouterLink
+              :to="`${homeLink}/assistant`"
+              class="btn btn-outline-light btn-sm d-sm-none d-inline-flex align-items-center"
+              :aria-label="t('nav.assistant')"
+            >
+              <IconMessageCircle
+                width="16"
+                height="16"
+                aria-hidden="true"
+              />
+            </RouterLink>
             <RouterLink
               v-if="isSuperAdmin"
               :to="`${homeLink}/admin`"

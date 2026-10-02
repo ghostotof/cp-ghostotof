@@ -4,7 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent } from 'vue'
 import AppHeader from '../../../src/presentation/layout/AppHeader.vue'
 import { createAppI18n } from '../../../src/presentation/i18n'
-import { AUTH_REPOSITORY, markBaseAccessGranted, useAuth } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, markBaseAccessGranted, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
 import { CV_REPOSITORY } from '../../../src/application/cv/useCvDownload'
 import { BASE_ACCESS_REPOSITORY } from '../../../src/application/baseAccess/useBaseAccess'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
@@ -110,6 +110,7 @@ async function mountHeader(
       { path: '/:locale(fr|en)/experience', name: 'experience', component: StubPage },
       { path: '/:locale(fr|en)/anonymous-cv', name: 'anonymous-cv', component: StubPage },
       { path: '/:locale(fr|en)/admin', name: 'admin-technologies', component: StubPage },
+      { path: '/:locale(fr|en)/assistant', name: 'assistant', component: StubPage },
     ],
   })
   await router.push(initialPath)
@@ -581,6 +582,55 @@ describe('AppHeader', () => {
 
       await primeBaseAccessState()
       await expectNoAccessibilityViolation((await mountHeader()).wrapper)
+    })
+  })
+
+  describe('lien « Assistant » (#265)', () => {
+    const TARGET = 'a[href="/fr/assistant"]'
+
+    it('anonyme : aucun lien vers l\'assistant', async () => {
+      await primeAuthState(null)
+      const { wrapper } = await mountHeader()
+
+      expect(wrapper.find(TARGET).exists()).toBe(false)
+    })
+
+    it('palier de base : aucun lien vers l\'assistant', async () => {
+      await primeBaseAccessState()
+      const { wrapper } = await mountHeader()
+
+      expect(wrapper.find(TARGET).exists()).toBe(false)
+    })
+
+    it('palier nominatif : un lien texte et un lien icône nommé par aria-label', async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader()
+
+      const links = wrapper.findAll(TARGET)
+      expect(links).toHaveLength(2)
+      const textLink = links.find((link) => link.classes().includes('d-sm-inline-flex'))
+      const iconLink = links.find((link) => link.classes().includes('d-sm-none'))
+      expect(textLink?.text()).toBe('Assistant')
+      expect(iconLink?.attributes('aria-label')).toBe('Assistant')
+      expect(iconLink?.get('svg').attributes('aria-hidden')).toBe('true')
+    })
+
+    it('super-admin : le lien est présent aussi, contrairement au bouton CV', async () => {
+      await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader()
+
+      expect(wrapper.findAll(TARGET)).toHaveLength(2)
+    })
+
+    it('la session expire : les liens disparaissent', async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader()
+      expect(wrapper.findAll(TARGET)).toHaveLength(2)
+
+      markSessionExpired()
+      await flushPromises()
+
+      expect(wrapper.find(TARGET).exists()).toBe(false)
     })
   })
 })
