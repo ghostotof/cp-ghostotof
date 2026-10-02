@@ -8,8 +8,12 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\Formatter\JsonFormatter;
+use Monolog\Level;
+use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -24,6 +28,7 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 final class BackofficeTranslationResourceTest extends WebTestCase
 {
     use HttpJson;
+    use ReadsAllChannelsLog;
 
     private const string SUPER_USERNAME = 'super';
     private const string PLAIN_USERNAME = 'jane';
@@ -193,6 +198,66 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame('/errors/translation-unavailable', $body['type']);
         self::assertStringNotContainsString('Overloaded', (string) $client->getResponse()->getContent());
+    }
+
+    /**
+     * Issue #269 : le bridge recopie le message d'erreur du fournisseur dans
+     * celui de son exception, et ce message peut citer l'entrée — du contenu
+     * du backoffice. Aucun journal ne doit le laisser sortir : ni notre log
+     * métier, ni ceux du noyau (ErrorListener, canal `request`) et d'API
+     * Platform (canal `app`), qui sérialisent toute la chaîne `previous`. La
+     * sonde écoute tous les canaux sauf `event` (ReadsAllChannelsLog).
+     */
+    public function testNoProviderErrorMessageReachesAnyLog(): void
+    {
+        $client = $this->superClient();
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $this->stubAnthropic($client, new MockResponse(
+            '{"type":"error","error":{"type":"invalid_request_error","message":"SENTINELLE-FOURNISSEUR Panne du broker RabbitMQ"}}',
+            ['http_code' => 400],
+        ));
+
+        $this->post($client, $csrfToken, $this->validPayload());
+
+        self::assertResponseStatusCodeSame(503);
+        $records = self::allChannelsLogRecords();
+        // Garde-fou : la sonde a bien vu passer l'exception (sinon le test
+        // resterait vert sans rien vérifier).
+        self::assertNotEmpty(array_filter(
+            $records,
+            static fn (LogRecord $record): bool => Level::Critical === $record->level && str_contains($record->message, 'TranslationUnavailableException'),
+        ));
+        $formatter = new JsonFormatter();
+        foreach ($records as $record) {
+            self::assertStringNotContainsString('SENTINELLE-FOURNISSEUR', $formatter->format($record));
+        }
+    }
+
+    /**
+     * Le type d'erreur Anthropic est lu dans le message de l'exception du
+     * bridge, dont le format n'est pas une API : ce test le fait passer par
+     * le vrai ResultConverter, et rougit si une montée de version le change.
+     * Cas typique : le modèle configuré a été retiré (404 `not_found_error`).
+     */
+    public function testTheProviderErrorTypeIsLoggedThroughTheRealBridge(): void
+    {
+        $client = $this->superClient();
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $this->stubAnthropic($client, new MockResponse(
+            '{"type":"error","error":{"type":"not_found_error","message":"SENTINELLE-FOURNISSEUR model: claude-sonnet-5"}}',
+            ['http_code' => 404, 'response_headers' => ['content-type' => 'application/json']],
+        ));
+
+        $this->post($client, $csrfToken, $this->validPayload());
+
+        self::assertResponseStatusCodeSame(503);
+        $failures = array_values(array_filter(
+            self::allChannelsLogRecords(),
+            static fn (LogRecord $record): bool => \array_key_exists('providerErrorType', $record->context),
+        ));
+        self::assertCount(1, $failures);
+        self::assertSame('not_found_error', $failures[0]->context['providerErrorType'] ?? null);
+        self::assertStringNotContainsString('SENTINELLE-FOURNISSEUR', (new JsonFormatter())->format($failures[0]));
     }
 
     public function testAResponseOutsideTheSchemaIsA503(): void
