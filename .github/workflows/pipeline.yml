@@ -340,6 +340,7 @@ jobs:
           tools/tests/rotate-deployer-token.test.sh
           tools/tests/security-headers.test.sh
           tools/tests/check-workflow-timeouts.test.sh
+          tools/tests/git-config-isolation.test.sh
       # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.

@@ -20,7 +20,11 @@ pass()  { printf '  ok   %s\n' "$1"; }
 fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1)); }
 check() { if eval "$2"; then pass "$1"; else fail "$1" "condition fausse : $2"; fi; }
 
-g() { git -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false "$@"; }
+# git sans configuration globale ni système (issue #304) : la signature, les
+# hooks ou la branche par défaut du poste n'atteignent ni la suite ni le script
+# testé, qui hérite de ces variables. Seule l'identité reste à fournir.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+g() { git -c user.name=test -c user.email=test@example.invalid "$@"; }
 
 NOTES=$'# v0.14.0 — Titre de test\n\n## Contenu\n\n- une ligne'
 
@@ -112,12 +116,10 @@ cmds="$(sed -n '/^```sh$/,/^```$/p' "$TMP/out" | sed '1d;$d')"
 sync_branch="$(printf '%s\n' "$cmds" | sed -n 's/^git push -u [^ ]* //p')"
 check "divergé : le résumé donne la marche à suivre en commandes" "[ -n \"\$cmds\" ]"
 check "divergé : la PR proposée cible develop explicitement (défaut du dépôt = main)" "printf '%s\n' \"\$cmds\" | grep -q '^gh pr create .*--base develop'"
-# Les commandes appellent `git` nu (elles sont faites pour un humain) : identité
-# et signature passent par l'environnement, sans quoi le merge échoue faute
-# d'identité, ou attend une phrase de passe sur un poste qui signe ses commits.
+# Les commandes appellent `git` nu (elles sont faites pour un humain) : l'identité
+# passe par l'environnement, sans quoi le merge échoue faute d'identité.
 if [ -n "$cmds" ] && (cd "$WORK" && GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid \
      GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid \
-     GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=commit.gpgsign GIT_CONFIG_VALUE_0=false \
      bash -euo pipefail -c "$(printf '%s\n' "$cmds" | grep -v '^gh ')") >"$TMP/sync.out" 2>&1; then
   check "divergé : la consigne pousse $sync_branch" "g -C '$O' show-ref --verify --quiet refs/heads/$sync_branch"
   check "divergé : préfixe fix/ couvert par les déclencheurs de la pipeline" "case '$sync_branch' in fix/*) grep -Eq \"^[[:space:]]*- '?fix/\\*\\*'?[[:space:]]*\$\" '$(dirname "$SCRIPT")/../.github/workflows/pipeline.yml' ;; *) false ;; esac"
