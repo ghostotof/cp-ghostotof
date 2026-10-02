@@ -382,7 +382,7 @@ mid-migration.
     (3rd audit, A5/D5, Monolog channel `security_audit`, `info`, JSON on stderr in prod — see
     `monolog.yaml`). Implements `Application/SecurityAuditLoggerInterface`, one method per event:
     `login-succeeded`, `login-failed`, `login-throttled`, `logged-out`, `base-access-issued`,
-    `csrf-rejected`, `backoffice-access-denied`, `user-invited`, `user-reinvited`, `role-changed`
+    `csrf-rejected`, `backoffice-access-denied`, `rate-limiter-unavailable`, `user-invited`, `user-reinvited`, `role-changed`
     (`superAdmin` bool), `password-changed`, `user-deleted`, `account-activated`, `user-purged`
     (`actor: system` — the one event whose actor is not read from the token storage; `record()` takes an
     explicit actor for CLI callers). Every record carries
@@ -399,7 +399,16 @@ mid-migration.
     `AccessDeniedHttpException` — that `previous` is required, so the CSRF guards' bare
     `AccessDeniedHttpException` isn't logged twice; an anonymous hit is a 401 that never reaches it); the
     two CSRF guards call `csrfRejected()` right before throwing (actor is `anonymous` there by
-    construction — priority 20 runs before the firewall); `BaseAccessController` logs the `guest-…`
+    construction — priority 20 runs before the firewall);
+    `Infrastructure/Http/RateLimiterLockFailureListener` logs `rate-limiter-unavailable` (issue
+    #276) when a limiter's shared lock fails on an `/api` route — acquiring, releasing, or a
+    conflict relayed by the component's in-memory store — and answers 503 problem+json with
+    `Retry-After`, never a 500. No subject: the lock resource carries the limiter's key (an IP, a
+    tried username), so neither the response nor the audit record names it, and the listener sits
+    at priority 16, above Symfony's `logKernelException` (0), writing its own `error` line with
+    the exception classes only — the raw message reaches no channel but `lock`. It catches any
+    Lock failure under `/api`: a future non-limiter lock must revisit it; `BaseAccessController`
+    logs the `guest-…`
     identifier, never the token; the `Security/User/Application` use cases and the housekeeping
     `PendingInvitationPurger` log after the successful action. Functional tests read the records through
     `tests/Support/ReadsSecurityAuditLog.php` (a

@@ -60,13 +60,6 @@ use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 #[AsEventListener(event: ExceptionEvent::class, priority: -100)]
 final readonly class ApiJsonErrorFormatListener
 {
-    /**
-     * Préfixe de l'API. Ancré sur « `/api` exactement, ou `/api/…` » : un
-     * `str_starts_with($path, '/api')` nu attraperait aussi un futur `/apix`
-     * ou `/api-docs`, qui ne sont pas l'API.
-     */
-    private const string API_PATH = '/api';
-
     public function __invoke(ExceptionEvent $event): void
     {
         // Le forward vers le contrôleur d'erreur est une sous-requête : elle
@@ -82,9 +75,7 @@ final readonly class ApiJsonErrorFormatListener
         // `/%61pi/inexistant` comme `/api/inexistant`, sa 404 doit donc sortir
         // en JSON elle aussi — sinon un octet d'encodage suffit à récupérer la
         // page HTML sur le chemin qu'on vient de couvrir.
-        $path = CanonicalPath::of($request);
-
-        if (self::API_PATH !== $path && !str_starts_with($path, self::API_PATH.'/')) {
+        if (!CanonicalPath::isUnderApi($request)) {
             return;
         }
 
