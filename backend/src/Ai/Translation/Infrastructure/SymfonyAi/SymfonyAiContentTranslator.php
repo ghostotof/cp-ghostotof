@@ -59,7 +59,7 @@ final readonly class SymfonyAiContentTranslator implements ContentTranslatorInte
             // fournisseur, qui peut citer l'entrée (issue #269).
             $this->logger->error('Assistant de traduction : le fournisseur a échoué.', [
                 'exception' => $exception::class,
-                'providerStatus' => $this->providerStatus($exception),
+                'serverErrorStatus' => $this->serverErrorStatus($exception),
                 'providerErrorType' => $this->providerErrorType($exception),
             ]);
 
@@ -162,11 +162,11 @@ final readonly class SymfonyAiContentTranslator implements ContentTranslatorInte
     }
 
     /**
-     * Statut HTTP du fournisseur, quand le bridge le transmet : il ne le fait
-     * que pour un 5xx (ServerException). 400, 401 et 429 ont chacun leur
-     * classe, qui suffit à les reconnaître.
+     * Statut HTTP d'une erreur serveur du fournisseur : le bridge ne transmet
+     * de statut que pour un 5xx (ServerException). 400, 401 et 429 ont chacun
+     * leur classe, qui suffit à les reconnaître.
      */
-    private function providerStatus(\Throwable $exception): ?int
+    private function serverErrorStatus(\Throwable $exception): ?int
     {
         return $exception instanceof ServerException ? $exception->getStatusCode() : null;
     }
@@ -177,7 +177,9 @@ final readonly class SymfonyAiContentTranslator implements ContentTranslatorInte
      * réduisent à une RuntimeException indiscernable d'une réponse vide. Le
      * bridge l'écrit en tête de son message (« API Error [<type>]: "…" ») ;
      * seul ce mot-clé est capturé, par une expression ancrée, jamais ce qui
-     * suit.
+     * suit. Ce format est celui de symfony/ai-anthropic-platform 0.13.0 :
+     * BackofficeTranslationResourceTest le vérifie à travers le vrai bridge,
+     * et rougit si une montée de version le change.
      */
     private function providerErrorType(\Throwable $exception): ?string
     {

@@ -55,6 +55,17 @@ when@test:
                 type: test
                 level: info
                 channels: ["security_audit"]
+            # Sonde sur TOUS les canaux, sans filtre : un test qui vérifie
+            # qu'un contenu ne sort par aucun journal (issue #269) couvre ainsi
+            # d'office un canal ajouté plus tard, ce qu'une liste de loggers
+            # écrite dans le test ne ferait pas. Retrouvée par son niveau parmi
+            # les handlers du logger public `monolog.logger.security_audit`
+            # (cf. BackofficeTranslationResourceTest) : garder `debug`, qui la
+            # distingue de `security_audit_test`. Le kernel étant reconstruit
+            # entre deux tests, elle ne garde que ceux du test en cours.
+            all_channels_test:
+                type: test
+                level: debug
 
 # `when@prod` couvre la production ET la préprod : les deux tournent avec
 # APP_ENV=prod (l'image `preprod` est construite FROM `production`, elle ne

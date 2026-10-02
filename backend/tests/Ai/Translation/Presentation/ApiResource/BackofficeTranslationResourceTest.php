@@ -12,7 +12,8 @@ use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Formatter\JsonFormatter;
 use Monolog\Handler\TestHandler;
-use Monolog\Logger;
+use Monolog\Level;
+use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -199,13 +200,14 @@ final class BackofficeTranslationResourceTest extends WebTestCase
     }
 
     /**
-     * Issue #269 : le bridge recopie le corps de la réponse du fournisseur
-     * dans le message de son exception, et ce corps peut citer l'entrée — du
-     * contenu du backoffice. Ni notre log métier ni ceux du noyau
-     * (ErrorListener, canal `request`) et d'API Platform (canal `app`), qui
-     * sérialisent toute la chaîne `previous`, ne doivent le laisser sortir.
+     * Issue #269 : le bridge recopie le message d'erreur du fournisseur dans
+     * celui de son exception, et ce message peut citer l'entrée — du contenu
+     * du backoffice. Aucun journal ne doit le laisser sortir : ni notre log
+     * métier, ni ceux du noyau (ErrorListener, canal `request`) et d'API
+     * Platform (canal `app`), qui sérialisent toute la chaîne `previous`. La
+     * sonde écoute tous les canaux (monolog.yaml, `all_channels_test`).
      */
-    public function testNoProviderResponseBodyReachesAnyLog(): void
+    public function testNoProviderErrorMessageReachesAnyLog(): void
     {
         $client = $this->superClient();
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
@@ -213,16 +215,11 @@ final class BackofficeTranslationResourceTest extends WebTestCase
             '{"type":"error","error":{"type":"invalid_request_error","message":"SENTINELLE-FOURNISSEUR Panne du broker RabbitMQ"}}',
             ['http_code' => 400],
         ));
-        $probe = new TestHandler();
-        foreach (['monolog.logger', 'monolog.logger.request'] as $channel) {
-            $logger = $client->getContainer()->get($channel);
-            self::assertInstanceOf(Logger::class, $logger);
-            $logger->pushHandler($probe);
-        }
 
         $this->post($client, $csrfToken, $this->validPayload());
 
         self::assertResponseStatusCodeSame(503);
+        $probe = $this->allChannelsProbe($client);
         // Garde-fou : la sonde a bien vu passer l'exception (sinon le test
         // resterait vert sans rien vérifier).
         self::assertTrue($probe->hasCriticalThatContains('TranslationUnavailableException'));
@@ -230,6 +227,33 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         foreach ($probe->getRecords() as $record) {
             self::assertStringNotContainsString('SENTINELLE-FOURNISSEUR', $formatter->format($record));
         }
+    }
+
+    /**
+     * Le type d'erreur Anthropic est lu dans le message de l'exception du
+     * bridge, dont le format n'est pas une API : ce test le fait passer par
+     * le vrai ResultConverter, et rougit si une montée de version le change.
+     * Cas typique : le modèle configuré a été retiré (404 `not_found_error`).
+     */
+    public function testTheProviderErrorTypeIsLoggedThroughTheRealBridge(): void
+    {
+        $client = $this->superClient();
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $this->stubAnthropic($client, new MockResponse(
+            '{"type":"error","error":{"type":"not_found_error","message":"SENTINELLE-FOURNISSEUR model: claude-sonnet-5"}}',
+            ['http_code' => 404, 'response_headers' => ['content-type' => 'application/json']],
+        ));
+
+        $this->post($client, $csrfToken, $this->validPayload());
+
+        self::assertResponseStatusCodeSame(503);
+        $failures = array_values(array_filter(
+            $this->allChannelsProbe($client)->getRecords(),
+            static fn (LogRecord $record): bool => 'Assistant de traduction : le fournisseur a échoué.' === $record->message,
+        ));
+        self::assertCount(1, $failures);
+        self::assertSame('not_found_error', $failures[0]->context['providerErrorType'] ?? null);
+        self::assertStringNotContainsString('SENTINELLE-FOURNISSEUR', (new JsonFormatter())->format($failures[0]));
     }
 
     public function testAResponseOutsideTheSchemaIsA503(): void
@@ -405,6 +429,25 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         $client->getContainer()->set(self::AI_HTTP_CLIENT_INNER, new MockHttpClient(
             static fn (): MockResponse => $factory(),
         ));
+    }
+
+    /**
+     * Sonde Monolog branchée sur tous les canaux en test (monolog.yaml,
+     * `all_channels_test`). Son service n'existe qu'en test, alors que
+     * phpstan-symfony lit le conteneur de dev : on la retrouve donc, comme
+     * ReadsSecurityAuditLog, parmi les handlers d'un logger public — elle
+     * écoute tous les canaux, donc aussi celui-ci. Seul son niveau `debug` la
+     * distingue de `security_audit_test` (`info`).
+     */
+    private function allChannelsProbe(KernelBrowser $client): TestHandler
+    {
+        foreach ($client->getContainer()->get('monolog.logger.security_audit')->getHandlers() as $handler) {
+            if ($handler instanceof TestHandler && Level::Debug === $handler->getLevel()) {
+                return $handler;
+            }
+        }
+
+        self::fail('Sonde all_channels_test introuvable : voir monolog.yaml (when@test).');
     }
 
     private function obtainBaseAccess(KernelBrowser $client): string

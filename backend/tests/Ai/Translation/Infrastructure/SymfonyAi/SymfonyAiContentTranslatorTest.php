@@ -174,7 +174,7 @@ final class SymfonyAiContentTranslatorTest extends TestCase
         self::assertCount(1, $logger->records);
         self::assertSame('error', $logger->records[0]['level']);
         self::assertSame($failure::class, $logger->records[0]['context']['exception']);
-        self::assertSame($status, $logger->records[0]['context']['providerStatus']);
+        self::assertSame($status, $logger->records[0]['context']['serverErrorStatus']);
         self::assertSame($errorType, $logger->records[0]['context']['providerErrorType']);
     }
 
