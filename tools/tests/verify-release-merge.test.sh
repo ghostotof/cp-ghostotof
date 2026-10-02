@@ -18,11 +18,9 @@ failures=0
 pass()  { printf '  ok   %s\n' "$1"; }
 fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1)); }
 
-# git sans configuration globale ni système (issue #304) : la signature, les
-# hooks ou la branche par défaut du poste n'atteignent ni la suite ni le script
-# testé, qui hérite de ces variables. Seule l'identité reste à fournir.
-export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
-g() { git -c user.name=test -c user.email=test@example.invalid "$@"; }
+# Isole git de l'environnement du poste et définit g() (issue #304).
+# shellcheck source=tools/tests/lib/git-isolation.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/git-isolation.sh"
 
 # new_repo <nom>  — dépôt avec un commit initial sur main
 new_repo() {

@@ -321,10 +321,13 @@ jobs:
         run: .github/scripts/summary-annotations.sh "Symfony Language Tools (lsp:check)" "$RUNNER_TEMP/lsp-check.log" '^::notice title=Symfony diagnostics summary' >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
-  # tools-tests — les scripts de release (spec 0006) et le lint du workflow
-  # lui-même. Les tests construisent un dépôt git temporaire et ne touchent ni
-  # au réseau ni au dépôt courant ; actionlint attrape les erreurs de syntaxe et
-  # d'expressions de ce fichier avant qu'un push de release ne les découvre.
+  # tools-tests — les scripts de tools/ (release, spec 0006 ; smoke tests ;
+  # rotation ; en-têtes) et le lint du workflow lui-même. Les tests construisent
+  # un dépôt git temporaire et ne touchent ni au réseau ni au dépôt courant ;
+  # git-config-isolation.test.sh les rejoue sous un environnement git hostile,
+  # pour qu'aucune ne dépende du poste qui la lance (#304). actionlint attrape
+  # les erreurs de syntaxe et d'expressions de ce fichier avant qu'un push de
+  # release ne les découvre.
   # ---------------------------------------------------------------------------
   tools-tests:
     runs-on: ubuntu-latest
@@ -345,7 +348,7 @@ jobs:
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.
       - name: shellcheck (préinstallé sur le runner)
-        run: shellcheck -x --severity=warning tools/*.sh tools/lib/*.sh tools/tests/*.sh
+        run: shellcheck -x --severity=warning tools/*.sh tools/lib/*.sh tools/tests/*.sh tools/tests/lib/*.sh
       # Image officielle, figée sur le digest de son index multi-arch (v1.7.12).
       # Elle embarque shellcheck et pyflakes, donc les `run:` de ce fichier sont
       # analysés aussi.
