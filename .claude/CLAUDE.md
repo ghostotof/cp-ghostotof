@@ -613,7 +613,7 @@ mid-migration.
   plus `SCALEWAY_AI_PROJECT_ID` on the same route; task 5 (#264) done: both are read by the `backend-secrets` `ExternalSecret` of the two overlays
   (`<env>-backend-scaleway-ai-{api-key,project-id}`), published **before** the `release/*` push — creation recipe
   (dedicated IAM application, Generative APIs inference only, one project) and the preprod checks of the release
-  in `k8s/README.md`; task 2 (#261) done: `POST /api/assistant/answers`,
+  in `k8s/README.md`; task 6 (#265) done: the `/(fr|en)/assistant` page (`ROLE_TRUSTED`/`ROLE_SUPER`), see "API-backed content"; task 2 (#261) done: `POST /api/assistant/answers`,
   `ROLE_TRUSTED`, `AnswerController` → `CareerAssistantInterface` → `SymfonyAiCareerAssistant`; task 3 (#262)
   done: D6 bounds in the `Conversation`/`ConversationMessage` VOs → 422 `/errors/invalid-conversation` — strict
   alternation between a first and a last `user` message makes the count odd, so the bound is **11** (D6
@@ -910,7 +910,7 @@ error state (`role="alert"`), and the content. `main.ts` provides both repositor
 `PortfolioContentRepository` one. `domain/watch` → `infrastructure/watch/HttpWatchRepository.ts` →
 `application/watch/useWatch.ts` → `presentation/pages/StackPage.vue` follows the identical shape, with one
 difference that comes from the backend: **its endpoint has no `{locale}` segment** (`GET /api/watch`) — a
-version number is a fact, not a translation, so only the surrounding UI strings are localized. Don't add new content here unless it's genuinely backend-managed (i.e. editable
+version number is a fact, not a translation, so only the surrounding UI strings are localized. The `assistant` slice (spec 0005, `ROLE_TRUSTED`/`ROLE_SUPER`) is the streaming variant: `domain/assistant` → `infrastructure/assistant/HttpAssistantRepository.ts` (reads the SSE stream with `fetch` + `ReadableStream`, incremental parser `serverEvents.ts`) → `application/assistant/useAssistant.ts` (state machine `idle|streaming|error`; the sliding window `buildConversationWindow` copies the backend's D6 bounds and counts in code points, never `.length`; a 401/403 calls `markSessionExpired()`) → `presentation/pages/AssistantPage.vue`. Don't add new content here unless it's genuinely backend-managed (i.e. editable
 from the backoffice) — purely static content still belongs in `infrastructure/portfolio/content/{fr,en}.ts`.
 
 #### Backoffice (`/admin`, `ROLE_SUPER`)
