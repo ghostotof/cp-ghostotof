@@ -6,6 +6,7 @@ namespace App\Ai\Assistant\Domain\Exception;
 
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use App\Shared\Domain\Exception\HasProblemType;
+use App\Shared\Domain\Exception\RetryAfterAware;
 
 /**
  * Un même compte a dépassé le quota horaire de l'assistant de parcours
@@ -13,9 +14,10 @@ use App\Shared\Domain\Exception\HasProblemType;
  * que celui que rend la zone nginx `assistant`) : le frontend n'a qu'une
  * raison à reconnaître, quelle que soit la borne atteinte. Rendue par
  * AssistantProblemResponseListener ; l'en-tête Retry-After est posé par
- * AssistantRateLimitRetryAfterListener à partir de $retryAfter.
+ * App\Shared\Infrastructure\Http\RetryAfterListener à partir de $retryAfter
+ * (RetryAfterAware).
  */
-final class AssistantRateLimitExceededException extends \DomainException implements ProblemExceptionInterface
+final class AssistantRateLimitExceededException extends \DomainException implements ProblemExceptionInterface, RetryAfterAware
 {
     use HasProblemType;
 
