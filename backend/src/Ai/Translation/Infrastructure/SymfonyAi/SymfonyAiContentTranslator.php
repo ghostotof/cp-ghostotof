@@ -12,6 +12,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\AgentInterface;
 use Symfony\AI\Agent\Exception\ExceptionInterface as AgentException;
 use Symfony\AI\Platform\Exception\ExceptionInterface as PlatformException;
+use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
@@ -27,7 +28,9 @@ use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExcep
  * serveur (D5) : une clé absente, une valeur vide ou non textuelle, un JSON
  * malformé sont une TranslationUnavailableException, jamais une réponse
  * partielle. Le texte envoyé et reçu n'est jamais journalisé — seuls les
- * jetons, la durée et le nombre de champs le sont.
+ * jetons, la durée et le nombre de champs le sont. Un échec du fournisseur
+ * se journalise par sa classe, son statut HTTP et son type d'erreur, jamais
+ * par son message, où le bridge recopie le corps de la réponse (issue #269).
  */
 final readonly class SymfonyAiContentTranslator implements ContentTranslatorInterface
 {
@@ -52,12 +55,15 @@ final readonly class SymfonyAiContentTranslator implements ContentTranslatorInte
             $content = $execution->getContent();
             $tokenUsage = $execution->getMetadata()->get('token_usage');
         } catch (PlatformException|AgentException|HttpClientException $exception) {
+            // Jamais le message : le bridge y recopie le corps de la réponse du
+            // fournisseur, qui peut citer l'entrée (issue #269).
             $this->logger->error('Assistant de traduction : le fournisseur a échoué.', [
                 'exception' => $exception::class,
-                'reason' => $exception->getMessage(),
+                'serverErrorStatus' => $this->serverErrorStatus($exception),
+                'providerErrorType' => $this->providerErrorType($exception),
             ]);
 
-            throw new TranslationUnavailableException($exception);
+            throw new TranslationUnavailableException();
         }
 
         $fields = $this->validatedFields($content, $request->fieldNames());
@@ -127,8 +133,8 @@ final readonly class SymfonyAiContentTranslator implements ContentTranslatorInte
         if (\is_string($content)) {
             try {
                 $content = json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
-            } catch (\JsonException $exception) {
-                throw $this->rejected('JSON malformé', $exception);
+            } catch (\JsonException) {
+                throw $this->rejected('JSON malformé');
             }
         }
 
@@ -148,10 +154,39 @@ final readonly class SymfonyAiContentTranslator implements ContentTranslatorInte
         return $fields;
     }
 
-    private function rejected(string $reason, ?\Throwable $previous = null): TranslationUnavailableException
+    private function rejected(string $reason): TranslationUnavailableException
     {
         $this->logger->error('Assistant de traduction : réponse du modèle refusée.', ['reason' => $reason]);
 
-        return new TranslationUnavailableException($previous);
+        return new TranslationUnavailableException();
+    }
+
+    /**
+     * Statut HTTP d'une erreur serveur du fournisseur : le bridge ne transmet
+     * de statut que pour un 5xx (ServerException). 400, 401 et 429 ont chacun
+     * leur classe, qui suffit à les reconnaître.
+     */
+    private function serverErrorStatus(\Throwable $exception): ?int
+    {
+        return $exception instanceof ServerException ? $exception->getStatusCode() : null;
+    }
+
+    /**
+     * Type d'erreur Anthropic (`not_found_error`, `permission_error`…) : sans
+     * lui, un modèle retiré (404) ou une clé privée d'un droit (403) se
+     * réduisent à une RuntimeException indiscernable d'une réponse vide. Le
+     * bridge l'écrit en tête de son message (« API Error [<type>]: "…" ») ;
+     * seul ce mot-clé est capturé, par une expression ancrée, jamais ce qui
+     * suit. Ce format est celui de symfony/ai-anthropic-platform 0.13.0 :
+     * BackofficeTranslationResourceTest le vérifie à travers le vrai bridge,
+     * et rougit si une montée de version le change.
+     */
+    private function providerErrorType(\Throwable $exception): ?string
+    {
+        if (1 === preg_match('/^(?:Server error\. )?API Error \[([a-z_]{1,40})\]/', $exception->getMessage(), $matches)) {
+            return $matches[1];
+        }
+
+        return null;
     }
 }

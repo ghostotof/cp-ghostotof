@@ -55,6 +55,19 @@ when@test:
                 type: test
                 level: info
                 channels: ["security_audit"]
+            # Sonde sur tous les canaux sauf `event` : un test qui vérifie qu'un
+            # contenu ne sort par aucun journal (issue #269) couvre ainsi
+            # d'office un canal ajouté plus tard, ce qu'une liste de loggers
+            # écrite dans le test ne ferait pas. `event` est exclu pour le coût
+            # (une ligne par listener notifié) : il ne porte jamais de message
+            # d'exception. Relue par tests/Support/ReadsAllChannelsLog.php, qui
+            # la distingue de `security_audit_test` par son niveau : garder
+            # `debug`. Le kernel étant reconstruit entre deux tests, elle ne
+            # garde que ceux du test en cours.
+            all_channels_test:
+                type: test
+                level: debug
+                channels: ["!event"]
 
 # `when@prod` couvre la production ET la préprod : les deux tournent avec
 # APP_ENV=prod (l'image `preprod` est construite FROM `production`, elle ne
