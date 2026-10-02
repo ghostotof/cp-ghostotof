@@ -410,7 +410,7 @@ mid-migration.
     `Retry-After`, never a 500. No subject: the lock resource carries the limiter's key (an IP, a
     tried username), so neither the response nor the audit record names it, and the listener sits
     at priority 16, above Symfony's `logKernelException` (0), writing its own `error` line with
-    the exception classes only — the raw message reaches no channel but `lock`. It catches any
+    the exception classes only — the raw message reaches no prod log at all. It catches any
     Lock failure under `/api`: a future non-limiter lock must revisit it; `BaseAccessController`
     logs the `guest-…`
     identifier, never the token; the `Security/User/Application` use cases and the housekeeping
@@ -1209,8 +1209,12 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   container for that test. **Never consume a limiter inside `wrapInTransaction`**: the lock and
   the `cache_items` row live on two connections PostgreSQL does not relate, which both deadlocks
   (until `lock_timeout`) and republishes the window after the lock is released. The Monolog
-  `lock` channel has its own handler capped at `notice` (`LockLogChannelTest`): the component
-  logs every acquire/release in `debug` with the resource — an IP or a username.
+  `lock` channel has its own handler at `warning` and no other prod handler (`main`, `console`)
+  receives it (`LockLogChannelTest`, issue #315): the component logs every acquire/release in
+  `debug` and every failure in `notice`, always with the resource — an IP or a username — and
+  never above `notice`, so the channel is silent in prod; a lock failure stays visible through
+  `RateLimiterLockFailureListener`'s `error` line, which never names the resource. A future lock
+  taken outside an `/api` request would fail silently: revisit this before adding one.
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
   it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would

@@ -47,9 +47,9 @@ use Symfony\Component\Lock\Exception\LockReleasingException;
  * la production garde. Passer au-dessus de 0 et répondre (`setResponse()`
  * arrête la propagation) le fait taire ; l'incident reste visible par la ligne
  * `error` écrite ici, qui porte les classes des exceptions et le chemin,
- * jamais leur message. Le canal `lock` du composant garde, lui, le nom de la
- * ressource au niveau `notice` : c'est le réglage assumé par #272
- * (monolog.yaml). 16 reste au-dessus de l'`ExceptionListener` du firewall (1),
+ * jamais leur message. C'est la seule trace de la panne en production : le
+ * canal `lock` du composant, qui écrit la ressource en `notice`, y est muet
+ * (handler à `warning`, issue #315, monolog.yaml). 16 reste au-dessus de l'`ExceptionListener` du firewall (1),
  * qui ne traite que les exceptions de sécurité, et loin devant API Platform
  * (-96) et `ApiJsonErrorFormatListener` (-100).
  *
