@@ -71,6 +71,12 @@ describe('buildConversationWindow', () => {
     expect(out.map((m) => m.content)).toEqual(['q3', 'r3', 'fin'])
   })
 
+  it('écarte l\'échange dont la réponse devient blanche une fois tronquée', () => {
+    // 4 000 blancs puis du texte : non blanche en entrée, blanche après troncature (422 backend).
+    const out = buildConversationWindow([q('q1'), a(' '.repeat(MAX_ANSWER_LENGTH) + 'utile')], 'fin')
+    expect(out.map((m) => m.content)).toEqual(['fin'])
+  })
+
   it('garde une réponse incomplète non vide', () => {
     const out = buildConversationWindow([q('q1'), a('début', 'incomplete')], 'fin')
     expect(out.map((m) => m.content)).toEqual(['q1', 'début', 'fin'])

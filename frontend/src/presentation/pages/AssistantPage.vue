@@ -10,7 +10,7 @@ import RichText from '../ui/RichText.vue'
 
 const { t, locale } = useI18n()
 const { messages, state, error, draft, draftLength, canSend, send, reset } = useAssistant()
-const { downloadCv, isDownloading } = useCvDownload()
+const { downloadCv, isDownloading, hasError: hasCvDownloadError } = useCvDownload()
 
 const currentLocale = computed(() => locale.value as Locale)
 const isStreaming = computed(() => 'streaming' === state.value)
@@ -50,9 +50,10 @@ const errorMessage = computed<string>(() => {
 /**
  * Entrée envoie, Maj+Entrée saute une ligne. Pendant une composition IME,
  * Entrée valide le candidat de saisie : l'intercepter enverrait un texte à moitié écrit.
+ * Safari valide un candidat avec `isComposing === false` mais `keyCode === 229` : même garde.
  */
 function handleKeydown(event: KeyboardEvent): void {
-  if ('Enter' !== event.key || event.shiftKey || event.isComposing) {
+  if ('Enter' !== event.key || event.shiftKey || event.isComposing || 229 === event.keyCode) {
     return
   }
   event.preventDefault()
@@ -102,6 +103,7 @@ function handleKeydown(event: KeyboardEvent): void {
       role="log"
       aria-live="polite"
       :aria-label="t('assistant.log')"
+      :aria-busy="isStreaming"
       class="surface-panel p-3 p-sm-4 d-flex flex-column gap-3"
     >
       <p
@@ -133,6 +135,15 @@ function handleKeydown(event: KeyboardEvent): void {
       class="text-body-secondary small mb-0"
     >
       {{ isStreaming ? t('assistant.answering') : '' }}
+    </p>
+
+    <!-- Second role="alert", distinct de celui de l'assistant : un échec de téléchargement n'est pas une erreur de conversation. -->
+    <p
+      v-if="hasCvDownloadError"
+      class="text-danger small mb-0"
+      role="alert"
+    >
+      {{ t('common.downloadCvError') }}
     </p>
 
     <p

@@ -163,6 +163,53 @@ describe('AssistantPage', () => {
     expect(answer).not.toHaveBeenCalled()
   })
 
+  it('Entrée avec keyCode 229 (validation de candidat IME sous Safari) n\'envoie pas', async () => {
+    const { repository, answer } = createControlledRepository()
+    const wrapper = mountPage(repository)
+
+    await type(wrapper, 'Question')
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter', isComposing: false, keyCode: 229 })
+    await flushPromises()
+
+    expect(answer).not.toHaveBeenCalled()
+  })
+
+  it('aria-busy du journal : true pendant le flux, false sinon', async () => {
+    const { repository } = createControlledRepository()
+    const wrapper = mountPage(repository)
+
+    expect(wrapper.find('[role="log"]').attributes('aria-busy')).toBe('false')
+    await type(wrapper, 'Question')
+    await submitWithButton(wrapper)
+    expect(wrapper.find('[role="log"]').attributes('aria-busy')).toBe('true')
+  })
+
+  it('un échec du téléchargement du CV est annoncé dans un role="alert"', async () => {
+    const download = vi.fn(async () => {
+      throw new Error('boom')
+    })
+    const wrapper = mountPage(createControlledRepository().repository, download)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="assistant-disclaimer"] button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').text()).toContain(createAppI18n().global.t('common.downloadCvError'))
+    expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
+  })
+
+  it('403 : le message parle d\'une session à rafraîchir', async () => {
+    const { repository, calls } = createControlledRepository()
+    const wrapper = mountPage(repository)
+
+    await type(wrapper, 'Question')
+    await submitWithButton(wrapper)
+    calls[0].reject(new AssistantError('forbidden'))
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('Votre session ne permet plus d\'utiliser l\'assistant. Reconnectez-vous.')
+  })
+
   it('Entrée pendant une composition IME n\'envoie pas', async () => {
     const { repository, answer } = createControlledRepository()
     const wrapper = mountPage(repository)

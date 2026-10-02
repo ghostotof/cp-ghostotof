@@ -16,13 +16,13 @@ export type AssistantErrorReason =
   | 'unknown'
 
 export class AssistantError extends Error {
+  readonly reason: AssistantErrorReason
+  readonly retryAfterSeconds: number | null
+
   /**
    * @param retryAfterSeconds délai avant de réessayer, renseigné sur un 429 quand
    *   le serveur le fournit (absent sur la zone nginx) ; `null` sinon.
    */
-  readonly reason: AssistantErrorReason
-  readonly retryAfterSeconds: number | null
-
   constructor(reason: AssistantErrorReason, retryAfterSeconds: number | null = null) {
     super(`Assistant error: ${reason}`)
     this.name = 'AssistantError'

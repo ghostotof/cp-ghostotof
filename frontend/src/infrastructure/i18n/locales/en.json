@@ -754,7 +754,7 @@
     "reset": "New conversation",
     "errors": {
       "unauthenticated": "Your session has expired.",
-      "forbidden": "Your account does not have access to the assistant.",
+      "forbidden": "Your session can no longer use the assistant. Please sign in again.",
       "relogin": "Sign in again",
       "validation": "The conversation could not be sent. Try again.",
       "tooLarge": "The conversation is too long: start a new one.",

@@ -46,12 +46,18 @@ function extractExchanges(history: readonly AssistantMessage[]): Exchange[] {
       question.role === 'user' &&
       answer !== undefined &&
       answer.role === 'assistant' &&
-      answer.status !== 'streaming' &&
-      answer.content.trim() !== ''
+      answer.status !== 'streaming'
     ) {
+      // La non-vacuité se juge sur la réponse tronquée : 4 000 blancs suivis de texte
+      // deviendraient une réponse blanche, que le backend refuse (422).
+      const truncated = truncateToCodePoints(answer.content, MAX_ANSWER_LENGTH)
+      if (truncated.trim() === '') {
+        i += 1
+        continue
+      }
       exchanges.push({
         question: { role: 'user', content: question.content },
-        answer: { role: 'assistant', content: truncateToCodePoints(answer.content, MAX_ANSWER_LENGTH) },
+        answer: { role: 'assistant', content: truncated },
       })
       i += 2
     } else {
