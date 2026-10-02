@@ -9,6 +9,7 @@
     "incidents": "Incidents",
     "caseStudies": "Case studies",
     "anonymousCv": "CV without identity",
+    "assistant": "Assistant",
     "career": "Career",
     "lessonsLearned": "Lessons learned"
   },
@@ -595,6 +596,10 @@
       "title": "CV without identity",
       "description": "Skills, seniority and achievements by domain — no name, employer or contact details."
     },
+    "assistant": {
+      "title": "Career assistant",
+      "description": "Ask an assistant questions about my career, reserved for trusted people."
+    },
     "caseStudies": {
       "title": "Case studies",
       "description": "Real technical problems, the solutions retained and measured results — no client names."
@@ -724,5 +729,40 @@
     "message": "This site sets no cookie on a plain visit. Only strictly necessary technical cookies are set if you log in or request instant access, so there is nothing to accept or refuse.",
     "learnMore": "Learn more",
     "dismiss": "Got it"
+  },
+  "assistant": {
+    "title": "Career assistant",
+    "intro": "Ask about my career, skills and achievements. The assistant answers from the CV and the case studies, and keeps nothing of the conversation.",
+    "disclaimer": {
+      "notice": "The assistant can be wrong: the documents are the reference.",
+      "lead": "To check an answer, see:",
+      "caseStudies": "the case studies",
+      "anonymousCv": "the anonymous CV",
+      "downloadCv": "download the CV"
+    },
+    "log": "Conversation with the assistant",
+    "empty": "No message yet. Ask your first question below.",
+    "roles": {
+      "user": "You",
+      "assistant": "Assistant"
+    },
+    "incomplete": "Answer interrupted, it is incomplete.",
+    "answering": "The assistant is answering…",
+    "question": "Your question",
+    "counter": "{count} / {max} characters",
+    "send": "Send",
+    "reset": "New conversation",
+    "errors": {
+      "unauthenticated": "Your session has expired.",
+      "forbidden": "Your account does not have access to the assistant.",
+      "relogin": "Sign in again",
+      "validation": "The conversation could not be sent. Try again.",
+      "tooLarge": "The conversation is too long: start a new one.",
+      "rateLimited": "Too many questions asked. Try again in a moment.",
+      "rateLimitedIn": "Too many questions asked. Try again in {minutes} minute | Too many questions asked. Try again in {minutes} minutes",
+      "unavailable": "The assistant is temporarily unavailable. Try again later.",
+      "network": "The connection was interrupted. Try again.",
+      "unknown": "An unexpected error occurred. Try again."
+    }
   }
 }
