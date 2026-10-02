@@ -10,7 +10,7 @@ use App\Shared\Domain\Exception\HasProblemType;
 /**
  * La traduction n'a pas pu être produite : fournisseur injoignable, délai
  * dépassé, réponse hors du schéma demandé. Le message est volontairement
- * générique — la cause (classe, statut HTTP du fournisseur) est journalisée
+ * générique — la cause (classe, statut et type d'erreur du fournisseur) est journalisée
  * par l'appelant, jamais renvoyée au client. Elle n'est pas non plus chaînée
  * en `previous` : l'ErrorListener du noyau et API Platform journalisent toute
  * la chaîne, et le bridge recopie le corps de la réponse du fournisseur dans

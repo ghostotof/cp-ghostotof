@@ -8,10 +8,10 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Formatter\JsonFormatter;
-use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -28,6 +28,7 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 final class BackofficeTranslationResourceTest extends WebTestCase
 {
     use HttpJson;
+    use ReadsAllChannelsLog;
 
     private const string SUPER_USERNAME = 'super';
     private const string PLAIN_USERNAME = 'jane';
@@ -205,7 +206,7 @@ final class BackofficeTranslationResourceTest extends WebTestCase
      * du backoffice. Aucun journal ne doit le laisser sortir : ni notre log
      * métier, ni ceux du noyau (ErrorListener, canal `request`) et d'API
      * Platform (canal `app`), qui sérialisent toute la chaîne `previous`. La
-     * sonde écoute tous les canaux (monolog.yaml, `all_channels_test`).
+     * sonde écoute tous les canaux sauf `event` (ReadsAllChannelsLog).
      */
     public function testNoProviderErrorMessageReachesAnyLog(): void
     {
@@ -219,12 +220,15 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         $this->post($client, $csrfToken, $this->validPayload());
 
         self::assertResponseStatusCodeSame(503);
-        $probe = $this->allChannelsProbe($client);
+        $records = self::allChannelsLogRecords();
         // Garde-fou : la sonde a bien vu passer l'exception (sinon le test
         // resterait vert sans rien vérifier).
-        self::assertTrue($probe->hasCriticalThatContains('TranslationUnavailableException'));
+        self::assertNotEmpty(array_filter(
+            $records,
+            static fn (LogRecord $record): bool => Level::Critical === $record->level && str_contains($record->message, 'TranslationUnavailableException'),
+        ));
         $formatter = new JsonFormatter();
-        foreach ($probe->getRecords() as $record) {
+        foreach ($records as $record) {
             self::assertStringNotContainsString('SENTINELLE-FOURNISSEUR', $formatter->format($record));
         }
     }
@@ -248,8 +252,8 @@ final class BackofficeTranslationResourceTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(503);
         $failures = array_values(array_filter(
-            $this->allChannelsProbe($client)->getRecords(),
-            static fn (LogRecord $record): bool => 'Assistant de traduction : le fournisseur a échoué.' === $record->message,
+            self::allChannelsLogRecords(),
+            static fn (LogRecord $record): bool => \array_key_exists('providerErrorType', $record->context),
         ));
         self::assertCount(1, $failures);
         self::assertSame('not_found_error', $failures[0]->context['providerErrorType'] ?? null);
@@ -429,25 +433,6 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         $client->getContainer()->set(self::AI_HTTP_CLIENT_INNER, new MockHttpClient(
             static fn (): MockResponse => $factory(),
         ));
-    }
-
-    /**
-     * Sonde Monolog branchée sur tous les canaux en test (monolog.yaml,
-     * `all_channels_test`). Son service n'existe qu'en test, alors que
-     * phpstan-symfony lit le conteneur de dev : on la retrouve donc, comme
-     * ReadsSecurityAuditLog, parmi les handlers d'un logger public — elle
-     * écoute tous les canaux, donc aussi celui-ci. Seul son niveau `debug` la
-     * distingue de `security_audit_test` (`info`).
-     */
-    private function allChannelsProbe(KernelBrowser $client): TestHandler
-    {
-        foreach ($client->getContainer()->get('monolog.logger.security_audit')->getHandlers() as $handler) {
-            if ($handler instanceof TestHandler && Level::Debug === $handler->getLevel()) {
-                return $handler;
-            }
-        }
-
-        self::fail('Sonde all_channels_test introuvable : voir monolog.yaml (when@test).');
     }
 
     private function obtainBaseAccess(KernelBrowser $client): string
