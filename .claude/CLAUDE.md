@@ -610,7 +610,10 @@ mid-migration.
   `.claude/specs/0005-career-assistant.md`, task 1 (#260) done: the `career_assistant` agent in `ai.yaml`,
   `mistral-small-3.2-24b-instruct-2506`, `max_tokens` 1024, `tools: false`, prompt preamble in
   `config/ai/prompts/career_assistant.txt`, key `SCALEWAY_AI_API_KEY` routed exactly like `ANTHROPIC_API_KEY`,
-  plus `SCALEWAY_AI_PROJECT_ID` on the same route; task 2 (#261) done: `POST /api/assistant/answers`,
+  plus `SCALEWAY_AI_PROJECT_ID` on the same route; task 5 (#264) done: both are read by the `backend-secrets` `ExternalSecret` of the two overlays
+  (`<env>-backend-scaleway-ai-{api-key,project-id}`), published **before** the `release/*` push — creation recipe
+  (dedicated IAM application, Generative APIs inference only, one project) and the preprod checks of the release
+  in `k8s/README.md`; task 2 (#261) done: `POST /api/assistant/answers`,
   `ROLE_TRUSTED`, `AnswerController` → `CareerAssistantInterface` → `SymfonyAiCareerAssistant`; task 3 (#262)
   done: D6 bounds in the `Conversation`/`ConversationMessage` VOs → 422 `/errors/invalid-conversation` — strict
   alternation between a first and a last `user` message makes the count odd, so the bound is **11** (D6
