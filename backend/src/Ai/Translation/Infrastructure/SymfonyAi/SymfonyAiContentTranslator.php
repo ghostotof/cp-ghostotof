@@ -18,7 +18,6 @@ use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientException;
-use Symfony\Contracts\HttpClient\Exception\HttpExceptionInterface;
 
 /**
  * Seule classe du projet à importer Symfony\AI (ADR 0004, D1) : tout ce qui
@@ -30,8 +29,8 @@ use Symfony\Contracts\HttpClient\Exception\HttpExceptionInterface;
  * malformé sont une TranslationUnavailableException, jamais une réponse
  * partielle. Le texte envoyé et reçu n'est jamais journalisé — seuls les
  * jetons, la durée et le nombre de champs le sont. Un échec du fournisseur
- * se journalise par sa classe et son statut HTTP, jamais par son message,
- * où le bridge recopie le corps de la réponse (issue #269).
+ * se journalise par sa classe, son statut HTTP et son type d'erreur, jamais
+ * par son message, où le bridge recopie le corps de la réponse (issue #269).
  */
 final readonly class SymfonyAiContentTranslator implements ContentTranslatorInterface
 {
@@ -61,6 +60,7 @@ final readonly class SymfonyAiContentTranslator implements ContentTranslatorInte
             $this->logger->error('Assistant de traduction : le fournisseur a échoué.', [
                 'exception' => $exception::class,
                 'providerStatus' => $this->providerStatus($exception),
+                'providerErrorType' => $this->providerErrorType($exception),
             ]);
 
             throw new TranslationUnavailableException();
@@ -162,23 +162,27 @@ final readonly class SymfonyAiContentTranslator implements ContentTranslatorInte
     }
 
     /**
-     * Statut HTTP du fournisseur, sans jamais lire le corps : la classe seule
-     * ne distingue pas un 529 (surcharge) d'un 401 (clé révoquée).
+     * Statut HTTP du fournisseur, quand le bridge le transmet : il ne le fait
+     * que pour un 5xx (ServerException). 400, 401 et 429 ont chacun leur
+     * classe, qui suffit à les reconnaître.
      */
     private function providerStatus(\Throwable $exception): ?int
     {
-        if ($exception instanceof ServerException) {
-            return $exception->getStatusCode();
-        }
+        return $exception instanceof ServerException ? $exception->getStatusCode() : null;
+    }
 
-        if ($exception instanceof HttpExceptionInterface) {
-            return $exception->getResponse()->getStatusCode();
-        }
-
-        // RuntimeException du bridge : « Unexpected response code 400: "…" ».
-        // Seul le nombre en tête est lu, jamais ce qui suit.
-        if (1 === preg_match('/^Unexpected response code (\d{3})\b/', $exception->getMessage(), $matches)) {
-            return (int) $matches[1];
+    /**
+     * Type d'erreur Anthropic (`not_found_error`, `permission_error`…) : sans
+     * lui, un modèle retiré (404) ou une clé privée d'un droit (403) se
+     * réduisent à une RuntimeException indiscernable d'une réponse vide. Le
+     * bridge l'écrit en tête de son message (« API Error [<type>]: "…" ») ;
+     * seul ce mot-clé est capturé, par une expression ancrée, jamais ce qui
+     * suit.
+     */
+    private function providerErrorType(\Throwable $exception): ?string
+    {
+        if (1 === preg_match('/^(?:Server error\. )?API Error \[([a-z_]{1,40})\]/', $exception->getMessage(), $matches)) {
+            return $matches[1];
         }
 
         return null;

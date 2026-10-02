@@ -10,7 +10,9 @@ use App\Ai\Translation\Infrastructure\SymfonyAi\SymfonyAiContentTranslator;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Ai\Translation\Support\FakeAgent;
 use App\Tests\Ai\Translation\Support\InMemoryLogger;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Exception\BadRequestException;
 use Symfony\AI\Platform\Exception\RuntimeException as PlatformRuntimeException;
 use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\Result\ObjectResult;
@@ -138,33 +140,29 @@ final class SymfonyAiContentTranslatorTest extends TestCase
     }
 
     /**
-     * Issue #269 : le bridge recopie le corps de la réponse du fournisseur
-     * dans son message (« Unexpected response code 400: "<corps>" »). La
-     * cause se journalise par sa classe et son statut HTTP, jamais par ce
-     * message.
+     * Issue #269 : le bridge recopie le message d'erreur du fournisseur dans
+     * le sien, et ce message peut citer l'entrée. Les exceptions ci-dessous
+     * sont celles que lève réellement le ResultConverter d'Anthropic en mode
+     * non streamé (celui du traducteur) ; la cause se journalise par sa
+     * classe, son statut et son type d'erreur, jamais par ce message.
+     *
+     * @return iterable<string, array{\Throwable, ?int, ?string}>
      */
-    public function testLogsTheProviderFailureByClassAndStatusNeverByItsMessage(): void
+    public static function providerFailures(): iterable
     {
-        $logger = new InMemoryLogger();
-        $translator = $this->translator(new PlatformRuntimeException('Unexpected response code 400: "SENTINELLE-FOURNISSEUR"'), $logger);
-
-        try {
-            $translator->translate($this->request());
-            self::fail('Une exception était attendue.');
-        } catch (TranslationUnavailableException) {
-        }
-
-        self::assertStringNotContainsString('SENTINELLE-FOURNISSEUR', $logger->dump());
-        $errors = array_values(array_filter($logger->records, static fn (array $record): bool => 'error' === $record['level']));
-        self::assertCount(1, $errors);
-        self::assertSame(PlatformRuntimeException::class, $errors[0]['context']['exception']);
-        self::assertSame(400, $errors[0]['context']['providerStatus']);
+        yield '400' => [new BadRequestException('SENTINELLE-FOURNISSEUR'), null, null];
+        yield '5xx' => [new ServerException(529, 'SENTINELLE-FOURNISSEUR'), 529, null];
+        yield 'surcharge dans un 200' => [new ServerException(null, 'API Error [overloaded_error]: "SENTINELLE-FOURNISSEUR"'), null, 'overloaded_error'];
+        yield 'modèle retiré' => [new PlatformRuntimeException('API Error [not_found_error]: "SENTINELLE-FOURNISSEUR"'), null, 'not_found_error'];
+        // Le type n'est lu qu'en tête : un crochet dans le corps n'est jamais capturé.
+        yield 'crochet hors de tête' => [new PlatformRuntimeException('SENTINELLE-FOURNISSEUR API Error [not_found_error]'), null, null];
     }
 
-    public function testLogsTheStatusOfAServerException(): void
+    #[DataProvider('providerFailures')]
+    public function testLogsTheProviderFailureByClassStatusAndTypeNeverByItsMessage(\Throwable $failure, ?int $status, ?string $errorType): void
     {
         $logger = new InMemoryLogger();
-        $translator = $this->translator(new ServerException(529, 'SENTINELLE-FOURNISSEUR'), $logger);
+        $translator = $this->translator($failure, $logger);
 
         try {
             $translator->translate($this->request());
@@ -173,7 +171,11 @@ final class SymfonyAiContentTranslatorTest extends TestCase
         }
 
         self::assertStringNotContainsString('SENTINELLE-FOURNISSEUR', $logger->dump());
-        self::assertSame(529, $logger->records[0]['context']['providerStatus']);
+        self::assertCount(1, $logger->records);
+        self::assertSame('error', $logger->records[0]['level']);
+        self::assertSame($failure::class, $logger->records[0]['context']['exception']);
+        self::assertSame($status, $logger->records[0]['context']['providerStatus']);
+        self::assertSame($errorType, $logger->records[0]['context']['providerErrorType']);
     }
 
     /**
@@ -183,7 +185,7 @@ final class SymfonyAiContentTranslatorTest extends TestCase
      */
     public function testTheExceptionLeavingTheServiceCarriesNothingFromTheProvider(): void
     {
-        $translator = $this->translator(new PlatformRuntimeException('Unexpected response code 400: "SENTINELLE-FOURNISSEUR"'));
+        $translator = $this->translator(new BadRequestException('SENTINELLE-FOURNISSEUR'));
 
         try {
             $translator->translate($this->request());
