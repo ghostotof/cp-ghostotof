@@ -7,6 +7,7 @@ namespace App\Shared\Infrastructure\Http;
 use App\Shared\Domain\Exception\RetryAfterAware;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\Event\ResponseEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
@@ -32,12 +33,18 @@ use Symfony\Component\HttpKernel\KernelEvents;
  * RateLimiterLockFailureListener : une panne du verrou n'est pas
  * RetryAfterAware (son délai est fixe, posé par cet écouteur-là).
  *
+ * **Sur un 429 seulement.** Si le rendu du 429 échoue à son tour, le noyau
+ * repasse par `kernel.exception` et sort une autre réponse (un 500), alors
+ * que l'échéance reste notée sur la requête. Un `Retry-After` n'y aurait pas
+ * de sens, et pourrait écraser celui, fixe, d'un 503 de verrou.
+ *
  * Horloge injectée plutôt que `time()` : la valeur exacte se teste avec une
  * horloge figée.
  */
 final readonly class RetryAfterListener
 {
-    private const string REQUEST_ATTRIBUTE = '_retry_after';
+    /** Préfixe `_app_` : aucun attribut d'un bundle tiers ne peut le porter. */
+    private const string REQUEST_ATTRIBUTE = '_app_retry_after';
 
     public function __construct(private ClockInterface $clock)
     {
@@ -58,13 +65,14 @@ final readonly class RetryAfterListener
     public function onKernelResponse(ResponseEvent $event): void
     {
         $retryAfter = $event->getRequest()->attributes->get(self::REQUEST_ATTRIBUTE);
-        if (!$retryAfter instanceof \DateTimeImmutable) {
+        $response = $event->getResponse();
+        if (!$retryAfter instanceof \DateTimeImmutable || Response::HTTP_TOO_MANY_REQUESTS !== $response->getStatusCode()) {
             return;
         }
 
         // Jamais négatif : l'échéance peut être dépassée le temps que la
         // réponse soit construite.
         $seconds = max(0, $retryAfter->getTimestamp() - $this->clock->now()->getTimestamp());
-        $event->getResponse()->headers->set('Retry-After', (string) $seconds);
+        $response->headers->set('Retry-After', (string) $seconds);
     }
 }

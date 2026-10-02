@@ -796,7 +796,7 @@ Content management for all of the above, plus user administration, gated end-to-
   `Shared/Infrastructure/Http/RetryAfterListener` reads any exception implementing
   `Shared/Domain/Exception/RetryAfterAware` (a PHP 8.4 interface property, `$retryAfter { get; }`, met by
   the exceptions' promoted `public readonly`). It notes the deadline on the request at **`kernel.exception`
-  priority 64** and sets the header at `kernel.response`, with an injected `ClockInterface`. 64 is not
+  priority 64** and sets the header at `kernel.response` — **on a 429 only** (a failed render that ends in a 500 must not carry it) — with an injected `ClockInterface`. 64 is not
   arbitrary: it must sit above every listener that *builds* the 429 and so stops propagation — API
   Platform (-96), `AssistantProblemResponseListener` (-64), `BaseAccessRateLimitExceptionListener` (0,
   which keeps its own body). A new quota exception implements the interface; never write a fifth

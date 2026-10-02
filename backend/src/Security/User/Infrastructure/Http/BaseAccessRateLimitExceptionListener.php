@@ -23,7 +23,8 @@ use Symfony\Component\HttpKernel\Event\ExceptionEvent;
  */
 final class BaseAccessRateLimitExceptionListener
 {
-    #[AsEventListener(event: ExceptionEvent::class)]
+    // Priorité explicite : RetryAfterListener (64) doit passer avant.
+    #[AsEventListener(event: ExceptionEvent::class, priority: 0)]
     public function __invoke(ExceptionEvent $event): void
     {
         $exception = $event->getThrowable();

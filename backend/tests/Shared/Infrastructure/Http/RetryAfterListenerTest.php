@@ -49,6 +49,29 @@ final class RetryAfterListenerTest extends TestCase
         self::assertSame('0', $response->headers->get('Retry-After'));
     }
 
+    /**
+     * La vraie borne : l'échéance tombe à la seconde même de la réponse.
+     */
+    public function testADeadlineExactlyNowGivesZero(): void
+    {
+        $response = $this->respondTo($this->quotaExceeded('+0 seconds'));
+
+        self::assertSame('0', $response->headers->get('Retry-After'));
+    }
+
+    /**
+     * Si le rendu du 429 échoue à son tour, le noyau repasse par
+     * `kernel.exception` et sort un 500 — l'échéance reste pourtant notée sur
+     * la requête. Un `Retry-After` sur une erreur serveur dirait au client
+     * d'attendre un quota qu'on ne lui a pas annoncé.
+     */
+    public function testAResponseThatIsNotA429GetsNoHeaderEvenWithADeadlineNoted(): void
+    {
+        $response = $this->respondTo($this->quotaExceeded('+42 seconds'), 500);
+
+        self::assertFalse($response->headers->has('Retry-After'));
+    }
+
     public function testAnExceptionWithoutDeadlineLeavesTheResponseAlone(): void
     {
         $response = $this->respondTo(new \DomainException('autre chose'));
@@ -66,11 +89,11 @@ final class RetryAfterListenerTest extends TestCase
         self::assertFalse($response->headers->has('Retry-After'));
     }
 
-    private function respondTo(\Throwable $exception): Response
+    private function respondTo(\Throwable $exception, int $status = 429): Response
     {
         $listener = new RetryAfterListener($this->clock);
         $request = Request::create('/api/contact', 'POST');
-        $response = new Response('', 429);
+        $response = new Response('', $status);
 
         $listener->onKernelException(new ExceptionEvent(
             self::createStub(HttpKernelInterface::class),
