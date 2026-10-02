@@ -222,8 +222,8 @@ Conséquences :
   identifiant tenté) : il ne sort ni dans la réponse ni sur le canal principal. Le listener est à
   la priorité 16, au-dessus du `logKernelException` de Symfony (0) qui l'aurait écrit en
   `critical`, et journalise lui-même une ligne `error` avec les classes des exceptions et le
-  chemin — l'incident reste visible côté exploitation. Seul le canal `lock` garde le nom de la
-  ressource, au niveau `notice` (voir le point suivant).
+  chemin — l'incident reste visible côté exploitation. Le canal `lock`, qui portait encore le nom
+  de la ressource au niveau `notice`, est muet en production depuis l'issue #315 (point suivant).
   **Portée** : le listener prend toute panne du composant Lock sous `/api`, pas seulement celles
   des limiteurs — exact aujourd'hui, où ils en sont les seuls utilisateurs. Un futur verrou
   métier impose de revoir ce listener, sans quoi sa panne serait étiquetée « limiteur ».
@@ -232,9 +232,18 @@ Conséquences :
   car aucun identifiant n'a été vérifié, et un filtre sur les échecs d'authentification
   mélangerait les deux. Sans sujet : le chemin dit quel limiteur a cédé. Une rafale de requêtes
   pendant une panne du verrou reste ainsi visible au `jq` sur le canal `security_audit`.
-- Le canal Monolog `lock` a son propre handler plafonné à `notice` : le composant trace chaque
-  pose et levée en `debug` avec la ressource (IP ou identifiant), que la préprod
-  (`LOG_LEVEL=debug`) aurait écrite à chaque requête limitée. `LockLogChannelTest` le fige.
+- Le canal Monolog `lock` a son propre handler, à `warning` (issue #315), et aucun autre handler
+  de production ne le reçoit (`main` ni `console`). Le composant trace chaque pose et levée en
+  `debug`, chaque échec en `notice`, toujours avec la ressource (IP ou identifiant tenté) : la
+  préprod (`LOG_LEVEL=debug`) l'aurait écrite à chaque requête limitée, et même le plafond à
+  `notice` d'abord retenu l'écrivait à chaque panne. Ce plafond se justifiait tant qu'aucune autre
+  trace de la panne n'existait ; depuis #276, la ligne `error` de `RateLimiterLockFailureListener`
+  la porte sans la ressource, et le composant n'émettant rien au-dessus de `notice`, le canal est
+  muet en production. Le handler reste déclaré pour que le canal ne retombe dans aucun autre.
+  Ce choix suppose que tout verrou est pris pendant une requête `/api` — vrai pour les sept
+  limiteurs — : un futur verrou hors HTTP serait muet en cas de panne. `LockLogChannelTest` le
+  fige ; le noyau de test ne charge pas `when@prod`, la preuve est donc un test de configuration
+  et non de bout en bout.
 - Les clés d'advisory lock sont un `crc32` de la ressource, sur 32 bits : deux ressources peuvent
   se sérialiser l'une l'autre, et une collision est calculable sur les clés IP. Accepté : l'effet
   est de quelques millisecondes, borné par les zones nginx et par D10.

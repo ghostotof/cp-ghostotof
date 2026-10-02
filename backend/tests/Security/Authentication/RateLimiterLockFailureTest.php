@@ -130,8 +130,9 @@ final class RateLimiterLockFailureTest extends WebTestCase
      * Le nom du verrou contient la clé du limiteur — ici l'identifiant tenté
      * (et l'IP). Le noyau journalisait le message de l'exception en
      * `critical` sur le canal principal ; il ne doit plus sortir que par le
-     * canal `lock`, plafonné et assumé par #272. L'incident, lui, reste
-     * visible : une ligne `error` sans ce nom.
+     * canal `lock`, que la sonde de test capte mais que la production ne
+     * journalise pas (handler à `warning`, issue #315, LockLogChannelTest).
+     * L'incident, lui, reste visible : une ligne `error` sans ce nom.
      */
     public function testTheLockResourceNeverReachesALogOutsideTheLockChannel(): void
     {

@@ -119,13 +119,16 @@ when@prod:
             # `contact_form-<ip>`, `translation_assistant-<username>`. Sous
             # `main`, la préprod (LOG_LEVEL=debug) écrirait une IP ou un
             # identifiant par requête limitée, hors de SecurityAuditLogger et de
-            # sa politique de contenu. Plafonné à `notice` en dur : les échecs
-            # d'acquisition ou de libération restent visibles, le trafic nominal
-            # non. LockLogChannelTest fige ce réglage.
+            # sa politique de contenu. Les échecs aussi portent la ressource
+            # (`notice`) : le handler est à `warning`, au-dessus de tout ce que
+            # le composant émet (issue #315). La panne reste visible par la
+            # ligne `error`, sans la ressource, de RateLimiterLockFailureListener
+            # (issue #276). Le handler reste déclaré pour que le canal ne
+            # retombe jamais dans un autre. LockLogChannelTest fige ce réglage.
             lock:
                 type: stream
                 path: php://stderr
-                level: notice
+                level: warning
                 formatter: monolog.formatter.json
                 channels: ["lock"]
             # Journal de sécurité. Deux différences assumées avec `main` :
@@ -162,7 +165,8 @@ when@prod:
                 # commandes d'administration), la ligne JSON du handler `security`
                 # reste la seule trace de l'événement, pas une seconde copie
                 # formatée pour un humain.
-                channels: ["!event", "!doctrine", "!security", "!security_audit", "!ai_usage"]
+                # `lock` aussi, pour la même raison que sous `main` (issue #315).
+                channels: ["!event", "!doctrine", "!security", "!security_audit", "!ai_usage", "!lock"]
             deprecation:
                 type: stream
                 channels: [deprecation]
