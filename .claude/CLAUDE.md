@@ -285,7 +285,8 @@ mid-migration.
     `Http/PasswordSetupRateLimitRequestListener.php` (audit C1 — a `kernel.request` listener at priority 15
     that consumes the per-IP quota on **`POST`** for the two exact paths of the flow **before** API Platform
     deserializes or validates anything; consuming it again in the Processor would halve the effective
-    quota, so don't) + `Http/PasswordSetupRateLimitRetryAfterListener.php` (adds `Retry-After` on the 429);
+    quota, so don't) — the 429's `Retry-After` comes from the shared
+    `Shared/Infrastructure/Http/RetryAfterListener` (issue #273, see "Errors under `/api`");
     the API Platform processors.
   - `Presentation/Command/CreateCpgUserCommand.php` (`app:user:create`, `--role` allow-list) and
     `Presentation/Controller/CurrentUserController.php` (`GET /api/me`). Everything else is API Platform
@@ -791,6 +792,15 @@ Content management for all of the above, plus user administration, gated end-to-
   content negotiation, and `GET /api/docs` without an `Accept` header answered **406** — and -100 sits
   between API Platform's own `ExceptionListener` (-96) and Symfony's `ErrorListener` (-128), so it never
   runs on errors API Platform already handled. `ApiJsonErrorFormatListenerTest` + `ApiErrorFormatTest` pin it.
+- **Every quota 429 gets its `Retry-After` from one listener** (issue #273):
+  `Shared/Infrastructure/Http/RetryAfterListener` reads any exception implementing
+  `Shared/Domain/Exception/RetryAfterAware` (a PHP 8.4 interface property, `$retryAfter { get; }`, met by
+  the exceptions' promoted `public readonly`). It notes the deadline on the request at **`kernel.exception`
+  priority 64** and sets the header at `kernel.response` — **on a 429 only** (a failed render that ends in a 500 must not carry it) — with an injected `ClockInterface`. 64 is not
+  arbitrary: it must sit above every listener that *builds* the 429 and so stops propagation — API
+  Platform (-96), `AssistantProblemResponseListener` (-64), `BaseAccessRateLimitExceptionListener` (0,
+  which keeps its own body). A new quota exception implements the interface; never write a fifth
+  per-context copy. `RateLimiterLockFailureListener` stays apart on purpose (fixed delay, priority 16).
 
 ### Seeding (`app:*:seed`)
 

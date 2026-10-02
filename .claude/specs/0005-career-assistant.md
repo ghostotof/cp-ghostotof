@@ -291,7 +291,7 @@ Domain/
   ValueObject/Role.php
   Exception/InvalidConversationException.php       # 422
   Exception/AssistantUnavailableException.php      # 503, ProblemExceptionInterface + HasProblemType
-  Exception/AssistantRateLimitExceededException.php # 429, porte le Retry-After
+  Exception/AssistantRateLimitExceededException.php # 429, RetryAfterAware : en-tête posé par Shared/Infrastructure/Http/RetryAfterListener (#273)
 Application/
   CareerAssistantInterface.php               # answer(Conversation, Locale): iterable<string>
   AssistantRateLimiterInterface.php
@@ -303,7 +303,6 @@ Infrastructure/
   Pdf/SmalotPdfTextExtractor.php             # smalot/pdfparser + normalisation, sans cache (D7)
   RateLimiter/SymfonyAssistantRateLimiter.php  # limiter.career_assistant, clé = username
   RateLimiter/QuotaGuardedCareerAssistant.php  # décorateur : consomme le quota, trace le refus sur ai_usage
-  Http/AssistantRateLimitRetryAfterListener.php
   Http/AssistantProblemResponseListener.php  # rend en problem+json les ProblemExceptionInterface de /api/assistant
   Http/AssistantRequestSizeListener.php      # 413 au-delà de 128 Kio, après le firewall
   Http/RequestBodyTooLargeException.php      # 413 /errors/request-too-large
