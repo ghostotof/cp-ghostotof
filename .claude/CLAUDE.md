@@ -632,7 +632,8 @@ mid-migration.
   calls counts one unit each; never consume it inside a Doctrine transaction; body over 128 KiB (the longest valid conversation in 4-byte characters is ~104 kB — 64 KiB, the spec's
   first figure, refused it) → 413 `/errors/request-too-large`, judged by
   `AssistantRequestSizeListener` at priority 4, *after* the firewall, so an anonymous or base-tier caller only
-  ever learns it is refused). Task 2 facts
+  ever learns it is refused); task 6 (#265) done: the `/(fr|en)/assistant` page
+  (`ROLE_TRUSTED`/`ROLE_SUPER`), see "API-backed content". Task 2 facts
   to keep: **the service composes its own system message** (preamble file + corpus rendered by
   `CorpusRenderer`, D8) because `SystemPromptInputProcessor` skips `ai.yaml`'s prompt as soon as the
   `MessageBag` carries one; **the agent is injected by id** (`ai.agent.career_assistant`), never
@@ -912,6 +913,14 @@ error state (`role="alert"`), and the content. `main.ts` provides both repositor
 difference that comes from the backend: **its endpoint has no `{locale}` segment** (`GET /api/watch`) — a
 version number is a fact, not a translation, so only the surrounding UI strings are localized. Don't add new content here unless it's genuinely backend-managed (i.e. editable
 from the backoffice) — purely static content still belongs in `infrastructure/portfolio/content/{fr,en}.ts`.
+
+The assistant follows the same layered shape without being backoffice content: its slice (spec 0005,
+`ROLE_TRUSTED`/`ROLE_SUPER`) is the streaming variant, `domain/assistant` →
+`infrastructure/assistant/HttpAssistantRepository.ts` (reads the SSE stream with `fetch` + `ReadableStream`,
+incremental parser `serverEvents.ts`) → `application/assistant/useAssistant.ts` (state machine
+`idle|streaming|error`; the sliding window `buildConversationWindow` copies the backend's D6 bounds and counts
+in code points, never `.length`; a 401/403 calls `markSessionExpired()`) →
+`presentation/pages/AssistantPage.vue`.
 
 #### Backoffice (`/admin`, `ROLE_SUPER`)
 

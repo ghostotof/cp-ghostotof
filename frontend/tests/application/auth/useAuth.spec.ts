@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
-import { AUTH_REPOSITORY, authState, markBaseAccessExpired, markBaseAccessGranted, useAuth } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, authState, markBaseAccessExpired, markBaseAccessGranted, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
@@ -287,6 +287,21 @@ describe('useAuth', () => {
       markBaseAccessExpired()
       expect(auth.tier.value).toBe('base')
       expect(auth.user.value?.username).toBe('jane')
+    })
+  })
+
+  describe('markSessionExpired', () => {
+    it('ramène une session nominative à anonyme, sans compte', async () => {
+      const auth = mountWithComposable(
+        createStubRepository({ login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })) }),
+      )
+      await auth.login('jane', 'password')
+      expect(auth.tier.value).toBe('trusted')
+
+      markSessionExpired()
+
+      expect(auth.tier.value).toBe('anonymous')
+      expect(auth.user.value).toBeNull()
     })
   })
 })

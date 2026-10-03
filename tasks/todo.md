@@ -8,7 +8,7 @@ Une branche par tâche, tirée de la mère, PR vers la mère. Le détail de chaq
 - [x] Tâche 3 — Coût borné : bornes D6 et quota (#262) — PR #282
 - [ ] Tâche 4 — CV nominatif dans le corpus (#263) — bloquée par #261
 - [x] Tâche 5 — Préparation du déploiement (#264)
-- [ ] Tâche 6 — Page Assistant (#265) — bloquée par #261, #262
+- [x] Tâche 6 — Page Assistant (#265) — PR #327
 
 ## Release de la spec (après la tâche 6) — checklist de référence : #324 (survit à l'archivage de `tasks/`)
 
