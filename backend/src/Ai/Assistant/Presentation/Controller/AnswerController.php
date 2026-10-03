@@ -9,6 +9,8 @@ use App\Ai\Assistant\Domain\Exception\AssistantUnavailableException;
 use App\Ai\Assistant\Domain\ValueObject\AnswerUsage;
 use App\Ai\Assistant\Presentation\Dto\AnswerRequest;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Monolog\Attribute\WithMonologChannel;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\EventStreamResponse;
 use Symfony\Component\HttpFoundation\ServerEvent;
 use Symfony\Component\HttpKernel\Attribute\MapRequestPayload;
@@ -24,7 +26,8 @@ use Symfony\Component\Routing\Attribute\Route;
  * appel de l'interface, mise en forme des événements. L'assistant a déjà lancé
  * l'appel au fournisseur quand answer() rend la main : un échec avant le
  * premier fragment remonte d'ici en 503. Après le 200, il ne reste qu'à le dire
- * par un événement `error`.
+ * par un événement `error` : le flux se termine toujours par `done` ou `error`,
+ * jamais par une simple coupure qu'un client prendrait pour une fin (#318).
  *
  * Chaque événement porte un `data` JSON (`delta` {text}, `done` {promptTokens,
  * completionTokens, durationMs}, `error` {reason}) : un fragment brut
@@ -37,10 +40,12 @@ use Symfony\Component\Routing\Attribute\Route;
  * delà, c'est le `proxy-buffering` de l'ingress-nginx, `off` par défaut et
  * non surchargé dans k8s/, qui laisse passer le flux.
  */
+#[WithMonologChannel('ai_usage')]
 final readonly class AnswerController
 {
     public function __construct(
         private CareerAssistantInterface $assistant,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -70,7 +75,24 @@ final readonly class AnswerController
                 yield new ServerEvent($this->json(['text' => $fragment]), type: 'delta');
             }
         } catch (AssistantUnavailableException) {
-            yield new ServerEvent($this->json(['reason' => 'assistant-unavailable']), type: 'error');
+            // Déjà journalisée sur `ai_usage` par l'assistant.
+            yield $this->unavailableEvent();
+
+            return;
+        } catch (\Throwable $exception) {
+            // Tout le reste : une exception du bridge que l'assistant ne relaie
+            // pas, ou le json_encode d'un fragment ci-dessus. Les jetons sont
+            // facturés, la fin doit donc exister sur `ai_usage` (D10) — la
+            // classe seulement : le message d'une exception du bridge porte le
+            // corps de la réponse du fournisseur.
+            $this->logger->error('Assistant de parcours : le flux a échoué.', [
+                'outcome' => 'error',
+                'stage' => 'during-stream',
+                'exception' => $exception::class,
+                'origin' => basename($exception->getFile()).':'.$exception->getLine(),
+            ]);
+
+            yield $this->unavailableEvent();
 
             return;
         }
@@ -82,6 +104,11 @@ final readonly class AnswerController
             'completionTokens' => $usage->completionTokens,
             'durationMs' => $usage->durationMs,
         ]), type: 'done');
+    }
+
+    private function unavailableEvent(): ServerEvent
+    {
+        return new ServerEvent($this->json(['reason' => 'assistant-unavailable']), type: 'error');
     }
 
     /**
