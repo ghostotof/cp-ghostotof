@@ -63,7 +63,7 @@ final readonly class ExtractedTextNormalizer
     {
         $pages = array_values(array_filter(
             array_map($this->cleanLines(...), explode(self::PAGE_BREAK, $text)),
-            self::hasText(...),
+            $this->hasText(...),
         ));
         $pages = $this->withoutRepeatedEdgeLines($this->withoutPageNumbers($pages));
 
@@ -88,24 +88,24 @@ final readonly class ExtractedTextNormalizer
             throw new CvTextExtractionException('Normalisation du texte du CV impossible.');
         }
 
-        return array_map(self::cleanLine(...), $lines);
+        return array_map($this->cleanLine(...), $lines);
     }
 
     /**
      * Une tabulation devient un espace avant d'être compressée ; \p{Cc}, qui
      * la couvrirait aussi, ne retire plus ensuite que les vrais contrôles.
      */
-    private static function cleanLine(string $line): string
+    private function cleanLine(string $line): string
     {
-        $withoutControls = self::replace('/\p{Cc}/u', '', str_replace("\t", ' ', $line));
+        $withoutControls = $this->replace('/\p{Cc}/u', '', str_replace("\t", ' ', $line));
 
-        return trim(self::replace('/\h+/u', ' ', $withoutControls));
+        return trim($this->replace('/\h+/u', ' ', $withoutControls));
     }
 
     /**
      * @param list<string> $lines
      */
-    private static function hasText(array $lines): bool
+    private function hasText(array $lines): bool
     {
         return [] !== array_filter($lines, static fn (string $line): bool => '' !== $line);
     }
@@ -231,7 +231,7 @@ final readonly class ExtractedTextNormalizer
      * en contenir, et un champ vidé en silence ferait dire à l'assistant que le
      * CV ne mentionne rien.
      */
-    private static function replace(string $pattern, string $replacement, string $value): string
+    private function replace(string $pattern, string $replacement, string $value): string
     {
         return preg_replace($pattern, $replacement, $value)
             ?? throw new CvTextExtractionException('Normalisation du texte du CV impossible.');

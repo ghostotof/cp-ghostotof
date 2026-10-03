@@ -226,10 +226,11 @@ final class AnswerControllerTest extends WebTestCase
     }
 
     /**
-     * Un CV illisible arrête la réponse (500) plutôt que d'en omettre la
-     * section, et l'échec ne recopie rien du fichier dans les journaux.
+     * Mode dégradé (revue de branche) : un CV illisible ne coupe pas
+     * l'assistant — la section se dit indisponible, l'appel part — et l'échec
+     * ne recopie rien du fichier dans les journaux.
      */
-    public function testAnUnreadableCvIsAServerErrorThatLogsNothingOfTheFile(): void
+    public function testAnUnreadableCvLeavesTheAssistantAnsweringAndLogsNothingOfTheFile(): void
     {
         [$client, $csrfToken] = $this->trustedClient();
         $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
@@ -244,8 +245,15 @@ final class AnswerControllerTest extends WebTestCase
             unlink($path);
         }
 
-        self::assertResponseStatusCodeSame(500);
-        self::assertSame([], $this->scalewayRequests);
+        self::assertResponseStatusCodeSame(200);
+        $messages = $this->scalewayRequests[0]['body']['messages'] ?? null;
+        self::assertIsArray($messages);
+        self::assertIsString($messages[0]['content'] ?? null);
+        self::assertStringContainsString("# CV détaillé\n\nLe CV détaillé n'est pas disponible.", $messages[0]['content']);
+        self::assertContains('extraction-failed', array_map(
+            static fn (LogRecord $record): mixed => $record->context['reason'] ?? null,
+            self::allChannelsLogRecords(),
+        ));
         $this->assertNoLogCarries(self::CV_FRAGMENTS);
     }
 
@@ -658,7 +666,9 @@ final class AnswerControllerTest extends WebTestCase
     private function useCvFile(KernelBrowser $client, string $path): void
     {
         $client->getContainer()->set(CorpusRenderer::class, new CorpusRenderer(
-            new PopplerPdfTextExtractor($path, new ExtractedTextNormalizer()),
+            // Le vrai logger : les `warning` de l'extracteur passent par la
+            // sonde de tous les canaux, comme en production.
+            new PopplerPdfTextExtractor($path, new ExtractedTextNormalizer(), $client->getContainer()->get('logger')),
             new StubProvider([]),
             new StubProvider([]),
         ));

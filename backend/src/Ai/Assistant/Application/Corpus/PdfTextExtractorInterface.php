@@ -14,9 +14,12 @@ namespace App\Ai\Assistant\Application\Corpus;
 interface PdfTextExtractorInterface
 {
     /**
+     * Ne lève jamais : une panne d'extraction n'arrête pas l'assistant, la
+     * section du corpus se dit indisponible (mode dégradé, journal de la spec).
+     *
      * @return string|null le texte normalisé, paragraphes séparés par une ligne
-     *                     vide ; null si le fichier est absent, ce qui n'est
-     *                     pas une erreur
+     *                     vide ; null si le fichier est absent (ce n'est pas une
+     *                     erreur) ou inutilisable (l'implémentation le journalise)
      */
     public function extract(): ?string;
 }
