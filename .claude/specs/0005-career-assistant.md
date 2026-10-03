@@ -84,7 +84,9 @@ compte compris) n'atteignent l'assistant — ni directement, ni par effet de bor
 - **D5 — Corpus rendu par un composant unique** (`Infrastructure/Corpus/CorpusRenderer`, derrière `Application/Corpus/CorpusRendererInterface`), en Markdown
   déterministe : une locale (celle de la requête), sections dans un ordre fixe (CV nominatif, CV
   sans identité, études de cas), entrées triées par `position`, intertitres nommés dans la langue
-  du corpus, **aucun champ technique** (id, groupe de traduction, locale). Les sources sont lues
+  du corpus (*précisé le 2026-10-03 : le CV nominatif est un seul PDF, son texte reste dans la
+  langue du fichier quelle que soit la locale — la règle 1 du préambule fait répondre dans celle de
+  la question*), **aucun champ technique** (id, groupe de traduction, locale). Les sources sont lues
   **par les providers publics existants** (`AnonymousCvProvider`, `CaseStudyProvider`, appelés
   avec une opération `GetCollection` et `['locale' => …]`), jamais par les repositories ; le CV
   nominatif par un lecteur dédié (D7). Le rendu est **assemblé à chaque requête**, jamais
@@ -100,18 +102,35 @@ compte compris) n'atteignent l'assistant — ni directement, ni par effet de bor
     F2 : sans elle, le total montait à 26 000*), premier message de rôle `user`, alternance stricte
     `user`/`assistant`, dernier message `user` — sinon 422 ;
   - timeout **40 s** sur le client dédié, sous les 60 s de nginx et de l'ingress.
-- **D7 — Le CV nominatif entre comme texte extrait du PDF**, par `smalot/pdfparser` (pur PHP, pas de
-  binaire à ajouter à l'image ; `ext-iconv` et `ext-zlib` sont dans l'image `php:alpine`), puis
-  **normalisé** : espaces et tabulations compressés, lignes recollées en paragraphes (une ligne
-  vide = un paragraphe), en-têtes ou pieds répétés d'une page à l'autre supprimés, caractères de
-  contrôle retirés. **Aucun cache : l'extraction est refaite à chaque requête**, et le texte
+- **D7 — Le CV nominatif entre comme texte extrait du PDF**, par `pdftotext` (`poppler-utils`,
+  installé dans l'étape `base` de l'image, appelé par `spatie/pdf-to-text`) — *amendé le 2026-10-03,
+  voir le journal : `smalot/pdfparser`, d'abord retenu (pur PHP, pas de binaire), ne restituait ni
+  paragraphes ni puces sur le vrai CV* —, puis **normalisé** : espaces et tabulations compressés,
+  lignes recollées en paragraphes (une ligne vide = un paragraphe ; dans un paragraphe, une ligne
+  n'est recollée à la suivante que si elle remplit sa colonne — 75 % de la plus longue du
+  paragraphe et au moins 40 caractères — et ne finit pas une phrase, sans quoi un titre deviendrait
+  le début de la phrase qui le suit), numéros de page retirés, en-têtes ou pieds répétés à
+  l'identique au bord de chaque page **gardés une seule fois** (*amendé le 2026-10-03, validé par le
+  propriétaire : supprimés partout, ils emporteraient le prénom d'un CV qui ne le porte qu'en
+  en-tête*), caractères de contrôle retirés. **Aucun cache : l'extraction est refaite à chaque requête**, et le texte
   n'existe qu'en mémoire le temps de la requête — **jamais persisté, jamais journalisé**.
   `cache.app` est sur Doctrine DBAL depuis l'ADR 0005 : y ranger le texte écrirait le CV nominatif
   complet dans la table `cache_items`, donc dans la base et ses sauvegardes. Le coût de
-  l'extraction (quelques millisecondes attendues, **mesuré en M2**) est borné par le quota D6 ; si
-  la mesure le rendait gênant, un cache se rediscute par amendement, jamais sur un stockage
-  persistant. Fichier absent → le corpus omet la
-  section et le prompt le dit (« le CV détaillé n'est pas disponible ») ; ce n'est pas une erreur.
+  l'extraction (**12,6 ms médians mesurés** le 2026-10-03 sur le vrai CV, 11 à 15 ms sur 30
+  appels, normalisation comprise) est borné par le quota D6 ; si la mesure le rendait gênant, un
+  cache se rediscute par amendement, jamais sur un stockage persistant. Fichier absent, ou sans
+  couche texte (un scan) → la section « CV détaillé » reste et dit que le CV détaillé n'est pas
+  disponible (*amendé le 2026-10-03 : « le corpus omet la section » ; une section vide qui le dit
+  est le garde-fou mesuré en tâche 1 pour les autres sources*) ; ce n'est pas une erreur. **Fichier
+  présent mais inutilisable** — binaire absent, PDF illisible, plus de 5 s, aucun texte, plus de
+  **30 000 caractères** — → **mode dégradé** (*amendé le 2026-10-03, décision du propriétaire à la
+  revue de branche*) : même section « indisponible », l'assistant répond, et un `warning` nomme une
+  raison stable (`binary-missing`, `extraction-failed` + code de sortie, `timeout`, `no-text`,
+  `too-long` + longueur…), **jamais** le texte, la sortie standard ni la sortie d'erreur du
+  processus (`ProcessFailedException` recopie les deux). La borne garde le coût borné par
+  construction (ADR 0004) ; au-delà, rien n'est tronqué, un CV coupé en silence ferait mentir le
+  corpus. `pdftotext` tourne **sans l'environnement du worker** (Symfony Process lui transmettrait
+  `DATABASE_URL`, `APP_SECRET`, les clés d'API).
 - **D8 — Prompt système en deux parties** : un préambule fixe (`config/ai/prompts/career_assistant.txt`,
   rôle, règles, refus hors sujet, langue de réponse = langue de la question, ne rien inventer, citer
   la section d'où vient l'information) suivi du **corpus rendu**, puis la conversation. Le corpus est
@@ -125,8 +144,9 @@ compte compris) n'atteignent l'assistant — ni directement, ni par effet de bor
   `X-Accel-Buffering: no` posé par le contrôleur, que l'ingress-nginx honore sans annotation globale.
 - **D10 — Rien n'est persisté, rien du contenu n'est journalisé.** Ni question, ni réponse, ni
   corpus dans les logs ; jetons, durée, nombre de messages, statut de fin (`done`/`error`) en `info`.
-- **D11 — Paquets pinnés** : `symfony/ai-scaleway-platform: 0.13.0` (exact) et `smalot/pdfparser`
-  en contrainte `^2.12` (paquet stable, hors règle 0.x).
+- **D11 — Paquets pinnés** : `symfony/ai-scaleway-platform: 0.13.0` (exact) et `spatie/pdf-to-text`
+  en contrainte `^1.55` (paquet stable, hors règle 0.x ; *amendé le 2026-10-03 : remplace
+  `smalot/pdfparser ^2.12`*). Le binaire suit la version d'Alpine de l'image (`PHP_TAG`).
 
 ### Contrats externes (vérifiés le 2026-09-15)
 
@@ -152,7 +172,12 @@ compte compris) n'atteignent l'assistant — ni directement, ni par effet de bor
 - **`smalot/pdfparser`** v2.12.5 (2026-04-17), PHP ≥ 7.1, pur PHP, dépend d'`ext-iconv`, `ext-zlib`,
   `symfony/polyfill-mbstring`. Maintenance limitée annoncée : compatibilité PHP 8.4 **à vérifier en
   M1** par l'installation et un test d'extraction sur un PDF de fixture ; repli `spatie/pdf-to-text`
-  (binaire `poppler-utils` à ajouter à l'image, plus précis) si l'extraction déçoit.
+  (binaire `poppler-utils` à ajouter à l'image, plus précis) si l'extraction déçoit. *Constat du
+  2026-10-03 (tâche 4) : s'installe sur PHP 8.5, mais déçoit — repli appliqué, voir le journal.*
+- **`spatie/pdf-to-text`** 1.55.0, mince enveloppe de `symfony/process` (passé ainsi en dépendance
+  de production) ; `pdftotext` 25.12.0 dans l'image (Alpine 3.24), celui d'Ubuntu en CI (étape
+  apt bornée de `test-backend`), d'où des tests d'extraction qui pincent la structure, pas une
+  chaîne exacte.
 - **Environnement d'exécution** : `max_execution_time = 30` en prod — sous Linux cette limite ne
   compte pas l'attente réseau, et le contrôleur n'a rien à calculer pendant le flux ; nginx et
   l'ingress coupent à 60 s ; le timeout client de 40 s reste dessous. Le limiteur de débit Symfony
@@ -300,7 +325,9 @@ Application/
 Infrastructure/
   Corpus/CorpusRenderer.php                  # providers publics + PdfTextExtractor → Markdown
   SymfonyAi/SymfonyAiCareerAssistant.php     # seule classe qui importe le bundle ; stream: true
-  Pdf/SmalotPdfTextExtractor.php             # smalot/pdfparser + normalisation, sans cache (D7)
+  Pdf/PopplerPdfTextExtractor.php            # pdftotext via spatie/pdf-to-text, sans cache (D7, amendée)
+  Pdf/ExtractedTextNormalizer.php            # normalisation pure : paragraphes, en-têtes, contrôles
+  Pdf/CvTextExtractionException.php          # 500, message littéral, jamais chaînée
   RateLimiter/SymfonyAssistantRateLimiter.php  # limiter.career_assistant, clé = username
   RateLimiter/QuotaGuardedCareerAssistant.php  # décorateur : consomme le quota, trace le refus sur ai_usage
   Http/AssistantProblemResponseListener.php  # rend en problem+json les ProblemExceptionInterface de /api/assistant
@@ -376,7 +403,7 @@ Tests miroir sous `tests/` (`tests/infrastructure/assistant/HttpAssistantReposit
 ```bash
 # Backend (dans make sh)
 composer require symfony/ai-scaleway-platform:0.13.0     # pin exact
-composer require smalot/pdfparser:^2.12
+composer require spatie/pdf-to-text:^1.55                # + poppler-utils dans l'image (D7 amendée)
 php bin/console debug:container app.ai.platform.scaleway  # la plateforme prend bien le client scoped
 php bin/console ai:agent:call career_assistant            # appel réel en dev (clé dans .env.local) — M1
 php bin/console debug:router | grep assistant             # une seule route
@@ -396,7 +423,7 @@ kubectl exec deploy/backend -c nginx -n preprod -- nginx -T | grep -A3 'assistan
   exceptions métier explicites, interface pour tout service consommé par le contrôleur, PHPStan
   `max` sans baseline, Rector et `lsp:check` verts.
 - `SymfonyAiCareerAssistant` est **la seule classe** à importer `Symfony\AI\*`. `CorpusRenderer` et
-  `SmalotPdfTextExtractor` n'en voient rien.
+  `PopplerPdfTextExtractor` n'en voient rien.
 - Le contrôleur reste léger : validation par le Validator, conversion en VO, appel de l'interface,
   construction de l'`EventStreamResponse`. Aucune logique de corpus ni de quota dedans.
 - Un `ignoreErrors` PHPStan, s'il faut, est scopé à `src/Ai/Assistant/Infrastructure/` et justifié ;
@@ -409,8 +436,9 @@ kubectl exec deploy/backend -c nginx -n preprod -- nginx -T | grep -A3 'assistan
 ## 8. Stratégie de test
 
 - **Unitaires (`tests/Ai/Assistant/`)** : VO `Conversation` (chaque borne D6, alternance) ;
-  `CorpusRendererTest` sur fixtures + snapshot ; `SmalotPdfTextExtractorTest` sur un PDF de fixture
-  généré pour l'occasion (texte fictif, versionné, quelques Ko) et sur un fichier absent ;
+  `CorpusRendererTest` sur fixtures + snapshot ; `PopplerPdfTextExtractorTest` (vrai binaire) sur un
+  PDF de fixture généré pour l'occasion (texte fictif, versionné, quelques Ko) et sur un fichier
+  absent, `ExtractedTextNormalizerTest` sur des chaînes ;
   `CorpusSourcesTest` (liste pincée) ; `SymfonyAiCareerAssistantTest` avec un `FakeAgent` en flux
   (réutiliser ou étendre `tests/Ai/Translation/Support/FakeAgent.php` → le déplacer dans
   `tests/Ai/Support/` s'il sert aux deux) ; `SymfonyAssistantRateLimiterTest` calqué sur celui de la
@@ -684,3 +712,57 @@ préfixe `/api/assistant` dupliqué entre deux écouteurs, horloge non injectée
 casse des identifiants, espaces Unicode dans un message, faux messages `assistant` (injection
 acceptée par conception, le corpus est celui du compte), réponse du modèle au-delà de 4 000
 caractères (la troncature M6 la couvre).
+
+**2026-10-03 (tâche 4, #263)** — **Repli sur `pdftotext`**, décidé par le propriétaire au vu d'une
+comparaison sur le vrai CV (une page, à colonnes), faite en comptages seulement. `smalot/pdfparser`
+s'installe sur PHP 8.5 mais restitue **aucune ligne vide** (la règle D7 « une ligne vide = un
+paragraphe » devenait inapplicable), **391 artefacts `<>`** (chaînes hexadécimales vides des
+tableaux `TJ` recopiées telles quelles) et **17 puces** rejetées en fin de texte, détachées de
+leurs éléments ; `getDataTm()` ne sauvait rien (coordonnées sans la matrice courante : `y`
+négatifs en page 2). `pdftotext` (mode par défaut) : 47 lignes vides entre paragraphes, aucun
+artefact, puces rattachées, 12 ms. Coût accepté : un binaire et ses bibliothèques dans l'étape
+`base` (donc aussi en dev) — **16,3 Mo installés, 25 paquets** (poppler, cairo, freetype,
+fontconfig…), mesuré par une désinstallation simulée dans l'image —, un processus par question, une
+étape apt en CI. **Vérifié dans l'image de production** construite pour l'occasion, en conditions de
+pod : `--read-only`, UID 10001, `HOME` inexistant — `pdftotext` sort 0 sans message de fontconfig
+et l'extracteur rend le texte (ADR 0005 : rien ne doit écrire sur le disque du pod). Deux écarts au texte de
+D7, amendée en conséquence : pdftotext ne détache pas un titre de son paragraphe, d'où la règle de
+recollage (une ligne remplit sa colonne — 75 % de la plus longue du paragraphe — et ne finit pas une
+phrase ; un retour automatique tombé après un point coupe le paragraphe en deux, ce qui ne fait rien
+perdre au modèle) ; une ligne répétée au bord de chaque page (trois premières et trois dernières
+lignes non vides, chiffres ignorés pour reconnaître un numéro de page) est **gardée une fois**, pas
+supprimée : un CV qui ne porterait le prénom ou l'adresse qu'en en-tête les perdrait, alors que la
+règle 2 du préambule désigne le titulaire par son prénom. Contrepartie : « Page 1 / 2 » reste une
+fois dans le texte. Le CV est un seul fichier, la section porte l'intertitre de la locale du corpus
+mais son texte est dans la langue du PDF. **Mesure** : 12,6 ms médians sur 30 extractions du vrai
+CV (11 à 15 ms), normalisation comprise — aucun cache à rediscuter. Fixture : CV fictif à deux
+pages généré par Chrome depuis un HTML versionné à côté (en-tête et pied par les boîtes de marge
+`@page`, numéro de page, liste). Prénom conservé, vérifié par le test de fixture comme demandé plus
+haut. Garde-fous ajoutés : `CorpusSourcesTest` admet `PopplerPdfTextExtractor` avec sa justification ;
+deux tests fonctionnels traversent le vrai extracteur — le texte atteint le message système envoyé
+à Scaleway et la sonde de tous les canaux de journal n'en porte aucun fragment (test vérifié par
+mutation : un `info` du prompt sur `ai_usage` le fait échouer), un CV illisible donne un 500 sans
+rien recopier du fichier.
+
+**2026-10-03 (tâche 4, revue de branche)** — Trois relectures (`/code-review` niveau high, axes
+standards et spec). Deux pertes de contenu reproduites sur des entrées fictives, corrigées test
+rouge d'abord : (C1) les chiffres étaient neutralisés pour reconnaître un numéro de page, si bien
+que deux lignes de dates au bord de deux pages passaient pour un même pied et que la seconde
+disparaissait — comparaison désormais **exacte**, numéros de page retirés par un motif dédié
+(« Page 1 / 2 », « page 1 sur 2 », « p. 3 », « 1/2 », au bord d'une page seulement), ce qui retire
+aussi la contrepartie notée plus haut ; (C2) sans plancher, la plus longue d'une suite de lignes
+courtes « remplissait sa colonne » et un titre se collait à sa liste — **plancher de 40
+caractères**. Arbitrages du propriétaire : en-têtes **gardés une fois** (confirmé) ; CV inutilisable
+en **mode dégradé** avec `warning` plutôt qu'un 500, qui coûtait une unité de quota par essai et ne
+disait rien de la cause ; **borne de 30 000 caractères** sans troncature ; nom
+`PdfTextExtractorInterface` **gardé** (traçabilité avec §5). Corrigés aussi : `pdftotext` sans
+l'environnement du worker (test vérifié par mutation), `symfony/process: 8.1.*` déclaré (importé par
+`src/`), fin de phrase reconnue derrière un guillemet ou une parenthèse, test du cas UTF-8 invalide,
+contrat de l'interface (« ne lève jamais »), précision sous D5. Non retenus : un en-tête absent de
+la première page n'est pas dédupliqué (improbable sur un CV d'une ou deux pages) ;
+`CvTextExtractionException` étend `\RuntimeException` comme `CorpusRenderingException` ; `replace()`
+garde une copie par classe, chacune levant son exception ; `nominativeCvSection()` reste distincte de
+`section()` (message d'absence propre) ; binaire non pinné, la CI teste le poppler d'Ubuntu et la
+prod tourne sur celui d'Alpine (les tests pincent la structure). Sur le vrai CV (une page) : 6 357
+caractères inchangés, 86 lignes non vides au lieu de 73, le plancher gardant des lignes courtes
+séparées.

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Ai\Assistant\Infrastructure\Corpus;
 
 use App\Ai\Assistant\Infrastructure\Corpus\CorpusRenderer;
+use App\Ai\Assistant\Infrastructure\Pdf\PopplerPdfTextExtractor;
 use App\Portfolio\AnonymousCv\Infrastructure\ApiPlatform\AnonymousCvProvider;
 use App\Portfolio\CaseStudy\Infrastructure\ApiPlatform\CaseStudyProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -22,6 +23,7 @@ final class CorpusSourcesTest extends KernelTestCase
     private const array ALLOWED_SOURCES = [
         AnonymousCvProvider::class => 'CV sans identité : lu par le palier de base, donc par tout ROLE_TRUSTED (ADR 0003 D5). Provider public, mêmes données que GET /api/anonymous-cv/{locale}.',
         CaseStudyProvider::class => 'Études de cas : même palier, même raison. Provider public, mêmes données que GET /api/case-studies/{locale}.',
+        PopplerPdfTextExtractor::class => "CV nominatif : le fichier même que GET /api/cv sert à ROLE_TRUSTED, le palier exigé par ^/api/assistant (spec 0005 D7). Lecteur dédié plutôt que provider : le CV n'a ni entité ni ressource API Platform, seulement le paramètre app.cv_file_path que le contrôleur lit aussi. Il ne part que chez Scaleway, l'hébergeur du site (ADR 0004 D3 amendée).",
     ];
 
     public function testTheCorpusReadsExactlyTheAllowedSources(): void
