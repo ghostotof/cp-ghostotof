@@ -124,6 +124,14 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
     }
 
     /**
+     * Seule une collection réellement vide se rend « Aucun document
+     * disponible » (issue #319). Un retour qui n'est pas une collection, ou une
+     * entrée d'un autre type (provider remplacé ou décoré, que
+     * CorpusSourcesTest ne voit pas), arrête le rendu : les écarter viderait la
+     * section en silence, et l'assistant répondrait « ce n'est pas dans les
+     * documents » à toutes les questions. Le message ne nomme que des types,
+     * jamais un contenu.
+     *
      * @template T of object
      *
      * @param ProviderInterface<T> $provider
@@ -135,14 +143,16 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
     {
         $result = $provider->provide(new GetCollection(), ['locale' => $locale->value]);
         if (!is_iterable($result)) {
-            return [];
+            throw new CorpusRenderingException(\sprintf('Rendu du corpus impossible : %s rend %s au lieu d\'une collection de %s.', $provider::class, get_debug_type($result), $class));
         }
 
         $entries = [];
         foreach ($result as $entry) {
-            if ($entry instanceof $class) {
-                $entries[] = $entry;
+            if (!$entry instanceof $class) {
+                throw new CorpusRenderingException(\sprintf('Rendu du corpus impossible : %s rend une entrée %s au lieu de %s.', $provider::class, get_debug_type($entry), $class));
             }
+
+            $entries[] = $entry;
         }
 
         return $entries;
