@@ -633,7 +633,25 @@ mid-migration.
   first figure, refused it) → 413 `/errors/request-too-large`, judged by
   `AssistantRequestSizeListener` at priority 4, *after* the firewall, so an anonymous or base-tier caller only
   ever learns it is refused); task 6 (#265) done: the `/(fr|en)/assistant` page
-  (`ROLE_TRUSTED`/`ROLE_SUPER`), see "API-backed content". Task 2 facts
+  (`ROLE_TRUSTED`/`ROLE_SUPER`), see "API-backed content"; task 4 (#263) done: the **nominative CV opens
+  the corpus** (« CV détaillé » / « Detailed CV »), extracted from the very file `GET /api/cv` serves
+  (`app.cv_file_path`) by **`pdftotext`** — `poppler-utils` in the Dockerfile's `base` stage (16 MB),
+  called through `spatie/pdf-to-text` by `Infrastructure/Pdf/PopplerPdfTextExtractor`, behind
+  `Application/Corpus/PdfTextExtractorInterface`. `smalot/pdfparser`, the spec's first choice, was
+  dropped (D7 amended): on the real CV it gave no blank line between paragraphs, hundreds of `<>`
+  artefacts and detached bullets. Re-extracted on **every** render, never cached (`cache.app` is the
+  DB, ADR 0005) — ~13 ms measured; absent or text-less file → the section stays and says the CV is not
+  available (not an error); unreadable file → `CvTextExtractionException`, 500, **literal message,
+  never chained** (`ProcessFailedException` copies the process's stdout, i.e. the CV text, and the
+  kernel logs the whole chain). `ExtractedTextNormalizer` keeps a line repeated at the edge of every
+  page **once** rather than deleting it (a CV carrying the first name only in its header would lose
+  it) and joins a line to the next only if it fills its column and doesn't end a sentence (pdftotext
+  leaves headings glued to their paragraph). CI's `test-backend` installs `poppler-utils` (bounded
+  apt step), so the extraction tests pin structure, not an exact string (Ubuntu's poppler ≠ Alpine's).
+  The test env's `CV_FILE_PATH` is `dummy.pdf` (no text): functional tests that need a real CV swap
+  the public-in-test `CorpusRenderer` for one built on the fictional fixture
+  (`tests/Ai/Assistant/Infrastructure/Pdf/Fixtures/cv-fictif.{html,pdf}`, regeneration command in the
+  HTML). **Never print the real CV's text in an agent session** — inspect it by counts only. Task 2 facts
   to keep: **the service composes its own system message** (preamble file + corpus rendered by
   `CorpusRenderer`, D8) because `SystemPromptInputProcessor` skips `ai.yaml`'s prompt as soon as the
   `MessageBag` carries one; **the agent is injected by id** (`ai.agent.career_assistant`), never
