@@ -57,6 +57,8 @@ import { CASE_STUDY_REPOSITORY } from './application/caseStudies/useCaseStudies'
 import { HttpCaseStudyRepository } from './infrastructure/caseStudies/HttpCaseStudyRepository'
 import { ANONYMOUS_CV_REPOSITORY } from './application/anonymousCv/useAnonymousCv'
 import { HttpAnonymousCvRepository } from './infrastructure/anonymousCv/HttpAnonymousCvRepository'
+import { ASSISTANT_REPOSITORY } from './application/assistant/useAssistant'
+import { HttpAssistantRepository } from './infrastructure/assistant/HttpAssistantRepository'
 import { BASE_ACCESS_REPOSITORY } from './application/baseAccess/useBaseAccess'
 import { HttpBaseAccessRepository } from './infrastructure/baseAccess/HttpBaseAccessRepository'
 import { getApiUrl } from './infrastructure/config/getApiUrl'
@@ -77,6 +79,7 @@ app.provide(QUALITY_CONTENT_REPOSITORY, new HttpQualityContentRepository(apiUrl)
 app.provide(CONTRIBUTION_REPOSITORY, new HttpContributionRepository(apiUrl))
 app.provide(CASE_STUDY_REPOSITORY, new HttpCaseStudyRepository(apiUrl))
 app.provide(ANONYMOUS_CV_REPOSITORY, new HttpAnonymousCvRepository(apiUrl))
+app.provide(ASSISTANT_REPOSITORY, new HttpAssistantRepository(apiUrl))
 app.provide(BASE_ACCESS_REPOSITORY, new HttpBaseAccessRepository(apiUrl))
 app.provide(INCIDENT_REPOSITORY, new HttpIncidentRepository(apiUrl))
 app.provide(WATCH_REPOSITORY, new HttpWatchRepository(apiUrl))

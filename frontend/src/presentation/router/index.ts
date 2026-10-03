@@ -5,7 +5,7 @@ import { applySeoMeta } from './seo'
 import { LOCALE_STORAGE_KEY, resolvePreferredLocale } from './preferredLocale'
 import { authState, waitForAuthCheck } from '../../application/auth/useAuth'
 import { hasRole } from '../../domain/auth/services/hasRole'
-import { ROLE_SUPER } from '../../domain/auth/entities/Role'
+import { ROLE_SUPER, ROLE_TRUSTED } from '../../domain/auth/entities/Role'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -33,6 +33,7 @@ const ContributionsPage = () => import('../pages/ContributionsPage.vue')
 const IncidentsPage = () => import('../pages/IncidentsPage.vue')
 const CaseStudiesPage = () => import('../pages/CaseStudiesPage.vue')
 const AnonymousCvPage = () => import('../pages/AnonymousCvPage.vue')
+const AssistantPage = () => import('../pages/AssistantPage.vue')
 const StackPage = () => import('../pages/StackPage.vue')
 const ContactPage = () => import('../pages/ContactPage.vue')
 const LoginPage = () => import('../pages/LoginPage.vue')
@@ -111,6 +112,21 @@ export const router = createRouter({
           component: AnonymousCvPage,
           // Même palier et même raisonnement que case-studies (ADR 0003 D5).
           meta: { titleKey: 'seo.anonymousCv.title', descriptionKey: 'seo.anonymousCv.description', noindex: true },
+        },
+        {
+          path: 'assistant',
+          name: 'assistant',
+          component: AssistantPage,
+          // Palier nominatif (ADR 0003 D1/D4, spec 0005). `roles` : un seul doit
+          // correspondre, et un ROLE_SUPER ne porte pas forcément ROLE_TRUSTED en
+          // clair. Anonyme ou palier de base sans compte : redirigé vers login.
+          meta: {
+            requiresAuth: true,
+            roles: [ROLE_TRUSTED, ROLE_SUPER],
+            noindex: true,
+            titleKey: 'seo.assistant.title',
+            descriptionKey: 'seo.assistant.description',
+          },
         },
         {
           path: 'stack',

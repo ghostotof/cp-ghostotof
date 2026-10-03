@@ -14,6 +14,12 @@ monolog:
         # voters), le nôtre porte la décision métier qu'on veut pouvoir relire.
         # Les deux sont journalisés, au même niveau, dans le même flux.
         - security_audit
+        # Usage des modèles de langage (jetons, durée, fin en `done` ou en
+        # `error`, ADR 0004 D5) : `#[WithMonologChannel('ai_usage')]`. Jamais
+        # de contenu (D10). Un canal à part pour la même raison que
+        # `security_audit` : la trace doit exister en production, où LOG_LEVEL
+        # écarterait un `info` du canal applicatif.
+        - ai_usage
         - deprecation # Deprecations are logged in the dedicated "deprecation" channel when it exists
 
 when@dev:
@@ -55,6 +61,11 @@ when@test:
                 type: test
                 level: info
                 channels: ["security_audit"]
+            # Même principe pour l'usage des modèles, relu par AnswerControllerTest.
+            ai_usage_test:
+                type: test
+                level: info
+                channels: ["ai_usage"]
             # Sonde sur tous les canaux sauf `event` : un test qui vérifie qu'un
             # contenu ne sort par aucun journal (issue #269) couvre ainsi
             # d'office un canal ajouté plus tard, ce qu'une liste de loggers
@@ -102,19 +113,22 @@ when@prod:
                 # les exclure ici est ce qui évite qu'un même événement sorte deux
                 # fois (et, à LOG_LEVEL=debug, avec deux niveaux d'effet différents).
                 # `lock` aussi, pour une autre raison : voir son handler.
-                channels: ["!security", "!security_audit", "!deprecation", "!lock"]
+                channels: ["!security", "!security_audit", "!ai_usage", "!deprecation", "!lock"]
             # Verrou des limiteurs de débit (issue #272). Le composant Lock trace
             # chaque pose et chaque levée en `debug`, avec la ressource —
             # `contact_form-<ip>`, `translation_assistant-<username>`. Sous
             # `main`, la préprod (LOG_LEVEL=debug) écrirait une IP ou un
             # identifiant par requête limitée, hors de SecurityAuditLogger et de
-            # sa politique de contenu. Plafonné à `notice` en dur : les échecs
-            # d'acquisition ou de libération restent visibles, le trafic nominal
-            # non. LockLogChannelTest fige ce réglage.
+            # sa politique de contenu. Les échecs aussi portent la ressource
+            # (`notice`) : le handler est à `warning`, au-dessus de tout ce que
+            # le composant émet (issue #315). La panne reste visible par la
+            # ligne `error`, sans la ressource, de RateLimiterLockFailureListener
+            # (issue #276). Le handler reste déclaré pour que le canal ne
+            # retombe jamais dans un autre. LockLogChannelTest fige ce réglage.
             lock:
                 type: stream
                 path: php://stderr
-                level: notice
+                level: warning
                 formatter: monolog.formatter.json
                 channels: ["lock"]
             # Journal de sécurité. Deux différences assumées avec `main` :
@@ -134,6 +148,16 @@ when@prod:
                 level: info
                 formatter: monolog.formatter.json
                 channels: ["security", "security_audit"]
+            # Usage des modèles de langage, au même niveau fixe et pour la même
+            # raison que `security` : sans lui, les jetons consommés ne
+            # laisseraient aucune trace en production. Une ligne par réponse de
+            # l'assistant : le volume est borné par ses quotas.
+            ai_usage:
+                type: stream
+                path: php://stderr
+                level: info
+                formatter: monolog.formatter.json
+                channels: ["ai_usage"]
             console:
                 type: console
                 process_psr_3_messages: false
@@ -141,7 +165,8 @@ when@prod:
                 # commandes d'administration), la ligne JSON du handler `security`
                 # reste la seule trace de l'événement, pas une seconde copie
                 # formatée pour un humain.
-                channels: ["!event", "!doctrine", "!security", "!security_audit"]
+                # `lock` aussi, pour la même raison que sous `main` (issue #315).
+                channels: ["!event", "!doctrine", "!security", "!security_audit", "!ai_usage", "!lock"]
             deprecation:
                 type: stream
                 channels: [deprecation]

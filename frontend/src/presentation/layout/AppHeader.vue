@@ -11,7 +11,9 @@ import { useAuth } from '../../application/auth/useAuth'
 import { useBaseAccess } from '../../application/baseAccess/useBaseAccess'
 import { useCvDownload } from '../../application/cv/useCvDownload'
 import LocaleSwitcher from '../ui/LocaleSwitcher.vue'
+import IconMessageCircle from '~icons/lucide/message-circle'
 import IconDownload from '~icons/lucide/download'
+import IconCircleUser from '~icons/lucide/circle-user'
 import IconZap from '~icons/lucide/zap'
 import IconMenu from '~icons/lucide/menu'
 import IconX from '~icons/lucide/x'
@@ -85,6 +87,29 @@ function isActiveGroup(group: NavigationGroup): boolean {
 /** Id stable et sûr pour aria-controls, dérivé du libellé (les libellés sont uniques par construction). */
 function groupMenuId(group: NavigationGroup): string {
   return `nav-group-${group.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+}
+
+/**
+ * Menu du compte, sous 768 px : les actions d'un palier connecté s'y
+ * replient (avec le lien Assistant, #265, l'en-tête d'un super-admin
+ * débordait de 74 px à 360 px). Il partage la mécanique des groupes de
+ * navigation — clic extérieur, Échap, un seul menu ouvert à la fois — sous
+ * une clé qu'aucun libellé de groupe ne peut porter.
+ */
+const ACCOUNT_MENU = '\u0000account'
+
+function toggleAccountMenu(): void {
+  openGroupLabel.value = ACCOUNT_MENU === openGroupLabel.value ? null : ACCOUNT_MENU
+}
+
+async function handleAccountMenuLogout(): Promise<void> {
+  closeGroups()
+  await handleLogout()
+}
+
+function handleAccountMenuCvDownload(): void {
+  closeGroups()
+  void downloadCv()
 }
 const route = useRoute()
 const router = useRouter()
@@ -316,7 +341,7 @@ function navLinkClass(link: NavigationLink) {
             </RouterLink>
           </template>
           <template v-else-if="'base' === tier">
-            <span class="badge rounded-pill text-bg-secondary fw-normal d-inline-flex align-items-center gap-1">
+            <span class="badge rounded-pill text-bg-secondary fw-normal d-none d-md-inline-flex align-items-center gap-1">
               <IconZap
                 width="12"
                 height="12"
@@ -328,62 +353,155 @@ function navLinkClass(link: NavigationLink) {
                  partagé, fermer l'onglet laisserait le cookie httpOnly actif. -->
             <button
               type="button"
-              class="btn btn-outline-light btn-sm d-inline-flex align-items-center text-nowrap"
+              class="btn btn-outline-light btn-sm d-none d-md-inline-flex align-items-center text-nowrap"
               @click="handleLogout"
             >
               {{ t('common.endBaseAccess') }}
             </button>
             <RouterLink
               :to="`${homeLink}/login`"
-              class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-2"
+              class="btn btn-outline-light btn-sm d-none d-md-inline-flex align-items-center gap-2"
             >
               {{ t('common.login') }}
             </RouterLink>
           </template>
           <template v-else>
+            <!-- Assistant (#265) : proposé à tout le palier nominatif, donc
+                 aussi à ROLE_SUPER, contrairement au CV. -->
+            <RouterLink
+              :to="`${homeLink}/assistant`"
+              class="btn btn-outline-light btn-sm d-none d-md-inline-flex align-items-center gap-2"
+            >
+              {{ t('nav.assistant') }}
+              <IconMessageCircle
+                width="16"
+                height="16"
+                aria-hidden="true"
+              />
+            </RouterLink>
             <RouterLink
               v-if="isSuperAdmin"
               :to="`${homeLink}/admin`"
-              class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-2"
+              class="btn btn-outline-light btn-sm d-none d-md-inline-flex align-items-center gap-2"
             >
               {{ t('common.administration') }}
             </RouterLink>
-            <template v-if="!isSuperAdmin">
-              <button
-                type="button"
-                class="btn btn-outline-light btn-sm d-none d-sm-inline-flex align-items-center gap-2"
-                :disabled="isDownloading"
-                @click="downloadCv"
-              >
-                {{ t('common.downloadCv') }}
-                <IconDownload
-                  width="16"
-                  height="16"
-                  aria-hidden="true"
-                />
-              </button>
-              <button
-                type="button"
-                class="btn btn-outline-light btn-sm d-sm-none d-inline-flex align-items-center"
-                :disabled="isDownloading"
-                :aria-label="t('common.downloadCv')"
-                @click="downloadCv"
-              >
-                <IconDownload
-                  width="16"
-                  height="16"
-                  aria-hidden="true"
-                />
-              </button>
-            </template>
+            <button
+              v-else
+              type="button"
+              class="btn btn-outline-light btn-sm d-none d-md-inline-flex align-items-center gap-2"
+              :disabled="isDownloading"
+              @click="downloadCv"
+            >
+              {{ t('common.downloadCv') }}
+              <IconDownload
+                width="16"
+                height="16"
+                aria-hidden="true"
+              />
+            </button>
             <button
               type="button"
-              class="btn btn-outline-light btn-sm d-inline-flex align-items-center"
+              class="btn btn-outline-light btn-sm d-none d-md-inline-flex align-items-center"
               @click="handleLogout"
             >
               {{ t('common.logout') }}
             </button>
           </template>
+
+          <!-- Sous 768 px, là où la navigation passe déjà dans le menu
+               mobile, les actions des paliers connectés se replient ici. -->
+          <div
+            v-if="'anonymous' !== tier"
+            :ref="(element) => setGroupRef(ACCOUNT_MENU, element as Element | null)"
+            class="nav-group d-md-none"
+          >
+            <button
+              type="button"
+              class="btn btn-outline-light btn-sm d-inline-flex align-items-center"
+              aria-haspopup="true"
+              :aria-expanded="ACCOUNT_MENU === openGroupLabel"
+              aria-controls="account-menu"
+              :aria-label="t('common.accountMenu')"
+              @click="toggleAccountMenu"
+            >
+              <IconCircleUser
+                width="16"
+                height="16"
+                aria-hidden="true"
+              />
+            </button>
+            <ul
+              v-if="ACCOUNT_MENU === openGroupLabel"
+              id="account-menu"
+              class="dropdown-menu show mt-1 account-menu"
+              data-bs-theme="dark"
+              :aria-label="t('common.accountMenu')"
+            >
+              <template v-if="'base' === tier">
+                <li>
+                  <span class="dropdown-header">{{ t('common.baseAccessBadge') }}</span>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    class="dropdown-item"
+                    @click="handleAccountMenuLogout"
+                  >
+                    {{ t('common.endBaseAccess') }}
+                  </button>
+                </li>
+                <li>
+                  <RouterLink
+                    :to="`${homeLink}/login`"
+                    class="dropdown-item"
+                    @click="closeGroups"
+                  >
+                    {{ t('common.login') }}
+                  </RouterLink>
+                </li>
+              </template>
+              <template v-else>
+                <li>
+                  <RouterLink
+                    :to="`${homeLink}/assistant`"
+                    class="dropdown-item"
+                    @click="closeGroups"
+                  >
+                    {{ t('nav.assistant') }}
+                  </RouterLink>
+                </li>
+                <li v-if="isSuperAdmin">
+                  <RouterLink
+                    :to="`${homeLink}/admin`"
+                    class="dropdown-item"
+                    @click="closeGroups"
+                  >
+                    {{ t('common.administration') }}
+                  </RouterLink>
+                </li>
+                <li v-else>
+                  <button
+                    type="button"
+                    class="dropdown-item"
+                    :disabled="isDownloading"
+                    @click="handleAccountMenuCvDownload"
+                  >
+                    {{ t('common.downloadCv') }}
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    class="dropdown-item"
+                    @click="handleAccountMenuLogout"
+                  >
+                    {{ t('common.logout') }}
+                  </button>
+                </li>
+              </template>
+            </ul>
+          </div>
         </template>
 
         <button
@@ -522,5 +640,11 @@ function navLinkClass(link: NavigationLink) {
   left: 0;
   z-index: 1030;
   min-width: 12rem;
+}
+
+/* Le menu du compte est au bord droit de l'écran : il s'ouvre vers la gauche. */
+.nav-group .account-menu {
+  left: auto;
+  right: 0;
 }
 </style>
