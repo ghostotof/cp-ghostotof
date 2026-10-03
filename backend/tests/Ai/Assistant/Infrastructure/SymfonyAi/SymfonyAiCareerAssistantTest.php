@@ -192,6 +192,68 @@ final class SymfonyAiCareerAssistantTest extends TestCase
         self::assertSame('during-stream', $this->logger->records[0]['context']['stage'] ?? null);
     }
 
+    /**
+     * Issue #318 : une exception que le bridge ne range dans aucune de ses
+     * familles (ValueError, LogicException de vendor…) est encore une panne
+     * du fournisseur. Avant le premier fragment, elle doit rester un 503 et
+     * non un 500 dont le noyau journaliserait le message.
+     */
+    public function testAnyOtherFailureBeforeTheFirstFragmentIsUnavailable(): void
+    {
+        $agent = new FakeStreamingAgent([], failure: new \ValueError('SENTINELLE-FOURNISSEUR'));
+
+        try {
+            $this->assistant($agent)->answer($this->conversation(), Locale::FR);
+            self::fail('AssistantUnavailableException attendue.');
+        } catch (AssistantUnavailableException) {
+        }
+
+        self::assertSame('before-first-fragment', $this->logger->records[0]['context']['stage'] ?? null);
+        self::assertSame(\ValueError::class, $this->logger->records[0]['context']['exception'] ?? null);
+        self::assertStringNotContainsString('SENTINELLE-FOURNISSEUR', $this->logger->dump());
+    }
+
+    /**
+     * Issue #318 : après le premier fragment, la même exception doit finir en
+     * AssistantUnavailableException, la seule que le contrôleur traduit en
+     * événement `error` : sinon le flux se coupe sans événement final.
+     */
+    public function testAnyOtherFailureDuringTheStreamIsUnavailable(): void
+    {
+        $agent = new FakeStreamingAgent(['Il a ', 'conçu'], failure: new \LogicException('SENTINELLE-FOURNISSEUR'), failAfter: 1);
+        $stream = $this->assistant($agent)->answer($this->conversation(), Locale::FR);
+
+        [$received, $failure] = $this->consume($stream);
+
+        self::assertSame(['Il a '], $received);
+        self::assertInstanceOf(AssistantUnavailableException::class, $failure);
+        self::assertSame('during-stream', $this->logger->records[0]['context']['stage'] ?? null);
+        self::assertSame(\LogicException::class, $this->logger->records[0]['context']['exception'] ?? null);
+        self::assertStringNotContainsString('SENTINELLE-FOURNISSEUR', $this->logger->dump());
+    }
+
+    /**
+     * D10 : une fin en échec porte les mêmes champs qu'une fin réussie, pour
+     * qu'une requête sur `ai_usage` les voie toutes. Les jetons ne sont pas
+     * connus : null explicite, qu'on ne confonde pas « inconnu » et « absent ».
+     */
+    public function testAnErrorOutcomeCarriesTheSameUsageFieldsAsADoneOne(): void
+    {
+        $agent = new FakeStreamingAgent(['Il a ', 'conçu'], failure: new TransportException('coupure'), failAfter: 1);
+
+        [, $failure] = $this->consume($this->assistant($agent)->answer($this->conversation(), Locale::FR));
+
+        self::assertInstanceOf(AssistantUnavailableException::class, $failure);
+        $context = $this->logger->records[0]['context'] ?? self::fail('Aucun log.');
+        self::assertSame(3, $context['messageCount'] ?? null);
+        self::assertIsInt($context['durationMs'] ?? null);
+        self::assertGreaterThanOrEqual(0, $context['durationMs']);
+        self::assertArrayHasKey('promptTokens', $context);
+        self::assertNull($context['promptTokens']);
+        self::assertArrayHasKey('completionTokens', $context);
+        self::assertNull($context['completionTokens']);
+    }
+
     /** Point de relecture n°2 : aucun fragment est une réponse vide, pas une panne. */
     public function testAnAnswerWithoutAnyTextFragmentEndsNormally(): void
     {

@@ -14,16 +14,13 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Monolog\Attribute\WithMonologChannel;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\AgentInterface;
-use Symfony\AI\Agent\Exception\ExceptionInterface as AgentException;
 use Symfony\AI\Agent\Execution\Execution;
-use Symfony\AI\Platform\Exception\ExceptionInterface as PlatformException;
 use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
-use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientException;
 use Symfony\Contracts\HttpClient\Exception\HttpExceptionInterface;
 
 /**
@@ -37,11 +34,14 @@ use Symfony\Contracts\HttpClient\Exception\HttpExceptionInterface;
  * ni message d'exception du fournisseur, que le bridge remplit avec le corps
  * de la réponse. Le statut HTTP de l'échec, lui, est journalisé.
  *
- * Une ligne SSE illisible (le bridge la décode avec JSON_THROW_ON_ERROR) est
- * une panne du fournisseur comme une autre : 503 ou événement `error`. De même
- * pour une ligne lisible mais d'une forme inattendue, sur laquelle le bridge lève
- * un TypeError en construisant ses objets. La classe de l'exception est
- * journalisée : un vrai bogue de ce côté-ci reste reconnaissable.
+ * Toute exception levée par l'appel ou par le flux est une panne du fournisseur :
+ * 503 avant le premier fragment, événement `error` après. Pas seulement les
+ * familles d'exceptions du bridge : une ligne SSE illisible (JsonException), une
+ * ligne d'une forme inattendue (TypeError en construisant ses objets), ou ce que
+ * vendor lève sans le ranger nulle part (ValueError, LogicException) ; sinon le
+ * flux se coupe sans événement final ni fin sur `ai_usage` (#318). La classe et
+ * le lieu de l'exception sont journalisés : un vrai bogue de ce côté-ci reste
+ * reconnaissable.
  *
  * Journal sur le canal `ai_usage` (monolog.yaml), à niveau fixe en production :
  * sans cela, LOG_LEVEL=warning y écarterait l'usage de chaque réponse.
@@ -79,8 +79,8 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
             // partirait qu'une fois le statut 200 envoyé, et un fournisseur
             // injoignable ne pourrait plus devenir un 503.
             $fragments->current();
-        } catch (PlatformException|AgentException|HttpClientException|\JsonException|\TypeError $exception) {
-            throw $this->unavailable($exception, $conversation, 'before-first-fragment');
+        } catch (\Throwable $exception) {
+            throw $this->unavailable($exception, $conversation, 'before-first-fragment', $startedAt);
         }
 
         return $this->relay($fragments, $execution, $conversation, $startedAt);
@@ -123,15 +123,15 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
                 yield $fragments->current();
                 $fragments->next();
             }
-        } catch (PlatformException|AgentException|HttpClientException|\JsonException|\TypeError $exception) {
-            throw $this->unavailable($exception, $conversation, 'during-stream');
+        } catch (\Throwable $exception) {
+            throw $this->unavailable($exception, $conversation, 'during-stream', $startedAt);
         }
 
         $tokenUsage = $execution->getMetadata()->get('token_usage');
         $usage = new AnswerUsage(
             promptTokens: $tokenUsage instanceof TokenUsageInterface ? $tokenUsage->getPromptTokens() : null,
             completionTokens: $tokenUsage instanceof TokenUsageInterface ? $tokenUsage->getCompletionTokens() : null,
-            durationMs: (int) round((hrtime(true) - $startedAt) / 1_000_000),
+            durationMs: $this->elapsedMs($startedAt),
         );
 
         $this->logger->info('Assistant de parcours : réponse produite.', [
@@ -145,7 +145,10 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
         return $usage;
     }
 
-    private function unavailable(\Throwable $exception, Conversation $conversation, string $stage): AssistantUnavailableException
+    /**
+     * @param int $startedAt hrtime(true) au début de answer()
+     */
+    private function unavailable(\Throwable $exception, Conversation $conversation, string $stage, int $startedAt): AssistantUnavailableException
     {
         $this->logger->error('Assistant de parcours : le fournisseur a échoué.', [
             'outcome' => 'error',
@@ -156,10 +159,20 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
             // du bridge, qui lève depuis vendor/.
             'origin' => basename($exception->getFile()).':'.$exception->getLine(),
             'providerStatus' => $this->providerStatus($exception),
+            // Les champs d'une fin réussie (D10) : une requête sur `ai_usage`
+            // voit ainsi toutes les fins. Jetons inconnus, null explicite.
             'messageCount' => $conversation->count(),
+            'durationMs' => $this->elapsedMs($startedAt),
+            'promptTokens' => null,
+            'completionTokens' => null,
         ]);
 
         return new AssistantUnavailableException();
+    }
+
+    private function elapsedMs(int $startedAt): int
+    {
+        return (int) round((hrtime(true) - $startedAt) / 1_000_000);
     }
 
     /**

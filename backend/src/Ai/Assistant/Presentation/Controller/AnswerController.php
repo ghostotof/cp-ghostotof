@@ -7,11 +7,8 @@ namespace App\Ai\Assistant\Presentation\Controller;
 use App\Ai\Assistant\Application\CareerAssistantInterface;
 use App\Ai\Assistant\Domain\Exception\AssistantUnavailableException;
 use App\Ai\Assistant\Domain\ValueObject\AnswerUsage;
-use App\Ai\Assistant\Domain\ValueObject\Conversation;
 use App\Ai\Assistant\Presentation\Dto\AnswerRequest;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
-use Monolog\Attribute\WithMonologChannel;
-use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\EventStreamResponse;
 use Symfony\Component\HttpFoundation\ServerEvent;
 use Symfony\Component\HttpKernel\Attribute\MapRequestPayload;
@@ -41,12 +38,10 @@ use Symfony\Component\Routing\Attribute\Route;
  * delà, c'est le `proxy-buffering` de l'ingress-nginx, `off` par défaut et
  * non surchargé dans k8s/, qui laisse passer le flux.
  */
-#[WithMonologChannel('ai_usage')]
 final readonly class AnswerController
 {
     public function __construct(
         private CareerAssistantInterface $assistant,
-        private LoggerInterface $logger,
     ) {
     }
 
@@ -57,52 +52,28 @@ final readonly class AnswerController
     {
         // `from` et non `fromString` : la valeur est bornée par Assert\Choice,
         // elle ne vient pas d'une URL (spec §9).
-        $conversation = $request->toConversation();
-        $startedAt = hrtime(true);
-        $fragments = $this->assistant->answer($conversation, Locale::from($request->locale));
+        $fragments = $this->assistant->answer($request->toConversation(), Locale::from($request->locale));
 
-        return new EventStreamResponse(function () use ($fragments, $conversation, $startedAt): \Generator {
-            yield from $this->events($fragments, $conversation, $startedAt);
+        return new EventStreamResponse(function () use ($fragments): \Generator {
+            yield from $this->events($fragments);
         });
     }
 
     /**
      * @param \Generator<int, string, mixed, AnswerUsage> $fragments
-     * @param int                                         $startedAt hrtime(true) avant l'appel à l'assistant
      *
      * @return \Generator<int, ServerEvent, mixed, void>
      */
-    private function events(\Generator $fragments, Conversation $conversation, int $startedAt): \Generator
+    private function events(\Generator $fragments): \Generator
     {
         try {
             foreach ($fragments as $fragment) {
                 yield new ServerEvent($this->json(['text' => $fragment]), type: 'delta');
             }
         } catch (AssistantUnavailableException) {
-            // Déjà journalisée sur `ai_usage` par l'assistant.
-            yield $this->unavailableEvent();
-
-            return;
-        } catch (\Throwable $exception) {
-            // Tout le reste : une exception du bridge que l'assistant ne relaie
-            // pas, ou le json_encode d'un fragment ci-dessus. Les jetons sont
-            // facturés, la fin doit donc exister sur `ai_usage` (D10) — la
-            // classe seulement : le message d'une exception du bridge porte le
-            // corps de la réponse du fournisseur.
-            $this->logger->error('Assistant de parcours : le flux a échoué.', [
-                'outcome' => 'error',
-                'stage' => 'during-stream',
-                'exception' => $exception::class,
-                'origin' => basename($exception->getFile()).':'.$exception->getLine(),
-                // Les champs de D10, comme sur les lignes de l'assistant. Les
-                // jetons ne sont connus qu'en fin de flux : null explicite.
-                'messageCount' => $conversation->count(),
-                'durationMs' => (int) round((hrtime(true) - $startedAt) / 1_000_000),
-                'promptTokens' => null,
-                'completionTokens' => null,
-            ]);
-
-            yield $this->unavailableEvent();
+            // Déjà journalisée sur `ai_usage` par l'assistant, seule exception
+            // que son générateur lève (contrat de CareerAssistantInterface).
+            yield new ServerEvent($this->json(['reason' => 'assistant-unavailable']), type: 'error');
 
             return;
         }
@@ -116,16 +87,14 @@ final readonly class AnswerController
         ]), type: 'done');
     }
 
-    private function unavailableEvent(): ServerEvent
-    {
-        return new ServerEvent($this->json(['reason' => 'assistant-unavailable']), type: 'error');
-    }
-
     /**
+     * Ne lève pas sur un fragment en UTF-8 invalide : l'octet devient U+FFFD,
+     * plutôt qu'une coupure du flux sans événement final (#318).
+     *
      * @param array<string, mixed> $data
      */
     private function json(array $data): string
     {
-        return json_encode($data, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES);
+        return json_encode($data, \JSON_THROW_ON_ERROR | \JSON_INVALID_UTF8_SUBSTITUTE | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES);
     }
 }

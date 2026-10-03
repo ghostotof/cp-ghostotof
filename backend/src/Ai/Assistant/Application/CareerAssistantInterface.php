@@ -19,8 +19,11 @@ interface CareerAssistantInterface
      * L'appel au fournisseur est lancé avant le retour : un échec avant le
      * premier fragment lève AssistantUnavailableException ici même, tant que le
      * statut HTTP peut encore changer. Un échec pendant le flux la lève depuis
-     * le générateur. Sa valeur de retour, lue après consommation, porte les
-     * jetons et la durée.
+     * le générateur, qui ne lève rien d'autre : toute panne, quelle qu'en soit
+     * l'exception d'origine, y devient celle-ci, déjà journalisée, pour que
+     * l'appelant puisse toujours terminer son flux par un événement final
+     * (#318). Sa valeur de retour, lue après consommation, porte les jetons et
+     * la durée.
      *
      * @return \Generator<int, string, mixed, AnswerUsage>
      *
