@@ -640,13 +640,19 @@ mid-migration.
   `Application/Corpus/PdfTextExtractorInterface`. `smalot/pdfparser`, the spec's first choice, was
   dropped (D7 amended): on the real CV it gave no blank line between paragraphs, hundreds of `<>`
   artefacts and detached bullets. Re-extracted on **every** render, never cached (`cache.app` is the
-  DB, ADR 0005) — ~13 ms measured; absent or text-less file → the section stays and says the CV is not
-  available (not an error); unreadable file → `CvTextExtractionException`, 500, **literal message,
-  never chained** (`ProcessFailedException` copies the process's stdout, i.e. the CV text, and the
-  kernel logs the whole chain). `ExtractedTextNormalizer` keeps a line repeated at the edge of every
-  page **once** rather than deleting it (a CV carrying the first name only in its header would lose
-  it) and joins a line to the next only if it fills its column and doesn't end a sentence (pdftotext
-  leaves headings glued to their paragraph). CI's `test-backend` installs `poppler-utils` (bounded
+  DB, ADR 0005) — ~13 ms measured; absent file → the section stays and says the CV is not available
+  (not an error); **present but unusable** (binary missing, unreadable PDF, > 5 s, no text layer,
+  > 30 000 characters — `MAX_CHARACTERS`, the cost bound) → **degraded mode**, decided by the owner:
+  same "not available" section, the assistant still answers, and a `warning` carries a stable
+  `reason` (+ exit code or length), **never** the text, stdout or stderr (`ProcessFailedException`
+  copies both, so it is neither logged nor rethrown). `pdftotext` runs **without the worker's
+  environment** (every inherited variable set to `false`): Symfony Process would otherwise hand it
+  `DATABASE_URL`, `APP_SECRET` and the API keys. `ExtractedTextNormalizer` drops page numbers at page
+  edges, keeps a line repeated **identically** at the edge of every page **once** rather than
+  deleting it (a CV carrying the first name only in its header would lose it — and the comparison is
+  exact, or two date lines at two page edges would pass for one footer), and joins a line to the next
+  only if it fills its column (≥ 75 % of the paragraph's longest line **and** ≥ 40 characters) and
+  doesn't end a sentence (pdftotext leaves headings glued to their paragraph). CI's `test-backend` installs `poppler-utils` (bounded
   apt step), so the extraction tests pin structure, not an exact string (Ubuntu's poppler ≠ Alpine's).
   The test env's `CV_FILE_PATH` is `dummy.pdf` (no text): functional tests that need a real CV swap
   the public-in-test `CorpusRenderer` for one built on the fictional fixture

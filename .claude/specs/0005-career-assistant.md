@@ -84,7 +84,9 @@ compte compris) n'atteignent l'assistant — ni directement, ni par effet de bor
 - **D5 — Corpus rendu par un composant unique** (`Infrastructure/Corpus/CorpusRenderer`, derrière `Application/Corpus/CorpusRendererInterface`), en Markdown
   déterministe : une locale (celle de la requête), sections dans un ordre fixe (CV nominatif, CV
   sans identité, études de cas), entrées triées par `position`, intertitres nommés dans la langue
-  du corpus, **aucun champ technique** (id, groupe de traduction, locale). Les sources sont lues
+  du corpus (*précisé le 2026-10-03 : le CV nominatif est un seul PDF, son texte reste dans la
+  langue du fichier quelle que soit la locale — la règle 1 du préambule fait répondre dans celle de
+  la question*), **aucun champ technique** (id, groupe de traduction, locale). Les sources sont lues
   **par les providers publics existants** (`AnonymousCvProvider`, `CaseStudyProvider`, appelés
   avec une opération `GetCollection` et `['locale' => …]`), jamais par les repositories ; le CV
   nominatif par un lecteur dédié (D7). Le rendu est **assemblé à chaque requête**, jamais
@@ -105,10 +107,12 @@ compte compris) n'atteignent l'assistant — ni directement, ni par effet de bor
   voir le journal : `smalot/pdfparser`, d'abord retenu (pur PHP, pas de binaire), ne restituait ni
   paragraphes ni puces sur le vrai CV* —, puis **normalisé** : espaces et tabulations compressés,
   lignes recollées en paragraphes (une ligne vide = un paragraphe ; dans un paragraphe, une ligne
-  n'est recollée à la suivante que si elle remplit sa colonne et ne finit pas une phrase, sans quoi
-  un titre deviendrait le début de la phrase qui le suit), en-têtes ou pieds répétés au bord de
-  chaque page **gardés une seule fois** (*amendé le 2026-10-03 : supprimés partout, ils
-  emporteraient le prénom d'un CV qui ne le porte qu'en en-tête*), caractères de contrôle retirés. **Aucun cache : l'extraction est refaite à chaque requête**, et le texte
+  n'est recollée à la suivante que si elle remplit sa colonne — 75 % de la plus longue du
+  paragraphe et au moins 40 caractères — et ne finit pas une phrase, sans quoi un titre deviendrait
+  le début de la phrase qui le suit), numéros de page retirés, en-têtes ou pieds répétés à
+  l'identique au bord de chaque page **gardés une seule fois** (*amendé le 2026-10-03, validé par le
+  propriétaire : supprimés partout, ils emporteraient le prénom d'un CV qui ne le porte qu'en
+  en-tête*), caractères de contrôle retirés. **Aucun cache : l'extraction est refaite à chaque requête**, et le texte
   n'existe qu'en mémoire le temps de la requête — **jamais persisté, jamais journalisé**.
   `cache.app` est sur Doctrine DBAL depuis l'ADR 0005 : y ranger le texte écrirait le CV nominatif
   complet dans la table `cache_items`, donc dans la base et ses sauvegardes. Le coût de
@@ -117,10 +121,16 @@ compte compris) n'atteignent l'assistant — ni directement, ni par effet de bor
   cache se rediscute par amendement, jamais sur un stockage persistant. Fichier absent, ou sans
   couche texte (un scan) → la section « CV détaillé » reste et dit que le CV détaillé n'est pas
   disponible (*amendé le 2026-10-03 : « le corpus omet la section » ; une section vide qui le dit
-  est le garde-fou mesuré en tâche 1 pour les autres sources*) ; ce n'est pas une erreur. Fichier
-  présent mais illisible (PDF corrompu, binaire absent, plus de 5 s) → 500
-  (`CvTextExtractionException`, message littéral, **jamais chaînée** : l'exception du processus
-  recopie sa sortie standard, donc le texte du CV).
+  est le garde-fou mesuré en tâche 1 pour les autres sources*) ; ce n'est pas une erreur. **Fichier
+  présent mais inutilisable** — binaire absent, PDF illisible, plus de 5 s, aucun texte, plus de
+  **30 000 caractères** — → **mode dégradé** (*amendé le 2026-10-03, décision du propriétaire à la
+  revue de branche*) : même section « indisponible », l'assistant répond, et un `warning` nomme une
+  raison stable (`binary-missing`, `extraction-failed` + code de sortie, `timeout`, `no-text`,
+  `too-long` + longueur…), **jamais** le texte, la sortie standard ni la sortie d'erreur du
+  processus (`ProcessFailedException` recopie les deux). La borne garde le coût borné par
+  construction (ADR 0004) ; au-delà, rien n'est tronqué, un CV coupé en silence ferait mentir le
+  corpus. `pdftotext` tourne **sans l'environnement du worker** (Symfony Process lui transmettrait
+  `DATABASE_URL`, `APP_SECRET`, les clés d'API).
 - **D8 — Prompt système en deux parties** : un préambule fixe (`config/ai/prompts/career_assistant.txt`,
   rôle, règles, refus hors sujet, langue de réponse = langue de la question, ne rien inventer, citer
   la section d'où vient l'information) suivi du **corpus rendu**, puis la conversation. Le corpus est
@@ -733,3 +743,26 @@ deux tests fonctionnels traversent le vrai extracteur — le texte atteint le me
 à Scaleway et la sonde de tous les canaux de journal n'en porte aucun fragment (test vérifié par
 mutation : un `info` du prompt sur `ai_usage` le fait échouer), un CV illisible donne un 500 sans
 rien recopier du fichier.
+
+**2026-10-03 (tâche 4, revue de branche)** — Trois relectures (`/code-review` niveau high, axes
+standards et spec). Deux pertes de contenu reproduites sur des entrées fictives, corrigées test
+rouge d'abord : (C1) les chiffres étaient neutralisés pour reconnaître un numéro de page, si bien
+que deux lignes de dates au bord de deux pages passaient pour un même pied et que la seconde
+disparaissait — comparaison désormais **exacte**, numéros de page retirés par un motif dédié
+(« Page 1 / 2 », « page 1 sur 2 », « p. 3 », « 1/2 », au bord d'une page seulement), ce qui retire
+aussi la contrepartie notée plus haut ; (C2) sans plancher, la plus longue d'une suite de lignes
+courtes « remplissait sa colonne » et un titre se collait à sa liste — **plancher de 40
+caractères**. Arbitrages du propriétaire : en-têtes **gardés une fois** (confirmé) ; CV inutilisable
+en **mode dégradé** avec `warning` plutôt qu'un 500, qui coûtait une unité de quota par essai et ne
+disait rien de la cause ; **borne de 30 000 caractères** sans troncature ; nom
+`PdfTextExtractorInterface` **gardé** (traçabilité avec §5). Corrigés aussi : `pdftotext` sans
+l'environnement du worker (test vérifié par mutation), `symfony/process: 8.1.*` déclaré (importé par
+`src/`), fin de phrase reconnue derrière un guillemet ou une parenthèse, test du cas UTF-8 invalide,
+contrat de l'interface (« ne lève jamais »), précision sous D5. Non retenus : un en-tête absent de
+la première page n'est pas dédupliqué (improbable sur un CV d'une ou deux pages) ;
+`CvTextExtractionException` étend `\RuntimeException` comme `CorpusRenderingException` ; `replace()`
+garde une copie par classe, chacune levant son exception ; `nominativeCvSection()` reste distincte de
+`section()` (message d'absence propre) ; binaire non pinné, la CI teste le poppler d'Ubuntu et la
+prod tourne sur celui d'Alpine (les tests pincent la structure). Sur le vrai CV (une page) : 6 357
+caractères inchangés, 86 lignes non vides au lieu de 73, le plancher gardant des lignes courtes
+séparées.
