@@ -1129,7 +1129,8 @@ To add a test for a new file: create it at the mirrored path under `tests/`, not
 #### Lint
 
 `npm run lint` (`eslint .`, flat config in `eslint.config.js`): `eslint-plugin-vue` (`flat/recommended`) +
-`@vue/eslint-config-typescript` (non type-checked — type errors are already caught by `vue-tsc -b` in the
+`typescript-eslint` `recommended` extended to `.vue`, with `vue-eslint-parser` delegating `<script lang="ts">`
+to the TypeScript parser (non type-checked — type errors are already caught by `vue-tsc -b` in the
 `build` script, ESLint here is style/correctness only) + `eslint-plugin-vuejs-accessibility`
 (`flat/recommended`, see the a11y section above) + `@intlify/eslint-plugin-vue-i18n` (`flat/recommended`,
 `settings['vue-i18n'].localeDir` points at `infrastructure/i18n/locales/*.json`) — this last one is why UI-chrome
@@ -1137,6 +1138,20 @@ strings and portfolio content are kept in separate files (see i18n above): mixin
 `no-raw-text`/key-usage checks meaningless. `no-raw-text`'s `ignorePattern` is configured to skip strings with
 no letters at all, for purely decorative glyphs (the header logo's `</>`, the "et aussi" middle dot). `npm run
 lint:fix` for the auto-fixable (mostly formatting) rules.
+
+**The TypeScript-in-SFC wiring is written by hand, not `@vue/eslint-config-typescript`** (issue #328,
+2026-10-03). That wrapper pulled `fast-glob` → `micromatch` → `braces`, and `braces` ≤ 3.0.3 got a *high*
+advisory with no patched release (GHSA-vfj7-8cjw-p6xm): `npm audit --audit-level=high` turned every branch
+red. It only used `fast-glob` to list the `.vue` files to type-check, which this project never does, so
+`eslint.config.js` now builds the same three blocks itself (see its docblock). The replacement was proven
+by `eslint --print-config` on a `.ts`, a `.vue`, a spec and two config files — byte-identical before and
+after — plus a clean lint of all 365 files; repeat that comparison if the block is ever touched.
+Revisit it only on a real trigger: adopting type-aware rules (`recommendedTypeChecked` needs the
+`projectService` and a per-file split of `.vue` files with and without TypeScript, which is what the
+wrapper automated), or a wrapper release that drops `fast-glob`. **The general rule this set**: when a
+blocking advisory in *dev tooling* has no fix, first look for a way to take the vulnerable package out of
+the tree; if there is none, wait for the fix. Never `--omit=dev` (it would hide the next advisory in the
+build chain, which can be a supply-chain hole) and never a silent audit exception.
 
 ### Frontend build/deploy
 
