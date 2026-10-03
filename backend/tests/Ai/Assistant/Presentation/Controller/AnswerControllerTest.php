@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace App\Tests\Ai\Assistant\Presentation\Controller;
 
+use App\Ai\Assistant\Infrastructure\Corpus\CorpusRenderer;
+use App\Ai\Assistant\Infrastructure\Pdf\ExtractedTextNormalizer;
+use App\Ai\Assistant\Infrastructure\Pdf\PopplerPdfTextExtractor;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Ai\Assistant\Support\StubProvider;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Handler\TestHandler;
@@ -29,6 +34,7 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 final class AnswerControllerTest extends WebTestCase
 {
     use HttpJson;
+    use ReadsAllChannelsLog;
 
     private const string PATH = '/api/assistant/answers';
     private const string TRUSTED_USERNAME = 'trusted';
@@ -44,6 +50,12 @@ final class AnswerControllerTest extends WebTestCase
     private const string ANTHROPIC_INNER = 'ai.http_client.scoping.inner';
 
     private const string MODEL = 'mistral-small-3.2-24b-instruct-2506';
+
+    /** CV fictif (deux pages, en-tête répété) : voir PopplerPdfTextExtractorTest. */
+    private const string FICTIONAL_CV = __DIR__.'/../../Infrastructure/Pdf/Fixtures/cv-fictif.pdf';
+
+    /** Fragments du CV fictif qu'aucun journal ne doit porter (D10). */
+    private const array CV_FRAGMENTS = ['Université Imaginaire', 'Escalade', 'Société Fictive'];
 
     /** @var list<array{url: string, body: mixed}> */
     private array $scalewayRequests = [];
@@ -189,6 +201,52 @@ final class AnswerControllerTest extends WebTestCase
         self::assertStringStartsWith('You are the career assistant', $messages[0]['content']);
         self::assertStringContainsString('<documents>', $messages[0]['content']);
         self::assertSame(['user', 'assistant', 'user'], array_column(\array_slice($messages, 1), 'role'));
+    }
+
+    /**
+     * D7 et D10 (#263) : le texte du CV nominatif atteint le modèle, et aucun
+     * journal, sur aucun canal, n'en porte un fragment. La première assertion
+     * empêche la seconde d'être vraie par vacuité.
+     */
+    public function testTheNominativeCvReachesTheModelAndNoLog(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
+        $this->useCvFile($client, self::FICTIONAL_CV);
+
+        $this->post($client, $csrfToken, $this->payload());
+        $client->getInternalResponse();
+
+        self::assertResponseStatusCodeSame(200);
+        $messages = $this->scalewayRequests[0]['body']['messages'] ?? null;
+        self::assertIsArray($messages);
+        self::assertIsString($messages[0]['content'] ?? null);
+        self::assertStringContainsString("# CV détaillé\n\nCamille Exemple", $messages[0]['content']);
+        $this->assertNoLogCarries(self::CV_FRAGMENTS);
+    }
+
+    /**
+     * Un CV illisible arrête la réponse (500) plutôt que d'en omettre la
+     * section, et l'échec ne recopie rien du fichier dans les journaux.
+     */
+    public function testAnUnreadableCvIsAServerErrorThatLogsNothingOfTheFile(): void
+    {
+        [$client, $csrfToken] = $this->trustedClient();
+        $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
+        $path = tempnam(sys_get_temp_dir(), 'cv-');
+        self::assertIsString($path);
+        file_put_contents($path, "Ce n'est pas un PDF : Université Imaginaire, Escalade.");
+        $this->useCvFile($client, $path);
+
+        try {
+            $this->post($client, $csrfToken, $this->payload());
+        } finally {
+            unlink($path);
+        }
+
+        self::assertResponseStatusCodeSame(500);
+        self::assertSame([], $this->scalewayRequests);
+        $this->assertNoLogCarries(self::CV_FRAGMENTS);
     }
 
     public function testRoleSuperInheritsTheAccess(): void
@@ -589,6 +647,36 @@ final class AnswerControllerTest extends WebTestCase
         }
 
         self::fail('Aucun TestHandler sur le canal ai_usage : voir monolog.yaml (when@test).');
+    }
+
+    /**
+     * Le CV de test est dummy.pdf, sans texte (CV_FILE_PATH, .env.test.local) :
+     * le renderer, public en test, est remplacé par un renderer branché sur le
+     * vrai extracteur et le fichier voulu. Les autres sources sont vides, seul
+     * le CV compte ici.
+     */
+    private function useCvFile(KernelBrowser $client, string $path): void
+    {
+        $client->getContainer()->set(CorpusRenderer::class, new CorpusRenderer(
+            new PopplerPdfTextExtractor($path, new ExtractedTextNormalizer()),
+            new StubProvider([]),
+            new StubProvider([]),
+        ));
+    }
+
+    /**
+     * @param list<string> $fragments
+     */
+    private function assertNoLogCarries(array $fragments): void
+    {
+        $records = self::allChannelsLogRecords();
+        self::assertNotSame([], $records);
+        foreach ($records as $record) {
+            $line = $record->message.json_encode($record->context, \JSON_UNESCAPED_UNICODE | \JSON_PARTIAL_OUTPUT_ON_ERROR);
+            foreach ($fragments as $fragment) {
+                self::assertStringNotContainsString($fragment, $line, $record->channel);
+            }
+        }
     }
 
     /** @return array{KernelBrowser, string} */

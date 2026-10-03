@@ -7,6 +7,7 @@ namespace App\Ai\Assistant\Infrastructure\Corpus;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\State\ProviderInterface;
 use App\Ai\Assistant\Application\Corpus\CorpusRendererInterface;
+use App\Ai\Assistant\Application\Corpus\PdfTextExtractorInterface;
 use App\Portfolio\AnonymousCv\Infrastructure\ApiPlatform\AnonymousCvProvider;
 use App\Portfolio\AnonymousCv\Presentation\ApiResource\AnonymousCvSectionResource;
 use App\Portfolio\CaseStudy\Infrastructure\ApiPlatform\CaseStudyProvider;
@@ -17,10 +18,14 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 /**
  * Corpus de l'assistant, en Markdown déterministe (spec 0005 D5).
  *
- * Les sources sont lues par les providers publics, jamais par un repository :
- * l'assistant ne peut ainsi rien savoir que la personne ne lise déjà sur le
- * site, et une injection de prompt réussie ne révèle rien (ADR 0004 D7).
- * CorpusSourcesTest pince la liste.
+ * Trois sections, dans cet ordre : le CV nominatif, extrait du PDF que sert
+ * GET /api/cv (D7), puis le CV sans identité et les études de cas, lus par les
+ * providers publics, jamais par un repository. L'assistant ne peut ainsi rien
+ * savoir que la personne ne lise déjà sur le site, et une injection de prompt
+ * réussie ne révèle rien (ADR 0004 D7). CorpusSourcesTest pince la liste.
+ *
+ * Le CV est un seul fichier, quelle que soit la locale : seul son intertitre
+ * suit la langue du corpus. Il est relu à chaque rendu, sans cache (D7).
  *
  * Le document est toujours délimité, même vide, et chaque section vide le dit
  * en toutes lettres : sans bloc explicite, mistral-small-3.2 invente un
@@ -30,7 +35,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * byte-identique d'un appel à l'autre : c'est la condition du cache de prompt
  * du fournisseur (D8).
  *
- * @phpstan-type Labels array{anonymousCv: string, caseStudies: string, yearsOfExperience: string, skills: string, achievements: string, problem: string, solution: string, tradeoffs: string, measuredResult: string, empty: string}
+ * @phpstan-type Labels array{nominativeCv: string, nominativeCvUnavailable: string, anonymousCv: string, caseStudies: string, yearsOfExperience: string, skills: string, achievements: string, problem: string, solution: string, tradeoffs: string, measuredResult: string, empty: string}
  */
 final readonly class CorpusRenderer implements CorpusRendererInterface
 {
@@ -46,6 +51,7 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
      * @param ProviderInterface<CaseStudyResource>          $caseStudyProvider
      */
     public function __construct(
+        private PdfTextExtractorInterface $cvTextExtractor,
         #[Autowire(service: AnonymousCvProvider::class)]
         private ProviderInterface $anonymousCvProvider,
         #[Autowire(service: CaseStudyProvider::class)]
@@ -59,6 +65,7 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
 
         $blocks = [
             self::OPENING_TAG,
+            ...$this->nominativeCvSection($labels),
             ...$this->section($labels['anonymousCv'], array_map(
                 static fn (AnonymousCvSectionResource $section): string => self::anonymousCvEntry($section, $labels),
                 $this->read($this->anonymousCvProvider, AnonymousCvSectionResource::class, $locale),
@@ -86,6 +93,8 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
     {
         return match ($locale) {
             Locale::FR => [
+                'nominativeCv' => 'CV détaillé',
+                'nominativeCvUnavailable' => "Le CV détaillé n'est pas disponible.",
                 'anonymousCv' => 'CV sans identité',
                 'caseStudies' => 'Études de cas',
                 'yearsOfExperience' => "Années d'expérience : %d",
@@ -98,6 +107,8 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
                 'empty' => 'Aucun document disponible pour cette section.',
             ],
             Locale::EN => [
+                'nominativeCv' => 'Detailed CV',
+                'nominativeCvUnavailable' => 'The detailed CV is not available.',
                 'anonymousCv' => 'CV without identity',
                 'caseStudies' => 'Case studies',
                 'yearsOfExperience' => 'Years of experience: %d',
@@ -135,6 +146,21 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
         }
 
         return $entries;
+    }
+
+    /**
+     * Un fichier absent ou sans couche texte (un scan) n'est pas une erreur :
+     * la section reste et le dit, sans quoi le modèle comblerait le vide.
+     *
+     * @param Labels $labels
+     *
+     * @return list<string>
+     */
+    private function nominativeCvSection(array $labels): array
+    {
+        $text = $this->cvTextExtractor->extract();
+
+        return ['# '.$labels['nominativeCv'], null === $text || '' === $text ? $labels['nominativeCvUnavailable'] : self::prose($text)];
     }
 
     /**

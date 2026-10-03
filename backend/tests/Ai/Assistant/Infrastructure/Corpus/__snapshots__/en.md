@@ -1,5 +1,13 @@
 <documents>
 
+# Detailed CV
+
+Camille Exemple
+Développeuse PHP depuis douze ans.
+
+Expérience
+Société Fictive, Lyon, 2019 à 2026 : refonte d'une plateforme de réservation.
+
 # CV without identity
 
 ## Architecture logicielle
