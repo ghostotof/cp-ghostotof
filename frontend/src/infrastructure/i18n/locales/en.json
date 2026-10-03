@@ -37,7 +37,8 @@
     "instantAccessRateLimited": "Too many attempts from this address. Please try again later.",
     "instantAccessError": "Access could not be granted. Please try again later.",
     "baseAccessBadge": "Base access",
-    "endBaseAccess": "End this access"
+    "endBaseAccess": "End this access",
+    "accountMenu": "Account menu"
   },
   "admin": {
     "heading": "Administration",
