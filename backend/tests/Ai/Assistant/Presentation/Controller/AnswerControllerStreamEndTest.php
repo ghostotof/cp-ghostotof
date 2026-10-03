@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Ai\Assistant\Presentation\Controller;
 
 use App\Ai\Assistant\Application\CareerAssistantInterface;
+use App\Ai\Assistant\Domain\Exception\AssistantUnavailableException;
 use App\Ai\Assistant\Domain\ValueObject\AnswerUsage;
 use App\Ai\Assistant\Domain\ValueObject\Conversation;
 use App\Ai\Assistant\Presentation\Controller\AnswerController;
@@ -58,11 +59,23 @@ final class AnswerControllerStreamEndTest extends TestCase
     }
 
     /**
-     * @param \Closure(): \Generator<int, string, mixed, AnswerUsage> $stream
-     * @param class-string<\Throwable>                                $expectedException
+     * Les flux de failingStreams(), sans la classe attendue : seul le test du
+     * journal en a l'usage.
+     *
+     * @return iterable<string, array{\Closure(): \Generator<int, string, mixed, AnswerUsage>}>
      */
-    #[DataProvider('failingStreams')]
-    public function testAnyExceptionAfterADeltaEndsWithAnErrorEvent(\Closure $stream, string $expectedException): void
+    public static function failingStreamsOnly(): iterable
+    {
+        foreach (self::failingStreams() as $name => [$stream]) {
+            yield $name => [$stream];
+        }
+    }
+
+    /**
+     * @param \Closure(): \Generator<int, string, mixed, AnswerUsage> $stream
+     */
+    #[DataProvider('failingStreamsOnly')]
+    public function testAnyExceptionAfterADeltaEndsWithAnErrorEvent(\Closure $stream): void
     {
         $handler = new TestHandler();
 
@@ -101,6 +114,81 @@ final class AnswerControllerStreamEndTest extends TestCase
     }
 
     /**
+     * D10 : la ligne de fin porte jetons, durée et nombre de messages, comme
+     * celles de l'assistant. Les jetons sont inconnus ici : null explicite,
+     * pour qu'une requête sur ces clés ne confonde pas « inconnu » et « absent ».
+     */
+    public function testTheErrorOutcomeCarriesTheUsageFieldsOfD10(): void
+    {
+        $handler = new TestHandler();
+
+        $this->send(static function (): \Generator {
+            yield 'Il a ';
+
+            throw new \ValueError(self::SECRET);
+        }, $handler);
+
+        $context = $handler->getRecords()[0]->context;
+        self::assertSame(3, $context['messageCount'] ?? null);
+        self::assertIsInt($context['durationMs'] ?? null);
+        self::assertGreaterThanOrEqual(0, $context['durationMs']);
+        self::assertArrayHasKey('promptTokens', $context);
+        self::assertNull($context['promptTokens']);
+        self::assertArrayHasKey('completionTokens', $context);
+        self::assertNull($context['completionTokens']);
+    }
+
+    /**
+     * L'assistant journalise déjà ses propres échecs : le contrôleur n'en
+     * écrit pas une seconde ligne, qui doublerait les fins sur `ai_usage`.
+     */
+    public function testAnAssistantUnavailableExceptionEndsWithAnErrorEventAndNoSecondLogLine(): void
+    {
+        $handler = new TestHandler();
+
+        $output = $this->send(static function (): \Generator {
+            yield 'Il a ';
+
+            throw new AssistantUnavailableException();
+        }, $handler);
+
+        self::assertSame(
+            "event: delta\ndata: {\"text\":\"Il a \"}\n\n"
+            ."event: error\ndata: {\"reason\":\"assistant-unavailable\"}\n\n",
+            $output,
+        );
+        self::assertSame([], $handler->getRecords());
+    }
+
+    /**
+     * Une exception levée avant tout fragment, une fois le flux ouvert, se
+     * termine elle aussi par `error`, seul événement du flux.
+     */
+    public function testAnExceptionBeforeAnyDeltaEndsWithAnErrorEventAlone(): void
+    {
+        $handler = new TestHandler();
+
+        $output = $this->send(static function (): \Generator {
+            yield from self::failingBeforeAnyFragment();
+
+            return new AnswerUsage(1, 1, 1);
+        }, $handler);
+
+        self::assertSame("event: error\ndata: {\"reason\":\"assistant-unavailable\"}\n\n", $output);
+        self::assertCount(1, $handler->getRecords());
+    }
+
+    /**
+     * Lève dès la première itération : le générateur appelant n'émet rien.
+     *
+     * @return iterable<int, string>
+     */
+    private static function failingBeforeAnyFragment(): iterable
+    {
+        throw new \ValueError(self::SECRET);
+    }
+
+    /**
      * @param \Closure(): \Generator<int, string, mixed, AnswerUsage> $stream
      */
     private function send(\Closure $stream, TestHandler $handler): string
@@ -118,7 +206,11 @@ final class AnswerControllerStreamEndTest extends TestCase
         };
         $controller = new AnswerController($assistant, new Logger('ai_usage', [$handler]));
 
-        $response = $controller(new AnswerRequest('fr', [['role' => 'user', 'content' => 'Quel est son domaine ?']]));
+        $response = $controller(new AnswerRequest('fr', [
+            ['role' => 'user', 'content' => 'Quel est son domaine ?'],
+            ['role' => 'assistant', 'content' => "L'architecture logicielle."],
+            ['role' => 'user', 'content' => 'Depuis combien de temps ?'],
+        ]));
 
         ob_start();
         try {

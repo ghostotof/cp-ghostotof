@@ -7,6 +7,7 @@ namespace App\Ai\Assistant\Presentation\Controller;
 use App\Ai\Assistant\Application\CareerAssistantInterface;
 use App\Ai\Assistant\Domain\Exception\AssistantUnavailableException;
 use App\Ai\Assistant\Domain\ValueObject\AnswerUsage;
+use App\Ai\Assistant\Domain\ValueObject\Conversation;
 use App\Ai\Assistant\Presentation\Dto\AnswerRequest;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Monolog\Attribute\WithMonologChannel;
@@ -56,19 +57,22 @@ final readonly class AnswerController
     {
         // `from` et non `fromString` : la valeur est bornée par Assert\Choice,
         // elle ne vient pas d'une URL (spec §9).
-        $fragments = $this->assistant->answer($request->toConversation(), Locale::from($request->locale));
+        $conversation = $request->toConversation();
+        $startedAt = hrtime(true);
+        $fragments = $this->assistant->answer($conversation, Locale::from($request->locale));
 
-        return new EventStreamResponse(function () use ($fragments): \Generator {
-            yield from $this->events($fragments);
+        return new EventStreamResponse(function () use ($fragments, $conversation, $startedAt): \Generator {
+            yield from $this->events($fragments, $conversation, $startedAt);
         });
     }
 
     /**
      * @param \Generator<int, string, mixed, AnswerUsage> $fragments
+     * @param int                                         $startedAt hrtime(true) avant l'appel à l'assistant
      *
      * @return \Generator<int, ServerEvent, mixed, void>
      */
-    private function events(\Generator $fragments): \Generator
+    private function events(\Generator $fragments, Conversation $conversation, int $startedAt): \Generator
     {
         try {
             foreach ($fragments as $fragment) {
@@ -90,6 +94,12 @@ final readonly class AnswerController
                 'stage' => 'during-stream',
                 'exception' => $exception::class,
                 'origin' => basename($exception->getFile()).':'.$exception->getLine(),
+                // Les champs de D10, comme sur les lignes de l'assistant. Les
+                // jetons ne sont connus qu'en fin de flux : null explicite.
+                'messageCount' => $conversation->count(),
+                'durationMs' => (int) round((hrtime(true) - $startedAt) / 1_000_000),
+                'promptTokens' => null,
+                'completionTokens' => null,
             ]);
 
             yield $this->unavailableEvent();
