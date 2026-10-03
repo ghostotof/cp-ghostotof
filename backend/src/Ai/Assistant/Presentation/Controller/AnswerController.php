@@ -24,7 +24,8 @@ use Symfony\Component\Routing\Attribute\Route;
  * appel de l'interface, mise en forme des événements. L'assistant a déjà lancé
  * l'appel au fournisseur quand answer() rend la main : un échec avant le
  * premier fragment remonte d'ici en 503. Après le 200, il ne reste qu'à le dire
- * par un événement `error`.
+ * par un événement `error` : le flux se termine toujours par `done` ou `error`,
+ * jamais par une simple coupure qu'un client prendrait pour une fin (#318).
  *
  * Chaque événement porte un `data` JSON (`delta` {text}, `done` {promptTokens,
  * completionTokens, durationMs}, `error` {reason}) : un fragment brut
@@ -70,6 +71,8 @@ final readonly class AnswerController
                 yield new ServerEvent($this->json(['text' => $fragment]), type: 'delta');
             }
         } catch (AssistantUnavailableException) {
+            // Déjà journalisée sur `ai_usage` par l'assistant, seule exception
+            // que son générateur lève (contrat de CareerAssistantInterface).
             yield new ServerEvent($this->json(['reason' => 'assistant-unavailable']), type: 'error');
 
             return;
@@ -85,10 +88,13 @@ final readonly class AnswerController
     }
 
     /**
+     * Ne lève pas sur un fragment en UTF-8 invalide : l'octet devient U+FFFD,
+     * plutôt qu'une coupure du flux sans événement final (#318).
+     *
      * @param array<string, mixed> $data
      */
     private function json(array $data): string
     {
-        return json_encode($data, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES);
+        return json_encode($data, \JSON_THROW_ON_ERROR | \JSON_INVALID_UTF8_SUBSTITUTE | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES);
     }
 }
