@@ -84,6 +84,16 @@ jobs:
           php-version: '8.5'
           extensions: intl, pdo_pgsql, zip, sockets, amqp-2.2.0
           coverage: none
+      - name: pdftotext (extraction du CV nominatif, spec 0005 D7)
+        # L'image l'installe dans son étape `base` (poppler-utils) ; le test de
+        # l'extracteur appelle le vrai binaire sur un PDF de fixture. Borne
+        # courte et réessais apt, comme les autres étapes apt (issue #285).
+        timeout-minutes: 5
+        run: |
+          sudo apt-get update -qq -o Acquire::Retries=3 -o Acquire::http::Timeout=30
+          sudo apt-get install -y -qq --no-install-recommends \
+            -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
+            poppler-utils
       - name: Composer install
         working-directory: backend
         run: composer install --no-interaction --prefer-dist
