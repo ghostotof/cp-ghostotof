@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Ai\Assistant\Infrastructure\Pdf;
 
+use App\Ai\Assistant\Infrastructure\Pdf\CvTextExtractionException;
 use App\Ai\Assistant\Infrastructure\Pdf\ExtractedTextNormalizer;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -97,12 +99,42 @@ final class ExtractedTextNormalizerTest extends TestCase
         self::assertSame("Page une.\n\ncamille.exemple@example.test\n\nPage deux.", $this->normalize($text));
     }
 
-    /** Un numéro de page change d'une page à l'autre ; c'est la même ligne. */
-    public function testAPageNumberCountsAsARepeatedLine(): void
+    /**
+     * Un numéro de page n'apprend rien au modèle : il disparaît, sous ses
+     * formes courantes, mais seulement au bord d'une page.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function pageNumbers(): iterable
     {
-        $text = "Page une.\n\nPage 1 / 2\fPage deux.\n\nPage 2 / 2\f";
+        yield 'barre' => ['Page 1 / 2'];
+        yield 'sur' => ['page 1 sur 2'];
+        yield 'of' => ['Page 1 of 2'];
+        yield 'seul' => ['Page 1'];
+        yield 'abrégé' => ['p. 1'];
+        yield 'nu avec barre' => ['1/2'];
+    }
 
-        self::assertSame("Page une.\n\nPage 1 / 2\n\nPage deux.", $this->normalize($text));
+    #[DataProvider('pageNumbers')]
+    public function testAPageNumberAtThePageEdgeIsRemoved(string $pageNumber): void
+    {
+        self::assertSame('Fin de page.', $this->normalize("Fin de page.\n\n".$pageNumber."\f"));
+    }
+
+    /**
+     * Revue de branche (C1) : les chiffres comptaient pour rien dans la
+     * comparaison des lignes, si bien que deux lignes de dates au bord de deux
+     * pages passaient pour un même pied — la seconde disparaissait.
+     */
+    public function testDateLinesAtThePageEdgesAreAllKept(): void
+    {
+        $text = "Intro.\n\nDéveloppeur Java, Société B\n2015 – 2019\f"
+            ."Stagiaire, Société C\n2014 – 2015\n\nSuite.";
+
+        $normalized = $this->normalize($text);
+
+        self::assertStringContainsString('2015 – 2019', $normalized);
+        self::assertStringContainsString('2014 – 2015', $normalized);
     }
 
     /**
@@ -119,7 +151,53 @@ final class ExtractedTextNormalizerTest extends TestCase
     /** Sur une seule page, rien ne se répète d'une page à l'autre. */
     public function testASinglePageLosesNoLine(): void
     {
-        self::assertSame("Camille Exemple\n\nPage 1 / 1", $this->normalize("Camille Exemple\n\nPage 1 / 1\f"));
+        self::assertSame("Camille Exemple\n\ncamille.exemple@example.test", $this->normalize("Camille Exemple\n\ncamille.exemple@example.test\f"));
+    }
+
+    /**
+     * Revue de branche (C2) : sans plancher absolu, la plus longue d'une
+     * suite de lignes courtes « remplissait sa colonne » et avalait la
+     * suivante — un titre se collait au premier élément de sa liste.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function blocksOfShortLines(): iterable
+    {
+        yield 'titre et liste' => ["Compétences\nPHP\nSymfony\nDocker"];
+        yield 'coordonnées' => ["Camille Exemple\nLyon, France\n06 12 34 56 78\ncamille@example.test"];
+        yield 'poste et dates' => ["Développeur PHP, Société A\n2019 – 2021"];
+    }
+
+    #[DataProvider('blocksOfShortLines')]
+    public function testShortLinesAreNeverJoined(string $block): void
+    {
+        self::assertSame($block, $this->normalize($block));
+    }
+
+    /** Revue de branche (C6) : une phrase finit aussi derrière un guillemet ou une parenthèse. */
+    public function testASentenceClosedByAQuoteOrAParenthesisIsNotJoined(): void
+    {
+        $text = "Il a écrit « la migration se fait par étapes, sans interruption de service. »\n"
+            ."PostgreSQL\n\n"
+            ."Plusieurs chantiers de reprise de code ont été menés (voir les études de cas.)\n"
+            .'RabbitMQ';
+
+        self::assertSame(
+            "Il a écrit « la migration se fait par étapes, sans interruption de service. »\nPostgreSQL\n\n"
+            ."Plusieurs chantiers de reprise de code ont été menés (voir les études de cas.)\nRabbitMQ",
+            $this->normalize($text),
+        );
+    }
+
+    /**
+     * Revue de branche (S1) : un UTF-8 invalide fait échouer PCRE ; un texte
+     * vidé en silence ferait dire à l'assistant que le CV ne mentionne rien.
+     */
+    public function testInvalidUtf8IsAnErrorNotASilentlyEmptyText(): void
+    {
+        $this->expectException(CvTextExtractionException::class);
+
+        $this->normalize("Texte \xC3( invalide.");
     }
 
     public function testAPageBreakSeparatesParagraphs(): void
