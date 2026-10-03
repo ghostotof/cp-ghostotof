@@ -632,7 +632,7 @@ mid-migration.
   calls counts one unit each; never consume it inside a Doctrine transaction; body over 128 KiB (the longest valid conversation in 4-byte characters is ~104 kB — 64 KiB, the spec's
   first figure, refused it) → 413 `/errors/request-too-large`, judged by
   `AssistantRequestSizeListener` at priority 4, *after* the firewall, so an anonymous or base-tier caller only
-  ever learns it is refused); task 6 (#265) code done, real-browser check pending: the `/(fr|en)/assistant` page
+  ever learns it is refused); task 6 (#265) done: the `/(fr|en)/assistant` page
   (`ROLE_TRUSTED`/`ROLE_SUPER`), see "API-backed content". Task 2 facts
   to keep: **the service composes its own system message** (preamble file + corpus rendered by
   `CorpusRenderer`, D8) because `SystemPromptInputProcessor` skips `ai.yaml`'s prompt as soon as the
