@@ -72,12 +72,15 @@ de la phase 1 ne change.
 l'assistant décrivaient chacun l'échec du fournisseur pour le journal, sans en citer le message (le
 bridge y recopie le corps de la réponse), et leurs deux copies divergeaient déjà. Elles sont réunies
 dans `Ai/Shared/Infrastructure/SymfonyAi/ProviderFailure`, un Value Object
-`{exceptionClass, status, errorType, origin}` construit depuis le `Throwable`, seule classe à
-interpréter le texte des messages du bridge. Elle importe `Symfony\AI\Platform\Exception\*` pour
-lire un statut typé, et c'est la seule exception à la règle « une classe par sous-contexte » : elle ne
-manipule ni message, ni agent, ni plateforme, et ne connaît aucun usage. Une montée de version du
-bundle reste donc un changement local — à la classe de l'usage, à `ai.yaml`, et à ce lecteur, dont le
-test obtient ses exceptions des vrais `ResultConverter` et rougit si leur format change.
+`{exceptionClass, status, errorType, reason, origin}` construit depuis le `Throwable`, seule classe à
+interpréter le texte des messages du bridge ; `reason` (`ProviderFailureReason`) range l'échec dans
+un vocabulaire indépendant du fournisseur (`permission-denied`, `rate-limited`…). La règle devient :
+**une classe par sous-contexte d'usage importe `Symfony\AI\*`, plus ce seul lecteur partagé**, qui
+n'importe que `Symfony\AI\Platform\Exception\*` pour lire un statut et une classe typés, ne
+manipule ni message, ni agent, ni plateforme, et ne connaît aucun usage. `Ai/Shared` n'est pas un
+sous-contexte d'usage et n'a pas vocation à en devenir un : rien d'autre n'y entre sans un nouvel
+amendement. Une montée de version du bundle reste un changement local — à la classe de l'usage, à
+`ai.yaml`, et à ce lecteur, dont le test obtient ses exceptions des vrais `ResultConverter` et rougit si leur format change.
 
 Les paquets `symfony/ai-bundle`, `symfony/ai-anthropic-platform` et `symfony/ai-agent` — et, en
 phase 2, `symfony/ai-scaleway-platform` — sont **pinnés en version exacte** (`0.13.0`, pas de `^`)

@@ -148,21 +148,21 @@ final class SymfonyAiContentTranslatorTest extends TestCase
      * lecture du type ; la cause se journalise par sa classe, son statut et
      * son type d'erreur, jamais par ce message.
      *
-     * @return iterable<string, array{\Throwable, ?int, ?string}>
+     * @return iterable<string, array{\Throwable, ?int, ?string, string}>
      */
     public static function bridgeFailures(): iterable
     {
-        yield '400' => [new BadRequestException('SENTINELLE-FOURNISSEUR'), null, null];
-        yield '5xx' => [new ServerException(529, 'SENTINELLE-FOURNISSEUR'), 529, null];
-        yield 'surcharge dans un 200' => [new ServerException(null, 'API Error [overloaded_error]: "SENTINELLE-FOURNISSEUR"'), null, 'overloaded_error'];
-        yield '429' => [new RateLimitExceededException(30, 'SENTINELLE-FOURNISSEUR'), null, null];
-        yield 'modèle retiré' => [new PlatformRuntimeException('API Error [not_found_error]: "SENTINELLE-FOURNISSEUR"'), null, 'not_found_error'];
+        yield '400' => [new BadRequestException('SENTINELLE-FOURNISSEUR'), null, null, 'input-rejected'];
+        yield '5xx' => [new ServerException(529, 'SENTINELLE-FOURNISSEUR'), 529, null, 'server-error'];
+        yield 'surcharge dans un 200' => [new ServerException(null, 'API Error [overloaded_error]: "SENTINELLE-FOURNISSEUR"'), null, 'overloaded_error', 'server-error'];
+        yield '429' => [new RateLimitExceededException(30, 'SENTINELLE-FOURNISSEUR'), null, null, 'rate-limited'];
+        yield 'modèle retiré' => [new PlatformRuntimeException('API Error [not_found_error]: "SENTINELLE-FOURNISSEUR"'), null, 'not_found_error', 'model-not-found'];
         // Le type n'est lu qu'en tête : un crochet dans le corps n'est jamais capturé.
-        yield 'crochet hors de tête' => [new PlatformRuntimeException('SENTINELLE-FOURNISSEUR API Error [not_found_error]'), null, null];
+        yield 'crochet hors de tête' => [new PlatformRuntimeException('SENTINELLE-FOURNISSEUR API Error [not_found_error]'), null, null, 'unknown'];
     }
 
     #[DataProvider('bridgeFailures')]
-    public function testLogsTheProviderFailureByClassStatusAndTypeNeverByItsMessage(\Throwable $failure, ?int $status, ?string $errorType): void
+    public function testLogsTheProviderFailureByClassStatusAndTypeNeverByItsMessage(\Throwable $failure, ?int $status, ?string $errorType, string $reason): void
     {
         $logger = new InMemoryLogger();
         $translator = $this->translator($failure, $logger);
@@ -179,6 +179,7 @@ final class SymfonyAiContentTranslatorTest extends TestCase
         self::assertSame($failure::class, $logger->records[0]['context']['exception']);
         self::assertSame($status, $logger->records[0]['context']['providerStatus']);
         self::assertSame($errorType, $logger->records[0]['context']['providerErrorType']);
+        self::assertSame($reason, $logger->records[0]['context']['providerFailure']);
         self::assertArrayHasKey('origin', $logger->records[0]['context']);
     }
 

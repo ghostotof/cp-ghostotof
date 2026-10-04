@@ -116,10 +116,13 @@ final class SymfonyAiCareerAssistantTest extends TestCase
         self::assertSame(403, $this->logger->records[0]['context']['providerStatus'] ?? null);
     }
 
-    /** Issue #308 : le type d'erreur du fournisseur, que le traducteur journalisait seul. */
-    public function testTheProviderErrorTypeIsLogged(): void
+    /**
+     * Issue #308 : en flux, le bridge ne transmet aucun type d'erreur lisible ;
+     * la raison, déduite du statut, dit tout de même ce qui s'est passé.
+     */
+    public function testAStreamedRefusalIsClassifiedByItsStatus(): void
     {
-        $agent = new FakeStreamingAgent([], failure: new PlatformRuntimeException('Error "permission_denied": "corps du fournisseur".'));
+        $agent = new FakeStreamingAgent([], failure: new PlatformRuntimeException('Unexpected response code 403: "{\\"type\\":\\"permission_denied\\"}"'));
 
         try {
             $this->assistant($agent)->answer($this->conversation(), Locale::FR);
@@ -127,8 +130,9 @@ final class SymfonyAiCareerAssistantTest extends TestCase
         } catch (AssistantUnavailableException) {
         }
 
-        self::assertSame('permission_denied', $this->logger->records[0]['context']['providerErrorType'] ?? null);
-        self::assertStringNotContainsString('corps du fournisseur', $this->logger->dump());
+        self::assertSame('permission-denied', $this->logger->records[0]['context']['providerFailure'] ?? null);
+        self::assertArrayHasKey('providerErrorType', $this->logger->records[0]['context']);
+        self::assertNull($this->logger->records[0]['context']['providerErrorType']);
     }
 
     public function testAFailureDuringTheStreamIsThrownByTheGeneratorAfterTheFirstFragments(): void
