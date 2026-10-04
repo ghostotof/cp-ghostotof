@@ -4,7 +4,9 @@
   `.claude/specs/archive/2026-09-14-spec-0002-assistant-traduction/0002-ai-translation-assistant.md`, issues `spec-0002` fermées, releases v0.10.0 puis
   v0.10.1 en production) ; **amendée le 2026-09-15** : la phase 2 n'est plus un serveur MCP mais un
   assistant conversationnel réservé à `ROLE_TRUSTED` (D7 réécrite, D1/D2/D3/D5 retouchées, voir
-  l'encadré « Amendement du 2026-09-15 » sous D7) ; spec de phase 2 à écrire avant tout code
+  l'encadré « Amendement du 2026-09-15 » sous D7) ; **phase 2 livrée** le 2026-10-04 (spec
+  `.claude/specs/archive/2026-10-04-spec-0005-assistant-parcours/0005-career-assistant.md`, release v0.19.0
+  en production ; vérifications restantes de la release dans l'issue #324)
 - Date : 2026-09-14, amendée le 2026-09-15
 - Portée : `src/Ai/` (nouveau contexte borné), `config/packages/ai.yaml`, `config/ai/prompts/`,
   `config/packages/framework.yaml` (clients HTTP `ai.http_client` et, en phase 2, un second client
