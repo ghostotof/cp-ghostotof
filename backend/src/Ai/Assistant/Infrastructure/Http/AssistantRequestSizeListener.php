@@ -39,8 +39,7 @@ final readonly class AssistantRequestSizeListener
         }
 
         $request = $event->getRequest();
-        $path = CanonicalPath::of($request);
-        if (self::PATH_PREFIX !== $path && !str_starts_with($path, self::PATH_PREFIX.'/')) {
+        if (!CanonicalPath::isUnder($request, self::PATH_PREFIX)) {
             return;
         }
 

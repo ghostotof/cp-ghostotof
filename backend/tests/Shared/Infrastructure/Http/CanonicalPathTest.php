@@ -64,4 +64,26 @@ final class CanonicalPathTest extends TestCase
         yield 'voisin avec tiret' => ['/api-docs', false];
         yield 'hors API' => ['/inexistant', false];
     }
+
+    /**
+     * Même ancrage pour n'importe quel sous-arbre (issue #322) : la règle vit
+     * à un seul endroit, comme celle des `access_control` (issue #78).
+     */
+    #[DataProvider('subtreeMembership')]
+    public function testIsUnderIsAnchoredOnTheDecodedPath(string $uri, bool $expected): void
+    {
+        self::assertSame($expected, CanonicalPath::isUnder(Request::create($uri), '/api/assistant'));
+    }
+
+    /**
+     * @return iterable<string, array{string, bool}>
+     */
+    public static function subtreeMembership(): iterable
+    {
+        yield 'racine du sous-arbre' => ['/api/assistant', true];
+        yield 'route du sous-arbre' => ['/api/assistant/answers', true];
+        yield 'chemin encodé' => ['/api/%61ssistant/answers', true];
+        yield 'voisin sans séparateur' => ['/api/assistants', false];
+        yield 'parent' => ['/api', false];
+    }
 }

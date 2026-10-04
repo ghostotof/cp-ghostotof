@@ -46,8 +46,21 @@ final class CanonicalPath
      */
     public static function isUnderApi(Request $request): bool
     {
+        return self::isUnder($request, self::API_PATH);
+    }
+
+    /**
+     * La requête vise-t-elle ce sous-arbre ? Même ancrage que `isUnderApi()`
+     * (« `$prefix` exactement, ou `$prefix/…` », chemin décodé), pour
+     * n'importe quel préfixe : c'est la règle des `access_control` (issue
+     * #78), elle ne doit être écrite qu'ici (issue #322).
+     *
+     * @param string $prefix chemin absolu, sans `/` final (`/api/assistant`)
+     */
+    public static function isUnder(Request $request, string $prefix): bool
+    {
         $path = self::of($request);
 
-        return self::API_PATH === $path || str_starts_with($path, self::API_PATH.'/');
+        return $prefix === $path || str_starts_with($path, $prefix.'/');
     }
 }
