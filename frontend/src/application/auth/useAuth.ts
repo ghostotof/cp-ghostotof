@@ -149,6 +149,17 @@ export function markBaseAccessExpired(): void {
   }
 }
 
+/**
+ * Un appel du palier nominatif (l'assistant, ROLE_TRUSTED) a reçu 401 ou 403 :
+ * le jeton ne vaut plus ce palier (expiré, révoqué, ou compte rétrogradé).
+ * Contrairement à markBaseAccessExpired, repasse à anonyme sans condition : la
+ * page qui l'appelle ne sert que ce palier, et garder un en-tête « connecté »
+ * au-dessus d'une page qui vient de refuser l'accès serait mentir.
+ */
+export function markSessionExpired(): void {
+  applySession(ANONYMOUS_SESSION)
+}
+
 export interface UseAuthResult {
   user: ComputedRef<AuthenticatedUser | null>
   /** Palier courant (ADR 0003 D1) — la source de vérité pour l'en-tête. */

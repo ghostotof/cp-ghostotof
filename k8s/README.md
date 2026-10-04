@@ -343,6 +343,111 @@ for ENV in preprod prod; do
 done
 ```
 
+**Assistant de parcours** (`<env>-backend-scaleway-ai-api-key` et
+`<env>-backend-scaleway-ai-project-id`, spec 0005) — **à publier avant de
+pousser la branche `release/*` qui livre l'assistant**. Un `ExternalSecret` qui
+référence une clé absente laisse `backend-secrets` incomplet, et le Deployment
+ne démarre pas : c'est la leçon de la phase 1 (clé Anthropic).
+
+1. **Une application IAM dédiée par environnement** (console : IAM >
+   Applications), distincte de celle d'ESO (§1) et de celle du mailer. Une
+   par environnement permet de les révoquer séparément. Noms en place depuis
+   le 2026-10-04 : `cpg-career-assistant-{dev,preprod,prod}`, politiques
+   `cpg-career-assistant-<env>-model-access`. Les applications et leurs
+   politiques ne portent aucun secret : on peut les créer au CLI
+   (`scw iam application create`, `scw iam policy create … rules.0.project-ids.0=<projet>`).
+   La **clé**, elle, se génère dans la console (Applications > API keys) : sa
+   partie secrète ne s'affiche qu'une fois, à la création, et ne doit passer
+   ni par un terminal partagé ni par une session d'agent.
+2. **Sa politique ne donne que l'inférence Generative APIs**, sur **un seul
+   projet** : le jeu de permissions Generative APIs le plus restreint qui
+   autorise l'appel aux modèles. À la date d'écriture, c'est
+   `GenerativeApisModelAccess`. Vérifier le nom dans la console (IAM >
+   Policies > Add rule), il peut changer. Pas de `FullAccess`, pas d'accès à
+   l'organisation.
+3. **L'identifiant de ce projet est le second secret.** Il entre dans le
+   chemin des appels (`api.scaleway.ai/<projet>/v1`). Sans lui, l'API vise le
+   projet par défaut de l'organisation, sur lequel la politique ne donne aucun
+   droit : réponse **403**, que le bridge 0.13.0 affiche comme « Unknown
+   error », et l'assistant répond 503. Ce n'est pas un secret au sens IAM. Il
+   reste hors du dépôt public parce qu'il désigne le projet qui porte la
+   facturation. Le lire dans la console (Project dashboard > Settings) ou par
+   `scw account project list`.
+
+Recette, dans un **terminal séparé** (jamais derrière un `!` dans une session
+d'agent, cf. §1). Les valeurs entrent au clavier (la clé est masquée), sont
+écrites **sans saut de ligne final** (`data=@fichier` pousse les octets tels
+quels, et un saut de ligne casserait l'URL ou l'en-tête), et ne passent par
+aucun argument. Le `curl` vérifie le couple clé + projet, et la présence du
+modèle, **avant** toute publication : un échec arrête tout sans rien publier.
+L'en-tête est lu depuis un fichier (`-H @fichier`), la clé ne figure donc pas
+dans `ps`.
+
+Le bloc entier se colle tel quel : il s'exécute dans `bash` par un *heredoc*,
+quel que soit le shell interactif. Sous zsh, `read -p` ne veut pas dire
+« prompt » (il lit un coprocessus : `read: -p: no coprocess`), et un `set -u`
+collé directement reste actif dans le shell et casse le prompt. Les `read`
+lisent `/dev/tty`, puisque l'entrée standard de `bash` est le heredoc. La
+publication est **rejouable** : un secret déjà créé reçoit une nouvelle
+version au lieu d'échouer sur un identifiant vide. Le dossier temporaire est
+supprimé à la sortie, même sur une erreur ou un Ctrl-C.
+
+```bash
+bash <<'RECETTE'
+set -euo pipefail
+umask 077
+MODEL=mistral-small-3.2-24b-instruct-2506
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+DEFAULT_PROJECT=$(scw account project list -o json | jq -r '.[] | select(.name=="cp-ghostotof") | .id')
+
+# 1. Saisie.
+for ENV in preprod prod; do
+  read -rsp "Clé secrète Generative APIs ($ENV) : " V </dev/tty && echo
+  [ -n "$V" ] || { echo "Clé vide pour $ENV : abandon." >&2; exit 1; }
+  printf '%s' "$V" > "$TMP/$ENV-key"
+  read -rp "Identifiant du projet ($ENV) [$DEFAULT_PROJECT] : " V </dev/tty
+  printf '%s' "${V:-$DEFAULT_PROJECT}" > "$TMP/$ENV-project"
+done
+unset V
+
+# 2. Contrôle AVANT publication. 403 : la politique ne porte pas sur ce
+#    projet. 401 : la clé.
+ok=true
+for ENV in preprod prod; do
+  { printf 'Authorization: Bearer '; cat "$TMP/$ENV-key"; printf '\n'; } > "$TMP/$ENV-header"
+  code=$(curl -s -o "$TMP/$ENV-models.json" -w '%{http_code}' -H @"$TMP/$ENV-header" \
+    "https://api.scaleway.ai/$(cat "$TMP/$ENV-project")/v1/models")
+  echo "$ENV : HTTP $code"
+  if [ "$code" != 200 ]; then ok=false
+  elif jq -r '.data[].id' "$TMP/$ENV-models.json" | grep -qx "$MODEL"; then echo "$ENV : modèle disponible"
+  else echo "$ENV : modèle $MODEL ABSENT"; ok=false
+  fi
+done
+$ok || { echo "Contrôle en échec : rien n'a été publié." >&2; exit 1; }
+read -rp "Publier les quatre secrets ? [o/N] " answer </dev/tty
+[ "$answer" = o ] || { echo "Abandon : rien n'a été publié."; exit 0; }
+
+# 3. Publication, rejouable.
+publish() {
+  local id
+  id=$(scw secret secret list name="$1" region=fr-par -o json | jq -r '.[0].id // empty')
+  [ -n "$id" ] || id=$(scw secret secret create name="$1" path=/ region=fr-par -o json | jq -r .id)
+  scw secret version create "$id" data=@"$2" region=fr-par > /dev/null && echo "publié : $1"
+}
+for ENV in preprod prod; do
+  publish "${ENV}-backend-scaleway-ai-api-key"    "$TMP/$ENV-key"
+  publish "${ENV}-backend-scaleway-ai-project-id" "$TMP/$ENV-project"
+done
+
+# 4. Contrôle : les quatre noms existent. Les noms seuls, aucune valeur n'est lue.
+scw secret secret list region=fr-par -o json | jq -r '.[].name' | grep scaleway-ai
+RECETTE
+```
+
+La vérification en préprod pendant la release est décrite plus bas, dans
+« Assistant de parcours : vérification pendant la release ».
+
 **Clés JWT** — générées en LOCAL (jamais sur le cluster ni en clair ailleurs
 qu'ici), une paire par environnement (préprod et prod ne doivent PAS partager
 la même paire) :
@@ -553,6 +658,58 @@ elle évolue.
    (wear levelling, copies au fil des journaux et des instantanés) : la seule
    garantie réelle reste que la valeur n'a jamais quitté ce répertoire, et
    qu'elle est révoquée dès l'étape 5.
+
+## Assistant de parcours : vérification pendant la release
+
+La préprod n'est déployée que depuis une branche `release/*` : l'assistant
+(spec 0005, `POST /api/assistant/answers`) n'est donc vérifié en conditions
+réelles qu'à la release qui le livre, **avant** le merge dans `main`. Les
+secrets Scaleway doivent avoir été publiés avant le push de la branche (§2,
+« Assistant de parcours »). Après le déploiement préprod de la branche :
+
+1. **Les deux clés sont arrivées dans le Secret.** La commande lit les noms des
+   clés, pas leurs valeurs :
+
+   ```bash
+   kubectl -n preprod get externalsecret backend-secrets
+   # STATUS SecretSynced, READY True
+   kubectl -n preprod get secret backend-secrets -o json | jq -r '.data | keys[]' | grep SCALEWAY_AI
+   # SCALEWAY_AI_API_KEY et SCALEWAY_AI_PROJECT_ID
+   ```
+
+2. **Le sidecar sert la nouvelle `location`.** La ConfigMap nginx est hachée,
+   sa modification déclenche donc un rollout (issue #18). Le vérifier quand
+   même : un sidecar resté sur l'ancienne configuration ferait passer la
+   requête par `location /`, avec la mise en tampon et la zone `publicapi`.
+
+   ```bash
+   kubectl -n preprod exec deploy/backend -c nginx -- nginx -T | grep -n assistant
+   # attendu : les zones assistant/assistantconn et la location ^~ /api/assistant/
+   ```
+
+3. **Une question réelle, en flux**, depuis un compte de test `ROLE_TRUSTED`
+   de la préprod (un compte invité, jamais un compte de production), sur la
+   page Assistant. Dans l'onglet Réseau des DevTools, la réponse doit être en
+   `text/event-stream` et le texte doit s'afficher **au fil de l'eau**, pas
+   d'un bloc à la fin. Un affichage d'un bloc signale un tampon resté actif
+   quelque part (sidecar ou ingress).
+
+4. **Le journal `ai_usage` l'a comptée**, sans aucun contenu :
+
+   ```bash
+   kubectl -n preprod logs deploy/backend -c php-fpm --since=10m \
+     | grep '"channel":"ai_usage"' \
+     | jq -c '.context'
+   # attendu : {"outcome":"done","messageCount":1,"durationMs":…,"promptTokens":…,"completionTokens":…}
+   ```
+
+   Sur `"outcome":"error"`, lire `providerStatus` : **403**, la politique de
+   la clé ne porte pas sur le projet de `SCALEWAY_AI_PROJECT_ID` ; **401**, la
+   clé elle-même. Corriger dans Secret Manager, forcer la resynchronisation
+   puis redémarrer (« Rotation / mise à jour d'un Secret » ci-dessous).
+
+La production ne reçoit pas de question de test. Après le déploiement prod, le
+point 1 suffit (`-n prod`), avec en plus le point 2 sur le sidecar de prod.
 
 ## Rotation / mise à jour d'un Secret
 

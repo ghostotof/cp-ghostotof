@@ -193,8 +193,9 @@ plafonds chiffrés, forme de la page) est du ressort de la spec.
   peut s'ajouter par la spec ; un contenu de palier supérieur exige un amendement.
 - **Le corpus passe par les providers et présenteurs existants**, jamais par les repositories : la
   partition par rôle est celle de l'API, lue au même endroit. Le CV nominatif est la seule pièce
-  sans provider (c'est un fichier) : un lecteur dédié en extrait le texte, mis en cache, **jamais
-  persisté ailleurs** ni journalisé — le PDF reste hors dépôt et hors image, comme aujourd'hui. Un
+  sans provider (c'est un fichier) : un lecteur dédié en extrait le texte, **sans cache, jamais
+  persisté** ni journalisé (*précisé le 2026-09-26, spec 0005 D7* : `cache.app` étant sur Doctrine
+  DBAL depuis l'ADR 0005, le mettre en cache l'aurait écrit en base) — le PDF reste hors dépôt et hors image, comme aujourd'hui. Un
   test pince la liste des sources du corpus, comme `ApiRouteExposureTest` pince les routes.
 - **Le corpus est injecté dans le contexte, pas retrouvé.** Il représente quelques milliers de
   jetons : un index vectoriel, un `pgvector` sur un Postgres à état et une étape de récupération
@@ -205,7 +206,7 @@ plafonds chiffrés, forme de la page) est du ressort de la spec.
   rendu pour les trois sources, en Markdown à intertitres nommés (« Problème », « Résultat
   mesuré »…) plutôt qu'en JSON : une locale (celle de la page), les entrées triées par
   `position`, aucun champ technique (identifiants, groupe de traduction, locale), le texte du CV
-  nominatif extrait **une fois** du PDF (cache sur la date du fichier) puis normalisé — sauts de
+  nominatif extrait du PDF à chaque requête (*précisé le 2026-09-26 : sans cache*) puis normalisé — sauts de
   ligne de mise en page, en-têtes répétés à chaque page et espacement recomposés en paragraphes
   et listes. Ce rendu est **assemblé à chaque requête** (quelques requêtes SQL, une milliseconde
   devant un appel de plusieurs secondes) et non précalculé : un corpus mis en cache et invalidé à
@@ -305,9 +306,10 @@ plafonds chiffrés, forme de la page) est du ressort de la spec.
   `k8s/base/backend-nginx.conf` restent des miroirs ; la ConfigMap hachée (`configMapGenerator`)
   fait redémarrer le sidecar, comme documenté dans `CLAUDE.md`.
 - **Un lecteur de PDF côté serveur**, pour le texte du CV nominatif : dépendance à choisir dans la
-  spec, texte mis en cache (invalidé par la date du fichier), normalisé, jamais écrit en base. Le
-  cache est local au pod (`cache.app`, système de fichiers) : avec deux réplicas, chacun extrait
-  une fois, ce qui est acceptable — il n'y a rien à partager.
+  spec, texte normalisé, jamais écrit en base. *Précisé le 2026-09-26* : il n'est pas mis en cache
+  non plus — `cache.app` est sur Doctrine DBAL depuis l'ADR 0005, un cache y écrirait le CV
+  nominatif dans `cache_items` ; l'extraction est refaite à chaque requête, son coût borné par le
+  quota (mesuré en M2 de la spec 0005).
 - **Un rendu de corpus testé sur fixtures** (D7) : le test montre le document exact envoyé au
   fournisseur et échoue si une source y entre ou en sort ; il remplace pour ce contexte
   l'allow-list justifiée qu'`ApiRouteExposureTest` tient pour les routes.

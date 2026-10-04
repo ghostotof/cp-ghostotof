@@ -41,9 +41,12 @@ FROM php:${PHP_TAG} AS base
 ARG AMQP_EXT_VERSION
 
 RUN set -eux; \
+    # poppler-utils : pdftotext, qui extrait le texte du CV nominatif pour
+    # le corpus de l'assistant (spec 0005 D7, repli retenu sur smalot/pdfparser
+    # qui ne restituait ni paragraphes ni puces, journal de la spec).
     apk add --no-cache \
         icu-libs libpq libzip rabbitmq-c tzdata \
-        fcgi; \
+        fcgi poppler-utils; \
     apk add --no-cache --virtual .build-deps \
         $PHPIZE_DEPS icu-dev postgresql-dev libzip-dev rabbitmq-c-dev linux-headers; \
     # Extensions requises par Symfony / Doctrine / Messenger

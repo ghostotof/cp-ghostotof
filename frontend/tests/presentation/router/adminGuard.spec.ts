@@ -7,6 +7,7 @@ import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthR
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import type { AuthSession } from '../../../src/domain/auth/entities/AuthSession'
 import { sessionFor } from '../../support/authSession'
+import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
 
 /**
  * Exerce le routeur singleton (presentation/router/index.ts) plutôt qu'une
@@ -133,6 +134,95 @@ describe('router — garde /admin (ROLE_SUPER)', () => {
     await pushPromise
 
     expect(router.currentRoute.value.name).toBe('admin-technologies')
+    wrapper.unmount()
+  })
+})
+
+describe('router — garde /assistant (ROLE_TRUSTED ou ROLE_SUPER)', () => {
+  beforeEach(async () => {
+    await router.push('/fr')
+    await router.isReady()
+  })
+
+  it('anonyme : redirige vers /login avec redirect=/fr/assistant', async () => {
+    await primeAuthState(null)
+
+    await router.push('/fr/assistant')
+
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(router.currentRoute.value.query.redirect).toBe('/fr/assistant')
+  })
+
+  it('palier de base sans compte : redirige vers /login (décision du 2026-10-02)', async () => {
+    const repository: AuthRepository = {
+      login: vi.fn(),
+      logout: vi.fn(),
+      me: vi.fn(async () => BASE_ACCESS_SESSION),
+    }
+    const Probe = defineComponent({
+      setup() {
+        return { auth: useAuth() }
+      },
+      template: '<div />',
+    })
+    const wrapper = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
+    await wrapper.vm.auth.checkAuth()
+    wrapper.unmount()
+
+    await router.push('/fr/assistant')
+
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(router.currentRoute.value.query.redirect).toBe('/fr/assistant')
+  })
+
+  it('compte ROLE_USER seul : redirige vers /forbidden', async () => {
+    await primeAuthState({ username: 'jane', roles: ['ROLE_USER'] })
+
+    await router.push('/fr/assistant')
+
+    expect(router.currentRoute.value.name).toBe('forbidden')
+  })
+
+  it('ROLE_TRUSTED : accède à la page', async () => {
+    await primeAuthState({ username: 'guest', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })
+
+    await router.push('/fr/assistant')
+
+    expect(router.currentRoute.value.name).toBe('assistant')
+    expect(router.currentRoute.value.meta.noindex).toBe(true)
+  })
+
+  it('ROLE_SUPER sans ROLE_TRUSTED en clair : accède à la page (un rôle suffit)', async () => {
+    await primeAuthState({ username: 'super', roles: ['ROLE_SUPER'] })
+
+    await router.push('/en/assistant')
+
+    expect(router.currentRoute.value.name).toBe('assistant')
+  })
+
+  it('attend la résolution de checkAuth() avant de trancher', async () => {
+    let resolveMe: (session: AuthSession) => void = () => {}
+    const repository: AuthRepository = {
+      login: vi.fn(),
+      logout: vi.fn(),
+      me: vi.fn(() => new Promise<AuthSession>((resolve) => (resolveMe = resolve))),
+    }
+    const Probe = defineComponent({
+      setup() {
+        return { auth: useAuth() }
+      },
+      template: '<div />',
+    })
+    const wrapper = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
+
+    const checkAuthPromise = wrapper.vm.auth.checkAuth()
+    const pushPromise = router.push('/fr/assistant')
+
+    resolveMe(sessionFor({ username: 'guest', roles: ['ROLE_TRUSTED'] }))
+    await checkAuthPromise
+    await pushPromise
+
+    expect(router.currentRoute.value.name).toBe('assistant')
     wrapper.unmount()
   })
 })
