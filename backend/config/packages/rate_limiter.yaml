@@ -42,3 +42,14 @@ framework:
             policy: 'sliding_window'
             limit: 30
             interval: '1 hour'
+
+        # Quota de l'assistant de parcours (spec 0005 D6, ADR 0004 D5 amendée —
+        # POST /api/assistant/answers, ROLE_TRUSTED). Clé : le compte (username),
+        # jamais l'IP. Consommé après la validation de la conversation et avant
+        # l'appel au fournisseur (cf. QuotaGuardedCareerAssistant). Stocké dans
+        # cache.app, donc en base (ADR 0005) : le compteur est commun à tous les
+        # pods, le quota vaut 30/h par compte quel que soit le nombre de réplicas.
+        career_assistant:
+            policy: 'sliding_window'
+            limit: 30
+            interval: '1 hour'

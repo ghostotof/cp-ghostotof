@@ -118,7 +118,7 @@ unresolvable host). It requires Symfony CLI ≥ 5.20.0 (`.env`, `versions.lock`)
 latest stable Language Tools into its own cache (`symfony lsp:cache-dir`), so that part is **not pinned**
 — which is why the job is blocking only on the `--fail-on` list of low-false-positive codes and is *not*
 in `build-images`' `needs` yet (re-evaluate after a few weeks). No baseline: the repo is clean apart from
-three `config.unknown_key` **warnings** on `ai.yaml` (`ai.agent.translator.model.name/options`), keys that
+six `config.unknown_key` **warnings** on `ai.yaml` (`ai.agent.{translator,career_assistant}.model.name/options`, three per agent), keys that
 Symfony accepts because the bundle declares `model` as a `variableNode` (its only rule: a string, or an array
 with `name`) — Language Tools cannot know the keys under it, a false positive by construction, left visible
 rather than baselined. **Monolog** is installed (`symfony/monolog-bundle`, audit 2026-09-16 constat A5 —
@@ -130,7 +130,10 @@ Kubernetes only collects a container's stdout/stderr — `kubectl logs … | jq`
 their own handler at a hard-coded `info`, never `fingers_crossed`: a run of failed logins with no error
 after it is exactly the trace worth keeping, and buffering would discard it. Everything else goes to
 the `main` handler at `%env(default:app.log_level:LOG_LEVEL)%` (`LOG_LEVEL=warning` in `backend/.env`,
-`debug` in the preprod image), which excludes those two channels so an event is emitted **once**. The
+`debug` in the preprod image), which excludes those two channels so an event is emitted **once**. A
+third channel follows the same rule, `ai_usage` (spec 0005): the career assistant's token usage and
+duration, never any content, on its own `info` handler — as an `info` of the default channel it never
+left a production pod (`AiUsageLogChannelTest` pins the prod config). The
 `default:` processor takes a *parameter name*, hence `app.log_level` in `services.yaml` — `default:warning:`
 would look for a parameter called `warning` and fail at compile time. No duplication with
 `error_log = /proc/self/fd/2` (`php.prod.ini`) either: Monolog writes to fd 2 itself, `error_log` only
@@ -282,7 +285,8 @@ mid-migration.
     `Http/PasswordSetupRateLimitRequestListener.php` (audit C1 — a `kernel.request` listener at priority 15
     that consumes the per-IP quota on **`POST`** for the two exact paths of the flow **before** API Platform
     deserializes or validates anything; consuming it again in the Processor would halve the effective
-    quota, so don't) + `Http/PasswordSetupRateLimitRetryAfterListener.php` (adds `Retry-After` on the 429);
+    quota, so don't) — the 429's `Retry-After` comes from the shared
+    `Shared/Infrastructure/Http/RetryAfterListener` (issue #273, see "Errors under `/api`");
     the API Platform processors.
   - `Presentation/Command/CreateCpgUserCommand.php` (`app:user:create`, `--role` allow-list) and
     `Presentation/Controller/CurrentUserController.php` (`GET /api/me`). Everything else is API Platform
@@ -341,11 +345,12 @@ mid-migration.
     never `getPathInfo()` directly** (issue #77). `getPathInfo()` is *not* decoded, while the router, the
     firewalls and `access_control` all decide on `rawurldecode()`: `POST /%61pi/logout` reached the
     `LogoutListener` without ever passing the CSRF check, and `/api/account/base%2Daccess` escaped its rate
-    limiter. Five sites go through the helper — the four `kernel.request` guards
+    limiter. The `kernel.request` guards go through the helper
     (`CsrfCookieRequestSubscriber`, `LoginCsrfRequestListener`, `BaseAccessRateLimitRequestListener`,
-    `PasswordSetupRateLimitRequestListener`), each with a `%XX` regression test, plus
-    `Shared/Infrastructure/Http/ApiJsonErrorFormatListener` on `kernel.exception` (see "Errors under `/api`"
-    below) — and `SecurityAuditLogger` logs the canonical form for the same reason.
+    `PasswordSetupRateLimitRequestListener`, `AssistantRequestSizeListener`), each with a `%XX`
+    regression test; two `kernel.exception` listeners use it too, the assistant's
+    `AssistantProblemResponseListener` and `Shared/Infrastructure/Http/ApiJsonErrorFormatListener` (see
+    "Errors under `/api`" below) — and `SecurityAuditLogger` logs the canonical form for the same reason.
   - **The `login` firewall is anchored on its `check_path`, the `api` one deliberately is not** (audit A23,
     `security.yaml`). `login` is `^/api/login_check$`: it holds a `json_login` and reads **no** JWT, so any
     route ever added under a looser `^/api/login` would be served anonymously, the visitor's `BEARER` never
@@ -382,7 +387,7 @@ mid-migration.
     (3rd audit, A5/D5, Monolog channel `security_audit`, `info`, JSON on stderr in prod — see
     `monolog.yaml`). Implements `Application/SecurityAuditLoggerInterface`, one method per event:
     `login-succeeded`, `login-failed`, `login-throttled`, `logged-out`, `base-access-issued`,
-    `csrf-rejected`, `backoffice-access-denied`, `user-invited`, `user-reinvited`, `role-changed`
+    `csrf-rejected`, `backoffice-access-denied`, `rate-limiter-unavailable`, `user-invited`, `user-reinvited`, `role-changed`
     (`superAdmin` bool), `password-changed`, `user-deleted`, `account-activated`, `user-purged`
     (`actor: system` — the one event whose actor is not read from the token storage; `record()` takes an
     explicit actor for CLI callers). Every record carries
@@ -399,7 +404,16 @@ mid-migration.
     `AccessDeniedHttpException` — that `previous` is required, so the CSRF guards' bare
     `AccessDeniedHttpException` isn't logged twice; an anonymous hit is a 401 that never reaches it); the
     two CSRF guards call `csrfRejected()` right before throwing (actor is `anonymous` there by
-    construction — priority 20 runs before the firewall); `BaseAccessController` logs the `guest-…`
+    construction — priority 20 runs before the firewall);
+    `Infrastructure/Http/RateLimiterLockFailureListener` logs `rate-limiter-unavailable` (issue
+    #276) when a limiter's shared lock fails on an `/api` route — acquiring, releasing, or a
+    conflict relayed by the component's in-memory store — and answers 503 problem+json with
+    `Retry-After`, never a 500. No subject: the lock resource carries the limiter's key (an IP, a
+    tried username), so neither the response nor the audit record names it, and the listener sits
+    at priority 16, above Symfony's `logKernelException` (0), writing its own `error` line with
+    the exception classes only — the raw message reaches no prod log at all. It catches any
+    Lock failure under `/api`: a future non-limiter lock must revisit it; `BaseAccessController`
+    logs the `guest-…`
     identifier, never the token; the `Security/User/Application` use cases and the housekeeping
     `PendingInvitationPurger` log after the successful action. Functional tests read the records through
     `tests/Support/ReadsSecurityAuditLog.php` (a
@@ -592,8 +606,97 @@ mid-migration.
   `ROLE_TRUSTED`, on Scaleway Generative APIs — the site's own host, `fr-par` — which is the one operator the
   nominative CV may reach (D3 amended); corpus injected in the context from the tier's existing providers,
   no tools, no vector store, nothing persisted, streamed response; the MCP server originally planned is
-  now an *alternative écartée*; spec still to write, nothing built). The bundle is **Symfony AI**, pinned in **exact version** (`symfony/ai-bundle`,
-  `symfony/ai-anthropic-platform`, `symfony/ai-agent`, all `0.13.0`, no `^` while 0.x); the platform and the
+  now an *alternative écartée*; **closed in `develop` on 2026-10-04** (PR #267, all six tasks and the
+  review follow-ups #318–#320/#323 merged; release, preprod/prod checks and the "delivered in vX.Y.Z" update of
+  this paragraph tracked in #324), spec archived at
+  `.claude/specs/archive/2026-10-04-spec-0005-assistant-parcours/0005-career-assistant.md`, task 1 (#260) done: the `career_assistant` agent in `ai.yaml`,
+  `mistral-small-3.2-24b-instruct-2506`, `max_tokens` 1024, `tools: false`, prompt preamble in
+  `config/ai/prompts/career_assistant.txt`, key `SCALEWAY_AI_API_KEY` routed exactly like `ANTHROPIC_API_KEY`,
+  plus `SCALEWAY_AI_PROJECT_ID` on the same route; task 5 (#264) done: both are read by the `backend-secrets` `ExternalSecret` of the two overlays
+  (`<env>-backend-scaleway-ai-{api-key,project-id}`), published **before** the `release/*` push — creation recipe
+  (dedicated IAM application, Generative APIs inference only, one project) and the preprod checks of the release
+  in `k8s/README.md`; task 2 (#261) done: `POST /api/assistant/answers`,
+  `ROLE_TRUSTED`, `AnswerController` → `CareerAssistantInterface` → `SymfonyAiCareerAssistant`; task 3 (#262)
+  done: D6 bounds in the `Conversation`/`ConversationMessage` VOs → 422 `/errors/invalid-conversation` — strict
+  alternation between a first and a last `user` message makes the count odd, so the bound is **11** (D6
+  amended from 12, which no valid conversation could reach — keep it odd, and keep the frontend's sliding
+  window at the same odd count, or its first message is an answer and every full-window send is a 422), plus
+  **16 000 characters for the whole conversation** (audit F2 — the bill is in tokens over everything sent);
+  `AnswerRequest` caps `messages` at 50 in a `Sequentially` *before* `All` (validating ~4 000 tiny messages
+  cost 113 ms), wide on purpose so a merely too-long conversation keeps the VO's typed 422; quota `career_assistant` (30/h, key `username`) consumed by
+  `QuotaGuardedCareerAssistant`, an `#[AsDecorator]` of `CareerAssistantInterface` — which is why
+  `services.yaml` aliases the interface explicitly: with two implementations the automatic single-impl alias
+  disappears and the decorator has nothing to decorate — so a 422 never costs quota, 429
+  `/errors/rate-limited` + `Retry-After`, the refusal logged on `ai_usage` with the account. **`#[WithMonologChannel]`
+  is lost on an `#[AsDecorator]` service** (decoration rewrites its tags, the record silently went to the app
+  channel): inject `monolog.logger.<channel>` by id there. The quota takes the shared PostgreSQL advisory lock like
+  every limiter (#272, v0.18.2, ADR 0005 D8–D10 — see the ADR 0005 invariant below), so a burst of synchronised
+  calls counts one unit each; never consume it inside a Doctrine transaction; body over 128 KiB (the longest valid conversation in 4-byte characters is ~104 kB — 64 KiB, the spec's
+  first figure, refused it) → 413 `/errors/request-too-large`, judged by
+  `AssistantRequestSizeListener` at priority 4, *after* the firewall, so an anonymous or base-tier caller only
+  ever learns it is refused); task 6 (#265) done: the `/(fr|en)/assistant` page
+  (`ROLE_TRUSTED`/`ROLE_SUPER`), see "API-backed content"; task 4 (#263) done: the **nominative CV opens
+  the corpus** (« CV détaillé » / « Detailed CV »), extracted from the very file `GET /api/cv` serves
+  (`app.cv_file_path`) by **`pdftotext`** — `poppler-utils` in the Dockerfile's `base` stage (16 MB),
+  called through `spatie/pdf-to-text` by `Infrastructure/Pdf/PopplerPdfTextExtractor`, behind
+  `Application/Corpus/PdfTextExtractorInterface`. `smalot/pdfparser`, the spec's first choice, was
+  dropped (D7 amended): on the real CV it gave no blank line between paragraphs, hundreds of `<>`
+  artefacts and detached bullets. Re-extracted on **every** render, never cached (`cache.app` is the
+  DB, ADR 0005) — ~13 ms measured; absent file → the section stays and says the CV is not available
+  (not an error); **present but unusable** (binary missing, unreadable PDF, > 5 s, no text layer,
+  > 30 000 characters — `MAX_CHARACTERS`, the cost bound) → **degraded mode**, decided by the owner:
+  same "not available" section, the assistant still answers, and a `warning` carries a stable
+  `reason` (+ exit code or length), **never** the text, stdout or stderr (`ProcessFailedException`
+  copies both, so it is neither logged nor rethrown). `pdftotext` runs **without the worker's
+  environment** (every inherited variable set to `false`): Symfony Process would otherwise hand it
+  `DATABASE_URL`, `APP_SECRET` and the API keys. `ExtractedTextNormalizer` drops page numbers at page
+  edges, keeps a line repeated **identically** at the edge of every page **once** rather than
+  deleting it (a CV carrying the first name only in its header would lose it — and the comparison is
+  exact, or two date lines at two page edges would pass for one footer), and joins a line to the next
+  only if it fills its column (≥ 75 % of the paragraph's longest line **and** ≥ 40 characters) and
+  doesn't end a sentence (pdftotext leaves headings glued to their paragraph). CI's `test-backend` installs `poppler-utils` (bounded
+  apt step), so the extraction tests pin structure, not an exact string (Ubuntu's poppler ≠ Alpine's).
+  The test env's `CV_FILE_PATH` is `dummy.pdf` (no text): functional tests that need a real CV swap
+  the public-in-test `CorpusRenderer` for one built on the fictional fixture
+  (`tests/Ai/Assistant/Infrastructure/Pdf/Fixtures/cv-fictif.{html,pdf}`, regeneration command in the
+  HTML). **Never print the real CV's text in an agent session** — inspect it by counts only. Task 2 facts
+  to keep: **the service composes its own system message** (preamble file + corpus rendered by
+  `CorpusRenderer`, D8) because `SystemPromptInputProcessor` skips `ai.yaml`'s prompt as soon as the
+  `MessageBag` carries one; **the agent is injected by id** (`ai.agent.career_assistant`), never
+  `PlatformInterface` by type, which autowires to Anthropic (D3); the stream is `text/event-stream` with JSON
+  `data` — `delta` `{text}`, then `done` `{promptTokens, completionTokens, durationMs}` or `error`
+  `{reason}` — and a provider failure **before the first fragment** is a 503 problem+json
+  (`/errors/assistant-unavailable`, rendered by `AssistantProblemResponseListener`, the route not being an API
+  Platform operation), the call being primed before the 200 is sent; `ReplayRefusingHttpClient` stops the
+  bridge's `EventSourceHttpClient` from replaying a cut stream (a second, billed generation). Two rules from
+  the task's security review: **`AssistantUnavailableException` never chains the bridge's exception** — the
+  kernel's `ErrorListener` logs the whole `previous` chain, and the bridge copies the provider's response
+  body into its message (issue #269 tracks the same defect on the translator); and every assistant exception
+  a client can cause implements `ProblemExceptionInterface`, since `exception_to_status` has no effect on
+  this route — with a **literal** message only, since the listener returns it as `detail`
+  (`ProblemDetailStaysStaticTest` parses every `ProblemExceptionInterface` of `src/` by tokens; a
+  dynamic message elsewhere needs a justified entry in its allow-list), and a `log_level` in
+  `framework.exceptions` — never `#[WithLogLevel]`, which would make the domain depend on HttpKernel —
+  or the kernel logs it `critical`. The corpus's `<documents>` neutralisation is **linear by
+  construction** (split on the word, chevrons stripped from the run before it): a regex in a loop was
+  quadratic on cascading chevrons, and nothing but a timing test sees that. `ai.scaleway.http_client` also carries `max_duration: 50`,
+  `timeout` being an idle timeout only, kept under the 60 s of `fastcgi_read_timeout` and the ingress
+  so their HTML 504 never beats the typed 503. The endpoint takes JSON only (`acceptFormat`, 415). **The project id is part of the platform's `baseUrl`**
+  (`https://api.scaleway.ai/<project>/v1/...`): without it the API targets the organisation's default project,
+  and a key held by an IAM application whose policy is scoped to another project gets a **403** — which the
+  0.13.0 bridge reports as `Error "unknown": "Unknown error"`, hiding the status. When that message shows up,
+  call the API directly and read the status before suspecting anything else.
+  **The Scaleway platform is declared in `services.yaml` (`app.ai.platform.scaleway`, the bridge's
+  `Factory::createPlatform`), not in `ai.yaml`** (spec 0005 D2): `symfony/ai-bundle` 0.13.0 hard-codes the
+  default `http_client` for a `scaleway` platform and ignores its `http_client` option, so the ADR's dedicated
+  client (`ai.scaleway.http_client`, `framework.yaml`: timeout 40 s, `max_redirects: 0`) can only reach it that
+  way. Don't move it back into `ai.yaml` until a bundle version honours the option;
+  `tests/Ai/Assistant/Infrastructure/ScalewayPlatformWiringTest` pins the wiring (mock behind
+  `ai.scaleway.http_client.scoping.inner`, asserts URL, bearer, timeout, `max_redirects`, model, bounds). The
+  Scaleway recipe's `ai_scaleway_platform.yaml`/`ai_generic_platform.yaml` (the latter from the transitive
+  `symfony/ai-generic-platform`) were deleted — delete them again if a recipe update recreates them. The
+  shared test agent is `tests/Ai/Support/FakeAgent`. The bundle is **Symfony AI**, pinned in **exact version** (`symfony/ai-bundle`,
+  `symfony/ai-anthropic-platform`, `symfony/ai-scaleway-platform`, `symfony/ai-agent`, all `0.13.0`, no `^` while 0.x); the platform and the
   `translator` agent (`claude-sonnet-5`, `max_tokens` 4096 — the Anthropic wire name, the bridge merges
   options as-is —, `tools: false`, system prompt in `config/ai/prompts/translator.txt`) are declared in
   `config/packages/ai.yaml` on a dedicated scoped client `ai.http_client` (`framework.yaml`: timeout 40 s,
@@ -719,6 +822,15 @@ Content management for all of the above, plus user administration, gated end-to-
   content negotiation, and `GET /api/docs` without an `Accept` header answered **406** — and -100 sits
   between API Platform's own `ExceptionListener` (-96) and Symfony's `ErrorListener` (-128), so it never
   runs on errors API Platform already handled. `ApiJsonErrorFormatListenerTest` + `ApiErrorFormatTest` pin it.
+- **Every quota 429 gets its `Retry-After` from one listener** (issue #273):
+  `Shared/Infrastructure/Http/RetryAfterListener` reads any exception implementing
+  `Shared/Domain/Exception/RetryAfterAware` (a PHP 8.4 interface property, `$retryAfter { get; }`, met by
+  the exceptions' promoted `public readonly`). It notes the deadline on the request at **`kernel.exception`
+  priority 64** and sets the header at `kernel.response` — **on a 429 only** (a failed render that ends in a 500 must not carry it) — with an injected `ClockInterface`. 64 is not
+  arbitrary: it must sit above every listener that *builds* the 429 and so stops propagation — API
+  Platform (-96), `AssistantProblemResponseListener` (-64), `BaseAccessRateLimitExceptionListener` (0,
+  which keeps its own body). A new quota exception implements the interface; never write a fifth
+  per-context copy. `RateLimiterLockFailureListener` stays apart on purpose (fixed delay, priority 16).
 
 ### Seeding (`app:*:seed`)
 
@@ -827,6 +939,14 @@ error state (`role="alert"`), and the content. `main.ts` provides both repositor
 difference that comes from the backend: **its endpoint has no `{locale}` segment** (`GET /api/watch`) — a
 version number is a fact, not a translation, so only the surrounding UI strings are localized. Don't add new content here unless it's genuinely backend-managed (i.e. editable
 from the backoffice) — purely static content still belongs in `infrastructure/portfolio/content/{fr,en}.ts`.
+
+The assistant follows the same layered shape without being backoffice content: its slice (spec 0005,
+`ROLE_TRUSTED`/`ROLE_SUPER`) is the streaming variant, `domain/assistant` →
+`infrastructure/assistant/HttpAssistantRepository.ts` (reads the SSE stream with `fetch` + `ReadableStream`,
+incremental parser `serverEvents.ts`) → `application/assistant/useAssistant.ts` (state machine
+`idle|streaming|error`; the sliding window `buildConversationWindow` copies the backend's D6 bounds and counts
+in code points, never `.length`; a 401/403 calls `markSessionExpired()`) →
+`presentation/pages/AssistantPage.vue`.
 
 #### Backoffice (`/admin`, `ROLE_SUPER`)
 
@@ -1044,7 +1164,8 @@ To add a test for a new file: create it at the mirrored path under `tests/`, not
 #### Lint
 
 `npm run lint` (`eslint .`, flat config in `eslint.config.js`): `eslint-plugin-vue` (`flat/recommended`) +
-`@vue/eslint-config-typescript` (non type-checked — type errors are already caught by `vue-tsc -b` in the
+`typescript-eslint` `recommended` extended to `.vue`, with `vue-eslint-parser` delegating `<script lang="ts">`
+to the TypeScript parser (non type-checked — type errors are already caught by `vue-tsc -b` in the
 `build` script, ESLint here is style/correctness only) + `eslint-plugin-vuejs-accessibility`
 (`flat/recommended`, see the a11y section above) + `@intlify/eslint-plugin-vue-i18n` (`flat/recommended`,
 `settings['vue-i18n'].localeDir` points at `infrastructure/i18n/locales/*.json`) — this last one is why UI-chrome
@@ -1052,6 +1173,20 @@ strings and portfolio content are kept in separate files (see i18n above): mixin
 `no-raw-text`/key-usage checks meaningless. `no-raw-text`'s `ignorePattern` is configured to skip strings with
 no letters at all, for purely decorative glyphs (the header logo's `</>`, the "et aussi" middle dot). `npm run
 lint:fix` for the auto-fixable (mostly formatting) rules.
+
+**The TypeScript-in-SFC wiring is written by hand, not `@vue/eslint-config-typescript`** (issue #328,
+2026-10-03). That wrapper pulled `fast-glob` → `micromatch` → `braces`, and `braces` ≤ 3.0.3 got a *high*
+advisory with no patched release (GHSA-vfj7-8cjw-p6xm): `npm audit --audit-level=high` turned every branch
+red. It only used `fast-glob` to list the `.vue` files to type-check, which this project never does, so
+`eslint.config.js` now builds the same three blocks itself (see its docblock). The replacement was proven
+by `eslint --print-config` on a `.ts`, a `.vue`, a spec and two config files — byte-identical before and
+after — plus a clean lint of all 365 files; repeat that comparison if the block is ever touched.
+Revisit it only on a real trigger: adopting type-aware rules (`recommendedTypeChecked` needs the
+`projectService` and a per-file split of `.vue` files with and without TypeScript, which is what the
+wrapper automated), or a wrapper release that drops `fast-glob`. **The general rule this set**: when a
+blocking advisory in *dev tooling* has no fix, first look for a way to take the vulnerable package out of
+the tree; if there is none, wait for the fix. Never `--omit=dev` (it would hide the next advisory in the
+build chain, which can be a supply-chain hole) and never a silent audit exception.
 
 ### Frontend build/deploy
 
@@ -1137,8 +1272,12 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   container for that test. **Never consume a limiter inside `wrapInTransaction`**: the lock and
   the `cache_items` row live on two connections PostgreSQL does not relate, which both deadlocks
   (until `lock_timeout`) and republishes the window after the lock is released. The Monolog
-  `lock` channel has its own handler capped at `notice` (`LockLogChannelTest`): the component
-  logs every acquire/release in `debug` with the resource — an IP or a username.
+  `lock` channel has its own handler at `warning` and no other prod handler (`main`, `console`)
+  receives it (`LockLogChannelTest`, issue #315): the component logs every acquire/release in
+  `debug` and every failure in `notice`, always with the resource — an IP or a username — and
+  never above `notice`, so the channel is silent in prod; a lock failure stays visible through
+  `RateLimiterLockFailureListener`'s `error` line, which never names the resource. A future lock
+  taken outside an `/api` request would fail silently: revisit this before adding one.
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
   it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would
@@ -1207,16 +1346,28 @@ GitHub variant, and never serve it from the site (it lives under `.github/`, not
   `CreateContainerConfigError` (incident v0.6.0). The rule that decides: **hash it if kustomize owns
   every reference to it, don't if anything outside kustomize names it.** Verify a config change
   actually landed with `kubectl exec … -c nginx -- nginx -T | grep <the new directive>`.
-- **Five nginx rate-limit zones, two different jobs.** `contact` (10 r/m), `pwsetup` (20 r/m),
-  `baseaccess` (20 r/m, issue #77 — each call signs an RS256 JWT) and `login` (10 r/m, burst 10,
-  ADR 0005 — the backstop under Symfony's `login_throttling`, which is the real ceiling) protect a
-  *side effect* — sending mail, guessing a token, minting a token, guessing a password.
+- **Six nginx rate-limit zones, two different jobs.** `contact` (10 r/m), `pwsetup` (20 r/m),
+  `baseaccess` (20 r/m, issue #77 — each call signs an RS256 JWT), `login` (10 r/m, burst 10,
+  ADR 0005 — the backstop under Symfony's `login_throttling`, which is the real ceiling) and
+  `assistant` (10 r/m, burst 5, plus `limit_conn assistantconn 1` — each call is billed and each
+  stream holds one of a pod's 8 php-fpm workers; the zones live in each sidecar, so an IP gets N times
+  these ceilings with N backend pods) protect a *side effect* — sending mail, guessing a token,
+  minting a token, guessing a password, spending money.
   `publicapi` (600 r/m, burst 200, on
   `location /`) protects the *resource*: without it every public read reaches PHP and Postgres as
   often as asked. Its ceiling is deliberately far above real use — behind a mobile carrier's CGNAT
   thousands of visitors share one address, and a tight cap would cut them all off at once, which is
   the very DoS audit C7 was about. `/healthz` uses an exact-match `location =`, so kubelet probes are
   never capped.
+- **`location ^~ /api/assistant/` does its own `fastcgi_pass`** (spec 0005 D9, both confs). The career
+  assistant streams `text/event-stream`, so the location sets `fastcgi_buffering off`; through
+  `try_files … /index.php` the internal redirect to `location ~ ^/index\.php` would leave that directive
+  behind. Measured on 2026-09-26: `X-Accel-Buffering: no` (set by `EventStreamResponse`) already suffices
+  for the sidecar, which consumes it — the ingress never sees it and relies on its own `proxy-buffering`,
+  `off` by default. The location is kept as defence in depth, and carries the `assistant` zones above,
+  `fastcgi_ignore_client_abort on` (PHP holds its worker after a client abort, so the `limit_conn`
+  slot must too) and an `error_page 429` that answers problem+json `/errors/rate-limited` — Symfony's
+  own 429s are not intercepted.
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's

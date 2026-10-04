@@ -11,7 +11,11 @@ sensible ou personnellement identifiant, il ne doit exister ni dans
 l'historique Git ni dans une image Docker construite.
 
 - `private/cv/cv.pdf` — servi par `GET /api/cv` (`App\Portfolio\Cv`),
-  protégé par authentification (`ROLE_USER`, voir `config/packages/security.yaml`).
+  réservé au palier nominatif (`ROLE_TRUSTED`, voir `config/packages/security.yaml`
+  et l'ADR 0003). Le même fichier ouvre le corpus de l'assistant de parcours
+  (`App\Ai\Assistant`, spec 0005 D7) : son texte en est extrait par
+  `pdftotext` à chaque question, jamais mis en cache ni journalisé. Un PDF sans
+  couche texte (un scan) y est traité comme absent.
   À déposer manuellement :
   - en local : copier le fichier à cet emplacement, `make sh` (bind mount)
     le voit immédiatement ;

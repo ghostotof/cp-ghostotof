@@ -28,8 +28,8 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
  * disponibles pour qu'API Platform convertisse l'exception en problem+json) et
  * après CsrfCookieRequestSubscriber (priorité 20), mais très en amont du
  * contrôleur. PasswordSetupRateLimitExceededException est mappée sur 429 via
- * exception_to_status (api_platform.yaml) ; PasswordSetupRateLimitRetryAfterListener
- * pose l'en-tête Retry-After sans modification.
+ * exception_to_status (api_platform.yaml) ; l'écouteur commun
+ * App\Shared\Infrastructure\Http\RetryAfterListener pose l'en-tête Retry-After.
  */
 #[AsEventListener(event: RequestEvent::class, priority: 15)]
 final readonly class PasswordSetupRateLimitRequestListener

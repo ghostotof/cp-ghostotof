@@ -13,13 +13,18 @@ use Symfony\Component\HttpKernel\Event\ExceptionEvent;
  * POST /api/account/base-access n'est pas une ressource API Platform (simple
  * contrôleur, cf. BaseAccessController) : contrairement à
  * PasswordSetupRateLimitExceededException, il n'y a pas de exception_to_status
- * pour construire la réponse 429 à sa place. Ce listener fait donc les deux
- * choses en un seul passage (corps + en-tête Retry-After), sans l'indirection
- * en deux temps utilisée côté API Platform.
+ * pour construire la réponse 429 à sa place. Ce listener en construit donc le
+ * corps.
+ *
+ * L'en-tête Retry-After n'est pas posé ici mais par l'écouteur commun
+ * App\Shared\Infrastructure\Http\RetryAfterListener (issue #273), qui a noté
+ * l'échéance plus tôt dans `kernel.exception` (priorité 64, au-dessus de
+ * celle-ci : setResponse() arrête la propagation).
  */
 final class BaseAccessRateLimitExceptionListener
 {
-    #[AsEventListener(event: ExceptionEvent::class)]
+    // Priorité explicite : RetryAfterListener (64) doit passer avant.
+    #[AsEventListener(event: ExceptionEvent::class, priority: 0)]
     public function __invoke(ExceptionEvent $event): void
     {
         $exception = $event->getThrowable();
@@ -28,12 +33,6 @@ final class BaseAccessRateLimitExceptionListener
             return;
         }
 
-        $retryAfterSeconds = max(0, $exception->retryAfter->getTimestamp() - time());
-
-        $event->setResponse(new JsonResponse(
-            ['detail' => $exception->getMessage()],
-            429,
-            ['Retry-After' => (string) $retryAfterSeconds],
-        ));
+        $event->setResponse(new JsonResponse(['detail' => $exception->getMessage()], 429));
     }
 }

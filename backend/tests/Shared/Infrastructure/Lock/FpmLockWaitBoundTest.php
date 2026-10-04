@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Lock;
 
+use App\Security\Authentication\Infrastructure\Http\RateLimiterLockFailureListener;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -40,6 +41,19 @@ final class FpmLockWaitBoundTest extends TestCase
         // nginx a déjà répondu 504, le worker n'a plus personne à servir. Au-dessus
         // aussi des 50 s de max_duration de l'assistant en flux.
         self::assertMatchesRegularExpression('/^request_terminate_timeout = 65s$/m', $this->productionPool());
+    }
+
+    /**
+     * Issue #276 : une panne du verrou répond 503 avec `Retry-After`. Un délai
+     * inférieur au `lock_timeout` renverrait le client sur un verrou qui n'a
+     * pas encore eu le temps d'échouer une seconde fois — il entretiendrait la
+     * saturation qu'il signale. Le lien n'était tenu que par un commentaire.
+     */
+    public function testTheRetryAfterOfALockFailureOutlastsTheLockTimeout(): void
+    {
+        self::assertSame(1, preg_match('/lock_timeout=(\d+)s/', $this->productionPool(), $matches));
+
+        self::assertGreaterThan((int) $matches[1], RateLimiterLockFailureListener::RETRY_AFTER_SECONDS);
     }
 
     private function productionPool(): string

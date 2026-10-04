@@ -16,6 +16,8 @@ use App\Security\User\Domain\Entity\CpgUser;
  *  - les événements Symfony (login réussi/raté/throttlé, logout) et le 403
  *    backoffice : Infrastructure\Log\SecurityEventsSubscriber ;
  *  - les deux gardes CSRF : juste avant de lever leur exception ;
+ *  - la panne du verrou des limiteurs (issue #276) :
+ *    Infrastructure\Http\RateLimiterLockFailureListener ;
  *  - l'émission d'un jeton du palier de base : BaseAccessController ;
  *  - les actions d'administration et l'activation d'un compte : les cas
  *    d'usage de Security\User\Application, après l'action réussie ;
@@ -55,6 +57,15 @@ interface SecurityAuditLoggerInterface
 
     /** 403 sur `/api/backoffice` : un appelant authentifié sans ROLE_SUPER. */
     public function backofficeAccessDenied(): void;
+
+    /**
+     * Requête refusée en 503 parce que le verrou partagé d'un limiteur de
+     * débit n'a pu être pris (ADR 0005 D8/D10, issue #276). Sans sujet : la
+     * ressource verrouillée contient la clé du limiteur (IP, identifiant
+     * tenté), le chemin suffit à dire lequel a cédé. Distinct de
+     * `login-failed` : aucun identifiant n'a été vérifié.
+     */
+    public function rateLimiterUnavailable(): void;
 
     public function userInvited(CpgUser $user): void;
 

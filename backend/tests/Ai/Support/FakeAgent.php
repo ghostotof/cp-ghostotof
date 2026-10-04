@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Ai\Translation\Support;
+namespace App\Tests\Ai\Support;
 
 use Symfony\AI\Agent\AgentInterface;
 use Symfony\AI\Agent\Execution\Execution;

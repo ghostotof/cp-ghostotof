@@ -9,6 +9,7 @@
     "incidents": "Incidents",
     "caseStudies": "Études de cas",
     "anonymousCv": "CV sans identité",
+    "assistant": "Assistant",
     "career": "Parcours",
     "lessonsLearned": "Retours d'expérience"
   },
@@ -36,7 +37,8 @@
     "instantAccessRateLimited": "Trop de tentatives depuis cette adresse. Réessayez plus tard.",
     "instantAccessError": "L'accès n'a pas pu être obtenu. Réessayez plus tard.",
     "baseAccessBadge": "Accès de base",
-    "endBaseAccess": "Terminer cet accès"
+    "endBaseAccess": "Terminer cet accès",
+    "accountMenu": "Menu du compte"
   },
   "admin": {
     "heading": "Administration",
@@ -595,6 +597,10 @@
       "title": "CV sans identité",
       "description": "Compétences, ancienneté et réalisations par domaine — sans nom, employeur ni coordonnées."
     },
+    "assistant": {
+      "title": "Assistant carrière",
+      "description": "Posez vos questions sur mon parcours à un assistant, réservé aux personnes de confiance."
+    },
     "caseStudies": {
       "title": "Études de cas",
       "description": "Problèmes techniques réels, solutions retenues et résultats mesurés — sans nom de client."
@@ -724,5 +730,40 @@
     "message": "Ce site ne dépose aucun cookie lors d'une simple visite. Seuls des cookies techniques, strictement nécessaires, sont posés si vous vous connectez ou demandez l'accès instantané : il n'y a donc rien à accepter ni à refuser.",
     "learnMore": "En savoir plus",
     "dismiss": "Compris"
+  },
+  "assistant": {
+    "title": "Assistant carrière",
+    "intro": "Posez vos questions sur mon parcours, mes compétences et mes réalisations. L'assistant répond à partir du CV et des études de cas, et ne conserve rien de la conversation.",
+    "disclaimer": {
+      "notice": "L'assistant peut se tromper : les documents font foi.",
+      "lead": "Pour vérifier une réponse, consultez :",
+      "caseStudies": "les études de cas",
+      "anonymousCv": "le CV sans identité",
+      "downloadCv": "télécharger le CV"
+    },
+    "log": "Conversation avec l'assistant",
+    "empty": "Aucun message pour l'instant. Posez votre première question ci-dessous.",
+    "roles": {
+      "user": "Vous",
+      "assistant": "Assistant"
+    },
+    "incomplete": "Réponse interrompue, elle est incomplète.",
+    "answering": "L'assistant répond…",
+    "question": "Votre question",
+    "counter": "{count} / {max} caractères",
+    "send": "Envoyer",
+    "reset": "Nouvelle conversation",
+    "errors": {
+      "unauthenticated": "Votre session a expiré.",
+      "forbidden": "Votre session ne permet plus d'utiliser l'assistant. Reconnectez-vous.",
+      "relogin": "Se reconnecter",
+      "validation": "La conversation n'a pas pu être envoyée. Réessayez.",
+      "tooLarge": "La conversation est trop longue : commencez-en une nouvelle.",
+      "rateLimited": "Trop de questions posées. Réessayez dans un moment.",
+      "rateLimitedIn": "Trop de questions posées. Réessayez dans {minutes} minute | Trop de questions posées. Réessayez dans {minutes} minutes",
+      "unavailable": "L'assistant est momentanément indisponible. Réessayez plus tard.",
+      "network": "La connexion a été interrompue. Réessayez.",
+      "unknown": "Une erreur inattendue est survenue. Réessayez."
+    }
   }
 }

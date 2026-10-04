@@ -4,7 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent } from 'vue'
 import AppHeader from '../../../src/presentation/layout/AppHeader.vue'
 import { createAppI18n } from '../../../src/presentation/i18n'
-import { AUTH_REPOSITORY, markBaseAccessGranted, useAuth } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, markBaseAccessGranted, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
 import { CV_REPOSITORY } from '../../../src/application/cv/useCvDownload'
 import { BASE_ACCESS_REPOSITORY } from '../../../src/application/baseAccess/useBaseAccess'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
@@ -110,6 +110,7 @@ async function mountHeader(
       { path: '/:locale(fr|en)/experience', name: 'experience', component: StubPage },
       { path: '/:locale(fr|en)/anonymous-cv', name: 'anonymous-cv', component: StubPage },
       { path: '/:locale(fr|en)/admin', name: 'admin-technologies', component: StubPage },
+      { path: '/:locale(fr|en)/assistant', name: 'assistant', component: StubPage },
     ],
   })
   await router.push(initialPath)
@@ -139,6 +140,15 @@ async function mountHeader(
 
 function findButton(wrapper: Awaited<ReturnType<typeof mountHeader>>['wrapper'], text: string) {
   return wrapper.findAll('button').find((button) => button.text() === text)
+}
+
+async function openAccountMenu(wrapper: Awaited<ReturnType<typeof mountHeader>>['wrapper']): Promise<void> {
+  await wrapper.get('button[aria-controls="account-menu"]').trigger('click')
+}
+
+/** Libellés des entrées du menu du compte, dans l'ordre (l'intitulé de palier n'en est pas une). */
+function menuItems(wrapper: Awaited<ReturnType<typeof mountHeader>>['wrapper']): string[] {
+  return wrapper.get('#account-menu').findAll('.dropdown-item').map((item) => item.text())
 }
 
 describe('AppHeader', () => {
@@ -581,6 +591,144 @@ describe('AppHeader', () => {
 
       await primeBaseAccessState()
       await expectNoAccessibilityViolation((await mountHeader()).wrapper)
+    })
+  })
+
+  describe('lien « Assistant » (#265)', () => {
+    const TARGET = 'a[href="/fr/assistant"]'
+
+    it('anonyme : aucun lien vers l\'assistant', async () => {
+      await primeAuthState(null)
+      const { wrapper } = await mountHeader()
+
+      expect(wrapper.find(TARGET).exists()).toBe(false)
+    })
+
+    it('palier de base : aucun lien vers l\'assistant', async () => {
+      await primeBaseAccessState()
+      const { wrapper } = await mountHeader()
+
+      expect(wrapper.find(TARGET).exists()).toBe(false)
+    })
+
+    it('palier nominatif : un lien texte masqué sous 768 px, et une entrée du menu du compte', async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader()
+
+      const textLink = wrapper.get(TARGET)
+      expect(textLink.text()).toBe('Assistant')
+      expect(textLink.classes()).toEqual(expect.arrayContaining(['d-none', 'd-md-inline-flex']))
+
+      await openAccountMenu(wrapper)
+
+      expect(wrapper.get('#account-menu').find(TARGET).text()).toBe('Assistant')
+    })
+
+    it('super-admin : le lien est présent aussi, contrairement au bouton CV', async () => {
+      await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader()
+
+      expect(wrapper.findAll(TARGET)).toHaveLength(1)
+      await openAccountMenu(wrapper)
+      expect(wrapper.findAll(TARGET)).toHaveLength(2)
+    })
+
+    it('la session expire : les liens disparaissent', async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader()
+      expect(wrapper.findAll(TARGET)).toHaveLength(1)
+
+      markSessionExpired()
+      await flushPromises()
+
+      expect(wrapper.find(TARGET).exists()).toBe(false)
+    })
+  })
+
+  /**
+   * Sous 768 px (là où la navigation passe déjà dans le menu mobile), les
+   * actions d'un palier connecté se replient dans un seul menu « compte » :
+   * avec le lien Assistant (#265), l'en-tête d'un super-admin débordait de
+   * 74 px à 360 px de large, même réduit à des icônes.
+   */
+  describe('menu du compte sous 768 px', () => {
+    const TOGGLE = 'button[aria-controls="account-menu"]'
+
+    it('anonyme : pas de menu du compte', async () => {
+      await primeAuthState(null)
+      const { wrapper } = await mountHeader()
+
+      expect(wrapper.find(TOGGLE).exists()).toBe(false)
+    })
+
+    it('le bouton est nommé, masqué à partir de 768 px, et fermé par défaut', async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader()
+
+      const toggle = wrapper.get(TOGGLE)
+      expect(toggle.attributes('aria-label')).toBe('Menu du compte')
+      expect(toggle.attributes('aria-haspopup')).toBe('true')
+      expect(toggle.attributes('aria-expanded')).toBe('false')
+      expect(toggle.get('svg').attributes('aria-hidden')).toBe('true')
+      expect(toggle.element.closest('.d-md-none')).not.toBeNull()
+      expect(wrapper.find('#account-menu').exists()).toBe(false)
+    })
+
+    it('palier nominatif : Assistant, CV et Déconnexion ; les boutons texte sont masqués sous 768 px', async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader()
+
+      expect(findButton(wrapper, 'Déconnexion')?.classes()).toEqual(expect.arrayContaining(['d-none', 'd-md-inline-flex']))
+      await openAccountMenu(wrapper)
+
+      expect(wrapper.get(TOGGLE).attributes('aria-expanded')).toBe('true')
+      expect(menuItems(wrapper)).toEqual(['Assistant', 'Télécharger mon CV', 'Déconnexion'])
+    })
+
+    it('super-admin : Assistant, Administration et Déconnexion, pas de CV', async () => {
+      await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader()
+
+      expect(wrapper.get('a[href="/fr/admin"]').classes()).toEqual(expect.arrayContaining(['d-none', 'd-md-inline-flex']))
+      await openAccountMenu(wrapper)
+
+      expect(menuItems(wrapper)).toEqual(['Assistant', 'Administration', 'Déconnexion'])
+    })
+
+    it('palier de base : l\'intitulé du palier, « Terminer cet accès » et la connexion', async () => {
+      await primeBaseAccessState()
+      const { wrapper } = await mountHeader()
+
+      expect(wrapper.get('.badge').classes()).toEqual(expect.arrayContaining(['d-none', 'd-md-inline-flex']))
+      await openAccountMenu(wrapper)
+
+      expect(wrapper.get('#account-menu .dropdown-header').text()).toBe('Accès de base')
+      expect(menuItems(wrapper)).toEqual(['Terminer cet accès', 'Connexion'])
+    })
+
+    it('« Déconnexion » du menu déconnecte et referme le menu', async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const authRepository = createStubAuthRepository({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader('/fr', authRepository)
+
+      await openAccountMenu(wrapper)
+      const logout = wrapper.get('#account-menu').findAll('button').find((button) => 'Déconnexion' === button.text())
+      await logout?.trigger('click')
+      await flushPromises()
+
+      expect(authRepository.logout).toHaveBeenCalledOnce()
+      expect(wrapper.find('#account-menu').exists()).toBe(false)
+    })
+
+    it('Échap referme le menu', async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader()
+
+      await openAccountMenu(wrapper)
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      await flushPromises()
+
+      expect(wrapper.find('#account-menu').exists()).toBe(false)
     })
   })
 })

@@ -14,6 +14,37 @@ framework:
     trusted_proxies: private_ranges
     trusted_headers: ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-forwarded-port', 'x-forwarded-prefix']
 
+    # Niveau de journalisation de l'ErrorListener du noyau, qui met sinon en
+    # `critical` toute exception hors HttpExceptionInterface et en `error` tout
+    # 4xx (tests/Ai/Assistant/Infrastructure/AssistantExceptionLogLevelTest.php).
+    # Ici plutôt qu'en `#[WithLogLevel]` : le domaine ne dépend pas de HttpKernel.
+    # Ne viser que des classes précises : un mapping sur HttpException
+    # abaisserait le niveau de tous les 4xx de l'application.
+    exceptions:
+        # Erreur du client, bornes D6 comprises : pas un incident.
+        App\Ai\Assistant\Domain\Exception\InvalidConversationException:
+            log_level: info
+        # Quota horaire atteint (D6) : le comportement attendu de la borne.
+        App\Ai\Assistant\Domain\Exception\AssistantRateLimitExceededException:
+            log_level: info
+        # Corps au-delà de 128 Kio (spec 0005 M4) : erreur du client.
+        App\Ai\Assistant\Infrastructure\Http\RequestBodyTooLargeException:
+            log_level: info
+        # Panne d'un tiers : la cause (classe, statut) est déjà sur `ai_usage`.
+        # `warning` reste visible en production (LOG_LEVEL=warning).
+        App\Ai\Assistant\Domain\Exception\AssistantUnavailableException:
+            log_level: warning
+        # Content-Type refusé (415) : une erreur du client, jamais un incident.
+        # Seule exception de cette liste qui ne soit pas propre à l'assistant,
+        # et c'est voulu (issue #320) : la classe est levée par
+        # #[MapRequestPayload(acceptFormat)] sur /api/assistant/answers, mais
+        # aussi par ContentNegotiationProvider, DeserializeProvider,
+        # ParameterProvider et DeserializeListener d'API Platform — donc sur
+        # **toute** route de l'API, backoffice compris. Avec LOG_LEVEL=warning,
+        # aucun 415 n'apparaît dans les journaux de production.
+        Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException:
+            log_level: info
+
     # Aucune session, dans aucun environnement (audit 2026-09-16, constat A23).
     # L'application est sans état de bout en bout : les deux firewalls sont
     # `stateless: true`, l'authentification tient dans un JWT en cookie, il n'y
@@ -46,6 +77,22 @@ framework:
             ai.http_client:
                 base_uri: 'https://api.anthropic.com'
                 timeout: 40
+                max_redirects: 0
+            # Même bornes pour l'assistant de parcours (spec 0005, ADR 0004 D5) :
+            # consommé par la plateforme Scaleway déclarée dans services.yaml, le
+            # bundle ne sachant pas le lui transmettre (spec 0005 D2).
+            ai.scaleway.http_client:
+                base_uri: 'https://api.scaleway.ai'
+                timeout: 40
+                # `timeout` est un délai d'inactivité : un flux qui goutte (un
+                # fragment toutes les 39 s) le repousserait sans fin et tiendrait un
+                # worker php-fpm. Plafond total, large au-dessus d'une réponse de
+                # 1 024 jetons (spec 0005 D6). `fastcgi_read_timeout` (nginx) et le
+                # délai de lecture de l'ingress, 60 s par défaut, mesurent l'attente
+                # entre deux lectures, pas un total : le risque d'un 504 HTML avant le
+                # 503 typé n'existe qu'avant le premier octet, et cette attente-là
+                # est bornée ici sous 60 s.
+                max_duration: 50
                 max_redirects: 0
 
     #esi: true

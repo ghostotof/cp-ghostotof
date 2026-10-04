@@ -26,7 +26,7 @@ de la préprod à la prod.
   assistant de traduction FR/EN dans le backoffice via Symfony AI, derrière une interface
   applicative, coût borné par construction, jamais de suggestion persistée sans un humain, aucun
   test qui sort sur le réseau. La phase 2, un assistant conversationnel sur le parcours réservé
-  au palier nominatif, est spécifiée ([spec 0005](.claude/specs/0005-career-assistant.md)).
+  au palier nominatif, est développée ([spec 0005](.claude/specs/archive/2026-10-04-spec-0005-assistant-parcours/0005-career-assistant.md)).
 - **Une veille technique en données vivantes** ([ADR 0002](docs/adr/0002-veille-technique.md)) :
   fins de support et vulnérabilités connues des paquets réellement déployés, lues d'un snapshot
   local écrit par un CronJob — aucun appel sortant dans un chemin de rendu public.

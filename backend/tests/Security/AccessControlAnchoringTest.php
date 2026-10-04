@@ -94,6 +94,8 @@ final class AccessControlAnchoringTest extends KernelTestCase
         yield '/api/cv/ → ROLE_TRUSTED' => ['/api/cv/', ['ROLE_TRUSTED']];
         yield '/api/case-studies/fr → ROLE_USER' => ['/api/case-studies/fr', ['ROLE_USER']];
         yield '/api/anonymous-cv/en → ROLE_USER' => ['/api/anonymous-cv/en', ['ROLE_USER']];
+        yield '/api/assistant → ROLE_TRUSTED' => ['/api/assistant', ['ROLE_TRUSTED']];
+        yield '/api/assistant/answers → ROLE_TRUSTED' => ['/api/assistant/answers', ['ROLE_TRUSTED']];
 
         // --- Un voisin par préfixe n'hérite d'aucune règle : sa protection
         // doit être écrite, jamais déduite d'une regex trop large.
@@ -103,6 +105,7 @@ final class AccessControlAnchoringTest extends KernelTestCase
         yield '/api/cvs → aucune règle' => ['/api/cvs', null];
         yield '/api/case-studies-drafts → aucune règle' => ['/api/case-studies-drafts', null];
         yield '/api/anonymous-cv-full → aucune règle' => ['/api/anonymous-cv-full', null];
+        yield '/api/assistants → aucune règle' => ['/api/assistants', null];
     }
 
     /**
