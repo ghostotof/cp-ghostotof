@@ -78,7 +78,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This repository started as a freshly generated project skeleton (single "Init" commit). Real backend code now
 exists — the `Security` bounded context (`User` + `Authentication`), six `Portfolio` bounded contexts
 (`Experience`, `Quality`, `About`, `Contribution`, `Incident`, `Watch`, see Backend architecture below) and an
-`Ai` context whose first sub-context, `Translation`, is delivered (spec 0002, ADR 0004, v0.10.0/v0.10.1 — see `Ai/` below); every entity has a UUID v7 key (spec 0003, v0.11.0) and every ordered content is
+`Ai` context whose two sub-contexts are delivered — `Translation` (spec 0002, ADR 0004, v0.10.0/v0.10.1) and `Assistant` (spec 0005, v0.19.0), see `Ai/` below; every entity has a UUID v7 key (spec 0003, v0.11.0) and every ordered content is
 reordered by drag-and-drop with an explicit FR/EN link in the database (spec 0004, v0.12.0, see
 `Portfolio/Shared/` below) — and follows a DDD structure under
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
@@ -601,14 +601,14 @@ mid-migration.
 - **`Ai/`** — everything that talks to a language model, and nothing else does (ADR 0004,
   `docs/adr/0004-assistance-ia.md`; spec `.claude/specs/archive/2026-09-14-spec-0002-assistant-traduction/0002-ai-translation-assistant.md`). Sub-context per
   usage: `Ai/Translation/` (phase 1, **delivered 2026-09-14**, v0.10.0 then v0.10.1: the backoffice FR/EN
-  translation assistant, `POST /api/backoffice/translations`, `ROLE_SUPER`) and later `Ai/Assistant/` (phase 2,
+  translation assistant, `POST /api/backoffice/translations`, `ROLE_SUPER`) and `Ai/Assistant/` (phase 2,
   **D7 amended on 2026-09-15**: a conversational "ask about my career" assistant on the site, reserved to
   `ROLE_TRUSTED`, on Scaleway Generative APIs — the site's own host, `fr-par` — which is the one operator the
   nominative CV may reach (D3 amended); corpus injected in the context from the tier's existing providers,
   no tools, no vector store, nothing persisted, streamed response; the MCP server originally planned is
-  now an *alternative écartée*; **closed in `develop` on 2026-10-04** (PR #267, all six tasks and the
-  review follow-ups #318–#320/#323 merged; release, preprod/prod checks and the "delivered in vX.Y.Z" update of
-  this paragraph tracked in #324), spec archived at
+  now an *alternative écartée*; **delivered in v0.19.0 on 2026-10-04** (closed in `develop` by PR #267 — all six tasks and the
+  review follow-ups #318–#320/#323 merged —, released by #341; the remaining release checks live in #324),
+  spec archived at
   `.claude/specs/archive/2026-10-04-spec-0005-assistant-parcours/0005-career-assistant.md`, task 1 (#260) done: the `career_assistant` agent in `ai.yaml`,
   `mistral-small-3.2-24b-instruct-2506`, `max_tokens` 1024, `tools: false`, prompt preamble in
   `config/ai/prompts/career_assistant.txt`, key `SCALEWAY_AI_API_KEY` routed exactly like `ANTHROPIC_API_KEY`,
@@ -1733,8 +1733,9 @@ ADRs:
   `jti`, so a token copied beforehand stays valid until it expires (1 h for a login token, 15 min for the base
   tier). Read it before adding a revocation list, lengthening `token_ttl`, or gating anything more sensitive
   than the CV; it also names the two remedies and what each one costs.
-- `docs/adr/0004-assistance-ia.md` — **statut `accepté` (2026-09-14), phase 1 livrée** (spec 0002, issues
-  `spec-0002` closed, v0.10.0/v0.10.1 in production the same day; the case-studies admin page, #104, joined
+- `docs/adr/0004-assistance-ia.md` — **statut `accepté` (2026-09-14), phases 1 et 2 livrées** (phase 1: spec 0002, issues
+  `spec-0002` closed, v0.10.0/v0.10.1 in production the same day; phase 2: spec 0005, v0.19.0 in production on
+  2026-10-04; the case-studies admin page, #104, joined
   on 2026-09-14, so every admin form now has the button). Rules for anything that calls a language model: one importing class behind an interface,
   bundle pinned exact, no call from a public render path, only publishable backoffice content leaves, human in
   the loop, bounded cost, offline tests. **Amended 2026-09-15**: D7 is now the `ROLE_TRUSTED` career
