@@ -30,7 +30,7 @@ final readonly class CareerAssistantSystemPrompt
     {
         $preamble = is_file($this->preambleFile) ? file_get_contents($this->preambleFile) : false;
         if (false === $preamble || '' === trim($preamble)) {
-            throw new \LogicException(\sprintf("Préambule de l'assistant introuvable ou vide : %s.", $this->preambleFile));
+            throw new AssistantPreambleMissingException();
         }
 
         return rtrim($preamble)."\n\n".$this->corpusRenderer->render($locale);

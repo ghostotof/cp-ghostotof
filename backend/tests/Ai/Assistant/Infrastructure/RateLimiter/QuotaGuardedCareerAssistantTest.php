@@ -12,6 +12,7 @@ use App\Ai\Assistant\Domain\ValueObject\Conversation;
 use App\Ai\Assistant\Domain\ValueObject\ConversationMessage;
 use App\Ai\Assistant\Domain\ValueObject\Role;
 use App\Ai\Assistant\Infrastructure\RateLimiter\QuotaGuardedCareerAssistant;
+use App\Ai\Assistant\Infrastructure\RateLimiter\UnauthenticatedAssistantCallException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Ai\Translation\Support\InMemoryLogger;
 use PHPUnit\Framework\TestCase;
@@ -103,7 +104,7 @@ final class QuotaGuardedCareerAssistantTest extends TestCase
         try {
             $guarded->answer($this->conversation(), Locale::FR);
             self::fail('Une exception était attendue.');
-        } catch (\LogicException) {
+        } catch (UnauthenticatedAssistantCallException) {
             self::assertSame([], $this->journal->getArrayCopy());
         }
     }
