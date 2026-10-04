@@ -28,6 +28,9 @@ use Symfony\Component\Yaml\Yaml;
  * qu'en attribut sur les exceptions, pour que le domaine ne dépende pas de
  * HttpKernel. Le listener est construit avec le mapping lu dans framework.yaml,
  * comme le fait le conteneur.
+ *
+ * Le cas du 415 dépasse l'assistant : la classe est aussi levée par API
+ * Platform, son niveau vaut donc pour toute l'API (framework.yaml, issue #320).
  */
 final class AssistantExceptionLogLevelTest extends TestCase
 {
@@ -42,7 +45,7 @@ final class AssistantExceptionLogLevelTest extends TestCase
         yield 'fournisseur indisponible (503)' => [new AssistantUnavailableException(), Level::Warning];
         yield 'quota atteint (429)' => [new AssistantRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Info];
         yield 'corps trop volumineux (413)' => [new RequestBodyTooLargeException(), Level::Info];
-        yield 'format refusé (415)' => [new UnsupportedMediaTypeHttpException('Unsupported format.'), Level::Info];
+        yield 'format refusé (415), sur toute route de l\'API' => [new UnsupportedMediaTypeHttpException('Unsupported format.'), Level::Info];
     }
 
     #[DataProvider('exceptions')]
