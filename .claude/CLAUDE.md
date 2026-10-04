@@ -606,8 +606,10 @@ mid-migration.
   `ROLE_TRUSTED`, on Scaleway Generative APIs — the site's own host, `fr-par` — which is the one operator the
   nominative CV may reach (D3 amended); corpus injected in the context from the tier's existing providers,
   no tools, no vector store, nothing persisted, streamed response; the MCP server originally planned is
-  now an *alternative écartée*; **in progress** on the branch `feature/spec-0005-career-assistant`, spec
-  `.claude/specs/0005-career-assistant.md`, task 1 (#260) done: the `career_assistant` agent in `ai.yaml`,
+  now an *alternative écartée*; **closed in `develop` on 2026-10-04** (PR #267, all six tasks and the
+  review follow-ups #318–#320/#323 merged; release, preprod/prod checks and the "delivered in vX.Y.Z" update of
+  this paragraph tracked in #324), spec archived at
+  `.claude/specs/archive/2026-10-04-spec-0005-assistant-parcours/0005-career-assistant.md`, task 1 (#260) done: the `career_assistant` agent in `ai.yaml`,
   `mistral-small-3.2-24b-instruct-2506`, `max_tokens` 1024, `tools: false`, prompt preamble in
   `config/ai/prompts/career_assistant.txt`, key `SCALEWAY_AI_API_KEY` routed exactly like `ANTHROPIC_API_KEY`,
   plus `SCALEWAY_AI_PROJECT_ID` on the same route; task 5 (#264) done: both are read by the `backend-secrets` `ExternalSecret` of the two overlays

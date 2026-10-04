@@ -1,6 +1,9 @@
 # SPEC — Assistant « interrogez mon parcours » (`Ai/Assistant`, Symfony AI, Scaleway)
 
-> Statut : **validée** le 2026-09-26 (rédigée le 2026-09-15 ; voir le journal en §10).
+> Statut : **livrée dans `develop`** le 2026-10-04 (rédigée le 2026-09-15, validée le 2026-09-26, six
+> tâches et quatre suivis de revue fusionnés ; voir le journal en §10). La release, ses vérifications
+> en préprod et en prod se jouent après le merge de clôture et sont consignées dans l'issue #324.
+> Archivée avec son plan de tâches (`tasks/`) selon la règle #192.
 > Phase 2 de l'intégration de Symfony AI, cadrée par l'ADR 0004 telle qu'amendée le 2026-09-15 (D7
 > réécrite, D2/D3/D5 retouchées). Elle succède à la spec 0002 (traduction, livrée) et en réutilise le
 > socle : contexte `src/Ai/`, `ai.yaml`, client HTTP dédié, quota par compte, tests hors ligne.
@@ -766,3 +769,16 @@ garde une copie par classe, chacune levant son exception ; `nominativeCvSection(
 prod tourne sur celui d'Alpine (les tests pincent la structure). Sur le vrai CV (une page) : 6 357
 caractères inchangés, 86 lignes non vides au lieu de 73, le plancher gardant des lignes courtes
 séparées.
+
+**2026-10-04 (clôture, PR #267)** — Spec close dans `develop`. Les six tâches (#260 à #265) sont
+livrées, et les suivis de la revue de branche du 2026-10-02 triés le 2026-10-03 : #318 (événement
+final du flux, PR #333), #319 (section du corpus jamais vidée en silence, PR #334), #320
+(configuration trompeuse, PR #335) et #323 (exceptions dédiées à la place des `LogicException`, PR
+#337) sont fusionnés ; #321 est fermée (couverte par la troncature frontend, la mesure du ratio
+jetons/caractères est reprise dans #324) ; #322 (rendu problem+json partagé) se détache de la spec
+et se reprend après la release. Les exceptions génériques restantes hors `Ai/Assistant` sont suivies
+dans #338. Prérequis de la release levés le même jour : applications IAM
+`cpg-career-assistant-{preprod,prod}` (`GenerativeApisModelAccess` sur le seul projet du site) et
+quatre secrets `<env>-backend-scaleway-ai-*` publiés. Tout ce qui suit — release, préprod, prod,
+mise à jour de `CLAUDE.md` et de l'ADR 0004 avec la version livrée — vit dans #324, ce fichier
+étant désormais figé.

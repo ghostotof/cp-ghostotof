@@ -40,6 +40,7 @@ supprimé avec ce rangement.
 | `2026-09-16-remediation-audit-securite-3-lot-1` | Troisième audit de sécurité, lot 1 : phases 0–3 (A1/A25 en prod par v0.14.1, réglages GitHub et RBAC, journal de sécurité) ; phases 4–6 dans un lot 2 avec son propre `tasks/` | (déplacé par `git mv`, PR #219) |
 | `2026-09-22-purge-pending-invitations` | Issue #238, purge automatique des invitations jamais activées (RGPD, minimisation) : `tasks/` seul, feature sans spec — design validé en session, 3 tâches par sous-agents, revue finale de branche qui a corrigé le plan (la relance repousse le délai, hachage vide requis, plancher d'un jour) | (déplacé par `git mv`, PR de clôture) |
 | `2026-09-23-remediation-audit-securite-3-lot-2` | Troisième audit de sécurité, lot 2 : phases 4–5 (A6/A7 jeton d'invitation hors des URL, hygiène code et infra A10/A12/A14/A15/A16/A17/A23, registre RGPD) ; checkpoints préprod joués après ce merge ; phase 6 (sauvegardes Postgres) en spec séparée | (déplacé par `git mv`, PR de clôture du lot 2) |
+| `2026-10-04-spec-0005-assistant-parcours` | Spec 0005, assistant « interrogez mon parcours » (Symfony AI phase 2, Scaleway, `ROLE_TRUSTED`) : la spec + `tasks/` entier (plan, plans détaillés des tâches 2 et 6) ; six tâches #260–#265 et suivis #318–#320/#323 ; release et vérifications consignées dans #324 | (déplacés par `git mv`, PR #267) |
 
 Les dossiers antérieurs au 2026-09-16 gardent `plan.md` et `todo.md` à plat plutôt que dans un
 sous-dossier `tasks/` ; leurs specs, restées un temps dans `.claude/specs/` avec un statut
