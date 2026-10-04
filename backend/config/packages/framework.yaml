@@ -34,8 +34,14 @@ framework:
         # `warning` reste visible en production (LOG_LEVEL=warning).
         App\Ai\Assistant\Domain\Exception\AssistantUnavailableException:
             log_level: warning
-        # Format de corps refusé par #[MapRequestPayload(acceptFormat)] : seul
-        # ce résolveur lève cette classe.
+        # Content-Type refusé (415) : une erreur du client, jamais un incident.
+        # Seule exception de cette liste qui ne soit pas propre à l'assistant,
+        # et c'est voulu (issue #320) : la classe est levée par
+        # #[MapRequestPayload(acceptFormat)] sur /api/assistant/answers, mais
+        # aussi par ContentNegotiationProvider, DeserializeProvider,
+        # ParameterProvider et DeserializeListener d'API Platform — donc sur
+        # **toute** route de l'API, backoffice compris. Avec LOG_LEVEL=warning,
+        # aucun 415 n'apparaît dans les journaux de production.
         Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException:
             log_level: info
 
