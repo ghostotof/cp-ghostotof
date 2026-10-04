@@ -60,7 +60,7 @@ final readonly class QuotaGuardedCareerAssistant implements CareerAssistantInter
         if (null === $account || '' === $account) {
             // L'access_control réserve la route à ROLE_TRUSTED : arriver ici
             // sans compte est un défaut de câblage, pas un appel à laisser passer.
-            throw new \LogicException("L'assistant exige un compte authentifié.");
+            throw new UnauthenticatedAssistantCallException();
         }
 
         try {
