@@ -116,6 +116,21 @@ final class SymfonyAiCareerAssistantTest extends TestCase
         self::assertSame(403, $this->logger->records[0]['context']['providerStatus'] ?? null);
     }
 
+    /** Issue #308 : le type d'erreur du fournisseur, que le traducteur journalisait seul. */
+    public function testTheProviderErrorTypeIsLogged(): void
+    {
+        $agent = new FakeStreamingAgent([], failure: new PlatformRuntimeException('Error "permission_denied": "corps du fournisseur".'));
+
+        try {
+            $this->assistant($agent)->answer($this->conversation(), Locale::FR);
+            self::fail('AssistantUnavailableException attendue.');
+        } catch (AssistantUnavailableException) {
+        }
+
+        self::assertSame('permission_denied', $this->logger->records[0]['context']['providerErrorType'] ?? null);
+        self::assertStringNotContainsString('corps du fournisseur', $this->logger->dump());
+    }
+
     public function testAFailureDuringTheStreamIsThrownByTheGeneratorAfterTheFirstFragments(): void
     {
         $agent = new FakeStreamingAgent(['Il a ', 'conçu'], failure: new TransportException('coupure'), failAfter: 1);

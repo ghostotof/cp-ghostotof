@@ -10,18 +10,17 @@ use App\Ai\Assistant\Domain\Exception\AssistantUnavailableException;
 use App\Ai\Assistant\Domain\ValueObject\AnswerUsage;
 use App\Ai\Assistant\Domain\ValueObject\Conversation;
 use App\Ai\Assistant\Domain\ValueObject\Role;
+use App\Ai\Shared\Infrastructure\SymfonyAi\ProviderFailure;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Monolog\Attribute\WithMonologChannel;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\AgentInterface;
 use Symfony\AI\Agent\Execution\Execution;
-use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
-use Symfony\Contracts\HttpClient\Exception\HttpExceptionInterface;
 
 /**
  * Seule classe de l'assistant à importer Symfony\AI (ADR 0004 D1).
@@ -32,7 +31,8 @@ use Symfony\Contracts\HttpClient\Exception\HttpExceptionInterface;
  *
  * Jamais de contenu dans un log (D10) : ni question, ni réponse, ni corpus,
  * ni message d'exception du fournisseur, que le bridge remplit avec le corps
- * de la réponse. Le statut HTTP de l'échec, lui, est journalisé.
+ * de la réponse. Le statut HTTP et le type d'erreur de l'échec, eux, sont
+ * journalisés, par ProviderFailure, partagée avec le traducteur (issue #308).
  *
  * Toute exception levée par l'appel ou par le flux est une panne du fournisseur :
  * 503 avant le premier fragment, événement `error` après. Pas seulement les
@@ -153,12 +153,11 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
         $this->logger->error('Assistant de parcours : le fournisseur a échoué.', [
             'outcome' => 'error',
             'stage' => $stage,
-            'exception' => $exception::class,
-            // Le lieu, sans contenu (D10) : un TypeError de câblage (ou un
-            // ArgumentCountError, qui en hérite) se distingue ainsi d'une panne
-            // du bridge, qui lève depuis vendor/.
-            'origin' => basename($exception->getFile()).':'.$exception->getLine(),
-            'providerStatus' => $this->providerStatus($exception),
+            // exception, providerStatus, providerErrorType et origin, sans
+            // contenu (D10) : le lieu distingue un TypeError de câblage (ou un
+            // ArgumentCountError, qui en hérite) d'une panne du bridge, qui
+            // lève depuis vendor/.
+            ...ProviderFailure::from($exception)->toLogContext(),
             // Les champs d'une fin réussie (D10) : une requête sur `ai_usage`
             // voit ainsi toutes les fins. Jetons inconnus, null explicite.
             'messageCount' => $conversation->count(),
@@ -173,27 +172,5 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
     private function elapsedMs(int $startedAt): int
     {
         return (int) round((hrtime(true) - $startedAt) / 1_000_000);
-    }
-
-    /**
-     * Statut HTTP du fournisseur, sans jamais lire le corps : le bridge 0.13.0
-     * réduit sinon tout échec à « unknown » (journal de la spec, tâche 1).
-     */
-    private function providerStatus(\Throwable $exception): ?int
-    {
-        if ($exception instanceof ServerException) {
-            return $exception->getStatusCode();
-        }
-
-        if ($exception instanceof HttpExceptionInterface) {
-            return $exception->getResponse()->getStatusCode();
-        }
-
-        // RuntimeException du bridge en flux : « Unexpected response code 403: "…" ».
-        if (1 === preg_match('/^Unexpected response code (\d{3})\b/', $exception->getMessage(), $matches)) {
-            return (int) $matches[1];
-        }
-
-        return null;
     }
 }

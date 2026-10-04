@@ -6,8 +6,9 @@
   assistant conversationnel réservé à `ROLE_TRUSTED` (D7 réécrite, D1/D2/D3/D5 retouchées, voir
   l'encadré « Amendement du 2026-09-15 » sous D7) ; **phase 2 livrée** le 2026-10-04 (spec
   `.claude/specs/archive/2026-10-04-spec-0005-assistant-parcours/0005-career-assistant.md`, release v0.19.0
-  en production ; vérifications restantes de la release dans l'issue #324)
-- Date : 2026-09-14, amendée le 2026-09-15
+  en production ; vérifications restantes de la release dans l'issue #324) ; **D1 amendée le 2026-10-04**
+  (issue #308 : `Ai/Shared/Infrastructure/SymfonyAi/ProviderFailure`, voir l'encadré sous D1)
+- Date : 2026-09-14, amendée le 2026-09-15 et le 2026-10-04
 - Portée : `src/Ai/` (nouveau contexte borné), `config/packages/ai.yaml`, `config/ai/prompts/`,
   `config/packages/framework.yaml` (clients HTTP `ai.http_client` et, en phase 2, un second client
   dédié à Scaleway), `config/packages/rate_limiter.yaml`, `k8s/overlays/*/external-secrets.yaml`
@@ -66,6 +67,17 @@ du bundle, ou de fournisseur, est un changement local à cette classe et à `ai.
 la première mise à l'épreuve de cette frontière : un second fournisseur (Scaleway, D7) derrière la
 même abstraction, choisi pour une raison qui tient à la donnée envoyée (D3), sans qu'aucune classe
 de la phase 1 ne change.
+
+**Amendement du 2026-10-04 (issue #308) — un lecteur partagé des échecs du bridge.** Le traducteur et
+l'assistant décrivaient chacun l'échec du fournisseur pour le journal, sans en citer le message (le
+bridge y recopie le corps de la réponse), et leurs deux copies divergeaient déjà. Elles sont réunies
+dans `Ai/Shared/Infrastructure/SymfonyAi/ProviderFailure`, un Value Object
+`{exceptionClass, status, errorType, origin}` construit depuis le `Throwable`, seule classe à
+interpréter le texte des messages du bridge. Elle importe `Symfony\AI\Platform\Exception\*` pour
+lire un statut typé, et c'est la seule exception à la règle « une classe par sous-contexte » : elle ne
+manipule ni message, ni agent, ni plateforme, et ne connaît aucun usage. Une montée de version du
+bundle reste donc un changement local — à la classe de l'usage, à `ai.yaml`, et à ce lecteur, dont le
+test obtient ses exceptions des vrais `ResultConverter` et rougit si leur format change.
 
 Les paquets `symfony/ai-bundle`, `symfony/ai-anthropic-platform` et `symfony/ai-agent` — et, en
 phase 2, `symfony/ai-scaleway-platform` — sont **pinnés en version exacte** (`0.13.0`, pas de `^`)

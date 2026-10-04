@@ -701,7 +701,10 @@ mid-migration.
   options as-is —, `tools: false`, system prompt in `config/ai/prompts/translator.txt`) are declared in
   `config/packages/ai.yaml` on a dedicated scoped client `ai.http_client` (`framework.yaml`: timeout 40 s,
   `max_redirects: 0`). Rules that must hold, in the ADR's words: **only one class imports `Symfony\AI\*`**
-  (`Infrastructure/SymfonyAi/…`, behind an application interface); **no model call from a public render
+  (`Infrastructure/SymfonyAi/…`, behind an application interface) — plus one shared reader,
+  `Ai/Shared/Infrastructure/SymfonyAi/ProviderFailure` (D1 amended, issue #308), the only class that reads
+  the bridge's exception messages: a provider failure is logged through its `toLogContext()`
+  (`exception`, `providerStatus`, `providerErrorType`, `origin`), never with the message, by both services; **no model call from a public render
   path**, a visitor-triggered Messenger handler or a render CronJob — backoffice only, synchronous, with a
   timeout; **only backoffice-authored content meant for publication may be sent** to a provider, never
   `cpg_user`, a token, the nominative CV or a contact message; **a suggestion is never persisted** without a
