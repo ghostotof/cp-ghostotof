@@ -1,43 +1,71 @@
-# v0.18.9 — Traces et journaux sans données sensibles
+# v0.19.0 — Assistant « interrogez mon parcours »
 
-Release corrective. Elle porte sur ce que l'application laisse échapper dans ses traces et ses
-journaux. Aucune migration, aucun secret nouveau, aucun changement de manifeste Kubernetes. La
-configuration PHP des images production et préprod change d'une ligne.
+Release de fonctionnalité : la phase 2 de l'assistance IA (ADR 0004, spec 0005). Une personne du
+palier nominatif (`ROLE_TRUSTED`) pose des questions en langage naturel sur le parcours, depuis
+une page du site, et reçoit une réponse en flux, fondée uniquement sur les contenus qu'elle lit
+déjà. Aucune migration. L'image backend gagne un paquet système (`poppler-utils`). Les deux
+`ExternalSecret` du backend lisent deux clés de plus, publiées avant cette release.
 
-## Les traces d'exception ne portent plus les arguments des appels (#278)
+## L'assistant de parcours (spec 0005)
 
-- `zend.exception_ignore_args = On` dans `docker/php/php.prod.ini`, donc en production et en
-  préprod, puisque l'image `preprod` est construite à partir de `production`.
-- Jusqu'ici, chaque frame d'une trace gardait ses arguments. La protection d'un DSN, d'un mot de
-  passe ou d'un jeton dépendait du `#[\SensitiveParameter]` posé sur chaque signature, une par
-  une, et un seul oubli suffisait.
-- Le dev garde `Off` pour pouvoir déboguer. Un test vérifie la directive dans `php.prod.ini`.
+- **Page `/fr/assistant` et `/en/assistant`**, réservée à `ROLE_TRUSTED` et `ROLE_SUPER`. La réponse
+  s'affiche au fil de l'eau, la conversation glisse sur une fenêtre bornée, et une session expirée
+  renvoie vers la connexion.
+- **`POST /api/assistant/answers`** répond en `text/event-stream` : des fragments `delta`, puis un
+  événement final `done` (jetons, durée) ou `error`. Un fournisseur injoignable avant le premier
+  fragment donne un 503 problem+json (`/errors/assistant-unavailable`), jamais une page HTML.
+- **Modèle Scaleway Generative APIs** (`mistral-small-3.2-24b-instruct-2506`, `fr-par`), l'hébergeur
+  du site : c'est le seul opérateur auquel le CV nominatif peut être envoyé (ADR 0004 D3 amendée).
+  Clé dédiée par environnement, limitée à l'inférence sur un seul projet.
+- **Le corpus** est composé à chaque appel à partir des contenus du palier : CV sans identité,
+  études de cas, et le texte du CV nominatif, extrait du PDF servi par `GET /api/cv` par
+  `pdftotext`. Aucune base vectorielle, aucun outil, rien n'est persisté. Si le CV est absent ou
+  illisible, l'assistant le dit au lieu d'inventer.
 
-## L'échec du traducteur IA ne journalise plus la réponse du fournisseur (#269)
+## Un coût borné par construction
 
-- Le bridge Symfony AI recopie le corps de la réponse d'Anthropic dans le message de son
-  exception, et ce corps peut citer l'entrée, c'est-à-dire du contenu du backoffice. Il sortait
-  par trois chemins : notre log métier, l'`ErrorListener` du noyau (CRITICAL sur le 503) et API
-  Platform (DEBUG), ces deux derniers à travers la chaîne `previous`.
-- L'échec est désormais journalisé par la classe de l'exception, le statut HTTP (pour un 5xx) et
-  le type d'erreur Anthropic. Ce type est un mot-clé fixe, lu par une expression ancrée qui ne
-  capture que `[a-z_]`. L'exception métier ne transporte plus de `previous`.
-- Une sonde de test écoute tous les canaux Monolog, et pas une liste écrite à la main. Elle
-  vérifie qu'une sentinelle placée dans la réponse simulée ne sort par aucun journal, y compris
-  sur un canal ajouté plus tard.
-- Le statut HTTP ne change pas : toujours 503.
+- Une conversation compte au plus 11 messages et 16 000 caractères. Au-delà, la réponse est un 422
+  typé (`/errors/invalid-conversation`). Un corps de plus de 128 Kio reçoit un 413, mais seulement
+  après le pare-feu : un appelant non autorisé apprend seulement qu'il est refusé.
+- Quota de 30 questions par heure et par compte (429 avec `Retry-After`). Une requête invalide ne
+  consomme pas de quota. `max_tokens` est fixé à 1024, et le client HTTP a un délai total borné.
+- Côté nginx, une zone dédiée limite à 10 requêtes par minute et à un seul flux simultané par
+  adresse, avec une réponse 429 en problem+json.
+- Le canal de journal `ai_usage` trace les jetons et la durée de chaque appel, jamais le contenu.
 
-## Outillage et tests
+## Suivis de la revue de branche
 
-- Les suites de `tools/tests/` ne dépendent plus de l'environnement git du poste (#304) :
-  signature des commits et des étiquettes, hooks, configuration passée par l'environnement,
-  `GIT_DIR` hérité. Une nouvelle suite, `git-config-isolation.test.sh`, les rejoue sous un
-  environnement hostile. Rien ne change pour `finalize-release.sh` en CI.
-- Le test d'enregistrement du premier produit surveillé vérifie maintenant la persistance, et la
-  dernière notice PHPUnit de la suite disparaît.
+- Le flux se termine toujours par un événement final, y compris sur une erreur en cours de route
+  (#318).
+- Une section du corpus n'est plus jamais vidée en silence : un contenu illisible arrête le rendu
+  au lieu de faire répondre « ce n'est pas dans les documents » (#319).
+- La configuration dit ce qu'elle fait vraiment : les 415 restent des erreurs client, et les
+  entrées mortes de `exception_to_status` sont retirées (#320).
+- Le préambule absent et l'appel sans compte lèvent chacun une exception dédiée, à la place d'une
+  `LogicException` générique (#323).
+
+## Limiteurs de débit et journaux
+
+- Une panne du verrou partagé des limiteurs répond 503 avec `Retry-After`, et laisse une trace
+  d'audit `rate-limiter-unavailable`, au lieu d'un 500 (#276).
+- Le canal `lock` ne journalise plus en production la clé des limiteurs, c'est-à-dire une IP ou un
+  identifiant tenté (#315).
+- Un seul écouteur pose l'en-tête `Retry-After` de tous les 429 de quota, au lieu de quatre copies
+  (#273).
+
+## Outillage
+
+- La configuration ESLint TypeScript est écrite à la main, sans `@vue/eslint-config-typescript`,
+  ce qui retire `braces` de l'arbre et débloque `npm audit` (#328).
+- La recette de publication des secrets de l'assistant (`k8s/README.md`) s'exécute sous zsh et
+  devient rejouable.
 
 ## À vérifier en préprod
 
 - Smoke tests et audit verts.
-- `php -i | grep exception_ignore_args` dans le conteneur `php-fpm` affiche `On`.
-- Le bouton de traduction du backoffice fonctionne toujours, et une suggestion revient.
+- `backend-secrets` synchronisé et porteur de `SCALEWAY_AI_API_KEY` et `SCALEWAY_AI_PROJECT_ID`
+  (noms seulement).
+- `nginx -T | grep assistant` sur le sidecar : les zones `assistant` et `assistantconn`, et la
+  `location ^~ /api/assistant/`.
+- La clé de préprod atteint le modèle depuis le pod, puis une question réelle depuis un compte
+  `ROLE_TRUSTED` : la réponse arrive en flux, et le journal `ai_usage` porte `"outcome":"done"`.
