@@ -9,6 +9,7 @@ use App\Ai\Assistant\Infrastructure\Corpus\CorpusRenderingException;
 use App\Portfolio\AnonymousCv\Presentation\ApiResource\AnonymousCvSectionResource;
 use App\Portfolio\CaseStudy\Presentation\ApiResource\CaseStudyResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Tests\Ai\Assistant\Support\RawResultProvider;
 use App\Tests\Ai\Assistant\Support\StubPdfTextExtractor;
 use App\Tests\Ai\Assistant\Support\StubProvider;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -186,6 +187,47 @@ final class CorpusRendererTest extends TestCase
             new StubProvider([new AnonymousCvSectionResource('Titre', 'PHP', 3, "abc\xC3(")]),
             new StubProvider([]),
         );
+
+        $this->expectException(CorpusRenderingException::class);
+
+        $renderer->render(Locale::FR);
+    }
+
+    /**
+     * Issue #319 : un provider remplacé ou décoré qui ne rend plus une
+     * collection vidait la section en silence (« Aucun document disponible »),
+     * et l'assistant répondait « ce n'est pas dans les documents » à tout.
+     */
+    #[DataProvider('nonIterableResults')]
+    public function testAProviderThatDoesNotReturnACollectionIsAnError(mixed $result): void
+    {
+        /** @var RawResultProvider<AnonymousCvSectionResource> $provider le type déclaré est celui que le provider trahit */
+        $provider = new RawResultProvider($result);
+        $renderer = new CorpusRenderer(new StubPdfTextExtractor(null), $provider, new StubProvider([]));
+
+        $this->expectException(CorpusRenderingException::class);
+
+        $renderer->render(Locale::FR);
+    }
+
+    /**
+     * @return iterable<string, array{mixed}>
+     */
+    public static function nonIterableResults(): iterable
+    {
+        yield 'null' => [null];
+        yield 'un objet seul' => [new AnonymousCvSectionResource('Titre', 'PHP', 3, 'Réalisation.')];
+    }
+
+    /**
+     * Issue #319 : une entrée d'un autre DTO (provider décoré, que
+     * CorpusSourcesTest ne voit pas) était écartée sans le dire.
+     */
+    public function testAnEntryOfAnUnexpectedTypeIsAnError(): void
+    {
+        /** @var RawResultProvider<CaseStudyResource> $provider le type déclaré est celui que le provider trahit */
+        $provider = new RawResultProvider([new AnonymousCvSectionResource('Titre', 'PHP', 3, 'Réalisation.')]);
+        $renderer = new CorpusRenderer(new StubPdfTextExtractor(null), new StubProvider([]), $provider);
 
         $this->expectException(CorpusRenderingException::class);
 
