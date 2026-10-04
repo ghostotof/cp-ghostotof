@@ -348,9 +348,11 @@ mid-migration.
     limiter. The `kernel.request` guards go through the helper
     (`CsrfCookieRequestSubscriber`, `LoginCsrfRequestListener`, `BaseAccessRateLimitRequestListener`,
     `PasswordSetupRateLimitRequestListener`, `AssistantRequestSizeListener`), each with a `%XX`
-    regression test; two `kernel.exception` listeners use it too, the assistant's
-    `AssistantProblemResponseListener` and `Shared/Infrastructure/Http/ApiJsonErrorFormatListener` (see
-    "Errors under `/api`" below) — and `SecurityAuditLogger` logs the canonical form for the same reason.
+    regression test; two `kernel.exception` listeners use it too, `Shared/Infrastructure/Http/`'s
+    `ApiProblemResponseListener` and `ApiJsonErrorFormatListener` (see "Errors under `/api`" below) — and
+    `SecurityAuditLogger` logs the canonical form for the same reason. A subtree check goes through
+    `CanonicalPath::isUnder($request, '/api/<x>')` (`isUnderApi()` is that, for `/api`): "the prefix exactly,
+    or the prefix followed by `/`", the `access_control` anchoring rule, written once (issue #322).
   - **The `login` firewall is anchored on its `check_path`, the `api` one deliberately is not** (audit A23,
     `security.yaml`). `login` is `^/api/login_check$`: it holds a `json_login` and reads **no** JWT, so any
     route ever added under a looser `^/api/login` would be served anonymously, the visitor's `BEARER` never
@@ -666,8 +668,8 @@ mid-migration.
   `PlatformInterface` by type, which autowires to Anthropic (D3); the stream is `text/event-stream` with JSON
   `data` — `delta` `{text}`, then `done` `{promptTokens, completionTokens, durationMs}` or `error`
   `{reason}` — and a provider failure **before the first fragment** is a 503 problem+json
-  (`/errors/assistant-unavailable`, rendered by `AssistantProblemResponseListener`, the route not being an API
-  Platform operation), the call being primed before the 200 is sent; `ReplayRefusingHttpClient` stops the
+  (`/errors/assistant-unavailable`, rendered by the shared `ApiProblemResponseListener`, the route not being an
+  API Platform operation), the call being primed before the 200 is sent; `ReplayRefusingHttpClient` stops the
   bridge's `EventSourceHttpClient` from replaying a cut stream (a second, billed generation). Two rules from
   the task's security review: **`AssistantUnavailableException` never chains the bridge's exception** — the
   kernel's `ErrorListener` logs the whole `previous` chain, and the bridge copies the provider's response
@@ -827,14 +829,27 @@ Content management for all of the above, plus user administration, gated end-to-
   content negotiation, and `GET /api/docs` without an `Accept` header answered **406** — and -100 sits
   between API Platform's own `ExceptionListener` (-96) and Symfony's `ErrorListener` (-128), so it never
   runs on errors API Platform already handled. `ApiJsonErrorFormatListenerTest` + `ApiErrorFormatTest` pin it.
+- **A `ProblemExceptionInterface` thrown by a controller under `/api` gets its typed problem+json from one
+  listener** (issue #322): `Shared/Infrastructure/Http/ApiProblemResponseListener`, `kernel.exception`
+  **priority -98**, main request, canonical path under `/api`, renders `{type, title, status, detail}` as
+  `application/problem+json` (status `500` if the exception has none). It replaced the assistant's and
+  base-access's own listeners; never write a per-route copy again. **The priority is the rule, not a
+  detail**: API Platform's `ExceptionListener` (-96) stops propagation on every route it owns, so what
+  reaches -98 is non-API-Platform *by construction* — no `_api_respond` attribute is read — and it must
+  stay above Symfony's rendering (-128). `ApiProblemResponseListenerPriorityTest` reads the real
+  dispatcher and pins that bracket. Two consequences for a new exception rendered there: it needs a
+  `log_level` in `framework.exceptions`, since `logKernelException` (0) now sees it — base-access's 429
+  was not logged at all while its listener stopped propagation at 0, and would go out `critical` without
+  its `info` entry —, and an `exception_to_status` entry for it is dead config. Rejected:
+  `api_platform.handle_symfony_errors: true` — global, unfiltered by path, rewrites the 404/405/403 bodies
+  that already work, and hands an `html` negotiation back to Symfony before `ApiJsonErrorFormatListener`.
 - **Every quota 429 gets its `Retry-After` from one listener** (issue #273):
   `Shared/Infrastructure/Http/RetryAfterListener` reads any exception implementing
   `Shared/Domain/Exception/RetryAfterAware` (a PHP 8.4 interface property, `$retryAfter { get; }`, met by
   the exceptions' promoted `public readonly`). It notes the deadline on the request at **`kernel.exception`
   priority 64** and sets the header at `kernel.response` — **on a 429 only** (a failed render that ends in a 500 must not carry it) — with an injected `ClockInterface`. 64 is not
   arbitrary: it must sit above every listener that *builds* the 429 and so stops propagation — API
-  Platform (-96), `AssistantProblemResponseListener` (-64), `BaseAccessRateLimitExceptionListener` (0,
-  which keeps its own body). A new quota exception implements the interface; never write a fifth
+  Platform (-96) and, on a controller, `ApiProblemResponseListener` (-98). A new quota exception implements the interface; never write a fifth
   per-context copy. `RateLimiterLockFailureListener` stays apart on purpose (fixed delay, priority 16).
 
 ### Seeding (`app:*:seed`)

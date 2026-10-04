@@ -13,7 +13,7 @@ use App\Shared\Domain\Exception\RetryAfterAware;
  * (spec 0005 D6). 429 avec un `type` stable (`/errors/rate-limited`, le même
  * que celui que rend la zone nginx `assistant`) : le frontend n'a qu'une
  * raison à reconnaître, quelle que soit la borne atteinte. Rendue par
- * AssistantProblemResponseListener ; l'en-tête Retry-After est posé par
+ * ApiProblemResponseListener (Shared) ; l'en-tête Retry-After est posé par
  * App\Shared\Infrastructure\Http\RetryAfterListener à partir de $retryAfter
  * (RetryAfterAware).
  */

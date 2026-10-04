@@ -34,6 +34,13 @@ framework:
         # `warning` reste visible en production (LOG_LEVEL=warning).
         App\Ai\Assistant\Domain\Exception\AssistantUnavailableException:
             log_level: warning
+        # Quota du palier de base atteint (ADR 0003 D6, issue #322) : le
+        # comportement attendu de la borne. Avant #322, un écouteur dédié
+        # rendait le 429 avant la journalisation du noyau, qui ne le voyait
+        # jamais ; il passe désormais par logKernelException, et sans cette
+        # entrée il sortirait en `critical` (ni HttpException, ni 4xx connu).
+        App\Security\User\Domain\Exception\BaseAccessRateLimitExceededException:
+            log_level: info
         # Content-Type refusé (415) : une erreur du client, jamais un incident.
         # Seule exception de cette liste qui ne soit pas propre à l'assistant,
         # et c'est voulu (issue #320) : la classe est levée par

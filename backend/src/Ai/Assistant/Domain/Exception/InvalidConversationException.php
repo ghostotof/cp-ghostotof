@@ -10,7 +10,7 @@ use App\Shared\Domain\Exception\HasProblemType;
 /**
  * La conversation reçue ne respecte pas ses invariants : 422 avec un `type`
  * stable (`/errors/invalid-conversation`). La route n'étant pas une opération
- * API Platform, c'est AssistantProblemResponseListener qui la rend, grâce à
+ * API Platform, c'est ApiProblemResponseListener (Shared) qui la rend, grâce à
  * ProblemExceptionInterface. Le message ne cite jamais le contenu reçu.
  *
  * Journalisée en `info` par le noyau : voir `framework.exceptions`.
