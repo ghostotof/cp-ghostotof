@@ -351,7 +351,14 @@ ne démarre pas : c'est la leçon de la phase 1 (clé Anthropic).
 
 1. **Une application IAM dédiée par environnement** (console : IAM >
    Applications), distincte de celle d'ESO (§1) et de celle du mailer. Une
-   par environnement permet de les révoquer séparément.
+   par environnement permet de les révoquer séparément. Noms en place depuis
+   le 2026-10-04 : `cpg-career-assistant-{dev,preprod,prod}`, politiques
+   `cpg-career-assistant-<env>-model-access`. Les applications et leurs
+   politiques ne portent aucun secret : on peut les créer au CLI
+   (`scw iam application create`, `scw iam policy create … rules.0.project-ids.0=<projet>`).
+   La **clé**, elle, se génère dans la console (Applications > API keys) : sa
+   partie secrète ne s'affiche qu'une fois, à la création, et ne doit passer
+   ni par un terminal partagé ni par une session d'agent.
 2. **Sa politique ne donne que l'inférence Generative APIs**, sur **un seul
    projet** : le jeu de permissions Generative APIs le plus restreint qui
    autorise l'appel aux modèles. À la date d'écriture, c'est
@@ -368,38 +375,74 @@ ne démarre pas : c'est la leçon de la phase 1 (clé Anthropic).
    `scw account project list`.
 
 Recette, dans un **terminal séparé** (jamais derrière un `!` dans une session
-d'agent, cf. §1). Les valeurs entrent par `read`, sont écrites **sans saut de
-ligne final** (`data=@fichier` pousse les octets tels quels, et un saut de
-ligne casserait l'URL ou l'en-tête), et ne passent par aucun argument. Le
-`curl` vérifie le couple clé + projet avant la publication : l'en-tête est lu
-depuis un fichier (`-H @fichier`), la clé ne figure donc pas dans `ps`.
+d'agent, cf. §1). Les valeurs entrent au clavier (la clé est masquée), sont
+écrites **sans saut de ligne final** (`data=@fichier` pousse les octets tels
+quels, et un saut de ligne casserait l'URL ou l'en-tête), et ne passent par
+aucun argument. Le `curl` vérifie le couple clé + projet, et la présence du
+modèle, **avant** toute publication : un échec arrête tout sans rien publier.
+L'en-tête est lu depuis un fichier (`-H @fichier`), la clé ne figure donc pas
+dans `ps`.
+
+Le bloc entier se colle tel quel : il s'exécute dans `bash` par un *heredoc*,
+quel que soit le shell interactif. Sous zsh, `read -p` ne veut pas dire
+« prompt » (il lit un coprocessus : `read: -p: no coprocess`), et un `set -u`
+collé directement reste actif dans le shell et casse le prompt. Les `read`
+lisent `/dev/tty`, puisque l'entrée standard de `bash` est le heredoc. La
+publication est **rejouable** : un secret déjà créé reçoit une nouvelle
+version au lieu d'échouer sur un identifiant vide. Le dossier temporaire est
+supprimé à la sortie, même sur une erreur ou un Ctrl-C.
 
 ```bash
+bash <<'RECETTE'
+set -euo pipefail
 umask 077
+MODEL=mistral-small-3.2-24b-instruct-2506
 TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+DEFAULT_PROJECT=$(scw account project list -o json | jq -r '.[] | select(.name=="cp-ghostotof") | .id')
+
+# 1. Saisie.
 for ENV in preprod prod; do
-  read -rsp "Clé secrète Generative APIs ($ENV) : " V && printf '%s' "$V" > "$TMP/$ENV-key" && echo
-  read -rp  "Identifiant du projet ($ENV) : " V && printf '%s' "$V" > "$TMP/$ENV-project"
+  read -rsp "Clé secrète Generative APIs ($ENV) : " V </dev/tty && echo
+  [ -n "$V" ] || { echo "Clé vide pour $ENV : abandon." >&2; exit 1; }
+  printf '%s' "$V" > "$TMP/$ENV-key"
+  read -rp "Identifiant du projet ($ENV) [$DEFAULT_PROJECT] : " V </dev/tty
+  printf '%s' "${V:-$DEFAULT_PROJECT}" > "$TMP/$ENV-project"
 done
 unset V
 
-# 200 attendu. 403 : la politique ne porte pas sur ce projet. 401 : la clé.
+# 2. Contrôle AVANT publication. 403 : la politique ne porte pas sur ce
+#    projet. 401 : la clé.
+ok=true
 for ENV in preprod prod; do
   { printf 'Authorization: Bearer '; cat "$TMP/$ENV-key"; printf '\n'; } > "$TMP/$ENV-header"
-  curl -s -o /dev/null -w "$ENV : %{http_code}\n" -H @"$TMP/$ENV-header" \
-    "https://api.scaleway.ai/$(cat "$TMP/$ENV-project")/v1/models"
+  code=$(curl -s -o "$TMP/$ENV-models.json" -w '%{http_code}' -H @"$TMP/$ENV-header" \
+    "https://api.scaleway.ai/$(cat "$TMP/$ENV-project")/v1/models")
+  echo "$ENV : HTTP $code"
+  if [ "$code" != 200 ]; then ok=false
+  elif jq -r '.data[].id' "$TMP/$ENV-models.json" | grep -qx "$MODEL"; then echo "$ENV : modèle disponible"
+  else echo "$ENV : modèle $MODEL ABSENT"; ok=false
+  fi
 done
+$ok || { echo "Contrôle en échec : rien n'a été publié." >&2; exit 1; }
+read -rp "Publier les quatre secrets ? [o/N] " answer </dev/tty
+[ "$answer" = o ] || { echo "Abandon : rien n'a été publié."; exit 0; }
 
+# 3. Publication, rejouable.
+publish() {
+  local id
+  id=$(scw secret secret list name="$1" region=fr-par -o json | jq -r '.[0].id // empty')
+  [ -n "$id" ] || id=$(scw secret secret create name="$1" path=/ region=fr-par -o json | jq -r .id)
+  scw secret version create "$id" data=@"$2" region=fr-par > /dev/null && echo "publié : $1"
+}
 for ENV in preprod prod; do
-  ID=$(scw secret secret create name=${ENV}-backend-scaleway-ai-api-key path=/ region=fr-par -o json | jq -r .id)
-  scw secret version create "$ID" data=@"$TMP/$ENV-key" region=fr-par
-  ID=$(scw secret secret create name=${ENV}-backend-scaleway-ai-project-id path=/ region=fr-par -o json | jq -r .id)
-  scw secret version create "$ID" data=@"$TMP/$ENV-project" region=fr-par
+  publish "${ENV}-backend-scaleway-ai-api-key"    "$TMP/$ENV-key"
+  publish "${ENV}-backend-scaleway-ai-project-id" "$TMP/$ENV-project"
 done
-rm -rf "$TMP"
 
-# Contrôle : les quatre noms existent. Les noms seuls, aucune valeur n'est lue.
+# 4. Contrôle : les quatre noms existent. Les noms seuls, aucune valeur n'est lue.
 scw secret secret list region=fr-par -o json | jq -r '.[].name' | grep scaleway-ai
+RECETTE
 ```
 
 La vérification en préprod pendant la release est décrite plus bas, dans
