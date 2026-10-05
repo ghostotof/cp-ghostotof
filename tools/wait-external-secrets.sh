@@ -41,7 +41,10 @@
 # secret data from provider ») et ne dit pas laquelle manque.
 #
 # Bornes : un appel `kubectl get externalsecrets` par tour, timeout/interval+1
-# tours, soit ~timeout secondes plus la latence des appels.
+# tours, chaque appel au cluster limité à 10 s (`--request-timeout`) : au
+# pire ~timeout + 10 s par tour, jamais le `timeout-minutes` du job. Si la
+# lecture échoue aux derniers tours, l'erreur le dit : le verdict décrit
+# alors l'état du dernier tour lu, pas l'état courant.
 #
 # Usage :  tools/wait-external-secrets.sh <namespace> <externalsecret>…
 #            [--timeout 120]   secondes d'attente au total (entier ≥ 0)
@@ -54,6 +57,7 @@
 set -euo pipefail
 
 OPTIONAL_ANNOTATION="cp-ghostotof.com/deploy-gate"
+REQUEST_TIMEOUT="10s"
 
 namespace=""; names=(); timeout=120; interval=5
 
@@ -61,9 +65,12 @@ usage_error() { echo "wait-external-secrets.sh : $*" >&2; echo "usage : $0 <name
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --timeout) timeout="${2:-}"; shift ;;
-    --interval) interval="${2:-}"; shift ;;
-    -h|--help) sed -n '2,54p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --timeout|--interval)
+      [ $# -ge 2 ] || usage_error "$1 attend une valeur"
+      if [ "$1" = "--timeout" ]; then timeout="$2"; else interval="$2"; fi
+      shift ;;
+    # L'en-tête de commentaires, jusqu'à la première ligne de code.
+    -h|--help) sed -n '2,/^[^#]/{/^#/p}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) usage_error "option inconnue « $1 »" ;;
     *) if [ -z "$namespace" ]; then namespace="$1"; else names+=("$1"); fi ;;
   esac
@@ -107,13 +114,18 @@ JQ_STATE='
   | join("\u001f")'
 
 declare -A state optional reason message keys
+# Échoue (retour 1) si kubectl échoue OU si sa réponse n'est pas le JSON
+# attendu (page d'erreur d'un proxy, sortie 0) : jq est joué dans une
+# substitution dont on teste le code, jamais dans `< <(…)` où son échec
+# passerait inaperçu et laisserait les états vides.
 read_states() {
-  local json line n s o r m k
-  json="$("$kubectl_bin" -n "$namespace" get externalsecrets -o json)" || return 1
+  local json parsed line n s o r m k
+  json="$("$kubectl_bin" --request-timeout="$REQUEST_TIMEOUT" -n "$namespace" get externalsecrets -o json)" || return 1
+  parsed="$(jq -r --arg annotation "$OPTIONAL_ANNOTATION" "$JQ_STATE" --args "${names[@]}" <<<"$json" 2>/dev/null)" || return 1
   while IFS= read -r line; do
     IFS=$'\x1f' read -r n s o r m k <<<"$line"
     state[$n]="$s"; optional[$n]="$o"; reason[$n]="$r"; message[$n]="$m"; keys[$n]="$k"
-  done < <(jq -r --arg annotation "$OPTIONAL_ANNOTATION" "$JQ_STATE" --args "${names[@]}" <<<"$json")
+  done <<<"$parsed"
 }
 
 # Liste des ES obligatoires pas encore prêts (vide = on peut s'arrêter).
@@ -128,26 +140,29 @@ blocking() {
 }
 
 echo "ExternalSecret à synchroniser dans $namespace : ${names[*]} (au plus ${timeout} s)"
-forced=0; read_ok=0
+forced=0
+last_read=0    # dernier tour dont la lecture a réussi (0 = aucun)
+last_round=0   # dernier tour joué
 for ((round = 1; round <= rounds; round++)); do
+  last_round=$round
   if read_states; then
-    read_ok=1
+    last_read=$round
   else
     echo "::warning::lecture des ExternalSecret de $namespace impossible au tour $round/$rounds, nouvel essai"
   fi
-  pending="$(blocking)"
-  if [ -z "$pending" ]; then break; fi
+  blocking_names="$(blocking)"
+  if [ -z "$blocking_names" ]; then break; fi
 
-  if [ "$forced" -eq 0 ] && [ "$read_ok" -eq 1 ]; then
+  if [ "$forced" -eq 0 ] && [ "$last_read" -gt 0 ]; then
     forced=1
     stamp="$(date +%s)"
-    for n in $pending; do
+    for n in $blocking_names; do
       if [ "${state[$n]:-absent}" = "absent" ]; then continue; fi
-      "$kubectl_bin" -n "$namespace" annotate externalsecret "$n" "force-sync=$stamp" --overwrite >/dev/null \
+      "$kubectl_bin" --request-timeout="$REQUEST_TIMEOUT" -n "$namespace" annotate externalsecret "$n" "force-sync=$stamp" --overwrite >/dev/null \
         || echo "::warning::force-sync impossible sur l'ExternalSecret $n (RBAC ?) ; attente du prochain essai d'ESO"
     done
   fi
-  echo "en attente (tour $round/$rounds) : $pending"
+  echo "en attente (tour $round/$rounds) : $blocking_names"
   if [ "$round" -lt "$rounds" ]; then "$sleep_bin" "$interval"; fi
 done
 
@@ -158,25 +173,29 @@ for n in "${names[@]}"; do
   if [ "${state[$n]:-absent}" = "ready" ]; then
     synced+=("$n")
   elif [ "${optional[$n]:-false}" = "true" ]; then
-    echo "::warning::ExternalSecret facultatif $n non synchronisé (${reason[$n]} : ${message[$n]}) — sans effet sur le déploiement"
+    echo "::warning::ExternalSecret facultatif $n non synchronisé (${reason[$n]:-état inconnu} : ${message[$n]:-}) — sans effet sur le déploiement"
   fi
 done
 
-if [ -z "$pending" ]; then
+if [ -z "$blocking_names" ]; then
   echo "ExternalSecret synchronisés : ${synced[*]}"
   exit 0
 fi
 
-if [ "$read_ok" -eq 0 ]; then
-  echo "::error::impossible de lire les ExternalSecret du namespace $namespace (kubectl get externalsecrets) : rien n'est migré ni déployé"
+if [ "$last_read" -eq 0 ]; then
+  echo "::error::impossible de lire les ExternalSecret du namespace $namespace (kubectl get externalsecrets, réponse absente ou illisible) : rien n'est migré ni déployé"
   exit 1
 fi
-for n in $pending; do
+staleness=""
+if [ "$last_read" -lt "$last_round" ]; then
+  staleness=" (dernière lecture réussie au tour $last_read/$rounds, lectures suivantes impossibles : l'état peut avoir changé depuis)"
+fi
+for n in $blocking_names; do
   case "${state[$n]:-absent}" in
-    absent) detail="${message[$n]}" ;;
-    stale)  detail="ESO n'a pas encore synchronisé la spec appliquée par cette release (le statut Ready décrit la génération précédente)" ;;
-    *)      detail="${reason[$n]} : ${message[$n]}" ;;
+    absent) detail="${message[$n]:-introuvable}" ;;
+    stale)  detail="${reason[$n]:-} pour la génération précédente : ESO n'a pas encore synchronisé la spec appliquée par cette release" ;;
+    *)      detail="${reason[$n]:-} : ${message[$n]:-}" ;;
   esac
-  echo "::error::ExternalSecret $n non synchronisé après ${timeout} s — $detail. Clés distantes référencées : ${keys[$n]:-aucune}. Vérifier qu'elles existent dans Scaleway Secret Manager (k8s/README.md) ; rien n'est migré ni déployé, la release précédente reste en service."
+  echo "::error::ExternalSecret $n non synchronisé après ${timeout} s$staleness — $detail. Clés distantes référencées : ${keys[$n]:-aucune}. Vérifier qu'elles existent dans Scaleway Secret Manager (k8s/README.md) ; rien n'est migré ni déployé, la release précédente reste en service."
 done
 exit 1

@@ -48,14 +48,21 @@ set -euo pipefail
 printf '%s\n' "$*" >> "$FAKE_DIR/args"
 case " $* " in
   *" get externalsecrets "*|*" get externalsecret "*)
-    n=$(( $(grep -c ' get externalsecret' "$FAKE_DIR/args") ))
+    n=$(grep -c ' get externalsecret' "$FAKE_DIR/args")
     while [ "$n" -gt 1 ] && [ ! -f "$FAKE_DIR/round-$n.json" ]; do n=$((n - 1)); done
+    # Pannes rejouées : __FAIL__ = l'API ne répond pas (sortie 1) ;
+    # __HTML__ = sortie 0 mais pas du JSON (page d'erreur d'un proxy).
+    case "$(cat "$FAKE_DIR/round-$n.json")" in
+      __FAIL__) echo "Unable to connect to the server: i/o timeout" >&2; exit 1 ;;
+      __HTML__) echo "<html><body>502 Bad Gateway</body></html>"; exit 0 ;;
+    esac
     cat "$FAKE_DIR/round-$n.json"
     ;;
   *" secret "*|*" secrets "*)
     printf '{"data":{"APP_SECRET":"%s"}}\n' "$SENTINEL"
     ;;
   *" annotate "*)
+    if [ -n "${FAKE_ANNOTATE_FAIL:-}" ]; then echo 'externalsecrets.external-secrets.io "x" is forbidden' >&2; exit 1; fi
     ;;
   *)
     echo "faux kubectl : appel inattendu « $* »" >&2; exit 99 ;;
@@ -130,6 +137,8 @@ round 1 "$(es backend-secrets 4 3-0b84e255 True SecretSynced)"
 run preprod backend-secrets --timeout 10 --interval 5
 if [ "$rc" -eq 1 ] && grep -q 'backend-secrets' "$FAKE_DIR/out"; then pass "Ready=True d'une génération périmée : sortie 1 nommant l'ES"
 else fail "Ready=True d'une génération périmée : sortie 1 nommant l'ES" "rc=$rc ; $(cat "$FAKE_DIR/out")"; fi
+if grep -q '^::error::.*backend-secrets.*SecretSynced' "$FAKE_DIR/out"; then pass "génération périmée : la raison de status.conditions est citée"
+else fail "génération périmée : la raison de status.conditions est citée" "$(cat "$FAKE_DIR/out")"; fi
 
 # --- 3. clé absente de Secret Manager : échec persistant --------------------
 new_case missing
@@ -145,6 +154,11 @@ if grep -q 'name:preprod-backend-secrets-a' "$FAKE_DIR/out" && grep -q 'name:pre
 else fail "les noms des clés distantes sont listés (ESO ne dit pas laquelle manque)" "$out"; fi
 if ! grep -q '^::error::.*jwt-keys' "$FAKE_DIR/out"; then pass "un ES prêt n'est pas mis en cause"
 else fail "un ES prêt n'est pas mis en cause" "$out"; fi
+# Chaque appel au cluster est borné : sans --request-timeout, un appel
+# bloqué ne serait arrêté que par le timeout-minutes du job.
+unbounded="$(grep -v -- '--request-timeout=' "$FAKE_DIR/args" || true)"
+if [ -z "$unbounded" ]; then pass "chaque appel kubectl porte --request-timeout"
+else fail "chaque appel kubectl porte --request-timeout" "$unbounded"; fi
 # Trois tours : t=0, t=5, t=10 — puis abandon.
 if [ "$(get_calls)" -eq 3 ]; then pass "attente bornée : timeout/interval + 1 tours"
 else fail "attente bornée : timeout/interval + 1 tours" "appels get=$(get_calls)"; fi
@@ -192,9 +206,45 @@ run preprod backend-secrets --timeout 0 --interval 5
 if [ "$rc" -eq 1 ] && grep -q '^::error::.*backend-secrets' "$FAKE_DIR/out"; then pass "ES introuvable : sortie 1 nommant l'ES"
 else fail "ES introuvable : sortie 1 nommant l'ES" "rc=$rc ; $(cat "$FAKE_DIR/out")"; fi
 
+# --- 7bis. pannes de lecture --------------------------------------------------
+# Réponse qui n'est pas du JSON (sortie 0) : diagnostic lisible, pas de crash
+# sur une variable non définie.
+new_case not-json
+printf '__HTML__' > "$FAKE_DIR/round-1.json"
+run preprod backend-secrets --timeout 5 --interval 5
+if [ "$rc" -eq 1 ] && grep -q '^::error::.*impossible de lire' "$FAKE_DIR/out" && ! grep -q 'unbound variable' "$FAKE_DIR/out"; then
+  pass "réponse non JSON : sortie 1, « impossible de lire », sans crash"
+else fail "réponse non JSON : sortie 1, « impossible de lire », sans crash" "rc=$rc ; $(cat "$FAKE_DIR/out")"; fi
+
+# API injoignable à chaque tour.
+new_case unreachable
+printf '__FAIL__' > "$FAKE_DIR/round-1.json"
+run preprod backend-secrets --timeout 5 --interval 5
+if [ "$rc" -eq 1 ] && grep -q '^::error::.*impossible de lire' "$FAKE_DIR/out"; then pass "API injoignable : sortie 1, « impossible de lire »"
+else fail "API injoignable : sortie 1, « impossible de lire »" "rc=$rc ; $(cat "$FAKE_DIR/out")"; fi
+
+# Lecture réussie au premier tour, puis l'API tombe : le verdict ne doit pas
+# se présenter comme l'état courant d'ESO sans dire que la lecture a échoué.
+new_case lost
+round 1 "$(es backend-secrets 4 3-0b84e255 True SecretSynced)"
+printf '__FAIL__' > "$FAKE_DIR/round-2.json"
+run preprod backend-secrets --timeout 10 --interval 5
+if [ "$rc" -eq 1 ] && grep -q '^::error::.*backend-secrets.*dernière lecture réussie' "$FAKE_DIR/out"; then
+  pass "lecture perdue en cours de route : l'erreur dit que l'état date du dernier tour lu"
+else fail "lecture perdue en cours de route : l'erreur dit que l'état date du dernier tour lu" "rc=$rc ; $(cat "$FAKE_DIR/out")"; fi
+
+# force-sync refusé (RBAC) : avertissement, l'attente continue.
+new_case annotate-denied
+round 1 "$(es backend-secrets 5 4-0b84e255 False SecretSyncedError)"
+round 2 "$(es backend-secrets 5 5-1c95f366 True SecretSynced)"
+FAKE_ANNOTATE_FAIL=1 run preprod backend-secrets --timeout 10 --interval 5
+if [ "$rc" -eq 0 ] && grep -q '^::warning::force-sync impossible.*backend-secrets' "$FAKE_DIR/out"; then
+  pass "force-sync refusé : ::warning::, puis l'attente aboutit"
+else fail "force-sync refusé : ::warning::, puis l'attente aboutit" "rc=$rc ; $(cat "$FAKE_DIR/out")"; fi
+
 # --- 8. aucune valeur de secret, dans aucun cas ------------------------------
 leaks="$(grep -rl "$SENTINEL" "$TMP"/*/out 2>/dev/null || true)"
-secret_reads="$(grep -h -E ' (get|describe) secrets? ' "$TMP"/*/args 2>/dev/null || true)"
+secret_reads="$(grep -h -E ' (get|describe) (secrets?( |$)|secrets?/)' "$TMP"/*/args 2>/dev/null || true)"
 if [ -z "$leaks" ] && [ -z "$secret_reads" ]; then pass "aucun Secret lu, aucune valeur dans la sortie"
 else fail "aucun Secret lu, aucune valeur dans la sortie" "fuites : ${leaks:-aucune} ; lectures : ${secret_reads:-aucune}"; fi
 
@@ -212,8 +262,14 @@ else fail "--timeout non numérique : sortie 2" "rc=$rc ; $(cat "$FAKE_DIR/out")
 run preprod backend-secrets --interval 0
 if [ "$rc" -eq 2 ]; then pass "--interval nul : sortie 2"
 else fail "--interval nul : sortie 2" "rc=$rc ; $(cat "$FAKE_DIR/out")"; fi
+run preprod backend-secrets --timeout
+if [ "$rc" -eq 2 ]; then pass "--timeout sans valeur : sortie 2"
+else fail "--timeout sans valeur : sortie 2" "rc=$rc ; $(cat "$FAKE_DIR/out")"; fi
 if [ ! -s "$FAKE_DIR/args" ]; then pass "arguments invalides : kubectl jamais appelé"
 else fail "arguments invalides : kubectl jamais appelé" "$(cat "$FAKE_DIR/args")"; fi
+run --help
+if [ "$rc" -eq 0 ] && grep -q '^Usage' "$FAKE_DIR/out" && ! grep -q 'set -euo' "$FAKE_DIR/out"; then pass "--help : l'en-tête seul, sans le code"
+else fail "--help : l'en-tête seul, sans le code" "rc=$rc ; $(tail -3 "$FAKE_DIR/out")"; fi
 
 echo
 if [ "$failures" -gt 0 ]; then echo "$failures échec(s)"; exit 1; fi
