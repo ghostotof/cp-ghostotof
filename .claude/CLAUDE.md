@@ -2,6 +2,38 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Where the rest lives: `.claude/rules/` (issue #346)
+
+This file only carries what applies everywhere, plus what runs from the shell (git flow, release,
+`make` commands, secrets). Everything specific to one area lives in a **path-scoped rule** under
+`.claude/rules/`, loaded automatically when a file matching its `paths:` is read or written.
+
+- **Read before you write.** A rule is loaded by the `Read`/`Write`/`Edit` tools, **never by a shell
+  command**: `cat`, `sed`, `grep` or `head` on a file load nothing (verified on 2026-10-05, see #346).
+  Before modifying a file of an area, or running a command that writes there, read at least one file of
+  that area with `Read`. When in doubt, read the rule itself.
+- **Where a new invariant goes.** In the rule of its area, or in a new rule with its own `paths:`. This
+  file only receives what is cross-cutting or shell-driven. `tools/check-claude-rules.sh` (run by
+  `tools-tests`) fails on a rule without `paths:`, on a glob that matches no tracked file, and on this
+  file growing past 50 000 bytes.
+
+| Rule (`.claude/rules/`) | Area | Read it before… |
+|---|---|---|
+| `backend-outillage.md` | backend quality tooling, Monolog | touching PHPStan/Rector/Psalm/`lsp:check`, a CI quality job, logging |
+| `backend-architecture.md` | backend DDD layout, UUID v7 keys | adding an entity, a bounded context, a migration |
+| `security-user.md` | `Security/User` | touching accounts, invitations, password setup |
+| `security-authentication.md` | `Security/Authentication` | touching login, JWT, cookies, CSRF, a `kernel.request` guard, the audit log |
+| `portfolio-contenus.md` | `Portfolio/*` content, ordering, translation groups | touching a content context, `position`, `translation_group` |
+| `portfolio-watch.md` | `Portfolio/Watch` | touching the tech watch, `/stack`, an outbound call |
+| `ai.md` | `Ai/` (translation, career assistant) | touching anything that calls a language model |
+| `backoffice-api.md` | backoffice API, API Platform pattern, API errors | adding an endpoint, an API Platform resource, an exception mapping |
+| `seeding.md` | `app:*:seed`, reference-data migrations | touching a seed command or the meaning of seeded data |
+| `frontend.md` | frontend layers, API-backed content, i18n, SEO, lint | any frontend change |
+| `frontend-backoffice.md` | `/admin`, set-password, route guard | touching an admin page or the router |
+| `frontend-a11y.md` | accessibility | adding or changing UI |
+| `images-docker.md` | Dockerfiles, frontend image, share cards | touching `docker/`, the image build, `.dockerignore` |
+| `deploiement.md` | Kubernetes, nginx, pipeline deploy jobs, state off the pod | touching `k8s/`, `docker/`, a workflow, `cache`/`lock`/rate limiters |
+
 ## Goals
 
 1. This project has vocation to be a personal demonstration of the best practices for a modern PHP application with a separated frontend (Vue + TypeScript).
