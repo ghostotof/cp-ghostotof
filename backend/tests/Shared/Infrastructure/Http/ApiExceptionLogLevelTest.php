@@ -8,7 +8,10 @@ use App\Ai\Assistant\Domain\Exception\AssistantRateLimitExceededException;
 use App\Ai\Assistant\Domain\Exception\AssistantUnavailableException;
 use App\Ai\Assistant\Domain\Exception\InvalidConversationException;
 use App\Ai\Assistant\Infrastructure\Http\RequestBodyTooLargeException;
+use App\Ai\Translation\Domain\Exception\TranslationRateLimitExceededException;
 use App\Ai\Translation\Domain\Exception\TranslationUnavailableException;
+use App\Portfolio\About\Domain\Exception\AboutSettingsNotFoundException;
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Domain\Exception\BaseAccessRateLimitExceededException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException;
@@ -67,6 +70,8 @@ final class ApiExceptionLogLevelTest extends TestCase
         yield 'jeton de mot de passe inconnu (404), visible en production' => [InvalidPasswordSetupTokenException::unknownToken(), Level::Warning];
         yield 'quota de définition de mot de passe (429), visible en production' => [new PasswordSetupRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Warning];
         yield 'lien de mot de passe expiré (410)' => [PasswordSetupTokenExpiredException::expiredOrAlreadyUsed(), Level::Info];
+        yield 'quota du traducteur (429), visible en production' => [new TranslationRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Warning];
+        yield 'réglages « À propos » absents pour une locale valide (404), visible en production' => [AboutSettingsNotFoundException::forLocale(Locale::FR), Level::Warning];
     }
 
     #[DataProvider('exceptions')]

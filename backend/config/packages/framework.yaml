@@ -68,8 +68,12 @@ framework:
         # Assistant de traduction (ADR 0004) : panne du fournisseur, quota.
         App\Ai\Translation\Domain\Exception\TranslationUnavailableException:
             log_level: warning
+        # Le quota est la borne de dépense, même sur un compte ROLE_SUPER
+        # compromis (rate_limiter.yaml) ; le traducteur n'écrit rien sur
+        # `ai_usage`, contrairement à l'assistant de parcours : ce journal est la
+        # seule trace applicative d'un usage en boucle.
         App\Ai\Translation\Domain\Exception\TranslationRateLimitExceededException:
-            log_level: info
+            log_level: warning
         # Contenus du portfolio : introuvable, conflit, saisie invalide.
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException:
             log_level: info
@@ -105,8 +109,12 @@ framework:
             log_level: info
         App\Portfolio\Quality\Domain\Exception\QualityTraitNotFoundException:
             log_level: info
+        # Pas une erreur du client : la locale a déjà passé Locale::fromString,
+        # c'est la ligne de réglages qui manque en base (seed absent, ligne
+        # supprimée), et toute la page « À propos » répond 404 sur une route
+        # publique. Un défaut de données, donc visible en production.
         App\Portfolio\About\Domain\Exception\AboutSettingsNotFoundException:
-            log_level: info
+            log_level: warning
         App\Portfolio\About\Domain\Exception\AboutSiteCardNotFoundException:
             log_level: info
         App\Portfolio\About\Domain\Exception\AboutMeCardNotFoundException:
