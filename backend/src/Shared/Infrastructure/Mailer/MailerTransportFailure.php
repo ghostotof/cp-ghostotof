@@ -19,7 +19,8 @@ use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExcep
  * dans le journal du worker et dans les détails d'erreur que la table d'échec
  * de Messenger garde avec le message. Le message lui-même, sérialisé dans
  * cette table, porte toujours ce qu'il transporte (le contact : nom, adresse
- * et texte du visiteur) : c'est sa rétention, pas l'exception, qui le règle.
+ * et texte du visiteur) : c'est sa rétention qui le règle
+ * (`app:contact:purge-failed-messages`, 30 jours, CronJob quotidienne).
  * Le pendant, côté e-mail, de ProviderFailure côté modèles de langage.
  *
  * Le code :
