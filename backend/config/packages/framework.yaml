@@ -76,11 +76,11 @@ framework:
         App\Ai\Translation\Domain\Exception\TranslationUnavailableException:
             log_level: warning
         # Le quota est la borne de dépense, même sur un compte ROLE_SUPER
-        # compromis (rate_limiter.yaml) ; le traducteur n'écrit rien sur
-        # `ai_usage`, contrairement à l'assistant de parcours : ce journal est la
-        # seule trace applicative d'un usage en boucle.
+        # compromis (rate_limiter.yaml). Son refus est tracé sur `ai_usage` avec
+        # le compte et l'échéance (SymfonyTranslationRateLimiter, issue #356),
+        # comme celui de l'assistant de parcours : `info` ici, comme lui.
         App\Ai\Translation\Domain\Exception\TranslationRateLimitExceededException:
-            log_level: warning
+            log_level: info
         # Contenus du portfolio : introuvable, conflit, saisie invalide.
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException:
             log_level: info

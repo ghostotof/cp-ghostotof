@@ -11,11 +11,10 @@ use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Ai\Assistant\Support\StubProvider;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\ReadsAiUsageLog;
 use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
-use Monolog\Handler\TestHandler;
-use Monolog\Level;
 use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -34,6 +33,7 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 final class AnswerControllerTest extends WebTestCase
 {
     use HttpJson;
+    use ReadsAiUsageLog;
     use ReadsAllChannelsLog;
 
     private const string PATH = '/api/assistant/answers';
@@ -169,7 +169,7 @@ final class AnswerControllerTest extends WebTestCase
         $client->getInternalResponse();
 
         $done = array_values(array_filter(
-            $this->aiUsageRecords(),
+            self::aiUsageRecords(),
             static fn (LogRecord $record): bool => 'done' === ($record->context['outcome'] ?? null),
         ));
         self::assertCount(1, $done);
@@ -466,7 +466,7 @@ final class AnswerControllerTest extends WebTestCase
         self::assertCount(self::QUOTA, $this->scalewayRequests);
         // Le refus est tracé sur le canal qui sort des pods de production.
         $refusals = array_values(array_filter(
-            $this->aiUsageRecords(),
+            self::aiUsageRecords(),
             static fn (LogRecord $record): bool => 'rate-limited' === ($record->context['outcome'] ?? null),
         ));
         self::assertCount(1, $refusals);
@@ -635,26 +635,6 @@ final class AnswerControllerTest extends WebTestCase
         ], content: '{"locale": "fr", "messages": [');
 
         self::assertSame(400, $client->getResponse()->getStatusCode());
-    }
-
-    /**
-     * Les enregistrements du canal `ai_usage`, gardés par le TestHandler que
-     * monolog.yaml y branche en test. Filtré sur le niveau : la sonde de tous
-     * les canaux (`all_channels_test`, `debug`, issue #269) est elle aussi un
-     * TestHandler de ce logger, et elle porte les enregistrements de toute
-     * l'application.
-     *
-     * @return list<LogRecord>
-     */
-    private function aiUsageRecords(): array
-    {
-        foreach (self::getContainer()->get('monolog.logger.ai_usage')->getHandlers() as $handler) {
-            if ($handler instanceof TestHandler && Level::Info === $handler->getLevel()) {
-                return array_values($handler->getRecords());
-            }
-        }
-
-        self::fail('Aucun TestHandler sur le canal ai_usage : voir monolog.yaml (when@test).');
     }
 
     /**
