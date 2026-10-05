@@ -311,6 +311,48 @@ final class SecurityAuditLoggerTest extends TestCase
     }
 
     /**
+     * Issue #356 : un jeton inconnu ne nomme rien — ni le jeton (un secret,
+     * même faux : une faute de frappe sur un vrai lien en serait proche), ni
+     * un compte (il n'y en a pas). L'IP et le chemin suffisent à attribuer un
+     * essai de jetons à la chaîne.
+     */
+    public function testPasswordSetupTokenRejectedCarriesNoSubjectOnlyTheIpAndThePath(): void
+    {
+        $this->pushRequest('/api/account/password-setup/validate', 'POST');
+
+        $this->auditLogger->passwordSetupTokenRejected();
+
+        self::assertSame([
+            'event' => 'password-setup-token-rejected',
+            'actor' => 'anonymous',
+            'ip' => self::IP,
+            'path' => '/api/account/password-setup/validate',
+        ], $this->singleRecord()->context);
+    }
+
+    /**
+     * Issue #356 : un lien déjà consommé qui revient est le signe possible
+     * d'une fuite (boîte mail lue par un tiers, lien transféré). Le compte
+     * visé est nommé — c'est lui qu'il faut prévenir —, jamais le jeton.
+     */
+    public function testPasswordSetupTokenReplayedNamesTheAccountTheLinkWasFor(): void
+    {
+        $this->pushRequest('/api/account/password-setup', 'POST');
+        $target = new CpgUser('jane', 'hashed-password');
+
+        $this->auditLogger->passwordSetupTokenReplayed($target);
+
+        self::assertSame([
+            'event' => 'password-setup-token-replayed',
+            'user' => 'jane',
+            'userId' => $target->getId()->toRfc4122(),
+            'actor' => 'anonymous',
+            'ip' => self::IP,
+            'path' => '/api/account/password-setup',
+        ], $this->singleRecord()->context);
+    }
+
+    /**
      * Le chemin journalisé est le chemin canonique, tel quel : depuis T4.1
      * (audit A7, D6) plus aucune route ne porte de jeton dans son chemin, la
      * rédaction transitoire `…/password-setup/{token}` a donc disparu. Un
@@ -438,9 +480,11 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->userDeleted($invited);
         $this->auditLogger->accountActivated($invited);
         $this->auditLogger->userPurged($invited);
+        $this->auditLogger->passwordSetupTokenRejected();
+        $this->auditLogger->passwordSetupTokenReplayed($invited);
 
         $records = $this->handler->getRecords();
-        self::assertCount(15, $records);
+        self::assertCount(17, $records);
 
         foreach ($records as $record) {
             $serialized = json_encode([$record->message, $record->context, $record->extra], \JSON_THROW_ON_ERROR);

@@ -51,11 +51,23 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
     {
         $token = $this->passwordSetupTokenRepository->findOneByTokenHash(hash('sha256', $clearToken));
 
+        // Journal de sécurité (issue #356) : ces deux refus n'avaient pour
+        // trace que la ligne générique du noyau, sans IP ni chemin. Jamais le
+        // jeton, ni en clair ni haché.
         if (null === $token) {
+            $this->auditLogger->passwordSetupTokenRejected();
+
             throw InvalidPasswordSetupTokenException::unknownToken();
         }
 
         if (!$token->isUsable($this->clock->now())) {
+            // Un lien déjà consommé qui revient se distingue ici, côté journal
+            // seulement : la réponse reste le 410 fusionné avec « expiré ». Un
+            // lien simplement expiré n'est pas un événement de sécurité.
+            if (null !== $token->getUsedAt()) {
+                $this->auditLogger->passwordSetupTokenReplayed($token->getUser());
+            }
+
             throw PasswordSetupTokenExpiredException::expiredOrAlreadyUsed();
         }
 

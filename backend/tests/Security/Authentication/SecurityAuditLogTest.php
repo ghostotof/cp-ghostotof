@@ -362,9 +362,67 @@ final class SecurityAuditLogTest extends WebTestCase
     }
 
     /**
-     * Les refus du parcours (jeton inconnu, expiré, corps invalide) et la
-     * simple validation n'écrivent rien dans le journal d'audit — et surtout
-     * pas le jeton reçu, qu'il soit bon ou mauvais.
+     * Issue #356 : un jeton inconnu laisse une ligne attribuable (IP, chemin)
+     * sur `security_audit`, sans le jeton — sur les deux routes du parcours.
+     */
+    public function testAnUnknownPasswordSetupTokenIsRecordedAsRejected(): void
+    {
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $unknown = bin2hex(random_bytes(32));
+        $server = ['CONTENT_TYPE' => 'application/json'];
+
+        $client->request('POST', '/api/account/password-setup/validate', server: $server, content: self::jsonBody(['token' => $unknown]));
+
+        self::assertResponseStatusCodeSame(404);
+        self::assertSame([
+            'event' => 'password-setup-token-rejected',
+            'actor' => 'anonymous',
+            'ip' => '127.0.0.1',
+            'path' => '/api/account/password-setup/validate',
+        ], self::singleSecurityAuditEvent('password-setup-token-rejected'));
+
+        $client->request('POST', '/api/account/password-setup', server: $server, content: self::jsonBody(['token' => $unknown, 'password' => TestCredentials::variant('setup')]));
+
+        self::assertResponseStatusCodeSame(404);
+        self::assertSame('/api/account/password-setup', self::singleSecurityAuditEvent('password-setup-token-rejected')['path']);
+    }
+
+    /**
+     * Issue #356 : un lien déjà consommé qui revient est tracé comme rejoué,
+     * avec le compte qu'il activait. La réponse, elle, reste le 410 fusionné
+     * avec « expiré ».
+     */
+    public function testAReplayedPasswordSetupLinkIsRecordedWithItsAccount(): void
+    {
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $token = $this->inviteAndCollectSetupToken('newcomer@example.com', Locale::FR);
+        $server = ['CONTENT_TYPE' => 'application/json'];
+
+        $client->request('POST', '/api/account/password-setup', server: $server, content: self::jsonBody(['token' => $token, 'password' => TestCredentials::variant('setup')]));
+        self::assertResponseStatusCodeSame(204);
+        $userId = self::singleSecurityAuditEvent('account-activated')['userId'];
+
+        $client->request('POST', '/api/account/password-setup/validate', server: $server, content: self::jsonBody(['token' => $token]));
+
+        self::assertResponseStatusCodeSame(410);
+        self::assertSame([
+            'event' => 'password-setup-token-replayed',
+            'user' => 'newcomer',
+            'userId' => $userId,
+            'actor' => 'anonymous',
+            'ip' => '127.0.0.1',
+            'path' => '/api/account/password-setup/validate',
+        ], self::singleSecurityAuditEvent('password-setup-token-replayed'));
+        $this->assertTokenAppearsInNoSecurityAuditRecord($token);
+    }
+
+    /**
+     * Aucune requête du parcours — validation, refus (jeton inconnu, corps
+     * invalide) — ne recopie le jeton reçu dans le journal d'audit, qu'il soit
+     * bon ou mauvais. Les refus y laissent une ligne depuis l'issue #356, sans
+     * lui.
      */
     public function testNoPasswordSetupRequestEverLeaksItsTokenIntoTheAuditLog(): void
     {

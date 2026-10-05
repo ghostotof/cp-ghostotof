@@ -148,13 +148,15 @@ framework:
         # aucune des deux entrées ne la reconnaîtrait.
         App\Security\User\Domain\Exception\AccountInvitationDeliveryException:
             log_level: warning
-        # Parcours public de définition de mot de passe. Un jeton inconnu et un
-        # quota atteint restent en `warning`, donc visibles en production :
-        # aucun événement `security_audit` ne les trace, et ce journal est le
-        # seul signal d'un essai de jetons à la chaîne. Un lien expiré, lui,
-        # est le cas ordinaire d'une invitation ouverte trop tard.
+        # Parcours public de définition de mot de passe. Un jeton inconnu est
+        # tracé sur `security_audit` (`password-setup-token-rejected`, avec IP
+        # et chemin, issue #356) : ce journal n'est plus sa seule trace, il
+        # rentre dans la règle des 4xx. Un lien expiré est le cas ordinaire
+        # d'une invitation ouverte trop tard ; un lien déjà consommé, fusionné
+        # avec lui dans la réponse, a son propre événement
+        # (`password-setup-token-replayed`).
         App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException:
-            log_level: warning
+            log_level: info
         App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException:
             log_level: info
         App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException:

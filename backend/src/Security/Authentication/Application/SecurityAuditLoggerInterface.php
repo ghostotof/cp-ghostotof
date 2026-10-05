@@ -21,6 +21,8 @@ use App\Security\User\Domain\Entity\CpgUser;
  *  - l'émission d'un jeton du palier de base : BaseAccessController ;
  *  - les actions d'administration et l'activation d'un compte : les cas
  *    d'usage de Security\User\Application, après l'action réussie ;
+ *  - les refus du parcours de définition de mot de passe qu'aucune autre
+ *    trace n'attribue (issue #356) : PasswordSetupService, avant de lever ;
  *  - la purge automatique des invitations jamais activées (issue #238) :
  *    PendingInvitationPurger, une par compte supprimé.
  *
@@ -80,6 +82,22 @@ interface SecurityAuditLoggerInterface
 
     /** Fin du parcours d'invitation : mot de passe défini, compte utilisable. */
     public function accountActivated(CpgUser $user): void;
+
+    /**
+     * Jeton de définition de mot de passe inconnu (404, issue #356). Sans
+     * sujet : ni le jeton soumis (un secret, ou presque — une faute de frappe
+     * sur un vrai lien), ni un compte (aucun ne correspond). L'IP et le
+     * chemin attribuent un essai de jetons à la chaîne.
+     */
+    public function passwordSetupTokenRejected(): void;
+
+    /**
+     * Lien déjà consommé présenté de nouveau (issue #356) : signe possible
+     * d'une fuite du lien. Côté journal seulement — la réponse garde le 410
+     * fusionné avec « expiré », qui ne dit pas à l'appelant que le lien a
+     * servi. Nomme le compte que le lien activait, jamais le jeton.
+     */
+    public function passwordSetupTokenReplayed(CpgUser $user): void;
 
     /**
      * Compte en attente d'activation supprimé par la purge automatique

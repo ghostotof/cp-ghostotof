@@ -115,6 +115,16 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         $this->record('account-activated', 'Account activated.', $this->account($user));
     }
 
+    public function passwordSetupTokenRejected(): void
+    {
+        $this->record('password-setup-token-rejected', 'Password-setup token rejected: unknown token.');
+    }
+
+    public function passwordSetupTokenReplayed(CpgUser $user): void
+    {
+        $this->record('password-setup-token-replayed', 'Password-setup token replayed: link already used.', $this->account($user));
+    }
+
     public function userPurged(CpgUser $user): void
     {
         // Acteur forcé à `system` : cet événement naît d'une commande CLI
