@@ -32,6 +32,11 @@ api_platform:
     #     vendor/api-platform/symfony/EventListener/ErrorListener.php:167). Une
     #     entrée large doit donc rester **après** les entrées précises — d'où la
     #     place des défauts, tout en bas.
+    #
+    # Toute nouvelle entrée en appelle une seconde, dans `framework.exceptions`
+    # (framework.yaml) : son `log_level`. Le noyau journalise l'exception
+    # avant qu'API Platform la rende, et sans entrée la met en `critical`
+    # (issue #348). ExceptionLogLevelCoverageTest rougit sur un oubli.
     exception_to_status:
         App\Contact\Domain\Exception\ContactRateLimitExceededException: 429
         # Aujourd'hui seulement levée dans SendContactMessageHandler (worker

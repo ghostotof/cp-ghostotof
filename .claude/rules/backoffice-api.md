@@ -66,7 +66,15 @@ paths:
 - **Exceptions**: every new Domain `NotFoundException`/`AlreadyExistsException` needs an entry in
   `config/packages/api_platform.yaml`'s `exception_to_status` map (e.g. `ExperienceTechnologyNotFoundException`,
   `CpgUserNotFoundException`, `CannotDeleteOwnAccountException`) — otherwise API Platform surfaces an unmapped
-  exception as a generic 500 instead of a meaningful 4xx. When two exceptions share a status code but the
+  exception as a generic 500 instead of a meaningful 4xx. **And a `log_level` in `framework.exceptions`**
+  (issue #348): `ErrorListener::logKernelException` (priority 0) logs every exception *before* API Platform
+  (-96) renders it — API Platform does not log it "itself" — and without an entry a non-`HttpException`
+  goes out `critical`: until #348 every backoffice 404/409 and every public password-setup 404/429 was a
+  production alert an anonymous caller could produce at will. `info` for a client error, `warning` for a
+  third-party outage (503) or for a signal no `security_audit` event carries (password-setup unknown token
+  and quota). `tests/Shared/Infrastructure/Http/ExceptionLogLevelCoverageTest.php` requires an entry for
+  every `exception_to_status` key and every `ProblemExceptionInterface` of `src/`; its only way out is its
+  `EXEMPT` list, with a written justification (today the three broad API Platform defaults below). When two exceptions share a status code but the
   frontend must tell them apart (e.g. the two `PUT …/roles` 409s: self-modification vs last-super-admin), make
   the exception `implements ApiPlatform\Metadata\Exception\ProblemExceptionInterface` and
   `use App\Shared\Domain\Exception\HasProblemType` (declare `problemType()` → a stable kebab slug +
@@ -107,7 +115,7 @@ paths:
   dispatcher and pins that bracket. Two consequences for a new exception rendered there: it needs a
   `log_level` in `framework.exceptions`, since `logKernelException` (0) now sees it — base-access's 429
   was not logged at all while its listener stopped propagation at 0, and would go out `critical` without
-  its `info` entry (`ApiExceptionLogLevelTest` lists them) —, and an `exception_to_status` entry for it is
+  its `info` entry (`ExceptionLogLevelCoverageTest` enforces it) —, and an `exception_to_status` entry for it is
   dead config. Never give such an exception a `status_code` in `framework.exceptions`: `logKernelException`
   would swap it for an `HttpException` before -98, and the `type` would silently disappear. One case
   where the propagation does reach -98 from an API Platform route: `kernel.terminate`, where the delegated
