@@ -114,12 +114,14 @@ back-quality: ## Lance PHPStan, Rector (dry-run), Psalm et lsp:check dans le con
 # Symfony Language Tools (issue #90) : les chaînes que PHPStan ne voit pas —
 # services, routes, transports Messenger, firewalls, clés de config des bundles,
 # chemins Twig. Même politique de blocage que le job CI lsp-check-backend
-# (LSP_FAIL_ON), pour qu'un vert local vaille un vert CI. Le CLI télécharge la
-# dernière version stable de Language Tools dans son cache à la première
-# exécution (cf. `symfony lsp:cache-dir`).
+# (LSP_FAIL_ON), pour qu'un vert local vaille un vert CI. La version de Language
+# Tools est celle de SYMFONY_LANGUAGE_TOOLS_VERSION (.env), installée dans le
+# cache du CLI par le script ci-dessous avant chaque exécution — sans lui, le CLI
+# prendrait la dernière stable et divergerait de la CI (issue #343).
 LSP_FAIL_ON = service.not_found,parameter.not_found,route.not_found,route.missing_parameters,security.unknown_firewall,security.unknown_provider,messenger.unknown_bus,messenger.unknown_transport,messenger.invalid_handler_signature,template.not_found,validation.unknown_constraint_option,env.unknown_processor,env.incompatible_type,config.invalid_type
 
 back-lsp: ## Lance symfony lsp:check (diagnostics Symfony) dans le conteneur
+	$(DC) exec -u dev backend /var/www/docker/php/install-symfony-language-tools.sh
 	$(DC) exec -u dev backend symfony lsp:check --fail-on=$(LSP_FAIL_ON)
 
 front-init: ## Crée le projet Vite en mode INTERACTIF (à lancer une seule fois)

@@ -114,10 +114,17 @@ alongside PHPStan; don't reach for Psalm annotations or raise its level. **Symfo
 it makes no call to symfony.com) and validates what PHPStan cannot see: service ids, route names,
 Messenger transports, firewalls, constraint options, bundle config keys, Twig paths. It needs no database
 (a refused connection is fine — a *DNS* failure once segfaulted the checker, don't point it at an
-unresolvable host). It requires Symfony CLI ≥ 5.20.0 (`.env`, `versions.lock`); the CLI downloads the
-latest stable Language Tools into its own cache (`symfony lsp:cache-dir`), so that part is **not pinned**
-— which is why the job is blocking only on the `--fail-on` list of low-false-positive codes and is *not*
-in `build-images`' `needs` yet (re-evaluate after a few weeks). No baseline: the repo is clean apart from
+unresolvable host). It requires Symfony CLI ≥ 5.20.0 (`.env`, `versions.lock`). **Language Tools is
+pinned too** (`SYMFONY_LANGUAGE_TOOLS_VERSION`, issue #343), though the CLI has no option for it: left
+alone, it asks the **GitHub API** (`releases/latest`, anonymous, a rate limit shared by every runner —
+hence the 403s *before any analysis*) for the latest stable once its cache is over 24 h old.
+`docker/php/install-symfony-language-tools.sh` installs the declared version into the CLI's cache
+(`symfony lsp:cache-dir`, checksum checked against the release's `SHA256SUMS`) and writes `state.json`
+with `checkedAt` = now, so the CLI uses it **without any network call**; both the CI job and
+`make back-lsp` run it first. It relies on the CLI's cache layout (`local/externaltool/manager.go`):
+re-check it on every `SYMFONY_CLI_VERSION` bump. A failed download is reported as such in the job
+summary, never as a code defect. The job is blocking only on the `--fail-on` list of
+low-false-positive codes and is *not* in `build-images`' `needs` yet (re-evaluate mid-October). No baseline: the repo is clean apart from
 six `config.unknown_key` **warnings** on `ai.yaml` (`ai.agent.{translator,career_assistant}.model.name/options`, three per agent), keys that
 Symfony accepts because the bundle declares `model` as a `variableNode` (its only rule: a string, or an array
 with `name`) — Language Tools cannot know the keys under it, a false positive by construction, left visible

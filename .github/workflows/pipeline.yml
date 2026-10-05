@@ -285,10 +285,14 @@ jobs:
   # Politique (bêta, réévaluer après quelques semaines) : bloquant SEULEMENT
   # sur les codes à faible taux de faux positifs (--fail-on, même liste que
   # `make back-lsp`) ; le reste n'est qu'annotation. Le job ne conditionne pas
-  # `build-images` : un rouge se voit sur la PR sans bloquer une release —
-  # Language Tools n'est pas figé (le CLI prend la dernière stable à chaque
-  # run), une nouvelle règle ne doit pas retenir une mise en production.
-  # Le CLI, lui, est figé : même version que le conteneur dev (.env).
+  # `build-images` : un rouge se voit sur la PR sans bloquer une release.
+  # Le CLI et Language Tools sont figés, mêmes versions que le conteneur dev
+  # (.env). Le CLI n'a pas d'option de version pour Language Tools : laissé
+  # seul, il interroge l'API GitHub (anonyme, limite partagée entre runners →
+  # 403 avant toute analyse, issue #343) et prend la dernière stable.
+  # install-symfony-language-tools.sh pose la version voulue dans son cache,
+  # qu'il utilise alors sans appel réseau. Un échec de ce téléchargement est
+  # signalé comme tel dans le résumé, jamais comme un défaut du code.
   # ---------------------------------------------------------------------------
   lsp-check-backend:
     runs-on: ubuntu-latest
@@ -319,6 +323,9 @@ jobs:
           tar -xzf "$RUNNER_TEMP/symfony-cli.tar.gz" -C "$RUNNER_TEMP/bin" symfony
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/bin/symfony" version
+      - name: Installe les Symfony Language Tools (version de .env)
+        id: language-tools
+        run: docker/php/install-symfony-language-tools.sh
       - name: symfony lsp:check (bloquant sur les codes listés)
         working-directory: backend
         shell: bash   # pipefail, cf. sast-backend
@@ -328,7 +335,15 @@ jobs:
             | tee "$RUNNER_TEMP/lsp-check.log"
       - name: Résumé lsp:check
         if: always()
-        run: .github/scripts/summary-annotations.sh "Symfony Language Tools (lsp:check)" "$RUNNER_TEMP/lsp-check.log" '^::notice title=Symfony diagnostics summary' >> "$GITHUB_STEP_SUMMARY"
+        env:
+          LANGUAGE_TOOLS_OUTCOME: ${{ steps.language-tools.outcome }}
+        run: |
+          if [ "$LANGUAGE_TOOLS_OUTCOME" = failure ]; then
+            echo "::error title=Symfony Language Tools indisponibles::Téléchargement impossible : aucun diagnostic n'a tourné, le code n'est pas en cause. Relancer le job."
+            printf '## ⚠️ Symfony Language Tools (lsp:check)\n\nTéléchargement de Language Tools impossible : **aucun diagnostic n'\''a tourné**, le code n'\''est pas en cause. Relancer le job ; voir l'\''étape « Installe les Symfony Language Tools ».\n\n' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          .github/scripts/summary-annotations.sh "Symfony Language Tools (lsp:check)" "$RUNNER_TEMP/lsp-check.log" '^::notice title=Symfony diagnostics summary' >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # tools-tests — les scripts de tools/ (release, spec 0006 ; smoke tests ;
@@ -354,11 +369,12 @@ jobs:
           tools/tests/security-headers.test.sh
           tools/tests/check-workflow-timeouts.test.sh
           tools/tests/git-config-isolation.test.sh
+          tools/tests/install-symfony-language-tools.test.sh
       # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.
       - name: shellcheck (préinstallé sur le runner)
-        run: shellcheck -x --severity=warning tools/*.sh tools/lib/*.sh tools/tests/*.sh tools/tests/lib/*.sh
+        run: shellcheck -x --severity=warning tools/*.sh tools/lib/*.sh tools/tests/*.sh tools/tests/lib/*.sh docker/php/install-symfony-language-tools.sh
       # Image officielle, figée sur le digest de son index multi-arch (v1.7.12).
       # Elle embarque shellcheck et pyflakes, donc les `run:` de ce fichier sont
       # analysés aussi.
