@@ -71,11 +71,18 @@ paths:
   (-96) renders it — API Platform does not log it "itself" — and without an entry a non-`HttpException`
   goes out `critical`: until #348 every backoffice 404/409 and every public password-setup 404/429 was a
   production alert an anonymous caller could produce at will. `info` for a client error, `warning` for a
-  third-party outage (503) or for a signal no `security_audit` event carries (password-setup unknown token
-  and quota). `tests/Shared/Infrastructure/Http/ExceptionLogLevelCoverageTest.php` requires an entry for
-  every `exception_to_status` key and every `ProblemExceptionInterface` of `src/`; its only way out is its
-  `EXEMPT` list, with a written justification (today the three broad API Platform defaults below). When two exceptions share a status code but the
-  frontend must tell them apart (e.g. the two `PUT …/roles` 409s: self-modification vs last-super-admin), make
+  third-party outage (503) or for a signal nothing else traces (password-setup unknown token and quota,
+  translation quota, missing About settings for a valid locale). That rule covers our domain exceptions
+  only: the framework's own HTTP 4xx (router 404/405, validation 422, 403) stay at `error`.
+  `tests/Shared/Infrastructure/Http/ExceptionLogLevelCoverageTest.php` pins four things: an entry for
+  every `exception_to_status` key and every `ProblemExceptionInterface` of `src/` (found by token parsing
+  through `tests/Support/DeclaredClasses`, shared with `ProblemDetailStaysStaticTest`, never inferred from
+  file paths); a level that matches the rendered status (4xx: info/notice/warning, 5xx:
+  warning/error/critical); no entry that targets anything else — a broad `\DomainException` or an
+  interface would hide real server faults and shadow the precise entries after it, since the kernel takes
+  the first match —; and justified ways out only (`EXEMPT`: the three broad API Platform defaults below,
+  tracked in #355; `JUSTIFIED_ENTRIES`: the 415 of #320).
+  When two exceptions share a status code but the frontend must tell them apart (e.g. the two `PUT …/roles` 409s: self-modification vs last-super-admin), make
   the exception `implements ApiPlatform\Metadata\Exception\ProblemExceptionInterface` and
   `use App\Shared\Domain\Exception\HasProblemType` (declare `problemType()` → a stable kebab slug +
   `problemStatus()`): API Platform then emits `type: /errors/<slug>` in the problem+json, which the client keys

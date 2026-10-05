@@ -41,8 +41,10 @@ api_platform:
         App\Contact\Domain\Exception\ContactRateLimitExceededException: 429
         # Aujourd'hui seulement levée dans SendContactMessageHandler (worker
         # Messenger async, jamais dans la pile HTTP synchrone) : entrée
-        # défensive pour éviter un 500 générique si ce handler était un jour
-        # invoqué de façon synchrone depuis un Processor API Platform.
+        # défensive pour éviter un 500 générique si ce service était un jour
+        # appelé directement depuis un Processor API Platform. Elle ne vaut pas
+        # pour un bus Messenger synchrone, qui envelopperait l'exception dans
+        # HandlerFailedException (issue #348).
         App\Contact\Domain\Exception\ContactMessageDeliveryException: 503
         # Assistant de traduction (ADR 0004) : fournisseur injoignable, délai
         # dépassé ou réponse hors schéma. 503 comme la remise d'un e-mail —
@@ -112,7 +114,8 @@ api_platform:
         App\Security\User\Domain\Exception\EmailAlreadyUsedException: 409
         App\Security\User\Domain\Exception\AccountNotAwaitingActivationException: 409
         # Levée par SendAccountInvitationHandler (worker Messenger async) ;
-        # entrée défensive au cas où l'envoi serait un jour synchrone.
+        # entrée défensive pour un appel direct, même réserve que la remise du
+        # message de contact ci-dessus (HandlerFailedException).
         App\Security\User\Domain\Exception\AccountInvitationDeliveryException: 503
         # Parcours public de définition de mot de passe (/api/account/password-setup) :
         # jeton inconnu -> 404, expiré ou déjà consommé -> 410 (cas fusionnés

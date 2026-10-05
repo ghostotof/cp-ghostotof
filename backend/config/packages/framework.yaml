@@ -16,7 +16,9 @@ framework:
 
     # Niveau de journalisation de l'ErrorListener du noyau, qui met sinon en
     # `critical` toute exception hors HttpExceptionInterface et en `error` tout
-    # 4xx (tests/Shared/Infrastructure/Http/ApiExceptionLogLevelTest.php).
+    # 4xx HTTP (tests/Shared/Infrastructure/Http/ApiExceptionLogLevelTest.php ;
+    # ExceptionLogLevelCoverageTest exige une entrée pour chaque exception
+    # métier rendue avec un statut, issue #348).
     # Ici plutôt qu'en `#[WithLogLevel]` : le domaine ne dépend pas de HttpKernel.
     # Ne viser que des classes précises : un mapping sur HttpException
     # abaisserait le niveau de tous les 4xx de l'application.
@@ -53,14 +55,18 @@ framework:
         # (-96) : sans entrée, chacune sortait en `critical` — une 404 de
         # backoffice, un 409 de saisie ou un quota atteint étaient autant
         # d'alertes de production (issue #348). Règle : `info` pour une erreur
-        # du client (4xx), `warning` pour la panne d'un tiers (503), qui reste
-        # visible en production. ExceptionLogLevelCoverageTest exige une entrée
-        # pour chaque clé de `exception_to_status` et chaque
-        # ProblemExceptionInterface de src/, hors dispenses justifiées.
+        # du client (4xx), `warning` pour la panne d'un tiers (503) ou pour un
+        # signal qu'aucune autre trace ne porte, l'un et l'autre visibles en
+        # production. La règle ne vaut que pour ces exceptions métier : les 4xx
+        # HTTP du framework (404/405 du routeur, 422 de validation, 403) restent
+        # en `error`. ExceptionLogLevelCoverageTest exige une entrée pour chaque
+        # clé de `exception_to_status` et chaque ProblemExceptionInterface de
+        # src/, hors dispenses justifiées, et un niveau conforme au statut.
         #
-        # Formulaire de contact : quota par IP, et remise de l'e-mail
-        # (aujourd'hui levée dans le worker seulement, entrée défensive comme
-        # celle de api_platform.yaml).
+        # Formulaire de contact : quota par IP en `info`, comme celui de
+        # base-access — leur trace retenue est l'access log de nginx (le 429 et
+        # l'IP réelle) ; un événement `security_audit` est suivi à part. Puis la
+        # remise de l'e-mail, voir AccountInvitationDeliveryException plus bas.
         App\Contact\Domain\Exception\ContactRateLimitExceededException:
             log_level: info
         App\Contact\Domain\Exception\ContactMessageDeliveryException:
@@ -134,7 +140,12 @@ framework:
             log_level: info
         App\Security\User\Domain\Exception\AccountNotAwaitingActivationException:
             log_level: info
-        # Envoi de l'invitation (worker aujourd'hui, entrée défensive).
+        # Envoi de l'invitation, comme la remise du message de contact : levées
+        # dans un handler du worker, où ni ce mapping ni `exception_to_status`
+        # n'agissent. Entrées défensives pour un appel *direct* au service
+        # depuis la pile HTTP seulement : via un bus Messenger synchrone,
+        # l'exception arriverait enveloppée dans HandlerFailedException, et
+        # aucune des deux entrées ne la reconnaîtrait.
         App\Security\User\Domain\Exception\AccountInvitationDeliveryException:
             log_level: warning
         # Parcours public de définition de mot de passe. Un jeton inconnu et un
@@ -150,11 +161,11 @@ framework:
             log_level: warning
 
         # Content-Type refusé (415) : une erreur du client, jamais un incident.
-        # Seule exception de cette liste à ne pas être une exception métier
-        # rendue par ApiProblemResponseListener, et c'est voulu (issue #320) :
-        # la classe est levée par #[MapRequestPayload(acceptFormat)] sur
-        # /api/assistant/answers, mais
-        # aussi par ContentNegotiationProvider, DeserializeProvider,
+        # Seule entrée de cette liste à ne viser ni une exception métier de
+        # src/ ni une clé de `exception_to_status`, et c'est voulu (issue #320,
+        # justifiée dans ExceptionLogLevelCoverageTest) : la classe est levée
+        # par #[MapRequestPayload(acceptFormat)] sur /api/assistant/answers,
+        # mais aussi par ContentNegotiationProvider, DeserializeProvider,
         # ParameterProvider et DeserializeListener d'API Platform — donc sur
         # **toute** route de l'API, backoffice compris. Avec LOG_LEVEL=warning,
         # aucun 415 n'apparaît dans les journaux de production.

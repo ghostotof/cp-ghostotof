@@ -46,9 +46,13 @@ use Symfony\Component\Yaml\Yaml;
  * ancien écouteur dédié court-circuitait.
  *
  * Les exceptions rendues par API Platform passent par la même journalisation,
- * avant lui (issue #348) : quelques-unes sont épinglées ici, celles dont le
- * niveau est un choix plutôt que la règle (4xx en `info`). La présence d'une
- * entrée pour chacune relève d'ExceptionLogLevelCoverageTest.
+ * avant lui (issue #348). Sont épinglées ici celles dont le niveau est un
+ * choix plutôt que la règle (un 4xx en `warning`), plus un représentant de la
+ * règle par statut. La présence et la conformité au statut d'une entrée pour
+ * chacune relèvent d'ExceptionLogLevelCoverageTest.
+ *
+ * La requête est la même pour tous les cas : le niveau ne dépend que de
+ * l'exception, jamais de la route.
  */
 final class ApiExceptionLogLevelTest extends TestCase
 {
