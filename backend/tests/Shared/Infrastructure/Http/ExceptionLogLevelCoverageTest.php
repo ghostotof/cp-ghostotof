@@ -13,6 +13,7 @@ use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\UnloggedFixtur
 use Doctrine\ORM\OptimisticLockException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
 use Symfony\Component\Yaml\Yaml;
 
@@ -60,6 +61,14 @@ final class ExceptionLogLevelCoverageTest extends TestCase
         OptimisticLockException::class => 'Défaut d\'API Platform ; aucune entité versionnée aujourd\'hui, le conflit serait à observer.',
     ];
 
+    /**
+     * Entrées de framework.exceptions qui ne visent ni une ProblemExceptionInterface
+     * de src/, ni une clé de `exception_to_status`.
+     */
+    private const array JUSTIFIED_ENTRIES = [
+        UnsupportedMediaTypeHttpException::class => '415 levé par #[MapRequestPayload] et par API Platform sur toute route de l\'API (issue #320) : classe précise, erreur du client.',
+    ];
+
     public function testEveryExceptionTheApiRendersHasALogLevel(): void
     {
         $rendered = array_values(array_unique([...DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class), ...$this->exceptionToStatusKeys()]));
@@ -72,6 +81,25 @@ final class ExceptionLogLevelCoverageTest extends TestCase
             [],
             $this->uncovered($watched, $this->logLevelKeys()),
             'Sans `log_level` dans framework.exceptions, ces exceptions sortent en `critical`.',
+        );
+    }
+
+    /**
+     * L'inverse du test précédent : chaque entrée vise une exception recensée.
+     * Une entrée large (`\DomainException`, une interface…) couvrirait tout en
+     * apparence, abaisserait aussi de vrais défauts serveur, et masquerait les
+     * entrées précises placées après elle — le noyau retient la première qui
+     * correspond. Interdites, donc, sauf justification.
+     */
+    public function testEveryLogLevelEntryTargetsARenderedException(): void
+    {
+        $rendered = [...DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class), ...$this->exceptionToStatusKeys()];
+        self::assertSame([], array_values(array_diff(array_keys(self::JUSTIFIED_ENTRIES), $this->logLevelKeys())), 'Justification d\'une entrée qui n\'existe plus : la retirer.');
+
+        self::assertSame(
+            [],
+            array_values(array_diff($this->logLevelKeys(), $rendered, array_keys(self::JUSTIFIED_ENTRIES))),
+            'Entrée de framework.exceptions qui ne vise aucune exception recensée : la viser précisément, ou la justifier.',
         );
     }
 
@@ -138,8 +166,10 @@ final class ExceptionLogLevelCoverageTest extends TestCase
     }
 
     /**
-     * Même résolution que ErrorListener::resolveLogLevel : la première entrée
-     * dont la classe est un `instanceof` l'emporte.
+     * Une entrée couvre une classe comme le noyau la résout : par `instanceof`
+     * (ErrorListener::resolveLogLevel). L'ordre des entrées, qui départage
+     * pour le noyau, n'entre pas en jeu ici : testEveryLogLevelEntryTargetsARenderedException
+     * n'admet que des entrées précises, qui ne se recouvrent donc pas.
      *
      * @param list<string> $classes
      * @param list<string> $logLevelKeys
