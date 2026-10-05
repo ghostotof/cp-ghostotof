@@ -172,7 +172,8 @@ final class SendAccountInvitationHandlerTest extends TestCase
     public function testItWrapsAMailerTransportFailureIntoADeliveryException(): void
     {
         $user = $this->pendingUser('newcomer', 'newcomer@example.com');
-        $transportException = new TransportException('SMTP indisponible.');
+        // Une réponse SMTP peut citer une adresse (audit I4, issue #356).
+        $transportException = new TransportException('550 5.1.1 <sentinel.recipient@example.com>: Recipient address rejected', 550);
 
         $mailer = $this->createMock(MailerInterface::class);
         $mailer->expects(self::once())->method('send')->willThrowException($transportException);
@@ -188,7 +189,13 @@ final class SendAccountInvitationHandlerTest extends TestCase
             $handler(new SendAccountInvitationMessage(self::USER_ID, 'en'));
             self::fail('AccountInvitationDeliveryException aurait dû être levée.');
         } catch (AccountInvitationDeliveryException $exception) {
-            self::assertSame($transportException, $exception->getPrevious());
+            // Chaîne coupée (issue #356) : le worker journalise toute la
+            // chaîne `previous`, et le transport de Messenger la sérialise
+            // dans la table d'échec. Seuls la classe et le code survivent.
+            self::assertNull($exception->getPrevious());
+            self::assertStringContainsString(TransportException::class, $exception->getMessage());
+            self::assertStringContainsString('550', $exception->getMessage());
+            self::assertStringNotContainsString('sentinel.recipient', $exception->getMessage());
         }
     }
 

@@ -37,7 +37,7 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
     public function invite(string $email, Locale $locale): CpgUser
     {
         if (null !== $this->cpgUserRepository->findOneByEmail($email)) {
-            throw EmailAlreadyUsedException::forEmail($email);
+            throw EmailAlreadyUsedException::alreadyLinkedToAnAccount();
         }
 
         // Mot de passe vide : le compte n'est utilisable qu'une fois le mot de
@@ -58,7 +58,7 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
             // locales identiques), la contrainte unique en base reste le dernier
             // rempart — même parti pris que CpgUserRegistrar::register(). Le
             // message n'est publié qu'après un save() réussi : sur échec, rien.
-            throw EmailAlreadyUsedException::forEmail($email);
+            throw EmailAlreadyUsedException::alreadyLinkedToAnAccount();
         }
 
         $this->dispatchInvitation($user, $locale);

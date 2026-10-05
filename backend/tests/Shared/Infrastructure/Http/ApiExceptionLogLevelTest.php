@@ -73,10 +73,12 @@ final class ApiExceptionLogLevelTest extends TestCase
         yield 'format refusé (415), sur toute route de l\'API' => [new UnsupportedMediaTypeHttpException('Unsupported format.'), Level::Info];
         yield 'compte introuvable (404, API Platform, issue #348)' => [CpgUserNotFoundException::forId(Uuid::v7()), Level::Info];
         yield 'traduction indisponible (503, panne d\'un tiers)' => [new TranslationUnavailableException(), Level::Warning];
-        yield 'jeton de mot de passe inconnu (404), visible en production' => [InvalidPasswordSetupTokenException::unknownToken(), Level::Warning];
-        yield 'quota de définition de mot de passe (429), visible en production' => [new PasswordSetupRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Warning];
+        // Tracé sur `security_audit` depuis l'issue #356 : le journal du noyau
+        // n'est plus sa seule trace, il rentre dans la règle des 4xx.
+        yield 'jeton de mot de passe inconnu (404, tracé sur security_audit)' => [InvalidPasswordSetupTokenException::unknownToken(), Level::Info];
+        yield 'quota de définition de mot de passe (429, tracé sur security_audit)' => [new PasswordSetupRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Info];
         yield 'lien de mot de passe expiré (410)' => [PasswordSetupTokenExpiredException::expiredOrAlreadyUsed(), Level::Info];
-        yield 'quota du traducteur (429), visible en production' => [new TranslationRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Warning];
+        yield 'quota du traducteur (429, tracé sur ai_usage)' => [new TranslationRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Info];
         yield 'réglages « À propos » absents pour une locale valide (404), visible en production' => [AboutSettingsNotFoundException::forLocale(Locale::FR), Level::Warning];
         yield 'corps de requête illisible (400, issue #355)' => [MalformedRequestBodyException::fromSerializerFailure(new NotEncodableValueException('Syntax error')), Level::Info];
         // Le contre-exemple de la ligne précédente : la même classe du

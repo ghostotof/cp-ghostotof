@@ -77,6 +77,73 @@ final class PasswordSetupServiceTest extends TestCase
         $this->service($tokenRepository, clock: $clock)->validate(self::CLEAR_TOKEN);
     }
 
+    /**
+     * Issue #356 : un jeton inconnu est tracé sur `security_audit`, sans le
+     * jeton — sa seule autre trace était la ligne générique du noyau, sans IP
+     * ni chemin.
+     */
+    public function testAnUnknownTokenIsLoggedAsRejected(): void
+    {
+        $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('findOneByTokenHash')->willReturn(null);
+
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('passwordSetupTokenRejected');
+        $auditLogger->expects(self::never())->method('passwordSetupTokenReplayed');
+
+        $this->expectException(InvalidPasswordSetupTokenException::class);
+
+        $this->service($tokenRepository, auditLogger: $auditLogger)->validate(self::CLEAR_TOKEN);
+    }
+
+    /**
+     * Issue #356 : un lien déjà consommé est tracé comme rejoué, avec le
+     * compte visé, côté journal seulement — la réponse garde le 410 fusionné
+     * avec « expiré », qui ne dit pas à l'appelant que le lien a servi.
+     */
+    public function testAnAlreadyUsedTokenIsLoggedAsReplayedForItsAccount(): void
+    {
+        $clock = new MockClock('2026-09-10 10:00:00');
+        $user = new CpgUser('jane', 'hashed-password');
+        $used = $this->tokenFor($user, $clock);
+        $used->markUsed(new \DateTimeImmutable('2026-09-10 09:00:00'));
+        $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('findOneByTokenHash')->willReturn($used);
+
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('passwordSetupTokenReplayed')->with($user);
+        $auditLogger->expects(self::never())->method('passwordSetupTokenRejected');
+
+        $this->expectException(PasswordSetupTokenExpiredException::class);
+
+        $this->service($tokenRepository, clock: $clock, auditLogger: $auditLogger)
+            ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
+    }
+
+    /**
+     * Un lien simplement expiré est le cas ordinaire d'une invitation ouverte
+     * trop tard : aucun événement de sécurité, le 410 en `info` suffit.
+     */
+    public function testAnExpiredButUnusedTokenIsNotASecurityEvent(): void
+    {
+        $clock = new MockClock('2026-09-10 10:00:00');
+        $expired = new PasswordSetupToken(
+            new CpgUser('jane', ''),
+            hash('sha256', self::CLEAR_TOKEN),
+            new \DateTimeImmutable('2026-09-09 10:00:00'),
+        );
+        $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('findOneByTokenHash')->willReturn($expired);
+
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('passwordSetupTokenRejected');
+        $auditLogger->expects(self::never())->method('passwordSetupTokenReplayed');
+
+        $this->expectException(PasswordSetupTokenExpiredException::class);
+
+        $this->service($tokenRepository, clock: $clock, auditLogger: $auditLogger)->validate(self::CLEAR_TOKEN);
+    }
+
     public function testCompleteHashesThePasswordActivatesTheUserAndConsumesTheToken(): void
     {
         $clock = new MockClock('2026-09-10 10:00:00');
@@ -86,6 +153,8 @@ final class PasswordSetupServiceTest extends TestCase
 
         $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
         $tokenRepository->method('findOneByTokenHash')->willReturn($token);
+        // La consommation se réclame en base avant toute écriture (issue #356).
+        $tokenRepository->expects(self::once())->method('claim')->with($token, $clock->now())->willReturn(true);
         $tokenRepository->expects(self::once())->method('save')->with($token);
 
         $cpgUserRepository = $this->createMock(CpgUserRepositoryInterface::class);
@@ -109,6 +178,44 @@ final class PasswordSetupServiceTest extends TestCase
         self::assertSame('2026-09-10 10:00:00', $user->getActivatedAt()?->format('Y-m-d H:i:s'));
         self::assertFalse($token->isUsable($clock->now()));
         self::assertSame('2026-09-10 10:00:00', $token->getUsedAt()?->format('Y-m-d H:i:s'));
+    }
+
+    /**
+     * Issue #356 : deux soumissions simultanées du même lien passaient toutes
+     * deux la vérification en mémoire, et la seconde imposait son mot de passe
+     * sans laisser de trace. La réclamation atomique tranche : la perdante
+     * est un rejeu, journalisé comme tel, et rien n'est écrit pour elle.
+     */
+    public function testCompleteLosingTheClaimIsAReplayAndWritesNothing(): void
+    {
+        $clock = new MockClock('2026-09-10 10:00:00');
+        $user = new CpgUser('jane', '');
+        $user->markInvited(new \DateTimeImmutable('2026-09-08 08:00:00'));
+        $token = $this->tokenFor($user, $clock);
+
+        $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('findOneByTokenHash')->willReturn($token);
+        $tokenRepository->expects(self::once())->method('claim')->willReturn(false);
+        $tokenRepository->expects(self::never())->method('save');
+
+        $cpgUserRepository = $this->createMock(CpgUserRepositoryInterface::class);
+        $cpgUserRepository->expects(self::never())->method('save');
+
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('passwordSetupTokenReplayed')->with($user);
+        $auditLogger->expects(self::never())->method('accountActivated');
+
+        $hasher = self::createStub(UserPasswordHasherInterface::class);
+        $hasher->method('hashPassword')->willReturn('hashed-by-the-loser');
+
+        try {
+            $this->service($tokenRepository, $cpgUserRepository, $hasher, $clock, $auditLogger)
+                ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
+            self::fail('PasswordSetupTokenExpiredException attendue.');
+        } catch (PasswordSetupTokenExpiredException) {
+            self::assertSame('', $user->getPassword(), 'Le mot de passe de la perdante ne doit pas toucher le compte.');
+            self::assertTrue($user->isPendingActivation());
+        }
     }
 
     public function testCompleteRejectsAnExpiredTokenWithoutTouchingAnything(): void

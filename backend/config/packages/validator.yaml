@@ -1,5 +1,16 @@
 framework:
     validation:
+        # Toute adresse validée ici finit dans un Symfony\Component\Mime\Address
+        # (contact, invitation, CpgUser) : la validation doit suivre la même
+        # grammaire que lui, celle d'egulias/email-validator (RFC 5322,
+        # dépendance de symfony/mailer). Le mode `html5` par défaut acceptait
+        # `a..b@example.com` ou `jean.@example.com`, que Mime refuse : l'envoi
+        # échouait alors dans le worker par une RfcComplianceException dont le
+        # message cite l'adresse, journalisée à chaque nouvel essai et stockée
+        # dans la table d'échec (issue #356). Mode global plutôt que par champ :
+        # une adresse ajoutée plus tard en hérite sans y penser.
+        email_validation_mode: strict
+
         # Enables validator auto-mapping support.
         # For instance, basic validation constraints will be inferred from Doctrine's metadata.
         #auto_mapping:

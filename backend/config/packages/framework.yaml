@@ -64,9 +64,10 @@ framework:
         # src/, hors dispenses justifiées, et un niveau conforme au statut.
         #
         # Formulaire de contact : quota par IP en `info`, comme celui de
-        # base-access — leur trace retenue est l'access log de nginx (le 429 et
-        # l'IP réelle) ; un événement `security_audit` est suivi à part. Puis la
-        # remise de l'e-mail, voir AccountInvitationDeliveryException plus bas.
+        # base-access — leur trace retenue est l'événement `security_audit`
+        # (`contact-throttled`, `base-access-throttled`, avec l'IP et le chemin,
+        # issue #356). Puis la remise de l'e-mail, voir
+        # AccountInvitationDeliveryException plus bas.
         App\Contact\Domain\Exception\ContactRateLimitExceededException:
             log_level: info
         App\Contact\Domain\Exception\ContactMessageDeliveryException:
@@ -75,11 +76,11 @@ framework:
         App\Ai\Translation\Domain\Exception\TranslationUnavailableException:
             log_level: warning
         # Le quota est la borne de dépense, même sur un compte ROLE_SUPER
-        # compromis (rate_limiter.yaml) ; le traducteur n'écrit rien sur
-        # `ai_usage`, contrairement à l'assistant de parcours : ce journal est la
-        # seule trace applicative d'un usage en boucle.
+        # compromis (rate_limiter.yaml). Son refus est tracé sur `ai_usage` avec
+        # le compte et l'échéance (SymfonyTranslationRateLimiter, issue #356),
+        # comme celui de l'assistant de parcours : `info` ici, comme lui.
         App\Ai\Translation\Domain\Exception\TranslationRateLimitExceededException:
-            log_level: warning
+            log_level: info
         # Contenus du portfolio : introuvable, conflit, saisie invalide.
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException:
             log_level: info
@@ -148,17 +149,21 @@ framework:
         # aucune des deux entrées ne la reconnaîtrait.
         App\Security\User\Domain\Exception\AccountInvitationDeliveryException:
             log_level: warning
-        # Parcours public de définition de mot de passe. Un jeton inconnu et un
-        # quota atteint restent en `warning`, donc visibles en production :
-        # aucun événement `security_audit` ne les trace, et ce journal est le
-        # seul signal d'un essai de jetons à la chaîne. Un lien expiré, lui,
-        # est le cas ordinaire d'une invitation ouverte trop tard.
+        # Parcours public de définition de mot de passe. Un jeton inconnu est
+        # tracé sur `security_audit` (`password-setup-token-rejected`, avec IP
+        # et chemin, issue #356) : ce journal n'est plus sa seule trace, il
+        # rentre dans la règle des 4xx. Un lien expiré est le cas ordinaire
+        # d'une invitation ouverte trop tard ; un lien déjà consommé, fusionné
+        # avec lui dans la réponse, a son propre événement
+        # (`password-setup-token-replayed`).
         App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException:
-            log_level: warning
+            log_level: info
         App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException:
             log_level: info
+        # Quota par IP : tracé sur `security_audit` (`password-setup-throttled`,
+        # issue #356), comme ceux du contact et de base-access.
         App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException:
-            log_level: warning
+            log_level: info
         # Corps de requête illisible sur une opération API Platform (issue #355) :
         # erreur du client, sur des POST publics donc à la main de n'importe
         # qui. Sa trace retenue est l'access log de nginx (le 400 et l'IP).

@@ -71,8 +71,10 @@ paths:
   (-96) renders it — API Platform does not log it "itself" — and without an entry a non-`HttpException`
   goes out `critical`: until #348 every backoffice 404/409 and every public password-setup 404/429 was a
   production alert an anonymous caller could produce at will. `info` for a client error, `warning` for a
-  third-party outage (503) or for a signal nothing else traces (password-setup unknown token and quota,
-  translation quota, missing About settings for a valid locale). That rule covers our domain exceptions
+  third-party outage (503) or for a signal nothing else traces (missing About settings for a valid
+  locale). The password-setup unknown token and quota and the translation quota were in that last group
+  until issue #356 gave them their own trace (`security_audit`, `ai_usage`) and moved them back to `info`:
+  a client-triggerable 4xx stays `info` once something attributable traces it. That rule covers our domain exceptions
   only: the framework's own HTTP 4xx (router 404/405, validation 422, 403) stay at `error`.
   `tests/Shared/Infrastructure/Http/ExceptionLogLevelCoverageTest.php` pins four things: an entry for
   every `exception_to_status` key and every `ProblemExceptionInterface` of `src/` (found by token parsing
