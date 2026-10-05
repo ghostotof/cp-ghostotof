@@ -102,34 +102,6 @@ production/preprod Dockerfile stages can `COPY backend/`), `web` (nginx), `datab
 
 Services communicate over the `app` bridge network by service name (`database`, `rabbitmq`, `backend`).
 
-### Dockerfile (`../docker/php/Dockerfile`) — multi-stage
-
-`base` (PHP + extensions: intl, pdo_pgsql, zip, sockets, amqp, opcache) is shared by every target so dev and
-prod run the identical PHP engine:
-
-- **`dev`** — adds symfony-cli, bash/git/curl; creates a `dev` user matching the host `UID`/`GID` (from `../.env`)
-  so bind-mounted files stay host-editable. Code is bind-mounted, not copied.
-- **`vendor`** — isolated `composer install --no-dev` layer, cached on `composer.json`/`composer.lock` only.
-- **`production`** — copies `vendor` + `../backend` source into the image (no mount), runs as a fixed non-root
-  `app` user (UID 10001), read-only filesystem except `var/`. This is the real deployable artifact. It also
-  **builds `config/watch/package-manifest.json`** here (`bin/build-package-manifest.php`, no Symfony kernel):
-  the build context is the repo root, so this is the one place `composer.lock` and
-  `frontend/package-lock.json` coexist — the manifest describes exactly what the image deploys and cannot
-  drift from it. Keep that `COPY`/`RUN` pair *after* the big install layer so an npm bump doesn't invalidate it.
-- **`preprod`** — built **`FROM production`** (not a parallel build) so its application layers are byte-identical
-  to prod; only adds Xdebug (**inert in the image**, see "Deployment invariants") and verbose logs.
-  Pipeline order is dev → preprod → prod regardless of declaration order in the Dockerfile.
-
-The build context is the **repo root**, so `.dockerignore` is what keeps things out of it, and two entries
-are there for secrecy rather than size (audit A13/A22): `backend/config/jwt/` — a workstation that has
-generated its dev RS256 keypair would otherwise ship `private.pem` in an image layer, and the deployed
-keys come from the `jwt-keys` Secret at runtime anyway — and `backend/.env.test`, `.claude/`, `tasks/`,
-`.superpowers/`, which carry local configuration, real identity (`CLAUDE.local.md`) or uncorrected audit
-findings. Never `COPY` something out of one of those; widen the ignore list instead. Development tooling
-files are also excluded: `backend/tests/`, PHPStan/Psalm/Rector/PHPUnit/LSP configuration files, and
-Composer/Flex recipe files — the production image has no test suite, and adding a new quality tool means
-adding its config file to the ignore list.
-
 ### Backoffice (`ROLE_SUPER`)
 
 Content management for all of the above, plus user administration, gated end-to-end behind `ROLE_SUPER`
@@ -151,38 +123,6 @@ Content management for all of the above, plus user administration, gated end-to-
   must answer 403, and every listed entry must actually open — so a new `ROLE_USER` content route needs its
   own justified entry there, and a `ROLE_USER` rule on an identifying route turns the suite red. Never
   weaken or delete that test to make a new route pass.
-### Frontend build/deploy
-
-`../docker/node/Dockerfile` mirrors the same idea: in dev the plain `node` image runs `npm install && npm run dev`
-directly (no image build). For deployable images, the API URL is a **runtime** setting, not a build-time one:
-`docker-entrypoint.sh` runs `envsubst` on `config.template.js` using the container's `API_URL` env var, producing
-`/usr/share/nginx/html/config.js` (served no-cache, loaded by `index.html` before the app bundle) that the app reads
-via `window.__APP_CONFIG__` (`frontend/src/infrastructure/config/getApiUrl.ts`, falling back to Vite's
-`import.meta.env.VITE_API_URL` for `npm run dev`, which never serves `config.js`). This means a single frontend
-image — like the backend — is built once and promoted from preprod to prod unchanged, only the `API_URL` env var
-differs per environment; `make build-front-prod`/`build-front-preprod` no longer take an `API_URL` argument.
-
-**The version shown in the footer is the opposite case, and deliberately so**: it is a property of the *image*,
-not of the environment, so it is fixed at **build** time — `make build-front-*` passes `--build-arg
-APP_VERSION=$(TAG)` (the pipeline's `<version>-<sha>`), `docker/node/Dockerfile` exports it as
-`VITE_APP_VERSION`, Vite inlines it, and `infrastructure/config/getAppVersion.ts` (the mirror of `getApiUrl.ts`)
-parses it into `{version, build, releaseUrl}`. `AppFooter.vue` renders `v0.17.0` as a link to the GitHub release
-(build sha in the `title`); a tag that isn't a release (a local build on a bare sha) shows as plain text, and an
-empty value (`npm run dev`) shows nothing. Don't move it to `config.js`: a promoted image *must* announce the same
-version in preprod and prod, which is exactly what build-time gives for free.
-
-**Share cards** (`frontend/scripts/og/`): one HTML template rendered by system Chrome + ImageMagick
-(`npm run og:generate`, no Playwright — see the script's header) into **two variants** of the same design
-that differ only by headline and size: `frontend/public/og.png` (1200×630, the site's `og:image`,
-headline = real name, the owner's deliberate choice for the site) and `.github/social-preview.png`
-(1280×640, headline = the `ghostotof` pseudonym, because the repo is pseudonymous end to end: URL,
-LICENSE, README). Both are committed and both are regenerated by `test-frontend` (script control on
-every push) and `build-images` (before the frontend image is built); the GitHub one is also uploaded
-as the `social-preview` artifact of each release. **GitHub has no API for the social preview**: the
-file is uploaded by hand in Settings → General → Social preview, so a change to the template means
-re-uploading it — the artifact exists to make that one download away. Never put the real name in the
-GitHub variant, and never serve it from the site (it lives under `.github/`, not `frontend/public/`).
-
 ### Deployment invariants (learned the hard way — don't undo these)
 
 - **No application state on the pod's filesystem** (ADR 0005, audit of 2026-09-16, constat A1,
