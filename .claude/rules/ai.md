@@ -138,7 +138,11 @@ paths:
   with an `outcome` (`done`, `error`); the quota refusal (`rate-limited`, `account`, `retryAfter`) is
   written by `SymfonyTranslationRateLimiter`, the one place that knows both the key and the deadline, so
   `TranslationRateLimitExceededException` is `info` like the assistant's. Functional tests read the
-  channel through `tests/Support/ReadsAiUsageLog`. `claude-sonnet-5` rejects `temperature`/`top_p`/`top_k`
+  channel through `tests/Support/ReadsAiUsageLog`. Two side effects, accepted: the translator's `error`
+  lines (provider failure, refused answer) moved with it from the app channel to `ai_usage` — still
+  emitted in prod, but a filter on the app channel no longer sees them —, and the two `rate-limited`
+  lines differ: the translator's carries `retryAfter`, the assistant's does not; the `outcome` values are
+  plain string literals in both services. `claude-sonnet-5` rejects `temperature`/`top_p`/`top_k`
   (400): no sampling option anywhere. The Flex recipes come from the official `symfony/recipes` (they apply
   despite `allow-contrib: false`); the `ai_anthropic_platform.yaml` they generate is merged into `ai.yaml`,
   delete it again if a recipe update recreates it.

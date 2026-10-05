@@ -111,7 +111,14 @@ paths:
     transport's exception**: its message copies the server's answer (SMTP line, Scaleway API body), which
     can quote the sender or the recipient, and the worker logs the whole `previous` chain.
     `Shared/Infrastructure/Mailer/MailerTransportFailure` keeps its class and a numeric code (HTTP status
-    for the API transport, SMTP reply code otherwise), the e-mail counterpart of `ProviderFailure`.
+    for the API transport, SMTP reply code otherwise), the e-mail counterpart of `ProviderFailure`; each
+    context keeps its own delivery exception, whose factory is identical on purpose (`Domain/` never
+    imports `Shared/Infrastructure`). The price: the SMTP enhanced status (`5.1.1`) and Scaleway's error
+    text are gone from the logs. **An address that `Mime\Address` would refuse never gets past
+    validation**: `framework.validation.email_validation_mode: strict` (`validator.yaml`), egulias'
+    grammar, the one Mime uses — the default `html5` mode accepted `a..b@example.com`, and the worker then
+    failed on a `RfcComplianceException` quoting it, logged on every retry. Don't override `mode:` on an
+    `Assert\Email` whose value ends up in an e-mail.
     `SecurityAuditLoggerTest::testNoContextValueEverCarriesAPasswordATokenOrAnEmail` pins that with
     sentinel values run through every method; extend it when adding one. Who calls what:
     `Infrastructure/Log/SecurityEventsSubscriber` for `LoginSuccessEvent`/`LoginFailureEvent` (**`login`
@@ -145,7 +152,21 @@ paths:
     depend on `Security` — the price is that this listener imports `Contact`'s quota exception. The
     translator's quota is **not** there: it is a `ROLE_SUPER` account, traced on `ai_usage` (see
     `.claude/rules/ai.md`). Since these events exist, the matching exceptions are back to `info` in
-    `framework.exceptions`. Functional tests read the records through
+    `framework.exceptions`. Accepted limits, settled in the review of #356 — don't "fix" them without
+    revisiting the trade-off: **`replayed` and `rejected` have legitimate sources** — the set-password page
+    calls `validate` on every load, so a person reopening their own link after activation writes
+    `replayed`, and a Messenger retry of the invitation regenerates the token, so the first link received
+    gives `rejected`; the `path` (`…/validate` vs `…/password-setup`) is what tells a probe from a
+    submission, read it before alerting. **Volume**: every anonymous 429 is now a prod line, bounded by the
+    nginx zones (10/min/IP contact, 20/min/IP base-access), well below what `csrf-rejected` already allows.
+    **Blind spots of the listener**: a 429 answered by nginx's `limit_req` never reaches PHP (the access log
+    is its trace), and a quota exception wrapped in another one would go unseen (`instanceof` on the
+    top-level throwable only). **Replay and expiry must cost the same**: `findOneByTokenHash` loads the
+    account by explicit join, so the `replayed` path, which logs it, pays no extra query behind the
+    shared 410 — keep the join. **Consumption is atomic**: `PasswordSetupService::complete()` hashes, then
+    `PasswordSetupTokenRepository::claim()` (`UPDATE … WHERE used_at IS NULL`, one row or none), and only
+    the winner writes the account; the loser of a concurrent submission is a `replayed`. Never go back to
+    deciding on `isUsable()` alone, which reads the loaded state. Functional tests read the records through
     `tests/Support/ReadsSecurityAuditLog.php` (a
     Monolog `test` handler on the channel, `when@test`, found among `monolog.logger.security_audit`'s
     handlers — that logger is public in every env, so phpstan-symfony's dev dump knows it); the kernel
