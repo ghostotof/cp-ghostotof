@@ -115,7 +115,7 @@ final class ExceptionLogLevelCoverageTest extends TestCase
     /**
      * @return iterable<string, array{class-string, list<string>, bool}>
      */
-    public static function coverage(): iterable
+    public static function detectorCases(): iterable
     {
         $unlogged = (new class('Vide.') extends \DomainException implements ProblemExceptionInterface {
             use HasProblemType;
@@ -146,7 +146,7 @@ final class ExceptionLogLevelCoverageTest extends TestCase
      * @param class-string $class
      * @param list<string> $logLevelKeys
      */
-    #[DataProvider('coverage')]
+    #[DataProvider('detectorCases')]
     public function testTheDetector(string $class, array $logLevelKeys, bool $covered): void
     {
         self::assertSame($covered ? [] : [$class], $this->uncovered([$class], $logLevelKeys));
@@ -196,19 +196,56 @@ final class ExceptionLogLevelCoverageTest extends TestCase
     }
 
     /**
-     * Seules comptent les entrées qui fixent un `log_level` : une entrée qui
-     * ne porterait qu'un `status_code` laisse le niveau au noyau.
-     *
      * @return list<string>
      */
     private function logLevelKeys(): array
     {
-        /** @var array{framework: array{exceptions?: array<string, array{log_level?: ?string}>}} $config */
+        /** @var array{framework: array{exceptions?: array<string, array<string, mixed>>}} $config */
         $config = Yaml::parseFile(self::FRAMEWORK_CONFIG);
 
-        return array_keys(array_filter(
-            $config['framework']['exceptions'] ?? [],
-            static fn (array $options): bool => null !== ($options['log_level'] ?? null) && '' !== $options['log_level'],
-        ));
+        return array_keys(self::logLevelsOf($config['framework']['exceptions'] ?? []));
+    }
+
+    /**
+     * Seules comptent les entrées qui fixent un `log_level` : une entrée qui
+     * ne porte qu'un `status_code`, ou un `log_level: ~`, laisse le niveau au
+     * noyau — donc `critical`.
+     *
+     * @param array<string, array<string, mixed>> $exceptions `framework.exceptions`
+     *
+     * @return array<string, string> classe => niveau
+     */
+    private static function logLevelsOf(array $exceptions): array
+    {
+        $levels = [];
+        foreach ($exceptions as $class => $options) {
+            $level = $options['log_level'] ?? null;
+            if (\is_string($level) && '' !== $level) {
+                $levels[$class] = $level;
+            }
+        }
+
+        return $levels;
+    }
+
+    /**
+     * @return iterable<string, array{array<string, array<string, mixed>>, array<string, string>}>
+     */
+    public static function entries(): iterable
+    {
+        yield 'log_level fixé' => [['App\\A' => ['log_level' => 'info']], ['App\\A' => 'info']];
+        yield 'status_code seul' => [['App\\A' => ['status_code' => 404]], []];
+        yield 'log_level nul' => [['App\\A' => ['log_level' => null]], []];
+        yield 'log_level vide' => [['App\\A' => ['log_level' => '']], []];
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $exceptions
+     * @param array<string, string>               $expected
+     */
+    #[DataProvider('entries')]
+    public function testOnlyEntriesThatSetALevelCount(array $exceptions, array $expected): void
+    {
+        self::assertSame($expected, self::logLevelsOf($exceptions));
     }
 }
