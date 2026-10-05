@@ -61,7 +61,7 @@ paths:
   `AboutSettings`/`AboutSiteCard`/`AboutMeCard`, the latter with an `AboutMeCardCategory` enum), a public
   read-only API Platform resource (`GetCollection('/experience/technologies')`, or an aggregating `Provider` for
   `/quality/{locale}` and `/about/{locale}` that returns `{principles, traits}` / `{settings, siteCards, meCards}`
-  in one call), and a backoffice CRUD resource (see below). Seeded via idempotent `app:{about,quality,contributions,incidents}:seed`
+  in one call), and a backoffice CRUD resource (see `.claude/rules/backoffice-api.md`). Seeded via idempotent `app:{about,quality,contributions,incidents}:seed`
   console commands (purge-by-locale then recreate — safe to rerun).
 
   `Contribution` is the odd one out and deliberately so: it carries a long `body` (the argument, not

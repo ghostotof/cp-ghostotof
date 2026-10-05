@@ -134,7 +134,7 @@ paths:
   sidecar ever picks the change up, since the file is mounted with `subPath` and Kubernetes never
   refreshes those in a running container. Before that, `kubectl apply` printed
   `configmap … configured` while nginx kept its old rules **indefinitely** — the deploy reporting
-  success while running something else, same family as the stale-image incident below.
+  success while running something else, same family as the stale-image incident in the release invariant of `.claude/CLAUDE.md`.
   `backend-config` is the **opposite** and must stay `disableNameSuffixHash: true`: it is referenced
   by literal name from `migrate-job`, `seed-job` and both CronJobs, all deliberately outside
   kustomize, which therefore cannot rewrite their references — a hashed name breaks them with

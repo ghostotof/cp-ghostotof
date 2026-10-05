@@ -45,12 +45,12 @@ paths:
   `/errors/rate-limited` + `Retry-After`, the refusal logged on `ai_usage` with the account. **`#[WithMonologChannel]`
   is lost on an `#[AsDecorator]` service** (decoration rewrites its tags, the record silently went to the app
   channel): inject `monolog.logger.<channel>` by id there. The quota takes the shared PostgreSQL advisory lock like
-  every limiter (#272, v0.18.2, ADR 0005 D8–D10 — see the ADR 0005 invariant below), so a burst of synchronised
+  every limiter (#272, v0.18.2, ADR 0005 D8–D10 — see the ADR 0005 invariant in `.claude/rules/deploiement.md`), so a burst of synchronised
   calls counts one unit each; never consume it inside a Doctrine transaction; body over 128 KiB (the longest valid conversation in 4-byte characters is ~104 kB — 64 KiB, the spec's
   first figure, refused it) → 413 `/errors/request-too-large`, judged by
   `AssistantRequestSizeListener` at priority 4, *after* the firewall, so an anonymous or base-tier caller only
   ever learns it is refused); task 6 (#265) done: the `/(fr|en)/assistant` page
-  (`ROLE_TRUSTED`/`ROLE_SUPER`), see "API-backed content"; task 4 (#263) done: the **nominative CV opens
+  (`ROLE_TRUSTED`/`ROLE_SUPER`), see "API-backed content" in `.claude/rules/frontend.md`; task 4 (#263) done: the **nominative CV opens
   the corpus** (« CV détaillé » / « Detailed CV »), extracted from the very file `GET /api/cv` serves
   (`app.cv_file_path`) by **`pdftotext`** — `poppler-utils` in the Dockerfile's `base` stage (16 MB),
   called through `spatie/pdf-to-text` by `Infrastructure/Pdf/PopplerPdfTextExtractor`, behind

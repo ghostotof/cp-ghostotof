@@ -60,11 +60,11 @@ paths:
     that consumes the per-IP quota on **`POST`** for the two exact paths of the flow **before** API Platform
     deserializes or validates anything; consuming it again in the Processor would halve the effective
     quota, so don't) — the 429's `Retry-After` comes from the shared
-    `Shared/Infrastructure/Http/RetryAfterListener` (issue #273, see "Errors under `/api`");
+    `Shared/Infrastructure/Http/RetryAfterListener` (issue #273, see "Errors under `/api`" in `.claude/rules/backoffice-api.md`);
     the API Platform processors.
   - `Presentation/Command/CreateCpgUserCommand.php` (`app:user:create`, `--role` allow-list) and
     `Presentation/Controller/CurrentUserController.php` (`GET /api/me`). Everything else is API Platform
-    resources — see "Backoffice" below for the `ROLE_SUPER` ones, plus the two **public** (no auth, no CSRF,
+    resources — see `.claude/rules/backoffice-api.md` for the `ROLE_SUPER` ones, plus the two **public** (no auth, no CSRF,
     IP rate-limited) ones of the set-password flow.
   - **A secret never travels in a URL path** (audit A7, T4.1/T4.2). `AccountPasswordSetupValidationResource`
     (`POST /api/account/password-setup/validate` `{token}`) and `AccountPasswordSetupResource`

@@ -67,5 +67,5 @@ To add a new bounded context (e.g. a second `Security` aggregate, or a new `Port
 the same `Domain/Application/Infrastructure/Presentation` split under a new `src/<Context>/` folder, creating
 only the layers actually needed (no persistence → no `Infrastructure/Doctrine/`; no HTTP entry point → no
 `Presentation/Controller/`). Tests mirror the same tree under `tests/<Context>/`. To add a new *backoffice* CRUD
-resource for existing content: follow the API Platform pattern above rather than reinventing a controller.
+resource for existing content: follow the API Platform pattern of `.claude/rules/backoffice-api.md` rather than reinventing a controller.
 

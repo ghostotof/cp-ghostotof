@@ -22,7 +22,7 @@ paths:
   `ROLE_USER` by accident. A sibling path therefore inherits no implicit protection — write its rule, or
   `ApiRouteExposureTest` flags it. `tests/Security/AccessControlAnchoringTest.php` pins the anchors against
   the compiled `AccessMap`; keep the pattern when adding a rule. The same test also pins the **firewall**
-  patterns, which follow a different rule and for a stated reason — see `Security/Authentication` above.
+  patterns, which follow a different rule and for a stated reason — see `.claude/rules/security-authentication.md`.
 - **API Platform pattern**, repeated identically across every backoffice resource
   (`BackofficeExperienceTechnologyResource`, `BackofficeQuality{Principle,Trait}Resource`,
   `BackofficeContributionResource`, `BackofficeIncidentResource`, `BackofficeWatchedProductResource`,

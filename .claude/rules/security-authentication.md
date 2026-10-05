@@ -55,7 +55,7 @@ paths:
     (`CsrfCookieRequestSubscriber`, `LoginCsrfRequestListener`, `BaseAccessRateLimitRequestListener`,
     `PasswordSetupRateLimitRequestListener`, `AssistantRequestSizeListener`), each with a `%XX`
     regression test; two `kernel.exception` listeners use it too, `Shared/Infrastructure/Http/`'s
-    `ApiProblemResponseListener` and `ApiJsonErrorFormatListener` (see "Errors under `/api`" below) — and
+    `ApiProblemResponseListener` and `ApiJsonErrorFormatListener` (see "Errors under `/api`" in `.claude/rules/backoffice-api.md`) — and
     `SecurityAuditLogger` logs the canonical form for the same reason. A subtree check goes through
     `CanonicalPath::isUnder($request, '/api/<x>')` (`isUnderApi()` is that, for `/api`): "the prefix exactly,
     or the prefix followed by `/`", the `access_control` anchoring rule, written once (issue #322).
@@ -130,7 +130,7 @@ paths:
     reboots between requests, so the handler holds the *last* request's records. `Psr\Log\Test\TestLogger`
     no longer ships with psr/log 3, unit tests use Monolog's `TestHandler`. `path` is logged **verbatim**
     (canonical form), with no redaction, and that is only correct because **no route carries a secret in
-    its path** any more (audit A7 — the set-password token moved into the body, see `Security/User` above).
+    its path** any more (audit A7 — the set-password token moved into the body, see `.claude/rules/security-user.md`).
     A route that ever needed one would be the bug, not a reason to add a redaction back here. A use case logs only
     an *effective* action: `CpgUserRoleAdministrator`'s idempotent no-op writes nothing, a refused
     action writes nothing (the unit tests pin `never()` on every error path).

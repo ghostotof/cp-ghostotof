@@ -105,7 +105,7 @@ Icons: domain/content only ever holds a string `iconKey`; the mapping to an actu
 `typescript-eslint` `recommended` extended to `.vue`, with `vue-eslint-parser` delegating `<script lang="ts">`
 to the TypeScript parser (non type-checked — type errors are already caught by `vue-tsc -b` in the
 `build` script, ESLint here is style/correctness only) + `eslint-plugin-vuejs-accessibility`
-(`flat/recommended`, see the a11y section above) + `@intlify/eslint-plugin-vue-i18n` (`flat/recommended`,
+(`flat/recommended`, see `.claude/rules/frontend-a11y.md`) + `@intlify/eslint-plugin-vue-i18n` (`flat/recommended`,
 `settings['vue-i18n'].localeDir` points at `infrastructure/i18n/locales/*.json`) — this last one is why UI-chrome
 strings and portfolio content are kept in separate files (see i18n above): mixing them in would make
 `no-raw-text`/key-usage checks meaningless. `no-raw-text`'s `ignorePattern` is configured to skip strings with

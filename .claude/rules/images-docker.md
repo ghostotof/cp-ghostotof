@@ -26,7 +26,7 @@ prod run the identical PHP engine:
   `frontend/package-lock.json` coexist — the manifest describes exactly what the image deploys and cannot
   drift from it. Keep that `COPY`/`RUN` pair *after* the big install layer so an npm bump doesn't invalidate it.
 - **`preprod`** — built **`FROM production`** (not a parallel build) so its application layers are byte-identical
-  to prod; only adds Xdebug (**inert in the image**, see "Deployment invariants") and verbose logs.
+  to prod; only adds Xdebug (**inert in the image**, see `.claude/rules/deploiement.md`) and verbose logs.
   Pipeline order is dev → preprod → prod regardless of declaration order in the Dockerfile.
 
 The build context is the **repo root**, so `.dockerignore` is what keeps things out of it, and two entries

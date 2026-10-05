@@ -13,10 +13,10 @@ paths:
 
 This repository started as a freshly generated project skeleton (single "Init" commit). Real backend code now
 exists — the `Security` bounded context (`User` + `Authentication`), six `Portfolio` bounded contexts
-(`Experience`, `Quality`, `About`, `Contribution`, `Incident`, `Watch`, see Backend architecture below) and an
-`Ai` context whose two sub-contexts are delivered — `Translation` (spec 0002, ADR 0004, v0.10.0/v0.10.1) and `Assistant` (spec 0005, v0.19.0), see `Ai/` below; every entity has a UUID v7 key (spec 0003, v0.11.0) and every ordered content is
+(`Experience`, `Quality`, `About`, `Contribution`, `Incident`, `Watch`, see `.claude/rules/backend-architecture.md` and the context rules) and an
+`Ai` context whose two sub-contexts are delivered — `Translation` (spec 0002, ADR 0004, v0.10.0/v0.10.1) and `Assistant` (spec 0005, v0.19.0), see `.claude/rules/ai.md`; every entity has a UUID v7 key (spec 0003, v0.11.0) and every ordered content is
 reordered by drag-and-drop with an explicit FR/EN link in the database (spec 0004, v0.12.0, see
-`Portfolio/Shared/` below) — and follows a DDD structure under
+`.claude/rules/portfolio-contenus.md`) — and follows a DDD structure under
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
 over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
 recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
@@ -87,8 +87,8 @@ would look for a parameter called `warning` and fail at compile time. No duplica
 `error_log = /proc/self/fd/2` (`php.prod.ini`) either: Monolog writes to fd 2 itself, `error_log` only
 ever receives the engine's own errors. The events are emitted by `SecurityAuditLogger` (see Phase 3 of
 the remediation plan). The
-frontend has moved past the default scaffold: it follows a layered clean architecture (see below) and has
+frontend has moved past the default scaffold: it follows a layered clean architecture (see `.claude/rules/frontend.md`) and has
 Vitest configured with `npm test`. A `ROLE_SUPER`-gated backoffice (`/admin` on the frontend, `/api/backoffice/*`
-on the backend) lets an authenticated super-admin manage all of the above content plus user accounts — see the
-"Backoffice" subsections under Backend/Frontend architecture below.
+on the backend) lets an authenticated super-admin manage all of the above content plus user accounts — see
+`.claude/rules/backoffice-api.md` and `.claude/rules/frontend-backoffice.md`.
 

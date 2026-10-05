@@ -86,7 +86,7 @@ paths:
   - **A fresh environment starts with an empty `watched_product`**, and `app:watch:refresh` says so
     plainly (`Aucun produit surveillé : rien à rafraîchir.`) rather than failing — `/stack` then shows
     "never refreshed" until the catalogue is seeded. Preprod is seeded automatically on every deploy
-    (see "Seeding" below); prod is populated and the guard keeps it that way.
+    (see `.claude/rules/seeding.md`); prod is populated and the guard keeps it that way.
   - **No version is ever typed in** (issue #19). Decision D2 started with PHP and Symfony reading the
     runtime; the other five used to be `MANUAL`, so bumping `POSTGRES_TAG` left `/stack` announcing
     the previous version until someone edited the backoffice — the page stating something untrue
