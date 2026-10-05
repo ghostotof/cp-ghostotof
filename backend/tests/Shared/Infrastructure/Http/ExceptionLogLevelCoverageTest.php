@@ -47,7 +47,8 @@ final class ExceptionLogLevelCoverageTest extends TestCase
      * `exception_to_status` (audit A15). Leur baisser le niveau abaisserait
      * aussi celui de vrais défauts serveur — un JSON de sortie non encodable,
      * une exception du Serializer sous un contrôleur — : le côté entrée (JSON
-     * illisible envoyé par le client) se traite à part, par une classe précise.
+     * illisible envoyé par le client) se traite à part, par une classe précise
+     * (issue #355).
      */
     private const array EXEMPT = [
         SerializerExceptionInterface::class => 'Entrée large : couvre aussi l\'encodage de sortie, un défaut serveur.',
