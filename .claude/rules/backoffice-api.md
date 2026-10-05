@@ -1,0 +1,126 @@
+---
+paths:
+  - "backend/src/**/Presentation/**"
+  - "backend/src/**/Infrastructure/ApiPlatform/**"
+  - "backend/src/Shared/**"
+  - "backend/config/packages/api_platform.yaml"
+  - "backend/config/packages/framework.yaml"
+  - "backend/config/packages/security.yaml"
+  - "backend/tests/**"
+---
+
+# Backend — backoffice API (`ROLE_SUPER`) and API errors
+
+> Moved verbatim from `.claude/CLAUDE.md` (#346), section « Architecture › Backoffice (`ROLE_SUPER`) ». The index of every rule is at the top of `.claude/CLAUDE.md`.
+
+- **Authorization**: a single `access_control` entry in `config/packages/security.yaml`,
+  `{ path: ^/api/backoffice(/|$), roles: ROLE_SUPER }`, which **must stay the first entry in the list** — Symfony
+  applies only the first matching rule, so a later/looser rule (e.g. `^/api/me`) would never get a chance to
+  override it, but a rule placed *before* it could accidentally widen backoffice access. **Every `path` is
+  anchored with `(/|$)`** (issue #78, pt 2): a rule covers its route and its subtree, nothing else, so
+  `/api/cv-export` is *not* `ROLE_TRUSTED` by accident and a future `/api/case-studies-drafts` is *not*
+  `ROLE_USER` by accident. A sibling path therefore inherits no implicit protection — write its rule, or
+  `ApiRouteExposureTest` flags it. `tests/Security/AccessControlAnchoringTest.php` pins the anchors against
+  the compiled `AccessMap`; keep the pattern when adding a rule. The same test also pins the **firewall**
+  patterns, which follow a different rule and for a stated reason — see `Security/Authentication` above.
+- **API Platform pattern**, repeated identically across every backoffice resource
+  (`BackofficeExperienceTechnologyResource`, `BackofficeQuality{Principle,Trait}Resource`,
+  `BackofficeContributionResource`, `BackofficeIncidentResource`, `BackofficeWatchedProductResource`,
+  `Backoffice{About}{Settings,SiteCard,MeCard}Resource`, `BackofficeUserResource`,
+  `BackofficeUserPasswordResource`): a flat DTO (never the Doctrine entity itself) under
+  `Presentation/ApiResource/`, backed by a `Provider` (`GetCollection`/`Get`) and a `Processor`
+  (`Post`/`Put`/`Delete`) under `Infrastructure/ApiPlatform/`. Collection reads use a `?locale=` query filter
+  (unlike the public `{locale}` path param — collections aren't per-locale routes). **`Put`/`Delete` operations
+  need an explicit `provider:` set, not just `processor:`** — otherwise API Platform's default provider tries to
+  resolve the DTO via Doctrine directly and 404s before ever reaching the processor. Since `v0.12.0` the
+  localized collections (Quality, About cards) are read **without** the `?locale=` filter by the admin
+  pages, which display every language in one grouped table (spec 0004 D8); the filter still exists.
+  Each ordered context adds a one-operation `Backoffice<X>OrderResource` (`Put …/order`, `read: false`,
+  `output: false`, 204) whose input uses the `CarriesOrderedKeys` trait — `keys()` returns the
+  validated `list<string>` and is the only thing the Processor reads; mirror that rather than
+  re-validating the array by hand (`debug:router | grep /order` must list exactly one route per context,
+  none synthesised).
+- **A read-only resource with no Doctrine identifier needs `#[ApiProperty(identifier: false)]`** on its
+  `id` field — `BackofficeVulnerabilityResource` (`GetCollection /backoffice/watch/vulnerabilities`,
+  read straight from the snapshot) is the case in point. Without it API Platform infers `id` as the
+  identifier, synthesises an item operation to build IRIs, and publishes
+  `/api/backoffice_vulnerabilities/{id}`: a second, undocumented route to the same data. Same trap as
+  audit C6 on `BackofficeUserResource`, arrived at from the other end. Check `debug:router` after
+  adding any resource.
+- **`Security/User` backoffice resources** (`ROLE_SUPER`): `BackofficeUserResource` —
+  `GetCollection` (list, `normalizationContext: skip_null_values=false` so `email` is always present),
+  `Post /backoffice/users` (**invite** by `{email, locale}`, input DTO `BackofficeUserInviteInput`, → 201; direct
+  username+password creation stays CLI-only), an explicit `Get /backoffice/users/{id}` and
+  `Delete /backoffice/users/{id}`. The `Get` is declared **on purpose** (audit C6): without an item operation,
+  API Platform silently synthesises one to build IRIs, published on its default template
+  `/api/backoffice_users/{id}` — a second, undocumented path to the same data, which at the time only stayed
+  protected by the accident that the then-unanchored `^/api/backoffice` matched `backoffice_users` by prefix.
+  That accident is gone (the rule is now `^/api/backoffice(/|$)`, see "Authorization" above), so such a route
+  would be served to anyone — `ApiRouteExposureTest` would turn red, but check `debug:router` first. Declaring
+  the `Get` removes that route. Plus dedicated one-operation
+  resources: `BackofficeUserPasswordResource` (`Put …/{id}/password`, `output: false`),
+  `BackofficeUserRoleResource` (`Put …/{id}/roles` `{superAdmin}`, `output: false`),
+  `BackofficeUserInvitationResource` (`Post …/{id}/invitation` `{locale}`, resend, `read: false`, → 202).
+  The `Put`/`Post`-with-id ones each set an explicit `provider` (or `read: false` for the id-in-path `Post`) so
+  API Platform doesn't 404 at the read stage on the non-Doctrine DTO.
+- **Exceptions**: every new Domain `NotFoundException`/`AlreadyExistsException` needs an entry in
+  `config/packages/api_platform.yaml`'s `exception_to_status` map (e.g. `ExperienceTechnologyNotFoundException`,
+  `CpgUserNotFoundException`, `CannotDeleteOwnAccountException`) — otherwise API Platform surfaces an unmapped
+  exception as a generic 500 instead of a meaningful 4xx. When two exceptions share a status code but the
+  frontend must tell them apart (e.g. the two `PUT …/roles` 409s: self-modification vs last-super-admin), make
+  the exception `implements ApiPlatform\Metadata\Exception\ProblemExceptionInterface` and
+  `use App\Shared\Domain\Exception\HasProblemType` (declare `problemType()` → a stable kebab slug +
+  `problemStatus()`): API Platform then emits `type: /errors/<slug>` in the problem+json, which the client keys
+  on instead of substring-matching the localized `detail`.
+  **Two traps of that map, both paid for** (audit A15): declaring `exception_to_status` **replaces** API
+  Platform's defaults instead of extending them, so the three it ships with are restored explicitly at the
+  **end** of the list (`Serializer\ExceptionInterface: 400`, `ApiPlatform\Metadata\Exception\InvalidArgumentException: 400`,
+  `Doctrine\ORM\OptimisticLockException: 409`) — without them, unparsable JSON or a wrongly-typed field
+  answered **500 on every POST, public ones included**, i.e. an anonymous caller could manufacture 500s at
+  will and drown real server errors in the logs. And resolution takes the **first matching entry**, with
+  `is_a()` matching interfaces and parents too, so a broad entry must stay **below** the precise ones: add a
+  new exception *above* those three restored defaults, never after. Since 2026-09-22 (issue #239)
+  `defaults.collect_denormalization_errors: true` narrows what that 400 covers: a **wrongly-typed field**
+  (`{"name":123}`) is collected instead of aborting the deserialization and comes out as a **422 with
+  `violations` naming the field**, the same shape the admin forms already render for an `Assert`; only
+  unreadable JSON stays a 400. `MalformedRequestBodyTest` pins both boundaries. The API Platform metadata
+  pool survives a change to that option — `rm -rf var/cache/test` before trusting a red test.
+- **Errors under `/api` come out as JSON, never as Symfony's HTML page** (audit A15). Two families escaped
+  API Platform's own error handling: the router's 404/405 (raised before API Platform exists for that
+  request) and the 403s of our own `kernel.request` guards on non-API-Platform routes (`POST /api/logout`
+  without the CSRF header, `POST /api/login_check` without `X-Requested-With`).
+  `Shared/Infrastructure/Http/ApiJsonErrorFormatListener` sets `json` as the request format for any
+  canonical path under `/api` (exactly `/api` or `/api/…`, never `/apix`), and
+  Symfony's `ProblemNormalizer` then renders RFC 7807. Two things to leave alone: it is on **`kernel.exception`
+  at priority -100**, *not* `kernel.request` — setting the format on every request breaks API Platform's
+  content negotiation, and `GET /api/docs` without an `Accept` header answered **406** — and -100 sits
+  between API Platform's own `ExceptionListener` (-96) and Symfony's `ErrorListener` (-128), so it never
+  runs on errors API Platform already handled. `ApiJsonErrorFormatListenerTest` + `ApiErrorFormatTest` pin it.
+- **A `ProblemExceptionInterface` thrown by a controller under `/api` gets its typed problem+json from one
+  listener** (issue #322): `Shared/Infrastructure/Http/ApiProblemResponseListener`, `kernel.exception`
+  **priority -98**, main request, canonical path under `/api`, renders `{type, title, status, detail}` as
+  `application/problem+json` (status `500` if the exception has none). It replaced the assistant's and
+  base-access's own listeners; never write a per-route copy again. **The priority is the rule, not a
+  detail**: API Platform's `ExceptionListener` (-96) stops propagation on every route it owns, so what
+  reaches -98 is non-API-Platform *by construction* — no `_api_respond` attribute is read — and it must
+  stay above Symfony's rendering (-128). `ApiProblemResponseListenerPriorityTest` reads the real
+  dispatcher and pins that bracket. Two consequences for a new exception rendered there: it needs a
+  `log_level` in `framework.exceptions`, since `logKernelException` (0) now sees it — base-access's 429
+  was not logged at all while its listener stopped propagation at 0, and would go out `critical` without
+  its `info` entry (`ApiExceptionLogLevelTest` lists them) —, and an `exception_to_status` entry for it is
+  dead config. Never give such an exception a `status_code` in `framework.exceptions`: `logKernelException`
+  would swap it for an `HttpException` before -98, and the `type` would silently disappear. One case
+  where the propagation does reach -98 from an API Platform route: `kernel.terminate`, where the delegated
+  renderer stands down (non-debug) — the listener stands down too. `BackofficeUserRoleResourceTest`
+  asserts the 409 still carries API Platform's debug `trace`, which the shared listener never emits. Rejected:
+  `api_platform.handle_symfony_errors: true` — global, unfiltered by path, rewrites the 404/405/403 bodies
+  that already work, and hands an `html` negotiation back to Symfony before `ApiJsonErrorFormatListener`.
+- **Every quota 429 gets its `Retry-After` from one listener** (issue #273):
+  `Shared/Infrastructure/Http/RetryAfterListener` reads any exception implementing
+  `Shared/Domain/Exception/RetryAfterAware` (a PHP 8.4 interface property, `$retryAfter { get; }`, met by
+  the exceptions' promoted `public readonly`). It notes the deadline on the request at **`kernel.exception`
+  priority 64** and sets the header at `kernel.response` — **on a 429 only** (a failed render that ends in a 500 must not carry it) — with an injected `ClockInterface`. 64 is not
+  arbitrary: it must sit above every listener that *builds* the 429 and so stops propagation — API
+  Platform (-96) and, on a controller, `ApiProblemResponseListener` (-98). A new quota exception implements the interface; never write a fifth
+  per-context copy. `RateLimiterLockFailureListener` stays apart on purpose (fixed delay, priority 16).
+
