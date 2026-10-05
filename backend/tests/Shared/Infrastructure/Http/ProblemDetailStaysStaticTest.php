@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Ai\Assistant\Infrastructure\Http;
+namespace App\Tests\Shared\Infrastructure\Http;
 
 use App\Security\User\Domain\Exception\CannotModifyOwnRolesException;
 use App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException;
@@ -15,8 +15,9 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * AssistantProblemResponseListener renvoie au client le `detail` (le message)
- * de toute ProblemExceptionInterface levée sous /api/assistant. Un message
+ * ApiProblemResponseListener renvoie au client le `detail` (le message) de
+ * toute ProblemExceptionInterface levée sous /api hors API Platform (issue
+ * #322), et API Platform fait de même sur ses propres routes. Un message
  * construit avec ce que le client a envoyé (une borne D6 qui citerait le
  * message trop long, par exemple) le renverrait tel quel. Garde-fou statique,
  * sur toutes les ProblemExceptionInterface de src/ :
@@ -40,7 +41,7 @@ use PHPUnit\Framework\TestCase;
  */
 final class ProblemDetailStaysStaticTest extends TestCase
 {
-    private const string SOURCES = __DIR__.'/../../../../../src';
+    private const string SOURCES = __DIR__.'/../../../../src';
 
     /**
      * Messages dynamiques admis, parce qu'aucune de ces exceptions ne peut être

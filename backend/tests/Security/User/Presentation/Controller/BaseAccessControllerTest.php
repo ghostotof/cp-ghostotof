@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\User\Presentation\Controller;
 
+use App\Security\User\Domain\Exception\BaseAccessRateLimitExceededException;
+use App\Tests\Support\ReadsAllChannelsLog;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\Level;
+use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
@@ -18,6 +22,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class BaseAccessControllerTest extends WebTestCase
 {
+    use ReadsAllChannelsLog;
+
     /**
      * Le quota du rate limiter "base_access" (config/packages/rate_limiter.yaml)
      * est stocké sur cache.rate_limiter (filesystem, survit au redémarrage du
@@ -97,6 +103,45 @@ final class BaseAccessControllerTest extends WebTestCase
         self::assertResponseStatusCodeSame(429);
         self::assertTrue($client->getResponse()->headers->has('Retry-After'));
         self::assertGreaterThan(0, (int) $client->getResponse()->headers->get('Retry-After'));
+    }
+
+    /**
+     * Issue #322 : le 429 sort en problem+json typé, comme celui de
+     * l'assistant (`/errors/rate-limited`), rendu par l'écouteur partagé des
+     * routes hors API Platform. Avant, un écouteur dédié rendait `{detail}`
+     * sans `type`, et il le faisait à la priorité 0, avant la journalisation
+     * du noyau : le 429 n'était journalisé nulle part. Il l'est désormais,
+     * une fois, et en `info` grâce à `framework.exceptions` — sans cette
+     * entrée, le noyau l'écrirait en `critical` (ni HttpException, ni 4xx
+     * connu), une ligne d'alerte en production pour chaque quota atteint.
+     */
+    public function testTheRateLimitedResponseIsATypedProblemLoggedAsAnInfo(): void
+    {
+        $client = $this->createClientWithFreshRateLimiter();
+
+        for ($i = 0; $i < 20; ++$i) {
+            $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
+        }
+
+        // Le kernel est redémarré avant chaque requête : la sonde ne garde que
+        // les enregistrements de celle-ci.
+        $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
+
+        $kernelRecords = array_values(array_filter(
+            self::allChannelsLogRecords(),
+            static fn (LogRecord $record): bool => ($record->context['exception'] ?? null) instanceof BaseAccessRateLimitExceededException,
+        ));
+        self::assertCount(1, $kernelRecords, 'Le noyau journalise l\'exception une fois.');
+        self::assertSame(Level::Info, $kernelRecords[0]->level);
+
+        self::assertResponseStatusCodeSame(429);
+        $response = $client->getResponse();
+        self::assertSame('application/problem+json', $response->headers->get('Content-Type'));
+        self::assertTrue($response->headers->has('Retry-After'));
+        $problem = json_decode((string) $response->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($problem);
+        self::assertSame('/errors/rate-limited', $problem['type'] ?? null);
+        self::assertSame(429, $problem['status'] ?? null);
     }
 
     /**
