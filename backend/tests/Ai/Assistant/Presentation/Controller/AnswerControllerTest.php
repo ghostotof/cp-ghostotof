@@ -168,10 +168,7 @@ final class AnswerControllerTest extends WebTestCase
         $this->post($client, $csrfToken, $this->payload());
         $client->getInternalResponse();
 
-        $done = array_values(array_filter(
-            self::aiUsageRecords(),
-            static fn (LogRecord $record): bool => 'done' === ($record->context['outcome'] ?? null),
-        ));
+        $done = self::aiUsageRecordsWithOutcome('done');
         self::assertCount(1, $done);
         self::assertSame(812, $done[0]->context['promptTokens'] ?? null);
     }
@@ -465,10 +462,7 @@ final class AnswerControllerTest extends WebTestCase
         self::assertLessThanOrEqual(3600, (int) $retryAfter);
         self::assertCount(self::QUOTA, $this->scalewayRequests);
         // Le refus est tracé sur le canal qui sort des pods de production.
-        $refusals = array_values(array_filter(
-            self::aiUsageRecords(),
-            static fn (LogRecord $record): bool => 'rate-limited' === ($record->context['outcome'] ?? null),
-        ));
+        $refusals = self::aiUsageRecordsWithOutcome('rate-limited');
         self::assertCount(1, $refusals);
         self::assertSame(self::TRUSTED_USERNAME, $refusals[0]->context['account'] ?? null);
     }

@@ -42,10 +42,12 @@ final readonly class ThrottledRequestAuditListener
             return;
         }
 
+        $refusal = $event->getThrowable();
+
         match (true) {
-            $event->getThrowable() instanceof PasswordSetupRateLimitExceededException => $this->auditLogger->passwordSetupThrottled(),
-            $event->getThrowable() instanceof ContactRateLimitExceededException => $this->auditLogger->contactThrottled(),
-            $event->getThrowable() instanceof BaseAccessRateLimitExceededException => $this->auditLogger->baseAccessThrottled(),
+            $refusal instanceof PasswordSetupRateLimitExceededException => $this->auditLogger->passwordSetupThrottled(),
+            $refusal instanceof ContactRateLimitExceededException => $this->auditLogger->contactThrottled(),
+            $refusal instanceof BaseAccessRateLimitExceededException => $this->auditLogger->baseAccessThrottled(),
             default => null,
         };
     }

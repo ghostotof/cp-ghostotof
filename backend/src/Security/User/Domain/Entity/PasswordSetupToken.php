@@ -78,7 +78,16 @@ class PasswordSetupToken
     /** Ni déjà utilisé, ni expiré à l'instant `$now`. */
     public function isUsable(\DateTimeImmutable $now): bool
     {
-        return null === $this->usedAt && $now < $this->expiresAt;
+        return !$this->wasUsed() && $now < $this->expiresAt;
+    }
+
+    /**
+     * Déjà consommé, quelle que soit l'échéance : ce qui distingue un rejeu,
+     * événement de sécurité, d'un lien simplement expiré (issue #356).
+     */
+    public function wasUsed(): bool
+    {
+        return null !== $this->usedAt;
     }
 
     public function markUsed(\DateTimeImmutable $usedAt): void

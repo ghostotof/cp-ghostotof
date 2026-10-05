@@ -16,8 +16,11 @@ use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExcep
  * (« 550 5.1.1 <adresse>: Recipient address rejected »), ou le corps de la
  * réponse de l'API Scaleway (ScalewayApiTransport) —, et cette réponse peut
  * citer l'expéditeur ou le destinataire. Chaînée en `previous`, elle sortait
- * dans le journal du worker et dans la table d'échec de Messenger. Le pendant,
- * côté e-mail, de ProviderFailure côté modèles de langage.
+ * dans le journal du worker et dans les détails d'erreur que la table d'échec
+ * de Messenger garde avec le message. Le message lui-même, sérialisé dans
+ * cette table, porte toujours ce qu'il transporte (le contact : nom, adresse
+ * et texte du visiteur) : c'est sa rétention, pas l'exception, qui le règle.
+ * Le pendant, côté e-mail, de ProviderFailure côté modèles de langage.
  *
  * Le code :
  *  - transport API (HttpTransportException) : le statut HTTP de la réponse,

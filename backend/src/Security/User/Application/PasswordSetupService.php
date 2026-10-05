@@ -77,7 +77,7 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
             // Un lien déjà consommé qui revient se distingue ici, côté journal
             // seulement : la réponse reste le 410 fusionné avec « expiré ». Un
             // lien simplement expiré n'est pas un événement de sécurité.
-            if (null !== $token->getUsedAt()) {
+            if ($token->wasUsed()) {
                 $this->auditLogger->passwordSetupTokenReplayed($token->getUser());
             }
 
