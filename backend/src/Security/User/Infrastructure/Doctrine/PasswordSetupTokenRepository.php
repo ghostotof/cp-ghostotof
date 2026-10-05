@@ -8,7 +8,9 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 
 /**
  * @extends ServiceEntityRepository<PasswordSetupToken>
@@ -48,6 +50,25 @@ class PasswordSetupTokenRepository extends ServiceEntityRepository implements Pa
             ->setParameter('tokenHash', $tokenHash)
             ->getQuery()
             ->getOneOrNullResult();
+    }
+
+    /**
+     * `UPDATE … WHERE used_at IS NULL` : la base, pas l'entité en mémoire,
+     * décide qui consomme. Le nombre de lignes touchées dit si c'est nous.
+     */
+    public function claim(PasswordSetupToken $token, \DateTimeImmutable $usedAt): bool
+    {
+        $claimed = $this->createQueryBuilder('token')
+            ->update()
+            ->set('token.usedAt', ':usedAt')
+            ->where('token.id = :id')
+            ->andWhere('token.usedAt IS NULL')
+            ->setParameter('usedAt', $usedAt, Types::DATETIME_IMMUTABLE)
+            ->setParameter('id', $token->getId(), UuidType::NAME)
+            ->getQuery()
+            ->execute();
+
+        return 1 === $claimed;
     }
 
     public function deleteForUser(CpgUser $user): void

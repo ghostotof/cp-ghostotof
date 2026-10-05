@@ -150,6 +150,45 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
         self::assertFalse($reloaded->isUsable(new \DateTimeImmutable()));
     }
 
+    /**
+     * Issue #356 : la consommation est atomique — `UPDATE … WHERE used_at IS
+     * NULL` —, une seule réclamation l'emporte.
+     */
+    public function testClaimConsumesAnUnusedTokenOnlyOnce(): void
+    {
+        $user = $this->persistUser('jane');
+        $hash = hash('sha256', 'clear-jane');
+        $token = new PasswordSetupToken($user, $hash, new \DateTimeImmutable('+48 hours'));
+        $this->repository->save($token);
+
+        self::assertTrue($this->repository->claim($token, new \DateTimeImmutable('2026-10-05 12:00:00')));
+        self::assertFalse($this->repository->claim($token, new \DateTimeImmutable('2026-10-05 12:00:01')));
+
+        $this->em->clear();
+        $reloaded = $this->repository->findOneByTokenHash($hash);
+        self::assertSame('2026-10-05 12:00:00', $reloaded?->getUsedAt()?->format('Y-m-d H:i:s'));
+    }
+
+    /**
+     * Le cas que la vérification en mémoire (`isUsable()`) laissait passer :
+     * deux requêtes lisent le jeton inutilisé, l'autre le consomme entre-temps.
+     * L'entité de celle-ci le croit encore libre ; la base, elle, tranche.
+     */
+    public function testClaimLosesTheRaceAgainstAConcurrentConsumption(): void
+    {
+        $user = $this->persistUser('jane');
+        $token = new PasswordSetupToken($user, hash('sha256', 'clear-jane'), new \DateTimeImmutable('+48 hours'));
+        $this->repository->save($token);
+
+        $this->em->getConnection()->executeStatement(
+            'UPDATE password_setup_token SET used_at = :usedAt WHERE id = :id',
+            ['usedAt' => '2026-10-05 11:59:59', 'id' => $token->getId()->toRfc4122()],
+        );
+
+        self::assertNull($token->getUsedAt(), 'Prémisse : l\'entité en mémoire ignore la consommation concurrente.');
+        self::assertFalse($this->repository->claim($token, new \DateTimeImmutable('2026-10-05 12:00:00')));
+    }
+
     public function testIsUsableRejectsExpiredTokens(): void
     {
         $user = new CpgUser('jane', 'hashed-password');

@@ -21,6 +21,14 @@ interface PasswordSetupTokenRepositoryInterface
     public function findOneByTokenHash(string $tokenHash): ?PasswordSetupToken;
 
     /**
+     * Marque le jeton consommé si et seulement s'il ne l'était pas encore, en
+     * une écriture atomique (issue #356) : de deux requêtes qui présentent le
+     * même lien au même instant, une seule l'emporte. Rend `false` à la
+     * perdante, sans rien écrire.
+     */
+    public function claim(PasswordSetupToken $token, \DateTimeImmutable $usedAt): bool;
+
+    /**
      * Supprime tous les jetons de l'utilisateur : appelé avant de régénérer un
      * jeton (invitation renvoyée) pour qu'un seul reste valide à la fois.
      */

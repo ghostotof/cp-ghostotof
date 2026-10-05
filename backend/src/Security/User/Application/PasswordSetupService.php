@@ -36,7 +36,20 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         $now = $this->clock->now();
 
         // Le hash d'abord : s'il échouait, le jeton ne serait pas consommé.
-        $user->setPassword($this->passwordHasher->hashPassword($user, $plainPassword));
+        $hashedPassword = $this->passwordHasher->hashPassword($user, $plainPassword);
+
+        // Puis la réclamation atomique (issue #356) : `isUsable()` n'a lu que
+        // l'état chargé, qu'une requête concurrente sur le même lien a pu
+        // consommer depuis. La perdante est un rejeu — c'est le scénario du
+        // lien fuité soumis en même temps que la personne invitée —, et rien
+        // de ce qu'elle a envoyé ne touche le compte.
+        if (!$this->passwordSetupTokenRepository->claim($token, $now)) {
+            $this->auditLogger->passwordSetupTokenReplayed($user);
+
+            throw PasswordSetupTokenExpiredException::expiredOrAlreadyUsed();
+        }
+
+        $user->setPassword($hashedPassword);
         $user->markActivated($now);
         $token->markUsed($now);
 
