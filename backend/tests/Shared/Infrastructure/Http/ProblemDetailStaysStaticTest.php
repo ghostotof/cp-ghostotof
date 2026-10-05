@@ -11,6 +11,7 @@ use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
 use App\Portfolio\Shared\Domain\Exception\IncompleteOrderException;
 use App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException;
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
+use App\Tests\Support\DeclaredClasses;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -65,7 +66,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
     public function testEveryProblemDetailInSourcesIsALiteral(): void
     {
         $sources = iterator_to_array($this->sourceFiles());
-        $problems = $this->problemClasses($sources);
+        $problems = DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class);
         self::assertNotEmpty($problems, 'Aucune ProblemExceptionInterface trouvée : le garde-fou ne garderait rien.');
         self::assertSame([], array_diff(array_keys(self::DYNAMIC_DETAIL_ALLOWED), $problems), 'Entrée admise qui n\'existe plus : la retirer.');
         $problems = array_values(array_diff($problems, array_keys(self::DYNAMIC_DETAIL_ALLOWED)));
@@ -127,26 +128,6 @@ final class ProblemDetailStaysStaticTest extends TestCase
                 yield $file->getPathname() => (string) file_get_contents($file->getPathname());
             }
         }
-    }
-
-    /**
-     * @param array<string, string> $sources
-     *
-     * @return list<string> FQCN des ProblemExceptionInterface déclarées dans src/
-     */
-    private function problemClasses(array $sources): array
-    {
-        $problems = [];
-        foreach ($sources as $code) {
-            $file = $this->parse($code);
-            foreach ($file['classes'] as $class) {
-                if (class_exists($class) && is_subclass_of($class, ProblemExceptionInterface::class)) {
-                    $problems[] = $class;
-                }
-            }
-        }
-
-        return $problems;
     }
 
     /**

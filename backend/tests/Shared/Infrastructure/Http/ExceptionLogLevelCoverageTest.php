@@ -7,6 +7,9 @@ namespace App\Tests\Shared\Infrastructure\Http;
 use ApiPlatform\Metadata\Exception\InvalidArgumentException as ApiPlatformInvalidArgumentException;
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use App\Shared\Domain\Exception\HasProblemType;
+use App\Tests\Support\DeclaredClasses;
+use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\LoggedFixtureProblemException;
+use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\UnloggedFixtureProblemException;
 use Doctrine\ORM\OptimisticLockException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -39,6 +42,7 @@ use Symfony\Component\Yaml\Yaml;
 final class ExceptionLogLevelCoverageTest extends TestCase
 {
     private const string SOURCES = __DIR__.'/../../../../src';
+    private const string FIXTURE_SOURCES = __DIR__.'/Fixtures/LogLevelSources';
     private const string FRAMEWORK_CONFIG = __DIR__.'/../../../../config/packages/framework.yaml';
     private const string API_PLATFORM_CONFIG = __DIR__.'/../../../../config/packages/api_platform.yaml';
 
@@ -58,7 +62,7 @@ final class ExceptionLogLevelCoverageTest extends TestCase
 
     public function testEveryExceptionTheApiRendersHasALogLevel(): void
     {
-        $rendered = array_values(array_unique([...$this->problemClassesInSources(), ...$this->exceptionToStatusKeys()]));
+        $rendered = array_values(array_unique([...DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class), ...$this->exceptionToStatusKeys()]));
         self::assertNotEmpty($rendered, 'Aucune exception recensée : le garde-fou ne garderait rien.');
         self::assertSame([], array_values(array_diff(array_keys(self::EXEMPT), $rendered)), 'Dispense qui ne correspond plus à rien : la retirer.');
 
@@ -121,6 +125,19 @@ final class ExceptionLogLevelCoverageTest extends TestCase
     }
 
     /**
+     * Le recensement réel, sur un répertoire fixture rejouable : un fichier qui
+     * déclare deux exceptions sans porter le nom d'aucune. La découverte doit
+     * voir les deux, et le garde-fou rougir sur celle qui n'a pas d'entrée.
+     */
+    public function testTheDiscoveryFindsEveryDeclaredProblemAndFlagsTheUnlogged(): void
+    {
+        $found = DeclaredClasses::implementing(self::FIXTURE_SOURCES, ProblemExceptionInterface::class);
+
+        self::assertSame([LoggedFixtureProblemException::class, UnloggedFixtureProblemException::class], $found);
+        self::assertSame([UnloggedFixtureProblemException::class], $this->uncovered($found, [LoggedFixtureProblemException::class]));
+    }
+
+    /**
      * Même résolution que ErrorListener::resolveLogLevel : la première entrée
      * dont la classe est un `instanceof` l'emporte.
      *
@@ -135,28 +152,6 @@ final class ExceptionLogLevelCoverageTest extends TestCase
             $classes,
             static fn (string $class): bool => !array_any($logLevelKeys, static fn (string $key): bool => is_a($class, $key, true)),
         ));
-    }
-
-    /**
-     * @return list<string> FQCN des ProblemExceptionInterface de src/ (PSR-4 : App\ => src/)
-     */
-    private function problemClassesInSources(): array
-    {
-        $root = (string) realpath(self::SOURCES);
-        $classes = [];
-        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS));
-        foreach ($files as $file) {
-            if (!$file instanceof \SplFileInfo || 'php' !== $file->getExtension()) {
-                continue;
-            }
-            $relative = substr($file->getPathname(), \strlen($root) + 1, -\strlen('.php'));
-            $class = 'App\\'.str_replace('/', '\\', $relative);
-            if (class_exists($class) && is_subclass_of($class, ProblemExceptionInterface::class)) {
-                $classes[] = $class;
-            }
-        }
-
-        return $classes;
     }
 
     /**
