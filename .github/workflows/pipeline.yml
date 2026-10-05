@@ -379,6 +379,7 @@ jobs:
           tools/tests/finalize-release.test.sh
           tools/tests/smoke-login-throttling.test.sh
           tools/tests/rotate-deployer-token.test.sh
+          tools/tests/wait-external-secrets.test.sh
           tools/tests/security-headers.test.sh
           tools/tests/check-workflow-timeouts.test.sh
           tools/tests/git-config-isolation.test.sh
