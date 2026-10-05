@@ -151,15 +151,19 @@ for ((round = 1; round <= rounds; round++)); do
   if [ "$round" -lt "$rounds" ]; then "$sleep_bin" "$interval"; fi
 done
 
-# Les facultatifs non prêts : signalés, jamais bloquants.
+# Les facultatifs non prêts : signalés, jamais bloquants — et absents du
+# bilan, qui ne liste que ce qui est réellement synchronisé.
+synced=()
 for n in "${names[@]}"; do
-  if [ "${optional[$n]:-false}" = "true" ] && [ "${state[$n]:-absent}" != "ready" ]; then
+  if [ "${state[$n]:-absent}" = "ready" ]; then
+    synced+=("$n")
+  elif [ "${optional[$n]:-false}" = "true" ]; then
     echo "::warning::ExternalSecret facultatif $n non synchronisé (${reason[$n]} : ${message[$n]}) — sans effet sur le déploiement"
   fi
 done
 
 if [ -z "$pending" ]; then
-  echo "ExternalSecret synchronisés : ${names[*]}"
+  echo "ExternalSecret synchronisés : ${synced[*]}"
   exit 0
 fi
 

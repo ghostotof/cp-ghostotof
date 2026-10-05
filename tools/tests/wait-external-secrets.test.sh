@@ -166,6 +166,9 @@ if [ "$rc" -eq 0 ]; then pass "ES facultatif en erreur : sortie 0"
 else fail "ES facultatif en erreur : sortie 0" "rc=$rc ; $(cat "$FAKE_DIR/out")"; fi
 if grep -q '^::warning::.*backend-xdebug-trigger' "$FAKE_DIR/out"; then pass "ES facultatif en erreur : signalé en ::warning::"
 else fail "ES facultatif en erreur : signalé en ::warning::" "$(cat "$FAKE_DIR/out")"; fi
+# Le bilan ne doit pas le compter parmi les synchronisés (il ne l'est pas).
+if grep -q '^ExternalSecret synchronisés : backend-secrets$' "$FAKE_DIR/out"; then pass "ES facultatif en erreur : absent du bilan des synchronisés"
+else fail "ES facultatif en erreur : absent du bilan des synchronisés" "$(cat "$FAKE_DIR/out")"; fi
 
 # --- 5. le même ES SANS l'annotation est obligatoire ------------------------
 new_case optional-unmarked
