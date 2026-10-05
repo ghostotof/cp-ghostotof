@@ -125,6 +125,21 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         $this->record('password-setup-token-replayed', 'Password-setup token replayed: link already used.', $this->account($user));
     }
 
+    public function passwordSetupThrottled(): void
+    {
+        $this->record('password-setup-throttled', 'Password-setup request refused by its rate limiter.');
+    }
+
+    public function contactThrottled(): void
+    {
+        $this->record('contact-throttled', 'Contact message refused by its rate limiter.');
+    }
+
+    public function baseAccessThrottled(): void
+    {
+        $this->record('base-access-throttled', 'Base-tier token refused by its rate limiter.');
+    }
+
     public function userPurged(CpgUser $user): void
     {
         // Acteur forcé à `system` : cet événement naît d'une commande CLI

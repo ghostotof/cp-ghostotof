@@ -76,7 +76,7 @@ final class ApiExceptionLogLevelTest extends TestCase
         // Tracé sur `security_audit` depuis l'issue #356 : le journal du noyau
         // n'est plus sa seule trace, il rentre dans la règle des 4xx.
         yield 'jeton de mot de passe inconnu (404, tracé sur security_audit)' => [InvalidPasswordSetupTokenException::unknownToken(), Level::Info];
-        yield 'quota de définition de mot de passe (429), visible en production' => [new PasswordSetupRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Warning];
+        yield 'quota de définition de mot de passe (429, tracé sur security_audit)' => [new PasswordSetupRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Info];
         yield 'lien de mot de passe expiré (410)' => [PasswordSetupTokenExpiredException::expiredOrAlreadyUsed(), Level::Info];
         yield 'quota du traducteur (429), visible en production' => [new TranslationRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Warning];
         yield 'réglages « À propos » absents pour une locale valide (404), visible en production' => [AboutSettingsNotFoundException::forLocale(Locale::FR), Level::Warning];

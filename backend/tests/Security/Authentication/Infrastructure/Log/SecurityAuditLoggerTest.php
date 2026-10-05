@@ -353,6 +353,35 @@ final class SecurityAuditLoggerTest extends TestCase
     }
 
     /**
+     * Issue #356 : un quota anonyme atteint n'a pas de sujet — la clé du
+     * limiteur est l'IP, déjà dans la ligne, et le chemin dit lequel.
+     */
+    #[DataProvider('anonymousQuotaRefusals')]
+    public function testAnAnonymousQuotaRefusalCarriesNoSubjectOnlyTheIpAndThePath(\Closure $refuse, string $path, string $event): void
+    {
+        $this->pushRequest($path, 'POST');
+
+        $refuse($this->auditLogger);
+
+        self::assertSame([
+            'event' => $event,
+            'actor' => 'anonymous',
+            'ip' => self::IP,
+            'path' => $path,
+        ], $this->singleRecord()->context);
+    }
+
+    /**
+     * @return iterable<string, array{\Closure(SecurityAuditLogger): void, string, string}>
+     */
+    public static function anonymousQuotaRefusals(): iterable
+    {
+        yield 'définition de mot de passe' => [static fn (SecurityAuditLogger $logger) => $logger->passwordSetupThrottled(), '/api/account/password-setup/validate', 'password-setup-throttled'];
+        yield 'formulaire de contact' => [static fn (SecurityAuditLogger $logger) => $logger->contactThrottled(), '/api/contact', 'contact-throttled'];
+        yield 'palier de base' => [static fn (SecurityAuditLogger $logger) => $logger->baseAccessThrottled(), '/api/account/base-access', 'base-access-throttled'];
+    }
+
+    /**
      * Le chemin journalisé est le chemin canonique, tel quel : depuis T4.1
      * (audit A7, D6) plus aucune route ne porte de jeton dans son chemin, la
      * rédaction transitoire `…/password-setup/{token}` a donc disparu. Un
@@ -482,9 +511,12 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->userPurged($invited);
         $this->auditLogger->passwordSetupTokenRejected();
         $this->auditLogger->passwordSetupTokenReplayed($invited);
+        $this->auditLogger->passwordSetupThrottled();
+        $this->auditLogger->contactThrottled();
+        $this->auditLogger->baseAccessThrottled();
 
         $records = $this->handler->getRecords();
-        self::assertCount(17, $records);
+        self::assertCount(20, $records);
 
         foreach ($records as $record) {
             $serialized = json_encode([$record->message, $record->context, $record->extra], \JSON_THROW_ON_ERROR);

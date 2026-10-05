@@ -451,6 +451,90 @@ final class SecurityAuditLogTest extends WebTestCase
         $this->assertTokenAppearsInNoSecurityAuditRecord($unknown);
     }
 
+    // ----- Issue #356 : quotas par IP des routes anonymes -----
+
+    /**
+     * Le quota se consomme dans un écouteur kernel.request (audit C1) : le
+     * 11e appel est refusé avant toute lecture du jeton, et c'est ce refus,
+     * pas un jeton inconnu de plus, que la ligne doit dire.
+     */
+    public function testAPasswordSetupQuotaRefusalIsRecorded(): void
+    {
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $body = self::jsonBody(['token' => bin2hex(random_bytes(32))]);
+
+        for ($attempt = 1; $attempt <= 10; ++$attempt) {
+            $client->request('POST', '/api/account/password-setup/validate', server: ['CONTENT_TYPE' => 'application/json'], content: $body);
+            self::assertResponseStatusCodeSame(404);
+        }
+
+        $client->request('POST', '/api/account/password-setup/validate', server: ['CONTENT_TYPE' => 'application/json'], content: $body);
+
+        self::assertResponseStatusCodeSame(429);
+        self::assertSame([
+            'event' => 'password-setup-throttled',
+            'actor' => 'anonymous',
+            'ip' => '127.0.0.1',
+            'path' => '/api/account/password-setup/validate',
+        ], self::singleSecurityAuditEvent('password-setup-throttled'));
+        self::assertSame([], self::securityAuditEvents('password-setup-token-rejected'));
+    }
+
+    public function testAContactQuotaRefusalIsRecorded(): void
+    {
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $body = self::jsonBody([
+            'name' => 'Jane Doe',
+            'email' => 'jane@example.com',
+            'message' => 'Bonjour, je souhaite vous contacter pour un projet.',
+        ]);
+
+        for ($attempt = 1; $attempt <= 5; ++$attempt) {
+            $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: $body);
+            self::assertResponseStatusCodeSame(202);
+        }
+
+        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: $body);
+
+        self::assertResponseStatusCodeSame(429);
+        self::assertSame([
+            'event' => 'contact-throttled',
+            'actor' => 'anonymous',
+            'ip' => '127.0.0.1',
+            'path' => '/api/contact',
+        ], self::singleSecurityAuditEvent('contact-throttled'));
+        // Ni le corps ni l'adresse de l'expéditeur : la ligne ne dit que le refus.
+        self::assertStringNotContainsString('jane@example.com', json_encode(self::securityAuditRecords(), \JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Rendu par ApiProblemResponseListener (-98), hors d'API Platform : le
+     * même écouteur de kernel.exception doit le voir passer.
+     */
+    public function testABaseAccessQuotaRefusalIsRecorded(): void
+    {
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+
+        for ($attempt = 1; $attempt <= 20; ++$attempt) {
+            $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
+            self::assertResponseIsSuccessful();
+        }
+
+        $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
+
+        self::assertResponseStatusCodeSame(429);
+        self::assertSame([
+            'event' => 'base-access-throttled',
+            'actor' => 'anonymous',
+            'ip' => '127.0.0.1',
+            'path' => '/api/account/base-access',
+        ], self::singleSecurityAuditEvent('base-access-throttled'));
+        self::assertSame([], self::securityAuditEvents('base-access-issued'));
+    }
+
     private function assertTokenAppearsInNoSecurityAuditRecord(string $token): void
     {
         self::assertStringNotContainsString($token, json_encode(self::securityAuditRecords(), \JSON_THROW_ON_ERROR));

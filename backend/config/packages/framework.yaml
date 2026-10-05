@@ -64,9 +64,10 @@ framework:
         # src/, hors dispenses justifiées, et un niveau conforme au statut.
         #
         # Formulaire de contact : quota par IP en `info`, comme celui de
-        # base-access — leur trace retenue est l'access log de nginx (le 429 et
-        # l'IP réelle) ; un événement `security_audit` est suivi à part. Puis la
-        # remise de l'e-mail, voir AccountInvitationDeliveryException plus bas.
+        # base-access — leur trace retenue est l'événement `security_audit`
+        # (`contact-throttled`, `base-access-throttled`, avec l'IP et le chemin,
+        # issue #356). Puis la remise de l'e-mail, voir
+        # AccountInvitationDeliveryException plus bas.
         App\Contact\Domain\Exception\ContactRateLimitExceededException:
             log_level: info
         App\Contact\Domain\Exception\ContactMessageDeliveryException:
@@ -159,8 +160,10 @@ framework:
             log_level: info
         App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException:
             log_level: info
+        # Quota par IP : tracé sur `security_audit` (`password-setup-throttled`,
+        # issue #356), comme ceux du contact et de base-access.
         App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException:
-            log_level: warning
+            log_level: info
         # Corps de requête illisible sur une opération API Platform (issue #355) :
         # erreur du client, sur des POST publics donc à la main de n'importe
         # qui. Sa trace retenue est l'access log de nginx (le 400 et l'IP).

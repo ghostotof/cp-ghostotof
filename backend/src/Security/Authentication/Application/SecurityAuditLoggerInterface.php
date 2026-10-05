@@ -23,6 +23,8 @@ use App\Security\User\Domain\Entity\CpgUser;
  *    d'usage de Security\User\Application, après l'action réussie ;
  *  - les refus du parcours de définition de mot de passe qu'aucune autre
  *    trace n'attribue (issue #356) : PasswordSetupService, avant de lever ;
+ *  - les quotas anonymes atteints (issue #356) :
+ *    Infrastructure\Log\ThrottledRequestAuditListener ;
  *  - la purge automatique des invitations jamais activées (issue #238) :
  *    PendingInvitationPurger, une par compte supprimé.
  *
@@ -98,6 +100,18 @@ interface SecurityAuditLoggerInterface
      * servi. Nomme le compte que le lien activait, jamais le jeton.
      */
     public function passwordSetupTokenReplayed(CpgUser $user): void;
+
+    /**
+     * Quotas par IP des routes anonymes atteints (429, issue #356), un
+     * événement par route. Sans sujet : la clé du limiteur est l'IP, déjà
+     * portée par la ligne. Le quota du traducteur, lui, est sur `ai_usage`
+     * avec le compte (ADR 0004).
+     */
+    public function passwordSetupThrottled(): void;
+
+    public function contactThrottled(): void;
+
+    public function baseAccessThrottled(): void;
 
     /**
      * Compte en attente d'activation supprimé par la purge automatique
