@@ -8,7 +8,15 @@ use App\Ai\Assistant\Domain\Exception\AssistantRateLimitExceededException;
 use App\Ai\Assistant\Domain\Exception\AssistantUnavailableException;
 use App\Ai\Assistant\Domain\Exception\InvalidConversationException;
 use App\Ai\Assistant\Infrastructure\Http\RequestBodyTooLargeException;
+use App\Ai\Translation\Domain\Exception\TranslationRateLimitExceededException;
+use App\Ai\Translation\Domain\Exception\TranslationUnavailableException;
+use App\Portfolio\About\Domain\Exception\AboutSettingsNotFoundException;
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Domain\Exception\BaseAccessRateLimitExceededException;
+use App\Security\User\Domain\Exception\CpgUserNotFoundException;
+use App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException;
+use App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException;
+use App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
@@ -19,6 +27,7 @@ use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\EventListener\ErrorListener;
 use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
+use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -35,6 +44,15 @@ use Symfony\Component\Yaml\Yaml;
  * Celui du quota de base-access aussi : rendu par ApiProblemResponseListener
  * depuis l'issue #322, il passe désormais par cette journalisation, que son
  * ancien écouteur dédié court-circuitait.
+ *
+ * Les exceptions rendues par API Platform passent par la même journalisation,
+ * avant lui (issue #348). Sont épinglées ici celles dont le niveau est un
+ * choix plutôt que la règle (un 4xx en `warning`), plus un représentant de la
+ * règle par statut. La présence et la conformité au statut d'une entrée pour
+ * chacune relèvent d'ExceptionLogLevelCoverageTest.
+ *
+ * La requête est la même pour tous les cas : le niveau ne dépend que de
+ * l'exception, jamais de la route.
  */
 final class ApiExceptionLogLevelTest extends TestCase
 {
@@ -51,6 +69,13 @@ final class ApiExceptionLogLevelTest extends TestCase
         yield 'corps trop volumineux (413)' => [new RequestBodyTooLargeException(), Level::Info];
         yield 'quota du palier de base atteint (429, issue #322)' => [new BaseAccessRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Info];
         yield 'format refusé (415), sur toute route de l\'API' => [new UnsupportedMediaTypeHttpException('Unsupported format.'), Level::Info];
+        yield 'compte introuvable (404, API Platform, issue #348)' => [CpgUserNotFoundException::forId(Uuid::v7()), Level::Info];
+        yield 'traduction indisponible (503, panne d\'un tiers)' => [new TranslationUnavailableException(), Level::Warning];
+        yield 'jeton de mot de passe inconnu (404), visible en production' => [InvalidPasswordSetupTokenException::unknownToken(), Level::Warning];
+        yield 'quota de définition de mot de passe (429), visible en production' => [new PasswordSetupRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Warning];
+        yield 'lien de mot de passe expiré (410)' => [PasswordSetupTokenExpiredException::expiredOrAlreadyUsed(), Level::Info];
+        yield 'quota du traducteur (429), visible en production' => [new TranslationRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Warning];
+        yield 'réglages « À propos » absents pour une locale valide (404), visible en production' => [AboutSettingsNotFoundException::forLocale(Locale::FR), Level::Warning];
     }
 
     #[DataProvider('exceptions')]

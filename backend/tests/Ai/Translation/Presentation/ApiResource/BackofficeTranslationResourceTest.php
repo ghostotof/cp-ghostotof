@@ -222,10 +222,11 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(503);
         $records = self::allChannelsLogRecords();
         // Garde-fou : la sonde a bien vu passer l'exception (sinon le test
-        // resterait vert sans rien vérifier).
+        // resterait vert sans rien vérifier). `warning` depuis l'issue #348
+        // (framework.exceptions), `critical` avant.
         self::assertNotEmpty(array_filter(
             $records,
-            static fn (LogRecord $record): bool => Level::Critical === $record->level && str_contains($record->message, 'TranslationUnavailableException'),
+            static fn (LogRecord $record): bool => Level::Warning === $record->level && str_contains($record->message, 'TranslationUnavailableException'),
         ));
         $formatter = new JsonFormatter();
         foreach ($records as $record) {
