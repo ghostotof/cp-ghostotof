@@ -840,7 +840,12 @@ Content management for all of the above, plus user administration, gated end-to-
   dispatcher and pins that bracket. Two consequences for a new exception rendered there: it needs a
   `log_level` in `framework.exceptions`, since `logKernelException` (0) now sees it — base-access's 429
   was not logged at all while its listener stopped propagation at 0, and would go out `critical` without
-  its `info` entry —, and an `exception_to_status` entry for it is dead config. Rejected:
+  its `info` entry (`ApiExceptionLogLevelTest` lists them) —, and an `exception_to_status` entry for it is
+  dead config. Never give such an exception a `status_code` in `framework.exceptions`: `logKernelException`
+  would swap it for an `HttpException` before -98, and the `type` would silently disappear. One case
+  where the propagation does reach -98 from an API Platform route: `kernel.terminate`, where the delegated
+  renderer stands down (non-debug) — the listener stands down too. `BackofficeUserRoleResourceTest`
+  asserts the 409 still carries API Platform's debug `trace`, which the shared listener never emits. Rejected:
   `api_platform.handle_symfony_errors: true` — global, unfiltered by path, rewrites the 404/405/403 bodies
   that already work, and hands an `html` negotiation back to Symfony before `ApiJsonErrorFormatListener`.
 - **Every quota 429 gets its `Retry-After` from one listener** (issue #273):

@@ -109,10 +109,11 @@ final class BaseAccessControllerTest extends WebTestCase
      * Issue #322 : le 429 sort en problem+json typé, comme celui de
      * l'assistant (`/errors/rate-limited`), rendu par l'écouteur partagé des
      * routes hors API Platform. Avant, un écouteur dédié rendait `{detail}`
-     * sans `type`, et le noyau journalisait l'exception en `critical` (ni
-     * HttpException, ni entrée dans `framework.exceptions`) : une ligne
-     * d'alerte en production pour chaque quota atteint, comportement attendu
-     * de la borne.
+     * sans `type`, et il le faisait à la priorité 0, avant la journalisation
+     * du noyau : le 429 n'était journalisé nulle part. Il l'est désormais,
+     * une fois, et en `info` grâce à `framework.exceptions` — sans cette
+     * entrée, le noyau l'écrirait en `critical` (ni HttpException, ni 4xx
+     * connu), une ligne d'alerte en production pour chaque quota atteint.
      */
     public function testTheRateLimitedResponseIsATypedProblemLoggedAsAnInfo(): void
     {

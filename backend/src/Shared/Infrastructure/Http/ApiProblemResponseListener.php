@@ -25,7 +25,9 @@ use Symfony\Component\HttpKernel\KernelEvents;
  *
  * **Priorité -98, et c'est elle qui fait la règle.** API Platform (-96) arrête
  * la propagation sur toutes ses routes en posant sa réponse : ce qui arrive ici
- * est donc hors API Platform par construction, sans lire d'attribut interne.
+ * est donc hors API Platform par construction, sans lire d'attribut interne
+ * — sauf pendant `kernel.terminate`, où ce rendu s'abstient et où cet écouteur
+ * s'abstient donc aussi.
  * Il doit aussi passer avant le rendu générique de Symfony (-128), sinon il
  * n'est jamais appelé. Il précède ApiJsonErrorFormatListener (-100), ce qui
  * est sans effet : celui-là ne fait que poser le format d'une erreur que
@@ -51,6 +53,14 @@ final readonly class ApiProblemResponseListener
         // Le forward vers le contrôleur d'erreur est une sous-requête : la
         // réponse se décide une seule fois, sur la requête principale.
         if (!$event->isMainRequest()) {
+            return;
+        }
+
+        // Pendant `kernel.terminate`, la réponse est déjà partie. Le rendu que
+        // délègue API Platform s'abstient alors (hors debug) sans poser de
+        // réponse : la propagation arrive ici même depuis une route API
+        // Platform, qui n'est pas la nôtre. Il n'y a rien à rendre.
+        if ($event->isKernelTerminating()) {
             return;
         }
 

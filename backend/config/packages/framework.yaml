@@ -16,11 +16,17 @@ framework:
 
     # Niveau de journalisation de l'ErrorListener du noyau, qui met sinon en
     # `critical` toute exception hors HttpExceptionInterface et en `error` tout
-    # 4xx (tests/Ai/Assistant/Infrastructure/AssistantExceptionLogLevelTest.php).
+    # 4xx (tests/Shared/Infrastructure/Http/ApiExceptionLogLevelTest.php).
     # Ici plutôt qu'en `#[WithLogLevel]` : le domaine ne dépend pas de HttpKernel.
     # Ne viser que des classes précises : un mapping sur HttpException
     # abaisserait le niveau de tous les 4xx de l'application.
     exceptions:
+        # Ici, `log_level` seulement, jamais `status_code` pour une exception
+        # métier rendue en problem+json (issue #322) : avec un `status_code`,
+        # ErrorListener::logKernelException (priorité 0) remplace l'exception
+        # par une HttpException avant ApiProblemResponseListener (-98), qui ne
+        # voit alors plus de ProblemExceptionInterface. Le `type` disparaîtrait
+        # sans bruit, le statut étant déjà porté par getStatus().
         # Erreur du client, bornes D6 comprises : pas un incident.
         App\Ai\Assistant\Domain\Exception\InvalidConversationException:
             log_level: info
@@ -42,9 +48,10 @@ framework:
         App\Security\User\Domain\Exception\BaseAccessRateLimitExceededException:
             log_level: info
         # Content-Type refusé (415) : une erreur du client, jamais un incident.
-        # Seule exception de cette liste qui ne soit pas propre à l'assistant,
-        # et c'est voulu (issue #320) : la classe est levée par
-        # #[MapRequestPayload(acceptFormat)] sur /api/assistant/answers, mais
+        # Seule exception de cette liste à ne pas être une exception métier
+        # rendue par ApiProblemResponseListener, et c'est voulu (issue #320) :
+        # la classe est levée par #[MapRequestPayload(acceptFormat)] sur
+        # /api/assistant/answers, mais
         # aussi par ContentNegotiationProvider, DeserializeProvider,
         # ParameterProvider et DeserializeListener d'API Platform — donc sur
         # **toute** route de l'API, backoffice compris. Avec LOG_LEVEL=warning,

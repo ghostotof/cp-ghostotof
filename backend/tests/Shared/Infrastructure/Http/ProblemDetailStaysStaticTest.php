@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Ai\Assistant\Infrastructure\Http;
+namespace App\Tests\Shared\Infrastructure\Http;
 
 use App\Security\User\Domain\Exception\CannotModifyOwnRolesException;
 use App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException;
@@ -41,7 +41,7 @@ use PHPUnit\Framework\TestCase;
  */
 final class ProblemDetailStaysStaticTest extends TestCase
 {
-    private const string SOURCES = __DIR__.'/../../../../../src';
+    private const string SOURCES = __DIR__.'/../../../../src';
 
     /**
      * Messages dynamiques admis, parce qu'aucune de ces exceptions ne peut être

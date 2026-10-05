@@ -56,9 +56,19 @@ final class CanonicalPath
      * #78), elle ne doit être écrite qu'ici (issue #322).
      *
      * @param string $prefix chemin absolu, sans `/` final (`/api/assistant`)
+     *
+     * @throws \InvalidArgumentException sur un préfixe mal formé : vide,
+     *                                    relatif ou terminé par `/`. Accepté,
+     *                                    il échouerait sans bruit — `/api/x/`
+     *                                    ne correspondrait plus à rien (une
+     *                                    garde désactivée), `` à tout.
      */
     public static function isUnder(Request $request, string $prefix): bool
     {
+        if (!str_starts_with($prefix, '/') || str_ends_with($prefix, '/')) {
+            throw new \InvalidArgumentException(sprintf('Préfixe de chemin mal formé : "%s" (attendu : absolu, sans "/" final).', $prefix));
+        }
+
         $path = self::of($request);
 
         return $prefix === $path || str_starts_with($path, $prefix.'/');

@@ -86,4 +86,27 @@ final class CanonicalPathTest extends TestCase
         yield 'voisin sans séparateur' => ['/api/assistants', false];
         yield 'parent' => ['/api', false];
     }
+
+    /**
+     * Un préfixe mal formé échouerait sans bruit : `/api/assistant/` ne
+     * correspondrait plus à rien (une garde désactivée), `` correspondrait à
+     * tout. L'erreur de programmation doit se voir.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function malformedPrefixes(): iterable
+    {
+        yield 'vide' => [''];
+        yield 'slash final' => ['/api/assistant/'];
+        yield 'racine seule' => ['/'];
+        yield 'relatif' => ['api/assistant'];
+    }
+
+    #[DataProvider('malformedPrefixes')]
+    public function testAMalformedPrefixIsRefused(string $prefix): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        CanonicalPath::isUnder(Request::create('/api/assistant/answers'), $prefix);
+    }
 }

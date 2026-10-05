@@ -44,8 +44,8 @@ final readonly class SecurityEventsSubscriber implements EventSubscriberInterfac
     /** Le firewall qui reçoit les identifiants (json_login), le seul où un login a lieu. */
     private const string LOGIN_FIREWALL = 'login';
 
-    /** Même ancre que la règle d'access_control (issue #78) : le sous-arbre, pas un voisin. */
-    private const string BACKOFFICE_PATH_PATTERN = '#^/api/backoffice(/|$)#';
+    /** Même ancre que la règle d'access_control (issue #78, CanonicalPath::isUnder) : le sous-arbre, pas un voisin. */
+    private const string BACKOFFICE_PATH = '/api/backoffice';
 
     public function __construct(private SecurityAuditLoggerInterface $auditLogger)
     {
@@ -105,7 +105,7 @@ final readonly class SecurityEventsSubscriber implements EventSubscriberInterfac
         }
 
         // Décodé (issue #77) : `/api/%62ackoffice` est bien le backoffice pour le firewall.
-        if (1 !== preg_match(self::BACKOFFICE_PATH_PATTERN, CanonicalPath::of($event->getRequest()))) {
+        if (!CanonicalPath::isUnder($event->getRequest(), self::BACKOFFICE_PATH)) {
             return;
         }
 

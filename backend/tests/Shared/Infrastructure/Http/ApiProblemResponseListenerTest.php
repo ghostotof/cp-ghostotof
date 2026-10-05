@@ -161,13 +161,30 @@ final class ApiProblemResponseListenerTest extends TestCase
         self::assertNull($event->getResponse());
     }
 
-    private function event(string $path, \Throwable $exception, int $requestType = HttpKernelInterface::MAIN_REQUEST): ExceptionEvent
+    /**
+     * Pendant `kernel.terminate`, la réponse est déjà partie. Le rendu que
+     * délègue API Platform s'abstient alors (ErrorListener, hors debug) et la
+     * propagation continue jusqu'ici, y compris sur une route API Platform :
+     * cet écouteur doit s'abstenir lui aussi, sinon il « rendrait » une route
+     * qui n'est pas la sienne, pour une réponse que personne ne recevra.
+     */
+    public function testNothingIsRenderedWhileTheKernelIsTerminating(): void
+    {
+        $event = $this->event('/api/assistant/answers', new AssistantUnavailableException(), isKernelTerminating: true);
+
+        (new ApiProblemResponseListener())($event);
+
+        self::assertNull($event->getResponse());
+    }
+
+    private function event(string $path, \Throwable $exception, int $requestType = HttpKernelInterface::MAIN_REQUEST, bool $isKernelTerminating = false): ExceptionEvent
     {
         return new ExceptionEvent(
             self::createStub(HttpKernelInterface::class),
             Request::create($path, 'POST'),
             $requestType,
             $exception,
+            $isKernelTerminating,
         );
     }
 }
