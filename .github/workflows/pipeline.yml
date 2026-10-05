@@ -379,6 +379,7 @@ jobs:
           tools/tests/finalize-release.test.sh
           tools/tests/smoke-login-throttling.test.sh
           tools/tests/rotate-deployer-token.test.sh
+          tools/tests/wait-external-secrets.test.sh
           tools/tests/security-headers.test.sh
           tools/tests/check-workflow-timeouts.test.sh
           tools/tests/git-config-isolation.test.sh
@@ -578,7 +579,7 @@ jobs:
     needs: [release-version, build-images]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
-    timeout-minutes: 45 # attentes kubectl cumulées ≤ 31 min (fenêtre de maintenance, migration, rollouts, seed)
+    timeout-minutes: 45 # attentes kubectl cumulées ≤ 33 min (secrets ESO, fenêtre de maintenance, migration, rollouts, seed)
     environment:
       name: preprod
       url: https://preprod.cp-ghostotof.com
@@ -623,6 +624,32 @@ jobs:
           mkdir -p "$RUNNER_TEMP/manifests"
           kustomize build . -o "$RUNNER_TEMP/manifests"
           kubectl -n preprod apply -f "$RUNNER_TEMP/manifests/v1_configmap_backend-config.yaml"
+          #    Puis ses secrets (issue #325) : les seuls objets ESO (SecretStore
+          #    et ExternalSecret), appliqués ici et attendus synchronisés. Une
+          #    clé absente de Secret Manager laissait son Secret incomplet, et
+          #    le symptôme n'apparaissait qu'au rollout, en
+          #    `CreateContainerConfigError` dans les événements des pods. Ici
+          #    l'échec nomme l'ExternalSecret et ses clés distantes AVANT toute
+          #    migration et avant la fenêtre de maintenance : fail-closed, la
+          #    release précédente reste en service. Seuls les ES annotés
+          #    `cp-ghostotof.com/deploy-gate: optional` (backend-xdebug-trigger)
+          #    ne bloquent pas. Appliquer plus tôt ne change rien pour les pods
+          #    en service : `apply -k` et le rafraîchissement horaire d'ESO
+          #    mettaient déjà les Secrets à jour pendant qu'ils tournaient.
+          #    SecretStore d'abord, puis les ExternalSecret qui le référencent
+          #    (l'ordre alphabétique des fichiers donnerait l'inverse). Sans
+          #    aucun objet ESO rendu, on s'arrête en le disant.
+          shopt -s nullglob
+          eso_files=("$RUNNER_TEMP"/manifests/external-secrets.io_*_secretstore_*.yaml
+                     "$RUNNER_TEMP"/manifests/external-secrets.io_*_externalsecret_*.yaml)
+          shopt -u nullglob
+          if [ "${#eso_files[@]}" -eq 0 ]; then
+            echo "::error::aucun objet ESO (external-secrets.io_*.yaml) dans la sortie de kustomize build : overlay ou version d'API inattendus, rien n'est déployé"
+            exit 1
+          fi
+          kubectl -n preprod apply "${eso_files[@]/#/--filename=}" -o name > "$RUNNER_TEMP/eso-applied"
+          mapfile -t es_names < <(sed -n 's#^externalsecret\.external-secrets\.io/##p' "$RUNNER_TEMP/eso-applied")
+          "$GITHUB_WORKSPACE/tools/wait-external-secrets.sh" preprod "${es_names[@]}" --timeout 120
           # 2. Fenêtre de maintenance (v0.11.0, migration UUID) — opt-in, variable
           #    de dépôt DEPLOY_MAINTENANCE_WINDOW=true. Réservée au cas où AUCUN
           #    ordre ne fonctionne : le nouveau code ne lit pas l'ancien schéma ET
@@ -787,9 +814,15 @@ jobs:
   # ---------------------------------------------------------------------------
   # cleanup-preprod — seulement si smoke-test-preprod/audit-preprod échoue
   # ---------------------------------------------------------------------------
+  # Seulement si deploy-preprod a RÉUSSI (issue #325) : `failure()` est vrai
+  # dès qu'un job ANCÊTRE échoue (documentation GitHub, « chain of dependent
+  # jobs »). Un deploy-preprod en échec — secrets non synchronisés, migration
+  # refusée — n'a fait aucun rollout : `rollout undo` ramènerait alors la
+  # release encore en service à la précédente, sur un schéma déjà migré, au
+  # lieu de la laisser servir (le fail-closed promis par l'étape Deploy).
   rollback-preprod:
-    needs: [smoke-test-preprod, audit-preprod]
-    if: failure() && startsWith(github.ref, 'refs/heads/release/')
+    needs: [deploy-preprod, smoke-test-preprod, audit-preprod]
+    if: failure() && startsWith(github.ref, 'refs/heads/release/') && needs.deploy-preprod.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10 # deux `rollout undo`, sans attente
     # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
@@ -832,7 +865,7 @@ jobs:
     needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests, frontend-image-headers]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 45 # attentes kubectl cumulées ≤ 28 min (fenêtre de maintenance, migration, rollouts)
+    timeout-minutes: 45 # attentes kubectl cumulées ≤ 30 min (secrets ESO, fenêtre de maintenance, migration, rollouts)
     permissions:
       contents: read
       actions: read
@@ -925,6 +958,25 @@ jobs:
           mkdir -p "$RUNNER_TEMP/manifests"
           kustomize build . -o "$RUNNER_TEMP/manifests"
           kubectl -n prod apply -f "$RUNNER_TEMP/manifests/v1_configmap_backend-config.yaml"
+          #    Puis ses secrets (issue #325), comme en préprod : objets ESO seuls,
+          #    attendus synchronisés avant toute migration. Un échec nomme
+          #    l'ExternalSecret et ses clés distantes ; rien n'est migré ni
+          #    déployé, la release précédente reste en service. La prod n'a
+          #    aucun ES facultatif : tous bloquent.
+          #    SecretStore d'abord, puis les ExternalSecret qui le référencent
+          #    (l'ordre alphabétique des fichiers donnerait l'inverse). Sans
+          #    aucun objet ESO rendu, on s'arrête en le disant.
+          shopt -s nullglob
+          eso_files=("$RUNNER_TEMP"/manifests/external-secrets.io_*_secretstore_*.yaml
+                     "$RUNNER_TEMP"/manifests/external-secrets.io_*_externalsecret_*.yaml)
+          shopt -u nullglob
+          if [ "${#eso_files[@]}" -eq 0 ]; then
+            echo "::error::aucun objet ESO (external-secrets.io_*.yaml) dans la sortie de kustomize build : overlay ou version d'API inattendus, rien n'est déployé"
+            exit 1
+          fi
+          kubectl -n prod apply "${eso_files[@]/#/--filename=}" -o name > "$RUNNER_TEMP/eso-applied"
+          mapfile -t es_names < <(sed -n 's#^externalsecret\.external-secrets\.io/##p' "$RUNNER_TEMP/eso-applied")
+          "$GITHUB_WORKSPACE/tools/wait-external-secrets.sh" prod "${es_names[@]}" --timeout 120
           # 2. Fenêtre de maintenance (v0.11.0, migration UUID) — opt-in, variable
           #    de dépôt DEPLOY_MAINTENANCE_WINDOW=true. Réservée au cas où AUCUN
           #    ordre ne fonctionne : le nouveau code ne lit pas l'ancien schéma ET
