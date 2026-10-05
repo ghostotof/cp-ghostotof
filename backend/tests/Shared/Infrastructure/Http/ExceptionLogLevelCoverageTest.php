@@ -58,8 +58,8 @@ final class ExceptionLogLevelCoverageTest extends TestCase
      * sont atteignables par aucun client aujourd'hui (vérifié le 2026-10-05).
      */
     private const array EXEMPT = [
-        SerializerExceptionInterface::class => 'Entrée large : couvre aussi l\'encodage de sortie, un défaut serveur. Le corps de requête en est sorti (MalformedRequestBodyException, #355).',
-        ApiPlatformInvalidArgumentException::class => 'Entrée large d\'API Platform : levée par la pagination (aucun provider de src/ ne pagine, `?page=0` répond 200), l\'IriConverter et la lecture des métadonnées, autant de défauts de configuration.',
+        SerializerExceptionInterface::class => 'Entrée large : couvre aussi l\'encodage de sortie, un défaut serveur — dont les UnsupportedFormatException du journal de test, levées par GET /api (point d\'entrée Hydra en jsonld, coupé en prod). Le corps de requête en est sorti (MalformedRequestBodyException, #355).',
+        ApiPlatformInvalidArgumentException::class => 'Entrée large d\'API Platform, sous-classes comprises (ItemNotFoundException, OperationNotFoundException) : levée par la pagination (aucun provider de src/ ne pagine, `?page=0` répond 200), l\'IriConverter (aucune ressource n\'accepte d\'IRI du client) et la lecture des métadonnées, autant de défauts de configuration.',
         OptimisticLockException::class => 'Défaut d\'API Platform ; aucune entité versionnée (pas de #[ORM\Version] dans src/), le conflit serait à observer.',
     ];
 
