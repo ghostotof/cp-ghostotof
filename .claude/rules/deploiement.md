@@ -105,6 +105,20 @@ paths:
   reading it**, only in the next one; a Messenger message in flight at deploy time must stay readable
   by both versions (v0.11.0's `SendAccountInvitationMessage.userId` note). Only migrations the old code
   cannot survive fall outside this order — see the maintenance window below.
+- **Every ExternalSecret of the release is synced before anything is migrated or rolled out**
+  (issue #325). Right after `backend-config`, the `Deploy` step applies the ESO objects alone
+  (`external-secrets.io_*.yaml` from the `kustomize build -o` output) and runs
+  `tools/wait-external-secrets.sh <ns> <names…> --timeout 120`, before the maintenance window. A key
+  missing from Secret Manager used to surface only as `CreateContainerConfigError` after a rollout
+  timed out (phase 1, Anthropic key); now the job fails naming the ExternalSecret and its remote key
+  names, fail-closed. **"Synced" is `Ready=True` *and* `status.syncedResourceVersion` starting with
+  `<metadata.generation>-`** — ESO keeps the previous generation's `Ready=True` until it reconciles a
+  changed spec, so `kubectl wait --for=condition=Ready` would pass exactly when a release adds a key
+  (observed on ESO v2.9.0). Never replace the script with a bare `kubectl wait`. It never reads a
+  Secret; it annotates `force-sync` on the blocking ones once, to break ESO's backoff when a job is
+  re-run after publishing the key. `cp-ghostotof.com/deploy-gate: optional` turns a failure into a
+  warning — only `backend-xdebug-trigger` (preprod) carries it, never put it on an ExternalSecret a
+  pod or Job needs to start. Offline test: `tools/tests/wait-external-secrets.test.sh`.
 - **`DEPLOY_MAINTENANCE_WINDOW` (repository variable) opts a deploy into a maintenance window** — added
   for v0.11.0's irreversible integer→UUID primary-key migrations, where the new code cannot read the old
   schema **and vice versa**, so no pod may serve a request while the migration runs. That is the only

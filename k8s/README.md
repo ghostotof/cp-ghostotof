@@ -347,7 +347,10 @@ done
 `<env>-backend-scaleway-ai-project-id`, spec 0005) — **à publier avant de
 pousser la branche `release/*` qui livre l'assistant**. Un `ExternalSecret` qui
 référence une clé absente laisse `backend-secrets` incomplet, et le Deployment
-ne démarre pas : c'est la leçon de la phase 1 (clé Anthropic).
+ne démarre pas : c'est la leçon de la phase 1 (clé Anthropic). Depuis #325, le
+pipeline l'attrape avant tout dégât (voir « Garde du déploiement » ci-dessous) ;
+publier d'abord reste la règle, la garde ne fait que transformer l'oubli en un
+échec lisible.
 
 1. **Une application IAM dédiée par environnement** (console : IAM >
    Applications), distincte de celle d'ESO (§1) et de celle du mailer. Une
@@ -461,6 +464,32 @@ php bin/console lexik:jwt:generate-keypair --skip-if-exists
 Une fois toutes les valeurs présentes dans Scaleway Secret Manager, ESO les
 synchronise automatiquement dans le cluster (`refreshInterval: 1h` sur chaque
 `ExternalSecret`) — pas d'action supplémentaire côté `kubectl apply -k`.
+
+**Garde du déploiement (issue #325).** `deploy-preprod` et `deploy-prod`
+appliquent les seuls objets ESO de la release (`SecretStore`, `ExternalSecret`)
+juste après `backend-config`, puis `tools/wait-external-secrets.sh` attend
+jusqu'à 120 s que chacun soit synchronisé — **avant** la fenêtre de
+maintenance, la migration et le rollout. « Synchronisé » veut dire `Ready=True`
+**et** `status.syncedResourceVersion` de la génération courante : tant qu'ESO
+n'a pas réconcilié une spec modifiée, le statut garde le `Ready=True` de la
+précédente, et un simple `kubectl wait --for=condition=Ready` passerait au vert
+précisément quand une release ajoute une clé. Un échec nomme l'`ExternalSecret`,
+la raison d'ESO et les **noms** des clés distantes qu'il référence (le message
+d'ESO, « could not get secret data from provider », ne dit pas laquelle
+manque) ; aucune valeur n'est lue ni affichée. Fail-closed : rien n'a été migré
+ni déployé, la release précédente reste en service.
+
+Pour s'en remettre : publier la clé manquante (ci-dessus), puis relancer le job
+en échec. Le script pose `force-sync` sur les `ExternalSecret` obligatoires non
+prêts dès son premier tour, ce qui sort ESO de son backoff : sans cela, une
+relance juste après la publication pouvait encore échouer.
+
+Un `ExternalSecret` annoté `cp-ghostotof.com/deploy-gate: optional` ne bloque
+pas : il est signalé en avertissement. Seul `backend-xdebug-trigger` l'est
+(préprod, « Profilage Xdebug en préprod ») ; ne jamais poser cette annotation
+sur un `ExternalSecret` dont un pod ou un Job a besoin pour démarrer. Le Role
+déployeur a déjà
+`get`/`list`/`patch` sur `externalsecrets` : rien à rejouer au §4.
 
 ### 2bis. Basic Auth de la préprod (restriction d'accès, posée le 2026-09-12)
 
@@ -903,7 +932,9 @@ démarre, seul le profilage reste indisponible. C'est exactement la propriété
 recherchée — mais elle a une contrepartie à connaître : tant que le secret
 n'existe pas, l'`ExternalSecret` `backend-xdebug-trigger` reste en `Ready:
 False` dans `kubectl get externalsecret -n preprod`. C'est normal et sans
-conséquence sur le reste ; ne pas le confondre avec une panne.
+conséquence sur le reste ; ne pas le confondre avec une panne. Le déploiement
+non plus ne s'y arrête pas : l'annotation `cp-ghostotof.com/deploy-gate:
+optional` le fait signaler en avertissement par la garde du §2 (issue #325).
 
 `tr -d '\n'` n'est pas un détail : `scw secret version create data=@fichier`
 pousse les octets du fichier **tels quels**, saut de ligne final compris, et un
