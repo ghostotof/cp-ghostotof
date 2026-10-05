@@ -47,6 +47,100 @@ framework:
         # entrée il sortirait en `critical` (ni HttpException, ni 4xx connu).
         App\Security\User\Domain\Exception\BaseAccessRateLimitExceededException:
             log_level: info
+
+        # --- Exceptions rendues par API Platform (`exception_to_status`) ---
+        # logKernelException (priorité 0) les voit aussi, avant API Platform
+        # (-96) : sans entrée, chacune sortait en `critical` — une 404 de
+        # backoffice, un 409 de saisie ou un quota atteint étaient autant
+        # d'alertes de production (issue #348). Règle : `info` pour une erreur
+        # du client (4xx), `warning` pour la panne d'un tiers (503), qui reste
+        # visible en production. ExceptionLogLevelCoverageTest exige une entrée
+        # pour chaque clé de `exception_to_status` et chaque
+        # ProblemExceptionInterface de src/, hors dispenses justifiées.
+        #
+        # Formulaire de contact : quota par IP, et remise de l'e-mail
+        # (aujourd'hui levée dans le worker seulement, entrée défensive comme
+        # celle de api_platform.yaml).
+        App\Contact\Domain\Exception\ContactRateLimitExceededException:
+            log_level: info
+        App\Contact\Domain\Exception\ContactMessageDeliveryException:
+            log_level: warning
+        # Assistant de traduction (ADR 0004) : panne du fournisseur, quota.
+        App\Ai\Translation\Domain\Exception\TranslationUnavailableException:
+            log_level: warning
+        App\Ai\Translation\Domain\Exception\TranslationRateLimitExceededException:
+            log_level: info
+        # Contenus du portfolio : introuvable, conflit, saisie invalide.
+        App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException:
+            log_level: info
+        App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException:
+            log_level: info
+        App\Portfolio\Contribution\Domain\Exception\ContributionNotFoundException:
+            log_level: info
+        App\Portfolio\CaseStudy\Domain\Exception\CaseStudyNotFoundException:
+            log_level: info
+        App\Portfolio\AnonymousCv\Domain\Exception\AnonymousCvSectionNotFoundException:
+            log_level: info
+        App\Portfolio\Incident\Domain\Exception\IncidentNotFoundException:
+            log_level: info
+        App\Portfolio\Watch\Domain\Exception\WatchedProductNotFoundException:
+            log_level: info
+        App\Portfolio\Watch\Domain\Exception\WatchedProductSlugAlreadyUsedException:
+            log_level: info
+        App\Portfolio\Watch\Domain\Exception\WatchedProductSlugIsImmutableException:
+            log_level: info
+        App\Portfolio\Watch\Domain\Exception\InvalidWatchedProductException:
+            log_level: info
+        App\Portfolio\Shared\Domain\Exception\InvalidLocaleException:
+            log_level: info
+        App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException:
+            log_level: info
+        App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException:
+            log_level: info
+        App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException:
+            log_level: info
+        App\Portfolio\Shared\Domain\Exception\IncompleteOrderException:
+            log_level: info
+        App\Portfolio\Quality\Domain\Exception\QualityPrincipleNotFoundException:
+            log_level: info
+        App\Portfolio\Quality\Domain\Exception\QualityTraitNotFoundException:
+            log_level: info
+        App\Portfolio\About\Domain\Exception\AboutSettingsNotFoundException:
+            log_level: info
+        App\Portfolio\About\Domain\Exception\AboutSiteCardNotFoundException:
+            log_level: info
+        App\Portfolio\About\Domain\Exception\AboutMeCardNotFoundException:
+            log_level: info
+        # Administration des comptes (backoffice, ROLE_SUPER).
+        App\Security\User\Domain\Exception\CpgUserNotFoundException:
+            log_level: info
+        App\Security\User\Domain\Exception\CannotDeleteOwnAccountException:
+            log_level: info
+        App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException:
+            log_level: info
+        App\Security\User\Domain\Exception\CannotModifyOwnRolesException:
+            log_level: info
+        App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException:
+            log_level: info
+        App\Security\User\Domain\Exception\EmailAlreadyUsedException:
+            log_level: info
+        App\Security\User\Domain\Exception\AccountNotAwaitingActivationException:
+            log_level: info
+        # Envoi de l'invitation (worker aujourd'hui, entrée défensive).
+        App\Security\User\Domain\Exception\AccountInvitationDeliveryException:
+            log_level: warning
+        # Parcours public de définition de mot de passe. Un jeton inconnu et un
+        # quota atteint restent en `warning`, donc visibles en production :
+        # aucun événement `security_audit` ne les trace, et ce journal est le
+        # seul signal d'un essai de jetons à la chaîne. Un lien expiré, lui,
+        # est le cas ordinaire d'une invitation ouverte trop tard.
+        App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException:
+            log_level: warning
+        App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException:
+            log_level: info
+        App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException:
+            log_level: warning
+
         # Content-Type refusé (415) : une erreur du client, jamais un incident.
         # Seule exception de cette liste à ne pas être une exception métier
         # rendue par ApiProblemResponseListener, et c'est voulu (issue #320) :
