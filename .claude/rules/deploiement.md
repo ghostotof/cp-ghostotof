@@ -119,6 +119,13 @@ paths:
   re-run after publishing the key. `cp-ghostotof.com/deploy-gate: optional` turns a failure into a
   warning — only `backend-xdebug-trigger` (preprod) carries it, never put it on an ExternalSecret a
   pod or Job needs to start. Offline test: `tools/tests/wait-external-secrets.test.sh`.
+  Corollary of the order: a release's ExternalSecrets stay applied even when its migration then fails,
+  and the previous release's pods restart on them — so **never remove or rename a Secret key in the
+  release that stops reading it**, only in the next one (the column rule, applied to secrets); adding
+  a key is always safe. And `rollback-preprod` runs only when `deploy-preprod` *succeeded*
+  (`needs.deploy-preprod.result == 'success'`): `failure()` is true as soon as any *ancestor* job
+  fails, so a deploy stopped before its rollout used to trigger `rollout undo` anyway and roll the
+  still-serving release back to the one before it.
 - **`DEPLOY_MAINTENANCE_WINDOW` (repository variable) opts a deploy into a maintenance window** — added
   for v0.11.0's irreversible integer→UUID primary-key migrations, where the new code cannot read the old
   schema **and vice versa**, so no pod may serve a request while the migration runs. That is the only

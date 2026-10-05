@@ -488,8 +488,18 @@ Un `ExternalSecret` annoté `cp-ghostotof.com/deploy-gate: optional` ne bloque
 pas : il est signalé en avertissement. Seul `backend-xdebug-trigger` l'est
 (préprod, « Profilage Xdebug en préprod ») ; ne jamais poser cette annotation
 sur un `ExternalSecret` dont un pod ou un Job a besoin pour démarrer. Le Role
-déployeur a déjà
-`get`/`list`/`patch` sur `externalsecrets` : rien à rejouer au §4.
+déployeur a déjà `get`/`list`/`patch` sur `externalsecrets` : rien à rejouer
+au §4.
+
+Conséquence de cet ordre : les `ExternalSecret` d'une release sont appliqués
+**même si sa migration échoue ensuite**, et les pods de la release précédente,
+toujours en service, redémarrent sur ses Secrets. D'où la même discipline que
+pour les colonnes (expand/contract, `.claude/rules/deploiement.md`) : **ne
+jamais retirer ni renommer une clé de Secret dans la release qui cesse de la
+lire**, seulement dans la suivante. Ajouter une clé est toujours sûr.
+`rollback-preprod` ne joue `rollout undo` que si `deploy-preprod` a réussi : un
+déploiement arrêté par cette garde n'a fait aucun rollout, il n'y a rien à
+défaire.
 
 ### 2bis. Basic Auth de la préprod (restriction d'accès, posée le 2026-09-12)
 
