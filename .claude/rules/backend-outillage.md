@@ -79,8 +79,9 @@ their own handler at a hard-coded `info`, never `fingers_crossed`: a run of fail
 after it is exactly the trace worth keeping, and buffering would discard it. Everything else goes to
 the `main` handler at `%env(default:app.log_level:LOG_LEVEL)%` (`LOG_LEVEL=warning` in `backend/.env`,
 `debug` in the preprod image), which excludes those two channels so an event is emitted **once**. A
-third channel follows the same rule, `ai_usage` (spec 0005): the career assistant's token usage and
-duration, never any content, on its own `info` handler — as an `info` of the default channel it never
+third channel follows the same rule, `ai_usage` (spec 0005): the career assistant's and, since issue
+#356, the translator's token usage, duration and quota refusals, never any content, on its own `info`
+handler — as an `info` of the default channel it never
 left a production pod (`AiUsageLogChannelTest` pins the prod config). The
 `default:` processor takes a *parameter name*, hence `app.log_level` in `services.yaml` — `default:warning:`
 would look for a parameter called `warning` and fail at compile time. No duplication with

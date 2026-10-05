@@ -96,13 +96,22 @@ paths:
     `monolog.yaml`). Implements `Application/SecurityAuditLoggerInterface`, one method per event:
     `login-succeeded`, `login-failed`, `login-throttled`, `logged-out`, `base-access-issued`,
     `csrf-rejected`, `backoffice-access-denied`, `rate-limiter-unavailable`, `user-invited`, `user-reinvited`, `role-changed`
-    (`superAdmin` bool), `password-changed`, `user-deleted`, `account-activated`, `user-purged`
+    (`superAdmin` bool), `password-changed`, `user-deleted`, `account-activated`, `password-setup-token-rejected`,
+    `password-setup-token-replayed`, `password-setup-throttled`, `contact-throttled`, `base-access-throttled`, `user-purged`
     (`actor: system` — the one event whose actor is not read from the token storage; `record()` takes an
     explicit actor for CLI callers). Every record carries
     `event` (the stable kebab-case key to filter on), `actor` (identifier from the token storage, or
     `anonymous`), `ip`, `path` (canonical), plus `user` and — for an existing account — `userId` (RFC 4122).
     **Never a password, a token (JWT, XSRF, invitation), an e-mail, a request body or a serialized
     exception** in any context: an invited account is named by `username` + `userId`, not by its e-mail.
+    The same rule now holds for the **messages** of the exceptions the kernel logs (issue #356):
+    `EmailAlreadyUsedException` no longer quotes the address (`alreadyLinkedToAnAccount()`, the backoffice
+    reads the 409 status, never the `detail`), and the two delivery exceptions
+    (`ContactMessageDeliveryException`, `AccountInvitationDeliveryException`) **never chain the mail
+    transport's exception**: its message copies the server's answer (SMTP line, Scaleway API body), which
+    can quote the sender or the recipient, and the worker logs the whole `previous` chain.
+    `Shared/Infrastructure/Mailer/MailerTransportFailure` keeps its class and a numeric code (HTTP status
+    for the API transport, SMTP reply code otherwise), the e-mail counterpart of `ProviderFailure`.
     `SecurityAuditLoggerTest::testNoContextValueEverCarriesAPasswordATokenOrAnEmail` pins that with
     sentinel values run through every method; extend it when adding one. Who calls what:
     `Infrastructure/Log/SecurityEventsSubscriber` for `LoginSuccessEvent`/`LoginFailureEvent` (**`login`
@@ -123,7 +132,20 @@ paths:
     Lock failure under `/api`: a future non-limiter lock must revisit it; `BaseAccessController`
     logs the `guest-…`
     identifier, never the token; the `Security/User/Application` use cases and the housekeeping
-    `PendingInvitationPurger` log after the successful action. Functional tests read the records through
+    `PendingInvitationPurger` log after the successful action. **The refusals no other trace attributes**
+    (issue #356, before it they only had the kernel's generic `Uncaught PHP Exception` line, with no IP
+    nor path): `PasswordSetupService` logs `password-setup-token-rejected` (unknown token, no subject) and
+    `password-setup-token-replayed` (a link **already used** comes back — possible leak of the link — with
+    the account it activated; journal side only, the response keeps the 410 merged with « expired », and
+    a merely expired link is no event) right before throwing; `Infrastructure/Log/ThrottledRequestAuditListener`
+    (`kernel.exception`, priority 0, above API Platform's -96 and `ApiProblemResponseListener`'s -98, which
+    stop propagation) maps the three anonymous per-IP quota exceptions to `password-setup-throttled`,
+    `contact-throttled`, `base-access-throttled`, no subject (the limiter's key is the IP). A listener rather
+    than a call at the three throw sites on purpose: `Contact` would otherwise be the first context to
+    depend on `Security` — the price is that this listener imports `Contact`'s quota exception. The
+    translator's quota is **not** there: it is a `ROLE_SUPER` account, traced on `ai_usage` (see
+    `.claude/rules/ai.md`). Since these events exist, the matching exceptions are back to `info` in
+    `framework.exceptions`. Functional tests read the records through
     `tests/Support/ReadsSecurityAuditLog.php` (a
     Monolog `test` handler on the channel, `when@test`, found among `monolog.logger.security_audit`'s
     handlers — that logger is public in every env, so phpstan-symfony's dev dump knows it); the kernel

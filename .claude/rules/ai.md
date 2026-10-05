@@ -133,7 +133,12 @@ paths:
   between the login and the call and the request really leaves for `api.anthropic.com`; dummy
   `ANTHROPIC_API_KEY` forced in `phpunit.dist.xml`, so such a leak fails 401 → 503 instead of costing money).
   An anonymous `POST` there answers **403, not 401**: the CSRF subscriber runs before the firewall. Token
-  usage and duration are logged, the content never is. `claude-sonnet-5` rejects `temperature`/`top_p`/`top_k`
+  usage and duration are logged, the content never is — **on `ai_usage`** since issue #356, like the
+  career assistant (as an `info` of the app channel the line never left a production pod), each line
+  with an `outcome` (`done`, `error`); the quota refusal (`rate-limited`, `account`, `retryAfter`) is
+  written by `SymfonyTranslationRateLimiter`, the one place that knows both the key and the deadline, so
+  `TranslationRateLimitExceededException` is `info` like the assistant's. Functional tests read the
+  channel through `tests/Support/ReadsAiUsageLog`. `claude-sonnet-5` rejects `temperature`/`top_p`/`top_k`
   (400): no sampling option anywhere. The Flex recipes come from the official `symfony/recipes` (they apply
   despite `allow-contrib: false`); the `ai_anthropic_platform.yaml` they generate is merged into `ai.yaml`,
   delete it again if a recipe update recreates it.
