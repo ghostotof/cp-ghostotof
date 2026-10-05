@@ -67,6 +67,26 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
         self::assertNull($this->repository->findOneByTokenHash(hash('sha256', 'unknown')));
     }
 
+    /**
+     * Issue #356 (audit) : le compte arrive chargé avec le jeton, par
+     * jointure. En proxy paresseux, le seul chemin « lien déjà consommé »
+     * — qui journalise le compte — payait une requête de plus que le chemin
+     * « expiré », et la différence de temps disait à l'appelant ce que le 410
+     * fusionné doit taire.
+     */
+    public function testFindOneByTokenHashLoadsTheAccountWithTheToken(): void
+    {
+        $user = $this->persistUser('jane');
+        $hash = hash('sha256', 'clear-jane');
+        $this->repository->save(new PasswordSetupToken($user, $hash, new \DateTimeImmutable('+48 hours')));
+        $this->em->clear();
+
+        $found = $this->repository->findOneByTokenHash($hash);
+
+        self::assertInstanceOf(PasswordSetupToken::class, $found);
+        self::assertFalse($this->em->getUnitOfWork()->isUninitializedObject($found->getUser()));
+    }
+
     public function testFindOneByTokenHashIsNotConfusedByOtherUsersTokens(): void
     {
         $jane = $this->persistUser('jane');
