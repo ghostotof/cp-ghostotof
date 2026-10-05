@@ -81,7 +81,16 @@ paths:
   warning/error/critical); no entry that targets anything else — a broad `\DomainException` or an
   interface would hide real server faults and shadow the precise entries after it, since the kernel takes
   the first match —; and justified ways out only (`EXEMPT`: the three broad API Platform defaults below,
-  tracked in #355; `JUSTIFIED_ENTRIES`: the 415 of #320).
+  which stay `critical`; `JUSTIFIED_ENTRIES`: the 415 of #320).
+  **A request body the Serializer refuses never reaches the broad `Serializer\ExceptionInterface` entry**
+  (issue #355): `Shared/Infrastructure/ApiPlatform/MalformedRequestBodyProvider` decorates
+  `api_platform.state_provider.deserialize` and turns any Serializer exception into
+  `MalformedRequestBodyException` (400, `info`) — unreadable JSON, and valid JSON whose root is not an
+  object (`123`, `null`, `"x"`), which is *not* collected as a 422. The broad entry keeps covering the
+  output side (a non-encodable response, invalid UTF-8 in the database), a server fault that must stay
+  `critical`: never give it a `log_level`, and never move the conversion to the JSON decoder, which also
+  decodes internal data. One caveat: the decorator also sees the providers `DeserializeProvider` wraps
+  (read, our own Providers) — a Provider of `src/` that calls the Serializer must catch its own failures.
   When two exceptions share a status code but the frontend must tell them apart (e.g. the two `PUT …/roles` 409s: self-modification vs last-super-admin), make
   the exception `implements ApiPlatform\Metadata\Exception\ProblemExceptionInterface` and
   `use App\Shared\Domain\Exception\HasProblemType` (declare `problemType()` → a stable kebab slug +
