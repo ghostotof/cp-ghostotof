@@ -81,7 +81,23 @@ paths:
   warning/error/critical); no entry that targets anything else — a broad `\DomainException` or an
   interface would hide real server faults and shadow the precise entries after it, since the kernel takes
   the first match —; and justified ways out only (`EXEMPT`: the three broad API Platform defaults below,
-  tracked in #355; `JUSTIFIED_ENTRIES`: the 415 of #320).
+  which stay `critical`; `JUSTIFIED_ENTRIES`: the 415 of #320).
+  **A request body the Serializer refuses never reaches the broad `Serializer\ExceptionInterface` entry**
+  (issue #355): `Shared/Infrastructure/ApiPlatform/MalformedRequestBodyProvider` decorates
+  `api_platform.state_provider.deserialize` and, **on an operation that deserializes only**, turns the
+  Serializer's `UnexpectedValueException` family — the only one a client can trigger — into
+  `MalformedRequestBodyException` (400, `info`): unreadable JSON, and valid JSON whose root is not an
+  object (`123`, `null`, `"x"`), which is *not* collected as a 422. A server fault raised at the same step
+  (`LogicException`, `MappingException`, an `UnsupportedFormatException` for a negotiated format with no
+  encoder) passes through untouched and stays a `critical` 500 — never widen the `catch` to
+  `Serializer\ExceptionInterface`. The broad entry keeps covering the output side (a non-encodable
+  response, invalid UTF-8 in the database), a server fault that must stay `critical`: never give it a
+  `log_level`, and never move the conversion to the JSON decoder, which also decodes internal data. The
+  `UnsupportedFormatException`s of `var/log/test.log` are output-side too: `GET /api`, the Hydra
+  entrypoint serialized as `jsonld` (not a declared format), disabled in prod (`enable_entrypoint: false`).
+  One caveat: on a write, the decorator also sees the providers `DeserializeProvider` wraps (read of the
+  existing item, our own Providers) — a Provider of `src/` that calls the Serializer must catch its own
+  failures.
   When two exceptions share a status code but the frontend must tell them apart (e.g. the two `PUT …/roles` 409s: self-modification vs last-super-admin), make
   the exception `implements ApiPlatform\Metadata\Exception\ProblemExceptionInterface` and
   `use App\Shared\Domain\Exception\HasProblemType` (declare `problemType()` → a stable kebab slug +
@@ -98,7 +114,8 @@ paths:
   `defaults.collect_denormalization_errors: true` narrows what that 400 covers: a **wrongly-typed field**
   (`{"name":123}`) is collected instead of aborting the deserialization and comes out as a **422 with
   `violations` naming the field**, the same shape the admin forms already render for an `Assert`; only
-  unreadable JSON stays a 400. `MalformedRequestBodyTest` pins both boundaries. The API Platform metadata
+  unreadable JSON and a root that is not an object stay a 400 (`MalformedRequestBodyException` since
+  #355, see above). `MalformedRequestBodyTest` pins both boundaries. The API Platform metadata
   pool survives a change to that option — `rm -rf var/cache/test` before trusting a red test.
 - **Errors under `/api` come out as JSON, never as Symfony's HTML page** (audit A15). Two families escaped
   API Platform's own error handling: the router's 404/405 (raised before API Platform exists for that

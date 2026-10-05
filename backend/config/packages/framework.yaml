@@ -159,6 +159,14 @@ framework:
             log_level: info
         App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException:
             log_level: warning
+        # Corps de requête illisible sur une opération API Platform (issue #355) :
+        # erreur du client, sur des POST publics donc à la main de n'importe
+        # qui. Sa trace retenue est l'access log de nginx (le 400 et l'IP).
+        # L'entrée large `Serializer\ExceptionInterface`, elle, n'a pas
+        # d'entrée ici, à dessein : un JSON de sortie non encodable reste en
+        # `critical`.
+        App\Shared\Infrastructure\ApiPlatform\MalformedRequestBodyException:
+            log_level: info
 
         # Content-Type refusé (415) : une erreur du client, jamais un incident.
         # Seule entrée de cette liste à ne viser ni une exception métier de

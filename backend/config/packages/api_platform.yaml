@@ -123,6 +123,12 @@ api_platform:
         App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException: 404
         App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException: 410
         App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException: 429
+        # Corps de requête que le Serializer refuse (JSON illisible, racine qui
+        # n'est pas un objet), requalifié à la seule frontière de la
+        # désérialisation par MalformedRequestBodyProvider (issue #355) : le
+        # même 400 que l'entrée large ci-dessous, mais une classe précise, qui
+        # porte son propre `log_level` sans baisser l'encodage de sortie.
+        App\Shared\Infrastructure\ApiPlatform\MalformedRequestBodyException: 400
         # --- Défauts d'API Platform, rétablis à l'identique (audit A15 / T5.1) ---
         # Écrasés depuis toujours par la simple présence de la clé ci-dessus.
         # Conséquence mesurée : sur n'importe quel POST public, un corps qui
@@ -132,10 +138,15 @@ api_platform:
         # volonté (borné seulement par les quotas par IP) et noyer les vraies
         # erreurs serveur dans les journaux.
         #
-        # ExceptionInterface du Serializer couvre les deux cas :
+        # ExceptionInterface du Serializer couvrait les deux cas,
         # NotEncodableValueException (JSON illisible) et
-        # NotNormalizableValueException (mauvais type d'attribut). Elle reste
-        # volontairement en dernier : c'est l'entrée la plus large de la liste.
+        # NotNormalizableValueException (mauvais type d'attribut). Depuis
+        # l'issue #355, le corps d'une requête n'y arrive plus : il sort en
+        # MalformedRequestBodyException (plus haut). Elle reste pour ce que le
+        # Serializer lève ailleurs, et volontairement en dernier : c'est
+        # l'entrée la plus large de la liste. Aucun `log_level` ne la vise
+        # (ExceptionLogLevelCoverageTest::EXEMPT) : un JSON de sortie non
+        # encodable est un défaut du serveur, il reste en `critical`.
         Symfony\Component\Serializer\Exception\ExceptionInterface: 400
         ApiPlatform\Metadata\Exception\InvalidArgumentException: 400
         Doctrine\ORM\OptimisticLockException: 409
@@ -152,7 +163,8 @@ api_platform:
         # Platform les convertit en ValidationException : **422** avec un
         # tableau `violations` nommant le champ, la forme que les formulaires
         # du frontend affichent déjà pour un Assert. Le JSON illisible, lui,
-        # reste un 400 (NotEncodableValueException, rien à collecter).
+        # reste un 400 (rien à collecter), tout comme une racine qui n'est pas
+        # un objet : MalformedRequestBodyException depuis l'issue #355.
         # MalformedRequestBodyTest épingle les deux frontières.
         collect_denormalization_errors: true
 
