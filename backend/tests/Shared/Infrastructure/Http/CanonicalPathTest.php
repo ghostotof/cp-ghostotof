@@ -64,4 +64,49 @@ final class CanonicalPathTest extends TestCase
         yield 'voisin avec tiret' => ['/api-docs', false];
         yield 'hors API' => ['/inexistant', false];
     }
+
+    /**
+     * Même ancrage pour n'importe quel sous-arbre (issue #322) : la règle vit
+     * à un seul endroit, comme celle des `access_control` (issue #78).
+     */
+    #[DataProvider('subtreeMembership')]
+    public function testIsUnderIsAnchoredOnTheDecodedPath(string $uri, bool $expected): void
+    {
+        self::assertSame($expected, CanonicalPath::isUnder(Request::create($uri), '/api/assistant'));
+    }
+
+    /**
+     * @return iterable<string, array{string, bool}>
+     */
+    public static function subtreeMembership(): iterable
+    {
+        yield 'racine du sous-arbre' => ['/api/assistant', true];
+        yield 'route du sous-arbre' => ['/api/assistant/answers', true];
+        yield 'chemin encodé' => ['/api/%61ssistant/answers', true];
+        yield 'voisin sans séparateur' => ['/api/assistants', false];
+        yield 'parent' => ['/api', false];
+    }
+
+    /**
+     * Un préfixe mal formé échouerait sans bruit : `/api/assistant/` ne
+     * correspondrait plus à rien (une garde désactivée), `` correspondrait à
+     * tout. L'erreur de programmation doit se voir.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function malformedPrefixes(): iterable
+    {
+        yield 'vide' => [''];
+        yield 'slash final' => ['/api/assistant/'];
+        yield 'racine seule' => ['/'];
+        yield 'relatif' => ['api/assistant'];
+    }
+
+    #[DataProvider('malformedPrefixes')]
+    public function testAMalformedPrefixIsRefused(string $prefix): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        CanonicalPath::isUnder(Request::create('/api/assistant/answers'), $prefix);
+    }
 }

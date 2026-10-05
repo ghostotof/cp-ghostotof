@@ -19,8 +19,8 @@ use Symfony\Component\HttpKernel\KernelEvents;
  *
  * **En deux temps.** Ce n'est pas lui qui construit le 429 : selon la route,
  * c'est l'`ExceptionListener` d'API Platform (`exception_to_status`, -96),
- * AssistantProblemResponseListener (-64) ou BaseAccessRateLimitExceptionListener
- * (0). Chacun appelle `ExceptionEvent::setResponse()`, qui arrête la
+ * ou, sur un contrôleur hors API Platform, ApiProblemResponseListener (-98,
+ * issue #322). Chacun appelle `ExceptionEvent::setResponse()`, qui arrête la
  * propagation de `kernel.exception`. L'échéance est donc notée sur la requête
  * pendant `kernel.exception`, puis lue pendant `kernel.response` — toujours
  * dispatché, quelle que soit la façon dont la réponse a été produite — pour

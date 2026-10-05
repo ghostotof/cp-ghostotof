@@ -2,12 +2,13 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Ai\Assistant\Infrastructure;
+namespace App\Tests\Shared\Infrastructure\Http;
 
 use App\Ai\Assistant\Domain\Exception\AssistantRateLimitExceededException;
 use App\Ai\Assistant\Domain\Exception\AssistantUnavailableException;
 use App\Ai\Assistant\Domain\Exception\InvalidConversationException;
 use App\Ai\Assistant\Infrastructure\Http\RequestBodyTooLargeException;
+use App\Security\User\Domain\Exception\BaseAccessRateLimitExceededException;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
@@ -31,8 +32,11 @@ use Symfony\Component\Yaml\Yaml;
  *
  * Le cas du 415 dépasse l'assistant : la classe est aussi levée par API
  * Platform, son niveau vaut donc pour toute l'API (framework.yaml, issue #320).
+ * Celui du quota de base-access aussi : rendu par ApiProblemResponseListener
+ * depuis l'issue #322, il passe désormais par cette journalisation, que son
+ * ancien écouteur dédié court-circuitait.
  */
-final class AssistantExceptionLogLevelTest extends TestCase
+final class ApiExceptionLogLevelTest extends TestCase
 {
     private const string FRAMEWORK_CONFIG = __DIR__.'/../../../../config/packages/framework.yaml';
 
@@ -45,6 +49,7 @@ final class AssistantExceptionLogLevelTest extends TestCase
         yield 'fournisseur indisponible (503)' => [new AssistantUnavailableException(), Level::Warning];
         yield 'quota atteint (429)' => [new AssistantRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Info];
         yield 'corps trop volumineux (413)' => [new RequestBodyTooLargeException(), Level::Info];
+        yield 'quota du palier de base atteint (429, issue #322)' => [new BaseAccessRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Info];
         yield 'format refusé (415), sur toute route de l\'API' => [new UnsupportedMediaTypeHttpException('Unsupported format.'), Level::Info];
     }
 

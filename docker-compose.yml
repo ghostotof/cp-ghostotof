@@ -50,7 +50,9 @@ services:
       - ./frontend/package-lock.json:/var/www/frontend/package-lock.json:ro
       # Lecture seule, pour que PHPUnit fige la configuration PHP-FPM de
       # production (FpmLockWaitBoundTest, issue #272) comme il le fait en CI,
-      # où le dépôt entier est extrait.
+      # où le dépôt entier est extrait. `make back-lsp` y exécute aussi
+      # install-symfony-language-tools.sh (issue #343) : ne pas retirer ce
+      # montage sans déplacer ces deux usages.
       - ./docker/php:/var/www/docker/php:ro
     depends_on:
       database:

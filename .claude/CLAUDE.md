@@ -78,7 +78,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This repository started as a freshly generated project skeleton (single "Init" commit). Real backend code now
 exists — the `Security` bounded context (`User` + `Authentication`), six `Portfolio` bounded contexts
 (`Experience`, `Quality`, `About`, `Contribution`, `Incident`, `Watch`, see Backend architecture below) and an
-`Ai` context whose first sub-context, `Translation`, is delivered (spec 0002, ADR 0004, v0.10.0/v0.10.1 — see `Ai/` below); every entity has a UUID v7 key (spec 0003, v0.11.0) and every ordered content is
+`Ai` context whose two sub-contexts are delivered — `Translation` (spec 0002, ADR 0004, v0.10.0/v0.10.1) and `Assistant` (spec 0005, v0.19.0), see `Ai/` below; every entity has a UUID v7 key (spec 0003, v0.11.0) and every ordered content is
 reordered by drag-and-drop with an explicit FR/EN link in the database (spec 0004, v0.12.0, see
 `Portfolio/Shared/` below) — and follows a DDD structure under
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
@@ -114,10 +114,22 @@ alongside PHPStan; don't reach for Psalm annotations or raise its level. **Symfo
 it makes no call to symfony.com) and validates what PHPStan cannot see: service ids, route names,
 Messenger transports, firewalls, constraint options, bundle config keys, Twig paths. It needs no database
 (a refused connection is fine — a *DNS* failure once segfaulted the checker, don't point it at an
-unresolvable host). It requires Symfony CLI ≥ 5.20.0 (`.env`, `versions.lock`); the CLI downloads the
-latest stable Language Tools into its own cache (`symfony lsp:cache-dir`), so that part is **not pinned**
-— which is why the job is blocking only on the `--fail-on` list of low-false-positive codes and is *not*
-in `build-images`' `needs` yet (re-evaluate after a few weeks). No baseline: the repo is clean apart from
+unresolvable host). It requires Symfony CLI ≥ 5.20.0 (`.env`, `versions.lock`). **Language Tools is
+pinned too** (`SYMFONY_LANGUAGE_TOOLS_VERSION`, issue #343), though the CLI has no option for it: left
+alone, it asks the **GitHub API** (`releases/latest`, anonymous, a rate limit shared by every runner —
+hence the 403s *before any analysis*) for the latest stable once its cache is over 24 h old.
+`docker/php/install-symfony-language-tools.sh` installs the declared version into the CLI's cache
+(`symfony lsp:cache-dir`, under the CLI's own `flock` on `install.lock`, checksum checked against the
+release's `SHA256SUMS`) and writes `state.json` with `checkedAt` = now, so the CLI uses it **without
+any network call**; both the CI job and `make back-lsp` run it first, then `--verify` after the
+analysis. It relies on the CLI's cache layout (`local/externaltool/manager.go`): on a
+`SYMFONY_CLI_VERSION` bump that breaks it, `--verify` turns red (exit 4) instead of the CLI silently
+going back to the GitHub API. Exit codes 2 (download) / 3 (integrity) / 1 (configuration) drive the
+job summary (`.github/scripts/summary-language-tools.sh`): only a 2 says "re-run", a 3 says
+"don't", none reads as a code defect. The script lives in `docker/php/` because that directory is
+mounted in the dev container and `tools/` is not. The job is blocking only on the `--fail-on` list
+of low-false-positive codes and is *not* in `build-images`' `needs` yet (re-evaluate mid-October).
+No baseline: the repo is clean apart from
 six `config.unknown_key` **warnings** on `ai.yaml` (`ai.agent.{translator,career_assistant}.model.name/options`, three per agent), keys that
 Symfony accepts because the bundle declares `model` as a `variableNode` (its only rule: a string, or an array
 with `name`) — Language Tools cannot know the keys under it, a false positive by construction, left visible
@@ -348,9 +360,11 @@ mid-migration.
     limiter. The `kernel.request` guards go through the helper
     (`CsrfCookieRequestSubscriber`, `LoginCsrfRequestListener`, `BaseAccessRateLimitRequestListener`,
     `PasswordSetupRateLimitRequestListener`, `AssistantRequestSizeListener`), each with a `%XX`
-    regression test; two `kernel.exception` listeners use it too, the assistant's
-    `AssistantProblemResponseListener` and `Shared/Infrastructure/Http/ApiJsonErrorFormatListener` (see
-    "Errors under `/api`" below) — and `SecurityAuditLogger` logs the canonical form for the same reason.
+    regression test; two `kernel.exception` listeners use it too, `Shared/Infrastructure/Http/`'s
+    `ApiProblemResponseListener` and `ApiJsonErrorFormatListener` (see "Errors under `/api`" below) — and
+    `SecurityAuditLogger` logs the canonical form for the same reason. A subtree check goes through
+    `CanonicalPath::isUnder($request, '/api/<x>')` (`isUnderApi()` is that, for `/api`): "the prefix exactly,
+    or the prefix followed by `/`", the `access_control` anchoring rule, written once (issue #322).
   - **The `login` firewall is anchored on its `check_path`, the `api` one deliberately is not** (audit A23,
     `security.yaml`). `login` is `^/api/login_check$`: it holds a `json_login` and reads **no** JWT, so any
     route ever added under a looser `^/api/login` would be served anonymously, the visitor's `BEARER` never
@@ -601,14 +615,14 @@ mid-migration.
 - **`Ai/`** — everything that talks to a language model, and nothing else does (ADR 0004,
   `docs/adr/0004-assistance-ia.md`; spec `.claude/specs/archive/2026-09-14-spec-0002-assistant-traduction/0002-ai-translation-assistant.md`). Sub-context per
   usage: `Ai/Translation/` (phase 1, **delivered 2026-09-14**, v0.10.0 then v0.10.1: the backoffice FR/EN
-  translation assistant, `POST /api/backoffice/translations`, `ROLE_SUPER`) and later `Ai/Assistant/` (phase 2,
+  translation assistant, `POST /api/backoffice/translations`, `ROLE_SUPER`) and `Ai/Assistant/` (phase 2,
   **D7 amended on 2026-09-15**: a conversational "ask about my career" assistant on the site, reserved to
   `ROLE_TRUSTED`, on Scaleway Generative APIs — the site's own host, `fr-par` — which is the one operator the
   nominative CV may reach (D3 amended); corpus injected in the context from the tier's existing providers,
   no tools, no vector store, nothing persisted, streamed response; the MCP server originally planned is
-  now an *alternative écartée*; **closed in `develop` on 2026-10-04** (PR #267, all six tasks and the
-  review follow-ups #318–#320/#323 merged; release, preprod/prod checks and the "delivered in vX.Y.Z" update of
-  this paragraph tracked in #324), spec archived at
+  now an *alternative écartée*; **delivered in v0.19.0 on 2026-10-04** (closed in `develop` by PR #267 — all six tasks and the
+  review follow-ups #318–#320/#323 merged —, released by #341; the remaining release checks live in #324),
+  spec archived at
   `.claude/specs/archive/2026-10-04-spec-0005-assistant-parcours/0005-career-assistant.md`, task 1 (#260) done: the `career_assistant` agent in `ai.yaml`,
   `mistral-small-3.2-24b-instruct-2506`, `max_tokens` 1024, `tools: false`, prompt preamble in
   `config/ai/prompts/career_assistant.txt`, key `SCALEWAY_AI_API_KEY` routed exactly like `ANTHROPIC_API_KEY`,
@@ -666,8 +680,8 @@ mid-migration.
   `PlatformInterface` by type, which autowires to Anthropic (D3); the stream is `text/event-stream` with JSON
   `data` — `delta` `{text}`, then `done` `{promptTokens, completionTokens, durationMs}` or `error`
   `{reason}` — and a provider failure **before the first fragment** is a 503 problem+json
-  (`/errors/assistant-unavailable`, rendered by `AssistantProblemResponseListener`, the route not being an API
-  Platform operation), the call being primed before the 200 is sent; `ReplayRefusingHttpClient` stops the
+  (`/errors/assistant-unavailable`, rendered by the shared `ApiProblemResponseListener`, the route not being an
+  API Platform operation), the call being primed before the 200 is sent; `ReplayRefusingHttpClient` stops the
   bridge's `EventSourceHttpClient` from replaying a cut stream (a second, billed generation). Two rules from
   the task's security review: **`AssistantUnavailableException` never chains the bridge's exception** — the
   kernel's `ErrorListener` logs the whole `previous` chain, and the bridge copies the provider's response
@@ -701,7 +715,12 @@ mid-migration.
   options as-is —, `tools: false`, system prompt in `config/ai/prompts/translator.txt`) are declared in
   `config/packages/ai.yaml` on a dedicated scoped client `ai.http_client` (`framework.yaml`: timeout 40 s,
   `max_redirects: 0`). Rules that must hold, in the ADR's words: **only one class imports `Symfony\AI\*`**
-  (`Infrastructure/SymfonyAi/…`, behind an application interface); **no model call from a public render
+  (`Infrastructure/SymfonyAi/…`, behind an application interface) — plus one shared reader,
+  `Ai/Shared/Infrastructure/SymfonyAi/ProviderFailure` (D1 amended, issue #308), the only class that reads
+  the bridge's exception messages: a provider failure is logged through its `toLogContext()`
+  (`exception`, `providerStatus`, `providerErrorType`, `providerFailure` — a `ProviderFailureReason` value,
+  provider-independent, readable even in a stream where no error type survives —, `origin`), never with the
+  message, by both services; **no model call from a public render
   path**, a visitor-triggered Messenger handler or a render CronJob — backoffice only, synchronous, with a
   timeout; **only backoffice-authored content meant for publication may be sent** to a provider, never
   `cpg_user`, a token, the nominative CV or a contact message; **a suggestion is never persisted** without a
@@ -822,14 +841,32 @@ Content management for all of the above, plus user administration, gated end-to-
   content negotiation, and `GET /api/docs` without an `Accept` header answered **406** — and -100 sits
   between API Platform's own `ExceptionListener` (-96) and Symfony's `ErrorListener` (-128), so it never
   runs on errors API Platform already handled. `ApiJsonErrorFormatListenerTest` + `ApiErrorFormatTest` pin it.
+- **A `ProblemExceptionInterface` thrown by a controller under `/api` gets its typed problem+json from one
+  listener** (issue #322): `Shared/Infrastructure/Http/ApiProblemResponseListener`, `kernel.exception`
+  **priority -98**, main request, canonical path under `/api`, renders `{type, title, status, detail}` as
+  `application/problem+json` (status `500` if the exception has none). It replaced the assistant's and
+  base-access's own listeners; never write a per-route copy again. **The priority is the rule, not a
+  detail**: API Platform's `ExceptionListener` (-96) stops propagation on every route it owns, so what
+  reaches -98 is non-API-Platform *by construction* — no `_api_respond` attribute is read — and it must
+  stay above Symfony's rendering (-128). `ApiProblemResponseListenerPriorityTest` reads the real
+  dispatcher and pins that bracket. Two consequences for a new exception rendered there: it needs a
+  `log_level` in `framework.exceptions`, since `logKernelException` (0) now sees it — base-access's 429
+  was not logged at all while its listener stopped propagation at 0, and would go out `critical` without
+  its `info` entry (`ApiExceptionLogLevelTest` lists them) —, and an `exception_to_status` entry for it is
+  dead config. Never give such an exception a `status_code` in `framework.exceptions`: `logKernelException`
+  would swap it for an `HttpException` before -98, and the `type` would silently disappear. One case
+  where the propagation does reach -98 from an API Platform route: `kernel.terminate`, where the delegated
+  renderer stands down (non-debug) — the listener stands down too. `BackofficeUserRoleResourceTest`
+  asserts the 409 still carries API Platform's debug `trace`, which the shared listener never emits. Rejected:
+  `api_platform.handle_symfony_errors: true` — global, unfiltered by path, rewrites the 404/405/403 bodies
+  that already work, and hands an `html` negotiation back to Symfony before `ApiJsonErrorFormatListener`.
 - **Every quota 429 gets its `Retry-After` from one listener** (issue #273):
   `Shared/Infrastructure/Http/RetryAfterListener` reads any exception implementing
   `Shared/Domain/Exception/RetryAfterAware` (a PHP 8.4 interface property, `$retryAfter { get; }`, met by
   the exceptions' promoted `public readonly`). It notes the deadline on the request at **`kernel.exception`
   priority 64** and sets the header at `kernel.response` — **on a 429 only** (a failed render that ends in a 500 must not carry it) — with an injected `ClockInterface`. 64 is not
   arbitrary: it must sit above every listener that *builds* the 429 and so stops propagation — API
-  Platform (-96), `AssistantProblemResponseListener` (-64), `BaseAccessRateLimitExceptionListener` (0,
-  which keeps its own body). A new quota exception implements the interface; never write a fifth
+  Platform (-96) and, on a controller, `ApiProblemResponseListener` (-98). A new quota exception implements the interface; never write a fifth
   per-context copy. `RateLimiterLockFailureListener` stays apart on purpose (fixed delay, priority 16).
 
 ### Seeding (`app:*:seed`)
@@ -1733,8 +1770,9 @@ ADRs:
   `jti`, so a token copied beforehand stays valid until it expires (1 h for a login token, 15 min for the base
   tier). Read it before adding a revocation list, lengthening `token_ttl`, or gating anything more sensitive
   than the CV; it also names the two remedies and what each one costs.
-- `docs/adr/0004-assistance-ia.md` — **statut `accepté` (2026-09-14), phase 1 livrée** (spec 0002, issues
-  `spec-0002` closed, v0.10.0/v0.10.1 in production the same day; the case-studies admin page, #104, joined
+- `docs/adr/0004-assistance-ia.md` — **statut `accepté` (2026-09-14), phases 1 et 2 livrées** (phase 1: spec 0002, issues
+  `spec-0002` closed, v0.10.0/v0.10.1 in production the same day; phase 2: spec 0005, v0.19.0 in production on
+  2026-10-04; the case-studies admin page, #104, joined
   on 2026-09-14, so every admin form now has the button). Rules for anything that calls a language model: one importing class behind an interface,
   bundle pinned exact, no call from a public render path, only publishable backoffice content leaves, human in
   the loop, bounded cost, offline tests. **Amended 2026-09-15**: D7 is now the `ROLE_TRUSTED` career

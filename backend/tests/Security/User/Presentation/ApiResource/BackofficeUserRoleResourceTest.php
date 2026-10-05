@@ -144,6 +144,14 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
         $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertIsArray($body);
         self::assertSame('/errors/cannot-modify-own-roles', $body['type'] ?? null);
+
+        // Rendu par API Platform, pas par ApiProblemResponseListener (issue
+        // #322) : API Platform ajoute la `trace` quand le kernel est en debug,
+        // ce qu'il est en test, et l'écouteur partagé ne l'émet jamais. Si
+        // l'écouteur partagé prenait la main sur une route API Platform (ordre
+        // des priorités inversé, ou API Platform qui cesserait de poser sa
+        // réponse), ce champ disparaîtrait.
+        self::assertArrayHasKey('trace', $body, 'Ce 409 doit rester rendu par API Platform.');
     }
 
     public function testMissingSuperAdminFieldReturns422(): void
