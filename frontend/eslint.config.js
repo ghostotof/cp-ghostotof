@@ -24,7 +24,7 @@ import globals from 'globals'
  * Passer un jour aux règles typées (`recommendedTypeChecked`) demanderait le
  * `projectService` et un traitement des `.vue` sans TypeScript : c'est à ce
  * moment-là, pas avant, qu'il faudra réévaluer le retour au paquet (voir la
- * section Lint de `.claude/CLAUDE.md`).
+ * section Lint de `.claude/rules/frontend.md`).
  */
 const typescriptForTsAndVue = tseslint.configs.recommended.map((config) =>
   config.files?.includes('**/*.ts') ? { ...config, files: [...config.files, '**/*.vue'] } : config,

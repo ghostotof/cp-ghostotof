@@ -612,7 +612,7 @@ jobs:
           # migration additive est inoffensive pour l'ancien code encore en
           # service — il ignore les colonnes qu'il ne mappe pas — et le nouveau
           # code arrive sur un schéma déjà prêt. Discipline d'écriture des
-          # migrations qui rend cet ordre sûr : CLAUDE.md § Deployment invariants.
+          # migrations qui rend cet ordre sûr : .claude/rules/deploiement.md.
           #
           # 1. La configuration de la release avant son Job. migrate-job.yaml lit
           #    `backend-config` par son nom littéral (hors kustomize) ; joué
@@ -914,7 +914,7 @@ jobs:
           # migration additive est inoffensive pour l'ancien code encore en
           # service — il ignore les colonnes qu'il ne mappe pas — et le nouveau
           # code arrive sur un schéma déjà prêt. Discipline d'écriture des
-          # migrations qui rend cet ordre sûr : CLAUDE.md § Deployment invariants.
+          # migrations qui rend cet ordre sûr : .claude/rules/deploiement.md.
           #
           # 1. La configuration de la release avant son Job. migrate-job.yaml lit
           #    `backend-config` par son nom littéral (hors kustomize) ; joué

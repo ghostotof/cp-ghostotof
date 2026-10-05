@@ -21,4 +21,5 @@ make db-migrate      # migrations Doctrine
 
 Les décisions structurantes (paliers d'accès, veille technique, assistance IA, provisionnement des
 comptes) sont dans [`../docs/adr/`](../docs/adr/) ; les invariants à respecter en travaillant
-ici, dans [`../.claude/CLAUDE.md`](../.claude/CLAUDE.md).
+ici, dans [`../.claude/CLAUDE.md`](../.claude/CLAUDE.md) et les règles backend de
+[`../.claude/rules/`](../.claude/rules/).
