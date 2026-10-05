@@ -119,12 +119,17 @@ pinned too** (`SYMFONY_LANGUAGE_TOOLS_VERSION`, issue #343), though the CLI has 
 alone, it asks the **GitHub API** (`releases/latest`, anonymous, a rate limit shared by every runner —
 hence the 403s *before any analysis*) for the latest stable once its cache is over 24 h old.
 `docker/php/install-symfony-language-tools.sh` installs the declared version into the CLI's cache
-(`symfony lsp:cache-dir`, checksum checked against the release's `SHA256SUMS`) and writes `state.json`
-with `checkedAt` = now, so the CLI uses it **without any network call**; both the CI job and
-`make back-lsp` run it first. It relies on the CLI's cache layout (`local/externaltool/manager.go`):
-re-check it on every `SYMFONY_CLI_VERSION` bump. A failed download is reported as such in the job
-summary, never as a code defect. The job is blocking only on the `--fail-on` list of
-low-false-positive codes and is *not* in `build-images`' `needs` yet (re-evaluate mid-October). No baseline: the repo is clean apart from
+(`symfony lsp:cache-dir`, under the CLI's own `flock` on `install.lock`, checksum checked against the
+release's `SHA256SUMS`) and writes `state.json` with `checkedAt` = now, so the CLI uses it **without
+any network call**; both the CI job and `make back-lsp` run it first, then `--verify` after the
+analysis. It relies on the CLI's cache layout (`local/externaltool/manager.go`): on a
+`SYMFONY_CLI_VERSION` bump that breaks it, `--verify` turns red (exit 4) instead of the CLI silently
+going back to the GitHub API. Exit codes 2 (download) / 3 (integrity) / 1 (configuration) drive the
+job summary (`.github/scripts/summary-language-tools.sh`): only a 2 says "re-run", a 3 says
+"don't", none reads as a code defect. The script lives in `docker/php/` because that directory is
+mounted in the dev container and `tools/` is not. The job is blocking only on the `--fail-on` list
+of low-false-positive codes and is *not* in `build-images`' `needs` yet (re-evaluate mid-October).
+No baseline: the repo is clean apart from
 six `config.unknown_key` **warnings** on `ai.yaml` (`ai.agent.{translator,career_assistant}.model.name/options`, three per agent), keys that
 Symfony accepts because the bundle declares `model` as a `variableNode` (its only rule: a string, or an array
 with `name`) — Language Tools cannot know the keys under it, a false positive by construction, left visible

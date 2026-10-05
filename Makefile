@@ -117,12 +117,14 @@ back-quality: ## Lance PHPStan, Rector (dry-run), Psalm et lsp:check dans le con
 # (LSP_FAIL_ON), pour qu'un vert local vaille un vert CI. La version de Language
 # Tools est celle de SYMFONY_LANGUAGE_TOOLS_VERSION (.env), installée dans le
 # cache du CLI par le script ci-dessous avant chaque exécution — sans lui, le CLI
-# prendrait la dernière stable et divergerait de la CI (issue #343).
+# prendrait la dernière stable et divergerait de la CI (issue #343). `--verify`
+# échoue ensuite si le CLI a activé une autre version que l'épinglée.
 LSP_FAIL_ON = service.not_found,parameter.not_found,route.not_found,route.missing_parameters,security.unknown_firewall,security.unknown_provider,messenger.unknown_bus,messenger.unknown_transport,messenger.invalid_handler_signature,template.not_found,validation.unknown_constraint_option,env.unknown_processor,env.incompatible_type,config.invalid_type
 
 back-lsp: ## Lance symfony lsp:check (diagnostics Symfony) dans le conteneur
 	$(DC) exec -u dev backend /var/www/docker/php/install-symfony-language-tools.sh
 	$(DC) exec -u dev backend symfony lsp:check --fail-on=$(LSP_FAIL_ON)
+	$(DC) exec -u dev backend /var/www/docker/php/install-symfony-language-tools.sh --verify
 
 front-init: ## Crée le projet Vite en mode INTERACTIF (à lancer une seule fois)
 	$(DC) run --rm frontend npm create vite@$(shell grep '^CREATE_VITE_VERSION=' .env | cut -d= -f2) .
