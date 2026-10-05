@@ -173,6 +173,22 @@ final class BackofficeUserInviteResourceTest extends WebTestCase
         }
     }
 
+    /**
+     * Issue #356 : une adresse acceptée par le validateur `html5` mais
+     * refusée par Mime\Address faisait échouer l'envoi dans le worker, avec
+     * l'adresse dans le message de l'exception. Refusée ici, en 422.
+     */
+    public function testInviteWithAnAddressMimeWouldRefuseReturns422(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('POST', '/api/backoffice/users', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_XSRF_TOKEN' => $csrfToken], content: self::jsonBody(['email' => 'jean..dupont@example.com', 'locale' => 'fr']));
+
+        self::assertResponseStatusCodeSame(422);
+    }
+
     public function testInviteWithAnInvalidEmailReturns422(): void
     {
         $client = self::createClient();

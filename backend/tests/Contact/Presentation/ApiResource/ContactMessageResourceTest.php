@@ -87,6 +87,37 @@ final class ContactMessageResourceTest extends WebTestCase
     }
 
     /**
+     * Issue #356 : des adresses que le validateur `html5` acceptait, mais que
+     * Mime\Address refuse (RFC 2822) — le worker levait alors une
+     * RfcComplianceException dont le message cite l'adresse, journalisée à
+     * chaque nouvel essai puis stockée dans la table d'échec. Le mode
+     * `strict` (validator.yaml) aligne la validation sur Mime : 422 ici.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function addressesMimeRefuses(): iterable
+    {
+        yield 'deux points consécutifs' => ['a..b@example.com'];
+        yield 'point final de la partie locale' => ['jean.@example.com'];
+        yield 'point initial de la partie locale' => ['.jean@example.com'];
+    }
+
+    #[DataProvider('addressesMimeRefuses')]
+    public function testAnAddressMimeWouldRefuseIsRejectedBeforeReachingTheWorker(string $email): void
+    {
+        $client = $this->createClientWithFreshRateLimiter();
+
+        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
+            'name' => 'Jane Doe',
+            'email' => $email,
+            'message' => 'Bonjour, je souhaite vous contacter pour un projet.',
+        ]));
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertCount(0, $this->asyncTransport()->getSent());
+    }
+
+    /**
      * Injection d'en-tête de mail : le nom est repris dans le sujet et dans
      * le replyTo (cf. SendContactMessageHandler). Une valeur contenant un
      * retour chariot suivi d'un en-tête forgé permettrait, sur une pile qui
