@@ -288,7 +288,7 @@ plafonds chiffrés, forme de la page) est du ressort de la spec.
   déploiement preprod, sinon le Deployment ne démarre pas.
 - **Un limiteur de plus** (`translation_assistant`), clé par compte et non par IP : premier
   limiteur du projet sur une route authentifiée.
-- **Un invariant de `CLAUDE.md` corrigé** : le CronJob de veille n'est plus le seul objet à appeler
+- **Un invariant de `CLAUDE.md` corrigé** (aujourd'hui dans `.claude/rules/deploiement.md`) : le CronJob de veille n'est plus le seul objet à appeler
   des tiers.
 - **Un coût récurrent nouveau**, de l'ordre du centime par traduction, plafonné par D5.
 - **Un bouton par page admin localisée**, branché page par page — Incidents (v0.10.0), puis
@@ -321,7 +321,7 @@ plafonds chiffrés, forme de la page) est du ressort de la spec.
   (`fastcgi_buffering off`, ou l'en-tête `X-Accel-Buffering: no` sur la réponse) et ingress-nginx
   (annotation `proxy-buffering: "off"`), sur ce chemin seulement. `docker/nginx/default.conf` et
   `k8s/base/backend-nginx.conf` restent des miroirs ; la ConfigMap hachée (`configMapGenerator`)
-  fait redémarrer le sidecar, comme documenté dans `CLAUDE.md`.
+  fait redémarrer le sidecar, comme documenté dans `.claude/rules/deploiement.md`.
 - **Un lecteur de PDF côté serveur**, pour le texte du CV nominatif : dépendance à choisir dans la
   spec, texte normalisé, jamais écrit en base. *Précisé le 2026-09-26* : il n'est pas mis en cache
   non plus — `cache.app` est sur Doctrine DBAL depuis l'ADR 0005, un cache y écrirait le CV

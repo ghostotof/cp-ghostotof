@@ -384,6 +384,7 @@ jobs:
           tools/tests/git-config-isolation.test.sh
           tools/tests/install-symfony-language-tools.test.sh
           tools/tests/summary-language-tools.test.sh
+          tools/tests/check-claude-rules.test.sh
       # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.
@@ -611,7 +612,7 @@ jobs:
           # migration additive est inoffensive pour l'ancien code encore en
           # service — il ignore les colonnes qu'il ne mappe pas — et le nouveau
           # code arrive sur un schéma déjà prêt. Discipline d'écriture des
-          # migrations qui rend cet ordre sûr : CLAUDE.md § Deployment invariants.
+          # migrations qui rend cet ordre sûr : .claude/rules/deploiement.md.
           #
           # 1. La configuration de la release avant son Job. migrate-job.yaml lit
           #    `backend-config` par son nom littéral (hors kustomize) ; joué
@@ -913,7 +914,7 @@ jobs:
           # migration additive est inoffensive pour l'ancien code encore en
           # service — il ignore les colonnes qu'il ne mappe pas — et le nouveau
           # code arrive sur un schéma déjà prêt. Discipline d'écriture des
-          # migrations qui rend cet ordre sûr : CLAUDE.md § Deployment invariants.
+          # migrations qui rend cet ordre sûr : .claude/rules/deploiement.md.
           #
           # 1. La configuration de la release avant son Job. migrate-job.yaml lit
           #    `backend-config` par son nom littéral (hors kustomize) ; joué

@@ -46,7 +46,8 @@ de la préprod à la prod.
 Les décisions sont écrites avant le code, avec leurs alternatives écartées, dans
 [`docs/adr/`](docs/adr/) ; les spécifications qui les mettent en œuvre dans
 [`.claude/specs/`](.claude/specs/) ; les invariants opérationnels appris en production (et ce qui
-ne doit plus jamais être défait) dans [`.claude/CLAUDE.md`](.claude/CLAUDE.md).
+ne doit plus jamais être défait) dans [`.claude/CLAUDE.md`](.claude/CLAUDE.md) et, zone par zone,
+dans [`.claude/rules/`](.claude/rules/).
 
 ## Développement local
 
