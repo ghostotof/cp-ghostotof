@@ -384,6 +384,7 @@ jobs:
           tools/tests/git-config-isolation.test.sh
           tools/tests/install-symfony-language-tools.test.sh
           tools/tests/summary-language-tools.test.sh
+          tools/tests/check-claude-rules.test.sh
       # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.
