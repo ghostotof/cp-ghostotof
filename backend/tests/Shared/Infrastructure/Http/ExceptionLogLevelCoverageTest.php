@@ -69,6 +69,15 @@ final class ExceptionLogLevelCoverageTest extends TestCase
         UnsupportedMediaTypeHttpException::class => '415 levé par #[MapRequestPayload] et par API Platform sur toute route de l\'API (issue #320) : classe précise, erreur du client.',
     ];
 
+    /**
+     * Niveaux admis selon le statut rendu. Un 4xx n'est pas un incident : ni
+     * `error` ni `critical`, le bruit que #348 retire, mais pas non plus
+     * `debug`, invisible jusqu'en préproduction. Un 5xx reste au moins un
+     * `warning`, visible en production (LOG_LEVEL=warning).
+     */
+    private const array CLIENT_ERROR_LEVELS = ['info', 'notice', 'warning'];
+    private const array SERVER_ERROR_LEVELS = ['warning', 'error', 'critical'];
+
     public function testEveryExceptionTheApiRendersHasALogLevel(): void
     {
         $rendered = array_values(array_unique([...DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class), ...$this->exceptionToStatusKeys()]));
@@ -82,6 +91,63 @@ final class ExceptionLogLevelCoverageTest extends TestCase
             $this->uncovered($watched, $this->logLevelKeys()),
             'Sans `log_level` dans framework.exceptions, ces exceptions sortent en `critical`.',
         );
+    }
+
+    /**
+     * Le niveau, pas seulement sa présence : un `debug` sur un 503 ou un
+     * `critical` sur une 404 passeraient sinon le garde-fou. Le statut est
+     * celui de `exception_to_status`, à défaut celui que l'exception déclare
+     * (ProblemExceptionInterface::getStatus()).
+     */
+    public function testEveryLevelMatchesTheStatusItRenders(): void
+    {
+        $statuses = $this->exceptionToStatus();
+        foreach (DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class) as $class) {
+            $statuses[$class] ??= (new \ReflectionClass($class))->newInstanceWithoutConstructor()->getStatus() ?? 500;
+        }
+
+        self::assertSame([], $this->levelViolations(array_diff_key($statuses, self::EXEMPT), $this->logLevels()));
+    }
+
+    /**
+     * @return iterable<string, array{int, string, bool}>
+     */
+    public static function levelCases(): iterable
+    {
+        yield '404 en info' => [404, 'info', true];
+        yield '429 en warning' => [429, 'warning', true];
+        yield '404 en debug, invisible' => [404, 'debug', false];
+        yield '404 en error, du bruit' => [404, 'error', false];
+        yield '404 en critical' => [404, 'critical', false];
+        yield '503 en warning' => [503, 'warning', true];
+        yield '503 en info, invisible en production' => [503, 'info', false];
+        yield '500 en critical' => [500, 'critical', true];
+    }
+
+    #[DataProvider('levelCases')]
+    public function testTheLevelPolicy(int $status, string $level, bool $allowed): void
+    {
+        self::assertSame($allowed ? [] : ['App\\A'], array_keys($this->levelViolations(['App\\A' => $status], ['App\\A' => $level])));
+    }
+
+    /**
+     * @param array<string, int>    $statuses classe => statut rendu
+     * @param array<string, string> $levels   classe => `log_level`
+     *
+     * @return array<string, string> classe => « statut : niveau » hors politique
+     */
+    private function levelViolations(array $statuses, array $levels): array
+    {
+        $violations = [];
+        foreach ($statuses as $class => $status) {
+            $level = $levels[$class] ?? null;
+            $allowed = $status < 500 ? self::CLIENT_ERROR_LEVELS : self::SERVER_ERROR_LEVELS;
+            if (null !== $level && !\in_array($level, $allowed, true)) {
+                $violations[$class] = $status.' : '.$level;
+            }
+        }
+
+        return $violations;
     }
 
     /**
@@ -189,10 +255,18 @@ final class ExceptionLogLevelCoverageTest extends TestCase
      */
     private function exceptionToStatusKeys(): array
     {
+        return array_keys($this->exceptionToStatus());
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function exceptionToStatus(): array
+    {
         /** @var array{api_platform: array{exception_to_status?: array<string, int>}} $config */
         $config = Yaml::parseFile(self::API_PLATFORM_CONFIG);
 
-        return array_keys($config['api_platform']['exception_to_status'] ?? []);
+        return $config['api_platform']['exception_to_status'] ?? [];
     }
 
     /**
@@ -200,10 +274,18 @@ final class ExceptionLogLevelCoverageTest extends TestCase
      */
     private function logLevelKeys(): array
     {
+        return array_keys($this->logLevels());
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function logLevels(): array
+    {
         /** @var array{framework: array{exceptions?: array<string, array<string, mixed>>}} $config */
         $config = Yaml::parseFile(self::FRAMEWORK_CONFIG);
 
-        return array_keys(self::logLevelsOf($config['framework']['exceptions'] ?? []));
+        return $this->logLevelsOf($config['framework']['exceptions'] ?? []);
     }
 
     /**
@@ -215,7 +297,7 @@ final class ExceptionLogLevelCoverageTest extends TestCase
      *
      * @return array<string, string> classe => niveau
      */
-    private static function logLevelsOf(array $exceptions): array
+    private function logLevelsOf(array $exceptions): array
     {
         $levels = [];
         foreach ($exceptions as $class => $options) {
@@ -246,6 +328,6 @@ final class ExceptionLogLevelCoverageTest extends TestCase
     #[DataProvider('entries')]
     public function testOnlyEntriesThatSetALevelCount(array $exceptions, array $expected): void
     {
-        self::assertSame($expected, self::logLevelsOf($exceptions));
+        self::assertSame($expected, $this->logLevelsOf($exceptions));
     }
 }
