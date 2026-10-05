@@ -10,6 +10,7 @@ use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Exception\AccountInvitationDeliveryException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
+use App\Shared\Infrastructure\Mailer\MailerTransportFailure;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
@@ -118,7 +119,11 @@ final readonly class SendAccountInvitationHandler
         try {
             $this->mailer->send($email);
         } catch (TransportExceptionInterface $exception) {
-            throw AccountInvitationDeliveryException::becauseTransportFailed($exception);
+            // La classe et le code seulement : le message du transport peut
+            // citer une adresse (issue #356), il ne remonte pas.
+            $failure = MailerTransportFailure::from($exception);
+
+            throw AccountInvitationDeliveryException::becauseTransportFailed($failure->exceptionClass, $failure->code);
         }
     }
 

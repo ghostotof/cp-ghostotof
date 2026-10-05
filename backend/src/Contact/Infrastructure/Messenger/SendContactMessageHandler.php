@@ -6,6 +6,7 @@ namespace App\Contact\Infrastructure\Messenger;
 
 use App\Contact\Application\Message\SendContactMessageMessage;
 use App\Contact\Domain\Exception\ContactMessageDeliveryException;
+use App\Shared\Infrastructure\Mailer\MailerTransportFailure;
 use Symfony\Bridge\Twig\Mime\TemplatedEmail;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
@@ -59,7 +60,11 @@ final readonly class SendContactMessageHandler
         try {
             $this->mailer->send($email);
         } catch (TransportExceptionInterface $exception) {
-            throw ContactMessageDeliveryException::becauseTransportFailed($exception);
+            // La classe et le code seulement : le message du transport peut
+            // citer une adresse (issue #356), il ne remonte pas.
+            $failure = MailerTransportFailure::from($exception);
+
+            throw ContactMessageDeliveryException::becauseTransportFailed($failure->exceptionClass, $failure->code);
         }
     }
 }
