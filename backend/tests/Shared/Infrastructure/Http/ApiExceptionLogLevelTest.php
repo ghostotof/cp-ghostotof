@@ -17,6 +17,7 @@ use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException;
 use App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException;
 use App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException;
+use App\Shared\Infrastructure\ApiPlatform\MalformedRequestBodyException;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
@@ -27,6 +28,7 @@ use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\EventListener\ErrorListener;
 use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
+use Symfony\Component\Serializer\Exception\NotEncodableValueException;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Yaml\Yaml;
 
@@ -76,6 +78,12 @@ final class ApiExceptionLogLevelTest extends TestCase
         yield 'lien de mot de passe expiré (410)' => [PasswordSetupTokenExpiredException::expiredOrAlreadyUsed(), Level::Info];
         yield 'quota du traducteur (429), visible en production' => [new TranslationRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Warning];
         yield 'réglages « À propos » absents pour une locale valide (404), visible en production' => [AboutSettingsNotFoundException::forLocale(Locale::FR), Level::Warning];
+        yield 'corps de requête illisible (400, issue #355)' => [MalformedRequestBodyException::fromSerializerFailure(new NotEncodableValueException('Syntax error')), Level::Info];
+        // Le contre-exemple de la ligne précédente : la même classe du
+        // Serializer, levée hors de la désérialisation d'une requête — un JSON
+        // de sortie non encodable, UTF-8 invalide en base. C'est un défaut du
+        // serveur, qui doit rester une alerte : aucune entrée ne la vise.
+        yield 'JSON de sortie non encodable, défaut serveur (issue #355)' => [new NotEncodableValueException('Malformed UTF-8 characters, possibly incorrectly encoded'), Level::Critical];
     }
 
     #[DataProvider('exceptions')]

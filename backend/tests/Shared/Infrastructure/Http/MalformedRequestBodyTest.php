@@ -7,8 +7,11 @@ namespace App\Tests\Shared\Infrastructure\Http;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\Level;
+use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -33,6 +36,7 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 final class MalformedRequestBodyTest extends WebTestCase
 {
     use HttpJson;
+    use ReadsAllChannelsLog;
 
     private const string SUPER_USERNAME = 'super';
 
@@ -81,6 +85,12 @@ final class MalformedRequestBodyTest extends WebTestCase
             'corps non JSON' => 'not-json',
             'JSON tronqué' => '{"token": ',
             'corps vide' => '',
+            // JSON valide, mais pas un objet : le décodage passe, la
+            // dénormalisation échoue sur la racine, et cette erreur-là n'est
+            // pas collectée en violation (issue #355).
+            'nombre à la racine' => '123',
+            'null à la racine' => 'null',
+            'chaîne à la racine' => '"x"',
         ];
 
         foreach ($endpoints as $name => $endpoint) {
@@ -88,6 +98,34 @@ final class MalformedRequestBodyTest extends WebTestCase
                 yield $name.' — '.$bodyName => [$endpoint, $body];
             }
         }
+    }
+
+    /**
+     * Ce 400 est une erreur du client, journalisée comme telle (issue #355) :
+     * `info`, la règle de #348 pour un 4xx. Avant correction, le noyau
+     * (ErrorListener::logKernelException, priorité 0) le journalisait en
+     * `critical` — l'exception du Serializer n'est pas une HttpException, et
+     * son entrée large ne pouvait être baissée sans baisser aussi l'encodage
+     * de sortie. Un anonyme produisait ainsi des alertes à volonté, bornées
+     * par les seuls quotas par IP.
+     *
+     * @param array{0: string, 1: string} $endpoint
+     */
+    #[DataProvider('publicPostEndpointsAndMalformedBodies')]
+    public function testAMalformedBodyOnAPublicPostIsLoggedAsAClientError(array $endpoint, string $body): void
+    {
+        [$path, $label] = $endpoint;
+        $client = $this->clientWithFreshQuotas();
+
+        $client->request('POST', $path, server: ['CONTENT_TYPE' => 'application/json'], content: $body);
+
+        self::assertSame(400, $client->getResponse()->getStatusCode(), $label);
+        $uncaught = array_values(array_filter(
+            self::allChannelsLogRecords(),
+            static fn (LogRecord $record): bool => 'request' === $record->channel && str_starts_with($record->message, 'Uncaught PHP Exception'),
+        ));
+        self::assertCount(1, $uncaught, $label);
+        self::assertSame(Level::Info, $uncaught[0]->level, $label.' : '.$uncaught[0]->message);
     }
 
     /**

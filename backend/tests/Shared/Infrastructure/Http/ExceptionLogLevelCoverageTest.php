@@ -51,14 +51,16 @@ final class ExceptionLogLevelCoverageTest extends TestCase
      * Entrées larges, rétablies depuis les défauts d'API Platform en fin de
      * `exception_to_status` (audit A15). Leur baisser le niveau abaisserait
      * aussi celui de vrais défauts serveur — un JSON de sortie non encodable,
-     * une exception du Serializer sous un contrôleur — : le côté entrée (JSON
-     * illisible envoyé par le client) se traite à part, par une classe précise
-     * (issue #355).
+     * une exception du Serializer sous un contrôleur. Elles restent donc en
+     * `critical`, et ce qu'un client peut produire à volonté passe par une
+     * classe précise : le corps de requête refusé par le Serializer sort en
+     * MalformedRequestBodyException depuis l'issue #355. Les deux autres ne
+     * sont atteignables par aucun client aujourd'hui (vérifié le 2026-10-05).
      */
     private const array EXEMPT = [
-        SerializerExceptionInterface::class => 'Entrée large : couvre aussi l\'encodage de sortie, un défaut serveur.',
-        ApiPlatformInvalidArgumentException::class => 'Entrée large d\'API Platform, levée aussi sur un défaut de configuration.',
-        OptimisticLockException::class => 'Défaut d\'API Platform ; aucune entité versionnée aujourd\'hui, le conflit serait à observer.',
+        SerializerExceptionInterface::class => 'Entrée large : couvre aussi l\'encodage de sortie, un défaut serveur. Le corps de requête en est sorti (MalformedRequestBodyException, #355).',
+        ApiPlatformInvalidArgumentException::class => 'Entrée large d\'API Platform : levée par la pagination (aucun provider de src/ ne pagine, `?page=0` répond 200), l\'IriConverter et la lecture des métadonnées, autant de défauts de configuration.',
+        OptimisticLockException::class => 'Défaut d\'API Platform ; aucune entité versionnée (pas de #[ORM\Version] dans src/), le conflit serait à observer.',
     ];
 
     /**
