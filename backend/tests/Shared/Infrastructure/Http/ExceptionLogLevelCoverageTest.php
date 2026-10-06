@@ -9,6 +9,7 @@ use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use App\Shared\Domain\Exception\HasProblemType;
 use App\Tests\Support\CompiledExceptionConfig;
 use App\Tests\Support\DeclaredClasses;
+use App\Tests\Shared\Infrastructure\Http\Fixtures\ExceptionToStatusFixtureResource;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\LoggedFixtureProblemException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\UnloggedFixtureProblemException;
 use Doctrine\ORM\OptimisticLockException;
@@ -99,15 +100,16 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
 
     /**
      * Le niveau, pas seulement sa présence : un `debug` sur un 503 ou un
-     * `critical` sur une 404 passeraient sinon le garde-fou. Le statut est
-     * celui de `exception_to_status`, à défaut celui que l'exception déclare
-     * (ProblemExceptionInterface::getStatus()).
+     * `critical` sur une 404 passeraient sinon le garde-fou. Les statuts sont
+     * ceux de `exception_to_status` et des ressources ou opérations — tous,
+     * une classe pouvant en recevoir un par opération —, à défaut celui que
+     * l'exception déclare (ProblemExceptionInterface::getStatus()).
      */
     public function testEveryLevelMatchesTheStatusItRenders(): void
     {
         $statuses = $this->exceptionToStatus();
         foreach (DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class) as $class) {
-            $statuses[$class] ??= (new \ReflectionClass($class))->newInstanceWithoutConstructor()->getStatus() ?? 500;
+            $statuses[$class] ??= [(new \ReflectionClass($class))->newInstanceWithoutConstructor()->getStatus() ?? 500];
         }
 
         self::assertSame([], $this->levelViolations(array_diff_key($statuses, self::EXEMPT), $this->logLevels()));
@@ -131,23 +133,25 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     #[DataProvider('levelCases')]
     public function testTheLevelPolicy(int $status, string $level, bool $allowed): void
     {
-        self::assertSame($allowed ? [] : ['App\\A'], array_keys($this->levelViolations(['App\\A' => $status], ['App\\A' => $level])));
+        self::assertSame($allowed ? [] : ['App\\A'], array_keys($this->levelViolations(['App\\A' => [$status]], ['App\\A' => $level])));
     }
 
     /**
-     * @param array<string, int>    $statuses classe => statut rendu
-     * @param array<string, string> $levels   classe => `log_level`
+     * @param array<string, list<int>> $statuses classe => statuts rendus
+     * @param array<string, string>    $levels   classe => `log_level`
      *
      * @return array<string, string> classe => « statut : niveau » hors politique
      */
     private function levelViolations(array $statuses, array $levels): array
     {
         $violations = [];
-        foreach ($statuses as $class => $status) {
+        foreach ($statuses as $class => $classStatuses) {
             $level = $levels[$class] ?? null;
-            $allowed = $status < 500 ? self::CLIENT_ERROR_LEVELS : self::SERVER_ERROR_LEVELS;
-            if (null !== $level && !\in_array($level, $allowed, true)) {
-                $violations[$class] = $status.' : '.$level;
+            foreach ($classStatuses as $status) {
+                $allowed = $status < 500 ? self::CLIENT_ERROR_LEVELS : self::SERVER_ERROR_LEVELS;
+                if (null !== $level && !\in_array($level, $allowed, true)) {
+                    $violations[$class] = $status.' : '.$level;
+                }
             }
         }
 
@@ -236,6 +240,25 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     }
 
     /**
+     * Un `exceptionToStatus` porté par une ressource ou une opération rend
+     * l'exception avec un statut au même titre qu'une clé de
+     * `api_platform.exception_to_status` (issue #357). Sur une ressource de
+     * test qui en déclare un à chaque niveau, le recensement doit voir les deux,
+     * et le garde-fou rougir : aucune n'a de `log_level`.
+     */
+    public function testTheMappingsOfAResourceAndOfItsOperationsAreWatched(): void
+    {
+        $statuses = CompiledExceptionConfig::resourceExceptionToStatus(
+            self::getContainer()->get('api_platform.metadata.resource.metadata_collection_factory'),
+            [ExceptionToStatusFixtureResource::class],
+        );
+        ksort($statuses);
+
+        self::assertSame([\OverflowException::class => [422], \UnderflowException::class => [409]], $statuses);
+        self::assertSame([\OverflowException::class, \UnderflowException::class], $this->uncovered(array_keys($statuses), $this->logLevelKeys()));
+    }
+
+    /**
      * Une entrée couvre une classe comme le noyau la résout : par `instanceof`
      * (ErrorListener::resolveLogLevel). L'ordre des entrées, qui départage
      * pour le noyau, n'entre pas en jeu ici : testEveryLogLevelEntryTargetsARenderedException
@@ -263,11 +286,25 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     }
 
     /**
-     * @return array<string, int>
+     * `api_platform.exception_to_status`, plus les `exceptionToStatus` de
+     * chaque ressource et de chacune de ses opérations (issue #357) : ce que le
+     * vendor fusionne au moment de rendre l'erreur.
+     *
+     * @return array<string, list<int>> classe => statuts rendus
      */
     private function exceptionToStatus(): array
     {
-        return CompiledExceptionConfig::exceptionToStatus(self::getContainer());
+        $container = self::getContainer();
+        $statuses = array_map(static fn (int $status): array => [$status], CompiledExceptionConfig::exceptionToStatus($container));
+        $byResource = CompiledExceptionConfig::resourceExceptionToStatus(
+            $container->get('api_platform.metadata.resource.metadata_collection_factory'),
+            $container->get('api_platform.metadata.resource.name_collection_factory')->create(),
+        );
+        foreach ($byResource as $class => $classStatuses) {
+            $statuses[$class] = array_values(array_unique([...$statuses[$class] ?? [], ...$classStatuses]));
+        }
+
+        return $statuses;
     }
 
     /**

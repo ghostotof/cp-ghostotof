@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
+use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\EventListener\ErrorListener;
 
@@ -45,5 +46,41 @@ final class CompiledExceptionConfig
     {
         /** @var array<string, int> */
         return $container->getParameter('api_platform.exception_to_status');
+    }
+
+    /**
+     * Les `exceptionToStatus` portés par une ressource ou une opération API
+     * Platform, que le vendor fusionne avec le paramètre global au moment de
+     * rendre l'erreur (ErrorListener::getOperationExceptionToStatus). Une même
+     * classe peut y recevoir plusieurs statuts, d'une opération à l'autre :
+     * chacun est gardé, pour que le niveau soit jugé contre tous.
+     *
+     * @param iterable<string> $resourceClasses
+     *
+     * @return array<string, list<int>> classe => statuts distincts
+     */
+    public static function resourceExceptionToStatus(ResourceMetadataCollectionFactoryInterface $factory, iterable $resourceClasses): array
+    {
+        $statuses = [];
+        foreach ($resourceClasses as $resourceClass) {
+            foreach ($factory->create($resourceClass) as $resource) {
+                $mappings = [$resource->getExceptionToStatus() ?? []];
+                foreach ($resource->getOperations() ?? [] as $operation) {
+                    $mappings[] = $operation->getExceptionToStatus() ?? [];
+                }
+                foreach ($mappings as $mapping) {
+                    // Non typé par API Platform (`?array`) : la forme est celle
+                    // de `exception_to_status`, classe => statut.
+                    /** @var array<string, int> $mapping */
+                    foreach ($mapping as $class => $status) {
+                        if (!\in_array($status, $statuses[$class] ?? [], true)) {
+                            $statuses[$class][] = $status;
+                        }
+                    }
+                }
+            }
+        }
+
+        return $statuses;
     }
 }
