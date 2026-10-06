@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Tests\Support;
 
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
-use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\Attribute\WithHttpStatus;
 use Symfony\Component\HttpKernel\Attribute\WithLogLevel;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -41,82 +40,124 @@ final class CompiledExceptionConfig
     }
 
     /**
-     * `api_platform.exception_to_status` compilé, dans l'ordre de résolution.
+     * Le statut avec lequel le noyau rend chaque exception qu'il convertit
+     * lui-même (ErrorListener::logKernelException), dans son ordre : la
+     * première entrée de `framework.exceptions` qui correspond par
+     * `instanceof` et fixe un `status_code`, à défaut un #[WithHttpStatus]
+     * hérité — que le noyau ne lit pas sur une HttpExceptionInterface. Le niveau
+     * reste résolu sur l'exception d'origine : sans entrée, `critical`.
+     *
+     * Une classe abstraite ou une interface n'est jamais levée telle quelle :
+     * ses sous-classes concrètes le sont, et sont recensées pour elles-mêmes.
+     *
+     * @param iterable<string> $classes
+     *
+     * @return array<string, int> classe => statut rendu
+     */
+    public static function kernelHttpStatus(ErrorListener $listener, iterable $classes): array
+    {
+        $mapping = self::exceptionsMapping($listener);
+        $statuses = [];
+        foreach ($classes as $class) {
+            if (!is_subclass_of($class, \Throwable::class) || self::neverThrown($class)) {
+                continue;
+            }
+            $status = array_find($mapping, static fn (array $options, string $key): bool => null !== $options['status_code'] && is_a($class, $key, true))['status_code'] ?? null;
+            if (null === $status && !is_subclass_of($class, HttpExceptionInterface::class)) {
+                $attribute = self::inheritedAttribute($listener, $class, WithHttpStatus::class);
+                $status = $attribute instanceof WithHttpStatus ? $attribute->statusCode : null;
+            }
+            if (null !== $status) {
+                $statuses[$class] = $status;
+            }
+        }
+
+        return $statuses;
+    }
+
+    /**
+     * Les tables `exception_to_status` qu'API Platform peut consulter pour
+     * rendre une erreur (ErrorListener::getStatusCode) : le paramètre global
+     * seul — hors de toute opération —, et pour chaque opération ce même
+     * paramètre fusionné avec la table de l'opération, puis aussi avec celles
+     * de la ressource (getOperationExceptionToStatus, quand l'opération est
+     * retrouvée depuis la requête). La fusion est celle du vendor, array_merge :
+     * une clé déjà présente garde sa place et prend la nouvelle valeur.
+     *
+     * @param array<string, int> $global          `api_platform.exception_to_status`
+     * @param iterable<string>   $resourceClasses
+     *
+     * @return list<array<string, int>>
+     */
+    public static function apiPlatformMappings(ResourceMetadataCollectionFactoryInterface $factory, iterable $resourceClasses, array $global): array
+    {
+        $mappings = [$global];
+        foreach ($resourceClasses as $resourceClass) {
+            $collection = $factory->create($resourceClass);
+            $resourceMappings = [];
+            foreach ($collection as $resource) {
+                $resourceMappings[] = self::mapping($resource->getExceptionToStatus());
+            }
+            foreach ($collection as $resource) {
+                foreach ($resource->getOperations() ?? [] as $operation) {
+                    $operationMapping = self::mapping($operation->getExceptionToStatus());
+                    $mappings[] = array_merge($global, $operationMapping);
+                    $mappings[] = array_merge($global, $operationMapping, ...$resourceMappings);
+                }
+            }
+        }
+
+        return $mappings;
+    }
+
+    /**
+     * Les statuts qu'une exception peut recevoir de ces tables : dans chacune,
+     * celui de la première clé qui correspond par is_a(), comme le vendor.
+     *
+     * @param list<array<string, int>> $mappings
+     *
+     * @return list<int> distincts, dans l'ordre des tables
+     */
+    public static function statusesFor(array $mappings, string $class): array
+    {
+        $statuses = [];
+        foreach ($mappings as $mapping) {
+            $status = array_find($mapping, static fn (int $status, string $key): bool => is_a($class, $key, true));
+            if (null !== $status && !\in_array($status, $statuses, true)) {
+                $statuses[] = $status;
+            }
+        }
+
+        return $statuses;
+    }
+
+    /**
+     * Une table d'API Platform, non typée par le vendor (`?array`) : sa forme
+     * est celle de `exception_to_status`, classe => statut.
+     *
+     * @param array<mixed>|null $mapping
      *
      * @return array<string, int>
      */
-    public static function exceptionToStatus(ContainerInterface $container): array
+    private static function mapping(?array $mapping): array
     {
-        /** @var array<string, int> */
-        return $container->getParameter('api_platform.exception_to_status');
+        /** @var array<string, int> $typed */
+        $typed = $mapping ?? [];
+
+        return $typed;
     }
 
     /**
-     * Les `exceptionToStatus` portés par une ressource ou une opération API
-     * Platform, que le vendor fusionne avec le paramètre global au moment de
-     * rendre l'erreur (ErrorListener::getOperationExceptionToStatus). Une même
-     * classe peut y recevoir plusieurs statuts, d'une opération à l'autre :
-     * chacun est gardé, pour que le niveau soit jugé contre tous.
-     *
-     * @param iterable<string> $resourceClasses
-     *
-     * @return array<string, list<int>> classe => statuts distincts
+     * Une classe abstraite ou une interface : jamais levée telle quelle.
      */
-    public static function resourceExceptionToStatus(ResourceMetadataCollectionFactoryInterface $factory, iterable $resourceClasses): array
+    private static function neverThrown(string $class): bool
     {
-        $statuses = [];
-        foreach ($resourceClasses as $resourceClass) {
-            foreach ($factory->create($resourceClass) as $resource) {
-                $mappings = [$resource->getExceptionToStatus() ?? []];
-                foreach ($resource->getOperations() ?? [] as $operation) {
-                    $mappings[] = $operation->getExceptionToStatus() ?? [];
-                }
-                foreach ($mappings as $mapping) {
-                    // Non typé par API Platform (`?array`) : la forme est celle
-                    // de `exception_to_status`, classe => statut.
-                    /** @var array<string, int> $mapping */
-                    foreach ($mapping as $class => $status) {
-                        if (!\in_array($status, $statuses[$class] ?? [], true)) {
-                            $statuses[$class][] = $status;
-                        }
-                    }
-                }
-            }
+        if (!class_exists($class) && !interface_exists($class)) {
+            return false;
         }
+        $reflection = new \ReflectionClass($class);
 
-        return $statuses;
-    }
-
-    /**
-     * Les exceptions que le noyau convertit en HttpException d'après leur
-     * #[WithHttpStatus] (ErrorListener::logKernelException), avec ce statut.
-     * Le niveau, lui, est résolu sur l'exception d'origine : sans entrée,
-     * `critical`.
-     *
-     * L'attribut est lu par la méthode même du noyau, qui le cherche aussi sur
-     * les classes parentes et les interfaces : la réflexion échoue bruyamment
-     * si Symfony la renomme, plutôt que de réimplémenter sa résolution.
-     *
-     * @param iterable<class-string> $classes
-     *
-     * @return array<class-string, list<int>> classe => statut déclaré
-     */
-    public static function withHttpStatus(ErrorListener $listener, iterable $classes): array
-    {
-        $statuses = [];
-        foreach ($classes as $class) {
-            // Une HttpExceptionInterface garde son propre statut : le noyau ne
-            // lit l'attribut que sur les autres exceptions.
-            if (!is_subclass_of($class, \Throwable::class) || is_subclass_of($class, HttpExceptionInterface::class)) {
-                continue;
-            }
-            $attribute = self::inheritedAttribute($listener, $class, WithHttpStatus::class);
-            if ($attribute instanceof WithHttpStatus) {
-                $statuses[$class] = [$attribute->statusCode];
-            }
-        }
-
-        return $statuses;
+        return $reflection->isAbstract() || $reflection->isInterface();
     }
 
     /**
