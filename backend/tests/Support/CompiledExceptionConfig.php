@@ -36,7 +36,7 @@ final class CompiledExceptionConfig
     public static function exceptionsMapping(ErrorListener $listener): array
     {
         /** @var array<class-string, array{log_level: ?string, status_code: int<100, 599>|null, log_channel: ?string}> */
-        return (new \ReflectionProperty(ErrorListener::class, 'exceptionsMapping'))->getValue($listener);
+        return self::internal(static fn (): \ReflectionProperty => new \ReflectionProperty(ErrorListener::class, 'exceptionsMapping'))->getValue($listener);
     }
 
     /**
@@ -102,7 +102,7 @@ final class CompiledExceptionConfig
      */
     public static function withHttpStatus(ErrorListener $listener, iterable $classes): array
     {
-        $resolve = new \ReflectionMethod(ErrorListener::class, 'getInheritedAttribute');
+        $resolve = self::internal(static fn (): \ReflectionMethod => new \ReflectionMethod(ErrorListener::class, 'getInheritedAttribute'));
         $statuses = [];
         foreach ($classes as $class) {
             // Une HttpExceptionInterface garde son propre statut : le noyau ne
@@ -117,5 +117,25 @@ final class CompiledExceptionConfig
         }
 
         return $statuses;
+    }
+
+    /**
+     * Un membre interne de l'ErrorListener, que Symfony peut renommer à toute
+     * montée de version : l'échec nomme le test de contrat à consulter plutôt
+     * qu'une ReflectionException sans contexte.
+     *
+     * @template T of \Reflector
+     *
+     * @param \Closure(): T $reflect
+     *
+     * @return T
+     */
+    private static function internal(\Closure $reflect): \Reflector
+    {
+        try {
+            return $reflect();
+        } catch (\ReflectionException $exception) {
+            throw new \LogicException('Interne de l\'ErrorListener introuvable, Symfony l\'a sans doute changé : voir ErrorListenerInternalsTest, puis adapter CompiledExceptionConfig.', 0, $exception);
+        }
     }
 }
