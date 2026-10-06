@@ -1,0 +1,5 @@
+# Fixture (issue #357) : un bloc when@dev de services.yaml.
+when@dev:
+    api_platform:
+        exception_to_status:
+            RuntimeException: 404

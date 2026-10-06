@@ -1,4 +1,0 @@
-# Fixture (issue #357) : répertoire propre à `test`, compilé : pas signalée.
-api_platform:
-    exception_to_status:
-        LogicException: 404

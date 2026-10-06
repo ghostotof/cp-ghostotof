@@ -23,7 +23,6 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Toute exception que l'API rend avec un statut a son `log_level` dans
@@ -59,27 +58,9 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
 {
     private const string SOURCES = __DIR__.'/../../../../src';
     private const string FIXTURE_SOURCES = __DIR__.'/Fixtures/LogLevelSources';
-    private const string CONFIG = __DIR__.'/../../../../config';
-    private const string FIXTURE_CONFIG = __DIR__.'/Fixtures/EnvironmentConfig';
     private const string EXTRA_CONFIG = __DIR__.'/Fixtures/ExtraConfig/exceptions.yaml';
     private const string FIXTURE_ATTRIBUTES = __DIR__.'/Fixtures/LogLevelAttributes';
     private const string EXTRA_CONFIG_OPTION = 'extra_config';
-
-    /**
-     * Les deux mappings que ce garde-fou lit compilés : extension => clé.
-     */
-    private const array MAPPINGS = ['framework' => 'exceptions', 'api_platform' => 'exception_to_status'];
-
-    /**
-     * Les mêmes mappings, cherchés dans le texte d'une configuration PHP : au
-     * format tableau, ou au format config builder (FrameworkConfig::exception(),
-     * ApiPlatformConfig::exceptionToStatus()).
-     */
-    private const array PHP_MAPPING_PATTERNS = [
-        'framework.exceptions' => '{[\'"]exceptions[\'"]|->exception\(}',
-        'api_platform.exception_to_status' => '{[\'"]exception_to_status[\'"]|->exceptionToStatus\(}',
-    ];
-    private const string PHP_ENVIRONMENT_CONDITION = '{when@|->env\(}';
 
     /**
      * Entrées larges, rétablies depuis les défauts d'API Platform en fin de
@@ -347,154 +328,6 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
         self::assertSame('info', $levels[\DomainException::class] ?? null, 'L\'entrée déclarée ailleurs n\'est pas lue.');
     }
 
-    /**
-     * La limite de la lecture compilée : le conteneur de test ne voit que
-     * l'environnement `test`. Une entrée déclarée pour `prod` seulement — un
-     * bloc `when@prod`, un fichier de config/packages/prod/, un
-     * services_prod.yaml — échapperait au garde-fou, et la préproduction comme
-     * la production tournent en `prod`. Ces deux configurations restent donc
-     * communes à tous les environnements (issue #357).
-     */
-    public function testNoMappingIsDeclaredForASingleEnvironmentOtherThanTest(): void
-    {
-        self::assertSame(
-            [],
-            $this->mappingsOutsideTheTestEnvironment(self::CONFIG),
-            'Déclaration propre à un environnement que le conteneur de test ne compile pas : la rendre commune.',
-        );
-    }
-
-    /**
-     * Le recensement lui-même, sur une configuration fixture qui déclare un
-     * mapping sous chacune des formes que le noyau charge selon
-     * l'environnement (KernelTrait::configureContainer), à côté de déclarations
-     * communes ou propres à `test`, qui ne doivent pas ressortir.
-     */
-    public function testTheEnvironmentScanFindsEveryFormTheKernelLoads(): void
-    {
-        self::assertSame([
-            'packages/api_platform.php : api_platform.exception_to_status (PHP, sous condition d\'environnement)',
-            'packages/framework.yaml : when@prod framework.exceptions',
-            'packages/prod/api_platform.yaml : api_platform.exception_to_status',
-            'packages/prod/framework.php : framework.exceptions (PHP, sous condition d\'environnement)',
-            'services.yaml : when@dev api_platform.exception_to_status',
-            'services_preprod.yaml : framework.exceptions',
-        ], $this->mappingsOutsideTheTestEnvironment(self::FIXTURE_CONFIG));
-    }
-
-    /**
-     * Les trois formes que le noyau charge selon l'environnement
-     * (KernelTrait::configureContainer) : un bloc `when@<env>` d'un fichier
-     * commun, un fichier de config/packages/<env>/, un services_<env>.*.
-     *
-     * Le YAML est lu clé par clé. Le PHP, qui ne se lit pas sans s'exécuter,
-     * l'est textuellement : un fichier propre à un autre environnement que
-     * `test`, ou qui porte une condition d'environnement, est signalé s'il
-     * mentionne l'un des mappings. Une condition qui ne viserait que `test`
-     * serait signalée aussi : l'erreur va dans le sens prudent.
-     *
-     * @return list<string> « fichier : clé » des déclarations hors `test`
-     */
-    private function mappingsOutsideTheTestEnvironment(string $configDirectory): array
-    {
-        $found = [];
-        foreach ($this->configFiles($configDirectory, 'yaml') as $relative => $file) {
-            $config = Yaml::parseFile($file, Yaml::PARSE_CUSTOM_TAGS);
-            if (!\is_array($config)) {
-                continue;
-            }
-            foreach ($this->blocksOutsideTheTestEnvironment($relative, $config) as $prefix => $block) {
-                foreach (self::MAPPINGS as $extension => $key) {
-                    if (\is_array($block[$extension] ?? null) && \array_key_exists($key, $block[$extension])) {
-                        $found[] = $relative.' : '.$prefix.$extension.'.'.$key;
-                    }
-                }
-            }
-        }
-        foreach ($this->configFiles($configDirectory, 'php') as $relative => $file) {
-            array_push($found, ...$this->phpMappingsOutsideTheTestEnvironment($relative, (string) file_get_contents($file)));
-        }
-        sort($found);
-
-        return $found;
-    }
-
-    /**
-     * @return array<string, string> chemin relatif => chemin absolu
-     */
-    private function configFiles(string $configDirectory, string $extension): array
-    {
-        $files = [];
-        foreach (['/packages/*.', '/packages/*/*.', '/services*.'] as $pattern) {
-            $matching = glob($configDirectory.$pattern.$extension);
-            if (false === $matching) {
-                throw new \LogicException(\sprintf('glob() a échoué sur %s%s%s.', $configDirectory, $pattern, $extension));
-            }
-            foreach ($matching as $file) {
-                $files[substr($file, \strlen($configDirectory) + 1)] = $file;
-            }
-        }
-
-        return $files;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function phpMappingsOutsideTheTestEnvironment(string $relativePath, string $code): array
-    {
-        $environment = $this->environmentOf($relativePath);
-        $outsideTest = null === $environment ? 1 === preg_match(self::PHP_ENVIRONMENT_CONDITION, $code) : 'test' !== $environment;
-        if (!$outsideTest) {
-            return [];
-        }
-
-        $found = [];
-        foreach (self::PHP_MAPPING_PATTERNS as $mapping => $pattern) {
-            if (1 === preg_match($pattern, $code)) {
-                $found[] = $relativePath.' : '.$mapping.' (PHP, sous condition d\'environnement)';
-            }
-        }
-
-        return $found;
-    }
-
-    /**
-     * @return ?string l'environnement d'un fichier qui lui est propre, null pour un fichier commun
-     */
-    private function environmentOf(string $relativePath): ?string
-    {
-        if (1 === preg_match('{^packages/([^/]+)/[^/]+\.(?:yaml|php)$}', $relativePath, $matches)
-            || 1 === preg_match('{^services_([^/]+)\.(?:yaml|php)$}', $relativePath, $matches)) {
-            return $matches[1];
-        }
-
-        return null;
-    }
-
-    /**
-     * @param array<mixed> $config contenu d'un fichier
-     *
-     * @return array<string, mixed> préfixe du diagnostic => bloc de configuration
-     */
-    private function blocksOutsideTheTestEnvironment(string $relativePath, array $config): array
-    {
-        // Un fichier propre à un environnement, en entier.
-        $environment = $this->environmentOf($relativePath);
-        if (null !== $environment) {
-            return 'test' === $environment ? [] : ['' => $config];
-        }
-
-        // Un fichier commun : ses blocs `when@<env>`, sauf `when@test`.
-        $blocks = [];
-        foreach ($config as $key => $block) {
-            if (\is_string($key) && str_starts_with($key, 'when@') && 'when@test' !== $key) {
-                $blocks[$key.' '] = $block;
-            }
-        }
-
-        return $blocks;
-    }
 
     /**
      * Le recensement ne lit que les opérations HTTP : celles de GraphQL ne
