@@ -11,6 +11,7 @@ use App\Shared\Domain\Exception\HasProblemType;
 use App\Tests\Support\CompiledExceptionConfig;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\ExceptionToStatusFixtureResource;
+use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\AbstractAttributedFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\AttributeLoggedFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\InheritedLogLevelFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\LoudAttributeFixtureException;
@@ -18,7 +19,6 @@ use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\AttributedFixt
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\InheritingFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\LoggedFixtureProblemException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\UnloggedFixtureProblemException;
-use Doctrine\ORM\OptimisticLockException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpKernel\EventListener\ErrorListener;
@@ -67,16 +67,19 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
      * aussi celui de vrais défauts serveur — un JSON de sortie non encodable,
      * une exception du Serializer sous un contrôleur. Elles restent donc en
      * `critical`, et ce qu'un client peut produire à volonté passe par une
-     * classe précise : le corps de requête refusé par le Serializer sort en
-     * MalformedRequestBodyException depuis l'issue #355 — si bien que celle du
-     * Serializer, qui ne voit plus que des défauts serveur, est rendue en 500
-     * depuis l'issue #360, statut et niveau enfin d'accord. Les deux autres ne
-     * sont atteignables par aucun client aujourd'hui (vérifié le 2026-10-05).
+     * classe précise, si bien que l'entrée large ne voit plus que des défauts
+     * serveur et se rend en 500 : le corps de requête refusé par le Serializer
+     * sort en MalformedRequestBodyException depuis l'issue #355 (500 pour le
+     * Serializer depuis #360), un `id` dans le corps d'un PUT aussi depuis
+     * l'issue #373 (500 pour l'InvalidArgumentException d'API Platform).
+     *
+     * Une dispense ne vaut que pour l'entrée `log_level` : statut et niveau
+     * doivent s'accorder quand même (testEveryLevelMatchesTheStatusItRenders,
+     * issue #373).
      */
     private const array EXEMPT = [
         SerializerExceptionInterface::class => 'Entrée large, rendue en 500 (#360) : ne voit plus que des défauts serveur — JSON de sortie non encodable (`NaN` en base, ServerSideSerializerFailureTest), Serializer mal configuré, format négocié sans encodeur. Le corps de requête en est sorti (MalformedRequestBodyException, #355), le point d\'entrée Hydra GET /api est coupé partout.',
-        ApiPlatformInvalidArgumentException::class => 'Entrée large d\'API Platform, sous-classes comprises (ItemNotFoundException, OperationNotFoundException) : levée par la pagination (aucun provider de src/ ne pagine, `?page=0` répond 200), l\'IriConverter (aucune ressource n\'accepte d\'IRI du client) et la lecture des métadonnées, autant de défauts de configuration.',
-        OptimisticLockException::class => 'Défaut d\'API Platform ; aucune entité versionnée (pas de #[ORM\Version] dans src/), le conflit serait à observer.',
+        ApiPlatformInvalidArgumentException::class => 'Entrée large d\'API Platform, sous-classe ItemNotFoundException comprise (OperationNotFoundException n\'en est pas : elle étend \InvalidArgumentException de PHP), rendue en 500 (#373). Le seul chemin client trouvé — un `id` dans le corps d\'un PUT, parti en résolution d\'IRI — en est sorti (`api_allow_update: false`, MalformedRequestBodyTest). Restent la pagination (aucun provider de src/ ne pagine, `?page=0` répond 200), l\'IriConverter (aucune ressource n\'accepte d\'IRI du client) et la lecture des métadonnées, autant de défauts de configuration.',
     ];
 
     /**
@@ -116,12 +119,43 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
      * `critical` sur une 404 passeraient sinon le garde-fou. Il est jugé contre
      * chaque statut que l'exception peut recevoir (renderedStatuses), au niveau
      * que le noyau retient pour elle.
+     *
+     * EXEMPT compris (issue #373) : une dispense exempte d'une entrée
+     * `log_level`, jamais de l'accord entre statut et niveau. Soustraite ici,
+     * elle avait laissé vivre `Serializer\ExceptionInterface: 400` en
+     * `critical` (#360), puis l'InvalidArgumentException d'API Platform au
+     * même 400, qu'un `id` dans le corps d'un PUT atteignait.
      */
     public function testEveryLevelMatchesTheStatusItRenders(): void
     {
-        $watched = array_diff_key($this->renderedStatuses(), self::EXEMPT);
+        self::assertSame([], $this->levelViolations(...$this->levelCheck()));
+    }
 
-        self::assertSame([], $this->levelViolations($watched, $this->kernelLevels($this->errorListener(), array_keys($watched))));
+    /**
+     * La régression de #373, verrouillée : la configuration étant désormais
+     * d'accord, le test précédent resterait vert si l'on soustrayait de
+     * nouveau EXEMPT — ou si une clé interface n'avait plus de niveau. Chaque
+     * dispense doit donc figurer, avec un niveau résolu, dans ce que le
+     * contrôle juge.
+     */
+    public function testTheLevelCheckJudgesEveryExemptedEntry(): void
+    {
+        [, $levels] = $this->levelCheck();
+
+        self::assertSame([], array_values(array_diff(array_keys(self::EXEMPT), array_keys($levels))), 'Dispense que le contrôle statut/niveau ne juge pas.');
+    }
+
+    /**
+     * Ce que juge le contrôle des niveaux : chaque exception rendue, EXEMPT
+     * compris, et le niveau que le noyau retient pour elle.
+     *
+     * @return array{array<string, list<int>>, array<string, string>} statuts rendus, niveaux retenus
+     */
+    private function levelCheck(): array
+    {
+        $watched = $this->renderedStatuses();
+
+        return [$watched, $this->kernelLevels($this->errorListener(), array_keys($watched))];
     }
 
     /**
@@ -338,6 +372,36 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     }
 
     /**
+     * @return iterable<string, array{class-string<\Throwable>, array<class-string, array{log_level?: string}>, ?string}>
+     */
+    public static function nonInstantiableKeyCases(): iterable
+    {
+        yield 'interface sans entrée' => [SerializerExceptionInterface::class, [], '400 : critical'];
+        yield 'classe abstraite sans entrée' => [AbstractAttributedFixtureException::class, [], '400 : critical'];
+        yield 'interface couverte par son entrée' => [SerializerExceptionInterface::class, [SerializerExceptionInterface::class => ['log_level' => 'info']], null];
+        yield 'classe abstraite couverte par son entrée' => [AbstractAttributedFixtureException::class, [AbstractAttributedFixtureException::class => ['log_level' => 'info']], null];
+    }
+
+    /**
+     * Une clé d'`exception_to_status` peut être une interface ou une classe
+     * abstraite : `Serializer\ExceptionInterface` l'est, et c'est elle qui,
+     * rendue en 400 et journalisée en `critical`, a laissé vivre #360 sans
+     * que le contrôle des niveaux la voie — le noyau ne résolvait le niveau
+     * que d'une classe instanciable (issue #373). Son niveau est celui d'une
+     * implémentation qu'aucune entrée plus précise ne vise.
+     *
+     * @param class-string<\Throwable>                           $class
+     * @param array<class-string, array{log_level?: string}>     $entries
+     */
+    #[DataProvider('nonInstantiableKeyCases')]
+    public function testANonInstantiableKeyIsHeldToThePolicy(string $class, array $entries, ?string $violation): void
+    {
+        $levels = $this->kernelLevels(CompiledExceptionConfig::listenerWith($entries), [$class]);
+
+        self::assertSame(null === $violation ? [] : [$class => $violation], $this->levelViolations([$class => [400]], $levels));
+    }
+
+    /**
      * L'ErrorListener compilé de l'application, que le conteneur de test expose.
      */
     private function errorListener(): ErrorListener
@@ -361,20 +425,33 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
 
     /**
      * Le niveau que le noyau retient pour chaque classe (CompiledExceptionConfig::kernelLogLevel).
+     * Une interface ou une classe abstraite n'est jamais levée telle quelle ;
+     * clé d'une table, elle couvre pourtant ses implémentations : un double
+     * de test en tient lieu (issue #373), sans quoi elle échapperait au
+     * contrôle des niveaux.
+     *
+     * Limite connue : le double d'une clé qui est une HttpExceptionInterface
+     * renvoie un statut 0, que le noyau tient pour un 4xx (`error`), quand une
+     * implémentation réelle en 5xx sortirait `critical`. Aucune clé de ce genre
+     * aujourd'hui, et les deux niveaux reçoivent le même verdict de la
+     * politique sur un 4xx comme sur un 5xx : pas de faux vert.
      *
      * @param list<string> $classes
      *
-     * @return array<string, string> classe => niveau ; une classe abstraite en est absente
+     * @return array<string, string> classe => niveau
      */
     private function kernelLevels(ErrorListener $listener, array $classes): array
     {
         $levels = [];
         foreach ($classes as $class) {
-            if (is_subclass_of($class, \Throwable::class)) {
-                $level = CompiledExceptionConfig::kernelLogLevel($listener, $class);
-                if (null !== $level) {
-                    $levels[$class] = $level;
-                }
+            if (!is_subclass_of($class, \Throwable::class)) {
+                continue;
+            }
+            // kernelLogLevel() ne répond pas pour une classe non instanciable.
+            $level = CompiledExceptionConfig::kernelLogLevel($listener, $class)
+                ?? CompiledExceptionConfig::kernelLogLevelOf($listener, self::createStub($class));
+            if (null !== $level) {
+                $levels[$class] = $level;
             }
         }
 

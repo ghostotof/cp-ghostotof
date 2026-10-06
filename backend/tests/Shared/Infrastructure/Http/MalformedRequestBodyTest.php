@@ -214,6 +214,83 @@ final class MalformedRequestBodyTest extends WebTestCase
     }
 
     /**
+     * Un `id` dans le corps d'un PUT (issue #373). Un PUT « standard »
+     * d'API Platform 4 ne peuple aucun objet existant : sans réglage, la clé
+     * partait en résolution d'IRI (ItemNormalizerTrait::updateObjectToPopulate)
+     * et sortait en ItemNotFoundException — 400 sous l'entrée large
+     * `ApiPlatform\Metadata\Exception\InvalidArgumentException`, mais
+     * journalisée `critical`, sur les vingt-deux PUT du backoffice. Aucune
+     * ressource ne se met à jour par IRI : `api_allow_update: false` fait
+     * refuser la clé par le Serializer, donc MalformedRequestBodyException
+     * (#355), une erreur du client.
+     *
+     * Les deux formes de PUT du projet : `read: false` (ordre) et un Provider
+     * qui lit l'existant (rôles).
+     */
+    #[DataProvider('putPathsGivenTheSuperAdminId')]
+    public function testAnIdInAPutBodyIsAClientErrorLoggedAsSuch(string $pathTemplate, string $body): void
+    {
+        $client = $this->clientWithFreshQuotas();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)
+            ->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAsSuper($client);
+        $superId = $client->getContainer()->get(EntityManagerInterface::class)->getConnection()->fetchOne('SELECT id FROM cpg_user WHERE username = ?', [self::SUPER_USERNAME]);
+        self::assertIsString($superId);
+
+        $client->request('PUT', \sprintf($pathTemplate, $superId), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: $body);
+
+        self::assertSame(400, $client->getResponse()->getStatusCode());
+        $this->assertProblemBodyWithoutInternals($client);
+        $uncaught = self::uncaughtExceptionRecords();
+        self::assertCount(1, $uncaught);
+        self::assertSame(Level::Info, $uncaught[0]->level, $uncaught[0]->message);
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function putPathsGivenTheSuperAdminId(): iterable
+    {
+        yield 'ordre, read: false' => ['/api/backoffice/incidents/order', '{"id":"x","groups":[]}'];
+        yield 'rôles, Provider' => ['/api/backoffice/users/%s/roles', '{"id":"x","superAdmin":true}'];
+    }
+
+    /**
+     * Le réglage tient pour **chaque** opération qui met à jour, pas seulement
+     * pour les deux routes ci-dessus. Un `denormalizationContext` déclaré sur
+     * une ressource ou une opération est fusionné avec le défaut
+     * (OperationDefaultsTrait::addGlobalDefaults), mais un tableau vide le
+     * neutralise, tout comme un `api_allow_update: true` explicite : la clé
+     * `id` repartirait alors en résolution d'IRI sans que rien ne rougisse.
+     * Lu sur les métadonnées compilées, comme le noyau les lit.
+     */
+    public function testEveryUpdateOperationRefusesAnUpdateByIri(): void
+    {
+        $container = self::getContainer();
+        $metadata = $container->get('api_platform.metadata.resource.metadata_collection_factory');
+        $updates = [];
+        $allowing = [];
+        foreach ($container->get('api_platform.metadata.resource.name_collection_factory')->create() as $resourceClass) {
+            foreach ($metadata->create($resourceClass) as $resource) {
+                foreach ($resource->getOperations() ?? [] as $name => $operation) {
+                    if (\in_array($operation->getMethod(), ['PUT', 'PATCH'], true)) {
+                        $updates[] = $name;
+                        if (false !== ($operation->getDenormalizationContext()['api_allow_update'] ?? null)) {
+                            $allowing[] = $name;
+                        }
+                    }
+                }
+            }
+        }
+
+        self::assertNotEmpty($updates, 'Aucune opération PUT/PATCH recensée : le garde ne garderait rien.');
+        self::assertSame([], $allowing, 'Ces opérations laissent un `id` du corps partir en résolution d\'IRI (critical).');
+    }
+
+    /**
      * Le contre-exemple, sans lequel le correctif pourrait n'être qu'un 400
      * posé sur tout : un corps **bien formé et bien typé** mais invalide reste
      * un 422 de validation, avec ses violations par champ.

@@ -32,8 +32,9 @@ api_platform:
     #  1. déclarer `exception_to_status` **remplace** la valeur par défaut
     #     d'API Platform, elle ne la complète pas (`->defaultValue([...])` dans
     #     Configuration::addExceptionToStatusSection, vendor/api-platform/symfony/
-    #     Bundle/DependencyInjection/Configuration.php:622). Les trois entrées
-    #     par défaut sont donc rétablies en fin de liste ci-dessous ;
+    #     Bundle/DependencyInjection/Configuration.php:622). Deux des trois
+    #     entrées par défaut sont donc rétablies en fin de liste ci-dessous,
+    #     la troisième retirée à dessein (issue #373) ;
     #  2. la résolution prend la **première** entrée qui correspond, dans
     #     l'ordre de déclaration, et `is_a($exception, $class, true)` reconnaît
     #     aussi les interfaces et les classes parentes (ErrorListener::getStatusCode,
@@ -137,9 +138,11 @@ api_platform:
         App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException: 429
         # Corps de requête que le Serializer refuse (JSON illisible, racine qui
         # n'est pas un objet), requalifié à la seule frontière de la
-        # désérialisation par MalformedRequestBodyProvider (issue #355) : le
-        # même 400 que l'entrée large ci-dessous, mais une classe précise, qui
-        # porte son propre `log_level` sans baisser l'encodage de sortie.
+        # désérialisation par MalformedRequestBodyProvider (issue #355) : une
+        # classe précise, qui porte son propre `log_level` sans baisser
+        # l'encodage de sortie, que l'entrée large ci-dessous rend en 500
+        # depuis l'issue #360. Elle reçoit aussi un `id` dans le corps d'un PUT
+        # (`api_allow_update: false`, plus bas, issue #373).
         App\Shared\Infrastructure\ApiPlatform\MalformedRequestBodyException: 400
         # --- Défauts d'API Platform, rétablis (audit A15 / T5.1) ---
         # Écrasés depuis toujours par la simple présence de la clé ci-dessus.
@@ -171,8 +174,29 @@ api_platform:
         # que sur un 5xx. Volontairement en dernier : c'est l'entrée la plus
         # large de la liste.
         Symfony\Component\Serializer\Exception\ExceptionInterface: 500
-        ApiPlatform\Metadata\Exception\InvalidArgumentException: 400
-        Doctrine\ORM\OptimisticLockException: 409
+        # Même raisonnement, même 500 (issue #373) : API Platform la rend en
+        # 400, sous-classe ItemNotFoundException comprise. Le seul chemin
+        # client trouvé — un `id` dans le corps d'un PUT, parti en résolution
+        # d'IRI — sort désormais en MalformedRequestBodyException
+        # (`api_allow_update: false`, plus bas). Reste la pagination (aucun
+        # provider de src/ ne pagine : `?page=0` répond 200), l'IriConverter
+        # (aucune ressource n'accepte d'IRI du client ; une IRI impossible à
+        # générer est un défaut de configuration) et la lecture des
+        # métadonnées : des défauts du serveur, en `critical`. Deux chemins
+        # client la rouvriraient, en 500 : la pagination, le jour où un
+        # provider paginera (`?page=0`), et une relation en `writableLink`,
+        # pour laquelle AbstractItemNormalizer::denormalizeRelation repose
+        # `api_allow_update: true` (`{"rel":{"id":"x"}}`). Leur donner alors
+        # une classe précise, à la #355, avant de les brancher. Ne pas la
+        # remettre à 400.
+        ApiPlatform\Metadata\Exception\InvalidArgumentException: 500
+        # Troisième défaut d'API Platform, `Doctrine\ORM\OptimisticLockException: 409`,
+        # **retiré** (issue #373) : aucune entité n'est versionnée (pas de
+        # #[ORM\Version] dans src/), et la seule levée possible aujourd'hui,
+        # OptimisticLockException::notVersioned(), est une erreur de
+        # programmation — un 500 `critical`, ce que donne l'absence d'entrée.
+        # Le jour où une entité sera versionnée, le conflit concurrent est un
+        # 409 du client : lui donner alors une entrée et un `log_level`.
     defaults:
         stateless: true
         cache_headers:
@@ -190,6 +214,22 @@ api_platform:
         # un objet : MalformedRequestBodyException depuis l'issue #355.
         # MalformedRequestBodyTest épingle les deux frontières.
         collect_denormalization_errors: true
+        # Issue #373 : aucune ressource ne se met à jour par IRI. Sans ce
+        # réglage, un `id` dans le corps d'un PUT (« standard » en API
+        # Platform 4 : aucun objet à peupler) partait en résolution d'IRI
+        # (ItemNormalizerTrait::updateObjectToPopulate) et sortait en
+        # ItemNotFoundException pour un `id` inconnu, 400 sous l'entrée large
+        # d'API Platform mais journalisée `critical`. Avec lui, le Serializer
+        # refuse la clé (« Update is not allowed for this operation »), d'où
+        # MalformedRequestBodyException, 400 en `info`, quel que soit l'`id`.
+        # Un `denormalizationContext` déclaré sur une ressource ou une
+        # opération est **fusionné** avec ce défaut
+        # (OperationDefaultsTrait::addGlobalDefaults) ; seuls un tableau vide
+        # ou un `api_allow_update: true` explicite le neutralisent, ce que
+        # MalformedRequestBodyTest::testEveryUpdateOperationRefusesAnUpdateByIri
+        # verrait sur chaque PUT/PATCH.
+        denormalization_context:
+            api_allow_update: false
 
 when@prod:
     api_platform:
