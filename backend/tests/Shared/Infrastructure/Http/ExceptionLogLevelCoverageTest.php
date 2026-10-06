@@ -69,6 +69,17 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     private const array MAPPINGS = ['framework' => 'exceptions', 'api_platform' => 'exception_to_status'];
 
     /**
+     * Les mêmes mappings, cherchés dans le texte d'une configuration PHP : au
+     * format tableau, ou au format config builder (FrameworkConfig::exception(),
+     * ApiPlatformConfig::exceptionToStatus()).
+     */
+    private const array PHP_MAPPING_PATTERNS = [
+        'framework.exceptions' => '{[\'"]exceptions[\'"]|->exception\(}',
+        'api_platform.exception_to_status' => '{[\'"]exception_to_status[\'"]|->exceptionToStatus\(}',
+    ];
+    private const string PHP_ENVIRONMENT_CONDITION = '{when@|->env\(}';
+
+    /**
      * Entrées larges, rétablies depuis les défauts d'API Platform en fin de
      * `exception_to_status` (audit A15). Leur baisser le niveau abaisserait
      * aussi celui de vrais défauts serveur — un JSON de sortie non encodable,
@@ -357,8 +368,10 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     public function testTheEnvironmentScanFindsEveryFormTheKernelLoads(): void
     {
         self::assertSame([
+            'packages/api_platform.php : api_platform.exception_to_status (PHP, sous condition d\'environnement)',
             'packages/framework.yaml : when@prod framework.exceptions',
             'packages/prod/api_platform.yaml : api_platform.exception_to_status',
+            'packages/prod/framework.php : framework.exceptions (PHP, sous condition d\'environnement)',
             'services.yaml : when@dev api_platform.exception_to_status',
             'services_preprod.yaml : framework.exceptions',
         ], $this->mappingsOutsideTheTestEnvironment(self::FIXTURE_CONFIG));
@@ -367,25 +380,20 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     /**
      * Les trois formes que le noyau charge selon l'environnement
      * (KernelTrait::configureContainer) : un bloc `when@<env>` d'un fichier
-     * commun, un fichier de config/packages/<env>/, un services_<env>.yaml.
-     * YAML seulement : le projet n'a pas de configuration PHP.
+     * commun, un fichier de config/packages/<env>/, un services_<env>.*.
+     *
+     * Le YAML est lu clé par clé. Le PHP, qui ne se lit pas sans s'exécuter,
+     * l'est textuellement : un fichier propre à un autre environnement que
+     * `test`, ou qui porte une condition d'environnement, est signalé s'il
+     * mentionne l'un des mappings. Une condition qui ne viserait que `test`
+     * serait signalée aussi : l'erreur va dans le sens prudent.
      *
      * @return list<string> « fichier : clé » des déclarations hors `test`
      */
     private function mappingsOutsideTheTestEnvironment(string $configDirectory): array
     {
-        $files = [];
-        foreach (['/packages/*.yaml', '/packages/*/*.yaml', '/services*.yaml'] as $pattern) {
-            $matching = glob($configDirectory.$pattern);
-            if (false === $matching) {
-                throw new \LogicException(\sprintf('glob() a échoué sur %s%s.', $configDirectory, $pattern));
-            }
-            array_push($files, ...$matching);
-        }
-
         $found = [];
-        foreach ($files as $file) {
-            $relative = substr($file, \strlen($configDirectory) + 1);
+        foreach ($this->configFiles($configDirectory, 'yaml') as $relative => $file) {
             $config = Yaml::parseFile($file, Yaml::PARSE_CUSTOM_TAGS);
             if (!\is_array($config)) {
                 continue;
@@ -398,9 +406,65 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
                 }
             }
         }
+        foreach ($this->configFiles($configDirectory, 'php') as $relative => $file) {
+            array_push($found, ...$this->phpMappingsOutsideTheTestEnvironment($relative, (string) file_get_contents($file)));
+        }
         sort($found);
 
         return $found;
+    }
+
+    /**
+     * @return array<string, string> chemin relatif => chemin absolu
+     */
+    private function configFiles(string $configDirectory, string $extension): array
+    {
+        $files = [];
+        foreach (['/packages/*.', '/packages/*/*.', '/services*.'] as $pattern) {
+            $matching = glob($configDirectory.$pattern.$extension);
+            if (false === $matching) {
+                throw new \LogicException(\sprintf('glob() a échoué sur %s%s%s.', $configDirectory, $pattern, $extension));
+            }
+            foreach ($matching as $file) {
+                $files[substr($file, \strlen($configDirectory) + 1)] = $file;
+            }
+        }
+
+        return $files;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function phpMappingsOutsideTheTestEnvironment(string $relativePath, string $code): array
+    {
+        $environment = $this->environmentOf($relativePath);
+        $outsideTest = null === $environment ? 1 === preg_match(self::PHP_ENVIRONMENT_CONDITION, $code) : 'test' !== $environment;
+        if (!$outsideTest) {
+            return [];
+        }
+
+        $found = [];
+        foreach (self::PHP_MAPPING_PATTERNS as $mapping => $pattern) {
+            if (1 === preg_match($pattern, $code)) {
+                $found[] = $relativePath.' : '.$mapping.' (PHP, sous condition d\'environnement)';
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * @return ?string l'environnement d'un fichier qui lui est propre, null pour un fichier commun
+     */
+    private function environmentOf(string $relativePath): ?string
+    {
+        if (1 === preg_match('{^packages/([^/]+)/[^/]+\.(?:yaml|php)$}', $relativePath, $matches)
+            || 1 === preg_match('{^services_([^/]+)\.(?:yaml|php)$}', $relativePath, $matches)) {
+            return $matches[1];
+        }
+
+        return null;
     }
 
     /**
@@ -411,9 +475,9 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     private function blocksOutsideTheTestEnvironment(string $relativePath, array $config): array
     {
         // Un fichier propre à un environnement, en entier.
-        if (1 === preg_match('{^packages/([^/]+)/[^/]+\.yaml$}', $relativePath, $matches)
-            || 1 === preg_match('{^services_([^/]+)\.yaml$}', $relativePath, $matches)) {
-            return 'test' === $matches[1] ? [] : ['' => $config];
+        $environment = $this->environmentOf($relativePath);
+        if (null !== $environment) {
+            return 'test' === $environment ? [] : ['' => $config];
         }
 
         // Un fichier commun : ses blocs `when@<env>`, sauf `when@test`.

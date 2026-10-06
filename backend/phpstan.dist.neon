@@ -17,9 +17,13 @@ parameters:
     # analyse pas. src/Kernel.php : getAllowedEnvs() est un faux positif
     # method.unused (appele par KernelTrait de Symfony, chaine de trait que
     # PHPStan ne suit pas).
+    # Configuration fixture d'ExceptionLogLevelCoverageTest (issue #357) : lue
+    # comme du texte, jamais exécutée ; son format config builder vise des
+    # classes (Symfony\Config\*) que le conteneur ne génère pas ici.
     excludePaths:
         - tests/bootstrap.php
         - src/Kernel.php
+        - tests/Shared/Infrastructure/Http/Fixtures/EnvironmentConfig
 
     # Charge le .env pour que l'analyse voie les memes variables qu'a l'execution.
     bootstrapFiles:
