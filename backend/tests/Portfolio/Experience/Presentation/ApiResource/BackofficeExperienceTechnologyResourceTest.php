@@ -10,6 +10,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Uid\Uuid;
@@ -182,6 +183,86 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         $client->request('GET', '/api/experience/technologies');
         $publicList = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame(['PHP'], array_column($publicList, 'name'));
+    }
+
+    /**
+     * Issue #372 : littéraux JSON bruts, que `json_encode` ne sait pas
+     * produire — `1e999` est un nombre JSON valide que `json_decode` rend en
+     * `float(INF)`. Avant correction, INF passait `PositiveOrZero`, la ligne
+     * était persistée et la route publique répondait 500 jusqu'à une
+     * correction à la main en base.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function outOfRangeYearsLiterals(): iterable
+    {
+        yield 'non fini (1e999)' => ['1e999'];
+        yield 'non fini négatif (-1e999)' => ['-1e999'];
+        yield 'au-delà de 100 ans' => ['100.5'];
+        yield 'négatif' => ['-1'];
+    }
+
+    #[DataProvider('outOfRangeYearsLiterals')]
+    public function testPostWithYearsOutOfRangeIsA422NamingYearsAndWritesNothing(string $yearsLiteral): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('POST', '/api/backoffice/experience/technologies', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: sprintf('{"name":"Rust","years":%s}', $yearsLiteral));
+
+        $this->assertViolationOnYears($client);
+        self::assertSame(0, $this->countTechnologies());
+
+        $this->assertPublicListStillServes($client);
+    }
+
+    #[DataProvider('outOfRangeYearsLiterals')]
+    public function testPutWithYearsOutOfRangeIsA422NamingYearsAndLeavesTheRowUntouched(string $yearsLiteral): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $technology = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register('Docker', 6.5, 'docker', null);
+
+        $client->request('PUT', sprintf('/api/backoffice/experience/technologies/%s', $technology->getId()->toRfc4122()), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: sprintf('{"name":"Docker","years":%s}', $yearsLiteral));
+
+        $this->assertViolationOnYears($client);
+        $stored = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->fetchOne('SELECT years FROM experience_technology WHERE name = ?', ['Docker']);
+        self::assertEquals(6.5, $stored);
+
+        $this->assertPublicListStillServes($client);
+    }
+
+    private function assertViolationOnYears(KernelBrowser $client): void
+    {
+        self::assertResponseStatusCodeSame(422);
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame(['years'], array_column($body['violations'], 'propertyPath'));
+    }
+
+    private function countTechnologies(): int
+    {
+        $count = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->fetchOne('SELECT COUNT(*) FROM experience_technology');
+        self::assertIsInt($count);
+
+        return $count;
+    }
+
+    /** Le symptôme de l'issue : la route publique anonyme tombait en 500. */
+    private function assertPublicListStillServes(KernelBrowser $client): void
+    {
+        $client->getCookieJar()->clear();
+        $client->request('GET', '/api/experience/technologies');
+        self::assertResponseIsSuccessful();
     }
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string

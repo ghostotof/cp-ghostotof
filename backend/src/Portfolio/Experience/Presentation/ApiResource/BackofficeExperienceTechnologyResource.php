@@ -60,7 +60,13 @@ final class BackofficeExperienceTechnologyResource
         #[Assert\NotBlank]
         #[Assert\Length(max: 180)]
         public string $name = '',
+        /**
+         * Miroir de la garde d'ExperienceTechnology (issue #372), pour que le
+         * refus sorte en 422 nommant `years`. `LessThanOrEqual` refuse aussi
+         * INF (`1e999` en JSON), que `PositiveOrZero` seul laissait passer.
+         */
         #[Assert\PositiveOrZero]
+        #[Assert\LessThanOrEqual(ExperienceTechnology::MAX_YEARS)]
         public float $years = 0.0,
         #[Assert\Length(max: 60)]
         public ?string $iconKey = null,

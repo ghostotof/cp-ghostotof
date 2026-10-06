@@ -47,6 +47,7 @@ class ExperienceTechnology
 
     #[ORM\Column]
     #[Assert\PositiveOrZero]
+    #[Assert\LessThanOrEqual(self::MAX_YEARS)]
     private float $years;
 
     #[ORM\Column(length: 60, nullable: true)]
