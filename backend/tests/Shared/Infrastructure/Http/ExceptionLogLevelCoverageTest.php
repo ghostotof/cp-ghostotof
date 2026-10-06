@@ -164,21 +164,35 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     }
 
     /**
+     * Une exception qui reçoit plusieurs statuts, d'une opération à l'autre,
+     * est nommée avec chacun de ceux que son niveau ne respecte pas : corriger
+     * le niveau pour l'un seulement laisserait l'autre en écart.
+     */
+    public function testEveryStatusInBreachIsReported(): void
+    {
+        self::assertSame(['App\\A' => '404 : debug, 503 : debug'], $this->levelViolations(['App\\A' => [404, 503]], ['App\\A' => 'debug']));
+    }
+
+    /**
      * @param array<string, list<int>> $statuses classe => statuts rendus
      * @param array<string, string>    $levels   classe => `log_level`
      *
-     * @return array<string, string> classe => « statut : niveau » hors politique
+     * @return array<string, string> classe => « statut : niveau » hors politique, chacun
      */
     private function levelViolations(array $statuses, array $levels): array
     {
         $violations = [];
         foreach ($statuses as $class => $classStatuses) {
             $level = $levels[$class] ?? null;
+            $breaches = [];
             foreach ($classStatuses as $status) {
                 $allowed = $status < 500 ? self::CLIENT_ERROR_LEVELS : self::SERVER_ERROR_LEVELS;
                 if (null !== $level && !\in_array($level, $allowed, true)) {
-                    $violations[$class] = $status.' : '.$level;
+                    $breaches[] = $status.' : '.$level;
                 }
+            }
+            if ([] !== $breaches) {
+                $violations[$class] = implode(', ', $breaches);
             }
         }
 
