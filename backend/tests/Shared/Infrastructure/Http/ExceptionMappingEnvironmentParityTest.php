@@ -74,6 +74,8 @@ final class ExceptionMappingEnvironmentParityTest extends TestCase
             'prod ≠ test : framework.exceptions[BadFunctionCallException]',
             // packages/framework.yaml, when@test.
             'prod ≠ test : framework.exceptions[LogicException]',
+            // packages/list_form.yaml, forme liste sous when@prod.
+            'prod ≠ test : framework.exceptions[OutOfRangeException]',
             // services_prod.yaml.
             'prod ≠ test : framework.exceptions[OverflowException]',
             // packages/prod/framework.php, au format closure.
@@ -81,6 +83,43 @@ final class ExceptionMappingEnvironmentParityTest extends TestCase
             // packages/framework.yaml, when@prod.
             'prod ≠ test : framework.exceptions[RuntimeException]',
         ], $this->differences(self::FIXTURE_PROJECT));
+    }
+
+    /**
+     * Une valeur paramétrée (`%env(…)%`, `%paramètre%`) se lit à l'identique
+     * dans chaque environnement, mais se résout selon lui : la parité ne la
+     * verrait pas, et le conteneur de test en retiendrait sa valeur à lui. Ces
+     * deux mappings restent donc littéraux.
+     */
+    public function testNoMappingValueIsParameterized(): void
+    {
+        self::assertSame([], $this->parameterized(null), 'Valeur paramétrée dans un mapping d\'exception : l\'écrire en clair.');
+    }
+
+    public function testAParameterizedValueIsFound(): void
+    {
+        self::assertSame(['framework.exceptions[ErrorException]'], $this->parameterized(self::FIXTURE_PROJECT));
+    }
+
+    /**
+     * @return list<string> « extension.clé[classe] » dont une valeur est paramétrée, dans un environnement au moins
+     */
+    private function parameterized(?string $projectDirectory): array
+    {
+        $found = [];
+        foreach (self::MAPPINGS as $extension => $key) {
+            foreach (['test', ...$this->environments()] as $environment) {
+                foreach ($this->declared($environment, $extension, $key, $projectDirectory) as $class => $value) {
+                    if (str_contains((string) json_encode($value), '%')) {
+                        $found[] = \sprintf('%s.%s[%s]', $extension, $key, $class);
+                    }
+                }
+            }
+        }
+        $found = array_values(array_unique($found));
+        sort($found);
+
+        return $found;
     }
 
     /**
@@ -122,8 +161,8 @@ final class ExceptionMappingEnvironmentParityTest extends TestCase
     }
 
     /**
-     * Le mapping que déclare un environnement, ses fragments fusionnés dans
-     * leur ordre de chargement : le dernier l'emporte, entrée par entrée.
+     * Le mapping que déclare un environnement, normalisé et fusionné par la
+     * configuration de l'extension (EnvironmentConfigKernel::declaredMapping).
      *
      * @return array<array-key, mixed> classe => options ou statut
      */
@@ -131,13 +170,6 @@ final class ExceptionMappingEnvironmentParityTest extends TestCase
     {
         $kernel = $this->kernels[$environment.'|'.$projectDirectory] ??= new EnvironmentConfigKernel($environment, $projectDirectory);
 
-        $merged = [];
-        foreach ($kernel->declaredConfig($extension) as $fragment) {
-            if (\is_array($fragment[$key] ?? null)) {
-                $merged = array_replace_recursive($merged, $fragment[$key]);
-            }
-        }
-
-        return $merged;
+        return $kernel->declaredMapping($extension, $key);
     }
 }
