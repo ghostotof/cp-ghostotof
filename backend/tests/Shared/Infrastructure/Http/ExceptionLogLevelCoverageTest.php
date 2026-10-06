@@ -497,6 +497,22 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     }
 
     /**
+     * Le recensement ne lit que les opérations HTTP : celles de GraphQL ne
+     * portent pas d'`exceptionToStatus`, et leurs erreurs suivent un autre
+     * chemin. GraphQL est désactivé (webonyx/graphql-php n'est pas installé),
+     * et la fabrique de métadonnées refuse alors toute opération GraphQL : le
+     * cas n'existe pas aujourd'hui. Ce témoin rougit le jour où il existe
+     * (issue #357).
+     */
+    public function testGraphQlStaysDisabled(): void
+    {
+        self::assertFalse(
+            self::getContainer()->getParameter('api_platform.graphql.enabled'),
+            'GraphQL activé : ses erreurs échappent à ce garde-fou. Étendre le recensement à ses opérations avant de retirer ce témoin.',
+        );
+    }
+
+    /**
      * Le noyau lit #[WithLogLevel] à défaut d'entrée (ErrorListener::resolveLogLevel) :
      * une exception qui le porte, ou en hérite, a un niveau (issue #357). Le
      * projet préfère `framework.exceptions`, pour que le domaine ne dépende pas
