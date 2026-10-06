@@ -242,11 +242,41 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         $this->assertPublicListStillServes($client);
     }
 
+    /**
+     * `-0.0` vaut zéro et passe les bornes, mais `json_encode` le publiait
+     * « -0 » : il doit ressortir en zéro ordinaire, en écriture comme sur la
+     * liste publique.
+     */
+    public function testANegativeZeroIsPublishedAsAPlainZero(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('POST', '/api/backoffice/experience/technologies', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: '{"name":"Rust","years":-0.0}');
+
+        self::assertResponseStatusCodeSame(201);
+        self::assertStringNotContainsString('-0', (string) $client->getResponse()->getContent());
+
+        $client->getCookieJar()->clear();
+        $client->request('GET', '/api/experience/technologies');
+        self::assertStringNotContainsString('-0', (string) $client->getResponse()->getContent());
+    }
+
     private function assertViolationOnYears(KernelBrowser $client): void
     {
         self::assertResponseStatusCodeSame(422);
         $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame(['years'], array_column($body['violations'], 'propertyPath'));
+        // Le message du domaine, en clair pour l'admin, au lieu du
+        // « This value should be… » générique des contraintes de comparaison.
+        self::assertStringStartsWith(
+            'Le temps cumulé doit être un nombre compris entre 0 et 100 ans',
+            $body['violations'][0]['message'],
+        );
     }
 
     private function countTechnologies(): int
