@@ -28,6 +28,9 @@ final class ExperienceTechnologyYearsConstraintTest extends KernelTestCase
     /** SQLSTATE de PostgreSQL pour une contrainte CHECK violée. */
     private const string CHECK_VIOLATION = '23514';
 
+    /** Écart de sondage autour des bornes, représentable sans perte près de 100. */
+    private const float HAIR = 1e-9;
+
     private Connection $connection;
 
     protected function setUp(): void
@@ -47,8 +50,9 @@ final class ExperienceTechnologyYearsConstraintTest extends KernelTestCase
     }
 
     /**
-     * La borne haute est lue sur le Value Object : si l'une des deux bornes
-     * bouge sans l'autre, ce test rougit.
+     * Les bornes sont lues sur le Value Object, et sondées juste au-delà de
+     * chacune (un milliardième d'année) : une contrainte desserrée ou resserrée
+     * d'un cheveu, ou un Value Object qui bougerait seul, fait rougir ce test.
      *
      * @return iterable<string, array{string}>
      */
@@ -57,8 +61,8 @@ final class ExperienceTechnologyYearsConstraintTest extends KernelTestCase
         yield 'Infinity' => ["'Infinity'::float8"];
         yield '-Infinity' => ["'-Infinity'::float8"];
         yield 'NaN, que PostgreSQL range au-dessus de tout nombre' => ["'NaN'::float8"];
-        yield 'négatif' => ['-0.5'];
-        yield 'juste au-delà de la borne du Value Object' => [var_export(ExperienceYears::MAX + 0.5, true)];
+        yield 'juste sous la borne basse' => [var_export(ExperienceYears::MIN - self::HAIR, true)];
+        yield 'juste au-delà de la borne haute' => [var_export(ExperienceYears::MAX + self::HAIR, true)];
     }
 
     #[DataProvider('refusedLiterals')]
@@ -74,7 +78,7 @@ final class ExperienceTechnologyYearsConstraintTest extends KernelTestCase
 
     public function testTheDatabaseAcceptsBothBoundsOfTheValueObject(): void
     {
-        $this->insertTechnologyWithYears('0');
+        $this->insertTechnologyWithYears(var_export(ExperienceYears::MIN, true));
         $this->insertTechnologyWithYears(var_export(ExperienceYears::MAX, true));
 
         self::assertSame(2, $this->connection->fetchOne('SELECT COUNT(*) FROM experience_technology'));

@@ -104,14 +104,14 @@ final class AddExperienceTechnologyCommand extends Command
         $option = $input->getOption('years');
 
         if (null !== $option) {
-            return $this->validateYears($option);
+            return $this->parseYears($option);
         }
 
-        $answer = $io->ask('Temps cumulé (en années, ex. 13.5)', validator: $this->validateYears(...));
+        $answer = $io->ask('Temps cumulé (en années, ex. 13.5)', validator: $this->parseYears(...));
 
         // En non-interactif, ask() rend la valeur par défaut (null) sans
         // passer par le validateur : on l'y soumet ici.
-        return $answer instanceof ExperienceYears ? $answer : $this->validateYears($answer);
+        return $answer instanceof ExperienceYears ? $answer : $this->parseYears($answer);
     }
 
     /**
@@ -121,7 +121,7 @@ final class AddExperienceTechnologyCommand extends Command
      *
      * @throws InvalidExperienceYearsException
      */
-    private function validateYears(mixed $years): ExperienceYears
+    private function parseYears(mixed $years): ExperienceYears
     {
         return ExperienceYears::fromString(\is_string($years) ? $years : '');
     }

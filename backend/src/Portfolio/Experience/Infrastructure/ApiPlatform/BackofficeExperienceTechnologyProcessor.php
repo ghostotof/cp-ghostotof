@@ -36,11 +36,14 @@ final readonly class BackofficeExperienceTechnologyProcessor implements Processo
             return null;
         }
 
+        // Déjà validé par le Callback du DTO : construit une fois pour les deux branches.
+        $years = ExperienceYears::fromFloat($data->years);
+
         if ($operation instanceof Put) {
             $technology = $this->experienceTechnologyAdministrator->update(
                 $this->uriVariableUuid($uriVariables),
                 $data->name,
-                ExperienceYears::fromFloat($data->years),
+                $years,
                 $data->iconKey,
                 $data->relatedTechnologyName,
                 $data->secondary,
@@ -48,7 +51,7 @@ final readonly class BackofficeExperienceTechnologyProcessor implements Processo
         } elseif ($operation instanceof Post) {
             $technology = $this->experienceTechnologyRegistrar->register(
                 $data->name,
-                ExperienceYears::fromFloat($data->years),
+                $years,
                 $data->iconKey,
                 $data->relatedTechnologyName,
                 $data->secondary,

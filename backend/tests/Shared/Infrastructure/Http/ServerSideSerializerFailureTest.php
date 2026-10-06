@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Http;
 
+use App\Tests\Support\LiftsExperienceYearsConstraint;
 use App\Tests\Support\ReadsAllChannelsLog;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Level;
@@ -32,6 +33,7 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class ServerSideSerializerFailureTest extends WebTestCase
 {
+    use LiftsExperienceYearsConstraint;
     use ReadsAllChannelsLog;
 
     protected function setUp(): void
@@ -42,11 +44,8 @@ final class ServerSideSerializerFailureTest extends WebTestCase
     protected function tearDown(): void
     {
         $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
-        // Annule la ligne `NaN` et rend la contrainte levée pour l'écrire,
-        // cf. clientWithANonEncodableTechnology().
-        if ($connection->isTransactionActive()) {
-            $connection->rollBack();
-        }
+        // Annule la ligne `NaN` et rend la contrainte levée pour l'écrire.
+        self::restoreExperienceYearsConstraint($connection);
         $connection->executeStatement('DELETE FROM experience_technology');
         parent::tearDown();
     }
@@ -132,11 +131,8 @@ final class ServerSideSerializerFailureTest extends WebTestCase
     /**
      * Une technologie dont la durée vaut `NaN`, écrite en SQL : le JSON n'a
      * pas de littéral `NaN`, aucune requête ne peut l'apporter. Depuis #372,
-     * la base elle-même la refuse (`chk_experience_technology_years`) : la
-     * ligne ne s'écrit qu'en levant la contrainte, dans une transaction que
-     * le tearDown annule — PostgreSQL rend le DDL transactionnel, elle revient
-     * donc même si le test échoue. Le client lit sur la même connexion
-     * (`disableReboot`), donc dans cette transaction. Ce que ce test épingle
+     * la base elle-même la refuse : la ligne ne s'écrit qu'en levant la
+     * contrainte (LiftsExperienceYearsConstraint). Ce que ce test épingle
      * reste vrai : si une valeur non encodable atteint un jour la sortie,
      * c'est un défaut serveur, et il sort en 500.
      *
@@ -147,8 +143,7 @@ final class ServerSideSerializerFailureTest extends WebTestCase
         $client = self::createClient($options);
         $client->disableReboot();
         $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
-        $connection->beginTransaction();
-        $connection->executeStatement('ALTER TABLE experience_technology DROP CONSTRAINT chk_experience_technology_years');
+        self::liftExperienceYearsConstraint($connection);
         $connection->executeStatement(
             "INSERT INTO experience_technology (id, name, years) VALUES (uuidv7(), 'PHP', 'NaN'::float8)",
         );

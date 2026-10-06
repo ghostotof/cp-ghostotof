@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Migrations;
 
+use App\Portfolio\Experience\Infrastructure\Doctrine\ExperienceTechnologyRepository;
+use App\Tests\Support\LiftsExperienceYearsConstraint;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
@@ -26,6 +28,8 @@ use Symfony\Component\ErrorHandler\BufferingLogger;
  */
 final class Version20261006120000Test extends KernelTestCase
 {
+    use LiftsExperienceYearsConstraint;
+
     private const string MIGRATION = 'DoctrineMigrations\Version20261006120000';
 
     private Connection $connection;
@@ -34,16 +38,13 @@ final class Version20261006120000Test extends KernelTestCase
     {
         self::bootKernel();
         $this->connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
-        $this->connection->beginTransaction();
+        self::liftExperienceYearsConstraint($this->connection);
         $this->connection->executeStatement('DELETE FROM experience_technology');
-        $this->connection->executeStatement(
-            'ALTER TABLE experience_technology DROP CONSTRAINT IF EXISTS chk_experience_technology_years',
-        );
     }
 
     protected function tearDown(): void
     {
-        $this->connection->rollBack();
+        self::restoreExperienceYearsConstraint($this->connection);
         parent::tearDown();
     }
 
@@ -88,7 +89,7 @@ final class Version20261006120000Test extends KernelTestCase
 
         $warnings = array_values(array_filter(
             $logger->cleanLogs(),
-            static fn (array $log): bool => LogLevel::WARNING === $log[0],
+            static fn (mixed $log): bool => \is_array($log) && LogLevel::WARNING === $log[0],
         ));
         $messages = array_column($warnings, 1);
         sort($messages);
@@ -184,7 +185,8 @@ final class Version20261006120000Test extends KernelTestCase
     private function constraintCount(): int
     {
         $count = $this->connection->fetchOne(
-            "SELECT COUNT(*) FROM pg_constraint WHERE conname = 'chk_experience_technology_years' AND contype = 'c'",
+            "SELECT COUNT(*) FROM pg_constraint WHERE conname = ? AND contype = 'c'",
+            [ExperienceTechnologyRepository::YEARS_CHECK_CONSTRAINT],
         );
         self::assertIsInt($count);
 

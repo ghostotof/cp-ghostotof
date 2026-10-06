@@ -19,10 +19,11 @@ namespace App\Portfolio\Experience\Domain\Exception;
  */
 final class InvalidExperienceYearsException extends \DomainException
 {
-    public static function outOfRange(float $years, float $maxYears): self
+    public static function outOfRange(float $years, float $minYears, float $maxYears): self
     {
         return new self(sprintf(
-            'Le temps cumulé doit être un nombre compris entre 0 et %s ans (reçu : %s).',
+            'Le temps cumulé doit être un nombre compris entre %s et %s ans (reçu : %s).',
+            $minYears,
             $maxYears,
             // var_export plutôt que %s : la valeur exacte (%s arrondit à 14
             // chiffres) et « NAN » sans le warning de PHP 8.5 sur sa conversion.

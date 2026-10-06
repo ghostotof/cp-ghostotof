@@ -259,11 +259,11 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         ], content: '{"name":"Rust","years":-0.0}');
 
         self::assertResponseStatusCodeSame(201);
-        self::assertYearsPublishedUnsigned((string) $client->getResponse()->getContent());
+        $this->assertYearsPublishedUnsigned((string) $client->getResponse()->getContent());
 
         $client->getCookieJar()->clear();
         $client->request('GET', '/api/experience/technologies');
-        self::assertYearsPublishedUnsigned((string) $client->getResponse()->getContent());
+        $this->assertYearsPublishedUnsigned((string) $client->getResponse()->getContent());
     }
 
     /**
@@ -271,7 +271,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
      * v7, dont un sur douze environ contient « -0 » (le décodage, lui,
      * confondrait -0.0 et 0.0, égaux pour PHP).
      */
-    private static function assertYearsPublishedUnsigned(string $rawJson): void
+    private function assertYearsPublishedUnsigned(string $rawJson): void
     {
         self::assertMatchesRegularExpression('/"years":\s*0/', $rawJson);
         self::assertDoesNotMatchRegularExpression('/"years":\s*-/', $rawJson);

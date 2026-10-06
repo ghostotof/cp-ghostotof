@@ -15,6 +15,14 @@ use Symfony\Component\Uid\Uuid;
  */
 class ExperienceTechnologyRepository extends ServiceEntityRepository implements ExperienceTechnologyRepositoryInterface
 {
+    /**
+     * Contrainte CHECK qui borne `years` en base (issue #372), posée par
+     * Version20261006120000 — qui l'écrit en dur, une migration étant un
+     * historique figé. Nommée ici pour que le code et les tests n'en
+     * recopient pas le nom.
+     */
+    public const string YEARS_CHECK_CONSTRAINT = 'chk_experience_technology_years';
+
     public function __construct(ManagerRegistry $registry)
     {
         parent::__construct($registry, ExperienceTechnology::class);

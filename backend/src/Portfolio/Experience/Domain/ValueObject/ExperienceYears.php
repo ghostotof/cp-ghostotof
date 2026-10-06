@@ -18,6 +18,9 @@ use App\Portfolio\Experience\Domain\Exception\InvalidExperienceYearsException;
  */
 final readonly class ExperienceYears
 {
+    /** Une technologie tout juste abordée : zéro est une durée légitime. */
+    public const float MIN = 0.0;
+
     /**
      * Assez large pour ne jamais gêner une vraie saisie, assez serrée pour
      * refuser l'absurde qu'une page publique afficherait tel quel.
@@ -34,9 +37,9 @@ final readonly class ExperienceYears
     public static function fromFloat(float $years): self
     {
         // `is_finite()` d'abord : NaN rend fausse toute comparaison, il
-        // passerait donc entre `< 0` et `> MAX` sans elle.
-        if (!is_finite($years) || $years < 0.0 || $years > self::MAX) {
-            throw InvalidExperienceYearsException::outOfRange($years, self::MAX);
+        // passerait donc entre `< MIN` et `> MAX` sans elle.
+        if (!is_finite($years) || $years < self::MIN || $years > self::MAX) {
+            throw InvalidExperienceYearsException::outOfRange($years, self::MIN, self::MAX);
         }
 
         // -0.0 passe la borne basse (il vaut 0) mais `json_encode` le publie
