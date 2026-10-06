@@ -1,0 +1,10 @@
+# Fixture d'ExceptionLogLevelCoverageTest (issue #357), chargée par
+# ExtraConfigKernel après toute la configuration de l'application : une entrée
+# déclarée ailleurs que dans framework.yaml, qui en surcharge une et en ajoute
+# une autre. La configuration compilée doit porter les deux.
+framework:
+    exceptions:
+        App\Security\User\Domain\Exception\CpgUserNotFoundException:
+            log_level: warning
+        DomainException:
+            log_level: info

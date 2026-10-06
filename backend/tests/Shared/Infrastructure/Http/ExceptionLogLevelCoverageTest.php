@@ -6,9 +6,11 @@ namespace App\Tests\Shared\Infrastructure\Http;
 
 use ApiPlatform\Metadata\Exception\InvalidArgumentException as ApiPlatformInvalidArgumentException;
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
+use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Shared\Domain\Exception\HasProblemType;
 use App\Tests\Support\CompiledExceptionConfig;
 use App\Tests\Support\DeclaredClasses;
+use App\Tests\Support\ExtraConfigKernel;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\ExceptionToStatusFixtureResource;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\AttributedFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\InheritingFixtureException;
@@ -18,6 +20,7 @@ use Doctrine\ORM\OptimisticLockException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
+use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
 use Symfony\Component\Yaml\Yaml;
 
@@ -57,6 +60,8 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     private const string FIXTURE_SOURCES = __DIR__.'/Fixtures/LogLevelSources';
     private const string CONFIG = __DIR__.'/../../../../config';
     private const string FIXTURE_CONFIG = __DIR__.'/Fixtures/EnvironmentConfig';
+    private const string EXTRA_CONFIG = __DIR__.'/Fixtures/ExtraConfig/exceptions.yaml';
+    private const string EXTRA_CONFIG_OPTION = 'extra_config';
 
     /**
      * Les deux mappings que ce garde-fou lit compilés : extension => clé.
@@ -95,6 +100,21 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
      */
     private const array CLIENT_ERROR_LEVELS = ['info', 'notice', 'warning'];
     private const array SERVER_ERROR_LEVELS = ['warning', 'error', 'critical'];
+
+    /**
+     * L'option `extra_config` de bootKernel() démarre le noyau avec un fichier
+     * de configuration de plus (ExtraConfigKernel). Le noyau est éteint après
+     * chaque test (KernelTestCase::tearDown) : les autres tests retrouvent le
+     * noyau de l'application.
+     *
+     * @param array<mixed> $options
+     */
+    protected static function createKernel(array $options = []): KernelInterface
+    {
+        $extraConfig = $options[self::EXTRA_CONFIG_OPTION] ?? null;
+
+        return \is_string($extraConfig) ? new ExtraConfigKernel($extraConfig) : parent::createKernel($options);
+    }
 
     public function testEveryExceptionTheApiRendersHasALogLevel(): void
     {
@@ -292,6 +312,23 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     private function withHttpStatus(string $directory): array
     {
         return CompiledExceptionConfig::withHttpStatus(self::getContainer()->get('exception_listener'), DeclaredClasses::all($directory));
+    }
+
+    /**
+     * La lecture compilée elle-même (issue #357) : une entrée déclarée dans un
+     * autre fichier de configuration, qui en surcharge une et en ajoute une
+     * autre, doit apparaître dans ce que lit le garde-fou. Le fichier est
+     * chargé par un noyau dédié, jamais par la vraie configuration ; une
+     * lecture de framework.yaml par Yaml::parseFile ne verrait ni l'une ni
+     * l'autre.
+     */
+    public function testAnEntryDeclaredInAnotherConfigFileIsRead(): void
+    {
+        self::bootKernel([self::EXTRA_CONFIG_OPTION => self::EXTRA_CONFIG]);
+        $levels = $this->logLevelsOf(CompiledExceptionConfig::exceptionsMapping(self::getContainer()->get('exception_listener')));
+
+        self::assertSame('warning', $levels[CpgUserNotFoundException::class] ?? null, 'La surcharge déclarée ailleurs n\'est pas lue.');
+        self::assertSame('info', $levels[\DomainException::class] ?? null, 'L\'entrée déclarée ailleurs n\'est pas lue.');
     }
 
     /**
