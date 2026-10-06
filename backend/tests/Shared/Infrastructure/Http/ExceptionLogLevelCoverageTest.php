@@ -6,6 +6,7 @@ namespace App\Tests\Shared\Infrastructure\Http;
 
 use ApiPlatform\Metadata\Exception\InvalidArgumentException as ApiPlatformInvalidArgumentException;
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
+use App\Contact\Presentation\ApiResource\ContactMessageResource;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Shared\Domain\Exception\HasProblemType;
 use App\Tests\Support\CompiledExceptionConfig;
@@ -566,9 +567,13 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
         $listener = $container->get('exception_listener');
         /** @var array<string, int> $global */
         $global = $container->getParameter('api_platform.exception_to_status');
+        $resourceClasses = iterator_to_array($container->get('api_platform.metadata.resource.name_collection_factory')->create(), false);
+        // Une découverte qui ne trouverait rien laisserait les garde-fous verts
+        // pour rien : une ressource connue doit y figurer.
+        self::assertContains(ContactMessageResource::class, $resourceClasses, 'La découverte des ressources API Platform ne trouve plus ContactMessageResource : les exceptionToStatus des opérations ne sont plus lus.');
         $mappings = CompiledExceptionConfig::apiPlatformMappings(
             $container->get('api_platform.metadata.resource.metadata_collection_factory'),
-            $container->get('api_platform.metadata.resource.name_collection_factory')->create(),
+            $resourceClasses,
             $global,
         );
         $problems = array_values(array_filter(
