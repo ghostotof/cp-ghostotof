@@ -92,9 +92,12 @@ paths:
   the first match —; and justified ways out only (`EXEMPT`: the two broad API Platform defaults below,
   which stay `critical`; `JUSTIFIED_ENTRIES`: the 415 of #320). **An `EXEMPT` entry is exempt from the
   `log_level` entry only, never from the status/level check** (issue #373): it is still judged at the
-  kernel's default `critical`, hence at a 5xx. A key that is an interface or an abstract class
-  (`Serializer\ExceptionInterface`) is judged too, through a PHPUnit stub handed to `resolveLogLevel` —
-  before #373 it escaped the check, which is what really let #360 live.
+  kernel's default `critical`, hence at a 5xx; `testTheLevelCheckJudgesEveryExemptedEntry` locks that in.
+  An `exception_to_status` key that is an interface or an abstract class (`Serializer\ExceptionInterface`)
+  is judged too, through a PHPUnit stub handed to `resolveLogLevel` — before #373 it escaped the check,
+  which is what really let #360 live. Not covered: an interface or abstract class given a `status_code` in
+  `framework.exceptions` (its implementations are not in `src/`, so nothing lists it as rendered) — don't
+  write one.
   **Both maps are read compiled, never parsed from YAML** (issue #357): `tests/Support/CompiledExceptionConfig`
   reads the `exception_listener` mapping, the `api_platform.exception_to_status` parameter and the
   resource metadata from the test container, so an entry from another config file or a `when@test`
@@ -160,10 +163,13 @@ paths:
   went to IRI resolution and came out 400 + `critical`. `defaults.denormalization_context.api_allow_update:
   false` now makes the Serializer refuse it (`MalformedRequestBodyException`, `info`), and
   `MalformedRequestBodyTest::testEveryUpdateOperationRefusesAnUpdateByIri` checks it holds on every compiled
-  PUT/PATCH — a `denormalizationContext` declared on a resource or an operation **replaces** that default, so
-  it must repeat it. What is left for the broad entry is server faults (IRI generation, metadata), hence
-  500; **pagination** would reach it from a client (`?page=0`) the day a provider paginates — give that
-  case its own class first, never move the entry back to 400. When audit A15 restored them, unparsable JSON or a wrongly-typed field
+  PUT/PATCH — a `denormalizationContext` declared on a resource or an operation is **merged** with that
+  default (`OperationDefaultsTrait::addGlobalDefaults`), but an empty `[]` or an explicit
+  `api_allow_update: true` neutralizes it. What is left for the broad entry is server faults (IRI
+  generation, metadata), hence 500. Two client paths would reopen it: **pagination** (`?page=0`) the day a
+  provider paginates, and a **`writableLink` relation**, for which `AbstractItemNormalizer::denormalizeRelation`
+  sets `api_allow_update: true` again — give either case its own class first, never move the entry back
+  to 400. When audit A15 restored them, unparsable JSON or a wrongly-typed field
   answered **500 on every POST, public ones included**, i.e. an anonymous caller could manufacture 500s at
   will and drown real server errors in the logs; the Serializer's default 400 was the cure then. #239 and
   #355 have since given every client case its own class, so what still reaches that entry is a server
@@ -172,7 +178,7 @@ paths:
   and interface keys since issue #373 (see above): both blind spots had let #360 live.
   And resolution takes the **first matching entry**, with
   `is_a()` matching interfaces and parents too, so a broad entry must stay **below** the precise ones: add a
-  new exception *above* those three restored defaults, never after. Since 2026-09-22 (issue #239)
+  new exception *above* those two restored defaults, never after. Since 2026-09-22 (issue #239)
   `defaults.collect_denormalization_errors: true` narrowed what the Serializer's 400 covered: a **wrongly-typed field**
   (`{"name":123}`) is collected instead of aborting the deserialization and comes out as a **422 with
   `violations` naming the field**, the same shape the admin forms already render for an `Assert`; only
