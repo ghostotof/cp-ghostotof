@@ -118,14 +118,23 @@ paths:
   `api_platform.state_provider.deserialize` and, **on an operation that deserializes only**, turns the
   Serializer's `UnexpectedValueException` family — the only one a client can trigger — into
   `MalformedRequestBodyException` (400, `info`): unreadable JSON, and valid JSON whose root is not an
-  object (`123`, `null`, `"x"`), which is *not* collected as a 422. A server fault raised at the same step
+  object (`123`, `null`, `"x"`), which is *not* collected as a 422 — plus, since #360, two precise classes
+  of its `RuntimeException` family that only a body can cause and no operation triggers today:
+  `ExtraAttributesException` (`allow_extra_attributes: false`) and `MissingConstructorArgumentsException`
+  (`collect_denormalization_errors` off); with the broad entry at 500, a context change would otherwise hand
+  anonymous callers a `critical` 500. Never `RuntimeException` itself. A server fault raised at the same step
   (`LogicException`, `MappingException`, an `UnsupportedFormatException` for a negotiated format with no
   encoder) passes through untouched and stays a `critical` 500 — never widen the `catch` to
-  `Serializer\ExceptionInterface`. The broad entry keeps covering the output side (a non-encodable
-  response, invalid UTF-8 in the database), a server fault that must stay `critical`: never give it a
-  `log_level`, and never move the conversion to the JSON decoder, which also decodes internal data. The
-  `UnsupportedFormatException`s of `var/log/test.log` are output-side too: `GET /api`, the Hydra
-  entrypoint serialized as `jsonld` (not a declared format), disabled in prod (`enable_entrypoint: false`).
+  `Serializer\ExceptionInterface`. The broad entry keeps covering the output side only (a non-encodable
+  response — a `NaN` in a `double precision` column; invalid UTF-8 never reaches the `UTF8` database —,
+  a misconfigured Serializer, a negotiated format with no encoder): server faults, so it maps to **500**
+  since issue #360, **not** API Platform's default 400 — never "restore" it, `ServerSideSerializerFailureTest`
+  pins the 500 end to end. It must stay `critical`: never give it a `log_level`, and never move the
+  conversion to the JSON decoder, which also decodes internal data. The Hydra entrypoint (`GET /api`) is
+  disabled in **every** environment (`enable_entrypoint: false`, #360): API Platform hard-codes its
+  formats to `jsonld`/`jsonhal`/`jsonapi`/`html` (`entrypoint_formats`, a `json` added to `docs_formats`
+  is dropped), none of which the project declares, so in dev/test it only ever answered an
+  `UnsupportedFormatException`. `/api/docs` stays available in dev.
   One caveat: on a write, the decorator also sees the providers `DeserializeProvider` wraps (read of the
   existing item, our own Providers) — a Provider of `src/` that calls the Serializer must catch its own
   failures.
@@ -135,14 +144,20 @@ paths:
   `problemStatus()`): API Platform then emits `type: /errors/<slug>` in the problem+json, which the client keys
   on instead of substring-matching the localized `detail`.
   **Two traps of that map, both paid for** (audit A15): declaring `exception_to_status` **replaces** API
-  Platform's defaults instead of extending them, so the three it ships with are restored explicitly at the
-  **end** of the list (`Serializer\ExceptionInterface: 400`, `ApiPlatform\Metadata\Exception\InvalidArgumentException: 400`,
-  `Doctrine\ORM\OptimisticLockException: 409`) — without them, unparsable JSON or a wrongly-typed field
+  Platform's defaults instead of extending them, so the three it ships with sit explicitly at the
+  **end** of the list (`Serializer\ExceptionInterface: 500`, `ApiPlatform\Metadata\Exception\InvalidArgumentException: 400`,
+  `Doctrine\ORM\OptimisticLockException: 409`) — two of them as API Platform ships them, the Serializer one
+  **deliberately not**. When audit A15 restored them, unparsable JSON or a wrongly-typed field
   answered **500 on every POST, public ones included**, i.e. an anonymous caller could manufacture 500s at
-  will and drown real server errors in the logs. And resolution takes the **first matching entry**, with
+  will and drown real server errors in the logs; the Serializer's default 400 was the cure then. #239 and
+  #355 have since given every client case its own class, so what still reaches that entry is a server
+  fault, mapped to **500** (issue #360, see above) — the client side is guarded by `MalformedRequestBodyTest`,
+  not by this entry. The status/level check of `ExceptionLogLevelCoverageTest` skips `EXEMPT` entries
+  (issue #373 tracks that blind spot, which let #360 live).
+  And resolution takes the **first matching entry**, with
   `is_a()` matching interfaces and parents too, so a broad entry must stay **below** the precise ones: add a
   new exception *above* those three restored defaults, never after. Since 2026-09-22 (issue #239)
-  `defaults.collect_denormalization_errors: true` narrows what that 400 covers: a **wrongly-typed field**
+  `defaults.collect_denormalization_errors: true` narrowed what the Serializer's 400 covered: a **wrongly-typed field**
   (`{"name":123}`) is collected instead of aborting the deserialization and comes out as a **422 with
   `violations` naming the field**, the same shape the admin forms already render for an `Assert`; only
   unreadable JSON and a root that is not an object stay a 400 (`MalformedRequestBodyException` since

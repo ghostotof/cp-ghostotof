@@ -71,11 +71,11 @@ final class ApiRouteExposureTest extends WebTestCase
         '/api/account/base-access' => 'ADR 0003 D6 : émet un jeton ROLE_USER (palier de base, publiable/non-identifiant) sans authentification — c\'est exactement l\'objet de l\'endpoint. Rate limité par IP (BaseAccessRateLimitRequestListener). N\'ouvre jamais /api/cv ni /api/me (ROLE_TRUSTED requis), voir BaseAccessControllerTest.',
         '/api/login_check' => 'Point d\'entrée du login : par définition atteint sans être authentifié.',
 
-        // --- Infrastructure API Platform. enable_docs/enable_entrypoint sont à
-        // false sous when@prod (cf. api_platform.yaml) : ces routes n'existent
-        // ni en préprod ni en prod, seulement en dev/test.
+        // --- Infrastructure API Platform. enable_docs est à false sous
+        // when@prod (cf. api_platform.yaml) : le schéma n'existe ni en préprod
+        // ni en prod, seulement en dev/test. Le point d'entrée Hydra
+        // (/api/{index}.{_format}) est coupé partout depuis l'issue #360.
         '/api/docs.{_format}' => 'Schéma OpenAPI — désactivé en préprod/prod (when@prod).',
-        '/api/{index}.{_format}' => 'Point d\'entrée Hydra — désactivé en préprod/prod (when@prod).',
         '/api/errors/{status}.{_format}' => 'Ressource d\'erreur interne d\'API Platform, aucune donnée métier.',
         '/api/validation_errors/{id}' => 'Ressource d\'erreur de validation interne d\'API Platform.',
         '/api/.well-known/genid/{id}' => 'Identifiants anonymes générés par API Platform, aucune donnée métier.',

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Shared\Infrastructure\ApiPlatform;
 
+use Symfony\Component\Serializer\Exception\ExtraAttributesException;
+use Symfony\Component\Serializer\Exception\MissingConstructorArgumentsException;
 use Symfony\Component\Serializer\Exception\UnexpectedValueException;
 
 /**
@@ -27,7 +29,7 @@ use Symfony\Component\Serializer\Exception\UnexpectedValueException;
  */
 final class MalformedRequestBodyException extends \UnexpectedValueException
 {
-    public static function fromSerializerFailure(UnexpectedValueException $failure): self
+    public static function fromSerializerFailure(UnexpectedValueException|ExtraAttributesException|MissingConstructorArgumentsException $failure): self
     {
         return new self('Le corps de la requête n\'est pas un document JSON exploitable.', previous: $failure);
     }

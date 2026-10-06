@@ -14,8 +14,10 @@ use App\Shared\Infrastructure\ApiPlatform\MalformedRequestBodyException;
 use App\Shared\Infrastructure\ApiPlatform\MalformedRequestBodyProvider;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Serializer\Exception\ExtraAttributesException;
 use Symfony\Component\Serializer\Exception\LogicException as SerializerLogicException;
 use Symfony\Component\Serializer\Exception\MappingException;
+use Symfony\Component\Serializer\Exception\MissingConstructorArgumentsException;
 use Symfony\Component\Serializer\Exception\NotEncodableValueException;
 use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
 use Symfony\Component\Serializer\Exception\UnsupportedFormatException;
@@ -35,6 +37,15 @@ final class MalformedRequestBodyProviderTest extends TestCase
     {
         yield 'JSON illisible' => [new NotEncodableValueException('Syntax error')];
         yield 'racine qui n\'est pas un objet' => [NotNormalizableValueException::createForUnexpectedDataType('Mauvais type.', 123, ['array'])];
+        // Hors de la famille UnexpectedValueException, mais tout aussi
+        // provoquées par le corps (issue #360) : aucune opération ne les
+        // déclenche aujourd'hui — `allow_extra_attributes` reste à vrai,
+        // `collect_denormalization_errors` collecte l'argument manquant en
+        // 422 —, mais une opération qui changerait l'un ou l'autre en ferait,
+        // depuis que l'entrée large du Serializer rend 500, un 500 `critical`
+        // à la portée de n'importe quel anonyme.
+        yield 'attribut inconnu refusé' => [new ExtraAttributesException(['zzz'])];
+        yield 'argument de constructeur absent' => [new MissingConstructorArgumentsException('Cannot create an instance of "stdClass" from serialized data because its constructor requires the following parameters to be present : "$name".', 0, null, ['name'], \stdClass::class)];
     }
 
     #[DataProvider('serializerFailures')]

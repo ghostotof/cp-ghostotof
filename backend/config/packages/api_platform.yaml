@@ -15,6 +15,14 @@ api_platform:
     # défaut de config n'avait encore jamais été exercé.
     error_formats:
         json: ['application/json']
+    # Le point d'entrée Hydra (GET /api) est coupé partout, pas seulement en
+    # production (issue #360). Il ne sait parler que jsonld, jsonhal, jsonapi
+    # ou html — formats fixés en dur par le bundle (ApiPlatformExtension,
+    # paramètre `entrypoint_formats`), un `json` ajouté aux `docs_formats` en
+    # est retiré —, et le projet n'en déclare aucun : actif en dev et en test,
+    # il ne répondait jamais, sinon par une UnsupportedFormatException
+    # `critical`. La documentation reste servie en dev par /api/docs.
+    enable_entrypoint: false
     # Sans cette entrée, ContactRateLimitExceededException remonterait en 500
     # (exception métier non reconnue par API Platform) au lieu du 429 attendu.
     #
@@ -133,7 +141,7 @@ api_platform:
         # même 400 que l'entrée large ci-dessous, mais une classe précise, qui
         # porte son propre `log_level` sans baisser l'encodage de sortie.
         App\Shared\Infrastructure\ApiPlatform\MalformedRequestBodyException: 400
-        # --- Défauts d'API Platform, rétablis à l'identique (audit A15 / T5.1) ---
+        # --- Défauts d'API Platform, rétablis (audit A15 / T5.1) ---
         # Écrasés depuis toujours par la simple présence de la clé ci-dessus.
         # Conséquence mesurée : sur n'importe quel POST public, un corps qui
         # n'est pas du JSON (« Syntax error ») ou un champ du mauvais type
@@ -142,16 +150,27 @@ api_platform:
         # volonté (borné seulement par les quotas par IP) et noyer les vraies
         # erreurs serveur dans les journaux.
         #
-        # ExceptionInterface du Serializer couvrait les deux cas,
+        # ExceptionInterface du Serializer couvrait alors les deux cas,
         # NotEncodableValueException (JSON illisible) et
-        # NotNormalizableValueException (mauvais type d'attribut). Depuis
-        # l'issue #355, le corps d'une requête n'y arrive plus : il sort en
-        # MalformedRequestBodyException (plus haut). Elle reste pour ce que le
-        # Serializer lève ailleurs, et volontairement en dernier : c'est
-        # l'entrée la plus large de la liste. Aucun `log_level` ne la vise
-        # (ExceptionLogLevelCoverageTest::EXEMPT) : un JSON de sortie non
-        # encodable est un défaut du serveur, il reste en `critical`.
-        Symfony\Component\Serializer\Exception\ExceptionInterface: 400
+        # NotNormalizableValueException (mauvais type d'attribut), d'où son
+        # 400. **Elle ne les couvre plus**, et ce défaut-là n'est donc **pas**
+        # rétabli à l'identique (issue #360) : le mauvais type est collecté en
+        # 422 (`collect_denormalization_errors`, plus bas), le corps illisible
+        # sort en MalformedRequestBodyException (plus haut, issue #355). Ce qui
+        # arrive encore ici est un défaut du serveur : un JSON de sortie non
+        # encodable (`NaN` d'une colonne `double precision`), un Serializer
+        # mal configuré, un format négocié sans encodeur. D'où **500**, en
+        # accord avec son niveau : aucun `log_level` ne la vise
+        # (ExceptionLogLevelCoverageTest::EXEMPT), elle reste en `critical`.
+        # Ce 500 est celui qu'API Platform donnerait sans l'entrée (repli de
+        # toute exception non mappée) : elle est gardée à dessein, pour que le
+        # choix se lise ici, à l'endroit où l'on « rétablirait le défaut ». Ne
+        # pas la remettre à 400 : ServerSideSerializerFailureTest rougirait, et
+        # hors debug le `detail` de l'encodeur (« Inf and NaN cannot be JSON
+        # encoded ») repartirait chez le visiteur — API Platform ne le masque
+        # que sur un 5xx. Volontairement en dernier : c'est l'entrée la plus
+        # large de la liste.
+        Symfony\Component\Serializer\Exception\ExceptionInterface: 500
         ApiPlatform\Metadata\Exception\InvalidArgumentException: 400
         Doctrine\ORM\OptimisticLockException: 409
     defaults:
@@ -160,8 +179,8 @@ api_platform:
             vary: ['Content-Type', 'Authorization', 'Origin']
         # Arbitrage du 2026-09-22 (reliquat du 3e audit, issue #239). Sans
         # cette option, la première NotNormalizableValueException interrompt la
-        # désérialisation et remonte via l'entrée `ExceptionInterface: 400`
-        # ci-dessus : un champ du mauvais type JSON (`{"name":123}`) répondait
+        # désérialisation et remontait via l'entrée large `ExceptionInterface`
+        # ci-dessus, alors à 400 : un champ du mauvais type JSON (`{"name":123}`) répondait
         # un 400 anonyme, sans dire quel champ. Avec elle, le Serializer
         # collecte ces erreurs (PartialDenormalizationException) et API
         # Platform les convertit en ValidationException : **422** avec un
@@ -174,10 +193,10 @@ api_platform:
 
 when@prod:
     api_platform:
-        # Coupe /api/docs(.json), /api/docs.jsonld et le point d'entrée Hydra
-        # /api en production : la SPA appelle des endpoints en dur, personne
-        # d'autre n'a besoin du schéma OpenAPI, et le laisser ouvert offrait à
-        # un visiteur non authentifié la cartographie complète de l'API — y
-        # compris /api/backoffice/*. Reste actif en dev pour l'exploration.
+        # Coupe /api/docs(.json) et /api/docs.jsonld en production : la SPA
+        # appelle des endpoints en dur, personne d'autre n'a besoin du schéma
+        # OpenAPI, et le laisser ouvert offrait à un visiteur non authentifié
+        # la cartographie complète de l'API — y compris /api/backoffice/*.
+        # Reste actif en dev pour l'exploration. Le point d'entrée Hydra /api,
+        # lui, est coupé dans tous les environnements (plus haut, issue #360).
         enable_docs: false
-        enable_entrypoint: false
