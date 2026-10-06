@@ -140,12 +140,16 @@ paths:
   `problemStatus()`): API Platform then emits `type: /errors/<slug>` in the problem+json, which the client keys
   on instead of substring-matching the localized `detail`.
   **Two traps of that map, both paid for** (audit A15): declaring `exception_to_status` **replaces** API
-  Platform's defaults instead of extending them, so the three it ships with are restored explicitly at the
-  **end** of the list (`Serializer\ExceptionInterface`, `ApiPlatform\Metadata\Exception\InvalidArgumentException: 400`,
-  `Doctrine\ORM\OptimisticLockException: 409`) — without them, unparsable JSON or a wrongly-typed field
+  Platform's defaults instead of extending them, so the three it ships with sit explicitly at the
+  **end** of the list (`Serializer\ExceptionInterface: 500`, `ApiPlatform\Metadata\Exception\InvalidArgumentException: 400`,
+  `Doctrine\ORM\OptimisticLockException: 409`) — two of them as API Platform ships them, the Serializer one
+  **deliberately not**. When audit A15 restored them, unparsable JSON or a wrongly-typed field
   answered **500 on every POST, public ones included**, i.e. an anonymous caller could manufacture 500s at
-  will and drown real server errors in the logs. The Serializer one was restored at its default 400 then,
-  and moved to **500** once #239 and #355 had taken every client case out of it (issue #360, see above).
+  will and drown real server errors in the logs; the Serializer's default 400 was the cure then. #239 and
+  #355 have since given every client case its own class, so what still reaches that entry is a server
+  fault, mapped to **500** (issue #360, see above) — the client side is guarded by `MalformedRequestBodyTest`,
+  not by this entry. The status/level check of `ExceptionLogLevelCoverageTest` skips `EXEMPT` entries
+  (issue #373 tracks that blind spot, which let #360 live).
   And resolution takes the **first matching entry**, with
   `is_a()` matching interfaces and parents too, so a broad entry must stay **below** the precise ones: add a
   new exception *above* those three restored defaults, never after. Since 2026-09-22 (issue #239)

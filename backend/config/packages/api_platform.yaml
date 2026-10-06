@@ -162,9 +162,14 @@ api_platform:
         # mal configuré, un format négocié sans encodeur. D'où **500**, en
         # accord avec son niveau : aucun `log_level` ne la vise
         # (ExceptionLogLevelCoverageTest::EXEMPT), elle reste en `critical`.
-        # Ne pas la remettre à 400 « pour rétablir le défaut » :
-        # ServerSideSerializerFailureTest rougirait. Volontairement en
-        # dernier : c'est l'entrée la plus large de la liste.
+        # Ce 500 est celui qu'API Platform donnerait sans l'entrée (repli de
+        # toute exception non mappée) : elle est gardée à dessein, pour que le
+        # choix se lise ici, à l'endroit où l'on « rétablirait le défaut ». Ne
+        # pas la remettre à 400 : ServerSideSerializerFailureTest rougirait, et
+        # hors debug le `detail` de l'encodeur (« Inf and NaN cannot be JSON
+        # encoded ») repartirait chez le visiteur — API Platform ne le masque
+        # que sur un 5xx. Volontairement en dernier : c'est l'entrée la plus
+        # large de la liste.
         Symfony\Component\Serializer\Exception\ExceptionInterface: 500
         ApiPlatform\Metadata\Exception\InvalidArgumentException: 400
         Doctrine\ORM\OptimisticLockException: 409

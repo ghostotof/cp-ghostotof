@@ -24,11 +24,11 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  * sa requête, et nginx, les smoke tests et l'audit comptaient une panne
  * comme une erreur client.
  *
- * Le cas reproduit ici est le seul qu'une donnée en base peut provoquer :
- * un `NaN` dans une colonne `double precision`, que PostgreSQL accepte et que
- * `json_encode` refuse. Une chaîne UTF-8 invalide, l'autre exemple de
- * l'issue, n'atteint jamais la base : elle est encodée en `UTF8` et la
- * refuse dès l'écriture.
+ * Le cas reproduit ici est une valeur non finie en base : un `NaN` dans une
+ * colonne `double precision`, que PostgreSQL accepte et que `json_encode`
+ * refuse (`Infinity` aussi, issue #372). Une chaîne UTF-8 invalide, l'autre
+ * exemple de l'issue, n'atteint jamais la base : elle est encodée en `UTF8`
+ * et la refuse dès l'écriture.
  */
 final class ServerSideSerializerFailureTest extends WebTestCase
 {
@@ -81,6 +81,28 @@ final class ServerSideSerializerFailureTest extends WebTestCase
     }
 
     /**
+     * Ce que voit un visiteur en production, où `kernel.debug` est faux : un
+     * document RFC 7807 générique, sans le message de l'encodeur ni la pile.
+     * Seul le statut 5xx le garantit — API Platform ne masque le `detail` que
+     * des erreurs serveur hors debug ; sous l'ancien 400, « Inf and NaN cannot
+     * be JSON encoded » partait chez le visiteur anonyme. Le client est monté
+     * sans debug expressément, l'environnement `test` le laissant actif.
+     */
+    public function testWithoutDebugTheServerFaultCarriesNoInternals(): void
+    {
+        $client = $this->clientWithANonEncodableTechnology(['debug' => false]);
+
+        $client->request('GET', '/api/experience/technologies');
+
+        self::assertSame(500, $client->getResponse()->getStatusCode());
+        $raw =(string) $client->getResponse()->getContent();
+        self::assertStringNotContainsString('NaN', $raw);
+        self::assertStringNotContainsString('trace', $raw);
+        self::assertStringNotContainsString('/var/www', $raw);
+        self::assertStringNotContainsString('Serializer', $raw);
+    }
+
+    /**
      * Le point d'entrée Hydra ne sait parler que `jsonld`, `jsonhal`,
      * `jsonapi` ou `html` (ApiPlatformExtension, `entrypoint_formats`), aucun
      * de ceux que le projet déclare. Actif hors production, il répondait 400
@@ -102,16 +124,20 @@ final class ServerSideSerializerFailureTest extends WebTestCase
     }
 
     /**
-     * Une technologie dont la durée vaut `NaN` : écrite en SQL, comme le
-     * ferait une correction manuelle en base, puisque l'entité la refuse
-     * (#[Assert\PositiveOrZero]) et que l'API ne l'accepterait pas.
+     * Une technologie dont la durée vaut `NaN`, écrite en SQL : le JSON n'a
+     * pas de littéral `NaN`, aucune requête ne peut l'apporter. Ce n'est pas
+     * la seule valeur non encodable qu'une ligne peut porter — un `1e999`
+     * envoyé au backoffice persiste `Infinity` (issue #372) —, mais c'est
+     * celle qui ne dépend d'aucune validation à corriger.
+     *
+     * @param array<string, mixed> $options options du noyau, cf. createClient()
      */
-    private function clientWithANonEncodableTechnology(): KernelBrowser
+    private function clientWithANonEncodableTechnology(array $options = []): KernelBrowser
     {
-        $client = self::createClient();
+        $client = self::createClient($options);
         $client->disableReboot();
         self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement(
-            "INSERT INTO experience_technology (id, name, years) VALUES (gen_random_uuid(), 'PHP', 'NaN'::float8)",
+            "INSERT INTO experience_technology (id, name, years) VALUES (uuidv7(), 'PHP', 'NaN'::float8)",
         );
 
         return $client;

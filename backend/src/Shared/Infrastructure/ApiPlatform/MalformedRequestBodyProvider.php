@@ -20,7 +20,8 @@ use Symfony\Component\Serializer\Exception\UnsupportedFormatException;
  *
  *  - pas sur l'entrée large `Serializer\ExceptionInterface` de
  *    `framework.exceptions` : `instanceof` sur toutes les routes, elle
- *    baisserait aussi l'encodage de sortie (UTF-8 invalide en base), qui
+ *    baisserait aussi l'encodage de sortie (`NaN` ou `Infinity` d'une colonne
+ *    `double precision`, rendus en 500 depuis l'issue #360), qui
  *    se fait dans la chaîne des *processors* (SerializeProcessor), donc hors de
  *    portée de ce décorateur par construction ;
  *  - pas sur le décodeur JSON du Serializer : il décode aussi des données
