@@ -1,0 +1,4 @@
+# Fixture (issue #357) : répertoire propre à `test`, le faux vert.
+api_platform:
+    exception_to_status:
+        LogicException: 404

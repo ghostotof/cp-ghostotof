@@ -6,16 +6,24 @@ namespace App\Tests\Shared\Infrastructure\Http;
 
 use ApiPlatform\Metadata\Exception\InvalidArgumentException as ApiPlatformInvalidArgumentException;
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
+use App\Contact\Presentation\ApiResource\ContactMessageResource;
 use App\Shared\Domain\Exception\HasProblemType;
+use App\Tests\Support\CompiledExceptionConfig;
 use App\Tests\Support\DeclaredClasses;
+use App\Tests\Shared\Infrastructure\Http\Fixtures\ExceptionToStatusFixtureResource;
+use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\AttributeLoggedFixtureException;
+use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\InheritedLogLevelFixtureException;
+use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\LoudAttributeFixtureException;
+use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\AttributedFixtureException;
+use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\InheritingFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\LoggedFixtureProblemException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\UnloggedFixtureProblemException;
 use Doctrine\ORM\OptimisticLockException;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\TestCase;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\HttpKernel\EventListener\ErrorListener;
 use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Toute exception que l'API rend avec un statut a son `log_level` dans
@@ -28,24 +36,30 @@ use Symfony\Component\Yaml\Yaml;
  * mot de passe inconnu ou un quota atteint devenaient ainsi des alertes de
  * production — et un anonyme pouvait en produire à volonté.
  *
- * Le périmètre surveillé est l'union de deux recensements explicites, sans
+ * Le périmètre surveillé est l'union de recensements explicites, sans
  * inférence sur la route qui lève l'exception :
  *
  *  - les ProblemExceptionInterface déclarées dans src/, rendues par
  *    ApiProblemResponseListener sous un contrôleur ou par API Platform ;
  *  - les clés de `api_platform.exception_to_status`, ProblemExceptionInterface
- *    ou non.
+ *    ou non, et celles des `exceptionToStatus` portés par une ressource ou
+ *    une opération, que le vendor y fusionne (issue #357) ;
+ *  - les exceptions de src/ qui déclarent leur statut par #[WithHttpStatus],
+ *    attribut hérité compris (issue #357).
  *
  * Une entrée couvre une classe comme le noyau la résout : `instanceof`, donc
  * aussi par une classe parente ou une interface. S'en dispenser passe par
  * EXEMPT, avec sa justification : c'est la seule échappatoire, et elle se voit.
+ *
+ * Les deux configurations sont lues **compilées**, dans le conteneur de test
+ * (issue #357) : une entrée déclarée dans un autre fichier de config/packages/,
+ * dans un bloc `when@test` ou en PHP compte comme le noyau la compte.
  */
-final class ExceptionLogLevelCoverageTest extends TestCase
+final class ExceptionLogLevelCoverageTest extends KernelTestCase
 {
     private const string SOURCES = __DIR__.'/../../../../src';
     private const string FIXTURE_SOURCES = __DIR__.'/Fixtures/LogLevelSources';
-    private const string FRAMEWORK_CONFIG = __DIR__.'/../../../../config/packages/framework.yaml';
-    private const string API_PLATFORM_CONFIG = __DIR__.'/../../../../config/packages/api_platform.yaml';
+    private const string FIXTURE_ATTRIBUTES = __DIR__.'/Fixtures/LogLevelAttributes';
 
     /**
      * Entrées larges, rétablies depuis les défauts d'API Platform en fin de
@@ -82,7 +96,7 @@ final class ExceptionLogLevelCoverageTest extends TestCase
 
     public function testEveryExceptionTheApiRendersHasALogLevel(): void
     {
-        $rendered = array_values(array_unique([...DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class), ...$this->exceptionToStatusKeys()]));
+        $rendered = array_keys($this->renderedStatuses());
         self::assertNotEmpty($rendered, 'Aucune exception recensée : le garde-fou ne garderait rien.');
         self::assertSame([], array_values(array_diff(array_keys(self::EXEMPT), $rendered)), 'Dispense qui ne correspond plus à rien : la retirer.');
 
@@ -90,25 +104,22 @@ final class ExceptionLogLevelCoverageTest extends TestCase
 
         self::assertSame(
             [],
-            $this->uncovered($watched, $this->logLevelKeys()),
+            $this->uncovered($watched, $this->logLevelKeys(), $this->logLevelAttributes($watched)),
             'Sans `log_level` dans framework.exceptions, ces exceptions sortent en `critical`.',
         );
     }
 
     /**
      * Le niveau, pas seulement sa présence : un `debug` sur un 503 ou un
-     * `critical` sur une 404 passeraient sinon le garde-fou. Le statut est
-     * celui de `exception_to_status`, à défaut celui que l'exception déclare
-     * (ProblemExceptionInterface::getStatus()).
+     * `critical` sur une 404 passeraient sinon le garde-fou. Il est jugé contre
+     * chaque statut que l'exception peut recevoir (renderedStatuses), au niveau
+     * que le noyau retient pour elle.
      */
     public function testEveryLevelMatchesTheStatusItRenders(): void
     {
-        $statuses = $this->exceptionToStatus();
-        foreach (DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class) as $class) {
-            $statuses[$class] ??= (new \ReflectionClass($class))->newInstanceWithoutConstructor()->getStatus() ?? 500;
-        }
+        $watched = array_diff_key($this->renderedStatuses(), self::EXEMPT);
 
-        self::assertSame([], $this->levelViolations(array_diff_key($statuses, self::EXEMPT), $this->logLevels()));
+        self::assertSame([], $this->levelViolations($watched, $this->kernelLevels($this->errorListener(), array_keys($watched))));
     }
 
     /**
@@ -129,23 +140,39 @@ final class ExceptionLogLevelCoverageTest extends TestCase
     #[DataProvider('levelCases')]
     public function testTheLevelPolicy(int $status, string $level, bool $allowed): void
     {
-        self::assertSame($allowed ? [] : ['App\\A'], array_keys($this->levelViolations(['App\\A' => $status], ['App\\A' => $level])));
+        self::assertSame($allowed ? [] : ['App\\A'], array_keys($this->levelViolations(['App\\A' => [$status]], ['App\\A' => $level])));
     }
 
     /**
-     * @param array<string, int>    $statuses classe => statut rendu
-     * @param array<string, string> $levels   classe => `log_level`
+     * Une exception qui reçoit plusieurs statuts, d'une opération à l'autre,
+     * est nommée avec chacun de ceux que son niveau ne respecte pas : corriger
+     * le niveau pour l'un seulement laisserait l'autre en écart.
+     */
+    public function testEveryStatusInBreachIsReported(): void
+    {
+        self::assertSame(['App\\A' => '404 : debug, 503 : debug'], $this->levelViolations(['App\\A' => [404, 503]], ['App\\A' => 'debug']));
+    }
+
+    /**
+     * @param array<string, list<int>> $statuses classe => statuts rendus
+     * @param array<string, string>    $levels   classe => `log_level`
      *
-     * @return array<string, string> classe => « statut : niveau » hors politique
+     * @return array<string, string> classe => « statut : niveau » hors politique, chacun
      */
     private function levelViolations(array $statuses, array $levels): array
     {
         $violations = [];
-        foreach ($statuses as $class => $status) {
+        foreach ($statuses as $class => $classStatuses) {
             $level = $levels[$class] ?? null;
-            $allowed = $status < 500 ? self::CLIENT_ERROR_LEVELS : self::SERVER_ERROR_LEVELS;
-            if (null !== $level && !\in_array($level, $allowed, true)) {
-                $violations[$class] = $status.' : '.$level;
+            $breaches = [];
+            foreach ($classStatuses as $status) {
+                $allowed = $status < 500 ? self::CLIENT_ERROR_LEVELS : self::SERVER_ERROR_LEVELS;
+                if (null !== $level && !\in_array($level, $allowed, true)) {
+                    $breaches[] = $status.' : '.$level;
+                }
+            }
+            if ([] !== $breaches) {
+                $violations[$class] = implode(', ', $breaches);
             }
         }
 
@@ -161,7 +188,7 @@ final class ExceptionLogLevelCoverageTest extends TestCase
      */
     public function testEveryLogLevelEntryTargetsARenderedException(): void
     {
-        $rendered = [...DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class), ...$this->exceptionToStatusKeys()];
+        $rendered = array_keys($this->renderedStatuses());
         self::assertSame([], array_values(array_diff(array_keys(self::JUSTIFIED_ENTRIES), $this->logLevelKeys())), 'Justification d\'une entrée qui n\'existe plus : la retirer.');
 
         self::assertSame(
@@ -234,41 +261,220 @@ final class ExceptionLogLevelCoverageTest extends TestCase
     }
 
     /**
-     * Une entrée couvre une classe comme le noyau la résout : par `instanceof`
-     * (ErrorListener::resolveLogLevel). L'ordre des entrées, qui départage
-     * pour le noyau, n'entre pas en jeu ici : testEveryLogLevelEntryTargetsARenderedException
-     * n'admet que des entrées précises, qui ne se recouvrent donc pas.
+     * Un `exceptionToStatus` porté par une ressource ou une opération rend
+     * l'exception avec un statut au même titre qu'une clé de
+     * `api_platform.exception_to_status` (issue #357). Sur une ressource de
+     * test qui en déclare un à chaque niveau, le recensement doit voir les deux,
+     * et le garde-fou rougir : aucune n'a de `log_level`.
+     */
+    public function testTheMappingsOfAResourceAndOfItsOperationsAreWatched(): void
+    {
+        $mappings = CompiledExceptionConfig::apiPlatformMappings(
+            self::getContainer()->get('api_platform.metadata.resource.metadata_collection_factory'),
+            [ExceptionToStatusFixtureResource::class],
+            [],
+        );
+        $statuses = [];
+        foreach ([\OverflowException::class, \UnderflowException::class] as $class) {
+            $statuses[$class] = CompiledExceptionConfig::statusesFor($mappings, $class);
+        }
+
+        self::assertSame([\OverflowException::class => [422], \UnderflowException::class => [409]], $statuses);
+        self::assertSame([\OverflowException::class, \UnderflowException::class], $this->uncovered(array_keys($statuses), $this->logLevelKeys()));
+    }
+
+    /**
+     * Une exception de src/ qui déclare son statut par #[WithHttpStatus] est
+     * rendue avec ce statut, mais journalisée au niveau résolu sur l'exception
+     * d'origine (issue #357). Sur un répertoire fixture, le recensement doit
+     * voir la classe qui porte l'attribut et celle qui en hérite, et le
+     * garde-fou rougir sur les deux.
+     */
+    public function testTheExceptionsThatDeclareAnHttpStatusAreWatched(): void
+    {
+        $statuses = $this->kernelConversions(self::FIXTURE_SOURCES);
+
+        self::assertSame([AttributedFixtureException::class => [404], InheritingFixtureException::class => [404]], $statuses);
+        self::assertSame(array_keys($statuses), $this->uncovered(array_keys($statuses), $this->logLevelKeys()));
+    }
+
+    /**
+     * Le noyau lit #[WithLogLevel] à défaut d'entrée (ErrorListener::resolveLogLevel) :
+     * une exception qui le porte, ou en hérite, a un niveau (issue #357). Le
+     * projet préfère `framework.exceptions`, pour que le domaine ne dépende pas
+     * de HttpKernel ; ce n'est pas à ce garde-fou de le dire en se trompant.
+     */
+    public function testAWithLogLevelAttributeCoversItsException(): void
+    {
+        $classes = array_keys($this->kernelConversions(self::FIXTURE_ATTRIBUTES));
+
+        // La fixture abstraite n'en est pas : jamais levée telle quelle.
+        self::assertSame([AttributeLoggedFixtureException::class, InheritedLogLevelFixtureException::class, LoudAttributeFixtureException::class], $classes);
+        self::assertSame([], $this->uncovered($classes, $this->logLevelKeys(), $this->logLevelAttributes($classes)));
+    }
+
+    /**
+     * Le niveau qu'il fixe obéit à la même politique qu'une entrée.
+     */
+    public function testAWithLogLevelAttributeIsHeldToTheLevelPolicy(): void
+    {
+        $statuses = $this->kernelConversions(self::FIXTURE_ATTRIBUTES);
+
+        self::assertSame([LoudAttributeFixtureException::class => '404 : critical'], $this->levelViolations($statuses, $this->kernelLevels($this->errorListener(), array_keys($statuses))));
+    }
+
+    /**
+     * Le niveau contrôlé est celui que le noyau retient, pas seulement celui
+     * d'une entrée au nom exact de la classe : une 404 couverte par l'entrée
+     * de sa classe parente, en `critical`, est hors politique (issue #357).
+     */
+    public function testTheLevelOfAParentEntryIsHeldToThePolicy(): void
+    {
+        $levels = $this->kernelLevels(CompiledExceptionConfig::listenerWith([\RuntimeException::class => ['log_level' => 'critical']]), [\OverflowException::class]);
+
+        self::assertSame([\OverflowException::class => '404 : critical'], $this->levelViolations([\OverflowException::class => [404]], $levels));
+    }
+
+    /**
+     * L'ErrorListener compilé de l'application, que le conteneur de test expose.
+     */
+    private function errorListener(): ErrorListener
+    {
+        return self::getContainer()->get('exception_listener');
+    }
+
+    /**
+     * Les classes d'un répertoire que le noyau de l'application convertit, et
+     * leur statut (CompiledExceptionConfig::kernelHttpStatus).
+     *
+     * @return array<string, list<int>> classe => statut rendu
+     */
+    private function kernelConversions(string $directory): array
+    {
+        return array_map(
+            static fn (int $status): array => [$status],
+            CompiledExceptionConfig::kernelHttpStatus($this->errorListener(), DeclaredClasses::all($directory)),
+        );
+    }
+
+    /**
+     * Le niveau que le noyau retient pour chaque classe (CompiledExceptionConfig::kernelLogLevel).
      *
      * @param list<string> $classes
-     * @param list<string> $logLevelKeys
      *
-     * @return list<string> classes qu'aucune entrée ne couvre
+     * @return array<string, string> classe => niveau ; une classe abstraite en est absente
      */
-    private function uncovered(array $classes, array $logLevelKeys): array
+    private function kernelLevels(ErrorListener $listener, array $classes): array
+    {
+        $levels = [];
+        foreach ($classes as $class) {
+            if (is_subclass_of($class, \Throwable::class)) {
+                $level = CompiledExceptionConfig::kernelLogLevel($listener, $class);
+                if (null !== $level) {
+                    $levels[$class] = $level;
+                }
+            }
+        }
+
+        return $levels;
+    }
+
+    /**
+     * @param list<string> $classes
+     *
+     * @return array<string, string> classe => niveau de son #[WithLogLevel]
+     */
+    private function logLevelAttributes(array $classes): array
+    {
+        return CompiledExceptionConfig::logLevelAttributes($this->errorListener(), $classes);
+    }
+
+    /**
+     * Une entrée couvre une classe comme le noyau la résout : par `instanceof`
+     * (ErrorListener::resolveLogLevel), donc aussi par une classe parente ou
+     * une interface ; à défaut, un #[WithLogLevel] hérité. Seule la présence
+     * compte ici. L'ordre des entrées, lui, compte pour le niveau retenu — deux
+     * entrées peuvent se recouvrir, une exception #[WithHttpStatus] et sa
+     * sous-classe étant toutes deux recensées : le contrôle des niveaux le lit
+     * donc au noyau lui-même (kernelLevels), jamais ici.
+     *
+     * @param list<string>          $classes
+     * @param list<string>          $logLevelKeys
+     * @param array<string, string> $attributeLevels classe => niveau de son #[WithLogLevel]
+     *
+     * @return list<string> classes qu'aucune entrée ni aucun attribut ne couvre
+     */
+    private function uncovered(array $classes, array $logLevelKeys, array $attributeLevels = []): array
     {
         return array_values(array_filter(
             $classes,
-            static fn (string $class): bool => !array_any($logLevelKeys, static fn (string $key): bool => is_a($class, $key, true)),
+            static fn (string $class): bool => !isset($attributeLevels[$class])
+                && !array_any($logLevelKeys, static fn (string $key): bool => is_a($class, $key, true)),
         ));
     }
 
     /**
-     * @return list<string>
+     * Chaque exception que l'API rend avec un statut, et tous les statuts
+     * qu'elle peut recevoir — un sur-ensemble prudent : le niveau doit convenir
+     * à chacun. Sans inférence sur la route qui lève l'exception :
+     *
+     *  - API Platform : chaque clé de ses tables (le paramètre global, les
+     *    `exceptionToStatus` de ressource et d'opération), avec dans chaque
+     *    table le statut de la première clé qui lui correspond par is_a() ;
+     *  - les ProblemExceptionInterface concrètes de src/ : celui que porte
+     *    getStatus(), rendu par ApiProblemResponseListener sous un contrôleur ;
+     *  - le noyau : les exceptions qu'il convertit lui-même, par une entrée
+     *    `status_code` ou un #[WithHttpStatus] (issue #357).
+     *
+     * @return array<string, list<int>> classe => statuts
      */
-    private function exceptionToStatusKeys(): array
+    private function renderedStatuses(): array
     {
-        return array_keys($this->exceptionToStatus());
+        $container = self::getContainer();
+        $listener = $this->errorListener();
+        /** @var array<string, int> $global */
+        $global = $container->getParameter('api_platform.exception_to_status');
+        $resourceClasses = iterator_to_array($container->get('api_platform.metadata.resource.name_collection_factory')->create(), false);
+        // Une découverte qui ne trouverait rien laisserait les garde-fous verts
+        // pour rien : une ressource connue doit y figurer.
+        self::assertContains(ContactMessageResource::class, $resourceClasses, 'La découverte des ressources API Platform ne trouve plus ContactMessageResource : les exceptionToStatus des opérations ne sont plus lus.');
+        $mappings = CompiledExceptionConfig::apiPlatformMappings(
+            $container->get('api_platform.metadata.resource.metadata_collection_factory'),
+            $resourceClasses,
+            $global,
+        );
+        $problems = array_values(array_filter(
+            DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class),
+            static fn (string $class): bool => !(new \ReflectionClass($class))->isAbstract(),
+        ));
+        $converted = CompiledExceptionConfig::kernelHttpStatus($listener, [...DeclaredClasses::all(self::SOURCES), ...$this->statusCodeKeys()]);
+
+        $classes = array_unique([...array_merge(...array_map(array_keys(...), $mappings)), ...$problems, ...array_keys($converted)]);
+        $statuses = [];
+        foreach ($classes as $class) {
+            $classStatuses = CompiledExceptionConfig::statusesFor($mappings, $class);
+            if (\in_array($class, $problems, true)) {
+                $classStatuses[] = (new \ReflectionClass($class))->newInstanceWithoutConstructor()->getStatus() ?? 500;
+            }
+            if (isset($converted[$class])) {
+                $classStatuses[] = $converted[$class];
+            }
+            $statuses[$class] = array_values(array_unique($classStatuses));
+        }
+
+        return $statuses;
     }
 
     /**
-     * @return array<string, int>
+     * Les entrées de `framework.exceptions` qui fixent un `status_code`.
+     *
+     * @return list<string>
      */
-    private function exceptionToStatus(): array
+    private function statusCodeKeys(): array
     {
-        /** @var array{api_platform: array{exception_to_status?: array<string, int>}} $config */
-        $config = Yaml::parseFile(self::API_PLATFORM_CONFIG);
+        $mapping = CompiledExceptionConfig::exceptionsMapping($this->errorListener());
 
-        return $config['api_platform']['exception_to_status'] ?? [];
+        return array_keys(array_filter($mapping, static fn (array $options): bool => null !== $options['status_code']));
     }
 
     /**
@@ -284,10 +490,7 @@ final class ExceptionLogLevelCoverageTest extends TestCase
      */
     private function logLevels(): array
     {
-        /** @var array{framework: array{exceptions?: array<string, array<string, mixed>>}} $config */
-        $config = Yaml::parseFile(self::FRAMEWORK_CONFIG);
-
-        return $this->logLevelsOf($config['framework']['exceptions'] ?? []);
+        return $this->logLevelsOf(CompiledExceptionConfig::exceptionsMapping($this->errorListener()));
     }
 
     /**

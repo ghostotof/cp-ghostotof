@@ -1,0 +1,4 @@
+# Fixture (issue #357) : répertoire propre à `prod`.
+api_platform:
+    exception_to_status:
+        UnderflowException: 404

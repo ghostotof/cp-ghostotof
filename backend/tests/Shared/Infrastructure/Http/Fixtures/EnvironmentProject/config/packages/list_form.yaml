@@ -1,0 +1,14 @@
+# Fixture d'ExceptionMappingEnvironmentParityTest (issue #357) : la forme liste
+# (`class:` comme attribut), que seule une normalisation par la configuration
+# de l'extension compare juste.
+framework:
+    exceptions:
+        # Commune : aucune différence.
+        - { class: OutOfBoundsException, log_level: info }
+
+when@prod:
+    framework:
+        exceptions:
+            # Propre à `prod` : une fusion par index l'écraserait avec
+            # OutOfBoundsException au lieu de l'ajouter.
+            - { class: OutOfRangeException, log_level: info }

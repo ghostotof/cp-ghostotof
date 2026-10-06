@@ -1,0 +1,25 @@
+# Fixture d'ExceptionMappingEnvironmentParityTest (issue #357). Chaque forme de
+# déclaration porte sa propre classe, pour se reconnaître dans le diagnostic.
+framework:
+    exceptions:
+        # Commune à tous les environnements : aucune différence.
+        DomainException:
+            log_level: info
+        # Commune, mais surchargée sous when@prod plus bas : différence de valeur.
+        BadFunctionCallException:
+            log_level: info
+
+when@test:
+    framework:
+        exceptions:
+            # Vue du seul conteneur de test : le faux vert.
+            LogicException:
+                log_level: info
+
+when@prod:
+    framework:
+        exceptions:
+            RuntimeException:
+                log_level: info
+            BadFunctionCallException:
+                log_level: warning

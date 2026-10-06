@@ -77,13 +77,42 @@ paths:
   a client-triggerable 4xx stays `info` once something attributable traces it. That rule covers our domain exceptions
   only: the framework's own HTTP 4xx (router 404/405, validation 422, 403) stay at `error`.
   `tests/Shared/Infrastructure/Http/ExceptionLogLevelCoverageTest.php` pins four things: an entry for
-  every `exception_to_status` key and every `ProblemExceptionInterface` of `src/` (found by token parsing
+  every exception rendered with a declared status — every `exception_to_status` key, every
+  `exceptionToStatus` carried by an `#[ApiResource]` or one of its operations (merged by the vendor at
+  render time, `ErrorListener::getOperationExceptionToStatus`), every exception the kernel converts
+  itself — a `framework.exceptions` entry with a `status_code`, which wins, else a `#[WithHttpStatus]`
+  of `src/`; either way the level is resolved on the original exception — and every concrete
+  `ProblemExceptionInterface` of `src/` (found by token parsing
   through `tests/Support/DeclaredClasses`, shared with `ProblemDetailStaysStaticTest`, never inferred from
-  file paths); a level that matches the rendered status (4xx: info/notice/warning, 5xx:
-  warning/error/critical); no entry that targets anything else — a broad `\DomainException` or an
+  file paths); a level that matches **every** status the exception can be rendered with (4xx:
+  info/notice/warning, 5xx: warning/error/critical) — a cautious superset: in each table API Platform
+  may consult (the global one, merged per operation) the first key matching by `is_a()`, plus
+  `getStatus()` for a problem exception and the kernel's conversion; no entry that targets anything else — a broad `\DomainException` or an
   interface would hide real server faults and shadow the precise entries after it, since the kernel takes
   the first match —; and justified ways out only (`EXEMPT`: the three broad API Platform defaults below,
   which stay `critical`; `JUSTIFIED_ENTRIES`: the 415 of #320).
+  **Both maps are read compiled, never parsed from YAML** (issue #357): `tests/Support/CompiledExceptionConfig`
+  reads the `exception_listener` mapping, the `api_platform.exception_to_status` parameter and the
+  resource metadata from the test container, so an entry from another config file or a `when@test`
+  block counts as the kernel counts it; `ApiExceptionLogLevelTest` builds its listener from the same
+  mapping; `CompiledExceptionConfigTest` proves it by compiling the app with one more config file
+  (`ExtraConfigKernel`, through an `extra_config` option of `bootKernel()` that only that class's
+  `createKernel()` understands — `KernelTestCase` silently ignores it anywhere else). The flip side: the test container only sees `test`. **Never declare either map for a single
+  environment** — not `when@prod`, `config/packages/prod/`, `services_prod.*` (preprod and prod both run
+  `APP_ENV=prod`, the guards would miss it), and not `when@test` either (the guards would turn green on
+  a config production lacks): keep them common. `ExceptionMappingEnvironmentParityTest` enforces it by
+  loading every environment of `Kernel::getAllowedEnvs()` through Symfony's own loaders without compiling
+  (`tests/Support/EnvironmentConfigKernel`), each map normalized and merged by its extension's own
+  configuration node — so every form the kernel knows (YAML or PHP, list form, dashed keys) is seen,
+  and nothing it ignores. Keep both maps literal: a `%env()%` or `%parameter%` value reads the same
+  everywhere but resolves per environment, and the same test refuses it. The level checked is the one
+  the kernel resolves, read from `ErrorListener::resolveLogLevel` itself: the first matching entry by
+  `instanceof`, else an inherited `#[WithLogLevel]` — honoured, though the project keeps levels in
+  `framework.exceptions` so the domain does not depend on HttpKernel. Three vendor internals are read by
+  reflection rather than reimplemented (the compiled mapping, `getInheritedAttribute`,
+  `resolveLogLevel`); `ErrorListenerInternalsTest` pins their signature, so a Symfony upgrade that
+  changes them fails there first. GraphQL operations are not covered:
+  `testGraphQlStaysDisabled` turns red the day `api_platform.graphql.enabled` becomes true.
   **A request body the Serializer refuses never reaches the broad `Serializer\ExceptionInterface` entry**
   (issue #355): `Shared/Infrastructure/ApiPlatform/MalformedRequestBodyProvider` decorates
   `api_platform.state_provider.deserialize` and, **on an operation that deserializes only**, turns the

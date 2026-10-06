@@ -33,16 +33,21 @@ final class DeclaredClasses
      */
     public static function implementing(string $directory, string $type): array
     {
+        return array_values(array_filter(self::all($directory), static fn (string $class): bool => is_subclass_of($class, $type)));
+    }
+
+    /**
+     * Toutes les classes nommées que déclarent les fichiers du répertoire.
+     *
+     * @return list<class-string> triées, pour un diagnostic stable
+     */
+    public static function all(string $directory): array
+    {
         $found = [];
         $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS));
         foreach ($files as $file) {
-            if (!$file instanceof \SplFileInfo || 'php' !== $file->getExtension()) {
-                continue;
-            }
-            foreach (self::declaredIn($file->getPathname()) as $class) {
-                if (is_subclass_of($class, $type)) {
-                    $found[] = $class;
-                }
+            if ($file instanceof \SplFileInfo && 'php' === $file->getExtension()) {
+                array_push($found, ...self::declaredIn($file->getPathname()));
             }
         }
         sort($found);
