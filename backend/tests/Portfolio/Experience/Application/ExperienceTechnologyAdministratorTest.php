@@ -9,6 +9,7 @@ use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException;
 use App\Portfolio\Experience\Domain\Repository\ExperienceTechnologyRepositoryInterface;
+use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
 
@@ -16,7 +17,7 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
 {
     public function testUpdateReplacesPropertiesAndSaves(): void
     {
-        $technology = new ExperienceTechnology('PHP', 1.0);
+        $technology = new ExperienceTechnology('PHP', ExperienceYears::fromFloat(1.0));
 
         $repository = $this->createMock(ExperienceTechnologyRepositoryInterface::class);
         $repository->expects(self::once())->method('findOneById')->with($technology->getId())->willReturn($technology);
@@ -25,7 +26,7 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
 
         $administrator = new ExperienceTechnologyAdministrator($repository);
 
-        $updated = $administrator->update($technology->getId(), 'Symfony', 9.5, 'symfony', null);
+        $updated = $administrator->update($technology->getId(), 'Symfony', ExperienceYears::fromFloat(9.5), 'symfony', null);
 
         self::assertSame('Symfony', $updated->getName());
         self::assertSame(9.5, $updated->getYears());
@@ -40,13 +41,13 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
 
         $this->expectException(ExperienceTechnologyNotFoundException::class);
 
-        $administrator->update(Uuid::v7(), 'Symfony', 9.5, null, null);
+        $administrator->update(Uuid::v7(), 'Symfony', ExperienceYears::fromFloat(9.5), null, null);
     }
 
     public function testUpdateThrowsWhenNameCollidesWithAnotherTechnology(): void
     {
-        $technology = new ExperienceTechnology('PHP', 1.0);
-        $otherTechnology = new ExperienceTechnology('Symfony', 1.0);
+        $technology = new ExperienceTechnology('PHP', ExperienceYears::fromFloat(1.0));
+        $otherTechnology = new ExperienceTechnology('Symfony', ExperienceYears::fromFloat(1.0));
 
         $repository = self::createStub(ExperienceTechnologyRepositoryInterface::class);
         $repository->method('findOneById')->willReturn($technology);
@@ -56,7 +57,7 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
 
         $this->expectException(ExperienceTechnologyAlreadyExistsException::class);
 
-        $administrator->update($technology->getId(), 'Symfony', 9.5, null, null);
+        $administrator->update($technology->getId(), 'Symfony', ExperienceYears::fromFloat(9.5), null, null);
     }
 
     /**
@@ -68,7 +69,7 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
      */
     public function testUpdateAllowsKeepingTheSameNameOnTheSameTechnology(): void
     {
-        $technology = new ExperienceTechnology('PHP', 1.0);
+        $technology = new ExperienceTechnology('PHP', ExperienceYears::fromFloat(1.0));
         $sameIdFromTheUrl = Uuid::fromString($technology->getId()->toRfc4122());
 
         $repository = self::createStub(ExperienceTechnologyRepositoryInterface::class);
@@ -77,14 +78,14 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
 
         $administrator = new ExperienceTechnologyAdministrator($repository);
 
-        $updated = $administrator->update($sameIdFromTheUrl, 'PHP', 14.0, null, null);
+        $updated = $administrator->update($sameIdFromTheUrl, 'PHP', ExperienceYears::fromFloat(14.0), null, null);
 
         self::assertSame(14.0, $updated->getYears());
     }
 
     public function testDeleteRemovesTechnology(): void
     {
-        $technology = new ExperienceTechnology('PHP', 1.0);
+        $technology = new ExperienceTechnology('PHP', ExperienceYears::fromFloat(1.0));
 
         $repository = $this->createMock(ExperienceTechnologyRepositoryInterface::class);
         $repository->expects(self::once())->method('findOneById')->with($technology->getId())->willReturn($technology);

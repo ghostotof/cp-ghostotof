@@ -11,6 +11,7 @@ use ApiPlatform\Metadata\Put;
 use ApiPlatform\State\ProcessorInterface;
 use App\Portfolio\Experience\Application\ExperienceTechnologyAdministratorInterface;
 use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
+use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use App\Portfolio\Experience\Presentation\ApiResource\BackofficeExperienceTechnologyResource;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 
@@ -35,11 +36,14 @@ final readonly class BackofficeExperienceTechnologyProcessor implements Processo
             return null;
         }
 
+        // Déjà validé par le Callback du DTO : construit une fois pour les deux branches.
+        $years = ExperienceYears::fromFloat($data->years);
+
         if ($operation instanceof Put) {
             $technology = $this->experienceTechnologyAdministrator->update(
                 $this->uriVariableUuid($uriVariables),
                 $data->name,
-                $data->years,
+                $years,
                 $data->iconKey,
                 $data->relatedTechnologyName,
                 $data->secondary,
@@ -47,7 +51,7 @@ final readonly class BackofficeExperienceTechnologyProcessor implements Processo
         } elseif ($operation instanceof Post) {
             $technology = $this->experienceTechnologyRegistrar->register(
                 $data->name,
-                $data->years,
+                $years,
                 $data->iconKey,
                 $data->relatedTechnologyName,
                 $data->secondary,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Experience\Domain\Entity;
 
+use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use App\Portfolio\Experience\Infrastructure\Doctrine\ExperienceTechnologyRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -36,8 +37,14 @@ class ExperienceTechnology
     #[Assert\Length(max: 180)]
     private string $name;
 
+    /**
+     * Toujours issu d'un ExperienceYears (issue #372) : la colonne garde un
+     * `float` pour Doctrine, la règle vit dans le Value Object et dans la
+     * contrainte `chk_experience_technology_years` en base — Doctrine
+     * n'appelle pas le constructeur en hydratant, seule la base protège une
+     * ligne écrite hors de l'entité.
+     */
     #[ORM\Column]
-    #[Assert\PositiveOrZero]
     private float $years;
 
     #[ORM\Column(length: 60, nullable: true)]
@@ -63,14 +70,14 @@ class ExperienceTechnology
 
     public function __construct(
         string $name,
-        float $years,
+        ExperienceYears $years,
         ?string $iconKey = null,
         ?string $relatedTechnologyName = null,
         bool $secondary = false,
     ) {
         $this->id = Uuid::v7();
         $this->name = $name;
-        $this->years = $years;
+        $this->years = $years->value;
         $this->iconKey = $iconKey;
         $this->relatedTechnologyName = $relatedTechnologyName;
         $this->secondary = $secondary;
@@ -108,13 +115,13 @@ class ExperienceTechnology
 
     public function update(
         string $name,
-        float $years,
+        ExperienceYears $years,
         ?string $iconKey,
         ?string $relatedTechnologyName,
         bool $secondary = false,
     ): void {
         $this->name = $name;
-        $this->years = $years;
+        $this->years = $years->value;
         $this->iconKey = $iconKey;
         $this->relatedTechnologyName = $relatedTechnologyName;
         $this->secondary = $secondary;

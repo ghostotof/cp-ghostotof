@@ -6,6 +6,8 @@ namespace App\Portfolio\Experience\Presentation\Command;
 
 use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException;
+use App\Portfolio\Experience\Domain\Exception\InvalidExperienceYearsException;
+use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -52,10 +54,10 @@ final class AddExperienceTechnologyCommand extends Command
             return Command::FAILURE;
         }
 
-        $yearsInput = $input->getOption('years') ?? $io->ask('Temps cumulé (en années, ex. 13.5)', validator: $this->validateYears(...));
-
-        if (!\is_string($yearsInput) || !is_numeric($yearsInput)) {
-            $io->error('Le temps cumulé doit être un nombre (ex. 13.5).');
+        try {
+            $years = $this->resolveYears($input, $io);
+        } catch (InvalidExperienceYearsException $exception) {
+            $io->error($exception->getMessage());
 
             return Command::FAILURE;
         }
@@ -66,7 +68,7 @@ final class AddExperienceTechnologyCommand extends Command
         try {
             $technology = $this->experienceTechnologyRegistrar->register(
                 $name,
-                (float) $yearsInput,
+                $years,
                 \is_string($icon) && '' !== $icon ? $icon : null,
                 \is_string($relatedTechnology) && '' !== $relatedTechnology ? $relatedTechnology : null,
             );
@@ -90,12 +92,40 @@ final class AddExperienceTechnologyCommand extends Command
         return $name;
     }
 
-    private function validateYears(mixed $years): string
+    /**
+     * Option d'abord, validée avant tout appel au registrar : une durée
+     * invalide n'est jamais masquée par un nom déjà pris. Sinon la question,
+     * dont le validateur fait reposer la valeur tant qu'elle est refusée.
+     * Une entrée standard fermée en pleine question (MissingInputException,
+     * la question n'ayant pas de défaut) n'est pas rattrapée : la commande
+     * échoue avec sa trace, comme avant #372 et comme pour le nom.
+     *
+     * @throws InvalidExperienceYearsException
+     */
+    private function resolveYears(InputInterface $input, SymfonyStyle $io): ExperienceYears
     {
-        if (!\is_string($years) || !is_numeric($years)) {
-            throw new \InvalidArgumentException('Le temps cumulé doit être un nombre (ex. 13.5).');
+        $option = $input->getOption('years');
+
+        if (null !== $option) {
+            return $this->parseYears($option);
         }
 
-        return $years;
+        $answer = $io->ask('Temps cumulé (en années, ex. 13.5)', validator: $this->parseYears(...));
+
+        // En non-interactif, ask() rend la valeur par défaut (null) sans
+        // passer par le validateur : on l'y soumet ici.
+        return $answer instanceof ExperienceYears ? $answer : $this->parseYears($answer);
+    }
+
+    /**
+     * Le QuestionHelper rattrape toute \Exception d'un validateur, l'exception
+     * du domaine comprise : nul besoin de la ré-emballer pour que la question
+     * soit reposée avec son message.
+     *
+     * @throws InvalidExperienceYearsException
+     */
+    private function parseYears(mixed $years): ExperienceYears
+    {
+        return ExperienceYears::fromString(\is_string($years) ? $years : '');
     }
 }

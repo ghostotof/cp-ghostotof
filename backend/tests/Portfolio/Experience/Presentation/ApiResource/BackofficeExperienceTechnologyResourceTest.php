@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Tests\Portfolio\Experience\Presentation\ApiResource;
 
 use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
+use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Uid\Uuid;
@@ -95,7 +97,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $technology = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register('Docker', 6.5, 'docker', null);
+        $technology = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register('Docker', ExperienceYears::fromFloat(6.5), 'docker', null);
 
         $client->request('GET', sprintf('/api/backoffice/experience/technologies/%s', $technology->getId()->toRfc4122()));
         self::assertResponseIsSuccessful();
@@ -117,7 +119,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register('Docker', 6.5, 'docker', null);
+        $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register('Docker', ExperienceYears::fromFloat(6.5), 'docker', null);
 
         // GetCollection
         $client->request('GET', '/api/backoffice/experience/technologies');
@@ -182,6 +184,131 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         $client->request('GET', '/api/experience/technologies');
         $publicList = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame(['PHP'], array_column($publicList, 'name'));
+    }
+
+    /**
+     * Issue #372 : littéraux JSON bruts, que `json_encode` ne sait pas
+     * produire — `1e999` est un nombre JSON valide que `json_decode` rend en
+     * `float(INF)`. Avant correction, INF passait `PositiveOrZero`, la ligne
+     * était persistée et la route publique répondait 500 jusqu'à une
+     * correction à la main en base.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function outOfRangeYearsLiterals(): iterable
+    {
+        yield 'non fini (1e999)' => ['1e999'];
+        yield 'non fini négatif (-1e999)' => ['-1e999'];
+        yield 'au-delà de 100 ans' => ['100.5'];
+        yield 'négatif' => ['-1'];
+    }
+
+    #[DataProvider('outOfRangeYearsLiterals')]
+    public function testPostWithYearsOutOfRangeIsA422NamingYearsAndWritesNothing(string $yearsLiteral): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('POST', '/api/backoffice/experience/technologies', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: sprintf('{"name":"Rust","years":%s}', $yearsLiteral));
+
+        $this->assertViolationOnYears($client);
+        self::assertSame(0, $this->countTechnologiesNamed('Rust'));
+
+        $this->assertPublicListStillServes($client);
+    }
+
+    #[DataProvider('outOfRangeYearsLiterals')]
+    public function testPutWithYearsOutOfRangeIsA422NamingYearsAndLeavesTheRowUntouched(string $yearsLiteral): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $technology = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register('Docker', ExperienceYears::fromFloat(6.5), 'docker', null);
+
+        $client->request('PUT', sprintf('/api/backoffice/experience/technologies/%s', $technology->getId()->toRfc4122()), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: sprintf('{"name":"Docker","years":%s}', $yearsLiteral));
+
+        $this->assertViolationOnYears($client);
+        $stored = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->fetchOne('SELECT years FROM experience_technology WHERE name = ?', ['Docker']);
+        self::assertEquals(6.5, $stored);
+
+        $this->assertPublicListStillServes($client);
+    }
+
+    /**
+     * `-0.0` vaut zéro et passe les bornes, mais `json_encode` le publiait
+     * « -0 » : il doit ressortir en zéro ordinaire, en écriture comme sur la
+     * liste publique.
+     */
+    public function testANegativeZeroIsPublishedAsAPlainZero(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('POST', '/api/backoffice/experience/technologies', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: '{"name":"Rust","years":-0.0}');
+
+        self::assertResponseStatusCodeSame(201);
+        $this->assertYearsPublishedUnsigned((string) $client->getResponse()->getContent());
+
+        $client->getCookieJar()->clear();
+        $client->request('GET', '/api/experience/technologies');
+        $this->assertYearsPublishedUnsigned((string) $client->getResponse()->getContent());
+    }
+
+    /**
+     * Sur le seul champ `years` du JSON brut : le corps porte aussi des UUID
+     * v7, dont un sur douze environ contient « -0 » (le décodage, lui,
+     * confondrait -0.0 et 0.0, égaux pour PHP).
+     */
+    private function assertYearsPublishedUnsigned(string $rawJson): void
+    {
+        self::assertMatchesRegularExpression('/"years":\s*0/', $rawJson);
+        self::assertDoesNotMatchRegularExpression('/"years":\s*-/', $rawJson);
+    }
+
+    private function assertViolationOnYears(KernelBrowser $client): void
+    {
+        self::assertResponseStatusCodeSame(422);
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame(['years'], array_column($body['violations'], 'propertyPath'));
+        // Le message du domaine, en clair pour l'admin, au lieu du
+        // « This value should be… » générique des contraintes de comparaison.
+        self::assertStringStartsWith(
+            'Le temps cumulé doit être un nombre compris entre 0 et 100 ans',
+            $body['violations'][0]['message'],
+        );
+    }
+
+    /**
+     * Par nom, pas sur toute la table : une base neuve n'est pas vide
+     * (Version20260906160000 insère des technologies).
+     */
+    private function countTechnologiesNamed(string $name): int
+    {
+        $count = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->fetchOne('SELECT COUNT(*) FROM experience_technology WHERE name = ?', [$name]);
+        self::assertIsInt($count);
+
+        return $count;
+    }
+
+    /** Le symptôme de l'issue : la route publique anonyme tombait en 500. */
+    private function assertPublicListStillServes(KernelBrowser $client): void
+    {
+        $client->getCookieJar()->clear();
+        $client->request('GET', '/api/experience/technologies');
+        self::assertResponseIsSuccessful();
     }
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Http;
 
+use App\Tests\Support\LiftsExperienceYearsConstraint;
 use App\Tests\Support\ReadsAllChannelsLog;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Level;
@@ -25,12 +26,14 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  *
  * Le cas reproduit ici est une valeur non finie en base : un `NaN` dans une
  * colonne `double precision`, que PostgreSQL accepte et que `json_encode`
- * refuse (`Infinity` aussi, issue #372). Une chaîne UTF-8 invalide, l'autre
+ * refuse (`Infinity` aussi, issue #372 — qui l'a depuis exclu par une
+ * contrainte CHECK, que ce test lève le temps d'un cas). Une chaîne UTF-8 invalide, l'autre
  * exemple de l'issue, n'atteint jamais la base : elle est encodée en `UTF8`
  * et la refuse dès l'écriture.
  */
 final class ServerSideSerializerFailureTest extends WebTestCase
 {
+    use LiftsExperienceYearsConstraint;
     use ReadsAllChannelsLog;
 
     protected function setUp(): void
@@ -40,7 +43,10 @@ final class ServerSideSerializerFailureTest extends WebTestCase
 
     protected function tearDown(): void
     {
-        self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement('DELETE FROM experience_technology');
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        // Annule la ligne `NaN` et rend la contrainte levée pour l'écrire.
+        self::restoreExperienceYearsConstraint($connection);
+        $connection->executeStatement('DELETE FROM experience_technology');
         parent::tearDown();
     }
 
@@ -124,10 +130,11 @@ final class ServerSideSerializerFailureTest extends WebTestCase
 
     /**
      * Une technologie dont la durée vaut `NaN`, écrite en SQL : le JSON n'a
-     * pas de littéral `NaN`, aucune requête ne peut l'apporter. Ce n'est pas
-     * la seule valeur non encodable qu'une ligne peut porter — un `1e999`
-     * envoyé au backoffice persiste `Infinity` (issue #372) —, mais c'est
-     * celle qui ne dépend d'aucune validation à corriger.
+     * pas de littéral `NaN`, aucune requête ne peut l'apporter. Depuis #372,
+     * la base elle-même la refuse : la ligne ne s'écrit qu'en levant la
+     * contrainte (LiftsExperienceYearsConstraint). Ce que ce test épingle
+     * reste vrai : si une valeur non encodable atteint un jour la sortie,
+     * c'est un défaut serveur, et il sort en 500.
      *
      * @param array<string, mixed> $options options du noyau, cf. createClient()
      */
@@ -135,7 +142,9 @@ final class ServerSideSerializerFailureTest extends WebTestCase
     {
         $client = self::createClient($options);
         $client->disableReboot();
-        self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement(
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        self::liftExperienceYearsConstraint($connection);
+        $connection->executeStatement(
             "INSERT INTO experience_technology (id, name, years) VALUES (uuidv7(), 'PHP', 'NaN'::float8)",
         );
 

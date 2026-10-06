@@ -64,6 +64,29 @@ paths:
   in one call), and a backoffice CRUD resource (see `.claude/rules/backoffice-api.md`). Seeded via idempotent `app:{about,quality,contributions,incidents}:seed`
   console commands (purge-by-locale then recreate — safe to rerun).
 
+  **`ExperienceTechnology.years` is a finite number in `[0, 100]`, checked at three layers** (issue #372).
+  A single non-encodable row (`Infinity`, `NaN`) is enough to put the public `GET /api/experience/technologies`
+  in 500 for every visitor, and `PositiveOrZero` alone let `{"years":1e999}` (`json_decode` → `INF`) through.
+  The rule is written once, in the Value Object `Domain/ValueObject/ExperienceYears` (`MIN`, `MAX`, `fromFloat`,
+  `fromString`; `-0.0` is normalised to `0`). The entity, the registrar and the administrator only receive an
+  `ExperienceYears`. The backoffice DTO validates through an `Assert\Callback` that delegates to it, so the
+  422 names `years` with the domain's message. The CLI command parses `--years` before reaching the
+  registrar. **And the database refuses the same bounds** (`ExperienceTechnologyRepository::YEARS_CHECK_CONSTRAINT`,
+  migration `Version20261006120000`), because Doctrine never calls the constructor when hydrating, so no PHP
+  guard sees a row written in SQL. One gap is accepted: the `CHECK` lets `-0` through (`-0 >= 0`), a value
+  only SQL can write and the public list would publish as `"years":-0`. Enforcing it would take an unreadable
+  sign test, for a cosmetic defect no write path produces. `ExperienceTechnologyYearsConstraintTest` reads both bounds from the Value Object and
+  probes a billionth past each, so a constraint loosened or tightened by a hair turns it red. A test that must
+  write a row the database now refuses lifts the constraint in a rolled-back transaction through the
+  `LiftsExperienceYearsConstraint` trait. Never drop it for good, and never write that `ALTER TABLE` by hand.
+  That migration clamped any existing faulty row **and set it `secondary`**, reporting each one as a
+  `warning` with its original value in the migration Job's output. The invented duration is therefore never
+  **displayed on the site**, since `ExperiencePage` shows no duration for a secondary technology, and the row
+  stays one backoffice edit away from being fixed. The public API still carries its `years`: the duration is
+  not protected data, and hiding it there would change the public contract. `InvalidExperienceYearsException` is deliberately **not** mapped to an HTTP status: from
+  the API it is unreachable unless a write path bypasses the DTO, a server fault that must stay a
+  `critical` 500.
+
   `Contribution` is the odd one out and deliberately so: it carries a long `body` (the argument, not
   just a link to it) alongside `title`/`project`/`reference`/`url`/`summary`. That text is **plain
   text**, paragraphs separated by a blank line, rendered by splitting on those blanks —

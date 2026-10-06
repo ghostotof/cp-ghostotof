@@ -7,6 +7,7 @@ namespace App\Portfolio\Experience\Application;
 use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException;
 use App\Portfolio\Experience\Domain\Repository\ExperienceTechnologyRepositoryInterface;
+use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 
 final readonly class ExperienceTechnologyRegistrar implements ExperienceTechnologyRegistrarInterface
@@ -16,7 +17,7 @@ final readonly class ExperienceTechnologyRegistrar implements ExperienceTechnolo
     ) {
     }
 
-    public function register(string $name, float $years, ?string $iconKey, ?string $relatedTechnologyName, bool $secondary = false): ExperienceTechnology
+    public function register(string $name, ExperienceYears $years, ?string $iconKey, ?string $relatedTechnologyName, bool $secondary = false): ExperienceTechnology
     {
         if (null !== $this->experienceTechnologyRepository->findOneByName($name)) {
             throw ExperienceTechnologyAlreadyExistsException::forName($name);
