@@ -6,6 +6,8 @@ namespace App\Tests\Support;
 
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpKernel\Attribute\WithHttpStatus;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\EventListener\ErrorListener;
 
 /**
@@ -78,6 +80,39 @@ final class CompiledExceptionConfig
                         }
                     }
                 }
+            }
+        }
+
+        return $statuses;
+    }
+
+    /**
+     * Les exceptions que le noyau convertit en HttpException d'après leur
+     * #[WithHttpStatus] (ErrorListener::logKernelException), avec ce statut.
+     * Le niveau, lui, est résolu sur l'exception d'origine : sans entrée,
+     * `critical`.
+     *
+     * L'attribut est lu par la méthode même du noyau, qui le cherche aussi sur
+     * les classes parentes et les interfaces : la réflexion échoue bruyamment
+     * si Symfony la renomme, plutôt que de réimplémenter sa résolution.
+     *
+     * @param iterable<class-string> $classes
+     *
+     * @return array<class-string, list<int>> classe => statut déclaré
+     */
+    public static function withHttpStatus(ErrorListener $listener, iterable $classes): array
+    {
+        $resolve = new \ReflectionMethod(ErrorListener::class, 'getInheritedAttribute');
+        $statuses = [];
+        foreach ($classes as $class) {
+            // Une HttpExceptionInterface garde son propre statut : le noyau ne
+            // lit l'attribut que sur les autres exceptions.
+            if (!is_subclass_of($class, \Throwable::class) || is_subclass_of($class, HttpExceptionInterface::class)) {
+                continue;
+            }
+            $attribute = $resolve->invoke($listener, $class, WithHttpStatus::class);
+            if ($attribute instanceof WithHttpStatus) {
+                $statuses[$class] = [$attribute->statusCode];
             }
         }
 
