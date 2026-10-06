@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Portfolio\Experience\Presentation\Command;
 
 use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
+use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException;
+use App\Portfolio\Experience\Domain\Exception\InvalidExperienceYearsException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -70,7 +72,9 @@ final class AddExperienceTechnologyCommand extends Command
                 \is_string($icon) && '' !== $icon ? $icon : null,
                 \is_string($relatedTechnology) && '' !== $relatedTechnology ? $relatedTechnology : null,
             );
-        } catch (ExperienceTechnologyAlreadyExistsException $exception) {
+        } catch (ExperienceTechnologyAlreadyExistsException|InvalidExperienceYearsException $exception) {
+            // Issue #372 : `is_numeric()` accepte « 1e999 » (INF) et « -5 » ;
+            // l'entité les refuse avant toute écriture, on rend son message.
             $io->error($exception->getMessage());
 
             return Command::FAILURE;
@@ -94,6 +98,14 @@ final class AddExperienceTechnologyCommand extends Command
     {
         if (!\is_string($years) || !is_numeric($years)) {
             throw new \InvalidArgumentException('Le temps cumulé doit être un nombre (ex. 13.5).');
+        }
+
+        // Même règle que l'entité, appliquée ici pour que la question soit
+        // reposée au lieu d'échouer une fois toutes les réponses données.
+        try {
+            ExperienceTechnology::assertYearsInRange((float) $years);
+        } catch (InvalidExperienceYearsException $exception) {
+            throw new \InvalidArgumentException($exception->getMessage(), $exception->getCode(), previous: $exception);
         }
 
         return $years;

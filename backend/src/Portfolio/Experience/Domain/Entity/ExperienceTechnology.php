@@ -138,10 +138,12 @@ class ExperienceTechnology
      * Garde de l'issue #372, appliquée à la création comme à la modification et
      * avant toute affectation. `is_finite()` d'abord : NaN rend fausse toute
      * comparaison, il passerait donc entre `< 0` et `> MAX_YEARS` sans elle.
+     * Publique pour qu'une saisie interactive (AddExperienceTechnologyCommand)
+     * redemande la valeur avec la même règle, sans la recopier.
      *
      * @throws InvalidExperienceYearsException
      */
-    private static function assertYearsInRange(float $years): void
+    public static function assertYearsInRange(float $years): void
     {
         if (!is_finite($years) || $years < 0.0 || $years > self::MAX_YEARS) {
             throw InvalidExperienceYearsException::outOfRange($years, self::MAX_YEARS);

@@ -6,6 +6,7 @@ namespace App\Tests\Portfolio\Experience\Presentation\Command;
 
 use App\Portfolio\Experience\Domain\Repository\ExperienceTechnologyRepositoryInterface;
 use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -78,6 +79,56 @@ final class AddExperienceTechnologyCommandTest extends KernelTestCase
         $exitCode = $tester->execute(['--name' => 'PHP', '--years' => 'not-a-number']);
 
         self::assertSame(1, $exitCode);
+    }
+
+    /**
+     * Issue #372 : `is_numeric('1e999')` est vrai et `(float)` le rend en INF,
+     * qui mettait la route publique en 500 une fois persisté ; `-5` passait
+     * aussi, la commande ne passant pas par le Validator.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function outOfRangeYears(): iterable
+    {
+        yield 'non fini' => ['1e999'];
+        yield 'négatif' => ['-5'];
+        yield 'au-delà de 100 ans' => ['100.5'];
+    }
+
+    #[DataProvider('outOfRangeYears')]
+    public function testRefusesYearsOutOfRangeBeforeAnyWrite(string $years): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute(['--name' => 'PHP', '--years' => $years]);
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('entre 0 et 100 ans', $this->normalizedDisplay($tester));
+        self::assertNull(self::getContainer()->get(ExperienceTechnologyRepositoryInterface::class)->findOneByName('PHP'));
+    }
+
+    /**
+     * En interactif, la valeur hors bornes est refusée par le validateur de la
+     * question, qui la redemande, plutôt qu'au moment d'écrire.
+     */
+    public function testInteractivePromptAsksAgainWhenYearsAreOutOfRange(): void
+    {
+        $tester = $this->commandTester();
+        $tester->setInputs(['1e999', '13.5']);
+
+        $exitCode = $tester->execute(['--name' => 'PHP'], ['interactive' => true]);
+
+        self::assertSame(0, $exitCode);
+        self::assertStringContainsString('entre 0 et 100 ans', $this->normalizedDisplay($tester));
+        $technology = self::getContainer()->get(ExperienceTechnologyRepositoryInterface::class)->findOneByName('PHP');
+        self::assertNotNull($technology);
+        self::assertSame(13.5, $technology->getYears());
+    }
+
+    /** SymfonyStyle replie les blocs d'erreur à la largeur du terminal. */
+    private function normalizedDisplay(CommandTester $tester): string
+    {
+        return (string) preg_replace('/\s+/', ' ', $tester->getDisplay());
     }
 
     private function commandTester(): CommandTester
