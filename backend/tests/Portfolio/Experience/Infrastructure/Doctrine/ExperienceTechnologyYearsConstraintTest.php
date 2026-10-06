@@ -35,6 +35,9 @@ final class ExperienceTechnologyYearsConstraintTest extends KernelTestCase
         self::bootKernel();
         $this->connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         $this->connection->beginTransaction();
+        // Une base neuve n'est pas vide : Version20260906160000 insère des
+        // technologies. Vidée dans la transaction, la table revient au tearDown.
+        $this->connection->executeStatement('DELETE FROM experience_technology');
     }
 
     protected function tearDown(): void

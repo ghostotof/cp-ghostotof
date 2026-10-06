@@ -216,7 +216,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         ], content: sprintf('{"name":"Rust","years":%s}', $yearsLiteral));
 
         $this->assertViolationOnYears($client);
-        self::assertSame(0, $this->countTechnologies());
+        self::assertSame(0, $this->countTechnologiesNamed('Rust'));
 
         $this->assertPublicListStillServes($client);
     }
@@ -259,11 +259,22 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         ], content: '{"name":"Rust","years":-0.0}');
 
         self::assertResponseStatusCodeSame(201);
-        self::assertStringNotContainsString('-0', (string) $client->getResponse()->getContent());
+        self::assertYearsPublishedUnsigned((string) $client->getResponse()->getContent());
 
         $client->getCookieJar()->clear();
         $client->request('GET', '/api/experience/technologies');
-        self::assertStringNotContainsString('-0', (string) $client->getResponse()->getContent());
+        self::assertYearsPublishedUnsigned((string) $client->getResponse()->getContent());
+    }
+
+    /**
+     * Sur le seul champ `years` du JSON brut : le corps porte aussi des UUID
+     * v7, dont un sur douze environ contient « -0 » (le décodage, lui,
+     * confondrait -0.0 et 0.0, égaux pour PHP).
+     */
+    private static function assertYearsPublishedUnsigned(string $rawJson): void
+    {
+        self::assertMatchesRegularExpression('/"years":\s*0/', $rawJson);
+        self::assertDoesNotMatchRegularExpression('/"years":\s*-/', $rawJson);
     }
 
     private function assertViolationOnYears(KernelBrowser $client): void
@@ -279,10 +290,14 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         );
     }
 
-    private function countTechnologies(): int
+    /**
+     * Par nom, pas sur toute la table : une base neuve n'est pas vide
+     * (Version20260906160000 insère des technologies).
+     */
+    private function countTechnologiesNamed(string $name): int
     {
         $count = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
-            ->fetchOne('SELECT COUNT(*) FROM experience_technology');
+            ->fetchOne('SELECT COUNT(*) FROM experience_technology WHERE name = ?', [$name]);
         self::assertIsInt($count);
 
         return $count;
