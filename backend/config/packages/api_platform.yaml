@@ -137,9 +137,11 @@ api_platform:
         App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException: 429
         # Corps de requête que le Serializer refuse (JSON illisible, racine qui
         # n'est pas un objet), requalifié à la seule frontière de la
-        # désérialisation par MalformedRequestBodyProvider (issue #355) : le
-        # même 400 que l'entrée large ci-dessous, mais une classe précise, qui
-        # porte son propre `log_level` sans baisser l'encodage de sortie.
+        # désérialisation par MalformedRequestBodyProvider (issue #355) : une
+        # classe précise, qui porte son propre `log_level` sans baisser
+        # l'encodage de sortie, que l'entrée large ci-dessous rend en 500
+        # depuis l'issue #360. Elle reçoit aussi un `id` dans le corps d'un PUT
+        # (`api_allow_update: false`, plus bas, issue #373).
         App\Shared\Infrastructure\ApiPlatform\MalformedRequestBodyException: 400
         # --- Défauts d'API Platform, rétablis (audit A15 / T5.1) ---
         # Écrasés depuis toujours par la simple présence de la clé ci-dessus.
@@ -171,8 +173,25 @@ api_platform:
         # que sur un 5xx. Volontairement en dernier : c'est l'entrée la plus
         # large de la liste.
         Symfony\Component\Serializer\Exception\ExceptionInterface: 500
-        ApiPlatform\Metadata\Exception\InvalidArgumentException: 400
-        Doctrine\ORM\OptimisticLockException: 409
+        # Même raisonnement, même 500 (issue #373) : API Platform la rend en
+        # 400, sous-classe ItemNotFoundException comprise. Le seul chemin
+        # client trouvé — un `id` dans le corps d'un PUT, parti en résolution
+        # d'IRI — sort désormais en MalformedRequestBodyException
+        # (`api_allow_update: false`, plus bas). Reste la pagination (aucun
+        # provider de src/ ne pagine : `?page=0` répond 200), l'IriConverter
+        # (aucune ressource n'accepte d'IRI du client ; une IRI impossible à
+        # générer est un défaut de configuration) et la lecture des
+        # métadonnées : des défauts du serveur, en `critical`. Le jour où un provider paginera, `?page=0` sortirait
+        # ici en 500 : lui donner alors sa classe précise, à la #355, avant de
+        # brancher la pagination. Ne pas la remettre à 400.
+        ApiPlatform\Metadata\Exception\InvalidArgumentException: 500
+        # Troisième défaut d'API Platform, `Doctrine\ORM\OptimisticLockException: 409`,
+        # **retiré** (issue #373) : aucune entité n'est versionnée (pas de
+        # #[ORM\Version] dans src/), et la seule levée possible aujourd'hui,
+        # OptimisticLockException::notVersioned(), est une erreur de
+        # programmation — un 500 `critical`, ce que donne l'absence d'entrée.
+        # Le jour où une entité sera versionnée, le conflit concurrent est un
+        # 409 du client : lui donner alors une entrée et un `log_level`.
     defaults:
         stateless: true
         cache_headers:

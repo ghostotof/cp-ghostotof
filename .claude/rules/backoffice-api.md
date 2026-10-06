@@ -89,8 +89,12 @@ paths:
   may consult (the global one, merged per operation) the first key matching by `is_a()`, plus
   `getStatus()` for a problem exception and the kernel's conversion; no entry that targets anything else — a broad `\DomainException` or an
   interface would hide real server faults and shadow the precise entries after it, since the kernel takes
-  the first match —; and justified ways out only (`EXEMPT`: the three broad API Platform defaults below,
-  which stay `critical`; `JUSTIFIED_ENTRIES`: the 415 of #320).
+  the first match —; and justified ways out only (`EXEMPT`: the two broad API Platform defaults below,
+  which stay `critical`; `JUSTIFIED_ENTRIES`: the 415 of #320). **An `EXEMPT` entry is exempt from the
+  `log_level` entry only, never from the status/level check** (issue #373): it is still judged at the
+  kernel's default `critical`, hence at a 5xx. A key that is an interface or an abstract class
+  (`Serializer\ExceptionInterface`) is judged too, through a PHPUnit stub handed to `resolveLogLevel` —
+  before #373 it escaped the check, which is what really let #360 live.
   **Both maps are read compiled, never parsed from YAML** (issue #357): `tests/Support/CompiledExceptionConfig`
   reads the `exception_listener` mapping, the `api_platform.exception_to_status` parameter and the
   resource metadata from the test container, so an entry from another config file or a `when@test`
@@ -145,16 +149,27 @@ paths:
   `problemStatus()`): API Platform then emits `type: /errors/<slug>` in the problem+json, which the client keys
   on instead of substring-matching the localized `detail`.
   **Two traps of that map, both paid for** (audit A15): declaring `exception_to_status` **replaces** API
-  Platform's defaults instead of extending them, so the three it ships with sit explicitly at the
-  **end** of the list (`Serializer\ExceptionInterface: 500`, `ApiPlatform\Metadata\Exception\InvalidArgumentException: 400`,
-  `Doctrine\ORM\OptimisticLockException: 409`) — two of them as API Platform ships them, the Serializer one
-  **deliberately not**. When audit A15 restored them, unparsable JSON or a wrongly-typed field
+  Platform's defaults instead of extending them, so two of the three it ships with sit explicitly at the
+  **end** of the list (`Serializer\ExceptionInterface: 500`, `ApiPlatform\Metadata\Exception\InvalidArgumentException: 500`),
+  both **deliberately not** at API Platform's 400; the third, `Doctrine\ORM\OptimisticLockException: 409`,
+  was **removed** by issue #373 (no entity is versioned, and its only possible throw today, `notVersioned()`,
+  is a programming error — a `critical` 500, what no entry gives; map the conflict back to a 409 with a
+  `log_level` the day an `#[ORM\Version]` appears). The API Platform `InvalidArgumentException` (subclass
+  `ItemNotFoundException`; `OperationNotFoundException` is **not** one, it extends PHP's) was reachable by a
+  client: an `id` in the body of any PUT — a "standard" PUT populates no object in API Platform 4, so the key
+  went to IRI resolution and came out 400 + `critical`. `defaults.denormalization_context.api_allow_update:
+  false` now makes the Serializer refuse it (`MalformedRequestBodyException`, `info`), and
+  `MalformedRequestBodyTest::testEveryUpdateOperationRefusesAnUpdateByIri` checks it holds on every compiled
+  PUT/PATCH — a `denormalizationContext` declared on a resource or an operation **replaces** that default, so
+  it must repeat it. What is left for the broad entry is server faults (IRI generation, metadata), hence
+  500; **pagination** would reach it from a client (`?page=0`) the day a provider paginates — give that
+  case its own class first, never move the entry back to 400. When audit A15 restored them, unparsable JSON or a wrongly-typed field
   answered **500 on every POST, public ones included**, i.e. an anonymous caller could manufacture 500s at
   will and drown real server errors in the logs; the Serializer's default 400 was the cure then. #239 and
   #355 have since given every client case its own class, so what still reaches that entry is a server
   fault, mapped to **500** (issue #360, see above) — the client side is guarded by `MalformedRequestBodyTest`,
-  not by this entry. The status/level check of `ExceptionLogLevelCoverageTest` skips `EXEMPT` entries
-  (issue #373 tracks that blind spot, which let #360 live).
+  not by this entry. The status/level check of `ExceptionLogLevelCoverageTest` covers `EXEMPT` entries
+  and interface keys since issue #373 (see above): both blind spots had let #360 live.
   And resolution takes the **first matching entry**, with
   `is_a()` matching interfaces and parents too, so a broad entry must stay **below** the precise ones: add a
   new exception *above* those three restored defaults, never after. Since 2026-09-22 (issue #239)

@@ -19,7 +19,6 @@ use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\AttributedFixt
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\InheritingFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\LoggedFixtureProblemException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\UnloggedFixtureProblemException;
-use Doctrine\ORM\OptimisticLockException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpKernel\EventListener\ErrorListener;
@@ -68,16 +67,19 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
      * aussi celui de vrais défauts serveur — un JSON de sortie non encodable,
      * une exception du Serializer sous un contrôleur. Elles restent donc en
      * `critical`, et ce qu'un client peut produire à volonté passe par une
-     * classe précise : le corps de requête refusé par le Serializer sort en
-     * MalformedRequestBodyException depuis l'issue #355 — si bien que celle du
-     * Serializer, qui ne voit plus que des défauts serveur, est rendue en 500
-     * depuis l'issue #360, statut et niveau enfin d'accord. Les deux autres ne
-     * sont atteignables par aucun client aujourd'hui (vérifié le 2026-10-05).
+     * classe précise, si bien que l'entrée large ne voit plus que des défauts
+     * serveur et se rend en 500 : le corps de requête refusé par le Serializer
+     * sort en MalformedRequestBodyException depuis l'issue #355 (500 pour le
+     * Serializer depuis #360), un `id` dans le corps d'un PUT aussi depuis
+     * l'issue #373 (500 pour l'InvalidArgumentException d'API Platform).
+     *
+     * Une dispense ne vaut que pour l'entrée `log_level` : statut et niveau
+     * doivent s'accorder quand même (testEveryLevelMatchesTheStatusItRenders,
+     * issue #373).
      */
     private const array EXEMPT = [
         SerializerExceptionInterface::class => 'Entrée large, rendue en 500 (#360) : ne voit plus que des défauts serveur — JSON de sortie non encodable (`NaN` en base, ServerSideSerializerFailureTest), Serializer mal configuré, format négocié sans encodeur. Le corps de requête en est sorti (MalformedRequestBodyException, #355), le point d\'entrée Hydra GET /api est coupé partout.',
-        ApiPlatformInvalidArgumentException::class => 'Entrée large d\'API Platform, sous-classes comprises (ItemNotFoundException, OperationNotFoundException) : levée par la pagination (aucun provider de src/ ne pagine, `?page=0` répond 200), l\'IriConverter (aucune ressource n\'accepte d\'IRI du client) et la lecture des métadonnées, autant de défauts de configuration.',
-        OptimisticLockException::class => 'Défaut d\'API Platform ; aucune entité versionnée (pas de #[ORM\Version] dans src/), le conflit serait à observer.',
+        ApiPlatformInvalidArgumentException::class => 'Entrée large d\'API Platform, sous-classe ItemNotFoundException comprise (OperationNotFoundException n\'en est pas : elle étend \InvalidArgumentException de PHP), rendue en 500 (#373). Le seul chemin client trouvé — un `id` dans le corps d\'un PUT, parti en résolution d\'IRI — en est sorti (`api_allow_update: false`, MalformedRequestBodyTest). Restent la pagination (aucun provider de src/ ne pagine, `?page=0` répond 200), l\'IriConverter (aucune ressource n\'accepte d\'IRI du client) et la lecture des métadonnées, autant de défauts de configuration.',
     ];
 
     /**
@@ -117,10 +119,16 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
      * `critical` sur une 404 passeraient sinon le garde-fou. Il est jugé contre
      * chaque statut que l'exception peut recevoir (renderedStatuses), au niveau
      * que le noyau retient pour elle.
+     *
+     * EXEMPT compris (issue #373) : une dispense exempte d'une entrée
+     * `log_level`, jamais de l'accord entre statut et niveau. Soustraite ici,
+     * elle avait laissé vivre `Serializer\ExceptionInterface: 400` en
+     * `critical` (#360), puis l'InvalidArgumentException d'API Platform au
+     * même 400, qu'un `id` dans le corps d'un PUT atteignait.
      */
     public function testEveryLevelMatchesTheStatusItRenders(): void
     {
-        $watched = array_diff_key($this->renderedStatuses(), self::EXEMPT);
+        $watched = $this->renderedStatuses();
 
         self::assertSame([], $this->levelViolations($watched, $this->kernelLevels($this->errorListener(), array_keys($watched))));
     }
