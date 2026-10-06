@@ -18,11 +18,12 @@ use App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException;
 use App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException;
 use App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException;
 use App\Shared\Infrastructure\ApiPlatform\MalformedRequestBodyException;
+use App\Tests\Support\CompiledExceptionConfig;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\TestCase;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\EventListener\ErrorListener;
@@ -30,7 +31,6 @@ use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Serializer\Exception\NotEncodableValueException;
 use Symfony\Component\Uid\Uuid;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * L'ErrorListener du noyau journalise en `critical` toute exception qui n'est
@@ -38,8 +38,9 @@ use Symfony\Component\Yaml\Yaml;
  * erreur du client ou pour la panne d'un tiers dont la cause est déjà sur le
  * canal `ai_usage`. Les niveaux vivent dans `framework.exceptions` plutôt
  * qu'en attribut sur les exceptions, pour que le domaine ne dépende pas de
- * HttpKernel. Le listener est construit avec le mapping lu dans framework.yaml,
- * comme le fait le conteneur.
+ * HttpKernel. Le listener est construit avec le mapping que le conteneur
+ * compilé lui donne (issue #357) : une entrée surchargée dans un autre fichier
+ * de configuration compte, comme pour le noyau.
  *
  * Le cas du 415 dépasse l'assistant : la classe est aussi levée par API
  * Platform, son niveau vaut donc pour toute l'API (framework.yaml, issue #320).
@@ -56,10 +57,8 @@ use Symfony\Component\Yaml\Yaml;
  * La requête est la même pour tous les cas : le niveau ne dépend que de
  * l'exception, jamais de la route.
  */
-final class ApiExceptionLogLevelTest extends TestCase
+final class ApiExceptionLogLevelTest extends KernelTestCase
 {
-    private const string FRAMEWORK_CONFIG = __DIR__.'/../../../../config/packages/framework.yaml';
-
     /**
      * @return iterable<string, array{\Throwable, Level}>
      */
@@ -92,7 +91,7 @@ final class ApiExceptionLogLevelTest extends TestCase
     public function testTheKernelLogsItAtTheConfiguredLevel(\Throwable $exception, Level $expected): void
     {
         $handler = new TestHandler();
-        $listener = new ErrorListener(null, new Logger('request', [$handler]), false, $this->exceptionsMapping());
+        $listener = new ErrorListener(null, new Logger('request', [$handler]), false, CompiledExceptionConfig::exceptionsMapping(self::getContainer()->get('exception_listener')));
 
         $listener->logKernelException(new ExceptionEvent(
             self::createStub(HttpKernelInterface::class),
@@ -103,21 +102,5 @@ final class ApiExceptionLogLevelTest extends TestCase
 
         self::assertCount(1, $handler->getRecords());
         self::assertSame($expected, $handler->getRecords()[0]->level);
-    }
-
-    /**
-     * @return array<class-string, array{log_level: ?string, status_code: null, log_channel: null}>
-     */
-    private function exceptionsMapping(): array
-    {
-        /** @var array{framework: array{exceptions?: array<class-string, array{log_level?: string}>}} $config */
-        $config = Yaml::parseFile(self::FRAMEWORK_CONFIG);
-
-        $mapping = [];
-        foreach ($config['framework']['exceptions'] ?? [] as $class => $options) {
-            $mapping[$class] = ['log_level' => $options['log_level'] ?? null, 'status_code' => null, 'log_channel' => null];
-        }
-
-        return $mapping;
     }
 }

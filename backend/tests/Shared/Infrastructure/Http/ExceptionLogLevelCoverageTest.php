@@ -7,15 +7,15 @@ namespace App\Tests\Shared\Infrastructure\Http;
 use ApiPlatform\Metadata\Exception\InvalidArgumentException as ApiPlatformInvalidArgumentException;
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use App\Shared\Domain\Exception\HasProblemType;
+use App\Tests\Support\CompiledExceptionConfig;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\LoggedFixtureProblemException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\UnloggedFixtureProblemException;
 use Doctrine\ORM\OptimisticLockException;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\TestCase;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Toute exception que l'API rend avec un statut a son `log_level` dans
@@ -39,13 +39,15 @@ use Symfony\Component\Yaml\Yaml;
  * Une entrée couvre une classe comme le noyau la résout : `instanceof`, donc
  * aussi par une classe parente ou une interface. S'en dispenser passe par
  * EXEMPT, avec sa justification : c'est la seule échappatoire, et elle se voit.
+ *
+ * Les deux configurations sont lues **compilées**, dans le conteneur de test
+ * (issue #357) : une entrée déclarée dans un autre fichier de config/packages/,
+ * dans un bloc `when@test` ou en PHP compte comme le noyau la compte.
  */
-final class ExceptionLogLevelCoverageTest extends TestCase
+final class ExceptionLogLevelCoverageTest extends KernelTestCase
 {
     private const string SOURCES = __DIR__.'/../../../../src';
     private const string FIXTURE_SOURCES = __DIR__.'/Fixtures/LogLevelSources';
-    private const string FRAMEWORK_CONFIG = __DIR__.'/../../../../config/packages/framework.yaml';
-    private const string API_PLATFORM_CONFIG = __DIR__.'/../../../../config/packages/api_platform.yaml';
 
     /**
      * Entrées larges, rétablies depuis les défauts d'API Platform en fin de
@@ -265,10 +267,7 @@ final class ExceptionLogLevelCoverageTest extends TestCase
      */
     private function exceptionToStatus(): array
     {
-        /** @var array{api_platform: array{exception_to_status?: array<string, int>}} $config */
-        $config = Yaml::parseFile(self::API_PLATFORM_CONFIG);
-
-        return $config['api_platform']['exception_to_status'] ?? [];
+        return CompiledExceptionConfig::exceptionToStatus(self::getContainer());
     }
 
     /**
@@ -284,10 +283,7 @@ final class ExceptionLogLevelCoverageTest extends TestCase
      */
     private function logLevels(): array
     {
-        /** @var array{framework: array{exceptions?: array<string, array<string, mixed>>}} $config */
-        $config = Yaml::parseFile(self::FRAMEWORK_CONFIG);
-
-        return $this->logLevelsOf($config['framework']['exceptions'] ?? []);
+        return $this->logLevelsOf(CompiledExceptionConfig::exceptionsMapping(self::getContainer()->get('exception_listener')));
     }
 
     /**

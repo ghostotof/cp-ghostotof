@@ -1,0 +1,49 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Tests\Support;
+
+use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpKernel\EventListener\ErrorListener;
+
+/**
+ * Ce que le conteneur compilé fait des exceptions, plutôt que ce qu'en dit un
+ * fichier YAML (issue #357).
+ *
+ * Lire `framework.yaml` ou `api_platform.yaml` par Yaml::parseFile laissait
+ * échapper les blocs `when@test`, toute autre source de configuration qui se
+ * fusionne (un second fichier de config/packages/, du PHP) et tout ce
+ * qu'aucun fichier ne déclare. Le conteneur, lui, porte la configuration telle
+ * que le noyau l'applique.
+ */
+final class CompiledExceptionConfig
+{
+    /**
+     * `framework.exceptions` compilé : le 4e argument du service
+     * `exception_listener` (FrameworkExtension), que l'ErrorListener garde dans
+     * une propriété protégée. La réflexion échoue bruyamment si Symfony la
+     * renomme, plutôt que de rendre une liste vide.
+     *
+     * Le service est passé par l'appelant, qui le tient du conteneur de test :
+     * il est privé, et seul ce conteneur-là l'expose.
+     *
+     * @return array<class-string, array{log_level: ?string, status_code: int<100, 599>|null, log_channel: ?string}>
+     */
+    public static function exceptionsMapping(ErrorListener $listener): array
+    {
+        /** @var array<class-string, array{log_level: ?string, status_code: int<100, 599>|null, log_channel: ?string}> */
+        return (new \ReflectionProperty(ErrorListener::class, 'exceptionsMapping'))->getValue($listener);
+    }
+
+    /**
+     * `api_platform.exception_to_status` compilé, dans l'ordre de résolution.
+     *
+     * @return array<string, int>
+     */
+    public static function exceptionToStatus(ContainerInterface $container): array
+    {
+        /** @var array<string, int> */
+        return $container->getParameter('api_platform.exception_to_status');
+    }
+}
