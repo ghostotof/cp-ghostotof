@@ -118,7 +118,11 @@ paths:
   `api_platform.state_provider.deserialize` and, **on an operation that deserializes only**, turns the
   Serializer's `UnexpectedValueException` family — the only one a client can trigger — into
   `MalformedRequestBodyException` (400, `info`): unreadable JSON, and valid JSON whose root is not an
-  object (`123`, `null`, `"x"`), which is *not* collected as a 422. A server fault raised at the same step
+  object (`123`, `null`, `"x"`), which is *not* collected as a 422 — plus, since #360, two precise classes
+  of its `RuntimeException` family that only a body can cause and no operation triggers today:
+  `ExtraAttributesException` (`allow_extra_attributes: false`) and `MissingConstructorArgumentsException`
+  (`collect_denormalization_errors` off); with the broad entry at 500, a context change would otherwise hand
+  anonymous callers a `critical` 500. Never `RuntimeException` itself. A server fault raised at the same step
   (`LogicException`, `MappingException`, an `UnsupportedFormatException` for a negotiated format with no
   encoder) passes through untouched and stays a `critical` 500 — never widen the `catch` to
   `Serializer\ExceptionInterface`. The broad entry keeps covering the output side only (a non-encodable
