@@ -7,6 +7,7 @@ namespace App\Tests\Support;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\Attribute\WithHttpStatus;
+use Symfony\Component\HttpKernel\Attribute\WithLogLevel;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\EventListener\ErrorListener;
 
@@ -117,6 +118,29 @@ final class CompiledExceptionConfig
         }
 
         return $statuses;
+    }
+
+    /**
+     * Le niveau que fixe #[WithLogLevel], lu par la même méthode du noyau que
+     * #[WithHttpStatus] : sur la classe, ses parentes et ses interfaces. Le
+     * noyau ne s'en sert qu'à défaut d'entrée dans `framework.exceptions`.
+     *
+     * @param iterable<string> $classes
+     *
+     * @return array<string, string> classe => niveau
+     */
+    public static function withLogLevel(ErrorListener $listener, iterable $classes): array
+    {
+        $resolve = self::internal(static fn (): \ReflectionMethod => new \ReflectionMethod(ErrorListener::class, 'getInheritedAttribute'));
+        $levels = [];
+        foreach ($classes as $class) {
+            $attribute = is_subclass_of($class, \Throwable::class) ? $resolve->invoke($listener, $class, WithLogLevel::class) : null;
+            if ($attribute instanceof WithLogLevel) {
+                $levels[$class] = $attribute->level;
+            }
+        }
+
+        return $levels;
     }
 
     /**

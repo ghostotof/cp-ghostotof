@@ -12,6 +12,7 @@ use App\Tests\Support\CompiledExceptionConfig;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Support\ExtraConfigKernel;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\ExceptionToStatusFixtureResource;
+use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\LoudAttributeFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\AttributedFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\InheritingFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\LoggedFixtureProblemException;
@@ -61,6 +62,7 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     private const string CONFIG = __DIR__.'/../../../../config';
     private const string FIXTURE_CONFIG = __DIR__.'/Fixtures/EnvironmentConfig';
     private const string EXTRA_CONFIG = __DIR__.'/Fixtures/ExtraConfig/exceptions.yaml';
+    private const string FIXTURE_ATTRIBUTES = __DIR__.'/Fixtures/LogLevelAttributes';
     private const string EXTRA_CONFIG_OPTION = 'extra_config';
 
     /**
@@ -137,7 +139,7 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
 
         self::assertSame(
             [],
-            $this->uncovered($watched, $this->logLevelKeys()),
+            $this->uncovered($watched, $this->logLevelKeys(), $this->withLogLevel($watched)),
             'Sans `log_level` dans framework.exceptions, ces exceptions sortent en `critical`.',
         );
     }
@@ -156,7 +158,10 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
             $statuses[$class] ??= [(new \ReflectionClass($class))->newInstanceWithoutConstructor()->getStatus() ?? 500];
         }
 
-        self::assertSame([], $this->levelViolations(array_diff_key($statuses, self::EXEMPT), $this->logLevels()));
+        $watched = array_diff_key($statuses, self::EXEMPT);
+        $levels = $this->resolvedLevels(array_keys($watched), $this->logLevels(), $this->withLogLevel(array_keys($watched)));
+
+        self::assertSame([], $this->levelViolations($watched, $levels));
     }
 
     /**
@@ -492,21 +497,108 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     }
 
     /**
+     * Le noyau lit #[WithLogLevel] à défaut d'entrée (ErrorListener::resolveLogLevel) :
+     * une exception qui le porte, ou en hérite, a un niveau (issue #357). Le
+     * projet préfère `framework.exceptions`, pour que le domaine ne dépende pas
+     * de HttpKernel ; ce n'est pas à ce garde-fou de le dire en se trompant.
+     */
+    public function testAWithLogLevelAttributeCoversItsException(): void
+    {
+        $classes = array_keys($this->withHttpStatus(self::FIXTURE_ATTRIBUTES));
+
+        self::assertCount(3, $classes);
+        self::assertSame([], $this->uncovered($classes, $this->logLevelKeys(), $this->withLogLevel($classes)));
+    }
+
+    /**
+     * Le niveau qu'il fixe obéit à la même politique qu'une entrée.
+     */
+    public function testAWithLogLevelAttributeIsHeldToTheLevelPolicy(): void
+    {
+        $statuses = $this->withHttpStatus(self::FIXTURE_ATTRIBUTES);
+        $levels = $this->resolvedLevels(array_keys($statuses), $this->logLevels(), $this->withLogLevel(array_keys($statuses)));
+
+        self::assertSame([LoudAttributeFixtureException::class => '404 : critical'], $this->levelViolations($statuses, $levels));
+    }
+
+    /**
+     * L'ordre du noyau : une entrée qui correspond l'emporte sur l'attribut.
+     */
+    public function testAnEntryTakesPrecedenceOverTheAttribute(): void
+    {
+        self::assertSame(
+            [LoudAttributeFixtureException::class => 'info'],
+            $this->resolvedLevels([LoudAttributeFixtureException::class], [\DomainException::class => 'info'], [LoudAttributeFixtureException::class => 'critical']),
+        );
+    }
+
+    /**
+     * Le niveau contrôlé est celui que le noyau retient, pas seulement celui
+     * d'une entrée au nom exact de la classe : une 404 couverte par l'entrée
+     * de sa classe parente, en `critical`, est hors politique (issue #357).
+     */
+    public function testTheLevelOfAParentEntryIsHeldToThePolicy(): void
+    {
+        $levels = $this->resolvedLevels([\OverflowException::class], [\RuntimeException::class => 'critical'], []);
+
+        self::assertSame([\OverflowException::class => '404 : critical'], $this->levelViolations([\OverflowException::class => [404]], $levels));
+    }
+
+    /**
+     * La résolution du noyau (ErrorListener::resolveLogLevel) : la première
+     * entrée qui correspond par `instanceof` et fixe un niveau, à défaut
+     * #[WithLogLevel], hérité compris. Une classe sans l'un ni l'autre est
+     * absente du résultat.
+     *
+     * @param list<string>          $classes
+     * @param array<string, string> $entryLevels     entrées de `framework.exceptions`, dans leur ordre
+     * @param array<string, string> $attributeLevels classe => niveau de son #[WithLogLevel]
+     *
+     * @return array<string, string> classe => niveau retenu
+     */
+    private function resolvedLevels(array $classes, array $entryLevels, array $attributeLevels): array
+    {
+        $resolved = [];
+        foreach ($classes as $class) {
+            $level = array_find($entryLevels, static fn (string $level, string $entry): bool => is_a($class, $entry, true))
+                ?? $attributeLevels[$class]
+                ?? null;
+            if (null !== $level) {
+                $resolved[$class] = $level;
+            }
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * @param list<string> $classes
+     *
+     * @return array<string, string> classe => niveau de son #[WithLogLevel]
+     */
+    private function withLogLevel(array $classes): array
+    {
+        return CompiledExceptionConfig::withLogLevel(self::getContainer()->get('exception_listener'), $classes);
+    }
+
+    /**
      * Une entrée couvre une classe comme le noyau la résout : par `instanceof`
      * (ErrorListener::resolveLogLevel). L'ordre des entrées, qui départage
      * pour le noyau, n'entre pas en jeu ici : testEveryLogLevelEntryTargetsARenderedException
      * n'admet que des entrées précises, qui ne se recouvrent donc pas.
      *
-     * @param list<string> $classes
-     * @param list<string> $logLevelKeys
+     * @param list<string>          $classes
+     * @param list<string>          $logLevelKeys
+     * @param array<string, string> $attributeLevels classe => niveau de son #[WithLogLevel]
      *
-     * @return list<string> classes qu'aucune entrée ne couvre
+     * @return list<string> classes qu'aucune entrée ni aucun attribut ne couvre
      */
-    private function uncovered(array $classes, array $logLevelKeys): array
+    private function uncovered(array $classes, array $logLevelKeys, array $attributeLevels = []): array
     {
         return array_values(array_filter(
             $classes,
-            static fn (string $class): bool => !array_any($logLevelKeys, static fn (string $key): bool => is_a($class, $key, true)),
+            static fn (string $class): bool => !isset($attributeLevels[$class])
+                && !array_any($logLevelKeys, static fn (string $key): bool => is_a($class, $key, true)),
         ));
     }
 
