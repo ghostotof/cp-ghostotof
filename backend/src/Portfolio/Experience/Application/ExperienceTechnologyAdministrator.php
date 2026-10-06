@@ -8,6 +8,7 @@ use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException;
 use App\Portfolio\Experience\Domain\Repository\ExperienceTechnologyRepositoryInterface;
+use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Symfony\Component\Uid\Uuid;
 
@@ -18,7 +19,7 @@ final readonly class ExperienceTechnologyAdministrator implements ExperienceTech
     ) {
     }
 
-    public function update(Uuid $id, string $name, float $years, ?string $iconKey, ?string $relatedTechnologyName, bool $secondary = false): ExperienceTechnology
+    public function update(Uuid $id, string $name, ExperienceYears $years, ?string $iconKey, ?string $relatedTechnologyName, bool $secondary = false): ExperienceTechnology
     {
         $technology = $this->experienceTechnologyRepository->findOneById($id);
 

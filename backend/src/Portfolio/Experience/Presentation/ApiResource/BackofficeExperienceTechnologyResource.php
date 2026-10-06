@@ -11,6 +11,7 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
+use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use App\Portfolio\Experience\Infrastructure\ApiPlatform\BackofficeExperienceTechnologyProcessor;
 use App\Portfolio\Experience\Infrastructure\ApiPlatform\BackofficeExperienceTechnologyProvider;
 use Symfony\Component\Routing\Requirement\Requirement;
@@ -66,7 +67,7 @@ final class BackofficeExperienceTechnologyResource
          * INF (`1e999` en JSON), que `PositiveOrZero` seul laissait passer.
          */
         #[Assert\PositiveOrZero]
-        #[Assert\LessThanOrEqual(ExperienceTechnology::MAX_YEARS)]
+        #[Assert\LessThanOrEqual(ExperienceYears::MAX)]
         public float $years = 0.0,
         #[Assert\Length(max: 60)]
         public ?string $iconKey = null,

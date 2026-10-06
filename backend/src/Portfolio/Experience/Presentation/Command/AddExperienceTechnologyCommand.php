@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Portfolio\Experience\Presentation\Command;
 
 use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
-use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException;
 use App\Portfolio\Experience\Domain\Exception\InvalidExperienceYearsException;
+use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -68,7 +68,7 @@ final class AddExperienceTechnologyCommand extends Command
         try {
             $technology = $this->experienceTechnologyRegistrar->register(
                 $name,
-                (float) $yearsInput,
+                ExperienceYears::fromFloat((float) $yearsInput),
                 \is_string($icon) && '' !== $icon ? $icon : null,
                 \is_string($relatedTechnology) && '' !== $relatedTechnology ? $relatedTechnology : null,
             );
@@ -103,7 +103,7 @@ final class AddExperienceTechnologyCommand extends Command
         // Même règle que l'entité, appliquée ici pour que la question soit
         // reposée au lieu d'échouer une fois toutes les réponses données.
         try {
-            ExperienceTechnology::assertYearsInRange((float) $years);
+            ExperienceYears::fromString($years);
         } catch (InvalidExperienceYearsException $exception) {
             throw new \InvalidArgumentException($exception->getMessage(), $exception->getCode(), previous: $exception);
         }

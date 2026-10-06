@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Experience\Domain\Entity;
 
-use App\Portfolio\Experience\Domain\Exception\InvalidExperienceYearsException;
+use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use App\Portfolio\Experience\Infrastructure\Doctrine\ExperienceTechnologyRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -24,14 +24,6 @@ use Symfony\Component\Validator\Constraints as Assert;
 class ExperienceTechnology
 {
     /**
-     * Borne haute du temps cumulé, en années (issue #372). Assez large pour ne
-     * jamais gêner une vraie saisie, assez serrée pour refuser l'absurde qu'une
-     * page publique afficherait tel quel. Partagée avec les contraintes du DTO
-     * backoffice, pour que le 422 et la garde du domaine ne divergent pas.
-     */
-    public const float MAX_YEARS = 100.0;
-
-    /**
      * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
      * non par la base au flush. Une entité connaît donc son identité dès sa
      * construction — elle se compare et se teste sans persistance.
@@ -45,9 +37,14 @@ class ExperienceTechnology
     #[Assert\Length(max: 180)]
     private string $name;
 
+    /**
+     * Toujours issu d'un ExperienceYears (issue #372) : la colonne garde un
+     * `float` pour Doctrine, la règle vit dans le Value Object et dans la
+     * contrainte `chk_experience_technology_years` en base — Doctrine
+     * n'appelle pas le constructeur en hydratant, seule la base protège une
+     * ligne écrite hors de l'entité.
+     */
     #[ORM\Column]
-    #[Assert\PositiveOrZero]
-    #[Assert\LessThanOrEqual(self::MAX_YEARS)]
     private float $years;
 
     #[ORM\Column(length: 60, nullable: true)]
@@ -73,16 +70,14 @@ class ExperienceTechnology
 
     public function __construct(
         string $name,
-        float $years,
+        ExperienceYears $years,
         ?string $iconKey = null,
         ?string $relatedTechnologyName = null,
         bool $secondary = false,
     ) {
-        self::assertYearsInRange($years);
-
         $this->id = Uuid::v7();
         $this->name = $name;
-        $this->years = $years;
+        $this->years = $years->value;
         $this->iconKey = $iconKey;
         $this->relatedTechnologyName = $relatedTechnologyName;
         $this->secondary = $secondary;
@@ -120,33 +115,15 @@ class ExperienceTechnology
 
     public function update(
         string $name,
-        float $years,
+        ExperienceYears $years,
         ?string $iconKey,
         ?string $relatedTechnologyName,
         bool $secondary = false,
     ): void {
-        self::assertYearsInRange($years);
-
         $this->name = $name;
-        $this->years = $years;
+        $this->years = $years->value;
         $this->iconKey = $iconKey;
         $this->relatedTechnologyName = $relatedTechnologyName;
         $this->secondary = $secondary;
-    }
-
-    /**
-     * Garde de l'issue #372, appliquée à la création comme à la modification et
-     * avant toute affectation. `is_finite()` d'abord : NaN rend fausse toute
-     * comparaison, il passerait donc entre `< 0` et `> MAX_YEARS` sans elle.
-     * Publique pour qu'une saisie interactive (AddExperienceTechnologyCommand)
-     * redemande la valeur avec la même règle, sans la recopier.
-     *
-     * @throws InvalidExperienceYearsException
-     */
-    public static function assertYearsInRange(float $years): void
-    {
-        if (!is_finite($years) || $years < 0.0 || $years > self::MAX_YEARS) {
-            throw InvalidExperienceYearsException::outOfRange($years, self::MAX_YEARS);
-        }
     }
 }

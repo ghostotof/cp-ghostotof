@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Portfolio\Experience\Presentation\ApiResource;
 
 use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
+use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
@@ -96,7 +97,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $technology = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register('Docker', 6.5, 'docker', null);
+        $technology = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register('Docker', ExperienceYears::fromFloat(6.5), 'docker', null);
 
         $client->request('GET', sprintf('/api/backoffice/experience/technologies/%s', $technology->getId()->toRfc4122()));
         self::assertResponseIsSuccessful();
@@ -118,7 +119,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register('Docker', 6.5, 'docker', null);
+        $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register('Docker', ExperienceYears::fromFloat(6.5), 'docker', null);
 
         // GetCollection
         $client->request('GET', '/api/backoffice/experience/technologies');
@@ -226,7 +227,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         $client = self::createClient();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
-        $technology = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register('Docker', 6.5, 'docker', null);
+        $technology = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register('Docker', ExperienceYears::fromFloat(6.5), 'docker', null);
 
         $client->request('PUT', sprintf('/api/backoffice/experience/technologies/%s', $technology->getId()->toRfc4122()), server: [
             'CONTENT_TYPE' => 'application/json',
