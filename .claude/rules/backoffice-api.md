@@ -77,13 +77,24 @@ paths:
   a client-triggerable 4xx stays `info` once something attributable traces it. That rule covers our domain exceptions
   only: the framework's own HTTP 4xx (router 404/405, validation 422, 403) stay at `error`.
   `tests/Shared/Infrastructure/Http/ExceptionLogLevelCoverageTest.php` pins four things: an entry for
-  every `exception_to_status` key and every `ProblemExceptionInterface` of `src/` (found by token parsing
+  every exception rendered with a declared status — every `exception_to_status` key, every
+  `exceptionToStatus` carried by an `#[ApiResource]` or one of its operations (merged by the vendor at
+  render time, `ErrorListener::getOperationExceptionToStatus`), every `#[WithHttpStatus]` exception of
+  `src/` (the kernel converts it but resolves the level on the original exception) and every
+  `ProblemExceptionInterface` of `src/` (found by token parsing
   through `tests/Support/DeclaredClasses`, shared with `ProblemDetailStaysStaticTest`, never inferred from
   file paths); a level that matches the rendered status (4xx: info/notice/warning, 5xx:
   warning/error/critical); no entry that targets anything else — a broad `\DomainException` or an
   interface would hide real server faults and shadow the precise entries after it, since the kernel takes
   the first match —; and justified ways out only (`EXEMPT`: the three broad API Platform defaults below,
   which stay `critical`; `JUSTIFIED_ENTRIES`: the 415 of #320).
+  **Both maps are read compiled, never parsed from YAML** (issue #357): `tests/Support/CompiledExceptionConfig`
+  reads the `exception_listener` mapping, the `api_platform.exception_to_status` parameter and the
+  resource metadata from the test container, so an entry from another config file or a `when@test`
+  block counts as the kernel counts it; `ApiExceptionLogLevelTest` builds its listener from the same
+  mapping. The flip side: the test container only sees `test`. **Never declare either map for a single
+  environment** (`when@prod`, `config/packages/prod/`, `services_prod.yaml` — preprod and prod both run
+  `APP_ENV=prod`): keep them common, `ExceptionLogLevelCoverageTest` turns red otherwise.
   **A request body the Serializer refuses never reaches the broad `Serializer\ExceptionInterface` entry**
   (issue #355): `Shared/Infrastructure/ApiPlatform/MalformedRequestBodyProvider` decorates
   `api_platform.state_provider.deserialize` and, **on an operation that deserializes only**, turns the

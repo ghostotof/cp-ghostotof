@@ -22,6 +22,9 @@ framework:
     # Ici plutôt qu'en `#[WithLogLevel]` : le domaine ne dépend pas de HttpKernel.
     # Ne viser que des classes précises : un mapping sur HttpException
     # abaisserait le niveau de tous les 4xx de l'application.
+    # Commun à tous les environnements, jamais sous `when@prod` : le garde-fou
+    # lit ce mapping compilé dans le conteneur de test, qui ne voit pas `prod`
+    # (issue #357).
     exceptions:
         # Ici, `log_level` seulement, jamais `status_code` pour une exception
         # métier rendue en problem+json (issue #322) : avec un `status_code`,
