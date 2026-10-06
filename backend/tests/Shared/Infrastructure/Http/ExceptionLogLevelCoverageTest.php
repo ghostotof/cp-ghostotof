@@ -128,9 +128,34 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
      */
     public function testEveryLevelMatchesTheStatusItRenders(): void
     {
+        self::assertSame([], $this->levelViolations(...$this->levelCheck()));
+    }
+
+    /**
+     * La régression de #373, verrouillée : la configuration étant désormais
+     * d'accord, le test précédent resterait vert si l'on soustrayait de
+     * nouveau EXEMPT — ou si une clé interface n'avait plus de niveau. Chaque
+     * dispense doit donc figurer, avec un niveau résolu, dans ce que le
+     * contrôle juge.
+     */
+    public function testTheLevelCheckJudgesEveryExemptedEntry(): void
+    {
+        [, $levels] = $this->levelCheck();
+
+        self::assertSame([], array_values(array_diff(array_keys(self::EXEMPT), array_keys($levels))), 'Dispense que le contrôle statut/niveau ne juge pas.');
+    }
+
+    /**
+     * Ce que juge le contrôle des niveaux : chaque exception rendue, EXEMPT
+     * compris, et le niveau que le noyau retient pour elle.
+     *
+     * @return array{array<string, list<int>>, array<string, string>} statuts rendus, niveaux retenus
+     */
+    private function levelCheck(): array
+    {
         $watched = $this->renderedStatuses();
 
-        self::assertSame([], $this->levelViolations($watched, $this->kernelLevels($this->errorListener(), array_keys($watched))));
+        return [$watched, $this->kernelLevels($this->errorListener(), array_keys($watched))];
     }
 
     /**
@@ -354,6 +379,7 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
         yield 'interface sans entrée' => [SerializerExceptionInterface::class, [], '400 : critical'];
         yield 'classe abstraite sans entrée' => [AbstractAttributedFixtureException::class, [], '400 : critical'];
         yield 'interface couverte par son entrée' => [SerializerExceptionInterface::class, [SerializerExceptionInterface::class => ['log_level' => 'info']], null];
+        yield 'classe abstraite couverte par son entrée' => [AbstractAttributedFixtureException::class, [AbstractAttributedFixtureException::class => ['log_level' => 'info']], null];
     }
 
     /**
@@ -404,6 +430,12 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
      * de test en tient lieu (issue #373), sans quoi elle échapperait au
      * contrôle des niveaux.
      *
+     * Limite connue : le double d'une clé qui est une HttpExceptionInterface
+     * renvoie un statut 0, que le noyau tient pour un 4xx (`error`), quand une
+     * implémentation réelle en 5xx sortirait `critical`. Aucune clé de ce genre
+     * aujourd'hui, et les deux niveaux reçoivent le même verdict de la
+     * politique sur un 4xx comme sur un 5xx : pas de faux vert.
+     *
      * @param list<string> $classes
      *
      * @return array<string, string> classe => niveau
@@ -415,10 +447,9 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
             if (!is_subclass_of($class, \Throwable::class)) {
                 continue;
             }
-            $reflection = new \ReflectionClass($class);
-            $level = $reflection->isAbstract() || $reflection->isInterface()
-                ? CompiledExceptionConfig::kernelLogLevelOf($listener, self::createStub($class))
-                : CompiledExceptionConfig::kernelLogLevel($listener, $class);
+            // kernelLogLevel() ne répond pas pour une classe non instanciable.
+            $level = CompiledExceptionConfig::kernelLogLevel($listener, $class)
+                ?? CompiledExceptionConfig::kernelLogLevelOf($listener, self::createStub($class));
             if (null !== $level) {
                 $levels[$class] = $level;
             }

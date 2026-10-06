@@ -234,7 +234,7 @@ final class MalformedRequestBodyTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)
             ->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $csrfToken = $this->loginAsSuper($client);
-        $superId = $client->getContainer()->get(EntityManagerInterface::class)->getConnection()->fetchOne('SELECT id FROM cpg_user');
+        $superId = $client->getContainer()->get(EntityManagerInterface::class)->getConnection()->fetchOne('SELECT id FROM cpg_user WHERE username = ?', [self::SUPER_USERNAME]);
         self::assertIsString($superId);
 
         $client->request('PUT', \sprintf($pathTemplate, $superId), server: [
@@ -250,10 +250,21 @@ final class MalformedRequestBodyTest extends WebTestCase
     }
 
     /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function putPathsGivenTheSuperAdminId(): iterable
+    {
+        yield 'ordre, read: false' => ['/api/backoffice/incidents/order', '{"id":"x","groups":[]}'];
+        yield 'rôles, Provider' => ['/api/backoffice/users/%s/roles', '{"id":"x","superAdmin":true}'];
+    }
+
+    /**
      * Le réglage tient pour **chaque** opération qui met à jour, pas seulement
-     * pour les deux routes ci-dessus : un `denormalizationContext` déclaré sur
-     * une ressource ou une opération remplace le défaut au lieu de s'y ajouter,
-     * et la clé `id` repartirait en résolution d'IRI sans que rien ne rougisse.
+     * pour les deux routes ci-dessus. Un `denormalizationContext` déclaré sur
+     * une ressource ou une opération est fusionné avec le défaut
+     * (OperationDefaultsTrait::addGlobalDefaults), mais un tableau vide le
+     * neutralise, tout comme un `api_allow_update: true` explicite : la clé
+     * `id` repartirait alors en résolution d'IRI sans que rien ne rougisse.
      * Lu sur les métadonnées compilées, comme le noyau les lit.
      */
     public function testEveryUpdateOperationRefusesAnUpdateByIri(): void
@@ -277,15 +288,6 @@ final class MalformedRequestBodyTest extends WebTestCase
 
         self::assertNotEmpty($updates, 'Aucune opération PUT/PATCH recensée : le garde ne garderait rien.');
         self::assertSame([], $allowing, 'Ces opérations laissent un `id` du corps partir en résolution d\'IRI (critical).');
-    }
-
-    /**
-     * @return iterable<string, array{string, string}>
-     */
-    public static function putPathsGivenTheSuperAdminId(): iterable
-    {
-        yield 'ordre, read: false' => ['/api/backoffice/incidents/order', '{"id":"x","groups":[]}'];
-        yield 'rôles, Provider' => ['/api/backoffice/users/%s/roles', '{"id":"x","superAdmin":true}'];
     }
 
     /**
