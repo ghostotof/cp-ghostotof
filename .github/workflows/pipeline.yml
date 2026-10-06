@@ -420,6 +420,23 @@ jobs:
         run: make front-image-headers
 
   # ---------------------------------------------------------------------------
+  # backend-nginx-rate-limits — garde de l'issue #347 : chaque zone limit_req du
+  # nginx backend refuse en 429 problem+json `/errors/rate-limited`, avec les
+  # 7 en-têtes de sécurité, sur les DEUX confs miroir (dev et sidecar k8s).
+  # Avant lui, aucune conf nginx du backend n'était exécutée avant la préprod :
+  # la page HTML par défaut de nginx y est restée sur cinq zones sans que rien
+  # rougisse. nginx seul, sans php-fpm ni réseau externe
+  # (tools/check-backend-nginx-rate-limits.sh).
+  # ---------------------------------------------------------------------------
+  backend-nginx-rate-limits:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10 # habituel ~30 s, pull de l'image nginx compris
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: 429 problem+json sur chaque zone nginx, deux confs
+        run: make back-nginx-rate-limits
+
+  # ---------------------------------------------------------------------------
   # Phase 2 — sur `release/**` seulement (spec 0006, D2/D3/D6)
   # ---------------------------------------------------------------------------
   # release-version — la confrontation à trois de D2 : la version calculée par
@@ -429,7 +446,7 @@ jobs:
   # qui nomme les trois valeurs — on renomme la branche, on ne « corrige » pas
   # la CI. Ses sorties nomment les images de tout le reste de la phase.
   release-version:
-    needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests, frontend-image-headers]
+    needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests, frontend-image-headers, backend-nginx-rate-limits]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
     timeout-minutes: 5 # habituel ~6 s
@@ -862,7 +879,7 @@ jobs:
   # personne, c'est un de trop.
   # ---------------------------------------------------------------------------
   deploy-prod:
-    needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests, frontend-image-headers]
+    needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests, frontend-image-headers, backend-nginx-rate-limits]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45 # attentes kubectl cumulées ≤ 30 min (secrets ESO, fenêtre de maintenance, migration, rollouts)
