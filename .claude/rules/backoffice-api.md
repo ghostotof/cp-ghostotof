@@ -92,9 +92,17 @@ paths:
   reads the `exception_listener` mapping, the `api_platform.exception_to_status` parameter and the
   resource metadata from the test container, so an entry from another config file or a `when@test`
   block counts as the kernel counts it; `ApiExceptionLogLevelTest` builds its listener from the same
-  mapping. The flip side: the test container only sees `test`. **Never declare either map for a single
-  environment** (`when@prod`, `config/packages/prod/`, `services_prod.yaml` — preprod and prod both run
-  `APP_ENV=prod`): keep them common, `ExceptionLogLevelCoverageTest` turns red otherwise.
+  mapping; `ExtraConfigKernel` (option `extra_config` of `bootKernel()`) proves it by compiling the app
+  with one more config file. The flip side: the test container only sees `test`. **Never declare either map for a single
+  environment** (`when@prod`, `config/packages/prod/`, `services_prod.*` — preprod and prod both run
+  `APP_ENV=prod`): keep them common, `ExceptionLogLevelCoverageTest` turns red otherwise (YAML read key
+  by key, PHP config read as text, erring on the cautious side). The level checked is the one the kernel
+  resolves (`ErrorListener::resolveLogLevel`): the first matching entry by `instanceof`, else an inherited
+  `#[WithLogLevel]` — honoured, though the project keeps levels in `framework.exceptions` so the domain
+  does not depend on HttpKernel. Two vendor internals are read by reflection rather than reimplemented
+  (the compiled mapping, `getInheritedAttribute`); `ErrorListenerInternalsTest` pins their signature, so
+  a Symfony upgrade that changes them fails there first. GraphQL operations are not covered:
+  `testGraphQlStaysDisabled` turns red the day `api_platform.graphql.enabled` becomes true.
   **A request body the Serializer refuses never reaches the broad `Serializer\ExceptionInterface` entry**
   (issue #355): `Shared/Infrastructure/ApiPlatform/MalformedRequestBodyProvider` decorates
   `api_platform.state_provider.deserialize` and, **on an operation that deserializes only**, turns the
