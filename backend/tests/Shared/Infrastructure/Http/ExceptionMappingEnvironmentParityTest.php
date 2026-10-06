@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Http;
 
+use App\Kernel;
 use App\Tests\Support\EnvironmentConfigKernel;
 use PHPUnit\Framework\TestCase;
 
@@ -26,11 +27,6 @@ use PHPUnit\Framework\TestCase;
  */
 final class ExceptionMappingEnvironmentParityTest extends TestCase
 {
-    /**
-     * Les environnements de App\Kernel::getAllowedEnvs(), hors `test`.
-     */
-    private const array ENVIRONMENTS = ['prod', 'dev'];
-
     /**
      * Extension => clé du mapping.
      */
@@ -95,7 +91,7 @@ final class ExceptionMappingEnvironmentParityTest extends TestCase
         $found = [];
         foreach (self::MAPPINGS as $extension => $key) {
             $reference = $this->declared('test', $extension, $key, $projectDirectory);
-            foreach (self::ENVIRONMENTS as $environment) {
+            foreach ($this->environments() as $environment) {
                 $declared = $this->declared($environment, $extension, $key, $projectDirectory);
                 foreach (array_unique([...array_keys($declared), ...array_keys($reference)]) as $class) {
                     if (($declared[$class] ?? null) !== ($reference[$class] ?? null)) {
@@ -107,6 +103,22 @@ final class ExceptionMappingEnvironmentParityTest extends TestCase
         sort($found);
 
         return $found;
+    }
+
+    /**
+     * Les environnements que le noyau admet, hors `test` : lus dans
+     * App\Kernel::getAllowedEnvs() plutôt que recopiés, pour qu'un
+     * environnement ajouté soit comparé sans qu'on y pense.
+     *
+     * @return list<string>
+     */
+    private function environments(): array
+    {
+        /** @var list<string> $allowed */
+        $allowed = (new \ReflectionMethod(Kernel::class, 'getAllowedEnvs'))->invoke(new Kernel('test', false));
+        self::assertContains('prod', $allowed, 'Le noyau n\'admet plus `prod` : revoir ce test.');
+
+        return array_values(array_diff($allowed, ['test']));
     }
 
     /**
