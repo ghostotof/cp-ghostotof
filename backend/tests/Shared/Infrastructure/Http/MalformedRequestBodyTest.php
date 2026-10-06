@@ -11,7 +11,6 @@ use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Level;
-use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -120,10 +119,7 @@ final class MalformedRequestBodyTest extends WebTestCase
         $client->request('POST', $path, server: ['CONTENT_TYPE' => 'application/json'], content: $body);
 
         self::assertSame(400, $client->getResponse()->getStatusCode(), $label);
-        $uncaught = array_values(array_filter(
-            self::allChannelsLogRecords(),
-            static fn (LogRecord $record): bool => 'request' === $record->channel && str_starts_with($record->message, 'Uncaught PHP Exception'),
-        ));
+        $uncaught = self::uncaughtExceptionRecords();
         self::assertCount(1, $uncaught, $label);
         self::assertSame(Level::Info, $uncaught[0]->level, $label.' : '.$uncaught[0]->message);
     }

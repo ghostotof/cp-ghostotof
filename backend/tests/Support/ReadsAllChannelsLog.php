@@ -41,4 +41,19 @@ trait ReadsAllChannelsLog
 
         self::fail('Sonde all_channels_test introuvable : voir monolog.yaml (when@test).');
     }
+
+    /**
+     * Les lignes que le noyau écrit pour une exception non rattrapée
+     * (ErrorListener::logKernelException, canal `request`) : celles dont le
+     * niveau dit si l'exception est traitée en erreur du client ou en panne.
+     *
+     * @return list<LogRecord>
+     */
+    private static function uncaughtExceptionRecords(): array
+    {
+        return array_values(array_filter(
+            self::allChannelsLogRecords(),
+            static fn (LogRecord $record): bool => 'request' === $record->channel && str_starts_with($record->message, 'Uncaught PHP Exception'),
+        ));
+    }
 }

@@ -7,7 +7,6 @@ namespace App\Tests\Shared\Infrastructure\Http;
 use App\Tests\Support\ReadsAllChannelsLog;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Level;
-use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
@@ -74,7 +73,7 @@ final class ServerSideSerializerFailureTest extends WebTestCase
 
         $client->request('GET', '/api/experience/technologies');
 
-        $uncaught = $this->uncaughtExceptionRecords();
+        $uncaught = self::uncaughtExceptionRecords();
         self::assertCount(1, $uncaught);
         self::assertSame(Level::Critical, $uncaught[0]->level, $uncaught[0]->message);
         self::assertStringContainsString('NotEncodableValueException', $uncaught[0]->message);
@@ -118,7 +117,7 @@ final class ServerSideSerializerFailureTest extends WebTestCase
         $client->request('GET', '/api');
 
         self::assertSame(404, $client->getResponse()->getStatusCode());
-        foreach ($this->uncaughtExceptionRecords() as $record) {
+        foreach (self::uncaughtExceptionRecords() as $record) {
             self::assertNotSame(Level::Critical, $record->level, $record->message);
         }
     }
@@ -141,16 +140,5 @@ final class ServerSideSerializerFailureTest extends WebTestCase
         );
 
         return $client;
-    }
-
-    /**
-     * @return list<LogRecord>
-     */
-    private function uncaughtExceptionRecords(): array
-    {
-        return array_values(array_filter(
-            self::allChannelsLogRecords(),
-            static fn (LogRecord $record): bool => 'request' === $record->channel && str_starts_with($record->message, 'Uncaught PHP Exception'),
-        ));
     }
 }
