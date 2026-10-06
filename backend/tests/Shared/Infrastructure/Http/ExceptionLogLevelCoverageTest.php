@@ -68,11 +68,13 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
      * une exception du Serializer sous un contrôleur. Elles restent donc en
      * `critical`, et ce qu'un client peut produire à volonté passe par une
      * classe précise : le corps de requête refusé par le Serializer sort en
-     * MalformedRequestBodyException depuis l'issue #355. Les deux autres ne
+     * MalformedRequestBodyException depuis l'issue #355 — si bien que celle du
+     * Serializer, qui ne voit plus que des défauts serveur, est rendue en 500
+     * depuis l'issue #360, statut et niveau enfin d'accord. Les deux autres ne
      * sont atteignables par aucun client aujourd'hui (vérifié le 2026-10-05).
      */
     private const array EXEMPT = [
-        SerializerExceptionInterface::class => 'Entrée large : couvre aussi l\'encodage de sortie, un défaut serveur — dont les UnsupportedFormatException du journal de test, levées par GET /api (point d\'entrée Hydra en jsonld, coupé en prod). Le corps de requête en est sorti (MalformedRequestBodyException, #355).',
+        SerializerExceptionInterface::class => 'Entrée large, rendue en 500 (#360) : ne voit plus que des défauts serveur — JSON de sortie non encodable (`NaN` en base, ServerSideSerializerFailureTest), Serializer mal configuré, format négocié sans encodeur. Le corps de requête en est sorti (MalformedRequestBodyException, #355), le point d\'entrée Hydra GET /api est coupé partout.',
         ApiPlatformInvalidArgumentException::class => 'Entrée large d\'API Platform, sous-classes comprises (ItemNotFoundException, OperationNotFoundException) : levée par la pagination (aucun provider de src/ ne pagine, `?page=0` répond 200), l\'IriConverter (aucune ressource n\'accepte d\'IRI du client) et la lecture des métadonnées, autant de défauts de configuration.',
         OptimisticLockException::class => 'Défaut d\'API Platform ; aucune entité versionnée (pas de #[ORM\Version] dans src/), le conflit serait à observer.',
     ];
