@@ -64,6 +64,22 @@ paths:
   in one call), and a backoffice CRUD resource (see `.claude/rules/backoffice-api.md`). Seeded via idempotent `app:{about,quality,contributions,incidents}:seed`
   console commands (purge-by-locale then recreate — safe to rerun).
 
+  **`ExperienceTechnology.years` is a finite number in `[0, 100]`, checked at three layers** (issue #372).
+  A single non-encodable row (`Infinity`, `NaN`) is enough to put the public `GET /api/experience/technologies`
+  in 500 for every visitor, and `PositiveOrZero` alone let `{"years":1e999}` (`json_decode` → `INF`) through.
+  The rule is written once, in the Value Object `Domain/ValueObject/ExperienceYears` (`MAX`, `fromFloat`,
+  `fromString`; `-0.0` is normalised to `0`). The entity, the registrar and the administrator only receive an
+  `ExperienceYears`. The backoffice DTO validates through an `Assert\Callback` that delegates to it, so the
+  422 names `years` with the domain's message. The CLI command validates `--years` before reaching the
+  registrar. **And the database refuses the same bounds** (`chk_experience_technology_years`, migration
+  `Version20261006120000`), because Doctrine never calls the constructor when hydrating, so no PHP guard
+  sees a row written in SQL. `ExperienceTechnologyYearsConstraintTest` reads the bound from the Value
+  Object, so the two cannot drift apart silently. That migration clamped any existing faulty row **and set
+  it `secondary`**: an invented duration is never published, and the row stays one backoffice edit away
+  from being fixed. `InvalidExperienceYearsException` is deliberately **not** mapped to an HTTP status: from
+  the API it is unreachable unless a write path bypasses the DTO, a server fault that must stay a
+  `critical` 500.
+
   `Contribution` is the odd one out and deliberately so: it carries a long `body` (the argument, not
   just a link to it) alongside `title`/`project`/`reference`/`url`/`summary`. That text is **plain
   text**, paragraphs separated by a blank line, rendered by splitting on those blanks —
