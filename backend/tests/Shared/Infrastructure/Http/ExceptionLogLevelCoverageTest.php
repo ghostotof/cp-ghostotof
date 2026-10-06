@@ -11,6 +11,8 @@ use App\Shared\Domain\Exception\HasProblemType;
 use App\Tests\Support\CompiledExceptionConfig;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\ExceptionToStatusFixtureResource;
+use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\AttributeLoggedFixtureException;
+use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\InheritedLogLevelFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\LoudAttributeFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\AttributedFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\InheritingFixtureException;
@@ -102,7 +104,7 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
 
         self::assertSame(
             [],
-            $this->uncovered($watched, $this->logLevelKeys(), $this->withLogLevel($watched)),
+            $this->uncovered($watched, $this->logLevelKeys(), $this->logLevelAttributes($watched)),
             'Sans `log_level` dans framework.exceptions, ces exceptions sortent en `critical`.',
         );
     }
@@ -117,7 +119,7 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     {
         $watched = array_diff_key($this->renderedStatuses(), self::EXEMPT);
 
-        self::assertSame([], $this->levelViolations($watched, $this->kernelLevels(self::getContainer()->get('exception_listener'), array_keys($watched))));
+        self::assertSame([], $this->levelViolations($watched, $this->kernelLevels($this->errorListener(), array_keys($watched))));
     }
 
     /**
@@ -297,20 +299,6 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     }
 
     /**
-     * Les classes d'un répertoire que le noyau de l'application convertit, et
-     * leur statut (CompiledExceptionConfig::kernelHttpStatus).
-     *
-     * @return array<string, list<int>> classe => statut rendu
-     */
-    private function kernelConversions(string $directory): array
-    {
-        return array_map(
-            static fn (int $status): array => [$status],
-            CompiledExceptionConfig::kernelHttpStatus(self::getContainer()->get('exception_listener'), DeclaredClasses::all($directory)),
-        );
-    }
-
-    /**
      * Le noyau lit #[WithLogLevel] à défaut d'entrée (ErrorListener::resolveLogLevel) :
      * une exception qui le porte, ou en hérite, a un niveau (issue #357). Le
      * projet préfère `framework.exceptions`, pour que le domaine ne dépende pas
@@ -320,8 +308,9 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     {
         $classes = array_keys($this->kernelConversions(self::FIXTURE_ATTRIBUTES));
 
-        self::assertCount(3, $classes);
-        self::assertSame([], $this->uncovered($classes, $this->logLevelKeys(), $this->withLogLevel($classes)));
+        // La fixture abstraite n'en est pas : jamais levée telle quelle.
+        self::assertSame([AttributeLoggedFixtureException::class, InheritedLogLevelFixtureException::class, LoudAttributeFixtureException::class], $classes);
+        self::assertSame([], $this->uncovered($classes, $this->logLevelKeys(), $this->logLevelAttributes($classes)));
     }
 
     /**
@@ -331,7 +320,7 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     {
         $statuses = $this->kernelConversions(self::FIXTURE_ATTRIBUTES);
 
-        self::assertSame([LoudAttributeFixtureException::class => '404 : critical'], $this->levelViolations($statuses, $this->kernelLevels(self::getContainer()->get('exception_listener'), array_keys($statuses))));
+        self::assertSame([LoudAttributeFixtureException::class => '404 : critical'], $this->levelViolations($statuses, $this->kernelLevels($this->errorListener(), array_keys($statuses))));
     }
 
     /**
@@ -344,6 +333,28 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
         $levels = $this->kernelLevels(CompiledExceptionConfig::listenerWith([\RuntimeException::class => ['log_level' => 'critical']]), [\OverflowException::class]);
 
         self::assertSame([\OverflowException::class => '404 : critical'], $this->levelViolations([\OverflowException::class => [404]], $levels));
+    }
+
+    /**
+     * L'ErrorListener compilé de l'application, que le conteneur de test expose.
+     */
+    private function errorListener(): ErrorListener
+    {
+        return self::getContainer()->get('exception_listener');
+    }
+
+    /**
+     * Les classes d'un répertoire que le noyau de l'application convertit, et
+     * leur statut (CompiledExceptionConfig::kernelHttpStatus).
+     *
+     * @return array<string, list<int>> classe => statut rendu
+     */
+    private function kernelConversions(string $directory): array
+    {
+        return array_map(
+            static fn (int $status): array => [$status],
+            CompiledExceptionConfig::kernelHttpStatus($this->errorListener(), DeclaredClasses::all($directory)),
+        );
     }
 
     /**
@@ -373,9 +384,9 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
      *
      * @return array<string, string> classe => niveau de son #[WithLogLevel]
      */
-    private function withLogLevel(array $classes): array
+    private function logLevelAttributes(array $classes): array
     {
-        return CompiledExceptionConfig::withLogLevel(self::getContainer()->get('exception_listener'), $classes);
+        return CompiledExceptionConfig::logLevelAttributes($this->errorListener(), $classes);
     }
 
     /**
@@ -420,7 +431,7 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     private function renderedStatuses(): array
     {
         $container = self::getContainer();
-        $listener = $container->get('exception_listener');
+        $listener = $this->errorListener();
         /** @var array<string, int> $global */
         $global = $container->getParameter('api_platform.exception_to_status');
         $resourceClasses = iterator_to_array($container->get('api_platform.metadata.resource.name_collection_factory')->create(), false);
@@ -461,7 +472,7 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
      */
     private function statusCodeKeys(): array
     {
-        $mapping = CompiledExceptionConfig::exceptionsMapping(self::getContainer()->get('exception_listener'));
+        $mapping = CompiledExceptionConfig::exceptionsMapping($this->errorListener());
 
         return array_keys(array_filter($mapping, static fn (array $options): bool => null !== $options['status_code']));
     }
@@ -479,7 +490,7 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
      */
     private function logLevels(): array
     {
-        return $this->logLevelsOf(CompiledExceptionConfig::exceptionsMapping(self::getContainer()->get('exception_listener')));
+        return $this->logLevelsOf(CompiledExceptionConfig::exceptionsMapping($this->errorListener()));
     }
 
     /**

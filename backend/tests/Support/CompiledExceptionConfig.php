@@ -184,7 +184,7 @@ final class CompiledExceptionConfig
      *
      * @return array<string, string> classe => niveau
      */
-    public static function withLogLevel(ErrorListener $listener, iterable $classes): array
+    public static function logLevelAttributes(ErrorListener $listener, iterable $classes): array
     {
         $levels = [];
         foreach ($classes as $class) {
