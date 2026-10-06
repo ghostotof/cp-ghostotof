@@ -53,4 +53,19 @@ final class PasswordSetupTokenTest extends TestCase
             new \DateTimeImmutable('2026-09-05 12:00:00'),
         );
     }
+
+    /**
+     * Un lien consommé n'est pas un lien expiré : c'est ce qui sépare le rejeu,
+     * événement de sécurité, du cas ordinaire (issue #356).
+     */
+    public function testWasUsedTellsAConsumedTokenFromAnExpiredOne(): void
+    {
+        $user = new CpgUser('jane', 'hashed-password');
+        $expired = new PasswordSetupToken($user, hash('sha256', 'x'), new \DateTimeImmutable('2026-09-03 12:00:00'));
+        $used = new PasswordSetupToken($user, hash('sha256', 'y'), new \DateTimeImmutable('2026-09-05 12:00:00'));
+        $used->markUsed(new \DateTimeImmutable('2026-09-04 12:00:00'));
+
+        self::assertFalse($expired->wasUsed());
+        self::assertTrue($used->wasUsed());
+    }
 }

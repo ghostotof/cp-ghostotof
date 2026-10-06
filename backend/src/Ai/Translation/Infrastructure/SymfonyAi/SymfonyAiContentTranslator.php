@@ -9,6 +9,7 @@ use App\Ai\Translation\Application\ContentTranslatorInterface;
 use App\Ai\Translation\Domain\Exception\TranslationUnavailableException;
 use App\Ai\Translation\Domain\ValueObject\TranslatedFields;
 use App\Ai\Translation\Domain\ValueObject\TranslationRequest;
+use Monolog\Attribute\WithMonologChannel;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\AgentInterface;
 use Symfony\AI\Agent\Exception\ExceptionInterface as AgentException;
@@ -32,7 +33,14 @@ use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExcep
  * se journalise par sa classe, son statut HTTP, son type d'erreur et son
  * lieu, jamais par son message, où le bridge recopie le corps de la réponse
  * (issue #269) : ProviderFailure, partagée avec l'assistant (issue #308).
+ *
+ * Journal sur le canal `ai_usage` (monolog.yaml), à niveau fixe en
+ * production, comme l'assistant de parcours (issue #356) : en `info` sur le
+ * canal applicatif, l'usage ne sortait jamais d'un pod (LOG_LEVEL=warning).
+ * Chaque ligne porte un `outcome` (`done`, `error`), le refus de quota
+ * (`rate-limited`) étant écrit par SymfonyTranslationRateLimiter.
  */
+#[WithMonologChannel('ai_usage')]
 final readonly class SymfonyAiContentTranslator implements ContentTranslatorInterface
 {
     private const string SCHEMA_NAME = 'translated_fields';
@@ -60,7 +68,7 @@ final readonly class SymfonyAiContentTranslator implements ContentTranslatorInte
             // fournisseur, qui peut citer l'entrée (issue #269).
             $this->logger->error(
                 'Assistant de traduction : le fournisseur a échoué.',
-                ProviderFailure::from($exception)->toLogContext(),
+                ['outcome' => 'error', ...ProviderFailure::from($exception)->toLogContext()],
             );
 
             throw new TranslationUnavailableException();
@@ -69,6 +77,7 @@ final readonly class SymfonyAiContentTranslator implements ContentTranslatorInte
         $fields = $this->validatedFields($content, $request->fieldNames());
 
         $this->logger->info('Assistant de traduction : traduction produite.', [
+            'outcome' => 'done',
             'fieldCount' => \count($fields),
             'durationMs' => (int) round((hrtime(true) - $startedAt) / 1_000_000),
             'promptTokens' => $tokenUsage instanceof TokenUsageInterface ? $tokenUsage->getPromptTokens() : null,
@@ -156,7 +165,7 @@ final readonly class SymfonyAiContentTranslator implements ContentTranslatorInte
 
     private function rejected(string $reason): TranslationUnavailableException
     {
-        $this->logger->error('Assistant de traduction : réponse du modèle refusée.', ['reason' => $reason]);
+        $this->logger->error('Assistant de traduction : réponse du modèle refusée.', ['outcome' => 'error', 'reason' => $reason]);
 
         return new TranslationUnavailableException();
     }

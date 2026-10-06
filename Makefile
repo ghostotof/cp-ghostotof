@@ -1,8 +1,13 @@
 # Raccourcis du projet. `make help` liste les cibles disponibles.
 .DEFAULT_GOAL := help
 DC := docker compose
+# Tag nginx du sidecar backend, lu une seule fois dans le manifeste k8s qui le
+# déploie : partagé par build-prod, build-preprod et back-nginx-rate-limits,
+# pour que les trois ne puissent pas diverger. Vide si le manifeste change de
+# forme : tools/check-backend-nginx-rate-limits.sh refuse alors `nginx:`.
+NGINX_SIDECAR_TAG := $(shell sed -n 's/.*image: nginx:\([^[:space:]]*\).*/\1/p' k8s/base/backend-deployment.yaml | head -1)
 
-.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality back-lsp build-front-prod build-front-preprod front-image-headers get-secret
+.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality back-lsp build-front-prod build-front-preprod front-image-headers back-nginx-rate-limits get-secret
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -59,7 +64,7 @@ build-prod: ## Construit l'image de production (TAG=... IMAGE=...)
 	  --build-arg BACKEND_FLAVOR=$(FLAVOR) \
 	  --build-arg POSTGRES_TAG=$(shell sed -n 's/.*image: postgres:\(\S*\).*/\1/p' k8s/base/postgres.yaml | head -1) \
 	  --build-arg RABBITMQ_TAG=$(shell sed -n 's/.*image: rabbitmq:\(\S*\).*/\1/p' k8s/base/rabbitmq.yaml | head -1) \
-	  --build-arg NGINX_TAG=$(shell sed -n 's/.*image: nginx:\(\S*\).*/\1/p' k8s/base/backend-deployment.yaml | head -1) \
+	  --build-arg NGINX_TAG=$(NGINX_SIDECAR_TAG) \
 	  --build-arg NODE_TAG=$(shell grep '^NODE_TAG=' .env | cut -d= -f2) \
 	  -f docker/php/Dockerfile \
 	  -t $(IMAGE):$(TAG) .
@@ -74,7 +79,7 @@ build-preprod: ## Construit l'image de préprod (= prod + outils de diagnostic)
 	  --build-arg BACKEND_FLAVOR=$(FLAVOR) \
 	  --build-arg POSTGRES_TAG=$(shell sed -n 's/.*image: postgres:\(\S*\).*/\1/p' k8s/base/postgres.yaml | head -1) \
 	  --build-arg RABBITMQ_TAG=$(shell sed -n 's/.*image: rabbitmq:\(\S*\).*/\1/p' k8s/base/rabbitmq.yaml | head -1) \
-	  --build-arg NGINX_TAG=$(shell sed -n 's/.*image: nginx:\(\S*\).*/\1/p' k8s/base/backend-deployment.yaml | head -1) \
+	  --build-arg NGINX_TAG=$(NGINX_SIDECAR_TAG) \
 	  --build-arg NODE_TAG=$(shell grep '^NODE_TAG=' .env | cut -d= -f2) \
 	  -f docker/php/Dockerfile \
 	  -t $(IMAGE):$(TAG)-preprod .
@@ -157,6 +162,11 @@ build-front-preprod: ## Construit l'image frontend de préprod (= prod + source 
 front-image-headers: ## Construit l'image frontend de prod et vérifie les 7 en-têtes de sécurité, location par location (garde A16)
 	$(MAKE) build-front-prod FRONT_IMAGE=$(FRONT_IMAGE) TAG=$(TAG)
 	tools/check-frontend-image-headers.sh $(FRONT_IMAGE):$(TAG)
+
+# Image du sidecar de préprod/prod (NGINX_SIDECAR_TAG) : le contrôle juge les
+# confs avec le nginx qui les sert réellement.
+back-nginx-rate-limits: ## Vérifie que chaque zone nginx du backend refuse en 429 problem+json, sur les deux confs (#347)
+	tools/check-backend-nginx-rate-limits.sh nginx:$(NGINX_SIDECAR_TAG)
 
 # --- Secrets Kubernetes (préprod/prod) ---------------------------------------
 # Lit les Secrets déjà présents dans le cluster (remplis par External Secrets

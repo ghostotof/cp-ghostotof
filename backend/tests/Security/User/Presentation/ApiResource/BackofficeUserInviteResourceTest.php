@@ -8,8 +8,11 @@ use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\Formatter\JsonFormatter;
+use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
@@ -24,6 +27,7 @@ use Symfony\Component\Uid\Uuid;
 final class BackofficeUserInviteResourceTest extends WebTestCase
 {
     use HttpJson;
+    use ReadsAllChannelsLog;
 
     private const string SUPER_USERNAME = 'super';
     private const string PLAIN_USERNAME = 'jane';
@@ -120,6 +124,69 @@ final class BackofficeUserInviteResourceTest extends WebTestCase
 
         $client->request('POST', '/api/backoffice/users', server: $server, content: $payload);
         self::assertResponseStatusCodeSame(409);
+    }
+
+    /**
+     * Issue #356 : l'adresse refusée ne sort ni dans la réponse ni dans aucun
+     * journal. Le noyau journalise le message de l'exception (en `info`,
+     * framework.exceptions), et la préprod tourne en LOG_LEVEL=debug : un
+     * message qui cite l'adresse la ferait sortir du pod, hors de la règle
+     * « jamais d'e-mail dans un journal » que seul `security_audit` pinçait.
+     */
+    public function testTheRefusedEmailAppearsNeitherInTheResponseNorInAnyLog(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $payload = self::jsonBody(['email' => 'sentinel.taken@example.com', 'locale' => 'fr']);
+        $server = ['CONTENT_TYPE' => 'application/json', 'HTTP_X_XSRF_TOKEN' => $csrfToken];
+        $client->request('POST', '/api/backoffice/users', server: $server, content: $payload);
+        self::assertResponseStatusCodeSame(201);
+
+        $client->request('POST', '/api/backoffice/users', server: $server, content: $payload);
+
+        self::assertResponseStatusCodeSame(409);
+        // Le `detail` seulement : en test, la réponse porte aussi la `trace`
+        // de débogage d'API Platform (arguments des appels compris), absente
+        // en production.
+        $problem = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($problem);
+        self::assertIsString($problem['detail'] ?? null);
+        self::assertStringNotContainsString('sentinel.taken', $problem['detail']);
+        $refusals = array_filter(
+            self::allChannelsLogRecords(),
+            static fn (LogRecord $record): bool => str_contains($record->message, 'EmailAlreadyUsedException'),
+        );
+        // Garde-fou : la sonde a bien vu passer le refus.
+        self::assertCount(1, $refusals);
+        $formatter = new JsonFormatter();
+        foreach (self::allChannelsLogRecords() as $record) {
+            // Le canal `doctrine` cite les paramètres SQL (l'adresse cherchée),
+            // mais seulement là où son middleware de journalisation est
+            // enregistré, c'est-à-dire avec kernel.debug : en dev et en test,
+            // jamais en préprod ni en production (APP_DEBUG=0, Dockerfile).
+            if ('doctrine' === $record->channel) {
+                continue;
+            }
+            self::assertStringNotContainsString('sentinel.taken', $formatter->format($record));
+        }
+    }
+
+    /**
+     * Issue #356 : une adresse acceptée par le validateur `html5` mais
+     * refusée par Mime\Address faisait échouer l'envoi dans le worker, avec
+     * l'adresse dans le message de l'exception. Refusée ici, en 422.
+     */
+    public function testInviteWithAnAddressMimeWouldRefuseReturns422(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('POST', '/api/backoffice/users', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_XSRF_TOKEN' => $csrfToken], content: self::jsonBody(['email' => 'jean..dupont@example.com', 'locale' => 'fr']));
+
+        self::assertResponseStatusCodeSame(422);
     }
 
     public function testInviteWithAnInvalidEmailReturns422(): void

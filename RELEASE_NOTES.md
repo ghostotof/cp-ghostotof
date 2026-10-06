@@ -1,49 +1,73 @@
-# v0.20.0 — Erreurs problem+json partagées et échecs IA lisibles
+# v0.21.0 — Refus attribuables, 429 nginx en problem+json et livraison plus sûre
 
-Release de consolidation, sans nouvelle fonctionnalité visible. Elle réunit en un seul endroit le
-rendu des erreurs typées hors API Platform, rend lisibles dans les journaux les échecs des
-fournisseurs de modèles, et épingle l'outil d'analyse `lsp:check` de la CI. Aucune migration,
-aucun manifeste Kubernetes modifié, aucun secret nouveau.
+Release de consolidation, sans nouvelle fonctionnalité visible. Elle rend attribuables dans le
+journal de sécurité les refus qui ne l'étaient pas, retire les adresses e-mail des exceptions
+journalisées, fixe le niveau de journalisation de chaque erreur de l'API, met en problem+json les
+429 émis par nginx et fait échouer le déploiement tôt si un secret n'est pas synchronisé. Aucune
+migration, aucun secret nouveau. Un seul manifeste Kubernetes change : l'annotation qui rend
+facultatif le secret Xdebug de préprod.
 
-## Erreurs typées sous `/api` (#322)
+## Journal de sécurité et données personnelles (#356)
 
-- **Un seul écouteur rend en problem+json** toute exception typée levée par un contrôleur sous
-  `/api` hors API Platform (`ApiProblemResponseListener`). Il remplace les deux copies propres à
-  l'assistant de parcours et à l'accès instantané. Sa priorité est figée par un test qui lit le
-  vrai dispatcher.
-- **Le 429 de l'accès instantané** (`POST /api/account/base-access`) porte désormais le type
-  `/errors/rate-limited`, comme les autres quotas. Le frontend ne lit que le statut, donc rien ne
-  change à l'écran. Ce 429 passe aussi par la journalisation du noyau, en `info`. Avant, il n'était
-  pas journalisé du tout.
-- **Une seule règle d'ancrage de sous-arbre** (`CanonicalPath::isUnder`) : « le préfixe exactement,
-  ou le préfixe suivi de `/` », sur le chemin décodé. Les gardes qui recopiaient ce test s'appuient
-  dessus.
+- **Cinq refus deviennent attribuables** dans le canal `security_audit` (IP, chemin canonique,
+  jamais le jeton) : `password-setup-token-rejected` (lien inconnu), `password-setup-token-replayed`
+  (lien déjà utilisé, avec le compte qu'il activait), `password-setup-throttled`,
+  `contact-throttled` et `base-access-throttled`. La réponse ne change pas : rejoué et expiré
+  restent le même 410.
+- **Consommation atomique du lien de définition de mot de passe.** Deux soumissions simultanées
+  du même lien passaient toutes les deux ; la seconde est maintenant refusée et journalisée.
+- **Aucune adresse e-mail dans un message d'exception journalisé.** La chaîne d'erreur du
+  transport SMTP n'est plus conservée (seules sa classe et un code numérique restent), et
+  l'exception « adresse déjà utilisée » ne cite plus l'adresse.
+- **Validation stricte des adresses** (`email_validation_mode: strict`) : une adresse que l'envoi
+  aurait refusée (`a..b@example.com`) est rejetée en 422 à la saisie, au lieu d'échouer en boucle
+  dans le worker.
+- **Le traducteur journalise son usage sur `ai_usage`**, comme l'assistant : jetons, durée et
+  refus de quota, jamais le contenu.
 
-## Échecs des fournisseurs de modèles (#308)
+## Niveaux de journalisation (#348, #355, #357)
 
-- **Le traducteur et l'assistant décrivent l'échec du fournisseur de la même façon**, par un seul
-  lecteur partagé (`ProviderFailure`). Ce lecteur ne cite jamais le message, qui peut contenir le
-  corps de la réponse du fournisseur.
-- **Un motif d'échec lisible**, même en flux, où aucun type d'erreur ne survit : la clé
-  `providerFailure` du journal vaut par exemple `authentication`, `permission-denied`,
-  `rate-limited` ou `server-error`.
-- **Changement de clé dans les journaux** : `serverErrorStatus` (traducteur) devient
-  `providerStatus`, comme pour l'assistant. Un filtre `jq` écrit sur l'ancienne clé est à adapter.
+- **Chaque exception rendue par l'API a un niveau explicite**, vérifié sur la configuration
+  compilée et identique entre environnements. Les refus attendus (quotas, liens inconnus) passent
+  en `info`.
+- **Un corps de requête illisible** (JSON mal formé, type inattendu) sort en 400 `info`, et non
+  plus en `critical`.
 
-## Outillage
+## 429 de nginx en problem+json (#347)
 
-- **`lsp:check` exécute une version épinglée des Symfony Language Tools** (#343), installée et
-  vérifiée par somme SHA-256 sans appel à l'API GitHub. Cela met fin aux 403 intermittents du job
-  `lsp-check-backend`, tombés deux fois sur `main`. Un échec de téléchargement est nommé comme tel
-  dans le résumé du job, pour ne plus passer pour un défaut du code.
+- **Toutes les zones de débit nginx** (contact, définition de mot de passe, accès instantané,
+  connexion, filet général de l'API et assistant) refusent en `application/problem+json`, type
+  `/errors/rate-limited`, au lieu de la page HTML de nginx. Les 429 rendus par Symfony passent
+  inchangés, `Retry-After` compris.
+- **Limite connue**, suivie dans #368 : ces 429 ne portent pas d'en-têtes CORS, donc un
+  navigateur sur une autre origine ne peut pas les lire.
+- **Nouveau garde CI `backend-nginx-rate-limits`**, requis avant la release et la prod : il lance
+  le nginx du sidecar sur les deux confs, sature chaque zone et vérifie le corps, le type et les
+  7 en-têtes de sécurité.
 
-## Documentation
+## Livraison (#325)
 
-- L'ADR 0004 et `CLAUDE.md` disent la phase 2 de l'assistance IA livrée en v0.19.0 (#342).
+- **Le déploiement attend que chaque `ExternalSecret` soit synchronisé** avant la migration et le
+  rollout, et échoue en nommant le secret et ses clés distantes. Avant, une clé absente de Secret
+  Manager ne se voyait qu'après l'expiration du rollout, en `CreateContainerConfigError`.
+- Le secret Xdebug de préprod est annoté facultatif : son absence donne un avertissement, pas un
+  échec.
+- `rollback-preprod` ne se déclenche plus quand le déploiement s'est arrêté avant son rollout.
+- **Première exécution réelle sur cette release.**
+
+## Outillage et dépendances
+
+- `CLAUDE.md` découpé en règles par zone du dépôt sous `.claude/rules/`, avec un garde CI (#346).
+- `source-map-js` et `postcss-selector-parser` montés de version, ce qui lève un avis npm de
+  niveau élevé dans l'outillage du frontend (#367).
 
 ## À vérifier en préprod
 
 - Smoke tests et audit verts.
-- `lsp-check-backend` vert sur la branche, avec la version épinglée.
-- `POST /api/account/base-access` rejoué au-delà du quota : 429 en `application/problem+json`, type
-  `/errors/rate-limited`, avec `Retry-After`.
+- `deploy-preprod` : l'étape d'attente des `ExternalSecret` passe, et `backend-xdebug-trigger`
+  n'y est qu'un avertissement s'il n'est pas synchronisé.
+- `kubectl exec … -c nginx -- nginx -T | grep -E 'error_page|_status'` sur le sidecar :
+  `error_page 429 = @rate_limited`, `limit_req_status 429` et `limit_conn_status 429` au niveau
+  server (critère 2 de #347).
+- `POST /api/account/base-access` rejoué au-delà de la zone nginx : 429 en
+  `application/problem+json`, type `/errors/rate-limited`.

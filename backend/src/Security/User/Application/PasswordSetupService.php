@@ -36,7 +36,20 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         $now = $this->clock->now();
 
         // Le hash d'abord : s'il échouait, le jeton ne serait pas consommé.
-        $user->setPassword($this->passwordHasher->hashPassword($user, $plainPassword));
+        $hashedPassword = $this->passwordHasher->hashPassword($user, $plainPassword);
+
+        // Puis la réclamation atomique (issue #356) : `isUsable()` n'a lu que
+        // l'état chargé, qu'une requête concurrente sur le même lien a pu
+        // consommer depuis. La perdante est un rejeu — c'est le scénario du
+        // lien fuité soumis en même temps que la personne invitée —, et rien
+        // de ce qu'elle a envoyé ne touche le compte.
+        if (!$this->passwordSetupTokenRepository->claim($token, $now)) {
+            $this->auditLogger->passwordSetupTokenReplayed($user);
+
+            throw PasswordSetupTokenExpiredException::expiredOrAlreadyUsed();
+        }
+
+        $user->setPassword($hashedPassword);
         $user->markActivated($now);
         $token->markUsed($now);
 
@@ -51,11 +64,23 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
     {
         $token = $this->passwordSetupTokenRepository->findOneByTokenHash(hash('sha256', $clearToken));
 
+        // Journal de sécurité (issue #356) : ces deux refus n'avaient pour
+        // trace que la ligne générique du noyau, sans IP ni chemin. Jamais le
+        // jeton, ni en clair ni haché.
         if (null === $token) {
+            $this->auditLogger->passwordSetupTokenRejected();
+
             throw InvalidPasswordSetupTokenException::unknownToken();
         }
 
         if (!$token->isUsable($this->clock->now())) {
+            // Un lien déjà consommé qui revient se distingue ici, côté journal
+            // seulement : la réponse reste le 410 fusionné avec « expiré ». Un
+            // lien simplement expiré n'est pas un événement de sécurité.
+            if ($token->wasUsed()) {
+                $this->auditLogger->passwordSetupTokenReplayed($token->getUser());
+            }
+
             throw PasswordSetupTokenExpiredException::expiredOrAlreadyUsed();
         }
 

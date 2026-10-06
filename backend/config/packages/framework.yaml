@@ -16,10 +16,16 @@ framework:
 
     # Niveau de journalisation de l'ErrorListener du noyau, qui met sinon en
     # `critical` toute exception hors HttpExceptionInterface et en `error` tout
-    # 4xx (tests/Shared/Infrastructure/Http/ApiExceptionLogLevelTest.php).
+    # 4xx HTTP (tests/Shared/Infrastructure/Http/ApiExceptionLogLevelTest.php ;
+    # ExceptionLogLevelCoverageTest exige une entrée pour chaque exception
+    # métier rendue avec un statut, issue #348).
     # Ici plutôt qu'en `#[WithLogLevel]` : le domaine ne dépend pas de HttpKernel.
     # Ne viser que des classes précises : un mapping sur HttpException
     # abaisserait le niveau de tous les 4xx de l'application.
+    # Commun à tous les environnements, ni sous `when@prod` ni sous `when@test` :
+    # les garde-fous lisent ce mapping compilé dans le conteneur de test, qui
+    # doit voir exactement ce que voit la production (issue #357,
+    # ExceptionMappingEnvironmentParityTest).
     exceptions:
         # Ici, `log_level` seulement, jamais `status_code` pour une exception
         # métier rendue en problem+json (issue #322) : avec un `status_code`,
@@ -47,12 +53,136 @@ framework:
         # entrée il sortirait en `critical` (ni HttpException, ni 4xx connu).
         App\Security\User\Domain\Exception\BaseAccessRateLimitExceededException:
             log_level: info
+
+        # --- Exceptions rendues par API Platform (`exception_to_status`) ---
+        # logKernelException (priorité 0) les voit aussi, avant API Platform
+        # (-96) : sans entrée, chacune sortait en `critical` — une 404 de
+        # backoffice, un 409 de saisie ou un quota atteint étaient autant
+        # d'alertes de production (issue #348). Règle : `info` pour une erreur
+        # du client (4xx), `warning` pour la panne d'un tiers (503) ou pour un
+        # signal qu'aucune autre trace ne porte, l'un et l'autre visibles en
+        # production. La règle ne vaut que pour ces exceptions métier : les 4xx
+        # HTTP du framework (404/405 du routeur, 422 de validation, 403) restent
+        # en `error`. ExceptionLogLevelCoverageTest exige une entrée pour chaque
+        # clé de `exception_to_status` et chaque ProblemExceptionInterface de
+        # src/, hors dispenses justifiées, et un niveau conforme au statut.
+        #
+        # Formulaire de contact : quota par IP en `info`, comme celui de
+        # base-access — leur trace retenue est l'événement `security_audit`
+        # (`contact-throttled`, `base-access-throttled`, avec l'IP et le chemin,
+        # issue #356). Puis la remise de l'e-mail, voir
+        # AccountInvitationDeliveryException plus bas.
+        App\Contact\Domain\Exception\ContactRateLimitExceededException:
+            log_level: info
+        App\Contact\Domain\Exception\ContactMessageDeliveryException:
+            log_level: warning
+        # Assistant de traduction (ADR 0004) : panne du fournisseur, quota.
+        App\Ai\Translation\Domain\Exception\TranslationUnavailableException:
+            log_level: warning
+        # Le quota est la borne de dépense, même sur un compte ROLE_SUPER
+        # compromis (rate_limiter.yaml). Son refus est tracé sur `ai_usage` avec
+        # le compte et l'échéance (SymfonyTranslationRateLimiter, issue #356),
+        # comme celui de l'assistant de parcours : `info` ici, comme lui.
+        App\Ai\Translation\Domain\Exception\TranslationRateLimitExceededException:
+            log_level: info
+        # Contenus du portfolio : introuvable, conflit, saisie invalide.
+        App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException:
+            log_level: info
+        App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException:
+            log_level: info
+        App\Portfolio\Contribution\Domain\Exception\ContributionNotFoundException:
+            log_level: info
+        App\Portfolio\CaseStudy\Domain\Exception\CaseStudyNotFoundException:
+            log_level: info
+        App\Portfolio\AnonymousCv\Domain\Exception\AnonymousCvSectionNotFoundException:
+            log_level: info
+        App\Portfolio\Incident\Domain\Exception\IncidentNotFoundException:
+            log_level: info
+        App\Portfolio\Watch\Domain\Exception\WatchedProductNotFoundException:
+            log_level: info
+        App\Portfolio\Watch\Domain\Exception\WatchedProductSlugAlreadyUsedException:
+            log_level: info
+        App\Portfolio\Watch\Domain\Exception\WatchedProductSlugIsImmutableException:
+            log_level: info
+        App\Portfolio\Watch\Domain\Exception\InvalidWatchedProductException:
+            log_level: info
+        App\Portfolio\Shared\Domain\Exception\InvalidLocaleException:
+            log_level: info
+        App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException:
+            log_level: info
+        App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException:
+            log_level: info
+        App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException:
+            log_level: info
+        App\Portfolio\Shared\Domain\Exception\IncompleteOrderException:
+            log_level: info
+        App\Portfolio\Quality\Domain\Exception\QualityPrincipleNotFoundException:
+            log_level: info
+        App\Portfolio\Quality\Domain\Exception\QualityTraitNotFoundException:
+            log_level: info
+        # Pas une erreur du client : la locale a déjà passé Locale::fromString,
+        # c'est la ligne de réglages qui manque en base (seed absent, ligne
+        # supprimée), et toute la page « À propos » répond 404 sur une route
+        # publique. Un défaut de données, donc visible en production.
+        App\Portfolio\About\Domain\Exception\AboutSettingsNotFoundException:
+            log_level: warning
+        App\Portfolio\About\Domain\Exception\AboutSiteCardNotFoundException:
+            log_level: info
+        App\Portfolio\About\Domain\Exception\AboutMeCardNotFoundException:
+            log_level: info
+        # Administration des comptes (backoffice, ROLE_SUPER).
+        App\Security\User\Domain\Exception\CpgUserNotFoundException:
+            log_level: info
+        App\Security\User\Domain\Exception\CannotDeleteOwnAccountException:
+            log_level: info
+        App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException:
+            log_level: info
+        App\Security\User\Domain\Exception\CannotModifyOwnRolesException:
+            log_level: info
+        App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException:
+            log_level: info
+        App\Security\User\Domain\Exception\EmailAlreadyUsedException:
+            log_level: info
+        App\Security\User\Domain\Exception\AccountNotAwaitingActivationException:
+            log_level: info
+        # Envoi de l'invitation, comme la remise du message de contact : levées
+        # dans un handler du worker, où ni ce mapping ni `exception_to_status`
+        # n'agissent. Entrées défensives pour un appel *direct* au service
+        # depuis la pile HTTP seulement : via un bus Messenger synchrone,
+        # l'exception arriverait enveloppée dans HandlerFailedException, et
+        # aucune des deux entrées ne la reconnaîtrait.
+        App\Security\User\Domain\Exception\AccountInvitationDeliveryException:
+            log_level: warning
+        # Parcours public de définition de mot de passe. Un jeton inconnu est
+        # tracé sur `security_audit` (`password-setup-token-rejected`, avec IP
+        # et chemin, issue #356) : ce journal n'est plus sa seule trace, il
+        # rentre dans la règle des 4xx. Un lien expiré est le cas ordinaire
+        # d'une invitation ouverte trop tard ; un lien déjà consommé, fusionné
+        # avec lui dans la réponse, a son propre événement
+        # (`password-setup-token-replayed`).
+        App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException:
+            log_level: info
+        App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException:
+            log_level: info
+        # Quota par IP : tracé sur `security_audit` (`password-setup-throttled`,
+        # issue #356), comme ceux du contact et de base-access.
+        App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException:
+            log_level: info
+        # Corps de requête illisible sur une opération API Platform (issue #355) :
+        # erreur du client, sur des POST publics donc à la main de n'importe
+        # qui. Sa trace retenue est l'access log de nginx (le 400 et l'IP).
+        # L'entrée large `Serializer\ExceptionInterface`, elle, n'a pas
+        # d'entrée ici, à dessein : un JSON de sortie non encodable reste en
+        # `critical`.
+        App\Shared\Infrastructure\ApiPlatform\MalformedRequestBodyException:
+            log_level: info
+
         # Content-Type refusé (415) : une erreur du client, jamais un incident.
-        # Seule exception de cette liste à ne pas être une exception métier
-        # rendue par ApiProblemResponseListener, et c'est voulu (issue #320) :
-        # la classe est levée par #[MapRequestPayload(acceptFormat)] sur
-        # /api/assistant/answers, mais
-        # aussi par ContentNegotiationProvider, DeserializeProvider,
+        # Seule entrée de cette liste à ne viser ni une exception métier de
+        # src/ ni une clé de `exception_to_status`, et c'est voulu (issue #320,
+        # justifiée dans ExceptionLogLevelCoverageTest) : la classe est levée
+        # par #[MapRequestPayload(acceptFormat)] sur /api/assistant/answers,
+        # mais aussi par ContentNegotiationProvider, DeserializeProvider,
         # ParameterProvider et DeserializeListener d'API Platform — donc sur
         # **toute** route de l'API, backoffice compris. Avec LOG_LEVEL=warning,
         # aucun 415 n'apparaît dans les journaux de production.

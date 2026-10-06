@@ -1,0 +1,5 @@
+# Fixture (issue #357) : services propres à `prod`.
+framework:
+    exceptions:
+        OverflowException:
+            log_level: info

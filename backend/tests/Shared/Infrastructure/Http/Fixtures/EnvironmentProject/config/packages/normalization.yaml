@@ -1,0 +1,14 @@
+# Fixture d'ExceptionMappingEnvironmentParityTest (issue #357).
+framework:
+    exceptions:
+        # Valeur paramétrée : identique à la lecture, résolue selon l'environnement.
+        ErrorException:
+            log_level: '%env(FIXTURE_LOG_LEVEL)%'
+
+when@prod:
+    framework:
+        exceptions:
+            # Clé à tirets, même valeur que l'entrée commune de framework.yaml :
+            # aucune différence une fois normalisée.
+            DomainException:
+                log-level: info

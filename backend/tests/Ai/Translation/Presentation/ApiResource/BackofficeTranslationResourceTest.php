@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\ReadsAiUsageLog;
 use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
@@ -28,6 +29,7 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 final class BackofficeTranslationResourceTest extends WebTestCase
 {
     use HttpJson;
+    use ReadsAiUsageLog;
     use ReadsAllChannelsLog;
 
     private const string SUPER_USERNAME = 'super';
@@ -123,6 +125,45 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         self::assertFalse($request['output_config']['format']['schema']['additionalProperties']);
         self::assertArrayNotHasKey('temperature', $request);
         self::assertSame('sk-ant-test-not-a-real-key', $captured['apiKey'] ?? null);
+    }
+
+    /**
+     * Issue #356 : l'usage du traducteur (jetons, durée) se relit en
+     * production, où LOG_LEVEL=warning écarterait un `info` du canal
+     * applicatif. Il part donc sur `ai_usage`, comme celui de l'assistant de
+     * parcours — jamais le texte traduit.
+     */
+    public function testTheUsageIsLoggedOnTheDedicatedChannel(): void
+    {
+        $client = $this->superClient();
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $this->stubAnthropic($client, $this->anthropicMessage('{"title":"RabbitMQ broker outage","impact":"The contact form answered 500."}'));
+
+        $this->post($client, $csrfToken, $this->validPayload());
+
+        self::assertResponseStatusCodeSame(200);
+        $done = self::aiUsageRecordsWithOutcome('done');
+        self::assertCount(1, $done);
+        self::assertSame(120, $done[0]->context['promptTokens'] ?? null);
+        self::assertSame(30, $done[0]->context['completionTokens'] ?? null);
+        self::assertSame(2, $done[0]->context['fieldCount'] ?? null);
+        self::assertStringNotContainsString('RabbitMQ', (new JsonFormatter())->format($done[0]));
+    }
+
+    /**
+     * La panne du fournisseur part sur le même canal : une requête sur
+     * `ai_usage` voit toutes les fins du traducteur, comme de l'assistant.
+     */
+    public function testAProviderFailureIsLoggedOnTheDedicatedChannel(): void
+    {
+        $client = $this->superClient();
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $this->stubAnthropic($client, new MockResponse('{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}', ['http_code' => 529]));
+
+        $this->post($client, $csrfToken, $this->validPayload());
+
+        self::assertResponseStatusCodeSame(503);
+        self::assertCount(1, self::aiUsageRecordsWithOutcome('error'));
     }
 
     /**
@@ -222,10 +263,11 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(503);
         $records = self::allChannelsLogRecords();
         // Garde-fou : la sonde a bien vu passer l'exception (sinon le test
-        // resterait vert sans rien vérifier).
+        // resterait vert sans rien vérifier). `warning` depuis l'issue #348
+        // (framework.exceptions), `critical` avant.
         self::assertNotEmpty(array_filter(
             $records,
-            static fn (LogRecord $record): bool => Level::Critical === $record->level && str_contains($record->message, 'TranslationUnavailableException'),
+            static fn (LogRecord $record): bool => Level::Warning === $record->level && str_contains($record->message, 'TranslationUnavailableException'),
         ));
         $formatter = new JsonFormatter();
         foreach ($records as $record) {
@@ -287,6 +329,13 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(429);
         self::assertResponseHasHeader('Retry-After');
         self::assertGreaterThan(0, (int) $client->getResponse()->headers->get('Retry-After'));
+        // Issue #356 : le refus est tracé sur le canal qui sort des pods de
+        // production, avec le compte — la boucle d'un compte ROLE_SUPER
+        // compromis se voit.
+        $refusals = self::aiUsageRecordsWithOutcome('rate-limited');
+        self::assertCount(1, $refusals);
+        self::assertSame(self::SUPER_USERNAME, $refusals[0]->context['account'] ?? null);
+        self::assertIsString($refusals[0]->context['retryAfter'] ?? null);
     }
 
     public function testAnInvalidPayloadDoesNotConsumeTheQuota(): void

@@ -26,7 +26,7 @@ notes citent le signalement, avec votre accord et sous le nom que vous choisisse
 - Le code de ce dépôt : backend Symfony (`backend/`), frontend Vue (`frontend/`), images Docker
   (`docker/`), manifests Kubernetes (`k8s/`), pipeline GitHub Actions (`.github/`).
 - Le site en production, [cp-ghostotof.com](https://cp-ghostotof.com), **sans** test destructif ni
-  déni de service : les limiteurs de débit sont documentés dans `CLAUDE.md` et le formulaire de
+  déni de service : les limiteurs de débit sont documentés dans `.claude/rules/deploiement.md` et le formulaire de
   contact envoie un vrai e-mail à chaque soumission.
 
 Hors périmètre : les services tiers (hébergeur, registre d'images, fournisseurs d'API) et les

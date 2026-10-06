@@ -362,9 +362,67 @@ final class SecurityAuditLogTest extends WebTestCase
     }
 
     /**
-     * Les refus du parcours (jeton inconnu, expiré, corps invalide) et la
-     * simple validation n'écrivent rien dans le journal d'audit — et surtout
-     * pas le jeton reçu, qu'il soit bon ou mauvais.
+     * Issue #356 : un jeton inconnu laisse une ligne attribuable (IP, chemin)
+     * sur `security_audit`, sans le jeton — sur les deux routes du parcours.
+     */
+    public function testAnUnknownPasswordSetupTokenIsRecordedAsRejected(): void
+    {
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $unknown = bin2hex(random_bytes(32));
+        $server = ['CONTENT_TYPE' => 'application/json'];
+
+        $client->request('POST', '/api/account/password-setup/validate', server: $server, content: self::jsonBody(['token' => $unknown]));
+
+        self::assertResponseStatusCodeSame(404);
+        self::assertSame([
+            'event' => 'password-setup-token-rejected',
+            'actor' => 'anonymous',
+            'ip' => '127.0.0.1',
+            'path' => '/api/account/password-setup/validate',
+        ], self::singleSecurityAuditEvent('password-setup-token-rejected'));
+
+        $client->request('POST', '/api/account/password-setup', server: $server, content: self::jsonBody(['token' => $unknown, 'password' => TestCredentials::variant('setup')]));
+
+        self::assertResponseStatusCodeSame(404);
+        self::assertSame('/api/account/password-setup', self::singleSecurityAuditEvent('password-setup-token-rejected')['path']);
+    }
+
+    /**
+     * Issue #356 : un lien déjà consommé qui revient est tracé comme rejoué,
+     * avec le compte qu'il activait. La réponse, elle, reste le 410 fusionné
+     * avec « expiré ».
+     */
+    public function testAReplayedPasswordSetupLinkIsRecordedWithItsAccount(): void
+    {
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $token = $this->inviteAndCollectSetupToken('newcomer@example.com', Locale::FR);
+        $server = ['CONTENT_TYPE' => 'application/json'];
+
+        $client->request('POST', '/api/account/password-setup', server: $server, content: self::jsonBody(['token' => $token, 'password' => TestCredentials::variant('setup')]));
+        self::assertResponseStatusCodeSame(204);
+        $userId = self::singleSecurityAuditEvent('account-activated')['userId'];
+
+        $client->request('POST', '/api/account/password-setup/validate', server: $server, content: self::jsonBody(['token' => $token]));
+
+        self::assertResponseStatusCodeSame(410);
+        self::assertSame([
+            'event' => 'password-setup-token-replayed',
+            'user' => 'newcomer',
+            'userId' => $userId,
+            'actor' => 'anonymous',
+            'ip' => '127.0.0.1',
+            'path' => '/api/account/password-setup/validate',
+        ], self::singleSecurityAuditEvent('password-setup-token-replayed'));
+        $this->assertTokenAppearsInNoSecurityAuditRecord($token);
+    }
+
+    /**
+     * Aucune requête du parcours — validation, refus (jeton inconnu, corps
+     * invalide) — ne recopie le jeton reçu dans le journal d'audit, qu'il soit
+     * bon ou mauvais. Les refus y laissent une ligne depuis l'issue #356, sans
+     * lui.
      */
     public function testNoPasswordSetupRequestEverLeaksItsTokenIntoTheAuditLog(): void
     {
@@ -391,6 +449,90 @@ final class SecurityAuditLogTest extends WebTestCase
         $client->request('POST', '/api/account/password-setup', server: $server, content: self::jsonBody(['token' => $unknown, 'password' => TestCredentials::variant('setup')]));
         self::assertResponseStatusCodeSame(404);
         $this->assertTokenAppearsInNoSecurityAuditRecord($unknown);
+    }
+
+    // ----- Issue #356 : quotas par IP des routes anonymes -----
+
+    /**
+     * Le quota se consomme dans un écouteur kernel.request (audit C1) : le
+     * 11e appel est refusé avant toute lecture du jeton, et c'est ce refus,
+     * pas un jeton inconnu de plus, que la ligne doit dire.
+     */
+    public function testAPasswordSetupQuotaRefusalIsRecorded(): void
+    {
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $body = self::jsonBody(['token' => bin2hex(random_bytes(32))]);
+
+        for ($attempt = 1; $attempt <= 10; ++$attempt) {
+            $client->request('POST', '/api/account/password-setup/validate', server: ['CONTENT_TYPE' => 'application/json'], content: $body);
+            self::assertResponseStatusCodeSame(404);
+        }
+
+        $client->request('POST', '/api/account/password-setup/validate', server: ['CONTENT_TYPE' => 'application/json'], content: $body);
+
+        self::assertResponseStatusCodeSame(429);
+        self::assertSame([
+            'event' => 'password-setup-throttled',
+            'actor' => 'anonymous',
+            'ip' => '127.0.0.1',
+            'path' => '/api/account/password-setup/validate',
+        ], self::singleSecurityAuditEvent('password-setup-throttled'));
+        self::assertSame([], self::securityAuditEvents('password-setup-token-rejected'));
+    }
+
+    public function testAContactQuotaRefusalIsRecorded(): void
+    {
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $body = self::jsonBody([
+            'name' => 'Jane Doe',
+            'email' => 'jane@example.com',
+            'message' => 'Bonjour, je souhaite vous contacter pour un projet.',
+        ]);
+
+        for ($attempt = 1; $attempt <= 5; ++$attempt) {
+            $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: $body);
+            self::assertResponseStatusCodeSame(202);
+        }
+
+        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: $body);
+
+        self::assertResponseStatusCodeSame(429);
+        self::assertSame([
+            'event' => 'contact-throttled',
+            'actor' => 'anonymous',
+            'ip' => '127.0.0.1',
+            'path' => '/api/contact',
+        ], self::singleSecurityAuditEvent('contact-throttled'));
+        // Ni le corps ni l'adresse de l'expéditeur : la ligne ne dit que le refus.
+        self::assertStringNotContainsString('jane@example.com', json_encode(self::securityAuditRecords(), \JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Rendu par ApiProblemResponseListener (-98), hors d'API Platform : le
+     * même écouteur de kernel.exception doit le voir passer.
+     */
+    public function testABaseAccessQuotaRefusalIsRecorded(): void
+    {
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+
+        for ($attempt = 1; $attempt <= 20; ++$attempt) {
+            $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
+            self::assertResponseIsSuccessful();
+        }
+
+        $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
+
+        self::assertResponseStatusCodeSame(429);
+        self::assertSame([
+            'event' => 'base-access-throttled',
+            'actor' => 'anonymous',
+            'ip' => '127.0.0.1',
+            'path' => '/api/account/base-access',
+        ], self::singleSecurityAuditEvent('base-access-throttled'));
+        self::assertSame([], self::securityAuditEvents('base-access-issued'));
     }
 
     private function assertTokenAppearsInNoSecurityAuditRecord(string $token): void

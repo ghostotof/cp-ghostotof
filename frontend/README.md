@@ -23,4 +23,4 @@ make sh-front        # shell dans le conteneur (npm run test:watch, etc.)
 ```
 
 Les conventions détaillées (ajout d'une page, d'un contenu, accessibilité, i18n) sont dans
-[`../.claude/CLAUDE.md`](../.claude/CLAUDE.md), section « Frontend architecture ».
+[`../.claude/rules/frontend.md`](../.claude/rules/frontend.md) et les règles `frontend-*.md` voisines.
