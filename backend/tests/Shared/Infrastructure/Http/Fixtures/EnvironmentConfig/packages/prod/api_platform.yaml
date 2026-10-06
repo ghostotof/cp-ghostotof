@@ -1,0 +1,4 @@
+# Fixture (issue #357) : répertoire propre à `prod`, signalée.
+api_platform:
+    exception_to_status:
+        RuntimeException: 404

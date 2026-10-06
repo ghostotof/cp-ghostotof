@@ -19,6 +19,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Toute exception que l'API rend avec un statut a son `log_level` dans
@@ -54,6 +55,13 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
 {
     private const string SOURCES = __DIR__.'/../../../../src';
     private const string FIXTURE_SOURCES = __DIR__.'/Fixtures/LogLevelSources';
+    private const string CONFIG = __DIR__.'/../../../../config';
+    private const string FIXTURE_CONFIG = __DIR__.'/Fixtures/EnvironmentConfig';
+
+    /**
+     * Les deux mappings que ce garde-fou lit compilés : extension => clé.
+     */
+    private const array MAPPINGS = ['framework' => 'exceptions', 'api_platform' => 'exception_to_status'];
 
     /**
      * Entrées larges, rétablies depuis les défauts d'API Platform en fin de
@@ -284,6 +292,102 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     private function withHttpStatus(string $directory): array
     {
         return CompiledExceptionConfig::withHttpStatus(self::getContainer()->get('exception_listener'), DeclaredClasses::all($directory));
+    }
+
+    /**
+     * La limite de la lecture compilée : le conteneur de test ne voit que
+     * l'environnement `test`. Une entrée déclarée pour `prod` seulement — un
+     * bloc `when@prod`, un fichier de config/packages/prod/, un
+     * services_prod.yaml — échapperait au garde-fou, et la préproduction comme
+     * la production tournent en `prod`. Ces deux configurations restent donc
+     * communes à tous les environnements (issue #357).
+     */
+    public function testNoMappingIsDeclaredForASingleEnvironmentOtherThanTest(): void
+    {
+        self::assertSame(
+            [],
+            $this->mappingsOutsideTheTestEnvironment(self::CONFIG),
+            'Déclaration propre à un environnement que le conteneur de test ne compile pas : la rendre commune.',
+        );
+    }
+
+    /**
+     * Le recensement lui-même, sur une configuration fixture qui déclare un
+     * mapping sous chacune des formes que le noyau charge selon
+     * l'environnement (KernelTrait::configureContainer), à côté de déclarations
+     * communes ou propres à `test`, qui ne doivent pas ressortir.
+     */
+    public function testTheEnvironmentScanFindsEveryFormTheKernelLoads(): void
+    {
+        self::assertSame([
+            'packages/framework.yaml : when@prod framework.exceptions',
+            'packages/prod/api_platform.yaml : api_platform.exception_to_status',
+            'services.yaml : when@dev api_platform.exception_to_status',
+            'services_preprod.yaml : framework.exceptions',
+        ], $this->mappingsOutsideTheTestEnvironment(self::FIXTURE_CONFIG));
+    }
+
+    /**
+     * Les trois formes que le noyau charge selon l'environnement
+     * (KernelTrait::configureContainer) : un bloc `when@<env>` d'un fichier
+     * commun, un fichier de config/packages/<env>/, un services_<env>.yaml.
+     * YAML seulement : le projet n'a pas de configuration PHP.
+     *
+     * @return list<string> « fichier : clé » des déclarations hors `test`
+     */
+    private function mappingsOutsideTheTestEnvironment(string $configDirectory): array
+    {
+        $files = [];
+        foreach (['/packages/*.yaml', '/packages/*/*.yaml', '/services*.yaml'] as $pattern) {
+            $matching = glob($configDirectory.$pattern);
+            if (false === $matching) {
+                throw new \LogicException(\sprintf('glob() a échoué sur %s%s.', $configDirectory, $pattern));
+            }
+            array_push($files, ...$matching);
+        }
+
+        $found = [];
+        foreach ($files as $file) {
+            $relative = substr($file, \strlen($configDirectory) + 1);
+            $config = Yaml::parseFile($file, Yaml::PARSE_CUSTOM_TAGS);
+            if (!\is_array($config)) {
+                continue;
+            }
+            foreach ($this->blocksOutsideTheTestEnvironment($relative, $config) as $prefix => $block) {
+                foreach (self::MAPPINGS as $extension => $key) {
+                    if (\is_array($block[$extension] ?? null) && \array_key_exists($key, $block[$extension])) {
+                        $found[] = $relative.' : '.$prefix.$extension.'.'.$key;
+                    }
+                }
+            }
+        }
+        sort($found);
+
+        return $found;
+    }
+
+    /**
+     * @param array<mixed> $config contenu d'un fichier
+     *
+     * @return array<string, mixed> préfixe du diagnostic => bloc de configuration
+     */
+    private function blocksOutsideTheTestEnvironment(string $relativePath, array $config): array
+    {
+        // Un fichier propre à un environnement, en entier.
+        if (1 === preg_match('{^packages/([^/]+)/[^/]+\.yaml$}', $relativePath, $matches)
+            || 1 === preg_match('{^services_([^/]+)\.yaml$}', $relativePath, $matches)) {
+            return 'test' === $matches[1] ? [] : ['' => $config];
+        }
+
+        // Un fichier commun : ses blocs `when@<env>`, sauf `when@test`.
+        $blocks = [];
+        foreach ($config as $key => $block) {
+            if (\is_string($key) && str_starts_with($key, 'when@') && 'when@test' !== $key) {
+                $blocks[$key.' '] = $block;
+            }
+        }
+
+        return $blocks;
     }
 
     /**

@@ -1,0 +1,5 @@
+# Fixture (issue #357) : services propres à `preprod`, signalée.
+framework:
+    exceptions:
+        RuntimeException:
+            log_level: info
