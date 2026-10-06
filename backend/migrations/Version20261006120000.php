@@ -19,12 +19,18 @@ use Doctrine\Migrations\AbstractMigration;
  *
  * Les lignes déjà fautives sont d'abord ramenées dans les bornes (NaN et
  * négatifs à 0, au-delà de 100 à 100) **et** passées en `secondary` : la
- * technologie reste publiée, mais dans l'énumération sans durée, si bien que
- * la valeur inventée ne s'affiche jamais ; elle se corrige au backoffice.
+ * technologie reste sur la page, mais dans l'énumération sans durée, si bien
+ * que la valeur inventée ne s'affiche jamais sur le site — l'API publique
+ * porte toujours `years`, la durée n'étant pas une donnée protégée. Chaque
+ * ligne réécrite est signalée avec sa valeur d'origine ; elle se corrige au
+ * backoffice.
  * Sans ce préalable, `ADD CONSTRAINT` échouerait sur la première d'entre elles
  * et ferait échouer le déploiement. PostgreSQL range NaN au-dessus de tout
  * nombre : `years <= 100` est faux pour lui, la condition le couvre donc
- * aussi, et `years = 'NaN'` le distingue de +Infinity.
+ * aussi, et `years = 'NaN'` le distingue de +Infinity. Seul `-0` passe
+ * (`-0 >= 0`) : écrit en SQL, il serait publié « -0 ». Défaut cosmétique
+ * qu'aucun chemin d'écriture ne produit (ExperienceYears le normalise),
+ * accepté plutôt qu'un test de signe illisible dans la contrainte.
  *
  * La borne est écrite en dur, comme `ExperienceYears::MAX` : une migration est
  * un historique figé. `ExperienceTechnologyYearsConstraintTest` épingle que la

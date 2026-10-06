@@ -96,6 +96,9 @@ final class AddExperienceTechnologyCommand extends Command
      * Option d'abord, validée avant tout appel au registrar : une durée
      * invalide n'est jamais masquée par un nom déjà pris. Sinon la question,
      * dont le validateur fait reposer la valeur tant qu'elle est refusée.
+     * Une entrée standard fermée en pleine question (MissingInputException,
+     * la question n'ayant pas de défaut) n'est pas rattrapée : la commande
+     * échoue avec sa trace, comme avant #372 et comme pour le nom.
      *
      * @throws InvalidExperienceYearsException
      */

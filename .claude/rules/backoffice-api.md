@@ -126,12 +126,11 @@ paths:
   (`LogicException`, `MappingException`, an `UnsupportedFormatException` for a negotiated format with no
   encoder) passes through untouched and stays a `critical` 500 — never widen the `catch` to
   `Serializer\ExceptionInterface`. The broad entry keeps covering the output side only (a non-encodable
-  response — a `NaN` in a `double precision` column, which the only such column now refuses by a `CHECK`
-  (#372, so `ServerSideSerializerFailureTest` lifts it in a rolled-back transaction); invalid UTF-8 never
-  reaches the `UTF8` database —,
+  response — a `NaN` in a `double precision` column; invalid UTF-8 never reaches the `UTF8` database —,
   a misconfigured Serializer, a negotiated format with no encoder): server faults, so it maps to **500**
   since issue #360, **not** API Platform's default 400 — never "restore" it, `ServerSideSerializerFailureTest`
-  pins the 500 end to end. It must stay `critical`: never give it a `log_level`, and never move the
+  pins the 500 end to end. That column now refuses `NaN` through a `CHECK` (#372), so the test lifts the
+  constraint (`LiftsExperienceYearsConstraint`) to write its row. It must stay `critical`: never give it a `log_level`, and never move the
   conversion to the JSON decoder, which also decodes internal data. The Hydra entrypoint (`GET /api`) is
   disabled in **every** environment (`enable_entrypoint: false`, #360): API Platform hard-codes its
   formats to `jsonld`/`jsonhal`/`jsonapi`/`html` (`entrypoint_formats`, a `json` added to `docs_formats`
