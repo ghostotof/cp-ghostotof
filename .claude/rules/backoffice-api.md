@@ -92,8 +92,9 @@ paths:
   reads the `exception_listener` mapping, the `api_platform.exception_to_status` parameter and the
   resource metadata from the test container, so an entry from another config file or a `when@test`
   block counts as the kernel counts it; `ApiExceptionLogLevelTest` builds its listener from the same
-  mapping; `ExtraConfigKernel` (option `extra_config` of `bootKernel()`) proves it by compiling the app
-  with one more config file. The flip side: the test container only sees `test`. **Never declare either map for a single
+  mapping; `CompiledExceptionConfigTest` proves it by compiling the app with one more config file
+  (`ExtraConfigKernel`, through an `extra_config` option of `bootKernel()` that only that class's
+  `createKernel()` understands — `KernelTestCase` silently ignores it anywhere else). The flip side: the test container only sees `test`. **Never declare either map for a single
   environment** — not `when@prod`, `config/packages/prod/`, `services_prod.*` (preprod and prod both run
   `APP_ENV=prod`, the guards would miss it), and not `when@test` either (the guards would turn green on
   a config production lacks): keep them common. `ExceptionMappingEnvironmentParityTest` enforces it by

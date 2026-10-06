@@ -40,6 +40,21 @@ final class CompiledExceptionConfig
     }
 
     /**
+     * Un ErrorListener du noyau construit avec ces seules entrées de
+     * `framework.exceptions`, pour éprouver les lectures de cette classe hors
+     * de la configuration de l'application.
+     *
+     * @param array<class-string, array{log_level?: string, status_code?: int<100, 599>}> $entries dans l'ordre
+     */
+    public static function listenerWith(array $entries): ErrorListener
+    {
+        return new ErrorListener(null, null, false, array_map(
+            static fn (array $options): array => ['log_level' => $options['log_level'] ?? null, 'status_code' => $options['status_code'] ?? null, 'log_channel' => null],
+            $entries,
+        ));
+    }
+
+    /**
      * Le statut avec lequel le noyau rend chaque exception qu'il convertit
      * lui-même (ErrorListener::logKernelException), dans son ordre : la
      * première entrée de `framework.exceptions` qui correspond par
