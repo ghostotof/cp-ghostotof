@@ -79,12 +79,15 @@ paths:
   `tests/Shared/Infrastructure/Http/ExceptionLogLevelCoverageTest.php` pins four things: an entry for
   every exception rendered with a declared status — every `exception_to_status` key, every
   `exceptionToStatus` carried by an `#[ApiResource]` or one of its operations (merged by the vendor at
-  render time, `ErrorListener::getOperationExceptionToStatus`), every `#[WithHttpStatus]` exception of
-  `src/` (the kernel converts it but resolves the level on the original exception) and every
+  render time, `ErrorListener::getOperationExceptionToStatus`), every exception the kernel converts
+  itself — a `framework.exceptions` entry with a `status_code`, which wins, else a `#[WithHttpStatus]`
+  of `src/`; either way the level is resolved on the original exception — and every concrete
   `ProblemExceptionInterface` of `src/` (found by token parsing
   through `tests/Support/DeclaredClasses`, shared with `ProblemDetailStaysStaticTest`, never inferred from
-  file paths); a level that matches the rendered status (4xx: info/notice/warning, 5xx:
-  warning/error/critical); no entry that targets anything else — a broad `\DomainException` or an
+  file paths); a level that matches **every** status the exception can be rendered with (4xx:
+  info/notice/warning, 5xx: warning/error/critical) — a cautious superset: in each table API Platform
+  may consult (the global one, merged per operation) the first key matching by `is_a()`, plus
+  `getStatus()` for a problem exception and the kernel's conversion; no entry that targets anything else — a broad `\DomainException` or an
   interface would hide real server faults and shadow the precise entries after it, since the kernel takes
   the first match —; and justified ways out only (`EXEMPT`: the three broad API Platform defaults below,
   which stay `critical`; `JUSTIFIED_ENTRIES`: the 415 of #320).
@@ -98,14 +101,17 @@ paths:
   environment** — not `when@prod`, `config/packages/prod/`, `services_prod.*` (preprod and prod both run
   `APP_ENV=prod`, the guards would miss it), and not `when@test` either (the guards would turn green on
   a config production lacks): keep them common. `ExceptionMappingEnvironmentParityTest` enforces it by
-  loading `prod`, `dev` and `test` through Symfony's own loaders without compiling
-  (`tests/Support/EnvironmentConfigKernel`, `getExtensionConfig()`), so every form the kernel knows —
-  YAML or PHP — is seen, and nothing it ignores. The level checked is the one the kernel
-  resolves (`ErrorListener::resolveLogLevel`): the first matching entry by `instanceof`, else an inherited
-  `#[WithLogLevel]` — honoured, though the project keeps levels in `framework.exceptions` so the domain
-  does not depend on HttpKernel. Two vendor internals are read by reflection rather than reimplemented
-  (the compiled mapping, `getInheritedAttribute`); `ErrorListenerInternalsTest` pins their signature, so
-  a Symfony upgrade that changes them fails there first. GraphQL operations are not covered:
+  loading every environment of `Kernel::getAllowedEnvs()` through Symfony's own loaders without compiling
+  (`tests/Support/EnvironmentConfigKernel`), each map normalized and merged by its extension's own
+  configuration node — so every form the kernel knows (YAML or PHP, list form, dashed keys) is seen,
+  and nothing it ignores. Keep both maps literal: a `%env()%` or `%parameter%` value reads the same
+  everywhere but resolves per environment, and the same test refuses it. The level checked is the one
+  the kernel resolves, read from `ErrorListener::resolveLogLevel` itself: the first matching entry by
+  `instanceof`, else an inherited `#[WithLogLevel]` — honoured, though the project keeps levels in
+  `framework.exceptions` so the domain does not depend on HttpKernel. Three vendor internals are read by
+  reflection rather than reimplemented (the compiled mapping, `getInheritedAttribute`,
+  `resolveLogLevel`); `ErrorListenerInternalsTest` pins their signature, so a Symfony upgrade that
+  changes them fails there first. GraphQL operations are not covered:
   `testGraphQlStaysDisabled` turns red the day `api_platform.graphql.enabled` becomes true.
   **A request body the Serializer refuses never reaches the broad `Serializer\ExceptionInterface` entry**
   (issue #355): `Shared/Infrastructure/ApiPlatform/MalformedRequestBodyProvider` decorates
