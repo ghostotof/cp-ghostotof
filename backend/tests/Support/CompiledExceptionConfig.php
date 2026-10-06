@@ -37,7 +37,7 @@ final class CompiledExceptionConfig
     public static function exceptionsMapping(ErrorListener $listener): array
     {
         /** @var array<class-string, array{log_level: ?string, status_code: int<100, 599>|null, log_channel: ?string}> */
-        return self::internal(static fn (): \ReflectionProperty => new \ReflectionProperty(ErrorListener::class, 'exceptionsMapping'))->getValue($listener);
+        return self::vendorMember(static fn (): \ReflectionProperty => new \ReflectionProperty(ErrorListener::class, 'exceptionsMapping'))->getValue($listener);
     }
 
     /**
@@ -103,7 +103,6 @@ final class CompiledExceptionConfig
      */
     public static function withHttpStatus(ErrorListener $listener, iterable $classes): array
     {
-        $resolve = self::internal(static fn (): \ReflectionMethod => new \ReflectionMethod(ErrorListener::class, 'getInheritedAttribute'));
         $statuses = [];
         foreach ($classes as $class) {
             // Une HttpExceptionInterface garde son propre statut : le noyau ne
@@ -111,7 +110,7 @@ final class CompiledExceptionConfig
             if (!is_subclass_of($class, \Throwable::class) || is_subclass_of($class, HttpExceptionInterface::class)) {
                 continue;
             }
-            $attribute = $resolve->invoke($listener, $class, WithHttpStatus::class);
+            $attribute = self::inheritedAttribute($listener, $class, WithHttpStatus::class);
             if ($attribute instanceof WithHttpStatus) {
                 $statuses[$class] = [$attribute->statusCode];
             }
@@ -131,16 +130,55 @@ final class CompiledExceptionConfig
      */
     public static function withLogLevel(ErrorListener $listener, iterable $classes): array
     {
-        $resolve = self::internal(static fn (): \ReflectionMethod => new \ReflectionMethod(ErrorListener::class, 'getInheritedAttribute'));
         $levels = [];
         foreach ($classes as $class) {
-            $attribute = is_subclass_of($class, \Throwable::class) ? $resolve->invoke($listener, $class, WithLogLevel::class) : null;
+            $attribute = is_subclass_of($class, \Throwable::class) ? self::inheritedAttribute($listener, $class, WithLogLevel::class) : null;
             if ($attribute instanceof WithLogLevel) {
                 $levels[$class] = $attribute->level;
             }
         }
 
         return $levels;
+    }
+
+    /**
+     * Le niveau auquel le noyau journalise une exception de cette classe : sa
+     * propre résolution (ErrorListener::resolveLogLevel) — première entrée de
+     * `framework.exceptions` qui correspond par `instanceof` et fixe un niveau,
+     * à défaut #[WithLogLevel] hérité, à défaut `critical` (ou `error` pour une
+     * HttpException 4xx) —, appelée plutôt que réécrite, pour ne jamais en
+     * diverger.
+     *
+     * L'exception est construite sans son constructeur — la résolution ne lit
+     * que sa classe —, ce qui vaut aussi pour un constructeur privé (les
+     * exceptions à constructeur nommé). Une classe abstraite ou une interface
+     * n'est jamais levée telle quelle : null.
+     *
+     * @param class-string<\Throwable> $class
+     */
+    public static function kernelLogLevel(ErrorListener $listener, string $class): ?string
+    {
+        $reflection = new \ReflectionClass($class);
+        if ($reflection->isAbstract() || $reflection->isInterface()) {
+            return null;
+        }
+
+        $resolve = self::vendorMember(static fn (): \ReflectionMethod => new \ReflectionMethod(ErrorListener::class, 'resolveLogLevel'));
+        $level = $resolve->invoke($listener, $reflection->newInstanceWithoutConstructor());
+
+        return \is_string($level) ? $level : null;
+    }
+
+    /**
+     * Un attribut de la classe, de ses parentes ou de ses interfaces, lu par la
+     * méthode du noyau (ErrorListener::getInheritedAttribute).
+     */
+    private static function inheritedAttribute(ErrorListener $listener, string $class, string $attribute): ?object
+    {
+        $resolve = self::vendorMember(static fn (): \ReflectionMethod => new \ReflectionMethod(ErrorListener::class, 'getInheritedAttribute'));
+        $found = $resolve->invoke($listener, $class, $attribute);
+
+        return \is_object($found) ? $found : null;
     }
 
     /**
@@ -154,7 +192,7 @@ final class CompiledExceptionConfig
      *
      * @return T
      */
-    private static function internal(\Closure $reflect): \Reflector
+    private static function vendorMember(\Closure $reflect): \Reflector
     {
         try {
             return $reflect();

@@ -20,6 +20,7 @@ use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\UnloggedFixtur
 use Doctrine\ORM\OptimisticLockException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\HttpKernel\EventListener\ErrorListener;
 use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
@@ -140,9 +141,8 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
         }
 
         $watched = array_diff_key($statuses, self::EXEMPT);
-        $levels = $this->resolvedLevels(array_keys($watched), $this->logLevels(), $this->withLogLevel(array_keys($watched)));
 
-        self::assertSame([], $this->levelViolations($watched, $levels));
+        self::assertSame([], $this->levelViolations($watched, $this->kernelLevels(self::getContainer()->get('exception_listener'), array_keys($watched))));
     }
 
     /**
@@ -365,20 +365,19 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     public function testAWithLogLevelAttributeIsHeldToTheLevelPolicy(): void
     {
         $statuses = $this->withHttpStatus(self::FIXTURE_ATTRIBUTES);
-        $levels = $this->resolvedLevels(array_keys($statuses), $this->logLevels(), $this->withLogLevel(array_keys($statuses)));
 
-        self::assertSame([LoudAttributeFixtureException::class => '404 : critical'], $this->levelViolations($statuses, $levels));
+        self::assertSame([LoudAttributeFixtureException::class => '404 : critical'], $this->levelViolations($statuses, $this->kernelLevels(self::getContainer()->get('exception_listener'), array_keys($statuses))));
     }
 
     /**
-     * L'ordre du noyau : une entrée qui correspond l'emporte sur l'attribut.
+     * L'ordre du noyau, sur lequel le contrôle des niveaux s'appuie : une
+     * entrée qui correspond l'emporte sur l'attribut.
      */
     public function testAnEntryTakesPrecedenceOverTheAttribute(): void
     {
-        self::assertSame(
-            [LoudAttributeFixtureException::class => 'info'],
-            $this->resolvedLevels([LoudAttributeFixtureException::class], [\DomainException::class => 'info'], [LoudAttributeFixtureException::class => 'critical']),
-        );
+        $listener = $this->listenerWith([\DomainException::class => 'info']);
+
+        self::assertSame([LoudAttributeFixtureException::class => 'info'], $this->kernelLevels($listener, [LoudAttributeFixtureException::class]));
     }
 
     /**
@@ -388,36 +387,44 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
      */
     public function testTheLevelOfAParentEntryIsHeldToThePolicy(): void
     {
-        $levels = $this->resolvedLevels([\OverflowException::class], [\RuntimeException::class => 'critical'], []);
+        $levels = $this->kernelLevels($this->listenerWith([\RuntimeException::class => 'critical']), [\OverflowException::class]);
 
         self::assertSame([\OverflowException::class => '404 : critical'], $this->levelViolations([\OverflowException::class => [404]], $levels));
     }
 
     /**
-     * La résolution du noyau (ErrorListener::resolveLogLevel) : la première
-     * entrée qui correspond par `instanceof` et fixe un niveau, à défaut
-     * #[WithLogLevel], hérité compris. Une classe sans l'un ni l'autre est
-     * absente du résultat.
+     * Le niveau que le noyau retient pour chaque classe (CompiledExceptionConfig::kernelLogLevel).
      *
-     * @param list<string>          $classes
-     * @param array<string, string> $entryLevels     entrées de `framework.exceptions`, dans leur ordre
-     * @param array<string, string> $attributeLevels classe => niveau de son #[WithLogLevel]
+     * @param list<string> $classes
      *
-     * @return array<string, string> classe => niveau retenu
+     * @return array<string, string> classe => niveau ; une classe abstraite en est absente
      */
-    private function resolvedLevels(array $classes, array $entryLevels, array $attributeLevels): array
+    private function kernelLevels(ErrorListener $listener, array $classes): array
     {
-        $resolved = [];
+        $levels = [];
         foreach ($classes as $class) {
-            $level = array_find($entryLevels, static fn (string $level, string $entry): bool => is_a($class, $entry, true))
-                ?? $attributeLevels[$class]
-                ?? null;
-            if (null !== $level) {
-                $resolved[$class] = $level;
+            if (is_subclass_of($class, \Throwable::class)) {
+                $level = CompiledExceptionConfig::kernelLogLevel($listener, $class);
+                if (null !== $level) {
+                    $levels[$class] = $level;
+                }
             }
         }
 
-        return $resolved;
+        return $levels;
+    }
+
+    /**
+     * Un ErrorListener du noyau avec ces seules entrées de `framework.exceptions`.
+     *
+     * @param array<class-string, string> $levels classe => `log_level`, dans l'ordre
+     */
+    private function listenerWith(array $levels): ErrorListener
+    {
+        return new ErrorListener(null, null, false, array_map(
+            static fn (string $level): array => ['log_level' => $level, 'status_code' => null, 'log_channel' => null],
+            $levels,
+        ));
     }
 
     /**
@@ -432,9 +439,12 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
 
     /**
      * Une entrée couvre une classe comme le noyau la résout : par `instanceof`
-     * (ErrorListener::resolveLogLevel). L'ordre des entrées, qui départage
-     * pour le noyau, n'entre pas en jeu ici : testEveryLogLevelEntryTargetsARenderedException
-     * n'admet que des entrées précises, qui ne se recouvrent donc pas.
+     * (ErrorListener::resolveLogLevel), donc aussi par une classe parente ou
+     * une interface ; à défaut, un #[WithLogLevel] hérité. Seule la présence
+     * compte ici. L'ordre des entrées, lui, compte pour le niveau retenu — deux
+     * entrées peuvent se recouvrir, une exception #[WithHttpStatus] et sa
+     * sous-classe étant toutes deux recensées : le contrôle des niveaux le lit
+     * donc au noyau lui-même (kernelLevels), jamais ici.
      *
      * @param list<string>          $classes
      * @param list<string>          $logLevelKeys
