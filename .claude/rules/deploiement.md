@@ -96,7 +96,8 @@ paths:
   variable added by this release would be missing; running pods don't re-read their env, so this
   changes nothing for them — the filename `v1_configmap_backend-config.yaml` is stable because the
   ConfigMap has `disableNameSuffixHash`), then `migrate-job.yaml` with the release image (300 s
-  timeout), then `kubectl apply -k .` + `rollout status`. **Fail-closed**: a failed Job exits before the
+  timeout, `tools/wait-rollout.sh`), then `kubectl apply -k .` + the rollout waits
+  (`tools/wait-rollout.sh`, see below). **Fail-closed**: a failed Job exits before the
   `apply`, so the previous release keeps serving on the old schema, which is exactly the safe state
   (PostgreSQL DDL is transactional and Doctrine wraps each migration in its own transaction) — fix the
   migration, cut a new tag. The discipline that makes this order safe, to respect in every migration:
@@ -126,6 +127,24 @@ paths:
   (`needs.deploy-preprod.result == 'success'`): `failure()` is true as soon as any *ancestor* job
   fails, so a deploy stopped before its rollout used to trigger `rollout undo` anyway and roll the
   still-serving release back to the one before it.
+- **Every deploy wait fails early on a container that will not start** (issue #353). The `Deploy`
+  steps never call `kubectl rollout status` or `kubectl wait --for=condition=complete` directly:
+  `tools/wait-rollout.sh <ns> deployment/NAME|job/NAME --timeout N` cuts kubectl's own wait into
+  5 s slices — so "done" keeps kubectl's meaning — and between slices reads the pods of the
+  *current* revision only: for a Deployment, the ReplicaSet whose `deployment.kubernetes.io/revision`
+  matches, once `status.observedGeneration` has caught up (pods of an earlier stuck rollout would be
+  a false positive); for a Job, the pods owned by its uid (the previous `backend-migrate`, just
+  deleted, may still be around). Containers **and** initContainers. It fails naming pod, container,
+  reason and the kubelet's message — which names the missing key or Secret, never a value — on
+  `InvalidImageName` at once, `CreateContainerConfigError` persisting 15 s, `ErrImagePull` and
+  `ImagePullBackOff` persisting 60 s **together** (the kubelet alternates them); a Job with
+  `Failed=True` fails at once instead of waiting out its timeout. `CrashLoopBackOff` is deliberately
+  not fatal. It never reads a Secret and needs nothing beyond the deployer Role's `get/list/watch`.
+  Each wait may overrun its timeout by ~25 s, counted in `timeout-minutes`. Fail-closed is
+  unchanged: a failure before `apply -k` leaves the previous release serving; after it, no automatic
+  rollback in prod, and `rollback-preprod` still runs only on a successful deploy. The 60 s
+  `rollout status` checks of `smoke-test-preprod` are not deploy waits and stay. Offline test:
+  `tools/tests/wait-rollout.test.sh`.
 - **`DEPLOY_MAINTENANCE_WINDOW` (repository variable) opts a deploy into a maintenance window** — added
   for v0.11.0's irreversible integer→UUID primary-key migrations, where the new code cannot read the old
   schema **and vice versa**, so no pod may serve a request while the migration runs. That is the only

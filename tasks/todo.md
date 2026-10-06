@@ -14,7 +14,7 @@ Branche : `feature/353-rollout-echec-rapide` (depuis `develop` à `717ce4b`). Pl
 
 - [x] **T1** — `tools/wait-rollout.sh` + `tools/tests/wait-rollout.test.sh` (banc rouge, script, vert,
       7 mutations détectées, shellcheck, commit)
-- [ ] **T2** — pipeline : 13 attentes remplacées, `tools-tests`, commentaires `timeout-minutes`, règle
+- [x] **T2** — pipeline : 13 attentes remplacées, `tools-tests`, commentaires `timeout-minutes`, règle
       `deploiement.md` (vérifications : grep, check-workflow-timeouts, check-claude-rules, actionlint ;
       commit)
 - [ ] **T3** — expérience en préprod, **par Christophe dans un terminal séparé** : Deployment jetable
