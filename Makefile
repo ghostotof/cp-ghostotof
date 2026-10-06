@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 DC := docker compose
 
-.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality back-lsp build-front-prod build-front-preprod front-image-headers get-secret
+.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality back-lsp build-front-prod build-front-preprod front-image-headers back-nginx-rate-limits get-secret
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -157,6 +157,11 @@ build-front-preprod: ## Construit l'image frontend de préprod (= prod + source 
 front-image-headers: ## Construit l'image frontend de prod et vérifie les 7 en-têtes de sécurité, location par location (garde A16)
 	$(MAKE) build-front-prod FRONT_IMAGE=$(FRONT_IMAGE) TAG=$(TAG)
 	tools/check-frontend-image-headers.sh $(FRONT_IMAGE):$(TAG)
+
+# Image du sidecar de préprod/prod, lue dans le manifeste comme pour build-prod :
+# le contrôle juge les confs avec le nginx qui les sert réellement.
+back-nginx-rate-limits: ## Vérifie que chaque zone nginx du backend refuse en 429 problem+json, sur les deux confs (#347)
+	tools/check-backend-nginx-rate-limits.sh nginx:$(shell sed -n 's/.*image: nginx:\(\S*\).*/\1/p' k8s/base/backend-deployment.yaml | head -1)
 
 # --- Secrets Kubernetes (préprod/prod) ---------------------------------------
 # Lit les Secrets déjà présents dans le cluster (remplis par External Secrets
