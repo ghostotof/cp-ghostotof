@@ -185,15 +185,19 @@ paths:
   slot must too). Its 429s come out in problem+json like every other zone's, see the next bullet.
 - **Every nginx 429 answers problem+json `/errors/rate-limited`** (issue #347, both confs). One
   `error_page 429 = @rate_limited` at `server` level covers every zone (`limit_req` and
-  `limit_conn`); nginx's default HTML page used to leak out of all of them but `assistant`. Two traps:
-  a `location` that declares an `error_page` of its own loses the inherited one, and an `add_header`
-  in `@rate_limited` would drop the seven security headers (A16). Symfony's own 429s pass through
+  `limit_conn`); nginx's default HTML page used to leak out of all of them but `assistant`.
+  `limit_req_status 429` / `limit_conn_status 429` sit at `server` level too: a refusal defaults to
+  503, which that `error_page` would not catch. Two traps: a `location` that declares an
+  `error_page` of its own loses the inherited one, and an `add_header` in `@rate_limited` would drop
+  the seven security headers (A16). Symfony's own 429s pass through
   untouched (no `fastcgi_intercept_errors`), `Retry-After` included. **Accepted limit**: these 429s
   carry no CORS headers (only `nelmio_cors` sets them), so a browser on another origin cannot read
   them and `fetch` throws — the frontend sees a network error, not "rate-limited". Guard:
   `tools/check-backend-nginx-rate-limits.sh` (`make back-nginx-rate-limits`, CI job
-  `backend-nginx-rate-limits`) runs the pinned sidecar image on each conf, saturates every zone and
-  checks the body, the type and the headers — a new zone gets a line in its `ZONES` list.
+  `backend-nginx-rate-limits`) runs the pinned sidecar image on each conf, saturates every
+  `limit_req` zone and checks the body, the type and the headers; it fails naming any `limit_req`
+  zone of the confs missing from its `ZONES` list. **`limit_conn` is not exercised** (it would need
+  an upstream that holds the connection, and there is no php-fpm in the job).
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's

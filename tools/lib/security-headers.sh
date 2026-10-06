@@ -6,8 +6,10 @@
 # sécurité attendus et la fonction pure qui les vérifie sur un dump d'en-têtes
 # HTTP déjà en main. Sourcée par :
 #   - tools/audit-prod.sh (audit boîte noire de préprod/prod, sections 4) ;
-#   - le futur contrôle de l'image nginx du frontend (tâche suivante du même
-#     lot, qui réutilise cette fonction sans réseau) ;
+#   - tools/check-frontend-image-headers.sh (image nginx du frontend, location
+#     par location) ;
+#   - tools/check-backend-nginx-rate-limits.sh (429 des zones nginx du backend,
+#     issue #347) ;
 #   - tools/tests/security-headers.test.sh (hors ligne, en-têtes construits à
 #     la main avec `printf`).
 #
