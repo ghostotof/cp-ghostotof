@@ -108,6 +108,24 @@ final class AddExperienceTechnologyCommandTest extends KernelTestCase
     }
 
     /**
+     * L'option est validée avant tout appel au registrar : une durée invalide
+     * est signalée comme telle même quand le nom est déjà pris, au lieu d'être
+     * masquée par « existe déjà » après une requête en base inutile.
+     */
+    public function testAnInvalidYearsOptionIsReportedBeforeTheNameCollision(): void
+    {
+        $tester = $this->commandTester();
+        $tester->execute(['--name' => 'PHP', '--years' => '13.5']);
+
+        $exitCode = $tester->execute(['--name' => 'PHP', '--years' => '1e999']);
+
+        self::assertSame(1, $exitCode);
+        $display = $this->normalizedDisplay($tester);
+        self::assertStringContainsString('entre 0 et 100 ans', $display);
+        self::assertStringNotContainsString('existe déjà', $display);
+    }
+
+    /**
      * En interactif, la valeur hors bornes est refusée par le validateur de la
      * question, qui la redemande, plutôt qu'au moment d'écrire.
      */

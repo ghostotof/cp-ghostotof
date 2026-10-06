@@ -54,10 +54,10 @@ final class AddExperienceTechnologyCommand extends Command
             return Command::FAILURE;
         }
 
-        $yearsInput = $input->getOption('years') ?? $io->ask('Temps cumulé (en années, ex. 13.5)', validator: $this->validateYears(...));
-
-        if (!\is_string($yearsInput) || !is_numeric($yearsInput)) {
-            $io->error('Le temps cumulé doit être un nombre (ex. 13.5).');
+        try {
+            $years = $this->resolveYears($input, $io);
+        } catch (InvalidExperienceYearsException $exception) {
+            $io->error($exception->getMessage());
 
             return Command::FAILURE;
         }
@@ -68,13 +68,11 @@ final class AddExperienceTechnologyCommand extends Command
         try {
             $technology = $this->experienceTechnologyRegistrar->register(
                 $name,
-                ExperienceYears::fromFloat((float) $yearsInput),
+                $years,
                 \is_string($icon) && '' !== $icon ? $icon : null,
                 \is_string($relatedTechnology) && '' !== $relatedTechnology ? $relatedTechnology : null,
             );
-        } catch (ExperienceTechnologyAlreadyExistsException|InvalidExperienceYearsException $exception) {
-            // Issue #372 : `is_numeric()` accepte « 1e999 » (INF) et « -5 » ;
-            // l'entité les refuse avant toute écriture, on rend son message.
+        } catch (ExperienceTechnologyAlreadyExistsException $exception) {
             $io->error($exception->getMessage());
 
             return Command::FAILURE;
@@ -94,20 +92,37 @@ final class AddExperienceTechnologyCommand extends Command
         return $name;
     }
 
-    private function validateYears(mixed $years): string
+    /**
+     * Option d'abord, validée avant tout appel au registrar : une durée
+     * invalide n'est jamais masquée par un nom déjà pris. Sinon la question,
+     * dont le validateur fait reposer la valeur tant qu'elle est refusée.
+     *
+     * @throws InvalidExperienceYearsException
+     */
+    private function resolveYears(InputInterface $input, SymfonyStyle $io): ExperienceYears
     {
-        if (!\is_string($years) || !is_numeric($years)) {
-            throw new \InvalidArgumentException('Le temps cumulé doit être un nombre (ex. 13.5).');
+        $option = $input->getOption('years');
+
+        if (null !== $option) {
+            return $this->validateYears($option);
         }
 
-        // Même règle que l'entité, appliquée ici pour que la question soit
-        // reposée au lieu d'échouer une fois toutes les réponses données.
-        try {
-            ExperienceYears::fromString($years);
-        } catch (InvalidExperienceYearsException $exception) {
-            throw new \InvalidArgumentException($exception->getMessage(), $exception->getCode(), previous: $exception);
-        }
+        $answer = $io->ask('Temps cumulé (en années, ex. 13.5)', validator: $this->validateYears(...));
 
-        return $years;
+        // En non-interactif, ask() rend la valeur par défaut (null) sans
+        // passer par le validateur : on l'y soumet ici.
+        return $answer instanceof ExperienceYears ? $answer : $this->validateYears($answer);
+    }
+
+    /**
+     * Le QuestionHelper rattrape toute \Exception d'un validateur, l'exception
+     * du domaine comprise : nul besoin de la ré-emballer pour que la question
+     * soit reposée avec son message.
+     *
+     * @throws InvalidExperienceYearsException
+     */
+    private function validateYears(mixed $years): ExperienceYears
+    {
+        return ExperienceYears::fromString(\is_string($years) ? $years : '');
     }
 }
