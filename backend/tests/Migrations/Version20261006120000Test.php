@@ -9,7 +9,9 @@ use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 use Doctrine\Migrations\Version\Version;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LogLevel;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\ErrorHandler\BufferingLogger;
 
 /**
  * Régression #372 : avant la correction, `{"years":1e999}` au backoffice ou
@@ -46,11 +48,12 @@ final class Version20261006120000Test extends KernelTestCase
     }
 
     /**
-     * Une durée inventée ne doit jamais s'afficher : la ligne est ramenée dans
-     * les bornes **et** rangée parmi les technologies secondaires, publiées
-     * sans durée. Elle reste visible, corrigeable au backoffice d'un clic.
+     * Une durée inventée ne doit jamais s'afficher sur le site : la ligne est
+     * ramenée dans les bornes **et** rangée parmi les technologies secondaires,
+     * dont la page n'affiche pas la durée (l'API publique, elle, porte toujours
+     * `years`). Elle reste visible, corrigeable au backoffice d'un clic.
      */
-    public function testOutOfRangeRowsAreClampedAndPublishedWithoutDuration(): void
+    public function testOutOfRangeRowsAreClampedAndMovedToSecondary(): void
     {
         $this->insertTechnology('Infini', "'Infinity'::float8");
         $this->insertTechnology('Moins-infini', "'-Infinity'::float8");
@@ -65,6 +68,35 @@ final class Version20261006120000Test extends KernelTestCase
         self::assertSame(['years' => 0.0, 'secondary' => true], $this->row('NaN'));
         self::assertSame(['years' => 0.0, 'secondary' => true], $this->row('Négatif'));
         self::assertSame(['years' => 100.0, 'secondary' => true], $this->row('Trop'));
+    }
+
+    /**
+     * La valeur d'origine n'est conservée nulle part ailleurs : chaque ligne
+     * touchée est signalée en `warning` — le niveau que la sortie console du
+     * Job de migration affiche sans `-v` — avec son nom et sa valeur, pour
+     * qu'un administrateur sache quoi corriger au backoffice.
+     */
+    public function testEveryRewrittenRowIsReportedWithItsOriginalValue(): void
+    {
+        $this->insertTechnology('Infini', "'Infinity'::float8");
+        $this->insertTechnology('Trop', '120');
+        $this->insertTechnology('PHP', '13.5');
+
+        $logger = new BufferingLogger();
+        $class = $this->migration()::class;
+        new $class($this->connection, $logger)->up(new Schema());
+
+        $warnings = array_values(array_filter(
+            $logger->cleanLogs(),
+            static fn (array $log): bool => LogLevel::WARNING === $log[0],
+        ));
+        $messages = array_column($warnings, 1);
+        sort($messages);
+        self::assertCount(2, $messages);
+        self::assertStringContainsString('"Infini"', $messages[0]);
+        self::assertStringContainsString('Infinity', $messages[0]);
+        self::assertStringContainsString('"Trop"', $messages[1]);
+        self::assertStringContainsString('120', $messages[1]);
     }
 
     /** Seules les lignes fautives changent, bornes comprises. */

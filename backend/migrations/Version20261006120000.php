@@ -38,6 +38,9 @@ use Doctrine\Migrations\AbstractMigration;
  */
 final class Version20261006120000 extends AbstractMigration
 {
+    /** Partagée par le relevé et la réécriture : les deux visent les mêmes lignes. */
+    private const string OUT_OF_RANGE = 'NOT (years >= 0 AND years <= 100)';
+
     public function getDescription(): string
     {
         return 'Borne experience_technology.years à [0, 100] par une contrainte CHECK (#372).';
@@ -45,16 +48,41 @@ final class Version20261006120000 extends AbstractMigration
 
     public function up(Schema $schema): void
     {
+        $this->reportRowsToRewrite();
+
         $this->addSql(
             'UPDATE experience_technology'
             ." SET years = CASE WHEN years = 'NaN'::float8 OR years < 0 THEN 0 ELSE 100 END,"
             .' secondary = true'
-            .' WHERE NOT (years >= 0 AND years <= 100)',
+            .' WHERE '.self::OUT_OF_RANGE,
         );
         $this->addSql(
             'ALTER TABLE experience_technology'
             .' ADD CONSTRAINT chk_experience_technology_years CHECK (years >= 0 AND years <= 100)',
         );
+    }
+
+    /**
+     * La valeur d'origine n'est conservée nulle part ailleurs : chaque ligne
+     * réécrite est signalée avant de l'être. `warnIf()` journalise en
+     * `warning`, que la sortie console du Job de migration affiche sans `-v`
+     * (`write()` journalise en `notice`, masqué par défaut). Lu au moment où
+     * la migration est planifiée, juste avant l'exécution de son SQL dans la
+     * même transaction ; un `--dry-run` signale donc aussi, sans rien écrire.
+     */
+    private function reportRowsToRewrite(): void
+    {
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT name, years::text AS years FROM experience_technology WHERE '.self::OUT_OF_RANGE.' ORDER BY name',
+        );
+
+        foreach ($rows as $row) {
+            $this->warnIf(true, sprintf(
+                'Technologie "%s" : temps cumulé %s hors de [0, 100], ramené dans les bornes et passé en secondaire — à corriger au backoffice (#372).',
+                $row['name'],
+                $row['years'],
+            ));
+        }
     }
 
     /**
