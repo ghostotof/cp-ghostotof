@@ -190,6 +190,20 @@ api_platform:
         # un objet : MalformedRequestBodyException depuis l'issue #355.
         # MalformedRequestBodyTest épingle les deux frontières.
         collect_denormalization_errors: true
+        # Issue #373 : aucune ressource ne se met à jour par IRI. Sans ce
+        # réglage, un `id` dans le corps d'un PUT (« standard » en API
+        # Platform 4 : aucun objet à peupler) partait en résolution d'IRI
+        # (ItemNormalizerTrait::updateObjectToPopulate) et sortait en
+        # ItemNotFoundException, 400 sous l'entrée large d'API Platform mais
+        # journalisée `critical`. Avec lui, le Serializer refuse la clé
+        # (« Update is not allowed for this operation »), d'où
+        # MalformedRequestBodyException, 400 en `info`. Un
+        # `denormalizationContext` déclaré sur une ressource ou une opération
+        # **remplace** ce défaut : il doit le reprendre, ce que
+        # MalformedRequestBodyTest::testEveryUpdateOperationRefusesAnUpdateByIri
+        # vérifie sur chaque PUT/PATCH.
+        denormalization_context:
+            api_allow_update: false
 
 when@prod:
     api_platform:
