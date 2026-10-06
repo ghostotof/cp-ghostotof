@@ -11,6 +11,7 @@ use App\Shared\Domain\Exception\HasProblemType;
 use App\Tests\Support\CompiledExceptionConfig;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\ExceptionToStatusFixtureResource;
+use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\AbstractAttributedFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\AttributeLoggedFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\InheritedLogLevelFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\LoudAttributeFixtureException;
@@ -338,6 +339,35 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     }
 
     /**
+     * @return iterable<string, array{class-string<\Throwable>, array<class-string, array{log_level?: string}>, ?string}>
+     */
+    public static function nonInstantiableKeyCases(): iterable
+    {
+        yield 'interface sans entrée' => [SerializerExceptionInterface::class, [], '400 : critical'];
+        yield 'classe abstraite sans entrée' => [AbstractAttributedFixtureException::class, [], '400 : critical'];
+        yield 'interface couverte par son entrée' => [SerializerExceptionInterface::class, [SerializerExceptionInterface::class => ['log_level' => 'info']], null];
+    }
+
+    /**
+     * Une clé d'`exception_to_status` peut être une interface ou une classe
+     * abstraite : `Serializer\ExceptionInterface` l'est, et c'est elle qui,
+     * rendue en 400 et journalisée en `critical`, a laissé vivre #360 sans
+     * que le contrôle des niveaux la voie — le noyau ne résolvait le niveau
+     * que d'une classe instanciable (issue #373). Son niveau est celui d'une
+     * implémentation qu'aucune entrée plus précise ne vise.
+     *
+     * @param class-string<\Throwable>                           $class
+     * @param array<class-string, array{log_level?: string}>     $entries
+     */
+    #[DataProvider('nonInstantiableKeyCases')]
+    public function testANonInstantiableKeyIsHeldToThePolicy(string $class, array $entries, ?string $violation): void
+    {
+        $levels = $this->kernelLevels(CompiledExceptionConfig::listenerWith($entries), [$class]);
+
+        self::assertSame(null === $violation ? [] : [$class => $violation], $this->levelViolations([$class => [400]], $levels));
+    }
+
+    /**
      * L'ErrorListener compilé de l'application, que le conteneur de test expose.
      */
     private function errorListener(): ErrorListener
@@ -361,20 +391,28 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
 
     /**
      * Le niveau que le noyau retient pour chaque classe (CompiledExceptionConfig::kernelLogLevel).
+     * Une interface ou une classe abstraite n'est jamais levée telle quelle ;
+     * clé d'une table, elle couvre pourtant ses implémentations : un double
+     * de test en tient lieu (issue #373), sans quoi elle échapperait au
+     * contrôle des niveaux.
      *
      * @param list<string> $classes
      *
-     * @return array<string, string> classe => niveau ; une classe abstraite en est absente
+     * @return array<string, string> classe => niveau
      */
     private function kernelLevels(ErrorListener $listener, array $classes): array
     {
         $levels = [];
         foreach ($classes as $class) {
-            if (is_subclass_of($class, \Throwable::class)) {
-                $level = CompiledExceptionConfig::kernelLogLevel($listener, $class);
-                if (null !== $level) {
-                    $levels[$class] = $level;
-                }
+            if (!is_subclass_of($class, \Throwable::class)) {
+                continue;
+            }
+            $reflection = new \ReflectionClass($class);
+            $level = $reflection->isAbstract() || $reflection->isInterface()
+                ? CompiledExceptionConfig::kernelLogLevelOf($listener, self::createStub($class))
+                : CompiledExceptionConfig::kernelLogLevel($listener, $class);
+            if (null !== $level) {
+                $levels[$class] = $level;
             }
         }
 

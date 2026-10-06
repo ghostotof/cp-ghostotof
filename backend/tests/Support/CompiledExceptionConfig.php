@@ -208,7 +208,8 @@ final class CompiledExceptionConfig
      * L'exception est construite sans son constructeur — la résolution ne lit
      * que sa classe —, ce qui vaut aussi pour un constructeur privé (les
      * exceptions à constructeur nommé). Une classe abstraite ou une interface
-     * n'est jamais levée telle quelle : null.
+     * n'est jamais levée telle quelle : null — kernelLogLevelOf() en résout
+     * une implémentation.
      *
      * @param class-string<\Throwable> $class
      */
@@ -219,8 +220,20 @@ final class CompiledExceptionConfig
             return null;
         }
 
+        return self::kernelLogLevelOf($listener, $reflection->newInstanceWithoutConstructor());
+    }
+
+    /**
+     * Le niveau que le noyau retient pour cette exception-ci, par la même
+     * résolution que kernelLogLevel(). Pour une clé qui est une interface ou
+     * une classe abstraite, l'appelant passe un double de test (issue #373) :
+     * son niveau est celui d'une implémentation qu'aucune entrée plus précise
+     * ne vise.
+     */
+    public static function kernelLogLevelOf(ErrorListener $listener, \Throwable $throwable): ?string
+    {
         $resolve = self::vendorMember(static fn (): \ReflectionMethod => new \ReflectionMethod(ErrorListener::class, 'resolveLogLevel'));
-        $level = $resolve->invoke($listener, $reflection->newInstanceWithoutConstructor());
+        $level = $resolve->invoke($listener, $throwable);
 
         return \is_string($level) ? $level : null;
     }
