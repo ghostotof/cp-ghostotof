@@ -94,9 +94,12 @@ paths:
   block counts as the kernel counts it; `ApiExceptionLogLevelTest` builds its listener from the same
   mapping; `ExtraConfigKernel` (option `extra_config` of `bootKernel()`) proves it by compiling the app
   with one more config file. The flip side: the test container only sees `test`. **Never declare either map for a single
-  environment** (`when@prod`, `config/packages/prod/`, `services_prod.*` — preprod and prod both run
-  `APP_ENV=prod`): keep them common, `ExceptionLogLevelCoverageTest` turns red otherwise (YAML read key
-  by key, PHP config read as text, erring on the cautious side). The level checked is the one the kernel
+  environment** — not `when@prod`, `config/packages/prod/`, `services_prod.*` (preprod and prod both run
+  `APP_ENV=prod`, the guards would miss it), and not `when@test` either (the guards would turn green on
+  a config production lacks): keep them common. `ExceptionMappingEnvironmentParityTest` enforces it by
+  loading `prod`, `dev` and `test` through Symfony's own loaders without compiling
+  (`tests/Support/EnvironmentConfigKernel`, `getExtensionConfig()`), so every form the kernel knows —
+  YAML or PHP — is seen, and nothing it ignores. The level checked is the one the kernel
   resolves (`ErrorListener::resolveLogLevel`): the first matching entry by `instanceof`, else an inherited
   `#[WithLogLevel]` — honoured, though the project keeps levels in `framework.exceptions` so the domain
   does not depend on HttpKernel. Two vendor internals are read by reflection rather than reimplemented
