@@ -6,7 +6,7 @@ Branche : `feature/353-rollout-echec-rapide` (depuis `develop` à `717ce4b`). Pl
 
 - [x] Architecture : script `tools/wait-rollout.sh` à tranches
 - [x] Transitoires : délai par raison. `InvalidImageName` 0 s, `CreateContainerConfigError` 15 s,
-      `ErrImagePull` et `ImagePullBackOff` 60 s comptés ensemble
+      `ErrImagePull` et `ImagePullBackOff` 60 s comptés ensemble, **porté à 150 s le 2026-10-07**
 - [x] Périmètre : Job `Failed=True` et initContainers inclus ; `CrashLoopBackOff` exclu
 - [x] Plan écrit
 
@@ -33,7 +33,7 @@ Branche : `feature/353-rollout-echec-rapide` (depuis `develop` à `717ce4b`). Pl
 - [x] Étape 07 : `/code-review`, puis `mattpocock-skills:code-review` (2026-10-07). Corrigé dans
       `3b908ca` : erreurs kubectl avalées par les tranches, table unique des raisons, « observé depuis »,
       exemple `cv-pdf` faux, limite des volumes (FailedMount) documentée, doc incohérente. Laissés à
-      l'arbitrage de Christophe : délai de pull de 60 s après `apply -k` en prod, `CreateContainerError`/
+      l'arbitrage de Christophe : ~~délai de pull de 60 s~~ (150 s, tranché le 2026-10-07), `CreateContainerError`/
       `RunContainerError`, Secret en volume (verbe `events`), coût des listes du namespace, code commun
       avec wait-external-secrets.sh
 - [ ] À la fusion de clôture : archiver `tasks/` sous `.claude/specs/archive/<date>-353-rollout-echec-rapide/`

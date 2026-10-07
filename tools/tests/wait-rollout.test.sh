@@ -11,7 +11,7 @@
 #   - `get … -o json` sert $FAKE_DIR/state-<n>.json, même règle de rang ;
 #     __FAIL__ et __HTML__ rejouent une API muette et une page de proxy.
 # Une horloge factice ($FAKE_DIR/clock, WAIT_ROLLOUT_CLOCK) n'avance que par
-# les tranches et le faux `sleep` : les délais de persistance (15 s, 60 s)
+# les tranches et le faux `sleep` : les délais de persistance (15 s, 150 s)
 # se vérifient à la seconde près, et la suite tourne en une seconde.
 #
 # Les fixtures reproduisent la forme des objets de l'API : un Deployment
@@ -24,7 +24,7 @@
 # CreateContainerConfigError persistant = sortie 1 avant 30 s, en nommant
 # pod, conteneur, raison et message ; transitoire = pas d'échec ; pods d'une
 # révision antérieure ou d'un ancien Job ignorés ; génération non observée
-# ignorée ; ErrImagePull/ImagePullBackOff comptés ensemble sur 60 s ;
+# ignorée ; ErrImagePull/ImagePullBackOff comptés ensemble sur 150 s ;
 # InvalidImageName immédiat ; initContainers inspectés ; pod en suppression
 # ignoré ; Job Failed=True immédiat ; délai borné ; tranche en erreur
 # complétée par une pause ; trois erreurs kubectl d'affilée (pas des
@@ -220,9 +220,22 @@ state 2 "$BACKEND" "$NEW_RS" "$(pod backend-7f9-abc rs-12 php-fpm ImagePullBackO
 state 3 "$BACKEND" "$NEW_RS" "$(pod backend-7f9-abc rs-12 php-fpm ErrImagePull 'failed to pull image')"
 state 4 "$BACKEND" "$NEW_RS" "$(pod backend-7f9-abc rs-12 php-fpm ImagePullBackOff 'Back-off pulling image')"
 run preprod deployment/backend --timeout 180 --interval 5
-if [ "$rc" -eq 1 ] && [ "$(clock)" -ge 60 ] && [ "$(clock)" -lt 75 ] && grep -q '^::error::.*ImagePullBackOff observé depuis' "$FAKE_DIR/out"; then
-  pass "pull en échec alterné : sortie 1 après 60 s (horloge $(clock) s), pas avant"
-else fail "pull en échec alterné : sortie 1 après 60 s, pas avant" "rc=$rc, horloge=$(clock) ; $(cat "$FAKE_DIR/out")"; fi
+if [ "$rc" -eq 1 ] && [ "$(clock)" -ge 150 ] && [ "$(clock)" -lt 165 ] && grep -q '^::error::.*ImagePullBackOff observé depuis' "$FAKE_DIR/out"; then
+  pass "pull en échec alterné : sortie 1 après 150 s (horloge $(clock) s), pas avant"
+else fail "pull en échec alterné : sortie 1 après 150 s, pas avant" "rc=$rc, horloge=$(clock) ; $(cat "$FAKE_DIR/out")"; fi
+
+# Un registre indisponible une centaine de secondes (après `apply -k` en
+# prod, sans rollback) ne doit pas faire échouer un rollout qui aurait
+# convergé seul : arbitrage du 2026-10-07, 150 s plutôt que 60.
+new_case pull-outage-100s
+# shellcheck disable=SC2046  # découpage voulu : 21 « timeout » puis « ready »
+slices $(printf 'timeout %.0s' $(seq 21)) ready
+state 1 "$BACKEND" "$NEW_RS" "$(pod backend-7f9-abc rs-12 php-fpm ErrImagePull 'failed to pull image')"
+state 2 "$BACKEND" "$NEW_RS" "$(pod backend-7f9-abc rs-12 php-fpm ImagePullBackOff 'Back-off pulling image')"
+state 21 "$BACKEND" "$NEW_RS" "$(pod backend-7f9-abc rs-12 php-fpm running)"
+run preprod deployment/backend --timeout 180 --interval 5
+if [ "$rc" -eq 0 ]; then pass "pull en échec 100 s puis rétabli : sortie 0"
+else fail "pull en échec 100 s puis rétabli : sortie 0" "rc=$rc, horloge=$(clock) ; $(cat "$FAKE_DIR/out")"; fi
 
 new_case pull-transient
 slices timeout timeout timeout timeout timeout timeout timeout timeout ready

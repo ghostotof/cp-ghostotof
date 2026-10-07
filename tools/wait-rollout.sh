@@ -41,9 +41,14 @@
 #   InvalidImageName             immédiat (ne se corrige jamais seul) ;
 #   CreateContainerConfigError   15 s (le kubelet réessaie ; un Secret en
 #                                cours d'écriture peut arriver) ;
-#   ErrImagePull/ImagePullBackOff 60 s, comptés ensemble (le kubelet alterne
-#                                les deux ; un registre momentanément
-#                                indisponible aboutit à +10 s, +30 s).
+#   ErrImagePull/ImagePullBackOff 150 s, comptés ensemble (le kubelet alterne
+#                                les deux). Les images sont vérifiées sur
+#                                GHCR avant le déploiement : un échec de pull
+#                                est d'abord un registre indisponible, et en
+#                                prod, après `apply -k`, il n'y a pas de
+#                                rollback. On laisse donc au kubelet le temps
+#                                de converger (arbitrage du 2026-10-07),
+#                                sous les 180 s des attentes les plus courtes.
 # Toute autre raison (`ContainerCreating`, `PodInitializing`,
 # `CrashLoopBackOff`, `CreateContainerError`…) est ignorée : l'attente
 # continue jusqu'au délai. La durée affichée est celle observée par le
@@ -86,7 +91,7 @@ declare -A REASON_CLASS=(
   [ImagePullBackOff]=pull
 )
 # Délai de persistance (s) par classe.
-declare -A GRACE=([image-name]=0 [config]=15 [pull]=60)
+declare -A GRACE=([image-name]=0 [config]=15 [pull]=150)
 # Ce que kubectl écrit quand une tranche expire sans erreur, en regex
 # étendue : « timed out waiting for the condition » (wait.ErrorInterrupted,
 # texte partagé par `rollout status` et `wait`) ou « context deadline

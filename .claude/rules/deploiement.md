@@ -137,7 +137,9 @@ paths:
   deleted, may still be around). Containers **and** initContainers. It fails naming pod, container,
   reason and the kubelet's message — which names the missing key or Secret, never a value — on
   `InvalidImageName` at once, `CreateContainerConfigError` persisting 15 s, `ErrImagePull` and
-  `ImagePullBackOff` persisting 60 s **together** (the kubelet alternates them); a Job with
+  `ImagePullBackOff` persisting 150 s **together** (the kubelet alternates them; long on purpose:
+  images are checked on GHCR first, so a pull error is mostly a registry hiccup, and after `apply -k`
+  in prod there is no rollback — a deploy that would have converged must not go red); a Job with
   `Failed=True` fails at once instead of waiting out its timeout. `CrashLoopBackOff` is deliberately
   not fatal. Slicing must not swallow kubectl's own errors: a slice that exits non-zero *without*
   having expired ("timed out waiting for the condition", or "context deadline exceeded" when a slow
