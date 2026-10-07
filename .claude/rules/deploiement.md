@@ -139,7 +139,15 @@ paths:
   `InvalidImageName` at once, `CreateContainerConfigError` persisting 15 s, `ErrImagePull` and
   `ImagePullBackOff` persisting 60 s **together** (the kubelet alternates them); a Job with
   `Failed=True` fails at once instead of waiting out its timeout. `CrashLoopBackOff` is deliberately
-  not fatal. It never reads a Secret and needs nothing beyond the deployer Role's `get/list/watch`.
+  not fatal. Slicing must not swallow kubectl's own errors: a slice that exits non-zero *without*
+  having expired ("timed out waiting for the condition", or "context deadline exceeded" when a slow
+  API outlasts the slice before the cache syncs) — Forbidden, NotFound, ProgressDeadlineExceeded —
+  is tolerated twice, the third in a row fails quoting it. **Known gap**: a missing Secret or
+  ConfigMap mounted as a non-optional *volume* (`jwt-keys`, `backend-nginx-conf`) leaves the pod in
+  `ContainerCreating` with only a `FailedMount` event, which the deployer Role cannot read (no
+  `events` verb) — that case still ends in a plain timeout. The reasons live in one table,
+  `REASON_CLASS`, with their delays in `GRACE`. It never reads a Secret and needs nothing beyond
+  the deployer Role's `get/list/watch`.
   Each wait may overrun its timeout by ~25 s, counted in `timeout-minutes`. Fail-closed is
   unchanged: a failure before `apply -k` leaves the previous release serving; after it, no automatic
   rollback in prod, and `rollback-preprod` still runs only on a successful deploy. The 60 s
@@ -153,7 +161,7 @@ paths:
   `kubectl patch` on `spec.replicas` — the deployer `Role` has no `deployments/scale` subresource, so
   never `kubectl scale`), wait for their pods to disappear, run `migrate-job.yaml` against the quiet
   database, then let `kubectl apply -k .` restore the manifests' replica counts and the existing
-  `rollout status` wait for the new pods. The frontend keeps serving; only the API returns 503 through
+  rollout waits (`tools/wait-rollout.sh`) wait for the new pods. The frontend keeps serving; only the API returns 503 through
   the ingress for the window's duration. It is opt-in specifically so an ordinary release stays
   zero-downtime — **set it before pushing the release tag and unset it right after the production
   deploy**: a forgotten `true` turns every subsequent deploy into a downtime deploy for no reason.
@@ -277,7 +285,8 @@ paths:
   `get`/`patch` on them, never `create`. A PSA refusal is *not* visible at `kubectl apply` — the namespace
   updates fine and the next pod creation fails — so validate in preprod first.
   Because this change rewrites the pod template of the `Recreate` workloads, `deploy-preprod`/`deploy-prod`
-  now also `rollout status` **`postgres`, `rabbitmq` and `worker`** after `apply -k`, not just
+  now also wait for the rollout (`tools/wait-rollout.sh`) of **`postgres`, `rabbitmq` and `worker`**
+  after `apply -k`, not just
   `backend`/`frontend`: without the wait the seed Job ran against a database that hadn't come back, and in
   prod a downed broker left the deploy green. Accept the corollary: such a change is a short, frank outage
   of those two stateful workloads.

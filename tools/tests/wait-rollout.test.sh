@@ -27,7 +27,9 @@
 # ignorée ; ErrImagePull/ImagePullBackOff comptés ensemble sur 60 s ;
 # InvalidImageName immédiat ; initContainers inspectés ; pod en suppression
 # ignoré ; Job Failed=True immédiat ; délai borné ; tranche en erreur
-# complétée par une pause ; message mis sur une ligne ; aucun Secret lu.
+# complétée par une pause ; trois erreurs kubectl d'affilée (pas des
+# expirations) = sortie 1, une expiration remet le compte à zéro ; message
+# mis sur une ligne ; aucun Secret lu.
 #
 # Usage :  tools/tests/wait-rollout.test.sh
 # ---------------------------------------------------------------------------
@@ -64,6 +66,11 @@ case " $* " in
                echo $(( $(cat "$FAKE_DIR/clock") + slice )) > "$FAKE_DIR/clock"
                echo "error: timed out waiting for the condition" >&2; exit 1 ;;
       error)   echo "Error from server (InternalError): etcdserver: request timed out" >&2; exit 1 ;;
+      # Tranche expirée avant la synchronisation initiale du cache (API
+      # lente) : client-go/tools/watch/until.go, UntilWithSync.
+      sync-timeout) echo $(( $(cat "$FAKE_DIR/clock") + slice )) > "$FAKE_DIR/clock"
+               echo "error: UntilWithSync: unable to sync caches: context deadline exceeded" >&2; exit 1 ;;
+      forbidden) echo "Error from server (Forbidden): deployments.apps \"backend\" is forbidden: User \"system:serviceaccount:preprod:github-actions-deployer\" cannot get resource \"deployments\"" >&2; exit 1 ;;
     esac ;;
   *" get "*" -o json "*)
     case " $* " in *" secret"*) printf '{"data":{"K":"%s"}}\n' "$SENTINEL"; exit 0 ;; esac
@@ -137,7 +144,7 @@ new_case() { FAKE_DIR="$TMP/$1"; mkdir -p "$FAKE_DIR"; : > "$FAKE_DIR/args"; ech
 clock() { cat "$FAKE_DIR/clock"; }
 slice_calls() { grep -c -E ' rollout status | wait --for=condition=complete ' "$FAKE_DIR/args" || true; }
 
-MSG_KEY="couldn't find key CV_PDF_PATH in Secret preprod/cv-pdf"
+MSG_KEY="couldn't find key ANTHROPIC_API_KEY in Secret preprod/backend-secrets"
 BACKEND="$(deploy backend d-1 7 7 12)"
 NEW_RS="$(rs backend-7f9 rs-12 d-1 12)"
 OLD_RS="$(rs backend-5c4 rs-11 d-1 11)"
@@ -164,7 +171,7 @@ out="$(cat "$FAKE_DIR/out")"
 if [ "$rc" -eq 1 ] && [ "$(clock)" -ge 15 ] && [ "$(clock)" -lt 30 ]; then
   pass "CreateContainerConfigError persistant : sortie 1 entre 15 et 30 s (horloge $(clock) s), pas 180"
 else fail "CreateContainerConfigError persistant : sortie 1 entre 15 et 30 s, pas 180" "rc=$rc, horloge=$(clock) ; $out"; fi
-if grep -q '^::error::deployment/backend bloqué dans preprod : pod backend-7f9-abc, conteneur php-fpm : CreateContainerConfigError depuis [0-9]* s — couldn.t find key CV_PDF_PATH in Secret preprod/cv-pdf$' "$FAKE_DIR/out"; then
+if grep -q '^::error::deployment/backend bloqué dans preprod : pod backend-7f9-abc, conteneur php-fpm : CreateContainerConfigError observé depuis [0-9]* s — couldn.t find key ANTHROPIC_API_KEY in Secret preprod/backend-secrets$' "$FAKE_DIR/out"; then
   pass "l'erreur nomme pod, conteneur, raison et message de Kubernetes"
 else fail "l'erreur nomme pod, conteneur, raison et message de Kubernetes" "$out"; fi
 unbounded="$(grep -v -e '--request-timeout=' -e '^sleep ' "$FAKE_DIR/args" || true)"
@@ -213,7 +220,7 @@ state 2 "$BACKEND" "$NEW_RS" "$(pod backend-7f9-abc rs-12 php-fpm ImagePullBackO
 state 3 "$BACKEND" "$NEW_RS" "$(pod backend-7f9-abc rs-12 php-fpm ErrImagePull 'failed to pull image')"
 state 4 "$BACKEND" "$NEW_RS" "$(pod backend-7f9-abc rs-12 php-fpm ImagePullBackOff 'Back-off pulling image')"
 run preprod deployment/backend --timeout 180 --interval 5
-if [ "$rc" -eq 1 ] && [ "$(clock)" -ge 60 ] && [ "$(clock)" -lt 75 ] && grep -q '^::error::.*ImagePullBackOff depuis' "$FAKE_DIR/out"; then
+if [ "$rc" -eq 1 ] && [ "$(clock)" -ge 60 ] && [ "$(clock)" -lt 75 ] && grep -q '^::error::.*ImagePullBackOff observé depuis' "$FAKE_DIR/out"; then
   pass "pull en échec alterné : sortie 1 après 60 s (horloge $(clock) s), pas avant"
 else fail "pull en échec alterné : sortie 1 après 60 s, pas avant" "rc=$rc, horloge=$(clock) ; $(cat "$FAKE_DIR/out")"; fi
 
@@ -302,6 +309,37 @@ run preprod deployment/backend --timeout 180 --interval 5
 if [ "$rc" -eq 0 ] && [ "$(grep -c '^sleep 5$' "$FAKE_DIR/args")" -eq 2 ]; then
   pass "tranche revenue en erreur : pause de l'intervalle avant la suivante"
 else fail "tranche revenue en erreur : pause de l'intervalle avant la suivante" "rc=$rc ; $(cat "$FAKE_DIR/args")"; fi
+
+# --- 13bis. erreur persistante autre qu'une expiration : échec anticipé -----
+# `rollout status`/`wait` sortaient aussitôt sur Forbidden, NotFound ou
+# ProgressDeadlineExceeded ; découpés en tranches, ils ne doivent pas
+# devenir une attente silencieuse jusqu'au délai (relecture /code-review).
+new_case slice-forbidden
+slices forbidden
+state 1 "$BACKEND" "$NEW_RS" "$(pod backend-7f9-abc rs-12 php-fpm running)"
+run preprod deployment/backend --timeout 180 --interval 5
+if [ "$rc" -eq 1 ] && [ "$(slice_calls)" -eq 3 ] \
+   && grep -q '^::error::deployment/backend : 3 erreurs kubectl consécutives dans preprod — Error from server (Forbidden): deployments.apps "backend" is forbidden' "$FAKE_DIR/out"; then
+  pass "erreur kubectl persistante (Forbidden) : sortie 1 à la 3e tranche, erreur citée"
+else fail "erreur kubectl persistante (Forbidden) : sortie 1 à la 3e tranche, erreur citée" "rc=$rc, tranches=$(slice_calls) ; $(cat "$FAKE_DIR/out")"; fi
+
+# Une expiration de tranche remet le compte à zéro : deux erreurs, une
+# tranche normale, deux erreurs, puis prêt — jamais trois d'affilée.
+new_case slice-errors-interleaved
+slices error error timeout error error ready
+state 1 "$BACKEND" "$NEW_RS" "$(pod backend-7f9-abc rs-12 php-fpm running)"
+run preprod deployment/backend --timeout 180 --interval 5
+if [ "$rc" -eq 0 ]; then pass "erreurs kubectl non consécutives : l'attente aboutit"
+else fail "erreurs kubectl non consécutives : l'attente aboutit" "rc=$rc ; $(cat "$FAKE_DIR/out")"; fi
+
+# Une API lente fait expirer la tranche avant même la synchronisation du
+# cache : c'est une expiration, pas une erreur à compter.
+new_case slice-sync-timeout
+slices sync-timeout sync-timeout sync-timeout sync-timeout ready
+state 1 "$BACKEND" "$NEW_RS" "$(pod backend-7f9-abc rs-12 php-fpm running)"
+run preprod deployment/backend --timeout 180 --interval 5
+if [ "$rc" -eq 0 ]; then pass "tranches expirées avant la synchronisation du cache : l'attente aboutit"
+else fail "tranches expirées avant la synchronisation du cache : l'attente aboutit" "rc=$rc ; $(cat "$FAKE_DIR/out")"; fi
 
 # --- 14. lecture des pods impossible -----------------------------------------
 new_case unreachable

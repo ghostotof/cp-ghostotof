@@ -7,12 +7,20 @@
 # pas seule (issue #353). Remplace, dans `deploy-preprod`/`deploy-prod`, les
 # `kubectl rollout status` et `kubectl wait --for=condition=complete`.
 #
-# Pourquoi : un Secret créé à la main absent (`cv-pdf`), une coquille dans
-# un `secretKeyRef`/`configMapKeyRef`, une clé de Secret Manager absente du
-# `data` de son ExternalSecret… laissent le pod en `CreateContainerConfigError`.
-# `rollout status` n'en dit rien et expire après 180 s (300 s pour le Job de
-# migration), sans cause dans les journaux du job. tools/wait-external-
-# secrets.sh (issue #325) ne couvre que les ExternalSecret non synchronisés.
+# Pourquoi : un Secret ou une clé absents d'une variable d'environnement
+# (`secretKeyRef`/`configMapKeyRef` mal orthographié, clé de Secret Manager
+# absente du `data` de son ExternalSecret, Secret créé à la main absent)
+# laissent le pod en `CreateContainerConfigError`. `rollout status` n'en dit
+# rien et expire après 180 s (300 s pour le Job de migration), sans cause
+# dans les journaux du job. tools/wait-external-secrets.sh (issue #325) ne
+# couvre que les ExternalSecret non synchronisés.
+#
+# Limite connue : un Secret ou un ConfigMap absent monté en VOLUME non
+# optionnel (`jwt-keys`, `backend-nginx-conf`) ne produit pas cette raison.
+# Le pod reste en `ContainerCreating` et la cause n'apparaît que dans un
+# événement `FailedMount`, que le Role déployeur ne lit pas (pas de verbe sur
+# `events`). Ce cas finit encore en délai dépassé. `cv-pdf`, monté
+# `optional: true`, ne bloque jamais le pod.
 #
 # Méthode : des tranches courtes de l'attente kubectl habituelle
 # (`rollout status --timeout=<interval>s` ou `wait --for=condition=complete
@@ -37,7 +45,14 @@
 #                                les deux ; un registre momentanément
 #                                indisponible aboutit à +10 s, +30 s).
 # Toute autre raison (`ContainerCreating`, `PodInitializing`,
-# `CrashLoopBackOff`…) est ignorée : l'attente continue jusqu'au délai.
+# `CrashLoopBackOff`, `CreateContainerError`…) est ignorée : l'attente
+# continue jusqu'au délai. La durée affichée est celle observée par le
+# script, pas celle depuis laquelle le conteneur attend.
+#
+# Erreurs de kubectl : une tranche qui sort en erreur sans avoir expiré
+# (Forbidden, NotFound, ProgressDeadlineExceeded…) est tolérée une ou deux
+# fois ; trois d'affilée font échouer en citant l'erreur, comme l'aurait
+# fait un `rollout status` d'un seul tenant.
 #
 # Aucune valeur de secret : seuls les statuts des pods sont lus, jamais un
 # Secret. `state.waiting.message` vient du kubelet et cite des NOMS
@@ -52,8 +67,8 @@
 # Usage :  tools/wait-rollout.sh <namespace> <deployment/NOM|job/NOM>
 #            [--timeout 180]   secondes d'attente au total (entier ≥ 0)
 #            [--interval 5]    secondes par tranche (entier ≥ 1)
-# Sortie : 0 prêt ; 1 raison fatale persistante, Job en échec ou délai
-#          dépassé ; 2 usage.
+# Sortie : 0 prêt ; 1 raison fatale persistante, Job en échec, erreurs
+#          kubectl répétées ou délai dépassé ; 2 usage.
 # Env :    WAIT_ROLLOUT_KUBECTL, WAIT_ROLLOUT_SLEEP, WAIT_ROLLOUT_CLOCK
 #          binaires de substitution (tests hors ligne ; l'horloge imprime
 #          un horodatage en secondes)
@@ -61,8 +76,25 @@
 set -euo pipefail
 
 REQUEST_TIMEOUT="10s"
-# Délai de persistance (s) par classe de raison fatale.
+# Raisons d'attente fatales, chacune rangée dans une classe ; seule table
+# à modifier pour en ajouter une (le jq en reçoit la liste). Les deux
+# raisons de pull partagent une classe : le kubelet les alterne.
+declare -A REASON_CLASS=(
+  [InvalidImageName]=image-name
+  [CreateContainerConfigError]=config
+  [ErrImagePull]=pull
+  [ImagePullBackOff]=pull
+)
+# Délai de persistance (s) par classe.
 declare -A GRACE=([image-name]=0 [config]=15 [pull]=60)
+# Ce que kubectl écrit quand une tranche expire sans erreur, en regex
+# étendue : « timed out waiting for the condition » (wait.ErrorInterrupted,
+# texte partagé par `rollout status` et `wait`) ou « context deadline
+# exceeded » (tranche expirée avant la synchronisation initiale du cache,
+# API lente : UntilWithSync de client-go). Toute autre sortie en erreur
+# compte pour MAX_SLICE_ERRORS.
+SLICE_EXPIRED="timed out waiting for the condition|context deadline exceeded"
+MAX_SLICE_ERRORS=3
 
 namespace=""; target=""; timeout=180; interval=5
 
@@ -105,13 +137,12 @@ if [ "$kind" = "deployment" ]; then resources="deployments,replicasets,pods"; el
 #                                     | no-replicaset | failed (Job) ;
 #   WAIT <pod> <conteneur> <init:true|false> <raison> <message>
 #     un par conteneur des pods de la révision en cours dont la raison
-#     d'attente est fatale.
+#     d'attente est dans REASON_CLASS.
 # shellcheck disable=SC2016  # $… ci-dessous sont des variables jq
 JQ_INSPECT='
   def oneline: (. // "") | gsub("[\r\n]+"; " ");
   def waits($items; $owner):
-    ["InvalidImageName", "CreateContainerConfigError", "ErrImagePull", "ImagePullBackOff"] as $fatal
-    | $items[]
+    $items[]
     | select(.kind == "Pod" and .metadata.deletionTimestamp == null)
     | select(any(.metadata.ownerReferences[]?; .uid == $owner))
     | .metadata.name as $pod
@@ -143,13 +174,8 @@ JQ_INSPECT='
         end
     end'
 
-class_of() {
-  case "$1" in
-    InvalidImageName) echo image-name ;;
-    CreateContainerConfigError) echo config ;;
-    *) echo pull ;;
-  esac
-}
+# Les raisons fatales, en tableau JSON pour le jq (`--argjson fatal`).
+fatal_reasons_json="$(printf '%s\n' "${!REASON_CLASS[@]}" | jq -R . | jq -cs .)"
 
 declare -A first_seen=()   # « pod|conteneur|classe » -> première observation
 pending=()                 # raisons fatales observées, sous leur seuil
@@ -160,27 +186,31 @@ job_failed=""
 # Échoue (retour 1) si kubectl échoue ou si sa réponse n'est pas le JSON
 # attendu ; jq est joué dans une substitution dont on teste le code.
 inspect() {
-  local json parsed line tag a b c d e t cls key age where
+  local json parsed line state state_reason state_message pod container is_init reason message t cls key age where
   json="$("$kubectl_bin" --request-timeout="$REQUEST_TIMEOUT" -n "$namespace" get "$resources" -o json)" || return 1
-  parsed="$(jq -r --arg kind "$kind" --arg name "$name" "$JQ_INSPECT" <<<"$json" 2>/dev/null)" || return 1
+  parsed="$(jq -r --arg kind "$kind" --arg name "$name" --argjson fatal "$fatal_reasons_json" "$JQ_INSPECT" <<<"$json" 2>/dev/null)" || return 1
   [ -n "$parsed" ] || return 1
   t="$(now)"
   pending=(); fatal=()
   declare -A seen=()
   while IFS= read -r line; do
-    IFS=$'\x1f' read -r tag a b c d e <<<"$line"
-    case "$tag" in
-      STATE) if [ "$a" = "failed" ]; then job_failed="$b : $c"; fi ;;
-      WAIT)
-        cls="$(class_of "$d")"; key="$a|$b|$cls"
+    case "$line" in
+      STATE$'\x1f'*)
+        IFS=$'\x1f' read -r _ state state_reason state_message <<<"$line"
+        if [ "$state" = "failed" ]; then job_failed="$state_reason : $state_message"; fi ;;
+      WAIT$'\x1f'*)
+        IFS=$'\x1f' read -r _ pod container is_init reason message <<<"$line"
+        cls="${REASON_CLASS[$reason]}"; key="$pod|$container|$cls"
         seen[$key]=1
         [ -n "${first_seen[$key]:-}" ] || first_seen[$key]="$t"
+        # Âge depuis la première observation par CE script : le statut d'un
+        # pod ne date pas l'entrée dans la raison d'attente.
         age=$((t - first_seen[$key]))
-        if [ "$c" = "true" ]; then where="initContainer $b"; else where="conteneur $b"; fi
+        if [ "$is_init" = "true" ]; then where="initContainer $container"; else where="conteneur $container"; fi
         if [ "$age" -ge "${GRACE[$cls]}" ]; then
-          fatal+=("pod $a, $where : $d depuis ${age} s — $e")
+          fatal+=("pod $pod, $where : $reason observé depuis ${age} s — $message")
         else
-          pending+=("pod $a, $where : $d depuis ${age} s (seuil ${GRACE[$cls]} s) — $e")
+          pending+=("pod $pod, $where : $reason observé depuis ${age} s (seuil ${GRACE[$cls]} s) — $message")
         fi ;;
     esac
   done <<<"$parsed"
@@ -208,6 +238,7 @@ deadline=$((start + timeout))
 max_rounds=$((timeout / interval + 1))
 last_printed=""
 inspect_ok=1
+slice_errors=0   # tranches consécutives sorties en erreur sans avoir expiré
 for ((round = 1; round <= max_rounds; round++)); do
   slice_start="$(now)"
   if slice_out="$(slice 2>"$err_file")"; then
@@ -235,6 +266,19 @@ for ((round = 1; round <= max_rounds; round++)); do
     done
     echo "::error::$target ne démarrera pas sans intervention : échec sans attendre la fin des ${timeout} s."
     exit 1
+  fi
+  # Une tranche qui n'a pas simplement expiré a rencontré une erreur :
+  # Forbidden, NotFound, ProgressDeadlineExceeded… `rollout status`/`wait`
+  # en un seul appel l'auraient rapportée aussitôt. Une erreur isolée de
+  # l'API est tolérée ; MAX_SLICE_ERRORS d'affilée font échouer.
+  if grep -q -E "$SLICE_EXPIRED" "$err_file"; then
+    slice_errors=0
+  else
+    slice_errors=$((slice_errors + 1))
+    if [ "$slice_errors" -ge "$MAX_SLICE_ERRORS" ]; then
+      echo "::error::$target : $slice_errors erreurs kubectl consécutives dans $namespace — $(tr '\n' ' ' < "$err_file" | sed 's/ *$//')"
+      exit 1
+    fi
   fi
 
   t="$(now)"

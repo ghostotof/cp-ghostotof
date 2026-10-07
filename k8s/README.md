@@ -1249,8 +1249,9 @@ de fusionner la release :
    done
    ```
    > **La pipeline attend désormais aussi les workloads à état.** Après
-   > `kubectl apply -k .`, `deploy-preprod` et `deploy-prod` font le
-   > `rollout status` de `postgres`, `rabbitmq` et `worker` en plus de
+   > `kubectl apply -k .`, `deploy-preprod` et `deploy-prod` attendent
+   > (`tools/wait-rollout.sh`, issue #353) le rollout de `postgres`,
+   > `rabbitmq` et `worker` en plus de
    > `backend`/`frontend`. Sans cela, `backend-seed` (`backoffLimit: 0`)
    > partait pendant que Postgres, en `Recreate`, n'était pas encore revenu
    > (détachement puis rattachement du PVC) et échouait sur une connexion
