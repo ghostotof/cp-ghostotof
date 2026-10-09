@@ -34,7 +34,7 @@ Branche : `feature/353-rollout-echec-rapide` (depuis `develop` à `717ce4b`). Pl
       Non éprouvé en vrai : un Job (`backend-migrate`), le Job `Failed=True`, les échecs de pull — le
       premier vrai passage sera la release qui embarque cette branche.
 
-- [ ] **T4** — (décidé le 2026-10-09, relecture § Secret en volume) un Secret ou ConfigMap absent
+- [x] **T4** — (décidé le 2026-10-09, relecture § Secret en volume) un Secret ou ConfigMap absent
       monté en VOLUME non optionnel (`jwt-keys`, `backend-nginx-conf`) : pod en `ContainerCreating`,
       cause dans un événement `FailedMount` seulement. Role déployeur : `get`/`list` sur `events`.
       Script : pour un pod de la révision en cours resté `Pending` (et sans
