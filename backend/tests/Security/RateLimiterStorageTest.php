@@ -48,7 +48,8 @@ use Symfony\Component\RateLimiter\Storage\CacheStorage;
  * décomptaient qu'une seule unité (reproduit en dev, 3 passages sur 3). Le
  * verrou doit être un advisory lock PostgreSQL — jamais `flock` ni
  * `semaphore`, locaux au pod, qui répareraient un poste de dev et laisseraient
- * la production ouverte dès deux réplicas.
+ * la production ouverte dès deux réplicas. Ce test-ci pince le câblage ;
+ * RateLimiterConcurrencyTest en vérifie l'effet (issue #277).
  */
 final class RateLimiterStorageTest extends KernelTestCase
 {
