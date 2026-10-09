@@ -146,16 +146,20 @@ paths:
   API outlasts the slice before the cache syncs) — Forbidden, NotFound, ProgressDeadlineExceeded —
   is tolerated twice, the third in a row fails quoting it. A missing Secret or ConfigMap mounted as
   a non-optional *volume* (`jwt-keys`, `backend-nginx-conf`) gives no telling reason — the pod sits
-  in `ContainerCreating` and the cause is only in a `FailedMount` event: for a current-revision pod
-  still waiting for its volumes (Pending, no `PodReadyToStartContainers=True`, no container started
-  or blocked otherwise) the script reads that pod's `FailedMount` events alone and fails after 15 s
-  on `secret|configmap "…" not found` / `references non-existent … key` only — **never on any
-  `FailedMount`**: a `Recreate` (postgres) reattaching its PVC emits transient ones. That needs
+  in `ContainerCreating` (`PodInitializing` with initContainers) and the cause is only in a
+  `FailedMount` event: while a current-revision pod still waits for its volumes
+  (`PodReadyToStartContainers` present **and** `False`, no container started or blocked otherwise)
+  the script reads the namespace's `FailedMount` events — once per round, all pods together — and
+  fails after 15 s, one count per volume, on `secret|configmap "…" not found` / `references
+  non-existent … key` only — **never on any `FailedMount`**: a `Recreate` (postgres) reattaching its
+  PVC emits transient ones. Condition absent (pod not scheduled yet, node without the feature): no
+  judgement, since an event kept an hour cannot be told from a live failure. A transient read error
+  keeps the running counts. That needs
   `get`/`list` on `events` in the deployer Role (added for #353 — **re-run `k8s/README.md` §4 after
   changing the Role**); refused, the script warns once and waits on — a forgotten bootstrap must
   never break every deploy. The reasons live in one table, `REASON_CLASS`, with their delays in
   `GRACE`. It never reads a Secret.
-  Each wait may overrun its timeout by ~25 s, counted in `timeout-minutes`. Fail-closed is
+  Each wait may overrun its timeout by ~35 s, counted in `timeout-minutes`. Fail-closed is
   unchanged: a failure before `apply -k` leaves the previous release serving; after it, no automatic
   rollback in prod, and `rollback-preprod` still runs only on a successful deploy. The 60 s
   `rollout status` checks of `smoke-test-preprod` are not deploy waits and stay. Offline test:

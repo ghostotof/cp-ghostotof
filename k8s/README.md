@@ -65,7 +65,7 @@ détail des jobs.
 
    > **⚠ À rejouer après l'issue #353.** Le `Role` a gagné `get`/`list` sur
    > `events` (lecture seule) : `tools/wait-rollout.sh` y lit les
-   > `FailedMount` d'un pod resté en `ContainerCreating`, seule trace d'un
+   > `FailedMount` d'un pod qui attend ses volumes, seule trace d'un
    > Secret ou d'un ConfigMap absent monté en volume. Relancer la boucle
    > ci-dessus avant la release qui embarque #353. Oublier ne casse **pas**
    > le déploiement — le script émet un `::warning::` « lecture des

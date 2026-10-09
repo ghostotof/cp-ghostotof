@@ -17,15 +17,20 @@
 #
 # Secret ou ConfigMap absent monté en VOLUME non optionnel (`jwt-keys`,
 # `backend-nginx-conf`) : pas de raison d'attente parlante, le pod reste en
-# `ContainerCreating` et la cause n'est que dans un événement `FailedMount`.
-# Pour un pod de la révision en cours qui attend encore ses volumes (phase
-# Pending, pas de `PodReadyToStartContainers=True`, aucun conteneur démarré
-# ni bloqué autrement), le script lit les seuls FailedMount de CE pod, et
-# n'en retient que « secret|configmap "…" not found » ou « references
-# non-existent … key » — jamais le FailedMount passager d'un PVC qui se
-# rattache (`Recreate` de postgres). Persistance exigée : 15 s. Il faut au
-# Role déployeur `get`/`list` sur `events` (k8s/README.md §4) ; refusé, le
-# script l'avertit une fois et l'attente continue comme avant #353.
+# `ContainerCreating` (`PodInitializing` s'il a des initContainers) et la
+# cause n'est que dans un événement `FailedMount`. Quand un pod de la
+# révision en cours attend encore ses volumes (condition
+# `PodReadyToStartContainers` présente et à False, aucun conteneur démarré
+# ni bloqué autrement), le script lit les FailedMount du namespace — une
+# lecture par tour, tous pods confondus — et n'en retient que « secret|
+# configmap "…" not found » ou « references non-existent … key », un compte
+# par volume : jamais le FailedMount passager d'un PVC qui se rattache
+# (`Recreate` de postgres). Persistance exigée : 15 s. Condition absente
+# (pod pas encore placé, nœud sans la fonctionnalité) : on ne juge pas, un
+# événement gardé une heure ne se distinguerait pas d'un échec en cours.
+# Il faut au Role déployeur `get`/`list` sur `events` (k8s/README.md §4) ;
+# refusé, le script l'avertit une fois et l'attente continue comme avant
+# #353. Une panne passagère de cette lecture garde les comptes en cours.
 # `cv-pdf`, monté `optional: true`, ne bloque jamais le pod.
 #
 # Méthode : des tranches courtes de l'attente kubectl habituelle
@@ -55,9 +60,9 @@
 #                                rollback. On laisse donc au kubelet le temps
 #                                de converger (arbitrage du 2026-10-07),
 #                                sous les 180 s des attentes les plus courtes.
-# Toute autre raison (`ContainerCreating`, `PodInitializing`,
-# `CrashLoopBackOff`, `CreateContainerError`…) est ignorée : l'attente
-# continue jusqu'au délai. La durée affichée est celle observée par le
+# Toute autre raison d'attente (`CrashLoopBackOff`, `CreateContainerError`…)
+# est ignorée : l'attente continue jusqu'au délai. `ContainerCreating` et
+# `PodInitializing` ne comptent que par les FailedMount ci-dessus. La durée affichée est celle observée par le
 # script, pas celle depuis laquelle le conteneur attend.
 #
 # Erreurs de kubectl : une tranche qui sort en erreur sans avoir expiré
@@ -65,14 +70,17 @@
 # fois ; trois d'affilée font échouer en citant l'erreur, comme l'aurait
 # fait un `rollout status` d'un seul tenant.
 #
-# Aucune valeur de secret : seuls les statuts des pods sont lus, jamais un
-# Secret. `state.waiting.message` vient du kubelet et cite des NOMS
-# (« couldn't find key FOO in Secret preprod/backend-secrets »).
+# Aucune valeur de secret : seuls les statuts des pods et, quand un pod
+# attend ses volumes, les événements FailedMount sont lus — jamais un
+# Secret. `state.waiting.message` et les FailedMount viennent du kubelet et
+# citent des NOMS (« couldn't find key FOO in Secret preprod/backend-
+# secrets », « secret "jwt-keys" not found »).
 #
 # Bornes : au plus timeout/interval + 1 tranches, et arrêt dès que l'horloge
 # dépasse le délai ; chaque tranche dure au plus interval s (+ 10 s de
-# requête), chaque lecture des pods au plus 10 s. Dépassement maximal :
-# ~interval + 20 s. Une tranche qui revient avant son terme (erreur de
+# requête), chaque lecture des pods au plus 10 s, et celle des événements,
+# quand un pod attend ses volumes, au plus 10 s de plus. Dépassement
+# maximal : ~interval + 30 s. Une tranche qui revient avant son terme (erreur de
 # l'API) est complétée par une pause, pour ne pas marteler l'API.
 #
 # Usage :  tools/wait-rollout.sh <namespace> <deployment/NOM|job/NOM>
@@ -87,9 +95,11 @@
 set -euo pipefail
 
 REQUEST_TIMEOUT="10s"
-# Raisons d'attente fatales, chacune rangée dans une classe ; seule table
-# à modifier pour en ajouter une (le jq en reçoit la liste). Les deux
-# raisons de pull partagent une classe : le kubelet les alterne.
+# Raisons d'attente de conteneur fatales, chacune rangée dans une classe ;
+# seule table à modifier pour en ajouter une (le jq en reçoit la liste). Les
+# deux raisons de pull partagent une classe : le kubelet les alterne. La
+# classe `mount` n'en fait pas partie : elle vient des événements
+# FailedMount (JQ_MOUNT), pas d'une raison d'attente.
 declare -A REASON_CLASS=(
   [InvalidImageName]=image-name
   [CreateContainerConfigError]=config
@@ -152,13 +162,18 @@ if [ "$kind" = "deployment" ]; then resources="deployments,replicasets,pods"; el
 #     d'attente est dans REASON_CLASS ;
 #   MOUNTING <pod>
 #     un par pod de la révision en cours qui attend encore ses volumes :
-#     phase Pending, pas de PodReadyToStartContainers=True, et tous ses
-#     conteneurs en ContainerCreating/PodInitializing (aucun n'a démarré ni
-#     n'est bloqué pour une autre raison). Seuls ceux-là valent la lecture
-#     de leurs événements.
+#     condition PodReadyToStartContainers présente ET à False (le kubelet ne
+#     crée la sandbox qu'une fois les volumes montés ; absente — pod pas
+#     encore placé, nœud sans la fonctionnalité —, on ne juge pas), et tous
+#     ses conteneurs en ContainerCreating/PodInitializing (aucun n'a démarré
+#     ni n'est bloqué pour une autre raison). Seuls ceux-là valent la
+#     lecture des événements.
+# Préfixe commun aux deux programmes jq : un message sur une seule ligne (il
+# finit dans une annotation `::error::`, où un saut de ligne permettrait de
+# forger une commande de workflow).
+JQ_DEFS='def oneline: (. // "") | gsub("[\r\n]+"; " ");'
 # shellcheck disable=SC2016  # $… ci-dessous sont des variables jq
 JQ_INSPECT='
-  def oneline: (. // "") | gsub("[\r\n]+"; " ");
   def waits($items; $owner):
     $items[]
     | select(.kind == "Pod" and .metadata.deletionTimestamp == null)
@@ -171,9 +186,9 @@ JQ_INSPECT='
     | join("\u001f");
   def mounting($items; $owner):
     $items[]
-    | select(.kind == "Pod" and .metadata.deletionTimestamp == null and .status.phase == "Pending")
+    | select(.kind == "Pod" and .metadata.deletionTimestamp == null)
     | select(any(.metadata.ownerReferences[]?; .uid == $owner))
-    | select(any(.status.conditions[]?; .type == "PodReadyToStartContainers" and .status == "True") | not)
+    | select(any(.status.conditions[]?; .type == "PodReadyToStartContainers" and .status == "False"))
     | select(all(((.status.initContainerStatuses // []) + (.status.containerStatuses // []))[];
                  (.state.waiting.reason // "") | IN("ContainerCreating", "PodInitializing")))
     | ["MOUNTING", .metadata.name] | join("\u001f");
@@ -200,22 +215,25 @@ JQ_INSPECT='
         end
     end'
 
-# Le dernier FailedMount d'un pod qui dit qu'un Secret ou un ConfigMap
-# manque, en « volume<US>message » ; rien sinon. Seuls ces messages comptent :
-# le rattachement d'un PVC (`Recreate` de postgres) émet aussi des
-# FailedMount, légitimes et passagers (« timed out waiting for the
-# condition »). Le sélecteur de champs est appliqué par le serveur ; le
-# filtre sur le pod est refait ici par prudence.
-# shellcheck disable=SC2016  # $pod est une variable jq
+# Pour les pods qui attendent leurs volumes ($pods), une ligne
+# « pod<US>volume<US>message » par volume dont le dernier FailedMount dit
+# qu'un Secret ou un ConfigMap manque. Seuls ces messages comptent : le
+# rattachement d'un PVC (`Recreate` de postgres) émet aussi des FailedMount,
+# légitimes et passagers (« timed out waiting for the condition »). Une
+# ligne par VOLUME, pas par pod : avec deux volumes manquants, garder le
+# seul dernier événement ferait alterner la clé et repartir le délai de
+# zéro à chaque tour.
+# shellcheck disable=SC2016  # $pods est une variable jq
 JQ_MOUNT='
   [.items[]?
-   | select(.involvedObject.kind == "Pod" and .involvedObject.name == $pod and .reason == "FailedMount")
-   | select((.message // "") | test("(secret|configmap) \"[^\"]+\" not found|references non-existent (config|secret) key"))]
-  | sort_by(.lastTimestamp // .eventTime // "") | last
-  | select(. != null)
-  | [ ([.message | capture("for volume \"(?<v>[^\"]+)\"") | .v][0] // "?"),
-      (.message | gsub("[\r\n]+"; " ")) ]
-  | join("\u001f")'
+   | select(.involvedObject.kind == "Pod" and (.involvedObject.name | IN($pods[])) and .reason == "FailedMount")
+   | select((.message // "") | test("(secret|configmap) \"[^\"]+\" not found|references non-existent (config|secret) key"))
+   | { pod: .involvedObject.name,
+       volume: ([.message | capture("for volume \"(?<v>[^\"]+)\"") | .v][0] // "?"),
+       message: (.message | oneline),
+       at: (.lastTimestamp // .eventTime // "") }]
+  | group_by([.pod, .volume])[] | max_by(.at)
+  | [.pod, .volume, .message] | join("\u001f")'
 
 # Les raisons fatales, en tableau JSON pour le jq (`--argjson fatal`).
 fatal_reasons_json="$(printf '%s\n' "${!REASON_CLASS[@]}" | jq -R . | jq -cs .)"
@@ -225,44 +243,60 @@ pending=()                 # raisons fatales observées, sous leur seuil
 fatal=()                   # raisons fatales qui ont dépassé leur seuil
 job_failed=""
 events_readable=1          # 0 dès qu'une lecture des événements est refusée
-mount_line=""              # résultat de mount_cause (pas de sous-shell : il
-                           # doit pouvoir passer events_readable à 0)
+events_error_warned=0      # 1 dès qu'une panne de lecture a été signalée
+mount_lines=""             # résultat de mount_causes
 
-# Range une raison observée : la date à sa première observation, puis dans
-# fatal ou pending selon son délai de persistance. Lit et écrit `seen` et `t`
-# de inspect() (portée dynamique de bash).
-note_reason() { # note_reason <pod> <où> <raison> <classe> <message>
-  local key="$1|$2|$4" age
+# Range une raison observée à l'instant t : la date à sa première
+# observation, puis dans fatal ou pending selon son délai de persistance.
+# Marque la clé dans `seen`, le tableau local de inspect() (portée
+# dynamique de bash) : une clé non revue est oubliée en fin de tour.
+note_reason() { # note_reason <t> <pod> <où> <raison> <classe> <message>
+  local t="$1" key="$2|$3|$5" age
   seen[$key]=1
   [ -n "${first_seen[$key]:-}" ] || first_seen[$key]="$t"
   # Âge depuis la première observation par CE script : le statut d'un pod
   # ne date pas l'entrée dans la raison d'attente.
   age=$((t - first_seen[$key]))
-  if [ "$age" -ge "${GRACE[$4]}" ]; then
-    fatal+=("pod $1, $2 : $3 observé depuis ${age} s — $5")
+  if [ "$age" -ge "${GRACE[$5]}" ]; then
+    fatal+=("pod $2, $3 : $4 observé depuis ${age} s — $6")
   else
-    pending+=("pod $1, $2 : $3 observé depuis ${age} s (seuil ${GRACE[$4]} s) — $5")
+    pending+=("pod $2, $3 : $4 observé depuis ${age} s (seuil ${GRACE[$5]} s) — $6")
   fi
 }
 
-# Cause d'un pod qui attend ses volumes, dans mount_line (vide si aucune).
-# Lecture refusée (Role déployeur sans `events`, k8s/README.md §4 pas
-# rejoué) : UN avertissement, plus aucune tentative ensuite — la détection
-# est perdue, le déploiement continue comme avant #353. Toute autre erreur :
-# ce tour est sauté, sans bruit (la lecture des pods l'aura déjà signalée).
-mount_cause() { # mount_cause <pod>
-  local json
-  mount_line=""
+# Causes des pods qui attendent leurs volumes, dans mount_lines (cf.
+# JQ_MOUNT). UNE lecture des événements FailedMount du namespace par tour,
+# quel que soit le nombre de pods : elle est bornée à REQUEST_TIMEOUT et
+# compte dans le dépassement possible du délai. Retour 1 si la lecture a
+# échoué : l'appelant garde alors les comptes en cours.
+#   Refusée (Role déployeur sans `events`, k8s/README.md §4 pas rejoué) : UN
+#   avertissement, plus aucune tentative — la détection est perdue, le
+#   déploiement continue comme avant #353 (retour 0, rien à garder).
+#   Autre panne : UN avertissement au premier échec, nouvel essai au tour
+#   suivant.
+mount_causes() { # mount_causes <pod>…
+  local json pods_json
+  mount_lines=""
   [ "$events_readable" -eq 1 ] || return 0
-  if ! json="$("$kubectl_bin" --request-timeout="$REQUEST_TIMEOUT" -n "$namespace" get events \
-      --field-selector "involvedObject.kind=Pod,involvedObject.name=$1,reason=FailedMount" -o json 2>"$events_err")"; then
-    if grep -q -i 'forbidden' "$events_err"; then
-      events_readable=0
-      echo "::warning::lecture des événements de $namespace refusée (droit get/list sur events absent du Role déployeur : rejouer k8s/README.md §4) — un Secret ou un ConfigMap absent monté en volume ne sera pas détecté, l'attente continue"
-    fi
+  pods_json="$(printf '%s\n' "$@" | jq -R . | jq -cs .)"
+  # </dev/null : kubectl n'a rien à lire sur stdin, et un greffon
+  # d'authentification qui lirait celui de l'appelant y mangerait des lignes.
+  if json="$("$kubectl_bin" --request-timeout="$REQUEST_TIMEOUT" -n "$namespace" get events \
+        --field-selector "involvedObject.kind=Pod,reason=FailedMount" -o json 2>"$events_err" </dev/null)" \
+     && mount_lines="$(jq -r --argjson pods "$pods_json" "$JQ_DEFS $JQ_MOUNT" <<<"$json" 2>/dev/null)"; then
     return 0
   fi
-  mount_line="$(jq -r --arg pod "$1" "$JQ_MOUNT" <<<"$json" 2>/dev/null)" || mount_line=""
+  mount_lines=""
+  if grep -q -i 'forbidden' "$events_err"; then
+    events_readable=0
+    echo "::warning::lecture des événements de $namespace refusée (droit get/list sur events absent du Role déployeur : rejouer k8s/README.md §4) — un Secret ou un ConfigMap absent monté en volume ne sera pas détecté, l'attente continue"
+    return 0
+  fi
+  if [ "$events_error_warned" -eq 0 ]; then
+    events_error_warned=1
+    echo "::warning::lecture des événements de $namespace impossible ($(tr '\n' ' ' < "$events_err" | cut -c1-300)) : les comptes en cours sont conservés, nouvel essai au tour suivant"
+  fi
+  return 1
 }
 
 # Lit l'état une fois, met à jour first_seen, remplit pending/fatal/job_failed.
@@ -270,8 +304,9 @@ mount_cause() { # mount_cause <pod>
 # attendu ; jq est joué dans une substitution dont on teste le code.
 inspect() {
   local json parsed line state state_reason state_message pod container is_init reason message t key where volume
+  local mounting_pods=()
   json="$("$kubectl_bin" --request-timeout="$REQUEST_TIMEOUT" -n "$namespace" get "$resources" -o json)" || return 1
-  parsed="$(jq -r --arg kind "$kind" --arg name "$name" --argjson fatal "$fatal_reasons_json" "$JQ_INSPECT" <<<"$json" 2>/dev/null)" || return 1
+  parsed="$(jq -r --arg kind "$kind" --arg name "$name" --argjson fatal "$fatal_reasons_json" "$JQ_DEFS $JQ_INSPECT" <<<"$json" 2>/dev/null)" || return 1
   [ -n "$parsed" ] || return 1
   t="$(now)"
   pending=(); fatal=()
@@ -284,16 +319,28 @@ inspect() {
       WAIT$'\x1f'*)
         IFS=$'\x1f' read -r _ pod container is_init reason message <<<"$line"
         if [ "$is_init" = "true" ]; then where="initContainer $container"; else where="conteneur $container"; fi
-        note_reason "$pod" "$where" "$reason" "${REASON_CLASS[$reason]}" "$message" ;;
+        note_reason "$t" "$pod" "$where" "$reason" "${REASON_CLASS[$reason]}" "$message" ;;
       MOUNTING$'\x1f'*)
         IFS=$'\x1f' read -r _ pod <<<"$line"
-        mount_cause "$pod"
-        if [ -n "$mount_line" ]; then
-          IFS=$'\x1f' read -r volume message <<<"$mount_line"
-          note_reason "$pod" "volume $volume" FailedMount mount "$message"
-        fi ;;
+        mounting_pods+=("$pod") ;;
     esac
   done <<<"$parsed"
+  if [ "${#mounting_pods[@]}" -gt 0 ]; then
+    if mount_causes "${mounting_pods[@]}"; then
+      while IFS=$'\x1f' read -r pod volume message; do
+        [ -n "$pod" ] || continue
+        note_reason "$t" "$pod" "volume $volume" FailedMount mount "$message"
+      done <<<"$mount_lines"
+    else
+      # Lecture en panne ce tour-ci : les comptes de montage de ces pods
+      # restent tels quels, au lieu de repartir de zéro au tour suivant.
+      for key in "${!first_seen[@]}"; do
+        for pod in "${mounting_pods[@]}"; do
+          case "$key" in "$pod|volume "*"|mount") seen[$key]=1 ;; esac
+        done
+      done
+    fi
+  fi
   # Une raison qui a disparu (conteneur démarré, pod remplacé) repart de zéro.
   for key in "${!first_seen[@]}"; do
     [ -n "${seen[$key]:-}" ] || unset "first_seen[$key]"

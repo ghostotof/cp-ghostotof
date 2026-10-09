@@ -43,9 +43,16 @@ Branche : `feature/353-rollout-echec-rapide` (depuis `develop` à `717ce4b`). Pl
       `FailedMount` de PVC (rattachement d'un `Recreate`). Lecture refusée (Role pas réappliqué) :
       UN `::warning::`, l'attente continue (sinon chaque déploiement casserait). Banc, mutations,
       règle, en-tête, `k8s/README.md` §4.
+      Relecture de T4 (2026-10-09, `/code-review` + Standards/Spec) corrigée dans le commit suivant :
+      une lecture des événements par tour (plus une par pod), un compte par volume, condition
+      `PodReadyToStartContainers` exigée présente ET `False` (absente : pas de jugement), comptes
+      conservés sur panne de lecture + un `::warning::`, fixtures réalistes (initContainers en
+      `PodInitializing`, clé `items`, Job, pod non placé, pod en suppression), doc des bornes (~35 s),
+      commentaire du Role honnête sur la portée des événements. 11 mutations détectées.
 - [ ] **T4 bis** — Christophe, terminal séparé : rejouer la boucle `k8s/README.md` §4 (preprod, prod),
-      vérifier `auth can-i list events` pour le déployeur ; facultatif : Deployment jetable montant un
-      Secret absent en volume
+      vérifier `auth can-i list events` pour le déployeur ; puis Deployment jetable montant un Secret
+      absent en VOLUME — **nécessaire, plus facultatif** : la détection repose sur
+      `PodReadyToStartContainers=False` pendant un FailedMount, à constater sur le cluster 1.36
 
 ## Critères d'acceptation (#353)
 

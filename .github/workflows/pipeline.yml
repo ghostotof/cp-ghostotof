@@ -597,7 +597,7 @@ jobs:
     needs: [release-version, build-images]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
-    timeout-minutes: 45 # attentes kubectl cumulées ≤ 36 min (secrets ESO, fenêtre de maintenance, migration, rollouts, seed ; chaque wait-rollout.sh peut dépasser son délai de ~25 s)
+    timeout-minutes: 45 # attentes kubectl cumulées ≤ 37 min (secrets ESO, fenêtre de maintenance, migration, rollouts, seed ; chaque wait-rollout.sh peut dépasser son délai de ~35 s)
     environment:
       name: preprod
       url: https://preprod.cp-ghostotof.com
@@ -892,7 +892,7 @@ jobs:
     needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests, frontend-image-headers, backend-nginx-rate-limits]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 45 # attentes kubectl cumulées ≤ 33 min (secrets ESO, fenêtre de maintenance, migration, rollouts ; chaque wait-rollout.sh peut dépasser son délai de ~25 s)
+    timeout-minutes: 45 # attentes kubectl cumulées ≤ 34 min (secrets ESO, fenêtre de maintenance, migration, rollouts ; chaque wait-rollout.sh peut dépasser son délai de ~35 s)
     permissions:
       contents: read
       actions: read

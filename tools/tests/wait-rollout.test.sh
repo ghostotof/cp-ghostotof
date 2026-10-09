@@ -12,7 +12,8 @@
 #     de rang ; __FAIL__ et __HTML__ rejouent une API muette et une page de
 #     proxy ;
 #   - `get events` sert $FAKE_DIR/events-<n> (liste vide par défaut) ;
-#     __FORBIDDEN__ rejoue un Role déployeur sans le droit de les lire.
+#     __FORBIDDEN__ rejoue un Role déployeur sans le droit de les lire,
+#     __ERROR__ une API momentanément injoignable.
 # Une horloge factice ($FAKE_DIR/clock, WAIT_ROLLOUT_CLOCK) n'avance que par
 # les tranches et le faux `sleep` : les délais de persistance (15 s, 150 s)
 # se vérifient à la seconde près, et la suite tourne en une seconde.
@@ -85,6 +86,7 @@ case " $* " in
     if [ ! -f "$f" ]; then echo '{"apiVersion":"v1","kind":"List","items":[]}'; exit 0; fi
     case "$(cat "$f")" in
       __FORBIDDEN__) echo 'Error from server (Forbidden): events is forbidden: User "system:serviceaccount:preprod:github-actions-deployer" cannot list resource "events" in API group "" in the namespace "preprod"' >&2; exit 1 ;;
+      __ERROR__) echo "Unable to connect to the server: net/http: request canceled (Client.Timeout exceeded)" >&2; exit 1 ;;
     esac
     cat "$f" ;;
   *" get "*" -o json "*)
@@ -141,21 +143,35 @@ pod() {
   printf '{"kind":"Pod","metadata":{"name":"%s","ownerReferences":[{"uid":"%s"}]%s},"status":{"phase":"%s","%s":%s}}' \
     "$1" "$2" "$meta" "$phase" "$key" "$statuses"
 }
-# mounting_pod <nom> <uid du propriétaire> [True|False] — un pod qui attend
-# le montage de ses volumes : phase Pending, conteneur en ContainerCreating,
-# et sa condition PodReadyToStartContainers si elle est donnée.
+# mounting_pod <nom> <uid du propriétaire> [True|False|-] [init] [deleting]
+# — un pod placé sur un nœud qui attend le montage de ses volumes, tel que le
+# kubelet le décrit : phase Pending, PodScheduled=True, la condition
+# PodReadyToStartContainers à la valeur donnée (« - » : absente, nœud sans
+# la fonctionnalité). Sans initContainers, le conteneur est en
+# ContainerCreating ; avec (`init`, comme backend, worker et les Jobs), init
+# ET conteneurs sont en PodInitializing.
 mounting_pod() {
-  local cond='[]'
-  [ -n "${3:-}" ] && cond="[{\"type\":\"PodReadyToStartContainers\",\"status\":\"$3\"}]"
-  printf '{"kind":"Pod","metadata":{"name":"%s","ownerReferences":[{"uid":"%s"}]},"status":{"phase":"Pending","conditions":%s,"containerStatuses":[{"name":"php-fpm","state":{"waiting":{"reason":"ContainerCreating"}}}]}}' \
-    "$1" "$2" "$cond"
+  local cond='[{"type":"PodScheduled","status":"True"}]' statuses meta=''
+  if [ -n "${3:-}" ] && [ "$3" != "-" ]; then
+    cond="[{\"type\":\"PodScheduled\",\"status\":\"True\"},{\"type\":\"PodReadyToStartContainers\",\"status\":\"$3\"}]"
+  fi
+  statuses='"containerStatuses":[{"name":"php-fpm","state":{"waiting":{"reason":"ContainerCreating"}}}]'
+  if [ "${4:-}" = "init" ]; then
+    statuses='"initContainerStatuses":[{"name":"seed-cache-system","state":{"waiting":{"reason":"PodInitializing"}}}],"containerStatuses":[{"name":"php-fpm","state":{"waiting":{"reason":"PodInitializing"}}}]'
+  fi
+  [ "${5:-}" = "deleting" ] && meta=',"deletionTimestamp":"2026-10-09T12:00:00Z"'
+  printf '{"kind":"Pod","metadata":{"name":"%s","ownerReferences":[{"uid":"%s"}]%s},"status":{"phase":"Pending","conditions":%s,%s}}' \
+    "$1" "$2" "$meta" "$cond" "$statuses"
 }
-# failed_mount <pod> <message> — un événement FailedMount de ce pod, tel que
-# le kubelet le publie (core/v1, agrégé : count, lastTimestamp).
+# failed_mount <pod> <message> [lastTimestamp] — un événement FailedMount de
+# ce pod, tel que le kubelet le publie (core/v1, agrégé : count,
+# lastTimestamp).
 failed_mount() {
-  jq -cn --arg p "$1" --arg m "$2" \
-    '{kind: "Event", involvedObject: {kind: "Pod", name: $p}, reason: "FailedMount", type: "Warning", message: $m, count: 3, lastTimestamp: "2026-10-09T12:00:00Z"}'
+  jq -cn --arg p "$1" --arg m "$2" --arg at "${3:-2026-10-09T12:00:00Z}" \
+    '{kind: "Event", involvedObject: {kind: "Pod", name: $p}, reason: "FailedMount", type: "Warning", message: $m, count: 3, lastTimestamp: $at}'
 }
+events_calls() { grep -c ' get events ' "$FAKE_DIR/args" || true; }
+state_calls() { grep -c -E ' get (deployments|jobs),' "$FAKE_DIR/args" || true; }
 # events <n> <événement>… — la liste servie au n-ième `get events`.
 events() {
   local n="$1"; shift
@@ -428,9 +444,9 @@ if [ "$rc" -eq 1 ] && [ "$(clock)" -ge 15 ] && [ "$(clock)" -lt 30 ] \
    && grep -q '^::error::deployment/backend bloqué dans preprod : pod backend-7f9-abc, volume jwt-keys : FailedMount observé depuis [0-9]* s — MountVolume.SetUp failed for volume "jwt-keys" : secret "jwt-keys" not found$' "$FAKE_DIR/out"; then
   pass "Secret absent monté en volume : sortie 1 entre 15 et 30 s (horloge $(clock) s), volume et message cités"
 else fail "Secret absent monté en volume : sortie 1 entre 15 et 30 s, volume et message cités" "rc=$rc, horloge=$(clock) ; $(cat "$FAKE_DIR/out")"; fi
-if grep -q -- '--request-timeout=10s -n preprod get events --field-selector involvedObject.kind=Pod,involvedObject.name=backend-7f9-abc,reason=FailedMount -o json' "$FAKE_DIR/args"; then
-  pass "événements : lecture bornée, ciblée sur le pod et la raison FailedMount"
-else fail "événements : lecture bornée, ciblée sur le pod et la raison FailedMount" "$(grep ' get events ' "$FAKE_DIR/args" || echo 'aucune lecture')"; fi
+if grep -q -- '--request-timeout=10s -n preprod get events --field-selector involvedObject.kind=Pod,reason=FailedMount -o json' "$FAKE_DIR/args"; then
+  pass "événements : lecture bornée, ciblée sur la raison FailedMount"
+else fail "événements : lecture bornée, ciblée sur la raison FailedMount" "$(grep ' get events ' "$FAKE_DIR/args" || echo 'aucune lecture')"; fi
 
 new_case mount-configmap
 slices timeout
@@ -484,6 +500,95 @@ if [ "$rc" -eq 0 ] && [ "$(grep -c '^::warning::.*événements' "$FAKE_DIR/out")
    && grep -q '^::warning::.*k8s/README.md §4' "$FAKE_DIR/out"; then
   pass "lecture des événements refusée : un seul ::warning:: renvoyant à §4, sortie 0"
 else fail "lecture des événements refusée : un seul ::warning:: renvoyant à §4, sortie 0" "rc=$rc ; $(cat "$FAKE_DIR/out")"; fi
+
+# Pod à initContainers (backend, worker, Jobs) : init et conteneurs en
+# PodInitializing tant que les volumes manquent.
+new_case mount-init
+slices timeout
+state 1 "$BACKEND" "$NEW_RS" "$(mounting_pod backend-7f9-abc rs-12 False init)"
+events 1 "$(failed_mount backend-7f9-abc "$MSG_MOUNT_SECRET")"
+run preprod deployment/backend --timeout 180 --interval 5
+if [ "$rc" -eq 1 ] && grep -q '^::error::.*volume jwt-keys : FailedMount' "$FAKE_DIR/out"; then
+  pass "pod à initContainers (PodInitializing) en attente d'un Secret monté : sortie 1"
+else fail "pod à initContainers (PodInitializing) en attente d'un Secret monté : sortie 1" "rc=$rc ; $(cat "$FAKE_DIR/out")"; fi
+
+# Clé absente d'une liste `items:` de volume.
+new_case mount-items
+slices timeout
+state 1 "$BACKEND" "$NEW_RS" "$(mounting_pod backend-7f9-abc rs-12 False)"
+events 1 "$(failed_mount backend-7f9-abc 'MountVolume.SetUp failed for volume "nginx-conf" : configmap references non-existent config key: default.conf')"
+run preprod deployment/backend --timeout 180 --interval 5
+if [ "$rc" -eq 1 ] && grep -q '^::error::.*volume nginx-conf : FailedMount.*references non-existent config key: default.conf$' "$FAKE_DIR/out"; then
+  pass "clé absente d'un volume (items) : sortie 1"
+else fail "clé absente d'un volume (items) : sortie 1" "rc=$rc ; $(cat "$FAKE_DIR/out")"; fi
+
+# Un Job (backend-migrate) dans le même cas.
+new_case mount-job
+slices timeout
+state 1 "$(job backend-migrate j-2)" "$(mounting_pod backend-migrate-xyz j-2 False init)"
+events 1 "$(failed_mount backend-migrate-xyz "$MSG_MOUNT_SECRET")"
+run preprod job/backend-migrate --timeout 300 --interval 5
+if [ "$rc" -eq 1 ] && [ "$(clock)" -lt 30 ] && grep -q '^::error::job/backend-migrate bloqué dans preprod : pod backend-migrate-xyz, volume jwt-keys : FailedMount' "$FAKE_DIR/out"; then
+  pass "Job dont un Secret monté manque : sortie 1 avant 30 s"
+else fail "Job dont un Secret monté manque : sortie 1 avant 30 s" "rc=$rc, horloge=$(clock) ; $(cat "$FAKE_DIR/out")"; fi
+
+# Deux pods en attente, deux volumes manquants sur l'un : UNE lecture des
+# événements par tour, et un compte stable par volume (sinon l'événement
+# retenu alternerait et le délai repartirait de zéro).
+new_case mount-two-pods
+slices timeout
+state 1 "$BACKEND" "$NEW_RS" "$(mounting_pod backend-7f9-abc rs-12 False)" "$(mounting_pod backend-7f9-def rs-12 False)"
+events 1 "$(failed_mount backend-7f9-abc "$MSG_MOUNT_SECRET" 2026-10-09T12:00:00Z)" \
+         "$(failed_mount backend-7f9-abc "$MSG_MOUNT_CM" 2026-10-09T12:00:05Z)" \
+         "$(failed_mount backend-7f9-def "$MSG_MOUNT_SECRET")"
+run preprod deployment/backend --timeout 180 --interval 5
+if [ "$rc" -eq 1 ] && [ "$(clock)" -lt 30 ] && [ "$(events_calls)" -eq "$(state_calls)" ] \
+   && [ "$(grep -c '^::error::deployment/backend bloqué' "$FAKE_DIR/out")" -eq 3 ]; then
+  pass "deux pods, trois volumes manquants : sortie 1 avant 30 s, une lecture des événements par tour"
+else fail "deux pods, trois volumes manquants : sortie 1 avant 30 s, une lecture des événements par tour" "rc=$rc, horloge=$(clock), lectures événements=$(events_calls)/état=$(state_calls) ; $(cat "$FAKE_DIR/out")"; fi
+
+# Nœud sans PodReadyToStartContainers : on ne sait pas distinguer un
+# événement périmé d'un montage toujours en échec — on ne juge pas.
+new_case mount-no-condition
+slices timeout timeout timeout timeout timeout ready
+state 1 "$BACKEND" "$NEW_RS" "$(mounting_pod backend-7f9-abc rs-12 -)"
+events 1 "$(failed_mount backend-7f9-abc "$MSG_MOUNT_SECRET")"
+run preprod deployment/backend --timeout 180 --interval 5
+if [ "$rc" -eq 0 ] && [ "$(events_calls)" -eq 0 ]; then
+  pass "pas de condition PodReadyToStartContainers : ni lecture des événements, ni jugement"
+else fail "pas de condition PodReadyToStartContainers : ni lecture des événements, ni jugement" "rc=$rc, lectures=$(events_calls) ; $(cat "$FAKE_DIR/out")"; fi
+
+# Pod pas encore placé (FailedScheduling, PVC en attente) : aucun volume à
+# monter, donc aucune lecture des événements.
+new_case mount-unscheduled
+slices timeout timeout ready
+state 1 "$BACKEND" "$NEW_RS" '{"kind":"Pod","metadata":{"name":"backend-7f9-abc","ownerReferences":[{"uid":"rs-12"}]},"status":{"phase":"Pending","conditions":[{"type":"PodScheduled","status":"False","reason":"Unschedulable"}]}}'
+run preprod deployment/backend --timeout 180 --interval 5
+if [ "$rc" -eq 0 ] && [ "$(events_calls)" -eq 0 ]; then pass "pod pas encore placé : aucune lecture des événements"
+else fail "pod pas encore placé : aucune lecture des événements" "rc=$rc, lectures=$(events_calls) ; $(cat "$FAKE_DIR/out")"; fi
+
+new_case mount-deleting
+slices timeout timeout ready
+state 1 "$BACKEND" "$NEW_RS" "$(mounting_pod backend-7f9-abc rs-12 False '' deleting)"
+events 1 "$(failed_mount backend-7f9-abc "$MSG_MOUNT_SECRET")"
+run preprod deployment/backend --timeout 180 --interval 5
+if [ "$rc" -eq 0 ] && [ "$(events_calls)" -eq 0 ]; then pass "pod en cours de suppression : événements ni lus ni comptés"
+else fail "pod en cours de suppression : événements ni lus ni comptés" "rc=$rc, lectures=$(events_calls) ; $(cat "$FAKE_DIR/out")"; fi
+
+# Lecture des événements en panne un tour sur deux : le compte de 15 s ne
+# doit pas repartir de zéro, et la panne est signalée une fois.
+new_case mount-transient-error
+slices timeout
+state 1 "$BACKEND" "$NEW_RS" "$(mounting_pod backend-7f9-abc rs-12 False)"
+events 1 "$(failed_mount backend-7f9-abc "$MSG_MOUNT_SECRET")"
+printf '__ERROR__' > "$FAKE_DIR/events-2"
+events 3 "$(failed_mount backend-7f9-abc "$MSG_MOUNT_SECRET")"
+printf '__ERROR__' > "$FAKE_DIR/events-4"
+events 5 "$(failed_mount backend-7f9-abc "$MSG_MOUNT_SECRET")"
+run preprod deployment/backend --timeout 180 --interval 5
+if [ "$rc" -eq 1 ] && [ "$(clock)" -lt 30 ] && [ "$(grep -c '^::warning::.*événements' "$FAKE_DIR/out")" -eq 1 ]; then
+  pass "lecture des événements en panne un tour sur deux : compte conservé, sortie 1 avant 30 s, un seul ::warning::"
+else fail "lecture des événements en panne un tour sur deux : compte conservé, sortie 1 avant 30 s, un seul ::warning::" "rc=$rc, horloge=$(clock) ; $(cat "$FAKE_DIR/out")"; fi
 
 # --- 16. aucune valeur de secret, dans aucun cas ------------------------------
 leaks="$(grep -rl "$SENTINEL" "$TMP"/*/out 2>/dev/null || true)"
