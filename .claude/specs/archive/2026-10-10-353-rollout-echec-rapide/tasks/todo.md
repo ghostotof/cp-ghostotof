@@ -82,5 +82,7 @@ Branche : `feature/353-rollout-echec-rapide` (depuis `develop` à `717ce4b`). Pl
       l'arbitrage de Christophe : ~~délai de pull de 60 s~~ (150 s, tranché le 2026-10-07), `CreateContainerError`/
       `RunContainerError`, Secret en volume (verbe `events`), coût des listes du namespace, code commun
       avec wait-external-secrets.sh
-- [ ] À la fusion de clôture : archiver `tasks/` sous `.claude/specs/archive/<date>-353-rollout-echec-rapide/`
-      (feature sans spec : `tasks/` seul), et mettre à jour le README de l'archive
+- [x] Clôture (étape 08, 2026-10-10) : `k8s/README.md` §4 complété de la variante sans `kustomize`
+      (`db2210c`) ; `tasks/` archivé sous `.claude/specs/archive/2026-10-10-353-rollout-echec-rapide/tasks/`
+      (feature sans spec : `tasks/` seul), README de l'archive mis à jour ; PR vers `develop`. Après le
+      merge : fermer #353 à la main (`Closes` ne ferme rien vers `develop`).
