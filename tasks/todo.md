@@ -17,16 +17,31 @@ Branche : `feature/353-rollout-echec-rapide` (depuis `develop` à `717ce4b`). Pl
 - [x] **T2** — pipeline : 13 attentes remplacées, `tools-tests`, commentaires `timeout-minutes`, règle
       `deploiement.md` (vérifications : grep, check-workflow-timeouts, check-claude-rules, actionlint ;
       commit)
-- [ ] **T3** — ⏸ en attente de Christophe — expérience en préprod, **par Christophe dans un terminal séparé** : Deployment jetable
-      avec une clé absente, message relevé, nettoyage, report dans l'issue
+- [x] **T3** — expérience en préprod, par Christophe dans un terminal séparé (2026-10-09), Deployment
+      jetable `wr353-probe`, script de la branche à `5c1c236`, kubectl 1.35 :
+      - **clé absente** (`secretKeyRef` vers un Secret inexistant) : `rc=1` en 33 s au lieu de 120,
+        `::error::… pod wr353-probe-6bb66b7ccf-rqc2f, conteneur busybox : CreateContainerConfigError
+        observé depuis 17 s — secret "wr353-absent" not found` ;
+      - **relevés** : une liste multi-types porte `kind` sur chaque item (`["Deployment","Pod","ReplicaSet"]`) ;
+        `state.waiting` = `{"reason":"CreateContainerConfigError","message":"secret \"wr353-absent\" not found"}` ;
+        annotation `deployment.kubernetes.io/revision` présente sur le Deployment et son ReplicaSet,
+        `observedGeneration` à jour — les trois hypothèses des fixtures sont confirmées ;
+      - **correction** (env retiré) : `rc=0`, rollout terminé dès la première tranche — ne prouve donc
+        PAS le filtre de révision (aucune inspection n'a eu lieu ; il reste couvert par le banc, cas 4) ;
+      - **nom d'image invalide** (`BusyBox:1.37`), deux révisions présentes : `rc=1` à la première
+        inspection, seul le pod de la nouvelle révision (`…-567db5bb96-…`) est mis en cause ;
+      - nettoyage fait (pod `Terminating` 30 s : `sleep` en PID 1 ignore SIGTERM).
+      Non éprouvé en vrai : un Job (`backend-migrate`), le Job `Failed=True`, les échecs de pull — le
+      premier vrai passage sera la release qui embarque cette branche.
 
 ## Critères d'acceptation (#353)
 
-- [ ] Un Deployment qui référence une clé absente fait échouer le job en quelques secondes, en
-      nommant pod, conteneur et raison (T1 cas 2, T3)
-- [ ] Un Job (`backend-migrate`) dans le même cas échoue de la même façon, avant ses 300 s (T1 cas 10)
-- [ ] Aucune valeur de secret dans les journaux (T1 cas 16)
-- [ ] `timeout-minutes` revu (T2 étapes 2e/3), `tools/tests` étendu (T1, T2 étape 4)
+- [x] Un Deployment qui référence une clé absente fait échouer le job en quelques secondes, en
+      nommant pod, conteneur et raison (T1 cas 2 ; T3 : 33 s au lieu de 120 en préprod)
+- [x] Un Job (`backend-migrate`) dans le même cas échoue de la même façon, avant ses 300 s (T1 cas 10 —
+      banc hors ligne seulement, pas éprouvé sur le cluster)
+- [x] Aucune valeur de secret dans les journaux (T1 cas 16 ; T3 : seuls des noms dans la sortie)
+- [x] `timeout-minutes` revu (T2 étapes 2e/3), `tools/tests` étendu (T1, T2 étape 4)
 
 ## Clôture
 
