@@ -49,10 +49,21 @@ Branche : `feature/353-rollout-echec-rapide` (depuis `develop` à `717ce4b`). Pl
       conservés sur panne de lecture + un `::warning::`, fixtures réalistes (initContainers en
       `PodInitializing`, clé `items`, Job, pod non placé, pod en suppression), doc des bornes (~35 s),
       commentaire du Role honnête sur la portée des événements. 11 mutations détectées.
-- [ ] **T4 bis** — Christophe, terminal séparé : rejouer la boucle `k8s/README.md` §4 (preprod, prod),
-      vérifier `auth can-i list events` pour le déployeur ; puis Deployment jetable montant un Secret
-      absent en VOLUME — **nécessaire, plus facultatif** : la détection repose sur
-      `PodReadyToStartContainers=False` pendant un FailedMount, à constater sur le cluster 1.36
+- [x] **T4 bis** — par Christophe, terminal séparé, la nuit du 2026-10-09 au 10 (journal `~/t4bis-353.log`) :
+      - **RBAC** : `kubectl diff -k` d'abord, en préprod puis en prod, contexte nommé (`kustomize` absent
+        du poste : `kubectl -k` et ligne `namespace:` ajoutée à la main). Diff identique des deux côtés,
+        seul le Role change (règle `events` `get`/`list` ajoutée), ClusterRole, liaisons et SA
+        `unchanged`. Puis `apply`, `auth can-i list events --as=…:github-actions-deployer` → `yes` en
+        préprod et en prod.
+      - **Secret absent monté en volume** (Deployment jetable `wr353-mount`, initContainer comme
+        `backend`) : `rc=1` en 32 s au lieu de 120, `::error::… pod wr353-mount-7d4454897d-s4vc4,
+        volume probe : FailedMount observé depuis 17 s — MountVolume.SetUp failed for volume "probe" :
+        secret "wr353-absent" not found`.
+      - **Relevés**, toutes les hypothèses de T4 confirmées sur le cluster 1.36 :
+        `PodReadyToStartContainers=False`, `PodScheduled=True`, phase `Pending`, init ET conteneur en
+        `PodInitializing`, message FailedMount au format attendu, événement agrégé (`count` 8,
+        `lastTimestamp`).
+      - Nettoyage fait, contexte rétabli (`docker-desktop`).
 
 ## Critères d'acceptation (#353)
 
