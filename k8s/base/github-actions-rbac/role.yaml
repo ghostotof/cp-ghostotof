@@ -22,6 +22,15 @@ rules:
   - apiGroups: ['']
     resources: ['pods', 'pods/log']
     verbs: ['get', 'list', 'watch']
+  # Lecture seule des événements (issue #353). tools/wait-rollout.sh y lit,
+  # pour un seul pod resté en ContainerCreating, ses `FailedMount` : un
+  # Secret ou un ConfigMap absent monté en volume n'apparaît nulle part
+  # ailleurs (le statut du pod ne dit que « ContainerCreating »). Un
+  # événement ne porte que des noms d'objets et des raisons, jamais une
+  # valeur. Sans ce droit, le script avertit et le déploiement continue.
+  - apiGroups: ['']
+    resources: ['events']
+    verbs: ['get', 'list']
   # `pods/exec: create` RETIRÉ (point d'audit C8) : ce verbe ouvrait au compte
   # de service de la CI un shell dans n'importe quel pod du namespace — donc
   # l'accès à tous les secrets montés (clés JWT, identifiants Postgres, CV) et

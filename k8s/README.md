@@ -63,6 +63,21 @@ détail des jobs.
    >   --as=system:serviceaccount:preprod:github-actions-deployer   # no attendu
    > ```
 
+   > **⚠ À rejouer après l'issue #353.** Le `Role` a gagné `get`/`list` sur
+   > `events` (lecture seule) : `tools/wait-rollout.sh` y lit les
+   > `FailedMount` d'un pod resté en `ContainerCreating`, seule trace d'un
+   > Secret ou d'un ConfigMap absent monté en volume. Relancer la boucle
+   > ci-dessus avant la release qui embarque #353. Oublier ne casse **pas**
+   > le déploiement — le script émet un `::warning::` « lecture des
+   > événements … refusée » et continue —, mais ce cas finit alors en délai
+   > dépassé, sans cause. Vérification, chaque namespace dans son contexte :
+   > ```bash
+   > kubectl --context cp-ghostotof-preprod -n preprod auth can-i list events \
+   >   --as=system:serviceaccount:preprod:github-actions-deployer   # yes attendu
+   > kubectl --context cp-ghostotof-prod -n prod auth can-i list events \
+   >   --as=system:serviceaccount:prod:github-actions-deployer      # yes attendu
+   > ```
+
    **Puis le jeton du pipeline — lié, à durée limitée, régénéré par script**
    (3e audit du 2026-09-16, constat A3, décision D4). Le kubeconfig que le
    pipeline reçoit n'est plus construit à la main autour d'un Secret
