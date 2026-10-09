@@ -22,6 +22,18 @@ rules:
   - apiGroups: ['']
     resources: ['pods', 'pods/log']
     verbs: ['get', 'list', 'watch']
+  # Lecture des événements du namespace (issue #353). tools/wait-rollout.sh
+  # y lit les `FailedMount` des pods qui attendent leurs volumes (statut
+  # ContainerCreating, ou PodInitializing avec des initContainers) : un
+  # Secret ou un ConfigMap absent monté en volume n'apparaît nulle part
+  # ailleurs. Le droit couvre TOUS les événements du namespace : ceux de
+  # Kubernetes ne citent que des noms et des raisons, mais un contrôleur
+  # tiers (ESO) ou une sonde `exec` peut y écrire un texte libre. Accepté :
+  # ce Role lit déjà tout Secret du namespace par construction (constat A3,
+  # ci-dessous). Sans ce droit, le script avertit et le déploiement continue.
+  - apiGroups: ['']
+    resources: ['events']
+    verbs: ['get', 'list']
   # `pods/exec: create` RETIRÉ (point d'audit C8) : ce verbe ouvrait au compte
   # de service de la CI un shell dans n'importe quel pod du namespace — donc
   # l'accès à tous les secrets montés (clés JWT, identifiants Postgres, CV) et

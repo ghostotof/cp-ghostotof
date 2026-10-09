@@ -96,7 +96,8 @@ paths:
   variable added by this release would be missing; running pods don't re-read their env, so this
   changes nothing for them — the filename `v1_configmap_backend-config.yaml` is stable because the
   ConfigMap has `disableNameSuffixHash`), then `migrate-job.yaml` with the release image (300 s
-  timeout), then `kubectl apply -k .` + `rollout status`. **Fail-closed**: a failed Job exits before the
+  timeout, `tools/wait-rollout.sh`), then `kubectl apply -k .` + the rollout waits
+  (`tools/wait-rollout.sh`, see below). **Fail-closed**: a failed Job exits before the
   `apply`, so the previous release keeps serving on the old schema, which is exactly the safe state
   (PostgreSQL DDL is transactional and Doctrine wraps each migration in its own transaction) — fix the
   migration, cut a new tag. The discipline that makes this order safe, to respect in every migration:
@@ -126,6 +127,43 @@ paths:
   (`needs.deploy-preprod.result == 'success'`): `failure()` is true as soon as any *ancestor* job
   fails, so a deploy stopped before its rollout used to trigger `rollout undo` anyway and roll the
   still-serving release back to the one before it.
+- **Every deploy wait fails early on a container that will not start** (issue #353). The `Deploy`
+  steps never call `kubectl rollout status` or `kubectl wait --for=condition=complete` directly:
+  `tools/wait-rollout.sh <ns> deployment/NAME|job/NAME --timeout N` cuts kubectl's own wait into
+  5 s slices — so "done" keeps kubectl's meaning — and between slices reads the pods of the
+  *current* revision only: for a Deployment, the ReplicaSet whose `deployment.kubernetes.io/revision`
+  matches, once `status.observedGeneration` has caught up (pods of an earlier stuck rollout would be
+  a false positive); for a Job, the pods owned by its uid (the previous `backend-migrate`, just
+  deleted, may still be around). Containers **and** initContainers. It fails naming pod, container,
+  reason and the kubelet's message — which names the missing key or Secret, never a value — on
+  `InvalidImageName` at once, `CreateContainerConfigError` persisting 15 s, `ErrImagePull` and
+  `ImagePullBackOff` persisting 150 s **together** (the kubelet alternates them; long on purpose:
+  images are checked on GHCR first, so a pull error is mostly a registry hiccup, and after `apply -k`
+  in prod there is no rollback — a deploy that would have converged must not go red); a Job with
+  `Failed=True` fails at once instead of waiting out its timeout. `CrashLoopBackOff` is deliberately
+  not fatal. Slicing must not swallow kubectl's own errors: a slice that exits non-zero *without*
+  having expired ("timed out waiting for the condition", or "context deadline exceeded" when a slow
+  API outlasts the slice before the cache syncs) — Forbidden, NotFound, ProgressDeadlineExceeded —
+  is tolerated twice, the third in a row fails quoting it. A missing Secret or ConfigMap mounted as
+  a non-optional *volume* (`jwt-keys`, `backend-nginx-conf`) gives no telling reason — the pod sits
+  in `ContainerCreating` (`PodInitializing` with initContainers) and the cause is only in a
+  `FailedMount` event: while a current-revision pod still waits for its volumes
+  (`PodReadyToStartContainers` present **and** `False`, no container started or blocked otherwise)
+  the script reads the namespace's `FailedMount` events — once per round, all pods together — and
+  fails after 15 s, one count per volume, on `secret|configmap "…" not found` / `references
+  non-existent … key` only — **never on any `FailedMount`**: a `Recreate` (postgres) reattaching its
+  PVC emits transient ones. Condition absent (pod not scheduled yet, node without the feature): no
+  judgement, since an event kept an hour cannot be told from a live failure. A transient read error
+  keeps the running counts. That needs
+  `get`/`list` on `events` in the deployer Role (added for #353 — **re-run `k8s/README.md` §4 after
+  changing the Role**); refused, the script warns once and waits on — a forgotten bootstrap must
+  never break every deploy. The reasons live in one table, `REASON_CLASS`, with their delays in
+  `GRACE`. It never reads a Secret.
+  Each wait may overrun its timeout by ~35 s, counted in `timeout-minutes`. Fail-closed is
+  unchanged: a failure before `apply -k` leaves the previous release serving; after it, no automatic
+  rollback in prod, and `rollback-preprod` still runs only on a successful deploy. The 60 s
+  `rollout status` checks of `smoke-test-preprod` are not deploy waits and stay. Offline test:
+  `tools/tests/wait-rollout.test.sh`.
 - **`DEPLOY_MAINTENANCE_WINDOW` (repository variable) opts a deploy into a maintenance window** — added
   for v0.11.0's irreversible integer→UUID primary-key migrations, where the new code cannot read the old
   schema **and vice versa**, so no pod may serve a request while the migration runs. That is the only
@@ -134,7 +172,7 @@ paths:
   `kubectl patch` on `spec.replicas` — the deployer `Role` has no `deployments/scale` subresource, so
   never `kubectl scale`), wait for their pods to disappear, run `migrate-job.yaml` against the quiet
   database, then let `kubectl apply -k .` restore the manifests' replica counts and the existing
-  `rollout status` wait for the new pods. The frontend keeps serving; only the API returns 503 through
+  rollout waits (`tools/wait-rollout.sh`) wait for the new pods. The frontend keeps serving; only the API returns 503 through
   the ingress for the window's duration. It is opt-in specifically so an ordinary release stays
   zero-downtime — **set it before pushing the release tag and unset it right after the production
   deploy**: a forgotten `true` turns every subsequent deploy into a downtime deploy for no reason.
@@ -258,7 +296,8 @@ paths:
   `get`/`patch` on them, never `create`. A PSA refusal is *not* visible at `kubectl apply` — the namespace
   updates fine and the next pod creation fails — so validate in preprod first.
   Because this change rewrites the pod template of the `Recreate` workloads, `deploy-preprod`/`deploy-prod`
-  now also `rollout status` **`postgres`, `rabbitmq` and `worker`** after `apply -k`, not just
+  now also wait for the rollout (`tools/wait-rollout.sh`) of **`postgres`, `rabbitmq` and `worker`**
+  after `apply -k`, not just
   `backend`/`frontend`: without the wait the seed Job ran against a database that hadn't come back, and in
   prod a downed broker left the deploy green. Accept the corollary: such a change is a short, frank outage
   of those two stateful workloads.
