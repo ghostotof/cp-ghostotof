@@ -144,12 +144,17 @@ paths:
   not fatal. Slicing must not swallow kubectl's own errors: a slice that exits non-zero *without*
   having expired ("timed out waiting for the condition", or "context deadline exceeded" when a slow
   API outlasts the slice before the cache syncs) — Forbidden, NotFound, ProgressDeadlineExceeded —
-  is tolerated twice, the third in a row fails quoting it. **Known gap**: a missing Secret or
-  ConfigMap mounted as a non-optional *volume* (`jwt-keys`, `backend-nginx-conf`) leaves the pod in
-  `ContainerCreating` with only a `FailedMount` event, which the deployer Role cannot read (no
-  `events` verb) — that case still ends in a plain timeout. The reasons live in one table,
-  `REASON_CLASS`, with their delays in `GRACE`. It never reads a Secret and needs nothing beyond
-  the deployer Role's `get/list/watch`.
+  is tolerated twice, the third in a row fails quoting it. A missing Secret or ConfigMap mounted as
+  a non-optional *volume* (`jwt-keys`, `backend-nginx-conf`) gives no telling reason — the pod sits
+  in `ContainerCreating` and the cause is only in a `FailedMount` event: for a current-revision pod
+  still waiting for its volumes (Pending, no `PodReadyToStartContainers=True`, no container started
+  or blocked otherwise) the script reads that pod's `FailedMount` events alone and fails after 15 s
+  on `secret|configmap "…" not found` / `references non-existent … key` only — **never on any
+  `FailedMount`**: a `Recreate` (postgres) reattaching its PVC emits transient ones. That needs
+  `get`/`list` on `events` in the deployer Role (added for #353 — **re-run `k8s/README.md` §4 after
+  changing the Role**); refused, the script warns once and waits on — a forgotten bootstrap must
+  never break every deploy. The reasons live in one table, `REASON_CLASS`, with their delays in
+  `GRACE`. It never reads a Secret.
   Each wait may overrun its timeout by ~25 s, counted in `timeout-minutes`. Fail-closed is
   unchanged: a failure before `apply -k` leaves the previous release serving; after it, no automatic
   rollback in prod, and `rollback-preprod` still runs only on a successful deploy. The 60 s

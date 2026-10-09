@@ -34,6 +34,19 @@ Branche : `feature/353-rollout-echec-rapide` (depuis `develop` à `717ce4b`). Pl
       Non éprouvé en vrai : un Job (`backend-migrate`), le Job `Failed=True`, les échecs de pull — le
       premier vrai passage sera la release qui embarque cette branche.
 
+- [ ] **T4** — (décidé le 2026-10-09, relecture § Secret en volume) un Secret ou ConfigMap absent
+      monté en VOLUME non optionnel (`jwt-keys`, `backend-nginx-conf`) : pod en `ContainerCreating`,
+      cause dans un événement `FailedMount` seulement. Role déployeur : `get`/`list` sur `events`.
+      Script : pour un pod de la révision en cours resté `Pending` (et sans
+      `PodReadyToStartContainers=True`), lire ses seuls événements `FailedMount` ; fatal après 15 s si
+      le message dit `secret|configmap "…" not found` ou `references non-existent … key` — jamais un
+      `FailedMount` de PVC (rattachement d'un `Recreate`). Lecture refusée (Role pas réappliqué) :
+      UN `::warning::`, l'attente continue (sinon chaque déploiement casserait). Banc, mutations,
+      règle, en-tête, `k8s/README.md` §4.
+- [ ] **T4 bis** — Christophe, terminal séparé : rejouer la boucle `k8s/README.md` §4 (preprod, prod),
+      vérifier `auth can-i list events` pour le déployeur ; facultatif : Deployment jetable montant un
+      Secret absent en volume
+
 ## Critères d'acceptation (#353)
 
 - [x] Un Deployment qui référence une clé absente fait échouer le job en quelques secondes, en
