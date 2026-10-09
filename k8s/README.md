@@ -48,6 +48,26 @@ détail des jobs.
      rm -rf "$TMP"
    done
    ```
+   **Sans le binaire `kustomize`**, avec le kustomize intégré à `kubectl` (la
+   procédure jouée le 2026-10-10 pour #353). Ajouter la ligne `namespace:` au
+   `kustomization.yaml` jetable revient au même que `kustomize edit set
+   namespace`. On nomme le contexte de chaque namespace, et on lit le
+   `kubectl diff` avant tout `apply` : il ne doit montrer que le changement
+   attendu, jamais un `ClusterRoleBinding` ni ses `subjects`.
+   ```bash
+   for NS in preprod prod; do
+     kubectl config use-context "cp-ghostotof-$NS"
+     TMP=$(mktemp -d)
+     cp k8s/base/github-actions-rbac/*.yaml "$TMP/"
+     printf 'namespace: %s\n' "$NS" >> "$TMP/kustomization.yaml"
+     kubectl diff -k "$TMP"     # lire avant de continuer
+     kubectl apply -k "$TMP"    # seulement si le diff est conforme
+     rm -rf "$TMP"
+   done
+   ```
+   En pratique, on joue ces lignes une à une, un namespace après l'autre, en
+   lisant le diff avant l'`apply`. La boucle les résume, elle ne s'utilise pas
+   telle quelle.
    > **⚠ À rejouer après le point d'audit C8.** Le `Role` a changé :
    > `pods/exec: create` a été **retiré** et `batch/jobs`
    > (`get,list,watch,create,delete`) ajouté, parce que les migrations Doctrine
@@ -67,7 +87,8 @@ détail des jobs.
    > `events` (lecture seule) : `tools/wait-rollout.sh` y lit les
    > `FailedMount` d'un pod qui attend ses volumes, seule trace d'un
    > Secret ou d'un ConfigMap absent monté en volume. Relancer la boucle
-   > ci-dessus avant la release qui embarque #353. Oublier ne casse **pas**
+   > ci-dessus avant la release qui embarque #353 (fait le 2026-10-10, en
+   > préprod puis en prod, par la variante sans `kustomize`). Oublier ne casse **pas**
    > le déploiement — le script émet un `::warning::` « lecture des
    > événements … refusée » et continue —, mais ce cas finit alors en délai
    > dépassé, sans cause. Vérification, chaque namespace dans son contexte :
