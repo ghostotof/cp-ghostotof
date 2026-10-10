@@ -27,7 +27,6 @@ use PhpToken;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
-use ReflectionParameter;
 use ReflectionProperty;
 
 /**
@@ -170,15 +169,7 @@ final class PlainPasswordInputsTest extends TestCase
 
     public function testEveryPlainPasswordParameterOfSrcIsHiddenFromStackTraces(): void
     {
-        $exposed = array_map(
-            PlainPasswordInputs::label(...),
-            array_values(array_filter(
-                PlainPasswordInputs::parameters($this->srcClasses()),
-                static fn (ReflectionParameter $parameter): bool => !SensitiveParameters::isHiddenFromTraces($parameter),
-            )),
-        );
-
-        self::assertSame([], $exposed, 'Un paramètre qui reçoit un mot de passe en clair porte #[SensitiveParameter] : sans lui, la valeur figure dans les arguments de toute trace d\'exception qui le traverse.');
+        self::assertSame([], SensitiveParameters::exposed(PlainPasswordInputs::parameters($this->srcClasses())), 'Un paramètre qui reçoit un mot de passe en clair porte #[SensitiveParameter] : sans lui, la valeur figure dans les arguments de toute trace d\'exception qui le traverse.');
     }
 
     public function testOnlyTheDeclaredClassesHashAPassword(): void

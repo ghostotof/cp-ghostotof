@@ -80,6 +80,27 @@ value in `command` and in the message, `=`, space and `escapeshellarg()` forms a
 none is thrown bare in `src/`, and adding one to `BareExceptionInstantiations::FORBIDDEN` is the step to
 take the day one is.
 
+**A parameter that receives a secret in clear carries `#[SensitiveParameter]`** (issues #411 for passwords,
+#414 for the rest). `tests/Security/SecretParametersTest.php` fails on a parameter that may hold a string
+(`string`, `mixed`, a union with one) whose name says token, JWT, secret, key, bearer, CSRF, credentials,
+authorization, DSN, cookie, signature or nonce (`SECRET_NAME`, any case; never `key` alone) without it —
+or whose parameter at the same position in an `App\…` interface or parent class says so: PHP only reads
+the attribute of the implementation called, so the one on an interface is declarative, required for
+consistency, and an implementation renaming `$clearToken` to `$value` is still caught. A digest is not a
+secret: `hashed` (not `unhashed`) or a trailing `hash` (not `toHash`) excludes the name (`$tokenHash`,
+`$hashedPassword`). Scope: methods of the classes of `src/` that `DeclaredClasses` finds (not enums,
+closures, anonymous classes, free functions) and of their `App\…` interfaces and parents. A secret under
+another name or in an `array` is hidden by hand and pinned in `HIDDEN_BY_HAND` (`AuthCookieFactory::create($value)`,
+`ReplayRefusingHttpClient::request($options)` — the Scaleway key and the nominative CV —,
+`PasswordOptionRedactor::redact($text)`); an entry the census already sees is refused there.
+`CsrfCookieTokenSigner::signature($random)` stays visible on purpose (half the token, useless without
+`APP_SECRET`). No exclusion list until a first false positive needs one. Why it matters although
+production strips arguments (`zend.exception_ignore_args`): dev and test do not — the debug JSON error
+body, Messenger's `ErrorDetailsStamp`, test output pasted in a ticket or an assistant session. The
+attribute only hides that frame's arguments: not a message, a local variable, nor a vendor call that
+receives the value next (`Cookie::create()`, Lexik). The walk and the hash exclusion are shared with the
+password guard (`tests/Support/SensitiveParameters`), so a change there moves both.
+
 **A regex of `src/` ends on `\z`, never on `$`** (issues #386, #409). In PCRE `$` also matches before a
 final `\n`, so `/^[a-z]+$/` accepts `"abc\n"`: a username, a watched-product slug and a translation field
 name all went through that way. `\z` rather than the `D` modifier: the anchor reads where it acts, and

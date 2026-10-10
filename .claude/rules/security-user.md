@@ -36,8 +36,9 @@ paths:
     (census in `tests/Support/PlainPasswordInputs`) fails on any field of `src/` whose name says "password"
     (`pass(word|wd|phrase)`, `pwd`, `mot_de_passe`, any case, `hash` excluded) and may hold a string unless
     it carries that sequence **alone**; on any such parameter without `#[SensitiveParameter]` (interfaces
-    included); on any class of `src/` naming a `Symfony\Component\PasswordHasher\` type that is not declared
-    in its `HASHERS` with the interface method the password reaches it by; and on any caller of those methods
+    included, and an implementation through its prototype's name since #414 — see
+    `.claude/rules/backend-architecture.md`); on any class of `src/` naming a `Symfony\Component\PasswordHasher\`
+    type that is not declared in its `HASHERS` with the interface method the password reaches it by; and on any caller of those methods
     that is not a declared entry point (`ENTRY_POINTS`) with what validates it (`VALIDATED_BY`: the API
     Platform resource it is the processor of, which must carry a password field, or the CLI, which must name
     both constraints). The caller census closes the gap of the name census: a field called `$secret` feeding

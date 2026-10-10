@@ -33,14 +33,8 @@ paths:
     name. Any new auth cookie goes through the factory, never `Cookie::create()` or `clearCookie()`
     inline. `__Host-` prefixing is a separate, preprod-tested step (it renames what Lexik and the frontend
     read by name).
-  - **A parameter that receives a token or a secret in clear carries `#[SensitiveParameter]`**, interfaces
-    included (issue #414, after #411 did it for passwords): `tests/Security/SecretParametersTest.php` fails
-    on any string-capable parameter of `src/` whose name matches `token|jwt|secret|api_?key` (any case,
-    `hash` excluded — `$tokenHash` is not a secret) without it. Production already strips arguments
-    (`zend.exception_ignore_args`), dev and test do not. The census is by name: `AuthCookieFactory::create($value)`
-    is hidden by hand, `CsrfCookieTokenSigner::signature($random)` is deliberately left visible (half the
-    token, useless without `APP_SECRET`). No exclusion list until a first false positive needs one.
-    The parameter walk is shared with the password guard (`tests/Support/SensitiveParameters`).
+  - **Tokens, JWTs and CSRF values are hidden from stack traces** (`#[SensitiveParameter]`, issue #414): the
+    guard covers all of `src/`, so its rule lives in `.claude/rules/backend-architecture.md`.
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
     listener at priority 20 (must run *above* the Security firewall's priority 8 — see the class docblock).
   - `Infrastructure/Http/LoginCsrfRequestListener.php` — **login-CSRF guard** (issue #76) on the two anonymous

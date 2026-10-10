@@ -6,6 +6,7 @@ namespace App\Security\User\Infrastructure\Log;
 
 use Monolog\Attribute\AsMonologProcessor;
 use Monolog\LogRecord;
+use SensitiveParameter;
 
 /**
  * Masque la valeur de `--password` dans les lignes du canal `console`
@@ -46,7 +47,8 @@ final class PasswordOptionRedactor
         );
     }
 
-    private function redact(string $text): string
+    /** `$text` porte l'argv en clair, mot de passe compris (issue #414). */
+    private function redact(#[SensitiveParameter] string $text): string
     {
         return (string) preg_replace(self::PASSWORD_VALUE, self::MASK, $text);
     }

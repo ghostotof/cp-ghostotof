@@ -12,11 +12,14 @@ use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInt
  * que la garde doit voir, caché ou non des traces d'exception, et ce qu'elle
  * doit ignorer. Hors de src/, elle n'est câblée nulle part.
  */
-final class SecretParametersFixture
+final class SecretParametersFixture implements SecretParametersFixtureInterface
 {
     /**
-     * Cinq secrets en clair, un seul caché des traces ; puis un condensat, un
-     * service, un compte et un titre, ignorés.
+     * Des secrets en clair sous toutes les graphies et tous les types qui
+     * portent une chaîne, un seul caché des traces ; puis un service, un
+     * compte et un titre, ignorés.
+     *
+     * @return list<mixed>
      */
     public function issue(
         string $jwt,
@@ -24,14 +27,55 @@ final class SecretParametersFixture
         ?string $refreshToken,
         mixed $clientSecret,
         string $apiKey,
-        string $tokenHash,
+        string $API_KEY,
+        string $bearer,
+        string|int $csrf,
         TokenStorageInterface $tokenStorage,
         int $maxTokens,
         string $title,
-    ): bool {
-        return null !== $tokenStorage->getToken()
-            && '' !== $jwt.$clearToken.$refreshToken.$tokenHash.$apiKey.$title
-            && null !== $clientSecret
-            && 0 < $maxTokens;
+    ): array {
+        return [$jwt, $clearToken, $refreshToken, $clientSecret, $apiKey, $API_KEY, $bearer, $csrf, $tokenStorage, $maxTokens, $title];
+    }
+
+    /**
+     * Le vocabulaire des secrets au-delà de « jeton » (revue de #414).
+     *
+     * @return list<string>
+     */
+    public function sign(
+        string $xsrf,
+        string $credentials,
+        string $authorization,
+        string $dsn,
+        string $privateKey,
+        string $signingKey,
+        string $hmacKey,
+        string $cookie,
+        string $signature,
+        string $nonce,
+    ): array {
+        return [$xsrf, $credentials, $authorization, $dsn, $privateKey, $signingKey, $hmacKey, $cookie, $signature, $nonce];
+    }
+
+    /**
+     * Un condensat n'est pas un secret en clair ; un nom qui contient
+     * seulement « hash » peut l'être.
+     *
+     * @return list<string>
+     */
+    public function digest(
+        string $tokenHash,
+        string $hashedSecret,
+        string $unhashedToken,
+        string $tokenToHash,
+        string $hashSecret,
+    ): array {
+        return [$tokenHash, $hashedSecret, $unhashedToken, $tokenToHash, $hashSecret];
+    }
+
+    /** Le jeton du prototype, reçu sous un nom que le recensement par nom ne verrait pas. */
+    public function verify(string $value): bool
+    {
+        return '' !== $value;
     }
 }

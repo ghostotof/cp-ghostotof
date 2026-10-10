@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ai\Assistant\Infrastructure\Http;
 
+use SensitiveParameter;
 use Symfony\Component\DependencyInjection\Attribute\AsDecorator;
 use Symfony\Component\DependencyInjection\Attribute\AutowireDecorated;
 use Symfony\Component\HttpClient\DecoratorTrait;
@@ -47,9 +48,13 @@ final class ReplayRefusingHttpClient implements HttpClientInterface, ResetInterf
     }
 
     /**
+     * `$options` porte la clé d'API (`auth_bearer`) et le corps, donc le
+     * corpus du CV nominatif : caché des traces, dont celle de la
+     * TransportException levée ici (issue #414).
+     *
      * @param array<mixed> $options
      */
-    public function request(string $method, string $url, array $options = []): ResponseInterface
+    public function request(string $method, string $url, #[SensitiveParameter] array $options = []): ResponseInterface
     {
         $body = $options['body'] ?? null;
         if (\is_string($body)) {

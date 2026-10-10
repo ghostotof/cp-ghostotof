@@ -196,10 +196,7 @@ final class PlainPasswordInputs
             return $element->getDeclaringClass()->getName().'::$'.$element->getName();
         }
 
-        $function = $element->getDeclaringFunction();
-        $owner = $element->getDeclaringClass()?->getName() ?? '';
-
-        return $owner.'::'.$function->getName().'($'.$element->getName().')';
+        return SensitiveParameters::label($element);
     }
 
     /**

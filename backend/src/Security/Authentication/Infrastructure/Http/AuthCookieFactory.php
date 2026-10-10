@@ -86,7 +86,8 @@ final readonly class AuthCookieFactory
     /**
      * `$value` porte le JWT ou le jeton CSRF : caché des traces comme dans
      * bearer() et xsrf(), bien que son nom échappe au recensement de
-     * SecretParametersTest (issue #414).
+     * {@see \App\Tests\Security\SecretParametersTest}, qui l'épingle
+     * (issue #414).
      *
      * @param self::BEARER|self::XSRF_TOKEN $name
      */
