@@ -519,6 +519,7 @@
       "expired": "This link has expired or has already been used. Ask the person who invited you for a new one.",
       "errors": {
         "tooShort": "The password must be at least {min} characters long.",
+        "tooLong": "The password is too long: {max} bytes at most (an accented character or an emoji takes up several).",
         "mismatch": "The two passwords do not match.",
         "weak-password": "This password was rejected (too common or found in a known breach). Please choose another one.",
         "rate-limited": "Too many attempts. Please try again in a few minutes.",

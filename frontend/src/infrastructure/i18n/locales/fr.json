@@ -519,6 +519,7 @@
       "expired": "Ce lien a expiré ou a déjà été utilisé. Contactez la personne qui vous a invité pour en recevoir un nouveau.",
       "errors": {
         "tooShort": "Le mot de passe doit contenir au moins {min} caractères.",
+        "tooLong": "Le mot de passe est trop long : {max} octets au plus (un caractère accenté ou un emoji en occupe plusieurs).",
         "mismatch": "Les deux mots de passe ne correspondent pas.",
         "weak-password": "Ce mot de passe a été refusé (trop courant ou présent dans une fuite connue). Choisissez-en un autre.",
         "rate-limited": "Trop de tentatives. Réessayez dans quelques minutes.",
