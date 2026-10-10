@@ -5,26 +5,30 @@ declare(strict_types=1);
 namespace App\Tests\Support;
 
 /**
- * Recense les `new \LogicException` et `new \RuntimeException` nus d'un
- * répertoire (issue #338), d'après les jetons des sources et non d'après un
- * grep : un `use LogicException;` suivi de `new LogicException`, un alias ou
- * une casse différente désignent la même classe pour PHP, et un homonyme de
- * l'espace de noms courant n'en est pas une.
+ * Recense les `new \Exception`, `new \LogicException` et `new \RuntimeException`
+ * nus d'un répertoire (issue #338), d'après les jetons des sources et non
+ * d'après un grep : un `use LogicException;` suivi de `new LogicException`, un
+ * alias, un import dans une liste à virgules ou une casse différente désignent
+ * la même classe pour PHP, et un homonyme de l'espace de noms courant n'en est
+ * pas une.
  *
  * Toute instanciation compte, levée ou non : une exception construite puis
- * levée plus loin reste une exception générique. Une sous-classe de la SPL
- * (\InvalidArgumentException…) est hors périmètre.
+ * levée plus loin reste une exception générique, et une classe anonyme qui
+ * l'étend sans rien y ajouter aussi. Les autres classes de la SPL
+ * (\InvalidArgumentException…) sont hors périmètre, voir #383.
  *
  * Limite assumée : un import groupé (`use Foo\{A, B};`) n'est pas résolu. Le
- * projet n'en écrit pas, et aucune des deux classes visées n'a d'espace de
- * noms à grouper.
+ * projet n'en écrit pas, et aucune des classes visées n'a d'espace de noms à
+ * grouper.
  */
 final class BareExceptionInstantiations
 {
     /** Noms en minuscules, sans `\` initial : PHP résout les classes sans tenir compte de la casse. */
-    private const array FORBIDDEN = ['logicexception', 'runtimeexception'];
+    private const array FORBIDDEN = ['exception', 'logicexception', 'runtimeexception'];
 
     private const array IGNORED = [\T_WHITESPACE, \T_COMMENT, \T_DOC_COMMENT];
+
+    private const array NAMES = [\T_STRING, \T_NAME_QUALIFIED, \T_NAME_FULLY_QUALIFIED];
 
     /**
      * @return list<string> `chemin:ligne` de chaque instanciation, triés pour un diagnostic stable
@@ -60,17 +64,15 @@ final class BareExceptionInstantiations
         $imports = [];
         $lines = [];
         foreach ($tokens as $index => $token) {
-            $next = $tokens[$index + 1] ?? null;
-            if (null === $next) {
-                break;
-            }
-
             if ($token->is(\T_NAMESPACE)) {
                 $namespaced = true;
             } elseif ($token->is(\T_USE)) {
-                $imports += self::import($tokens, $index + 1);
-            } elseif ($token->is(\T_NEW) && \in_array(self::resolve($next, $namespaced, $imports), self::FORBIDDEN, true)) {
-                $lines[] = $token->line;
+                $imports = array_merge($imports, self::imports($tokens, $index + 1));
+            } elseif ($token->is(\T_NEW)) {
+                $class = self::instantiatedName($tokens, $index + 1);
+                if (null !== $class && \in_array(self::resolve($class, $namespaced, $imports), self::FORBIDDEN, true)) {
+                    $lines[] = $token->line;
+                }
             }
         }
 
@@ -78,36 +80,70 @@ final class BareExceptionInstantiations
     }
 
     /**
-     * Un `use Nom;` ou `use Nom as Alias;`. Un `use` de trait ou de fonction
-     * anonyme donne au pire un alias qui ne désigne aucune classe visée.
+     * Les imports d'un `use A, B as C;`. Un `use function`/`use const`, ou le
+     * `use (…)` d'une fonction anonyme, n'importe aucune classe ; un `use` de
+     * trait donne au pire un alias qui ne désigne aucune classe visée.
      *
      * @param list<\PhpToken> $tokens
      *
      * @return array<string, string>
      */
-    private static function import(array $tokens, int $index): array
+    private static function imports(array $tokens, int $index): array
     {
-        $name = $tokens[$index] ?? null;
-        if (null === $name || !$name->is([\T_STRING, \T_NAME_QUALIFIED, \T_NAME_FULLY_QUALIFIED])) {
-            return [];
+        $imports = [];
+        while (null !== ($name = $tokens[$index] ?? null) && $name->is(self::NAMES)) {
+            $class = strtolower(ltrim($name->text, '\\'));
+            $as = $tokens[$index + 1] ?? null;
+            $explicitAlias = $tokens[$index + 2] ?? null;
+            if (null !== $as && $as->is(\T_AS) && null !== $explicitAlias && $explicitAlias->is(\T_STRING)) {
+                $imports[strtolower($explicitAlias->text)] = $class;
+                $index += 3;
+            } else {
+                // Sans `as`, l'alias est le dernier segment du nom importé.
+                $lastSeparator = strrpos($class, '\\');
+                $imports[false === $lastSeparator ? $class : substr($class, $lastSeparator + 1)] = $class;
+                ++$index;
+            }
+
+            $separator = $tokens[$index] ?? null;
+            if (null === $separator || ',' !== $separator->text) {
+                break;
+            }
+            ++$index;
         }
 
-        $class = strtolower(ltrim($name->text, '\\'));
-        $as = $tokens[$index + 1] ?? null;
-        $explicitAlias = $tokens[$index + 2] ?? null;
-        if (null !== $as && $as->is(\T_AS) && null !== $explicitAlias && $explicitAlias->is(\T_STRING)) {
-            return [strtolower($explicitAlias->text) => $class];
+        return $imports;
+    }
+
+    /**
+     * Le nom écrit après `new` : la classe instanciée, ou celle qu'étend une
+     * classe anonyme (`new class(…) extends X {}`). Null pour une expression
+     * (`new $class`) ou une classe anonyme sans parent.
+     *
+     * @param list<\PhpToken> $tokens
+     */
+    private static function instantiatedName(array $tokens, int $index): ?\PhpToken
+    {
+        $next = $tokens[$index] ?? null;
+        if (null === $next || !$next->is(\T_CLASS)) {
+            return null !== $next && $next->is(self::NAMES) ? $next : null;
         }
 
-        // Sans `as`, l'alias est le dernier segment du nom importé.
-        $lastSeparator = strrpos($class, '\\');
+        // Classe anonyme : son parent se lit avant l'accolade du corps.
+        for ($cursor = $index + 1; null !== ($token = $tokens[$cursor] ?? null) && '{' !== $token->text; ++$cursor) {
+            if ($token->is(\T_EXTENDS)) {
+                $parent = $tokens[$cursor + 1] ?? null;
 
-        return [false === $lastSeparator ? $class : substr($class, $lastSeparator + 1) => $class];
+                return null !== $parent && $parent->is(self::NAMES) ? $parent : null;
+            }
+        }
+
+        return null;
     }
 
     /**
      * La classe que PHP instancierait, en minuscules sans `\` initial ; null
-     * si ce qui suit `new` n'est pas un nom (classe anonyme, expression).
+     * pour un nom relatif à l'espace de noms courant.
      *
      * @param array<string, string> $imports
      */
@@ -115,10 +151,6 @@ final class BareExceptionInstantiations
     {
         if ($name->is(\T_NAME_FULLY_QUALIFIED)) {
             return strtolower(ltrim($name->text, '\\'));
-        }
-
-        if (!$name->is([\T_STRING, \T_NAME_QUALIFIED])) {
-            return null;
         }
 
         $segments = explode('\\', strtolower($name->text), 2);

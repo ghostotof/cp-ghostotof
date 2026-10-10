@@ -47,7 +47,12 @@ final class NoBareGenericExceptionTest extends TestCase
         yield 'importée sous un alias' => ["<?php\nnamespace App;\nuse RuntimeException as Boom;\nthrow new Boom('x');\n", [4]];
         yield 'dans une expression' => ["<?php\nnamespace App;\n\$a = \$b ?? throw new \\LogicException('x');\n", [3]];
         yield 'construite puis levée' => ["<?php\nnamespace App;\n\$e = new \\RuntimeException('x');\nthrow \$e;\n", [3]];
-        yield 'fichier sans espace de noms' => ["<?php\nthrow new LogicException('x');\n", [2]];
+        yield 'importée dans une liste à virgules' => ["<?php\nnamespace App;\nuse Foo\\Bar, RuntimeException;\nthrow new RuntimeException('x');\n", [4]];
+        yield 'liste à virgules avec alias' => ["<?php\nnamespace App;\nuse Foo\\Bar, LogicException as Boom;\nthrow new Boom('x');\n", [4]];
+        yield '\\Exception nue, plus générique encore' => ["<?php\nnamespace App;\nthrow new \\Exception('x');\n", [3]];
+        yield 'classe anonyme qui étend une exception interdite' => ["<?php\nnamespace App;\nthrow new class('x') extends \\LogicException {};\n", [3]];
+        yield 'classe anonyme qui étend une exception dédiée' => ["<?php\nnamespace App;\nthrow new class('x') extends DedicatedException {};\n", []];
+        yield 'fichier sans espace de noms' =>["<?php\nthrow new LogicException('x');\n", [2]];
         // Résolue dans l'espace de noms courant : App\LogicException, pas celle de PHP.
         yield 'homonyme de l\'espace de noms' => ["<?php\nnamespace App;\nthrow new LogicException('x');\n", []];
         yield 'exception dédiée' => ["<?php\nnamespace App;\nthrow UnsupportedOperationException::for(\$operation);\n", []];
