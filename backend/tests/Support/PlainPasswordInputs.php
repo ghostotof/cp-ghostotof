@@ -23,10 +23,11 @@ use Symfony\Component\Validator\Constraints\Sequentially;
  * un autre :
  *  - les **champs** : toute propriété qui peut porter une chaîne et dont le
  *    nom dit « mot de passe » ({@see self::NAME}) ;
- *  - les **paramètres** du même nom, dans les classes et dans leurs interfaces
- *    `App\…` ;
+ *  - les **paramètres** du même nom, dans les classes, interfaces, traits et
+ *    enums reçus, et dans les interfaces `App\…` des classes ;
  *  - les **classes qui hachent** : celles dont le code nomme un type du
- *    composant PasswordHasher, quel que soit le nom de leurs paramètres.
+ *    composant PasswordHasher, quel que soit le nom de leurs paramètres — un
+ *    trait ou une interface compris, si on les lui passe.
  *
  * Plus, pour fermer la boucle, les **appelants** d'une méthode d'interface :
  * une voie nouvelle vers un cas d'usage existant est vue même si son champ

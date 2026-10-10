@@ -88,8 +88,18 @@ or whose parameter at the same position in an `App\…` interface or parent clas
 the attribute of the implementation called, so the one on an interface is declarative, required for
 consistency, and an implementation renaming `$clearToken` to `$value` is still caught. A digest is not a
 secret: `hashed` (not `unhashed`) or a trailing `hash` (not `toHash`) excludes the name (`$tokenHash`,
-`$hashedPassword`). Scope: methods of the classes of `src/` that `DeclaredClasses` finds (not enums,
-closures, anonymous classes, free functions) and of their `App\…` interfaces and parents. A secret under
+`$hashedPassword`). Scope: methods of the classes, interfaces, traits and enums of `src/`
+(`DeclaredClasses::classLikes()`, issue #421: an enum, an interface nothing implements or a trait nothing
+uses was reached by no class) and of the classes' `App\…` interfaces and parents. **`DeclaredClasses` has
+two censuses, and each guard picks one explicitly**: `classes()` (abstract included) for a guard that
+reasons on what is thrown or instantiated (`implementing()` builds on it — `is_subclass_of()` is true of an
+interface extending the type), `classLikes()` for one that reads signatures, attributes or a file's source
+(the secret and password guards, `RegexEndAnchorTest` — the Validator merges an interface's constraints
+into its implementations). Never widen `classes()` silently. **Closures, arrow functions, anonymous
+classes and free functions stay out, an accepted limit** (#421, reasons in `SecretParametersTest`'s
+docblock): reflection cannot reach them without running the code, and a token census by name would miss
+the very case that would justify it — a callback gets its value under its contract's generic name (the
+`$value` of `app:user:create`'s password validator and normalizer). A secret under
 another name or in an `array` is hidden by hand and pinned in `HIDDEN_BY_HAND` (`AuthCookieFactory::create($value)`,
 `ReplayRefusingHttpClient::request($options)` — the Scaleway key and the nominative CV —,
 `PasswordOptionRedactor::redact($text)`); an entry the census already sees is refused there.

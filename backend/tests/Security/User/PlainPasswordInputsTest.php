@@ -18,6 +18,7 @@ use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserPasswordProcessor
 use App\Security\User\Presentation\ApiResource\AccountPasswordSetupResource;
 use App\Security\User\Presentation\ApiResource\BackofficeUserPasswordResource;
 use App\Security\User\Presentation\Command\CreateCpgUserCommand;
+use App\Tests\Security\User\Fixtures\HasherTrait\HashesThroughATraitFixture;
 use App\Tests\Security\User\Fixtures\PlainPasswordFieldsFixture;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Support\PhpSources;
@@ -86,12 +87,19 @@ use ReflectionProperty;
  * Le 3 ferme le trou du 1 : un champ nommé `$secret` qui alimenterait
  * `changePassword()` échappe au recensement par nom, pas à celui des appelants.
  *
+ * Les trois lisent les classes, interfaces, traits et enums de `src/`
+ * ({@see DeclaredClasses::classLikes()}, issue #421) : un trait qui
+ * nommerait le hasher ou appellerait `changePassword()` est lu dans son propre
+ * fichier, que la classe qui l'utilise ne cite que par `use`.
+ *
  * **Limites assumées.** Un hasher obtenu sans nommer son type (service
  * injecté par son identifiant) n'est pas vu ; un cas d'usage qui hacherait un
  * mot de passe reçu sous un nom sans « pass » non plus, mais il nommerait le
  * hasher et tomberait dans le 3. La connexion (`json_login`) n'est pas une
  * entrée de `src/` : Symfony y refuse lui-même un mot de passe au-delà de la
- * borne du hasher.
+ * borne du hasher. Les closures, fonctions fléchées, classes anonymes et
+ * fonctions hors classe ne sont pas recensées, pour les raisons que donne
+ * {@see \App\Tests\Security\SecretParametersTest}.
  */
 final class PlainPasswordInputsTest extends TestCase
 {
@@ -342,6 +350,15 @@ final class PlainPasswordInputsTest extends TestCase
     }
 
     /**
+     * Un trait qui nomme le hasher est lu dans son propre fichier : la classe
+     * qui l'utilise ne le cite que par `use` (issue #421).
+     */
+    public function testTheHasherCensusReadsATraitInItsOwnFile(): void
+    {
+        self::assertSame([HashesThroughATraitFixture::class], PlainPasswordInputs::hasherUsers($this->classesIn(__DIR__.'/Fixtures/HasherTrait')));
+    }
+
+    /**
      * @return list<ReflectionProperty>
      */
     private function srcFields(): array
@@ -379,7 +396,18 @@ final class PlainPasswordInputsTest extends TestCase
      */
     private function srcClasses(): array
     {
-        return DeclaredClasses::all(\dirname(__DIR__, 3).'/src');
+        return $this->classesIn(\dirname(__DIR__, 3).'/src');
+    }
+
+    /**
+     * Le périmètre des trois recensements, sur src/ comme sur un répertoire
+     * fixture : classes, interfaces, traits et enums (issue #421).
+     *
+     * @return list<class-string>
+     */
+    private function classesIn(string $directory): array
+    {
+        return DeclaredClasses::classLikes($directory);
     }
 
     /**

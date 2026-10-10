@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared;
 
+use App\Tests\Shared\Fixtures\RegexEndAnchor\RegexOnInterfaceFixture;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Support\DollarAnchoredPatterns;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -96,11 +97,33 @@ final class RegexEndAnchorTest extends TestCase
      * dialecte des `pattern` JSON Schema, le lit comme un « z » littéral. Le
      * schéma publié exigerait alors un « z » dans chaque slug. Tout
      * `Assert\Regex` ancré par `\z` déclare donc son `htmlPattern`.
+     *
+     * Lu sur les classes, interfaces, traits et enums de src/ (issue #421) :
+     * le Validator fusionne les contraintes d'une interface dans celles de ses
+     * implémentations, alors qu'une méthode de classe ne porte pas les
+     * attributs de la méthode d'interface qu'elle implémente.
      */
     public function testEveryRegexConstraintPublishesAPatternThatEcmaScriptReads(): void
     {
+        self::assertSame([], $this->htmlPatternsEcmaScriptMisreadsIn(self::SOURCES), 'Déclarez un htmlPattern sans \A, \z ni \Z (ECMAScript ne les connaît pas).');
+    }
+
+    public function testTheConstraintCensusReadsInterfaces(): void
+    {
+        self::assertSame(
+            // getHtmlPattern() ne retire qu'un `$` final : `\z` reste, suivi de `.*`.
+            [RegexOnInterfaceFixture::class.'::slug()#0.0 [a-z]+\z.*'],
+            $this->htmlPatternsEcmaScriptMisreadsIn(__DIR__.'/Fixtures/RegexEndAnchor'),
+        );
+    }
+
+    /**
+     * @return list<string> les `Regex` du répertoire dont le motif publié garde une ancre PCRE qu'ECMAScript ne connaît pas
+     */
+    private function htmlPatternsEcmaScriptMisreadsIn(string $directory): array
+    {
         $found = [];
-        foreach (DeclaredClasses::all(self::SOURCES) as $class) {
+        foreach (DeclaredClasses::classLikes($directory) as $class) {
             foreach ($this->regexConstraintsOf(new ReflectionClass($class)) as $where => $constraint) {
                 $htmlPattern = $constraint->getHtmlPattern();
                 if (null !== $htmlPattern && 1 === preg_match('/\\\\[AzZ]/', $htmlPattern)) {
@@ -109,7 +132,7 @@ final class RegexEndAnchorTest extends TestCase
             }
         }
 
-        self::assertSame([], $found, 'Déclarez un htmlPattern sans \A, \z ni \Z (ECMAScript ne les connaît pas).');
+        return $found;
     }
 
     /**
