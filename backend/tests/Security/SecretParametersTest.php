@@ -34,10 +34,9 @@ use ReflectionParameter;
  * `zend.exception_ignore_args = On` retire déjà les arguments des traces : le
  * risque est celui du dev, traces affichées (le corps JSON d'erreur en debug),
  * `ErrorDetailsStamp` de Messenger, journaux collés dans un ticket ou une
- * session d'assistant, et de ce que la directive ne couvre pas,
- * `debug_backtrace()` et les processus `php` qu'un test lance. L'attribut,
- * lui, vaut quelle que soit la configuration du moteur, pour `getTrace()`
- * comme pour `debug_backtrace()`.
+ * session d'assistant, et celui de `debug_backtrace()`, que la directive ne
+ * touche pas. L'attribut, lui, vaut quelle que soit la configuration du
+ * moteur, pour `getTrace()` comme pour `debug_backtrace()`.
  * Il ne cache que les **arguments**, et seulement dans la frame de la méthode
  * qui le déclare : une valeur recopiée dans le message d'une exception, dans
  * une variable locale (qu'un débogueur pas à pas affiche), ou passée ensuite

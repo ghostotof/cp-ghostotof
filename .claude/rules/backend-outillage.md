@@ -20,28 +20,8 @@ reordered by drag-and-drop with an explicit FR/EN link in the database (spec 000
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
 over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
 recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
-`tests/`, mirrors the `src/` bounded-context tree) and runnable via `php bin/phpunit` inside `make sh`.
-**Under PHPUnit, exception traces carry no call arguments** (issue #420, decision pending the owner's
-confirmation): `phpunit.dist.xml` sets `<ini name="zend.exception_ignore_args" value="1"/>`, as
-`php.prod.ini` does in the deployed images. Why: `#[SensitiveParameter]` (#411, #414) only covers `src/`,
-the vendor keeps its arguments (`Cookie::create($value)`, `JWTManager::parse($token)`,
-`LcobucciJWTEncoder::decode($token)`…), and the risk those issues target is a test trace pasted in a
-ticket or an assistant session. Measured on 2026-10-10 before deciding: **CI already ran with it On** —
-`setup-php` loads `php.ini-production` by default (`ini-file: production`), which sets it, while the dev
-container has no `php.ini` at all (PHP's built-in default, Off) — so the setting mostly aligns the
-developer's machine with CI and production; the directive is `PHP_INI_ALL`, so PHPUnit's `ini_set()`
-applies it. **PHPUnit's own report loses nothing**: it prints a trace as `file:line` and its exporter
-skips an exception's `trace`; what loses the arguments is a trace a test or Symfony renders itself
-(`getTraceAsString()`, `FlattenException` in Symfony's debug `ProblemNormalizer` body or Messenger's
-`ErrorDetailsStamp`, a `dump()`). API Platform's debug body strips them anyway (`Error::getTrace()`). No
-test asserted on trace arguments, and the #411/#414 guards read the attribute by reflection, never a
-trace, so none became vacuous. To debug with arguments, a local `phpunit.xml` (gitignored) sets it back
-to 0. **Not covered**: `debug_backtrace()` (the directive only acts on exceptions — measured), the frame
-of a `require`, which keeps the included path, and the `php` child processes some tests spawn
-(`Process`), which start from the container's own configuration. `ExceptionArgumentsHiddenInTestsTest`
-pins both the file entry (the runtime check alone would stay green in CI without it) and the effect, on
-`getTrace()` and on a `FlattenException`. That is also why the #411/#414 guards stay: dev (`APP_DEBUG`
-error bodies over HTTP) still runs with it Off.
+`tests/`, mirrors the `src/` bounded-context tree) and runnable via `php bin/phpunit` inside `make sh`;
+its traces carry no call arguments (see the last section, issue #420).
 **PHPStan** is configured (`backend/phpstan.dist.neon`, level `max` + `phpstan-strict-rules` +
 `phpstan-symfony`/`-doctrine`/`-phpunit`/`-deprecation-rules` via `extension-installer`): run it with
 `composer phpstan` inside `make sh` (warms the dev container first), CI job `phpstan-backend` (blocking,
@@ -114,3 +94,30 @@ Vitest configured with `npm test`. A `ROLE_SUPER`-gated backoffice (`/admin` on 
 on the backend) lets an authenticated super-admin manage all of the above content plus user accounts — see
 `.claude/rules/backoffice-api.md` and `.claude/rules/frontend-backoffice.md`.
 
+## Exception traces under PHPUnit (issue #420)
+
+`phpunit.dist.xml` sets `<ini name="zend.exception_ignore_args" value="1"/>`, as `php.prod.ini` does in
+the deployed images: a trace carries no call arguments. `#[SensitiveParameter]` (#411, #414, see
+`.claude/rules/backend-architecture.md`) only covers `src/`; the vendor keeps its arguments
+(`Cookie::create($value)`, `JWTManager::parse($token)`, `LcobucciJWTEncoder::decode($token)`…), and the
+risk is a test trace pasted in a ticket or an assistant session. Facts measured before deciding
+(2026-10-10): **CI already ran with it On** — `setup-php` loads `php.ini-production` by default
+(`ini-file: production`) — while no ini file of the dev container sets it (no `php.ini`, `php.dev.ini`
+as `conf.d/zz-app.ini` is silent: PHP's built-in Off); the directive is `PHP_INI_ALL`, so PHPUnit's
+`ini_set()` applies it. **PHPUnit's report loses nothing**: it prints a trace as `file:line`, and its
+exporter skips an exception's `trace`. What loses the arguments is a trace rendered by a test or by
+Symfony (`getTraceAsString()`, a `FlattenException` in Messenger's `ErrorDetailsStamp` or in the debug
+`ProblemNormalizer` body of a non-API-Platform route — API Platform's own debug body already drops them).
+No test asserted on trace arguments, and the #411/#414 guards read the attribute by reflection, never
+a trace, so none became vacuous. **A `php` process a test starts** does not get PHPUnit's `<ini>`: it is
+built by `tests/Support/ChildPhpProcess::command()`, which passes the parent's value with `-d` (its
+stderr, trace included, ends up in the failure message). **To debug with arguments**, write a local
+`phpunit.xml` (gitignored, read instead of the dist file) set to 0 — `bin/phpunit -d …=0` does not
+work, the XML `<ini>` is applied after the CLI one. The two runtime tests then **skip**, naming the
+cause, rather than fail. `ExceptionArgumentsHiddenInTestsTest` pins the dist entry (the runtime checks
+alone would stay green in CI without it), the effect on `getTrace()` and on a `FlattenException`, the
+child's value, and that no test names `PHP_BINARY` outside the helper. **Not covered**:
+`debug_backtrace()` (the directive only acts on exceptions — measured), the frame of a `require`, which
+keeps the included path, a child started otherwise than through `PHP_BINARY` (`PhpExecutableFinder`, a
+literal `php`), and dev over HTTP (`APP_DEBUG` error bodies, Off there) — which is why the #411/#414
+guards stay.
