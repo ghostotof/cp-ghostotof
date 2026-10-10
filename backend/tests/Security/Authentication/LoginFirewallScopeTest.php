@@ -115,8 +115,11 @@ final class LoginFirewallScopeTest extends WebTestCase
         // bien été comptées sur la même clé.
         $this->attemptLogin($client, '/api/login_check', TestCredentials::plainPassword());
 
-        self::assertResponseStatusCodeSame(401);
-        self::assertStringContainsStringIgnoringCase('too many failed login attempts', (string) $client->getResponse()->getContent());
+        // Le refus de débit de login_throttling (issue #399).
+        self::assertResponseStatusCodeSame(429);
+        $problem = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($problem);
+        self::assertSame('/errors/rate-limited', $problem['type'] ?? null);
         self::assertNull($client->getCookieJar()->get(AuthCookieFactory::BEARER));
     }
 

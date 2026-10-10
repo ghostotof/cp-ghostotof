@@ -7,6 +7,7 @@ namespace App\Tests\Security\Authentication\Infrastructure\Log;
 use App\Ai\Assistant\Domain\Exception\AssistantRateLimitExceededException;
 use App\Ai\Translation\Domain\Exception\TranslationRateLimitExceededException;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
+use App\Security\Authentication\Domain\Exception\LoginRateLimitExceededException;
 use App\Security\Authentication\Infrastructure\Log\ThrottledRequestAuditListener;
 use App\Shared\Domain\Exception\RetryAfterAware;
 use App\Tests\Security\Authentication\Infrastructure\Log\Fixtures\QuotaSources\UnauditedQuotaFixtureException;
@@ -22,7 +23,7 @@ use Throwable;
 /**
  * Toute exception de quota de src/ est soit tracée sur `security_audit` par
  * ThrottledRequestAuditListener, soit justifiée comme quota par compte
- * (issue #361).
+ * (issue #361), soit justifiée comme tracée en amont de sa levée (issue #399).
  *
  * L'écouteur trie en liste fermée, quand RetryAfterListener lit
  * RetryAfterAware de façon générique : un nouveau limiteur anonyme aurait son
@@ -57,11 +58,21 @@ final class ThrottledRequestAuditCoverageTest extends TestCase
     ];
 
     /**
+     * Quotas déjà tracés sur `security_audit` par un autre émetteur, *avant*
+     * que leur exception ne soit levée : l'écouteur doit les ignorer, sinon le
+     * refus serait écrit deux fois. Chacun avec l'émetteur et le test qui fige
+     * sa trace.
+     */
+    private const array TRACED_UPSTREAM = [
+        LoginRateLimitExceededException::class => 'Refus de login_throttling (issue #399) : `login-throttled`, avec l\'identifiant tenté, est émis par SecurityEventsSubscriber sur LoginFailureEvent (priorité 0), avant que LoginThrottlingRefusalListener (-200) ne lève l\'exception (SecurityAuditLogTest::testASixthFailedLoginIsRecordedAsThrottledNotAsFailed).',
+    ];
+
+    /**
      * Un événement de quota se nomme `…Throttled` (`<route>-throttled` dans le
-     * journal). Ceux-ci portent ce suffixe sans être un quota de requête.
+     * journal). Ceux-ci portent ce suffixe sans être émis par l'écouteur.
      */
     private const array NOT_QUOTA_EVENTS = [
-        'loginThrottled' => 'login_throttling de Symfony : échecs de connexion comptés par identifiant, réponse 401, émis par SecurityEventsSubscriber.',
+        'loginThrottled' => 'login_throttling de Symfony : échecs de connexion comptés par (IP, identifiant), émis par SecurityEventsSubscriber, qui seul connaît l\'identifiant tenté. Le quota correspondant est dans TRACED_UPSTREAM.',
     ];
 
     /**
@@ -78,30 +89,35 @@ final class ThrottledRequestAuditCoverageTest extends TestCase
         self::assertNotEmpty($quotas, 'Aucune exception de quota recensée : le garde-fou ne garderait rien.');
 
         $audited = [];
-        foreach (array_diff($quotas, array_keys(self::PER_ACCOUNT)) as $class) {
+        foreach (array_diff($quotas, array_keys(self::PER_ACCOUNT), array_keys(self::TRACED_UPSTREAM)) as $class) {
             $audited[$class] = $this->auditMethodsCalledFor($class);
         }
 
         self::assertSame(
             [],
             $this->violations($audited),
-            'Chaque exception de quota doit être triée par ThrottledRequestAuditListener vers un événement `…Throttled` qui n\'appartient qu\'à elle, ou justifiée dans PER_ACCOUNT.',
+            'Chaque exception de quota doit être triée par ThrottledRequestAuditListener vers un événement `…Throttled` qui n\'appartient qu\'à elle, ou justifiée dans PER_ACCOUNT ou TRACED_UPSTREAM.',
         );
     }
 
     /**
      * Une justification ne vaut que pour un quota qui existe et que
-     * l'écouteur ignore bel et bien : sinon elle ment, ou un quota par compte
-     * est entré dans le journal de sécurité.
+     * l'écouteur ignore bel et bien : sinon elle ment, un quota par compte
+     * est entré dans le journal de sécurité, ou un refus déjà tracé l'est
+     * deux fois.
      */
-    public function testEveryJustifiedQuotaExistsAndStaysOutOfTheSecurityAudit(): void
+    public function testEveryJustifiedQuotaExistsAndIsLeftAloneByTheListener(): void
     {
         $quotas = $this->quotaExceptions(self::SOURCES);
+        $justified = [
+            ...array_map(static fn (): string => 'quota par compte', self::PER_ACCOUNT),
+            ...array_map(static fn (): string => 'tracé en amont', self::TRACED_UPSTREAM),
+        ];
 
-        self::assertSame([], array_values(array_diff(array_keys(self::PER_ACCOUNT), $quotas)), 'Justification d\'une exception de quota qui n\'existe plus : la retirer.');
+        self::assertSame([], array_values(array_diff(array_keys($justified), $quotas)), 'Justification d\'une exception de quota qui n\'existe plus : la retirer.');
 
-        foreach (array_keys(self::PER_ACCOUNT) as $class) {
-            self::assertSame([], $this->auditMethodsCalledFor($class), $class.' est justifiée comme quota par compte, mais l\'écouteur la trace sur `security_audit`.');
+        foreach ($justified as $class => $reason) {
+            self::assertSame([], $this->auditMethodsCalledFor($class), $class.' est justifiée ('.$reason.'), mais l\'écouteur la trace sur `security_audit`.');
         }
     }
 

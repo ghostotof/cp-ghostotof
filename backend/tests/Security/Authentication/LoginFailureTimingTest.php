@@ -171,9 +171,13 @@ final class LoginFailureTimingTest extends WebTestCase
             self::assertStringNotContainsStringIgnoringCase('too many', (string) $response->getContent());
         }
 
+        // Le refus de débit (issue #399), le même que pour un identifiant connu
+        // (LoginThrottlingTest) : il ne dit rien de l'existence du compte.
         $response = $this->attemptLogin($client, $unknown, 'wrong-password');
-        self::assertSame(401, $response->getStatusCode());
-        self::assertStringContainsStringIgnoringCase('too many failed login attempts', (string) $response->getContent());
+        self::assertSame(429, $response->getStatusCode());
+        $problem = json_decode((string) $response->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($problem);
+        self::assertSame('/errors/rate-limited', $problem['type'] ?? null);
     }
 
     /**
