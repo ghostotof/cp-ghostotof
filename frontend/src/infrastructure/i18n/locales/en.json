@@ -463,6 +463,7 @@
     "passwordLabel": "Password",
     "submit": "Log in",
     "invalidCredentials": "Incorrect username or password.",
+    "rateLimited": "Too many login attempts. Please try again in a few minutes.",
     "genericError": "Something went wrong, please try again."
   },
   "contact": {

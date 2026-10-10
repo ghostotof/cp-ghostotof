@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HttpAuthRepository } from '../../../src/infrastructure/auth/HttpAuthRepository'
 import { InvalidCredentialsError } from '../../../src/domain/auth/errors/InvalidCredentialsError'
+import { LoginRateLimitedError } from '../../../src/domain/auth/errors/LoginRateLimitedError'
 
 function stubFetch(status: number, body: unknown = undefined): ReturnType<typeof vi.fn> {
   const fetchMock = vi.fn(async () => ({
@@ -93,5 +94,15 @@ describe('HttpAuthRepository.login()', () => {
     stubFetch(401)
 
     await expect(new HttpAuthRepository('https://api.example.test').login(username, 'wrong')).rejects.toBeInstanceOf(InvalidCredentialsError)
+  })
+
+  /**
+   * Issue #399 : le refus de `login_throttling` répond 429 `/errors/rate-limited`,
+   * comme la zone nginx `login` — les deux mènent au même message.
+   */
+  it('429 : LoginRateLimitedError, pas une erreur générique', async () => {
+    stubFetch(429, { type: '/errors/rate-limited', status: 429 })
+
+    await expect(new HttpAuthRepository('https://api.example.test').login(username, 'wrong')).rejects.toBeInstanceOf(LoginRateLimitedError)
   })
 })
