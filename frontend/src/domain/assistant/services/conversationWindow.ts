@@ -10,7 +10,8 @@ export const MAX_WINDOW_MESSAGES = 11
 /** Total maximal de la conversation envoyée. */
 export const MAX_CONVERSATION_LENGTH = 16000
 export const MAX_QUESTION_LENGTH = 1000
-export const MAX_ANSWER_LENGTH = 4000
+/** 5 000 (issue #406) : une réponse anglaise pleine, `max_tokens` 1 024, fait ~4 230 caractères. */
+export const MAX_ANSWER_LENGTH = 5000
 
 /** Longueur en points de code (un émoji hors BMP compte pour 1). */
 export function codePointLength(text: string): number {
@@ -48,7 +49,7 @@ function extractExchanges(history: readonly AssistantMessage[]): Exchange[] {
       answer.role === 'assistant' &&
       answer.status !== 'streaming'
     ) {
-      // La non-vacuité se juge sur la réponse tronquée : 4 000 blancs suivis de texte
+      // La non-vacuité se juge sur la réponse tronquée : 5 000 blancs suivis de texte
       // deviendraient une réponse blanche, que le backend refuse (422).
       const truncated = truncateToCodePoints(answer.content, MAX_ANSWER_LENGTH)
       if (truncated.trim() === '') {
@@ -70,7 +71,7 @@ function extractExchanges(history: readonly AssistantMessage[]): Exchange[] {
 /**
  * Historique affiché + nouvelle question → ce qui part au backend, toujours valide
  * pour `Conversation` : alternance stricte, premier et dernier message `user`,
- * nombre impair ≤ 11, réponses ≤ 4 000 et total ≤ 16 000 points de code.
+ * nombre impair ≤ 11, réponses ≤ 5 000 et total ≤ 16 000 points de code.
  * Les échanges les plus anciens tombent en premier ; la question reste toujours.
  */
 export function buildConversationWindow(

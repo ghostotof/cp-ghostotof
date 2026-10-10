@@ -395,9 +395,9 @@ final class AnswerControllerTest extends WebTestCase
 
         yield '13 messages' => [$alternating(13)];
         yield 'message utilisateur de 1 001 caractères' => [[['role' => 'user', 'content' => str_repeat('a', 1001)]]];
-        yield "message de l'assistant de 4 001 caractères" => [[
+        yield "message de l'assistant de 5 001 caractères" => [[
             ['role' => 'user', 'content' => 'Question ?'],
-            ['role' => 'assistant', 'content' => str_repeat('a', 4001)],
+            ['role' => 'assistant', 'content' => str_repeat('a', 5001)],
             ['role' => 'user', 'content' => 'Question ?'],
         ]];
         // Chaque message sous sa propre borne, le total au-dessus :
