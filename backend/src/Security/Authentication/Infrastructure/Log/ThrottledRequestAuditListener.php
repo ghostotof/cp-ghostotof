@@ -28,6 +28,11 @@ use Symfony\Component\HttpKernel\Event\ExceptionEvent;
  * de ces deux rendus, qui arrêtent la propagation. Seule la requête
  * principale compte. Le quota du traducteur, ROLE_SUPER, n'est pas trié ici :
  * il se trace sur `ai_usage` avec le compte.
+ *
+ * Le tri est une liste fermée, quand RetryAfterListener lit RetryAfterAware
+ * de façon générique : ThrottledRequestAuditCoverageTest exige que chaque
+ * RetryAfterAware de src/ y figure, avec son propre événement, ou soit
+ * justifiée comme quota par compte (issue #361).
  */
 #[AsEventListener(event: ExceptionEvent::class, priority: 0)]
 final readonly class ThrottledRequestAuditListener

@@ -15,6 +15,11 @@ namespace App\Shared\Domain\Exception;
  * sans accesseur à écrire, et le nom lu par leurs appelants ne change pas.
  * Le domaine n'en dépend d'aucun composant HTTP : une échéance est un fait
  * métier, l'en-tête en est la traduction, faite en infrastructure.
+ *
+ * Une nouvelle exception de quota doit aussi être tracée : triée par
+ * ThrottledRequestAuditListener si c'est un quota par IP de route anonyme,
+ * justifiée comme quota par compte sinon. ThrottledRequestAuditCoverageTest
+ * rougit tant qu'elle n'est ni l'une ni l'autre (issue #361).
  */
 interface RetryAfterAware
 {

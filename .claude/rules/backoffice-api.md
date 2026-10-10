@@ -228,5 +228,7 @@ paths:
   priority 64** and sets the header at `kernel.response` — **on a 429 only** (a failed render that ends in a 500 must not carry it) — with an injected `ClockInterface`. 64 is not
   arbitrary: it must sit above every listener that *builds* the 429 and so stops propagation — API
   Platform (-96) and, on a controller, `ApiProblemResponseListener` (-98). A new quota exception implements the interface; never write a fifth
-  per-context copy. `RateLimiterLockFailureListener` stays apart on purpose (fixed delay, priority 16).
+  per-context copy. It must also be traced: `ThrottledRequestAuditCoverageTest` (issue #361) wants every
+  `RetryAfterAware` either sorted by `ThrottledRequestAuditListener` or justified as a per-account quota
+  (see `.claude/rules/security-authentication.md`). `RateLimiterLockFailureListener` stays apart on purpose (fixed delay, priority 16).
 

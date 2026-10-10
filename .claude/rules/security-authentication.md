@@ -161,7 +161,12 @@ paths:
     nginx zones (10/min/IP contact, 20/min/IP base-access), well below what `csrf-rejected` already allows.
     **Blind spots of the listener**: a 429 answered by nginx's `limit_req` never reaches PHP (the access log
     is its trace), and a quota exception wrapped in another one would go unseen (`instanceof` on the
-    top-level throwable only). **Replay and expiry must cost the same**: `findOneByTokenHash` loads the
+    top-level throwable only). **The sort is a closed list, so a guard holds it open** (issue #361):
+    `ThrottledRequestAuditCoverageTest` walks every `RetryAfterAware` of `src/` (through `DeclaredClasses`),
+    hands each one to the real listener, and turns red unless it yields exactly one event of its own or
+    sits in `PER_ACCOUNT` with a justification (the translator and the assistant, both on `ai_usage`). A new
+    anonymous quota therefore gets its interface method, its `match` arm and its event in the same change —
+    never a `PER_ACCOUNT` entry to make the suite pass. **Replay and expiry must cost the same**: `findOneByTokenHash` loads the
     account by explicit join, so the `replayed` path, which logs it, pays no extra query behind the
     shared 410 — keep the join. **Consumption is atomic**: `PasswordSetupService::complete()` hashes, then
     `PasswordSetupTokenRepository::claim()` (`UPDATE … WHERE used_at IS NULL`, one row or none), and only
