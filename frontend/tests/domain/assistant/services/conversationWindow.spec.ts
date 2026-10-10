@@ -72,7 +72,7 @@ describe('buildConversationWindow', () => {
   })
 
   it('écarte l\'échange dont la réponse devient blanche une fois tronquée', () => {
-    // 4 000 blancs puis du texte : non blanche en entrée, blanche après troncature (422 backend).
+    // MAX_ANSWER_LENGTH blancs puis du texte : non blanche en entrée, blanche après troncature (422 backend).
     const out = buildConversationWindow([q('q1'), a(' '.repeat(MAX_ANSWER_LENGTH) + 'utile')], 'fin')
     expect(out.map((m) => m.content)).toEqual(['fin'])
   })
@@ -82,9 +82,16 @@ describe('buildConversationWindow', () => {
     expect(out.map((m) => m.content)).toEqual(['q1', 'début', 'fin'])
   })
 
-  it('tronque une réponse de 4 500 caractères à 4 000', () => {
+  // Issue #406 : une réponse anglaise pleine (max_tokens 1 024) fait ~4 230
+  // caractères. Valeurs en dur : le test fixe la borne au lieu de la suivre.
+  it('garde intacte une réponse de 4 500 caractères', () => {
     const out = buildConversationWindow([q('q1'), a('x'.repeat(4500))], 'fin')
-    expect(codePointLength(out[1].content)).toBe(MAX_ANSWER_LENGTH)
+    expect(codePointLength(out[1].content)).toBe(4500)
+  })
+
+  it('tronque une réponse de 5 500 caractères à 5 000', () => {
+    const out = buildConversationWindow([q('q1'), a('x'.repeat(5500))], 'fin')
+    expect(codePointLength(out[1].content)).toBe(5000)
   })
 
   it('retire les échanges les plus anciens au-delà de 16 000, la question restant', () => {
