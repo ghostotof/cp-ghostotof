@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Security\User\Domain\Exception;
 
 use App\Shared\Domain\Exception\RetryAfterAware;
+use DateTimeImmutable;
+use DomainException;
 
 /**
  * Levée lorsqu'un même client (identifié par IP, cf.
@@ -14,9 +16,9 @@ use App\Shared\Domain\Exception\RetryAfterAware;
  * l'en-tête Retry-After est posé par App\Shared\Infrastructure\Http\RetryAfterListener
  * à partir de $retryAfter (RetryAfterAware).
  */
-final class PasswordSetupRateLimitExceededException extends \DomainException implements RetryAfterAware
+final class PasswordSetupRateLimitExceededException extends DomainException implements RetryAfterAware
 {
-    public function __construct(public readonly \DateTimeImmutable $retryAfter)
+    public function __construct(public readonly DateTimeImmutable $retryAfter)
     {
         parent::__construct('Trop de tentatives depuis cette adresse IP. Réessayez plus tard.');
     }

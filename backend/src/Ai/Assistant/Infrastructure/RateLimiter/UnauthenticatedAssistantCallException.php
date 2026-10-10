@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Ai\Assistant\Infrastructure\RateLimiter;
 
+use LogicException;
+
 /**
  * L'assistant a été appelé sans compte authentifié (issue #323). L'access_control
  * réserve la route à ROLE_TRUSTED, donc arriver jusqu'au quota sans compte est
@@ -14,7 +16,7 @@ namespace App\Ai\Assistant\Infrastructure\RateLimiter;
  * \LogicException parce que c'en est une, sous un nom qui se cible dans
  * `framework.exceptions` et se reconnaît dans les journaux. Message littéral.
  */
-final class UnauthenticatedAssistantCallException extends \LogicException
+final class UnauthenticatedAssistantCallException extends LogicException
 {
     public function __construct()
     {

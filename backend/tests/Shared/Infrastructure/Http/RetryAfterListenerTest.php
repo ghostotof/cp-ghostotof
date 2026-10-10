@@ -6,6 +6,8 @@ namespace App\Tests\Shared\Infrastructure\Http;
 
 use App\Shared\Domain\Exception\RetryAfterAware;
 use App\Shared\Infrastructure\Http\RetryAfterListener;
+use DateTimeImmutable;
+use DomainException;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpFoundation\Request;
@@ -13,6 +15,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\Event\ResponseEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
+use Throwable;
 
 /**
  * Test unitaire de l'écouteur commun `Retry-After` (issue #273). L'horloge
@@ -74,7 +77,7 @@ final class RetryAfterListenerTest extends TestCase
 
     public function testAnExceptionWithoutDeadlineLeavesTheResponseAlone(): void
     {
-        $response = $this->respondTo(new \DomainException('autre chose'));
+        $response = $this->respondTo(new DomainException('autre chose'));
 
         self::assertFalse($response->headers->has('Retry-After'));
     }
@@ -89,7 +92,7 @@ final class RetryAfterListenerTest extends TestCase
         self::assertFalse($response->headers->has('Retry-After'));
     }
 
-    private function respondTo(\Throwable $exception, int $status = 429): Response
+    private function respondTo(Throwable $exception, int $status = 429): Response
     {
         $listener = new RetryAfterListener($this->clock);
         $request = Request::create('/api/contact', 'POST');
@@ -116,14 +119,14 @@ final class RetryAfterListenerTest extends TestCase
         );
     }
 
-    private function quotaExceeded(string $offset): \Throwable
+    private function quotaExceeded(string $offset): Throwable
     {
         // Dérivée de l'horloge elle-même : MockClock est en UTC, un
         // `new \DateTimeImmutable()` suivrait le fuseau par défaut de PHP.
         $deadline = $this->clock->now()->modify($offset);
 
-        return new class($deadline) extends \DomainException implements RetryAfterAware {
-            public function __construct(public readonly \DateTimeImmutable $retryAfter)
+        return new class($deadline) extends DomainException implements RetryAfterAware {
+            public function __construct(public readonly DateTimeImmutable $retryAfter)
             {
                 parent::__construct('quota atteint');
             }

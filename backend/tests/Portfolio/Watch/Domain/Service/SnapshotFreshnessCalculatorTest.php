@@ -6,6 +6,7 @@ namespace App\Tests\Portfolio\Watch\Domain\Service;
 
 use App\Portfolio\Watch\Domain\Service\SnapshotFreshnessCalculator;
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotFreshness;
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 
 final class SnapshotFreshnessCalculatorTest extends TestCase
@@ -21,7 +22,7 @@ final class SnapshotFreshnessCalculatorTest extends TestCase
 
     private function freshnessAfter(string $modifier): SnapshotFreshness
     {
-        $now = new \DateTimeImmutable(self::NOW);
+        $now = new DateTimeImmutable(self::NOW);
 
         return $this->calculator->freshnessFor($now->modify($modifier), $now);
     }
@@ -30,7 +31,7 @@ final class SnapshotFreshnessCalculatorTest extends TestCase
     {
         self::assertSame(
             SnapshotFreshness::NEVER_REFRESHED,
-            $this->calculator->freshnessFor(null, new \DateTimeImmutable(self::NOW)),
+            $this->calculator->freshnessFor(null, new DateTimeImmutable(self::NOW)),
         );
     }
 

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Ai\Assistant\Infrastructure\Pdf;
 
+use RuntimeException;
+
 /**
  * Le texte extrait du CV nominatif n'a pas pu être normalisé (PCRE en échec,
  * typiquement un UTF-8 invalide). Levée par ExtractedTextNormalizer plutôt que
@@ -13,6 +15,6 @@ namespace App\Ai\Assistant\Infrastructure\Pdf;
  *
  * Le message est toujours littéral et ne cite jamais le texte (D10).
  */
-final class CvTextExtractionException extends \RuntimeException
+final class CvTextExtractionException extends RuntimeException
 {
 }

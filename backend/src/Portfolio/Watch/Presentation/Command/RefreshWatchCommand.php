@@ -7,6 +7,7 @@ namespace App\Portfolio\Watch\Presentation\Command;
 use App\Portfolio\Watch\Application\ReleaseCyclesRefreshReport;
 use App\Portfolio\Watch\Application\VulnerabilityRefreshReport;
 use App\Portfolio\Watch\Application\WatchRefresherInterface;
+use DateTimeImmutable;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -63,7 +64,7 @@ final class RefreshWatchCommand extends Command
             $io->note('Simulation : aucune écriture ne sera effectuée.');
         }
 
-        $report = $this->refresher->refresh(new \DateTimeImmutable(), $dryRun);
+        $report = $this->refresher->refresh(new DateTimeImmutable(), $dryRun);
 
         $this->describeReleaseCycles($io, $report->releaseCycles);
         $this->describeVulnerabilities($io, $report->vulnerabilities);

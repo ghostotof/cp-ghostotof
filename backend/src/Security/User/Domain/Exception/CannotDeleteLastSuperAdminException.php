@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Security\User\Domain\Exception;
 
 use App\Security\User\Domain\Entity\CpgUser;
+use DomainException;
 
 /**
  * Exception métier levée lorsqu'un ROLE_SUPER tente de supprimer le dernier
@@ -12,7 +13,7 @@ use App\Security\User\Domain\Entity\CpgUser;
  * backoffice deviendrait inaccessible et ne pourrait être récupéré qu'en
  * ligne de commande (app:user:create --role=ROLE_SUPER).
  */
-final class CannotDeleteLastSuperAdminException extends \DomainException
+final class CannotDeleteLastSuperAdminException extends DomainException
 {
     public static function forUsername(string $username): self
     {

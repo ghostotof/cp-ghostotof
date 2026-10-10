@@ -7,6 +7,7 @@ namespace App\Tests\Security\Authentication\Infrastructure\Log;
 use App\Security\Authentication\Infrastructure\Log\SecurityAuditLogger;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\ValueObject\GuestUser;
+use Closure;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
@@ -357,7 +358,7 @@ final class SecurityAuditLoggerTest extends TestCase
      * limiteur est l'IP, déjà dans la ligne, et le chemin dit lequel.
      */
     #[DataProvider('anonymousQuotaRefusals')]
-    public function testAnAnonymousQuotaRefusalCarriesNoSubjectOnlyTheIpAndThePath(\Closure $refuse, string $path, string $event): void
+    public function testAnAnonymousQuotaRefusalCarriesNoSubjectOnlyTheIpAndThePath(Closure $refuse, string $path, string $event): void
     {
         $this->pushRequest($path, 'POST');
 
@@ -372,7 +373,7 @@ final class SecurityAuditLoggerTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{\Closure(SecurityAuditLogger): void, string, string}>
+     * @return iterable<string, array{Closure(SecurityAuditLogger):void, string, string}>
      */
     public static function anonymousQuotaRefusals(): iterable
     {

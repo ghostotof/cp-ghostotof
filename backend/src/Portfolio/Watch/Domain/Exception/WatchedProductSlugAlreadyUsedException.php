@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Domain\Exception;
 
+use DomainException;
+
 /**
  * Exception métier levée quand un produit est déjà suivi sous ce slug.
  *
@@ -11,7 +13,7 @@ namespace App\Portfolio\Watch\Domain\Exception;
  * slug afficheraient deux lignes identiques dans le radar, alimentées par le
  * même appel sortant.
  */
-final class WatchedProductSlugAlreadyUsedException extends \DomainException
+final class WatchedProductSlugAlreadyUsedException extends DomainException
 {
     public static function forSlug(string $slug): self
     {

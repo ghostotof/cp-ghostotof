@@ -13,6 +13,7 @@ use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\Lock\Exception\LockAcquiringException;
 use Symfony\Component\Lock\Exception\LockConflictedException;
 use Symfony\Component\Lock\Exception\LockReleasingException;
+use Throwable;
 
 /**
  * Panne du verrou des limiteurs de débit → 503 problem+json avec Retry-After
@@ -133,7 +134,7 @@ final readonly class RateLimiterLockFailureListener
      * La chaîne des `previous` est parcourue : un appelant qui rattraperait la
      * panne pour la relancer en contexte ne doit pas la faire retomber en 500.
      */
-    private function isLockFailure(\Throwable $throwable): bool
+    private function isLockFailure(Throwable $throwable): bool
     {
         for ($current = $throwable; null !== $current; $current = $current->getPrevious()) {
             if ($current instanceof LockAcquiringException
@@ -147,9 +148,9 @@ final readonly class RateLimiterLockFailureListener
     }
 
     /**
-     * @return list<class-string<\Throwable>>
+     * @return list<class-string<Throwable>>
      */
-    private function exceptionClasses(\Throwable $throwable): array
+    private function exceptionClasses(Throwable $throwable): array
     {
         $classes = [];
 

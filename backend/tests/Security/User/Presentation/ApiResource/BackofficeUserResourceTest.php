@@ -9,6 +9,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use RuntimeException;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Uid\Uuid;
@@ -181,7 +182,7 @@ final class BackofficeUserResourceTest extends WebTestCase
             }
         }
 
-        throw new \RuntimeException(sprintf('User "%s" not found in collection.', $username));
+        throw new RuntimeException(sprintf('User "%s" not found in collection.', $username));
     }
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string

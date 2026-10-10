@@ -6,6 +6,7 @@ namespace App\Tests\Shared\Domain\ValueObject;
 
 use App\Shared\Domain\Exception\InvalidRetentionPeriodException;
 use App\Shared\Domain\ValueObject\RetentionPeriod;
+use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -90,8 +91,8 @@ final class RetentionPeriodTest extends TestCase
         }
     }
 
-    private function now(): \DateTimeImmutable
+    private function now(): DateTimeImmutable
     {
-        return new \DateTimeImmutable(self::NOW);
+        return new DateTimeImmutable(self::NOW);
     }
 }

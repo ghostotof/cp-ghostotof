@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Portfolio\Watch\Application;
 
+use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Watch\Application\WatchedProductAdministrator;
 use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductNotFoundException;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductSlugAlreadyUsedException;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductSlugIsImmutableException;
-use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Watch\Domain\Repository\WatchedProductRepositoryInterface;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use PHPUnit\Framework\MockObject\MockObject;

@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Quality\Infrastructure\ApiPlatform;
 
-use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
-use App\Portfolio\Quality\Domain\Entity\QualityTrait;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
 use App\Portfolio\Quality\Application\QualityPrinciplePresenterInterface;
 use App\Portfolio\Quality\Application\QualityTraitPresenterInterface;
+use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
+use App\Portfolio\Quality\Domain\Entity\QualityTrait;
 use App\Portfolio\Quality\Domain\Repository\QualityPrincipleRepositoryInterface;
 use App\Portfolio\Quality\Domain\Repository\QualityTraitRepositoryInterface;
 use App\Portfolio\Quality\Presentation\ApiResource\QualityContentResource;

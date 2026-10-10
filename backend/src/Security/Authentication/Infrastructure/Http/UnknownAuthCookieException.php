@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Http;
 
+use InvalidArgumentException;
+
 /**
  * `AuthCookieFactory::expired()` a reçu un nom qui n'est ni `BEARER` ni
  * `XSRF-TOKEN` (issue #383).
@@ -13,7 +15,7 @@ namespace App\Security\Authentication\Infrastructure\Http;
  * entrée `exception_to_status`, plutôt que d'expirer un cookie qui n'est pas
  * celui de la fabrique.
  */
-final class UnknownAuthCookieException extends \InvalidArgumentException
+final class UnknownAuthCookieException extends InvalidArgumentException
 {
     /**
      * Un `token` de la RFC 6265 (§ 4.1.1), borné à 64 caractères. Un nom

@@ -7,6 +7,8 @@ namespace App\Shared\Infrastructure\ApiPlatform;
 use Symfony\Component\Serializer\Exception\ExtraAttributesException;
 use Symfony\Component\Serializer\Exception\MissingConstructorArgumentsException;
 use Symfony\Component\Serializer\Exception\UnexpectedValueException;
+// Alias : l'UnexpectedValueException du Serializer, importée ci-dessus, occupe le nom court.
+use UnexpectedValueException as NativeUnexpectedValueException;
 
 /**
  * Le corps d'une requête adressée à une opération API Platform n'a pas pu être
@@ -27,7 +29,7 @@ use Symfony\Component\Serializer\Exception\UnexpectedValueException;
  * Le message est fixe : celui du Serializer cite parfois la classe de la
  * ressource visée. La cause reste chaînée (getPrevious()) pour le journal.
  */
-final class MalformedRequestBodyException extends \UnexpectedValueException
+final class MalformedRequestBodyException extends NativeUnexpectedValueException
 {
     public static function fromSerializerFailure(UnexpectedValueException|ExtraAttributesException|MissingConstructorArgumentsException $failure): self
     {

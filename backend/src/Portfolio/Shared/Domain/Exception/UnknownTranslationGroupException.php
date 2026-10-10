@@ -6,6 +6,7 @@ namespace App\Portfolio\Shared\Domain\Exception;
 
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use App\Shared\Domain\Exception\HasProblemType;
+use DomainException;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -19,7 +20,7 @@ use Symfony\Component\Uid\Uuid;
  * est donc inconnu — un groupe ne peut pas chevaucher deux catégories, sans
  * quoi une même position vaudrait dans deux tableaux différents.
  */
-final class UnknownTranslationGroupException extends \DomainException implements ProblemExceptionInterface
+final class UnknownTranslationGroupException extends DomainException implements ProblemExceptionInterface
 {
     use HasProblemType;
 

@@ -10,6 +10,7 @@ use App\Portfolio\Incident\Domain\Repository\IncidentRepositoryInterface;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use DateTimeImmutable;
 use Symfony\Component\Uid\Uuid;
 
 final readonly class IncidentAdministrator implements IncidentAdministratorInterface
@@ -25,7 +26,7 @@ final readonly class IncidentAdministrator implements IncidentAdministratorInter
         Locale $locale,
         string $title,
         string $version,
-        \DateTimeImmutable $occurredAt,
+        DateTimeImmutable $occurredAt,
         string $impact,
         string $rootCause,
         string $resolution,
@@ -43,7 +44,7 @@ final readonly class IncidentAdministrator implements IncidentAdministratorInter
         Uuid $id,
         string $title,
         string $version,
-        \DateTimeImmutable $occurredAt,
+        DateTimeImmutable $occurredAt,
         string $impact,
         string $rootCause,
         string $resolution,

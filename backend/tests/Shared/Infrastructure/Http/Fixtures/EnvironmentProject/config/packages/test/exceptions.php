@@ -9,6 +9,6 @@ declare(strict_types=1);
 
 return [
     'api_platform' => [
-        'exception_to_status' => [\InvalidArgumentException::class => 404],
+        'exception_to_status' => [InvalidArgumentException::class => 404],
     ],
 ];

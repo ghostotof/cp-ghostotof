@@ -6,6 +6,7 @@ namespace App\Security\User\Domain\Repository;
 
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
+use DateTimeImmutable;
 
 /**
  * Abstraction (DIP) dont dépendent CpgUserInviter (création du jeton) et
@@ -26,7 +27,7 @@ interface PasswordSetupTokenRepositoryInterface
      * même lien au même instant, une seule l'emporte. Rend `false` à la
      * perdante, sans rien écrire.
      */
-    public function claim(PasswordSetupToken $token, \DateTimeImmutable $usedAt): bool;
+    public function claim(PasswordSetupToken $token, DateTimeImmutable $usedAt): bool;
 
     /**
      * Supprime tous les jetons de l'utilisateur : appelé avant de régénérer un

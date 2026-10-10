@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Ai\Translation\Domain\Exception;
 
 use App\Shared\Domain\Exception\RetryAfterAware;
+use DateTimeImmutable;
+use DomainException;
 
 /**
  * Un même compte a dépassé le quota horaire de l'assistant de traduction
@@ -13,9 +15,9 @@ use App\Shared\Domain\Exception\RetryAfterAware;
  * posé par App\Shared\Infrastructure\Http\RetryAfterListener à partir de
  * $retryAfter (RetryAfterAware).
  */
-final class TranslationRateLimitExceededException extends \DomainException implements RetryAfterAware
+final class TranslationRateLimitExceededException extends DomainException implements RetryAfterAware
 {
-    public function __construct(public readonly \DateTimeImmutable $retryAfter)
+    public function __construct(public readonly DateTimeImmutable $retryAfter)
     {
         parent::__construct("Quota horaire de l'assistant de traduction atteint pour ce compte. Réessayez plus tard.");
     }

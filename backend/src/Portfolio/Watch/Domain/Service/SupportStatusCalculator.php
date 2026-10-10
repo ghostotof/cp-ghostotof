@@ -6,6 +6,7 @@ namespace App\Portfolio\Watch\Domain\Service;
 
 use App\Portfolio\Watch\Domain\ValueObject\ReleaseCycle;
 use App\Portfolio\Watch\Domain\ValueObject\SupportStatus;
+use DateTimeImmutable;
 
 /**
  * Détermine l'état de maintenance d'un cycle à une date donnée.
@@ -22,7 +23,7 @@ use App\Portfolio\Watch\Domain\ValueObject\SupportStatus;
  */
 final readonly class SupportStatusCalculator
 {
-    public function statusFor(?ReleaseCycle $cycle, \DateTimeImmutable $now): SupportStatus
+    public function statusFor(?ReleaseCycle $cycle, DateTimeImmutable $now): SupportStatus
     {
         if (null === $cycle) {
             return SupportStatus::UNKNOWN;
@@ -48,7 +49,7 @@ final readonly class SupportStatusCalculator
     /**
      * L'échéance est inclusive : le jour dit, le support est terminé.
      */
-    private function hasBeenReached(?\DateTimeImmutable $deadline, \DateTimeImmutable $now): bool
+    private function hasBeenReached(?DateTimeImmutable $deadline, DateTimeImmutable $now): bool
     {
         return null !== $deadline && $now >= $deadline;
     }

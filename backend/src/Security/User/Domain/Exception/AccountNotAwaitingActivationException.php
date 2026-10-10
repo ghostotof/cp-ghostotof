@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Security\User\Domain\Exception;
 
+use DomainException;
+
 /**
  * Exception métier levée lorsqu'on tente de renvoyer une invitation à un compte
  * qui n'est pas en attente d'activation : soit son mot de passe a déjà été
  * défini, soit c'est un compte créé en CLI (jamais invité, sans e-mail).
  */
-final class AccountNotAwaitingActivationException extends \DomainException
+final class AccountNotAwaitingActivationException extends DomainException
 {
     public static function forUsername(string $username): self
     {

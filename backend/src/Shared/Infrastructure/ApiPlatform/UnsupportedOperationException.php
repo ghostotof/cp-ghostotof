@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Shared\Infrastructure\ApiPlatform;
 
 use ApiPlatform\Metadata\Operation;
+use LogicException;
 
 /**
  * Un Processor a reçu une opération que sa ressource ne déclare pas (issue #338).
@@ -15,7 +16,7 @@ use ApiPlatform\Metadata\Operation;
  * Levée par DispatchesWriteOperations, le `process()` commun des Processors
  * CRUD du backoffice ; la trace dit lequel l'a reçue.
  */
-final class UnsupportedOperationException extends \LogicException
+final class UnsupportedOperationException extends LogicException
 {
     public static function forOperation(Operation $operation): self
     {

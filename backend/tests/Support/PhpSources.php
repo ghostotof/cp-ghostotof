@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
+use FilesystemIterator;
+use PhpToken;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use SplFileInfo;
+
 /**
  * Ce que les recenseurs par jetons de src/ ont en commun (DeclaredClasses,
  * BareExceptionInstantiations) : quels fichiers ils lisent, et quels jetons
@@ -20,9 +26,9 @@ final class PhpSources
     public static function files(string $directory): array
     {
         $paths = [];
-        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS));
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS));
         foreach ($files as $file) {
-            if ($file instanceof \SplFileInfo && 'php' === $file->getExtension()) {
+            if ($file instanceof SplFileInfo && 'php' === $file->getExtension()) {
                 $paths[] = $file->getPathname();
             }
         }
@@ -32,13 +38,13 @@ final class PhpSources
     }
 
     /**
-     * @return list<\PhpToken> les jetons du code, sans espaces ni commentaires
+     * @return list<PhpToken> les jetons du code, sans espaces ni commentaires
      */
     public static function significantTokens(string $code): array
     {
         return array_values(array_filter(
-            \PhpToken::tokenize($code),
-            static fn (\PhpToken $token): bool => !$token->is(self::IGNORED),
+            PhpToken::tokenize($code),
+            static fn (PhpToken $token): bool => !$token->is(self::IGNORED),
         ));
     }
 }

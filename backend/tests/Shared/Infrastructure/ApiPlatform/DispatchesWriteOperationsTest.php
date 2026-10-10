@@ -11,6 +11,7 @@ use ApiPlatform\Metadata\Put;
 use App\Shared\Infrastructure\ApiPlatform\DispatchesWriteOperations;
 use App\Shared\Infrastructure\ApiPlatform\UnsupportedOperationException;
 use PHPUnit\Framework\TestCase;
+use stdClass;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -27,7 +28,7 @@ final class DispatchesWriteOperationsTest extends TestCase
     public function testPostCreatesAndReturnsTheCreatedResource(): void
     {
         $processor = new RecordingProcessor();
-        $data = new \stdClass();
+        $data = new stdClass();
 
         self::assertSame($processor->created, $processor->process($data, new Post()));
         self::assertSame([['create', $data]], $processor->calls);
@@ -36,7 +37,7 @@ final class DispatchesWriteOperationsTest extends TestCase
     public function testPutUpdatesTheEntryOfTheUriAndReturnsTheUpdatedResource(): void
     {
         $processor = new RecordingProcessor();
-        $data = new \stdClass();
+        $data = new stdClass();
 
         self::assertSame($processor->updated, $processor->process($data, new Put(), ['id' => self::ID]));
         self::assertSame([['update', self::ID, $data]], $processor->calls);
@@ -46,7 +47,7 @@ final class DispatchesWriteOperationsTest extends TestCase
     {
         $processor = new RecordingProcessor();
 
-        self::assertNull($processor->process(new \stdClass(), new Delete(), ['id' => self::ID]));
+        self::assertNull($processor->process(new stdClass(), new Delete(), ['id' => self::ID]));
         self::assertSame([['delete', self::ID]], $processor->calls);
     }
 
@@ -55,7 +56,7 @@ final class DispatchesWriteOperationsTest extends TestCase
         $processor = new RecordingProcessor();
 
         try {
-            $processor->process(new \stdClass(), new Patch(), ['id' => self::ID]);
+            $processor->process(new stdClass(), new Patch(), ['id' => self::ID]);
             self::fail('Une opération Patch ne doit jamais être traitée.');
         } catch (UnsupportedOperationException $exception) {
             self::assertStringContainsString(Patch::class, $exception->getMessage());
@@ -72,30 +73,30 @@ final class DispatchesWriteOperationsTest extends TestCase
  */
 final class RecordingProcessor
 {
-    /** @use DispatchesWriteOperations<\stdClass> */
+    /** @use DispatchesWriteOperations<stdClass> */
     use DispatchesWriteOperations;
 
     /** @var list<list<mixed>> */
     public array $calls = [];
 
-    public readonly \stdClass $created;
+    public readonly stdClass $created;
 
-    public readonly \stdClass $updated;
+    public readonly stdClass $updated;
 
     public function __construct()
     {
-        $this->created = new \stdClass();
-        $this->updated = new \stdClass();
+        $this->created = new stdClass();
+        $this->updated = new stdClass();
     }
 
-    private function create(mixed $data): \stdClass
+    private function create(mixed $data): stdClass
     {
         $this->calls[] = ['create', $data];
 
         return $this->created;
     }
 
-    private function update(Uuid $id, mixed $data): \stdClass
+    private function update(Uuid $id, mixed $data): stdClass
     {
         $this->calls[] = ['update', $id->toRfc4122(), $data];
 

@@ -6,6 +6,7 @@ namespace App\Tests\Security\User\Presentation\Controller;
 
 use App\Security\User\Domain\Exception\BaseAccessRateLimitExceededException;
 use App\Tests\Support\ReadsAllChannelsLog;
+use DateTimeImmutable;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Level;
@@ -65,7 +66,7 @@ final class BaseAccessControllerTest extends WebTestCase
         self::assertIsArray($payload);
         self::assertSame(['ROLE_USER'], $payload['roles']);
         self::assertIsString($payload['expiresAt']);
-        $expiresAt = new \DateTimeImmutable($payload['expiresAt']);
+        $expiresAt = new DateTimeImmutable($payload['expiresAt']);
         $remaining = $expiresAt->getTimestamp() - time();
         self::assertGreaterThan(14 * 60, $remaining);
         self::assertLessThanOrEqual(15 * 60, $remaining);

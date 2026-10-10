@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Ai\Assistant\Infrastructure\Corpus;
 
+use RuntimeException;
+
 /**
  * Un contenu du corpus n'a pas pu être rendu : PCRE en échec (UTF-8 invalide,
  * limite de retour arrière épuisée), ou un provider qui ne rend pas une
@@ -17,6 +19,6 @@ namespace App\Ai\Assistant\Infrastructure\Corpus;
  * 500 : un contenu que le rendu ne sait pas lire est un défaut à corriger, pas
  * une indisponibilité.
  */
-final class CorpusRenderingException extends \RuntimeException
+final class CorpusRenderingException extends RuntimeException
 {
 }

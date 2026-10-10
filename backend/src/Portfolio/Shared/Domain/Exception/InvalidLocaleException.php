@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Shared\Domain\Exception;
 
+use DomainException;
+
 /**
  * Exception métier levée par Locale::fromString() quand une valeur venue de
  * l'extérieur (segment d'URL `{locale}`, argument de commande…) ne correspond à
@@ -15,7 +17,7 @@ namespace App\Portfolio\Shared\Domain\Exception;
  * ValueError du projet, y compris un vrai bug sans rapport avec la locale, en le
  * masquant au passage. Le mapping porte désormais sur cette exception précise.
  */
-final class InvalidLocaleException extends \DomainException
+final class InvalidLocaleException extends DomainException
 {
     public static function forValue(string $value): self
     {

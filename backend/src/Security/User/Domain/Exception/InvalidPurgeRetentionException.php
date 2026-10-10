@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Security\User\Domain\Exception;
 
+use DateTimeImmutable;
+use DomainException;
+
 /**
  * Exception métier levée par PendingInvitationPurger::purge() lorsque le
  * seuil calculé (maintenant − durée de rétention) est plus récent que le
@@ -21,9 +24,9 @@ namespace App\Security\User\Domain\Exception;
  * directement le cas d'usage, avant toute lecture du dépôt, pour tout
  * appelant (CLI aujourd'hui, un futur appelant direct demain).
  */
-final class InvalidPurgeRetentionException extends \DomainException
+final class InvalidPurgeRetentionException extends DomainException
 {
-    public static function forThreshold(\DateTimeImmutable $threshold, \DateTimeImmutable $now): self
+    public static function forThreshold(DateTimeImmutable $threshold, DateTimeImmutable $now): self
     {
         return new self(sprintf(
             'La durée de rétention doit être d\'au moins un jour : le seuil calculé (%s) est trop récent par rapport à maintenant (%s).',

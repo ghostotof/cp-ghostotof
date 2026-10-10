@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace App\Shared\Domain\Exception;
 
+use DomainException;
+
 /**
  * Exception métier levée par `App\Shared\Domain\ValueObject\RetentionPeriod`
  * lorsque l'expression relative fournie (typiquement l'option `--older-than`
  * d'une commande de purge) ne décrit pas une durée strictement positive, ou
  * n'est pas un intervalle relatif PHP lisible.
  */
-final class InvalidRetentionPeriodException extends \DomainException
+final class InvalidRetentionPeriodException extends DomainException
 {
     /**
      * L'expression est syntaxiquement valide pour `\DateInterval` mais ne

@@ -6,8 +6,10 @@ namespace App\Tests\Portfolio\Shared\Domain\ValueObject;
 
 use App\Portfolio\Shared\Domain\Exception\InvalidLocaleException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use DomainException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use ValueError;
 
 /**
  * Point d'audit I3 : `fromString()` remplace `from()` sur les valeurs venues de
@@ -76,8 +78,8 @@ final class LocaleTest extends TestCase
     {
         $hierarchy = [InvalidLocaleException::class, ...array_values(class_parents(InvalidLocaleException::class))];
 
-        self::assertNotContains(\ValueError::class, $hierarchy);
-        self::assertContains(\DomainException::class, $hierarchy);
+        self::assertNotContains(ValueError::class, $hierarchy);
+        self::assertContains(DomainException::class, $hierarchy);
     }
 
     /**
@@ -87,7 +89,7 @@ final class LocaleTest extends TestCase
      */
     public function testFromStillThrowsAValueErrorForInternalMisuse(): void
     {
-        $this->expectException(\ValueError::class);
+        $this->expectException(ValueError::class);
 
         Locale::from('zz');
     }

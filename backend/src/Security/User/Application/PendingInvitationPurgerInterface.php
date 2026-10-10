@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Security\User\Application;
 
 use App\Security\User\Domain\Exception\InvalidPurgeRetentionException;
+use DateInterval;
 
 /**
  * Cas d'usage "purger les invitations jamais activées" (issue #238, motif
@@ -29,5 +30,5 @@ interface PendingInvitationPurgerInterface
      *                                         seuil purgerait des invitations
      *                                         encore vivantes)
      */
-    public function purge(\DateInterval $maxAge, bool $dryRun = false): PendingInvitationPurgeResult;
+    public function purge(DateInterval $maxAge, bool $dryRun = false): PendingInvitationPurgeResult;
 }

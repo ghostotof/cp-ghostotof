@@ -6,6 +6,7 @@ namespace App\Tests\Portfolio\Watch\Infrastructure\Manifest;
 
 use App\Portfolio\Watch\Infrastructure\Manifest\DeployedVersionsBuilder;
 use App\Portfolio\Watch\Infrastructure\Manifest\ManifestWriteException;
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -55,7 +56,7 @@ final class DeployedVersionsBuilderTest extends TestCase
             $this->root.'/package-lock.json',
             $this->root.'/out.json',
             $tagOverrides,
-        ))->build(new \DateTimeImmutable('2026-09-09T12:00:00+00:00'));
+        ))->build(new DateTimeImmutable('2026-09-09T12:00:00+00:00'));
     }
 
     /**
@@ -179,7 +180,7 @@ final class DeployedVersionsBuilderTest extends TestCase
         set_error_handler(static fn (): bool => true, \E_WARNING);
 
         try {
-            $builder->build(new \DateTimeImmutable('2026-09-09T12:00:00+00:00'));
+            $builder->build(new DateTimeImmutable('2026-09-09T12:00:00+00:00'));
             self::fail('Un répertoire de sortie impossible à créer doit arrêter la construction.');
         } catch (ManifestWriteException $exception) {
             self::assertStringContainsString($blocker.'/sub', $exception->getMessage());
@@ -205,7 +206,7 @@ final class DeployedVersionsBuilderTest extends TestCase
         set_error_handler(static fn (): bool => true, \E_WARNING);
 
         try {
-            $builder->build(new \DateTimeImmutable('2026-09-09T12:00:00+00:00'));
+            $builder->build(new DateTimeImmutable('2026-09-09T12:00:00+00:00'));
             self::fail('Un fichier de sortie impossible à écrire doit arrêter la construction.');
         } catch (ManifestWriteException $exception) {
             self::assertStringContainsString($occupied, $exception->getMessage());

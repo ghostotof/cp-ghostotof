@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Application;
 
+use DateTimeImmutable;
+
 /**
  * Interroge les sources externes et fige le résultat dans le snapshot courant.
  *
@@ -15,9 +17,9 @@ namespace App\Portfolio\Watch\Application;
 interface WatchRefresherInterface
 {
     /**
-     * @param \DateTimeImmutable $now    date de référence, passée explicitement pour
+     * @param DateTimeImmutable $now date de référence, passée explicitement pour
      *                                   que les échéances soient évaluables en test
      * @param bool               $dryRun calcule tout sans rien écrire
      */
-    public function refresh(\DateTimeImmutable $now, bool $dryRun = false): WatchRefreshReport;
+    public function refresh(DateTimeImmutable $now, bool $dryRun = false): WatchRefreshReport;
 }

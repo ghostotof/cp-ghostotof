@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionProperty;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Bundle\SecurityBundle\Security\FirewallMap;
 use Symfony\Component\HttpFoundation\ChainRequestMatcher;
@@ -264,7 +265,7 @@ final class AccessControlAnchoringTest extends KernelTestCase
     {
         $map = self::getContainer()->get('security.firewall.map');
 
-        $contexts = (new \ReflectionProperty(FirewallMap::class, 'map'))->getValue($map);
+        $contexts = (new ReflectionProperty(FirewallMap::class, 'map'))->getValue($map);
         self::assertIsIterable($contexts, 'FirewallMap::$map n\'est plus itérable : structure interne changée, adapter ce test.');
 
         $patterns = [];
@@ -292,7 +293,7 @@ final class AccessControlAnchoringTest extends KernelTestCase
 
         self::assertInstanceOf(ChainRequestMatcher::class, $requestMatcher, sprintf('Firewall "%s" : matcher inattendu, adapter ce test.', $firewall));
 
-        $matchers = (new \ReflectionProperty(ChainRequestMatcher::class, 'matchers'))->getValue($requestMatcher);
+        $matchers = (new ReflectionProperty(ChainRequestMatcher::class, 'matchers'))->getValue($requestMatcher);
         self::assertIsIterable($matchers, 'ChainRequestMatcher::$matchers n\'est plus itérable : structure interne changée, adapter ce test.');
 
         $regexps = [];
@@ -304,7 +305,7 @@ final class AccessControlAnchoringTest extends KernelTestCase
                 continue;
             }
 
-            $regexp = (new \ReflectionProperty(PathRequestMatcher::class, 'regexp'))->getValue($matcher);
+            $regexp = (new ReflectionProperty(PathRequestMatcher::class, 'regexp'))->getValue($matcher);
             self::assertIsString($regexp, 'PathRequestMatcher::$regexp n\'est plus une chaîne : structure interne changée, adapter ce test.');
 
             $regexps[] = $regexp;

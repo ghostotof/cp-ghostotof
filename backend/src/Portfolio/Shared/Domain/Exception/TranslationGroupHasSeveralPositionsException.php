@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Shared\Domain\Exception;
 
+use LogicException;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -17,7 +18,7 @@ use Symfony\Component\Uid\Uuid;
  * \DomainException, que les erreurs clientes de ce dossier étendent. Le
  * message donne le groupe, ce qu'il faut retrouver en base.
  */
-final class TranslationGroupHasSeveralPositionsException extends \LogicException
+final class TranslationGroupHasSeveralPositionsException extends LogicException
 {
     public static function forGroup(Uuid $translationGroup): self
     {

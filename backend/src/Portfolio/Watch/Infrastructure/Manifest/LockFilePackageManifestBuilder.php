@@ -8,6 +8,8 @@ use App\Portfolio\Watch\Domain\Service\PackageManifestBuilderInterface;
 use App\Portfolio\Watch\Domain\ValueObject\PackageCoordinates;
 use App\Portfolio\Watch\Domain\ValueObject\PackageManifest;
 use App\Portfolio\Watch\Infrastructure\ReadsUntrustedArrays;
+use DateTimeImmutable;
+use JsonException;
 
 /**
  * Produit le manifeste des paquets déployés à partir des fichiers de
@@ -35,7 +37,7 @@ final readonly class LockFilePackageManifestBuilder implements PackageManifestBu
     ) {
     }
 
-    public function build(\DateTimeImmutable $generatedAt): PackageManifest
+    public function build(DateTimeImmutable $generatedAt): PackageManifest
     {
         $manifest = new PackageManifest($generatedAt, [
             ...$this->composerPackages(),
@@ -154,7 +156,7 @@ final readonly class LockFilePackageManifestBuilder implements PackageManifestBu
 
         try {
             $decoded = json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
+        } catch (JsonException) {
             return [];
         }
 

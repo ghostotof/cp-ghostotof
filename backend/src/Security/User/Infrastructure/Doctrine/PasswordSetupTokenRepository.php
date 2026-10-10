@@ -7,6 +7,7 @@ namespace App\Security\User\Infrastructure\Doctrine;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
+use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\Persistence\ManagerRegistry;
@@ -56,7 +57,7 @@ class PasswordSetupTokenRepository extends ServiceEntityRepository implements Pa
      * `UPDATE … WHERE used_at IS NULL` : la base, pas l'entité en mémoire,
      * décide qui consomme. Le nombre de lignes touchées dit si c'est nous.
      */
-    public function claim(PasswordSetupToken $token, \DateTimeImmutable $usedAt): bool
+    public function claim(PasswordSetupToken $token, DateTimeImmutable $usedAt): bool
     {
         $claimed = $this->createQueryBuilder('token')
             ->update()

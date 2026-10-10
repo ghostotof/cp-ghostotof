@@ -11,6 +11,7 @@ use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
+use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -101,7 +102,7 @@ final class BackofficeIncidentResourceTest extends WebTestCase
             Locale::FR,
             'RabbitMQ en CrashLoopBackOff',
             'v0.5.0',
-            new \DateTimeImmutable('2026-09-03'),
+            new DateTimeImmutable('2026-09-03'),
             'Impact.',
             'Cause.',
             'Résolution.',
@@ -129,8 +130,8 @@ final class BackofficeIncidentResourceTest extends WebTestCase
         $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         $administrator = $client->getContainer()->get(IncidentAdministratorInterface::class);
-        $administrator->create(Locale::FR, 'Titre FR', 'v0.1.0', new \DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv');
-        $administrator->create(Locale::EN, 'Title EN', 'v0.1.0', new \DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv');
+        $administrator->create(Locale::FR, 'Titre FR', 'v0.1.0', new DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv');
+        $administrator->create(Locale::EN, 'Title EN', 'v0.1.0', new DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv');
 
         $client->request('GET', '/api/backoffice/incidents?locale=fr');
         self::assertResponseIsSuccessful();
@@ -258,7 +259,7 @@ final class BackofficeIncidentResourceTest extends WebTestCase
             Locale::FR,
             'Premier',
             'v0.1.0',
-            new \DateTimeImmutable('2026-01-01'),
+            new DateTimeImmutable('2026-01-01'),
             'i',
             'c',
             'r',
@@ -286,8 +287,8 @@ final class BackofficeIncidentResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         $administrator = $client->getContainer()->get(IncidentAdministratorInterface::class);
-        $administrator->create(Locale::FR, 'Premier', 'v0.1.0', new \DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv');
-        $second = $administrator->create(Locale::FR, 'Second', 'v0.2.0', new \DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv');
+        $administrator->create(Locale::FR, 'Premier', 'v0.1.0', new DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv');
+        $second = $administrator->create(Locale::FR, 'Second', 'v0.2.0', new DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv');
         self::assertSame(1, $second->getPosition());
 
         $created = $this->post($client, $csrfToken, [
@@ -313,7 +314,7 @@ final class BackofficeIncidentResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         $existing = $client->getContainer()->get(IncidentAdministratorInterface::class)
-            ->create(Locale::FR, 'Premier', 'v0.1.0', new \DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv');
+            ->create(Locale::FR, 'Premier', 'v0.1.0', new DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv');
 
         $body = $this->post($client, $csrfToken, [
             'title' => 'Doublon',
@@ -385,9 +386,9 @@ final class BackofficeIncidentResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         $administrator = $client->getContainer()->get(IncidentAdministratorInterface::class);
-        $administrator->create(Locale::FR, 'Premier', 'v0.1.0', new \DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv');
-        $french = $administrator->create(Locale::FR, 'Second', 'v0.2.0', new \DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv');
-        $english = $administrator->create(Locale::EN, 'Second, in English', 'v0.2.0', new \DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv', $french->getTranslationGroup());
+        $administrator->create(Locale::FR, 'Premier', 'v0.1.0', new DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv');
+        $french = $administrator->create(Locale::FR, 'Second', 'v0.2.0', new DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv');
+        $english = $administrator->create(Locale::EN, 'Second, in English', 'v0.2.0', new DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv', $french->getTranslationGroup());
 
         $updated = $this->put($client, $csrfToken, $french->getId()->toRfc4122(), [
             'title' => 'Second, détaché',
@@ -411,8 +412,8 @@ final class BackofficeIncidentResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         $administrator = $client->getContainer()->get(IncidentAdministratorInterface::class);
-        $target = $administrator->create(Locale::FR, 'Premier', 'v0.1.0', new \DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv');
-        $english = $administrator->create(Locale::EN, 'Orpheline', 'v0.2.0', new \DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv');
+        $target = $administrator->create(Locale::FR, 'Premier', 'v0.1.0', new DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv');
+        $english = $administrator->create(Locale::EN, 'Orpheline', 'v0.2.0', new DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv');
         self::assertSame(1, $english->getPosition());
 
         $updated = $this->put($client, $csrfToken, $english->getId()->toRfc4122(), [
@@ -433,8 +434,8 @@ final class BackofficeIncidentResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
         $administrator = $client->getContainer()->get(IncidentAdministratorInterface::class);
-        $target = $administrator->create(Locale::FR, 'Premier', 'v0.1.0', new \DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv');
-        $other = $administrator->create(Locale::FR, 'Second', 'v0.2.0', new \DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv');
+        $target = $administrator->create(Locale::FR, 'Premier', 'v0.1.0', new DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv');
+        $other = $administrator->create(Locale::FR, 'Second', 'v0.2.0', new DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv');
 
         $body = $this->put($client, $csrfToken, $other->getId()->toRfc4122(), [
             'title' => 'Second',

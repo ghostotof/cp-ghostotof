@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Security\User\Domain\Exception;
 
+use DomainException;
+
 /**
  * Exception métier levée lorsqu'on tente de créer un CpgUser avec un nom
  * d'utilisateur déjà utilisé par un autre compte.
  */
-final class UsernameAlreadyUsedException extends \DomainException
+final class UsernameAlreadyUsedException extends DomainException
 {
     public static function forUsername(string $username): self
     {

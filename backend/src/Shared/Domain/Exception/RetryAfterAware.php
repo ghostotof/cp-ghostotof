@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Shared\Domain\Exception;
 
+use DateTimeImmutable;
+
 /**
  * Une exception de dépassement de quota qui sait quand le client pourra
  * réessayer. App\Shared\Infrastructure\Http\RetryAfterListener en tire
@@ -21,5 +23,5 @@ namespace App\Shared\Domain\Exception;
  */
 interface RetryAfterAware
 {
-    public \DateTimeImmutable $retryAfter { get; }
+    public DateTimeImmutable $retryAfter { get; }
 }

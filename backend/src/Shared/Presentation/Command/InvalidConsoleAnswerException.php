@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Shared\Presentation\Command;
 
+use InvalidArgumentException;
+
 /**
  * Une réponse à une question console est refusée par le validateur de la
  * question (issue #383).
@@ -17,7 +19,7 @@ namespace App\Shared\Presentation\Command;
  * exception pour la règle (InvalidUsernameException,
  * InvalidExperienceYearsException), le validateur lève celle-là.
  */
-final class InvalidConsoleAnswerException extends \InvalidArgumentException
+final class InvalidConsoleAnswerException extends InvalidArgumentException
 {
     /**
      * @param string $subject ce qui est demandé, avec son article (« Le mot de passe »)

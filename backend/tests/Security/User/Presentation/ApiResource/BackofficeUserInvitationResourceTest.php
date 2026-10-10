@@ -12,6 +12,7 @@ use App\Tests\Support\HttpJson;
 use App\Tests\Support\InvitesUsers;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use RuntimeException;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
@@ -201,7 +202,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
             }
         }
 
-        throw new \RuntimeException('Invited user not found.');
+        throw new RuntimeException('Invited user not found.');
     }
 
     private function asyncTransport(): InMemoryTransport

@@ -6,6 +6,7 @@ namespace App\Tests\Ai\Assistant\Infrastructure\RateLimiter;
 
 use App\Ai\Assistant\Domain\Exception\AssistantRateLimitExceededException;
 use App\Ai\Assistant\Infrastructure\RateLimiter\SymfonyAssistantRateLimiter;
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\RateLimiter\Storage\InMemoryStorage;
@@ -45,7 +46,7 @@ final class SymfonyAssistantRateLimiterTest extends TestCase
             $rateLimiter->consume('trusted');
             self::fail('Une exception était attendue.');
         } catch (AssistantRateLimitExceededException $exception) {
-            self::assertGreaterThan(new \DateTimeImmutable(), $exception->retryAfter);
+            self::assertGreaterThan(new DateTimeImmutable(), $exception->retryAfter);
             self::assertSame('/errors/rate-limited', $exception->getType());
             self::assertSame(429, $exception->getStatus());
         }

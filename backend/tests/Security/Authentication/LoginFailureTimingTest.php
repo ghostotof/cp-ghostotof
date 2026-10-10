@@ -11,6 +11,7 @@ use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use SensitiveParameter;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Response;
@@ -224,14 +225,14 @@ final class LoginFailureTimingTest extends WebTestCase
         $hasher = new class implements PasswordHasherInterface {
             public int $calls = 0;
 
-            public function hash(#[\SensitiveParameter] string $plainPassword): string
+            public function hash(#[SensitiveParameter] string $plainPassword): string
             {
                 ++$this->calls;
 
                 return 'hashed';
             }
 
-            public function verify(string $hashedPassword, #[\SensitiveParameter] string $plainPassword): bool
+            public function verify(string $hashedPassword, #[SensitiveParameter] string $plainPassword): bool
             {
                 return false;
             }

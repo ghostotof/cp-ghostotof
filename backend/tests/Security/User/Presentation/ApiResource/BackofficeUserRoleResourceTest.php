@@ -9,6 +9,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use RuntimeException;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
@@ -229,7 +230,7 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
             }
         }
 
-        throw new \RuntimeException(sprintf('User "%s" not found.', $username));
+        throw new RuntimeException(sprintf('User "%s" not found.', $username));
     }
 
     /**
@@ -243,7 +244,7 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
             }
         }
 
-        throw new \RuntimeException(sprintf('User "%s" not found.', $username));
+        throw new RuntimeException(sprintf('User "%s" not found.', $username));
     }
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string

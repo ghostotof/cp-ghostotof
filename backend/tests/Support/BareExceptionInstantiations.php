@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
+use PhpToken;
+
 /**
  * Recense les `new \Exception`, `new \LogicException`, `new \RuntimeException`
  * et `new \InvalidArgumentException` nus d'un répertoire (issues #338 et #383),
@@ -77,7 +79,7 @@ final class BareExceptionInstantiations
      * `use (…)` d'une fonction anonyme, n'importe aucune classe ; un `use` de
      * trait donne au pire un alias qui ne désigne aucune classe visée.
      *
-     * @param list<\PhpToken> $tokens
+     * @param list<PhpToken> $tokens
      *
      * @return array<string, string>
      */
@@ -113,9 +115,9 @@ final class BareExceptionInstantiations
      * classe anonyme (`new class(…) extends X {}`). Null pour une expression
      * (`new $class`) ou une classe anonyme sans parent.
      *
-     * @param list<\PhpToken> $tokens
+     * @param list<PhpToken> $tokens
      */
-    private static function instantiatedName(array $tokens, int $index): ?\PhpToken
+    private static function instantiatedName(array $tokens, int $index): ?PhpToken
     {
         $next = $tokens[$index] ?? null;
         if (null === $next || !$next->is(\T_CLASS)) {
@@ -140,7 +142,7 @@ final class BareExceptionInstantiations
      *
      * @param array<string, string> $imports
      */
-    private static function resolve(\PhpToken $name, bool $namespaced, array $imports): ?string
+    private static function resolve(PhpToken $name, bool $namespaced, array $imports): ?string
     {
         if ($name->is(\T_NAME_FULLY_QUALIFIED)) {
             return strtolower(ltrim($name->text, '\\'));

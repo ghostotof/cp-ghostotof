@@ -6,6 +6,7 @@ namespace App\Portfolio\Shared\Domain\Exception;
 
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use App\Shared\Domain\Exception\HasProblemType;
+use DomainException;
 
 /**
  * Spec 0004 D4 : `PUT …/order` exige l'ensemble exact des clés du périmètre.
@@ -21,7 +22,7 @@ use App\Shared\Domain\Exception\HasProblemType;
  * n'aurait jamais été dans le périmètre — dans les deux cas la liste n'est pas
  * une permutation valide du périmètre, et la réponse HTTP est la même 422.
  */
-final class UnknownOrderEntryException extends \DomainException implements ProblemExceptionInterface
+final class UnknownOrderEntryException extends DomainException implements ProblemExceptionInterface
 {
     use HasProblemType;
 

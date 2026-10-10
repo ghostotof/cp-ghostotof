@@ -6,13 +6,14 @@ namespace App\Security\User\Domain\Exception;
 
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use App\Shared\Domain\Exception\HasProblemType;
+use DomainException;
 
 /**
  * Exception métier levée lorsqu'un ROLE_SUPER tente de modifier ses propres
  * rôles depuis le backoffice (typiquement se rétrograder) : garde anti-lockout
  * accidentel, sur le même modèle que CannotDeleteOwnAccountException.
  */
-final class CannotModifyOwnRolesException extends \DomainException implements ProblemExceptionInterface
+final class CannotModifyOwnRolesException extends DomainException implements ProblemExceptionInterface
 {
     use HasProblemType;
 

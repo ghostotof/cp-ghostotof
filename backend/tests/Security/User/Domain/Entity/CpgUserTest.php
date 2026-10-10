@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Domain\Entity;
 
 use App\Security\User\Domain\Entity\CpgUser;
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\UuidV7;
 
@@ -98,7 +99,7 @@ final class CpgUserTest extends TestCase
     public function testMarkInvitedRecordsTheTimestampWithoutActivating(): void
     {
         $user = new CpgUser('jane', 'hashed-password');
-        $invitedAt = new \DateTimeImmutable('2026-09-03 12:00:00');
+        $invitedAt = new DateTimeImmutable('2026-09-03 12:00:00');
 
         $user->markInvited($invitedAt);
 
@@ -109,9 +110,9 @@ final class CpgUserTest extends TestCase
     public function testMarkActivatedClearsThePendingState(): void
     {
         $user = new CpgUser('jane', 'hashed-password');
-        $user->markInvited(new \DateTimeImmutable('2026-09-03 12:00:00'));
+        $user->markInvited(new DateTimeImmutable('2026-09-03 12:00:00'));
 
-        $user->markActivated(new \DateTimeImmutable('2026-09-04 09:30:00'));
+        $user->markActivated(new DateTimeImmutable('2026-09-04 09:30:00'));
 
         self::assertFalse($user->isPendingActivation());
     }
@@ -124,7 +125,7 @@ final class CpgUserTest extends TestCase
     public function testANewlyInvitedAccountIsAwaitingPasswordSetup(): void
     {
         $user = new CpgUser('jane', '');
-        $user->markInvited(new \DateTimeImmutable('2026-09-03 12:00:00'));
+        $user->markInvited(new DateTimeImmutable('2026-09-03 12:00:00'));
 
         self::assertTrue($user->isAwaitingPasswordSetup());
     }
@@ -139,7 +140,7 @@ final class CpgUserTest extends TestCase
     public function testAnAccountWhosePasswordWasSetFromTheBackofficeIsNotAwaitingPasswordSetup(): void
     {
         $user = new CpgUser('jane', '');
-        $user->markInvited(new \DateTimeImmutable('2026-09-03 12:00:00'));
+        $user->markInvited(new DateTimeImmutable('2026-09-03 12:00:00'));
 
         $user->setPassword('a-real-hash-set-from-the-backoffice');
 
@@ -166,9 +167,9 @@ final class CpgUserTest extends TestCase
     public function testAnActivatedAccountIsNotAwaitingPasswordSetup(): void
     {
         $user = new CpgUser('jane', '');
-        $user->markInvited(new \DateTimeImmutable('2026-09-03 12:00:00'));
+        $user->markInvited(new DateTimeImmutable('2026-09-03 12:00:00'));
         $user->setPassword('a-real-hash');
-        $user->markActivated(new \DateTimeImmutable('2026-09-04 09:30:00'));
+        $user->markActivated(new DateTimeImmutable('2026-09-04 09:30:00'));
 
         self::assertFalse($user->isAwaitingPasswordSetup());
     }

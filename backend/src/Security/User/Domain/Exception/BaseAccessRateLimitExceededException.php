@@ -7,6 +7,8 @@ namespace App\Security\User\Domain\Exception;
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use App\Shared\Domain\Exception\HasProblemType;
 use App\Shared\Domain\Exception\RetryAfterAware;
+use DateTimeImmutable;
+use DomainException;
 
 /**
  * Levée lorsqu'un même client (identifié par IP, cf.
@@ -22,11 +24,11 @@ use App\Shared\Domain\Exception\RetryAfterAware;
  * L'en-tête Retry-After est posé par RetryAfterListener (RetryAfterAware), et
  * le niveau de journalisation (`info`) est fixé dans `framework.exceptions`.
  */
-final class BaseAccessRateLimitExceededException extends \DomainException implements ProblemExceptionInterface, RetryAfterAware
+final class BaseAccessRateLimitExceededException extends DomainException implements ProblemExceptionInterface, RetryAfterAware
 {
     use HasProblemType;
 
-    public function __construct(public readonly \DateTimeImmutable $retryAfter)
+    public function __construct(public readonly DateTimeImmutable $retryAfter)
     {
         parent::__construct('Trop de tentatives depuis cette adresse IP. Réessayez plus tard.');
     }

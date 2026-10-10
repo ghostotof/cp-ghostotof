@@ -7,6 +7,7 @@ namespace App\Tests\Portfolio\Incident\Presentation\ApiResource;
 use App\Portfolio\Incident\Application\IncidentAdministratorInterface;
 use App\Portfolio\Incident\Domain\Repository\IncidentRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
@@ -33,8 +34,8 @@ final class IncidentResourceTest extends WebTestCase
         $client = self::createClient();
         $administrator = $client->getContainer()->get(IncidentAdministratorInterface::class);
 
-        $second = $administrator->create(Locale::FR, 'Deuxième', 'v0.4.0', new \DateTimeImmutable('2026-09-02'), 'I', 'C', 'R', 'Règle 2');
-        $first = $administrator->create(Locale::FR, 'Premier', 'v0.5.0', new \DateTimeImmutable('2026-09-03'), 'I', 'C', 'R', 'Règle 1');
+        $second = $administrator->create(Locale::FR, 'Deuxième', 'v0.4.0', new DateTimeImmutable('2026-09-02'), 'I', 'C', 'R', 'Règle 2');
+        $first = $administrator->create(Locale::FR, 'Premier', 'v0.5.0', new DateTimeImmutable('2026-09-03'), 'I', 'C', 'R', 'Règle 1');
 
         // Le tri public se fait sur la position, pas sur l'ordre de création :
         // depuis la spec 0004 D3 celle-ci suit l'insertion, il faut donc les
@@ -60,8 +61,8 @@ final class IncidentResourceTest extends WebTestCase
         $client = self::createClient();
         $administrator = $client->getContainer()->get(IncidentAdministratorInterface::class);
 
-        $administrator->create(Locale::FR, 'Version française', 'v0.5.0', new \DateTimeImmutable('2026-09-03'), 'I', 'C', 'R', 'Règle');
-        $administrator->create(Locale::EN, 'English version', 'v0.5.0', new \DateTimeImmutable('2026-09-03'), 'I', 'C', 'R', 'Rule');
+        $administrator->create(Locale::FR, 'Version française', 'v0.5.0', new DateTimeImmutable('2026-09-03'), 'I', 'C', 'R', 'Règle');
+        $administrator->create(Locale::EN, 'English version', 'v0.5.0', new DateTimeImmutable('2026-09-03'), 'I', 'C', 'R', 'Rule');
 
         $client->request('GET', '/api/incidents/en');
 
@@ -82,7 +83,7 @@ final class IncidentResourceTest extends WebTestCase
     {
         $client = self::createClient();
         $client->getContainer()->get(IncidentAdministratorInterface::class)
-            ->create(Locale::FR, 'Titre', 'v0.5.0', new \DateTimeImmutable('2026-09-03'), 'I', 'C', 'R', 'La règle acquise.');
+            ->create(Locale::FR, 'Titre', 'v0.5.0', new DateTimeImmutable('2026-09-03'), 'I', 'C', 'R', 'La règle acquise.');
 
         $client->request('GET', '/api/incidents/fr');
 

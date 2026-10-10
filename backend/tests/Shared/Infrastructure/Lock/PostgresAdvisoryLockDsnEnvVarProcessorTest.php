@@ -6,6 +6,7 @@ namespace App\Tests\Shared\Infrastructure\Lock;
 
 use App\Shared\Infrastructure\Lock\PostgresAdvisoryLockDsnEnvVarProcessor;
 use App\Shared\Infrastructure\Lock\UnsupportedLockDatabaseUrlException;
+use LogicException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -99,7 +100,7 @@ final class PostgresAdvisoryLockDsnEnvVarProcessorTest extends TestCase
         return (new PostgresAdvisoryLockDsnEnvVarProcessor())->getEnv(
             'pg_advisory',
             'DATABASE_URL',
-            static fn (string $name): string => 'DATABASE_URL' === $name ? $databaseUrl : throw new \LogicException($name),
+            static fn (string $name): string => 'DATABASE_URL' === $name ? $databaseUrl : throw new LogicException($name),
         );
     }
 }

@@ -17,6 +17,7 @@ use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
+use stdClass;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpClient\Exception\TransportException;
@@ -742,7 +743,7 @@ final class AnswerControllerTest extends WebTestCase
             $delta = 0 === $index ? ['role' => 'assistant', 'content' => $fragment] : ['content' => $fragment];
             $body .= $this->chunk(['choices' => [['index' => 0, 'delta' => $delta, 'finish_reason' => null]]]);
         }
-        $body .= $this->chunk(['choices' => [['index' => 0, 'delta' => new \stdClass(), 'finish_reason' => 'stop']]]);
+        $body .= $this->chunk(['choices' => [['index' => 0, 'delta' => new stdClass(), 'finish_reason' => 'stop']]]);
         $body .= $this->chunk(['choices' => [], 'usage' => ['prompt_tokens' => 812, 'completion_tokens' => 9, 'total_tokens' => 821]]);
 
         return $body."data: [DONE]\n\n";

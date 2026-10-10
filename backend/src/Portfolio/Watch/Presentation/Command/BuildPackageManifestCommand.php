@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Portfolio\Watch\Presentation\Command;
 
 use App\Portfolio\Watch\Domain\Service\PackageManifestBuilderInterface;
+use DateTimeImmutable;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -38,7 +39,7 @@ final class BuildPackageManifestCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        $manifest = $this->builder->build(new \DateTimeImmutable());
+        $manifest = $this->builder->build(new DateTimeImmutable());
 
         $byEcosystem = [];
         foreach ($manifest->packages as $package) {

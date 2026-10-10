@@ -9,6 +9,7 @@ use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Tests\Support\ReadsSecurityAuditLog;
+use DateTimeImmutable;
 use Doctrine\DBAL\Connection;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -57,12 +58,12 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
     {
         $stale = new CpgUser('stale-invitee', '');
         $stale->setEmail('stale@example.com');
-        $stale->markInvited(new \DateTimeImmutable('-40 days'));
+        $stale->markInvited(new DateTimeImmutable('-40 days'));
         $this->userRepository->save($stale);
         $this->tokenRepository->save(new PasswordSetupToken(
             $stale,
             hash('sha256', 'clear-token-stale-invitee'),
-            new \DateTimeImmutable('+48 hours'),
+            new DateTimeImmutable('+48 hours'),
         ));
 
         $exitCode = $this->commandTester()->execute(['--older-than' => '30 days']);
@@ -86,7 +87,7 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
     public function testRecentAccountIsKept(): void
     {
         $recent = new CpgUser('recent-invitee', '');
-        $recent->markInvited(new \DateTimeImmutable('-10 days'));
+        $recent->markInvited(new DateTimeImmutable('-10 days'));
         $this->userRepository->save($recent);
 
         $exitCode = $this->commandTester()->execute(['--older-than' => '30 days']);
@@ -99,8 +100,8 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
     public function testActivatedAccountIsKept(): void
     {
         $activated = new CpgUser('activated-invitee', '');
-        $activated->markInvited(new \DateTimeImmutable('-40 days'));
-        $activated->markActivated(new \DateTimeImmutable('-5 days'));
+        $activated->markInvited(new DateTimeImmutable('-40 days'));
+        $activated->markActivated(new DateTimeImmutable('-5 days'));
         $this->userRepository->save($activated);
 
         $exitCode = $this->commandTester()->execute(['--older-than' => '30 days']);
@@ -113,7 +114,7 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
     public function testDryRunRemovesNothingAndListsTheAccountUnderASimulationTitle(): void
     {
         $stale = new CpgUser('dry-run-invitee', '');
-        $stale->markInvited(new \DateTimeImmutable('-40 days'));
+        $stale->markInvited(new DateTimeImmutable('-40 days'));
         $this->userRepository->save($stale);
 
         $tester = $this->commandTester();
@@ -130,7 +131,7 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
     {
         $superInvitee = new CpgUser('super-invitee', '');
         $superInvitee->setRoles([CpgUser::ROLE_SUPER]);
-        $superInvitee->markInvited(new \DateTimeImmutable('-40 days'));
+        $superInvitee->markInvited(new DateTimeImmutable('-40 days'));
         $this->userRepository->save($superInvitee);
 
         $tester = $this->commandTester();
@@ -189,7 +190,7 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
     public function testNegativeOlderThanIsRejectedAndPurgesNothing(): void
     {
         $recentInvitee = new CpgUser('recent-guard-invitee', '');
-        $recentInvitee->markInvited(new \DateTimeImmutable('-1 day'));
+        $recentInvitee->markInvited(new DateTimeImmutable('-1 day'));
         $this->userRepository->save($recentInvitee);
 
         $tester = $this->commandTester();
@@ -207,7 +208,7 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
     public function testZeroOlderThanIsRejectedAndPurgesNothing(): void
     {
         $recentInvitee = new CpgUser('zero-guard-invitee', '');
-        $recentInvitee->markInvited(new \DateTimeImmutable('-1 day'));
+        $recentInvitee->markInvited(new DateTimeImmutable('-1 day'));
         $this->userRepository->save($recentInvitee);
 
         $tester = $this->commandTester();

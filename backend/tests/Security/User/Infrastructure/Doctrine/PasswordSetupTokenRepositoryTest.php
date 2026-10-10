@@ -7,6 +7,7 @@ namespace App\Tests\Security\User\Infrastructure\Doctrine;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
+use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -56,7 +57,7 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
         $user = $this->persistUser('jane');
         $hash = hash('sha256', 'clear-token-jane');
 
-        $this->repository->save(new PasswordSetupToken($user, $hash, new \DateTimeImmutable('+48 hours')));
+        $this->repository->save(new PasswordSetupToken($user, $hash, new DateTimeImmutable('+48 hours')));
         $this->em->clear();
 
         $found = $this->repository->findOneByTokenHash($hash);
@@ -78,7 +79,7 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
     {
         $user = $this->persistUser('jane');
         $hash = hash('sha256', 'clear-jane');
-        $this->repository->save(new PasswordSetupToken($user, $hash, new \DateTimeImmutable('+48 hours')));
+        $this->repository->save(new PasswordSetupToken($user, $hash, new DateTimeImmutable('+48 hours')));
         $this->em->clear();
 
         $found = $this->repository->findOneByTokenHash($hash);
@@ -94,8 +95,8 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
         $janeHash = hash('sha256', 'clear-jane');
         $johnHash = hash('sha256', 'clear-john');
 
-        $this->repository->save(new PasswordSetupToken($jane, $janeHash, new \DateTimeImmutable('+48 hours')));
-        $this->repository->save(new PasswordSetupToken($john, $johnHash, new \DateTimeImmutable('+48 hours')));
+        $this->repository->save(new PasswordSetupToken($jane, $janeHash, new DateTimeImmutable('+48 hours')));
+        $this->repository->save(new PasswordSetupToken($john, $johnHash, new DateTimeImmutable('+48 hours')));
         $this->em->clear();
 
         self::assertSame('john', $this->repository->findOneByTokenHash($johnHash)?->getUser()->getUsername());
@@ -108,8 +109,8 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
         $janeHash = hash('sha256', 'clear-jane');
         $johnHash = hash('sha256', 'clear-john');
 
-        $this->repository->save(new PasswordSetupToken($jane, $janeHash, new \DateTimeImmutable('+48 hours')));
-        $this->repository->save(new PasswordSetupToken($john, $johnHash, new \DateTimeImmutable('+48 hours')));
+        $this->repository->save(new PasswordSetupToken($jane, $janeHash, new DateTimeImmutable('+48 hours')));
+        $this->repository->save(new PasswordSetupToken($john, $johnHash, new DateTimeImmutable('+48 hours')));
 
         $this->repository->deleteForUser($jane);
         $this->em->clear();
@@ -122,7 +123,7 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
     {
         $user = $this->persistUser('jane');
         $hash = hash('sha256', 'clear-jane');
-        $this->repository->save(new PasswordSetupToken($user, $hash, new \DateTimeImmutable('+48 hours')));
+        $this->repository->save(new PasswordSetupToken($user, $hash, new DateTimeImmutable('+48 hours')));
         $this->em->clear();
 
         $managedUser = $this->em->getRepository(CpgUser::class)->findOneBy(['username' => 'jane']);
@@ -138,16 +139,16 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
     {
         $user = $this->persistUser('jane');
         $hash = hash('sha256', 'clear-jane');
-        $token = new PasswordSetupToken($user, $hash, new \DateTimeImmutable('+48 hours'));
+        $token = new PasswordSetupToken($user, $hash, new DateTimeImmutable('+48 hours'));
         $this->repository->save($token);
 
-        $token->markUsed(new \DateTimeImmutable());
+        $token->markUsed(new DateTimeImmutable());
         $this->repository->save($token);
         $this->em->clear();
 
         $reloaded = $this->repository->findOneByTokenHash($hash);
         self::assertInstanceOf(PasswordSetupToken::class, $reloaded);
-        self::assertFalse($reloaded->isUsable(new \DateTimeImmutable()));
+        self::assertFalse($reloaded->isUsable(new DateTimeImmutable()));
     }
 
     /**
@@ -158,11 +159,11 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
     {
         $user = $this->persistUser('jane');
         $hash = hash('sha256', 'clear-jane');
-        $token = new PasswordSetupToken($user, $hash, new \DateTimeImmutable('+48 hours'));
+        $token = new PasswordSetupToken($user, $hash, new DateTimeImmutable('+48 hours'));
         $this->repository->save($token);
 
-        self::assertTrue($this->repository->claim($token, new \DateTimeImmutable('2026-10-05 12:00:00')));
-        self::assertFalse($this->repository->claim($token, new \DateTimeImmutable('2026-10-05 12:00:01')));
+        self::assertTrue($this->repository->claim($token, new DateTimeImmutable('2026-10-05 12:00:00')));
+        self::assertFalse($this->repository->claim($token, new DateTimeImmutable('2026-10-05 12:00:01')));
 
         $this->em->clear();
         $reloaded = $this->repository->findOneByTokenHash($hash);
@@ -177,7 +178,7 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
     public function testClaimLosesTheRaceAgainstAConcurrentConsumption(): void
     {
         $user = $this->persistUser('jane');
-        $token = new PasswordSetupToken($user, hash('sha256', 'clear-jane'), new \DateTimeImmutable('+48 hours'));
+        $token = new PasswordSetupToken($user, hash('sha256', 'clear-jane'), new DateTimeImmutable('+48 hours'));
         $this->repository->save($token);
 
         $this->em->getConnection()->executeStatement(
@@ -186,15 +187,15 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
         );
 
         self::assertNull($token->getUsedAt(), 'Prémisse : l\'entité en mémoire ignore la consommation concurrente.');
-        self::assertFalse($this->repository->claim($token, new \DateTimeImmutable('2026-10-05 12:00:00')));
+        self::assertFalse($this->repository->claim($token, new DateTimeImmutable('2026-10-05 12:00:00')));
     }
 
     public function testIsUsableRejectsExpiredTokens(): void
     {
         $user = new CpgUser('jane', 'hashed-password');
-        $token = new PasswordSetupToken($user, hash('sha256', 'x'), new \DateTimeImmutable('2026-09-03 12:00:00'));
+        $token = new PasswordSetupToken($user, hash('sha256', 'x'), new DateTimeImmutable('2026-09-03 12:00:00'));
 
-        self::assertTrue($token->isUsable(new \DateTimeImmutable('2026-09-03 11:59:59')));
-        self::assertFalse($token->isUsable(new \DateTimeImmutable('2026-09-03 12:00:01')));
+        self::assertTrue($token->isUsable(new DateTimeImmutable('2026-09-03 11:59:59')));
+        self::assertFalse($token->isUsable(new DateTimeImmutable('2026-09-03 12:00:01')));
     }
 }

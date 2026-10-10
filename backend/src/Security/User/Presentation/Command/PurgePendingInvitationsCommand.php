@@ -6,6 +6,9 @@ namespace App\Security\User\Presentation\Command;
 
 use App\Security\User\Application\PendingInvitationPurgerInterface;
 use App\Security\User\Domain\Exception\InvalidPurgeRetentionException;
+use DateInterval;
+use DateTimeImmutable;
+use Exception;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -117,7 +120,7 @@ final class PurgePendingInvitationsCommand extends Command
         return Command::SUCCESS;
     }
 
-    private function parseMaxAge(string $olderThan, SymfonyStyle $io): ?\DateInterval
+    private function parseMaxAge(string $olderThan, SymfonyStyle $io): ?DateInterval
     {
         try {
             // Même garde que app:contact:purge-failed-messages : un intervalle
@@ -132,10 +135,10 @@ final class PurgePendingInvitationsCommand extends Command
             // positif, négatif ou nul est vérifié plus loin par
             // PendingInvitationPurger::purge() (InvalidPurgeRetentionException),
             // seul endroit qui connaît "maintenant".
-            new \DateTimeImmutable('-'.$olderThan);
+            new DateTimeImmutable('-'.$olderThan);
 
-            return \DateInterval::createFromDateString($olderThan);
-        } catch (\Exception) {
+            return DateInterval::createFromDateString($olderThan);
+        } catch (Exception) {
             $io->error(sprintf('Intervalle invalide : "%s". Exemples valides : "30 days", "12 hours".', $olderThan));
 
             return null;

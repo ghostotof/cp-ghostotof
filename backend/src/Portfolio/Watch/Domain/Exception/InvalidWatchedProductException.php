@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\Portfolio\Watch\Domain\Exception;
 
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
+use DomainException;
 
 /**
  * Exception métier levée quand la version d'un produit surveillé contredit sa
  * source de version (décision D2) : une entrée saisie à la main sans version,
  * ou une entrée résolue au runtime à laquelle on tente d'imposer une valeur.
  */
-final class InvalidWatchedProductException extends \DomainException
+final class InvalidWatchedProductException extends DomainException
 {
     public static function manualVersionRequired(string $slug): self
     {

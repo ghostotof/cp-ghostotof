@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Portfolio\Watch\Domain\Service;
 
 use App\Portfolio\Watch\Domain\ValueObject\PackageManifest;
+use DateTimeImmutable;
 
 /**
  * Relève le périmètre déployé et le fige là où l'application le relira.
@@ -15,5 +16,5 @@ use App\Portfolio\Watch\Domain\ValueObject\PackageManifest;
  */
 interface PackageManifestBuilderInterface
 {
-    public function build(\DateTimeImmutable $generatedAt): PackageManifest;
+    public function build(DateTimeImmutable $generatedAt): PackageManifest;
 }

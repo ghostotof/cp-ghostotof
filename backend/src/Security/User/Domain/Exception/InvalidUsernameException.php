@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Security\User\Domain\Exception;
 
+use DomainException;
+
 /**
  * Exception métier levée lorsqu'on tente de créer un CpgUser avec un nom
  * d'utilisateur ne respectant pas CpgUser::USERNAME_PATTERN.
  */
-final class InvalidUsernameException extends \DomainException
+final class InvalidUsernameException extends DomainException
 {
     public static function forUsername(string $username): self
     {
