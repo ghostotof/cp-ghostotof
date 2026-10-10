@@ -99,15 +99,22 @@ final class AddExperienceTechnologyCommand extends Command
     private function resolveName(InputInterface $input, SymfonyStyle $io): ?TechnologyName
     {
         try {
-            $name = $input->getOption('name') ?? $io->ask('Nom de la technologie', validator: $this->validateName(...));
+            $option = $input->getOption('name');
 
-            if (null === $name) {
+            if (null !== $option) {
+                return $this->parseName($option);
+            }
+
+            $answer = $io->ask('Nom de la technologie', validator: $this->parseName(...));
+
+            if (null === $answer) {
                 $io->error('Aucun nom de technologie : en mode non interactif, passez --name.');
 
                 return null;
             }
 
-            return $this->validateName($name);
+            // Le validateur de la question a déjà converti la réponse.
+            return $answer instanceof TechnologyName ? $answer : $this->parseName($answer);
         } catch (InvalidTechnologyNameException $exception) {
             $io->error($exception->getMessage());
 
@@ -119,17 +126,13 @@ final class AddExperienceTechnologyCommand extends Command
      * La règle du domaine (TechnologyName) : le nom rogné, et non la saisie
      * brute, part au registrar — sans quoi `--name=' PHP '` échappait au
      * contrôle d'unicité (issue #386). Le QuestionHelper affiche le message
-     * de l'exception et repose la question ; une réponse déjà convertie (le
-     * validateur de la question) est rendue telle quelle.
+     * de l'exception et repose la question. Une réponse qui n'est pas une
+     * chaîne (aucune, en pratique) est traitée comme vide.
      *
      * @throws InvalidTechnologyNameException
      */
-    private function validateName(mixed $name): TechnologyName
+    private function parseName(mixed $name): TechnologyName
     {
-        if ($name instanceof TechnologyName) {
-            return $name;
-        }
-
         return TechnologyName::fromString(\is_string($name) ? $name : '');
     }
 

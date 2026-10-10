@@ -303,6 +303,44 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         self::assertSame(1, $this->countTechnologiesNamed('Podman'));
     }
 
+    /** Revue de #386 : l'administrator compare lui aussi le nom rogné. */
+    public function testPutWithANameSurroundedBySpacesCollidesWithAnotherTechnology(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register(TechnologyName::fromString('Docker'), ExperienceYears::fromFloat(6.5), 'docker', null);
+        $podman = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register(TechnologyName::fromString('Podman'), ExperienceYears::fromFloat(1.0), null, null);
+
+        $client->request('PUT', \sprintf('/api/backoffice/experience/technologies/%s', $podman->getId()->toRfc4122()), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody(['name' => "\u{00A0}Docker ", 'years' => 1.0]));
+
+        self::assertResponseStatusCodeSame(409);
+        self::assertSame(1, $this->countTechnologiesNamed('Podman'));
+    }
+
+    /**
+     * Revue de #386 : PostgreSQL refuse l'octet NUL dans un `varchar`. Le nom
+     * passait la validation, et l'exception DBAL sortait en 500 `critical`.
+     */
+    public function testPostWithAControlCharacterInTheNameIsA422NamingName(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('POST', '/api/backoffice/experience/technologies', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody(['name' => "P\0HP", 'years' => 1.0]));
+
+        self::assertResponseStatusCodeSame(422);
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame(['name'], array_column($body['violations'], 'propertyPath'));
+    }
+
     /** Un nom fait d'espaces passait `NotBlank`, qui ne rogne pas sans normaliseur. */
     public function testPostWithABlankNameIsA422NamingName(): void
     {

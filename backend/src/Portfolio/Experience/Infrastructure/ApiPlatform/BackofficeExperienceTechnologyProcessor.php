@@ -35,7 +35,7 @@ final readonly class BackofficeExperienceTechnologyProcessor implements Processo
         // Déjà validé par le Callback du DTO : une valeur hors bornes n'atteint pas ce point.
         $years = ExperienceYears::fromFloat($data->years);
 
-        // Rogné et borné par le DTO (NotBlank normalisé, Length) : TechnologyName ne lève pas ici.
+        // Déjà validé par le Callback du DTO : TechnologyName ne lève pas ici.
         $technology = $this->experienceTechnologyRegistrar->register(
             TechnologyName::fromString($data->name),
             $years,
