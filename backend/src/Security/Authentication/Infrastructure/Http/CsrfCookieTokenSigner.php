@@ -60,7 +60,7 @@ final readonly class CsrfCookieTokenSigner
      * correspond à ce serveur. Ne compare pas au cookie/header : c'est le
      * rôle (préalable) de CsrfCookieRequestSubscriber.
      */
-    public function isValid(string $token): bool
+    public function isValid(#[SensitiveParameter] string $token): bool
     {
         $parts = explode(self::SEPARATOR, $token);
 

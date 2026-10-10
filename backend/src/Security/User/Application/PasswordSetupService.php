@@ -25,12 +25,12 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
     ) {
     }
 
-    public function validate(string $clearToken): void
+    public function validate(#[SensitiveParameter] string $clearToken): void
     {
         $this->usableTokenOrFail($clearToken);
     }
 
-    public function complete(string $clearToken, #[SensitiveParameter] string $plainPassword): void
+    public function complete(#[SensitiveParameter] string $clearToken, #[SensitiveParameter] string $plainPassword): void
     {
         $token = $this->usableTokenOrFail($clearToken);
         $user = $token->getUser();
@@ -61,7 +61,7 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         $this->auditLogger->accountActivated($user);
     }
 
-    private function usableTokenOrFail(string $clearToken): PasswordSetupToken
+    private function usableTokenOrFail(#[SensitiveParameter] string $clearToken): PasswordSetupToken
     {
         $token = $this->passwordSetupTokenRepository->findOneByTokenHash(hash('sha256', $clearToken));
 

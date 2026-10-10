@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Http;
 
+use SensitiveParameter;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Cookie;
 
@@ -48,7 +49,7 @@ final readonly class AuthCookieFactory
     /**
      * @param int|null $expiresAt timestamp Unix, ou null pour un cookie de session
      */
-    public function bearer(string $jwt, ?int $expiresAt = null): Cookie
+    public function bearer(#[SensitiveParameter] string $jwt, ?int $expiresAt = null): Cookie
     {
         return $this->create(self::BEARER, $jwt, $expiresAt);
     }
@@ -56,7 +57,7 @@ final readonly class AuthCookieFactory
     /**
      * @param int|null $expiresAt timestamp Unix, ou null pour un cookie de session
      */
-    public function xsrf(string $token, ?int $expiresAt = null): Cookie
+    public function xsrf(#[SensitiveParameter] string $token, ?int $expiresAt = null): Cookie
     {
         return $this->create(self::XSRF_TOKEN, $token, $expiresAt);
     }
@@ -83,9 +84,13 @@ final readonly class AuthCookieFactory
     }
 
     /**
+     * `$value` porte le JWT ou le jeton CSRF : caché des traces comme dans
+     * bearer() et xsrf(), bien que son nom échappe au recensement de
+     * SecretParametersTest (issue #414).
+     *
      * @param self::BEARER|self::XSRF_TOKEN $name
      */
-    private function create(string $name, ?string $value, ?int $expiresAt): Cookie
+    private function create(string $name, #[SensitiveParameter] ?string $value, ?int $expiresAt): Cookie
     {
         return Cookie::create($name, $value)
             ->withExpires($expiresAt ?? 0)

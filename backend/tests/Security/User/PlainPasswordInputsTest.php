@@ -22,6 +22,7 @@ use App\Tests\Security\User\Fixtures\PlainPasswordFieldsFixture;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Support\PhpSources;
 use App\Tests\Support\PlainPasswordInputs;
+use App\Tests\Support\SensitiveParameters;
 use PhpToken;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -173,7 +174,7 @@ final class PlainPasswordInputsTest extends TestCase
             PlainPasswordInputs::label(...),
             array_values(array_filter(
                 PlainPasswordInputs::parameters($this->srcClasses()),
-                static fn (ReflectionParameter $parameter): bool => !PlainPasswordInputs::isHiddenFromTraces($parameter),
+                static fn (ReflectionParameter $parameter): bool => !SensitiveParameters::isHiddenFromTraces($parameter),
             )),
         );
 
@@ -302,7 +303,7 @@ final class PlainPasswordInputsTest extends TestCase
             PlainPasswordFieldsFixture::class.'::change($plainPassword)' => true,
         ], array_combine(
             array_map(PlainPasswordInputs::label(...), $parameters),
-            array_map(PlainPasswordInputs::isHiddenFromTraces(...), $parameters),
+            array_map(SensitiveParameters::isHiddenFromTraces(...), $parameters),
         ));
     }
 
