@@ -6,6 +6,7 @@ namespace App\Tests\Security\User\Presentation\Command;
 
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Tests\Support\ChildPhpProcess;
 use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestCredentials;
@@ -448,7 +449,7 @@ final class CreateCpgUserCommandTest extends KernelTestCase
     {
         \assert(self::$kernel instanceof KernelInterface);
         $process = proc_open(
-            ['php', self::$kernel->getProjectDir().'/bin/console', 'app:user:create', '--username=jane', '--password-stdin', '--no-ansi', '--env=test'],
+            ChildPhpProcess::command(self::$kernel->getProjectDir().'/bin/console', 'app:user:create', '--username=jane', '--password-stdin', '--no-ansi', '--env=test'),
             [0 => ['pty'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
             $pipes,
         );

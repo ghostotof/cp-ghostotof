@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Security;
 
+use App\Tests\Support\ChildPhpProcess;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Process\Process;
@@ -153,7 +154,7 @@ final class RateLimiterConcurrencyTest extends KernelTestCase
     private function startConsumer(string $limiterName, string $key, string $barrierPath): Process
     {
         $process = new Process(
-            [\PHP_BINARY, self::CONSUMER_SCRIPT, $limiterName, $key, $barrierPath],
+            ChildPhpProcess::command(self::CONSUMER_SCRIPT, $limiterName, $key, $barrierPath),
             env: $this->consumerEnvironment(),
             timeout: self::TIMEOUT_SECONDS,
         );

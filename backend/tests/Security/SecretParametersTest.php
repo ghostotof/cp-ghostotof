@@ -33,12 +33,14 @@ use ReflectionParameter;
  * l'attribut, la valeur figure dans les arguments de toute trace d'exception
  * qui traverse la méthode.
  *
- * **Ce que l'attribut protège, et ce qu'il ne protège pas.** En production,
+ * **Ce que l'attribut protège, et ce qu'il ne protège pas.** En production et,
+ * depuis #420, sous PHPUnit ({@see \App\Tests\Security\ExceptionArgumentsHiddenInTestsTest}),
  * `zend.exception_ignore_args = On` retire déjà les arguments des traces : le
- * risque est celui du dev et du test, traces affichées (le corps JSON d'erreur
- * en debug), `ErrorDetailsStamp` de Messenger, journaux de test collés dans un
- * ticket ou une session d'assistant. L'attribut, lui, vaut quelle que soit la
- * configuration du moteur, pour `getTrace()` comme pour `debug_backtrace()`.
+ * risque est celui du dev, traces affichées (le corps JSON d'erreur en debug),
+ * `ErrorDetailsStamp` de Messenger, journaux collés dans un ticket ou une
+ * session d'assistant, et celui de `debug_backtrace()`, que la directive ne
+ * touche pas. L'attribut, lui, vaut quelle que soit la configuration du
+ * moteur, pour `getTrace()` comme pour `debug_backtrace()`.
  * Il ne cache que les **arguments**, et seulement dans la frame de la méthode
  * qui le déclare : une valeur recopiée dans le message d'une exception, dans
  * une variable locale (qu'un débogueur pas à pas affiche), ou passée ensuite
