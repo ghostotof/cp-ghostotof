@@ -29,7 +29,13 @@ paths:
   `Backoffice{About}{Settings,SiteCard,MeCard}Resource`, `BackofficeUserResource`,
   `BackofficeUserPasswordResource`): a flat DTO (never the Doctrine entity itself) under
   `Presentation/ApiResource/`, backed by a `Provider` (`GetCollection`/`Get`) and a `Processor`
-  (`Post`/`Put`/`Delete`) under `Infrastructure/ApiPlatform/`. Collection reads use a `?locale=` query filter
+  (`Post`/`Put`/`Delete`) under `Infrastructure/ApiPlatform/`. A CRUD Processor **uses the
+  `Shared/Infrastructure/ApiPlatform/DispatchesWriteOperations` trait** (issue #338,
+  `@use DispatchesWriteOperations<TheResource>`) and declares only `create()`, `update(Uuid $id, …)` and
+  `delete(Uuid $id)`. The trait picks one by operation, and refuses any other with
+  `UnsupportedOperationException` before any action — never re-write the `instanceof` cascade.
+  `DispatchesWriteOperationsTest` pins that choice. Each resource's functional test pins the wiring.
+  Collection reads use a `?locale=` query filter
   (unlike the public `{locale}` path param — collections aren't per-locale routes). **`Put`/`Delete` operations
   need an explicit `provider:` set, not just `processor:`** — otherwise API Platform's default provider tries to
   resolve the DTO via Doctrine directly and 404s before ever reaching the processor. Since `v0.12.0` the

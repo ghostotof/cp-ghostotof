@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Portfolio\Watch\Infrastructure\Manifest;
 
 use App\Portfolio\Watch\Infrastructure\Manifest\DeployedVersionsBuilder;
+use App\Portfolio\Watch\Infrastructure\Manifest\ManifestWriteException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -159,5 +160,58 @@ final class DeployedVersionsBuilderTest extends TestCase
         file_put_contents($this->root.'/.env', "NODE_TAG=20.0.0-alpine\n");
 
         self::assertSame('20.0.0', $this->build()['nodejs']);
+    }
+
+    /**
+     * Le relevé s'écrit au `docker build` : un répertoire de sortie impossible
+     * à créer doit arrêter la construction sous un nom dédié (issue #338), pas
+     * laisser une image sans relevé. Un fichier ordinaire à la place du
+     * répertoire attendu suffit à faire échouer `mkdir`, même en root.
+     */
+    public function testAnOutputDirectoryThatCannotBeCreatedStopsTheBuild(): void
+    {
+        $blocker = $this->root.'/k8s/base/blocker';
+        touch($blocker);
+        $builder = new DeployedVersionsBuilder($this->root, $this->root.'/package-lock.json', $blocker.'/sub/out.json');
+
+        // `mkdir()` émet un E_WARNING avant que la garde ne lève : il est
+        // attendu ici, et `failOnWarning` en ferait un échec du test.
+        set_error_handler(static fn (): bool => true, \E_WARNING);
+
+        try {
+            $builder->build(new \DateTimeImmutable('2026-09-09T12:00:00+00:00'));
+            self::fail('Un répertoire de sortie impossible à créer doit arrêter la construction.');
+        } catch (ManifestWriteException $exception) {
+            self::assertStringContainsString($blocker.'/sub', $exception->getMessage());
+        } finally {
+            restore_error_handler();
+            unlink($blocker);
+        }
+    }
+
+    /**
+     * Le répertoire existe, mais le fichier ne peut pas s'écrire (disque
+     * plein, droits) : la construction s'arrête aussi (revue de #338), au
+     * lieu de laisser partir une image sans relevé. Un répertoire à la place
+     * du fichier fait échouer l'écriture, même en root.
+     */
+    public function testAnOutputFileThatCannotBeWrittenStopsTheBuild(): void
+    {
+        $occupied = $this->root.'/k8s/base/out.json';
+        mkdir($occupied);
+        $builder = new DeployedVersionsBuilder($this->root, $this->root.'/package-lock.json', $occupied);
+
+        // `file_put_contents()` émet un E_WARNING avant que la garde ne lève.
+        set_error_handler(static fn (): bool => true, \E_WARNING);
+
+        try {
+            $builder->build(new \DateTimeImmutable('2026-09-09T12:00:00+00:00'));
+            self::fail('Un fichier de sortie impossible à écrire doit arrêter la construction.');
+        } catch (ManifestWriteException $exception) {
+            self::assertStringContainsString($occupied, $exception->getMessage());
+        } finally {
+            restore_error_handler();
+            rmdir($occupied);
+        }
     }
 }

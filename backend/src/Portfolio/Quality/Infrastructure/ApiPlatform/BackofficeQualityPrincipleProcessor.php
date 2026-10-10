@@ -4,15 +4,11 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Quality\Infrastructure\ApiPlatform;
 
-use ApiPlatform\Metadata\Delete;
-use ApiPlatform\Metadata\Operation;
-use ApiPlatform\Metadata\Post;
-use ApiPlatform\Metadata\Put;
 use ApiPlatform\State\ProcessorInterface;
 use App\Portfolio\Quality\Application\QualityPrincipleAdministratorInterface;
 use App\Portfolio\Quality\Presentation\ApiResource\BackofficeQualityPrincipleResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
-use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use App\Shared\Infrastructure\ApiPlatform\DispatchesWriteOperations;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -20,42 +16,49 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class BackofficeQualityPrincipleProcessor implements ProcessorInterface
 {
-    use ResolvesUriVariables;
+    /** @use DispatchesWriteOperations<BackofficeQualityPrincipleResource> */
+    use DispatchesWriteOperations;
 
     public function __construct(
         private QualityPrincipleAdministratorInterface $qualityPrincipleAdministrator,
     ) {
     }
 
-    public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeQualityPrincipleResource
+    /**
+     * @param BackofficeQualityPrincipleResource $data
+     */
+    private function create(mixed $data): BackofficeQualityPrincipleResource
     {
-        if ($operation instanceof Delete) {
-            $this->qualityPrincipleAdministrator->delete($this->uriVariableUuid($uriVariables));
-
-            return null;
-        }
-
-        if ($operation instanceof Put) {
-            $principle = $this->qualityPrincipleAdministrator->update(
-                $this->uriVariableUuid($uriVariables),
-                $data->title,
-                $data->description,
-                $data->iconKey,
-                $this->translationGroup($data),
-            );
-        } elseif ($operation instanceof Post) {
-            $principle = $this->qualityPrincipleAdministrator->create(
-                Locale::from((string) $data->locale),
-                $data->title,
-                $data->description,
-                $data->iconKey,
-                $this->translationGroup($data),
-            );
-        } else {
-            throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
-        }
+        $principle = $this->qualityPrincipleAdministrator->create(
+            Locale::from((string) $data->locale),
+            $data->title,
+            $data->description,
+            $data->iconKey,
+            $this->translationGroup($data),
+        );
 
         return BackofficeQualityPrincipleResource::fromEntity($principle);
+    }
+
+    /**
+     * @param BackofficeQualityPrincipleResource $data
+     */
+    private function update(Uuid $id, mixed $data): BackofficeQualityPrincipleResource
+    {
+        $principle = $this->qualityPrincipleAdministrator->update(
+            $id,
+            $data->title,
+            $data->description,
+            $data->iconKey,
+            $this->translationGroup($data),
+        );
+
+        return BackofficeQualityPrincipleResource::fromEntity($principle);
+    }
+
+    private function delete(Uuid $id): void
+    {
+        $this->qualityPrincipleAdministrator->delete($id);
     }
 
     /**

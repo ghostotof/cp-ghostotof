@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Portfolio\Shared\Domain\Service;
 
 use App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException;
+use App\Portfolio\Shared\Domain\Exception\TranslationGroupHasSeveralPositionsException;
 use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
 use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -56,8 +57,9 @@ final readonly class ContentPlacement
      *
      * @param list<TranslatableContent> $members entrées déjà dans ce groupe et dans le périmètre
      *
-     * @throws UnknownTranslationGroupException  si le groupe n'existe pas dans le périmètre
-     * @throws TranslationAlreadyExistsException si le groupe porte déjà cette langue
+     * @throws UnknownTranslationGroupException             si le groupe n'existe pas dans le périmètre
+     * @throws TranslationAlreadyExistsException            si le groupe porte déjà cette langue
+     * @throws TranslationGroupHasSeveralPositionsException si les membres du groupe divergent sur la position
      */
     public function inGroup(Uuid $translationGroup, Locale $locale, array $members): int
     {
@@ -78,7 +80,7 @@ final readonly class ContentPlacement
         $position = $members[0]->getPosition();
         foreach ($members as $member) {
             if ($member->getPosition() !== $position) {
-                throw new \LogicException(\sprintf('Le groupe de traduction %s porte plusieurs positions.', $translationGroup->toRfc4122()));
+                throw TranslationGroupHasSeveralPositionsException::forGroup($translationGroup);
             }
         }
 

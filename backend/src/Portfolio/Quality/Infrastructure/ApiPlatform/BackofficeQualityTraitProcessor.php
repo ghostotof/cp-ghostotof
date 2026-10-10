@@ -4,15 +4,11 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Quality\Infrastructure\ApiPlatform;
 
-use ApiPlatform\Metadata\Delete;
-use ApiPlatform\Metadata\Operation;
-use ApiPlatform\Metadata\Post;
-use ApiPlatform\Metadata\Put;
 use ApiPlatform\State\ProcessorInterface;
 use App\Portfolio\Quality\Application\QualityTraitAdministratorInterface;
 use App\Portfolio\Quality\Presentation\ApiResource\BackofficeQualityTraitResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
-use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use App\Shared\Infrastructure\ApiPlatform\DispatchesWriteOperations;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -20,38 +16,45 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class BackofficeQualityTraitProcessor implements ProcessorInterface
 {
-    use ResolvesUriVariables;
+    /** @use DispatchesWriteOperations<BackofficeQualityTraitResource> */
+    use DispatchesWriteOperations;
 
     public function __construct(
         private QualityTraitAdministratorInterface $qualityTraitAdministrator,
     ) {
     }
 
-    public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeQualityTraitResource
+    /**
+     * @param BackofficeQualityTraitResource $data
+     */
+    private function create(mixed $data): BackofficeQualityTraitResource
     {
-        if ($operation instanceof Delete) {
-            $this->qualityTraitAdministrator->delete($this->uriVariableUuid($uriVariables));
-
-            return null;
-        }
-
-        if ($operation instanceof Put) {
-            $trait = $this->qualityTraitAdministrator->update(
-                $this->uriVariableUuid($uriVariables),
-                $data->label,
-                $this->translationGroup($data),
-            );
-        } elseif ($operation instanceof Post) {
-            $trait = $this->qualityTraitAdministrator->create(
-                Locale::from((string) $data->locale),
-                $data->label,
-                $this->translationGroup($data),
-            );
-        } else {
-            throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
-        }
+        $trait = $this->qualityTraitAdministrator->create(
+            Locale::from((string) $data->locale),
+            $data->label,
+            $this->translationGroup($data),
+        );
 
         return BackofficeQualityTraitResource::fromEntity($trait);
+    }
+
+    /**
+     * @param BackofficeQualityTraitResource $data
+     */
+    private function update(Uuid $id, mixed $data): BackofficeQualityTraitResource
+    {
+        $trait = $this->qualityTraitAdministrator->update(
+            $id,
+            $data->label,
+            $this->translationGroup($data),
+        );
+
+        return BackofficeQualityTraitResource::fromEntity($trait);
+    }
+
+    private function delete(Uuid $id): void
+    {
+        $this->qualityTraitAdministrator->delete($id);
     }
 
     /**

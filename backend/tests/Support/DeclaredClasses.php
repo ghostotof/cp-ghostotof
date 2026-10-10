@@ -22,8 +22,6 @@ namespace App\Tests\Support;
  */
 final class DeclaredClasses
 {
-    private const array IGNORED = [\T_WHITESPACE, \T_COMMENT, \T_DOC_COMMENT];
-
     /**
      * @template T of object
      *
@@ -44,11 +42,8 @@ final class DeclaredClasses
     public static function all(string $directory): array
     {
         $found = [];
-        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS));
-        foreach ($files as $file) {
-            if ($file instanceof \SplFileInfo && 'php' === $file->getExtension()) {
-                array_push($found, ...self::declaredIn($file->getPathname()));
-            }
+        foreach (PhpSources::files($directory) as $path) {
+            array_push($found, ...self::declaredIn($path));
         }
         sort($found);
 
@@ -81,10 +76,7 @@ final class DeclaredClasses
      */
     private static function classNames(string $code): array
     {
-        $tokens = array_values(array_filter(
-            \PhpToken::tokenize($code),
-            static fn (\PhpToken $token): bool => !$token->is(self::IGNORED),
-        ));
+        $tokens = PhpSources::significantTokens($code);
 
         $namespace = '';
         $classes = [];

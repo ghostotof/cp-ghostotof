@@ -4,15 +4,11 @@ declare(strict_types=1);
 
 namespace App\Portfolio\CaseStudy\Infrastructure\ApiPlatform;
 
-use ApiPlatform\Metadata\Delete;
-use ApiPlatform\Metadata\Operation;
-use ApiPlatform\Metadata\Post;
-use ApiPlatform\Metadata\Put;
 use ApiPlatform\State\ProcessorInterface;
 use App\Portfolio\CaseStudy\Application\CaseStudyAdministratorInterface;
 use App\Portfolio\CaseStudy\Presentation\ApiResource\BackofficeCaseStudyResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
-use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use App\Shared\Infrastructure\ApiPlatform\DispatchesWriteOperations;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -20,50 +16,57 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class BackofficeCaseStudyProcessor implements ProcessorInterface
 {
-    use ResolvesUriVariables;
+    /** @use DispatchesWriteOperations<BackofficeCaseStudyResource> */
+    use DispatchesWriteOperations;
 
     public function __construct(
         private CaseStudyAdministratorInterface $caseStudyAdministrator,
     ) {
     }
 
-    public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeCaseStudyResource
+    /**
+     * @param BackofficeCaseStudyResource $data
+     */
+    private function create(mixed $data): BackofficeCaseStudyResource
     {
-        if ($operation instanceof Delete) {
-            $this->caseStudyAdministrator->delete($this->uriVariableUuid($uriVariables));
-
-            return null;
-        }
-
-        if ($operation instanceof Put) {
-            $caseStudy = $this->caseStudyAdministrator->update(
-                $this->uriVariableUuid($uriVariables),
-                $data->title,
-                $data->problem,
-                $data->solution,
-                $data->tradeoffs,
-                $data->measuredResult,
-                $this->translationGroup($data),
-            );
-        } elseif ($operation instanceof Post) {
-            // Locale::from (et non fromString) : la valeur est déjà bornée en
-            // amont par #[Assert\Choice] sur le DTO. Un ValueError ici serait
-            // un vrai défaut, et doit remonter en 500 plutôt que d'être
-            // déguisé en 404.
-            $caseStudy = $this->caseStudyAdministrator->create(
-                Locale::from((string) $data->locale),
-                $data->title,
-                $data->problem,
-                $data->solution,
-                $data->tradeoffs,
-                $data->measuredResult,
-                $this->translationGroup($data),
-            );
-        } else {
-            throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
-        }
+        // Locale::from (et non fromString) : la valeur est déjà bornée en
+        // amont par #[Assert\Choice] sur le DTO. Un ValueError ici serait
+        // un vrai défaut, et doit remonter en 500 plutôt que d'être
+        // déguisé en 404.
+        $caseStudy = $this->caseStudyAdministrator->create(
+            Locale::from((string) $data->locale),
+            $data->title,
+            $data->problem,
+            $data->solution,
+            $data->tradeoffs,
+            $data->measuredResult,
+            $this->translationGroup($data),
+        );
 
         return BackofficeCaseStudyResource::fromEntity($caseStudy);
+    }
+
+    /**
+     * @param BackofficeCaseStudyResource $data
+     */
+    private function update(Uuid $id, mixed $data): BackofficeCaseStudyResource
+    {
+        $caseStudy = $this->caseStudyAdministrator->update(
+            $id,
+            $data->title,
+            $data->problem,
+            $data->solution,
+            $data->tradeoffs,
+            $data->measuredResult,
+            $this->translationGroup($data),
+        );
+
+        return BackofficeCaseStudyResource::fromEntity($caseStudy);
+    }
+
+    private function delete(Uuid $id): void
+    {
+        $this->caseStudyAdministrator->delete($id);
     }
 
     /**

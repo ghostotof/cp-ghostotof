@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Portfolio\Shared\Domain\Service;
 
 use App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException;
+use App\Portfolio\Shared\Domain\Exception\TranslationGroupHasSeveralPositionsException;
 use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -117,13 +118,23 @@ final class ContentPlacementTest extends TestCase
      * Toutes les entrées d'un groupe partagent sa position ; `inGroup()` en
      * dépend. Un groupe hétérogène est un défaut du pipeline, pas une saisie :
      * il doit surfacer, pas être arbitré en silence par `$members[0]`.
+     *
+     * Les deux membres sont en FR et la langue demandée est EN : avec deux
+     * langues seulement, c'est la seule façon d'atteindre ce contrôle, la
+     * présence de la langue demandée étant vérifiée avant (issue #338 — une
+     * paire FR/EN levait TranslationAlreadyExistsException, une \LogicException
+     * elle aussi, et le test passait sans jamais arriver jusqu'ici). Un tel
+     * groupe viole aussi l'index unique `(translation_group, locale)` : c'est
+     * précisément le groupe corrompu que la garde suppose.
      */
     public function testAGroupWhoseMembersDisagreeOnThePositionIsABug(): void
     {
         $group = Uuid::v7();
-        $members = [new FakeTranslatableContent(Locale::FR, 3, $group), new FakeTranslatableContent(Locale::EN, 5, $group)];
+        $members = [new FakeTranslatableContent(Locale::FR, 3, $group), new FakeTranslatableContent(Locale::FR, 5, $group)];
 
-        $this->expectException(\LogicException::class);
+        $this->expectException(TranslationGroupHasSeveralPositionsException::class);
+        // Le groupe fautif est ce qu'il faut retrouver en base.
+        $this->expectExceptionMessage($group->toRfc4122());
 
         (new ContentPlacement())->inGroup($group, Locale::EN, $members);
     }
