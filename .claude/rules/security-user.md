@@ -32,6 +32,19 @@ paths:
     — each constraint only if the previous one passed — so a password already refused never reaches
     api.pwnedpasswords.com: the DTO is validated before the token is read, so any anonymous caller of the
     set-password route could otherwise trigger that outbound call (`PasswordBreachCheckOrderTest` counts them).
+    **A fourth entry point cannot skip it** (issue #411): `tests/Security/User/PlainPasswordInputsTest.php`
+    (census in `tests/Support/PlainPasswordInputs`) fails on any field of `src/` whose name says "password"
+    (`pass(word|wd|phrase)`, `pwd`, `mot_de_passe`, any case, `hash` excluded) and may hold a string unless
+    it carries that sequence **alone**; on any such parameter without `#[SensitiveParameter]` (interfaces
+    included); on any class of `src/` naming a `Symfony\Component\PasswordHasher\` type that is not declared
+    in its `HASHERS` with the interface method the password reaches it by; and on any caller of those methods
+    that is not a declared entry point (`ENTRY_POINTS`) with what validates it (`VALIDATED_BY`: the API
+    Platform resource it is the processor of, which must carry a password field, or the CLI, which must name
+    both constraints). The caller census closes the gap of the name census: a field called `$secret` feeding
+    `changePassword()` is caught there. A guard rather than a `PlainPassword` value object, settled in #411
+    (justification in the test's docblock): the VO would only cover the length — not the breach check nor its
+    order —, would write the rule a second time, and its other gain, keeping the value out of stack traces,
+    is what `#[SensitiveParameter]` gives. Revisit the day the hashing use cases multiply.
     Domain exceptions: `UsernameAlreadyUsedException`, `EmailAlreadyUsedException`,
     `InvalidPasswordSetupTokenException` (→404), `PasswordSetupTokenExpiredException` (→410, covers "already
     used"), `CannotModifyOwnRolesException` / `CannotDemoteLastSuperAdminException` (→409),
