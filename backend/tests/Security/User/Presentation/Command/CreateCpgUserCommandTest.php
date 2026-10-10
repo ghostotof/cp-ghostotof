@@ -6,6 +6,7 @@ namespace App\Tests\Security\User\Presentation\Command;
 
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -17,6 +18,8 @@ use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
 final class CreateCpgUserCommandTest extends KernelTestCase
 {
+    use ReadsSecurityAuditLog;
+
     protected function setUp(): void
     {
         self::bootKernel();
@@ -40,6 +43,19 @@ final class CreateCpgUserCommandTest extends KernelTestCase
 
         $user = self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane');
         self::assertNotNull($user);
+    }
+
+    /** Issue #386 : le câblage réel, du conteneur au canal `security_audit`. */
+    public function testTheCreationIsRecordedInTheSecurityAuditLog(): void
+    {
+        $tester = $this->commandTester();
+
+        $this->executeWithPasswordOnStdin($tester, ['--username' => 'super', '--role' => ['ROLE_SUPER']], TestCredentials::plainPassword());
+
+        $event = self::singleSecurityAuditEvent('user-created');
+        self::assertSame('super', $event['user']);
+        self::assertTrue($event['superAdmin']);
+        self::assertSame('console', $event['actor']);
     }
 
     public function testFailsWhenUsernameAlreadyUsed(): void

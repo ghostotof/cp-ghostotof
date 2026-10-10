@@ -26,7 +26,9 @@ use App\Security\User\Domain\Entity\CpgUser;
  *  - les quotas anonymes atteints (issue #356) :
  *    Infrastructure\Log\ThrottledRequestAuditListener ;
  *  - la purge automatique des invitations jamais activées (issue #238) :
- *    PendingInvitationPurger, une par compte supprimé.
+ *    PendingInvitationPurger, une par compte supprimé ;
+ *  - la création d'un compte en ligne de commande (issue #386) :
+ *    CpgUserRegistrar, après l'enregistrement.
  *
  * Ce qui sort, et rien d'autre : `event` (kebab-case, stable — c'est la clé
  * sur laquelle on filtre), l'identifiant visé (`user`, plus `userId` quand un
@@ -121,4 +123,13 @@ interface SecurityAuditLoggerInterface
      * de la requête courante (il n'y en a pas).
      */
     public function userPurged(CpgUser $user): void;
+
+    /**
+     * Compte créé par `app:user:create` (CpgUserRegistrar, issue #386), seule
+     * voie qui en crée un sans invitation — et celle du premier ROLE_SUPER.
+     * Porte `superAdmin`, comme `role-changed`. L'acteur journalisé est
+     * `console` : une personne au terminal, que le journal ne sait pas
+     * nommer, distincte de `system` (un traitement planifié).
+     */
+    public function userCreated(CpgUser $user): void;
 }
