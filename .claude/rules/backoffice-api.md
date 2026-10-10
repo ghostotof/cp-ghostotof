@@ -241,6 +241,6 @@ paths:
   reads the `type`. The `exception_to_status` entries of the three API Platform quotas stay, at 429:
   that map is read first. **`login_throttling` is not one of them yet**: Lexik's failure handler answers
   **401** `Too many failed login attempts`, no problem+json. Decided on 2026-10-10 (#369): it moves to a
-  429 `rate-limited` with `Retry-After`, in its own issue, since it touches the login page, the preprod
+  429 `rate-limited` with `Retry-After`, in issue #399, since it touches the login page, the preprod
   smoke test (`tools/smoke-login-throttling.sh`) and the failure handler.
 
