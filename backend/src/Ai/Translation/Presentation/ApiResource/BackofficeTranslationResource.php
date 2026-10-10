@@ -8,7 +8,7 @@ use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Post;
 use App\Ai\Translation\Infrastructure\ApiPlatform\BackofficeTranslationProcessor;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
-use App\Shared\Presentation\ApiResource\UnvalidatedInputException;
+use App\Shared\Presentation\ApiResource\InputContradictsValidationException;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
@@ -121,7 +121,7 @@ final class BackofficeTranslationResource
         $fields = [];
         foreach ($this->fields as $name => $value) {
             if (!\is_string($value)) {
-                throw UnvalidatedInputException::because(\sprintf('champ "%s" non textuel', (string) $name));
+                throw InputContradictsValidationException::nonTextualField($name);
             }
             $fields[(string) $name] = $value;
         }

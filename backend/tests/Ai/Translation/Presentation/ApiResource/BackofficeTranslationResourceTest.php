@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Tests\Ai\Translation\Presentation\ApiResource;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use App\Ai\Translation\Presentation\ApiResource\BackofficeTranslationResource;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Shared\Presentation\ApiResource\InputContradictsValidationException;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\ReadsAiUsageLog;
 use App\Tests\Support\ReadsAllChannelsLog;
@@ -52,6 +54,20 @@ final class BackofficeTranslationResourceTest extends WebTestCase
     {
         self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement('DELETE FROM cpg_user');
         parent::tearDown();
+    }
+
+    /**
+     * `validatedFields()` rend le dictionnaire tel que la validation le
+     * garantit. Une valeur non textuelle à ce stade est un défaut du pipeline
+     * (issue #338) : refusée sous un nom dédié, qui nomme le champ, plutôt que
+     * filtrée en silence. Le DTO est construit sans passer par le validateur.
+     */
+    public function testANonTextualFieldContradictsTheValidationAndIsNamed(): void
+    {
+        $this->expectException(InputContradictsValidationException::class);
+        $this->expectExceptionMessage('"summary"');
+
+        new BackofficeTranslationResource(sourceLocale: 'fr', targetLocale: 'en', fields: ['title' => 'Bonjour', 'summary' => ['imbriqué']])->validatedFields();
     }
 
     public function testAnonymousRequestIsRejected(): void
