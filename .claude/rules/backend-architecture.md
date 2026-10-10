@@ -86,6 +86,12 @@ never a qualified name. Out of scope, **by decision** (2026-10-10): native **fun
 their leading backslash (`\sprintf`, `\in_array`, `\PHP_EOL`, `\T_CLASS`) — no `use function` / `use const`:
 `importShortClasses` does not touch them, so Rector stays the only tool, and the backslash lets OPcache
 compile some functions to dedicated opcodes; namespaces cited in prose (`App\Shared`);
+**The line is performance, and it was measured** (2026-10-10, PHP 8.5, OPcache dump after the optimizer): the
+rule only covers natives whose import costs nothing. `\DateTimeImmutable` and an imported `DateTimeImmutable`
+compile to **identical opcodes** — `use` is resolved at compile time — whereas an unqualified `count($a)`
+loses the dedicated `COUNT` opcode for `INIT_NS_FCALL_BY_NAME` + `DO_FCALL_BY_NAME`, a runtime lookup that
+falls back to the global function (constants share that fallback). A class-like native that ever proved
+costly to import would keep its qualified name, with the measurement as its justification. Also out of scope:
 `config/bundles.php` and `config/reference.php` (Flex-generated); class names held in strings as test data;
 `migrations/` (frozen, outside Rector's paths). The guard is Rector's `withImportNames()` in
 `backend/rector.php`, checked by the blocking `rector-backend` job: it already rejects a qualified
