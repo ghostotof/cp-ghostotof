@@ -6,6 +6,7 @@ namespace App\Ai\Assistant\Domain\Exception;
 
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use App\Shared\Domain\Exception\HasProblemType;
+use RuntimeException;
 
 /**
  * L'assistant n'a pas pu répondre : fournisseur injoignable, refus, délai
@@ -17,7 +18,7 @@ use App\Shared\Domain\Exception\HasProblemType;
  * (`/errors/assistant-unavailable`) ; après le début du flux, elle devient
  * l'événement `error` de même raison.
  */
-final class AssistantUnavailableException extends \RuntimeException implements ProblemExceptionInterface
+final class AssistantUnavailableException extends RuntimeException implements ProblemExceptionInterface
 {
     use HasProblemType;
 

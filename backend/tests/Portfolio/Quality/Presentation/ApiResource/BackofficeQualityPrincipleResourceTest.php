@@ -99,7 +99,7 @@ final class BackofficeQualityPrincipleResourceTest extends WebTestCase
 
         $principle = $client->getContainer()->get(QualityPrincipleAdministratorInterface::class)->create(Locale::FR, 'DDD', 'Description.', 'boxes');
 
-        $client->request('GET', sprintf('/api/backoffice/quality/principles/%s', $principle->getId()->toRfc4122()));
+        $client->request('GET', \sprintf('/api/backoffice/quality/principles/%s', $principle->getId()->toRfc4122()));
         self::assertResponseIsSuccessful();
         $item = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame($principle->getId()->toRfc4122(), $item['id']);
@@ -154,7 +154,7 @@ final class BackofficeQualityPrincipleResourceTest extends WebTestCase
         $id = $created['id'];
 
         // Put
-        $client->request('PUT', sprintf('/api/backoffice/quality/principles/%s', $id), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/quality/principles/%s', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['locale' => 'fr', 'title' => 'SOLID', 'description' => 'Description mise à jour.', 'iconKey' => 'columns-3', 'position' => 1]));
@@ -174,7 +174,7 @@ final class BackofficeQualityPrincipleResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
 
         // Delete
-        $client->request('DELETE', sprintf('/api/backoffice/quality/principles/%s', $id), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
+        $client->request('DELETE', \sprintf('/api/backoffice/quality/principles/%s', $id), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
         self::assertResponseStatusCodeSame(204);
 
         // Le contenu public ne reflète plus le principe supprimé
@@ -398,7 +398,7 @@ final class BackofficeQualityPrincipleResourceTest extends WebTestCase
      */
     private function put(KernelBrowser $client, string $csrfToken, string $id, array $overrides): mixed
     {
-        $client->request('PUT', sprintf('/api/backoffice/quality/principles/%s', $id), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/quality/principles/%s', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody($overrides + $this->payload()));

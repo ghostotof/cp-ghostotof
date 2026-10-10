@@ -12,6 +12,7 @@ use App\Portfolio\Watch\Domain\Service\SnapshotFreshnessCalculator;
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotSourceStatus;
 use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
 use App\Portfolio\Watch\Infrastructure\ApiPlatform\WatchProvider;
+use DateTimeImmutable;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 
@@ -40,7 +41,7 @@ final class WatchProviderTest extends TestCase
         $this->snapshotRepository->method('findOneByType')->willReturn(new WatchSnapshot(
             WatchSnapshotType::RELEASE_CYCLES,
             $payload,
-            new \DateTimeImmutable('-2 hours'),
+            new DateTimeImmutable('-2 hours'),
             SnapshotSourceStatus::OK,
         ));
     }
@@ -150,7 +151,7 @@ final class WatchProviderTest extends TestCase
         $this->snapshotRepository->method('findOneByType')->willReturn(new WatchSnapshot(
             WatchSnapshotType::RELEASE_CYCLES,
             ['products' => [['slug' => 'php', 'label' => 'PHP']]],
-            new \DateTimeImmutable('-3 days'),
+            new DateTimeImmutable('-3 days'),
             SnapshotSourceStatus::OK,
         ));
 

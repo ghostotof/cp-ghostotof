@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Portfolio\Watch\Domain\Service;
 
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotFreshness;
+use DateTimeImmutable;
 
 /**
  * Dit si la donnée servie est encore d'actualité.
@@ -29,13 +30,13 @@ final readonly class SnapshotFreshnessCalculator
      */
     public const int STALE_AFTER_HOURS = 36;
 
-    public function freshnessFor(?\DateTimeImmutable $refreshedAt, \DateTimeImmutable $now): SnapshotFreshness
+    public function freshnessFor(?DateTimeImmutable $refreshedAt, DateTimeImmutable $now): SnapshotFreshness
     {
         if (null === $refreshedAt) {
             return SnapshotFreshness::NEVER_REFRESHED;
         }
 
-        $deadline = $refreshedAt->modify(sprintf('+%d hours', self::STALE_AFTER_HOURS));
+        $deadline = $refreshedAt->modify(\sprintf('+%d hours', self::STALE_AFTER_HOURS));
 
         return $now < $deadline ? SnapshotFreshness::FRESH : SnapshotFreshness::STALE;
     }

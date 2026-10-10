@@ -271,7 +271,7 @@ final class SecurityAuditLogTest extends WebTestCase
         $invited = self::getContainer()->get(CpgUserInviterInterface::class)->invite('jean.dupont@example.com', Locale::FR);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->request('POST', sprintf('/api/backoffice/users/%s/invitation', $invited->getId()->toRfc4122()), server: [
+        $client->request('POST', \sprintf('/api/backoffice/users/%s/invitation', $invited->getId()->toRfc4122()), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['locale' => 'en']));
@@ -289,7 +289,7 @@ final class SecurityAuditLogTest extends WebTestCase
         $jane = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->request('PUT', sprintf('/api/backoffice/users/%s/roles', $jane->getId()->toRfc4122()), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/users/%s/roles', $jane->getId()->toRfc4122()), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['superAdmin' => true]));
@@ -302,7 +302,7 @@ final class SecurityAuditLogTest extends WebTestCase
             'superAdmin' => true,
             'actor' => self::SUPER_USERNAME,
             'ip' => '127.0.0.1',
-            'path' => sprintf('/api/backoffice/users/%s/roles', $jane->getId()->toRfc4122()),
+            'path' => \sprintf('/api/backoffice/users/%s/roles', $jane->getId()->toRfc4122()),
         ], self::singleSecurityAuditEvent('role-changed'));
     }
 
@@ -312,7 +312,7 @@ final class SecurityAuditLogTest extends WebTestCase
         $jane = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->request('PUT', sprintf('/api/backoffice/users/%s/password', $jane->getId()->toRfc4122()), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/users/%s/password', $jane->getId()->toRfc4122()), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['password' => TestCredentials::variant('new')]));
@@ -331,7 +331,7 @@ final class SecurityAuditLogTest extends WebTestCase
         $jane = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->request('DELETE', sprintf('/api/backoffice/users/%s', $jane->getId()->toRfc4122()), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
+        $client->request('DELETE', \sprintf('/api/backoffice/users/%s', $jane->getId()->toRfc4122()), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
 
         self::assertResponseStatusCodeSame(204);
         $event = self::singleSecurityAuditEvent('user-deleted');

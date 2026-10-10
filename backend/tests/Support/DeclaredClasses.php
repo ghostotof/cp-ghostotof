@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
+use LogicException;
+
 /**
  * Recense les classes d'un répertoire qui implémentent ou étendent un type
  * donné, d'après ce que déclarent les sources — jamais d'après le nom des
@@ -63,7 +65,7 @@ final class DeclaredClasses
                 require_once $path;
             }
             if (!class_exists($class)) {
-                throw new \LogicException(\sprintf('%s déclare %s, introuvable même après chargement.', $path, $class));
+                throw new LogicException(\sprintf('%s déclare %s, introuvable même après chargement.', $path, $class));
             }
             $loaded[] = $class;
         }

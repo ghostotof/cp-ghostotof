@@ -33,7 +33,7 @@ final class GuestUserProvider implements PayloadAwareUserProviderInterface
     public function loadUserByIdentifierAndPayload(string $identifier, array $payload): UserInterface
     {
         if (true !== ($payload[self::GUEST_CLAIM] ?? null)) {
-            throw new UserNotFoundException(sprintf('"%s" n\'est pas un jeton du palier de base.', $identifier));
+            throw new UserNotFoundException(\sprintf('"%s" n\'est pas un jeton du palier de base.', $identifier));
         }
 
         return new GuestUser($identifier);
@@ -48,13 +48,13 @@ final class GuestUserProvider implements PayloadAwareUserProviderInterface
      */
     public function loadUserByIdentifier(string $identifier): UserInterface
     {
-        throw new UserNotFoundException(sprintf('"%s" n\'est pas un jeton du palier de base.', $identifier));
+        throw new UserNotFoundException(\sprintf('"%s" n\'est pas un jeton du palier de base.', $identifier));
     }
 
     public function refreshUser(UserInterface $user): UserInterface
     {
         if (!$user instanceof GuestUser) {
-            throw new UnsupportedUserException(sprintf('Instances de "%s" non supportées.', get_debug_type($user)));
+            throw new UnsupportedUserException(\sprintf('Instances de "%s" non supportées.', get_debug_type($user)));
         }
 
         // Stateless (firewall "api" sans session) : rien à recharger.

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Shared\Infrastructure\ApiPlatform;
 
+use LogicException;
+
 /**
  * Un Processor qui agit au nom du compte connecté a été atteint sans le compte
  * qu'il attend (issue #338) : aucun compte, ou un compte d'un autre type.
@@ -19,7 +21,7 @@ namespace App\Shared\Infrastructure\ApiPlatform;
  * Même idée que UnauthenticatedAssistantCallException (#323), laissée à part :
  * rien n'attrape un type commun aux deux.
  */
-final class UnexpectedActingUserException extends \LogicException
+final class UnexpectedActingUserException extends LogicException
 {
     /**
      * @param class-string $processor

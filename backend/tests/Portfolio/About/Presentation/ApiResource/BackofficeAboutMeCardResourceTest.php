@@ -101,7 +101,7 @@ final class BackofficeAboutMeCardResourceTest extends WebTestCase
 
         $card = $client->getContainer()->get(AboutMeCardAdministratorInterface::class)->create(Locale::FR, AboutMeCardCategory::TECHNICAL, 'Développeur', 'Description.', 'code');
 
-        $client->request('GET', sprintf('/api/backoffice/about/me-cards/%s', $card->getId()->toRfc4122()));
+        $client->request('GET', \sprintf('/api/backoffice/about/me-cards/%s', $card->getId()->toRfc4122()));
         self::assertResponseIsSuccessful();
         $item = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame($card->getId()->toRfc4122(), $item['id']);
@@ -163,7 +163,7 @@ final class BackofficeAboutMeCardResourceTest extends WebTestCase
         $id = $created['id'];
 
         // Put
-        $client->request('PUT', sprintf('/api/backoffice/about/me-cards/%s', $id), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/about/me-cards/%s', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['locale' => 'fr', 'category' => 'hobby', 'title' => 'Moto', 'description' => 'Description mise à jour.', 'iconKey' => 'motorbike', 'position' => 1]));
@@ -184,10 +184,10 @@ final class BackofficeAboutMeCardResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
 
         // Delete
-        $client->request('DELETE', sprintf('/api/backoffice/about/me-cards/%s', $id), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
+        $client->request('DELETE', \sprintf('/api/backoffice/about/me-cards/%s', $id), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
         self::assertResponseStatusCodeSame(204);
 
-        $client->request('GET', sprintf('/api/backoffice/about/me-cards/%s', $id));
+        $client->request('GET', \sprintf('/api/backoffice/about/me-cards/%s', $id));
         self::assertResponseStatusCodeSame(404);
     }
 
@@ -470,7 +470,7 @@ final class BackofficeAboutMeCardResourceTest extends WebTestCase
      */
     private function put(KernelBrowser $client, string $csrfToken, string $id, array $overrides): mixed
     {
-        $client->request('PUT', sprintf('/api/backoffice/about/me-cards/%s', $id), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/about/me-cards/%s', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody($overrides + $this->payload()));

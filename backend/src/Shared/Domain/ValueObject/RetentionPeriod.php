@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Shared\Domain\ValueObject;
 
 use App\Shared\Domain\Exception\InvalidRetentionPeriodException;
+use DateInterval;
+use DateMalformedIntervalStringException;
+use DateTimeImmutable;
 
 /**
  * Durée de rétention strictement positive, exprimée en intervalle relatif PHP
@@ -12,7 +15,7 @@ use App\Shared\Domain\Exception\InvalidRetentionPeriodException;
  * calculer un seuil d'ancienneté sûr.
  *
  * Piège corrigé (issue #248) : la commande de purge des messages de contact en
- * échec construisait auparavant `new \DateTimeImmutable('-'.$olderThan)`. Avec
+ * échec construisait auparavant `new DateTimeImmutable('-'.$olderThan)`. Avec
  * un `$olderThan` déjà négatif (ex. "-30 days"), la concaténation produit
  * `'--30 days'` — une double négation que PHP accepte silencieusement et
  * interprète comme "+30 days" (vérifié empiriquement en PHP 8.5 : cette forme
@@ -28,8 +31,8 @@ use App\Shared\Domain\Exception\InvalidRetentionPeriodException;
  * (`$now - $interval`) puis de vérifier qu'il est strictement antérieur à
  * `$now`.
  *
- * `\DateInterval::createFromDateString()` est utilisé plutôt que
- * `\DateTimeImmutable` : depuis PHP 8.3 il lève `\DateMalformedIntervalStringException`
+ * {@see DateInterval::createFromDateString()} est utilisé plutôt que
+ * {@see DateTimeImmutable} : depuis PHP 8.3 il lève {@see DateMalformedIntervalStringException}
  * sur une expression illisible (vérifié empiriquement en PHP 8.5 : une chaîne
  * comme "not-an-interval" lève directement, elle ne produit jamais
  * silencieusement un intervalle nul) ; si une version plus ancienne du moteur
@@ -39,7 +42,7 @@ use App\Shared\Domain\Exception\InvalidRetentionPeriodException;
 final readonly class RetentionPeriod
 {
     private function __construct(
-        private \DateTimeImmutable $threshold,
+        private DateTimeImmutable $threshold,
         private string $expression,
     ) {
     }
@@ -48,7 +51,7 @@ final readonly class RetentionPeriod
      * @throws InvalidRetentionPeriodException si l'expression est vide, illisible,
      *         ou ne produit pas un seuil strictement antérieur à `$now`
      */
-    public static function fromString(string $expression, \DateTimeImmutable $now): self
+    public static function fromString(string $expression, DateTimeImmutable $now): self
     {
         $trimmed = trim($expression);
 
@@ -57,8 +60,8 @@ final readonly class RetentionPeriod
         }
 
         try {
-            $interval = \DateInterval::createFromDateString($trimmed);
-        } catch (\DateMalformedIntervalStringException) {
+            $interval = DateInterval::createFromDateString($trimmed);
+        } catch (DateMalformedIntervalStringException) {
             throw InvalidRetentionPeriodException::unreadable($expression);
         }
 
@@ -71,7 +74,7 @@ final readonly class RetentionPeriod
         return new self($threshold, $trimmed);
     }
 
-    public function threshold(): \DateTimeImmutable
+    public function threshold(): DateTimeImmutable
     {
         return $this->threshold;
     }

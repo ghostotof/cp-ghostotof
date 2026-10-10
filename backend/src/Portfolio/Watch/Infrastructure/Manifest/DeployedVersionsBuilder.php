@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Infrastructure\Manifest;
 
+use DateTimeImmutable;
+
 /**
  * Relève, au moment de la construction de l'image, les versions des composants
  * que le projet déploie ou avec lesquels il construit.
@@ -58,7 +60,7 @@ final readonly class DeployedVersionsBuilder
     /**
      * @return array<string, string> version par slug, celles qui ont pu être lues
      */
-    public function build(\DateTimeImmutable $generatedAt): array
+    public function build(DateTimeImmutable $generatedAt): array
     {
         $versions = [];
 
@@ -163,7 +165,7 @@ final readonly class DeployedVersionsBuilder
     /**
      * @param array<string, string> $versions
      */
-    private function write(array $versions, \DateTimeImmutable $generatedAt): void
+    private function write(array $versions, DateTimeImmutable $generatedAt): void
     {
         $encoded = json_encode(
             ['generatedAt' => $generatedAt->format(\DATE_ATOM), 'versions' => $versions],

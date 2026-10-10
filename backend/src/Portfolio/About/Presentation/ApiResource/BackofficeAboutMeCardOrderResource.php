@@ -67,7 +67,7 @@ final readonly class BackofficeAboutMeCardOrderResource
     /**
      * La catégorie telle que la validation la garantit. `from()` et non
      * `fromString()` : la valeur est bornée en amont par `Assert\Choice`, une
-     * `\ValueError` ici serait un vrai défaut, pas une saisie (règle d'audit I3).
+     * {@see \ValueError} ici serait un vrai défaut, pas une saisie (règle d'audit I3).
      */
     public function validatedCategory(): AboutMeCardCategory
     {

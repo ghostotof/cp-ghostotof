@@ -48,7 +48,7 @@ final readonly class SendContactMessageHandler
             ->from($this->contactSenderEmail)
             ->to($this->contactRecipientEmail)
             ->replyTo(new Address($message->senderEmail, $message->senderName))
-            ->subject(sprintf('Nouveau message de contact — %s', $message->senderName))
+            ->subject(\sprintf('Nouveau message de contact — %s', $message->senderName))
             ->htmlTemplate('emails/contact_notification.html.twig')
             ->textTemplate('emails/contact_notification.txt.twig')
             ->context([

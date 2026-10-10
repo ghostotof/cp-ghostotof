@@ -52,7 +52,7 @@ final class LoginThrottlingTest extends WebTestCase
         // 5 échecs autorisés : chacun renvoie 401 (identifiants invalides).
         for ($attempt = 1; $attempt <= 5; ++$attempt) {
             $this->attemptLogin($client, 'wrong-password');
-            self::assertResponseStatusCodeSame(401, sprintf('La tentative n°%d aurait dû répondre 401.', $attempt));
+            self::assertResponseStatusCodeSame(401, \sprintf('La tentative n°%d aurait dû répondre 401.', $attempt));
             self::assertStringNotContainsStringIgnoringCase('too many', (string) $client->getResponse()->getContent());
         }
 

@@ -80,7 +80,7 @@ final class AddExperienceTechnologyCommand extends Command
             return Command::FAILURE;
         }
 
-        $io->success(sprintf('Technologie "%s" ajoutée (id: %s, %s ans).', $technology->getName(), $technology->getId()->toRfc4122(), $technology->getYears()));
+        $io->success(\sprintf('Technologie "%s" ajoutée (id: %s, %s ans).', $technology->getName(), $technology->getId()->toRfc4122(), $technology->getYears()));
 
         return Command::SUCCESS;
     }
@@ -163,7 +163,7 @@ final class AddExperienceTechnologyCommand extends Command
     }
 
     /**
-     * Le QuestionHelper rattrape toute \Exception d'un validateur, l'exception
+     * Le QuestionHelper rattrape toute {@see \Exception} d'un validateur, l'exception
      * du domaine comprise : nul besoin de la ré-emballer pour que la question
      * soit reposée avec son message.
      *

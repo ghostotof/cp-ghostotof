@@ -6,6 +6,7 @@ namespace App\Security\User\Infrastructure\Doctrine;
 
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\Persistence\ManagerRegistry;
@@ -44,7 +45,7 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
         return $this->findBy([], ['username' => 'ASC']);
     }
 
-    public function findAwaitingPasswordSetupInvitedBefore(\DateTimeImmutable $threshold): array
+    public function findAwaitingPasswordSetupInvitedBefore(DateTimeImmutable $threshold): array
     {
         return $this->createQueryBuilder('u')
             ->andWhere('u.invitedAt IS NOT NULL')
@@ -95,7 +96,7 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
     public function upgradePassword(PasswordAuthenticatedUserInterface $user, string $newHashedPassword): void
     {
         if (!$user instanceof CpgUser) {
-            throw new UnsupportedUserException(sprintf('Instances of "%s" are not supported.', $user::class));
+            throw new UnsupportedUserException(\sprintf('Instances of "%s" are not supported.', $user::class));
         }
 
         $user->setPassword($newHashedPassword);

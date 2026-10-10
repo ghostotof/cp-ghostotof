@@ -78,14 +78,48 @@ take the day one is.
 ones included** (issue #391). `use LogicException;` then `new LogicException(…)`, `use Throwable;` then
 `catch (Throwable $e)`, `use DateTimeImmutable;` then `DateTimeImmutable $at`, likewise `Stringable`,
 `JsonSerializable`, `Closure`, `Generator`, `ReflectionClass`…: never `\LogicException`, never
-`\App\…\Foo` inline, in code, attributes and phpdoc types alike (settled on 2026-10-10). A class only a comment refers to is cited as `{@see Foo}` with its `use`: Rector's
-`removeUnusedImports` keeps an import referenced by `{@see}` but **deletes** one cited in plain prose
-(verified on 2026-10-10), so a bare short name in a sentence loses its import on the next `rector:fix`. A
-name clash with a project class gets an alias (`use InvalidArgumentException as NativeInvalidArgumentException;`),
-never a qualified name. Out of scope, **by decision** (2026-10-10): native **functions and constants** keep
-their leading backslash (`\sprintf`, `\in_array`, `\PHP_EOL`, `\T_CLASS`) — no `use function` / `use const`:
-`importShortClasses` does not touch them, so Rector stays the only tool, and the backslash lets OPcache
-compile some functions to dedicated opcodes; namespaces cited in prose (`App\Shared`);
+`\App\…\Foo` inline, in code, attributes and phpdoc types alike (settled on 2026-10-10) — a `{@see}`
+in a comment is not a type, see below.
+**A comment never adds a `use`** (settled on 2026-10-10, review of #391). A class the file imports for
+its code is cited by its short name — `{@see Foo}` in a docblock, `Foo` in a `//` comment. Any other class
+is cited by **`{@see}` with its full name, without `use`**: `{@see \ValueError}`,
+`{@see \App\Shared\Infrastructure\Http\RetryAfterListener}`, `{@see \DateInterval::createFromDateString()}`
+— the leading `\` makes it unambiguous for the IDE, which keeps it clickable and renames it. Rector leaves
+such a `{@see}` alone (verified on 2026-10-10). In a `//` comment, where `{@see}` means nothing, the full
+name stands alone (`Monolog\Logger` in `ReadsSecurityAuditLog`). Two reasons. An import only a docblock needs
+is checked by nothing — PHP does not resolve an unused `use`, PHPStan does not read `{@see}`, Rector keeps
+it — so a deleted or renamed class leaves it dangling with a green CI; and it would make an inner layer
+import an outer one (`Domain` → `Application`/`Infrastructure`/`Presentation`, `Application` →
+`Infrastructure`/`Presentation`) for documentation's sake. The full name is checked instead:
+`tests/Shared/CommentedClassNamesExistTest.php` (`tests/Support/CommentedClassNames`) fails on any full
+name in a comment of `src/` or `tests/` that is neither a class, interface, enum or trait (nor its cited
+`::method()`) nor a namespace — a name is full when it starts with `\` or with a root namespace the
+autoloader knows. Not checked, and allowed: a name relative to its context, as the repository interfaces
+write it (`Infrastructure\Doctrine\CpgUserRepository`), and the `Assert\…` shorthand. A comment that names
+a class which does not exist (a removed vendor class, a hypothetical homonym) says so in words rather than
+by a full name. Background, verified on 2026-10-10: Rector's `removeUnusedImports` keeps an import
+referenced by `{@see}` in a `/** … */` docblock, but deletes one cited in plain prose or in a `//` /
+`/* … */` comment, even through `{@see}`. Code quoted in a comment
+(`` `new DateTimeImmutable('-'.$x)` ``, `` `#[SensitiveParameter]` ``) takes the short name without `{@see}`:
+it shows code, it does not link a class. A quoted configuration key keeps its fully qualified name, the only
+one the config knows (`Symfony\Component\Serializer\Exception\ExceptionInterface: 400`, `MalformedRequestBodyTest`). A
+name clash gets an alias (`use UnexpectedValueException as NativeUnexpectedValueException;` in
+`MalformedRequestBodyException`, which already imports the Serializer's), never a qualified name.
+**`use` statements are sorted alphabetically**, case-insensitive, `\` as a segment separator — the order
+of PhpStorm's "Optimize imports" and php-cs-fixer's `ordered_imports` (`alpha`). No tool enforces it, and
+`rector:fix` inserts a new import at the top of the block: re-sort after it. php-cs-fixer is deliberately
+not a dependency (#391); a one-off run of its phar under `var/` with that single rule is how #391 sorted
+the existing code. Out of scope, **by decision** (2026-10-10): native **functions and constants** are
+never imported — no `use function` / `use const`, `importShortClasses` does not touch them; namespaces
+cited in prose (`App\Shared`). **A native function is qualified exactly when the compiler optimizes it**
+(settled on 2026-10-10, review of #391): a function of php-cs-fixer's `@compiler_optimized` set (`\count`,
+`\in_array`, `\is_string`, `\strlen`, `\sprintf`, `\dirname`…) is written with its leading backslash, every
+other one without (`array_map`, `trim`, `json_decode`: no dedicated opcode, nothing to gain). Measured for
+`sprintf`: `\sprintf('x %s', $a)` compiles to a bare `FAST_CONCAT`, the unqualified call to a runtime
+lookup and a function call. A first-class callable (`is_string(...)`) is not a call and stays as written. No
+tool enforces the split; #391 applied it once (73 `sprintf` in `src/`, 147 in `tests/`, a dozen others)
+with the same phar, rule `native_function_invocation` (`include: ['@compiler_optimized']`, `strict: false`).
+Constants were not migrated: a leading backslash already there stays.
 **The line is performance, and it was measured** (2026-10-10, PHP 8.5, OPcache dump after the optimizer): the
 rule only covers natives whose import costs nothing. `\DateTimeImmutable` and an imported `DateTimeImmutable`
 compile to **identical opcodes** — `use` is resolved at compile time — whereas an unqualified `count($a)`
@@ -93,9 +127,10 @@ loses the dedicated `COUNT` opcode for `INIT_NS_FCALL_BY_NAME` + `DO_FCALL_BY_NA
 falls back to the global function (constants share that fallback). A class-like native that ever proved
 costly to import would keep its qualified name, with the measurement as its justification. Also out of scope:
 `config/bundles.php` and `config/reference.php` (Flex-generated); class names held in strings as test data;
-`migrations/` (frozen, outside Rector's paths). The guard is Rector's `withImportNames()` in
-`backend/rector.php`, checked by the blocking `rector-backend` job: it already rejects a qualified
-namespaced class, and rejects a qualified native class once `importShortClasses` is `true` — the switch
-and the migration of the existing code (≈ 200 files) are issue #391. Until it lands, write new code the
-target way: an explicit `use DateTimeImmutable;` passes Rector today.
+`migrations/` (frozen, outside Rector's paths); the `Assert\…` constraint shorthand, which mirrors the
+`use …\Constraints as Assert;` alias the code itself writes. The guard is Rector's
+`withImportNames(importShortClasses: true, removeUnusedImports: true)` in `backend/rector.php`, checked by
+the blocking `rector-backend` job: it rejects a qualified class, native or namespaced, in code and phpdoc
+types (issue #391, ≈ 200 files migrated). It does **not** see a `@template T of \Foo` bound, reviewed by
+hand, nor any prose, where `CommentedClassNamesExistTest` checks the full names (see above).
 

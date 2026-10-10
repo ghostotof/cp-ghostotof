@@ -12,6 +12,7 @@ use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Portfolio\Incident\Support\InMemoryIncidentRepository;
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
 
@@ -29,7 +30,7 @@ final class IncidentAdministratorTest extends TestCase
             $locale,
             $title,
             '1.0',
-            new \DateTimeImmutable('2026-01-01'),
+            new DateTimeImmutable('2026-01-01'),
             'Impact.',
             'Cause.',
             'Résolution.',
@@ -77,7 +78,7 @@ final class IncidentAdministratorTest extends TestCase
             Locale::EN,
             'Incident EN',
             '1.0',
-            new \DateTimeImmutable('2026-01-01'),
+            new DateTimeImmutable('2026-01-01'),
             'Impact.',
             'Cause.',
             'Resolution.',

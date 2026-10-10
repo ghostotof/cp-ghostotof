@@ -9,6 +9,9 @@ use App\Security\User\Application\PendingInvitationPurger;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\InvalidPurgeRetentionException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use DateInterval;
+use DateTimeImmutable;
+use DateTimeZone;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\MockClock;
@@ -32,7 +35,7 @@ final class PendingInvitationPurgerTest extends TestCase
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
         $repository->expects(self::once())
             ->method('findAwaitingPasswordSetupInvitedBefore')
-            ->with(new \DateTimeImmutable('2026-08-23 10:00:00', new \DateTimeZone('UTC')))
+            ->with(new DateTimeImmutable('2026-08-23 10:00:00', new DateTimeZone('UTC')))
             ->willReturn([$first, $second]);
         $repository->expects(self::exactly(2))->method('remove')
             ->with(self::logicalOr($first, $second));
@@ -46,11 +49,11 @@ final class PendingInvitationPurgerTest extends TestCase
 
         $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
 
-        $result = $purger->purge(new \DateInterval('P30D'));
+        $result = $purger->purge(new DateInterval('P30D'));
 
         self::assertSame(['first-invitee', 'second-invitee'], $result->purged);
         self::assertSame([], $result->skipped);
-        self::assertEquals(new \DateTimeImmutable('2026-08-23 10:00:00', new \DateTimeZone('UTC')), $result->threshold);
+        self::assertEquals(new DateTimeImmutable('2026-08-23 10:00:00', new DateTimeZone('UTC')), $result->threshold);
     }
 
     public function testDryRunNeitherRemovesNorLogsButStillReportsWhatWouldBePurged(): void
@@ -70,7 +73,7 @@ final class PendingInvitationPurgerTest extends TestCase
 
         $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
 
-        $result = $purger->purge(new \DateInterval('P30D'), dryRun: true);
+        $result = $purger->purge(new DateInterval('P30D'), dryRun: true);
 
         self::assertSame(['stale-invitee'], $result->purged);
         self::assertSame([], $result->skipped);
@@ -97,7 +100,7 @@ final class PendingInvitationPurgerTest extends TestCase
 
         $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
 
-        $result = $purger->purge(new \DateInterval('P30D'));
+        $result = $purger->purge(new DateInterval('P30D'));
 
         self::assertSame(['super-invitee'], $result->skipped);
         self::assertSame([], $result->purged);
@@ -119,7 +122,7 @@ final class PendingInvitationPurgerTest extends TestCase
 
         $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
 
-        $result = $purger->purge(new \DateInterval('P30D'));
+        $result = $purger->purge(new DateInterval('P30D'));
 
         self::assertSame([], $result->purged);
         self::assertSame([], $result->skipped);
@@ -137,11 +140,11 @@ final class PendingInvitationPurgerTest extends TestCase
         $clock = new MockClock(self::NOW);
 
         $passwordAlreadySet = new CpgUser('password-already-set', 'a-real-hash');
-        $passwordAlreadySet->markInvited(new \DateTimeImmutable('-40 days'));
+        $passwordAlreadySet->markInvited(new DateTimeImmutable('-40 days'));
 
         $alreadyActivated = new CpgUser('already-activated', 'a-real-hash');
-        $alreadyActivated->markInvited(new \DateTimeImmutable('-40 days'));
-        $alreadyActivated->markActivated(new \DateTimeImmutable('-5 days'));
+        $alreadyActivated->markInvited(new DateTimeImmutable('-40 days'));
+        $alreadyActivated->markActivated(new DateTimeImmutable('-5 days'));
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
         $repository->method('findAwaitingPasswordSetupInvitedBefore')
@@ -156,7 +159,7 @@ final class PendingInvitationPurgerTest extends TestCase
 
         $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
 
-        $result = $purger->purge(new \DateInterval('P30D'));
+        $result = $purger->purge(new DateInterval('P30D'));
 
         self::assertSame([], $result->purged);
         self::assertSame([], $result->skipped);
@@ -179,7 +182,7 @@ final class PendingInvitationPurgerTest extends TestCase
 
         $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
 
-        $result = $purger->purge(new \DateInterval('P1D'));
+        $result = $purger->purge(new DateInterval('P1D'));
 
         self::assertSame([], $result->purged);
     }
@@ -207,7 +210,7 @@ final class PendingInvitationPurgerTest extends TestCase
 
         $this->expectException(InvalidPurgeRetentionException::class);
 
-        $purger->purge(new \DateInterval('PT1H'));
+        $purger->purge(new DateInterval('PT1H'));
     }
 
     public function testANegativeIntervalIsRejectedBeforeAnyRepositoryAccess(): void
@@ -227,12 +230,12 @@ final class PendingInvitationPurgerTest extends TestCase
         $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
 
         // Double négation possible côté appelant ("--older-than=-30 days") :
-        // \DateInterval::createFromDateString('-30 days') produit un
-        // intervalle dont \DateTimeImmutable::sub() avance l'horloge au lieu
+        // DateInterval::createFromDateString('-30 days') produit un
+        // intervalle dont DateTimeImmutable::sub() avance l'horloge au lieu
         // de la reculer — le seuil se retrouve dans le futur.
         $this->expectException(InvalidPurgeRetentionException::class);
 
-        $purger->purge(\DateInterval::createFromDateString('-30 days'));
+        $purger->purge(DateInterval::createFromDateString('-30 days'));
     }
 
     public function testAZeroLengthIntervalIsRejectedBeforeAnyRepositoryAccess(): void
@@ -255,13 +258,13 @@ final class PendingInvitationPurgerTest extends TestCase
         // rejeté au même titre qu'un intervalle négatif.
         $this->expectException(InvalidPurgeRetentionException::class);
 
-        $purger->purge(new \DateInterval('PT0S'));
+        $purger->purge(new DateInterval('PT0S'));
     }
 
     private function pendingUser(string $username): CpgUser
     {
         $user = new CpgUser($username, '');
-        $user->markInvited(new \DateTimeImmutable('-40 days'));
+        $user->markInvited(new DateTimeImmutable('-40 days'));
 
         return $user;
     }

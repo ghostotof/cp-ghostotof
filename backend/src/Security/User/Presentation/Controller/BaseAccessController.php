@@ -8,6 +8,8 @@ use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
 use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
 use App\Security\User\Domain\ValueObject\GuestUser;
+use DateTimeImmutable;
+use DateTimeInterface;
 use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
@@ -57,7 +59,7 @@ final readonly class BaseAccessController
         // prochain rechargement, bien après que le jeton ait expiré.
         $response = new JsonResponse([
             'roles' => $guest->getRoles(),
-            'expiresAt' => (new \DateTimeImmutable('@'.$expiresAt))->format(\DateTimeInterface::ATOM),
+            'expiresAt' => (new DateTimeImmutable('@'.$expiresAt))->format(DateTimeInterface::ATOM),
         ]);
 
         // Les deux cookies meurent avec le jeton : rien à « terminer » côté

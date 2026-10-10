@@ -19,6 +19,7 @@ use App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException;
 use App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException;
 use App\Shared\Infrastructure\ApiPlatform\MalformedRequestBodyException;
 use App\Tests\Support\CompiledExceptionConfig;
+use DateTimeImmutable;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
@@ -31,6 +32,7 @@ use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Serializer\Exception\NotEncodableValueException;
 use Symfony\Component\Uid\Uuid;
+use Throwable;
 
 /**
  * L'ErrorListener du noyau journalise en `critical` toute exception qui n'est
@@ -60,24 +62,24 @@ use Symfony\Component\Uid\Uuid;
 final class ApiExceptionLogLevelTest extends KernelTestCase
 {
     /**
-     * @return iterable<string, array{\Throwable, Level}>
+     * @return iterable<string, array{Throwable, Level}>
      */
     public static function exceptions(): iterable
     {
         yield 'conversation refusée (422)' => [new InvalidConversationException('La conversation est vide.'), Level::Info];
         yield 'fournisseur indisponible (503)' => [new AssistantUnavailableException(), Level::Warning];
-        yield 'quota atteint (429)' => [new AssistantRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Info];
+        yield 'quota atteint (429)' => [new AssistantRateLimitExceededException(new DateTimeImmutable('+1 hour')), Level::Info];
         yield 'corps trop volumineux (413)' => [new RequestBodyTooLargeException(), Level::Info];
-        yield 'quota du palier de base atteint (429, issue #322)' => [new BaseAccessRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Info];
+        yield 'quota du palier de base atteint (429, issue #322)' => [new BaseAccessRateLimitExceededException(new DateTimeImmutable('+1 hour')), Level::Info];
         yield 'format refusé (415), sur toute route de l\'API' => [new UnsupportedMediaTypeHttpException('Unsupported format.'), Level::Info];
         yield 'compte introuvable (404, API Platform, issue #348)' => [CpgUserNotFoundException::forId(Uuid::v7()), Level::Info];
         yield 'traduction indisponible (503, panne d\'un tiers)' => [new TranslationUnavailableException(), Level::Warning];
         // Tracé sur `security_audit` depuis l'issue #356 : le journal du noyau
         // n'est plus sa seule trace, il rentre dans la règle des 4xx.
         yield 'jeton de mot de passe inconnu (404, tracé sur security_audit)' => [InvalidPasswordSetupTokenException::unknownToken(), Level::Info];
-        yield 'quota de définition de mot de passe (429, tracé sur security_audit)' => [new PasswordSetupRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Info];
+        yield 'quota de définition de mot de passe (429, tracé sur security_audit)' => [new PasswordSetupRateLimitExceededException(new DateTimeImmutable('+1 hour')), Level::Info];
         yield 'lien de mot de passe expiré (410)' => [PasswordSetupTokenExpiredException::expiredOrAlreadyUsed(), Level::Info];
-        yield 'quota du traducteur (429, tracé sur ai_usage)' => [new TranslationRateLimitExceededException(new \DateTimeImmutable('+1 hour')), Level::Info];
+        yield 'quota du traducteur (429, tracé sur ai_usage)' => [new TranslationRateLimitExceededException(new DateTimeImmutable('+1 hour')), Level::Info];
         yield 'réglages « À propos » absents pour une locale valide (404), visible en production' => [AboutSettingsNotFoundException::forLocale(Locale::FR), Level::Warning];
         yield 'corps de requête illisible (400, issue #355)' => [MalformedRequestBodyException::fromSerializerFailure(new NotEncodableValueException('Syntax error')), Level::Info];
         // Le contre-exemple de la ligne précédente : la même classe du
@@ -88,7 +90,7 @@ final class ApiExceptionLogLevelTest extends KernelTestCase
     }
 
     #[DataProvider('exceptions')]
-    public function testTheKernelLogsItAtTheConfiguredLevel(\Throwable $exception, Level $expected): void
+    public function testTheKernelLogsItAtTheConfiguredLevel(Throwable $exception, Level $expected): void
     {
         $handler = new TestHandler();
         $listener = new ErrorListener(null, new Logger('request', [$handler]), false, CompiledExceptionConfig::exceptionsMapping(self::getContainer()->get('exception_listener')));

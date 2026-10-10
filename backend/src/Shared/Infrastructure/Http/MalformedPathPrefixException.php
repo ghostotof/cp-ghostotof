@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Shared\Infrastructure\Http;
 
+use InvalidArgumentException;
+
 /**
  * `CanonicalPath::isUnder()` a reçu un préfixe vide, relatif ou terminé par
  * `/` (issue #383).
@@ -14,7 +16,7 @@ namespace App\Shared\Infrastructure\Http;
  * échouerait sans bruit — `/api/x/` ne correspondrait plus à rien (une garde
  * désactivée), `` à tout.
  */
-final class MalformedPathPrefixException extends \InvalidArgumentException
+final class MalformedPathPrefixException extends InvalidArgumentException
 {
     public static function forPrefix(string $prefix): self
     {

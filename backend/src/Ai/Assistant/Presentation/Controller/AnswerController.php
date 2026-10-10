@@ -9,6 +9,7 @@ use App\Ai\Assistant\Domain\Exception\AssistantUnavailableException;
 use App\Ai\Assistant\Domain\ValueObject\AnswerUsage;
 use App\Ai\Assistant\Presentation\Dto\AnswerRequest;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Generator;
 use Symfony\Component\HttpFoundation\EventStreamResponse;
 use Symfony\Component\HttpFoundation\ServerEvent;
 use Symfony\Component\HttpKernel\Attribute\MapRequestPayload;
@@ -54,17 +55,17 @@ final readonly class AnswerController
         // elle ne vient pas d'une URL (spec §9).
         $fragments = $this->assistant->answer($request->toConversation(), Locale::from($request->locale));
 
-        return new EventStreamResponse(function () use ($fragments): \Generator {
+        return new EventStreamResponse(function () use ($fragments): Generator {
             yield from $this->events($fragments);
         });
     }
 
     /**
-     * @param \Generator<int, string, mixed, AnswerUsage> $fragments
+     * @param Generator<int, string, mixed, AnswerUsage> $fragments
      *
-     * @return \Generator<int, ServerEvent, mixed, void>
+     * @return Generator<int, ServerEvent, mixed, void>
      */
-    private function events(\Generator $fragments): \Generator
+    private function events(Generator $fragments): Generator
     {
         try {
             foreach ($fragments as $fragment) {

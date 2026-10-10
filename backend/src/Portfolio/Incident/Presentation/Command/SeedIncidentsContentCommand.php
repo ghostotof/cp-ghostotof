@@ -9,6 +9,7 @@ use App\Portfolio\Incident\Domain\Repository\IncidentRepositoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Presentation\Command\GuardsExistingContent;
 use App\Shared\Presentation\Command\TranslationGroupIndex;
+use DateTimeImmutable;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -75,7 +76,7 @@ final class SeedIncidentsContentCommand extends Command
                     $locale,
                     $incident['title'],
                     $incident['version'],
-                    new \DateTimeImmutable($incident['occurredAt']),
+                    new DateTimeImmutable($incident['occurredAt']),
                     $incident['impact'],
                     $incident['rootCause'],
                     $incident['resolution'],
@@ -86,7 +87,7 @@ final class SeedIncidentsContentCommand extends Command
                 $translationGroups->remember('incident', $index, $created->getTranslationGroup());
             }
 
-            $io->success(sprintf('[%s] %d incident(s).', $localeValue, \count($incidents)));
+            $io->success(\sprintf('[%s] %d incident(s).', $localeValue, \count($incidents)));
         }
 
         return Command::SUCCESS;

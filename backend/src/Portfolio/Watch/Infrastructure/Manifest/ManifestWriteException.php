@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Infrastructure\Manifest;
 
+use RuntimeException;
+
 /**
  * Un manifeste de la veille (relevé des versions déployées, manifeste des
  * paquets) n'a pas pu être écrit : son répertoire n'a pas pu être créé, ou le
@@ -14,7 +16,7 @@ namespace App\Portfolio\Watch\Infrastructure\Manifest;
  * que /api/watch présenterait sans bruit comme « non analysé ». Le message cite
  * un chemin de build, sans secret.
  */
-final class ManifestWriteException extends \RuntimeException
+final class ManifestWriteException extends RuntimeException
 {
     public static function forDirectory(string $directory): self
     {

@@ -69,15 +69,15 @@ final class AuthCookieAttributesTest extends WebTestCase
         $logout = $this->cookiesByName($client);
 
         foreach ([AuthCookieFactory::BEARER, AuthCookieFactory::XSRF_TOKEN] as $name) {
-            self::assertArrayHasKey($name, $baseAccess, sprintf('%s absent de la réponse du palier de base.', $name));
-            self::assertArrayHasKey($name, $login, sprintf('%s absent de la réponse de login.', $name));
-            self::assertArrayHasKey($name, $logout, sprintf('%s absent de la réponse de logout.', $name));
+            self::assertArrayHasKey($name, $baseAccess, \sprintf('%s absent de la réponse du palier de base.', $name));
+            self::assertArrayHasKey($name, $login, \sprintf('%s absent de la réponse de login.', $name));
+            self::assertArrayHasKey($name, $logout, \sprintf('%s absent de la réponse de logout.', $name));
 
             $expected = $this->attributes($baseAccess[$name]);
-            self::assertSame($expected, $this->attributes($login[$name]), sprintf('%s : le login pose d\'autres attributs que le palier de base.', $name));
-            self::assertSame($expected, $this->attributes($logout[$name]), sprintf('%s : le logout expire avec d\'autres attributs que la pose — le navigateur ne le supprimerait pas.', $name));
+            self::assertSame($expected, $this->attributes($login[$name]), \sprintf('%s : le login pose d\'autres attributs que le palier de base.', $name));
+            self::assertSame($expected, $this->attributes($logout[$name]), \sprintf('%s : le logout expire avec d\'autres attributs que la pose — le navigateur ne le supprimerait pas.', $name));
 
-            self::assertTrue($logout[$name]->isCleared(), sprintf('%s : le logout doit expirer le cookie.', $name));
+            self::assertTrue($logout[$name]->isCleared(), \sprintf('%s : le logout doit expirer le cookie.', $name));
             self::assertFalse($baseAccess[$name]->isCleared());
             self::assertFalse($login[$name]->isCleared());
         }

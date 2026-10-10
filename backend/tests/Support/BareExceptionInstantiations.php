@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
+use PhpToken;
+
 /**
- * Recense les `new \Exception`, `new \LogicException`, `new \RuntimeException`
- * et `new \InvalidArgumentException` nus d'un répertoire (issues #338 et #383),
+ * Recense les `new Exception`, `new LogicException`, `new RuntimeException`
+ * et `new InvalidArgumentException` nus d'un répertoire (issues #338 et #383),
  * d'après les jetons des sources et non
  * d'après un grep : un `use LogicException;` suivi de `new LogicException`, un
  * alias, un import dans une liste à virgules ou une casse différente désignent
@@ -16,7 +18,7 @@ namespace App\Tests\Support;
  * Toute instanciation compte, levée ou non : une exception construite puis
  * levée plus loin reste une exception générique, et une classe anonyme qui
  * l'étend sans rien y ajouter aussi. Les autres classes de la SPL
- * (\DomainException…) sont hors périmètre : aucune n'est levée nue dans
+ * ({@see \DomainException}…) sont hors périmètre : aucune n'est levée nue dans
  * `src/`, et les ajouter ici est la marche à suivre le jour où l'une le serait.
  *
  * Limite assumée : un import groupé (`use Foo\{A, B};`) n'est pas résolu. Le
@@ -77,7 +79,7 @@ final class BareExceptionInstantiations
      * `use (…)` d'une fonction anonyme, n'importe aucune classe ; un `use` de
      * trait donne au pire un alias qui ne désigne aucune classe visée.
      *
-     * @param list<\PhpToken> $tokens
+     * @param list<PhpToken> $tokens
      *
      * @return array<string, string>
      */
@@ -113,9 +115,9 @@ final class BareExceptionInstantiations
      * classe anonyme (`new class(…) extends X {}`). Null pour une expression
      * (`new $class`) ou une classe anonyme sans parent.
      *
-     * @param list<\PhpToken> $tokens
+     * @param list<PhpToken> $tokens
      */
-    private static function instantiatedName(array $tokens, int $index): ?\PhpToken
+    private static function instantiatedName(array $tokens, int $index): ?PhpToken
     {
         $next = $tokens[$index] ?? null;
         if (null === $next || !$next->is(\T_CLASS)) {
@@ -140,7 +142,7 @@ final class BareExceptionInstantiations
      *
      * @param array<string, string> $imports
      */
-    private static function resolve(\PhpToken $name, bool $namespaced, array $imports): ?string
+    private static function resolve(PhpToken $name, bool $namespaced, array $imports): ?string
     {
         if ($name->is(\T_NAME_FULLY_QUALIFIED)) {
             return strtolower(ltrim($name->text, '\\'));

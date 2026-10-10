@@ -9,6 +9,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Process\Process;
 use Symfony\Component\RateLimiter\LimiterInterface;
 use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
+use Throwable;
 
 /**
  * Des consume() simultanés sur la même clé décomptent chacun leur unité
@@ -137,7 +138,7 @@ final class RateLimiterConcurrencyTest extends KernelTestCase
     {
         try {
             $limiter->reset();
-        } catch (\Throwable) {
+        } catch (Throwable) {
         }
     }
 

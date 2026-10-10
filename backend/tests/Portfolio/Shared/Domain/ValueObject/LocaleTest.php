@@ -6,13 +6,15 @@ namespace App\Tests\Portfolio\Shared\Domain\ValueObject;
 
 use App\Portfolio\Shared\Domain\Exception\InvalidLocaleException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use DomainException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use ValueError;
 
 /**
  * Point d'audit I3 : `fromString()` remplace `from()` sur les valeurs venues de
  * l'extérieur, pour que l'échec porte une exception métier identifiable plutôt
- * qu'un `\ValueError` générique — le seul moyen de mapper 404 sur la locale
+ * qu'un {@see ValueError} générique — le seul moyen de mapper 404 sur la locale
  * sans transformer au passage n'importe quelle autre ValueError en 404.
  */
 final class LocaleTest extends TestCase
@@ -67,7 +69,7 @@ final class LocaleTest extends TestCase
 
     /**
      * Cœur du correctif I3 : l'exception de locale ne doit surtout pas hériter
-     * de `\ValueError`. Si c'était le cas, remapper un jour `ValueError` en 404
+     * de {@see ValueError}. Si c'était le cas, remapper un jour `ValueError` en 404
      * réintroduirait le fourre-tout qu'on vient de supprimer — et l'inverse est
      * vrai aussi : une ValueError sans rapport ne doit pas être confondue avec
      * une locale invalide.
@@ -76,18 +78,18 @@ final class LocaleTest extends TestCase
     {
         $hierarchy = [InvalidLocaleException::class, ...array_values(class_parents(InvalidLocaleException::class))];
 
-        self::assertNotContains(\ValueError::class, $hierarchy);
-        self::assertContains(\DomainException::class, $hierarchy);
+        self::assertNotContains(ValueError::class, $hierarchy);
+        self::assertContains(DomainException::class, $hierarchy);
     }
 
     /**
      * `from()` reste disponible pour les valeurs déjà validées en amont (champs
      * de DTO bornés par #[Assert\Choice], valeurs relues depuis la base) : son
-     * `\ValueError` y signalerait un vrai bug, et doit donc rester un 500.
+     * {@see ValueError} y signalerait un vrai bug, et doit donc rester un 500.
      */
     public function testFromStillThrowsAValueErrorForInternalMisuse(): void
     {
-        $this->expectException(\ValueError::class);
+        $this->expectException(ValueError::class);
 
         Locale::from('zz');
     }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Ai\Support;
 
+use Generator;
+use LogicException;
 use Symfony\AI\Agent\AgentInterface;
 use Symfony\AI\Agent\Execution\Execution;
 use Symfony\AI\Agent\Execution\Update\Result as ResultUpdate;
@@ -11,6 +13,7 @@ use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Message\UserMessage;
 use Symfony\AI\Platform\Result\ResultInterface;
+use Throwable;
 
 /**
  * Agent de test : renvoie un résultat préparé (ou lève une exception) et
@@ -27,7 +30,7 @@ final class FakeAgent implements AgentInterface
     public array $lastOptions = [];
 
     public function __construct(
-        private readonly ResultInterface|\Throwable $outcome,
+        private readonly ResultInterface|Throwable $outcome,
     ) {
     }
 
@@ -38,13 +41,13 @@ final class FakeAgent implements AgentInterface
         );
         $this->lastOptions = $options;
 
-        if ($this->outcome instanceof \Throwable) {
+        if ($this->outcome instanceof Throwable) {
             throw $this->outcome;
         }
 
         $result = $this->outcome;
 
-        return new Execution(static function () use ($result): \Generator {
+        return new Execution(static function () use ($result): Generator {
             yield new ResultUpdate($result);
         });
     }
@@ -57,7 +60,7 @@ final class FakeAgent implements AgentInterface
     /** Texte du dernier message utilisateur envoyé au modèle. */
     public function lastUserText(): string
     {
-        $messages = $this->lastMessages ?? throw new \LogicException('Aucun appel enregistré.');
+        $messages = $this->lastMessages ?? throw new LogicException('Aucun appel enregistré.');
 
         foreach ($messages->getMessages() as $message) {
             if ($message instanceof UserMessage) {
@@ -65,6 +68,6 @@ final class FakeAgent implements AgentInterface
             }
         }
 
-        throw new \LogicException('Aucun message utilisateur dans le dernier appel.');
+        throw new LogicException('Aucun message utilisateur dans le dernier appel.');
     }
 }

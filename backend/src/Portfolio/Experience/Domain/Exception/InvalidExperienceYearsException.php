@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Experience\Domain\Exception;
 
+use DomainException;
+
 /**
  * Exception métier levée quand le temps cumulé d'une technologie n'est pas un
  * nombre de l'intervalle publiable (issue #372) : illisible, négatif, au-delà
@@ -17,11 +19,11 @@ namespace App\Portfolio\Experience\Domain\Exception;
  * 500 `critical` et non se fondre dans les 422 d'un client. Seule la commande
  * CLI la rattrape, pour en afficher le message.
  */
-final class InvalidExperienceYearsException extends \DomainException
+final class InvalidExperienceYearsException extends DomainException
 {
     public static function outOfRange(float $years, float $minYears, float $maxYears): self
     {
-        return new self(sprintf(
+        return new self(\sprintf(
             'Le temps cumulé doit être un nombre compris entre %s et %s ans (reçu : %s).',
             $minYears,
             $maxYears,

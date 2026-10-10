@@ -104,9 +104,9 @@ final class SeedWatchedProductsCommandTest extends KernelTestCase
             self::assertNotSame(
                 VersionSource::MANUAL,
                 $product->getVersionSource(),
-                sprintf('Le produit « %s » est encore en saisie manuelle.', $product->getSlug()),
+                \sprintf('Le produit « %s » est encore en saisie manuelle.', $product->getSlug()),
             );
-            self::assertNull($product->getVersion(), sprintf('Le produit « %s » porte une version.', $product->getSlug()));
+            self::assertNull($product->getVersion(), \sprintf('Le produit « %s » porte une version.', $product->getSlug()));
         }
     }
 

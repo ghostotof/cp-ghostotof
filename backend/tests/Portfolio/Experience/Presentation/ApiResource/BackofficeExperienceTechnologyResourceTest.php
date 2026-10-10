@@ -99,7 +99,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
 
         $technology = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register('Docker', ExperienceYears::fromFloat(6.5), 'docker', null);
 
-        $client->request('GET', sprintf('/api/backoffice/experience/technologies/%s', $technology->getId()->toRfc4122()));
+        $client->request('GET', \sprintf('/api/backoffice/experience/technologies/%s', $technology->getId()->toRfc4122()));
         self::assertResponseIsSuccessful();
         $item = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame($technology->getId()->toRfc4122(), $item['id']);
@@ -150,7 +150,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(409);
 
         // Put
-        $client->request('PUT', sprintf('/api/backoffice/experience/technologies/%s', $id), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/experience/technologies/%s', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['name' => 'Docker', 'years' => 7.0, 'iconKey' => 'docker', 'relatedTechnologyName' => null]));
@@ -159,7 +159,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         self::assertSame(7.0, $updated['years']);
 
         // Put - collision de nom avec une autre techno => 409
-        $client->request('PUT', sprintf('/api/backoffice/experience/technologies/%s', $id), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/experience/technologies/%s', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['name' => 'PHP', 'years' => 7.0]));
@@ -177,7 +177,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
 
         // Delete
-        $client->request('DELETE', sprintf('/api/backoffice/experience/technologies/%s', $id), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
+        $client->request('DELETE', \sprintf('/api/backoffice/experience/technologies/%s', $id), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
         self::assertResponseStatusCodeSame(204);
 
         // La liste publique ne reflète plus la techno supprimée
@@ -213,7 +213,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         $client->request('POST', '/api/backoffice/experience/technologies', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: sprintf('{"name":"Rust","years":%s}', $yearsLiteral));
+        ], content: \sprintf('{"name":"Rust","years":%s}', $yearsLiteral));
 
         $this->assertViolationOnYears($client);
         self::assertSame(0, $this->countTechnologiesNamed('Rust'));
@@ -229,10 +229,10 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $technology = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register('Docker', ExperienceYears::fromFloat(6.5), 'docker', null);
 
-        $client->request('PUT', sprintf('/api/backoffice/experience/technologies/%s', $technology->getId()->toRfc4122()), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/experience/technologies/%s', $technology->getId()->toRfc4122()), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
-        ], content: sprintf('{"name":"Docker","years":%s}', $yearsLiteral));
+        ], content: \sprintf('{"name":"Docker","years":%s}', $yearsLiteral));
 
         $this->assertViolationOnYears($client);
         $stored = self::getContainer()->get(EntityManagerInterface::class)->getConnection()

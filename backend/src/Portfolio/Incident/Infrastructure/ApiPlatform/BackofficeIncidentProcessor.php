@@ -9,6 +9,7 @@ use App\Portfolio\Incident\Application\IncidentAdministratorInterface;
 use App\Portfolio\Incident\Presentation\ApiResource\BackofficeIncidentResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\DispatchesWriteOperations;
+use DateTimeImmutable;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -31,7 +32,7 @@ final readonly class BackofficeIncidentProcessor implements ProcessorInterface
     {
         // Le format est déjà borné en amont par #[Assert\Date] sur le DTO :
         // une valeur invalide n'atteint jamais ce point.
-        $occurredAt = new \DateTimeImmutable($data->occurredAt);
+        $occurredAt = new DateTimeImmutable($data->occurredAt);
 
         // Locale::from : valeur déjà bornée par #[Assert\Choice]. Un
         // ValueError ici serait un vrai défaut et doit remonter en 500.
@@ -57,7 +58,7 @@ final readonly class BackofficeIncidentProcessor implements ProcessorInterface
     {
         // Le format est déjà borné en amont par #[Assert\Date] sur le DTO :
         // une valeur invalide n'atteint jamais ce point.
-        $occurredAt = new \DateTimeImmutable($data->occurredAt);
+        $occurredAt = new DateTimeImmutable($data->occurredAt);
 
         $incident = $this->incidentAdministrator->update(
             $id,

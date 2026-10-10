@@ -7,6 +7,7 @@ namespace App\Tests\Portfolio\Watch\Infrastructure\Manifest;
 use App\Portfolio\Watch\Domain\ValueObject\PackageCoordinates;
 use App\Portfolio\Watch\Infrastructure\Manifest\LockFilePackageManifestBuilder;
 use App\Portfolio\Watch\Infrastructure\Manifest\ManifestWriteException;
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 
 final class LockFilePackageManifestBuilderTest extends TestCase
@@ -90,7 +91,7 @@ final class LockFilePackageManifestBuilderTest extends TestCase
      */
     private function ecosystemsByName(LockFilePackageManifestBuilder $builder): array
     {
-        $manifest = $builder->build(new \DateTimeImmutable('2026-09-07 12:00:00'));
+        $manifest = $builder->build(new DateTimeImmutable('2026-09-07 12:00:00'));
 
         $byName = [];
         foreach ($manifest->packages as $package) {
@@ -125,7 +126,7 @@ final class LockFilePackageManifestBuilderTest extends TestCase
 
     public function testItNormalizesComposerVersionTags(): void
     {
-        $manifest = $this->builder($this->composerLock(), null)->build(new \DateTimeImmutable());
+        $manifest = $this->builder($this->composerLock(), null)->build(new DateTimeImmutable());
 
         $versions = [];
         foreach ($manifest->packages as $package) {
@@ -159,7 +160,7 @@ final class LockFilePackageManifestBuilderTest extends TestCase
 
     public function testItWritesTheManifestWhereItWillBeRead(): void
     {
-        $this->builder($this->composerLock(), $this->npmLock())->build(new \DateTimeImmutable());
+        $this->builder($this->composerLock(), $this->npmLock())->build(new DateTimeImmutable());
 
         self::assertFileExists($this->path('package-manifest.json'));
 
@@ -177,7 +178,7 @@ final class LockFilePackageManifestBuilderTest extends TestCase
      */
     public function testWithoutAnyLockTheManifestIsEmptyButReal(): void
     {
-        $manifest = $this->builder(null, null)->build(new \DateTimeImmutable());
+        $manifest = $this->builder(null, null)->build(new DateTimeImmutable());
 
         self::assertSame([], $manifest->packages);
         self::assertFileExists($this->path('package-manifest.json'));
@@ -200,7 +201,7 @@ final class LockFilePackageManifestBuilderTest extends TestCase
         set_error_handler(static fn (): bool => true, \E_WARNING);
 
         try {
-            $builder->build(new \DateTimeImmutable('2026-09-07 12:00:00'));
+            $builder->build(new DateTimeImmutable('2026-09-07 12:00:00'));
             self::fail('Un répertoire de sortie impossible à créer doit arrêter la construction.');
         } catch (ManifestWriteException $exception) {
             self::assertStringContainsString($blocker.'/sub', $exception->getMessage());
@@ -225,7 +226,7 @@ final class LockFilePackageManifestBuilderTest extends TestCase
         set_error_handler(static fn (): bool => true, \E_WARNING);
 
         try {
-            $builder->build(new \DateTimeImmutable('2026-09-07 12:00:00'));
+            $builder->build(new DateTimeImmutable('2026-09-07 12:00:00'));
             self::fail('Un fichier de sortie impossible à écrire doit arrêter la construction.');
         } catch (ManifestWriteException $exception) {
             self::assertStringContainsString($occupied, $exception->getMessage());

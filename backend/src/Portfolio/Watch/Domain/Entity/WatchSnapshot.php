@@ -8,6 +8,7 @@ use App\Portfolio\Watch\Domain\Exception\EmptySnapshotPayloadException;
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotSourceStatus;
 use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
 use App\Portfolio\Watch\Infrastructure\Doctrine\WatchSnapshotRepository;
+use DateTimeImmutable;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -50,7 +51,7 @@ class WatchSnapshot
 
     /** Date de la donnée elle-même, pas de sa lecture par le visiteur. */
     #[ORM\Column(type: 'datetime_immutable')]
-    private \DateTimeImmutable $refreshedAt;
+    private DateTimeImmutable $refreshedAt;
 
     #[ORM\Column(enumType: SnapshotSourceStatus::class, length: 10)]
     private SnapshotSourceStatus $sourceStatus;
@@ -63,7 +64,7 @@ class WatchSnapshot
     public function __construct(
         WatchSnapshotType $type,
         array $payload,
-        \DateTimeImmutable $refreshedAt,
+        DateTimeImmutable $refreshedAt,
         SnapshotSourceStatus $sourceStatus,
     ) {
         $this->assertPayloadIsNotEmpty($type, $payload);
@@ -93,7 +94,7 @@ class WatchSnapshot
         return $this->payload;
     }
 
-    public function getRefreshedAt(): \DateTimeImmutable
+    public function getRefreshedAt(): DateTimeImmutable
     {
         return $this->refreshedAt;
     }
@@ -114,7 +115,7 @@ class WatchSnapshot
      */
     public function refresh(
         array $payload,
-        \DateTimeImmutable $refreshedAt,
+        DateTimeImmutable $refreshedAt,
         SnapshotSourceStatus $sourceStatus,
     ): void {
         $this->assertPayloadIsNotEmpty($this->type, $payload);

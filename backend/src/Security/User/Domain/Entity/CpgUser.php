@@ -6,6 +6,7 @@ namespace App\Security\User\Domain\Entity;
 
 use App\Security\User\Domain\Exception\InvalidUsernameException;
 use App\Security\User\Infrastructure\Doctrine\CpgUserRepository;
+use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
@@ -20,10 +21,10 @@ use Symfony\Component\Validator\Constraints as Assert;
  * d'utilisateur.
  *
  * Deux voies de création :
- * - CLI (App\Security\User\Presentation\Command\CreateCpgUserCommand) :
+ * - CLI ({@see \App\Security\User\Presentation\Command\CreateCpgUserCommand}) :
  *   amorçage, notamment du premier ROLE_SUPER — sans email, compte utilisable
  *   immédiatement ;
- * - invitation depuis le backoffice (App\Security\User\Application\CpgUserInviter) :
+ * - invitation depuis le backoffice ({@see \App\Security\User\Application\CpgUserInviter}) :
  *   un email est stocké (nullable, unique, jamais exposé avant authentification —
  *   cf. objectif n°9), le compte est créé "en attente d'activation" et la
  *   personne définit elle-même son mot de passe via un lien reçu par email.
@@ -93,7 +94,7 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
     /** Date d'envoi de l'invitation (comptes créés depuis le backoffice ; `null` pour un compte CLI). */
     #[ORM\Column(nullable: true)]
     #[Ignore]
-    private ?\DateTimeImmutable $invitedAt = null;
+    private ?DateTimeImmutable $invitedAt = null;
 
     /**
      * Date à laquelle la personne invitée a défini son mot de passe via le lien
@@ -103,7 +104,7 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
      */
     #[ORM\Column(nullable: true)]
     #[Ignore]
-    private ?\DateTimeImmutable $activatedAt = null;
+    private ?DateTimeImmutable $activatedAt = null;
 
     public function __construct(string $username, string $hashedPassword)
     {
@@ -136,22 +137,22 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
         $this->email = $email;
     }
 
-    public function getInvitedAt(): ?\DateTimeImmutable
+    public function getInvitedAt(): ?DateTimeImmutable
     {
         return $this->invitedAt;
     }
 
-    public function getActivatedAt(): ?\DateTimeImmutable
+    public function getActivatedAt(): ?DateTimeImmutable
     {
         return $this->activatedAt;
     }
 
-    public function markInvited(\DateTimeImmutable $invitedAt): void
+    public function markInvited(DateTimeImmutable $invitedAt): void
     {
         $this->invitedAt = $invitedAt;
     }
 
-    public function markActivated(\DateTimeImmutable $activatedAt): void
+    public function markActivated(DateTimeImmutable $activatedAt): void
     {
         $this->activatedAt = $activatedAt;
     }

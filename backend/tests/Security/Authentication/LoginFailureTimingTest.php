@@ -11,6 +11,7 @@ use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use SensitiveParameter;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Response;
@@ -75,7 +76,7 @@ final class LoginFailureTimingTest extends WebTestCase
         $wrongPassword = $this->attemptLogin($client, $active, 'wrong-password');
 
         foreach (['inconnu' => $unknown, 'en attente' => $awaitingActivation, 'mauvais mot de passe' => $wrongPassword] as $case => $response) {
-            self::assertSame(401, $response->getStatusCode(), sprintf('Le cas « %s » n\'a pas répondu 401.', $case));
+            self::assertSame(401, $response->getStatusCode(), \sprintf('Le cas « %s » n\'a pas répondu 401.', $case));
         }
 
         self::assertSame($unknown->getContent(), $awaitingActivation->getContent(), 'Un compte en attente d\'activation se distingue d\'un identifiant inconnu par le corps de la réponse.');
@@ -166,7 +167,7 @@ final class LoginFailureTimingTest extends WebTestCase
 
         for ($attempt = 1; $attempt <= 5; ++$attempt) {
             $response = $this->attemptLogin($client, $unknown, 'wrong-password');
-            self::assertSame(401, $response->getStatusCode(), sprintf('La tentative n°%d aurait dû répondre 401.', $attempt));
+            self::assertSame(401, $response->getStatusCode(), \sprintf('La tentative n°%d aurait dû répondre 401.', $attempt));
             self::assertStringNotContainsStringIgnoringCase('too many', (string) $response->getContent());
         }
 
@@ -224,14 +225,14 @@ final class LoginFailureTimingTest extends WebTestCase
         $hasher = new class implements PasswordHasherInterface {
             public int $calls = 0;
 
-            public function hash(#[\SensitiveParameter] string $plainPassword): string
+            public function hash(#[SensitiveParameter] string $plainPassword): string
             {
                 ++$this->calls;
 
                 return 'hashed';
             }
 
-            public function verify(string $hashedPassword, #[\SensitiveParameter] string $plainPassword): bool
+            public function verify(string $hashedPassword, #[SensitiveParameter] string $plainPassword): bool
             {
                 return false;
             }

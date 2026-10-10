@@ -8,6 +8,7 @@ use App\Portfolio\Watch\Domain\Exception\ReleaseCycleSourceUnavailableException;
 use App\Portfolio\Watch\Domain\Service\ReleaseCycleSourceInterface;
 use App\Portfolio\Watch\Infrastructure\Validator\WatchedProductSlugExists;
 use App\Portfolio\Watch\Infrastructure\Validator\WatchedProductSlugExistsValidator;
+use LogicException;
 use PHPUnit\Framework\MockObject\Stub;
 use Psr\Log\NullLogger;
 use Symfony\Component\Validator\ConstraintValidatorInterface;
@@ -78,7 +79,7 @@ final class WatchedProductSlugExistsValidatorTest extends ConstraintValidatorTes
     public function testAnEmptySlugIsLeftToTheOtherConstraints(): void
     {
         $this->releaseCycleSource->method('supportsProduct')->willReturnCallback(
-            static fn (): never => throw new \LogicException(
+            static fn (): never => throw new LogicException(
                 'Le fournisseur ne doit pas être interrogé pour une valeur déjà connue comme invalide.',
             ),
         );

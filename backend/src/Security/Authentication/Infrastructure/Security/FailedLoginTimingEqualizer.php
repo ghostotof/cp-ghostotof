@@ -11,6 +11,7 @@ use Symfony\Component\Security\Core\Exception\TooManyLoginAttemptsAuthentication
 use Symfony\Component\Security\Core\Exception\UserNotFoundException;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
 use Symfony\Component\Security\Http\Event\LoginFailureEvent;
+use Throwable;
 
 /**
  * Égalise le temps de réponse des échecs de `POST /api/login_check`
@@ -143,7 +144,7 @@ final readonly class FailedLoginTimingEqualizer
             $user = $passport->getUser();
         } catch (UserNotFoundException) {
             return true;
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Panne du chargeur : le 401 est déjà construit, ce listener n'a ni
             // à le changer ni à décider pour lui.
             return false;

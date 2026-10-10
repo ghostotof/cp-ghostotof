@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Shared\Infrastructure\ApiPlatform;
 
+use InvalidArgumentException;
+
 /**
  * Une variable d'URI attendue comme UUID est absente ou n'en est pas un
  * (issue #383).
@@ -16,7 +18,7 @@ namespace App\Shared\Infrastructure\ApiPlatform;
  * `exception_to_status`. Le message nomme la clé, écrite dans le code, jamais
  * la valeur reçue.
  */
-final class InvalidUriVariableException extends \InvalidArgumentException
+final class InvalidUriVariableException extends InvalidArgumentException
 {
     public static function notAUuid(string $key): self
     {

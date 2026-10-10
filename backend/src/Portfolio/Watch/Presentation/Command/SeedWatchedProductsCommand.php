@@ -82,7 +82,7 @@ final class SeedWatchedProductsCommand extends Command
             $this->watchedProductAdministrator->create($slug, $label, $versionSource, $version);
         }
 
-        $io->success(sprintf('%d produits surveillés posés.', \count($this->catalog())));
+        $io->success(\sprintf('%d produits surveillés posés.', \count($this->catalog())));
 
         return Command::SUCCESS;
     }

@@ -13,6 +13,7 @@ use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\Lock\Exception\LockAcquiringException;
 use Symfony\Component\Lock\Exception\LockConflictedException;
 use Symfony\Component\Lock\Exception\LockReleasingException;
+use Throwable;
 
 /**
  * Panne du verrou des limiteurs de débit → 503 problem+json avec Retry-After
@@ -56,7 +57,7 @@ use Symfony\Component\Lock\Exception\LockReleasingException;
  * **Ce que la réponse ne dit pas.** Ni le message de l'exception (corps fixe),
  * ni de sujet au journal d'audit : le chemin dit quel limiteur a cédé.
  *
- * **Hors de l'écouteur commun `Retry-After`** (App\Shared\Infrastructure\Http\RetryAfterListener,
+ * **Hors de l'écouteur commun `Retry-After`** ({@see \App\Shared\Infrastructure\Http\RetryAfterListener},
  * issue #273), et délibérément. Celui-là traduit l'échéance que porte une
  * exception de quota (RetryAfterAware) ; une panne du verrou n'en porte
  * aucune — personne ne sait quand la base reviendra —, d'où le délai fixe
@@ -133,7 +134,7 @@ final readonly class RateLimiterLockFailureListener
      * La chaîne des `previous` est parcourue : un appelant qui rattraperait la
      * panne pour la relancer en contexte ne doit pas la faire retomber en 500.
      */
-    private function isLockFailure(\Throwable $throwable): bool
+    private function isLockFailure(Throwable $throwable): bool
     {
         for ($current = $throwable; null !== $current; $current = $current->getPrevious()) {
             if ($current instanceof LockAcquiringException
@@ -147,9 +148,9 @@ final readonly class RateLimiterLockFailureListener
     }
 
     /**
-     * @return list<class-string<\Throwable>>
+     * @return list<class-string<Throwable>>
      */
-    private function exceptionClasses(\Throwable $throwable): array
+    private function exceptionClasses(Throwable $throwable): array
     {
         $classes = [];
 

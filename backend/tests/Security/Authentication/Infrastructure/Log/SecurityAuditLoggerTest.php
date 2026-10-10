@@ -7,6 +7,7 @@ namespace App\Tests\Security\Authentication\Infrastructure\Log;
 use App\Security\Authentication\Infrastructure\Log\SecurityAuditLogger;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\ValueObject\GuestUser;
+use Closure;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
@@ -26,7 +27,7 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * et le chemin — et rien d'autre. Le test « valeurs sentinelles » pince la
  * règle « jamais un secret ni un e-mail dans un contexte ».
  *
- * `Psr\Log\Test\TestLogger` n'existe plus dans psr/log 3 (déplacé dans
+ * Le `TestLogger` de psr/log n'existe plus dans psr/log 3 (déplacé dans
  * fig/log-test, non installé) : le TestHandler de Monolog joue le même rôle,
  * avec en prime le nom du canal et le niveau tels qu'ils sortiront en prod.
  */
@@ -357,7 +358,7 @@ final class SecurityAuditLoggerTest extends TestCase
      * limiteur est l'IP, déjà dans la ligne, et le chemin dit lequel.
      */
     #[DataProvider('anonymousQuotaRefusals')]
-    public function testAnAnonymousQuotaRefusalCarriesNoSubjectOnlyTheIpAndThePath(\Closure $refuse, string $path, string $event): void
+    public function testAnAnonymousQuotaRefusalCarriesNoSubjectOnlyTheIpAndThePath(Closure $refuse, string $path, string $event): void
     {
         $this->pushRequest($path, 'POST');
 
@@ -372,7 +373,7 @@ final class SecurityAuditLoggerTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{\Closure(SecurityAuditLogger): void, string, string}>
+     * @return iterable<string, array{Closure(SecurityAuditLogger):void, string, string}>
      */
     public static function anonymousQuotaRefusals(): iterable
     {
@@ -525,7 +526,7 @@ final class SecurityAuditLoggerTest extends TestCase
                 self::assertStringNotContainsStringIgnoringCase(
                     $sentinel,
                     $serialized,
-                    sprintf('L\'enregistrement « %s » laisse fuir : %s.', $record->context['event'] ?? $record->message, $label),
+                    \sprintf('L\'enregistrement « %s » laisse fuir : %s.', $record->context['event'] ?? $record->message, $label),
                 );
             }
         }

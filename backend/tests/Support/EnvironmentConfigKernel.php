@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Support;
 
 use App\Kernel;
+use LogicException;
 use Symfony\Component\Config\Definition\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Extension\ConfigurationExtensionInterface;
@@ -91,7 +92,7 @@ final class EnvironmentConfigKernel extends Kernel
         $loaded = $builder->getExtension($extension);
         $configuration = $loaded instanceof ConfigurationExtensionInterface ? $loaded->getConfiguration([], $builder) : null;
         if (null === $configuration) {
-            throw new \LogicException(\sprintf('L\'extension « %s » n\'expose pas sa configuration.', $extension));
+            throw new LogicException(\sprintf('L\'extension « %s » n\'expose pas sa configuration.', $extension));
         }
 
         return $configuration->getConfigTreeBuilder()->buildTree();

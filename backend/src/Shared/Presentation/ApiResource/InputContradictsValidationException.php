@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Shared\Presentation\ApiResource;
 
+use LogicException;
+
 /**
  * Un DTO d'écriture contient une valeur que sa validation aurait dû refuser
  * (issue #338) : l'entrée contredit la validation, qui a pourtant tourné.
@@ -16,7 +18,7 @@ namespace App\Shared\Presentation\ApiResource;
  * une entrée amputée. Une fabrique par cas, et jamais la valeur elle-même dans
  * le message.
  */
-final class InputContradictsValidationException extends \LogicException
+final class InputContradictsValidationException extends LogicException
 {
     /**
      * Longueur maximale d'un nom de champ cité : celle qu'admet

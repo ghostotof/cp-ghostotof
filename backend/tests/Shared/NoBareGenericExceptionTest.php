@@ -9,8 +9,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * `src/` ne lève jamais de \Exception, de \LogicException, de
- * \RuntimeException ni d'\InvalidArgumentException nue (issues #338 et #383) :
+ * `src/` ne lève jamais de {@see \Exception}, de {@see \LogicException}, de
+ * {@see \RuntimeException} ni d'{@see \InvalidArgumentException} nue (issues #338 et #383) :
  * les standards du projet veulent une exception explicite, qui se cible dans
  * `framework.exceptions` et se reconnaît dans les journaux. Les dix-neuf de
  * #338 et les sept de #383 ont reçu une classe dédiée, sans exemption ; ce test
@@ -54,7 +54,7 @@ final class NoBareGenericExceptionTest extends TestCase
         yield 'classe anonyme qui étend une exception interdite' => ["<?php\nnamespace App;\nthrow new class('x') extends \\LogicException {};\n", [3]];
         yield 'classe anonyme qui étend une exception dédiée' => ["<?php\nnamespace App;\nthrow new class('x') extends DedicatedException {};\n", []];
         yield 'fichier sans espace de noms' =>["<?php\nthrow new LogicException('x');\n", [2]];
-        // Résolue dans l'espace de noms courant : App\LogicException, pas celle de PHP.
+        // Résolue dans l'espace de noms courant, App : ce n'est pas la LogicException de PHP.
         yield 'homonyme de l\'espace de noms' => ["<?php\nnamespace App;\nthrow new LogicException('x');\n", []];
         yield 'exception dédiée' => ["<?php\nnamespace App;\nthrow UnsupportedOperationException::for(\$operation);\n", []];
         yield 'InvalidArgumentException' => ["<?php\nnamespace App;\nthrow new \\InvalidArgumentException('x');\n", [3]];
