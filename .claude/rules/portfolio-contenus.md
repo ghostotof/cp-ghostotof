@@ -41,7 +41,9 @@ paths:
     on an entry already alone; `reattach()` with a group inherits its position; `inGroup()` throws
     `TranslationGroupHasSeveralPositionsException` (a `LogicException`, issue #338) on a group whose members disagree on the position, a pipeline bug, never a 4xx — checked **before** the
     "locale already there" 409, issue #384: with two locales the only corrupt group the unique index allows
-    is an FR/EN pair, which always carries the requested locale, so the reverse order hid the bug as an `info`). `WatchedProduct` is not localized, so it is `Orderable` on its
+    is an FR/EN pair, which always carries the requested locale, so the reverse order hid the bug as an `info`;
+    when it fires, look beyond migrations and SQL writes: `reorder()` takes no lock, so a "Create the XX
+    version" landing between its read and its save keeps the old position, and the exact-set rule cannot see it). `WatchedProduct` is not localized, so it is `Orderable` on its
     own id, and its `Administrator` computes the end of the catalogue itself. The **only client-driven
     writer of `position` is `PUT /api/backoffice/<x>/order`** (`ContentPlacement` derives it server-side,
     no request body ever chooses it) (`Backoffice<X>OrderResource`, `read: false`,

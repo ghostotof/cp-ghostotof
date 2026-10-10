@@ -141,6 +141,22 @@ final class ContentPlacementTest extends TestCase
     }
 
     /**
+     * Le chemin du `PUT` (#384) : rattacher une entrée EN à une paire FR/EN
+     * corrompue doit faire surfacer le défaut, pas le 409 de la langue déjà
+     * présente — même ordre de contrôles que la création.
+     */
+    public function testReattachingToAGroupWhoseMembersDisagreeOnThePositionIsABug(): void
+    {
+        $entry = new FakeTranslatableContent(Locale::EN, 9);
+        $target = Uuid::v7();
+        $members = [new FakeTranslatableContent(Locale::FR, 3, $target), new FakeTranslatableContent(Locale::EN, 5, $target)];
+
+        $this->expectException(TranslationGroupHasSeveralPositionsException::class);
+
+        (new ContentPlacement())->reattach($entry, $target, $members);
+    }
+
+    /**
      * @return iterable<string, array{Locale}>
      */
     public static function everyLocale(): iterable
