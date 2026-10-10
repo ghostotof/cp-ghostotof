@@ -66,8 +66,8 @@ final class PlainPasswordInputs
     public static function fields(array $classes): array
     {
         $fields = [];
-        // Le champ d'un trait utilisé est lu dans la classe qui l'utilise.
-        foreach (array_diff($classes, DeclaredClasses::traitsUsedBy($classes)) as $class) {
+        // Le champ d'un trait utilisé est lu dans chaque classe qui l'utilise.
+        foreach (DeclaredClasses::withoutUsedTraits($classes) as $class) {
             foreach ((new ReflectionClass($class))->getProperties() as $property) {
                 if ($property->getDeclaringClass()->getName() === $class
                     && SensitiveParameters::namesAClearSecret($property->getName(), self::NAME)
@@ -153,8 +153,24 @@ final class PlainPasswordInputs
     {
         return array_values(array_filter(
             self::classesAndEnums($classes),
-            static fn (string $class): bool => !is_subclass_of($class, $interface)
-                && array_any(self::sourcesOf($class), static fn (string $code): bool => self::callsMethodOf($code, $interface, $method)),
+            static function (string $class) use ($interface, $method): bool {
+                if (is_subclass_of($class, $interface)) {
+                    return false;
+                }
+
+                // La classe peut nommer l'interface (son constructeur) et son
+                // trait l'appeler (`$this->administrator->…`) : les deux se
+                // cumulent sur l'ensemble de ses fichiers (revue de #421).
+                $designated = false;
+                $called = false;
+                foreach (self::sourcesOf($class) as $code) {
+                    [$designates, $calls] = self::designatesAndCalls($code, $interface, $method);
+                    $designated = $designated || $designates;
+                    $called = $called || $calls;
+                }
+
+                return $designated && $called;
+            },
         ));
     }
 
@@ -169,6 +185,18 @@ final class PlainPasswordInputs
      * @param class-string $interface
      */
     public static function callsMethodOf(string $code, string $interface, string $method): bool
+    {
+        [$designated, $called] = self::designatesAndCalls($code, $interface, $method);
+
+        return $designated && $called;
+    }
+
+    /**
+     * @param class-string $interface
+     *
+     * @return array{bool, bool} le code désigne l'interface ; il appelle une méthode de ce nom sur un objet
+     */
+    private static function designatesAndCalls(string $code, string $interface, string $method): array
     {
         $tokens = PhpSources::significantTokens($code);
         $shortName = substr($interface, (int) strrpos($interface, '\\') + 1);
@@ -189,7 +217,7 @@ final class PlainPasswordInputs
             }
         }
 
-        return $designated && $called;
+        return [$designated, $called];
     }
 
     public static function label(ReflectionProperty|ReflectionParameter $element): string
@@ -240,7 +268,7 @@ final class PlainPasswordInputs
      *
      * @return list<string>
      */
-    private static function sourcesOf(string $class): array
+    public static function sourcesOf(string $class): array
     {
         $sources = [];
         foreach ([$class, ...DeclaredClasses::traitsUsedBy([$class])] as $declaration) {

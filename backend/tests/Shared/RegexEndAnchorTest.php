@@ -132,9 +132,8 @@ final class RegexEndAnchorTest extends TestCase
     private function htmlPatternsEcmaScriptMisreadsIn(string $directory): array
     {
         $found = [];
-        $declarations = DeclaredClasses::classLikes($directory);
-        // Un trait utilisé se lit dans la classe qui l'utilise, une seule fois.
-        foreach (array_diff($declarations, DeclaredClasses::traitsUsedBy($declarations)) as $class) {
+        // Un trait utilisé se lit dans chaque classe qui l'utilise.
+        foreach (DeclaredClasses::withoutUsedTraits(DeclaredClasses::classLikes($directory)) as $class) {
             foreach ($this->regexConstraintsOf(new ReflectionClass($class)) as $where => $constraint) {
                 $htmlPattern = $constraint->getHtmlPattern();
                 if (null !== $htmlPattern && 1 === preg_match('/\\\\[AzZ]/', $htmlPattern)) {

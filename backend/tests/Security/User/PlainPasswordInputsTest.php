@@ -19,6 +19,7 @@ use App\Security\User\Presentation\ApiResource\AccountPasswordSetupResource;
 use App\Security\User\Presentation\ApiResource\BackofficeUserPasswordResource;
 use App\Security\User\Presentation\Command\CreateCpgUserCommand;
 use App\Tests\Security\User\Fixtures\PlainPasswordFieldsFixture;
+use App\Tests\Security\User\Fixtures\Traits\DesignatesTheAdministratorFixture;
 use App\Tests\Security\User\Fixtures\Traits\UsesTheCallerTraitFixture;
 use App\Tests\Security\User\Fixtures\Traits\UsesTheHasherTraitFixture;
 use App\Tests\Security\User\Fixtures\Traits\UsesThePasswordFieldTraitFixture;
@@ -370,11 +371,12 @@ final class PlainPasswordInputsTest extends TestCase
 
     /**
      * Même lecture pour les appelants : la voie d'entrée est la classe, que
-     * VALIDATED_BY peut relier à sa ressource API Platform.
+     * VALIDATED_BY peut relier à sa ressource API Platform. L'interface peut
+     * être nommée dans un fichier et appelée dans l'autre.
      */
     public function testTheCallerCensusReadsTheTraitsOfAClass(): void
     {
-        self::assertSame([UsesTheCallerTraitFixture::class], PlainPasswordInputs::callers($this->classesIn(self::TRAIT_FIXTURES), CpgUserAdministratorInterface::class, 'changePassword'));
+        self::assertSame([DesignatesTheAdministratorFixture::class, UsesTheCallerTraitFixture::class], PlainPasswordInputs::callers($this->classesIn(self::TRAIT_FIXTURES), CpgUserAdministratorInterface::class, 'changePassword'));
     }
 
     /**
@@ -408,13 +410,12 @@ final class PlainPasswordInputsTest extends TestCase
      */
     private function assertNamesBothPasswordConstraints(string $entryPoint): void
     {
-        $file = (new ReflectionClass($entryPoint))->getFileName();
-        self::assertIsString($file);
-
-        // Le dernier segment : la CLI écrit `Assert\NotCompromisedPassword`.
+        // Son fichier et ceux de ses traits, comme pour le recensement des
+        // appelants (issue #421). Le dernier segment : la CLI écrit
+        // `Assert\NotCompromisedPassword`.
         $names = array_map(
             static fn (PhpToken $token): string => substr($token->text, (int) strrpos('\\'.$token->text, '\\')),
-            PhpSources::significantTokens((string) file_get_contents($file)),
+            array_merge(...array_map(PhpSources::significantTokens(...), PlainPasswordInputs::sourcesOf($entryPoint))),
         );
 
         self::assertContains('PlainPasswordLength', $names, \sprintf('%s ne valide pas la longueur par PlainPasswordLength.', $entryPoint));

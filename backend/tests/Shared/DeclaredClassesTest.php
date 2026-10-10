@@ -56,6 +56,21 @@ final class DeclaredClassesTest extends TestCase
     }
 
     /**
+     * Ce que lit un garde-fou de signatures : chaque déclaration, sauf le
+     * trait utilisé, déjà vu dans sa classe.
+     */
+    public function testWithoutUsedTraitsKeepsEveryDeclarationButTheUsedTrait(): void
+    {
+        self::assertSame([
+            DeclaredFixtureAbstractClass::class,
+            DeclaredFixtureClass::class,
+            DeclaredFixtureEnum::class,
+            DeclaredFixtureInterface::class,
+            DeclaredFixtureSubInterface::class,
+        ], DeclaredClasses::withoutUsedTraits(DeclaredClasses::classLikes(self::FIXTURES)));
+    }
+
+    /**
      * Une interface qui étend le type n'est pas une classe qui l'implémente
      * (`DeclaredFixtureSubInterface`, pour laquelle `is_subclass_of()` est
      * vrai) : `implementing()` reste sur les classes, que ses appelants

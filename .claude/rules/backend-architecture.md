@@ -91,7 +91,9 @@ secret: `hashed` (not `unhashed`) or a trailing `hash` (not `toHash`) excludes t
 `$hashedPassword`). Scope: methods of the classes, interfaces, traits and enums of `src/`
 (`DeclaredClasses::classLikes()`, issue #421: an enum, an interface nothing implements or a trait nothing
 uses was reached by no class) and of the classes' `App\…` interfaces and parents; a used trait is read
-in the class using it, where its prototype lives, and reported once, under the class. **`DeclaredClasses` has
+in each class using it, where its prototype lives, and reported under that class, never a second time
+under its own name (`DeclaredClasses::withoutUsedTraits()`, the one place that rule is written — go
+through it in any new guard on `classLikes()`). **`DeclaredClasses` has
 two censuses, and each guard picks one explicitly**: `classes()` (abstract included) for a guard that
 reasons on what is thrown or instantiated (`implementing()` builds on it — `is_subclass_of()` is true of an
 interface extending the type), `classLikes()` for one that reads signatures, attributes or a file's source

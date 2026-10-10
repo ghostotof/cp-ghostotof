@@ -35,7 +35,7 @@ use ReflectionClass;
  *    {@see \App\Tests\Shared\RegexEndAnchorTest}). Un enum, une interface
  *    sans implémentation ou un trait sans utilisateur portent des membres que
  *    la réflexion n'atteint par aucune classe ; un trait utilisé, lui, se lit
- *    dans sa classe ({@see self::traitsUsedBy()}).
+ *    dans chaque classe qui l'utilise ({@see self::withoutUsedTraits()}).
  * Étendre {@see self::classes()} en silence aurait changé le périmètre de
  * gardes qui supposent une classe : `is_subclass_of()` est vrai d'une
  * interface qui étend le type, et un garde-fou qui lève ou instancie ce qu'il
@@ -100,8 +100,8 @@ final class DeclaredClasses
      * Les traits qu'utilisent ces déclarations, directement ou par un autre
      * trait. La réflexion montre leurs méthodes et leurs propriétés dans la
      * classe qui les utilise, comme si elle les déclarait : un garde-fou qui
-     * lit aussi le trait pour lui-même verrait chaque membre deux fois
-     * (issue #421).
+     * lit aussi le trait pour lui-même verrait chaque membre une fois de plus
+     * (issue #421) — {@see self::withoutUsedTraits()} l'écarte.
      *
      * @param list<class-string> $classes
      *
@@ -121,6 +121,20 @@ final class DeclaredClasses
         }
 
         return $used;
+    }
+
+    /**
+     * Ces déclarations, moins les traits que l'une d'elles utilise : ce
+     * qu'un garde-fou de signatures ou d'attributs lit, chaque membre d'un
+     * trait utilisé l'étant déjà dans chaque classe qui l'utilise.
+     *
+     * @param list<class-string> $declarations
+     *
+     * @return list<class-string>
+     */
+    public static function withoutUsedTraits(array $declarations): array
+    {
+        return array_values(array_diff($declarations, self::traitsUsedBy($declarations)));
     }
 
     /**
@@ -151,7 +165,9 @@ final class DeclaredClasses
      */
     private static function isDeclared(string $name): bool
     {
-        return class_exists($name) || interface_exists($name) || trait_exists($name);
+        // Une seule tentative d'autoload : le chargeur inclut le fichier
+        // quelle que soit la sorte de déclaration.
+        return class_exists($name) || interface_exists($name, false) || trait_exists($name, false);
     }
 
     /**

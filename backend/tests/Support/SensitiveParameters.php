@@ -27,8 +27,8 @@ use SensitiveParameter;
  * dans une interface ou une classe mère `App\…` de sa classe : une
  * implémentation qui renomme `$clearToken` en `$value` reçoit le même secret,
  * et l'attribut posé sur l'interface ne cache rien à l'exécution (revue de
- * #414). La méthode d'un trait utilisé est vue dans la classe qui l'utilise,
- * celle d'un trait sans utilisateur pour elle-même (issue #421).
+ * #414). La méthode d'un trait utilisé est vue dans chaque classe qui
+ * l'utilise, celle d'un trait sans utilisateur pour elle-même (issue #421).
  */
 final class SensitiveParameters
 {
@@ -44,7 +44,10 @@ final class SensitiveParameters
     public static function named(array $classes, string $pattern): array
     {
         $owners = [];
-        foreach ($classes as $class) {
+        // Un trait utilisé est lu dans chaque classe qui l'utilise, où se
+        // trouve le prototype de ses méthodes : le lire aussi pour lui-même
+        // signalerait le défaut une fois de plus (issue #421).
+        foreach (DeclaredClasses::withoutUsedTraits($classes) as $class) {
             $reflection = new ReflectionClass($class);
             $owners[$class] = $reflection;
             foreach ($reflection->getInterfaces() as $interface) {
@@ -53,10 +56,6 @@ final class SensitiveParameters
                 }
             }
         }
-        // Un trait utilisé est lu dans la classe qui l'utilise, où se trouve
-        // le prototype de ses méthodes : le lire aussi pour lui-même
-        // signalerait chaque défaut deux fois (issue #421).
-        $owners = array_diff_key($owners, array_flip(DeclaredClasses::traitsUsedBy($classes)));
         ksort($owners);
 
         $parameters = [];
