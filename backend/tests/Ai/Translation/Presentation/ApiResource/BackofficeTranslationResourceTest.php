@@ -348,6 +348,11 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(429);
         self::assertResponseHasHeader('Retry-After');
         self::assertGreaterThan(0, (int) $client->getResponse()->headers->get('Retry-After'));
+        // Issue #369 : le `type` de tout refus de débit, nginx compris — pas
+        // le `/errors/429` qu'API Platform déduirait du seul statut.
+        $problem = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($problem);
+        self::assertSame('/errors/rate-limited', $problem['type'] ?? null);
         // Issue #356 : le refus est tracé sur le canal qui sort des pods de
         // production, avec le compte — la boucle d'un compte ROLE_SUPER
         // compromis se voit.

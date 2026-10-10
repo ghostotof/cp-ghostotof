@@ -23,8 +23,16 @@ api_platform:
     # il ne répondait jamais, sinon par une UnsupportedFormatException
     # `critical`. La documentation reste servie en dev par /api/docs.
     enable_entrypoint: false
-    # Sans cette entrée, ContactRateLimitExceededException remonterait en 500
-    # (exception métier non reconnue par API Platform) au lieu du 429 attendu.
+    # Statut HTTP des exceptions métier levées sous une opération API Platform :
+    # sans entrée ici ni ProblemExceptionInterface::getStatus(), l'exception
+    # remonterait en 500. Une ProblemExceptionInterface qui déclare son statut
+    # n'a pas besoin d'entrée : c'est le cas des quotas du contact, de la
+    # traduction et de la définition du mot de passe depuis l'issue #369
+    # (`type` /errors/rate-limited, 429). Si elle en a une, l'entrée doit
+    # répéter ce statut : la table, consultée la première
+    # (ErrorListener::getStatusCode), fixe le statut HTTP, alors que getStatus()
+    # remplit le `status` du corps. ProblemStatusMatchesExceptionToStatusTest
+    # rougit sur une contradiction.
     #
     # ATTENTION, deux pièges de cette clé, l'un et l'autre vérifiés dans le
     # vendor de la version installée :
@@ -51,7 +59,6 @@ api_platform:
     # environnements : ExceptionMappingEnvironmentParityTest refuse un
     # `when@prod` comme un `when@test`.
     exception_to_status:
-        App\Contact\Domain\Exception\ContactRateLimitExceededException: 429
         # Aujourd'hui seulement levée dans SendContactMessageHandler (worker
         # Messenger async, jamais dans la pile HTTP synchrone) : entrée
         # défensive pour éviter un 500 générique si ce service était un jour
@@ -70,7 +77,6 @@ api_platform:
         # (Shared, priorité -98, issue #322) les rend avec le statut que porte
         # chacune via ProblemExceptionInterface::getStatus(). Une entrée ajoutée
         # ici ne serait jamais lue.
-        App\Ai\Translation\Domain\Exception\TranslationRateLimitExceededException: 429
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException: 409
         App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException: 404
         App\Portfolio\Contribution\Domain\Exception\ContributionNotFoundException: 404
@@ -132,10 +138,10 @@ api_platform:
         App\Security\User\Domain\Exception\AccountInvitationDeliveryException: 503
         # Parcours public de définition de mot de passe (/api/account/password-setup) :
         # jeton inconnu -> 404, expiré ou déjà consommé -> 410 (cas fusionnés
-        # pour ne pas révéler qu'un lien a servi), quota IP dépassé -> 429.
+        # pour ne pas révéler qu'un lien a servi). Le 429 du quota IP vient de
+        # PasswordSetupRateLimitExceededException::getStatus() (issue #369).
         App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException: 404
         App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException: 410
-        App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException: 429
         # Corps de requête que le Serializer refuse (JSON illisible, racine qui
         # n'est pas un objet), requalifié à la seule frontière de la
         # désérialisation par MalformedRequestBodyProvider (issue #355) : une
