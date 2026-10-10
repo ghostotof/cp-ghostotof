@@ -9,6 +9,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Infrastructure\Http\CanonicalPath;
 use Monolog\Attribute\WithMonologChannel;
 use Psr\Log\LoggerInterface;
+use SensitiveParameter;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
 
@@ -45,6 +46,7 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         private LoggerInterface $logger,
         private RequestStack $requestStack,
         private TokenStorageInterface $tokenStorage,
+        private LoginIdentifierFingerprint $fingerprint,
     ) {
     }
 
@@ -53,14 +55,14 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         $this->record('login-succeeded', 'Login succeeded.', ['user' => $username]);
     }
 
-    public function loginFailed(?string $username): void
+    public function loginFailed(#[SensitiveParameter] ?string $triedIdentifier, ?CpgUser $account): void
     {
-        $this->record('login-failed', 'Login failed.', ['user' => $username]);
+        $this->record('login-failed', 'Login failed.', $this->attemptSubject($triedIdentifier, $account));
     }
 
-    public function loginThrottled(?string $username): void
+    public function loginThrottled(#[SensitiveParameter] ?string $triedIdentifier): void
     {
-        $this->record('login-throttled', 'Login refused by throttling.', ['user' => $username]);
+        $this->record('login-throttled', 'Login refused by throttling.', $this->attemptSubject($triedIdentifier, null));
     }
 
     public function loggedOut(?string $username): void
@@ -179,6 +181,30 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
     private function account(CpgUser $user): array
     {
         return ['user' => $user->getUsername(), 'userId' => $user->getId()->toRfc4122()];
+    }
+
+    /**
+     * Le sujet d'une tentative de login (issue #418). L'identifiant saisi ne
+     * sort jamais : un mot de passe tapé dans le champ identifiant partirait
+     * sinon en clair dans les journaux de production. Il est remplacé par son
+     * empreinte, qui suffit à corréler les tentatives — entre elles et avec le
+     * compteur de `login_throttling`. Le nom en clair ne vient que d'un compte
+     * chargé : c'est alors `getUsername()` qui est écrit, pas la saisie.
+     *
+     * `user` reste présent (à `null`) sans compte, comme avant : les lectures
+     * `jq '.context.user // "-"'` du runbook (k8s/README.md) ne changent pas.
+     *
+     * @return array{user: string|null, userId?: string, userFingerprint: string|null}
+     */
+    private function attemptSubject(#[SensitiveParameter] ?string $triedIdentifier, ?CpgUser $account): array
+    {
+        $fingerprint = null !== $triedIdentifier ? $this->fingerprint->of($triedIdentifier) : null;
+
+        if (null === $account) {
+            return ['user' => null, 'userFingerprint' => $fingerprint];
+        }
+
+        return [...$this->account($account), 'userFingerprint' => $fingerprint];
     }
 
     /**

@@ -55,7 +55,7 @@ framework:
             log_level: info
         # Refus de `login_throttling` (issue #399) : la défense anti-brute-force
         # qui fait son office. Déjà tracé par `login-throttled` (security_audit,
-        # avec l'identifiant tenté) ; sans cette entrée, chaque refus serait une
+        # avec l'empreinte de l'identifiant tenté, issue #418) ; sans cette entrée, chaque refus serait une
         # ligne `critical` qu'un anonyme produirait à volonté.
         App\Security\Authentication\Domain\Exception\LoginRateLimitExceededException:
             log_level: info

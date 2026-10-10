@@ -10,7 +10,10 @@ use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\Persistence\ManagerRegistry;
+use SensitiveParameter;
+use Symfony\Bridge\Doctrine\Security\User\UserLoaderInterface;
 use Symfony\Component\Security\Core\Exception\UnsupportedUserException;
+use Symfony\Component\Security\Core\Exception\UserNotFoundException;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\PasswordUpgraderInterface;
 use Symfony\Component\Uid\Uuid;
@@ -18,16 +21,54 @@ use Symfony\Component\Uid\Uuid;
 /**
  * @extends ServiceEntityRepository<CpgUser>
  */
-class CpgUserRepository extends ServiceEntityRepository implements CpgUserRepositoryInterface, PasswordUpgraderInterface
+class CpgUserRepository extends ServiceEntityRepository implements CpgUserRepositoryInterface, PasswordUpgraderInterface, UserLoaderInterface
 {
     public function __construct(ManagerRegistry $registry)
     {
         parent::__construct($registry, CpgUser::class);
     }
 
-    public function findOneByUsername(string $username): ?CpgUser
+    public function findOneByUsername(#[SensitiveParameter] string $username): ?CpgUser
     {
         return $this->findOneBy(['username' => $username]);
+    }
+
+    /**
+     * Chargeur du fournisseur `cpg_users` (security.yaml), à la place de son
+     * option `property: username` (issue #418).
+     *
+     * Le fournisseur `entity` de Doctrine, quand il cherche lui-même par
+     * propriété, lève `UserNotFoundException('User "<identifiant>" not
+     * found.')` ;
+     * {@see \Symfony\Component\Security\Http\Authentication\AuthenticatorManager}
+     * journalise cette exception en `info` sur le canal `security`, que la
+     * production écrit (monolog.yaml). Or
+     * l'identifiant tenté est souvent un mot de passe tapé dans le mauvais
+     * champ. Ici l'exception est levée avant que le fournisseur ne construise
+     * la sienne, avec un message qui ne cite rien ; l'identifiant reste porté
+     * par `setUserIdentifier()`, que le formateur JSON de Monolog n'écrit pas
+     * (il ne sérialise d'une exception que sa classe, son message, son code
+     * et son fichier).
+     *
+     * Un identifiant hors de `CpgUser::USERNAME_PATTERN` ne peut désigner
+     * aucun compte — le constructeur l'impose — et n'est donc pas cherché
+     * (relecture de #418). Sans ce refus, PostgreSQL, qui reçoit les
+     * paramètres texte comme des chaînes C, coupait `jane\0…` au NUL et
+     * chargeait `jane`, pendant que `login_throttling` comptait chaque
+     * suffixe à part ; un octet hors UTF-8 faisait échouer la requête.
+     */
+    public function loadUserByIdentifier(#[SensitiveParameter] string $identifier): CpgUser
+    {
+        $user = 1 === preg_match(CpgUser::USERNAME_PATTERN, $identifier) ? $this->findOneByUsername($identifier) : null;
+
+        if (null === $user) {
+            $exception = new UserNotFoundException('Unknown user identifier.');
+            $exception->setUserIdentifier($identifier);
+
+            throw $exception;
+        }
+
+        return $user;
     }
 
     public function findOneByEmail(string $email): ?CpgUser

@@ -131,4 +131,28 @@ final class AuthenticationFlowTest extends WebTestCase
         self::assertNull($client->getCookieJar()->get('BEARER'));
         self::assertNull($client->getCookieJar()->get('XSRF-TOKEN'));
     }
+
+    /**
+     * Relecture de #418 : PostgreSQL reçoit les paramètres texte comme des
+     * chaînes C, coupées au premier octet NUL. `jane\u0000<n'importe quoi>`
+     * chargeait donc `jane` — avec le bon mot de passe, le login réussissait
+     * —, tandis que `login_throttling` comptait chaque suffixe à part : un
+     * compteur par (IP, identifiant) neuf à chaque essai. Un identifiant hors
+     * de CpgUser::USERNAME_PATTERN ne désigne aucun compte, il n'est plus
+     * cherché.
+     */
+    public function testAnIdentifierCutByANulByteDoesNotLogInAsTheAccountItStartsWith(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::USERNAME, TestCredentials::plainPassword(), [CpgUser::ROLE_TRUSTED]);
+        self::getContainer()->get('cache.rate_limiter')->clear();
+
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
+            'username' => self::USERNAME."\0suffix",
+            'password' => TestCredentials::plainPassword(),
+        ]));
+
+        self::assertResponseStatusCodeSame(401);
+        self::assertNull($client->getCookieJar()->get('BEARER'));
+    }
 }

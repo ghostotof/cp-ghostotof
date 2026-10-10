@@ -95,7 +95,15 @@ paths:
     `MessageListener`, `BodyRenderer`, Twig), checks the serialized stamp and the logged failure for the
     token with verbose trace settings, checks that each leaking case did quote it before conversion, and
     runs the real retry listener.
-  - `Infrastructure/` — `Doctrine/{CpgUser,PasswordSetupToken}Repository.php` (sole impls);
+  - `Infrastructure/` — `Doctrine/{CpgUser,PasswordSetupToken}Repository.php` (sole impls;
+    `CpgUserRepository` is also the **loader of the `cpg_users` provider**, `UserLoaderInterface`, issue #418:
+    the `entity` provider has no `property` option on purpose — with it, Doctrine's provider threw
+    `User "<identifier>" not found.`, which the `security` channel logs at `info` in production, and the tried
+    identifier is sometimes a password typed in the wrong field; `loadUserByIdentifier()` throws a
+    `UserNotFoundException` whose message quotes nothing. Never put `property: username` back. An
+    identifier outside `CpgUser::USERNAME_PATTERN` is refused **without a query**: PostgreSQL reads a text
+    parameter as a C string, so `jane\0…` used to load `jane` — a valid login — while `login_throttling`
+    counted each suffix apart, and a non-UTF-8 byte failed the query);
     `Messenger/SendAccountInvitationHandler.php` (creates the token — see above — then the `TemplatedEmail`
     `emails/account_invitation.*`, subject + localized strings built here);
     `RateLimiter/SymfonyPasswordSetupRateLimiter.php`;

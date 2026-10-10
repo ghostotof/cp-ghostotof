@@ -5,10 +5,15 @@ declare(strict_types=1);
 namespace App\Tests\Security;
 
 use App\Ai\Assistant\Infrastructure\Http\ReplayRefusingHttpClient;
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
 use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
+use App\Security\Authentication\Infrastructure\Log\LoginIdentifierFingerprint;
+use App\Security\Authentication\Infrastructure\Log\SecurityAuditLogger;
 use App\Security\User\Application\PasswordSetupService;
 use App\Security\User\Application\PasswordSetupServiceInterface;
+use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Security\User\Infrastructure\Doctrine\CpgUserRepository;
 use App\Security\User\Infrastructure\Log\PasswordOptionRedactor;
 use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersEnumFixture;
 use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersOrphanInterfaceFixture;
@@ -114,7 +119,21 @@ final class SecretParametersTest extends TestCase
         AuthCookieFactory::class.'::create($value)' => 'le JWT ou le jeton CSRF de bearer() et xsrf()',
         ReplayRefusingHttpClient::class.'::request($options)' => 'la clé d\'API Scaleway (`auth_bearer`) et le corps : le corpus du CV nominatif',
         PasswordOptionRedactor::class.'::redact($text)' => 'l\'argv d\'app:user:create, `--password=<mot de passe>` compris',
+        // Issue #418 : l'identifiant tenté au login peut être un mot de passe
+        // tapé dans le mauvais champ.
+        SecurityAuditLoggerInterface::class.'::loginFailed($triedIdentifier)' => self::TRIED_IDENTIFIER,
+        SecurityAuditLoggerInterface::class.'::loginThrottled($triedIdentifier)' => self::TRIED_IDENTIFIER,
+        SecurityAuditLogger::class.'::loginFailed($triedIdentifier)' => self::TRIED_IDENTIFIER,
+        SecurityAuditLogger::class.'::loginThrottled($triedIdentifier)' => self::TRIED_IDENTIFIER,
+        SecurityAuditLogger::class.'::attemptSubject($triedIdentifier)' => self::TRIED_IDENTIFIER,
+        LoginIdentifierFingerprint::class.'::of($identifier)' => self::TRIED_IDENTIFIER,
+        CpgUserRepository::class.'::loadUserByIdentifier($identifier)' => self::TRIED_IDENTIFIER.' (chargeur du fournisseur `cpg_users`)',
+        CpgUserRepositoryInterface::class.'::findOneByUsername($username)' => self::TRIED_IDENTIFIER.' (appelé par le chargeur)',
+        CpgUserRepository::class.'::findOneByUsername($username)' => self::TRIED_IDENTIFIER.' (appelé par le chargeur)',
     ];
+
+    /** Ce que reçoivent les paramètres de l'issue #418. */
+    private const string TRIED_IDENTIFIER = 'l\'identifiant tenté au login, possiblement un mot de passe';
 
     public function testEverySecretParameterOfSrcIsHiddenFromStackTraces(): void
     {
