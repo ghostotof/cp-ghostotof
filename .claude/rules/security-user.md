@@ -28,6 +28,10 @@ paths:
     counted the minimum in bytes, the API the maximum in characters). The minimum is in **characters**, the
     maximum in **bytes**, the unit the hasher checks (`PasswordHasherInterface::MAX_PASSWORD_LENGTH`, `strlen`):
     counted in characters, a multibyte password passed validation and the hasher turned it into a 500.
+    On both DTOs it sits inside one `Assert\Sequentially([NotBlank, PlainPasswordLength, NotCompromisedPassword])`
+    — each constraint only if the previous one passed — so a password already refused never reaches
+    api.pwnedpasswords.com: the DTO is validated before the token is read, so any anonymous caller of the
+    set-password route could otherwise trigger that outbound call (`PasswordBreachCheckOrderTest` counts them).
     Domain exceptions: `UsernameAlreadyUsedException`, `EmailAlreadyUsedException`,
     `InvalidPasswordSetupTokenException` (→404), `PasswordSetupTokenExpiredException` (→410, covers "already
     used"), `CannotModifyOwnRolesException` / `CannotDemoteLastSuperAdminException` (→409),

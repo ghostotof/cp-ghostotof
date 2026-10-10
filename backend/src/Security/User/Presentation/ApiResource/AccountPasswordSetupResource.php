@@ -47,8 +47,10 @@ final class AccountPasswordSetupResource
     #[Assert\Length(max: 255)]
     public string $token = '';
 
-    #[Assert\NotBlank]
-    #[PlainPasswordLength]
+    // Dans l'ordre, chacune seulement si la précédente passe (revue de
+    // #386) : un mot de passe déjà refusé n'interroge pas haveibeenpwned —
+    // et la validation précède la lecture du jeton, donc tout anonyme
+    // pouvait déclencher l'appel sortant.
     // Refuse un mot de passe présent dans une fuite connue (haveibeenpwned,
     // k-anonymity). Désactivé en environnement de test (validator.yaml,
     // when@test), même choix que BackofficeUserPasswordResource.
@@ -56,6 +58,10 @@ final class AccountPasswordSetupResource
     // injoignable, le mot de passe est accepté plutôt que de renvoyer 500 sur
     // ce parcours public — la longueur mini reste appliquée, et la
     // disponibilité du parcours prime sur ce contrôle unitaire.
-    #[Assert\NotCompromisedPassword(skipOnError: true)]
+    #[Assert\Sequentially([
+        new Assert\NotBlank(),
+        new PlainPasswordLength(),
+        new Assert\NotCompromisedPassword(skipOnError: true),
+    ])]
     public string $password = '';
 }

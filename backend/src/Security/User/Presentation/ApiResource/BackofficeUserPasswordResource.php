@@ -33,8 +33,8 @@ use Symfony\Component\Validator\Constraints as Assert;
 final readonly class BackofficeUserPasswordResource
 {
     public function __construct(
-        #[Assert\NotBlank]
-        #[PlainPasswordLength]
+        // Dans l'ordre, chacune seulement si la précédente passe (revue de
+        // #386) : un mot de passe déjà refusé n'interroge pas haveibeenpwned.
         // Point d'audit B8 : refuse un mot de passe présent dans les fuites
         // connues (API k-anonymity de haveibeenpwned, aucun envoi du mot de
         // passe en clair). Désactivé en environnement de test
@@ -44,7 +44,11 @@ final readonly class BackofficeUserPasswordResource
         // api.pwnedpasswords.com ne doit pas transformer un changement de mot
         // de passe légitime en 500 — le contrôle est alors sauté, la longueur
         // mini restant garantie.
-        #[Assert\NotCompromisedPassword(skipOnError: true)]
+        #[Assert\Sequentially([
+            new Assert\NotBlank(),
+            new PlainPasswordLength(),
+            new Assert\NotCompromisedPassword(skipOnError: true),
+        ])]
         public string $password = '',
     ) {
     }

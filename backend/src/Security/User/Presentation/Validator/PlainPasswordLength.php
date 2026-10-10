@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Security\User\Presentation\Validator;
 
 use App\Security\User\Domain\Entity\CpgUser;
-use Attribute;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Constraints\Compound;
 
@@ -29,8 +28,11 @@ use Symfony\Component\Validator\Constraints\Compound;
  *
  * Pattern Composite (Compound de Symfony) plutôt que deux attributs recopiés
  * à chaque site : la règle a déjà divergé une fois entre ses copies.
+ *
+ * Pas d'attribut PHP : la contrainte ne s'emploie qu'à l'intérieur d'un
+ * `Assert\Sequentially`, entre `NotBlank` et `NotCompromisedPassword`, pour
+ * qu'un mot de passe refusé n'interroge jamais haveibeenpwned.
  */
-#[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_METHOD | Attribute::IS_REPEATABLE)]
 final class PlainPasswordLength extends Compound
 {
     /**
@@ -42,7 +44,13 @@ final class PlainPasswordLength extends Compound
     {
         return [
             new Assert\Length(min: CpgUser::MIN_PASSWORD_LENGTH),
-            new Assert\Length(max: CpgUser::MAX_PASSWORD_LENGTH, countUnit: Assert\Length::COUNT_BYTES),
+            // Le message par défaut parle de caractères : il annonçait « 4096
+            // characters » à qui en avait tapé 2 049 multioctets.
+            new Assert\Length(
+                max: CpgUser::MAX_PASSWORD_LENGTH,
+                countUnit: Assert\Length::COUNT_BYTES,
+                maxMessage: 'This value is too long. It should have {{ limit }} byte or less.|This value is too long. It should have {{ limit }} bytes or less.',
+            ),
         ];
     }
 }
