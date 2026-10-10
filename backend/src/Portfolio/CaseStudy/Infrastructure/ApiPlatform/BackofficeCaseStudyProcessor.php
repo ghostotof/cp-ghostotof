@@ -13,6 +13,7 @@ use App\Portfolio\CaseStudy\Application\CaseStudyAdministratorInterface;
 use App\Portfolio\CaseStudy\Presentation\ApiResource\BackofficeCaseStudyResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use App\Shared\Infrastructure\ApiPlatform\UnsupportedOperationException;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -60,7 +61,7 @@ final readonly class BackofficeCaseStudyProcessor implements ProcessorInterface
                 $this->translationGroup($data),
             );
         } else {
-            throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
+            throw UnsupportedOperationException::for($operation);
         }
 
         return BackofficeCaseStudyResource::fromEntity($caseStudy);

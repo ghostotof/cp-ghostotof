@@ -13,6 +13,7 @@ use App\Portfolio\Quality\Application\QualityTraitAdministratorInterface;
 use App\Portfolio\Quality\Presentation\ApiResource\BackofficeQualityTraitResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use App\Shared\Infrastructure\ApiPlatform\UnsupportedOperationException;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -48,7 +49,7 @@ final readonly class BackofficeQualityTraitProcessor implements ProcessorInterfa
                 $this->translationGroup($data),
             );
         } else {
-            throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
+            throw UnsupportedOperationException::for($operation);
         }
 
         return BackofficeQualityTraitResource::fromEntity($trait);

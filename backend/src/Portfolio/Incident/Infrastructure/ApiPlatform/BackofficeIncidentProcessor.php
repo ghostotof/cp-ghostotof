@@ -13,6 +13,7 @@ use App\Portfolio\Incident\Application\IncidentAdministratorInterface;
 use App\Portfolio\Incident\Presentation\ApiResource\BackofficeIncidentResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use App\Shared\Infrastructure\ApiPlatform\UnsupportedOperationException;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -66,7 +67,7 @@ final readonly class BackofficeIncidentProcessor implements ProcessorInterface
                 $this->translationGroup($data),
             );
         } else {
-            throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
+            throw UnsupportedOperationException::for($operation);
         }
 
         return BackofficeIncidentResource::fromEntity($incident);

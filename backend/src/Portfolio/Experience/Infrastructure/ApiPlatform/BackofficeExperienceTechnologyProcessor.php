@@ -14,6 +14,7 @@ use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
 use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use App\Portfolio\Experience\Presentation\ApiResource\BackofficeExperienceTechnologyResource;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use App\Shared\Infrastructure\ApiPlatform\UnsupportedOperationException;
 
 /**
  * @implements ProcessorInterface<BackofficeExperienceTechnologyResource, BackofficeExperienceTechnologyResource|null>
@@ -57,7 +58,7 @@ final readonly class BackofficeExperienceTechnologyProcessor implements Processo
                 $data->secondary,
             );
         } else {
-            throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
+            throw UnsupportedOperationException::for($operation);
         }
 
         return BackofficeExperienceTechnologyResource::fromEntity($technology);

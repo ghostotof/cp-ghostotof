@@ -13,6 +13,7 @@ use App\Portfolio\Watch\Application\WatchedProductAdministratorInterface;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use App\Portfolio\Watch\Presentation\ApiResource\BackofficeWatchedProductResource;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use App\Shared\Infrastructure\ApiPlatform\UnsupportedOperationException;
 
 /**
  * @implements ProcessorInterface<BackofficeWatchedProductResource, BackofficeWatchedProductResource|null>
@@ -55,7 +56,7 @@ final readonly class BackofficeWatchedProductProcessor implements ProcessorInter
                 $version,
             );
         } else {
-            throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
+            throw UnsupportedOperationException::for($operation);
         }
 
         return BackofficeWatchedProductResource::fromEntity($product);

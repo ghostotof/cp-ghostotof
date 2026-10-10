@@ -13,6 +13,7 @@ use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
 use App\Portfolio\Contribution\Presentation\ApiResource\BackofficeContributionResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use App\Shared\Infrastructure\ApiPlatform\UnsupportedOperationException;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -62,7 +63,7 @@ final readonly class BackofficeContributionProcessor implements ProcessorInterfa
                 $this->translationGroup($data),
             );
         } else {
-            throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
+            throw UnsupportedOperationException::for($operation);
         }
 
         return BackofficeContributionResource::fromEntity($contribution);

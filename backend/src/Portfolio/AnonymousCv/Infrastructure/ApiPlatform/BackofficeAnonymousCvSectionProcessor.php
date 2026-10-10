@@ -13,6 +13,7 @@ use App\Portfolio\AnonymousCv\Application\AnonymousCvSectionAdministratorInterfa
 use App\Portfolio\AnonymousCv\Presentation\ApiResource\BackofficeAnonymousCvSectionResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use App\Shared\Infrastructure\ApiPlatform\UnsupportedOperationException;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -58,7 +59,7 @@ final readonly class BackofficeAnonymousCvSectionProcessor implements ProcessorI
                 $this->translationGroup($data),
             );
         } else {
-            throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
+            throw UnsupportedOperationException::for($operation);
         }
 
         return BackofficeAnonymousCvSectionResource::fromEntity($section);

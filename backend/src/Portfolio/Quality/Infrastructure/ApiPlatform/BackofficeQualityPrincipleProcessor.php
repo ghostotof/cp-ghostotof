@@ -13,6 +13,7 @@ use App\Portfolio\Quality\Application\QualityPrincipleAdministratorInterface;
 use App\Portfolio\Quality\Presentation\ApiResource\BackofficeQualityPrincipleResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use App\Shared\Infrastructure\ApiPlatform\UnsupportedOperationException;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -52,7 +53,7 @@ final readonly class BackofficeQualityPrincipleProcessor implements ProcessorInt
                 $this->translationGroup($data),
             );
         } else {
-            throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
+            throw UnsupportedOperationException::for($operation);
         }
 
         return BackofficeQualityPrincipleResource::fromEntity($principle);

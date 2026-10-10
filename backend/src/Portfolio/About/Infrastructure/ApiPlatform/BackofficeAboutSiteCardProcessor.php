@@ -13,6 +13,7 @@ use App\Portfolio\About\Application\AboutSiteCardAdministratorInterface;
 use App\Portfolio\About\Presentation\ApiResource\BackofficeAboutSiteCardResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use App\Shared\Infrastructure\ApiPlatform\UnsupportedOperationException;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -52,7 +53,7 @@ final readonly class BackofficeAboutSiteCardProcessor implements ProcessorInterf
                 $this->translationGroup($data),
             );
         } else {
-            throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
+            throw UnsupportedOperationException::for($operation);
         }
 
         return BackofficeAboutSiteCardResource::fromEntity($card);
