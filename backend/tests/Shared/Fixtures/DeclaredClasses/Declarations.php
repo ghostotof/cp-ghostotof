@@ -18,6 +18,10 @@ interface DeclaredFixtureInterface
     public function enum(): string;
 }
 
+interface DeclaredFixtureSubInterface extends DeclaredFixtureInterface
+{
+}
+
 trait DeclaredFixtureTrait
 {
     public function anonymous(): Stringable

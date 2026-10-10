@@ -112,7 +112,7 @@ final class RegexEndAnchorTest extends TestCase
     {
         self::assertSame(
             // getHtmlPattern() ne retire qu'un `$` final : `\z` reste, suivi de `.*`.
-            [RegexOnInterfaceFixture::class.'::slug()#0.0 [a-z]+\z.*'],
+            [RegexOnInterfaceFixture::class.'::getSlug()#0.0 [a-z]+\z.*'],
             $this->htmlPatternsEcmaScriptMisreadsIn(__DIR__.'/Fixtures/RegexEndAnchor'),
         );
     }

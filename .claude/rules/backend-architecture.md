@@ -90,7 +90,8 @@ consistency, and an implementation renaming `$clearToken` to `$value` is still c
 secret: `hashed` (not `unhashed`) or a trailing `hash` (not `toHash`) excludes the name (`$tokenHash`,
 `$hashedPassword`). Scope: methods of the classes, interfaces, traits and enums of `src/`
 (`DeclaredClasses::classLikes()`, issue #421: an enum, an interface nothing implements or a trait nothing
-uses was reached by no class) and of the classes' `App\…` interfaces and parents. **`DeclaredClasses` has
+uses was reached by no class) and of the classes' `App\…` interfaces and parents; a used trait is read
+in the class using it, where its prototype lives, and reported once, under the class. **`DeclaredClasses` has
 two censuses, and each guard picks one explicitly**: `classes()` (abstract included) for a guard that
 reasons on what is thrown or instantiated (`implementing()` builds on it — `is_subclass_of()` is true of an
 interface extending the type), `classLikes()` for one that reads signatures, attributes or a file's source

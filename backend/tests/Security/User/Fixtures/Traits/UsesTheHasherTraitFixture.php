@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Security\User\Fixtures\HasherTrait;
+namespace App\Tests\Security\User\Fixtures\Traits;
 
 /**
  * Fixture de {@see \App\Tests\Security\User\PlainPasswordInputsTest} (issue

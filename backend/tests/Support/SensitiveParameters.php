@@ -27,7 +27,8 @@ use SensitiveParameter;
  * dans une interface ou une classe mère `App\…` de sa classe : une
  * implémentation qui renomme `$clearToken` en `$value` reçoit le même secret,
  * et l'attribut posé sur l'interface ne cache rien à l'exécution (revue de
- * #414).
+ * #414). La méthode d'un trait utilisé est vue dans la classe qui l'utilise,
+ * celle d'un trait sans utilisateur pour elle-même (issue #421).
  */
 final class SensitiveParameters
 {
@@ -52,6 +53,10 @@ final class SensitiveParameters
                 }
             }
         }
+        // Un trait utilisé est lu dans la classe qui l'utilise, où se trouve
+        // le prototype de ses méthodes : le lire aussi pour lui-même
+        // signalerait chaque défaut deux fois (issue #421).
+        $owners = array_diff_key($owners, array_flip(self::traitsUsedBy($classes)));
         ksort($owners);
 
         $parameters = [];
@@ -70,6 +75,31 @@ final class SensitiveParameters
         }
 
         return $parameters;
+    }
+
+    /**
+     * Les traits qu'utilisent ces déclarations, directement ou par un autre
+     * trait. La réflexion montre leurs méthodes et leurs propriétés dans la
+     * classe qui les utilise, comme si elle les déclarait.
+     *
+     * @param list<class-string> $classes
+     *
+     * @return list<class-string>
+     */
+    public static function traitsUsedBy(array $classes): array
+    {
+        $used = [];
+        $pending = array_map(static fn (string $class): ReflectionClass => new ReflectionClass($class), $classes);
+        while ([] !== $pending) {
+            foreach (array_pop($pending)->getTraits() as $trait) {
+                if (!\in_array($trait->getName(), $used, true)) {
+                    $used[] = $trait->getName();
+                    $pending[] = $trait;
+                }
+            }
+        }
+
+        return $used;
     }
 
     /** `#[SensitiveParameter]` : la valeur ne figure dans aucune trace d'exception, quel que soit `zend.exception_ignore_args`. */

@@ -25,9 +25,9 @@ use Symfony\Component\Validator\Constraints\Sequentially;
  *    nom dit « mot de passe » ({@see self::NAME}) ;
  *  - les **paramètres** du même nom, dans les classes, interfaces, traits et
  *    enums reçus, et dans les interfaces `App\…` des classes ;
- *  - les **classes qui hachent** : celles dont le code nomme un type du
- *    composant PasswordHasher, quel que soit le nom de leurs paramètres — un
- *    trait ou une interface compris, si on les lui passe.
+ *  - les **classes qui hachent** : celles dont le code, ou celui de leurs
+ *    traits, nomme un type du composant PasswordHasher, quel que soit le nom
+ *    de leurs paramètres.
  *
  * Plus, pour fermer la boucle, les **appelants** d'une méthode d'interface :
  * une voie nouvelle vers un cas d'usage existant est vue même si son champ
@@ -66,7 +66,8 @@ final class PlainPasswordInputs
     public static function fields(array $classes): array
     {
         $fields = [];
-        foreach ($classes as $class) {
+        // Le champ d'un trait utilisé est lu dans la classe qui l'utilise.
+        foreach (array_diff($classes, SensitiveParameters::traitsUsedBy($classes)) as $class) {
             foreach ((new ReflectionClass($class))->getProperties() as $property) {
                 if ($property->getDeclaringClass()->getName() === $class
                     && SensitiveParameters::namesAClearSecret($property->getName(), self::NAME)
@@ -123,13 +124,13 @@ final class PlainPasswordInputs
     /**
      * @param list<class-string> $classes
      *
-     * @return list<class-string> celles dont le fichier nomme un type du composant PasswordHasher
+     * @return list<class-string> les classes dont le code, ou celui de leurs traits, nomme un type du composant PasswordHasher
      */
     public static function hasherUsers(array $classes): array
     {
         return array_values(array_filter(
-            $classes,
-            static fn (string $class): bool => self::namesAPasswordHasher(self::sourceOf($class)),
+            self::executable($classes),
+            static fn (string $class): bool => array_any(self::sourcesOf($class), self::namesAPasswordHasher(...)),
         ));
     }
 
@@ -146,14 +147,14 @@ final class PlainPasswordInputs
      * @param list<class-string> $classes
      * @param class-string       $interface
      *
-     * @return list<class-string> celles qui appellent $method d'$interface, hors ses implémentations
+     * @return list<class-string> les classes qui appellent $method d'$interface, par leur code ou celui de leurs traits, hors ses implémentations
      */
     public static function callers(array $classes, string $interface, string $method): array
     {
         return array_values(array_filter(
-            $classes,
+            self::executable($classes),
             static fn (string $class): bool => !is_subclass_of($class, $interface)
-                && self::callsMethodOf(self::sourceOf($class), $interface, $method),
+                && array_any(self::sourcesOf($class), static fn (string $code): bool => self::callsMethodOf($code, $interface, $method)),
         ));
     }
 
@@ -212,13 +213,41 @@ final class PlainPasswordInputs
     }
 
     /**
-     * @param class-string $class
+     * Ce qui hache ou appelle est une classe (ou un enum) : une interface
+     * n'exécute rien, et un trait agit dans la classe qui l'utilise, la seule
+     * qui puisse implémenter l'interface de HASHERS ou être le processor
+     * d'une ressource (issue #421).
+     *
+     * @param list<class-string> $classes
+     *
+     * @return list<class-string>
      */
-    private static function sourceOf(string $class): string
+    private static function executable(array $classes): array
     {
-        $file = (new ReflectionClass($class))->getFileName();
+        return array_values(array_filter($classes, static function (string $class): bool {
+            $reflection = new ReflectionClass($class);
 
-        return false === $file ? '' : (string) file_get_contents($file);
+            return !$reflection->isInterface() && !$reflection->isTrait();
+        }));
+    }
+
+    /**
+     * Le fichier de la classe et ceux de ses traits, qu'elle ne cite que par
+     * `use` : chacun se lit à part, avec ses propres imports.
+     *
+     * @param class-string $class
+     *
+     * @return list<string>
+     */
+    private static function sourcesOf(string $class): array
+    {
+        $sources = [];
+        foreach ([$class, ...SensitiveParameters::traitsUsedBy([$class])] as $declaration) {
+            $file = (new ReflectionClass($declaration))->getFileName();
+            $sources[] = false === $file ? '' : (string) file_get_contents($file);
+        }
+
+        return $sources;
     }
 
     /**

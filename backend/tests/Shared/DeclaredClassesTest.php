@@ -8,6 +8,7 @@ use App\Tests\Shared\Fixtures\DeclaredClasses\DeclaredFixtureAbstractClass;
 use App\Tests\Shared\Fixtures\DeclaredClasses\DeclaredFixtureClass;
 use App\Tests\Shared\Fixtures\DeclaredClasses\DeclaredFixtureEnum;
 use App\Tests\Shared\Fixtures\DeclaredClasses\DeclaredFixtureInterface;
+use App\Tests\Shared\Fixtures\DeclaredClasses\DeclaredFixtureSubInterface;
 use App\Tests\Shared\Fixtures\DeclaredClasses\DeclaredFixtureTrait;
 use App\Tests\Support\DeclaredClasses;
 use PHPUnit\Framework\TestCase;
@@ -39,14 +40,16 @@ final class DeclaredClassesTest extends TestCase
             DeclaredFixtureClass::class,
             DeclaredFixtureEnum::class,
             DeclaredFixtureInterface::class,
+            DeclaredFixtureSubInterface::class,
             DeclaredFixtureTrait::class,
         ], DeclaredClasses::classLikes(self::FIXTURES));
     }
 
     /**
-     * Une interface qui étend le type n'est pas une classe qui l'implémente :
-     * `implementing()` reste sur les classes, que ses appelants instancient
-     * ou lèvent.
+     * Une interface qui étend le type n'est pas une classe qui l'implémente
+     * (`DeclaredFixtureSubInterface`, pour laquelle `is_subclass_of()` est
+     * vrai) : `implementing()` reste sur les classes, que ses appelants
+     * instancient ou lèvent.
      */
     public function testImplementingReturnsClassesOnly(): void
     {

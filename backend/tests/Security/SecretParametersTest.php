@@ -15,6 +15,7 @@ use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersOrphanInterfaceFix
 use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersOrphanTraitFixture;
 use App\Tests\Security\Fixtures\SecretParametersFixture;
 use App\Tests\Security\Fixtures\SecretParametersFixtureInterface;
+use App\Tests\Security\Fixtures\UsedTrait\IssuesTokensFixture;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Support\SensitiveParameters;
 use PHPUnit\Framework\TestCase;
@@ -208,6 +209,16 @@ final class SecretParametersTest extends TestCase
             SecretParametersOrphanInterfaceFixture::class.'::authenticate($apiKey)',
             SecretParametersOrphanTraitFixture::class.'::decrypt($secret)',
         ], SensitiveParameters::exposed($this->parametersIn(__DIR__.'/Fixtures/BeyondClasses')));
+    }
+
+    /**
+     * La méthode d'un trait utilisé est signalée une fois, sous la classe qui
+     * l'utilise : c'est là que se lit son prototype, une interface de la
+     * classe (issue #421).
+     */
+    public function testAMethodOfAUsedTraitIsCensusedOnce(): void
+    {
+        self::assertSame([IssuesTokensFixture::class.'::issue($token)'], SensitiveParameters::exposed($this->parametersIn(__DIR__.'/Fixtures/UsedTrait')));
     }
 
     /**

@@ -18,8 +18,10 @@ use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserPasswordProcessor
 use App\Security\User\Presentation\ApiResource\AccountPasswordSetupResource;
 use App\Security\User\Presentation\ApiResource\BackofficeUserPasswordResource;
 use App\Security\User\Presentation\Command\CreateCpgUserCommand;
-use App\Tests\Security\User\Fixtures\HasherTrait\HashesThroughATraitFixture;
 use App\Tests\Security\User\Fixtures\PlainPasswordFieldsFixture;
+use App\Tests\Security\User\Fixtures\Traits\UsesTheCallerTraitFixture;
+use App\Tests\Security\User\Fixtures\Traits\UsesTheHasherTraitFixture;
+use App\Tests\Security\User\Fixtures\Traits\UsesThePasswordFieldTraitFixture;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Support\PhpSources;
 use App\Tests\Support\PlainPasswordInputs;
@@ -88,9 +90,11 @@ use ReflectionProperty;
  * `changePassword()` échappe au recensement par nom, pas à celui des appelants.
  *
  * Les trois lisent les classes, interfaces, traits et enums de `src/`
- * ({@see DeclaredClasses::classLikes()}, issue #421) : un trait qui
- * nommerait le hasher ou appellerait `changePassword()` est lu dans son propre
- * fichier, que la classe qui l'utilise ne cite que par `use`.
+ * ({@see DeclaredClasses::classLikes()}, issue #421). Un trait utilisé est lu
+ * avec la classe qui l'utilise, à qui il est attribué : son champ, son
+ * paramètre, le hasher qu'il nomme ou l'appel qu'il fait sont ceux de la
+ * classe, la seule qui puisse implémenter l'interface de HASHERS ou être le
+ * processor d'une ressource ; un trait sans utilisateur est lu pour lui-même.
  *
  * **Limites assumées.** Un hasher obtenu sans nommer son type (service
  * injecté par son identifiant) n'est pas vu ; un cas d'usage qui hacherait un
@@ -103,6 +107,8 @@ use ReflectionProperty;
  */
 final class PlainPasswordInputsTest extends TestCase
 {
+    private const string TRAIT_FIXTURES = __DIR__.'/Fixtures/Traits';
+
     /**
      * Champs dont le nom dit « mot de passe » sans être une saisie.
      *
@@ -350,12 +356,34 @@ final class PlainPasswordInputsTest extends TestCase
     }
 
     /**
-     * Un trait qui nomme le hasher est lu dans son propre fichier : la classe
-     * qui l'utilise ne le cite que par `use` (issue #421).
+     * Une classe hache si son code, ou celui de ses traits, nomme le hasher :
+     * la classe qui utilise le trait ne le cite que par `use`. C'est elle qui
+     * se déclare dans HASHERS, avec la méthode d'interface qu'elle
+     * implémente — un trait n'implémente rien (issue #421).
      */
-    public function testTheHasherCensusReadsATraitInItsOwnFile(): void
+    public function testTheHasherCensusReadsTheTraitsOfAClass(): void
     {
-        self::assertSame([HashesThroughATraitFixture::class], PlainPasswordInputs::hasherUsers($this->classesIn(__DIR__.'/Fixtures/HasherTrait')));
+        self::assertSame([UsesTheHasherTraitFixture::class], PlainPasswordInputs::hasherUsers($this->classesIn(self::TRAIT_FIXTURES)));
+    }
+
+    /**
+     * Même lecture pour les appelants : la voie d'entrée est la classe, que
+     * VALIDATED_BY peut relier à sa ressource API Platform.
+     */
+    public function testTheCallerCensusReadsTheTraitsOfAClass(): void
+    {
+        self::assertSame([UsesTheCallerTraitFixture::class], PlainPasswordInputs::callers($this->classesIn(self::TRAIT_FIXTURES), CpgUserAdministratorInterface::class, 'changePassword'));
+    }
+
+    /**
+     * Le champ d'un trait est lu une fois, dans la classe qui l'utilise, pas
+     * une seconde sous le nom du trait.
+     */
+    public function testAFieldDeclaredByAUsedTraitIsCensusedOnce(): void
+    {
+        $fields = array_map(PlainPasswordInputs::label(...), PlainPasswordInputs::fields($this->classesIn(self::TRAIT_FIXTURES)));
+
+        self::assertSame([UsesThePasswordFieldTraitFixture::class.'::$password'], $fields);
     }
 
     /**
