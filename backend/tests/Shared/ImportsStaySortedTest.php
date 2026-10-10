@@ -11,8 +11,8 @@ use PHPUnit\Framework\TestCase;
 /**
  * Les `use` de `src/` et de `tests/` restent triés (issue #394), dans l'ordre
  * de php-cs-fixer `ordered_imports` `alpha` que #391 a appliqué une fois.
- * Aucun outil du projet ne l'impose, et `rector:fix` ajoute chaque nouvel
- * import en tête du bloc.
+ * Aucun autre outil du projet ne l'impose, et `rector:fix` ajoute chaque
+ * nouvel import en tête du bloc.
  *
  * Le recensement est d'abord éprouvé sur des extraits littéraux. Un recenseur
  * qui ne trouverait jamais rien rendrait le premier test vert sans rien
@@ -25,7 +25,7 @@ final class ImportsStaySortedTest extends TestCase
     {
         $root = \dirname(__DIR__, 2);
 
-        self::assertSame([], UnsortedImports::in($root.'/src', $root.'/tests'), UnsortedImports::FIX);
+        self::assertSame([], UnsortedImports::in($root.'/src', $root.'/tests'), UnsortedImports::fix());
     }
 
     /**
@@ -57,6 +57,8 @@ final class ImportsStaySortedTest extends TestCase
         yield 'use de trait' => ["<?php\nnamespace App;\nfinal class X\n{\n    use Zed;\n    use Alpha;\n}\n", []];
         yield 'use de fonction anonyme' => ["<?php\nnamespace App;\n\$f = function () use (\$b, \$a) {};\n", []];
         yield 'use de trait après une chaîne interpolée' => ["<?php\nnamespace App;\n\$s = \"{\$a}\";\nfinal class X\n{\n    use Zed;\n    use Alpha;\n}\n", []];
+        yield 'clés égales' => ["<?php\nnamespace App;\nuse App\\Alpha;\nuse App\\alpha;\n", []];
+        yield 'use de trait après une chaîne ${…}' => ["<?php\nnamespace App;\n\$s = \"\${a}\";\nfinal class X\n{\n    use Zed;\n    use Alpha;\n}\n", []];
         yield 'use function, interdit' => ["<?php\nnamespace App;\nuse function sprintf;\n", ['3 use function interdit']];
         yield 'use const, interdit' => ["<?php\nnamespace App;\nuse const PHP_EOL;\n", ['3 use const interdit']];
         yield 'import groupé, interdit' => ["<?php\nnamespace App;\nuse App\\{Beta, Alpha};\n", ['3 import groupé interdit']];

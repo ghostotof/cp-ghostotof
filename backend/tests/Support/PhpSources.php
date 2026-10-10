@@ -12,21 +12,13 @@ use SplFileInfo;
 
 /**
  * Ce que les recenseurs par jetons ont en commun (DeclaredClasses,
- * BareExceptionInstantiations, UnsortedImports, MisqualifiedNativeCalls) : quels
- * fichiers ils lisent, et quels jetons ils ignorent. Partagé pour qu'un garde-fou ne voie jamais un autre périmètre
- * que son voisin.
+ * BareExceptionInstantiations, CommentedClassNames, UnsortedImports,
+ * MisqualifiedNativeCalls) : quels fichiers ils lisent, et quels jetons ils
+ * ignorent. Partagé pour qu'un garde-fou ne voie jamais un autre périmètre que
+ * son voisin.
  */
 final class PhpSources
 {
-    /**
-     * Ce que les messages de correction des gardes de style (UnsortedImports,
-     * MisqualifiedNativeCalls) font lancer dans le conteneur `backend` avant
-     * la correction. php-cs-fixer n'est volontairement pas une dépendance
-     * (#391) : son phar, à une version épinglée, se pose sous `var/`, qui
-     * n'est pas versionné.
-     */
-    public const string CS_FIXER_DOWNLOAD = 'curl -fsSL -o var/php-cs-fixer.phar https://github.com/PHP-CS-Fixer/PHP-CS-Fixer/releases/download/v3.95.27/php-cs-fixer.phar';
-
     private const array IGNORED = [\T_WHITESPACE, \T_COMMENT, \T_DOC_COMMENT];
 
     /**
@@ -55,5 +47,14 @@ final class PhpSources
             PhpToken::tokenize($code),
             static fn (PhpToken $token): bool => !$token->is(self::IGNORED),
         ));
+    }
+
+    /**
+     * Un jeton qui ouvre une accolade, que `}` refermera. `"{$a}"` l'ouvre par
+     * T_CURLY_OPEN, dont le texte est `{`, et `"${a}"` par `${`.
+     */
+    public static function opensBrace(PhpToken $token): bool
+    {
+        return '{' === $token->text || $token->is(\T_DOLLAR_OPEN_CURLY_BRACES);
     }
 }

@@ -22,12 +22,20 @@ use PhpToken;
  *
  * Seul un nom d'un seul segment est concerné : `Foo\count(`, avec ou sans `\`
  * initial, désigne la fonction d'un espace de noms, et non une fonction globale.
+ * Une fonction globale qui n'est pas native (`\dump(`) est signalée comme les
+ * natives hors de l'ensemble : php-cs-fixer en `strict` lui retire aussi son
+ * `\`, et la règle ne qualifie que l'ensemble.
+ *
+ * Comme dans php-cs-fixer, un appel non qualifié n'est pas signalé quand le
+ * fichier déclare une fonction du même nom hors de toute classe : c'est alors
+ * un double de la native dans l'espace de noms, et `\count()` appellerait
+ * l'original. Une méthode homonyme ne masque rien.
  */
 final class MisqualifiedNativeCalls
 {
     /**
-     * L'ensemble `@compiler_optimized` de php-cs-fixer v3.95.27
-     * (`NativeFunctionInvocationFixer::getAllCompilerOptimizedFunctionsNormalized()`),
+     * L'ensemble `@compiler_optimized` de php-cs-fixer, à la version
+     * {@see PhpCsFixer::VERSION} (`NativeFunctionInvocationFixer::getAllCompilerOptimizedFunctionsNormalized()`),
      * recopié parce que php-cs-fixer n'est pas une dépendance. Les fonctions
      * viennent de `zend_try_compile_special_func()` (`Zend/zend_compile.c`), puis
      * de l'optimiseur d'OPcache (`Zend/Optimizer/`). La liste suit PHP :
@@ -54,10 +62,17 @@ final class MisqualifiedNativeCalls
      */
     public const array ABSENT_FROM_PHP = ['is_real'];
 
-    public const string FIX = "Fonctions natives mal qualifiées. Correction ponctuelle, depuis la racine du dépôt :\n"
-        ."docker compose exec -u dev backend sh -c '".PhpSources::CS_FIXER_DOWNLOAD
-        .' && for d in src tests; do php var/php-cs-fixer.phar fix --using-cache=no --allow-risky=yes'
-        .' --rules=\'"\'"\'{"native_function_invocation":{"include":["@compiler_optimized"],"scope":"all","strict":true}}\'"\'"\' $d; done\'';
+    /**
+     * Le message d'échec de la garde : la commande qui corrige tous les appels signalés.
+     */
+    public static function fix(): string
+    {
+        return "Fonctions natives mal qualifiées. Correction ponctuelle, depuis la racine du dépôt :\n"
+            .PhpCsFixer::command(
+                '{"native_function_invocation":{"include":["@compiler_optimized"],"scope":"all","strict":true}}',
+                risky: true,
+            );
+    }
 
     /**
      * @return list<string> `chemin:ligne problème` pour chaque appel fautif, triés pour un diagnostic stable
@@ -82,14 +97,15 @@ final class MisqualifiedNativeCalls
     public static function inCode(string $code): array
     {
         $tokens = PhpSources::significantTokens($code);
-        $classNames = self::attributeClassNames($tokens);
+        $attributeClassIndexes = self::attributeClassIndexes($tokens);
+        $declared = self::declaredFunctions($tokens);
         $problems = [];
         foreach ($tokens as $index => $token) {
-            if (!self::isCall($tokens, $index) || isset($classNames[$index])) {
+            if (!self::isCall($tokens, $index) || isset($attributeClassIndexes[$index])) {
                 continue;
             }
 
-            if ($token->is(\T_STRING) && self::isOptimized($token->text)) {
+            if ($token->is(\T_STRING) && self::isOptimized($token->text) && !isset($declared[strtolower($token->text)])) {
                 $problems[] = $token->line.' '.$token->text.'() doit s\'écrire \\'.$token->text.'()';
             } elseif ($token->is(\T_NAME_FULLY_QUALIFIED) && 1 === substr_count($token->text, '\\')
                 && !self::isOptimized(substr($token->text, 1))) {
@@ -134,7 +150,7 @@ final class MisqualifiedNativeCalls
      *
      * @return array<int, true>
      */
-    private static function attributeClassNames(array $tokens): array
+    private static function attributeClassIndexes(array $tokens): array
     {
         $names = [];
         $brackets = 0;
@@ -163,6 +179,53 @@ final class MisqualifiedNativeCalls
         }
 
         return $names;
+    }
+
+    /**
+     * Les fonctions que le fichier déclare hors de toute classe, en minuscules :
+     * au premier niveau, ou dans le corps d'une fonction. Une méthode est une
+     * déclaration posée directement dans le corps d'une classe, d'une
+     * interface, d'un trait ou d'une énumération.
+     *
+     * @param list<PhpToken> $tokens
+     *
+     * @return array<string, true>
+     */
+    private static function declaredFunctions(array $tokens): array
+    {
+        $declared = [];
+        $depth = 0;
+        /** @var list<int> $classBodies profondeur d'accolades à l'intérieur de chaque corps de classe ouvert */
+        $classBodies = [];
+        $classDeclared = false;
+        foreach ($tokens as $index => $token) {
+            if ($token->is([\T_CLASS, \T_INTERFACE, \T_TRAIT, \T_ENUM])
+                && true !== ($tokens[$index - 1] ?? null)?->is(\T_DOUBLE_COLON)) {
+                // Le corps s'ouvre à la prochaine accolade ; `Foo::class` n'en déclare aucun.
+                $classDeclared = true;
+            } elseif (PhpSources::opensBrace($token)) {
+                ++$depth;
+                if ($classDeclared) {
+                    $classBodies[] = $depth;
+                    $classDeclared = false;
+                }
+            } elseif ('}' === $token->text) {
+                if (end($classBodies) === $depth) {
+                    array_pop($classBodies);
+                }
+                --$depth;
+            } elseif ($token->is(\T_FUNCTION) && end($classBodies) !== $depth) {
+                $name = $tokens[$index + 1] ?? null;
+                if ('&' === $name?->text) {
+                    $name = $tokens[$index + 2] ?? null;
+                }
+                if (null !== $name && $name->is(\T_STRING)) {
+                    $declared[strtolower($name->text)] = true;
+                }
+            }
+        }
+
+        return $declared;
     }
 
     private static function isOptimized(string $function): bool

@@ -9,7 +9,7 @@ use PhpToken;
 /**
  * Recense les imports mal ordonnés d'un répertoire (issue #394), selon le tri
  * de php-cs-fixer `ordered_imports` `alpha` (`OrderedImportsFixer::sortAlphabetically()`,
- * v3.95.27) :
+ * à la version {@see PhpCsFixer::VERSION}) :
  * - la clé est l'import tel qu'écrit, alias compris (`Foo as Bar`) ;
  * - chaque `\` y devient une espace, donc `Foo\Bar` précède `Foo2` ;
  * - les clés se comparent par `strcasecmp`, sans tenir compte de la casse.
@@ -29,9 +29,15 @@ use PhpToken;
  */
 final class UnsortedImports
 {
-    public const string FIX = "Imports mal ordonnés. Tri ponctuel, depuis la racine du dépôt :\n"
-        ."docker compose exec -u dev backend sh -c '".PhpSources::CS_FIXER_DOWNLOAD
-        .' && for d in src tests; do php var/php-cs-fixer.phar fix --using-cache=no --rules=ordered_imports $d; done\'';
+    /**
+     * Le message d'échec de la garde : comment corriger chaque forme signalée.
+     */
+    public static function fix(): string
+    {
+        return "Un `use function`, un `use const` ou un import groupé se réécrit à la main : la règle les interdit,\n"
+            ."et le tri ne les corrige pas. Pour l'ordre, tri ponctuel depuis la racine du dépôt :\n"
+            .PhpCsFixer::command('ordered_imports');
+    }
 
     /**
      * @return list<string> `chemin:ligne problème` pour chaque import fautif, triés pour un diagnostic stable
@@ -64,8 +70,7 @@ final class UnsortedImports
         $count = \count($tokens);
         for ($index = 0; $index < $count; ++$index) {
             $token = $tokens[$index];
-            // `"{$a}"` ouvre par T_CURLY_OPEN, dont le texte est `{` ; `"${a}"` par `${`.
-            if ('{' === $token->text || $token->is(\T_DOLLAR_OPEN_CURLY_BRACES)) {
+            if (PhpSources::opensBrace($token)) {
                 ++$depth;
             } elseif ('}' === $token->text) {
                 --$depth;
@@ -90,7 +95,7 @@ final class UnsortedImports
             }
 
             foreach (self::imports($tokens, $index + 1, $end) as [$import, $line]) {
-                if (null !== $previous && strcasecmp(self::key($previous), self::key($import)) > 0) {
+                if (null !== $previous && strcasecmp(self::sortKey($previous), self::sortKey($import)) > 0) {
                     $problems[] = $line.' '.$import.' doit précéder '.$previous;
                 }
                 $previous = $import;
@@ -171,7 +176,7 @@ final class UnsortedImports
      * La clé de tri de php-cs-fixer : `\` devient une espace, qui précède
      * chiffres, lettres et `_`.
      */
-    private static function key(string $import): string
+    private static function sortKey(string $import): string
     {
         return str_replace('\\', ' ', $import);
     }

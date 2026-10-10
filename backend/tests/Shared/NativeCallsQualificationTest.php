@@ -27,7 +27,7 @@ final class NativeCallsQualificationTest extends TestCase
     {
         $root = \dirname(__DIR__, 2);
 
-        self::assertSame([], MisqualifiedNativeCalls::in($root.'/src', $root.'/tests'), MisqualifiedNativeCalls::FIX);
+        self::assertSame([], MisqualifiedNativeCalls::in($root.'/src', $root.'/tests'), MisqualifiedNativeCalls::fix());
     }
 
     /**
@@ -61,18 +61,29 @@ final class NativeCallsQualificationTest extends TestCase
         yield 'appel après un attribut' => ["<?php\nnamespace App;\n#[Foo(1)]\nfunction x(): int\n{\n    return count([]);\n}\n", ['6 count() doit s\'écrire \\count()']];
         yield 'fonction d\'un espace de noms' => ["<?php\nnamespace App;\n\$a = Foo\\count([]);\n\$b = \\App\\count([]);\n", []];
         yield 'argument nommé' => ["<?php\nnamespace App;\n\$a = foo(count: 1);\n", []];
+        yield 'crochets dans les arguments d\'un attribut' => ["<?php\nnamespace App;\n#[Foo([1, 2]), Count(1)]\nfinal class X {}\n", []];
+        // php-cs-fixer en `strict` retire aussi ce `\` : la règle ne qualifie que l'ensemble.
+        yield 'fonction globale non native, qualifiée' => ["<?php\nnamespace App;\n\\dump(1);\n", ['3 \\dump() doit s\'écrire dump()']];
+        // Le double d'une fonction native, déclaré dans l'espace de noms : `\count()` appellerait l'original.
+        yield 'fonction homonyme déclarée dans le fichier' => ["<?php\nnamespace App;\nfunction count(array \$a): int\n{\n    return 0;\n}\n\$a = count([]);\n", []];
+        yield 'fonction homonyme déclarée dans une fonction' => ["<?php\nnamespace App;\nfunction x(): int\n{\n    function strlen(): int\n    {\n        return 0;\n    }\n\n    return 1;\n}\n\$a = strlen('x');\n", []];
+        yield 'méthode homonyme, qui ne masque rien' => ["<?php\nnamespace App;\nfinal class X\n{\n    public function count(): int\n    {\n        return count([]);\n    }\n}\n", ['7 count() doit s\'écrire \\count()']];
     }
 
     /**
      * La liste est recopiée de php-cs-fixer, qui la tient pour toutes les
      * versions de PHP. Un nom qui n'est plus une fonction interne doit être
-     * déclaré absent, et un nom déclaré absent ne doit pas exister : la liste
-     * ne dérive pas en silence d'une version de PHP à l'autre.
+     * déclaré absent, et un nom déclaré absent ne doit pas exister : une entrée
+     * morte ne passe pas inaperçue d'une version de PHP à l'autre.
+     *
+     * Ce test ne voit pas l'autre sens : une fonction que PHP se met à
+     * compiler, comme `sprintf` avec PHP 8.4, n'entre dans la liste que par la
+     * recopie qui suit une montée de php-cs-fixer.
      */
     public function testTheCompilerOptimizedListMatchesTheRunningPhp(): void
     {
         $list = MisqualifiedNativeCalls::COMPILER_OPTIMIZED;
-        self::assertCount(43, array_unique($list));
+        self::assertSame($list, array_values(array_unique($list)));
 
         $notInternal = array_values(array_filter(
             $list,

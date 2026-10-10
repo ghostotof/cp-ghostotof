@@ -112,9 +112,11 @@ new import at the top of the block, so re-sort after it: `tests/Shared/ImportsSt
 that order, naming the file, the line and the pair, and its failure message carries the one-off sort
 command. It reproduces php-cs-fixer's key (the import as written, alias included, `\` read as a space,
 `strcasecmp`), block by block, and **refuses** `use function`, `use const` and grouped imports
-(`use Foo\{A, B};`) instead of sorting them. php-cs-fixer is deliberately not a dependency (#391): that
-command downloads its phar, pinned (`PhpSources::CS_FIXER_DOWNLOAD`), under `var/`, which is how #391
-sorted the existing code. Out of scope, **by decision** (2026-10-10): native **functions and constants** are
+(`use Foo\{A, B};`) instead of sorting them, and its message says those are rewritten by hand.
+php-cs-fixer is deliberately not a dependency (#391): the command, built by `tests/Support/PhpCsFixer`,
+puts its phar under `var/` at a pinned version (`PhpCsFixer::VERSION`) and runs nothing unless the phar
+matches `PhpCsFixer::SHA256` — the release publishes no checksum, only a GPG signature, verified once
+when the sum was pinned. That phar is how #391 sorted the existing code. Out of scope, **by decision** (2026-10-10): native **functions and constants** are
 never imported — no `use function` / `use const`, `importShortClasses` does not touch them; namespaces
 cited in prose (`App\Shared`). **A native function is qualified exactly when the compiler optimizes it**
 (settled on 2026-10-10, review of #391): a function of php-cs-fixer's `@compiler_optimized` set (`\count`,
@@ -128,10 +130,14 @@ rule `native_function_invocation` (`include: ['@compiler_optimized']`, `strict: 
 keeps it: an unqualified call to a function of the set fails, and so does a qualified call to any other
 single-segment global function, with the file, the line and the expected form. Its message gives the fix,
 the same rule with `strict: true`, which also removes a superfluous `\`. Methods, declarations, `new`,
-attribute classes and first-class callables are not calls. The set is **copied** into
-`MisqualifiedNativeCalls::COMPILER_OPTIMIZED` from php-cs-fixer v3.95.27 (43 names), and a drift test
-requires each name to be an internal function of the running PHP unless it is listed in `ABSENT_FROM_PHP`
-(`is_real`, removed in PHP 8.0). After a php-cs-fixer or PHP upgrade, copy the new list over.
+attribute classes and first-class callables are not calls, and, as in php-cs-fixer, an unqualified call
+is left alone when the file declares a function of that name outside any class (a namespaced double of
+the native, which `\count()` would bypass). The set is **copied** into
+`MisqualifiedNativeCalls::COMPILER_OPTIMIZED` from php-cs-fixer at `PhpCsFixer::VERSION`, and a drift
+test requires each name to be an internal function of the running PHP unless it is listed in
+`ABSENT_FROM_PHP` (`is_real`, removed in PHP 8.0). It cannot see the other direction — a function PHP
+starts compiling, as `sprintf` with PHP 8.4 —: on a php-cs-fixer bump (a new `VERSION` and `SHA256`),
+copy the new list over and re-read both guards against the fixers they mirror.
 Constants were not migrated: a leading backslash already there stays.
 **The line is performance, and it was measured** (2026-10-10, PHP 8.5, OPcache dump after the optimizer): the
 rule only covers natives whose import costs nothing. `\DateTimeImmutable` and an imported `DateTimeImmutable`
