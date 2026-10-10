@@ -27,6 +27,8 @@ namespace App\Portfolio\Watch\Infrastructure\Manifest;
  */
 final readonly class DeployedVersionsBuilder
 {
+    use WritesManifestFile;
+
     /**
      * Où lire chaque version, par slug de produit suivi.
      *
@@ -163,17 +165,11 @@ final readonly class DeployedVersionsBuilder
      */
     private function write(array $versions, \DateTimeImmutable $generatedAt): void
     {
-        $directory = \dirname($this->outputPath);
-
-        if (!is_dir($directory) && !mkdir($directory, 0o775, true) && !is_dir($directory)) {
-            throw ManifestDirectoryCreationException::for($directory);
-        }
-
         $encoded = json_encode(
             ['generatedAt' => $generatedAt->format(\DATE_ATOM), 'versions' => $versions],
             \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR,
         );
 
-        file_put_contents($this->outputPath, $encoded."\n");
+        self::writeManifestFile($this->outputPath, $encoded."\n");
     }
 }

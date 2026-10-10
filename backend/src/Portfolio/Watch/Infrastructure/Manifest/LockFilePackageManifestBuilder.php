@@ -26,6 +26,7 @@ use App\Portfolio\Watch\Infrastructure\ReadsUntrustedArrays;
 final readonly class LockFilePackageManifestBuilder implements PackageManifestBuilderInterface
 {
     use ReadsUntrustedArrays;
+    use WritesManifestFile;
 
     public function __construct(
         private string $composerLockPath,
@@ -163,12 +164,6 @@ final readonly class LockFilePackageManifestBuilder implements PackageManifestBu
 
     private function write(PackageManifest $manifest): void
     {
-        $directory = \dirname($this->manifestPath);
-
-        if (!is_dir($directory) && !mkdir($directory, 0o775, true) && !is_dir($directory)) {
-            throw ManifestDirectoryCreationException::for($directory);
-        }
-
         $payload = [
             'generatedAt' => $manifest->generatedAt->format(\DATE_ATOM),
             'packages' => array_map(
@@ -181,7 +176,7 @@ final readonly class LockFilePackageManifestBuilder implements PackageManifestBu
             ),
         ];
 
-        file_put_contents(
+        self::writeManifestFile(
             $this->manifestPath,
             json_encode($payload, \JSON_THROW_ON_ERROR | \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES),
         );

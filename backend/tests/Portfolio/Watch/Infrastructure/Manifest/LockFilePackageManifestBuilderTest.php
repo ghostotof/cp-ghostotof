@@ -6,7 +6,7 @@ namespace App\Tests\Portfolio\Watch\Infrastructure\Manifest;
 
 use App\Portfolio\Watch\Domain\ValueObject\PackageCoordinates;
 use App\Portfolio\Watch\Infrastructure\Manifest\LockFilePackageManifestBuilder;
-use App\Portfolio\Watch\Infrastructure\Manifest\ManifestDirectoryCreationException;
+use App\Portfolio\Watch\Infrastructure\Manifest\ManifestWriteException;
 use PHPUnit\Framework\TestCase;
 
 final class LockFilePackageManifestBuilderTest extends TestCase
@@ -202,10 +202,36 @@ final class LockFilePackageManifestBuilderTest extends TestCase
         try {
             $builder->build(new \DateTimeImmutable('2026-09-07 12:00:00'));
             self::fail('Un répertoire de sortie impossible à créer doit arrêter la construction.');
-        } catch (ManifestDirectoryCreationException $exception) {
+        } catch (ManifestWriteException $exception) {
             self::assertStringContainsString($blocker.'/sub', $exception->getMessage());
         } finally {
             restore_error_handler();
+        }
+    }
+
+    /**
+     * Le répertoire existe, mais le fichier ne peut pas s'écrire (disque
+     * plein, droits) : la construction s'arrête aussi (revue de #338), au
+     * lieu de laisser partir une image sans manifeste. Un répertoire à la
+     * place du fichier fait échouer l'écriture, même en root.
+     */
+    public function testAManifestFileThatCannotBeWrittenStopsTheBuild(): void
+    {
+        $occupied = $this->path('occupied');
+        mkdir($occupied);
+        $builder = new LockFilePackageManifestBuilder($this->composerLock(), $this->npmLock(), $occupied);
+
+        // `file_put_contents()` émet un E_WARNING avant que la garde ne lève.
+        set_error_handler(static fn (): bool => true, \E_WARNING);
+
+        try {
+            $builder->build(new \DateTimeImmutable('2026-09-07 12:00:00'));
+            self::fail('Un fichier de sortie impossible à écrire doit arrêter la construction.');
+        } catch (ManifestWriteException $exception) {
+            self::assertStringContainsString($occupied, $exception->getMessage());
+        } finally {
+            restore_error_handler();
+            rmdir($occupied);
         }
     }
 }
