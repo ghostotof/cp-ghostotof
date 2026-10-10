@@ -117,8 +117,11 @@ paths:
     can quote the sender or the recipient, and the worker logs the whole `previous` chain.
     `Shared/Infrastructure/Mailer/MailerTransportFailure` keeps its class and a numeric code (HTTP status
     for the API transport, SMTP reply code otherwise), the e-mail counterpart of `ProviderFailure`; each
-    context keeps its own delivery exception, whose factory is identical on purpose (`Domain/` never
-    imports `Shared/Infrastructure`). The price: the SMTP enhanced status (`5.1.1`) and Scaleway's error
+    context keeps its own delivery exception, whose transport factory is identical on purpose (`Domain/`
+    never imports `Shared/Infrastructure`). The invitation one has a second factory since issue #419,
+    `becauseSendingFailed()`, for any other failure of `send()` (template rendering, after the token is
+    valid — see `.claude/rules/security-user.md`); the contact handler still converts the transport
+    failure only. The price: the SMTP enhanced status (`5.1.1`) and Scaleway's error
     text are gone from the logs. **An address that `Mime\Address` would refuse never gets past
     validation**: `framework.validation.email_validation_mode: strict` (`validator.yaml`), egulias'
     grammar, the one Mime uses — the default `html5` mode accepted `a..b@example.com`, and the worker then

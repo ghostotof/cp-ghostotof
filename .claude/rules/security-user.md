@@ -76,6 +76,25 @@ paths:
     the user (missing or already activated → `logger->warning` + return, no retry), then in a single
     `wrapInTransaction` purges the previous `PasswordSetupToken` and issues a fresh one. Keep it that way: do
     not move token creation back up into `CpgUserInviter`, and never add a secret to the message.
+    **Nor in the worker's failure** (issue #419): the template is rendered inside `mailer->send()`, after
+    the token is valid — first on the "queued" `MessageEvent` `Mailer` dispatches before its bus
+    (`MessageListener` renders regardless of `isQueued()`, so a broken template fails **bare**), then in the
+    transport behind the bus (wrapped in a `HandlerFailedException`) — and a Twig message can quote a
+    context value (`Key "…/set-password#<token>" … does not exist`). The worker's `ErrorDetailsStamp`
+    keeps the message, the whole `previous` chain and each one's `traceAsString` (it empties the
+    structured trace only; string arguments are cut at `zend.exception_string_param_max_len`, absent when
+    `zend.exception_ignore_args` is on) into the `failure_transport`, and the retry listener logs the
+    message on every attempt — prod included. So **any** failure of building the e-mail (an `Address`
+    Mime refuses, which it quotes — #356) or of `send()` becomes `AccountInvitationDeliveryException` —
+    `becauseTransportFailed()` (class + code) or `becauseSendingFailed()` (type plus `<template>:<line>`
+    for a Twig error, `<file basename>:<line>` otherwise, described from the innermost exception of nested
+    `HandlerFailedException`s) —, never with a `previous`, never quoting the original message. Retry
+    is unchanged in this wiring: neither the replaced exception nor this one is (un)recoverable, the
+    transport's strategy applies; one bare from `send()` would lose that effect (none exists).
+    `SendAccountInvitationHandlerTest` drives the real mailer chain (transport, bus, dispatcher,
+    `MessageListener`, `BodyRenderer`, Twig), checks the serialized stamp and the logged failure for the
+    token with verbose trace settings, checks that each leaking case did quote it before conversion, and
+    runs the real retry listener.
   - `Infrastructure/` — `Doctrine/{CpgUser,PasswordSetupToken}Repository.php` (sole impls);
     `Messenger/SendAccountInvitationHandler.php` (creates the token — see above — then the `TemplatedEmail`
     `emails/account_invitation.*`, subject + localized strings built here);

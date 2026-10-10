@@ -6,6 +6,7 @@ namespace App\Security\User\Infrastructure\Messenger;
 
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
+use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Exception\AccountInvitationDeliveryException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
@@ -14,12 +15,16 @@ use App\Shared\Infrastructure\Mailer\MailerTransportFailure;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
+use SensitiveParameter;
 use Symfony\Bridge\Twig\Mime\TemplatedEmail;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Uid\Uuid;
+use Throwable;
+use Twig\Error\Error as TwigError;
 
 /**
  * Consommé par `make consume` (messenger:consume async -vv). Depuis le point
@@ -91,6 +96,36 @@ final readonly class SendAccountInvitationHandler
             ));
         });
 
+        try {
+            $this->mailer->send($this->invitationEmail($user, $recipientEmail, $locale, $clearToken));
+        } catch (TransportExceptionInterface $exception) {
+            // La classe et le code seulement : le message du transport peut
+            // citer une adresse (issue #356), il ne remonte pas.
+            $failure = MailerTransportFailure::from($exception);
+
+            throw AccountInvitationDeliveryException::becauseTransportFailed($failure->exceptionClass, $failure->code);
+        } catch (Throwable $exception) {
+            // Le jeton est déjà valide en base : ni l'exception de la
+            // construction de l'e-mail (une adresse que Mime refuse, qu'il cite)
+            // ni celle du rendu du gabarit, dans send() (un message Twig peut
+            // citer l'URL), ne doivent atteindre le stamp d'erreur du worker ni
+            // ses logs (issue #419, audit C2). Le réessai n'en change pas dans
+            // ce câblage : ni l'exception remplacée ni celle-ci ne sont
+            // « (un)recoverable », la stratégie du transport décide. Limite :
+            // une exception de ce genre levée nue par send() (un listener de
+            // Symfony\Component\Mailer\Event\MessageEvent) perdrait son effet ;
+            // il n'en existe aucune aujourd'hui.
+            throw AccountInvitationDeliveryException::becauseSendingFailed($this->describeFailure($exception));
+        }
+    }
+
+    private function invitationEmail(
+        CpgUser $user,
+        string $recipientEmail,
+        Locale $locale,
+        #[SensitiveParameter]
+        string $clearToken,
+    ): TemplatedEmail {
         // Le jeton voyage dans le FRAGMENT du lien, jamais dans son chemin
         // (audit A7, décision D6) : un navigateur n'envoie pas le fragment au
         // serveur, il n'atteint donc ni les access logs du nginx frontend ni
@@ -103,7 +138,7 @@ final readonly class SendAccountInvitationHandler
             $clearToken,
         );
 
-        $email = (new TemplatedEmail())
+        return (new TemplatedEmail())
             ->from($this->senderEmail)
             ->to($recipientEmail)
             ->subject($this->subjectFor($locale))
@@ -115,16 +150,46 @@ final readonly class SendAccountInvitationHandler
                 'strings' => $this->stringsFor($locale),
             ])
         ;
+    }
 
-        try {
-            $this->mailer->send($email);
-        } catch (TransportExceptionInterface $exception) {
-            // La classe et le code seulement : le message du transport peut
-            // citer une adresse (issue #356), il ne remonte pas.
-            $failure = MailerTransportFailure::from($exception);
-
-            throw AccountInvitationDeliveryException::becauseTransportFailed($failure->exceptionClass, $failure->code);
+    /**
+     * Ce que l'échec peut dire sans risque : son type et son emplacement — le
+     * gabarit et la ligne pour une erreur Twig, le fichier et la ligne sinon.
+     * Jamais son message, qui peut citer une valeur du contexte
+     * (`Key "…/set-password#<jeton>" … does not exist`). Le nom d'un gabarit
+     * est celui que le loader connaît ; seul `template_from_string(x, nom)`
+     * en ferait une donnée, et son extension n'est pas chargée.
+     *
+     * Le gabarit est rendu deux fois dans send() : au
+     * {@see \Symfony\Component\Mailer\Event\MessageEvent} « queued » que
+     * {@see \Symfony\Component\Mailer\Mailer} émet avant son bus
+     * ({@see \Symfony\Component\Mailer\EventListener\MessageListener} rend
+     * sans regarder `isQueued()`), d'où un échec nu, puis dans le transport,
+     * derrière le bus ({@see \Symfony\Component\Mailer\Messenger\SendEmailMessage}
+     * traité en synchrone faute de routage), d'où un échec enveloppé dans une
+     * HandlerFailedException par bus traversé : on décrit celle du fond.
+     */
+    private function describeFailure(Throwable $exception): string
+    {
+        while ($exception instanceof HandlerFailedException && $exception->getPrevious() instanceof Throwable) {
+            $exception = $exception->getPrevious();
         }
+
+        $type = get_debug_type($exception);
+
+        if (!$exception instanceof TwigError) {
+            return \sprintf('%s, %s:%d', $type, basename($exception->getFile()), $exception->getLine());
+        }
+
+        $template = $exception->getSourceContext()?->getName();
+        $line = $exception->getTemplateLine();
+
+        return match (true) {
+            null === $template => $type,
+            // Twig rend -1 quand il ne sait pas la ligne.
+            $line < 1 => \sprintf('%s, %s', $type, $template),
+            default => \sprintf('%s, %s:%d', $type, $template, $line),
+        };
     }
 
     private function subjectFor(Locale $locale): string
