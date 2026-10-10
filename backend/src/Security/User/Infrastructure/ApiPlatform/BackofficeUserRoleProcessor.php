@@ -10,6 +10,7 @@ use App\Security\User\Application\CpgUserRoleAdministratorInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Presentation\ApiResource\BackofficeUserRoleResource;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use App\Shared\Infrastructure\ApiPlatform\UnauthenticatedProcessorCallException;
 use Symfony\Bundle\SecurityBundle\Security;
 
 /**
@@ -33,7 +34,7 @@ final readonly class BackofficeUserRoleProcessor implements ProcessorInterface
         // garde explicite plutôt qu'un TypeError 500 opaque si l'invariante
         // venait à être violée (même patron que BackofficeUserProcessor).
         if (!$actingUser instanceof CpgUser) {
-            throw new \LogicException('BackofficeUserRoleProcessor::process() appelé sans utilisateur authentifié.');
+            throw UnauthenticatedProcessorCallException::in(self::class);
         }
 
         // La validation (#[Assert\NotNull] sur BackofficeUserRoleResource) a déjà
