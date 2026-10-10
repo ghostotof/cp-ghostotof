@@ -42,14 +42,14 @@ trait ResolvesUriVariables
      *
      * @param array<string, mixed> $uriVariables
      *
-     * @throws \InvalidArgumentException si le segment est absent ou n'est pas un UUID valide
+     * @throws InvalidUriVariableException si le segment est absent ou n'est pas un UUID valide
      */
     private function uriVariableUuid(array $uriVariables, string $key = 'id'): Uuid
     {
         $value = $uriVariables[$key] ?? null;
 
         if (!\is_string($value) || !Uuid::isValid($value)) {
-            throw new \InvalidArgumentException(sprintf('La variable d\'URI "%s" doit être un UUID valide.', $key));
+            throw InvalidUriVariableException::notAUuid($key);
         }
 
         return Uuid::fromString($value);
