@@ -46,22 +46,9 @@ final class AddExperienceTechnologyCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        $name = $input->getOption('name') ?? $io->ask('Nom de la technologie', validator: $this->validateName(...));
+        $name = $this->resolveName($input, $io);
 
-        // En non interactif, ask() rend la valeur par défaut (null) sans
-        // passer par le validateur (issue #383) : refus explicite, qui nomme
-        // l'option, plutôt qu'un assert() absent du binaire de prod.
         if (null === $name) {
-            $io->error('Aucun nom de technologie : en mode non interactif, passez --name.');
-
-            return Command::FAILURE;
-        }
-
-        try {
-            $name = $this->validateName($name);
-        } catch (InvalidConsoleAnswerException $exception) {
-            $io->error($exception->getMessage());
-
             return Command::FAILURE;
         }
 
@@ -70,6 +57,10 @@ final class AddExperienceTechnologyCommand extends Command
         } catch (InvalidExperienceYearsException $exception) {
             $io->error($exception->getMessage());
 
+            return Command::FAILURE;
+        }
+
+        if (null === $years) {
             return Command::FAILURE;
         }
 
@@ -95,6 +86,35 @@ final class AddExperienceTechnologyCommand extends Command
     }
 
     /**
+     * L'option, ou la question, dont le validateur fait reposer la saisie tant
+     * qu'elle est refusée. Null après un message d'erreur : la commande échoue.
+     *
+     * Deux pièges du QuestionHelper (issue #383) : en non interactif, `ask()`
+     * rend la valeur par défaut (null) sans passer par le validateur, d'où le
+     * refus qui nomme l'option ; et sur une fin d'entrée après une saisie
+     * refusée, il relance la dernière erreur du validateur, d'où `ask()` dans
+     * le `try`.
+     */
+    private function resolveName(InputInterface $input, SymfonyStyle $io): ?string
+    {
+        try {
+            $name = $input->getOption('name') ?? $io->ask('Nom de la technologie', validator: $this->validateName(...));
+
+            if (null === $name) {
+                $io->error('Aucun nom de technologie : en mode non interactif, passez --name.');
+
+                return null;
+            }
+
+            return $this->validateName($name);
+        } catch (InvalidConsoleAnswerException $exception) {
+            $io->error($exception->getMessage());
+
+            return null;
+        }
+    }
+
+    /**
      * Le QuestionHelper affiche le message de l'exception et repose la question.
      *
      * @throws InvalidConsoleAnswerException
@@ -111,14 +131,19 @@ final class AddExperienceTechnologyCommand extends Command
     /**
      * Option d'abord, validée avant tout appel au registrar : une durée
      * invalide n'est jamais masquée par un nom déjà pris. Sinon la question,
-     * dont le validateur fait reposer la valeur tant qu'elle est refusée.
-     * Une entrée standard fermée en pleine question (MissingInputException,
-     * la question n'ayant pas de défaut) n'est pas rattrapée : la commande
+     * dont le validateur fait reposer la valeur tant qu'elle est refusée ;
+     * sur une fin d'entrée après une saisie refusée, l'erreur relancée par le
+     * QuestionHelper est l'exception du domaine, que execute() rattrape. Une
+     * entrée standard fermée sans saisie refusée (MissingInputException, la
+     * question n'ayant pas de défaut) n'est pas rattrapée : la commande
      * échoue avec sa trace, comme avant #372 et comme pour le nom.
+     *
+     * Null après un message d'erreur : en non interactif, ask() rend la
+     * valeur par défaut (null) sans passer par le validateur (issue #383).
      *
      * @throws InvalidExperienceYearsException
      */
-    private function resolveYears(InputInterface $input, SymfonyStyle $io): ExperienceYears
+    private function resolveYears(InputInterface $input, SymfonyStyle $io): ?ExperienceYears
     {
         $option = $input->getOption('years');
 
@@ -128,8 +153,12 @@ final class AddExperienceTechnologyCommand extends Command
 
         $answer = $io->ask('Temps cumulé (en années, ex. 13.5)', validator: $this->parseYears(...));
 
-        // En non-interactif, ask() rend la valeur par défaut (null) sans
-        // passer par le validateur : on l'y soumet ici.
+        if (null === $answer) {
+            $io->error('Aucune durée : en mode non interactif, passez --years.');
+
+            return null;
+        }
+
         return $answer instanceof ExperienceYears ? $answer : $this->parseYears($answer);
     }
 

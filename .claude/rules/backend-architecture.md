@@ -57,15 +57,20 @@ client-supplied value in its message without bounding it (`InputContradictsValid
 `tests/Shared/NoBareGenericExceptionTest.php` enforces it. It counts tokens through
 `tests/Support/BareExceptionInstantiations`, which shares its file walk with `DeclaredClasses` via `PhpSources`, so
 an import, an alias, a comma list or an anonymous subclass is seen too. It has **no exemption list**, and
-that is deliberate: when the same failure needs an exemption a second time, give it a shared class
-instead. **A console question's validator follows the same rule** (#383): the `QuestionHelper` catches
+that is deliberate: a site that seems to need one gets a class, shared if several sites throw the same
+failure. **A console question's validator follows the same rule** (#383): the `QuestionHelper` catches
 any `\Exception` a validator throws, shows its message and asks again, so the domain exception is the
 right one when the rule has one (`InvalidUsernameException`, `InvalidExperienceYearsException`), and
-`Shared/Presentation/Command/InvalidConsoleAnswerException` covers the rest. Two traps of the same commands:
-in non-interactive mode, `ask()` returns the default (`null`) **without calling the validator**, so the
-command refuses `null` explicitly and names the option, instead of relying on an `assert()` that production
-compiles out. And a `CommandTester` is **interactive by default**, so a `-n` test passes
-`['interactive' => false]`. The other SPL classes (`\DomainException`…) are out of the guard's scope:
+`Shared/Presentation/Command/InvalidConsoleAnswerException` covers the rest. Its message never quotes
+the answer, which can be anything (a password pasted into the wrong prompt): `InvalidUsernameException::invalidFormat()`,
+not `forUsername()`. Three traps of the same commands. In non-interactive mode, `ask()` returns the default
+(`null`) **without calling the validator**, so the command refuses `null` explicitly and names the option,
+instead of relying on an `assert()` that production compiles out. On end of input after a refused answer,
+`ask()` **rethrows the validator's last exception**, so `ask()` sits inside the `try` that turns it into
+`$io->error()` — otherwise it leaves the command and the console's `ErrorListener` logs it `critical`. And a
+`CommandTester` is **interactive by default**, so a `-n` test passes `['interactive' => false]`. A hidden
+question that reads a password is `setTrimmable(false)` (a question is trimmed by default, `--password` and
+`json_login` are not), with a normalizer that strips the one line ending the read keeps when untrimmed. The other SPL classes (`\DomainException`…) are out of the guard's scope:
 none is thrown bare in `src/`, and adding one to `BareExceptionInstantiations::FORBIDDEN` is the step to
 take the day one is.
 

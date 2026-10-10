@@ -8,9 +8,11 @@ namespace App\Shared\Presentation\Command;
  * Une réponse à une question console est refusée par le validateur de la
  * question (issue #383).
  *
- * Elle ne quitte jamais la commande : le QuestionHelper rattrape toute
- * `\Exception` d'un validateur, en affiche le message à l'opérateur et repose
- * la question. Le message est donc une consigne de saisie, jamais une trace.
+ * Le QuestionHelper rattrape toute `\Exception` d'un validateur, en affiche le
+ * message à l'opérateur et repose la question. Sur une fin d'entrée, il relance
+ * la dernière : la commande doit donc la rattraper autour de `ask()`, sans quoi
+ * elle sort et le ErrorListener de la console la journalise en `critical`. Le
+ * message est une consigne de saisie, et ne cite jamais la réponse.
  * Réservée aux refus sans équivalent métier : quand le domaine a déjà une
  * exception pour la règle (InvalidUsernameException,
  * InvalidExperienceYearsException), le validateur lève celle-là.

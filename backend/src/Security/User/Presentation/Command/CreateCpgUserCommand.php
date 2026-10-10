@@ -131,21 +131,24 @@ final class CreateCpgUserCommand extends Command
      * L'option, ou la question, dont le validateur fait reposer la saisie tant
      * qu'elle est refusée. Null après un message d'erreur : la commande échoue.
      *
-     * En non interactif, `ask()` rend la valeur par défaut (null) sans passer
-     * par le validateur (issue #383) : d'où le refus explicite, qui nomme
-     * l'option à passer, plutôt qu'un `assert()` absent du binaire de prod.
+     * Deux pièges du QuestionHelper (issue #383) : en non interactif, `ask()`
+     * rend la valeur par défaut (null) sans passer par le validateur, d'où le
+     * refus qui nomme l'option ; et sur une fin d'entrée après une saisie
+     * refusée, il relance la dernière erreur du validateur, d'où `ask()` dans
+     * le `try` — sans quoi elle quitterait la commande et le ErrorListener de
+     * la console la journaliserait en `critical`.
      */
     private function resolveUsername(InputInterface $input, SymfonyStyle $io): ?string
     {
-        $username = $input->getOption('username') ?? $io->ask('Nom d\'utilisateur', validator: $this->validateUsername(...));
-
-        if (null === $username) {
-            $io->error('Aucun nom d\'utilisateur : en mode non interactif, passez --username.');
-
-            return null;
-        }
-
         try {
+            $username = $input->getOption('username') ?? $io->ask('Nom d\'utilisateur', validator: $this->validateUsername(...));
+
+            if (null === $username) {
+                $io->error('Aucun nom d\'utilisateur : en mode non interactif, passez --username.');
+
+                return null;
+            }
+
             return $this->validateUsername($username);
         } catch (InvalidUsernameException $exception) {
             $io->error($exception->getMessage());
@@ -155,15 +158,15 @@ final class CreateCpgUserCommand extends Command
     }
 
     /**
-     * La règle et son message sont ceux du domaine (CpgUser::USERNAME_PATTERN) :
-     * le QuestionHelper affiche le message de l'exception et repose la question.
+     * La règle est celle du domaine (CpgUser::USERNAME_PATTERN), le message
+     * aussi, sans la saisie : le QuestionHelper l'affiche et repose la question.
      *
      * @throws InvalidUsernameException
      */
     private function validateUsername(mixed $username): string
     {
         if (!\is_string($username) || 1 !== preg_match(CpgUser::USERNAME_PATTERN, $username)) {
-            throw InvalidUsernameException::forUsername(\is_string($username) ? $username : '');
+            throw InvalidUsernameException::invalidFormat();
         }
 
         return $username;
@@ -171,27 +174,32 @@ final class CreateCpgUserCommand extends Command
 
     /**
      * L'option, ou deux questions masquées. Null après un message d'erreur :
-     * pas de saisie en non interactif (même raison que resolveUsername()), ou
-     * une confirmation qui diffère — refusée comme toute autre saisie, par un
-     * message et le code 1, pas par une exception qui quitterait la commande.
+     * pas de saisie en non interactif, une fin d'entrée après une saisie vide
+     * (mêmes pièges que resolveUsername()), ou une confirmation qui diffère —
+     * refusée comme toute autre saisie, par un message et le code 1, pas par
+     * une exception qui quitterait la commande.
      */
     private function resolvePassword(InputInterface $input, SymfonyStyle $io): ?string
     {
         $option = $input->getOption('password');
 
-        if (null !== $option) {
-            \assert(\is_string($option)); // InputOption::VALUE_REQUIRED
-
+        if (\is_string($option)) {
             return $option;
         }
 
-        $password = $io->askQuestion($this->hiddenQuestion('Mot de passe', static function (mixed $value): string {
-            if (!\is_string($value) || '' === $value) {
-                throw InvalidConsoleAnswerException::empty('Le mot de passe');
-            }
+        try {
+            $password = $io->askQuestion($this->hiddenQuestion('Mot de passe', static function (mixed $value): string {
+                if (!\is_string($value) || '' === $value) {
+                    throw InvalidConsoleAnswerException::empty('Le mot de passe');
+                }
 
-            return $value;
-        }));
+                return $value;
+            }));
+        } catch (InvalidConsoleAnswerException $exception) {
+            $io->error($exception->getMessage());
+
+            return null;
+        }
 
         if (!\is_string($password)) {
             $io->error('Aucun mot de passe : en mode non interactif, passez --password.');
@@ -208,11 +216,21 @@ final class CreateCpgUserCommand extends Command
         return $password;
     }
 
+    /**
+     * Une question masquée qui rend le mot de passe tel qu'il a été tapé.
+     * Une question est rognée par défaut, alors que `--password` et json_login
+     * le prennent tel quel : une espace en tête ou en fin donnait un compte
+     * inutilisable (issue #383). Sans rognage, la lecture garde en revanche la
+     * fin de ligne de la saisie : le normaliseur, appliqué avant le
+     * validateur, retire celle-là et rien d'autre.
+     */
     private function hiddenQuestion(string $label, ?callable $validator = null): Question
     {
         $question = new Question($label);
         $question->setHidden(true);
         $question->setHiddenFallback(false);
+        $question->setTrimmable(false);
+        $question->setNormalizer(static fn (mixed $value): mixed => \is_string($value) ? preg_replace('/\r?\n\z/', '', $value) : $value);
         $question->setValidator($validator);
 
         return $question;

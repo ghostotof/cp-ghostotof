@@ -11,6 +11,7 @@ use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpKernel\KernelInterface;
+use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
 final class CreateCpgUserCommandTest extends KernelTestCase
 {
@@ -174,7 +175,8 @@ final class CreateCpgUserCommandTest extends KernelTestCase
     /**
      * Le validateur de la question lève l'exception du domaine
      * (InvalidUsernameException) : le QuestionHelper en affiche le message et
-     * redemande la saisie.
+     * redemande la saisie. Le message ne cite pas la saisie, qui peut être
+     * n'importe quoi — un mot de passe collé au mauvais endroit compris.
      */
     public function testTheInteractivePromptAsksAgainWhenTheUsernameIsInvalid(): void
     {
@@ -184,7 +186,9 @@ final class CreateCpgUserCommandTest extends KernelTestCase
         $exitCode = $tester->execute([], ['interactive' => true]);
 
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('"ab" est invalide', $this->normalizedDisplay($tester));
+        $display = $this->normalizedDisplay($tester);
+        self::assertStringContainsString('Le nom d\'utilisateur est invalide', $display);
+        self::assertStringNotContainsString('"ab"', $display);
         self::assertNotNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane'));
     }
 
@@ -198,6 +202,59 @@ final class CreateCpgUserCommandTest extends KernelTestCase
         self::assertSame(0, $exitCode);
         self::assertStringContainsString('ne peut pas être vide', $this->normalizedDisplay($tester));
         self::assertNotNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane'));
+    }
+
+    /**
+     * Revue de #383 : sur une fin d'entrée, le QuestionHelper relance la
+     * dernière erreur du validateur. Elle quittait la commande, et le
+     * ErrorListener de la console la journalisait en `critical`, saisie
+     * comprise : un mot de passe collé dans le champ du nom finissait en clair
+     * dans les journaux.
+     */
+    public function testARefusedUsernameFollowedByTheEndOfInputFailsWithoutQuotingIt(): void
+    {
+        $tester = $this->commandTester();
+        $tester->setInputs(['MyS3cr3t!Pass']);
+
+        $exitCode = $tester->execute([], ['interactive' => true]);
+
+        self::assertSame(1, $exitCode);
+        $display = $this->normalizedDisplay($tester);
+        self::assertStringContainsString('Le nom d\'utilisateur est invalide', $display);
+        self::assertStringNotContainsString('MyS3cr3t!Pass', $display);
+    }
+
+    public function testAnEmptyPasswordFollowedByTheEndOfInputFailsWithAMessage(): void
+    {
+        $tester = $this->commandTester();
+        $tester->setInputs(['']);
+
+        $exitCode = $tester->execute(['--username' => 'jane'], ['interactive' => true]);
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('ne peut pas être vide', $this->normalizedDisplay($tester));
+        self::assertNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane'));
+    }
+
+    /**
+     * Revue de #383 : une question est rognée par défaut, alors que
+     * `--password` et json_login prennent le mot de passe tel quel. Un
+     * mot de passe saisi avec une espace en tête ou en fin donnait un compte
+     * dont on ne pouvait pas se servir.
+     */
+    public function testAPasswordTypedAtThePromptKeepsItsSurroundingSpaces(): void
+    {
+        $password = '  '.TestCredentials::plainPassword().'  ';
+        $tester = $this->commandTester();
+        $tester->setInputs([$password, $password]);
+
+        $exitCode = $tester->execute(['--username' => 'jane'], ['interactive' => true]);
+
+        self::assertSame(0, $exitCode);
+        $user = self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane');
+        self::assertNotNull($user);
+        $hasher = self::getContainer()->get(UserPasswordHasherInterface::class);
+        self::assertTrue($hasher->isPasswordValid($user, $password));
     }
 
     /** SymfonyStyle replie les blocs d'erreur à la largeur du terminal. */
