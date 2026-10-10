@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\Tests\Support;
 
 /**
- * Recense les `new \Exception`, `new \LogicException` et `new \RuntimeException`
- * nus d'un répertoire (issue #338), d'après les jetons des sources et non
+ * Recense les `new \Exception`, `new \LogicException`, `new \RuntimeException`
+ * et `new \InvalidArgumentException` nus d'un répertoire (issues #338 et #383),
+ * d'après les jetons des sources et non
  * d'après un grep : un `use LogicException;` suivi de `new LogicException`, un
  * alias, un import dans une liste à virgules ou une casse différente désignent
  * la même classe pour PHP, et un homonyme de l'espace de noms courant n'en est
@@ -15,7 +16,8 @@ namespace App\Tests\Support;
  * Toute instanciation compte, levée ou non : une exception construite puis
  * levée plus loin reste une exception générique, et une classe anonyme qui
  * l'étend sans rien y ajouter aussi. Les autres classes de la SPL
- * (\InvalidArgumentException…) sont hors périmètre, voir #383.
+ * (\DomainException…) sont hors périmètre : aucune n'est levée nue dans
+ * `src/`, et les ajouter ici est la marche à suivre le jour où l'une le serait.
  *
  * Limite assumée : un import groupé (`use Foo\{A, B};`) n'est pas résolu. Le
  * projet n'en écrit pas, et aucune des classes visées n'a d'espace de noms à
@@ -24,7 +26,7 @@ namespace App\Tests\Support;
 final class BareExceptionInstantiations
 {
     /** Noms en minuscules, sans `\` initial : PHP résout les classes sans tenir compte de la casse. */
-    private const array FORBIDDEN = ['exception', 'logicexception', 'runtimeexception'];
+    private const array FORBIDDEN = ['exception', 'logicexception', 'runtimeexception', 'invalidargumentexception'];
 
     private const array NAMES = [\T_STRING, \T_NAME_QUALIFIED, \T_NAME_FULLY_QUALIFIED];
 
