@@ -235,8 +235,8 @@ final class ProblemDetailStaysStaticTest extends TestCase
     }
 
     /**
-     * @param list<PhpToken> $tokens
-     * @param int|string|list<int|string>     $kind
+     * @param list<PhpToken>              $tokens
+     * @param int|string|list<int|string> $kind
      */
     private function tokenAt(array $tokens, int $index, int|string|array $kind): bool
     {
@@ -244,7 +244,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
     }
 
     /**
-     * @param list<PhpToken> $tokens
+     * @param list<PhpToken>        $tokens
      * @param array<string, string> $aliases
      */
     private function collectAlias(array $tokens, int $index, array &$aliases): void

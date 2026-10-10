@@ -23,12 +23,12 @@ interface PendingInvitationPurgerInterface
 {
     /**
      * @param bool $dryRun si vrai, ne supprime ni ne journalise rien : le
-     *                      résultat dit seulement ce qui *serait* purgé
+     *                     résultat dit seulement ce qui *serait* purgé
      *
      * @throws InvalidPurgeRetentionException si $maxAge est inférieur à un jour
-     *                                         (négatif, nul ou trop court : le
-     *                                         seuil purgerait des invitations
-     *                                         encore vivantes)
+     *                                        (négatif, nul ou trop court : le
+     *                                        seuil purgerait des invitations
+     *                                        encore vivantes)
      */
     public function purge(DateInterval $maxAge, bool $dryRun = false): PendingInvitationPurgeResult;
 }

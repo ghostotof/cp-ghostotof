@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Http;
 
-use ApiPlatform\Metadata\Exception\InvalidArgumentException;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
@@ -219,7 +218,7 @@ final class MalformedRequestBodyTest extends WebTestCase
      * d'API Platform 4 ne peuple aucun objet existant : sans réglage, la clé
      * partait en résolution d'IRI (ItemNormalizerTrait::updateObjectToPopulate)
      * et sortait en ItemNotFoundException — 400 sous l'entrée large
-     * {@see InvalidArgumentException}, mais
+     * `ApiPlatform\Metadata\Exception\InvalidArgumentException`, mais
      * journalisée `critical`, sur les vingt-deux PUT du backoffice. Aucune
      * ressource ne se met à jour par IRI : `api_allow_update: false` fait
      * refuser la clé par le Serializer, donc MalformedRequestBodyException

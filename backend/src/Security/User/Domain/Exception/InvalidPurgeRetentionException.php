@@ -20,7 +20,7 @@ use DomainException;
  * inférieur à un jour ("1 hour") purgerait en un lancement manuel la quasi-
  * totalité des comptes en attente — le CronJob quotidien n'utilise jamais que
  * la valeur par défaut (30 jours), seul un appel humain direct est concerné.
- * La garde en amont de la commande (DateTimeImmutable('-'.$olderThan)) ne
+ * La garde en amont de la commande (`new DateTimeImmutable('-'.$olderThan)`) ne
  * suffit à couvrir aucun de ces trois cas — cette exception protège donc
  * directement le cas d'usage, avant toute lecture du dépôt, pour tout
  * appelant (CLI aujourd'hui, un futur appelant direct demain).

@@ -7,7 +7,6 @@ namespace App\Shared\Infrastructure\ApiPlatform;
 use InvalidArgumentException;
 use Symfony\Component\Serializer\Exception\ExtraAttributesException;
 use Symfony\Component\Serializer\Exception\MissingConstructorArgumentsException;
-// Alias : l'UnexpectedValueException du Serializer, importée ci-dessus, occupe le nom court.
 use Symfony\Component\Serializer\Exception\UnexpectedValueException;
 use UnexpectedValueException as NativeUnexpectedValueException;
 
@@ -25,7 +24,9 @@ use UnexpectedValueException as NativeUnexpectedValueException;
  *
  * {@see NativeUnexpectedValueException} plutôt qu'{@see InvalidArgumentException} : la SPL
  * range la seconde parmi les erreurs de programmation, alors qu'il s'agit ici
- * d'une donnée reçue à l'exécution.
+ * d'une donnée reçue à l'exécution. La classe native passe par l'alias
+ * NativeUnexpectedValueException parce que le nom court UnexpectedValueException
+ * est déjà celui du Serializer, que fromSerializerFailure() reçoit.
  *
  * Le message est fixe : celui du Serializer cite parfois la classe de la
  * ressource visée. La cause reste chaînée (getPrevious()) pour le journal.

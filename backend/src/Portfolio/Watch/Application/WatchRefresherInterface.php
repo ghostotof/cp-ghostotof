@@ -17,9 +17,9 @@ use DateTimeImmutable;
 interface WatchRefresherInterface
 {
     /**
-     * @param DateTimeImmutable $now date de référence, passée explicitement pour
-     *                                   que les échéances soient évaluables en test
-     * @param bool               $dryRun calcule tout sans rien écrire
+     * @param DateTimeImmutable $now    date de référence, passée explicitement pour
+     *                                  que les échéances soient évaluables en test
+     * @param bool              $dryRun calcule tout sans rien écrire
      */
     public function refresh(DateTimeImmutable $now, bool $dryRun = false): WatchRefreshReport;
 }

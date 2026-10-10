@@ -396,8 +396,8 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
      * que d'une classe instanciable (issue #373). Son niveau est celui d'une
      * implémentation qu'aucune entrée plus précise ne vise.
      *
-     * @param class-string<Throwable> $class
-     * @param array<class-string, array{log_level?: string}>     $entries
+     * @param class-string<Throwable>                        $class
+     * @param array<class-string, array{log_level?: string}> $entries
      */
     #[DataProvider('nonInstantiableKeyCases')]
     public function testANonInstantiableKeyIsHeldToThePolicy(string $class, array $entries, ?string $violation): void
