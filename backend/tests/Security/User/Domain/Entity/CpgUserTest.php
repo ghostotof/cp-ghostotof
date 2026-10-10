@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Domain\Entity;
 
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\InvalidUsernameException;
 use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\UuidV7;
@@ -43,6 +44,19 @@ final class CpgUserTest extends TestCase
 
         self::assertSame('jane', $user->getUserIdentifier());
         self::assertSame('jane', $user->getUsername());
+    }
+
+    /**
+     * Issue #386 : le `$` de PCRE accepte la position qui précède un `\n`
+     * final. Un nom suivi d'un retour à la ligne passait, et donnait un compte
+     * distinct qui s'affiche comme son homonyme dans le backoffice et dans
+     * `security_audit`.
+     */
+    public function testAUsernameEndingWithALineFeedIsRefused(): void
+    {
+        $this->expectException(InvalidUsernameException::class);
+
+        new CpgUser("jane\n", 'hashed-password');
     }
 
     public function testRolesAlwaysIncludeRoleUser(): void

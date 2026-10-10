@@ -63,6 +63,20 @@ final class CreateCpgUserCommandTest extends KernelTestCase
         self::assertSame(1, $exitCode);
     }
 
+    /**
+     * Issue #386 : `--username` n'est pas rogné, contrairement à l'invite. Un
+     * retour à la ligne final y créait un compte homonyme de `jane`.
+     */
+    public function testRefusesAUsernameEndingWithALineFeed(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute(['--username' => "jane\n", '--password' => TestCredentials::plainPassword()]);
+
+        self::assertSame(1, $exitCode);
+        self::assertNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername("jane\n"));
+    }
+
     public function testFailsOnPasswordTooLong(): void
     {
         $tester = $this->commandTester();

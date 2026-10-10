@@ -54,8 +54,12 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
      */
     public const int MAX_PASSWORD_LENGTH = 4096;
 
-    /** Lettres, chiffres, ".", "_" ou "-", 3 à 60 caractères. */
-    public const string USERNAME_PATTERN = '/^[a-zA-Z0-9_.-]{3,60}$/';
+    /**
+     * Lettres, chiffres, ".", "_" ou "-", 3 à 60 caractères. Ancré par `\z`
+     * et non par `$`, qui accepte la position précédant un `\n` final : un
+     * nom suivi d'un retour à la ligne passait (issue #386).
+     */
+    public const string USERNAME_PATTERN = '/^[a-zA-Z0-9_.-]{3,60}\z/';
 
     /**
      * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
