@@ -138,6 +138,8 @@ final class AuthCookieFactoryTest extends TestCase
     public static function namesThatAreNotQuoted(): iterable
     {
         yield 'retour à la ligne' => ["BEARER\nX-Injected: 1"];
+        // Sans \z, le `$` de PCRE accepte aussi la position avant un \n final.
+        yield 'retour à la ligne final' => ["PHPSESSID\n"];
         yield 'espace' => ['BEARER x'];
         yield 'trop long' => [str_repeat('A', 65)];
         yield 'vide' => [''];
