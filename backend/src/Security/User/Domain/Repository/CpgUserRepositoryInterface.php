@@ -6,6 +6,7 @@ namespace App\Security\User\Domain\Repository;
 
 use App\Security\User\Domain\Entity\CpgUser;
 use DateTimeImmutable;
+use SensitiveParameter;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -15,7 +16,11 @@ use Symfony\Component\Uid\Uuid;
  */
 interface CpgUserRepositoryInterface
 {
-    public function findOneByUsername(string $username): ?CpgUser;
+    /**
+     * @param string $username au login, l'identifiant tenté — possiblement un
+     *                         mot de passe tapé dans le mauvais champ (#418)
+     */
+    public function findOneByUsername(#[SensitiveParameter] string $username): ?CpgUser;
 
     public function findOneByEmail(string $email): ?CpgUser;
 

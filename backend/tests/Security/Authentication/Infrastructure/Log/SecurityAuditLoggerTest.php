@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\Authentication\Infrastructure\Log;
 
+use App\Security\Authentication\Infrastructure\Log\LoginIdentifierFingerprint;
 use App\Security\Authentication\Infrastructure\Log\SecurityAuditLogger;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\ValueObject\GuestUser;
+use App\Tests\Support\TestCredentials;
 use Closure;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
@@ -38,6 +40,7 @@ final class SecurityAuditLoggerTest extends TestCase
     private TestHandler $handler;
     private RequestStack $requestStack;
     private TokenStorage $tokenStorage;
+    private LoginIdentifierFingerprint $fingerprint;
     private SecurityAuditLogger $auditLogger;
 
     protected function setUp(): void
@@ -45,10 +48,12 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->handler = new TestHandler();
         $this->requestStack = new RequestStack();
         $this->tokenStorage = new TokenStorage();
+        $this->fingerprint = new LoginIdentifierFingerprint('test-kernel-secret');
         $this->auditLogger = new SecurityAuditLogger(
             new Logger('security_audit', [$this->handler]),
             $this->requestStack,
             $this->tokenStorage,
+            $this->fingerprint,
         );
     }
 
@@ -68,39 +73,80 @@ final class SecurityAuditLoggerTest extends TestCase
         ], $this->singleRecord()->context);
     }
 
-    public function testLoginFailedIsAnonymousAndKeepsTheAttemptedIdentifier(): void
+    /**
+     * Issue #418 : un identifiant tenté qui ne désigne aucun compte n'est
+     * jamais écrit tel quel — c'est souvent un mot de passe tapé dans le
+     * mauvais champ. Seule son empreinte sort, pour corréler les tentatives.
+     */
+    public function testLoginFailedOnAnUnknownIdentifierLogsItsFingerprintNeverTheValue(): void
     {
         $this->pushRequest('/api/login_check', 'POST');
 
-        $this->auditLogger->loginFailed('jane');
+        $this->auditLogger->loginFailed(TestCredentials::variant('typed-as-identifier'), null);
 
         self::assertSame([
             'event' => 'login-failed',
-            'user' => 'jane',
+            'user' => null,
+            'userFingerprint' => $this->fingerprint->of(TestCredentials::variant('typed-as-identifier')),
             'actor' => 'anonymous',
             'ip' => self::IP,
             'path' => '/api/login_check',
         ], $this->singleRecord()->context);
     }
 
-    public function testLoginFailedAcceptsAnUnknownIdentifier(): void
+    /**
+     * Un compte existant reste lisible en clair, comme dans les autres
+     * événements (`user` + `userId`) : c'est le nom que l'exploitant cherche
+     * quand un compte est visé. Le nom vient du compte chargé, pas de la
+     * saisie.
+     */
+    public function testLoginFailedOnAnExistingAccountNamesItAndKeepsTheFingerprint(): void
     {
         $this->pushRequest('/api/login_check', 'POST');
+        $jane = new CpgUser('jane', 'hashed-password');
 
-        $this->auditLogger->loginFailed(null);
+        $this->auditLogger->loginFailed('jane', $jane);
 
-        self::assertNull($this->singleRecord()->context['user']);
-        self::assertSame('login-failed', $this->singleRecord()->context['event']);
+        self::assertSame([
+            'event' => 'login-failed',
+            'user' => 'jane',
+            'userId' => $jane->getId()->toRfc4122(),
+            'userFingerprint' => $this->fingerprint->of('jane'),
+            'actor' => 'anonymous',
+            'ip' => self::IP,
+            'path' => '/api/login_check',
+        ], $this->singleRecord()->context);
     }
 
-    public function testLoginThrottledIsItsOwnEvent(): void
+    public function testLoginFailedWithoutIdentifierHasNeitherNameNorFingerprint(): void
     {
         $this->pushRequest('/api/login_check', 'POST');
 
-        $this->auditLogger->loginThrottled('jane');
+        $this->auditLogger->loginFailed(null, null);
 
-        self::assertSame('login-throttled', $this->singleRecord()->context['event']);
-        self::assertSame('jane', $this->singleRecord()->context['user']);
+        $context = $this->singleRecord()->context;
+        self::assertSame('login-failed', $context['event']);
+        self::assertNull($context['user']);
+        self::assertNull($context['userFingerprint']);
+        self::assertArrayNotHasKey('userId', $context);
+    }
+
+    /**
+     * Le throttling refuse avant que le compte ne soit chargé : l'appelant
+     * n'en a pas, l'empreinte seule relie la ligne aux `login-failed` qui
+     * l'ont déclenchée — y compris quand ceux-ci nommaient le compte.
+     */
+    public function testLoginThrottledIsItsOwnEventLinkedToTheFailuresByTheFingerprint(): void
+    {
+        $this->pushRequest('/api/login_check', 'POST');
+
+        $this->auditLogger->loginFailed('jane', new CpgUser('jane', 'hashed-password'));
+        $this->auditLogger->loginThrottled('JANE');
+
+        [$failed, $throttled] = $this->handler->getRecords();
+        self::assertSame('login-throttled', $throttled->context['event']);
+        self::assertNull($throttled->context['user']);
+        self::assertSame($failed->context['userFingerprint'], $throttled->context['userFingerprint'], 'Même compteur login_throttling (insensible à la casse), même empreinte.');
     }
 
     public function testLoggedOutNamesTheDepartingUser(): void
@@ -475,7 +521,7 @@ final class SecurityAuditLoggerTest extends TestCase
     {
         $this->pushRequest('/api/login_check', 'POST');
 
-        $this->auditLogger->loginFailed('jane');
+        $this->auditLogger->loginFailed('jane', null);
 
         $record = $this->singleRecord();
         self::assertSame(Level::Info, $record->level);
@@ -500,6 +546,8 @@ final class SecurityAuditLoggerTest extends TestCase
             'requested-with header' => 'SENTINEL-REQUESTED-WITH-5e1a',
             'invitation token' => 'SENTINEL-INVITATION-TOKEN-7d2b',
             'email' => 'sentinel.person@example.com',
+            // Issue #418 : un mot de passe tapé dans le champ identifiant.
+            'password typed as identifier' => 'SENTINEL-TYPED-AS-USERNAME-3e6f',
         ];
 
         // Le jeton d'invitation voyage dans le corps (A7, D6), comme le mot de
@@ -529,8 +577,9 @@ final class SecurityAuditLoggerTest extends TestCase
 
         // Un login raté, un rejet CSRF, une invitation — plus le reste de
         // l'API, pour que l'ajout d'une méthode ne passe pas sous le radar.
-        $this->auditLogger->loginFailed('jane');
-        $this->auditLogger->loginThrottled('jane');
+        $this->auditLogger->loginFailed($sentinels['password typed as identifier'], null);
+        $this->auditLogger->loginThrottled($sentinels['password typed as identifier']);
+        $this->auditLogger->loginFailed('jane', $invited);
         $this->auditLogger->loginSucceeded('jane');
         $this->auditLogger->loggedOut('jane');
         $this->auditLogger->baseAccessIssued('guest-0123');
@@ -552,7 +601,7 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->baseAccessThrottled();
 
         $records = $this->handler->getRecords();
-        self::assertCount(21, $records);
+        self::assertCount(22, $records);
 
         foreach ($records as $record) {
             $serialized = json_encode([$record->message, $record->context, $record->extra], \JSON_THROW_ON_ERROR);

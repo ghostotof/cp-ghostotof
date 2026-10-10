@@ -1122,12 +1122,31 @@ défaut, `debug` dans l'image préprod). Chaque ligne `security_audit` porte `ev
 visé (`user`, `userId`), l'auteur (`actor`), `ip` et `path` — jamais un mot de passe, un jeton ni
 un e-mail (un test le pince).
 
+L'identifiant **tenté** au login n'est jamais écrit tel quel (issue #418) : ce peut être un mot de
+passe tapé dans le mauvais champ. `login-failed` et `login-throttled` portent son empreinte,
+`userFingerprint` (HMAC sur `APP_SECRET`, insensible à la casse comme le compteur de
+`login_throttling`), et ne nomment le compte (`user`, `userId`) que s'il existe et a été chargé :
+`user` vaut donc `null` pour un identifiant inconnu, et **toujours** pour `login-throttled` (refusé
+avant tout chargement). Pour relier un refus aux échecs qui l'ont causé, filtrer sur l'empreinte :
+
+```bash
+kubectl -n preprod logs deploy/backend -c php-fpm --tail=2000 \
+  | grep '"channel":"security_audit"' \
+  | jq -r 'select(.context.userFingerprint == "<empreinte>") | [.datetime, .context.event, .context.user // "-", .context.ip] | @tsv'
+```
+
+Une rotation d'`APP_SECRET` change toutes les empreintes : les lignes d'avant et d'après ne se
+relient plus. Un refus du compteur **par IP seule** (25 essais en 15 min, toutes saisies confondues)
+peut porter l'empreinte d'une saisie jamais vue : rien ne s'y relie, lire alors les lignes de la
+même `ip`. L'empreinte est courte exprès (6 caractères hexadécimaux, 24 bits) : deux saisies
+différentes peuvent coïncider, c'est un indice à IP et fenêtre fixées, pas une preuve entre IP.
+
 Lecture sur un pod, canal d'audit seulement, une ligne lisible par événement :
 
 ```bash
 kubectl -n preprod logs deploy/backend -c php-fpm --tail=500 \
   | grep '"channel":"security_audit"' \
-  | jq -r '[.datetime, .context.event, .context.user // "-", .context.actor, .context.ip, .context.path] | @tsv'
+  | jq -r '[.datetime, .context.event, .context.user // "-", .context.userFingerprint // "-", .context.actor, .context.ip, .context.path] | @tsv'
 ```
 
 Vérification après un déploiement (checkpoint 3 du plan) : un `POST /api/login_check` erroné

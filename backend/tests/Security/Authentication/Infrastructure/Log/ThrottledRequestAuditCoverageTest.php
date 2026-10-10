@@ -64,7 +64,7 @@ final class ThrottledRequestAuditCoverageTest extends TestCase
      * sa trace.
      */
     private const array TRACED_UPSTREAM = [
-        LoginRateLimitExceededException::class => 'Refus de login_throttling (issue #399) : `login-throttled`, avec l\'identifiant tenté, est émis par SecurityEventsSubscriber sur LoginFailureEvent (priorité 0), avant que LoginThrottlingRefusalListener (-200) ne lève l\'exception (SecurityAuditLogTest::testASixthFailedLoginIsRecordedAsThrottledNotAsFailed).',
+        LoginRateLimitExceededException::class => 'Refus de login_throttling (issue #399) : `login-throttled`, avec l\'empreinte de l\'identifiant tenté (issue #418), est émis par SecurityEventsSubscriber sur LoginFailureEvent (priorité 0), avant que LoginThrottlingRefusalListener (-200) ne lève l\'exception (SecurityAuditLogTest::testASixthFailedLoginIsRecordedAsThrottledNotAsFailed).',
     ];
 
     /**
@@ -72,7 +72,7 @@ final class ThrottledRequestAuditCoverageTest extends TestCase
      * journal). Ceux-ci portent ce suffixe sans être émis par l'écouteur.
      */
     private const array NOT_QUOTA_EVENTS = [
-        'loginThrottled' => 'login_throttling de Symfony : échecs de connexion comptés par (IP, identifiant), émis par SecurityEventsSubscriber, qui seul connaît l\'identifiant tenté. Le quota correspondant est dans TRACED_UPSTREAM.',
+        'loginThrottled' => 'login_throttling de Symfony : échecs de connexion comptés par (IP, identifiant), émis par SecurityEventsSubscriber, qui seul connaît l\'identifiant tenté (journalisé par son empreinte, issue #418). Le quota correspondant est dans TRACED_UPSTREAM.',
     ];
 
     /**

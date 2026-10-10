@@ -109,6 +109,31 @@ paths:
     `anonymous`), `ip`, `path` (canonical), plus `user` and — for an existing account — `userId` (RFC 4122).
     **Never a password, a token (JWT, XSRF, invitation), an e-mail, a request body or a serialized
     exception** in any context: an invited account is named by `username` + `userId`, not by its e-mail.
+    **The identifier tried at login is never written as typed** (issue #418): a password typed in the
+    username field would otherwise reach the production log. `login-failed` and `login-throttled` carry
+    `userFingerprint` instead — `Infrastructure/Log/LoginIdentifierFingerprint`, an HMAC-SHA256 keyed on
+    `kernel.secret`, case-folded like `login_throttling`'s counter (`mb_strtolower`), **6 hex chars
+    (24 bits) on purpose**, an empty key refused (with the key, a longer fingerprint would confirm
+    offline, at SHA-256 speed, a password typed as identifier; the class docblock has the numbers) — and
+    name the account (`user` + `userId`, from the loaded `CpgUser`, never from the input) **only when the
+    authentication already loaded it**: `user` is `null` for an unknown identifier and always for
+    `login-throttled`, which refuses before the account is loaded (loading it there would cost a query on
+    the path an attacker hammers). The fingerprint is the link between a `login-throttled` and the
+    failures that caused it — when the per-(IP, identifier) counter refused; a refusal by the per-IP
+    counter (25 / 15 min) may carry a fingerprint no earlier failure has, read it by `ip` then. Filtering
+    the **log** on `CpgUser::USERNAME_PATTERN` was rejected: a keychain-generated or plain alphanumeric
+    password matches it (the `cpg_users` loader does filter on it, for another reason, see
+    `.claude/rules/security-user.md`). Price: rotating `APP_SECRET` changes every fingerprint.
+    Symfony's own `security` channel had the same leak — `Authenticator failed.` logs the user provider's
+    exception — closed at the source by the `cpg_users` loader (see `.claude/rules/security-user.md`) on
+    the `login` firewall, the only one that receives a typed identifier. On the `api` firewall the
+    `app_users` chain still quotes the identifier in its own `UserNotFoundException` (`There is no user
+    with identifier "…"`, a JWT for a deleted account, `GuestUserProvider` too): that value comes from a
+    signed JWT, a real username, never from a form field — accepted, not a #418 leak;
+    `SecurityAuditLogTest::testAPasswordTypedAsTheIdentifierReachesNoLog` formats every channel's records
+    with Monolog's `JsonFormatter`, the production one, on an unknown identifier and on the throttling
+    refusal, and skips only `doctrine`'s `debug` records (SQL parameters, logged under `kernel.debug` only,
+    never with `APP_DEBUG=0`).
     The same rule now holds for the **messages** of the exceptions the kernel logs (issue #356):
     `EmailAlreadyUsedException` no longer quotes the address (`alreadyLinkedToAnAccount()`, the backoffice
     reads the 409 status, never the `detail`), and the two delivery exceptions
@@ -175,7 +200,7 @@ paths:
     `…Throttled` method, never `loginThrottled` nor an unrelated one such as `rateLimiterUnavailable` — or
     sits in a justified list: `PER_ACCOUNT` (the translator and the assistant, both on `ai_usage`, pinned by
     their own tests) or `TRACED_UPSTREAM` (issue #399: `LoginRateLimitExceededException`, whose
-    `login-throttled` — with the tried username — `SecurityEventsSubscriber` writes on `LoginFailureEvent`
+    `login-throttled` — with the tried identifier's fingerprint (#418) — `SecurityEventsSubscriber` writes on `LoginFailureEvent`
     before the exception exists; sorting it again would log the refusal twice). The guard checks that the
     listener ignores every justified entry. A new anonymous quota therefore gets its `…Throttled` interface
     method, its `match` arm and its event in the same change — never a justified entry to make the suite
