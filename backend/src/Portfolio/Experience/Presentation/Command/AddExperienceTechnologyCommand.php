@@ -8,6 +8,7 @@ use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException;
 use App\Portfolio\Experience\Domain\Exception\InvalidExperienceYearsException;
 use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
+use App\Shared\Presentation\Command\InvalidConsoleAnswerException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -46,10 +47,20 @@ final class AddExperienceTechnologyCommand extends Command
         $io = new SymfonyStyle($input, $output);
 
         $name = $input->getOption('name') ?? $io->ask('Nom de la technologie', validator: $this->validateName(...));
-        \assert(\is_string($name));
 
-        if ('' === trim($name)) {
-            $io->error('Le nom de la technologie ne peut pas être vide.');
+        // En non interactif, ask() rend la valeur par défaut (null) sans
+        // passer par le validateur (issue #383) : refus explicite, qui nomme
+        // l'option, plutôt qu'un assert() absent du binaire de prod.
+        if (null === $name) {
+            $io->error('Aucun nom de technologie : en mode non interactif, passez --name.');
+
+            return Command::FAILURE;
+        }
+
+        try {
+            $name = $this->validateName($name);
+        } catch (InvalidConsoleAnswerException $exception) {
+            $io->error($exception->getMessage());
 
             return Command::FAILURE;
         }
@@ -83,10 +94,15 @@ final class AddExperienceTechnologyCommand extends Command
         return Command::SUCCESS;
     }
 
+    /**
+     * Le QuestionHelper affiche le message de l'exception et repose la question.
+     *
+     * @throws InvalidConsoleAnswerException
+     */
     private function validateName(mixed $name): string
     {
         if (!\is_string($name) || '' === trim($name)) {
-            throw new \InvalidArgumentException('Le nom de la technologie ne peut pas être vide.');
+            throw InvalidConsoleAnswerException::empty('Le nom de la technologie');
         }
 
         return $name;

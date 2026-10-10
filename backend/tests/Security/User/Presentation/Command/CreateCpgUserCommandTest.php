@@ -127,6 +127,85 @@ final class CreateCpgUserCommandTest extends KernelTestCase
         self::assertStringContainsString('inconnu', $tester->getDisplay());
     }
 
+    /**
+     * Issue #383 : sans --username, `ask()` rend en non interactif la valeur
+     * par défaut (null) sans passer par le validateur. La commande tombait sur
+     * un `assert()` en dev, sur un TypeError en prod ; elle doit refuser en
+     * nommant l'option à passer.
+     */
+    public function testANonInteractiveRunWithoutUsernameFailsAndNamesTheOption(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute(['--password' => TestCredentials::plainPassword()], ['interactive' => false]);
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('--username', $tester->getDisplay());
+    }
+
+    public function testANonInteractiveRunWithoutPasswordFailsAndNamesTheOption(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute(['--username' => 'jane'], ['interactive' => false]);
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('--password', $tester->getDisplay());
+        self::assertNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane'));
+    }
+
+    /**
+     * Issue #383 : une confirmation différente sortait de la commande en
+     * exception non rattrapée ; elle échoue désormais comme toute autre saisie
+     * refusée, par un message et le code 1.
+     */
+    public function testAPasswordConfirmationThatDiffersFailsWithAMessage(): void
+    {
+        $tester = $this->commandTester();
+        $tester->setInputs([TestCredentials::plainPassword(), TestCredentials::variant('autre')]);
+
+        $exitCode = $tester->execute(['--username' => 'jane'], ['interactive' => true]);
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('ne correspondent pas', $this->normalizedDisplay($tester));
+        self::assertNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane'));
+    }
+
+    /**
+     * Le validateur de la question lève l'exception du domaine
+     * (InvalidUsernameException) : le QuestionHelper en affiche le message et
+     * redemande la saisie.
+     */
+    public function testTheInteractivePromptAsksAgainWhenTheUsernameIsInvalid(): void
+    {
+        $tester = $this->commandTester();
+        $tester->setInputs(['ab', 'jane', TestCredentials::plainPassword(), TestCredentials::plainPassword()]);
+
+        $exitCode = $tester->execute([], ['interactive' => true]);
+
+        self::assertSame(0, $exitCode);
+        self::assertStringContainsString('"ab" est invalide', $this->normalizedDisplay($tester));
+        self::assertNotNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane'));
+    }
+
+    public function testTheInteractivePromptAsksAgainWhenThePasswordIsEmpty(): void
+    {
+        $tester = $this->commandTester();
+        $tester->setInputs(['', TestCredentials::plainPassword(), TestCredentials::plainPassword()]);
+
+        $exitCode = $tester->execute(['--username' => 'jane'], ['interactive' => true]);
+
+        self::assertSame(0, $exitCode);
+        self::assertStringContainsString('ne peut pas être vide', $this->normalizedDisplay($tester));
+        self::assertNotNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane'));
+    }
+
+    /** SymfonyStyle replie les blocs d'erreur à la largeur du terminal. */
+    private function normalizedDisplay(CommandTester $tester): string
+    {
+        return (string) preg_replace('/\s+/', ' ', $tester->getDisplay());
+    }
+
     private function commandTester(): CommandTester
     {
         \assert(self::$kernel instanceof KernelInterface);

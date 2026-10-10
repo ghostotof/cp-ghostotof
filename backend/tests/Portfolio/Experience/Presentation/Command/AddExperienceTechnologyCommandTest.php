@@ -143,6 +143,33 @@ final class AddExperienceTechnologyCommandTest extends KernelTestCase
         self::assertSame(13.5, $technology->getYears());
     }
 
+    /**
+     * Issue #383 : sans --name, `ask()` rend en non interactif la valeur par
+     * défaut (null) sans passer par le validateur ; la commande doit refuser
+     * en nommant l'option à passer, pas tomber sur un `assert()`.
+     */
+    public function testANonInteractiveRunWithoutNameFailsAndNamesTheOption(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute(['--years' => '13.5'], ['interactive' => false]);
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('--name', $tester->getDisplay());
+    }
+
+    public function testTheInteractivePromptAsksAgainWhenTheNameIsBlank(): void
+    {
+        $tester = $this->commandTester();
+        $tester->setInputs(['   ', 'PHP']);
+
+        $exitCode = $tester->execute(['--years' => '13.5'], ['interactive' => true]);
+
+        self::assertSame(0, $exitCode);
+        self::assertStringContainsString('ne peut pas être vide', $this->normalizedDisplay($tester));
+        self::assertNotNull(self::getContainer()->get(ExperienceTechnologyRepositoryInterface::class)->findOneByName('PHP'));
+    }
+
     /** SymfonyStyle replie les blocs d'erreur à la largeur du terminal. */
     private function normalizedDisplay(CommandTester $tester): string
     {
