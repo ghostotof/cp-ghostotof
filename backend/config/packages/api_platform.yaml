@@ -23,8 +23,13 @@ api_platform:
     # il ne répondait jamais, sinon par une UnsupportedFormatException
     # `critical`. La documentation reste servie en dev par /api/docs.
     enable_entrypoint: false
-    # Sans cette entrée, ContactRateLimitExceededException remonterait en 500
-    # (exception métier non reconnue par API Platform) au lieu du 429 attendu.
+    # Statut HTTP des exceptions métier levées sous une opération API Platform :
+    # sans entrée ici ni ProblemExceptionInterface::getStatus(), l'exception
+    # remonterait en 500. Les trois quotas de cette liste (contact, traduction,
+    # définition du mot de passe) portent en plus leur `type`
+    # `/errors/rate-limited` et leur 429 par ProblemExceptionInterface
+    # (issue #369) ; leur entrée, consultée la première
+    # (ErrorListener::getStatusCode), doit rester à 429.
     #
     # ATTENTION, deux pièges de cette clé, l'un et l'autre vérifiés dans le
     # vendor de la version installée :
