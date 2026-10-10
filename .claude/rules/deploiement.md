@@ -232,9 +232,15 @@ paths:
   503, which that `error_page` would not catch. Two traps: a `location` that declares an
   `error_page` of its own loses the inherited one, and an `add_header` in `@rate_limited` would drop
   the seven security headers (A16). Symfony's own 429s pass through
-  untouched (no `fastcgi_intercept_errors`), `Retry-After` included. **Accepted limit**: these 429s
-  carry no CORS headers (only `nelmio_cors` sets them), so a browser on another origin cannot read
-  them and `fetch` throws — the frontend sees a network error, not "rate-limited". Guard:
+  untouched (no `fastcgi_intercept_errors`), `Retry-After` included. **No CORS headers on these
+  429s, on purpose** (issue #368): only `nelmio_cors` sets them, and none is needed — in preprod and
+  prod the frontend and the API share **one origin** (single-host ingress, `/api` → `backend`,
+  `API_URL` = the site's own origin), so the browser applies no CORS check and the frontend reads
+  the 429 and its problem+json body (checked in a real browser on preprod, 2026-10-10: response
+  `type` `basic`, nginx's own `/errors/rate-limited` body read by `fetch`). Only dev is cross-origin (Vite on
+  `:5173`, nginx on `:8080`): there `fetch` throws a `TypeError` on these 429s. Don't add CORS to
+  `@rate_limited` (a second source of truth for the origin, plus the A16 header trap) and don't map
+  a `TypeError` to "rate-limited" — revisit only if the API ever moves to its own host. Guard:
   `tools/check-backend-nginx-rate-limits.sh` (`make back-nginx-rate-limits`, CI job
   `backend-nginx-rate-limits`) runs the pinned sidecar image on each conf, saturates every
   `limit_req` zone and checks the body, the type and the headers; it fails naming any `limit_req`
