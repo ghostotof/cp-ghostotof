@@ -16,6 +16,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use DomainException;
 use stdClass;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Throwable;
 
 /**
  * Le verrou de périmètre d'ordre (issue #389) : ce qu'il garantit se lit depuis
@@ -152,14 +153,15 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
                 $this->probe->executeQuery('SELECT pg_advisory_xact_lock(1, 1)');
                 $this->entityManager()->getConnection()->executeQuery('SELECT pg_advisory_xact_lock(1, 1)');
             });
-        } catch (DriverException $exception) {
+        } catch (Throwable $exception) {
             $timeout = $exception;
         } finally {
             $this->probe->executeQuery('ROLLBACK');
         }
 
-        self::assertInstanceOf(DriverException::class, $timeout);
-        self::assertNotInstanceOf(OrderScopeLockTimeoutException::class, $timeout);
+        // OrderScopeLockTimeoutException n'est pas une DriverException : un
+        // renommage indu ferait échouer cette assertion.
+        self::assertInstanceOf(DriverException::class, $timeout, 'Le délai dépassé dans l\'opération a été renommé.');
     }
 
     /**
