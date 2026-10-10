@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Portfolio\Shared\Domain\ValueObject;
 
 use App\Portfolio\Shared\Domain\Exception\InvalidLocaleException;
-use ValueError;
 
 /**
  * Langue du contenu portfolio géré en base (About/Quality/Stats/Experience).
@@ -35,7 +34,7 @@ enum Locale: string
     /**
      * Variante de `from()` pour les valeurs venues de l'extérieur (segment
      * d'URL, argument de commande…) : lève une exception métier explicite
-     * plutôt qu'un {@see ValueError} générique.
+     * plutôt qu'un \ValueError générique.
      *
      * Point d'audit I3 : permet à `api_platform.yaml` de mapper précisément
      * `InvalidLocaleException` sur 404, au lieu du fourre-tout `ValueError: 404`

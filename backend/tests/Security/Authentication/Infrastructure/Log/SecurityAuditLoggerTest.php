@@ -27,7 +27,7 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * et le chemin — et rien d'autre. Le test « valeurs sentinelles » pince la
  * règle « jamais un secret ni un e-mail dans un contexte ».
  *
- * `Psr\Log\Test\TestLogger` n'existe plus dans psr/log 3 (déplacé dans
+ * Le `TestLogger` de psr/log n'existe plus dans psr/log 3 (déplacé dans
  * fig/log-test, non installé) : le TestHandler de Monolog joue le même rôle,
  * avec en prime le nom du canal et le niveau tels qu'ils sortiront en prod.
  */

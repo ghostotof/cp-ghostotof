@@ -9,7 +9,6 @@ use ApiPlatform\Metadata\Delete;
 use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
-use App\Security\User\Application\CpgUserInviter;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserInviteProcessor;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserProcessor;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserProvider;
@@ -23,7 +22,7 @@ use Symfony\Component\Routing\Requirement\Requirement;
  * CLI app:user:create. Le POST ici *invite* : il prend une adresse e-mail,
  * dérive un identifiant, crée un compte en attente d'activation et envoie un
  * lien de définition de mot de passe (cf. BackofficeUserInviteInput /
- * {@see CpgUserInviter}).
+ * App\Security\User\Application\CpgUserInviter).
  */
 #[ApiResource(
     shortName: 'BackofficeUser',

@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace App\Security\User\Application\Message;
 
-use App\Security\User\Application\CpgUserInviter;
-
 /**
  * Commande Messenger : demande d'envoi de l'e-mail d'invitation à définir son
- * mot de passe. Dispatchée par {@see CpgUserInviter},
+ * mot de passe. Dispatchée par App\Security\User\Application\CpgUserInviter,
  * consommée par App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler
  * (transport "async"/RabbitMQ, cf. config/packages/messenger.yaml).
  *

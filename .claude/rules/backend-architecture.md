@@ -78,20 +78,26 @@ take the day one is.
 ones included** (issue #391). `use LogicException;` then `new LogicException(…)`, `use Throwable;` then
 `catch (Throwable $e)`, `use DateTimeImmutable;` then `DateTimeImmutable $at`, likewise `Stringable`,
 `JsonSerializable`, `Closure`, `Generator`, `ReflectionClass`…: never `\LogicException`, never
-`\App\…\Foo` inline, in code, attributes and phpdoc types alike (settled on 2026-10-10). A class only a comment refers to is cited as `{@see Foo}` with its `use`: Rector's
-`removeUnusedImports` keeps an import referenced by `{@see}` but **deletes** one cited in plain prose
-(verified on 2026-10-10), so a bare short name in a sentence loses its import on the next `rector:fix`.
-**`{@see}` only holds an import inside a `/** … */` docblock** — in a `//` or `/* … */` comment Rector
-deletes it all the same (verified on 2026-10-10). There, write the short name when the class is already
-imported for the code, and keep the qualified name otherwise: it is the only form that still resolves
-(`tests/Support/ReadsSecurityAuditLog.php`, `Monolog\Logger`). Code quoted in a comment
+`\App\…\Foo` inline, in code, attributes and phpdoc types alike (settled on 2026-10-10).
+**A comment never adds a `use`** (settled on 2026-10-10, review of #391). A class the file imports for
+its code is cited by its short name — `{@see Foo}` in a docblock, `Foo` in a `//` comment. Any other class
+is cited by its **full name, without `use` and without `{@see}`**: `\ValueError` for a native one,
+`App\Shared\Infrastructure\Http\RetryAfterListener` otherwise. Two reasons. An import only a docblock needs
+is checked by nothing — PHP does not resolve an unused `use`, PHPStan does not read `{@see}`, Rector keeps
+it — so a deleted or renamed class leaves it dangling with a green CI; and it would make an inner layer
+import an outer one (`Domain` → `Application`/`Infrastructure`/`Presentation`, `Application` →
+`Infrastructure`/`Presentation`) for documentation's sake. The full name is checked instead:
+`tests/Shared/CommentedClassNamesExistTest.php` (`tests/Support/CommentedClassNames`) fails on any full
+name in a comment of `src/` or `tests/` that is neither a class, interface, enum or trait (nor its cited
+`::method()`) nor a namespace — a name is full when it starts with `\` or with a root namespace the
+autoloader knows. Not checked, and allowed: a name relative to its context, as the repository interfaces
+write it (`Infrastructure\Doctrine\CpgUserRepository`), and the `Assert\…` shorthand. A comment that names
+a class which does not exist (a removed vendor class, a hypothetical homonym) says so in words rather than
+by a full name. Background, verified on 2026-10-10: Rector's `removeUnusedImports` keeps an import
+referenced by `{@see}` in a `/** … */` docblock, but deletes one cited in plain prose or in a `//` /
+`/* … */` comment, even through `{@see}`. Code quoted in a comment
 (`` `new DateTimeImmutable('-'.$x)` ``, `` `#[SensitiveParameter]` ``) takes the short name without `{@see}`:
-it shows code, it does not link a class. **A reference that points outward takes no `use`**
-(settled on 2026-10-10, review of #391): from `Domain` to `Application`, `Infrastructure` or `Presentation`,
-from `Application` to `Infrastructure` or `Presentation`. An inner layer does not depend on an outer one,
-not even through an import only a docblock needs, so the class keeps its fully qualified name in prose,
-without `{@see}` (`App\Shared\Infrastructure\Http\RetryAfterListener` in `RetryAfterAware`), or the name
-relative to its context that the repository interfaces already write (`Infrastructure\Doctrine\CpgUserRepository`). A quoted configuration key keeps its fully qualified name, the only
+it shows code, it does not link a class. A quoted configuration key keeps its fully qualified name, the only
 one the config knows (`Symfony\Component\Serializer\Exception\ExceptionInterface: 400`, `MalformedRequestBodyTest`). A
 name clash gets an alias (`use UnexpectedValueException as NativeUnexpectedValueException;` in
 `MalformedRequestBodyException`, which already imports the Serializer's), never a qualified name.
@@ -121,6 +127,6 @@ costly to import would keep its qualified name, with the measurement as its just
 `use …\Constraints as Assert;` alias the code itself writes. The guard is Rector's
 `withImportNames(importShortClasses: true, removeUnusedImports: true)` in `backend/rector.php`, checked by
 the blocking `rector-backend` job: it rejects a qualified class, native or namespaced, in code and phpdoc
-types (issue #391, ≈ 200 files migrated). It does **not** see a `@template T of \Foo` bound nor any prose:
-those are reviewed by hand.
+types (issue #391, ≈ 200 files migrated). It does **not** see a `@template T of \Foo` bound, reviewed by
+hand, nor any prose, where `CommentedClassNamesExistTest` checks the full names (see above).
 

@@ -10,14 +10,13 @@ use App\Contact\Application\ContactMessageSenderInterface;
 use App\Contact\Application\ContactRateLimiterInterface;
 use App\Contact\Domain\ValueObject\ContactMessage;
 use App\Contact\Presentation\ApiResource\ContactMessageResource;
-use App\Portfolio\Experience\Infrastructure\ApiPlatform\ExperienceTechnologyProvider;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Relie ContactMessageResource (Presentation) à l'Application : seule cette
  * classe Infrastructure a le droit de connaître à la fois la ressource API
  * Platform et le use case applicatif, sur le même modèle que
- * {@see ExperienceTechnologyProvider}.
+ * App\Portfolio\Experience\Infrastructure\ApiPlatform\ExperienceTechnologyProvider.
  *
  * @implements ProcessorInterface<ContactMessageResource, ContactMessageResource>
  */

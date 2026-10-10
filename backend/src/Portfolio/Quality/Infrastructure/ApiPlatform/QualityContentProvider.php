@@ -6,7 +6,6 @@ namespace App\Portfolio\Quality\Infrastructure\ApiPlatform;
 
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProviderInterface;
-use App\Portfolio\Experience\Infrastructure\ApiPlatform\ExperienceTechnologyProvider;
 use App\Portfolio\Quality\Application\QualityPrinciplePresenterInterface;
 use App\Portfolio\Quality\Application\QualityTraitPresenterInterface;
 use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
@@ -23,7 +22,7 @@ use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
  * deux repositories (principles + traits) : seule cette classe
  * Infrastructure a le droit de connaître à la fois les entités Doctrine et
  * la ressource API Platform. Même pattern que
- * {@see ExperienceTechnologyProvider}.
+ * App\Portfolio\Experience\Infrastructure\ApiPlatform\ExperienceTechnologyProvider.
  *
  * @implements ProviderInterface<QualityContentResource>
  */

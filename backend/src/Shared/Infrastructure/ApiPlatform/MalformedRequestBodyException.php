@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Shared\Infrastructure\ApiPlatform;
 
-use InvalidArgumentException;
 use Symfony\Component\Serializer\Exception\ExtraAttributesException;
 use Symfony\Component\Serializer\Exception\MissingConstructorArgumentsException;
 use Symfony\Component\Serializer\Exception\UnexpectedValueException;
@@ -22,7 +21,7 @@ use UnexpectedValueException as NativeUnexpectedValueException;
  * qui est un défaut du serveur. Une classe précise, elle, reçoit son propre
  * `log_level` (framework.yaml) sans rien entraîner d'autre.
  *
- * {@see NativeUnexpectedValueException} plutôt qu'{@see InvalidArgumentException} : la SPL
+ * {@see NativeUnexpectedValueException} plutôt qu'\InvalidArgumentException : la SPL
  * range la seconde parmi les erreurs de programmation, alors qu'il s'agit ici
  * d'une donnée reçue à l'exécution. La classe native passe par l'alias
  * NativeUnexpectedValueException parce que le nom court UnexpectedValueException

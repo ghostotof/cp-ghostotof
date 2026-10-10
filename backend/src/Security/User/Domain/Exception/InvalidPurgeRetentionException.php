@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Security\User\Domain\Exception;
 
-use DateInterval;
 use DateTimeImmutable;
 use DomainException;
 
@@ -14,7 +13,7 @@ use DomainException;
  * plancher d'un jour (issue #238, round de correction M6). Trois cas
  * concrets couverts : un intervalle négatif transmis par erreur (ex.
  * "--older-than=-30 days", doublement négativé par
- * {@see DateInterval::createFromDateString()}) fait avancer l'horloge au lieu de la
+ * \DateInterval::createFromDateString()) fait avancer l'horloge au lieu de la
  * reculer ; un intervalle nul ("0 days") place le seuil exactement sur
  * l'instant présent ; et, plus généralement, tout intervalle strictement
  * inférieur à un jour ("1 hour") purgerait en un lancement manuel la quasi-

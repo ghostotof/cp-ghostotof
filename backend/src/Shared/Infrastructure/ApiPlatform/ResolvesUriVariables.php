@@ -7,7 +7,6 @@ namespace App\Shared\Infrastructure\ApiPlatform;
 use App\Portfolio\Shared\Domain\Exception\InvalidLocaleException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Symfony\Component\Uid\Uuid;
-use ValueError;
 
 /**
  * Les variables d'URI d'API Platform proviennent toujours de segments de
@@ -61,7 +60,7 @@ trait ResolvesUriVariables
      * `Locale::from($this->uriVariableString($uriVariables, 'locale'))` répété
      * dans chaque Provider/Processor de contenu, et surtout garantit que
      * l'échec produit une InvalidLocaleException (mappée 404) plutôt qu'un
-     * {@see ValueError} nu — cf. point d'audit I3.
+     * \ValueError nu — cf. point d'audit I3.
      *
      * @param array<string, mixed> $uriVariables
      *

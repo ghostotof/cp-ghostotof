@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Cv\Presentation\Controller;
 
-use App\Security\User\Presentation\Controller\CurrentUserController;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
@@ -14,7 +13,7 @@ use Symfony\Component\Routing\Attribute\Route;
 /**
  * Protégé par l'access_control "^/api/cv" (config/packages/security.yaml) :
  * n'est jamais atteint sans un JWT valide, sur le même modèle que
- * {@see CurrentUserController}. Le fichier
+ * App\Security\User\Presentation\Controller\CurrentUserController. Le fichier
  * réel ne vit jamais dans le dépôt Git ni dans l'image Docker (voir
  * backend/resources/README.md) : $cvFilePath pointe vers un chemin déposé
  * localement ou monté par l'orchestrateur en environnement déployé.
