@@ -199,6 +199,8 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         yield 'nom de champ invalide' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['root-cause' => 'x']]];
         yield 'nom de champ commençant par un chiffre' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['1title' => 'x']]];
         yield 'nom de champ trop long' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => [str_repeat('a', 41) => 'x']]];
+        // Régression #409 : un `$` final acceptait la position avant un `\n` final.
+        yield 'nom de champ terminé par un saut de ligne' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ["title\n" => 'x']]];
         yield 'valeur vide' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['title' => '   ']]];
         // Issue #159 : jamais un 500, quelle que soit la forme de la valeur.
         yield 'valeur non textuelle : liste' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['title' => ['x']]]];
