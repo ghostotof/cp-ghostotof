@@ -90,7 +90,8 @@ paths:
     `FailedLoginTimingEqualizerTest` + `tests/Security/Authentication/LoginFailureTimingTest.php` pin it.
     Related fact worth knowing: `login_throttling` answers **401** with `Too many failed login attempts`,
     not 429 — it is Lexik's failure handler that shapes the response (`LoginThrottlingTest`,
-    `tools/smoke-login-throttling.sh`).
+    `tools/smoke-login-throttling.sh`). Decided on 2026-10-10 (#369) to move it to a 429
+    `/errors/rate-limited`, in its own issue (see "Every quota 429" in `.claude/rules/backoffice-api.md`).
   - **`Infrastructure/Log/SecurityAuditLogger.php` is the single entry point of the security audit log**
     (3rd audit, A5/D5, Monolog channel `security_audit`, `info`, JSON on stderr in prod — see
     `monolog.yaml`). Implements `Application/SecurityAuditLoggerInterface`, one method per event:

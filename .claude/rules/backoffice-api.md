@@ -231,4 +231,16 @@ paths:
   per-context copy. It must also be traced: `ThrottledRequestAuditCoverageTest` (issue #361) wants every
   `RetryAfterAware` either sorted by `ThrottledRequestAuditListener` or justified as a per-account quota
   (see `.claude/rules/security-authentication.md`). `RateLimiterLockFailureListener` stays apart on purpose (fixed delay, priority 16).
+  **And every quota 429 carries `type: /errors/rate-limited`** (issue #369), the `type` of the nginx zones
+  (`@rate_limited`): one cause, one value for a client to recognise. A quota exception therefore also
+  implements `ProblemExceptionInterface` with `HasProblemType` (`rate-limited`, 429) — model:
+  `BaseAccessRateLimitExceededException`. Without it, on an API Platform operation, the `type` falls back
+  to `/errors/429`, derived from the status alone, which is what the contact, set-password and
+  translation quotas answered until #369. `QuotaExceptionsAreRetryAfterAwareTest` walks every
+  `RetryAfterAware` of `src/` (`DeclaredClasses`) and enforces it; each route's functional 429 test
+  reads the `type`. The `exception_to_status` entries of the three API Platform quotas stay, at 429:
+  that map is read first. **`login_throttling` is not one of them yet**: Lexik's failure handler answers
+  **401** `Too many failed login attempts`, no problem+json. Decided on 2026-10-10 (#369): it moves to a
+  429 `rate-limited` with `Retry-After`, in its own issue, since it touches the login page, the preprod
+  smoke test (`tools/smoke-login-throttling.sh`) and the failure handler.
 
