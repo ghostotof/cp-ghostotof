@@ -11,7 +11,7 @@ use App\Ai\Translation\Application\TranslationRateLimiterInterface;
 use App\Ai\Translation\Domain\ValueObject\TranslationRequest;
 use App\Ai\Translation\Presentation\ApiResource\BackofficeTranslationResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
-use App\Shared\Infrastructure\ApiPlatform\UnauthenticatedProcessorCallException;
+use App\Shared\Infrastructure\ApiPlatform\UnexpectedActingUserException;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\Security\Core\User\UserInterface;
 
@@ -45,7 +45,7 @@ final readonly class BackofficeTranslationProcessor implements ProcessorInterfac
         // BackofficeUserRoleProcessor).
         $actingUser = $this->security->getUser();
         if (!$actingUser instanceof UserInterface) {
-            throw UnauthenticatedProcessorCallException::in(self::class);
+            throw UnexpectedActingUserException::inProcessor(self::class, UserInterface::class, $actingUser);
         }
 
         $this->translationRateLimiter->consume($actingUser->getUserIdentifier());

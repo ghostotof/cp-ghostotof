@@ -10,7 +10,7 @@ use App\Security\User\Application\CpgUserAdministratorInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Presentation\ApiResource\BackofficeUserResource;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
-use App\Shared\Infrastructure\ApiPlatform\UnauthenticatedProcessorCallException;
+use App\Shared\Infrastructure\ApiPlatform\UnexpectedActingUserException;
 use Symfony\Bundle\SecurityBundle\Security;
 
 /**
@@ -35,7 +35,7 @@ final readonly class BackofficeUserProcessor implements ProcessorInterface
         // qu'un cast PHPDoc silencieux, pour éviter un TypeError 500 opaque
         // si cette invariante venait à être violée.
         if (!$actingUser instanceof CpgUser) {
-            throw UnauthenticatedProcessorCallException::in(self::class);
+            throw UnexpectedActingUserException::inProcessor(self::class, CpgUser::class, $actingUser);
         }
 
         $this->cpgUserAdministrator->delete($this->uriVariableUuid($uriVariables), $actingUser);
