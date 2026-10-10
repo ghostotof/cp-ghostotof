@@ -56,7 +56,7 @@ final class SensitiveParameters
         // Un trait utilisé est lu dans la classe qui l'utilise, où se trouve
         // le prototype de ses méthodes : le lire aussi pour lui-même
         // signalerait chaque défaut deux fois (issue #421).
-        $owners = array_diff_key($owners, array_flip(self::traitsUsedBy($classes)));
+        $owners = array_diff_key($owners, array_flip(DeclaredClasses::traitsUsedBy($classes)));
         ksort($owners);
 
         $parameters = [];
@@ -75,31 +75,6 @@ final class SensitiveParameters
         }
 
         return $parameters;
-    }
-
-    /**
-     * Les traits qu'utilisent ces déclarations, directement ou par un autre
-     * trait. La réflexion montre leurs méthodes et leurs propriétés dans la
-     * classe qui les utilise, comme si elle les déclarait.
-     *
-     * @param list<class-string> $classes
-     *
-     * @return list<class-string>
-     */
-    public static function traitsUsedBy(array $classes): array
-    {
-        $used = [];
-        $pending = array_map(static fn (string $class): ReflectionClass => new ReflectionClass($class), $classes);
-        while ([] !== $pending) {
-            foreach (array_pop($pending)->getTraits() as $trait) {
-                if (!\in_array($trait->getName(), $used, true)) {
-                    $used[] = $trait->getName();
-                    $pending[] = $trait;
-                }
-            }
-        }
-
-        return $used;
     }
 
     /** `#[SensitiveParameter]` : la valeur ne figure dans aucune trace d'exception, quel que soit `zend.exception_ignore_args`. */

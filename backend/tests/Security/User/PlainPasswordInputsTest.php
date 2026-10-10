@@ -94,7 +94,9 @@ use ReflectionProperty;
  * avec la classe qui l'utilise, à qui il est attribué : son champ, son
  * paramètre, le hasher qu'il nomme ou l'appel qu'il fait sont ceux de la
  * classe, la seule qui puisse implémenter l'interface de HASHERS ou être le
- * processor d'une ressource ; un trait sans utilisateur est lu pour lui-même.
+ * processor d'une ressource. Un trait sans utilisateur voit ses champs et ses
+ * paramètres recensés pour lui-même, mais n'est ni un hasher ni un appelant :
+ * rien ne l'exécute.
  *
  * **Limites assumées.** Un hasher obtenu sans nommer son type (service
  * injecté par son identifiant) n'est pas vu ; un cas d'usage qui hacherait un

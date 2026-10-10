@@ -67,7 +67,7 @@ final class PlainPasswordInputs
     {
         $fields = [];
         // Le champ d'un trait utilisé est lu dans la classe qui l'utilise.
-        foreach (array_diff($classes, SensitiveParameters::traitsUsedBy($classes)) as $class) {
+        foreach (array_diff($classes, DeclaredClasses::traitsUsedBy($classes)) as $class) {
             foreach ((new ReflectionClass($class))->getProperties() as $property) {
                 if ($property->getDeclaringClass()->getName() === $class
                     && SensitiveParameters::namesAClearSecret($property->getName(), self::NAME)
@@ -129,7 +129,7 @@ final class PlainPasswordInputs
     public static function hasherUsers(array $classes): array
     {
         return array_values(array_filter(
-            self::executable($classes),
+            self::classesAndEnums($classes),
             static fn (string $class): bool => array_any(self::sourcesOf($class), self::namesAPasswordHasher(...)),
         ));
     }
@@ -152,7 +152,7 @@ final class PlainPasswordInputs
     public static function callers(array $classes, string $interface, string $method): array
     {
         return array_values(array_filter(
-            self::executable($classes),
+            self::classesAndEnums($classes),
             static fn (string $class): bool => !is_subclass_of($class, $interface)
                 && array_any(self::sourcesOf($class), static fn (string $code): bool => self::callsMethodOf($code, $interface, $method)),
         ));
@@ -214,15 +214,16 @@ final class PlainPasswordInputs
 
     /**
      * Ce qui hache ou appelle est une classe (ou un enum) : une interface
-     * n'exécute rien, et un trait agit dans la classe qui l'utilise, la seule
-     * qui puisse implémenter l'interface de HASHERS ou être le processor
-     * d'une ressource (issue #421).
+     * n'exécute rien, et un trait n'agit que dans la classe qui l'utilise, la
+     * seule qui puisse implémenter l'interface de HASHERS ou être le processor
+     * d'une ressource (issue #421). Un trait sans utilisateur n'est donc ni
+     * un hasher ni un appelant : rien ne l'exécute.
      *
      * @param list<class-string> $classes
      *
      * @return list<class-string>
      */
-    private static function executable(array $classes): array
+    private static function classesAndEnums(array $classes): array
     {
         return array_values(array_filter($classes, static function (string $class): bool {
             $reflection = new ReflectionClass($class);
@@ -242,7 +243,7 @@ final class PlainPasswordInputs
     private static function sourcesOf(string $class): array
     {
         $sources = [];
-        foreach ([$class, ...SensitiveParameters::traitsUsedBy([$class])] as $declaration) {
+        foreach ([$class, ...DeclaredClasses::traitsUsedBy([$class])] as $declaration) {
             $file = (new ReflectionClass($declaration))->getFileName();
             $sources[] = false === $file ? '' : (string) file_get_contents($file);
         }

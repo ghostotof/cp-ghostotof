@@ -80,7 +80,10 @@ use ReflectionParameter;
  * outre réécrire par jetons le filtre de type et l'exclusion des condensats,
  * sans prototype à consulter. Au relevé de #421 (2026-10-10), aucune
  * closure de `src/` n'a de paramètre au nom de secret, et `src/` n'a ni
- * classe anonyme ni fonction hors classe.
+ * classe anonyme ni fonction hors classe. Une variable capturée par `use`
+ * (le `$clearToken` de
+ * {@see \App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler})
+ * n'est pas un argument : elle ne figure dans aucune trace.
  */
 final class SecretParametersTest extends TestCase
 {

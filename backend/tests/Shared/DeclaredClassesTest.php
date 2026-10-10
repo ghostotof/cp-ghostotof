@@ -17,7 +17,7 @@ use PHPUnit\Framework\TestCase;
  * Ce que {@see DeclaredClasses} recense, sur un fichier hors PSR-4 qui déclare
  * une chose de chaque sorte (issue #421). Deux recensements, qu'un garde-fou
  * choisit explicitement : les classes seules, pour qui raisonne sur des
- * classes (une exception levée, un `RetryAfterAware` instancié), et toutes
+ * classes (une exception levée, une exception de quota instanciée), et toutes
  * les déclarations nommées, pour qui lit des signatures ou des attributs.
  */
 final class DeclaredClassesTest extends TestCase
@@ -43,6 +43,16 @@ final class DeclaredClassesTest extends TestCase
             DeclaredFixtureSubInterface::class,
             DeclaredFixtureTrait::class,
         ], DeclaredClasses::classLikes(self::FIXTURES));
+    }
+
+    /**
+     * La réflexion montre les membres d'un trait dans la classe qui l'utilise :
+     * un recensement qui lit aussi le trait pour lui-même les verrait deux
+     * fois.
+     */
+    public function testTraitsUsedByNamesTheTraitsTheDeclarationsUse(): void
+    {
+        self::assertSame([DeclaredFixtureTrait::class], DeclaredClasses::traitsUsedBy(DeclaredClasses::classLikes(self::FIXTURES)));
     }
 
     /**

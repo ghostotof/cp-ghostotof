@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Support;
 
 use LogicException;
+use ReflectionClass;
 
 /**
  * Recense les déclarations nommées d'un répertoire, d'après ce que déclarent
@@ -20,17 +21,21 @@ use LogicException;
  * **Deux recensements, que chaque garde-fou choisit explicitement** (issue
  * #421) :
  *  - {@see self::classes()}, les classes seules (abstraites comprises), pour
- *    qui raisonne sur ce qui s'instancie ou se lève : les
- *    ProblemExceptionInterface de src/ (ExceptionLogLevelCoverageTest,
- *    ProblemDetailStaysStaticTest, ProblemStatusMatchesExceptionToStatusTest),
- *    les RetryAfterAware (QuotaExceptionsContractTest,
- *    ThrottledRequestAuditCoverageTest) ;
+ *    qui raisonne sur ce qui s'instancie ou se lève : les exceptions
+ *    problème et les exceptions de quota de src/
+ *    ({@see \App\Tests\Shared\Infrastructure\Http\ExceptionLogLevelCoverageTest},
+ *    {@see \App\Tests\Shared\Infrastructure\Http\ProblemDetailStaysStaticTest},
+ *    {@see \App\Tests\Shared\Infrastructure\Http\ProblemStatusMatchesExceptionToStatusTest},
+ *    {@see \App\Tests\Shared\Domain\Exception\QuotaExceptionsContractTest},
+ *    {@see \App\Tests\Security\Authentication\Infrastructure\Log\ThrottledRequestAuditCoverageTest}) ;
  *  - {@see self::classLikes()}, toutes les déclarations nommées — classes,
- *    interfaces, traits, enums —, pour qui lit des signatures ou des
- *    attributs (SecretParametersTest, PlainPasswordInputsTest,
- *    RegexEndAnchorTest). Un enum, une interface sans implémentation ou un
- *    trait sans utilisateur portent des méthodes que la réflexion n'atteint
- *    par aucune classe.
+ *    interfaces, traits, enums —, pour qui lit des signatures, des attributs
+ *    ou des sources ({@see \App\Tests\Security\SecretParametersTest},
+ *    {@see \App\Tests\Security\User\PlainPasswordInputsTest},
+ *    {@see \App\Tests\Shared\RegexEndAnchorTest}). Un enum, une interface
+ *    sans implémentation ou un trait sans utilisateur portent des membres que
+ *    la réflexion n'atteint par aucune classe ; un trait utilisé, lui, se lit
+ *    dans sa classe ({@see self::traitsUsedBy()}).
  * Étendre {@see self::classes()} en silence aurait changé le périmètre de
  * gardes qui supposent une classe : `is_subclass_of()` est vrai d'une
  * interface qui étend le type, et un garde-fou qui lève ou instancie ce qu'il
@@ -92,17 +97,44 @@ final class DeclaredClasses
     }
 
     /**
+     * Les traits qu'utilisent ces déclarations, directement ou par un autre
+     * trait. La réflexion montre leurs méthodes et leurs propriétés dans la
+     * classe qui les utilise, comme si elle les déclarait : un garde-fou qui
+     * lit aussi le trait pour lui-même verrait chaque membre deux fois
+     * (issue #421).
+     *
+     * @param list<class-string> $classes
+     *
+     * @return list<class-string>
+     */
+    public static function traitsUsedBy(array $classes): array
+    {
+        $used = [];
+        $pending = array_map(static fn (string $class): ReflectionClass => new ReflectionClass($class), $classes);
+        while ([] !== $pending) {
+            foreach (array_pop($pending)->getTraits() as $trait) {
+                if (!\in_array($trait->getName(), $used, true)) {
+                    $used[] = $trait->getName();
+                    $pending[] = $trait;
+                }
+            }
+        }
+
+        return $used;
+    }
+
+    /**
      * @return list<class-string> déclarations du fichier, chargées
      */
     private static function declaredIn(string $path): array
     {
         $loaded = [];
         foreach (self::declaredNames((string) file_get_contents($path)) as $name) {
-            if (!self::isLoaded($name)) {
+            if (!self::isDeclared($name)) {
                 // Hors PSR-4 : l'autoload ne sait pas où la trouver.
                 require_once $path;
             }
-            if (!self::isLoaded($name)) {
+            if (!self::isDeclared($name)) {
                 throw new LogicException(\sprintf('%s déclare %s, introuvable même après chargement.', $path, $name));
             }
             $loaded[] = $name;
@@ -112,12 +144,12 @@ final class DeclaredClasses
     }
 
     /**
-     * Chargée, ou chargeable par l'autoload. `class_exists()` couvre les
-     * enums ; interfaces et traits ont chacun leur fonction.
+     * Déclarée, au besoin par l'autoload, qu'elle déclenche. `class_exists()`
+     * couvre les enums ; interfaces et traits ont chacun leur fonction.
      *
      * @phpstan-assert-if-true class-string $name
      */
-    private static function isLoaded(string $name): bool
+    private static function isDeclared(string $name): bool
     {
         return class_exists($name) || interface_exists($name) || trait_exists($name);
     }

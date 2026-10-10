@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared;
 
 use App\Tests\Shared\Fixtures\RegexEndAnchor\RegexOnInterfaceFixture;
+use App\Tests\Shared\Fixtures\RegexEndAnchor\UsesTheRegexTraitFixture;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Support\DollarAnchoredPatterns;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -108,11 +109,19 @@ final class RegexEndAnchorTest extends TestCase
         self::assertSame([], $this->htmlPatternsEcmaScriptMisreadsIn(self::SOURCES), 'Déclarez un htmlPattern sans \A, \z ni \Z (ECMAScript ne les connaît pas).');
     }
 
-    public function testTheConstraintCensusReadsInterfaces(): void
+    /**
+     * Le recensement lit une interface, que le Validator fusionne dans ses
+     * implémentations, et un trait utilisé une seule fois, sous la classe qui
+     * l'utilise (issue #421).
+     */
+    public function testTheConstraintCensusReadsInterfacesAndUsedTraitsOnce(): void
     {
         self::assertSame(
             // getHtmlPattern() ne retire qu'un `$` final : `\z` reste, suivi de `.*`.
-            [RegexOnInterfaceFixture::class.'::getSlug()#0.0 [a-z]+\z.*'],
+            [
+                RegexOnInterfaceFixture::class.'::getSlug()#0.0 [a-z]+\z.*',
+                UsesTheRegexTraitFixture::class.'::$code#0.0 [a-z]+\z.*',
+            ],
             $this->htmlPatternsEcmaScriptMisreadsIn(__DIR__.'/Fixtures/RegexEndAnchor'),
         );
     }
@@ -123,7 +132,9 @@ final class RegexEndAnchorTest extends TestCase
     private function htmlPatternsEcmaScriptMisreadsIn(string $directory): array
     {
         $found = [];
-        foreach (DeclaredClasses::classLikes($directory) as $class) {
+        $declarations = DeclaredClasses::classLikes($directory);
+        // Un trait utilisé se lit dans la classe qui l'utilise, une seule fois.
+        foreach (array_diff($declarations, DeclaredClasses::traitsUsedBy($declarations)) as $class) {
             foreach ($this->regexConstraintsOf(new ReflectionClass($class)) as $where => $constraint) {
                 $htmlPattern = $constraint->getHtmlPattern();
                 if (null !== $htmlPattern && 1 === preg_match('/\\\\[AzZ]/', $htmlPattern)) {

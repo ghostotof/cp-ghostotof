@@ -7,7 +7,7 @@ namespace App\Tests\Shared\Fixtures\DeclaredClasses;
 use Stringable;
 
 /*
- * Fixture de DeclaredClassesTest (issue #421) : un fichier qui ne porte le nom
+ * Fixture de App\Tests\Shared\DeclaredClassesTest (issue #421) : un fichier qui ne porte le nom
  * d'aucune des déclarations qu'il contient — une de chaque sorte —, et des
  * mots-clés qui n'en sont pas (une classe anonyme, `X::class`, une méthode
  * nommée `enum`).
