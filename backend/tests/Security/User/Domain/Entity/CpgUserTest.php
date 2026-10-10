@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Domain\Entity;
 
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\InvalidUsernameException;
 use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\UuidV7;
@@ -43,6 +44,35 @@ final class CpgUserTest extends TestCase
 
         self::assertSame('jane', $user->getUserIdentifier());
         self::assertSame('jane', $user->getUsername());
+    }
+
+    /**
+     * Issue #386 : le `$` de PCRE accepte la position qui précède un `\n`
+     * final. Un nom suivi d'un retour à la ligne passait, et donnait un compte
+     * distinct qui s'affiche comme son homonyme dans le backoffice et dans
+     * `security_audit`.
+     */
+    public function testAUsernameEndingWithALineFeedIsRefused(): void
+    {
+        $this->expectException(InvalidUsernameException::class);
+
+        new CpgUser("jane\n", 'hashed-password');
+    }
+
+    /**
+     * Revue de #386 : comme l'invite de la CLI (issue #383), le constructeur
+     * ne cite pas la saisie refusée — elle peut être n'importe quoi, un mot de
+     * passe collé au mauvais endroit compris, et le message d'une exception
+     * finit dans les journaux.
+     */
+    public function testARefusedUsernameIsNotQuotedInTheException(): void
+    {
+        try {
+            new CpgUser('MyS3cr3t!Pass', 'hashed-password');
+            self::fail('Le nom d\'utilisateur aurait dû être refusé.');
+        } catch (InvalidUsernameException $exception) {
+            self::assertStringNotContainsString('MyS3cr3t!Pass', $exception->getMessage());
+        }
     }
 
     public function testRolesAlwaysIncludeRoleUser(): void

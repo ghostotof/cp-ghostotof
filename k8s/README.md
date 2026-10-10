@@ -1136,6 +1136,46 @@ contre la préprod doit produire une ligne `login-failed` avec l'IP publique de 
 Les logs de pod ne sont conservés que par Kubernetes (rotation locale, perdus au remplacement du
 pod) : la rétention et le statut RGPD de ces lignes sont traités dans `docs/rgpd/` (plan, T5.8).
 
+### Créer un compte super-administrateur (issue #386)
+
+`app:user:create` est la seule voie qui crée un compte sans invitation : l'amorçage du premier
+`ROLE_SUPER` (ADR 0001), ou sa recréation si tous ont été perdus. **Jamais par `kubectl exec`** :
+la ligne `user-created` du journal partirait sur le terminal de l'opérateur, pas sur le flux du
+conteneur, et `kubectl logs` ne la verrait jamais. Le Job `k8s/base/create-user-job.yaml` (hors
+`kustomization.yaml`, comme le Job de migration) lance la commande dans son propre pod. Le mot
+de passe passe par un Secret temporaire créé **depuis un fichier**, monté en lecture seule et lu
+par `--password-stdin` : jamais par un argument ni une variable. Dans un **terminal séparé**,
+jamais derrière un `!` dans une session Claude Code (cf. « Deployment invariants » de
+`.claude/CLAUDE.md`). La préprod d'abord, pour valider la procédure.
+
+```bash
+NS=preprod   # puis prod
+umask 077
+dir="$(mktemp -d)"
+# Saisie sans écho, écrite sans fin de ligne (une fin de ligne restante serait refusée).
+IFS= read -rs pw && printf '%s' "$pw" > "$dir/password" && unset pw
+kubectl -n "$NS" create secret generic backend-create-user-password --from-file=password="$dir/password"
+rm -rf "$dir"
+
+# L'image qui tourne, pour que le Job exécute exactement le code déployé.
+IMAGE="$(kubectl -n "$NS" get deploy backend -o jsonpath='{.spec.template.spec.containers[?(@.name=="php-fpm")].image}')"
+kubectl -n "$NS" delete job backend-create-user --ignore-not-found
+# Liste explicite : sans elle, envsubst effacerait toute autre `$VARIABLE` du manifeste.
+BACKEND_IMAGE="$IMAGE" CPG_USERNAME='<nom-du-compte>' \
+  envsubst '${BACKEND_IMAGE} ${CPG_USERNAME}' < k8s/base/create-user-job.yaml \
+  | kubectl -n "$NS" apply -f -
+# Sur un refus, le Job échoue aussitôt mais `wait` épuise son délai : lire les logs sans attendre.
+kubectl -n "$NS" wait --for=condition=complete --timeout=180s job/backend-create-user
+kubectl -n "$NS" logs job/backend-create-user   # succès ou refus, et la ligne `user-created`
+kubectl -n "$NS" delete secret backend-create-user-password
+```
+
+Le Job ne se rejoue pas (`backoffLimit: 0`) : un nom pris ou un mot de passe refusé (trop court,
+compromis, fin de ligne) s'y lisent dans les logs, et l'on recommence depuis le début. Il
+disparaît de lui-même au bout d'un jour (`ttlSecondsAfterFinished`), et ses logs avec lui :
+l'acteur `console` de l'événement ne nomme personne, l'attribution de l'`apply` reste celle du
+kubeconfig qui l'a fait.
+
 ## Durcissement des pods (jeton de ServiceAccount et Pod Security Admission)
 
 Deux changements posés le 2026-09-21 (3e audit, constat A17, tâche T5.6). Ils

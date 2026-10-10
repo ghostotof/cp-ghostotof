@@ -423,6 +423,40 @@ final class SecurityAuditLoggerTest extends TestCase
     }
 
     /**
+     * Issue #386 : un compte créé en ligne de commande (app:user:create), y
+     * compris un ROLE_SUPER, ne laissait aucune trace. L'acteur est `console`
+     * — une personne au terminal, que le journal ne sait pas nommer — et non
+     * `system`, réservé aux traitements planifiés, ni `anonymous`.
+     *
+     * @param list<string> $roles
+     */
+    #[DataProvider('createdAccountRoles')]
+    public function testUserCreatedNamesTheAccountWhetherItIsSuperAdminAndTheConsoleAsActor(array $roles, bool $superAdmin): void
+    {
+        $created = new CpgUser('bootstrap', 'hashed-password');
+        $created->setRoles($roles);
+
+        $this->auditLogger->userCreated($created);
+
+        self::assertSame([
+            'event' => 'user-created',
+            'user' => 'bootstrap',
+            'userId' => $created->getId()->toRfc4122(),
+            'superAdmin' => $superAdmin,
+            'actor' => 'console',
+            'ip' => null,
+            'path' => null,
+        ], $this->singleRecord()->context);
+    }
+
+    /** @return iterable<string, array{list<string>, bool}> */
+    public static function createdAccountRoles(): iterable
+    {
+        yield 'palier de base' => [[], false];
+        yield 'super-administrateur' => [[CpgUser::ROLE_SUPER], true];
+    }
+
+    /**
      * Hors requête HTTP (commande, handler Messenger) : ni IP ni chemin, mais
      * l'événement sort quand même — l'absence de requête n'est pas une raison
      * de perdre la trace.
@@ -510,6 +544,7 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->userDeleted($invited);
         $this->auditLogger->accountActivated($invited);
         $this->auditLogger->userPurged($invited);
+        $this->auditLogger->userCreated($invited);
         $this->auditLogger->passwordSetupTokenRejected();
         $this->auditLogger->passwordSetupTokenReplayed($invited);
         $this->auditLogger->passwordSetupThrottled();
@@ -517,7 +552,7 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->baseAccessThrottled();
 
         $records = $this->handler->getRecords();
-        self::assertCount(20, $records);
+        self::assertCount(21, $records);
 
         foreach ($records as $record) {
             $serialized = json_encode([$record->message, $record->context, $record->extra], \JSON_THROW_ON_ERROR);

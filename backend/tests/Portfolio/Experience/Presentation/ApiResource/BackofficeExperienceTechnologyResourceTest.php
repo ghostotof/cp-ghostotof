@@ -6,6 +6,7 @@ namespace App\Tests\Portfolio\Experience\Presentation\ApiResource;
 
 use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
 use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
+use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
@@ -97,7 +98,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $technology = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register('Docker', ExperienceYears::fromFloat(6.5), 'docker', null);
+        $technology = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register(TechnologyName::fromString('Docker'), ExperienceYears::fromFloat(6.5), 'docker', null);
 
         $client->request('GET', \sprintf('/api/backoffice/experience/technologies/%s', $technology->getId()->toRfc4122()));
         self::assertResponseIsSuccessful();
@@ -119,7 +120,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register('Docker', ExperienceYears::fromFloat(6.5), 'docker', null);
+        $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register(TechnologyName::fromString('Docker'), ExperienceYears::fromFloat(6.5), 'docker', null);
 
         // GetCollection
         $client->request('GET', '/api/backoffice/experience/technologies');
@@ -227,7 +228,7 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         $client = self::createClient();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
-        $technology = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register('Docker', ExperienceYears::fromFloat(6.5), 'docker', null);
+        $technology = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register(TechnologyName::fromString('Docker'), ExperienceYears::fromFloat(6.5), 'docker', null);
 
         $client->request('PUT', \sprintf('/api/backoffice/experience/technologies/%s', $technology->getId()->toRfc4122()), server: [
             'CONTENT_TYPE' => 'application/json',
@@ -264,6 +265,98 @@ final class BackofficeExperienceTechnologyResourceTest extends WebTestCase
         $client->getCookieJar()->clear();
         $client->request('GET', '/api/experience/technologies');
         $this->assertYearsPublishedUnsigned((string) $client->getResponse()->getContent());
+    }
+
+    /**
+     * Issue #386 : le nom n'était rogné nulle part. `" Docker "` passait le
+     * contrôle d'unicité et publiait un doublon de « Docker ».
+     */
+    public function testPostWithANameSurroundedBySpacesCollidesWithTheTrimmedOne(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register(TechnologyName::fromString('Docker'), ExperienceYears::fromFloat(6.5), 'docker', null);
+
+        $client->request('POST', '/api/backoffice/experience/technologies', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody(['name' => ' Docker ', 'years' => 1.0]));
+
+        self::assertResponseStatusCodeSame(409);
+        self::assertSame(0, $this->countTechnologiesNamed(' Docker '));
+    }
+
+    public function testPutStoresTheNameTrimmed(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $technology = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register(TechnologyName::fromString('Docker'), ExperienceYears::fromFloat(6.5), 'docker', null);
+
+        $client->request('PUT', \sprintf('/api/backoffice/experience/technologies/%s', $technology->getId()->toRfc4122()), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody(['name' => ' Podman ', 'years' => 6.5]));
+
+        self::assertResponseIsSuccessful();
+        self::assertSame(1, $this->countTechnologiesNamed('Podman'));
+    }
+
+    /** Revue de #386 : l'administrator compare lui aussi le nom rogné. */
+    public function testPutWithANameSurroundedBySpacesCollidesWithAnotherTechnology(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register(TechnologyName::fromString('Docker'), ExperienceYears::fromFloat(6.5), 'docker', null);
+        $podman = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class)->register(TechnologyName::fromString('Podman'), ExperienceYears::fromFloat(1.0), null, null);
+
+        $client->request('PUT', \sprintf('/api/backoffice/experience/technologies/%s', $podman->getId()->toRfc4122()), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody(['name' => "\u{00A0}Docker ", 'years' => 1.0]));
+
+        self::assertResponseStatusCodeSame(409);
+        self::assertSame(1, $this->countTechnologiesNamed('Podman'));
+    }
+
+    /**
+     * Revue de #386 : PostgreSQL refuse l'octet NUL dans un `varchar`. Le nom
+     * passait la validation, et l'exception DBAL sortait en 500 `critical`.
+     */
+    public function testPostWithAControlCharacterInTheNameIsA422NamingName(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('POST', '/api/backoffice/experience/technologies', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody(['name' => "P\0HP", 'years' => 1.0]));
+
+        self::assertResponseStatusCodeSame(422);
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame(['name'], array_column($body['violations'], 'propertyPath'));
+    }
+
+    /** Un nom fait d'espaces passait `NotBlank`, qui ne rogne pas sans normaliseur. */
+    public function testPostWithABlankNameIsA422NamingName(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('POST', '/api/backoffice/experience/technologies', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody(['name' => '   ', 'years' => 1.0]));
+
+        self::assertResponseStatusCodeSame(422);
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame(['name'], array_column($body['violations'], 'propertyPath'));
+        self::assertSame(0, $this->countTechnologiesNamed('   '));
     }
 
     /**

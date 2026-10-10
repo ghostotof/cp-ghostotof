@@ -99,7 +99,9 @@ paths:
     `csrf-rejected`, `backoffice-access-denied`, `rate-limiter-unavailable`, `user-invited`, `user-reinvited`, `role-changed`
     (`superAdmin` bool), `password-changed`, `user-deleted`, `account-activated`, `password-setup-token-rejected`,
     `password-setup-token-replayed`, `password-setup-throttled`, `contact-throttled`, `base-access-throttled`, `user-purged`
-    (`actor: system` — the one event whose actor is not read from the token storage; `record()` takes an
+    (`actor: system`, a scheduled command), `user-created` (issue #386, `app:user:create` through `CpgUserRegistrar`,
+    with `superAdmin` like `role-changed`, `actor: console` — a person at a terminal the log cannot name, never
+    `system` nor `anonymous`) — the two events whose actor is not read from the token storage; `record()` takes an
     explicit actor for CLI callers). Every record carries
     `event` (the stable kebab-case key to filter on), `actor` (identifier from the token storage, or
     `anonymous`), `ip`, `path` (canonical), plus `user` and — for an existing account — `userId` (RFC 4122).

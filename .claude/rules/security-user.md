@@ -22,8 +22,16 @@ paths:
     `Domain/Repository/{CpgUser,PasswordSetupToken}RepositoryInterface.php` (the DIP boundary — `Application/`
     never depends on Doctrine directly).
     `CpgUser::ROLE_SUPER` is the role reserved for backoffice access; `CpgUser::MIN_PASSWORD_LENGTH` /
-    `MAX_PASSWORD_LENGTH` are the single source of truth, reused by the CLI, the backoffice password-change
-    endpoint, and the public set-password endpoint.
+    `MAX_PASSWORD_LENGTH` are the single source of truth, applied through one compound constraint,
+    `Presentation/Validator/PlainPasswordLength`, by the CLI, the backoffice password-change endpoint and the
+    public set-password endpoint — never a hand-written `Assert\Length` or `strlen()` (issue #386: the CLI
+    counted the minimum in bytes, the API the maximum in characters). The minimum is in **characters**, the
+    maximum in **bytes**, the unit the hasher checks (`PasswordHasherInterface::MAX_PASSWORD_LENGTH`, `strlen`):
+    counted in characters, a multibyte password passed validation and the hasher turned it into a 500.
+    On both DTOs it sits inside one `Assert\Sequentially([NotBlank, PlainPasswordLength, NotCompromisedPassword])`
+    — each constraint only if the previous one passed — so a password already refused never reaches
+    api.pwnedpasswords.com: the DTO is validated before the token is read, so any anonymous caller of the
+    set-password route could otherwise trigger that outbound call (`PasswordBreachCheckOrderTest` counts them).
     Domain exceptions: `UsernameAlreadyUsedException`, `EmailAlreadyUsedException`,
     `InvalidPasswordSetupTokenException` (→404), `PasswordSetupTokenExpiredException` (→410, covers "already
     used"), `CannotModifyOwnRolesException` / `CannotDemoteLastSuperAdminException` (→409),
@@ -62,7 +70,11 @@ paths:
     quota, so don't) — the 429's `Retry-After` comes from the shared
     `Shared/Infrastructure/Http/RetryAfterListener` (issue #273, see "Errors under `/api`" in `.claude/rules/backoffice-api.md`);
     the API Platform processors.
-  - `Presentation/Command/CreateCpgUserCommand.php` (`app:user:create`, `--role` allow-list) and
+  - `Presentation/Command/CreateCpgUserCommand.php` (`app:user:create`, `--role` allow-list, password on
+    standard input through `--password-stdin` — refused on a terminal, never an option value, issue #386;
+    in preprod/prod it runs **only** through `k8s/base/create-user-job.yaml`, never `kubectl exec`, whose
+    stderr is the operator's terminal and loses the `user-created` audit line — procedure in `k8s/README.md`,
+    « Créer un compte super-administrateur ») and
     `Presentation/Controller/CurrentUserController.php` (`GET /api/me`). Everything else is API Platform
     resources — see `.claude/rules/backoffice-api.md` for the `ROLE_SUPER` ones, plus the two **public** (no auth, no CSRF,
     IP rate-limited) ones of the set-password flow.

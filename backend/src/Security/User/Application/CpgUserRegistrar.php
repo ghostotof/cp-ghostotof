@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\User\Application;
 
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\UsernameAlreadyUsedException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
@@ -15,6 +16,7 @@ final readonly class CpgUserRegistrar implements CpgUserRegistrarInterface
     public function __construct(
         private CpgUserRepositoryInterface $cpgUserRepository,
         private UserPasswordHasherInterface $passwordHasher,
+        private SecurityAuditLoggerInterface $auditLogger,
     ) {
     }
 
@@ -36,6 +38,10 @@ final readonly class CpgUserRegistrar implements CpgUserRegistrarInterface
             // la contrainte unique en base reste le dernier rempart.
             throw UsernameAlreadyUsedException::forUsername($username);
         }
+
+        // Après l'enregistrement, comme les autres cas d'usage : une création
+        // refusée n'écrit rien (issue #386).
+        $this->auditLogger->userCreated($user);
 
         return $user;
     }

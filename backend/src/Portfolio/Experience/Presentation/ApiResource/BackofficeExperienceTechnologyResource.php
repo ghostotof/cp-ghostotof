@@ -12,7 +12,9 @@ use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Domain\Exception\InvalidExperienceYearsException;
+use App\Portfolio\Experience\Domain\Exception\InvalidTechnologyNameException;
 use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
+use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
 use App\Portfolio\Experience\Infrastructure\ApiPlatform\BackofficeExperienceTechnologyProcessor;
 use App\Portfolio\Experience\Infrastructure\ApiPlatform\BackofficeExperienceTechnologyProvider;
 use Symfony\Component\Routing\Requirement\Requirement;
@@ -60,8 +62,7 @@ final class BackofficeExperienceTechnologyResource
 {
     public function __construct(
         public ?string $id = null,
-        #[Assert\NotBlank]
-        #[Assert\Length(max: 180)]
+        /** Validé par validateName(), qui délègue à TechnologyName (issue #386). */
         public string $name = '',
         /** Validé par validateYears(), qui délègue à ExperienceYears (issue #372). */
         public float $years = 0.0,
@@ -75,6 +76,25 @@ final class BackofficeExperienceTechnologyResource
          */
         public bool $secondary = false,
     ) {
+    }
+
+    /**
+     * La règle du nom n'est écrite qu'une fois, dans TechnologyName (issue
+     * #386) : la recopier en `NotBlank` et `Length` laissait passer un nom
+     * fait d'espaces insécables ou porteur d'un octet NUL (500 `critical` à
+     * l'INSERT). La violation reste attachée à `name`, avec le message du
+     * domaine.
+     */
+    #[Assert\Callback]
+    public function validateName(ExecutionContextInterface $context): void
+    {
+        try {
+            TechnologyName::fromString($this->name);
+        } catch (InvalidTechnologyNameException $exception) {
+            $context->buildViolation($exception->getMessage())
+                ->atPath('name')
+                ->addViolation();
+        }
     }
 
     /**

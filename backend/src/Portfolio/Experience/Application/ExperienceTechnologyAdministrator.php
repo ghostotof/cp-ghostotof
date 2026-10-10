@@ -9,6 +9,7 @@ use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsE
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException;
 use App\Portfolio\Experience\Domain\Repository\ExperienceTechnologyRepositoryInterface;
 use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
+use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Symfony\Component\Uid\Uuid;
 
@@ -19,7 +20,7 @@ final readonly class ExperienceTechnologyAdministrator implements ExperienceTech
     ) {
     }
 
-    public function update(Uuid $id, string $name, ExperienceYears $years, ?string $iconKey, ?string $relatedTechnologyName, bool $secondary = false): ExperienceTechnology
+    public function update(Uuid $id, TechnologyName $name, ExperienceYears $years, ?string $iconKey, ?string $relatedTechnologyName, bool $secondary = false): ExperienceTechnology
     {
         $technology = $this->experienceTechnologyRepository->findOneById($id);
 
@@ -27,13 +28,13 @@ final readonly class ExperienceTechnologyAdministrator implements ExperienceTech
             throw ExperienceTechnologyNotFoundException::forId($id);
         }
 
-        $existingWithSameName = $this->experienceTechnologyRepository->findOneByName($name);
+        $existingWithSameName = $this->experienceTechnologyRepository->findOneByName($name->value);
 
         // Comparaison par valeur (equals()) et non par identité (!==) : l'id
         // vient de l'URL, donc d'un Uuid fraîchement reconstruit, jamais la
         // même instance que celui porté par l'entité.
         if (null !== $existingWithSameName && !$existingWithSameName->getId()->equals($id)) {
-            throw ExperienceTechnologyAlreadyExistsException::forName($name);
+            throw ExperienceTechnologyAlreadyExistsException::forName($name->value);
         }
 
         $technology->update($name, $years, $iconKey, $relatedTechnologyName, $secondary);
@@ -44,7 +45,7 @@ final readonly class ExperienceTechnologyAdministrator implements ExperienceTech
             // Cf. ExperienceTechnologyRegistrar::register() : la vérification
             // findOneByName() ci-dessus n'est pas atomique avec ce save(),
             // la contrainte unique en base reste le dernier rempart.
-            throw ExperienceTechnologyAlreadyExistsException::forName($name);
+            throw ExperienceTechnologyAlreadyExistsException::forName($name->value);
         }
 
         return $technology;
