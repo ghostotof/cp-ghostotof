@@ -106,19 +106,38 @@ one the config knows (`Symfony\Component\Serializer\Exception\ExceptionInterface
 name clash gets an alias (`use UnexpectedValueException as NativeUnexpectedValueException;` in
 `MalformedRequestBodyException`, which already imports the Serializer's), never a qualified name.
 **`use` statements are sorted alphabetically**, case-insensitive, `\` as a segment separator — the order
-of PhpStorm's "Optimize imports" and php-cs-fixer's `ordered_imports` (`alpha`). No tool enforces it, and
-`rector:fix` inserts a new import at the top of the block: re-sort after it. php-cs-fixer is deliberately
-not a dependency (#391); a one-off run of its phar under `var/` with that single rule is how #391 sorted
-the existing code. Out of scope, **by decision** (2026-10-10): native **functions and constants** are
+of PhpStorm's "Optimize imports" and php-cs-fixer's `ordered_imports` (`alpha`). `rector:fix` inserts a
+new import at the top of the block, so re-sort after it: `tests/Shared/ImportsStaySortedTest.php`
+(`tests/Support/UnsortedImports`, issue #394) fails on any top-level import of `src/` or `tests/` out of
+that order, naming the file, the line and the pair, and its failure message carries the one-off sort
+command. It reproduces php-cs-fixer's key (the import as written, alias included, `\` read as a space,
+`strcasecmp`), block by block, and **refuses** `use function`, `use const` and grouped imports
+(`use Foo\{A, B};`) instead of sorting them, and its message says those are rewritten by hand.
+php-cs-fixer is deliberately not a dependency (#391): the command, built by `tests/Support/PhpCsFixer`,
+puts its phar under `var/` at a pinned version (`PhpCsFixer::VERSION`) and runs nothing unless the phar
+matches `PhpCsFixer::SHA256` — the release publishes no checksum, only a GPG signature, verified once
+when the sum was pinned. That phar is how #391 sorted the existing code. Out of scope, **by decision** (2026-10-10): native **functions and constants** are
 never imported — no `use function` / `use const`, `importShortClasses` does not touch them; namespaces
 cited in prose (`App\Shared`). **A native function is qualified exactly when the compiler optimizes it**
 (settled on 2026-10-10, review of #391): a function of php-cs-fixer's `@compiler_optimized` set (`\count`,
 `\in_array`, `\is_string`, `\strlen`, `\sprintf`, `\dirname`…) is written with its leading backslash, every
 other one without (`array_map`, `trim`, `json_decode`: no dedicated opcode, nothing to gain). Measured for
 `sprintf`: `\sprintf('x %s', $a)` compiles to a bare `FAST_CONCAT`, the unqualified call to a runtime
-lookup and a function call. A first-class callable (`is_string(...)`) is not a call and stays as written. No
-tool enforces the split; #391 applied it once (73 `sprintf` in `src/`, 147 in `tests/`, a dozen others)
-with the same phar, rule `native_function_invocation` (`include: ['@compiler_optimized']`, `strict: false`).
+lookup and a function call. A first-class callable (`is_string(...)`) is not a call and stays as written.
+#391 applied the split once (73 `sprintf` in `src/`, 147 in `tests/`, a dozen others) with the same phar,
+rule `native_function_invocation` (`include: ['@compiler_optimized']`, `strict: false`).
+`tests/Shared/NativeCallsQualificationTest.php` (`tests/Support/MisqualifiedNativeCalls`, issue #394)
+keeps it: an unqualified call to a function of the set fails, and so does a qualified call to any other
+single-segment global function, with the file, the line and the expected form. Its message gives the fix,
+the same rule with `strict: true`, which also removes a superfluous `\`. Methods, declarations, `new`,
+attribute classes and first-class callables are not calls, and, as in php-cs-fixer, an unqualified call
+is left alone when the file declares a function of that name outside any class (a namespaced double of
+the native, which `\count()` would bypass). The set is **copied** into
+`MisqualifiedNativeCalls::COMPILER_OPTIMIZED` from php-cs-fixer at `PhpCsFixer::VERSION`, and a drift
+test requires each name to be an internal function of the running PHP unless it is listed in
+`ABSENT_FROM_PHP` (`is_real`, removed in PHP 8.0). It cannot see the other direction — a function PHP
+starts compiling, as `sprintf` with PHP 8.4 —: on a php-cs-fixer bump (a new `VERSION` and `SHA256`),
+copy the new list over and re-read both guards against the fixers they mirror.
 Constants were not migrated: a leading backslash already there stays.
 **The line is performance, and it was measured** (2026-10-10, PHP 8.5, OPcache dump after the optimizer): the
 rule only covers natives whose import costs nothing. `\DateTimeImmutable` and an imported `DateTimeImmutable`
@@ -132,5 +151,6 @@ costly to import would keep its qualified name, with the measurement as its just
 `withImportNames(importShortClasses: true, removeUnusedImports: true)` in `backend/rector.php`, checked by
 the blocking `rector-backend` job: it rejects a qualified class, native or namespaced, in code and phpdoc
 types (issue #391, ≈ 200 files migrated). It does **not** see a `@template T of \Foo` bound, reviewed by
-hand, nor any prose, where `CommentedClassNamesExistTest` checks the full names (see above).
+hand, nor any prose, where `CommentedClassNamesExistTest` checks the full names (see above), nor import
+order or function qualification, which the two #394 guards above check.
 

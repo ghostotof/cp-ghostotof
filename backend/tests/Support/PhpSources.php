@@ -11,10 +11,11 @@ use RecursiveIteratorIterator;
 use SplFileInfo;
 
 /**
- * Ce que les recenseurs par jetons de src/ ont en commun (DeclaredClasses,
- * BareExceptionInstantiations) : quels fichiers ils lisent, et quels jetons
- * ils ignorent. Partagé pour qu'un garde-fou ne voie jamais un autre périmètre
- * que son voisin.
+ * Ce que les recenseurs par jetons ont en commun (DeclaredClasses,
+ * BareExceptionInstantiations, CommentedClassNames, UnsortedImports,
+ * MisqualifiedNativeCalls) : quels fichiers ils lisent, et quels jetons ils
+ * ignorent. Partagé pour qu'un garde-fou ne voie jamais un autre périmètre que
+ * son voisin.
  */
 final class PhpSources
 {
@@ -46,5 +47,14 @@ final class PhpSources
             PhpToken::tokenize($code),
             static fn (PhpToken $token): bool => !$token->is(self::IGNORED),
         ));
+    }
+
+    /**
+     * Un jeton qui ouvre une accolade, que `}` refermera. `"{$a}"` l'ouvre par
+     * T_CURLY_OPEN, dont le texte est `{`, et `"${a}"` par `${`.
+     */
+    public static function opensBrace(PhpToken $token): bool
+    {
+        return '{' === $token->text || $token->is(\T_DOLLAR_OPEN_CURLY_BRACES);
     }
 }
