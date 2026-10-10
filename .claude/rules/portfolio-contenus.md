@@ -38,8 +38,8 @@ paths:
     `detach()` on a `PUT` with `translationGroup: null` detaches **and moves the entry to the end of
     its scope** (issue #169 — keeping the position let the old group receive that locale again via
     "Create the XX version" and inherit the same position: two keys on one position), and is a no-op
-    on an entry already alone; `reattach()` with a group inherits its position; `inGroup()` throws a
-    `LogicException` on a group whose members disagree on the position, a pipeline bug, never a 4xx). `WatchedProduct` is not localized, so it is `Orderable` on its
+    on an entry already alone; `reattach()` with a group inherits its position; `inGroup()` throws
+    `TranslationGroupHasSeveralPositionsException` (a `LogicException`, issue #338) on a group whose members disagree on the position, a pipeline bug, never a 4xx). `WatchedProduct` is not localized, so it is `Orderable` on its
     own id, and its `Administrator` computes the end of the catalogue itself. The **only client-driven
     writer of `position` is `PUT /api/backoffice/<x>/order`** (`ContentPlacement` derives it server-side,
     no request body ever chooses it) (`Backoffice<X>OrderResource`, `read: false`,
