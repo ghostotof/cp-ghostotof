@@ -23,6 +23,7 @@ use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
 use App\Portfolio\Quality\Domain\Entity\QualityTrait;
 use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Portfolio\Shared\Infrastructure\Doctrine\OrderScopeLockTimeoutException;
 use App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock;
 use App\Portfolio\Watch\Application\WatchedProductAdministratorInterface;
 use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
@@ -30,7 +31,6 @@ use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use App\Tests\Support\OpensProbeConnection;
 use Closure;
 use DateTimeImmutable;
-use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -49,7 +49,7 @@ use Symfony\Component\Uid\Uuid;
  *
  * Méthode : une session témoin tient le verrou du périmètre, la connexion de
  * l'ORM reçoit un `lock_timeout` court, et l'opération doit **attendre** puis
- * échouer sur ce délai, sans rien avoir écrit. Le périmètre est la classe de
+ * échouer sur ce délai (`OrderScopeLockTimeoutException`), sans rien avoir écrit. Le périmètre est la classe de
  * l'entité qui porte les positions : c'est le contrat que l'administrateur
  * passe à `withLock()`.
  *
@@ -69,13 +69,6 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
 
     /** Assez pour qu'une opération non verrouillée termine bien avant, assez peu pour un test rapide. */
     private const string LOCK_TIMEOUT = '300ms';
-
-    /**
-     * `lock_not_available`, ce que lève PostgreSQL à l'expiration de
-     * `lock_timeout`. Le convertisseur de DBAL n'en fait pas une
-     * `LockWaitTimeoutException`, seulement une `DriverException`.
-     */
-    private const string LOCK_NOT_AVAILABLE = '55P03';
 
     private ?string $table = null;
 
@@ -208,10 +201,7 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
         $waited = false;
         try {
             $operation();
-        } catch (DriverException $exception) {
-            if (self::LOCK_NOT_AVAILABLE !== $exception->getSQLState()) {
-                throw $exception;
-            }
+        } catch (OrderScopeLockTimeoutException) {
             $waited = true;
         } finally {
             $connection->executeStatement('RESET lock_timeout');

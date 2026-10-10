@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Tests\Portfolio\Shared\Infrastructure\Doctrine;
 
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
+use App\Portfolio\Shared\Infrastructure\Doctrine\OrderScopeLockTimeoutException;
 use App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock;
 use App\Tests\Portfolio\Shared\Support\FakeOrderable;
 use App\Tests\Portfolio\Shared\Support\FakeTranslatableContent;
 use App\Tests\Support\OpensProbeConnection;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 use DomainException;
 use stdClass;
@@ -98,6 +100,66 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
         self::assertTrue($this->probeCanLock(self::SCOPE), 'Le verrou survit à l\'échec de l\'opération.');
         self::assertTrue($this->entityManager()->isOpen(), 'L\'échec de l\'opération a fermé l\'EntityManager.');
         self::assertFalse($this->entityManager()->getConnection()->isTransactionActive());
+    }
+
+    /**
+     * Au-delà de `lock_timeout` (5 s pour un worker FPM, cf. www.prod.conf),
+     * l'attente échoue sous un nom qui se cherche dans les journaux plutôt
+     * qu'en `DriverException` anonyme. Reste un 500 `critical` : attendre
+     * 5 s une écriture de quelques millisecondes est une anomalie.
+     */
+    public function testAWaitPastLockTimeoutFailsWithANamedExceptionWithoutRunningTheOperation(): void
+    {
+        $connection = $this->entityManager()->getConnection();
+        $this->probe->executeQuery(
+            'SELECT pg_advisory_lock(?, hashtext(?))',
+            [PostgresAdvisoryOrderScopeLock::ADVISORY_NAMESPACE, self::SCOPE],
+        );
+        $connection->executeStatement("SET lock_timeout = '100ms'");
+        $ran = false;
+        $caught = null;
+
+        try {
+            $this->lock()->withLock(self::SCOPE, static function () use (&$ran): void {
+                $ran = true;
+            });
+        } catch (OrderScopeLockTimeoutException $exception) {
+            $caught = $exception;
+        } finally {
+            $connection->executeStatement('RESET lock_timeout');
+        }
+
+        self::assertInstanceOf(OrderScopeLockTimeoutException::class, $caught, "L'attente du verrou n'a pas échoué sous son nom.");
+        self::assertStringContainsString(self::SCOPE, $caught->getMessage());
+        self::assertInstanceOf(DriverException::class, $caught->getPrevious());
+        self::assertFalse($ran, "L'opération a tourné sans le verrou.");
+        self::assertTrue($this->entityManager()->isOpen());
+        self::assertFalse($connection->isTransactionActive());
+    }
+
+    /**
+     * Seule l'attente du verrou de périmètre est renommée : un délai dépassé
+     * dans l'opération (verrou de ligne…) remonte tel quel.
+     */
+    public function testALockTimeoutRaisedByTheOperationItselfIsNotRenamed(): void
+    {
+        $timeout = null;
+
+        try {
+            $this->lock()->withLock(self::SCOPE, function (): void {
+                $this->entityManager()->getConnection()->executeStatement("SET LOCAL lock_timeout = '100ms'");
+                $this->probe->executeQuery('BEGIN');
+                $this->probe->executeQuery('SELECT pg_advisory_xact_lock(1, 1)');
+                $this->entityManager()->getConnection()->executeQuery('SELECT pg_advisory_xact_lock(1, 1)');
+            });
+        } catch (DriverException $exception) {
+            $timeout = $exception;
+        } finally {
+            $this->probe->executeQuery('ROLLBACK');
+        }
+
+        self::assertInstanceOf(DriverException::class, $timeout);
+        self::assertNotInstanceOf(OrderScopeLockTimeoutException::class, $timeout);
     }
 
     /**

@@ -7,6 +7,7 @@ namespace App\Portfolio\Shared\Infrastructure\Doctrine;
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use Closure;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -46,6 +47,13 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
      */
     public const int ADVISORY_NAMESPACE = 0x4F524452;
 
+    /**
+     * SQLSTATE `lock_not_available`, levé à l'expiration de `lock_timeout`.
+     * Le convertisseur de DBAL n'en fait pas une `LockWaitTimeoutException`,
+     * seulement une `DriverException`.
+     */
+    private const string LOCK_NOT_AVAILABLE = '55P03';
+
     public function __construct(
         private EntityManagerInterface $entityManager,
     ) {
@@ -59,10 +67,20 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
                 // périmètre. Sans délai propre : celui d'une requête web est le
                 // lock_timeout de 5 s de www.prod.conf (#272), largement
                 // au-dessus des quelques millisecondes d'une écriture d'ordre.
-                $connection->executeQuery(
-                    'SELECT pg_advisory_xact_lock(?, hashtext(?))',
-                    [self::ADVISORY_NAMESPACE, $scope],
-                );
+                try {
+                    $connection->executeQuery(
+                        'SELECT pg_advisory_xact_lock(?, hashtext(?))',
+                        [self::ADVISORY_NAMESPACE, $scope],
+                    );
+                } catch (DriverException $exception) {
+                    // Seule l'attente de ce verrou-ci est renommée : un délai
+                    // dépassé dans l'opération remonte tel quel.
+                    if (self::LOCK_NOT_AVAILABLE === $exception->getSQLState()) {
+                        throw OrderScopeLockTimeoutException::forScope($scope, $exception);
+                    }
+
+                    throw $exception;
+                }
 
                 return $operation();
             },
