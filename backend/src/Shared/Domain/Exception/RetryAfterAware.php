@@ -15,6 +15,9 @@ namespace App\Shared\Domain\Exception;
  * sans accesseur à écrire, et le nom lu par leurs appelants ne change pas.
  * Le domaine n'en dépend d'aucun composant HTTP : une échéance est un fait
  * métier, l'en-tête en est la traduction, faite en infrastructure.
+ *
+ * Implémenter l'interface ne suffit pas : un refus de quota doit aussi être
+ * tracé, ce qu'un test de couverture exige de toute implémentation (issue #361).
  */
 interface RetryAfterAware
 {
