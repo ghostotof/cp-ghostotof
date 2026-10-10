@@ -118,7 +118,7 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
     public function __construct(string $username, string $hashedPassword)
     {
         if (1 !== preg_match(self::USERNAME_PATTERN, $username)) {
-            throw InvalidUsernameException::forUsername($username);
+            throw InvalidUsernameException::invalidFormat();
         }
 
         $this->id = Uuid::v7();

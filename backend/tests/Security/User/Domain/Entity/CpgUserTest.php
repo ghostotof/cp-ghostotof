@@ -59,6 +59,22 @@ final class CpgUserTest extends TestCase
         new CpgUser("jane\n", 'hashed-password');
     }
 
+    /**
+     * Revue de #386 : comme l'invite de la CLI (issue #383), le constructeur
+     * ne cite pas la saisie refusée — elle peut être n'importe quoi, un mot de
+     * passe collé au mauvais endroit compris, et le message d'une exception
+     * finit dans les journaux.
+     */
+    public function testARefusedUsernameIsNotQuotedInTheException(): void
+    {
+        try {
+            new CpgUser('MyS3cr3t!Pass', 'hashed-password');
+            self::fail('Le nom d\'utilisateur aurait dû être refusé.');
+        } catch (InvalidUsernameException $exception) {
+            self::assertStringNotContainsString('MyS3cr3t!Pass', $exception->getMessage());
+        }
+    }
+
     public function testRolesAlwaysIncludeRoleUser(): void
     {
         $user = new CpgUser('jane', 'hashed-password');
