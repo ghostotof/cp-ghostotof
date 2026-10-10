@@ -70,7 +70,11 @@ paths:
     quota, so don't) — the 429's `Retry-After` comes from the shared
     `Shared/Infrastructure/Http/RetryAfterListener` (issue #273, see "Errors under `/api`" in `.claude/rules/backoffice-api.md`);
     the API Platform processors.
-  - `Presentation/Command/CreateCpgUserCommand.php` (`app:user:create`, `--role` allow-list) and
+  - `Presentation/Command/CreateCpgUserCommand.php` (`app:user:create`, `--role` allow-list, password on
+    standard input through `--password-stdin` — refused on a terminal, never an option value, issue #386;
+    in preprod/prod it runs **only** through `k8s/base/create-user-job.yaml`, never `kubectl exec`, whose
+    stderr is the operator's terminal and loses the `user-created` audit line — procedure in `k8s/README.md`,
+    « Créer un compte super-administrateur ») and
     `Presentation/Controller/CurrentUserController.php` (`GET /api/me`). Everything else is API Platform
     resources — see `.claude/rules/backoffice-api.md` for the `ROLE_SUPER` ones, plus the two **public** (no auth, no CSRF,
     IP rate-limited) ones of the set-password flow.
