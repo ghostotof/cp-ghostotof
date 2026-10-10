@@ -19,6 +19,6 @@ final class ReleaseCycleProductNotFoundException extends DomainException
 {
     public static function forSlug(string $slug): self
     {
-        return new self(sprintf('Le produit "%s" est inconnu de la source de cycles de vie.', $slug));
+        return new self(\sprintf('Le produit "%s" est inconnu de la source de cycles de vie.', $slug));
     }
 }

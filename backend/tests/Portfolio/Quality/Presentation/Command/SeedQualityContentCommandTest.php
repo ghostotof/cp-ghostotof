@@ -128,7 +128,7 @@ final class SeedQualityContentCommandTest extends KernelTestCase
             foreach ($french as $index => $entry) {
                 self::assertTrue(
                     $entry->getTranslationGroup()->equals($english[$index]->getTranslationGroup()),
-                    sprintf('[%s] Les entrées de position %d ne partagent pas leur groupe.', $label, $index),
+                    \sprintf('[%s] Les entrées de position %d ne partagent pas leur groupe.', $label, $index),
                 );
 
                 $groups[] = $entry->getTranslationGroup()->toRfc4122();

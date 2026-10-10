@@ -29,7 +29,7 @@ final class TranslationAlreadyExistsException extends DomainException implements
 
     public static function forGroupAndLocale(Uuid $translationGroup, Locale $locale): self
     {
-        return new self(sprintf(
+        return new self(\sprintf(
             'Le groupe de traduction "%s" porte déjà une entrée en "%s".',
             $translationGroup->toRfc4122(),
             $locale->value,

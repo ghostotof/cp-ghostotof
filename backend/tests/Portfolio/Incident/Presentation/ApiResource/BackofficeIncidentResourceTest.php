@@ -109,7 +109,7 @@ final class BackofficeIncidentResourceTest extends WebTestCase
             'Invariant.',
         );
 
-        $client->request('GET', sprintf('/api/backoffice/incidents/%s', $incident->getId()->toRfc4122()));
+        $client->request('GET', \sprintf('/api/backoffice/incidents/%s', $incident->getId()->toRfc4122()));
         self::assertResponseIsSuccessful();
         $item = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame($incident->getId()->toRfc4122(), $item['id']);
@@ -174,7 +174,7 @@ final class BackofficeIncidentResourceTest extends WebTestCase
         $id = $created['id'];
 
         // Put
-        $client->request('PUT', sprintf('/api/backoffice/incidents/%s', $id), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/incidents/%s', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody([
@@ -214,7 +214,7 @@ final class BackofficeIncidentResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
 
         // Delete
-        $client->request('DELETE', sprintf('/api/backoffice/incidents/%s', $id), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
+        $client->request('DELETE', \sprintf('/api/backoffice/incidents/%s', $id), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
         self::assertResponseStatusCodeSame(204);
 
         self::assertSame([], self::getContainer()->get(IncidentRepositoryInterface::class)->findAll());
@@ -472,7 +472,7 @@ final class BackofficeIncidentResourceTest extends WebTestCase
      */
     private function put(KernelBrowser $client, string $csrfToken, string $id, array $overrides): mixed
     {
-        $client->request('PUT', sprintf('/api/backoffice/incidents/%s', $id), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/incidents/%s', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody($overrides + $this->payload()));

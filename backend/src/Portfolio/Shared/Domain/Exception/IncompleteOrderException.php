@@ -25,7 +25,7 @@ final class IncompleteOrderException extends DomainException implements ProblemE
      */
     public static function forKeys(array $missingKeys): self
     {
-        return new self(sprintf(
+        return new self(\sprintf(
             'Il manque %d entrée(s) du périmètre dans la liste envoyée : %s.',
             \count($missingKeys),
             implode(', ', $missingKeys),

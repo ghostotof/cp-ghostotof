@@ -104,7 +104,7 @@ final readonly class FilePackageManifestReader implements PackageManifestReaderI
             $name = $this->readString($package, 'name');
             $version = $this->readString($package, 'version');
 
-            if (in_array(null, [$ecosystem, $name, $version], true)) {
+            if (\in_array(null, [$ecosystem, $name, $version], true)) {
                 continue;
             }
 

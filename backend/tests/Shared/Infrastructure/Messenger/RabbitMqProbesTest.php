@@ -34,7 +34,7 @@ final class RabbitMqProbesTest extends TestCase
         $probe = $this->probe('startupProbe');
 
         $budget = $this->int($probe, 'periodSeconds', 10) * $this->int($probe, 'failureThreshold', 3);
-        self::assertGreaterThanOrEqual(self::MIN_STARTUP_BUDGET_SECONDS, $budget, sprintf('La startupProbe ne laisse que %d s au démarrage.', $budget));
+        self::assertGreaterThanOrEqual(self::MIN_STARTUP_BUDGET_SECONDS, $budget, \sprintf('La startupProbe ne laisse que %d s au démarrage.', $budget));
     }
 
     /**
@@ -56,9 +56,9 @@ final class RabbitMqProbesTest extends TestCase
     {
         $probe = $this->probe($name);
 
-        self::assertArrayNotHasKey('exec', $probe, sprintf('%s ne doit pas lancer de commande.', $name));
+        self::assertArrayNotHasKey('exec', $probe, \sprintf('%s ne doit pas lancer de commande.', $name));
         $tcpSocket = $probe['tcpSocket'] ?? null;
-        self::assertIsArray($tcpSocket, sprintf('%s doit être une sonde tcpSocket.', $name));
+        self::assertIsArray($tcpSocket, \sprintf('%s doit être une sonde tcpSocket.', $name));
         self::assertSame(self::AMQP_PORT, $tcpSocket['port'] ?? null);
     }
 
@@ -68,7 +68,7 @@ final class RabbitMqProbesTest extends TestCase
     private function probe(string $name): array
     {
         $probe = $this->container()[$name] ?? null;
-        self::assertIsArray($probe, sprintf('%s absente du conteneur rabbitmq.', $name));
+        self::assertIsArray($probe, \sprintf('%s absente du conteneur rabbitmq.', $name));
 
         return $probe;
     }

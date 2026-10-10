@@ -19,7 +19,7 @@ final class WatchedProductSlugIsImmutableException extends DomainException
 {
     public static function forSlugs(string $current, string $submitted): self
     {
-        return new self(sprintf(
+        return new self(\sprintf(
             'Le slug d\'un produit surveillé ne peut pas changer ("%s" → "%s") : supprimez l\'entrée et créez-en une nouvelle.',
             $current,
             $submitted,

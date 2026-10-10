@@ -26,7 +26,7 @@ final class UnknownTranslationGroupException extends DomainException implements 
 
     public static function forGroup(Uuid $translationGroup): self
     {
-        return new self(sprintf(
+        return new self(\sprintf(
             'Aucune entrée de ce périmètre ne porte le groupe de traduction "%s".',
             $translationGroup->toRfc4122(),
         ));

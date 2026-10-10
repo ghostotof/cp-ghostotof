@@ -14,6 +14,6 @@ final class ExperienceTechnologyAlreadyExistsException extends DomainException
 {
     public static function forName(string $name): self
     {
-        return new self(sprintf('Une technologie existe déjà avec le nom "%s".', $name));
+        return new self(\sprintf('Une technologie existe déjà avec le nom "%s".', $name));
     }
 }

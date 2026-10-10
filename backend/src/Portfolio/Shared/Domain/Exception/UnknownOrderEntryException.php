@@ -28,7 +28,7 @@ final class UnknownOrderEntryException extends DomainException implements Proble
 
     public static function forKey(string $key): self
     {
-        return new self(sprintf(
+        return new self(\sprintf(
             'La clé "%s" ne correspond à aucune entrée du périmètre (ou apparaît plus d\'une fois).',
             $key,
         ));

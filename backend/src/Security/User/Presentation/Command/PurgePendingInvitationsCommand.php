@@ -96,7 +96,7 @@ final class PurgePendingInvitationsCommand extends Command
             return Command::INVALID;
         }
 
-        $io->title(sprintf(
+        $io->title(\sprintf(
             '%sInvitations en attente antérieures au %s',
             $dryRun ? 'Simulation — ' : '',
             $result->threshold->format('Y-m-d H:i:s'),
@@ -141,7 +141,7 @@ final class PurgePendingInvitationsCommand extends Command
 
             return DateInterval::createFromDateString($olderThan);
         } catch (Exception) {
-            $io->error(sprintf('Intervalle invalide : "%s". Exemples valides : "30 days", "12 hours".', $olderThan));
+            $io->error(\sprintf('Intervalle invalide : "%s". Exemples valides : "30 days", "12 hours".', $olderThan));
 
             return null;
         }

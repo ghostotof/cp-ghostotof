@@ -78,7 +78,7 @@ trait ReadsSecurityAuditLog
     private static function singleSecurityAuditEvent(string $event): array
     {
         $events = self::securityAuditEvents($event);
-        self::assertCount(1, $events, sprintf('Exactement un enregistrement « %s » attendu.', $event));
+        self::assertCount(1, $events, \sprintf('Exactement un enregistrement « %s » attendu.', $event));
 
         return $events[0];
     }

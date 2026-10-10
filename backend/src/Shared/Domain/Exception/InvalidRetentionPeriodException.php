@@ -24,7 +24,7 @@ final class InvalidRetentionPeriodException extends DomainException
      */
     public static function notStrictlyPositive(string $expression): self
     {
-        return new self(sprintf(
+        return new self(\sprintf(
             'La durée de rétention "%s" doit être strictement positive (le seuil calculé se situe dans le futur ou au moment présent).',
             $expression,
         ));
@@ -35,7 +35,7 @@ final class InvalidRetentionPeriodException extends DomainException
      */
     public static function unreadable(string $expression): self
     {
-        return new self(sprintf(
+        return new self(\sprintf(
             'La durée de rétention "%s" est illisible. Exemples valides : "30 days", "12 hours".',
             $expression,
         ));

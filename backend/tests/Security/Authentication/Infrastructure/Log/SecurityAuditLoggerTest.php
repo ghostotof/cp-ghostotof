@@ -526,7 +526,7 @@ final class SecurityAuditLoggerTest extends TestCase
                 self::assertStringNotContainsStringIgnoringCase(
                     $sentinel,
                     $serialized,
-                    sprintf('L\'enregistrement « %s » laisse fuir : %s.', $record->context['event'] ?? $record->message, $label),
+                    \sprintf('L\'enregistrement « %s » laisse fuir : %s.', $record->context['event'] ?? $record->message, $label),
                 );
             }
         }

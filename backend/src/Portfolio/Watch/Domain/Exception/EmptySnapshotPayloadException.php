@@ -20,7 +20,7 @@ final class EmptySnapshotPayloadException extends DomainException
 {
     public static function forType(WatchSnapshotType $type): self
     {
-        return new self(sprintf(
+        return new self(\sprintf(
             'Refus d\'écrire un snapshot "%s" vide : la donnée précédente reste en place.',
             $type->value,
         ));

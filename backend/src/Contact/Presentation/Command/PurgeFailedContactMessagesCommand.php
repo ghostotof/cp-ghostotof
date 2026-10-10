@@ -78,7 +78,7 @@ final class PurgeFailedContactMessagesCommand extends Command
 
         try {
             $deleted = $this->connection->executeStatement(
-                sprintf('DELETE FROM %s WHERE queue_name = :queue AND created_at < :threshold', self::MESSENGER_TABLE),
+                \sprintf('DELETE FROM %s WHERE queue_name = :queue AND created_at < :threshold', self::MESSENGER_TABLE),
                 ['queue' => self::FAILED_QUEUE, 'threshold' => $threshold->format('Y-m-d H:i:s')],
             );
         } catch (TableNotFoundException) {
@@ -89,7 +89,7 @@ final class PurgeFailedContactMessagesCommand extends Command
             return Command::SUCCESS;
         }
 
-        $io->success(sprintf('%d message(s) en échec antérieur(s) à %s purgé(s).', $deleted, $threshold->format('Y-m-d H:i:s')));
+        $io->success(\sprintf('%d message(s) en échec antérieur(s) à %s purgé(s).', $deleted, $threshold->format('Y-m-d H:i:s')));
 
         return Command::SUCCESS;
     }

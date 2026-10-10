@@ -15,6 +15,6 @@ final class AccountNotAwaitingActivationException extends DomainException
 {
     public static function forUsername(string $username): self
     {
-        return new self(sprintf('Le compte "%s" n\'est pas en attente d\'activation : impossible de renvoyer une invitation.', $username));
+        return new self(\sprintf('Le compte "%s" n\'est pas en attente d\'activation : impossible de renvoyer une invitation.', $username));
     }
 }

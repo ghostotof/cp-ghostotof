@@ -76,7 +76,7 @@ final class LoginFailureTimingTest extends WebTestCase
         $wrongPassword = $this->attemptLogin($client, $active, 'wrong-password');
 
         foreach (['inconnu' => $unknown, 'en attente' => $awaitingActivation, 'mauvais mot de passe' => $wrongPassword] as $case => $response) {
-            self::assertSame(401, $response->getStatusCode(), sprintf('Le cas « %s » n\'a pas répondu 401.', $case));
+            self::assertSame(401, $response->getStatusCode(), \sprintf('Le cas « %s » n\'a pas répondu 401.', $case));
         }
 
         self::assertSame($unknown->getContent(), $awaitingActivation->getContent(), 'Un compte en attente d\'activation se distingue d\'un identifiant inconnu par le corps de la réponse.');
@@ -167,7 +167,7 @@ final class LoginFailureTimingTest extends WebTestCase
 
         for ($attempt = 1; $attempt <= 5; ++$attempt) {
             $response = $this->attemptLogin($client, $unknown, 'wrong-password');
-            self::assertSame(401, $response->getStatusCode(), sprintf('La tentative n°%d aurait dû répondre 401.', $attempt));
+            self::assertSame(401, $response->getStatusCode(), \sprintf('La tentative n°%d aurait dû répondre 401.', $attempt));
             self::assertStringNotContainsStringIgnoringCase('too many', (string) $response->getContent());
         }
 

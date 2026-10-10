@@ -14,7 +14,7 @@ final class InvalidUsernameException extends DomainException
 {
     public static function forUsername(string $username): self
     {
-        return new self(sprintf('Le nom d\'utilisateur "%s" est invalide : il doit contenir entre 3 et 60 caractères (lettres, chiffres, ".", "_" ou "-").', $username));
+        return new self(\sprintf('Le nom d\'utilisateur "%s" est invalide : il doit contenir entre 3 et 60 caractères (lettres, chiffres, ".", "_" ou "-").', $username));
     }
 
     /**

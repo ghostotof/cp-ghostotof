@@ -21,7 +21,7 @@ final class CannotDemoteLastSuperAdminException extends DomainException implemen
 
     public static function forUsername(string $username): self
     {
-        return new self(sprintf('Impossible de retirer le rôle %s à "%s" : c\'est le dernier compte à le posséder, le backoffice deviendrait inaccessible.', CpgUser::ROLE_SUPER, $username));
+        return new self(\sprintf('Impossible de retirer le rôle %s à "%s" : c\'est le dernier compte à le posséder, le backoffice deviendrait inaccessible.', CpgUser::ROLE_SUPER, $username));
     }
 
     protected function problemType(): string

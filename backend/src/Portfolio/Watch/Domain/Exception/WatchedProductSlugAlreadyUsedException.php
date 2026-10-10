@@ -17,6 +17,6 @@ final class WatchedProductSlugAlreadyUsedException extends DomainException
 {
     public static function forSlug(string $slug): self
     {
-        return new self(sprintf('Le produit "%s" est déjà surveillé.', $slug));
+        return new self(\sprintf('Le produit "%s" est déjà surveillé.', $slug));
     }
 }

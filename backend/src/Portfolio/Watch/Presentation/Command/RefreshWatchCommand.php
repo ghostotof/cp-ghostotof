@@ -75,14 +75,14 @@ final class RefreshWatchCommand extends Command
     private function describeReleaseCycles(SymfonyStyle $io, ReleaseCyclesRefreshReport $report): void
     {
         if ([] !== $report->unknownSlugs) {
-            $io->warning(sprintf(
+            $io->warning(\sprintf(
                 'Produits inconnus de la source, à corriger au backoffice : %s',
                 implode(', ', $report->unknownSlugs),
             ));
         }
 
         if ([] !== $report->failedSlugs) {
-            $io->error(sprintf(
+            $io->error(\sprintf(
                 'Sources injoignables pour : %s. Le snapshot précédent reste servi pour ces entrées.',
                 implode(', ', $report->failedSlugs),
             ));
@@ -96,7 +96,7 @@ final class RefreshWatchCommand extends Command
             return;
         }
 
-        $message = sprintf('%d produit(s) rafraîchi(s).', $report->refreshedCount);
+        $message = \sprintf('%d produit(s) rafraîchi(s).', $report->refreshedCount);
 
         if ($report->persisted) {
             $io->success($message);
@@ -123,7 +123,7 @@ final class RefreshWatchCommand extends Command
             return;
         }
 
-        $message = sprintf('%d paquets analysés, %d vulnérabilité(s) connue(s).', $report->packagesScanned ?? 0, $report->found);
+        $message = \sprintf('%d paquets analysés, %d vulnérabilité(s) connue(s).', $report->packagesScanned ?? 0, $report->found);
 
         if (0 === $report->found) {
             $io->success($message);

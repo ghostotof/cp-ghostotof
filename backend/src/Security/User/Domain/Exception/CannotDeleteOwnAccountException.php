@@ -14,6 +14,6 @@ final class CannotDeleteOwnAccountException extends DomainException
 {
     public static function forUsername(string $username): self
     {
-        return new self(sprintf('L\'utilisateur "%s" ne peut pas supprimer son propre compte.', $username));
+        return new self(\sprintf('L\'utilisateur "%s" ne peut pas supprimer son propre compte.', $username));
     }
 }

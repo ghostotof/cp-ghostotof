@@ -19,7 +19,7 @@ final class CannotModifyOwnRolesException extends DomainException implements Pro
 
     public static function forUsername(string $username): self
     {
-        return new self(sprintf('L\'utilisateur "%s" ne peut pas modifier ses propres rôles.', $username));
+        return new self(\sprintf('L\'utilisateur "%s" ne peut pas modifier ses propres rôles.', $username));
     }
 
     protected function problemType(): string

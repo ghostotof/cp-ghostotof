@@ -99,7 +99,7 @@ final class BackofficeQualityTraitResourceTest extends WebTestCase
 
         $trait = $client->getContainer()->get(QualityTraitAdministratorInterface::class)->create(Locale::FR, 'Architecture propre');
 
-        $client->request('GET', sprintf('/api/backoffice/quality/traits/%s', $trait->getId()->toRfc4122()));
+        $client->request('GET', \sprintf('/api/backoffice/quality/traits/%s', $trait->getId()->toRfc4122()));
         self::assertResponseIsSuccessful();
         $item = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame($trait->getId()->toRfc4122(), $item['id']);
@@ -154,7 +154,7 @@ final class BackofficeQualityTraitResourceTest extends WebTestCase
         $id = $created['id'];
 
         // Put
-        $client->request('PUT', sprintf('/api/backoffice/quality/traits/%s', $id), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/quality/traits/%s', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['locale' => 'fr', 'label' => 'Maintenabilité', 'position' => 1]));
@@ -174,7 +174,7 @@ final class BackofficeQualityTraitResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
 
         // Delete
-        $client->request('DELETE', sprintf('/api/backoffice/quality/traits/%s', $id), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
+        $client->request('DELETE', \sprintf('/api/backoffice/quality/traits/%s', $id), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
         self::assertResponseStatusCodeSame(204);
 
         // Le contenu public ne reflète plus le trait supprimé
@@ -398,7 +398,7 @@ final class BackofficeQualityTraitResourceTest extends WebTestCase
      */
     private function put(KernelBrowser $client, string $csrfToken, string $id, array $overrides): mixed
     {
-        $client->request('PUT', sprintf('/api/backoffice/quality/traits/%s', $id), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/quality/traits/%s', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody($overrides + $this->payload()));

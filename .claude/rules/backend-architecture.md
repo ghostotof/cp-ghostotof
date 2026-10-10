@@ -99,10 +99,17 @@ name clash gets an alias (`use UnexpectedValueException as NativeUnexpectedValue
 of PhpStorm's "Optimize imports" and php-cs-fixer's `ordered_imports` (`alpha`). No tool enforces it, and
 `rector:fix` inserts a new import at the top of the block: re-sort after it. php-cs-fixer is deliberately
 not a dependency (#391); a one-off run of its phar under `var/` with that single rule is how #391 sorted
-the existing code. Out of scope, **by decision** (2026-10-10): native **functions and constants** keep
-their leading backslash (`\sprintf`, `\in_array`, `\PHP_EOL`, `\T_CLASS`) — no `use function` / `use const`:
-`importShortClasses` does not touch them, so Rector stays the only tool, and the backslash lets OPcache
-compile some functions to dedicated opcodes; namespaces cited in prose (`App\Shared`);
+the existing code. Out of scope, **by decision** (2026-10-10): native **functions and constants** are
+never imported — no `use function` / `use const`, `importShortClasses` does not touch them; namespaces
+cited in prose (`App\Shared`). **A native function is qualified exactly when the compiler optimizes it**
+(settled on 2026-10-10, review of #391): a function of php-cs-fixer's `@compiler_optimized` set (`\count`,
+`\in_array`, `\is_string`, `\strlen`, `\sprintf`, `\dirname`…) is written with its leading backslash, every
+other one without (`array_map`, `trim`, `json_decode`: no dedicated opcode, nothing to gain). Measured for
+`sprintf`: `\sprintf('x %s', $a)` compiles to a bare `FAST_CONCAT`, the unqualified call to a runtime
+lookup and a function call. A first-class callable (`is_string(...)`) is not a call and stays as written. No
+tool enforces the split; #391 applied it once (73 `sprintf` in `src/`, 147 in `tests/`, a dozen others)
+with the same phar, rule `native_function_invocation` (`include: ['@compiler_optimized']`, `strict: false`).
+Constants were not migrated: a leading backslash already there stays.
 **The line is performance, and it was measured** (2026-10-10, PHP 8.5, OPcache dump after the optimizer): the
 rule only covers natives whose import costs nothing. `\DateTimeImmutable` and an imported `DateTimeImmutable`
 compile to **identical opcodes** — `use` is resolved at compile time — whereas an unqualified `count($a)`

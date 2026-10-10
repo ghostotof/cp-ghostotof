@@ -36,7 +36,7 @@ final readonly class SnapshotFreshnessCalculator
             return SnapshotFreshness::NEVER_REFRESHED;
         }
 
-        $deadline = $refreshedAt->modify(sprintf('+%d hours', self::STALE_AFTER_HOURS));
+        $deadline = $refreshedAt->modify(\sprintf('+%d hours', self::STALE_AFTER_HOURS));
 
         return $now < $deadline ? SnapshotFreshness::FRESH : SnapshotFreshness::STALE;
     }

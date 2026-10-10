@@ -79,7 +79,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $id = $this->findInviteeId($client);
 
-        $client->request('POST', sprintf('/api/backoffice/users/%s/invitation', $id), server: [
+        $client->request('POST', \sprintf('/api/backoffice/users/%s/invitation', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['locale' => 'en']));
@@ -148,7 +148,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $id = $this->findInviteeId($client);
 
-        $client->request('POST', sprintf('/api/backoffice/users/%s/invitation', $id), server: [
+        $client->request('POST', \sprintf('/api/backoffice/users/%s/invitation', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['locale' => 'fr']));
@@ -164,7 +164,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $id = $this->findInviteeId($client);
 
-        $client->request('POST', sprintf('/api/backoffice/users/%s/invitation', $id), server: [
+        $client->request('POST', \sprintf('/api/backoffice/users/%s/invitation', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody([]));

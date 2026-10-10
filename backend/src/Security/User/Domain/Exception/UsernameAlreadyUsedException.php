@@ -14,6 +14,6 @@ final class UsernameAlreadyUsedException extends DomainException
 {
     public static function forUsername(string $username): self
     {
-        return new self(sprintf('Un utilisateur existe déjà avec le nom d\'utilisateur "%s".', $username));
+        return new self(\sprintf('Un utilisateur existe déjà avec le nom d\'utilisateur "%s".', $username));
     }
 }

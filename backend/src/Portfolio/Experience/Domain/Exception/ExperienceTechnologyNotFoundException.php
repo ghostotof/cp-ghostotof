@@ -15,6 +15,6 @@ final class ExperienceTechnologyNotFoundException extends DomainException
 {
     public static function forId(Uuid $id): self
     {
-        return new self(sprintf('Aucune technologie trouvée avec l\'identifiant %s.', $id->toRfc4122()));
+        return new self(\sprintf('Aucune technologie trouvée avec l\'identifiant %s.', $id->toRfc4122()));
     }
 }

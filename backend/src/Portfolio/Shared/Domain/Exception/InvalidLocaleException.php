@@ -22,6 +22,6 @@ final class InvalidLocaleException extends DomainException
 {
     public static function forValue(string $value): self
     {
-        return new self(sprintf('Langue inconnue : "%s".', $value));
+        return new self(\sprintf('Langue inconnue : "%s".', $value));
     }
 }

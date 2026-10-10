@@ -15,6 +15,6 @@ final class QualityPrincipleNotFoundException extends DomainException
 {
     public static function forId(Uuid $id): self
     {
-        return new self(sprintf('Aucun principe de qualité trouvé avec l\'id "%s".', $id->toRfc4122()));
+        return new self(\sprintf('Aucun principe de qualité trouvé avec l\'id "%s".', $id->toRfc4122()));
     }
 }

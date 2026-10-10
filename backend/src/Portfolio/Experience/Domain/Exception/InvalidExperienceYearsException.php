@@ -23,7 +23,7 @@ final class InvalidExperienceYearsException extends DomainException
 {
     public static function outOfRange(float $years, float $minYears, float $maxYears): self
     {
-        return new self(sprintf(
+        return new self(\sprintf(
             'Le temps cumulé doit être un nombre compris entre %s et %s ans (reçu : %s).',
             $minYears,
             $maxYears,

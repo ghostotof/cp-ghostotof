@@ -93,16 +93,16 @@ trait InvitesUsers
         // template (texte ou HTML) qui aurait perdu son lien.
         $tokens = [];
         foreach (['texte' => $email->getTextBody(), 'HTML' => $email->getHtmlBody()] as $label => $body) {
-            self::assertIsString($body, sprintf('Version %s de l\'e-mail d\'invitation absente.', $label));
+            self::assertIsString($body, \sprintf('Version %s de l\'e-mail d\'invitation absente.', $label));
             self::assertSame(
                 1,
                 preg_match('~/set-password#([0-9a-f]{64})~', $body, $matches),
-                sprintf('Lien de définition de mot de passe introuvable dans la version %s de l\'e-mail d\'invitation.', $label),
+                \sprintf('Lien de définition de mot de passe introuvable dans la version %s de l\'e-mail d\'invitation.', $label),
             );
             self::assertStringNotContainsString(
                 '/set-password/',
                 $body,
-                sprintf('La version %s de l\'e-mail porte encore le jeton dans un chemin d\'URL.', $label),
+                \sprintf('La version %s de l\'e-mail porte encore le jeton dans un chemin d\'URL.', $label),
             );
             $tokens[] = $matches[1];
         }

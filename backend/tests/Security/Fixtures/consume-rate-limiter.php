@@ -32,18 +32,18 @@ use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
 // Même amorçage que tous les tests (autoload, Dotenv, umask). Le test transmet
 // APP_ENV=test : Dotenv charge .env.test.local (DATABASE_URL, KERNEL_CLASS),
 // et le kernel retrouve le cache de conteneur que le test a déjà compilé.
-require dirname(__DIR__, 2).'/bootstrap.php';
+require \dirname(__DIR__, 2).'/bootstrap.php';
 
-$arguments = is_array($_SERVER['argv'] ?? null) ? array_values($_SERVER['argv']) : [];
+$arguments = \is_array($_SERVER['argv'] ?? null) ? array_values($_SERVER['argv']) : [];
 [, $limiterName, $key, $barrierPath] = $arguments + [null, null, null, null];
-if (!is_string($limiterName) || !is_string($key) || !is_string($barrierPath)) {
+if (!\is_string($limiterName) || !\is_string($key) || !\is_string($barrierPath)) {
     fwrite(\STDERR, "Usage : php consume-rate-limiter.php <limiteur> <clé> <fichier-barrière>\n");
     exit(2);
 }
 
 $factory = RateLimiterFactoryLocator::locate($limiterName);
 if (!$factory instanceof RateLimiterFactoryInterface) {
-    fwrite(\STDERR, sprintf("limiter.%s n'est pas une fabrique de limiteur.\n", $limiterName));
+    fwrite(\STDERR, \sprintf("limiter.%s n'est pas une fabrique de limiteur.\n", $limiterName));
     exit(2);
 }
 $limiter = $factory->create($key);
@@ -56,7 +56,7 @@ $limiter->consume(0);
 
 $barrier = fopen($barrierPath, 'r');
 if (false === $barrier) {
-    fwrite(\STDERR, sprintf("Fichier-barrière illisible : %s\n", $barrierPath));
+    fwrite(\STDERR, \sprintf("Fichier-barrière illisible : %s\n", $barrierPath));
     exit(2);
 }
 
@@ -67,7 +67,7 @@ flush();
 // fichiers sans flock) laisserait passer ce fils sans synchronisation : le
 // test pourrait alors réussir sans avoir mis les consommateurs en concurrence.
 if (!flock($barrier, \LOCK_SH)) {
-    fwrite(\STDERR, sprintf("Impossible d'attendre la barrière : flock(LOCK_SH) a échoué sur %s\n", $barrierPath));
+    fwrite(\STDERR, \sprintf("Impossible d'attendre la barrière : flock(LOCK_SH) a échoué sur %s\n", $barrierPath));
     exit(2);
 }
 

@@ -87,7 +87,7 @@ final class SeedIncidentsContentCommand extends Command
                 $translationGroups->remember('incident', $index, $created->getTranslationGroup());
             }
 
-            $io->success(sprintf('[%s] %d incident(s).', $localeValue, \count($incidents)));
+            $io->success(\sprintf('[%s] %d incident(s).', $localeValue, \count($incidents)));
         }
 
         return Command::SUCCESS;

@@ -221,7 +221,7 @@ final class WatchResourceTest extends WebTestCase
         $body = (string) $client->getResponse()->getContent();
 
         foreach (['GHSA-h7vf-5wrv-9fhv', 'CVE-2026-0001', 'symfony/http-kernel', '4.4.50', 'Une faille'] as $secret) {
-            self::assertStringNotContainsString($secret, $body, sprintf(
+            self::assertStringNotContainsString($secret, $body, \sprintf(
                 'La réponse publique expose « %s », qui relève du seul backoffice (décision D4).',
                 $secret,
             ));
@@ -236,7 +236,7 @@ final class WatchResourceTest extends WebTestCase
         self::assertSame(84, $vulnerabilities['packagesScanned']);
 
         foreach (['id', 'aliases', 'summary', 'severity', 'package', 'fixedIn', 'vulnerabilities'] as $forbidden) {
-            self::assertArrayNotHasKey($forbidden, $vulnerabilities, sprintf(
+            self::assertArrayNotHasKey($forbidden, $vulnerabilities, \sprintf(
                 'Le champ « %s » n\'a rien à faire dans la réponse publique (décision D4).',
                 $forbidden,
             ));

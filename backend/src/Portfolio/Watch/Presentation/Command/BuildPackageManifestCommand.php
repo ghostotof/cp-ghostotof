@@ -55,10 +55,10 @@ final class BuildPackageManifestCommand extends Command
         }
 
         foreach ($byEcosystem as $ecosystem => $count) {
-            $io->writeln(sprintf('  %s : %d paquets', $ecosystem, $count));
+            $io->writeln(\sprintf('  %s : %d paquets', $ecosystem, $count));
         }
 
-        $io->success(sprintf('%d paquets relevés.', \count($manifest->packages)));
+        $io->success(\sprintf('%d paquets relevés.', \count($manifest->packages)));
 
         return Command::SUCCESS;
     }

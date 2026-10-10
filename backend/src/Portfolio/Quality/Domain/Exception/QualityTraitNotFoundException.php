@@ -15,6 +15,6 @@ final class QualityTraitNotFoundException extends DomainException
 {
     public static function forId(Uuid $id): self
     {
-        return new self(sprintf('Aucun trait de qualité trouvé avec l\'id "%s".', $id->toRfc4122()));
+        return new self(\sprintf('Aucun trait de qualité trouvé avec l\'id "%s".', $id->toRfc4122()));
     }
 }

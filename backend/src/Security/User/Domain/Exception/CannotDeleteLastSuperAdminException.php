@@ -17,6 +17,6 @@ final class CannotDeleteLastSuperAdminException extends DomainException
 {
     public static function forUsername(string $username): self
     {
-        return new self(sprintf('Impossible de supprimer "%s" : c\'est le dernier compte %s, le backoffice deviendrait inaccessible.', $username, CpgUser::ROLE_SUPER));
+        return new self(\sprintf('Impossible de supprimer "%s" : c\'est le dernier compte %s, le backoffice deviendrait inaccessible.', $username, CpgUser::ROLE_SUPER));
     }
 }

@@ -63,7 +63,7 @@ final class CreateCpgUserCommand extends Command
         $this
             ->addOption('username', null, InputOption::VALUE_REQUIRED, 'Nom d\'utilisateur')
             ->addOption('password', null, InputOption::VALUE_REQUIRED, 'Mot de passe en clair (usage scripté uniquement)')
-            ->addOption('role', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, sprintf('Rôle additionnel à attribuer (répétable), parmi : %s', implode(', ', self::ALLOWED_ROLES)))
+            ->addOption('role', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, \sprintf('Rôle additionnel à attribuer (répétable), parmi : %s', implode(', ', self::ALLOWED_ROLES)))
         ;
     }
 
@@ -84,13 +84,13 @@ final class CreateCpgUserCommand extends Command
         }
 
         if (\strlen($plainPassword) < CpgUser::MIN_PASSWORD_LENGTH) {
-            $io->error(sprintf('Le mot de passe doit contenir au moins %d caractères.', CpgUser::MIN_PASSWORD_LENGTH));
+            $io->error(\sprintf('Le mot de passe doit contenir au moins %d caractères.', CpgUser::MIN_PASSWORD_LENGTH));
 
             return Command::FAILURE;
         }
 
         if (\strlen($plainPassword) > CpgUser::MAX_PASSWORD_LENGTH) {
-            $io->error(sprintf('Le mot de passe ne doit pas dépasser %d caractères.', CpgUser::MAX_PASSWORD_LENGTH));
+            $io->error(\sprintf('Le mot de passe ne doit pas dépasser %d caractères.', CpgUser::MAX_PASSWORD_LENGTH));
 
             return Command::FAILURE;
         }
@@ -109,7 +109,7 @@ final class CreateCpgUserCommand extends Command
         $unknownRoles = array_diff($roles, self::ALLOWED_ROLES);
 
         if ([] !== $unknownRoles) {
-            $io->error(sprintf('Rôle(s) inconnu(s) : %s. Rôles autorisés : %s.', implode(', ', $unknownRoles), implode(', ', self::ALLOWED_ROLES)));
+            $io->error(\sprintf('Rôle(s) inconnu(s) : %s. Rôles autorisés : %s.', implode(', ', $unknownRoles), implode(', ', self::ALLOWED_ROLES)));
 
             return Command::FAILURE;
         }
@@ -122,7 +122,7 @@ final class CreateCpgUserCommand extends Command
             return Command::FAILURE;
         }
 
-        $io->success(sprintf('Utilisateur "%s" créé (id: %s).', $user->getUsername(), $user->getId()->toRfc4122()));
+        $io->success(\sprintf('Utilisateur "%s" créé (id: %s).', $user->getUsername(), $user->getId()->toRfc4122()));
 
         return Command::SUCCESS;
     }

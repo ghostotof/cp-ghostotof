@@ -162,7 +162,7 @@ final class Version20261006120000Test extends KernelTestCase
     private function insertTechnology(string $name, string $yearsLiteral): void
     {
         $this->connection->executeStatement(
-            sprintf('INSERT INTO experience_technology (id, name, years) VALUES (uuidv7(), ?, %s)', $yearsLiteral),
+            \sprintf('INSERT INTO experience_technology (id, name, years) VALUES (uuidv7(), ?, %s)', $yearsLiteral),
             [$name],
         );
     }

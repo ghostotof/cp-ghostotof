@@ -15,6 +15,6 @@ final class CpgUserNotFoundException extends DomainException
 {
     public static function forId(Uuid $id): self
     {
-        return new self(sprintf('Aucun utilisateur trouvé avec l\'identifiant %s.', $id->toRfc4122()));
+        return new self(\sprintf('Aucun utilisateur trouvé avec l\'identifiant %s.', $id->toRfc4122()));
     }
 }

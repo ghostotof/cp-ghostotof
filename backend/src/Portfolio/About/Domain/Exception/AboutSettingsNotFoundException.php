@@ -15,6 +15,6 @@ final class AboutSettingsNotFoundException extends DomainException
 {
     public static function forLocale(Locale $locale): self
     {
-        return new self(sprintf('Aucun réglage "À propos" trouvé pour la locale "%s".', $locale->value));
+        return new self(\sprintf('Aucun réglage "À propos" trouvé pour la locale "%s".', $locale->value));
     }
 }
