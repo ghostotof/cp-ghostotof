@@ -1,0 +1,4 @@
+# État et snapshots produits par les wizards : données DNS publiques, mais datées
+# et propres à une exécution — ils ne s'archivent pas avec la feature.
+dns-mail-europe.state
+snapshots/
