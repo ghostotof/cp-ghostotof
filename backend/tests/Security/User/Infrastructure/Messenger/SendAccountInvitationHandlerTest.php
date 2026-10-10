@@ -13,14 +13,30 @@ use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Bridge\Twig\Mime\BodyRenderer;
 use Symfony\Bridge\Twig\Mime\TemplatedEmail;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Mailer\EventListener\MessageListener;
 use Symfony\Component\Mailer\Exception\TransportException;
+use Symfony\Component\Mailer\Mailer;
 use Symfony\Component\Mailer\MailerInterface;
+use Symfony\Component\Mailer\Messenger\MessageHandler;
+use Symfony\Component\Mailer\Messenger\SendEmailMessage;
+use Symfony\Component\Mailer\Transport\NullTransport;
+use Symfony\Component\Messenger\Exception\HandlerFailedException;
+use Symfony\Component\Messenger\Exception\UnrecoverableExceptionInterface;
+use Symfony\Component\Messenger\Handler\HandlersLocator;
+use Symfony\Component\Messenger\MessageBus;
+use Symfony\Component\Messenger\Middleware\HandleMessageMiddleware;
+use Symfony\Component\Messenger\Stamp\ErrorDetailsStamp;
 use Symfony\Component\Mime\Address;
+use Twig\Environment;
+use Twig\Loader\ArrayLoader;
 
 /**
  * Périmètre du handler depuis l'audit C2 (décision D3) : c'est lui qui
@@ -200,6 +216,72 @@ final class SendAccountInvitationHandlerTest extends TestCase
         }
     }
 
+    /**
+     * Issue #419 : le jeton naît et est validé en base avant le rendu du
+     * gabarit. Si le rendu échoue, l'exception remonte jusqu'au worker, qui
+     * pose un {@see ErrorDetailsStamp} sur l'enveloppe : il suit chaque
+     * réessai (RabbitMQ) puis le failure_transport (`messenger:failed:show`).
+     * Ce que le stamp garde — message, `previous`, trace en chaîne — ne doit
+     * jamais livrer un jeton utilisable (audit C2), quelle que soit la
+     * verbosité des traces (`zend.exception_*`, celle du dev et du test, et au
+     * pire une longueur de paramètre relevée).
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function brokenInvitationTemplates(): iterable
+    {
+        // Le cas cité par l'issue : une variable inconnue sous strict_variables.
+        // Vert avant le correctif : le message ne cite aucune valeur, et
+        // ErrorDetailsStamp::create() vide la trace (et ses arguments) de
+        // l'exception et de chaque `previous`. Gardé comme garde du scénario.
+        yield 'variable inconnue (strict_variables)' => ["{{ setupUrl }}\n{{ undefinedVariable }}"];
+        // Twig cite la clé introuvable dans son message : ici, l'URL entière.
+        yield 'message qui cite une valeur du contexte' => ['{{ strings[setupUrl] }}'];
+        // Le filtre reçoit l'URL en argument direct : visible dans la trace.
+        yield 'URL en argument d\'une frame' => ["{{ setupUrl|escape('unknown') }}"];
+    }
+
+    #[DataProvider('brokenInvitationTemplates')]
+    public function testARenderingFailureLeavesNoUsableTokenInTheErrorDetailsStamp(string $brokenTextTemplate): void
+    {
+        [$stamp, $tokenHash] = $this->failToRender($brokenTextTemplate);
+
+        // Ce que la table du failure_transport stocke : l'enveloppe sérialisée
+        // (PhpSerializer), stamp compris.
+        $stored = serialize($stamp);
+
+        // Toutes les fenêtres de 64 caractères hexadécimaux, chevauchantes :
+        // le jeton peut être collé à d'autres caractères hexadécimaux.
+        preg_match_all('/(?=([0-9a-f]{64}))/', $stored, $candidates);
+        foreach ($candidates[1] as $candidate) {
+            self::assertNotSame(
+                $tokenHash,
+                hash('sha256', $candidate),
+                'Le jeton d\'invitation en clair est dans l\'ErrorDetailsStamp.',
+            );
+        }
+        self::assertStringNotContainsString('set-password#', $stored);
+    }
+
+    /**
+     * Le rendu raté devient l'exception de domaine, chaîne coupée comme pour le
+     * transport (issue #356), et la politique de réessai ne change pas : ni
+     * avant ni après #419 l'exception n'est « unrecoverable », Messenger
+     * réessaie selon la stratégie du transport puis range le message dans le
+     * failure_transport.
+     */
+    public function testARenderingFailureBecomesADeliveryExceptionThatIsStillRetried(): void
+    {
+        [$stamp] = $this->failToRender('{{ undefinedVariable }}');
+
+        self::assertSame(AccountInvitationDeliveryException::class, $stamp->getExceptionClass());
+        $flattened = $stamp->getFlattenException();
+        self::assertNotNull($flattened);
+        self::assertNull($flattened->getPrevious(), 'Aucune exception du rendu ne doit rester en `previous`.');
+        self::assertStringContainsString('RuntimeError', $stamp->getExceptionMessage());
+        self::assertFalse(is_a($stamp->getExceptionClass(), UnrecoverableExceptionInterface::class, true));
+    }
+
     private function pendingUser(string $username, string $email): CpgUser
     {
         $user = new CpgUser($username, '');
@@ -209,6 +291,72 @@ final class SendAccountInvitationHandlerTest extends TestCase
         // L'identité du compte rechargé n'a pas à correspondre à celle du
         // message : le dépôt est bouchonné, c'est lui qui décide ce qu'il rend.
         return $user;
+    }
+
+    /**
+     * Fait échouer le rendu de l'e-mail par la vraie chaîne du mailer, câblée
+     * comme `mailer.mailer` : l'envoi passe par un bus (SendEmailMessage, traité
+     * en synchrone faute de routage), le transport émet le MessageEvent et le
+     * MessageListener rend le TemplatedEmail via BodyRenderer et Twig. Le tout
+     * derrière un vrai bus Messenger, comme dans le worker, puis construit le
+     * stamp que le worker poserait.
+     *
+     * @return array{ErrorDetailsStamp, string} le stamp et le SHA-256 du jeton émis
+     */
+    private function failToRender(string $brokenTextTemplate): array
+    {
+        $tokenHash = null;
+        $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('save')->willReturnCallback(
+            static function (PasswordSetupToken $token) use (&$tokenHash): void {
+                $tokenHash = $token->getTokenHash();
+            },
+        );
+
+        $twig = new Environment(new ArrayLoader([
+            'emails/account_invitation.html.twig' => '<p>{{ setupUrl }}</p>',
+            'emails/account_invitation.txt.twig' => $brokenTextTemplate,
+        ]), ['strict_variables' => true]);
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new MessageListener(null, new BodyRenderer($twig)));
+        $transport = new NullTransport($dispatcher);
+        $mailer = new Mailer($transport, new MessageBus([new HandleMessageMiddleware(new HandlersLocator([
+            SendEmailMessage::class => [new MessageHandler($transport)],
+        ]))]));
+
+        $handler = $this->handler(
+            $this->pendingUser('newcomer', 'newcomer@example.com'),
+            $tokenRepository,
+            $mailer,
+            new MockClock(),
+        );
+        $bus = new MessageBus([new HandleMessageMiddleware(new HandlersLocator([
+            SendAccountInvitationMessage::class => [$handler],
+        ]))]);
+
+        // Les réglages du dev et du test (arguments gardés), et au pire une
+        // longueur de chaîne relevée : le correctif ne doit pas dépendre d'un
+        // php.ini.
+        $ignoreArgs = ini_set('zend.exception_ignore_args', '0');
+        $maxLength = ini_set('zend.exception_string_param_max_len', '1000000');
+
+        try {
+            $bus->dispatch(new SendAccountInvitationMessage(self::USER_ID, 'fr'));
+            self::fail('Le rendu aurait dû échouer.');
+        } catch (HandlerFailedException $exception) {
+            $stamp = ErrorDetailsStamp::create($exception);
+        } finally {
+            if (false !== $ignoreArgs) {
+                ini_set('zend.exception_ignore_args', $ignoreArgs);
+            }
+            if (false !== $maxLength) {
+                ini_set('zend.exception_string_param_max_len', $maxLength);
+            }
+        }
+
+        self::assertIsString($tokenHash, 'Le jeton doit avoir été émis avant le rendu.');
+
+        return [$stamp, $tokenHash];
     }
 
     private function handler(

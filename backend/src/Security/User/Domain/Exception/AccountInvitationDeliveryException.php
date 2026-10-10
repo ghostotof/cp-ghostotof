@@ -27,4 +27,22 @@ final class AccountInvitationDeliveryException extends RuntimeException
             $code ?? 'inconnu',
         ));
     }
+
+    /**
+     * Toute autre défaillance de l'envoi, en pratique le rendu Twig du
+     * gabarit (issue #419). Même règle que pour le transport, pour une autre
+     * raison : le jeton d'invitation est déjà valide en base quand le gabarit
+     * est rendu, et un message Twig peut citer une valeur du contexte
+     * (`Key "https://…/set-password#<jeton>" … does not exist`). Le stamp
+     * d'erreur que le worker pose garde le message et toute la chaîne
+     * `previous` jusque dans le failure_transport (audit C2) : seule la
+     * classe de l'échec est gardée, ni son message ni l'exception elle-même.
+     */
+    public static function becauseSendingFailed(string $failureClass): self
+    {
+        return new self(\sprintf(
+            'La préparation ou l\'envoi de l\'e-mail d\'invitation a échoué (%s).',
+            $failureClass,
+        ));
+    }
 }

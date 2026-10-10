@@ -74,6 +74,15 @@ paths:
     the user (missing or already activated → `logger->warning` + return, no retry), then in a single
     `wrapInTransaction` purges the previous `PasswordSetupToken` and issues a fresh one. Keep it that way: do
     not move token creation back up into `CpgUserInviter`, and never add a secret to the message.
+    **Nor in the error stamp** (issue #419): the template is rendered inside `mailer->send()`, after the
+    token is valid, and a Twig message can quote a context value (`Key "…/set-password#<token>" … does not
+    exist`); the worker's `ErrorDetailsStamp` keeps the message and the whole `previous` chain (not the
+    trace arguments, which it empties) into the `failure_transport`. So **any** failure of `send()` becomes
+    `AccountInvitationDeliveryException` — `becauseTransportFailed()` (class + code) or `becauseSendingFailed()`
+    (class only, unwrapped from the mailer bus's `HandlerFailedException`) —, never with a `previous`, never
+    quoting the original message. Retry is unchanged: neither is unrecoverable, the transport's strategy
+    applies. `SendAccountInvitationHandlerTest` drives the real mailer chain (bus, `MessageListener`,
+    `BodyRenderer`, Twig) and searches the serialized stamp for the token.
   - `Infrastructure/` — `Doctrine/{CpgUser,PasswordSetupToken}Repository.php` (sole impls);
     `Messenger/SendAccountInvitationHandler.php` (creates the token — see above — then the `TemplatedEmail`
     `emails/account_invitation.*`, subject + localized strings built here);

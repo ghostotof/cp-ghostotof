@@ -19,7 +19,9 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Uid\Uuid;
+use Throwable;
 
 /**
  * Consommé par `make consume` (messenger:consume async -vv). Depuis le point
@@ -124,7 +126,31 @@ final readonly class SendAccountInvitationHandler
             $failure = MailerTransportFailure::from($exception);
 
             throw AccountInvitationDeliveryException::becauseTransportFailed($failure->exceptionClass, $failure->code);
+        } catch (Throwable $exception) {
+            // Le rendu du gabarit a lieu ici, dans send() (MessageListener →
+            // BodyRenderer → Twig), alors que le jeton est déjà valide en base :
+            // son exception, message compris, ne doit pas atteindre le stamp
+            // d'erreur du worker (issue #419, audit C2). Le réessai n'en change
+            // pas : ni l'exception remplacée ni celle-ci ne sont
+            // « unrecoverable », Messenger applique la stratégie du transport.
+            throw AccountInvitationDeliveryException::becauseSendingFailed($this->failureClassOf($exception));
         }
+    }
+
+    /**
+     * Le mailer passe par le bus (SendEmailMessage, traité en synchrone faute
+     * de routage) : un échec du rendu arrive enveloppé dans une
+     * HandlerFailedException, et la classe qui renseigne est celle du dedans.
+     */
+    private function failureClassOf(Throwable $exception): string
+    {
+        if ($exception instanceof HandlerFailedException) {
+            foreach ($exception->getWrappedExceptions() as $wrapped) {
+                return $wrapped::class;
+            }
+        }
+
+        return $exception::class;
     }
 
     private function subjectFor(Locale $locale): string
