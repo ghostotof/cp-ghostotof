@@ -46,3 +46,15 @@ survives `cache:clear` after a DTO's `id` type changes — `rm -rf var/cache/<en
 bind-mount desync (`docker compose restart backend`) can make a container run a stale Provider/Processor
 mid-migration.
 
+**`src/` never instantiates a bare `\Exception`, `\LogicException` or `\RuntimeException`** (issue #338).
+Every failure gets its own class: a client error implements `ProblemExceptionInterface` (see
+`.claude/rules/backoffice-api.md`, "Exceptions"), and a server fault (wiring defect, broken invariant, build
+step) extends the generic class it replaces, without a mapping, so it stays a `critical` 500. The point is a
+name that can be targeted in `framework.exceptions` and recognised in the logs. Create it next to the layer
+that throws it, with a named factory (`forOperation()`, `forGroup()`, `forDirectory()`…), and never put a
+client-supplied value in its message without bounding it (`InputContradictsValidationException::nonTextualField()`).
+`tests/Shared/NoBareGenericExceptionTest.php` enforces it. It counts tokens through
+`tests/Support/BareExceptionInstantiations`, which shares its file walk with `DeclaredClasses` via `PhpSources`, so
+an import, an alias, a comma list or an anonymous subclass is seen too. The other SPL classes
+(`\InvalidArgumentException`…) are out of its scope until #383 settles them.
+
