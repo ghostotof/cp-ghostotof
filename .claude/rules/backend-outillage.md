@@ -111,13 +111,17 @@ Symfony (`getTraceAsString()`, a `FlattenException` in Messenger's `ErrorDetails
 No test asserted on trace arguments, and the #411/#414 guards read the attribute by reflection, never
 a trace, so none became vacuous. **A `php` process a test starts** does not get PHPUnit's `<ini>`: it is
 built by `tests/Support/ChildPhpProcess::command()`, which passes the parent's value with `-d` (its
-stderr, trace included, ends up in the failure message). **To debug with arguments**, write a local
-`phpunit.xml` (gitignored, read instead of the dist file) set to 0 — `bin/phpunit -d …=0` does not
-work, the XML `<ini>` is applied after the CLI one. The two runtime tests then **skip**, naming the
-cause, rather than fail. `ExceptionArgumentsHiddenInTestsTest` pins the dist entry (the runtime checks
-alone would stay green in CI without it), the effect on `getTrace()` and on a `FlattenException`, the
-child's value, and that no test names `PHP_BINARY` outside the helper. **Not covered**:
-`debug_backtrace()` (the directive only acts on exceptions — measured), the frame of a `require`, which
-keeps the included path, a child started otherwise than through `PHP_BINARY` (`PhpExecutableFinder`, a
-literal `php`), and dev over HTTP (`APP_DEBUG` error bodies, Off there) — which is why the #411/#414
-guards stay.
+stderr, trace included, ends up in the failure message) — the two concurrency tests and
+`CreateCpgUserCommandTest`'s pseudo-terminal run. **To debug with arguments**, write a local
+`phpunit.xml` (gitignored, read instead of the dist file) that sets it **explicitly** to 0 —
+`bin/phpunit -d …=0` does not work, the XML `<ini>` is applied after the CLI one. The two runtime
+tests then **skip**, naming the cause, rather than fail; a local `phpunit.xml` that merely omits it (an
+old copy of the dist) fails them. `ExceptionArgumentsHiddenInTestsTest` pins the dist entry and the
+shape of the child's command (the runtime checks alone would stay green in CI), the effect on
+`getTrace()`, on a `FlattenException` and in a child, and that no test names `PHP_BINARY` outside the
+helper. **Not covered**: `debug_backtrace()` (the directive only acts on exceptions — measured), the
+frame of a `require`, which keeps the included path, a child started otherwise (a literal `'php'`,
+`PhpExecutableFinder`, `bin/console` by its shebang — a token heuristic cannot tell a literal `'php'`
+command from test data, so the guard does not try), and dev over HTTP (`APP_DEBUG` error bodies, Off
+there) — which is why the #411/#414 guards stay. Setting it in `php.dev.ini` would cover every child at
+once, at the cost of dev CLI traces: not done, an open question of #420.

@@ -30,18 +30,12 @@ final class ExceptionArgumentsHiddenInTestsTest extends TestCase
     /** Assez court pour que `getTraceAsString()`, qui tronque à 15 caractères, l'écrive en entier si les arguments étaient gardés. */
     private const string ARGUMENT = 'arg-420';
 
-    private const string DIRECTIVE = 'zend.exception_ignore_args';
-
     public function testPhpUnitConfigurationDropsCallArgumentsFromExceptionTraces(): void
     {
         $path = $this->backendDirectory().'/phpunit.dist.xml';
         self::assertFileIsReadable($path);
 
-        $configuration = new SimpleXMLElement((string) file_get_contents($path));
-        $settings = $configuration->xpath('/phpunit/php/ini[@name="'.self::DIRECTIVE.'"]/@value');
-
-        self::assertIsArray($settings);
-        self::assertSame(['1'], array_map(strval(...), $settings), 'phpunit.dist.xml pose zend.exception_ignore_args à 1 (issue #420).');
+        self::assertSame(['1'], $this->declaredValues($path), 'phpunit.dist.xml pose zend.exception_ignore_args à 1 (issue #420).');
     }
 
     public function testAnExceptionTraceCarriesNoCallArgumentUnderPhpUnit(): void
@@ -78,16 +72,29 @@ final class ExceptionArgumentsHiddenInTestsTest extends TestCase
     /**
      * Un processus `php` lancé par un test ne reçoit pas le `<ini>` de
      * PHPUnit, et sa sortie d'erreur, trace comprise, finit dans le message
-     * d'échec du test qui l'a lancé.
+     * d'échec du test qui l'a lancé. L'exécution seule serait creuse en CI,
+     * où l'enfant charge aussi `php.ini-production` : la forme de la commande
+     * est vérifiée en plus.
      */
     public function testAChildPhpProcessInheritsTheSettingOfPhpUnit(): void
     {
-        $child = new Process(ChildPhpProcess::command('-r', 'echo ini_get("'.self::DIRECTIVE.'");'));
+        $value = (string) \ini_get(ChildPhpProcess::DIRECTIVE);
+        self::assertSame(['-d', ChildPhpProcess::DIRECTIVE.'='.$value, 'script.php'], \array_slice(ChildPhpProcess::command('script.php'), 1), 'La directive passe avant le script.');
+
+        $child = new Process(ChildPhpProcess::command('-r', 'echo ini_get("'.ChildPhpProcess::DIRECTIVE.'");'));
         $child->mustRun();
 
-        self::assertSame((string) \ini_get(self::DIRECTIVE), $child->getOutput());
+        // `-d …=On` est relu `1` par l'enfant : on compare l'état, pas l'écriture.
+        self::assertSame(self::isOn($value), self::isOn($child->getOutput()));
     }
 
+    /**
+     * Ne voit que `PHP_BINARY`, la façon dont la suite lance PHP. Un `'php'`
+     * littéral, `PhpExecutableFinder`, `PHP_BINDIR` ou un `bin/console` lancé
+     * par son shebang lui échappent : un `'php'` en tête de tableau est aussi
+     * une donnée de test courante (un nom de technologie), qu'aucune
+     * heuristique par jetons ne distingue d'une commande.
+     */
     public function testNoTestStartsPhpWithoutChildPhpProcess(): void
     {
         $helper = (new ReflectionClass(ChildPhpProcess::class))->getFileName();
@@ -109,17 +116,36 @@ final class ExceptionArgumentsHiddenInTestsTest extends TestCase
     /**
      * Le `phpunit.xml` local (ignoré par git), que PHPUnit lit à la place de
      * `phpunit.dist.xml`, est l'échappatoire documentée pour déboguer avec les
-     * arguments : la suite le signale par un saut plutôt que par un rouge
-     * qu'on apprendrait à ignorer. Partout ailleurs, CI comprise, le réglage
-     * est exigé.
+     * arguments : quand il pose **explicitement** la directive à Off, la suite
+     * le signale par un saut plutôt que par un rouge qu'on apprendrait à
+     * ignorer. Un `phpunit.xml` qui l'omet (copié d'une dist d'avant #420)
+     * n'est pas un choix : le test échoue, comme partout ailleurs, CI comprise.
      */
     private function requireTheSettingUnlessDisabledLocally(): void
     {
-        if ('1' !== \ini_get(self::DIRECTIVE) && is_file($this->backendDirectory().'/phpunit.xml')) {
+        $local = $this->backendDirectory().'/phpunit.xml';
+        $declaredOff = is_file($local) && array_any($this->declaredValues($local), static fn (string $value): bool => !self::isOn($value));
+        if ($declaredOff && !self::isOn((string) \ini_get(ChildPhpProcess::DIRECTIVE))) {
             self::markTestSkipped('zend.exception_ignore_args désactivé par un phpunit.xml local : les traces portent les arguments des appels.');
         }
 
-        self::assertSame('1', \ini_get(self::DIRECTIVE));
+        self::assertTrue(self::isOn((string) \ini_get(ChildPhpProcess::DIRECTIVE)), 'zend.exception_ignore_args est actif sous PHPUnit (issue #420).');
+    }
+
+    /** `1`, `On`, `true`, `yes` : ce que PHP lit comme vrai pour une directive booléenne. */
+    private static function isOn(string $value): bool
+    {
+        return filter_var($value, \FILTER_VALIDATE_BOOL);
+    }
+
+    /**
+     * @return list<string> les valeurs que ce fichier de configuration PHPUnit donne à la directive
+     */
+    private function declaredValues(string $path): array
+    {
+        $settings = new SimpleXMLElement((string) file_get_contents($path))->xpath('/phpunit/php/ini[@name="'.ChildPhpProcess::DIRECTIVE.'"]/@value');
+
+        return array_values(array_map(strval(...), \is_array($settings) ? $settings : []));
     }
 
     private function backendDirectory(): string

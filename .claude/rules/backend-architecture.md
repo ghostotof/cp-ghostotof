@@ -98,8 +98,7 @@ another name or in an `array` is hidden by hand and pinned in `HIDDEN_BY_HAND` (
 production and, since #420, PHPUnit strip arguments (`zend.exception_ignore_args`, see
 `.claude/rules/backend-outillage.md`): dev does not (the debug JSON error body, Messenger's
 `ErrorDetailsStamp`, output pasted in a ticket or an assistant session), and `debug_backtrace()` never
-does. The
-attribute only hides that frame's arguments: not a message, a local variable, nor a vendor call that
+does. The attribute only hides that frame's arguments: not a message, a local variable, nor a vendor call that
 receives the value next (`Cookie::create()`, Lexik). The walk and the hash exclusion are shared with the
 password guard (`tests/Support/SensitiveParameters`), so a change there moves both.
 
