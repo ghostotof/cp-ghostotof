@@ -18,6 +18,15 @@ use SplFileInfo;
  */
 final class PhpSources
 {
+    /**
+     * Ce que les messages de correction des gardes de style (UnsortedImports,
+     * MisqualifiedNativeCalls) font lancer dans le conteneur `backend` avant
+     * la correction. php-cs-fixer n'est volontairement pas une dépendance
+     * (#391) : son phar, à une version épinglée, se pose sous `var/`, qui
+     * n'est pas versionné.
+     */
+    public const string CS_FIXER_DOWNLOAD = 'curl -fsSL -o var/php-cs-fixer.phar https://github.com/PHP-CS-Fixer/PHP-CS-Fixer/releases/download/v3.95.27/php-cs-fixer.phar';
+
     private const array IGNORED = [\T_WHITESPACE, \T_COMMENT, \T_DOC_COMMENT];
 
     /**
