@@ -82,10 +82,11 @@ paths:
     keeps the message, the whole `previous` chain and each one's `traceAsString` (it empties the
     structured trace only; string arguments are cut at `zend.exception_string_param_max_len`, absent when
     `zend.exception_ignore_args` is on) into the `failure_transport`, and the retry listener logs the
-    message on every attempt — prod included. So **any** failure of `send()` becomes
-    `AccountInvitationDeliveryException` — `becauseTransportFailed()` (class + code) or
-    `becauseSendingFailed()` (type, plus `<template>:<line>` for a Twig error, the first wrapped exception
-    of a `HandlerFailedException`) —, never with a `previous`, never quoting the original message. Retry
+    message on every attempt — prod included. So **any** failure of building the e-mail (an `Address`
+    Mime refuses, which it quotes — #356) or of `send()` becomes `AccountInvitationDeliveryException` —
+    `becauseTransportFailed()` (class + code) or `becauseSendingFailed()` (type plus `<template>:<line>`
+    for a Twig error, `<file basename>:<line>` otherwise, described from the innermost exception of nested
+    `HandlerFailedException`s) —, never with a `previous`, never quoting the original message. Retry
     is unchanged in this wiring: neither the replaced exception nor this one is (un)recoverable, the
     transport's strategy applies; one bare from `send()` would lose that effect (none exists).
     `SendAccountInvitationHandlerTest` drives the real mailer chain (transport, bus, dispatcher,

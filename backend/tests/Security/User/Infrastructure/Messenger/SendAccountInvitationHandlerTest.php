@@ -11,6 +11,7 @@ use App\Security\User\Domain\Exception\AccountInvitationDeliveryException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler;
+use ArrayObject;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use LogicException;
@@ -45,7 +46,9 @@ use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\RawMessage;
 use Throwable;
 use Twig\Environment;
+use Twig\Error\RuntimeError;
 use Twig\Loader\ArrayLoader;
+use Twig\Source;
 
 /**
  * Périmètre du handler depuis l'audit C2 (décision D3) : c'est lui qui
@@ -271,7 +274,8 @@ final class SendAccountInvitationHandlerTest extends TestCase
         );
 
         // Ce que la table du failure_transport stocke : l'enveloppe sérialisée
-        // (PhpSerializer), stamp compris.
+        // (Symfony\Component\Messenger\Transport\Serialization\PhpSerializer),
+        // stamp compris.
         self::assertStringNotContainsString(
             $failure['clearToken'],
             $failure['serializedStamp'],
@@ -338,19 +342,68 @@ final class SendAccountInvitationHandlerTest extends TestCase
 
     /**
      * Le rendu a lieu une seconde fois derrière le bus du mailer : un échec y
-     * arrive enveloppé dans une HandlerFailedException, dont le nom ne dit
-     * rien. C'est l'exception enveloppée qui est nommée, sans son message.
+     * arrive enveloppé dans une HandlerFailedException (une par bus traversé),
+     * dont le nom ne dit rien. C'est l'exception du fond qui est décrite, par
+     * son type et son emplacement, sans son message.
      */
-    public function testAFailureWrappedByTheMailerBusIsNamedByTheWrappedException(): void
+    public function testAFailureWrappedByTheMailerBusIsDescribedByTheInnermostException(): void
+    {
+        $envelope = new Envelope(new SendEmailMessage(new TemplatedEmail()));
+        $mailer = self::createStub(MailerInterface::class);
+        $mailer->method('send')->willThrowException(new HandlerFailedException($envelope, [
+            new HandlerFailedException($envelope, [new LogicException('https://front.test/fr/set-password#sentinel')]),
+        ]));
+
+        $exception = $this->deliveryFailureWith($mailer);
+
+        self::assertMatchesRegularExpression(
+            '~\(LogicException, SendAccountInvitationHandlerTest\.php:\d+\)~',
+            $exception->getMessage(),
+        );
+        self::assertStringNotContainsString('sentinel', $exception->getMessage());
+    }
+
+    /**
+     * Twig rend -1 quand il ne sait pas la ligne : le gabarit seul, alors.
+     */
+    public function testATemplateErrorWithoutAKnownLineNamesTheTemplateOnly(): void
     {
         $mailer = self::createStub(MailerInterface::class);
-        $mailer->method('send')->willThrowException(new HandlerFailedException(
-            new Envelope(new SendEmailMessage(new TemplatedEmail())),
-            [new LogicException('https://front.test/fr/set-password#sentinel')],
-        ));
+        $mailer->method('send')->willThrowException(
+            new RuntimeError('sentinel', -1, new Source('', 'emails/account_invitation.html.twig')),
+        );
 
+        $message = $this->deliveryFailureWith($mailer)->getMessage();
+
+        self::assertStringContainsString('(Twig\Error\RuntimeError, emails/account_invitation.html.twig)', $message);
+        self::assertStringNotContainsString('sentinel', $message);
+    }
+
+    /**
+     * Le jeton est déjà valide quand l'e-mail se construit : une adresse que
+     * Mime refuse (un compte invité avant `email_validation_mode: strict`) ne
+     * doit pas faire remonter son RfcComplianceException, qui la cite
+     * (issue #356), dans le stamp ni dans les logs du worker.
+     */
+    public function testARecipientAddressMimeRefusesIsNeverQuoted(): void
+    {
+        $mailer = $this->createMock(MailerInterface::class);
+        $mailer->expects(self::never())->method('send');
+
+        $exception = $this->deliveryFailureWith($mailer, 'sentinel..recipient@example.com');
+
+        self::assertStringContainsString('RfcComplianceException', $exception->getMessage());
+        self::assertStringNotContainsString('sentinel', $exception->getMessage());
+    }
+
+    /**
+     * Invite le compte et rend l'exception de domaine levée, contrôlée sans
+     * `previous` (issue #356, #419).
+     */
+    private function deliveryFailureWith(MailerInterface $mailer, string $email = 'newcomer@example.com'): AccountInvitationDeliveryException
+    {
         $handler = $this->handler(
-            $this->pendingUser('newcomer', 'newcomer@example.com'),
+            $this->pendingUser('newcomer', $email),
             self::createStub(PasswordSetupTokenRepositoryInterface::class),
             $mailer,
             new MockClock(),
@@ -358,12 +411,13 @@ final class SendAccountInvitationHandlerTest extends TestCase
 
         try {
             $handler(new SendAccountInvitationMessage(self::USER_ID, 'fr'));
-            self::fail('AccountInvitationDeliveryException aurait dû être levée.');
         } catch (AccountInvitationDeliveryException $exception) {
             self::assertNull($exception->getPrevious());
-            self::assertStringContainsString('(LogicException)', $exception->getMessage());
-            self::assertStringNotContainsString('sentinel', $exception->getMessage());
+
+            return $exception;
         }
+
+        self::fail('AccountInvitationDeliveryException aurait dû être levée.');
     }
 
     private function pendingUser(string $username, string $email): CpgUser
@@ -379,7 +433,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
 
     /**
      * Fait échouer le rendu de l'e-mail par la vraie chaîne du mailer
-     * ({@see self::mailerRendering()}), derrière un vrai bus Messenger comme
+     * ({@see self::renderingMailer()}), derrière un vrai bus Messenger comme
      * dans le worker. Rend le jeton émis, l'échec que le worker reçoit, et
      * leurs formes texte : l'exception du rendu telle que send() la lève, le
      * stamp sérialisé, l'échec du worker tel qu'un log l'écrit. PHP tronque
@@ -391,7 +445,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
      */
     private function failToRender(string $brokenTextTemplate): array
     {
-        $mailer = new class($this->mailerRendering($brokenTextTemplate)) implements MailerInterface {
+        $mailer = new class($this->renderingMailer($brokenTextTemplate)) implements MailerInterface {
             public ?string $setupUrl = null;
             public ?Throwable $failure = null;
 
@@ -417,9 +471,19 @@ final class SendAccountInvitationHandlerTest extends TestCase
             }
         };
 
+        // Le condensat enregistré, lu après coup par la fermeture du dispatch.
+        /** @var ArrayObject<string, string> $savedToken */
+        $savedToken = new ArrayObject();
+        $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('save')->willReturnCallback(
+            static function (PasswordSetupToken $token) use ($savedToken): void {
+                $savedToken['hash'] = $token->getTokenHash();
+            },
+        );
+
         $handler = $this->handler(
             $this->pendingUser('newcomer', 'newcomer@example.com'),
-            self::createStub(PasswordSetupTokenRepositoryInterface::class),
+            $tokenRepository,
             $mailer,
             new MockClock(),
         );
@@ -427,7 +491,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
             SendAccountInvitationMessage::class => [$handler],
         ]))]);
 
-        return $this->withVerboseTraces(static function () use ($bus, $mailer): array {
+        return $this->withVerboseTraces(static function () use ($bus, $mailer, $savedToken): array {
             try {
                 $bus->dispatch(new SendAccountInvitationMessage(self::USER_ID, 'fr'));
                 self::fail('Le rendu aurait dû échouer.');
@@ -435,6 +499,8 @@ final class SendAccountInvitationHandlerTest extends TestCase
                 self::assertInstanceOf(Throwable::class, $mailer->failure);
                 self::assertIsString($mailer->setupUrl);
                 self::assertSame(1, preg_match('~#([0-9a-f]{64})\z~', $mailer->setupUrl, $matches));
+                // La prémisse de #419 : ce jeton est déjà valide en base.
+                self::assertSame($savedToken['hash'] ?? null, hash('sha256', $matches[1]));
 
                 return [
                     'clearToken' => $matches[1],
@@ -449,13 +515,14 @@ final class SendAccountInvitationHandlerTest extends TestCase
 
     /**
      * La chaîne du mailer câblée comme `mailer.mailer` (transport, bus,
-     * dispatcher). Le gabarit y est rendu deux fois : au MessageEvent
-     * « queued » que Mailer::send() émet avant le bus (MessageListener rend
+     * dispatcher). Le gabarit y est rendu deux fois : au
+     * {@see \Symfony\Component\Mailer\Event\MessageEvent} « queued » que
+     * Mailer::send() émet avant le bus (MessageListener rend
      * sans regarder isQueued()), puis dans le transport, derrière le bus
      * (SendEmailMessage traité en synchrone faute de routage). Un gabarit cassé
      * échoue donc dès le premier rendu, hors de toute HandlerFailedException.
      */
-    private function mailerRendering(string $brokenTextTemplate): MailerInterface
+    private function renderingMailer(string $brokenTextTemplate): MailerInterface
     {
         $twig = new Environment(new ArrayLoader([
             'emails/account_invitation.html.twig' => '<p>{{ setupUrl }}</p>',
