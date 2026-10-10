@@ -76,11 +76,17 @@ final class BackofficeWatchedProductResource
          * catalogue du fournisseur accepte réellement (minuscules, chiffres,
          * tirets, points) : une majuscule ou un espace produirait une entrée
          * « inconnue » sans autre explication.
+         *
+         * Ancré par `\z` et non `$`, qui accepte un `\n` final (issue #409).
+         * `htmlPattern` est alors explicite : API Platform publie le motif dans
+         * l'OpenAPI via `getHtmlPattern()`, qui ne retire qu'un `$` final et y
+         * laisserait `\z` — un « z » littéral pour ECMAScript.
          */
         #[Assert\NotBlank]
         #[Assert\Length(max: 60)]
         #[Assert\Regex(
-            pattern: '/^[a-z0-9][a-z0-9.-]*$/',
+            pattern: '/^[a-z0-9][a-z0-9.-]*\z/',
+            htmlPattern: '[a-z0-9][a-z0-9.-]*',
             message: 'Le slug ne peut contenir que des minuscules, des chiffres, des tirets et des points.',
         )]
         #[WatchedProductSlugExists(groups: [self::CREATION_GROUP])]

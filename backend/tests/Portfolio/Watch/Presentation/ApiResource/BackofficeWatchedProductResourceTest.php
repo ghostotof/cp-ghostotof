@@ -430,6 +430,34 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
     }
 
     /**
+     * Régression #409 : le motif du slug finissait par `$`, qui accepte la
+     * position précédant un `\n` final. `nginx\n` passait donc la validation ;
+     * seul `WatchedProductSlugExists` l'aurait arrêté, et seulement à la
+     * création, si le fournisseur répondait. Le fournisseur est simulé ici
+     * comme acceptant tout slug : le refus doit venir du motif lui-même.
+     */
+    public function testASlugEndingWithANewlineIsRejectedByValidation(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $this->stubSlugVerification($client);
+
+        $client->request('POST', '/api/backoffice/watch/products', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody([
+            'slug' => "nginx\n",
+            'label' => 'nginx',
+            'versionSource' => 'manual',
+            'version' => '1.30.4',
+        ]));
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertStringContainsString('Le slug ne peut contenir', (string) $client->getResponse()->getContent());
+    }
+
+    /**
      * Substitue la source de cycles de vie pour que la validation du slug (D10)
      * ne sorte jamais sur le réseau.
      *
