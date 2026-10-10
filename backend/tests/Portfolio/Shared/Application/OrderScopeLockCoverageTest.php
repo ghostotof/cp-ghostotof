@@ -57,7 +57,7 @@ use Symfony\Component\Uid\Uuid;
  *
  * @phpstan-type LocalizedContext array{
  *     create: Closure(Locale, ?Uuid): TranslatableContent,
- *     detach: Closure(TranslatableContent): mixed,
+ *     update: Closure(TranslatableContent, ?Uuid): mixed,
  *     reorder: Closure(list<string>): mixed,
  * }
  */
@@ -95,7 +95,7 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
 
             return [
                 'create' => static fn (Locale $l, ?Uuid $g): Contribution => $a->create($l, 'T', 'P', 'R', 'https://example.com', 'S', 'B', $g),
-                'detach' => static fn (TranslatableContent $e): Contribution => $a->update(self::as(Contribution::class, $e)->getId(), 'T', 'P', 'R', 'https://example.com', 'S', 'B', null),
+                'update' => static fn (TranslatableContent $e, ?Uuid $g): Contribution => $a->update(self::as(Contribution::class, $e)->getId(), 'T', 'P', 'R', 'https://example.com', 'S', 'B', $g),
                 'reorder' => $a->reorder(...),
             ];
         });
@@ -105,7 +105,7 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
 
             return [
                 'create' => static fn (Locale $l, ?Uuid $g): Incident => $a->create($l, 'T', '1.0.0', $at, 'I', 'C', 'R', 'V', $g),
-                'detach' => static fn (TranslatableContent $e): Incident => $a->update(self::as(Incident::class, $e)->getId(), 'T', '1.0.0', $at, 'I', 'C', 'R', 'V', null),
+                'update' => static fn (TranslatableContent $e, ?Uuid $g): Incident => $a->update(self::as(Incident::class, $e)->getId(), 'T', '1.0.0', $at, 'I', 'C', 'R', 'V', $g),
                 'reorder' => $a->reorder(...),
             ];
         });
@@ -114,7 +114,7 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
 
             return [
                 'create' => static fn (Locale $l, ?Uuid $g): QualityPrinciple => $a->create($l, 'T', 'D', 'shield', $g),
-                'detach' => static fn (TranslatableContent $e): QualityPrinciple => $a->update(self::as(QualityPrinciple::class, $e)->getId(), 'T', 'D', 'shield', null),
+                'update' => static fn (TranslatableContent $e, ?Uuid $g): QualityPrinciple => $a->update(self::as(QualityPrinciple::class, $e)->getId(), 'T', 'D', 'shield', $g),
                 'reorder' => $a->reorder(...),
             ];
         });
@@ -123,7 +123,7 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
 
             return [
                 'create' => static fn (Locale $l, ?Uuid $g): QualityTrait => $a->create($l, 'L', $g),
-                'detach' => static fn (TranslatableContent $e): QualityTrait => $a->update(self::as(QualityTrait::class, $e)->getId(), 'L', null),
+                'update' => static fn (TranslatableContent $e, ?Uuid $g): QualityTrait => $a->update(self::as(QualityTrait::class, $e)->getId(), 'L', $g),
                 'reorder' => $a->reorder(...),
             ];
         });
@@ -132,7 +132,7 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
 
             return [
                 'create' => static fn (Locale $l, ?Uuid $g): AboutSiteCard => $a->create($l, 'T', 'D', null, $g),
-                'detach' => static fn (TranslatableContent $e): AboutSiteCard => $a->update(self::as(AboutSiteCard::class, $e)->getId(), 'T', 'D', null, null),
+                'update' => static fn (TranslatableContent $e, ?Uuid $g): AboutSiteCard => $a->update(self::as(AboutSiteCard::class, $e)->getId(), 'T', 'D', null, $g),
                 'reorder' => $a->reorder(...),
             ];
         });
@@ -141,7 +141,7 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
 
             return [
                 'create' => static fn (Locale $l, ?Uuid $g): AboutMeCard => $a->create($l, AboutMeCardCategory::HOBBY, 'T', 'D', null, $g),
-                'detach' => static fn (TranslatableContent $e): AboutMeCard => $a->update(self::as(AboutMeCard::class, $e)->getId(), 'T', 'D', null, null),
+                'update' => static fn (TranslatableContent $e, ?Uuid $g): AboutMeCard => $a->update(self::as(AboutMeCard::class, $e)->getId(), 'T', 'D', null, $g),
                 'reorder' => static function (array $keys) use ($a): void {
                     /** @var list<string> $keys appelée par localizedOperations(), qui passe des clés de groupe */
                     $a->reorder(AboutMeCardCategory::HOBBY, $keys);
@@ -153,7 +153,7 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
 
             return [
                 'create' => static fn (Locale $l, ?Uuid $g): AnonymousCvSection => $a->create($l, 'T', 'S', 5, 'A', $g),
-                'detach' => static fn (TranslatableContent $e): AnonymousCvSection => $a->update(self::as(AnonymousCvSection::class, $e)->getId(), 'T', 'S', 5, 'A', null),
+                'update' => static fn (TranslatableContent $e, ?Uuid $g): AnonymousCvSection => $a->update(self::as(AnonymousCvSection::class, $e)->getId(), 'T', 'S', 5, 'A', $g),
                 'reorder' => $a->reorder(...),
             ];
         });
@@ -162,7 +162,7 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
 
             return [
                 'create' => static fn (Locale $l, ?Uuid $g): CaseStudy => $a->create($l, 'T', 'P', 'S', 'C', 'M', $g),
-                'detach' => static fn (TranslatableContent $e): CaseStudy => $a->update(self::as(CaseStudy::class, $e)->getId(), 'T', 'P', 'S', 'C', 'M', null),
+                'update' => static fn (TranslatableContent $e, ?Uuid $g): CaseStudy => $a->update(self::as(CaseStudy::class, $e)->getId(), 'T', 'P', 'S', 'C', 'M', $g),
                 'reorder' => $a->reorder(...),
             ];
         });
@@ -218,7 +218,7 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
     }
 
     /**
-     * Les quatre opérations d'un contenu localisé qui calculent une position.
+     * Les cinq opérations d'un contenu localisé qui calculent une position.
      *
      * @param Closure(): LocalizedContext $context
      *
@@ -241,12 +241,20 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
             return static fn (): TranslatableContent => $operations['create'](Locale::EN, $group);
         }];
         // Détacher une entrée de sa traduction l'envoie en fin de périmètre.
-        yield $table.' update' => [$table, static function () use ($context): Closure {
+        yield $table.' update that detaches' => [$table, static function () use ($context): Closure {
             $operations = $context();
             $french = $operations['create'](Locale::FR, null);
             $operations['create'](Locale::EN, $french->getTranslationGroup());
 
-            return static fn (): mixed => $operations['detach']($french);
+            return static fn (): mixed => $operations['update']($french, null);
+        }];
+        // Rattacher une entrée seule à un groupe lui en fait hériter la position.
+        yield $table.' update that reattaches' => [$table, static function () use ($context): Closure {
+            $operations = $context();
+            $group = $operations['create'](Locale::FR, null)->getTranslationGroup();
+            $english = $operations['create'](Locale::EN, null);
+
+            return static fn (): mixed => $operations['update']($english, $group);
         }];
         yield $table.' reorder' => [$table, static function () use ($context): Closure {
             $operations = $context();

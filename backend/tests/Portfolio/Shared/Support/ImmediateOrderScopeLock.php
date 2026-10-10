@@ -14,7 +14,7 @@ use Closure;
  * OrderScopeLockCoverageTest et de ContributionOrderConcurrencyTest, contre
  * PostgreSQL.
  */
-final class ImmediateOrderScopeLock implements OrderScopeLockInterface
+final readonly class ImmediateOrderScopeLock implements OrderScopeLockInterface
 {
     public function withLock(string $scope, Closure $operation): mixed
     {

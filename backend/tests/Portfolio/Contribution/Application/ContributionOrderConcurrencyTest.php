@@ -27,8 +27,9 @@ use Symfony\Component\Process\Process;
  *  2. A lit le périmètre et calcule ses positions ; au `preFlush` de son
  *     écriture — le dernier instant avant qu'elle n'atteigne la base —, le
  *     test relâche la barrière ;
- *  3. le test attend que B ait **fini** ou soit **bloqué sur un verrou**
- *     PostgreSQL, puis laisse A écrire ;
+ *  3. le test attend que B ait **fini** ou que sa session (pid annoncé avec
+ *     son « ready ») soit **bloquée sur un verrou** PostgreSQL, puis laisse A
+ *     écrire ;
  *  4. une fois B terminé, le test relit la table.
  *
  * Sans verrou de périmètre, B lit l'état antérieur à A et termine pendant la
@@ -124,21 +125,22 @@ final class ContributionOrderConcurrencyTest extends KernelTestCase
             timeout: self::TIMEOUT_SECONDS,
         );
         $writer->start();
-        $this->waitUntilReady($writer);
+        $writerPid = $this->waitUntilReady($writer);
 
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);
         $probe = self::openProbeBeside($entityManager->getConnection());
         $eventManager = $entityManager->getEventManager();
 
-        $listener = new class($barrier, $barrierPath, $writer, $probe, $this->waitUntilDoneOrBlocked(...)) {
+        $listener = new class($barrier, $barrierPath, $writer, $writerPid, $probe, $this->waitUntilDoneOrBlocked(...)) {
             /**
-             * @param resource                          $barrier
-             * @param Closure(Process, Connection): void $waitUntilDoneOrBlocked
+             * @param resource                                $barrier
+             * @param Closure(Process, int, Connection): void $waitUntilDoneOrBlocked
              */
             public function __construct(
                 private $barrier,
                 private readonly string $barrierPath,
                 private readonly Process $writer,
+                private readonly int $writerPid,
                 private readonly Connection $probe,
                 private readonly Closure $waitUntilDoneOrBlocked,
             ) {
@@ -156,7 +158,7 @@ final class ContributionOrderConcurrencyTest extends KernelTestCase
                 flock($this->barrier, \LOCK_UN);
                 fclose($this->barrier);
                 unlink($this->barrierPath);
-                ($this->waitUntilDoneOrBlocked)($this->writer, $this->probe);
+                ($this->waitUntilDoneOrBlocked)($this->writer, $this->writerPid, $this->probe);
                 $this->probe->close();
             }
         };
@@ -166,17 +168,19 @@ final class ContributionOrderConcurrencyTest extends KernelTestCase
     }
 
     /**
-     * Rend la main dès que B a terminé ou attend un verrou PostgreSQL. Interrogé
-     * depuis une connexion à part, hors de toute transaction : pg_stat_activity
-     * est figé pour la durée d'une transaction.
+     * Rend la main dès que B a terminé ou que **sa** session attend un verrou
+     * PostgreSQL : une autre session en attente ne doit pas passer pour lui.
+     * Interrogé depuis une connexion à part, hors de toute transaction :
+     * pg_stat_activity est figé pour la durée d'une transaction.
      */
-    private function waitUntilDoneOrBlocked(Process $writer, Connection $probe): void
+    private function waitUntilDoneOrBlocked(Process $writer, int $writerPid, Connection $probe): void
     {
         $deadline = microtime(true) + self::TIMEOUT_SECONDS;
 
         while ($writer->isRunning()) {
             $blocked = $probe->fetchOne(
-                "SELECT count(*) > 0 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()",
+                "SELECT wait_event_type IS NOT DISTINCT FROM 'Lock' FROM pg_stat_activity WHERE pid = ?",
+                [$writerPid],
             );
             if (true === $blocked) {
                 return;
@@ -188,11 +192,17 @@ final class ContributionOrderConcurrencyTest extends KernelTestCase
         }
     }
 
-    private function waitUntilReady(Process $writer): void
+    /**
+     * Attend le « ready <pid> » de B et rend le pid de sa session PostgreSQL.
+     */
+    private function waitUntilReady(Process $writer): int
     {
         $deadline = microtime(true) + self::TIMEOUT_SECONDS;
 
-        while (!str_contains($writer->getOutput(), "ready\n")) {
+        while (true) {
+            if (1 === preg_match('/^ready (\d+)$/m', $writer->getOutput(), $matches)) {
+                return (int) $matches[1];
+            }
             if (!$writer->isRunning()) {
                 self::fail(\sprintf("Le processus concurrent s'est arrêté avant la barrière :\n%s", $writer->getErrorOutput()));
             }

@@ -12,7 +12,8 @@ declare(strict_types=1);
  * Déroulé :
  *  1. démarre le kernel de test et ouvre sa connexion PostgreSQL : tout ce
  *     qui est lent se fait avant la barrière ;
- *  2. écrit « ready », puis attend un verrou partagé sur le fichier-barrière,
+ *  2. écrit « ready <pid> », pid de cette connexion — celle qui attendra le
+ *     verrou —, puis attend un verrou partagé sur le fichier-barrière,
  *     que le test tient en exclusif jusqu'au point d'entrelacement voulu ;
  *  3. crée la contribution (dans le groupe s'il est donné, en fin de
  *     périmètre sinon) et écrit sa position ;
@@ -43,8 +44,13 @@ if (!$administrator instanceof ContributionAdministratorInterface || !$entityMan
 }
 
 // Ouvre la connexion avant la barrière : la poignée de main ne doit pas
-// retarder la création au-delà du point d'entrelacement.
-$entityManager->getConnection()->executeQuery('SELECT 1');
+// retarder la création au-delà du point d'entrelacement. Son pid permet au
+// test de reconnaître l'attente de verrou de ce processus-ci.
+$pid = $entityManager->getConnection()->fetchOne('SELECT pg_backend_pid()');
+if (!\is_int($pid)) {
+    fwrite(\STDERR, "pg_backend_pid() n'a pas rendu d'entier.\n");
+    exit(2);
+}
 
 $barrier = fopen($barrierPath, 'r');
 if (false === $barrier) {
@@ -52,7 +58,7 @@ if (false === $barrier) {
     exit(2);
 }
 
-echo "ready\n";
+echo 'ready '.$pid."\n";
 flush();
 
 if (!flock($barrier, \LOCK_SH)) {
