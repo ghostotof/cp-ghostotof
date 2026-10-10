@@ -19,7 +19,7 @@ interface PasswordSetupServiceInterface
      * @throws InvalidPasswordSetupTokenException si le jeton est inconnu
      * @throws PasswordSetupTokenExpiredException si le jeton est expiré ou déjà utilisé
      */
-    public function validate(string $clearToken): void;
+    public function validate(#[SensitiveParameter] string $clearToken): void;
 
     /**
      * Hache le mot de passe, active le compte et marque le jeton comme utilisé.
@@ -27,5 +27,5 @@ interface PasswordSetupServiceInterface
      * @throws InvalidPasswordSetupTokenException si le jeton est inconnu
      * @throws PasswordSetupTokenExpiredException si le jeton est expiré ou déjà utilisé
      */
-    public function complete(string $clearToken, #[SensitiveParameter] string $plainPassword): void;
+    public function complete(#[SensitiveParameter] string $clearToken, #[SensitiveParameter] string $plainPassword): void;
 }

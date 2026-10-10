@@ -22,11 +22,11 @@ use App\Tests\Security\User\Fixtures\PlainPasswordFieldsFixture;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Support\PhpSources;
 use App\Tests\Support\PlainPasswordInputs;
+use App\Tests\Support\SensitiveParameters;
 use PhpToken;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
-use ReflectionParameter;
 use ReflectionProperty;
 
 /**
@@ -169,15 +169,7 @@ final class PlainPasswordInputsTest extends TestCase
 
     public function testEveryPlainPasswordParameterOfSrcIsHiddenFromStackTraces(): void
     {
-        $exposed = array_map(
-            PlainPasswordInputs::label(...),
-            array_values(array_filter(
-                PlainPasswordInputs::parameters($this->srcClasses()),
-                static fn (ReflectionParameter $parameter): bool => !PlainPasswordInputs::isHiddenFromTraces($parameter),
-            )),
-        );
-
-        self::assertSame([], $exposed, 'Un paramètre qui reçoit un mot de passe en clair porte #[SensitiveParameter] : sans lui, la valeur figure dans les arguments de toute trace d\'exception qui le traverse.');
+        self::assertSame([], SensitiveParameters::exposed(PlainPasswordInputs::parameters($this->srcClasses())), 'Un paramètre qui reçoit un mot de passe en clair porte #[SensitiveParameter] : sans lui, la valeur figure dans les arguments de toute trace d\'exception qui le traverse.');
     }
 
     public function testOnlyTheDeclaredClassesHashAPassword(): void
@@ -302,7 +294,7 @@ final class PlainPasswordInputsTest extends TestCase
             PlainPasswordFieldsFixture::class.'::change($plainPassword)' => true,
         ], array_combine(
             array_map(PlainPasswordInputs::label(...), $parameters),
-            array_map(PlainPasswordInputs::isHiddenFromTraces(...), $parameters),
+            array_map(SensitiveParameters::isHiddenFromTraces(...), $parameters),
         ));
     }
 

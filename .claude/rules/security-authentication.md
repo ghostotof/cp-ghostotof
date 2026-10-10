@@ -33,6 +33,8 @@ paths:
     name. Any new auth cookie goes through the factory, never `Cookie::create()` or `clearCookie()`
     inline. `__Host-` prefixing is a separate, preprod-tested step (it renames what Lexik and the frontend
     read by name).
+  - **Tokens, JWTs and CSRF values are hidden from stack traces** (`#[SensitiveParameter]`, issue #414): the
+    guard covers all of `src/`, so its rule lives in `.claude/rules/backend-architecture.md`.
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
     listener at priority 20 (must run *above* the Security firewall's priority 8 — see the class docblock).
   - `Infrastructure/Http/LoginCsrfRequestListener.php` — **login-CSRF guard** (issue #76) on the two anonymous

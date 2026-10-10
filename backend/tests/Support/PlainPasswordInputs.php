@@ -8,12 +8,8 @@ use App\Security\User\Presentation\Validator\PlainPasswordLength;
 use PhpToken;
 use ReflectionAttribute;
 use ReflectionClass;
-use ReflectionNamedType;
 use ReflectionParameter;
 use ReflectionProperty;
-use ReflectionType;
-use ReflectionUnionType;
-use SensitiveParameter;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\Constraints\NotBlank;
 use Symfony\Component\Validator\Constraints\NotCompromisedPassword;
@@ -38,6 +34,8 @@ use Symfony\Component\Validator\Constraints\Sequentially;
  *
  * Un nom « haché » (`$hashedPassword`, `$newHashedPassword`) n'est pas une
  * saisie : il est écarté par le recensement, pas par une liste d'exemptions.
+ * Le recensement des paramètres et cette exclusion sont partagés avec la garde
+ * des jetons et secrets (issue #414), dans {@see SensitiveParameters}.
  */
 final class PlainPasswordInputs
 {
@@ -52,8 +50,6 @@ final class PlainPasswordInputs
 
     /** La séquence que tout champ de mot de passe porte, dans cet ordre (revue de #386). */
     public const array SHARED_SEQUENCE = [NotBlank::class, PlainPasswordLength::class, NotCompromisedPassword::class];
-
-    private const string HASHED = '/hash/i';
 
     private const string HASHER_NAMESPACE = 'Symfony\\Component\\PasswordHasher\\';
 
@@ -72,8 +68,8 @@ final class PlainPasswordInputs
         foreach ($classes as $class) {
             foreach ((new ReflectionClass($class))->getProperties() as $property) {
                 if ($property->getDeclaringClass()->getName() === $class
-                    && self::namesAPlainPassword($property->getName())
-                    && self::mayHoldAString($property->getType())) {
+                    && SensitiveParameters::namesAClearSecret($property->getName(), self::NAME)
+                    && SensitiveParameters::mayHoldAString($property->getType())) {
                     $fields[] = $property;
                 }
             }
@@ -120,39 +116,7 @@ final class PlainPasswordInputs
      */
     public static function parameters(array $classes): array
     {
-        $owners = [];
-        foreach ($classes as $class) {
-            $reflection = new ReflectionClass($class);
-            $owners[$class] = $reflection;
-            foreach ($reflection->getInterfaces() as $interface) {
-                if (str_starts_with($interface->getName(), 'App\\')) {
-                    $owners[$interface->getName()] = $interface;
-                }
-            }
-        }
-        ksort($owners);
-
-        $parameters = [];
-        foreach ($owners as $name => $owner) {
-            foreach ($owner->getMethods() as $method) {
-                if ($method->getDeclaringClass()->getName() !== $name) {
-                    continue;
-                }
-                foreach ($method->getParameters() as $parameter) {
-                    if (self::namesAPlainPassword($parameter->getName()) && self::mayHoldAString($parameter->getType())) {
-                        $parameters[] = $parameter;
-                    }
-                }
-            }
-        }
-
-        return $parameters;
-    }
-
-    /** `#[SensitiveParameter]` : la valeur ne figure dans aucune trace d'exception, quel que soit `zend.exception_ignore_args`. */
-    public static function isHiddenFromTraces(ReflectionParameter $parameter): bool
-    {
-        return [] !== $parameter->getAttributes(SensitiveParameter::class);
+        return SensitiveParameters::named($classes, self::NAME);
     }
 
     /**
@@ -232,30 +196,7 @@ final class PlainPasswordInputs
             return $element->getDeclaringClass()->getName().'::$'.$element->getName();
         }
 
-        $function = $element->getDeclaringFunction();
-        $owner = $element->getDeclaringClass()?->getName() ?? '';
-
-        return $owner.'::'.$function->getName().'($'.$element->getName().')';
-    }
-
-    private static function namesAPlainPassword(string $name): bool
-    {
-        return 1 === preg_match(self::NAME, $name) && 1 !== preg_match(self::HASHED, $name);
-    }
-
-    /**
-     * Un type absent, `string`, `mixed`, ou une union qui en contient un. Un
-     * service (`UserPasswordHasherInterface $passwordHasher`) n'est pas une
-     * saisie.
-     */
-    private static function mayHoldAString(?ReflectionType $type): bool
-    {
-        if (null === $type) {
-            return true;
-        }
-
-        $members = $type instanceof ReflectionUnionType ? $type->getTypes() : [$type];
-        return array_any($members, fn(ReflectionType $member): bool => $member instanceof ReflectionNamedType && \in_array($member->getName(), ['string', 'mixed'], true));
+        return SensitiveParameters::label($element);
     }
 
     /**
