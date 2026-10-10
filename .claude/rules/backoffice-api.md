@@ -232,14 +232,21 @@ paths:
   `RetryAfterAware` either sorted by `ThrottledRequestAuditListener` or justified as a per-account quota
   (see `.claude/rules/security-authentication.md`). `RateLimiterLockFailureListener` stays apart on purpose (fixed delay, priority 16).
   **And every quota 429 carries `type: /errors/rate-limited`** (issue #369), the `type` of the nginx zones
-  (`@rate_limited`): one cause, one value for a client to recognise. A quota exception therefore also
-  implements `ProblemExceptionInterface` with `HasProblemType` (`rate-limited`, 429) — model:
-  `BaseAccessRateLimitExceededException`. Without it, on an API Platform operation, the `type` falls back
-  to `/errors/429`, derived from the status alone, which is what the contact, set-password and
-  translation quotas answered until #369. `QuotaExceptionsAreRetryAfterAwareTest` walks every
-  `RetryAfterAware` of `src/` (`DeclaredClasses`) and enforces it; each route's functional 429 test
-  reads the `type`. The `exception_to_status` entries of the three API Platform quotas stay, at 429:
-  that map is read first. **`login_throttling` is not one of them yet**: Lexik's failure handler answers
+  (`@rate_limited`): one cause, one value for a client to recognise. A quota exception therefore declares
+  `implements ProblemExceptionInterface, RetryAfterAware` and `use IsRateLimitedProblem`
+  (`Shared/Domain/Exception`, `rate-limited` + 429 over `HasProblemType`) — never its own
+  `problemType()`. Without it, on an API Platform operation, the `type` falls back to `/errors/429`,
+  derived from the status alone, which is what the contact, set-password and translation quotas answered
+  until #369. `QuotaExceptionsContractTest` (formerly `QuotaExceptionsAreRetryAfterAwareTest`) walks every
+  `RetryAfterAware` of `src/` (`DeclaredClasses`) and enforces both the deadline and the problem type;
+  each route's functional 429 test reads the `type`. **No `exception_to_status` entry for a quota**: on an
+  API Platform operation `getStatus()` already gives the 429, and an entry is a second source that can
+  only diverge — `ErrorListener::getStatusCode` reads the map *first* for the HTTP status, while
+  `Error::createFromException` fills the body's `status` from `getStatus()`, so an entry at 503 would answer
+  HTTP 503 with `"status": 429` and no `Retry-After`. `ProblemStatusMatchesExceptionToStatusTest` (#369)
+  turns red when any entry, global or on a resource or operation, contradicts the `getStatus()` of a
+  `ProblemExceptionInterface` of `src/` — the 409s that keep both (`CannotModifyOwnRolesException`…) included.
+  **`login_throttling` is not one of them yet**: Lexik's failure handler answers
   **401** `Too many failed login attempts`, no problem+json. Decided on 2026-10-10 (#369): it moves to a
   429 `rate-limited` with `Retry-After`, in issue #399, since it touches the login page, the preprod
   smoke test (`tools/smoke-login-throttling.sh`) and the failure handler.
