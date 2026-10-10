@@ -26,8 +26,6 @@ final class BareExceptionInstantiations
     /** Noms en minuscules, sans `\` initial : PHP résout les classes sans tenir compte de la casse. */
     private const array FORBIDDEN = ['exception', 'logicexception', 'runtimeexception'];
 
-    private const array IGNORED = [\T_WHITESPACE, \T_COMMENT, \T_DOC_COMMENT];
-
     private const array NAMES = [\T_STRING, \T_NAME_QUALIFIED, \T_NAME_FULLY_QUALIFIED];
 
     /**
@@ -36,15 +34,11 @@ final class BareExceptionInstantiations
     public static function in(string $directory): array
     {
         $found = [];
-        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS));
-        foreach ($files as $file) {
-            if ($file instanceof \SplFileInfo && 'php' === $file->getExtension()) {
-                foreach (self::inCode((string) file_get_contents($file->getPathname())) as $line) {
-                    $found[] = $file->getPathname().':'.$line;
-                }
+        foreach (PhpSources::files($directory) as $path) {
+            foreach (self::inCode((string) file_get_contents($path)) as $line) {
+                $found[] = $path.':'.$line;
             }
         }
-        sort($found);
 
         return $found;
     }
@@ -54,10 +48,7 @@ final class BareExceptionInstantiations
      */
     public static function inCode(string $code): array
     {
-        $tokens = array_values(array_filter(
-            \PhpToken::tokenize($code),
-            static fn (\PhpToken $token): bool => !$token->is(self::IGNORED),
-        ));
+        $tokens = PhpSources::significantTokens($code);
 
         $namespaced = false;
         /** @var array<string, string> $imports alias en minuscules => classe importée en minuscules */
