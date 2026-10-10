@@ -150,8 +150,8 @@ paths:
     `contact-throttled`, `base-access-throttled`, no subject (the limiter's key is the IP). A listener rather
     than a call at the three throw sites on purpose: `Contact` would otherwise be the first context to
     depend on `Security` — the price is that this listener imports `Contact`'s quota exception. The
-    translator's quota is **not** there: it is a `ROLE_SUPER` account, traced on `ai_usage` (see
-    `.claude/rules/ai.md`). Since these events exist, the matching exceptions are back to `info` in
+    per-account quotas are **not** there — the translator's (`ROLE_SUPER`) and the career assistant's
+    (`ROLE_TRUSTED`), both traced with the account on `ai_usage` (see `.claude/rules/ai.md`). Since these events exist, the matching exceptions are back to `info` in
     `framework.exceptions`. Accepted limits, settled in the review of #356 — don't "fix" them without
     revisiting the trade-off: **`replayed` and `rejected` have legitimate sources** — the set-password page
     calls `validate` on every load, so a person reopening their own link after activation writes
@@ -163,10 +163,13 @@ paths:
     is its trace), and a quota exception wrapped in another one would go unseen (`instanceof` on the
     top-level throwable only). **The sort is a closed list, so a guard holds it open** (issue #361):
     `ThrottledRequestAuditCoverageTest` walks every `RetryAfterAware` of `src/` (through `DeclaredClasses`),
-    hands each one to the real listener, and turns red unless it yields exactly one event of its own or
-    sits in `PER_ACCOUNT` with a justification (the translator and the assistant, both on `ai_usage`). A new
-    anonymous quota therefore gets its interface method, its `match` arm and its event in the same change —
-    never a `PER_ACCOUNT` entry to make the suite pass. **Replay and expiry must cost the same**: `findOneByTokenHash` loads the
+    hands each one to the real listener, and turns red unless it yields exactly one event of its own — a
+    `…Throttled` method, never `loginThrottled` (Symfony's `login_throttling`, a 401) nor an unrelated one
+    such as `rateLimiterUnavailable` — or sits in `PER_ACCOUNT` with a justification (the translator and
+    the assistant, both on `ai_usage`, pinned by their own tests). A new anonymous quota therefore gets its
+    `…Throttled` interface method, its `match` arm and its event in the same change — never a `PER_ACCOUNT`
+    entry to make the suite pass. The guard calls the listener directly: it proves the sort, not that the
+    exception reaches priority 0 unwrapped — `SecurityAuditLogTest` covers the real wiring, extend it too. **Replay and expiry must cost the same**: `findOneByTokenHash` loads the
     account by explicit join, so the `replayed` path, which logs it, pays no extra query behind the
     shared 410 — keep the join. **Consumption is atomic**: `PasswordSetupService::complete()` hashes, then
     `PasswordSetupTokenRepository::claim()` (`UPDATE … WHERE used_at IS NULL`, one row or none), and only
