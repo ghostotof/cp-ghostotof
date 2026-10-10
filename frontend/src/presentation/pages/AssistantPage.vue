@@ -7,6 +7,7 @@ import { MAX_QUESTION_LENGTH } from '../../domain/assistant/services/conversatio
 import type { Locale } from '../../domain/portfolio/entities/Locale'
 import BaseTextarea from '../ui/BaseTextarea.vue'
 import RichText from '../ui/RichText.vue'
+import { retryAfterMinutes } from '../ui/retryAfterMinutes'
 
 const { t, locale } = useI18n()
 const { messages, state, error, draft, draftLength, canSend, send, reset } = useAssistant()
@@ -27,7 +28,7 @@ const errorMessage = computed<string>(() => {
       if (null === failure.retryAfterSeconds) {
         return t('assistant.errors.rateLimited')
       }
-      const minutes = Math.max(1, Math.ceil(failure.retryAfterSeconds / 60))
+      const minutes = retryAfterMinutes(failure.retryAfterSeconds)
       return t('assistant.errors.rateLimitedIn', { minutes }, minutes)
     }
     case 'too-large':

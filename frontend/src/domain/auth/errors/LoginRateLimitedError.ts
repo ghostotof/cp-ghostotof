@@ -12,8 +12,16 @@
  * rejette et le cas retombe sur l'erreur générique.
  */
 export class LoginRateLimitedError extends Error {
-  constructor() {
+  readonly retryAfterSeconds: number | null
+
+  /**
+   * @param retryAfterSeconds délai avant de réessayer, quand le serveur le
+   *   fournit (le throttling de Symfony, jusqu'à 15 min) ; `null` pour la zone
+   *   nginx, qui n'en pose pas.
+   */
+  constructor(retryAfterSeconds: number | null = null) {
     super('Too many login attempts')
     this.name = 'LoginRateLimitedError'
+    this.retryAfterSeconds = retryAfterSeconds
   }
 }

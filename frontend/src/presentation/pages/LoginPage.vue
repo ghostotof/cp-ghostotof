@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuth } from '../../application/auth/useAuth'
 import { InvalidCredentialsError } from '../../domain/auth/errors/InvalidCredentialsError'
 import { LoginRateLimitedError } from '../../domain/auth/errors/LoginRateLimitedError'
+import { retryAfterMinutes } from '../ui/retryAfterMinutes'
 import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
 
 const { t, locale } = useI18n()
@@ -43,7 +44,11 @@ function loginErrorMessage(error: unknown): string {
     return t('auth.invalidCredentials')
   }
   if (error instanceof LoginRateLimitedError) {
-    return t('auth.rateLimited')
+    if (null === error.retryAfterSeconds) {
+      return t('auth.rateLimited')
+    }
+    const minutes = retryAfterMinutes(error.retryAfterSeconds)
+    return t('auth.rateLimitedIn', { minutes }, minutes)
   }
   return t('auth.genericError')
 }
