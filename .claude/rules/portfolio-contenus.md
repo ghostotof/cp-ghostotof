@@ -45,9 +45,11 @@ paths:
     when it fires, look at migrations and SQL writes, which bypass the scope lock below). `WatchedProduct` is not localized, so it is `Orderable` on its
     own id, and its `Administrator` computes the end of the catalogue itself.
     **Every write that computes a position runs under its scope's lock** (issue #389): `create()`, `update()`
-    and `reorder()` of the nine `Administrator`s wrap their **whole body** in
-    `Shared/Application/OrderScopeLockInterface::withLock(ORDER_SCOPE, …)`, `ORDER_SCOPE` being the table
-    name (`about_me_card` too, wider than its per-category ordering scope, on purpose). Without it a "Create
+    and `reorder()` of the eight localized `Administrator`s, `create()` and `reorder()` of
+    `WatchedProductAdministrator` (its `update()` never touches the position), wrap their **whole body** in
+    `Shared/Application/OrderScopeLockInterface::withLock(ORDER_SCOPE, …)`, `ORDER_SCOPE` being the entity
+    class (`<Entity>::class`, never a table name, which the Application layer has no business knowing; the
+    whole table for `AboutMeCard` too, wider than its per-category ordering scope, on purpose). Without it a "Create
     the XX version" landing between a `reorder()`'s read and its save kept the old position (a group on two
     positions, invisible to the exact-set rule), and two simultaneous creations without a group got the same
     `atEndOf()`. The adapter, `Shared/Infrastructure/Doctrine/PostgresAdvisoryOrderScopeLock`, runs the body
@@ -59,7 +61,12 @@ paths:
     EntityManager on any exception, while a 409 inside the lock is an ordinary outcome. A read made *before*
     `withLock()` escapes it, hence the whole body; an entity already in the identity map (the `PUT` entry,
     loaded by the provider) keeps its pre-lock values, harmless since only its own position is rewritten.
-    In an FPM worker the wait is bounded by `PGOPTIONS` `lock_timeout=5s` (a 500 past that). Guards:
+    In an FPM worker the wait is bounded by `PGOPTIONS` `lock_timeout=5s`; past it the adapter throws
+    `OrderScopeLockTimeoutException` (named, unmapped: a `critical` 500 — 5 s for a millisecond write is an
+    anomaly, not a conflict to retry), and only for its own lock statement: a timeout inside the operation
+    stays the DBAL exception. **The console waits without a bound**: the `app:*:seed` commands go through the
+    `Administrator`s, so the deploy's seed Job takes the same lock, which `www.prod.conf` does not reach —
+    harmless while every holder keeps it for milliseconds, revisit before holding it any longer. Guards:
     `OrderScopeLockCoverageTest` (a probe session holds each scope, every placing operation of every
     `Administrator` must wait — a new one written without `withLock()` turns it red) and
     `ContributionOrderConcurrencyTest` (two real processes, interleaved at the `preFlush`, both races).
