@@ -29,7 +29,8 @@ paths:
   kept: `apply -k` never deletes a renamed object). `tests/Security/RateLimiterStorageTest`
   pins it (every limiter + `cache.app` DBAL-backed, never Filesystem — add a new limiter to its
   list); `tools/smoke-login-throttling.sh`, run by `smoke-test-preprod`, is the only check that
-  exercises a real pod (6 wrong logins, the 6th must say "Too many failed login attempts")
+  exercises a real pod (6 wrong logins, the 6th must be a 429 `/errors/rate-limited` **with** a
+  `Retry-After` — without one it is the nginx zone answering, which proves nothing, issue #399)
   and the nginx `login` zone (10 r/m, burst 10, both confs) is the backstop if the storage ever
   fails again. Anything that "just writes a file" at runtime (a lock, a session, a render cache)
   falls under the same rule: DB, a dedicated service, or nowhere.

@@ -246,8 +246,14 @@ paths:
   HTTP 503 with `"status": 429` and no `Retry-After`. `ProblemStatusMatchesExceptionToStatusTest` (#369)
   turns red when any entry, global or on a resource or operation, contradicts the `getStatus()` of a
   `ProblemExceptionInterface` of `src/` — the 409s that keep both (`CannotModifyOwnRolesException`…) included.
-  **`login_throttling` is not one of them yet**: Lexik's failure handler answers
-  **401** `Too many failed login attempts`, no problem+json. Decided on 2026-10-10 (#369): it moves to a
-  429 `rate-limited` with `Retry-After`, in issue #399, since it touches the login page, the preprod
-  smoke test (`tools/smoke-login-throttling.sh`) and the failure handler.
+  **`login_throttling` is one of them since issue #399**: `Security/Authentication/Infrastructure/Security/LoginThrottlingRefusalListener`
+  (`LoginFailureEvent`, `login` firewall, priority **-200**, after the counter, the `login-throttled` audit
+  and `FailedLoginTimingEqualizer`) throws `LoginRateLimitExceededException` on a
+  `TooManyLoginAttemptsAuthenticationException`, and the shared path above renders it — never build that
+  429 in a failure handler. Its deadline is the exception's `%minutes%` (Symfony's ceiling of the limiter's
+  deadline, an upper bound off by at most 59 s, falling back to one minute): no second read of the
+  limiter's storage on the path an attacker hammers. Every other login failure keeps Lexik's 401, byte for
+  byte (audit A10). Three consumers read that 429: `LoginThrottlingTest`, the login page
+  (`LoginRateLimitedError`) and the preprod smoke test (`tools/smoke-login-throttling.sh`), which tells it
+  from the nginx `login` zone's 429 by its `Retry-After` — nginx sends the same `type` without one.
 
