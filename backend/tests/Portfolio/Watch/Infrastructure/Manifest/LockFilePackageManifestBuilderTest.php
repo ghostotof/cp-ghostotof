@@ -6,6 +6,7 @@ namespace App\Tests\Portfolio\Watch\Infrastructure\Manifest;
 
 use App\Portfolio\Watch\Domain\ValueObject\PackageCoordinates;
 use App\Portfolio\Watch\Infrastructure\Manifest\LockFilePackageManifestBuilder;
+use App\Portfolio\Watch\Infrastructure\Manifest\ManifestDirectoryCreationException;
 use PHPUnit\Framework\TestCase;
 
 final class LockFilePackageManifestBuilderTest extends TestCase
@@ -180,5 +181,31 @@ final class LockFilePackageManifestBuilderTest extends TestCase
 
         self::assertSame([], $manifest->packages);
         self::assertFileExists($this->path('package-manifest.json'));
+    }
+
+    /**
+     * Le manifeste s'écrit au `docker build` : un répertoire de sortie
+     * impossible à créer doit arrêter la construction sous un nom dédié
+     * (issue #338). Un fichier ordinaire à la place du répertoire attendu
+     * suffit à faire échouer `mkdir`, même en root.
+     */
+    public function testAManifestDirectoryThatCannotBeCreatedStopsTheBuild(): void
+    {
+        $blocker = $this->path('blocker');
+        touch($blocker);
+        $builder = new LockFilePackageManifestBuilder($this->composerLock(), $this->npmLock(), $blocker.'/sub/package-manifest.json');
+
+        // `mkdir()` émet un E_WARNING avant que la garde ne lève : il est
+        // attendu ici, et `failOnWarning` en ferait un échec du test.
+        set_error_handler(static fn (): bool => true, \E_WARNING);
+
+        try {
+            $builder->build(new \DateTimeImmutable('2026-09-07 12:00:00'));
+            self::fail('Un répertoire de sortie impossible à créer doit arrêter la construction.');
+        } catch (ManifestDirectoryCreationException $exception) {
+            self::assertStringContainsString($blocker.'/sub', $exception->getMessage());
+        } finally {
+            restore_error_handler();
+        }
     }
 }

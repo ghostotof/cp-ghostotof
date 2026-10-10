@@ -166,7 +166,7 @@ final readonly class DeployedVersionsBuilder
         $directory = \dirname($this->outputPath);
 
         if (!is_dir($directory) && !mkdir($directory, 0o775, true) && !is_dir($directory)) {
-            throw new \RuntimeException(sprintf('Impossible de créer le répertoire « %s ».', $directory));
+            throw ManifestDirectoryCreationException::for($directory);
         }
 
         $encoded = json_encode(

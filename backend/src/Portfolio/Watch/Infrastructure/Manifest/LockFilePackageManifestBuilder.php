@@ -166,7 +166,7 @@ final readonly class LockFilePackageManifestBuilder implements PackageManifestBu
         $directory = \dirname($this->manifestPath);
 
         if (!is_dir($directory) && !mkdir($directory, 0o775, true) && !is_dir($directory)) {
-            throw new \RuntimeException(sprintf('Impossible de créer le répertoire "%s".', $directory));
+            throw ManifestDirectoryCreationException::for($directory);
         }
 
         $payload = [

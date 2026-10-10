@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Portfolio\Watch\Infrastructure\Manifest;
 
 use App\Portfolio\Watch\Infrastructure\Manifest\DeployedVersionsBuilder;
+use App\Portfolio\Watch\Infrastructure\Manifest\ManifestDirectoryCreationException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -159,5 +160,32 @@ final class DeployedVersionsBuilderTest extends TestCase
         file_put_contents($this->root.'/.env', "NODE_TAG=20.0.0-alpine\n");
 
         self::assertSame('20.0.0', $this->build()['nodejs']);
+    }
+
+    /**
+     * Le relevé s'écrit au `docker build` : un répertoire de sortie impossible
+     * à créer doit arrêter la construction sous un nom dédié (issue #338), pas
+     * laisser une image sans relevé. Un fichier ordinaire à la place du
+     * répertoire attendu suffit à faire échouer `mkdir`, même en root.
+     */
+    public function testAnOutputDirectoryThatCannotBeCreatedStopsTheBuild(): void
+    {
+        $blocker = $this->root.'/k8s/base/blocker';
+        touch($blocker);
+        $builder = new DeployedVersionsBuilder($this->root, $this->root.'/package-lock.json', $blocker.'/sub/out.json');
+
+        // `mkdir()` émet un E_WARNING avant que la garde ne lève : il est
+        // attendu ici, et `failOnWarning` en ferait un échec du test.
+        set_error_handler(static fn (): bool => true, \E_WARNING);
+
+        try {
+            $builder->build(new \DateTimeImmutable('2026-09-09T12:00:00+00:00'));
+            self::fail('Un répertoire de sortie impossible à créer doit arrêter la construction.');
+        } catch (ManifestDirectoryCreationException $exception) {
+            self::assertStringContainsString($blocker.'/sub', $exception->getMessage());
+        } finally {
+            restore_error_handler();
+            unlink($blocker);
+        }
     }
 }
