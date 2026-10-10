@@ -54,10 +54,15 @@ final readonly class ExtractedTextNormalizer
     /**
      * Ponctuation qui termine une phrase ou annonce une suite, éventuellement
      * suivie d'un guillemet ou d'une parenthèse qui se referment.
+     *
+     * Ce motif et le suivant s'appliquent à des lignes découpées à chaque fin
+     * de ligne puis nettoyées : aucune ne finit par `\n`, et `$` y valait déjà
+     * `\z`. L'ancre suit pourtant la règle du dépôt (issue #409,
+     * RegexEndAnchorTest), pour que le motif reste juste s'il sert ailleurs.
      */
-    private const string SENTENCE_END = '/[.!?:;…][\s»"”’)\]]*$/u';
+    private const string SENTENCE_END = '/[.!?:;…][\s»"”’)\]]*\z/u';
 
-    private const string PAGE_NUMBER = '/^(?:(?:page|p\.)\s*\d+(?:\s*(?:\/|sur|of|de)\s*\d+)?|\d+\s*\/\s*\d+)$/iu';
+    private const string PAGE_NUMBER = '/^(?:(?:page|p\.)\s*\d+(?:\s*(?:\/|sur|of|de)\s*\d+)?|\d+\s*\/\s*\d+)\z/iu';
 
     public function normalize(string $text): string
     {
