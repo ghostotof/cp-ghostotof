@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Shared\Presentation\ApiResource;
 
+use App\Shared\Presentation\ApiResource\UnvalidatedInputException;
+
 /**
  * Le passage commun aux neuf ressources d'ordre (spec 0004 B4) entre ce que le
  * désérialiseur produit et ce que le domaine attend.
@@ -35,7 +37,7 @@ trait CarriesOrderedKeys
 
         foreach ($keys as $key) {
             if (!\is_string($key)) {
-                throw new \LogicException('Une clé d\'ordre non textuelle aurait dû être refusée par la validation.');
+                throw UnvalidatedInputException::because('clé d\'ordre non textuelle');
             }
 
             $validated[] = $key;
