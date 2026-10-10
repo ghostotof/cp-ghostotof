@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Application;
 
+use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductNotFoundException;
@@ -23,9 +24,17 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class WatchedProductAdministrator implements WatchedProductAdministratorInterface
 {
+    /**
+     * Périmètre d'ordre, verrouillé par toute écriture qui place un produit
+     * (issue #389) : le catalogue entier. update() n'en fait pas partie, il ne
+     * touche pas à la position.
+     */
+    private const string ORDER_SCOPE = WatchedProduct::class;
+
     public function __construct(
         private WatchedProductRepositoryInterface $watchedProductRepository,
         private OrderAssigner $orderAssigner,
+        private OrderScopeLockInterface $orderScopeLock,
     ) {
     }
 
@@ -35,15 +44,17 @@ final readonly class WatchedProductAdministrator implements WatchedProductAdmini
         VersionSource $versionSource,
         ?string $version,
     ): WatchedProduct {
-        if (null !== $this->watchedProductRepository->findOneBySlug($slug)) {
-            throw WatchedProductSlugAlreadyUsedException::forSlug($slug);
-        }
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($slug, $label, $versionSource, $version): WatchedProduct {
+            if (null !== $this->watchedProductRepository->findOneBySlug($slug)) {
+                throw WatchedProductSlugAlreadyUsedException::forSlug($slug);
+            }
 
-        $product = new WatchedProduct($slug, $label, $versionSource, $version, $this->positionAtEnd());
+            $product = new WatchedProduct($slug, $label, $versionSource, $version, $this->positionAtEnd());
 
-        $this->watchedProductRepository->save($product);
+            $this->watchedProductRepository->save($product);
 
-        return $product;
+            return $product;
+        });
     }
 
     public function update(
@@ -82,11 +93,13 @@ final readonly class WatchedProductAdministrator implements WatchedProductAdmini
 
     public function reorder(array $keys): void
     {
-        $scope = $this->watchedProductRepository->findAllOrdered();
+        $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($keys): void {
+            $scope = $this->watchedProductRepository->findAllOrdered();
 
-        $this->orderAssigner->assign($scope, $keys);
+            $this->orderAssigner->assign($scope, $keys);
 
-        $this->watchedProductRepository->saveAll($scope);
+            $this->watchedProductRepository->saveAll($scope);
+        });
     }
 
     /**

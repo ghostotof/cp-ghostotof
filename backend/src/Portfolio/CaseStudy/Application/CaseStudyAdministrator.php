@@ -7,6 +7,7 @@ namespace App\Portfolio\CaseStudy\Application;
 use App\Portfolio\CaseStudy\Domain\Entity\CaseStudy;
 use App\Portfolio\CaseStudy\Domain\Exception\CaseStudyNotFoundException;
 use App\Portfolio\CaseStudy\Domain\Repository\CaseStudyRepositoryInterface;
+use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -14,10 +15,17 @@ use Symfony\Component\Uid\Uuid;
 
 final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInterface
 {
+    /**
+     * Périmètre d'ordre, verrouillé par toute écriture qui place une entrée
+     * (issue #389) : la table entière, toutes langues confondues.
+     */
+    private const string ORDER_SCOPE = CaseStudy::class;
+
     public function __construct(
         private CaseStudyRepositoryInterface $caseStudyRepository,
         private ContentPlacement $contentPlacement,
         private OrderAssigner $orderAssigner,
+        private OrderScopeLockInterface $orderScopeLock,
     ) {
     }
 
@@ -30,11 +38,13 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
         string $measuredResult,
         ?Uuid $translationGroup = null,
     ): CaseStudy {
-        $caseStudy = new CaseStudy($locale, $title, $problem, $solution, $tradeoffs, $measuredResult, $this->positionFor($locale, $translationGroup), $translationGroup);
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($locale, $title, $problem, $solution, $tradeoffs, $measuredResult, $translationGroup): CaseStudy {
+            $caseStudy = new CaseStudy($locale, $title, $problem, $solution, $tradeoffs, $measuredResult, $this->positionFor($locale, $translationGroup), $translationGroup);
 
-        $this->caseStudyRepository->save($caseStudy);
+            $this->caseStudyRepository->save($caseStudy);
 
-        return $caseStudy;
+            return $caseStudy;
+        });
     }
 
     public function update(
@@ -46,31 +56,33 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
         string $measuredResult,
         ?Uuid $translationGroup,
     ): CaseStudy {
-        $caseStudy = $this->caseStudyRepository->findOneById($id);
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $title, $problem, $solution, $tradeoffs, $measuredResult, $translationGroup): CaseStudy {
+            $caseStudy = $this->caseStudyRepository->findOneById($id);
 
-        if (null === $caseStudy) {
-            throw CaseStudyNotFoundException::forId($id);
-        }
+            if (null === $caseStudy) {
+                throw CaseStudyNotFoundException::forId($id);
+            }
 
-        if (null === $translationGroup) {
-            // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
-            // le chargement du périmètre — le même qu'à la création sans groupe.
-            $this->contentPlacement->detach(
-                $caseStudy,
-                $this->caseStudyRepository->findByTranslationGroup($caseStudy->getTranslationGroup()),
-                $this->caseStudyRepository->findAll(),
-            );
-        } else {
-            $this->contentPlacement->reattach(
-                $caseStudy,
-                $translationGroup,
-                $this->caseStudyRepository->findByTranslationGroup($translationGroup),
-            );
-        }
-        $caseStudy->update($title, $problem, $solution, $tradeoffs, $measuredResult);
-        $this->caseStudyRepository->save($caseStudy);
+            if (null === $translationGroup) {
+                // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
+                // le chargement du périmètre — le même qu'à la création sans groupe.
+                $this->contentPlacement->detach(
+                    $caseStudy,
+                    $this->caseStudyRepository->findByTranslationGroup($caseStudy->getTranslationGroup()),
+                    $this->caseStudyRepository->findAll(),
+                );
+            } else {
+                $this->contentPlacement->reattach(
+                    $caseStudy,
+                    $translationGroup,
+                    $this->caseStudyRepository->findByTranslationGroup($translationGroup),
+                );
+            }
+            $caseStudy->update($title, $problem, $solution, $tradeoffs, $measuredResult);
+            $this->caseStudyRepository->save($caseStudy);
 
-        return $caseStudy;
+            return $caseStudy;
+        });
     }
 
     public function delete(Uuid $id): void
@@ -86,11 +98,13 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
 
     public function reorder(array $keys): void
     {
-        $scope = $this->caseStudyRepository->findAll();
+        $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($keys): void {
+            $scope = $this->caseStudyRepository->findAll();
 
-        $this->orderAssigner->assign($scope, $keys);
+            $this->orderAssigner->assign($scope, $keys);
 
-        $this->caseStudyRepository->saveAll($scope);
+            $this->caseStudyRepository->saveAll($scope);
+        });
     }
 
     /**
