@@ -58,8 +58,8 @@ final readonly class ContentPlacement
      * @param list<TranslatableContent> $members entrées déjà dans ce groupe et dans le périmètre
      *
      * @throws UnknownTranslationGroupException             si le groupe n'existe pas dans le périmètre
-     * @throws TranslationAlreadyExistsException            si le groupe porte déjà cette langue
      * @throws TranslationGroupHasSeveralPositionsException si les membres du groupe divergent sur la position
+     * @throws TranslationAlreadyExistsException            si le groupe porte déjà cette langue
      */
     public function inGroup(Uuid $translationGroup, Locale $locale, array $members): int
     {
@@ -67,20 +67,26 @@ final readonly class ContentPlacement
             throw UnknownTranslationGroupException::forGroup($translationGroup);
         }
 
-        foreach ($members as $member) {
-            if ($member->getLocale() === $locale) {
-                throw TranslationAlreadyExistsException::forGroupAndLocale($translationGroup, $locale);
-            }
-        }
-
         // Toutes les entrées d'un groupe partagent sa position (invariant tenu
         // par ce service et par OrderAssigner) : la première vaut pour toutes.
         // Un groupe qui ne le respecte pas est un défaut du pipeline, pas une
         // saisie — il surface (500) plutôt que d'être arbitré en silence.
+        //
+        // Ce contrôle passe AVANT celui de la langue (issue #384) : avec deux
+        // langues et l'index unique (translation_group, locale), le seul groupe
+        // corrompu possible est une paire FR/EN, qui porte donc toujours la
+        // langue demandée. Dans l'ordre inverse, il sortait en 409 `info`,
+        // comme une saisie ordinaire, et le défaut ne déclenchait aucune alerte.
         $position = $members[0]->getPosition();
         foreach ($members as $member) {
             if ($member->getPosition() !== $position) {
                 throw TranslationGroupHasSeveralPositionsException::forGroup($translationGroup);
+            }
+        }
+
+        foreach ($members as $member) {
+            if ($member->getLocale() === $locale) {
+                throw TranslationAlreadyExistsException::forGroupAndLocale($translationGroup, $locale);
             }
         }
 
@@ -121,6 +127,7 @@ final readonly class ContentPlacement
      * @param list<TranslatableContent> $members entrées du groupe demandé
      *
      * @throws UnknownTranslationGroupException
+     * @throws TranslationGroupHasSeveralPositionsException
      * @throws TranslationAlreadyExistsException
      */
     public function reattach(TranslatableContent $entry, Uuid $translationGroup, array $members): void
