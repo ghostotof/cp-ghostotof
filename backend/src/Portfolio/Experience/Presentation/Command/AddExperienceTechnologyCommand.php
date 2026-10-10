@@ -7,8 +7,9 @@ namespace App\Portfolio\Experience\Presentation\Command;
 use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException;
 use App\Portfolio\Experience\Domain\Exception\InvalidExperienceYearsException;
+use App\Portfolio\Experience\Domain\Exception\InvalidTechnologyNameException;
 use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
-use App\Shared\Presentation\Command\InvalidConsoleAnswerException;
+use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -95,7 +96,7 @@ final class AddExperienceTechnologyCommand extends Command
      * refusée, il relance la dernière erreur du validateur, d'où `ask()` dans
      * le `try`.
      */
-    private function resolveName(InputInterface $input, SymfonyStyle $io): ?string
+    private function resolveName(InputInterface $input, SymfonyStyle $io): ?TechnologyName
     {
         try {
             $name = $input->getOption('name') ?? $io->ask('Nom de la technologie', validator: $this->validateName(...));
@@ -107,7 +108,7 @@ final class AddExperienceTechnologyCommand extends Command
             }
 
             return $this->validateName($name);
-        } catch (InvalidConsoleAnswerException $exception) {
+        } catch (InvalidTechnologyNameException $exception) {
             $io->error($exception->getMessage());
 
             return null;
@@ -115,17 +116,21 @@ final class AddExperienceTechnologyCommand extends Command
     }
 
     /**
-     * Le QuestionHelper affiche le message de l'exception et repose la question.
+     * La règle du domaine (TechnologyName) : le nom rogné, et non la saisie
+     * brute, part au registrar — sans quoi `--name=' PHP '` échappait au
+     * contrôle d'unicité (issue #386). Le QuestionHelper affiche le message
+     * de l'exception et repose la question ; une réponse déjà convertie (le
+     * validateur de la question) est rendue telle quelle.
      *
-     * @throws InvalidConsoleAnswerException
+     * @throws InvalidTechnologyNameException
      */
-    private function validateName(mixed $name): string
+    private function validateName(mixed $name): TechnologyName
     {
-        if (!\is_string($name) || '' === trim($name)) {
-            throw InvalidConsoleAnswerException::empty('Le nom de la technologie');
+        if ($name instanceof TechnologyName) {
+            return $name;
         }
 
-        return $name;
+        return TechnologyName::fromString(\is_string($name) ? $name : '');
     }
 
     /**

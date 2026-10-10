@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\Put;
 use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Domain\Exception\InvalidExperienceYearsException;
 use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
+use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
 use App\Portfolio\Experience\Infrastructure\ApiPlatform\BackofficeExperienceTechnologyProcessor;
 use App\Portfolio\Experience\Infrastructure\ApiPlatform\BackofficeExperienceTechnologyProvider;
 use Symfony\Component\Routing\Requirement\Requirement;
@@ -60,8 +61,12 @@ final class BackofficeExperienceTechnologyResource
 {
     public function __construct(
         public ?string $id = null,
-        #[Assert\NotBlank]
-        #[Assert\Length(max: 180)]
+        /**
+         * Les deux règles de TechnologyName, en 422 sur `name` (issue #386) :
+         * sans normaliseur, NotBlank laissait passer un nom fait d'espaces.
+         */
+        #[Assert\NotBlank(normalizer: 'trim')]
+        #[Assert\Length(max: TechnologyName::MAX_LENGTH, normalizer: 'trim')]
         public string $name = '',
         /** Validé par validateYears(), qui délègue à ExperienceYears (issue #372). */
         public float $years = 0.0,

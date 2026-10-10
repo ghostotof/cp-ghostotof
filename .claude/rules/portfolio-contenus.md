@@ -117,6 +117,15 @@ paths:
   the API it is unreachable unless a write path bypasses the DTO, a server fault that must stay a
   `critical` 500.
 
+  **`ExperienceTechnology.name` is a `Domain/ValueObject/TechnologyName`** (issue #386): trimmed, not blank,
+  at most `MAX_LENGTH` (the column's 180) characters. The entity, the registrar and the administrator only
+  receive one, so the uniqueness check (`findOneByName()`) runs on the trimmed value — trimming in the entity
+  alone would have let `" PHP "` through to the unique index, whose exception closes the EntityManager. The
+  backoffice DTO mirrors both rules (`NotBlank` and `Length`, each with `normalizer: 'trim'`, the same PHP
+  `trim()`) so the API answers a 422 on `name`; `InvalidTechnologyNameException` is unmapped on purpose, like
+  `InvalidExperienceYearsException`. No `CHECK` in the database, unlike `years`: an untrimmed name is a
+  duplicate on the public page, not a 500, and no write path reaches SQL without the Value Object. `relatedTechnologyName` is a free label, not trimmed.
+
   `Contribution` is the odd one out and deliberately so: it carries a long `body` (the argument, not
   just a link to it) alongside `title`/`project`/`reference`/`url`/`summary`. That text is **plain
   text**, paragraphs separated by a blank line, rendered by splitting on those blanks —

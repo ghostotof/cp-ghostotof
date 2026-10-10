@@ -8,6 +8,7 @@ use ApiPlatform\State\ProcessorInterface;
 use App\Portfolio\Experience\Application\ExperienceTechnologyAdministratorInterface;
 use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
 use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
+use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
 use App\Portfolio\Experience\Presentation\ApiResource\BackofficeExperienceTechnologyResource;
 use App\Shared\Infrastructure\ApiPlatform\DispatchesWriteOperations;
 use Symfony\Component\Uid\Uuid;
@@ -34,8 +35,9 @@ final readonly class BackofficeExperienceTechnologyProcessor implements Processo
         // Déjà validé par le Callback du DTO : une valeur hors bornes n'atteint pas ce point.
         $years = ExperienceYears::fromFloat($data->years);
 
+        // Rogné et borné par le DTO (NotBlank normalisé, Length) : TechnologyName ne lève pas ici.
         $technology = $this->experienceTechnologyRegistrar->register(
-            $data->name,
+            TechnologyName::fromString($data->name),
             $years,
             $data->iconKey,
             $data->relatedTechnologyName,
@@ -55,7 +57,7 @@ final readonly class BackofficeExperienceTechnologyProcessor implements Processo
 
         $technology = $this->experienceTechnologyAdministrator->update(
             $id,
-            $data->name,
+            TechnologyName::fromString($data->name),
             $years,
             $data->iconKey,
             $data->relatedTechnologyName,
