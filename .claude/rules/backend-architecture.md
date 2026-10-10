@@ -95,8 +95,10 @@ another name or in an `array` is hidden by hand and pinned in `HIDDEN_BY_HAND` (
 `PasswordOptionRedactor::redact($text)`); an entry the census already sees is refused there.
 `CsrfCookieTokenSigner::signature($random)` stays visible on purpose (half the token, useless without
 `APP_SECRET`). No exclusion list until a first false positive needs one. Why it matters although
-production strips arguments (`zend.exception_ignore_args`): dev and test do not — the debug JSON error
-body, Messenger's `ErrorDetailsStamp`, test output pasted in a ticket or an assistant session. The
+production and, since #420, PHPUnit strip arguments (`zend.exception_ignore_args`, see
+`.claude/rules/backend-outillage.md`): dev does not — the debug JSON error body, Messenger's
+`ErrorDetailsStamp`, output pasted in a ticket or an assistant session —, nor does `debug_backtrace()`,
+nor a `php` process a test spawns. The
 attribute only hides that frame's arguments: not a message, a local variable, nor a vendor call that
 receives the value next (`Cookie::create()`, Lexik). The walk and the hash exclusion are shared with the
 password guard (`tests/Support/SensitiveParameters`), so a change there moves both.

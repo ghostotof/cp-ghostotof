@@ -13,6 +13,17 @@
     <php>
         <ini name="display_errors" value="1" />
         <ini name="error_reporting" value="-1" />
+        <!-- Issue #420 : les traces d'exception ne portent pas les arguments
+             des appels, comme en déployé (php.prod.ini) et comme en CI, où
+             setup-php charge php.ini-production. #[SensitiveParameter] (#411,
+             #414) ne couvre que src/ ; ce réglage couvre aussi le vendor
+             (Cookie::create(), Lexik…), dont une trace de test collée dans un
+             ticket ou une session d'assistant livrerait les jetons. Le rapport
+             de PHPUnit n'y perd rien : il n'imprime d'une trace que fichier et
+             ligne. Pour déboguer avec les arguments, un phpunit.xml local
+             (ignoré par git) peut le remettre à 0. Épinglé par
+             ExceptionArgumentsHiddenInTestsTest. -->
+        <ini name="zend.exception_ignore_args" value="1" />
         <server name="APP_ENV" value="test" force="true" />
         <server name="SHELL_VERBOSITY" value="-1" />
         <!-- Point d'audit I4 : CONTACT_* sont vides dans le .env versionné
