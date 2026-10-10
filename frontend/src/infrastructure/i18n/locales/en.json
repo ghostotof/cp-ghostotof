@@ -242,7 +242,7 @@
         "cannot-modify-own-roles": "You cannot change your own roles.",
         "cannot-demote-last-super": "Not allowed: this is the last administrator account.",
         "already-activated": "This account has already set its password.",
-        "validation": "The password must be at least 8 characters long.",
+        "validation": "This password was rejected: it must be at least {min} characters long and at most {max} bytes, and must not appear in any known breach.",
         "unknown": "Something went wrong. Please try again later."
       }
     },

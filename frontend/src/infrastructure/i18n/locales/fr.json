@@ -242,7 +242,7 @@
         "cannot-modify-own-roles": "Vous ne pouvez pas modifier vos propres rôles.",
         "cannot-demote-last-super": "Impossible : c'est le dernier compte administrateur.",
         "already-activated": "Ce compte a déjà défini son mot de passe.",
-        "validation": "Le mot de passe doit contenir au moins 8 caractères.",
+        "validation": "Ce mot de passe a été refusé : il doit compter au moins {min} caractères et {max} octets au plus, et ne figurer dans aucune fuite connue.",
         "unknown": "Une erreur est survenue. Réessayez plus tard."
       }
     },
