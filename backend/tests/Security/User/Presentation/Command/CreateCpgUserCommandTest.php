@@ -6,19 +6,23 @@ namespace App\Tests\Security\User\Presentation\Command;
 
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Exception\InvalidOptionException;
+use Symfony\Component\Console\Tester\ApplicationTester;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
 final class CreateCpgUserCommandTest extends KernelTestCase
 {
+    use ReadsAllChannelsLog;
     use ReadsSecurityAuditLog;
 
     protected function setUp(): void
@@ -463,6 +467,30 @@ final class CreateCpgUserCommandTest extends KernelTestCase
         $output = stream_get_contents($pipes[1]).stream_get_contents($pipes[2]);
         self::assertStringContainsString('terminal', (string) preg_replace('/\s+/', ' ', $output));
         proc_close($process);
+    }
+
+    /**
+     * Revue de #386 : le câblage réel. L'ancienne option déclenche une
+     * InvalidOptionException ; le ErrorListener de la console la journalise
+     * avec l'argv (`critical`), puis la sortie non nulle (`debug`). Aucun
+     * canal ne doit garder le mot de passe.
+     */
+    public function testAPasswordStillTypedAsAnOptionNeverReachesTheLogs(): void
+    {
+        \assert(self::$kernel instanceof KernelInterface);
+        $application = new Application(self::$kernel);
+        $application->setAutoExit(false);
+        $tester = new ApplicationTester($application);
+
+        $tester->run(['command' => 'app:user:create', '--username' => 'jane', '--password' => 'S3NTINEL-pass-386'], ['interactive' => false]);
+
+        self::assertNotSame(0, $tester->getStatusCode());
+        $records = self::allChannelsLogRecords();
+        self::assertNotEmpty(array_filter($records, static fn (LogRecord $record): bool => 'console' === $record->channel));
+
+        foreach ($records as $record) {
+            self::assertStringNotContainsString('S3NTINEL-pass-386', json_encode([$record->message, $record->context], \JSON_THROW_ON_ERROR));
+        }
     }
 
     /** SymfonyStyle replie les blocs d'erreur à la largeur du terminal. */

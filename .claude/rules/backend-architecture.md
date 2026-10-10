@@ -73,7 +73,10 @@ question that reads a password is `setTrimmable(false)` (a question is trimmed b
 and `json_login` are not), with a normalizer that strips the one line ending the read keeps when untrimmed. **A password is never an
 option value** (#386): `app:user:create` reads it from standard input (`--password-stdin`, which requires
 `--username` — a prompt would read the password instead), never from `--password`, whose argv shows in `ps`,
-the shell history and the `command` context the console's `ErrorListener` logs. The other SPL classes (`\DomainException`…) are out of the guard's scope:
+the shell history and the `command` context the console's `ErrorListener` logs. An operator still typing
+`--password` out of habit gets an `InvalidOptionException`, which that listener logs `critical` with the argv:
+`Security/User/Infrastructure/Log/PasswordOptionRedactor` (Monolog processor, channel `console`) masks the
+value in `command` and in the message, `=`, space and `escapeshellarg()` forms alike. The other SPL classes (`\DomainException`…) are out of the guard's scope:
 none is thrown bare in `src/`, and adding one to `BareExceptionInstantiations::FORBIDDEN` is the step to
 take the day one is.
 
