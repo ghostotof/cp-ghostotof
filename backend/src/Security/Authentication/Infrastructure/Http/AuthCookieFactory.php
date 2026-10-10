@@ -70,11 +70,13 @@ final readonly class AuthCookieFactory
      * Reçoit un `string` et non l'union des deux constantes : la garde est
      * volontairement à l'exécution, pour qu'un appel construit dynamiquement
      * échoue net plutôt que d'expirer un cookie qui n'est pas le sien.
+     *
+     * @throws UnknownAuthCookieException
      */
     public function expired(string $name): Cookie
     {
         if (self::BEARER !== $name && self::XSRF_TOKEN !== $name) {
-            throw new \InvalidArgumentException(sprintf('"%s" n\'est pas un cookie d\'authentification (attendu : %s ou %s).', $name, self::BEARER, self::XSRF_TOKEN));
+            throw UnknownAuthCookieException::forName($name);
         }
 
         return $this->create($name, null, 1);

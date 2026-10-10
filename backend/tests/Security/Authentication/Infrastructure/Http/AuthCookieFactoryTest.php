@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\Authentication\Infrastructure\Http;
 
 use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
+use App\Security\Authentication\Infrastructure\Http\UnknownAuthCookieException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Cookie;
@@ -121,8 +122,35 @@ final class AuthCookieFactoryTest extends TestCase
 
     public function testExpiringAnUnknownCookieNameIsRefused(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(UnknownAuthCookieException::class);
+        $this->expectExceptionMessage('"PHPSESSID"');
 
         (new AuthCookieFactory('test'))->expired('PHPSESSID');
+    }
+
+    /**
+     * Un nom construit dynamiquement peut venir d'une requête : il n'est cité
+     * que s'il a la forme d'un nom de cookie, et jamais au-delà d'une longueur
+     * bornée, pour qu'aucune valeur cliente arbitraire n'atteigne les journaux.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function namesThatAreNotQuoted(): iterable
+    {
+        yield 'retour à la ligne' => ["BEARER\nX-Injected: 1"];
+        // Sans \z, le `$` de PCRE accepte aussi la position avant un \n final.
+        yield 'retour à la ligne final' => ["PHPSESSID\n"];
+        yield 'espace' => ['BEARER x'];
+        yield 'trop long' => [str_repeat('A', 65)];
+        yield 'vide' => [''];
+    }
+
+    #[DataProvider('namesThatAreNotQuoted')]
+    public function testAnUnknownNameIsQuotedOnlyWhenItLooksLikeACookieName(string $name): void
+    {
+        self::assertSame(
+            '"<invalide>" n\'est pas un cookie d\'authentification (attendu : BEARER ou XSRF-TOKEN).',
+            UnknownAuthCookieException::forName($name)->getMessage(),
+        );
     }
 }

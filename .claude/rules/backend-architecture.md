@@ -46,7 +46,8 @@ survives `cache:clear` after a DTO's `id` type changes — `rm -rf var/cache/<en
 bind-mount desync (`docker compose restart backend`) can make a container run a stale Provider/Processor
 mid-migration.
 
-**`src/` never instantiates a bare `\Exception`, `\LogicException` or `\RuntimeException`** (issue #338).
+**`src/` never instantiates a bare `\Exception`, `\LogicException`, `\RuntimeException` or
+`\InvalidArgumentException`** (issues #338, #383).
 Every failure gets its own class: a client error implements `ProblemExceptionInterface` (see
 `.claude/rules/backoffice-api.md`, "Exceptions"), and a server fault (wiring defect, broken invariant, build
 step) extends the generic class it replaces, without a mapping, so it stays a `critical` 500. The point is a
@@ -55,6 +56,21 @@ that throws it, with a named factory (`forOperation()`, `forGroup()`, `forDirect
 client-supplied value in its message without bounding it (`InputContradictsValidationException::nonTextualField()`).
 `tests/Shared/NoBareGenericExceptionTest.php` enforces it. It counts tokens through
 `tests/Support/BareExceptionInstantiations`, which shares its file walk with `DeclaredClasses` via `PhpSources`, so
-an import, an alias, a comma list or an anonymous subclass is seen too. The other SPL classes
-(`\InvalidArgumentException`…) are out of its scope until #383 settles them.
+an import, an alias, a comma list or an anonymous subclass is seen too. It has **no exemption list**, and
+that is deliberate: a site that seems to need one gets a class, shared if several sites throw the same
+failure. **A console question's validator follows the same rule** (#383): the `QuestionHelper` catches
+any `\Exception` a validator throws, shows its message and asks again, so the domain exception is the
+right one when the rule has one (`InvalidUsernameException`, `InvalidExperienceYearsException`), and
+`Shared/Presentation/Command/InvalidConsoleAnswerException` covers the rest. Its message never quotes
+the answer, which can be anything (a password pasted into the wrong prompt): `InvalidUsernameException::invalidFormat()`,
+not `forUsername()`. Three traps of the same commands. In non-interactive mode, `ask()` returns the default
+(`null`) **without calling the validator**, so the command refuses `null` explicitly and names the option,
+instead of relying on an `assert()` that production compiles out. On end of input after a refused answer,
+`ask()` **rethrows the validator's last exception**, so `ask()` sits inside the `try` that turns it into
+`$io->error()` — otherwise it leaves the command and the console's `ErrorListener` logs it `critical`. And a
+`CommandTester` is **interactive by default**, so a `-n` test passes `['interactive' => false]`. A hidden
+question that reads a password is `setTrimmable(false)` (a question is trimmed by default, `--password` and
+`json_login` are not), with a normalizer that strips the one line ending the read keeps when untrimmed. The other SPL classes (`\DomainException`…) are out of the guard's scope:
+none is thrown bare in `src/`, and adding one to `BareExceptionInstantiations::FORBIDDEN` is the step to
+take the day one is.
 

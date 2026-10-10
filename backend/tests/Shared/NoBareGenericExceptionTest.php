@@ -9,11 +9,12 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * `src/` ne lève jamais de \LogicException ni de \RuntimeException nue
- * (issue #338) : les standards du projet veulent une exception explicite, qui
- * se cible dans `framework.exceptions` et se reconnaît dans les journaux. Les
- * dix-neuf qui restaient ont reçu une classe dédiée ; ce test empêche le
- * prochain Processor copié-collé d'en réintroduire une.
+ * `src/` ne lève jamais de \Exception, de \LogicException, de
+ * \RuntimeException ni d'\InvalidArgumentException nue (issues #338 et #383) :
+ * les standards du projet veulent une exception explicite, qui se cible dans
+ * `framework.exceptions` et se reconnaît dans les journaux. Les dix-neuf de
+ * #338 et les sept de #383 ont reçu une classe dédiée, sans exemption ; ce test
+ * empêche le prochain Processor copié-collé d'en réintroduire une.
  *
  * Le recensement est éprouvé d'abord sur des extraits littéraux : un
  * recenseur qui ne trouverait jamais rien rendrait le second test vert sans
@@ -56,7 +57,9 @@ final class NoBareGenericExceptionTest extends TestCase
         // Résolue dans l'espace de noms courant : App\LogicException, pas celle de PHP.
         yield 'homonyme de l\'espace de noms' => ["<?php\nnamespace App;\nthrow new LogicException('x');\n", []];
         yield 'exception dédiée' => ["<?php\nnamespace App;\nthrow UnsupportedOperationException::for(\$operation);\n", []];
-        yield 'autre exception de la SPL, hors périmètre' => ["<?php\nnamespace App;\nthrow new \\InvalidArgumentException('x');\n", []];
+        yield 'InvalidArgumentException' => ["<?php\nnamespace App;\nthrow new \\InvalidArgumentException('x');\n", [3]];
+        yield 'InvalidArgumentException importée' => ["<?php\nnamespace App;\nuse InvalidArgumentException;\nthrow new InvalidArgumentException('x');\n", [4]];
+        yield 'autre exception de la SPL, hors périmètre' => ["<?php\nnamespace App;\nthrow new \\DomainException('x');\n", []];
         yield 'simple mention' => ["<?php\nnamespace App;\n\$class = \\LogicException::class;\n", []];
     }
 }

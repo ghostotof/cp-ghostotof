@@ -57,16 +57,13 @@ final class CanonicalPath
      *
      * @param string $prefix chemin absolu, sans `/` final (`/api/assistant`)
      *
-     * @throws \InvalidArgumentException sur un préfixe mal formé : vide,
-     *                                    relatif ou terminé par `/`. Accepté,
-     *                                    il échouerait sans bruit — `/api/x/`
-     *                                    ne correspondrait plus à rien (une
-     *                                    garde désactivée), `` à tout.
+     * @throws MalformedPathPrefixException sur un préfixe vide, relatif ou
+     *                                      terminé par `/`
      */
     public static function isUnder(Request $request, string $prefix): bool
     {
         if (!str_starts_with($prefix, '/') || str_ends_with($prefix, '/')) {
-            throw new \InvalidArgumentException(sprintf('Préfixe de chemin mal formé : "%s" (attendu : absolu, sans "/" final).', $prefix));
+            throw MalformedPathPrefixException::forPrefix($prefix);
         }
 
         $path = self::of($request);

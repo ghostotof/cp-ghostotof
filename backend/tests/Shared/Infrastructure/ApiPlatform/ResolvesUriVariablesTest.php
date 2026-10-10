@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\ApiPlatform;
 
+use App\Shared\Infrastructure\ApiPlatform\InvalidUriVariableException;
 use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
@@ -27,14 +28,14 @@ final class ResolvesUriVariablesTest extends TestCase
 
     public function testANonUuidStringIsRejected(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidUriVariableException::class);
 
         $this->resolver()->resolve(['id' => 'not-a-uuid']);
     }
 
     public function testAnAbsentKeyIsRejected(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidUriVariableException::class);
 
         $this->resolver()->resolve([]);
     }
