@@ -10,7 +10,6 @@ use App\Security\User\Presentation\Command\CreateCpgUserCommand;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
-use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\Constraints\NotCompromisedPassword;
 use Symfony\Component\Validator\ConstraintViolation;
 use Symfony\Component\Validator\ConstraintViolationList;
@@ -30,10 +29,12 @@ final class CreateCpgUserCommandCompromisedPasswordTest extends TestCase
         $registrar = $this->createMock(CpgUserRegistrarInterface::class);
         $registrar->expects(self::never())->method('register');
 
+        // La longueur passe par le même validateur (issue #386) : seule la
+        // contrainte de fuite renvoie une violation.
         $validator = self::createStub(ValidatorInterface::class);
-        $validator->method('validate')->willReturn(new ConstraintViolationList([
-            new ConstraintViolation('This password has been leaked in a data breach.', null, [], '', null, 'hunter2'),
-        ]));
+        $validator->method('validate')->willReturnCallback(static fn (mixed $value, mixed $constraints): ConstraintViolationList => $constraints instanceof NotCompromisedPassword
+            ? new ConstraintViolationList([new ConstraintViolation('This password has been leaked in a data breach.', null, [], '', null, 'hunter2')])
+            : new ConstraintViolationList());
 
         $tester = new CommandTester(new CreateCpgUserCommand($registrar, $validator));
 
@@ -72,17 +73,18 @@ final class CreateCpgUserCommandCompromisedPasswordTest extends TestCase
         $registrar = self::createStub(CpgUserRegistrarInterface::class);
         $registrar->method('register')->willReturn(new CpgUser('jane', 'hashed'));
 
-        $validator = $this->createMock(ValidatorInterface::class);
-        $validator->expects(self::once())
-            ->method('validate')
-            ->with(
-                self::anything(),
-                self::callback(static fn (Constraint $constraint): bool => $constraint instanceof NotCompromisedPassword),
-            )
-            ->willReturn(new ConstraintViolationList());
+        $validated = [];
+        $validator = self::createStub(ValidatorInterface::class);
+        $validator->method('validate')->willReturnCallback(static function (mixed $value, mixed $constraints) use (&$validated): ConstraintViolationList {
+            $validated[] = $constraints;
+
+            return new ConstraintViolationList();
+        });
 
         $tester = new CommandTester(new CreateCpgUserCommand($registrar, $validator));
         $tester->setInputs(['a-fresh-strong-password']);
         $tester->execute(['--username' => 'jane', '--password-stdin' => true], ['interactive' => false]);
+
+        self::assertCount(1, array_filter($validated, static fn (mixed $constraint): bool => $constraint instanceof NotCompromisedPassword));
     }
 }

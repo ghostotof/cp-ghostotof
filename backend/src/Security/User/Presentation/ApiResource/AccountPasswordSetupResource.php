@@ -6,8 +6,8 @@ namespace App\Security\User\Presentation\ApiResource;
 
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Post;
-use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Infrastructure\ApiPlatform\AccountPasswordSetupProcessor;
+use App\Security\User\Presentation\Validator\PlainPasswordLength;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -48,7 +48,7 @@ final class AccountPasswordSetupResource
     public string $token = '';
 
     #[Assert\NotBlank]
-    #[Assert\Length(min: CpgUser::MIN_PASSWORD_LENGTH, max: CpgUser::MAX_PASSWORD_LENGTH)]
+    #[PlainPasswordLength]
     // Refuse un mot de passe présent dans une fuite connue (haveibeenpwned,
     // k-anonymity). Désactivé en environnement de test (validator.yaml,
     // when@test), même choix que BackofficeUserPasswordResource.

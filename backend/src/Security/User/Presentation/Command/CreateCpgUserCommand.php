@@ -8,6 +8,7 @@ use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\InvalidUsernameException;
 use App\Security\User\Domain\Exception\UsernameAlreadyUsedException;
+use App\Security\User\Presentation\Validator\PlainPasswordLength;
 use App\Shared\Presentation\Command\InvalidConsoleAnswerException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -18,6 +19,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Question\Question;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\ConstraintViolationInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
@@ -107,14 +109,12 @@ final class CreateCpgUserCommand extends Command
             return Command::FAILURE;
         }
 
-        if (\strlen($plainPassword) < CpgUser::MIN_PASSWORD_LENGTH) {
-            $io->error(\sprintf('Le mot de passe doit contenir au moins %d caractères.', CpgUser::MIN_PASSWORD_LENGTH));
+        // Même contrainte que les deux ressources API (issue #386), validée
+        // avant la fuite : un mot de passe refusé n'interroge pas haveibeenpwned.
+        $lengthViolations = $this->validator->validate($plainPassword, new PlainPasswordLength());
 
-            return Command::FAILURE;
-        }
-
-        if (\strlen($plainPassword) > CpgUser::MAX_PASSWORD_LENGTH) {
-            $io->error(\sprintf('Le mot de passe ne doit pas dépasser %d caractères.', CpgUser::MAX_PASSWORD_LENGTH));
+        if ($lengthViolations->count() > 0) {
+            $io->error($this->lengthViolationMessage($lengthViolations->get(0)));
 
             return Command::FAILURE;
         }
@@ -149,6 +149,20 @@ final class CreateCpgUserCommand extends Command
         $io->success(\sprintf('Utilisateur "%s" créé (id: %s).', $user->getUsername(), $user->getId()->toRfc4122()));
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * Les messages du Validator sont en anglais, ceux de la commande en
+     * français ; le code de la violation dit laquelle des bornes a cédé.
+     */
+    private function lengthViolationMessage(ConstraintViolationInterface $violation): string
+    {
+        return match ($violation->getCode()) {
+            Assert\Length::TOO_SHORT_ERROR => \sprintf('Le mot de passe doit contenir au moins %d caractères.', CpgUser::MIN_PASSWORD_LENGTH),
+            Assert\Length::TOO_LONG_ERROR => \sprintf('Le mot de passe ne doit pas dépasser %d octets.', CpgUser::MAX_PASSWORD_LENGTH),
+            Assert\Length::INVALID_CHARACTERS_ERROR => 'Le mot de passe n\'est pas de l\'UTF-8 valide.',
+            default => (string) $violation->getMessage(),
+        };
     }
 
     /**

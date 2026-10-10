@@ -45,12 +45,17 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
      */
     public const string ROLE_TRUSTED = 'ROLE_TRUSTED';
 
+    /** En caractères : la règle que lit la personne qui choisit son mot de passe. */
     public const int MIN_PASSWORD_LENGTH = 8;
 
     /**
      * Borne haute alignée sur PasswordHasherInterface::MAX_PASSWORD_LENGTH de
      * Symfony : au-delà, le hasher lève une exception (défense anti-DoS sur
      * bcrypt/argon). On valide donc en amont pour répondre 422, jamais 500.
+     * En **octets**, comme le hasher la contrôle (`strlen`) : comptée en
+     * caractères, un mot de passe multioctet passait la validation et
+     * finissait en 500 (issue #386). Les deux bornes ne s'appliquent qu'à
+     * travers Presentation\Validator\PlainPasswordLength.
      */
     public const int MAX_PASSWORD_LENGTH = 4096;
 

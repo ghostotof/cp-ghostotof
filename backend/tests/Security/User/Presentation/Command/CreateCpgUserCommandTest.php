@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\User\Presentation\Command;
 
+use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
@@ -73,6 +74,44 @@ final class CreateCpgUserCommandTest extends KernelTestCase
 
         self::assertSame(1, $exitCode);
         self::assertNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername("jane\n"));
+    }
+
+    /**
+     * Issue #386 : la CLI mesurait le minimum en octets (`strlen`), l'API en
+     * caractères. Sept « é » font quatorze octets : la CLI les acceptait.
+     */
+    public function testAMultibytePasswordShorterThanTheMinimumInCharactersIsRefused(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $this->executeWithPasswordOnStdin($tester, ['--username' => 'jane'], str_repeat('é', CpgUser::MIN_PASSWORD_LENGTH - 1));
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('au moins', $this->normalizedDisplay($tester));
+        self::assertNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane'));
+    }
+
+    /** Le maximum reste celui du hasher, en octets : 2 049 « é » font 4 098 octets. */
+    public function testAMultibytePasswordBeyondTheHasherLimitInBytesIsRefused(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $this->executeWithPasswordOnStdin($tester, ['--username' => 'jane'], str_repeat('é', intdiv(CpgUser::MAX_PASSWORD_LENGTH, 2) + 1));
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('dépasser', $this->normalizedDisplay($tester));
+    }
+
+    /** L'entrée standard peut porter n'importe quels octets ; l'API, elle, ne reçoit que de l'UTF-8 (JSON). */
+    public function testAPasswordThatIsNotValidUtf8IsRefused(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $this->executeWithPasswordOnStdin($tester, ['--username' => 'jane'], str_repeat("\xff", CpgUser::MIN_PASSWORD_LENGTH));
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('UTF-8', $this->normalizedDisplay($tester));
+        self::assertNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane'));
     }
 
     public function testFailsOnPasswordTooLong(): void

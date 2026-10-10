@@ -6,9 +6,9 @@ namespace App\Security\User\Presentation\ApiResource;
 
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Put;
-use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserPasswordProcessor;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserPasswordProvider;
+use App\Security\User\Presentation\Validator\PlainPasswordLength;
 use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -34,7 +34,7 @@ final readonly class BackofficeUserPasswordResource
 {
     public function __construct(
         #[Assert\NotBlank]
-        #[Assert\Length(min: CpgUser::MIN_PASSWORD_LENGTH, max: CpgUser::MAX_PASSWORD_LENGTH)]
+        #[PlainPasswordLength]
         // Point d'audit B8 : refuse un mot de passe présent dans les fuites
         // connues (API k-anonymity de haveibeenpwned, aucun envoi du mot de
         // passe en clair). Désactivé en environnement de test
