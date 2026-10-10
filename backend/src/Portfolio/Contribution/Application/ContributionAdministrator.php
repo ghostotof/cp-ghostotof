@@ -19,7 +19,7 @@ final readonly class ContributionAdministrator implements ContributionAdministra
      * Périmètre d'ordre, verrouillé par toute écriture qui place une entrée
      * (issue #389) : la table entière, toutes langues confondues.
      */
-    private const string ORDER_SCOPE = 'contribution';
+    private const string ORDER_SCOPE = Contribution::class;
 
     public function __construct(
         private ContributionRepositoryInterface $contributionRepository,

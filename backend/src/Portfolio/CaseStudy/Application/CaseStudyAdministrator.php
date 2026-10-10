@@ -19,7 +19,7 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
      * Périmètre d'ordre, verrouillé par toute écriture qui place une entrée
      * (issue #389) : la table entière, toutes langues confondues.
      */
-    private const string ORDER_SCOPE = 'case_study';
+    private const string ORDER_SCOPE = CaseStudy::class;
 
     public function __construct(
         private CaseStudyRepositoryInterface $caseStudyRepository,

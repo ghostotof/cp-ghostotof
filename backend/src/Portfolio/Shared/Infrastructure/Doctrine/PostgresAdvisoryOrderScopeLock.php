@@ -41,7 +41,8 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
 {
     /**
      * Première clé du verrou, commune à tous les périmètres d'ordre : « ORDR »
-     * en ASCII. La seconde est `hashtext()` du nom du périmètre.
+     * en ASCII. La seconde est `hashtext()` du périmètre, le nom de la classe
+     * d'entité qui porte les positions.
      */
     public const int ADVISORY_NAMESPACE = 0x4F524452;
 

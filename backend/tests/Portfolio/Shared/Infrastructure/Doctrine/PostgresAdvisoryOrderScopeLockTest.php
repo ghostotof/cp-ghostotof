@@ -6,6 +6,8 @@ namespace App\Tests\Portfolio\Shared\Infrastructure\Doctrine;
 
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock;
+use App\Tests\Portfolio\Shared\Support\FakeOrderable;
+use App\Tests\Portfolio\Shared\Support\FakeTranslatableContent;
 use App\Tests\Support\OpensProbeConnection;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
@@ -21,6 +23,11 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
 {
     use OpensProbeConnection;
+
+    /** Deux périmètres quelconques : un périmètre est une classe d'entité, n'importe laquelle fait l'affaire ici. */
+    private const string SCOPE = FakeTranslatableContent::class;
+
+    private const string OTHER_SCOPE = FakeOrderable::class;
 
     private Connection $probe;
 
@@ -38,22 +45,22 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
 
     public function testTheScopeIsLockedForTheWholeOperationAndReleasedAfterIt(): void
     {
-        $lockedDuringOperation = $this->lock()->withLock('scope-a', fn (): bool => !$this->probeCanLock('scope-a'));
+        $lockedDuringOperation = $this->lock()->withLock(self::SCOPE, fn (): bool => !$this->probeCanLock(self::SCOPE));
 
         self::assertTrue($lockedDuringOperation, 'Une autre session a pu prendre le verrou pendant l\'opération.');
-        self::assertTrue($this->probeCanLock('scope-a'), 'Le verrou survit à l\'opération.');
+        self::assertTrue($this->probeCanLock(self::SCOPE), 'Le verrou survit à l\'opération.');
     }
 
     public function testTheOperationsResultIsReturned(): void
     {
         $result = new stdClass();
 
-        self::assertSame($result, $this->lock()->withLock('scope-a', static fn (): stdClass => $result));
+        self::assertSame($result, $this->lock()->withLock(self::SCOPE, static fn (): stdClass => $result));
     }
 
     public function testAnotherScopeStaysFree(): void
     {
-        $otherScopeFree = $this->lock()->withLock('scope-a', fn (): bool => $this->probeCanLock('scope-b'));
+        $otherScopeFree = $this->lock()->withLock(self::SCOPE, fn (): bool => $this->probeCanLock(self::OTHER_SCOPE));
 
         self::assertTrue($otherScopeFree, 'Verrouiller un périmètre en bloque un autre.');
     }
@@ -66,7 +73,7 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     {
         $connection = $this->entityManager()->getConnection();
 
-        self::assertTrue($this->lock()->withLock('scope-a', $connection->isTransactionActive(...)));
+        self::assertTrue($this->lock()->withLock(self::SCOPE, $connection->isTransactionActive(...)));
         self::assertFalse($connection->isTransactionActive());
     }
 
@@ -81,14 +88,14 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
         $caught = null;
 
         try {
-            $this->lock()->withLock('scope-a', static fn (): never => throw $refusal);
+            $this->lock()->withLock(self::SCOPE, static fn (): never => throw $refusal);
         } catch (DomainException $exception) {
             $caught = $exception;
         }
 
         self::assertSame($refusal, $caught, 'L\'exception de l\'opération n\'est pas remontée telle quelle.');
 
-        self::assertTrue($this->probeCanLock('scope-a'), 'Le verrou survit à l\'échec de l\'opération.');
+        self::assertTrue($this->probeCanLock(self::SCOPE), 'Le verrou survit à l\'échec de l\'opération.');
         self::assertTrue($this->entityManager()->isOpen(), 'L\'échec de l\'opération a fermé l\'EntityManager.');
         self::assertFalse($this->entityManager()->getConnection()->isTransactionActive());
     }
@@ -96,6 +103,8 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     /**
      * Tente de prendre le verrou depuis la connexion témoin, et le relâche
      * aussitôt s'il l'a obtenu.
+     *
+     * @param class-string $scope
      */
     private function probeCanLock(string $scope): bool
     {

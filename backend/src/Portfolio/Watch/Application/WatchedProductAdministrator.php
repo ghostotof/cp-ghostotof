@@ -29,7 +29,7 @@ final readonly class WatchedProductAdministrator implements WatchedProductAdmini
      * (issue #389) : le catalogue entier. update() n'en fait pas partie, il ne
      * touche pas à la position.
      */
-    private const string ORDER_SCOPE = 'watched_product';
+    private const string ORDER_SCOPE = WatchedProduct::class;
 
     public function __construct(
         private WatchedProductRepositoryInterface $watchedProductRepository,

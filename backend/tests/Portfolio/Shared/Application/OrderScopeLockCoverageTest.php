@@ -25,6 +25,7 @@ use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock;
 use App\Portfolio\Watch\Application\WatchedProductAdministratorInterface;
+use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use App\Tests\Support\OpensProbeConnection;
 use Closure;
@@ -48,8 +49,9 @@ use Symfony\Component\Uid\Uuid;
  *
  * Méthode : une session témoin tient le verrou du périmètre, la connexion de
  * l'ORM reçoit un `lock_timeout` court, et l'opération doit **attendre** puis
- * échouer sur ce délai, sans rien avoir écrit. Le périmètre est le nom de la
- * table : c'est le contrat que l'administrateur passe à `withLock()`.
+ * échouer sur ce délai, sans rien avoir écrit. Le périmètre est la classe de
+ * l'entité qui porte les positions : c'est le contrat que l'administrateur
+ * passe à `withLock()`.
  *
  * Ce que ce test ne voit pas : une lecture faite **avant** `withLock()`. Le
  * corps entier de chaque opération est enveloppé pour cette raison, et la
@@ -86,11 +88,11 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
     }
 
     /**
-     * @return iterable<string, array{0: string, 1: Closure(): (Closure(): mixed)}>
+     * @return iterable<string, array{0: class-string, 1: Closure(): (Closure(): mixed)}>
      */
     public static function provideOperationsThatPlaceAnEntry(): iterable
     {
-        yield from self::localizedOperations('contribution', static function (): array {
+        yield from self::localizedOperations(Contribution::class, static function (): array {
             $a = self::getContainer()->get(ContributionAdministratorInterface::class);
 
             return [
@@ -99,7 +101,7 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
                 'reorder' => $a->reorder(...),
             ];
         });
-        yield from self::localizedOperations('incident', static function (): array {
+        yield from self::localizedOperations(Incident::class, static function (): array {
             $a = self::getContainer()->get(IncidentAdministratorInterface::class);
             $at = new DateTimeImmutable('2026-10-10');
 
@@ -109,7 +111,7 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
                 'reorder' => $a->reorder(...),
             ];
         });
-        yield from self::localizedOperations('quality_principle', static function (): array {
+        yield from self::localizedOperations(QualityPrinciple::class, static function (): array {
             $a = self::getContainer()->get(QualityPrincipleAdministratorInterface::class);
 
             return [
@@ -118,7 +120,7 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
                 'reorder' => $a->reorder(...),
             ];
         });
-        yield from self::localizedOperations('quality_trait', static function (): array {
+        yield from self::localizedOperations(QualityTrait::class, static function (): array {
             $a = self::getContainer()->get(QualityTraitAdministratorInterface::class);
 
             return [
@@ -127,7 +129,7 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
                 'reorder' => $a->reorder(...),
             ];
         });
-        yield from self::localizedOperations('about_site_card', static function (): array {
+        yield from self::localizedOperations(AboutSiteCard::class, static function (): array {
             $a = self::getContainer()->get(AboutSiteCardAdministratorInterface::class);
 
             return [
@@ -136,7 +138,7 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
                 'reorder' => $a->reorder(...),
             ];
         });
-        yield from self::localizedOperations('about_me_card', static function (): array {
+        yield from self::localizedOperations(AboutMeCard::class, static function (): array {
             $a = self::getContainer()->get(AboutMeCardAdministratorInterface::class);
 
             return [
@@ -148,7 +150,7 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
                 },
             ];
         });
-        yield from self::localizedOperations('anonymous_cv_section', static function (): array {
+        yield from self::localizedOperations(AnonymousCvSection::class, static function (): array {
             $a = self::getContainer()->get(AnonymousCvSectionAdministratorInterface::class);
 
             return [
@@ -157,7 +159,7 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
                 'reorder' => $a->reorder(...),
             ];
         });
-        yield from self::localizedOperations('case_study', static function (): array {
+        yield from self::localizedOperations(CaseStudy::class, static function (): array {
             $a = self::getContainer()->get(CaseStudyAdministratorInterface::class);
 
             return [
@@ -169,13 +171,13 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
 
         // WatchedProduct n'est pas localisé : pas de groupe, et update() ne
         // touche pas à la position. Restent la fin de catalogue et le reorder.
-        yield 'watched_product create' => ['watched_product', static function (): Closure {
+        yield 'WatchedProduct create' => [WatchedProduct::class, static function (): Closure {
             $a = self::getContainer()->get(WatchedProductAdministratorInterface::class);
             $a->create('existant', 'Produit', VersionSource::MANUAL, '1.0');
 
             return static fn (): object => $a->create('nouveau', 'Produit', VersionSource::MANUAL, '1.0');
         }];
-        yield 'watched_product reorder' => ['watched_product', static function (): Closure {
+        yield 'WatchedProduct reorder' => [WatchedProduct::class, static function (): Closure {
             $a = self::getContainer()->get(WatchedProductAdministratorInterface::class);
             $first = $a->create('premier', 'Produit', VersionSource::MANUAL, '1.0');
             $second = $a->create('second', 'Produit', VersionSource::MANUAL, '1.0');
@@ -185,19 +187,22 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
     }
 
     /**
-     * @param Closure(): (Closure(): mixed) $prepare écrit les données de départ, rend l'opération à observer
+     * @param class-string                  $entityClass l'entité qui porte les positions, donc le périmètre verrouillé
+     * @param Closure(): (Closure(): mixed) $prepare     écrit les données de départ, rend l'opération à observer
      */
     #[DataProvider('provideOperationsThatPlaceAnEntry')]
-    public function testTheOperationWaitsForTheScopeLock(string $table, Closure $prepare): void
+    public function testTheOperationWaitsForTheScopeLock(string $entityClass, Closure $prepare): void
     {
         self::bootKernel();
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $table = $entityManager->getClassMetadata($entityClass)->getTableName();
         $this->table = $table;
         $operation = $prepare();
 
-        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        $connection = $entityManager->getConnection();
         $before = $this->snapshot($table);
         $probe = self::openProbeBeside($connection);
-        $probe->executeQuery('SELECT pg_advisory_lock(?, hashtext(?))', [PostgresAdvisoryOrderScopeLock::ADVISORY_NAMESPACE, $table]);
+        $probe->executeQuery('SELECT pg_advisory_lock(?, hashtext(?))', [PostgresAdvisoryOrderScopeLock::ADVISORY_NAMESPACE, $entityClass]);
         $connection->executeStatement(\sprintf("SET lock_timeout = '%s'", self::LOCK_TIMEOUT));
 
         $waited = false;
@@ -213,35 +218,38 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
             $probe->close();
         }
 
-        self::assertTrue($waited, \sprintf("L'opération a écrit sans attendre le verrou du périmètre « %s » (#389).", $table));
+        self::assertTrue($waited, \sprintf("L'opération a écrit sans attendre le verrou du périmètre « %s » (#389).", $entityClass));
         self::assertSame($before, $this->snapshot($table), "L'opération a écrit avant d'avoir le verrou.");
     }
 
     /**
      * Les cinq opérations d'un contenu localisé qui calculent une position.
      *
-     * @param Closure(): LocalizedContext $context
+     * @param class-string<TranslatableContent> $entityClass
+     * @param Closure(): LocalizedContext        $context
      *
-     * @return iterable<string, array{0: string, 1: Closure(): (Closure(): mixed)}>
+     * @return iterable<string, array{0: class-string, 1: Closure(): (Closure(): mixed)}>
      */
-    private static function localizedOperations(string $table, Closure $context): iterable
+    private static function localizedOperations(string $entityClass, Closure $context): iterable
     {
+        $label = substr($entityClass, (int) strrpos($entityClass, '\\') + 1);
+
         // Fin de périmètre : une entrée existe déjà, la nouvelle se range après.
-        yield $table.' create' => [$table, static function () use ($context): Closure {
+        yield $label.' create' => [$entityClass, static function () use ($context): Closure {
             $operations = $context();
             $operations['create'](Locale::FR, null);
 
             return static fn (): TranslatableContent => $operations['create'](Locale::FR, null);
         }];
         // « Créer la version EN » : la position vient du groupe.
-        yield $table.' create in a group' => [$table, static function () use ($context): Closure {
+        yield $label.' create in a group' => [$entityClass, static function () use ($context): Closure {
             $operations = $context();
             $group = $operations['create'](Locale::FR, null)->getTranslationGroup();
 
             return static fn (): TranslatableContent => $operations['create'](Locale::EN, $group);
         }];
         // Détacher une entrée de sa traduction l'envoie en fin de périmètre.
-        yield $table.' update that detaches' => [$table, static function () use ($context): Closure {
+        yield $label.' update that detaches' => [$entityClass, static function () use ($context): Closure {
             $operations = $context();
             $french = $operations['create'](Locale::FR, null);
             $operations['create'](Locale::EN, $french->getTranslationGroup());
@@ -249,14 +257,14 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
             return static fn (): mixed => $operations['update']($french, null);
         }];
         // Rattacher une entrée seule à un groupe lui en fait hériter la position.
-        yield $table.' update that reattaches' => [$table, static function () use ($context): Closure {
+        yield $label.' update that reattaches' => [$entityClass, static function () use ($context): Closure {
             $operations = $context();
             $group = $operations['create'](Locale::FR, null)->getTranslationGroup();
             $english = $operations['create'](Locale::EN, null);
 
             return static fn (): mixed => $operations['update']($english, $group);
         }];
-        yield $table.' reorder' => [$table, static function () use ($context): Closure {
+        yield $label.' reorder' => [$entityClass, static function () use ($context): Closure {
             $operations = $context();
             $first = $operations['create'](Locale::FR, null);
             $second = $operations['create'](Locale::FR, null);

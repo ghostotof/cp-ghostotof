@@ -19,7 +19,7 @@ final readonly class QualityTraitAdministrator implements QualityTraitAdministra
      * Périmètre d'ordre, verrouillé par toute écriture qui place une entrée
      * (issue #389) : la table entière, toutes langues confondues.
      */
-    private const string ORDER_SCOPE = 'quality_trait';
+    private const string ORDER_SCOPE = QualityTraitEntity::class;
 
     public function __construct(
         private QualityTraitRepositoryInterface $qualityTraitRepository,

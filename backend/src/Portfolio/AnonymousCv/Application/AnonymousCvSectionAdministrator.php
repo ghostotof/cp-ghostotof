@@ -19,7 +19,7 @@ final readonly class AnonymousCvSectionAdministrator implements AnonymousCvSecti
      * Périmètre d'ordre, verrouillé par toute écriture qui place une entrée
      * (issue #389) : la table entière, toutes langues confondues.
      */
-    private const string ORDER_SCOPE = 'anonymous_cv_section';
+    private const string ORDER_SCOPE = AnonymousCvSection::class;
 
     public function __construct(
         private AnonymousCvSectionRepositoryInterface $sectionRepository,

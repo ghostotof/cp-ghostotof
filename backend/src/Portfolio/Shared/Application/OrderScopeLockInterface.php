@@ -36,7 +36,9 @@ interface OrderScopeLockInterface
      *
      * @template T
      *
-     * @param string       $scope     nom stable du périmètre, celui de la table qui porte les positions
+     * @param class-string $scope     l'entité qui porte les positions : ses lignes forment le
+     *                                 périmètre. Une classe et non un nom de table, que cette
+     *                                 couche n'a pas à connaître
      * @param Closure(): T $operation
      *
      * @return T

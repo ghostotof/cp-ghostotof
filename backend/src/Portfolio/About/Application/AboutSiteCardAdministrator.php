@@ -19,7 +19,7 @@ final readonly class AboutSiteCardAdministrator implements AboutSiteCardAdminist
      * Périmètre d'ordre, verrouillé par toute écriture qui place une entrée
      * (issue #389) : la table entière, toutes langues confondues.
      */
-    private const string ORDER_SCOPE = 'about_site_card';
+    private const string ORDER_SCOPE = AboutSiteCard::class;
 
     public function __construct(
         private AboutSiteCardRepositoryInterface $aboutSiteCardRepository,

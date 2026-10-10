@@ -21,7 +21,7 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
      * la table entière, plus large que le périmètre d'ordre (une catégorie). Un
      * verrou par catégorie n'aurait rien à gagner avec un seul administrateur.
      */
-    private const string ORDER_SCOPE = 'about_me_card';
+    private const string ORDER_SCOPE = AboutMeCard::class;
 
     public function __construct(
         private AboutMeCardRepositoryInterface $aboutMeCardRepository,
