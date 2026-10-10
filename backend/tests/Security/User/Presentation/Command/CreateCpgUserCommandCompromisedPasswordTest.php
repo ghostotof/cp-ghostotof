@@ -7,6 +7,7 @@ namespace App\Tests\Security\User\Presentation\Command;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Presentation\Command\CreateCpgUserCommand;
+use App\Tests\Support\TestCredentials;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -34,12 +35,12 @@ final class CreateCpgUserCommandCompromisedPasswordTest extends TestCase
         // contrainte de fuite renvoie une violation.
         $validator = self::createStub(ValidatorInterface::class);
         $validator->method('validate')->willReturnCallback(static fn (mixed $value, mixed $constraints): ConstraintViolationList => $constraints instanceof NotCompromisedPassword
-            ? new ConstraintViolationList([new ConstraintViolation('This password has been leaked in a data breach.', null, [], '', null, 'hunter2')])
+            ? new ConstraintViolationList([new ConstraintViolation('This password has been leaked in a data breach.', null, [], '', null, TestCredentials::variant('leaked'))])
             : new ConstraintViolationList());
 
         $tester = new CommandTester(new CreateCpgUserCommand($registrar, $validator));
 
-        $tester->setInputs(['hunter2-but-long-enough']);
+        $tester->setInputs([TestCredentials::variant('leaked')]);
         $exitCode = $tester->execute(['--username' => 'jane', '--password-stdin' => true], ['interactive' => false]);
 
         self::assertSame(Command::FAILURE, $exitCode);
@@ -58,7 +59,7 @@ final class CreateCpgUserCommandCompromisedPasswordTest extends TestCase
 
         $tester = new CommandTester(new CreateCpgUserCommand($registrar, $validator));
 
-        $tester->setInputs(['a-fresh-strong-password']);
+        $tester->setInputs([TestCredentials::plainPassword()]);
         $exitCode = $tester->execute(['--username' => 'jane', '--password-stdin' => true], ['interactive' => false]);
 
         self::assertSame(Command::SUCCESS, $exitCode);
@@ -83,7 +84,7 @@ final class CreateCpgUserCommandCompromisedPasswordTest extends TestCase
         });
 
         $tester = new CommandTester(new CreateCpgUserCommand($registrar, $validator));
-        $tester->setInputs(['a-fresh-strong-password']);
+        $tester->setInputs([TestCredentials::plainPassword()]);
         $tester->execute(['--username' => 'jane', '--password-stdin' => true], ['interactive' => false]);
 
         self::assertCount(1, array_filter($validated, static fn (mixed $constraint): bool => $constraint instanceof NotCompromisedPassword));
@@ -103,7 +104,7 @@ final class CreateCpgUserCommandCompromisedPasswordTest extends TestCase
         $validator->expects(self::never())->method('validate');
 
         $tester = new CommandTester(new CreateCpgUserCommand($registrar, $validator));
-        $tester->setInputs(['a-fresh-strong-password']);
+        $tester->setInputs([TestCredentials::plainPassword()]);
         $exitCode = $tester->execute(['--username' => 'jane', '--password-stdin' => true, '--role' => ['ROLE_TRUSTED']], ['interactive' => false]);
 
         self::assertSame(Command::FAILURE, $exitCode);
@@ -133,7 +134,7 @@ final class CreateCpgUserCommandCompromisedPasswordTest extends TestCase
         });
 
         $tester = new CommandTester(new CreateCpgUserCommand($registrar, $validator));
-        $tester->setInputs(['a-fresh-strong-password']);
+        $tester->setInputs([TestCredentials::plainPassword()]);
         $exitCode = $tester->execute(['--username' => 'jane', '--password-stdin' => true], ['interactive' => false]);
 
         self::assertSame(Command::FAILURE, $exitCode);

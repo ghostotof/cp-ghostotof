@@ -7,6 +7,7 @@ namespace App\Tests\Security\User\Presentation\ApiResource;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Presentation\ApiResource\AccountPasswordSetupResource;
 use App\Security\User\Presentation\ApiResource\BackofficeUserPasswordResource;
+use App\Tests\Support\TestCredentials;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -82,8 +83,8 @@ final class PasswordBreachCheckOrderTest extends TestCase
      */
     public static function acceptablePasswords(): iterable
     {
-        yield 'backoffice' => [new BackofficeUserPasswordResource('a-fresh-strong-password')];
-        yield 'définition par lien' => [self::passwordSetup('a-fresh-strong-password')];
+        yield 'backoffice' => [new BackofficeUserPasswordResource(TestCredentials::plainPassword())];
+        yield 'définition par lien' => [self::passwordSetup(TestCredentials::plainPassword())];
     }
 
     #[DataProvider('acceptablePasswords')]

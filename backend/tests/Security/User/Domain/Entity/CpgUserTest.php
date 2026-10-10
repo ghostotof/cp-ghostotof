@@ -6,6 +6,7 @@ namespace App\Tests\Security\User\Domain\Entity;
 
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\InvalidUsernameException;
+use App\Tests\Support\TestCredentials;
 use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\UuidV7;
@@ -67,11 +68,14 @@ final class CpgUserTest extends TestCase
      */
     public function testARefusedUsernameIsNotQuotedInTheException(): void
     {
+        // Le « ! » le rend invalide comme nom : la valeur générée seule passerait le motif.
+        $pasted = TestCredentials::variant('pasted').'!';
+
         try {
-            new CpgUser('MyS3cr3t!Pass', 'hashed-password');
+            new CpgUser($pasted, 'hashed-password');
             self::fail('Le nom d\'utilisateur aurait dû être refusé.');
         } catch (InvalidUsernameException $exception) {
-            self::assertStringNotContainsString('MyS3cr3t!Pass', $exception->getMessage());
+            self::assertStringNotContainsString($pasted, $exception->getMessage());
         }
     }
 
