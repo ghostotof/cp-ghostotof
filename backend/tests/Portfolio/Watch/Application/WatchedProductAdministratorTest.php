@@ -12,6 +12,7 @@ use App\Portfolio\Watch\Domain\Exception\WatchedProductSlugAlreadyUsedException;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductSlugIsImmutableException;
 use App\Portfolio\Watch\Domain\Repository\WatchedProductRepositoryInterface;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
+use App\Tests\Portfolio\Shared\Support\ImmediateOrderScopeLock;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
@@ -24,7 +25,7 @@ final class WatchedProductAdministratorTest extends TestCase
     protected function setUp(): void
     {
         $this->repository = $this->createMock(WatchedProductRepositoryInterface::class);
-        $this->administrator = new WatchedProductAdministrator($this->repository, new OrderAssigner());
+        $this->administrator = new WatchedProductAdministrator($this->repository, new OrderAssigner(), new ImmediateOrderScopeLock());
     }
 
     private function postgres(): WatchedProduct

@@ -7,6 +7,7 @@ namespace App\Portfolio\Quality\Application;
 use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
 use App\Portfolio\Quality\Domain\Exception\QualityPrincipleNotFoundException;
 use App\Portfolio\Quality\Domain\Repository\QualityPrincipleRepositoryInterface;
+use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -14,10 +15,17 @@ use Symfony\Component\Uid\Uuid;
 
 final readonly class QualityPrincipleAdministrator implements QualityPrincipleAdministratorInterface
 {
+    /**
+     * Périmètre d'ordre, verrouillé par toute écriture qui place une entrée
+     * (issue #389) : la table entière, toutes langues confondues.
+     */
+    private const string ORDER_SCOPE = 'quality_principle';
+
     public function __construct(
         private QualityPrincipleRepositoryInterface $qualityPrincipleRepository,
         private ContentPlacement $contentPlacement,
         private OrderAssigner $orderAssigner,
+        private OrderScopeLockInterface $orderScopeLock,
     ) {
     }
 
@@ -28,40 +36,44 @@ final readonly class QualityPrincipleAdministrator implements QualityPrincipleAd
         string $iconKey,
         ?Uuid $translationGroup = null,
     ): QualityPrinciple {
-        $principle = new QualityPrinciple($locale, $title, $description, $iconKey, $this->positionFor($locale, $translationGroup), $translationGroup);
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($locale, $title, $description, $iconKey, $translationGroup): QualityPrinciple {
+            $principle = new QualityPrinciple($locale, $title, $description, $iconKey, $this->positionFor($locale, $translationGroup), $translationGroup);
 
-        $this->qualityPrincipleRepository->save($principle);
+            $this->qualityPrincipleRepository->save($principle);
 
-        return $principle;
+            return $principle;
+        });
     }
 
     public function update(Uuid $id, string $title, string $description, string $iconKey, ?Uuid $translationGroup): QualityPrinciple
     {
-        $principle = $this->qualityPrincipleRepository->findOneById($id);
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $title, $description, $iconKey, $translationGroup): QualityPrinciple {
+            $principle = $this->qualityPrincipleRepository->findOneById($id);
 
-        if (null === $principle) {
-            throw QualityPrincipleNotFoundException::forId($id);
-        }
+            if (null === $principle) {
+                throw QualityPrincipleNotFoundException::forId($id);
+            }
 
-        if (null === $translationGroup) {
-            // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
-            // le chargement du périmètre — le même qu'à la création sans groupe.
-            $this->contentPlacement->detach(
-                $principle,
-                $this->qualityPrincipleRepository->findByTranslationGroup($principle->getTranslationGroup()),
-                $this->qualityPrincipleRepository->findAll(),
-            );
-        } else {
-            $this->contentPlacement->reattach(
-                $principle,
-                $translationGroup,
-                $this->qualityPrincipleRepository->findByTranslationGroup($translationGroup),
-            );
-        }
-        $principle->update($title, $description, $iconKey);
-        $this->qualityPrincipleRepository->save($principle);
+            if (null === $translationGroup) {
+                // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
+                // le chargement du périmètre — le même qu'à la création sans groupe.
+                $this->contentPlacement->detach(
+                    $principle,
+                    $this->qualityPrincipleRepository->findByTranslationGroup($principle->getTranslationGroup()),
+                    $this->qualityPrincipleRepository->findAll(),
+                );
+            } else {
+                $this->contentPlacement->reattach(
+                    $principle,
+                    $translationGroup,
+                    $this->qualityPrincipleRepository->findByTranslationGroup($translationGroup),
+                );
+            }
+            $principle->update($title, $description, $iconKey);
+            $this->qualityPrincipleRepository->save($principle);
 
-        return $principle;
+            return $principle;
+        });
     }
 
     public function delete(Uuid $id): void
@@ -77,11 +89,13 @@ final readonly class QualityPrincipleAdministrator implements QualityPrincipleAd
 
     public function reorder(array $keys): void
     {
-        $scope = $this->qualityPrincipleRepository->findAll();
+        $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($keys): void {
+            $scope = $this->qualityPrincipleRepository->findAll();
 
-        $this->orderAssigner->assign($scope, $keys);
+            $this->orderAssigner->assign($scope, $keys);
 
-        $this->qualityPrincipleRepository->saveAll($scope);
+            $this->qualityPrincipleRepository->saveAll($scope);
+        });
     }
 
     /**

@@ -7,6 +7,7 @@ namespace App\Portfolio\About\Application;
 use App\Portfolio\About\Domain\Entity\AboutSiteCard;
 use App\Portfolio\About\Domain\Exception\AboutSiteCardNotFoundException;
 use App\Portfolio\About\Domain\Repository\AboutSiteCardRepositoryInterface;
+use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -14,10 +15,17 @@ use Symfony\Component\Uid\Uuid;
 
 final readonly class AboutSiteCardAdministrator implements AboutSiteCardAdministratorInterface
 {
+    /**
+     * Périmètre d'ordre, verrouillé par toute écriture qui place une entrée
+     * (issue #389) : la table entière, toutes langues confondues.
+     */
+    private const string ORDER_SCOPE = 'about_site_card';
+
     public function __construct(
         private AboutSiteCardRepositoryInterface $aboutSiteCardRepository,
         private ContentPlacement $contentPlacement,
         private OrderAssigner $orderAssigner,
+        private OrderScopeLockInterface $orderScopeLock,
     ) {
     }
 
@@ -28,40 +36,44 @@ final readonly class AboutSiteCardAdministrator implements AboutSiteCardAdminist
         ?string $iconKey,
         ?Uuid $translationGroup = null,
     ): AboutSiteCard {
-        $card = new AboutSiteCard($locale, $title, $description, $iconKey, $this->positionFor($locale, $translationGroup), $translationGroup);
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($locale, $title, $description, $iconKey, $translationGroup): AboutSiteCard {
+            $card = new AboutSiteCard($locale, $title, $description, $iconKey, $this->positionFor($locale, $translationGroup), $translationGroup);
 
-        $this->aboutSiteCardRepository->save($card);
+            $this->aboutSiteCardRepository->save($card);
 
-        return $card;
+            return $card;
+        });
     }
 
     public function update(Uuid $id, string $title, string $description, ?string $iconKey, ?Uuid $translationGroup): AboutSiteCard
     {
-        $card = $this->aboutSiteCardRepository->findOneById($id);
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $title, $description, $iconKey, $translationGroup): AboutSiteCard {
+            $card = $this->aboutSiteCardRepository->findOneById($id);
 
-        if (null === $card) {
-            throw AboutSiteCardNotFoundException::forId($id);
-        }
+            if (null === $card) {
+                throw AboutSiteCardNotFoundException::forId($id);
+            }
 
-        if (null === $translationGroup) {
-            // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
-            // le chargement du périmètre — le même qu'à la création sans groupe.
-            $this->contentPlacement->detach(
-                $card,
-                $this->aboutSiteCardRepository->findByTranslationGroup($card->getTranslationGroup()),
-                $this->aboutSiteCardRepository->findAll(),
-            );
-        } else {
-            $this->contentPlacement->reattach(
-                $card,
-                $translationGroup,
-                $this->aboutSiteCardRepository->findByTranslationGroup($translationGroup),
-            );
-        }
-        $card->update($title, $description, $iconKey);
-        $this->aboutSiteCardRepository->save($card);
+            if (null === $translationGroup) {
+                // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
+                // le chargement du périmètre — le même qu'à la création sans groupe.
+                $this->contentPlacement->detach(
+                    $card,
+                    $this->aboutSiteCardRepository->findByTranslationGroup($card->getTranslationGroup()),
+                    $this->aboutSiteCardRepository->findAll(),
+                );
+            } else {
+                $this->contentPlacement->reattach(
+                    $card,
+                    $translationGroup,
+                    $this->aboutSiteCardRepository->findByTranslationGroup($translationGroup),
+                );
+            }
+            $card->update($title, $description, $iconKey);
+            $this->aboutSiteCardRepository->save($card);
 
-        return $card;
+            return $card;
+        });
     }
 
     public function delete(Uuid $id): void
@@ -77,11 +89,13 @@ final readonly class AboutSiteCardAdministrator implements AboutSiteCardAdminist
 
     public function reorder(array $keys): void
     {
-        $scope = $this->aboutSiteCardRepository->findAll();
+        $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($keys): void {
+            $scope = $this->aboutSiteCardRepository->findAll();
 
-        $this->orderAssigner->assign($scope, $keys);
+            $this->orderAssigner->assign($scope, $keys);
 
-        $this->aboutSiteCardRepository->saveAll($scope);
+            $this->aboutSiteCardRepository->saveAll($scope);
+        });
     }
 
     /**

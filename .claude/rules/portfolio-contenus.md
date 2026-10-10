@@ -42,9 +42,28 @@ paths:
     `TranslationGroupHasSeveralPositionsException` (a `LogicException`, issue #338) on a group whose members disagree on the position, a pipeline bug, never a 4xx — checked **before** the
     "locale already there" 409, issue #384: with two locales the only corrupt group the unique index allows
     is an FR/EN pair, which always carries the requested locale, so the reverse order hid the bug as an `info`;
-    when it fires, look beyond migrations and SQL writes: `reorder()` takes no lock, so a "Create the XX
-    version" landing between its read and its save keeps the old position, and the exact-set rule cannot see it). `WatchedProduct` is not localized, so it is `Orderable` on its
-    own id, and its `Administrator` computes the end of the catalogue itself. The **only client-driven
+    when it fires, look at migrations and SQL writes, which bypass the scope lock below). `WatchedProduct` is not localized, so it is `Orderable` on its
+    own id, and its `Administrator` computes the end of the catalogue itself.
+    **Every write that computes a position runs under its scope's lock** (issue #389): `create()`, `update()`
+    and `reorder()` of the nine `Administrator`s wrap their **whole body** in
+    `Shared/Application/OrderScopeLockInterface::withLock(ORDER_SCOPE, …)`, `ORDER_SCOPE` being the table
+    name (`about_me_card` too, wider than its per-category ordering scope, on purpose). Without it a "Create
+    the XX version" landing between a `reorder()`'s read and its save kept the old position (a group on two
+    positions, invisible to the exact-set rule), and two simultaneous creations without a group got the same
+    `atEndOf()`. The adapter, `Shared/Infrastructure/Doctrine/PostgresAdvisoryOrderScopeLock`, runs the body
+    in `Connection::transactional()` whose first statement is `pg_advisory_xact_lock(ORDR, hashtext(scope))`,
+    released by the COMMIT/ROLLBACK itself. Three choices not to undo: a **scope** lock, never `SELECT … FOR
+    UPDATE` (a blocked one does not see rows the other transaction inserted, and locks nothing on an empty
+    table, so the creation race survives it); **not** `lock.factory` (a session lock on a second connection,
+    which would have to be released after the ORM's COMMIT); **not** `wrapInTransaction()`, which closes the
+    EntityManager on any exception, while a 409 inside the lock is an ordinary outcome. A read made *before*
+    `withLock()` escapes it, hence the whole body; an entity already in the identity map (the `PUT` entry,
+    loaded by the provider) keeps its pre-lock values, harmless since only its own position is rewritten.
+    In an FPM worker the wait is bounded by `PGOPTIONS` `lock_timeout=5s` (a 500 past that). Guards:
+    `OrderScopeLockCoverageTest` (a probe session holds each scope, every placing operation of every
+    `Administrator` must wait — a new one written without `withLock()` turns it red) and
+    `ContributionOrderConcurrencyTest` (two real processes, interleaved at the `preFlush`, both races).
+    `delete()` takes no lock: it leaves a gap, never a collision. The **only client-driven
     writer of `position` is `PUT /api/backoffice/<x>/order`** (`ContentPlacement` derives it server-side,
     no request body ever chooses it) (`Backoffice<X>OrderResource`, `read: false`,
     `output: false`, 204, one per context, `{groups: [uuid…]}` — `{ids: […]}` for Watch, plus
