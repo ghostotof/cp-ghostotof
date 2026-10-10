@@ -3,6 +3,7 @@ import type { ConversationTurn } from '../../domain/assistant/entities/Assistant
 import type { AssistantRepository } from '../../domain/assistant/repositories/AssistantRepository'
 import { AssistantError, type AssistantErrorReason } from '../../domain/assistant/errors/AssistantError'
 import { readCsrfToken } from '../auth/csrfCookie'
+import { retryAfterSeconds } from '../http/retryAfterSeconds'
 import { ServerEventParser, type ServerEvent } from './serverEvents'
 
 const PATH = '/api/assistant/answers'
@@ -135,7 +136,7 @@ export class HttpAssistantRepository implements AssistantRepository {
   private httpError(response: Response): AssistantError {
     const reason = this.reasonFor(response.status)
 
-    return new AssistantError(reason, reason === 'rate-limited' ? this.retryAfter(response) : null)
+    return new AssistantError(reason, reason === 'rate-limited' ? retryAfterSeconds(response) : null)
   }
 
   private reasonFor(status: number): AssistantErrorReason {
@@ -155,20 +156,5 @@ export class HttpAssistantRepository implements AssistantRepository {
       default:
         return 'unknown'
     }
-  }
-
-  /** `Retry-After` : des secondes entières, ou une date HTTP. Absent (zone nginx) ou illisible → null. */
-  private retryAfter(response: Response): number | null {
-    const header = response.headers.get('Retry-After')?.trim()
-    if (!header) {
-      return null
-    }
-    if (/^\d+$/.test(header)) {
-      return Number(header)
-    }
-
-    const date = Date.parse(header)
-
-    return Number.isNaN(date) ? null : Math.max(0, Math.ceil((date - Date.now()) / 1000))
   }
 }

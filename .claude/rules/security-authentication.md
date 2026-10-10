@@ -88,10 +88,10 @@ paths:
     changes. The submitted password is never read. The response is untouched — the three 401s must stay
     byte-identical, which is the other half of non-enumeration.
     `FailedLoginTimingEqualizerTest` + `tests/Security/Authentication/LoginFailureTimingTest.php` pin it.
-    Related fact worth knowing: `login_throttling` answers **401** with `Too many failed login attempts`,
-    not 429 — it is Lexik's failure handler that shapes the response (`LoginThrottlingTest`,
-    `tools/smoke-login-throttling.sh`). Decided on 2026-10-10 (#369) to move it to a 429
-    `/errors/rate-limited`, in issue #399 (see "Every quota 429" in `.claude/rules/backoffice-api.md`).
+    Related fact worth knowing: `login_throttling` answers a **429** `/errors/rate-limited` with
+    `Retry-After` since issue #399, the only failure that leaves Lexik's 401 — it says nothing about the
+    account. `LoginThrottlingRefusalListener` throws it at priority -200, below this listener; see "Every
+    quota 429" in `.claude/rules/backoffice-api.md`.
   - **`Infrastructure/Log/SecurityAuditLogger.php` is the single entry point of the security audit log**
     (3rd audit, A5/D5, Monolog channel `security_audit`, `info`, JSON on stderr in prod — see
     `monolog.yaml`). Implements `Application/SecurityAuditLoggerInterface`, one method per event:
@@ -165,11 +165,14 @@ paths:
     top-level throwable only). **The sort is a closed list, so a guard holds it open** (issue #361):
     `ThrottledRequestAuditCoverageTest` walks every `RetryAfterAware` of `src/` (through `DeclaredClasses`),
     hands each one to the real listener, and turns red unless it yields exactly one event of its own — a
-    `…Throttled` method, never `loginThrottled` (Symfony's `login_throttling`, a 401) nor an unrelated one
-    such as `rateLimiterUnavailable` — or sits in `PER_ACCOUNT` with a justification (the translator and
-    the assistant, both on `ai_usage`, pinned by their own tests). A new anonymous quota therefore gets its
-    `…Throttled` interface method, its `match` arm and its event in the same change — never a `PER_ACCOUNT`
-    entry to make the suite pass. The guard calls the listener directly: it proves the sort, not that the
+    `…Throttled` method, never `loginThrottled` nor an unrelated one such as `rateLimiterUnavailable` — or
+    sits in a justified list: `PER_ACCOUNT` (the translator and the assistant, both on `ai_usage`, pinned by
+    their own tests) or `TRACED_UPSTREAM` (issue #399: `LoginRateLimitExceededException`, whose
+    `login-throttled` — with the tried username — `SecurityEventsSubscriber` writes on `LoginFailureEvent`
+    before the exception exists; sorting it again would log the refusal twice). The guard checks that the
+    listener ignores every justified entry. A new anonymous quota therefore gets its `…Throttled` interface
+    method, its `match` arm and its event in the same change — never a justified entry to make the suite
+    pass. The guard calls the listener directly: it proves the sort, not that the
     exception reaches priority 0 unwrapped — `SecurityAuditLogTest` covers the real wiring, extend it too. **Replay and expiry must cost the same**: `findOneByTokenHash` loads the
     account by explicit join, so the `replayed` path, which logs it, pays no extra query behind the
     shared 410 — keep the join. **Consumption is atomic**: `PasswordSetupService::complete()` hashes, then

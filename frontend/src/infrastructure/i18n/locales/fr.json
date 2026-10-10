@@ -463,6 +463,8 @@
     "passwordLabel": "Mot de passe",
     "submit": "Se connecter",
     "invalidCredentials": "Nom d'utilisateur ou mot de passe incorrect.",
+    "rateLimited": "Trop de tentatives de connexion. Réessayez dans quelques minutes.",
+    "rateLimitedIn": "Trop de tentatives de connexion. Réessayez dans {minutes} minute. | Trop de tentatives de connexion. Réessayez dans {minutes} minutes.",
     "genericError": "Une erreur est survenue, veuillez réessayer."
   },
   "contact": {

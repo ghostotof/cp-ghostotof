@@ -83,7 +83,11 @@ final class SecurityAuditLogTest extends WebTestCase
 
         $this->attemptLogin($client, $username, 'wrong-password');
 
-        self::assertResponseStatusCodeSame(401);
+        // Le 429 de l'issue #399 est levé après l'écriture du journal
+        // (LoginThrottlingRefusalListener, priorité -200) : l'événement est
+        // toujours là, une seule fois — ThrottledRequestAuditListener ne le
+        // réécrit pas (ThrottledRequestAuditCoverageTest, TRACED_UPSTREAM).
+        self::assertResponseStatusCodeSame(429);
         self::assertSame($username, self::singleSecurityAuditEvent('login-throttled')['user']);
         self::assertSame([], self::securityAuditEvents('login-failed'), 'Une tentative bloquée par le throttling n\'est pas un login raté : le mot de passe n\'a même pas été vérifié.');
     }
