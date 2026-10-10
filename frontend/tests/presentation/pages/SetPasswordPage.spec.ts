@@ -242,6 +242,23 @@ describe('SetPasswordPage', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
   })
 
+  it('compte la longueur en points de code comme le backend : quatre emojis sont refusés localement (#410)', async () => {
+    // 4 points de code, mais 8 unités UTF-16 : `string.length` les laissait
+    // passer, et le backend (`mb_strlen`) répondait 422.
+    const fourEmojis = '🔑🔑🔑🔑'
+    const repository = createStubRepository()
+    const { wrapper } = await mountPage(repository)
+
+    const inputs = wrapper.findAll('input[type="password"]')
+    await inputs[0].setValue(fourEmojis)
+    await inputs[1].setValue(fourEmojis)
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(repository.completePasswordSetup).not.toHaveBeenCalled()
+    expect(wrapper.get('[role="alert"]').text()).toContain('au moins 8 caractères')
+  })
+
   it('soumet le mot de passe puis affiche un écran de succès avec un lien vers la connexion', async () => {
     const repository = createStubRepository()
     const { wrapper } = await mountPage(repository)

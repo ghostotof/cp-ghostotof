@@ -98,7 +98,9 @@ onMounted(async () => {
 async function handleSubmit(): Promise<void> {
   localFormError.value = null
 
-  if (password.value.length < MIN_PASSWORD_LENGTH) {
+  // Points de code, comme `mb_strlen` côté backend : `.length` compte des
+  // unités UTF-16, un emoji y vaut 2 (#410).
+  if ([...password.value].length < MIN_PASSWORD_LENGTH) {
     localFormError.value = t('account.setPassword.errors.tooShort', { min: MIN_PASSWORD_LENGTH })
     return
   }
