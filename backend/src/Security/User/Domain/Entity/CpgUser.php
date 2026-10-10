@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Security\User\Domain\Entity;
 
+use App\Security\User\Application\CpgUserInviter;
 use App\Security\User\Domain\Exception\InvalidUsernameException;
 use App\Security\User\Infrastructure\Doctrine\CpgUserRepository;
+use App\Security\User\Presentation\Command\CreateCpgUserCommand;
 use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -21,10 +23,10 @@ use Symfony\Component\Validator\Constraints as Assert;
  * d'utilisateur.
  *
  * Deux voies de création :
- * - CLI (App\Security\User\Presentation\Command\CreateCpgUserCommand) :
+ * - CLI ({@see CreateCpgUserCommand}) :
  *   amorçage, notamment du premier ROLE_SUPER — sans email, compte utilisable
  *   immédiatement ;
- * - invitation depuis le backoffice (App\Security\User\Application\CpgUserInviter) :
+ * - invitation depuis le backoffice ({@see CpgUserInviter}) :
  *   un email est stocké (nullable, unique, jamais exposé avant authentification —
  *   cf. objectif n°9), le compte est créé "en attente d'activation" et la
  *   personne définit elle-même son mot de passe via un lien reçu par email.

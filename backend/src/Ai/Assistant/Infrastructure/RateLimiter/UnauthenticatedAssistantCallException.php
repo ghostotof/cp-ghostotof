@@ -13,7 +13,7 @@ use LogicException;
  *
  * Pas une erreur du client (un anonyme reçoit 401/403 du pare-feu bien avant) :
  * elle sort en 500 et n'implémente pas ProblemExceptionInterface. Elle étend
- * \LogicException parce que c'en est une, sous un nom qui se cible dans
+ * {@see LogicException} parce que c'en est une, sous un nom qui se cible dans
  * `framework.exceptions` et se reconnaît dans les journaux. Message littéral.
  */
 final class UnauthenticatedAssistantCallException extends LogicException

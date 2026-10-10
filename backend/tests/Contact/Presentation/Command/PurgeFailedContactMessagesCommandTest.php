@@ -70,7 +70,7 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
     }
 
     /**
-     * Issue #248 : `new \DateTimeImmutable('-'.$olderThan)` acceptait la
+     * Issue #248 : `new DateTimeImmutable('-'.$olderThan)` acceptait la
      * double négation "--30 days" (interprétée "+30 days") et purgeait tout,
      * y compris un message en échec récent. `RetentionPeriod` doit refuser
      * cette expression avant que la moindre suppression ait lieu.

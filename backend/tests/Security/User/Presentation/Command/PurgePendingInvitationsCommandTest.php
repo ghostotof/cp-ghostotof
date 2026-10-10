@@ -181,8 +181,8 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
 
     /**
      * Constat de la revue : "--older-than=-30 days" traverse la garde
-     * syntaxique (new \DateTimeImmutable('--30 days') est acceptée par PHP)
-     * mais \DateInterval::createFromDateString('-30 days') produit un
+     * syntaxique (new DateTimeImmutable('--30 days') est acceptée par PHP)
+     * mais DateInterval::createFromDateString('-30 days') produit un
      * intervalle qui, une fois soustrait à "maintenant", avance l'horloge —
      * le seuil se retrouve dans le futur et purgerait tous les comptes en
      * attente (hors ROLE_SUPER). Doit être refusé avant toute suppression.

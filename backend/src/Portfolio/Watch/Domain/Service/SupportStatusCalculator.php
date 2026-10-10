@@ -18,7 +18,7 @@ use DateTimeImmutable;
  * deux rafraîchissements doit se voir immédiatement — c'est précisément ce que
  * cette page prétend surveiller.
  *
- * La date de référence est un paramètre, jamais un `new \DateTimeImmutable()`
+ * La date de référence est un paramètre, jamais un `new DateTimeImmutable()`
  * caché : sans cela, aucun cas limite ne serait testable.
  */
 final readonly class SupportStatusCalculator

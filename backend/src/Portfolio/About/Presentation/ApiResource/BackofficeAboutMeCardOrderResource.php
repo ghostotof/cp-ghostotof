@@ -11,6 +11,7 @@ use App\Portfolio\About\Infrastructure\ApiPlatform\BackofficeAboutMeCardOrderPro
 use App\Portfolio\Shared\Presentation\ApiResource\CarriesOrderedKeys;
 use App\Shared\Presentation\ApiResource\InputContradictsValidationException;
 use Symfony\Component\Validator\Constraints as Assert;
+use ValueError;
 
 /**
  * PUT /api/backoffice/about/me-cards/order — l'unique écrivain de la position
@@ -67,7 +68,7 @@ final readonly class BackofficeAboutMeCardOrderResource
     /**
      * La catégorie telle que la validation la garantit. `from()` et non
      * `fromString()` : la valeur est bornée en amont par `Assert\Choice`, une
-     * `\ValueError` ici serait un vrai défaut, pas une saisie (règle d'audit I3).
+     * {@see ValueError} ici serait un vrai défaut, pas une saisie (règle d'audit I3).
      */
     public function validatedCategory(): AboutMeCardCategory
     {

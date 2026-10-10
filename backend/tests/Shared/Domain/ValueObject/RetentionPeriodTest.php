@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Issue #248 : `new \DateTimeImmutable('-'.$olderThan)` acceptait en silence
+ * Issue #248 : `new DateTimeImmutable('-'.$olderThan)` acceptait en silence
  * une double négation ("-30 days" -> '--30 days', interprété comme "+30
  * days") et plaçait le seuil de purge dans le futur. `RetentionPeriod` répare
  * ça en comparant le seuil obtenu à `$now`, qui est le seul invariant qui

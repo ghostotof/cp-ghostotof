@@ -230,8 +230,8 @@ final class PendingInvitationPurgerTest extends TestCase
         $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
 
         // Double négation possible côté appelant ("--older-than=-30 days") :
-        // \DateInterval::createFromDateString('-30 days') produit un
-        // intervalle dont \DateTimeImmutable::sub() avance l'horloge au lieu
+        // DateInterval::createFromDateString('-30 days') produit un
+        // intervalle dont DateTimeImmutable::sub() avance l'horloge au lieu
         // de la reculer — le seuil se retrouve dans le futur.
         $this->expectException(InvalidPurgeRetentionException::class);
 

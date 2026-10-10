@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Shared\Domain\Exception;
 
+use DomainException;
 use LogicException;
 use Symfony\Component\Uid\Uuid;
 
@@ -14,8 +15,8 @@ use Symfony\Component\Uid\Uuid;
  * (issue #338).
  *
  * Elle sort donc en 500 `critical` : ni `ProblemExceptionInterface`, ni
- * entrée `exception_to_status`, et elle étend \LogicException plutôt que
- * \DomainException, que les erreurs clientes de ce dossier étendent. Le
+ * entrée `exception_to_status`, et elle étend {@see LogicException} plutôt que
+ * {@see DomainException}, que les erreurs clientes de ce dossier étendent. Le
  * message donne le groupe, ce qu'il faut retrouver en base.
  */
 final class TranslationGroupHasSeveralPositionsException extends LogicException

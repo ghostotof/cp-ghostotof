@@ -147,7 +147,7 @@ final class ExceptionMappingEnvironmentParityTest extends TestCase
 
     /**
      * Les environnements que le noyau admet, hors `test` : lus dans
-     * App\Kernel::getAllowedEnvs() plutôt que recopiés, pour qu'un
+     * {@see Kernel::getAllowedEnvs()} plutôt que recopiés, pour qu'un
      * environnement ajouté soit comparé sans qu'on y pense.
      *
      * @return list<string>

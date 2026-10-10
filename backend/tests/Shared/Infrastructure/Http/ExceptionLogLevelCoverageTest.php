@@ -223,7 +223,7 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
 
     /**
      * L'inverse du test précédent : chaque entrée vise une exception recensée.
-     * Une entrée large (`\DomainException`, une interface…) couvrirait tout en
+     * Une entrée large ({@see DomainException}, une interface…) couvrirait tout en
      * apparence, abaisserait aussi de vrais défauts serveur, et masquerait les
      * entrées précises placées après elle — le noyau retient la première qui
      * correspond. Interdites, donc, sauf justification.

@@ -9,6 +9,7 @@ use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsE
 use App\Portfolio\Experience\Domain\Exception\InvalidExperienceYearsException;
 use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use App\Shared\Presentation\Command\InvalidConsoleAnswerException;
+use Exception;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -163,7 +164,7 @@ final class AddExperienceTechnologyCommand extends Command
     }
 
     /**
-     * Le QuestionHelper rattrape toute \Exception d'un validateur, l'exception
+     * Le QuestionHelper rattrape toute {@see Exception} d'un validateur, l'exception
      * du domaine comprise : nul besoin de la ré-emballer pour que la question
      * soit reposée avec son message.
      *

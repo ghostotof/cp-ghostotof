@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Security\User\Application\Message;
 
+use App\Security\User\Application\CpgUserInviter;
+use App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler;
+
 /**
  * Commande Messenger : demande d'envoi de l'e-mail d'invitation à définir son
- * mot de passe. Dispatchée par App\Security\User\Application\CpgUserInviter,
- * consommée par App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler
+ * mot de passe. Dispatchée par {@see CpgUserInviter},
+ * consommée par {@see SendAccountInvitationHandler}
  * (transport "async"/RabbitMQ, cf. config/packages/messenger.yaml).
  *
  * L'identifiant voyage en chaîne RFC 4122 (spec 0003 D7) et non en Uuid : un

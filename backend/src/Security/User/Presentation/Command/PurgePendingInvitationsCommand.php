@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Security\User\Presentation\Command;
 
+use App\Security\User\Application\CpgUserInviter;
+use App\Security\User\Application\PendingInvitationPurger;
 use App\Security\User\Application\PendingInvitationPurgerInterface;
 use App\Security\User\Domain\Exception\InvalidPurgeRetentionException;
 use DateInterval;
@@ -21,7 +23,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * durée de rétention (issue #238).
  *
  * Contexte RGPD (registre §3.2, minimisation art. 5-1-c) : un compte invité
- * (App\Security\User\Application\CpgUserInviter) porte un e-mail — une donnée
+ * ({@see CpgUserInviter}) porte un e-mail — une donnée
  * personnelle — tant qu'il n'a pas défini son mot de passe. Une invitation
  * jamais suivie d'effet n'a plus de raison de conserver cette adresse
  * indéfiniment. Le seuil (30 jours par défaut) court depuis la *dernière*
@@ -30,7 +32,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * métier — jetons supprimés avec le compte (FK ON DELETE CASCADE), garde
  * anti-lockout ROLE_SUPER, aucune notification à la personne (l'adresse
  * purgée est précisément ce qu'on supprime) — vit dans
- * App\Security\User\Application\PendingInvitationPurger ; cette commande n'en
+ * {@see PendingInvitationPurger} ; cette commande n'en
  * est que l'habillage CLI, planifié quotidiennement par
  * k8s/base/messenger-purge-cronjob.yaml. Round de correction (revue) : le
  * purgeur refuse tout seuil de rétention inférieur à un jour (--older-than
@@ -124,13 +126,13 @@ final class PurgePendingInvitationsCommand extends Command
     {
         try {
             // Même garde que app:contact:purge-failed-messages : un intervalle
-            // relatif que \DateTimeImmutable elle-même refuse est rejeté ici,
+            // relatif que DateTimeImmutable elle-même refuse est rejeté ici,
             // avant de demander la même chaîne à DateInterval ci-dessous.
-            // \Exception seul suffit à couvrir les deux cas réels : depuis
+            // Exception seul suffit à couvrir les deux cas réels : depuis
             // PHP 8.3, une chaîne illisible fait lever
             // DateMalformedStringException ici puis
             // DateMalformedIntervalStringException plus bas — les deux
-            // étendent directement \Exception, jamais l'une l'autre. Cette
+            // étendent directement Exception, jamais l'une l'autre. Cette
             // garde ne juge que la *syntaxe* de l'intervalle ; qu'il soit
             // positif, négatif ou nul est vérifié plus loin par
             // PendingInvitationPurger::purge() (InvalidPurgeRetentionException),

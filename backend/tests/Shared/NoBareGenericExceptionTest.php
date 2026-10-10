@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace App\Tests\Shared;
 
 use App\Tests\Support\BareExceptionInstantiations;
+use Exception;
+use InvalidArgumentException;
+use LogicException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 /**
- * `src/` ne lève jamais de \Exception, de \LogicException, de
- * \RuntimeException ni d'\InvalidArgumentException nue (issues #338 et #383) :
+ * `src/` ne lève jamais de {@see Exception}, de {@see LogicException}, de
+ * {@see RuntimeException} ni d'{@see InvalidArgumentException} nue (issues #338 et #383) :
  * les standards du projet veulent une exception explicite, qui se cible dans
  * `framework.exceptions` et se reconnaît dans les journaux. Les dix-neuf de
  * #338 et les sept de #383 ont reçu une classe dédiée, sans exemption ; ce test

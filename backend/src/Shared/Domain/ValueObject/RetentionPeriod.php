@@ -15,7 +15,7 @@ use DateTimeImmutable;
  * calculer un seuil d'ancienneté sûr.
  *
  * Piège corrigé (issue #248) : la commande de purge des messages de contact en
- * échec construisait auparavant `new \DateTimeImmutable('-'.$olderThan)`. Avec
+ * échec construisait auparavant `new DateTimeImmutable('-'.$olderThan)`. Avec
  * un `$olderThan` déjà négatif (ex. "-30 days"), la concaténation produit
  * `'--30 days'` — une double négation que PHP accepte silencieusement et
  * interprète comme "+30 days" (vérifié empiriquement en PHP 8.5 : cette forme
@@ -31,8 +31,8 @@ use DateTimeImmutable;
  * (`$now - $interval`) puis de vérifier qu'il est strictement antérieur à
  * `$now`.
  *
- * `\DateInterval::createFromDateString()` est utilisé plutôt que
- * `\DateTimeImmutable` : depuis PHP 8.3 il lève `\DateMalformedIntervalStringException`
+ * {@see DateInterval::createFromDateString()} est utilisé plutôt que
+ * {@see DateTimeImmutable} : depuis PHP 8.3 il lève {@see DateMalformedIntervalStringException}
  * sur une expression illisible (vérifié empiriquement en PHP 8.5 : une chaîne
  * comme "not-an-interval" lève directement, elle ne produit jamais
  * silencieusement un intervalle nul) ; si une version plus ancienne du moteur

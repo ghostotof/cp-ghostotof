@@ -122,7 +122,7 @@ final class RetryAfterListenerTest extends TestCase
     private function quotaExceeded(string $offset): Throwable
     {
         // Dérivée de l'horloge elle-même : MockClock est en UTC, un
-        // `new \DateTimeImmutable()` suivrait le fuseau par défaut de PHP.
+        // `new DateTimeImmutable()` suivrait le fuseau par défaut de PHP.
         $deadline = $this->clock->now()->modify($offset);
 
         return new class($deadline) extends DomainException implements RetryAfterAware {

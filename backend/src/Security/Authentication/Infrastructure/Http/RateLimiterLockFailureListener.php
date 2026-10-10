@@ -6,6 +6,7 @@ namespace App\Security\Authentication\Infrastructure\Http;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Shared\Infrastructure\Http\CanonicalPath;
+use App\Shared\Infrastructure\Http\RetryAfterListener;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -57,7 +58,7 @@ use Throwable;
  * **Ce que la réponse ne dit pas.** Ni le message de l'exception (corps fixe),
  * ni de sujet au journal d'audit : le chemin dit quel limiteur a cédé.
  *
- * **Hors de l'écouteur commun `Retry-After`** (App\Shared\Infrastructure\Http\RetryAfterListener,
+ * **Hors de l'écouteur commun `Retry-After`** ({@see RetryAfterListener},
  * issue #273), et délibérément. Celui-là traduit l'échéance que porte une
  * exception de quota (RetryAfterAware) ; une panne du verrou n'en porte
  * aucune — personne ne sait quand la base reviendra —, d'où le délai fixe
