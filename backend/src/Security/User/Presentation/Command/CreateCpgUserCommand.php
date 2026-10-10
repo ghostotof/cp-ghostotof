@@ -10,6 +10,7 @@ use App\Security\User\Domain\Exception\InvalidUsernameException;
 use App\Security\User\Domain\Exception\UsernameAlreadyUsedException;
 use App\Security\User\Presentation\Validator\PlainPasswordLength;
 use App\Shared\Presentation\Command\InvalidConsoleAnswerException;
+use SensitiveParameter;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -167,7 +168,7 @@ final class CreateCpgUserCommand extends Command
      * porte l'URL, donc le préfixe SHA-1 du mot de passe, que le
      * ErrorListener de la console journaliserait en `critical`.
      */
-    private function acceptsPassword(string $plainPassword, SymfonyStyle $io): bool
+    private function acceptsPassword(#[SensitiveParameter] string $plainPassword, SymfonyStyle $io): bool
     {
         $lengthViolations = $this->validator->validate($plainPassword, new PlainPasswordLength());
 

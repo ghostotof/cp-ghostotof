@@ -9,6 +9,7 @@ use ApiPlatform\Metadata\Put;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserPasswordProcessor;
 use App\Security\User\Infrastructure\ApiPlatform\BackofficeUserPasswordProvider;
 use App\Security\User\Presentation\Validator\PlainPasswordLength;
+use SensitiveParameter;
 use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -49,6 +50,10 @@ final readonly class BackofficeUserPasswordResource
             new PlainPasswordLength(),
             new Assert\NotCompromisedPassword(skipOnError: true),
         ])]
+        // Hors des traces d'exception de la dénormalisation (issue #411,
+        // App\Tests\Security\User\PlainPasswordInputsTest) ; le Validator ne
+        // lit que la propriété.
+        #[SensitiveParameter]
         public string $password = '',
     ) {
     }

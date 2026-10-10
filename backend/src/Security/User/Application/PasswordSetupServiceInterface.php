@@ -6,6 +6,7 @@ namespace App\Security\User\Application;
 
 use App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException;
 use App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException;
+use SensitiveParameter;
 
 /**
  * Parcours public "je définis mon mot de passe via le lien reçu par e-mail".
@@ -26,5 +27,5 @@ interface PasswordSetupServiceInterface
      * @throws InvalidPasswordSetupTokenException si le jeton est inconnu
      * @throws PasswordSetupTokenExpiredException si le jeton est expiré ou déjà utilisé
      */
-    public function complete(string $clearToken, string $plainPassword): void;
+    public function complete(string $clearToken, #[SensitiveParameter] string $plainPassword): void;
 }

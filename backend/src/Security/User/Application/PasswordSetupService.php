@@ -11,6 +11,7 @@ use App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use Psr\Clock\ClockInterface;
+use SensitiveParameter;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
 final readonly class PasswordSetupService implements PasswordSetupServiceInterface
@@ -29,7 +30,7 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         $this->usableTokenOrFail($clearToken);
     }
 
-    public function complete(string $clearToken, string $plainPassword): void
+    public function complete(string $clearToken, #[SensitiveParameter] string $plainPassword): void
     {
         $token = $this->usableTokenOrFail($clearToken);
         $user = $token->getUser();
