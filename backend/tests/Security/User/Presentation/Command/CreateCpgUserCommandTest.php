@@ -9,6 +9,7 @@ use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Console\Exception\InvalidOptionException;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
@@ -31,10 +32,7 @@ final class CreateCpgUserCommandTest extends KernelTestCase
     {
         $tester = $this->commandTester();
 
-        $exitCode = $tester->execute([
-            '--username' => 'jane',
-            '--password' => TestCredentials::plainPassword(),
-        ]);
+        $exitCode = $this->executeWithPasswordOnStdin($tester, ['--username' => 'jane'], TestCredentials::plainPassword());
 
         self::assertSame(0, $exitCode);
         self::assertStringContainsString('jane', $tester->getDisplay());
@@ -46,9 +44,9 @@ final class CreateCpgUserCommandTest extends KernelTestCase
     public function testFailsWhenUsernameAlreadyUsed(): void
     {
         $tester = $this->commandTester();
-        $tester->execute(['--username' => 'jane', '--password' => TestCredentials::plainPassword()]);
+        $this->executeWithPasswordOnStdin($tester, ['--username' => 'jane'], TestCredentials::plainPassword());
 
-        $exitCode = $tester->execute(['--username' => 'jane', '--password' => TestCredentials::variant('autre')]);
+        $exitCode = $this->executeWithPasswordOnStdin($tester, ['--username' => 'jane'], TestCredentials::variant('autre'));
 
         self::assertSame(1, $exitCode);
         self::assertStringContainsString('existe déjà', $tester->getDisplay());
@@ -58,7 +56,7 @@ final class CreateCpgUserCommandTest extends KernelTestCase
     {
         $tester = $this->commandTester();
 
-        $exitCode = $tester->execute(['--username' => 'ab', '--password' => TestCredentials::plainPassword()]);
+        $exitCode = $this->executeWithPasswordOnStdin($tester, ['--username' => 'ab'], TestCredentials::plainPassword());
 
         self::assertSame(1, $exitCode);
     }
@@ -71,7 +69,7 @@ final class CreateCpgUserCommandTest extends KernelTestCase
     {
         $tester = $this->commandTester();
 
-        $exitCode = $tester->execute(['--username' => "jane\n", '--password' => TestCredentials::plainPassword()]);
+        $exitCode = $this->executeWithPasswordOnStdin($tester, ['--username' => "jane\n"], TestCredentials::plainPassword());
 
         self::assertSame(1, $exitCode);
         self::assertNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername("jane\n"));
@@ -81,10 +79,7 @@ final class CreateCpgUserCommandTest extends KernelTestCase
     {
         $tester = $this->commandTester();
 
-        $exitCode = $tester->execute([
-            '--username' => 'jane',
-            '--password' => str_repeat('a', 4097),
-        ]);
+        $exitCode = $this->executeWithPasswordOnStdin($tester, ['--username' => 'jane'], str_repeat('a', 4097));
 
         self::assertSame(1, $exitCode);
         self::assertStringContainsString('dépasser', $tester->getDisplay());
@@ -94,11 +89,7 @@ final class CreateCpgUserCommandTest extends KernelTestCase
     {
         $tester = $this->commandTester();
 
-        $exitCode = $tester->execute([
-            '--username' => 'super',
-            '--password' => TestCredentials::plainPassword(),
-            '--role' => ['ROLE_SUPER'],
-        ]);
+        $exitCode = $this->executeWithPasswordOnStdin($tester, ['--username' => 'super', '--role' => ['ROLE_SUPER']], TestCredentials::plainPassword());
 
         self::assertSame(0, $exitCode);
 
@@ -117,11 +108,7 @@ final class CreateCpgUserCommandTest extends KernelTestCase
     {
         $tester = $this->commandTester();
 
-        $exitCode = $tester->execute([
-            '--username' => 'jane',
-            '--password' => TestCredentials::plainPassword(),
-            '--role' => ['ROLE_TRUSTED'],
-        ]);
+        $exitCode = $this->executeWithPasswordOnStdin($tester, ['--username' => 'jane', '--role' => ['ROLE_TRUSTED']], TestCredentials::plainPassword());
 
         self::assertSame(1, $exitCode);
         self::assertStringContainsString('ROLE_TRUSTED', $tester->getDisplay());
@@ -132,11 +119,7 @@ final class CreateCpgUserCommandTest extends KernelTestCase
     {
         $tester = $this->commandTester();
 
-        $exitCode = $tester->execute([
-            '--username' => 'jane',
-            '--password' => TestCredentials::plainPassword(),
-            '--role' => ['ROLE_UNKNOWN'],
-        ]);
+        $exitCode = $this->executeWithPasswordOnStdin($tester, ['--username' => 'jane', '--role' => ['ROLE_UNKNOWN']], TestCredentials::plainPassword());
 
         self::assertSame(1, $exitCode);
         self::assertStringContainsString('inconnu', $tester->getDisplay());
@@ -152,7 +135,9 @@ final class CreateCpgUserCommandTest extends KernelTestCase
     {
         $tester = $this->commandTester();
 
-        $exitCode = $tester->execute(['--password' => TestCredentials::plainPassword()], ['interactive' => false]);
+        $tester->setInputs([TestCredentials::plainPassword()]);
+
+        $exitCode = $tester->execute(['--password-stdin' => true], ['interactive' => false]);
 
         self::assertSame(1, $exitCode);
         self::assertStringContainsString('--username', $tester->getDisplay());
@@ -165,7 +150,7 @@ final class CreateCpgUserCommandTest extends KernelTestCase
         $exitCode = $tester->execute(['--username' => 'jane'], ['interactive' => false]);
 
         self::assertSame(1, $exitCode);
-        self::assertStringContainsString('--password', $tester->getDisplay());
+        self::assertStringContainsString('--password-stdin', $tester->getDisplay());
         self::assertNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane'));
     }
 
@@ -271,10 +256,94 @@ final class CreateCpgUserCommandTest extends KernelTestCase
         self::assertTrue($hasher->isPasswordValid($user, $password));
     }
 
+    /**
+     * Issue #386 : un mot de passe passé en argument se lit dans `ps`, dans
+     * l'historique du shell et dans le contexte `command` des journaux du
+     * ErrorListener de la console. L'option n'existe plus.
+     */
+    public function testThePasswordCannotBePassedAsAnArgumentAnyMore(): void
+    {
+        $tester = $this->commandTester();
+
+        $this->expectException(InvalidOptionException::class);
+
+        $tester->execute(['--username' => 'jane', '--password' => TestCredentials::plainPassword()], ['interactive' => false]);
+    }
+
+    /**
+     * La fin de ligne qu'ajoutent `echo` ou un heredoc est retirée, et elle
+     * seule : les espaces autour restent, comme à l'invite et dans json_login.
+     */
+    public function testReadsThePasswordFromStandardInputWithoutItsLineEnding(): void
+    {
+        $password = ' '.TestCredentials::plainPassword().' ';
+        $tester = $this->commandTester();
+
+        $exitCode = $this->executeWithPasswordOnStdin($tester, ['--username' => 'jane'], $password);
+
+        self::assertSame(0, $exitCode);
+        $user = self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane');
+        self::assertNotNull($user);
+        self::assertTrue(self::getContainer()->get(UserPasswordHasherInterface::class)->isPasswordValid($user, $password));
+    }
+
+    public function testAWindowsLineEndingOnStandardInputIsRemovedToo(): void
+    {
+        $tester = $this->commandTester();
+        $tester->setInputs([TestCredentials::plainPassword()."\r"]);
+
+        $exitCode = $tester->execute(['--username' => 'jane', '--password-stdin' => true], ['interactive' => false]);
+
+        self::assertSame(0, $exitCode);
+        $user = self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane');
+        self::assertNotNull($user);
+        self::assertTrue(self::getContainer()->get(UserPasswordHasherInterface::class)->isPasswordValid($user, TestCredentials::plainPassword()));
+    }
+
+    /**
+     * L'entrée standard porte le mot de passe : une invite du nom
+     * d'utilisateur la lirait à sa place. Même règle que `docker login`.
+     */
+    public function testPasswordStdinRequiresTheUsernameOption(): void
+    {
+        $tester = $this->commandTester();
+        $tester->setInputs([TestCredentials::plainPassword()]);
+
+        $exitCode = $tester->execute(['--password-stdin' => true], ['interactive' => true]);
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('--username', $tester->getDisplay());
+        self::assertCount(0, self::getContainer()->get(CpgUserRepositoryInterface::class)->findAll());
+    }
+
+    public function testAnEmptyStandardInputFails(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute(['--username' => 'jane', '--password-stdin' => true], ['interactive' => false]);
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('entrée standard', $this->normalizedDisplay($tester));
+        self::assertNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane'));
+    }
+
     /** SymfonyStyle replie les blocs d'erreur à la largeur du terminal. */
     private function normalizedDisplay(CommandTester $tester): string
     {
         return (string) preg_replace('/\s+/', ' ', $tester->getDisplay());
+    }
+
+    /**
+     * Le mot de passe passe par l'entrée standard, suivi de la fin de ligne
+     * qu'y met `setInputs()` comme le ferait `echo`.
+     *
+     * @param array<string, mixed> $arguments
+     */
+    private function executeWithPasswordOnStdin(CommandTester $tester, array $arguments, string $password): int
+    {
+        $tester->setInputs([$password]);
+
+        return $tester->execute([...$arguments, '--password-stdin' => true], ['interactive' => false]);
     }
 
     private function commandTester(): CommandTester

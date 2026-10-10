@@ -69,8 +69,11 @@ instead of relying on an `assert()` that production compiles out. On end of inpu
 `ask()` **rethrows the validator's last exception**, so `ask()` sits inside the `try` that turns it into
 `$io->error()` — otherwise it leaves the command and the console's `ErrorListener` logs it `critical`. And a
 `CommandTester` is **interactive by default**, so a `-n` test passes `['interactive' => false]`. A hidden
-question that reads a password is `setTrimmable(false)` (a question is trimmed by default, `--password` and
-`json_login` are not), with a normalizer that strips the one line ending the read keeps when untrimmed. The other SPL classes (`\DomainException`…) are out of the guard's scope:
+question that reads a password is `setTrimmable(false)` (a question is trimmed by default, `--password-stdin`
+and `json_login` are not), with a normalizer that strips the one line ending the read keeps when untrimmed. **A password is never an
+option value** (#386): `app:user:create` reads it from standard input (`--password-stdin`, which requires
+`--username` — a prompt would read the password instead), never from `--password`, whose argv shows in `ps`,
+the shell history and the `command` context the console's `ErrorListener` logs. The other SPL classes (`\DomainException`…) are out of the guard's scope:
 none is thrown bare in `src/`, and adding one to `BareExceptionInstantiations::FORBIDDEN` is the step to
 take the day one is.
 

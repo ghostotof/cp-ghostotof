@@ -37,7 +37,8 @@ final class CreateCpgUserCommandCompromisedPasswordTest extends TestCase
 
         $tester = new CommandTester(new CreateCpgUserCommand($registrar, $validator));
 
-        $exitCode = $tester->execute(['--username' => 'jane', '--password' => 'hunter2-but-long-enough']);
+        $tester->setInputs(['hunter2-but-long-enough']);
+        $exitCode = $tester->execute(['--username' => 'jane', '--password-stdin' => true], ['interactive' => false]);
 
         self::assertSame(Command::FAILURE, $exitCode);
         self::assertStringContainsString('fuite de données', $tester->getDisplay());
@@ -55,7 +56,8 @@ final class CreateCpgUserCommandCompromisedPasswordTest extends TestCase
 
         $tester = new CommandTester(new CreateCpgUserCommand($registrar, $validator));
 
-        $exitCode = $tester->execute(['--username' => 'jane', '--password' => 'a-fresh-strong-password']);
+        $tester->setInputs(['a-fresh-strong-password']);
+        $exitCode = $tester->execute(['--username' => 'jane', '--password-stdin' => true], ['interactive' => false]);
 
         self::assertSame(Command::SUCCESS, $exitCode);
     }
@@ -80,6 +82,7 @@ final class CreateCpgUserCommandCompromisedPasswordTest extends TestCase
             ->willReturn(new ConstraintViolationList());
 
         $tester = new CommandTester(new CreateCpgUserCommand($registrar, $validator));
-        $tester->execute(['--username' => 'jane', '--password' => 'a-fresh-strong-password']);
+        $tester->setInputs(['a-fresh-strong-password']);
+        $tester->execute(['--username' => 'jane', '--password-stdin' => true], ['interactive' => false]);
     }
 }

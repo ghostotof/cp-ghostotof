@@ -13,6 +13,7 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Input\StreamableInputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Question\Question;
 use Symfony\Component\Console\Style\SymfonyStyle;
@@ -24,7 +25,13 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  * d'inscription public, et depuis l'ADR 0001 la voie normale de création est
  * l'invitation depuis le backoffice. La CLI reste pour ce que l'invitation ne
  * peut pas faire — créer le premier ROLE_SUPER — et pour les comptes de
- * développement. Usage interactif (prompts) ou scripté (--username/--password).
+ * développement. Usage interactif (prompts) ou scripté : `--username` et
+ * `--password-stdin`, le mot de passe lu sur l'entrée standard.
+ *
+ * Jamais de mot de passe en argument (issue #386) : l'argv se lit dans `ps`,
+ * dans l'historique du shell et dans le contexte `command` des journaux du
+ * ErrorListener de la console. Même convention que `docker login`, et que
+ * les rotations de secrets de `.claude/CLAUDE.md`.
  */
 #[AsCommand(
     name: 'app:user:create',
@@ -51,6 +58,15 @@ final class CreateCpgUserCommand extends Command
      */
     private const array ALLOWED_ROLES = [CpgUser::ROLE_SUPER];
 
+    /**
+     * Octets lus au plus sur l'entrée standard : un caractère UTF-8 en compte
+     * quatre au plus, plus une fin de ligne `\r\n`, plus un octet. Une lecture
+     * qui atteint la borne dépasse donc CpgUser::MAX_PASSWORD_LENGTH caractères
+     * et sera refusée comme trop longue, sans que `yes | …` puisse remplir la
+     * mémoire.
+     */
+    private const int STDIN_READ_LIMIT = 4 * CpgUser::MAX_PASSWORD_LENGTH + 3;
+
     public function __construct(
         private readonly CpgUserRegistrarInterface $cpgUserRegistrar,
         private readonly ValidatorInterface $validator,
@@ -62,7 +78,7 @@ final class CreateCpgUserCommand extends Command
     {
         $this
             ->addOption('username', null, InputOption::VALUE_REQUIRED, 'Nom d\'utilisateur')
-            ->addOption('password', null, InputOption::VALUE_REQUIRED, 'Mot de passe en clair (usage scripté uniquement)')
+            ->addOption('password-stdin', null, InputOption::VALUE_NONE, 'Lit le mot de passe sur l\'entrée standard (usage scripté, exige --username)')
             ->addOption('role', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, \sprintf('Rôle additionnel à attribuer (répétable), parmi : %s', implode(', ', self::ALLOWED_ROLES)))
         ;
     }
@@ -70,6 +86,14 @@ final class CreateCpgUserCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
+
+        if (true === $input->getOption('password-stdin') && null === $input->getOption('username')) {
+            // L'entrée standard porte le mot de passe : l'invite du nom
+            // d'utilisateur le lirait à sa place.
+            $io->error('--password-stdin exige --username.');
+
+            return Command::FAILURE;
+        }
 
         $username = $this->resolveUsername($input, $io);
 
@@ -173,18 +197,17 @@ final class CreateCpgUserCommand extends Command
     }
 
     /**
-     * L'option, ou deux questions masquées. Null après un message d'erreur :
-     * pas de saisie en non interactif, une fin d'entrée après une saisie vide
-     * (mêmes pièges que resolveUsername()), ou une confirmation qui diffère —
-     * refusée comme toute autre saisie, par un message et le code 1, pas par
-     * une exception qui quitterait la commande.
+     * L'entrée standard, ou deux questions masquées. Null après un message
+     * d'erreur : une entrée standard vide, pas de saisie en non interactif,
+     * une fin d'entrée après une saisie vide (mêmes pièges que
+     * resolveUsername()), ou une confirmation qui diffère — refusée comme
+     * toute autre saisie, par un message et le code 1, pas par une exception
+     * qui quitterait la commande.
      */
     private function resolvePassword(InputInterface $input, SymfonyStyle $io): ?string
     {
-        $option = $input->getOption('password');
-
-        if (\is_string($option)) {
-            return $option;
+        if (true === $input->getOption('password-stdin')) {
+            return $this->readPasswordFromStandardInput($input, $io);
         }
 
         try {
@@ -202,7 +225,7 @@ final class CreateCpgUserCommand extends Command
         }
 
         if (!\is_string($password)) {
-            $io->error('Aucun mot de passe : en mode non interactif, passez --password.');
+            $io->error('Aucun mot de passe : en mode non interactif, passez --password-stdin.');
 
             return null;
         }
@@ -217,8 +240,29 @@ final class CreateCpgUserCommand extends Command
     }
 
     /**
+     * Le flux est celui que lit le QuestionHelper (celui du CommandTester en
+     * test), STDIN sinon. La fin de ligne qu'ajoutent `echo` ou un heredoc
+     * est retirée, et elle seule, comme à l'invite : les espaces autour
+     * restent, ainsi que json_login les prend.
+     */
+    private function readPasswordFromStandardInput(InputInterface $input, SymfonyStyle $io): ?string
+    {
+        $stream = ($input instanceof StreamableInputInterface ? $input->getStream() : null) ?? STDIN;
+        $read = stream_get_contents($stream, self::STDIN_READ_LIMIT);
+        $password = false === $read ? '' : (string) preg_replace('/\r?\n\z/', '', $read);
+
+        if ('' === $password) {
+            $io->error('Aucun mot de passe lu sur l\'entrée standard.');
+
+            return null;
+        }
+
+        return $password;
+    }
+
+    /**
      * Une question masquée qui rend le mot de passe tel qu'il a été tapé.
-     * Une question est rognée par défaut, alors que `--password` et json_login
+     * Une question est rognée par défaut, alors que `--password-stdin` et json_login
      * le prennent tel quel : une espace en tête ou en fin donnait un compte
      * inutilisable (issue #383). Sans rognage, la lecture garde en revanche la
      * fin de ligne de la saisie : le normaliseur, appliqué avant le
