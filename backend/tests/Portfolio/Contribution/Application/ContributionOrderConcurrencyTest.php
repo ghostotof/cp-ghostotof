@@ -6,6 +6,7 @@ namespace App\Tests\Portfolio\Contribution\Application;
 
 use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Tests\Support\ChildPhpProcess;
 use App\Tests\Support\OpensProbeConnection;
 use Closure;
 use Doctrine\DBAL\Connection;
@@ -114,7 +115,7 @@ final class ContributionOrderConcurrencyTest extends KernelTestCase
         self::assertNotFalse($barrier);
         self::assertTrue(flock($barrier, \LOCK_EX));
 
-        $command = [\PHP_BINARY, self::WRITER_SCRIPT, $barrierPath, $locale->value];
+        $command = ChildPhpProcess::command(self::WRITER_SCRIPT, $barrierPath, $locale->value);
         if (null !== $group) {
             $command[] = $group;
         }
