@@ -86,7 +86,12 @@ deletes it all the same (verified on 2026-10-10). There, write the short name wh
 imported for the code, and keep the qualified name otherwise: it is the only form that still resolves
 (`tests/Support/ReadsSecurityAuditLog.php`, `Monolog\Logger`). Code quoted in a comment
 (`` `new DateTimeImmutable('-'.$x)` ``, `` `#[SensitiveParameter]` ``) takes the short name without `{@see}`:
-it shows code, it does not link a class. A quoted configuration key keeps its fully qualified name, the only
+it shows code, it does not link a class. **A reference that points outward takes no `use`**
+(settled on 2026-10-10, review of #391): from `Domain` to `Application`, `Infrastructure` or `Presentation`,
+from `Application` to `Infrastructure` or `Presentation`. An inner layer does not depend on an outer one,
+not even through an import only a docblock needs, so the class keeps its fully qualified name in prose,
+without `{@see}` (`App\Shared\Infrastructure\Http\RetryAfterListener` in `RetryAfterAware`), or the name
+relative to its context that the repository interfaces already write (`Infrastructure\Doctrine\CpgUserRepository`). A quoted configuration key keeps its fully qualified name, the only
 one the config knows (`Symfony\Component\Serializer\Exception\ExceptionInterface: 400`, `MalformedRequestBodyTest`). A
 name clash gets an alias (`use UnexpectedValueException as NativeUnexpectedValueException;` in
 `MalformedRequestBodyException`, which already imports the Serializer's), never a qualified name.

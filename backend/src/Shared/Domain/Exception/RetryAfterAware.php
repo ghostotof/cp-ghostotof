@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace App\Shared\Domain\Exception;
 
-use App\Shared\Infrastructure\Http\RetryAfterListener;
 use DateTimeImmutable;
 
 /**
  * Une exception de dépassement de quota qui sait quand le client pourra
- * réessayer. {@see RetryAfterListener} en tire
+ * réessayer. App\Shared\Infrastructure\Http\RetryAfterListener en tire
  * l'en-tête HTTP `Retry-After`, quelle que soit la route ou l'écouteur qui
  * construit la réponse 429 (issue #273).
  *

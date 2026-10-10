@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace App\Contact\Domain\Exception;
 
-use App\Contact\Infrastructure\RateLimiter\SymfonyContactRateLimiter;
 use App\Shared\Domain\Exception\RetryAfterAware;
 use DateTimeImmutable;
 use DomainException;
 
 /**
  * Exception métier levée lorsqu'un même client (identifié par IP, cf.
- * {@see SymfonyContactRateLimiter}) dépasse le
+ * App\Contact\Infrastructure\RateLimiter\SymfonyContactRateLimiter) dépasse le
  * quota de soumissions autorisé sur le formulaire de contact. Mappée sur HTTP
  * 429 via exception_to_status (cf. config/packages/api_platform.yaml).
  */

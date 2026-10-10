@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace App\Security\User\Domain\Exception;
 
-use App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler;
 use RuntimeException;
 
 /**
  * Exception métier levée lorsque l'envoi effectif de l'e-mail d'invitation
  * échoue (SMTP indisponible, DSN mal configuré, etc.), dans
- * {@see SendAccountInvitationHandler}.
+ * App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler.
  */
 final class AccountInvitationDeliveryException extends RuntimeException
 {

@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace App\Contact\Domain\Exception;
 
-use App\Contact\Infrastructure\Messenger\SendContactMessageHandler;
 use RuntimeException;
 
 /**
  * Exception métier levée lorsque l'envoi effectif de l'email de contact
  * échoue (SMTP indisponible, DSN mal configuré, etc.), typiquement dans
- * {@see SendContactMessageHandler}.
+ * App\Contact\Infrastructure\Messenger\SendContactMessageHandler.
  */
 final class ContactMessageDeliveryException extends RuntimeException
 {
