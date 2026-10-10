@@ -80,9 +80,21 @@ ones included** (issue #391). `use LogicException;` then `new LogicException(…
 `JsonSerializable`, `Closure`, `Generator`, `ReflectionClass`…: never `\LogicException`, never
 `\App\…\Foo` inline, in code, attributes and phpdoc types alike (settled on 2026-10-10). A class only a comment refers to is cited as `{@see Foo}` with its `use`: Rector's
 `removeUnusedImports` keeps an import referenced by `{@see}` but **deletes** one cited in plain prose
-(verified on 2026-10-10), so a bare short name in a sentence loses its import on the next `rector:fix`. A
-name clash with a project class gets an alias (`use InvalidArgumentException as NativeInvalidArgumentException;`),
-never a qualified name. Out of scope, **by decision** (2026-10-10): native **functions and constants** keep
+(verified on 2026-10-10), so a bare short name in a sentence loses its import on the next `rector:fix`.
+**`{@see}` only holds an import inside a `/** … */` docblock** — in a `//` or `/* … */` comment Rector
+deletes it all the same (verified on 2026-10-10). There, write the short name when the class is already
+imported for the code, and keep the qualified name otherwise: it is the only form that still resolves
+(`tests/Support/ReadsSecurityAuditLog.php`, `Monolog\Logger`). Code quoted in a comment
+(`` `new DateTimeImmutable('-'.$x)` ``, `` `#[SensitiveParameter]` ``) takes the short name without `{@see}`:
+it shows code, it does not link a class. A quoted configuration key keeps its fully qualified name, the only
+one the config knows (`Symfony\Component\Serializer\Exception\ExceptionInterface: 400`, `MalformedRequestBodyTest`). A
+name clash gets an alias (`use UnexpectedValueException as NativeUnexpectedValueException;` in
+`MalformedRequestBodyException`, which already imports the Serializer's), never a qualified name.
+**`use` statements are sorted alphabetically**, case-insensitive, `\` as a segment separator — the order
+of PhpStorm's "Optimize imports" and php-cs-fixer's `ordered_imports` (`alpha`). No tool enforces it, and
+`rector:fix` inserts a new import at the top of the block: re-sort after it. php-cs-fixer is deliberately
+not a dependency (#391); a one-off run of its phar under `var/` with that single rule is how #391 sorted
+the existing code. Out of scope, **by decision** (2026-10-10): native **functions and constants** keep
 their leading backslash (`\sprintf`, `\in_array`, `\PHP_EOL`, `\T_CLASS`) — no `use function` / `use const`:
 `importShortClasses` does not touch them, so Rector stays the only tool, and the backslash lets OPcache
 compile some functions to dedicated opcodes; namespaces cited in prose (`App\Shared`);
@@ -93,9 +105,10 @@ loses the dedicated `COUNT` opcode for `INIT_NS_FCALL_BY_NAME` + `DO_FCALL_BY_NA
 falls back to the global function (constants share that fallback). A class-like native that ever proved
 costly to import would keep its qualified name, with the measurement as its justification. Also out of scope:
 `config/bundles.php` and `config/reference.php` (Flex-generated); class names held in strings as test data;
-`migrations/` (frozen, outside Rector's paths). The guard is Rector's `withImportNames()` in
-`backend/rector.php`, checked by the blocking `rector-backend` job: it already rejects a qualified
-namespaced class, and rejects a qualified native class once `importShortClasses` is `true` — the switch
-and the migration of the existing code (≈ 200 files) are issue #391. Until it lands, write new code the
-target way: an explicit `use DateTimeImmutable;` passes Rector today.
+`migrations/` (frozen, outside Rector's paths); the `Assert\…` constraint shorthand, which mirrors the
+`use …\Constraints as Assert;` alias the code itself writes. The guard is Rector's
+`withImportNames(importShortClasses: true, removeUnusedImports: true)` in `backend/rector.php`, checked by
+the blocking `rector-backend` job: it rejects a qualified class, native or namespaced, in code and phpdoc
+types (issue #391, ≈ 200 files migrated). It does **not** see a `@template T of \Foo` bound nor any prose:
+those are reviewed by hand.
 
