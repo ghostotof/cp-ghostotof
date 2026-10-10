@@ -9,6 +9,7 @@ use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Exception\InvalidOptionException;
@@ -292,7 +293,7 @@ final class CreateCpgUserCommandTest extends KernelTestCase
 
     /**
      * Revue de #383 : une question est rognée par défaut, alors que
-     * `--password` et json_login prennent le mot de passe tel quel. Un
+     * `--password-stdin` et json_login prennent le mot de passe tel quel. Un
      * mot de passe saisi avec une espace en tête ou en fin donnait un compte
      * dont on ne pouvait pas se servir.
      */
@@ -380,6 +381,88 @@ final class CreateCpgUserCommandTest extends KernelTestCase
         self::assertSame(1, $exitCode);
         self::assertStringContainsString('entrée standard', $this->normalizedDisplay($tester));
         self::assertNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane'));
+    }
+
+    /**
+     * Revue de #386 : la lecture est bornée à la borne du hasher, en octets,
+     * plus une fin de ligne. Bornée à quatre fois plus, elle tronquait une
+     * entrée trop longue au milieu d'un caractère, et la commande répondait
+     * « pas de l'UTF-8 valide » au lieu de « trop long ».
+     */
+    public function testAStandardInputBeyondTheReadLimitIsReportedAsTooLong(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $this->executeWithPasswordOnStdin($tester, ['--username' => 'jane'], str_repeat('€', 2 * CpgUser::MAX_PASSWORD_LENGTH));
+
+        self::assertSame(1, $exitCode);
+        $display = $this->normalizedDisplay($tester);
+        self::assertStringContainsString('dépasser', $display);
+        self::assertStringNotContainsString('UTF-8', $display);
+    }
+
+    /**
+     * Revue de #386 : une seule fin de ligne est retirée. Ce qui reste — une
+     * seconde fin de ligne, un `\r` isolé, l'indicateur d'ordre des octets
+     * d'un fichier enregistré sous Windows — ne se tape pas dans un champ de
+     * mot de passe : le compte serait inutilisable. Refusé, jamais nettoyé.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function untypablePasswords(): iterable
+    {
+        yield 'deux fins de ligne' => ["mot-de-passe-solide\n"];
+        yield '\r isolé en fin' => ["mot-de-passe-solide\r\r"];
+        yield 'fin de ligne au milieu' => ["mot-de-passe\nsolide"];
+        yield 'indicateur d\'ordre des octets' => ["\u{FEFF}mot-de-passe-solide"];
+    }
+
+    #[DataProvider('untypablePasswords')]
+    public function testAPasswordThatCannotBeTypedAtTheLoginIsRefused(string $password): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $this->executeWithPasswordOnStdin($tester, ['--username' => 'jane'], $password);
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('ne peut pas être saisi', $this->normalizedDisplay($tester));
+        self::assertNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('jane'));
+    }
+
+    /**
+     * Revue de #386 : sur un terminal, `--password-stdin` attendait une fin
+     * d'entrée (Ctrl-D) sans rien dire, le mot de passe s'affichant en clair
+     * à mesure qu'on le tape. La commande refuse aussitôt, et nomme l'invite
+     * masquée. Un vrai processus sur un pseudo-terminal : le CommandTester lit
+     * un flux mémoire, jamais un terminal.
+     */
+    public function testPasswordStdinRefusesATerminal(): void
+    {
+        \assert(self::$kernel instanceof KernelInterface);
+        $process = proc_open(
+            ['php', self::$kernel->getProjectDir().'/bin/console', 'app:user:create', '--username=jane', '--password-stdin', '--no-ansi', '--env=test'],
+            [0 => ['pty'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+        self::assertIsResource($process);
+
+        $deadline = microtime(true) + 20;
+
+        while (proc_get_status($process)['running'] && microtime(true) < $deadline) {
+            usleep(100_000);
+        }
+
+        $status = proc_get_status($process);
+
+        if ($status['running']) {
+            proc_terminate($process, 9);
+            self::fail('La commande attend une fin d\'entrée sur un terminal au lieu de refuser.');
+        }
+
+        self::assertSame(1, $status['exitcode']);
+        $output = stream_get_contents($pipes[1]).stream_get_contents($pipes[2]);
+        self::assertStringContainsString('terminal', (string) preg_replace('/\s+/', ' ', $output));
+        proc_close($process);
     }
 
     /** SymfonyStyle replie les blocs d'erreur à la largeur du terminal. */

@@ -21,6 +21,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\ConstraintViolationInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
+use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExceptionInterface;
 
 /**
  * Chemin d'amorçage : il n'existe volontairement aucun formulaire
@@ -61,13 +62,17 @@ final class CreateCpgUserCommand extends Command
     private const array ALLOWED_ROLES = [CpgUser::ROLE_SUPER];
 
     /**
-     * Octets lus au plus sur l'entrée standard : un caractère UTF-8 en compte
-     * quatre au plus, plus une fin de ligne `\r\n`, plus un octet. Une lecture
-     * qui atteint la borne dépasse donc CpgUser::MAX_PASSWORD_LENGTH caractères
-     * et sera refusée comme trop longue, sans que `yes | …` puisse remplir la
-     * mémoire.
+     * Octets lus au plus sur l'entrée standard : la borne du hasher, en octets
+     * (CpgUser::MAX_PASSWORD_LENGTH), plus une fin de ligne `\r\n`, plus un
+     * octet. Une lecture qui atteint la borne est donc trop longue quoi
+     * qu'elle contienne, et refusée comme telle avant toute validation — une
+     * troncature au milieu d'un caractère la ferait passer pour de l'UTF-8
+     * invalide. `yes | …` ne remplit pas la mémoire.
      */
-    private const int STDIN_READ_LIMIT = 4 * CpgUser::MAX_PASSWORD_LENGTH + 3;
+    private const int STDIN_READ_LIMIT = CpgUser::MAX_PASSWORD_LENGTH + 3;
+
+    /** Indicateur d'ordre des octets qu'un éditeur Windows place en tête de fichier. */
+    private const string BYTE_ORDER_MARK = "\u{FEFF}";
 
     public function __construct(
         private readonly CpgUserRegistrarInterface $cpgUserRegistrar,
@@ -89,10 +94,12 @@ final class CreateCpgUserCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        if (true === $input->getOption('password-stdin') && null === $input->getOption('username')) {
-            // L'entrée standard porte le mot de passe : l'invite du nom
-            // d'utilisateur le lirait à sa place.
-            $io->error('--password-stdin exige --username.');
+        // Les options d'abord : ce qui se sait sans le mot de passe se refuse
+        // avant de le lire, et avant de le soumettre à haveibeenpwned.
+        $optionsError = $this->optionsError($input);
+
+        if (null !== $optionsError) {
+            $io->error($optionsError);
 
             return Command::FAILURE;
         }
@@ -105,38 +112,12 @@ final class CreateCpgUserCommand extends Command
 
         $plainPassword = $this->resolvePassword($input, $io);
 
-        if (null === $plainPassword) {
-            return Command::FAILURE;
-        }
-
-        // Même contrainte que les deux ressources API (issue #386), validée
-        // avant la fuite : un mot de passe refusé n'interroge pas haveibeenpwned.
-        $lengthViolations = $this->validator->validate($plainPassword, new PlainPasswordLength());
-
-        if ($lengthViolations->count() > 0) {
-            $io->error($this->lengthViolationMessage($lengthViolations->get(0)));
-
-            return Command::FAILURE;
-        }
-
-        // Point d'audit B8 : même contrôle que l'endpoint backoffice
-        // (BackofficeUserPasswordResource). En environnement de test, la
-        // vérification réseau est désactivée (validator.yaml, when@test).
-        if ($this->validator->validate($plainPassword, new Assert\NotCompromisedPassword())->count() > 0) {
-            $io->error('Ce mot de passe figure dans une fuite de données connue (haveibeenpwned) : choisissez-en un autre.');
-
+        if (null === $plainPassword || !$this->acceptsPassword($plainPassword, $io)) {
             return Command::FAILURE;
         }
 
         /** @var list<string> $roles */
         $roles = $input->getOption('role');
-        $unknownRoles = array_diff($roles, self::ALLOWED_ROLES);
-
-        if ([] !== $unknownRoles) {
-            $io->error(\sprintf('Rôle(s) inconnu(s) : %s. Rôles autorisés : %s.', implode(', ', $unknownRoles), implode(', ', self::ALLOWED_ROLES)));
-
-            return Command::FAILURE;
-        }
 
         try {
             $user = $this->cpgUserRegistrar->register($username, $plainPassword, $roles);
@@ -152,6 +133,68 @@ final class CreateCpgUserCommand extends Command
     }
 
     /**
+     * Le refus d'une combinaison d'options, ou null. `--password-stdin` exige
+     * `--username` : l'entrée standard porte le mot de passe, et l'invite du
+     * nom d'utilisateur le lirait à sa place.
+     */
+    private function optionsError(InputInterface $input): ?string
+    {
+        if (true === $input->getOption('password-stdin') && null === $input->getOption('username')) {
+            return '--password-stdin exige --username.';
+        }
+
+        /** @var list<string> $roles */
+        $roles = $input->getOption('role');
+        $unknownRoles = array_diff($roles, self::ALLOWED_ROLES);
+
+        if ([] !== $unknownRoles) {
+            return \sprintf('Rôle(s) inconnu(s) : %s. Rôles autorisés : %s.', implode(', ', $unknownRoles), implode(', ', self::ALLOWED_ROLES));
+        }
+
+        return null;
+    }
+
+    /**
+     * La longueur, par la contrainte des deux ressources API (issue #386),
+     * puis la fuite (point d'audit B8, même contrôle que le backoffice) : un
+     * mot de passe déjà refusé n'interroge pas haveibeenpwned. En
+     * environnement de test, la vérification réseau est désactivée
+     * (validator.yaml, when@test).
+     *
+     * Sans `skipOnError`, la CLI échoue fermée quand le service est
+     * injoignable — la personne est au terminal, elle réessaiera. Mais
+     * l'exception du client HTTP ne sort pas de la commande : son message
+     * porte l'URL, donc le préfixe SHA-1 du mot de passe, que le
+     * ErrorListener de la console journaliserait en `critical`.
+     */
+    private function acceptsPassword(string $plainPassword, SymfonyStyle $io): bool
+    {
+        $lengthViolations = $this->validator->validate($plainPassword, new PlainPasswordLength());
+
+        if ($lengthViolations->count() > 0) {
+            $io->error($this->lengthViolationMessage($lengthViolations->get(0)));
+
+            return false;
+        }
+
+        try {
+            $compromised = $this->validator->validate($plainPassword, new Assert\NotCompromisedPassword())->count() > 0;
+        } catch (HttpClientExceptionInterface) {
+            $io->error('haveibeenpwned est injoignable : le mot de passe n\'a pas pu être vérifié. Réessayez plus tard.');
+
+            return false;
+        }
+
+        if ($compromised) {
+            $io->error('Ce mot de passe figure dans une fuite de données connue (haveibeenpwned) : choisissez-en un autre.');
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * Les messages du Validator sont en anglais, ceux de la commande en
      * français ; le code de la violation dit laquelle des bornes a cédé.
      */
@@ -159,10 +202,15 @@ final class CreateCpgUserCommand extends Command
     {
         return match ($violation->getCode()) {
             Assert\Length::TOO_SHORT_ERROR => \sprintf('Le mot de passe doit contenir au moins %d caractères.', CpgUser::MIN_PASSWORD_LENGTH),
-            Assert\Length::TOO_LONG_ERROR => \sprintf('Le mot de passe ne doit pas dépasser %d octets.', CpgUser::MAX_PASSWORD_LENGTH),
+            Assert\Length::TOO_LONG_ERROR => $this->tooLongMessage(),
             Assert\Length::INVALID_CHARACTERS_ERROR => 'Le mot de passe n\'est pas de l\'UTF-8 valide.',
             default => (string) $violation->getMessage(),
         };
+    }
+
+    private function tooLongMessage(): string
+    {
+        return \sprintf('Le mot de passe ne doit pas dépasser %d octets.', CpgUser::MAX_PASSWORD_LENGTH);
     }
 
     /**
@@ -258,15 +306,41 @@ final class CreateCpgUserCommand extends Command
      * test), STDIN sinon. La fin de ligne qu'ajoutent `echo` ou un heredoc
      * est retirée, et elle seule, comme à l'invite : les espaces autour
      * restent, ainsi que json_login les prend.
+     *
+     * Refusé plutôt que nettoyé (revue de #386) : un terminal, sur lequel la
+     * lecture attendrait Ctrl-D en affichant le mot de passe ; et ce qui
+     * reste d'une fin de ligne ou d'un indicateur d'ordre des octets, qu'aucun
+     * champ de mot de passe ne permet de taper — le compte serait
+     * inutilisable sans que rien ne le dise.
      */
     private function readPasswordFromStandardInput(InputInterface $input, SymfonyStyle $io): ?string
     {
         $stream = ($input instanceof StreamableInputInterface ? $input->getStream() : null) ?? STDIN;
+
+        if (stream_isatty($stream)) {
+            $io->error('L\'entrée standard est un terminal : --password-stdin y afficherait le mot de passe. Redirigez-la (< fichier), ou omettez l\'option pour l\'invite masquée.');
+
+            return null;
+        }
+
         $read = stream_get_contents($stream, self::STDIN_READ_LIMIT);
+
+        if (false !== $read && \strlen($read) >= self::STDIN_READ_LIMIT) {
+            $io->error($this->tooLongMessage());
+
+            return null;
+        }
+
         $password = false === $read ? '' : (string) preg_replace('/\r?\n\z/', '', $read);
 
         if ('' === $password) {
             $io->error('Aucun mot de passe lu sur l\'entrée standard.');
+
+            return null;
+        }
+
+        if (1 === preg_match('/[\r\n]/', $password) || str_contains($password, self::BYTE_ORDER_MARK)) {
+            $io->error('Ce mot de passe ne peut pas être saisi à la connexion : il contient une fin de ligne ou un indicateur d\'ordre des octets (BOM).');
 
             return null;
         }
