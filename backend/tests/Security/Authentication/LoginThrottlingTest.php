@@ -37,6 +37,15 @@ final class LoginThrottlingTest extends WebTestCase
     private const int THROTTLING_INTERVAL_SECONDS = 15 * 60;
 
     /**
+     * Les six tentatives tiennent en quelques secondes, la fenêtre fixe vient
+     * donc de s'ouvrir : l'échéance réelle est à une minute près de sa fin.
+     * Une borne basse à 14 minutes distingue ce vrai chemin du repli à une
+     * minute de LoginThrottlingRefusalListener, que `> 0` laissait passer —
+     * si Symfony cessait de fournir `%minutes%`, le test le verrait.
+     */
+    private const int MINIMAL_RETRY_AFTER_SECONDS = 14 * 60;
+
+    /**
      * Le compteur de `login_throttling` est indexé par (IP, identifiant) et
      * persiste dans la base de test (pool `cache.rate_limiter`, table
      * `cache_items` depuis l'ADR 0005) pendant toute la fenêtre (15 min). Un
@@ -126,7 +135,7 @@ final class LoginThrottlingTest extends WebTestCase
         self::assertSame('application/problem+json', $response->headers->get('Content-Type'));
 
         $retryAfter = (int) $response->headers->get('Retry-After');
-        self::assertGreaterThan(0, $retryAfter);
+        self::assertGreaterThanOrEqual(self::MINIMAL_RETRY_AFTER_SECONDS, $retryAfter, 'Retry-After ne suit plus l\'échéance du limiteur : le repli à une minute a pris le relais.');
         self::assertLessThanOrEqual(self::THROTTLING_INTERVAL_SECONDS, $retryAfter);
 
         $problem = json_decode((string) $response->getContent(), true, flags: \JSON_THROW_ON_ERROR);

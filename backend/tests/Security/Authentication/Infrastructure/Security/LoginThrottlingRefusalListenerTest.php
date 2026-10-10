@@ -40,6 +40,22 @@ final class LoginThrottlingRefusalListenerTest extends TestCase
     }
 
     /**
+     * Jamais de `previous` : l'ExceptionListener du firewall (kernel.exception,
+     * priorité 1) parcourt toute la chaîne et reprend la première
+     * AuthenticationException qu'il y trouve. La cause chaînée lui rendrait la
+     * main, et le refus redeviendrait un 401 du point d'entrée, sans Retry-After.
+     */
+    public function testTheQuotaExceptionNeverChainsTheAuthenticationFailure(): void
+    {
+        try {
+            $this->listener()($this->failure(new TooManyLoginAttemptsAuthenticationException(15)));
+            self::fail('Le refus de login_throttling aurait dû lever LoginRateLimitExceededException.');
+        } catch (LoginRateLimitExceededException $exception) {
+            self::assertNull($exception->getPrevious());
+        }
+    }
+
+    /**
      * `TooManyLoginAttemptsAuthenticationException` accepte un seuil absent,
      * et Symfony calcule 0 quand l'échéance tombe sur la seconde courante : un
      * `Retry-After: 0` dirait de réessayer tout de suite, une minute est sûre.
@@ -64,28 +80,23 @@ final class LoginThrottlingRefusalListenerTest extends TestCase
     }
 
     /**
-     * Un mot de passe faux garde le 401 de Lexik : la réponse déjà construite
-     * n'est pas touchée (non-énumération, audit A10).
+     * Un mot de passe faux garde le 401 de Lexik (non-énumération, audit A10).
+     * L'écouteur n'écrit jamais la réponse : le seul moyen qu'il a de la
+     * changer est de lever, et le contrat est donc qu'il ne lève pas.
      */
-    public function testAnOrdinaryFailureIsLeftAlone(): void
+    public function testAnOrdinaryFailureRaisesNoQuotaRefusal(): void
     {
-        $event = $this->failure(new BadCredentialsException('Bad credentials.'));
-        $response = $event->getResponse();
+        $this->expectNotToPerformAssertions();
 
-        $this->listener()($event);
-
-        self::assertSame($response, $event->getResponse());
+        $this->listener()($this->failure(new BadCredentialsException('Bad credentials.')));
     }
 
     /** Le firewall `api` ré-authentifie le JWT, il ne connaît pas `login_throttling`. */
-    public function testAnotherFirewallIsLeftAlone(): void
+    public function testAnotherFirewallRaisesNoQuotaRefusal(): void
     {
-        $event = $this->failure(new TooManyLoginAttemptsAuthenticationException(15), 'api');
-        $response = $event->getResponse();
+        $this->expectNotToPerformAssertions();
 
-        $this->listener()($event);
-
-        self::assertSame($response, $event->getResponse());
+        $this->listener()($this->failure(new TooManyLoginAttemptsAuthenticationException(15), 'api'));
     }
 
     private function listener(): LoginThrottlingRefusalListener

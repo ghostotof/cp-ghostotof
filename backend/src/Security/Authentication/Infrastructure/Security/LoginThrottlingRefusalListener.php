@@ -25,6 +25,13 @@ use Symfony\Component\Security\Http\Event\LoginFailureEvent;
  * passe avant — le compteur de `LoginThrottlingListener` (0), le journal
  * d'audit `login-throttled` de `SecurityEventsSubscriber` (0) et
  * {@see FailedLoginTimingEqualizer} (-100, qui écarte de toute façon ce cas).
+ * LoginThrottlingRefusalListenerPriorityTest garde cette place sur le
+ * dispatcher du firewall.
+ *
+ * **Jamais de `previous`** sur l'exception levée : l'ExceptionListener du
+ * firewall (kernel.exception, priorité 1) parcourt toute la chaîne et reprend
+ * la première AuthenticationException qu'il y trouve. Chaîner la cause lui
+ * rendrait la main, et le refus redeviendrait un 401 sans `Retry-After`.
  *
  * **Firewall `login` seulement, et ce seul échec** : les autres 401 (identifiant
  * inconnu, mot de passe faux, compte en attente) restent ceux de Lexik, octet
