@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Infrastructure\Log;
 
 use App\Security\User\Infrastructure\Log\PasswordOptionRedactor;
+use App\Tests\Support\TestCredentials;
 use DateTimeImmutable;
 use Monolog\Level;
 use Monolog\LogRecord;
@@ -21,24 +22,33 @@ use PHPUnit\Framework\TestCase;
  */
 final class PasswordOptionRedactorTest extends TestCase
 {
-    /** @return iterable<string, array{string, string}> */
+    /**
+     * Valeurs générées par TestCredentials, jamais écrites en dur : un
+     * littéral de mot de passe, même fictif, déclenche GitGuardian (#386).
+     *
+     * @return iterable<string, array{string, string}>
+     */
     public static function commandsCarryingAPassword(): iterable
     {
+        $secret = TestCredentials::variant('redacted-option');
+
         yield 'option et valeur jointes' => [
-            "app:user:create --username=jane --password=S3cret-pass --role=ROLE_SUPER",
-            "app:user:create --username=jane --password=*** --role=ROLE_SUPER",
+            \sprintf('app:user:create --username=jane --password=%s --role=ROLE_SUPER', $secret),
+            'app:user:create --username=jane --password=*** --role=ROLE_SUPER',
         ];
         yield 'option et valeur séparées' => [
-            "app:user:create --username=jane --password S3cret-pass",
-            "app:user:create --username=jane --password ***",
+            \sprintf('app:user:create --username=jane --password %s', $secret),
+            'app:user:create --username=jane --password ***',
         ];
+        // `escapeshellarg()` encadre d'apostrophes une valeur qui n'est pas un
+        // mot, et y écrit une apostrophe interne `'\''`.
         yield 'valeur entre apostrophes, apostrophe comprise' => [
-            "app:user:create --password='S3cret pass'\\''s' --username=jane",
-            "app:user:create --password=*** --username=jane",
+            \sprintf('app:user:create --password=%s --username=jane', escapeshellarg($secret." l'espace")),
+            'app:user:create --password=*** --username=jane',
         ];
         yield 'valeur donnée à --password-stdin' => [
-            "app:user:create --username=jane --password-stdin=S3cret-pass",
-            "app:user:create --username=jane --password-stdin=***",
+            \sprintf('app:user:create --username=jane --password-stdin=%s', $secret),
+            'app:user:create --username=jane --password-stdin=***',
         ];
     }
 
@@ -63,7 +73,7 @@ final class PasswordOptionRedactorTest extends TestCase
 
     public function testARecordWithoutCommandIsLeftAlone(): void
     {
-        $record = $this->record(['message' => '--password=x']);
+        $record = $this->record(['message' => '--password='.TestCredentials::variant('redacted-option')]);
 
         self::assertSame($record, (new PasswordOptionRedactor())($record));
     }

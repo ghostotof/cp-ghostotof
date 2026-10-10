@@ -272,15 +272,17 @@ final class CreateCpgUserCommandTest extends KernelTestCase
      */
     public function testARefusedUsernameFollowedByTheEndOfInputFailsWithoutQuotingIt(): void
     {
+        // Le « ! » le rend invalide comme nom : la valeur générée seule passerait le motif.
+        $pasted = TestCredentials::variant('pasted').'!';
         $tester = $this->commandTester();
-        $tester->setInputs(['MyS3cr3t!Pass']);
+        $tester->setInputs([$pasted]);
 
         $exitCode = $tester->execute([], ['interactive' => true]);
 
         self::assertSame(1, $exitCode);
         $display = $this->normalizedDisplay($tester);
         self::assertStringContainsString('Le nom d\'utilisateur est invalide', $display);
-        self::assertStringNotContainsString('MyS3cr3t!Pass', $display);
+        self::assertStringNotContainsString($pasted, $display);
     }
 
     public function testAnEmptyPasswordFollowedByTheEndOfInputFailsWithAMessage(): void
@@ -415,10 +417,12 @@ final class CreateCpgUserCommandTest extends KernelTestCase
      */
     public static function untypablePasswords(): iterable
     {
-        yield 'deux fins de ligne' => ["mot-de-passe-solide\n"];
-        yield '\r isolé en fin' => ["mot-de-passe-solide\r\r"];
-        yield 'fin de ligne au milieu' => ["mot-de-passe\nsolide"];
-        yield 'indicateur d\'ordre des octets' => ["\u{FEFF}mot-de-passe-solide"];
+        $password = TestCredentials::plainPassword();
+
+        yield 'deux fins de ligne' => [$password."\n"];
+        yield '\r isolé en fin' => [$password."\r\r"];
+        yield 'fin de ligne au milieu' => [substr($password, 0, 6)."\n".substr($password, 6)];
+        yield 'indicateur d\'ordre des octets' => ["\u{FEFF}".$password];
     }
 
     #[DataProvider('untypablePasswords')]
@@ -482,14 +486,15 @@ final class CreateCpgUserCommandTest extends KernelTestCase
         $application->setAutoExit(false);
         $tester = new ApplicationTester($application);
 
-        $tester->run(['command' => 'app:user:create', '--username' => 'jane', '--password' => 'S3NTINEL-pass-386'], ['interactive' => false]);
+        $password = TestCredentials::variant('legacy-option');
+        $tester->run(['command' => 'app:user:create', '--username' => 'jane', '--password' => $password], ['interactive' => false]);
 
         self::assertNotSame(0, $tester->getStatusCode());
         $records = self::allChannelsLogRecords();
         self::assertNotEmpty(array_filter($records, static fn (LogRecord $record): bool => 'console' === $record->channel));
 
         foreach ($records as $record) {
-            self::assertStringNotContainsString('S3NTINEL-pass-386', json_encode([$record->message, $record->context], \JSON_THROW_ON_ERROR));
+            self::assertStringNotContainsString($password, json_encode([$record->message, $record->context], \JSON_THROW_ON_ERROR));
         }
     }
 
