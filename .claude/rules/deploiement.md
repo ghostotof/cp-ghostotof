@@ -52,7 +52,11 @@ paths:
   lock, no table — a bare `postgresql://` would give the table-based `DoctrineDbalStore`); any
   other scheme is refused, the URL never echoed. With the component configured, every
   `rate_limiter.yaml` limiter (`lock_factory: 'auto'`) and both `login_throttling` ones get
-  `lock.factory`, and `RateLimiterStorageTest` asserts that store for each. **Never `flock` or
+  `lock.factory`, and `RateLimiterStorageTest` asserts that store for each;
+  `RateLimiterConcurrencyTest` (issue #277) checks the behaviour — ten processes released by a
+  file barrier consume one key at once, every unit must be counted (red with `lock_factory: null`).
+  It runs the consumers as separate processes on purpose: a test that held the lock itself would
+  wait forever on its own children. **Never `flock` or
   `semaphore`** (pod-local — they fix dev and CI and leave prod open from two replicas on); the
   Flex recipe writes `LOCK_DSN=flock` into `.env` and `phpunit.dist.xml`, remove it again if a
   recipe update brings it back. No separate `LOCK_DSN` either: it would be a second secret
