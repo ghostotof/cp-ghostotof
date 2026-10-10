@@ -40,7 +40,9 @@ final class BackofficeTranslationResource
     public const int MAX_FIELDS = 12;
     public const int MAX_FIELD_LENGTH = 20_000;
     public const int MAX_TOTAL_LENGTH = 40_000;
-    public const string FIELD_NAME_PATTERN = '/^[a-zA-Z][a-zA-Z0-9]{0,39}$/';
+
+    /** Ancré par `\z` : `$` accepterait un `\n` final (issue #409), jusqu'au fournisseur. */
+    public const string FIELD_NAME_PATTERN = '/^[a-zA-Z][a-zA-Z0-9]{0,39}\z/';
 
     /**
      * Entrée non fiable tant que la validation n'a pas tranché : les clés

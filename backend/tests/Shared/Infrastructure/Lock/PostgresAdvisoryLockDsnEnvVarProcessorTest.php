@@ -83,6 +83,23 @@ final class PostgresAdvisoryLockDsnEnvVarProcessorTest extends TestCase
         }
     }
 
+    /**
+     * Régression #409 : la syntaxe du schéma finissait par `$`, qui accepte la
+     * position précédant un `\n` final. `mysql\n` passait donc pour un schéma
+     * valide et le saut de ligne partait tel quel dans le message, puis dans
+     * le journal — une ligne de log forgée depuis la configuration.
+     */
+    public function testASchemeEndingWithANewlineIsReportedAsInvalid(): void
+    {
+        try {
+            $this->process("mysql\n://app:s3cret@database/app");
+            self::fail('Une URL non PostgreSQL doit être refusée.');
+        } catch (UnsupportedLockDatabaseUrlException $exception) {
+            self::assertStringContainsString('schéma reçu : "<invalide>"', $exception->getMessage());
+            self::assertStringNotContainsString("\n", $exception->getMessage());
+        }
+    }
+
     public function testItRefusesAResolvedValueThatIsNotAString(): void
     {
         $this->expectException(UnsupportedLockDatabaseUrlException::class);

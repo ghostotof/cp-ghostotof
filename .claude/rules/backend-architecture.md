@@ -80,6 +80,21 @@ value in `command` and in the message, `=`, space and `escapeshellarg()` forms a
 none is thrown bare in `src/`, and adding one to `BareExceptionInstantiations::FORBIDDEN` is the step to
 take the day one is.
 
+**A regex of `src/` ends on `\z`, never on `$`** (issues #386, #409). In PCRE `$` also matches before a
+final `\n`, so `/^[a-z]+$/` accepts `"abc\n"`: a username, a watched-product slug and a translation field
+name all went through that way. `\z` rather than the `D` modifier: the anchor reads where it acts, and
+survives a copy of the pattern's body without its modifiers. `tests/Shared/RegexEndAnchorTest.php`
+(`tests/Support/DollarAnchoredPatterns`) fails on any string literal of `src/` shaped like a regex that
+holds an anchoring `$` (escaped, in a character class or a `Q…E` quote it is literal) without `D` or
+`m` — constants, `#[Assert\Regex]`, inline `preg_*` calls alike. Not seen: a pattern built by
+concatenation, a heredoc. **An `#[Assert\Regex]` anchored by `\z` declares its `htmlPattern`**: API
+Platform publishes the OpenAPI `pattern` from `getHtmlPattern()`, which only strips a final `$`, and
+ECMAScript reads a leftover `\z` as a literal `z` (`BackofficeWatchedProductResource::$slug`); the same
+test checks every `Regex` constraint of `src/`, nested ones included. `security.yaml`'s path patterns
+are out of scope and keep their `$`: the router refuses a path ending in `%0A` (404) before any
+firewall or `access_control` rule is consulted, and on `access_control` the wider `$` is the
+fail-closed side.
+
 **Every class, interface, enum and trait is imported with `use` and written by its short name — native
 ones included** (issue #391). `use LogicException;` then `new LogicException(…)`, `use Throwable;` then
 `catch (Throwable $e)`, `use DateTimeImmutable;` then `DateTimeImmutable $at`, likewise `Stringable`,

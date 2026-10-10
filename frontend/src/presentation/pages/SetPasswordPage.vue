@@ -4,10 +4,12 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAccountPasswordSetup } from '../../application/account/useAccountPasswordSetup'
 import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
+import {
+  MAX_PASSWORD_BYTES,
+  MIN_PASSWORD_LENGTH,
+  passwordLengthViolation,
+} from '../../domain/account/services/passwordLength'
 import BaseTextInput from '../ui/BaseTextInput.vue'
-
-/** Doit rester cohérent avec CpgUser::MIN_PASSWORD_LENGTH côté backend. */
-const MIN_PASSWORD_LENGTH = 8
 
 const { t, locale: i18nLocale } = useI18n()
 const route = useRoute()
@@ -85,6 +87,19 @@ const apiErrorText = computed(() => {
   return t(`account.setPassword.errors.${reason}`)
 })
 
+/** Identifiants reliés au champ mot de passe par `aria-describedby`. */
+const HINT_ID = 'set-password-hint'
+const ERROR_ID = 'set-password-error'
+
+/**
+ * La règle de longueur, puis le message d'erreur quand il est affiché : un
+ * lecteur d'écran les relit en revenant sur le champ, alors que l'annonce de
+ * la région `alert` n'a lieu qu'une fois.
+ */
+const passwordDescribedBy = computed(() =>
+  null !== localFormError.value || null !== apiErrorText.value ? `${HINT_ID} ${ERROR_ID}` : HINT_ID,
+)
+
 function retry(): void {
   void validate(setupToken)
 }
@@ -98,8 +113,16 @@ onMounted(async () => {
 async function handleSubmit(): Promise<void> {
   localFormError.value = null
 
-  if (password.value.length < MIN_PASSWORD_LENGTH) {
+  // Mêmes unités que le backend (points de code / octets UTF-8, #410) : un
+  // refus local évite un 422 que la page ne saurait qu'attribuer à un mot de
+  // passe compromis, et n'entame pas le quota par IP.
+  const lengthViolation = passwordLengthViolation(password.value)
+  if ('too-short' === lengthViolation) {
     localFormError.value = t('account.setPassword.errors.tooShort', { min: MIN_PASSWORD_LENGTH })
+    return
+  }
+  if ('too-long' === lengthViolation) {
+    localFormError.value = t('account.setPassword.errors.tooLong', { max: MAX_PASSWORD_BYTES })
     return
   }
   if (password.value !== confirmation.value) {
@@ -185,6 +208,7 @@ async function handleSubmit(): Promise<void> {
             v-model="password"
             type="password"
             :label="t('account.setPassword.passwordLabel')"
+            :aria-describedby="passwordDescribedBy"
             required
           />
           <BaseTextInput
@@ -195,12 +219,16 @@ async function handleSubmit(): Promise<void> {
             required
           />
 
-          <p class="text-body-secondary small">
+          <p
+            :id="HINT_ID"
+            class="text-body-secondary small"
+          >
             {{ t('account.setPassword.hint', { min: MIN_PASSWORD_LENGTH }) }}
           </p>
 
           <p
             v-if="localFormError"
+            :id="ERROR_ID"
             class="text-danger small"
             role="alert"
           >
@@ -208,6 +236,7 @@ async function handleSubmit(): Promise<void> {
           </p>
           <p
             v-else-if="apiErrorText"
+            :id="ERROR_ID"
             class="text-danger small"
             role="alert"
           >
