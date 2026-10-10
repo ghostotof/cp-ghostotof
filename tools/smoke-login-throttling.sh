@@ -21,10 +21,11 @@
 # quatre exécutions par quart d'heure depuis un même runner, et une cinquième
 # ne ferait que produire le 429 plus tôt — ce que ce script accepte aussi.
 #
-# Le `Retry-After` est ce qui distingue ce refus de celui de la zone nginx
-# `login` (10 r/m, burst 10) : nginx rend lui aussi un 429
-# `/errors/rate-limited`, mais sans `Retry-After`. Un 429 de nginx ne prouve
-# rien sur l'état des limiteurs de l'application, il fait donc échouer le test.
+# Deux indices distinguent ce refus de celui de la zone nginx `login`
+# (10 r/m, burst 10), qui rend lui aussi un 429 `/errors/rate-limited` :
+# nginx ne pose pas de `Retry-After`, et son `detail` n'est pas celui de
+# l'application. Un 429 de nginx ne prouve rien sur l'état des limiteurs de
+# l'application, il fait donc échouer le test.
 #
 # Usage :  tools/smoke-login-throttling.sh <url-de-base>
 #          ex. tools/smoke-login-throttling.sh https://preprod.cp-ghostotof.com
@@ -59,6 +60,23 @@ if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
   curl_opts+=(-K "$auth_config")
 fi
 
+# Le `detail` littéral de LoginRateLimitExceededException (backend) : le
+# second discriminant face à la zone nginx, dont le 429 dit « Trop de
+# requêtes ». ProblemDetailStaysStaticTest le garde constant côté PHP.
+app_detail='"detail":"Trop de tentatives de connexion.'
+# `\/` toléré : JsonResponse (Symfony) échappe les barres obliques, la zone
+# nginx non — les deux formes valent le même JSON. ERE de bash, pas de grep :
+# portable, et sans pipe que `pipefail` ferait échouer sur un SIGPIPE.
+type_pattern='"type":"(\\)?/errors(\\)?/rate-limited"'
+
+# Valeur d'un en-tête de la dernière réponse : nom insensible à la casse
+# (HTTP/2 l'écrit en minuscules), CR retiré, dernière occurrence.
+header() {
+  tr -d '\r' < "$headers_file" | awk -v name="$1" '
+    tolower(substr($0, 1, length(name) + 1)) == tolower(name) ":" { sub(/^[^:]*:[[:space:]]*/, ""); value = $0 }
+    END { print value }'
+}
+
 throttled_at=0
 for attempt in $(seq 1 "$attempts"); do
   # Dernière ligne = code HTTP, le reste = corps.
@@ -75,12 +93,14 @@ for attempt in $(seq 1 "$attempts"); do
   # Le corps est toujours montré, tronqué : un 401 de la Basic Auth de
   # l'ingress (HTML nginx) et un 401 de l'application (JSON Lexik) se
   # ressemblent au code près, et c'est la première chose à savoir quand ce
-  # test échoue.
-  excerpt="$(printf '%s' "$body" | tr '\n' ' ' | cut -c1-160)"
+  # test échoue. Tout caractère de contrôle devient une espace : ce texte part
+  # dans le journal de la CI, où un `\r` ouvrirait une ligne `::commande::`
+  # que le runner exécuterait.
+  excerpt="$(printf '%s' "$body" | tr '\000-\037\177' '[ *]' | cut -c1-160)"
 
   if [ "$status" = "429" ]; then
-    # Insensible à la casse (HTTP/2 écrit les noms en minuscules), CR retiré.
-    retry_after="$(tr -d '\r' < "$headers_file" | sed -n 's/^[Rr][Ee][Tt][Rr][Yy]-[Aa][Ff][Tt][Ee][Rr]:[[:space:]]*//p' | tail -n 1)"
+    retry_after="$(header Retry-After)"
+    content_type="$(header Content-Type)"
     if [ -z "$retry_after" ]; then
       echo "tentative $attempt : 429 sans Retry-After — c'est la zone nginx \`login\`, pas le login_throttling de l'application, et il ne prouve rien sur l'état des limiteurs (corps : $excerpt)" >&2
       exit 1
@@ -89,10 +109,16 @@ for attempt in $(seq 1 "$attempts"); do
       echo "tentative $attempt : 429 avec un Retry-After invalide (« $retry_after »), un nombre de secondes > 0 attendu (corps : $excerpt)" >&2
       exit 1
     fi
-    # `\/` toléré : JsonResponse (Symfony) échappe les barres obliques, la
-    # zone nginx non — les deux formes valent le même JSON.
-    if ! printf '%s' "$body" | grep -q '"type":"\\\?/errors\\\?/rate-limited"'; then
+    if [[ "$content_type" != application/problem+json* ]]; then
+      echo "tentative $attempt : 429 en « $content_type », application/problem+json attendu (corps : $excerpt)" >&2
+      exit 1
+    fi
+    if ! [[ "$body" =~ $type_pattern ]]; then
       echo "tentative $attempt : 429 sans le type /errors/rate-limited (corps : $excerpt)" >&2
+      exit 1
+    fi
+    if [[ "$body" != *"$app_detail"* ]]; then
+      echo "tentative $attempt : 429 avec Retry-After mais sans le detail de l'application — la zone nginx \`login\` relayée par un intermédiaire qui aurait ajouté l'en-tête ? Il ne prouve rien sur l'état des limiteurs (corps : $excerpt)" >&2
       exit 1
     fi
     throttled_at="$attempt"
@@ -107,7 +133,7 @@ for attempt in $(seq 1 "$attempts"); do
 
   # L'ancien contrat (avant #399) : l'image déployée ne porte pas le 429.
   # Le dire, plutôt que conclure plus bas à un stockage défaillant.
-  if printf '%s' "$body" | grep -qi 'too many failed login attempts'; then
+  if [[ "${body,,}" == *"too many failed login attempts"* ]]; then
     echo "tentative $attempt : 401 « Too many failed login attempts », l'ancien contrat de Lexik — le throttling fonctionne, mais l'image déployée ne répond pas le 429 de l'issue #399 (corps : $excerpt)" >&2
     exit 1
   fi

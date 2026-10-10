@@ -229,7 +229,8 @@ paths:
   arbitrary: it must sit above every listener that *builds* the 429 and so stops propagation — API
   Platform (-96) and, on a controller, `ApiProblemResponseListener` (-98). A new quota exception implements the interface; never write a fifth
   per-context copy. It must also be traced: `ThrottledRequestAuditCoverageTest` (issue #361) wants every
-  `RetryAfterAware` either sorted by `ThrottledRequestAuditListener` or justified as a per-account quota
+  `RetryAfterAware` either sorted by `ThrottledRequestAuditListener` or justified, as a per-account quota
+  (`PER_ACCOUNT`) or as one traced before it is thrown (`TRACED_UPSTREAM`, the login refusal, issue #399)
   (see `.claude/rules/security-authentication.md`). `RateLimiterLockFailureListener` stays apart on purpose (fixed delay, priority 16).
   **And every quota 429 carries `type: /errors/rate-limited`** (issue #369), the `type` of the nginx zones
   (`@rate_limited`): one cause, one value for a client to recognise. A quota exception therefore declares
@@ -255,5 +256,6 @@ paths:
   limiter's storage on the path an attacker hammers. Every other login failure keeps Lexik's 401, byte for
   byte (audit A10). Three consumers read that 429: `LoginThrottlingTest`, the login page
   (`LoginRateLimitedError`) and the preprod smoke test (`tools/smoke-login-throttling.sh`), which tells it
-  from the nginx `login` zone's 429 by its `Retry-After` — nginx sends the same `type` without one.
+  from the nginx `login` zone's 429 by its `Retry-After` and its literal `detail` — nginx sends the same
+  `type`, without the header and with its own `detail`.
 
