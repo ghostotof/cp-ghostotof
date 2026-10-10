@@ -38,9 +38,39 @@ paths:
     `detach()` on a `PUT` with `translationGroup: null` detaches **and moves the entry to the end of
     its scope** (issue #169 — keeping the position let the old group receive that locale again via
     "Create the XX version" and inherit the same position: two keys on one position), and is a no-op
-    on an entry already alone; `reattach()` with a group inherits its position; `inGroup()` throws a
-    `LogicException` on a group whose members disagree on the position, a pipeline bug, never a 4xx). `WatchedProduct` is not localized, so it is `Orderable` on its
-    own id, and its `Administrator` computes the end of the catalogue itself. The **only client-driven
+    on an entry already alone; `reattach()` with a group inherits its position; `inGroup()` throws
+    `TranslationGroupHasSeveralPositionsException` (a `LogicException`, issue #338) on a group whose members disagree on the position, a pipeline bug, never a 4xx — checked **before** the
+    "locale already there" 409, issue #384: with two locales the only corrupt group the unique index allows
+    is an FR/EN pair, which always carries the requested locale, so the reverse order hid the bug as an `info`;
+    when it fires, look at migrations and SQL writes, which bypass the scope lock below). `WatchedProduct` is not localized, so it is `Orderable` on its
+    own id, and its `Administrator` computes the end of the catalogue itself.
+    **Every write that computes a position runs under its scope's lock** (issue #389): `create()`, `update()`
+    and `reorder()` of the eight localized `Administrator`s, `create()` and `reorder()` of
+    `WatchedProductAdministrator` (its `update()` never touches the position), wrap their **whole body** in
+    `Shared/Application/OrderScopeLockInterface::withLock(ORDER_SCOPE, …)`, `ORDER_SCOPE` being the entity
+    class (`<Entity>::class`, never a table name, which the Application layer has no business knowing; the
+    whole table for `AboutMeCard` too, wider than its per-category ordering scope, on purpose). Without it a "Create
+    the XX version" landing between a `reorder()`'s read and its save kept the old position (a group on two
+    positions, invisible to the exact-set rule), and two simultaneous creations without a group got the same
+    `atEndOf()`. The adapter, `Shared/Infrastructure/Doctrine/PostgresAdvisoryOrderScopeLock`, runs the body
+    in `Connection::transactional()` whose first statement is `pg_advisory_xact_lock(ORDR, hashtext(scope))`,
+    released by the COMMIT/ROLLBACK itself. Three choices not to undo: a **scope** lock, never `SELECT … FOR
+    UPDATE` (a blocked one does not see rows the other transaction inserted, and locks nothing on an empty
+    table, so the creation race survives it); **not** `lock.factory` (a session lock on a second connection,
+    which would have to be released after the ORM's COMMIT); **not** `wrapInTransaction()`, which closes the
+    EntityManager on any exception, while a 409 inside the lock is an ordinary outcome. A read made *before*
+    `withLock()` escapes it, hence the whole body; an entity already in the identity map (the `PUT` entry,
+    loaded by the provider) keeps its pre-lock values, harmless since only its own position is rewritten.
+    In an FPM worker the wait is bounded by `PGOPTIONS` `lock_timeout=5s`; past it the adapter throws
+    `OrderScopeLockTimeoutException` (named, unmapped: a `critical` 500 — 5 s for a millisecond write is an
+    anomaly, not a conflict to retry), and only for its own lock statement: a timeout inside the operation
+    stays the DBAL exception. **The console waits without a bound**: the `app:*:seed` commands go through the
+    `Administrator`s, so the deploy's seed Job takes the same lock, which `www.prod.conf` does not reach —
+    harmless while every holder keeps it for milliseconds, revisit before holding it any longer. Guards:
+    `OrderScopeLockCoverageTest` (a probe session holds each scope, every placing operation of every
+    `Administrator` must wait — a new one written without `withLock()` turns it red) and
+    `ContributionOrderConcurrencyTest` (two real processes, interleaved at the `preFlush`, both races).
+    `delete()` takes no lock: it leaves a gap, never a collision. The **only client-driven
     writer of `position` is `PUT /api/backoffice/<x>/order`** (`ContentPlacement` derives it server-side,
     no request body ever chooses it) (`Backoffice<X>OrderResource`, `read: false`,
     `output: false`, 204, one per context, `{groups: [uuid…]}` — `{ids: […]}` for Watch, plus
@@ -63,6 +93,29 @@ paths:
   `/quality/{locale}` and `/about/{locale}` that returns `{principles, traits}` / `{settings, siteCards, meCards}`
   in one call), and a backoffice CRUD resource (see `.claude/rules/backoffice-api.md`). Seeded via idempotent `app:{about,quality,contributions,incidents}:seed`
   console commands (purge-by-locale then recreate — safe to rerun).
+
+  **`ExperienceTechnology.years` is a finite number in `[0, 100]`, checked at three layers** (issue #372).
+  A single non-encodable row (`Infinity`, `NaN`) is enough to put the public `GET /api/experience/technologies`
+  in 500 for every visitor, and `PositiveOrZero` alone let `{"years":1e999}` (`json_decode` → `INF`) through.
+  The rule is written once, in the Value Object `Domain/ValueObject/ExperienceYears` (`MIN`, `MAX`, `fromFloat`,
+  `fromString`; `-0.0` is normalised to `0`). The entity, the registrar and the administrator only receive an
+  `ExperienceYears`. The backoffice DTO validates through an `Assert\Callback` that delegates to it, so the
+  422 names `years` with the domain's message. The CLI command parses `--years` before reaching the
+  registrar. **And the database refuses the same bounds** (`ExperienceTechnologyRepository::YEARS_CHECK_CONSTRAINT`,
+  migration `Version20261006120000`), because Doctrine never calls the constructor when hydrating, so no PHP
+  guard sees a row written in SQL. One gap is accepted: the `CHECK` lets `-0` through (`-0 >= 0`), a value
+  only SQL can write and the public list would publish as `"years":-0`. Enforcing it would take an unreadable
+  sign test, for a cosmetic defect no write path produces. `ExperienceTechnologyYearsConstraintTest` reads both bounds from the Value Object and
+  probes a billionth past each, so a constraint loosened or tightened by a hair turns it red. A test that must
+  write a row the database now refuses lifts the constraint in a rolled-back transaction through the
+  `LiftsExperienceYearsConstraint` trait. Never drop it for good, and never write that `ALTER TABLE` by hand.
+  That migration clamped any existing faulty row **and set it `secondary`**, reporting each one as a
+  `warning` with its original value in the migration Job's output. The invented duration is therefore never
+  **displayed on the site**, since `ExperiencePage` shows no duration for a secondary technology, and the row
+  stays one backoffice edit away from being fixed. The public API still carries its `years`: the duration is
+  not protected data, and hiding it there would change the public contract. `InvalidExperienceYearsException` is deliberately **not** mapped to an HTTP status: from
+  the API it is unreachable unless a write path bypasses the DTO, a server fault that must stay a
+  `critical` 500.
 
   `Contribution` is the odd one out and deliberately so: it carries a long `body` (the argument, not
   just a link to it) alongside `title`/`project`/`reference`/`url`/`summary`. That text is **plain

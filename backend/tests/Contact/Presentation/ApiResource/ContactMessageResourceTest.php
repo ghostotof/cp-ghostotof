@@ -255,6 +255,11 @@ final class ContactMessageResourceTest extends WebTestCase
         self::assertCount(0, $this->asyncTransport()->getSent());
         self::assertTrue($client->getResponse()->headers->has('Retry-After'));
         self::assertGreaterThan(0, (int) $client->getResponse()->headers->get('Retry-After'));
+        // Issue #369 : le `type` de tout refus de débit, nginx compris — pas
+        // le `/errors/429` qu'API Platform déduirait du seul statut.
+        $problem = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($problem);
+        self::assertSame('/errors/rate-limited', $problem['type'] ?? null);
     }
 
     public function testTheEndpointIsNotSubjectToTheDoubleSubmitCookieCsrfCheck(): void

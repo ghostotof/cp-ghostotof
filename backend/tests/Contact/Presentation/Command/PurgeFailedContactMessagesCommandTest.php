@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Contact\Presentation\Command;
 
 use App\Contact\Application\Message\SendContactMessageMessage;
+use DateTimeImmutable;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\TableNotFoundException;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -48,7 +49,7 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
         // On vieillit artificiellement le premier au-delà de la fenêtre.
         $this->connection->executeStatement(
             "UPDATE messenger_messages SET created_at = :old WHERE body LIKE '%old@example.com%'",
-            ['old' => (new \DateTimeImmutable('-40 days'))->format('Y-m-d H:i:s')],
+            ['old' => (new DateTimeImmutable('-40 days'))->format('Y-m-d H:i:s')],
         );
 
         $exitCode = $this->commandTester()->execute(['--older-than' => '30 days']);
@@ -69,7 +70,7 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
     }
 
     /**
-     * Issue #248 : `new \DateTimeImmutable('-'.$olderThan)` acceptait la
+     * Issue #248 : `new DateTimeImmutable('-'.$olderThan)` acceptait la
      * double négation "--30 days" (interprétée "+30 days") et purgeait tout,
      * y compris un message en échec récent. `RetentionPeriod` doit refuser
      * cette expression avant que la moindre suppression ait lieu.

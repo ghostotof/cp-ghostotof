@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Security\User\Application;
 
+use DateTimeImmutable;
+
 /**
  * Compte-rendu de PendingInvitationPurger::purge(), destiné à l'appelant
  * (commande CLI planifiée). Ce n'est pas un concept métier : il ne franchit
@@ -18,7 +20,7 @@ final readonly class PendingInvitationPurgeResult
     public function __construct(
         public array $purged,
         public array $skipped,
-        public \DateTimeImmutable $threshold,
+        public DateTimeImmutable $threshold,
     ) {
     }
 }

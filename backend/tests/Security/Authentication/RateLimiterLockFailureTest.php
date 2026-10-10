@@ -14,6 +14,7 @@ use App\Tests\Support\UnavailableLockStore;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Level;
 use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionProperty;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Lock\LockFactory;
@@ -163,7 +164,7 @@ final class RateLimiterLockFailureTest extends WebTestCase
     {
         // phpstan-symfony connaît le type (LockFactory) depuis le dump du conteneur.
         $lockFactory = self::getContainer()->get('lock.default.factory');
-        (new \ReflectionProperty(LockFactory::class, 'store'))->setValue($lockFactory, new UnavailableLockStore());
+        (new ReflectionProperty(LockFactory::class, 'store'))->setValue($lockFactory, new UnavailableLockStore());
     }
 
     private function attemptLogin(KernelBrowser $client): void

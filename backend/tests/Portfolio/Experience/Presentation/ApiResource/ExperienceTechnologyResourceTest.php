@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Portfolio\Experience\Presentation\ApiResource;
 
 use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
+use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
@@ -33,9 +34,9 @@ final class ExperienceTechnologyResourceTest extends WebTestCase
         $client = self::createClient();
         $registrar = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class);
 
-        $registrar->register('Symfony', 9.5, 'symfony', null);
-        $registrar->register('PHP', 13.5, 'php', 'HTML / CSS / JavaScript');
-        $registrar->register('Docker', 6.5, 'docker', null);
+        $registrar->register('Symfony', ExperienceYears::fromFloat(9.5), 'symfony', null);
+        $registrar->register('PHP', ExperienceYears::fromFloat(13.5), 'php', 'HTML / CSS / JavaScript');
+        $registrar->register('Docker', ExperienceYears::fromFloat(6.5), 'docker', null);
 
         $client->request('GET', '/api/experience/technologies');
 
@@ -62,8 +63,8 @@ final class ExperienceTechnologyResourceTest extends WebTestCase
         $client = self::createClient();
         $registrar = $client->getContainer()->get(ExperienceTechnologyRegistrarInterface::class);
 
-        $registrar->register('PHP', 13.5, 'php', null);
-        $registrar->register('Python', 0.5, 'python', null, true);
+        $registrar->register('PHP', ExperienceYears::fromFloat(13.5), 'php', null);
+        $registrar->register('Python', ExperienceYears::fromFloat(0.5), 'python', null, true);
 
         $client->request('GET', '/api/experience/technologies');
 

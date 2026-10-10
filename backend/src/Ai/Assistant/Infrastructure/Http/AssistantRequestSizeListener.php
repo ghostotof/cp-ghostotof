@@ -12,13 +12,18 @@ use Symfony\Component\HttpKernel\KernelEvents;
 /**
  * Refuse en 413 un corps de plus de 128 Kio sous `/api/assistant` (spec 0005
  * M4, amendée), avant toute désérialisation. nginx laisse passer jusqu'à 1 Mo
- * (`client_max_body_size`) ; la borne applicative découle des longueurs D6 :
- * la plus longue conversation valide (6 × 1 000 + 5 × 4 000 = 26 000
- * caractères) pèse au pire 104 000 octets en UTF-8 (4 octets par caractère),
- * plus son enveloppe JSON. 64 Kio, la valeur d'origine, refusait donc une
- * conversation valide riche en emoji. La borne suppose un JSON non échappé,
- * celui de `JSON.stringify` : un client qui écrirait chaque emoji en `\u`
- * (12 octets) pourrait la dépasser, et recevrait un 413 plutôt qu'une réponse.
+ * (`client_max_body_size`) ; la borne applicative découle des longueurs D6.
+ * La plus longue conversation valide (16 000 caractères au total,
+ * `Conversation::MAX_TOTAL_LENGTH`) pèse au pire ~64 Ko en UTF-8 (4 octets par
+ * caractère), enveloppe JSON comprise. 64 Kio, la valeur d'origine, datait
+ * d'avant ce total, quand seules les bornes par message tenaient la
+ * conversation (26 000 caractères, 104 000 octets). Les 128 Kio laissent
+ * passer aussi une conversation dont chaque message respecte sa borne mais
+ * pas le total (6 × 1 000 + 5 × 5 000 = 31 000 caractères depuis #406, au
+ * pire 124 372 octets mesurés). Elle reçoit donc le 422 typé de
+ * `Conversation`, pas ce 413. La borne suppose un JSON non échappé, celui de
+ * `JSON.stringify` : un client qui écrirait chaque emoji en `\u` (12 octets)
+ * pourrait la dépasser, et recevrait un 413 plutôt qu'une réponse.
  *
  * Priorité 4 : après le firewall (8) et son access_control. La taille ne se
  * juge qu'une fois l'accès accordé — un anonyme ou le palier de base reçoit

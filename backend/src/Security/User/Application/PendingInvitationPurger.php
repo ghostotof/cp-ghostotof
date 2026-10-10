@@ -8,6 +8,7 @@ use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\InvalidPurgeRetentionException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use DateInterval;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -21,7 +22,7 @@ final readonly class PendingInvitationPurger implements PendingInvitationPurgerI
     ) {
     }
 
-    public function purge(\DateInterval $maxAge, bool $dryRun = false): PendingInvitationPurgeResult
+    public function purge(DateInterval $maxAge, bool $dryRun = false): PendingInvitationPurgeResult
     {
         $now = $this->clock->now();
         $threshold = $now->sub($maxAge);
@@ -32,7 +33,7 @@ final readonly class PendingInvitationPurger implements PendingInvitationPurgerI
         // ne vient que d'un appel humain direct. Un seuil devenu >= now
         // (intervalle négatif ou nul) reste un cas particulier de cette même
         // garde : le futur est encore plus proche que "maintenant − 1 jour".
-        $minimumThreshold = $now->sub(new \DateInterval('P1D'));
+        $minimumThreshold = $now->sub(new DateInterval('P1D'));
 
         // Garde métier, avant toute lecture du dépôt : protège tout appelant,
         // pas seulement la commande CLI qui, elle, ne fait qu'attraper

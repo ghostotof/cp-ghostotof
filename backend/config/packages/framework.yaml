@@ -53,6 +53,12 @@ framework:
         # entrée il sortirait en `critical` (ni HttpException, ni 4xx connu).
         App\Security\User\Domain\Exception\BaseAccessRateLimitExceededException:
             log_level: info
+        # Refus de `login_throttling` (issue #399) : la défense anti-brute-force
+        # qui fait son office. Déjà tracé par `login-throttled` (security_audit,
+        # avec l'identifiant tenté) ; sans cette entrée, chaque refus serait une
+        # ligne `critical` qu'un anonyme produirait à volonté.
+        App\Security\Authentication\Domain\Exception\LoginRateLimitExceededException:
+            log_level: info
 
         # --- Exceptions rendues par API Platform (`exception_to_status`) ---
         # logKernelException (priorité 0) les voit aussi, avant API Platform

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Shared\Infrastructure\Lock;
 
+use Closure;
 use Symfony\Component\DependencyInjection\EnvVarProcessorInterface;
 
 /**
@@ -29,7 +30,7 @@ final class PostgresAdvisoryLockDsnEnvVarProcessor implements EnvVarProcessorInt
     /** Les schémas que `StoreFactory` sait suffixer de `+advisory`. */
     private const array POSTGRES_SCHEMES = ['postgresql', 'postgres', 'pgsql'];
 
-    public function getEnv(string $prefix, string $name, \Closure $getEnv): string
+    public function getEnv(string $prefix, string $name, Closure $getEnv): string
     {
         $databaseUrl = $getEnv($name);
         $databaseUrl = \is_string($databaseUrl) ? $databaseUrl : '';

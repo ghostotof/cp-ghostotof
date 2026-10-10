@@ -29,7 +29,13 @@ paths:
   `Backoffice{About}{Settings,SiteCard,MeCard}Resource`, `BackofficeUserResource`,
   `BackofficeUserPasswordResource`): a flat DTO (never the Doctrine entity itself) under
   `Presentation/ApiResource/`, backed by a `Provider` (`GetCollection`/`Get`) and a `Processor`
-  (`Post`/`Put`/`Delete`) under `Infrastructure/ApiPlatform/`. Collection reads use a `?locale=` query filter
+  (`Post`/`Put`/`Delete`) under `Infrastructure/ApiPlatform/`. A CRUD Processor **uses the
+  `Shared/Infrastructure/ApiPlatform/DispatchesWriteOperations` trait** (issue #338,
+  `@use DispatchesWriteOperations<TheResource>`) and declares only `create()`, `update(Uuid $id, …)` and
+  `delete(Uuid $id)`. The trait picks one by operation, and refuses any other with
+  `UnsupportedOperationException` before any action — never re-write the `instanceof` cascade.
+  `DispatchesWriteOperationsTest` pins that choice. Each resource's functional test pins the wiring.
+  Collection reads use a `?locale=` query filter
   (unlike the public `{locale}` path param — collections aren't per-locale routes). **`Put`/`Delete` operations
   need an explicit `provider:` set, not just `processor:`** — otherwise API Platform's default provider tries to
   resolve the DTO via Doctrine directly and 404s before ever reaching the processor. Since `v0.12.0` the
@@ -89,8 +95,15 @@ paths:
   may consult (the global one, merged per operation) the first key matching by `is_a()`, plus
   `getStatus()` for a problem exception and the kernel's conversion; no entry that targets anything else — a broad `\DomainException` or an
   interface would hide real server faults and shadow the precise entries after it, since the kernel takes
-  the first match —; and justified ways out only (`EXEMPT`: the three broad API Platform defaults below,
-  which stay `critical`; `JUSTIFIED_ENTRIES`: the 415 of #320).
+  the first match —; and justified ways out only (`EXEMPT`: the two broad API Platform defaults below,
+  which stay `critical`; `JUSTIFIED_ENTRIES`: the 415 of #320). **An `EXEMPT` entry is exempt from the
+  `log_level` entry only, never from the status/level check** (issue #373): it is still judged at the
+  kernel's default `critical`, hence at a 5xx; `testTheLevelCheckJudgesEveryExemptedEntry` locks that in.
+  An `exception_to_status` key that is an interface or an abstract class (`Serializer\ExceptionInterface`)
+  is judged too, through a PHPUnit stub handed to `resolveLogLevel` — before #373 it escaped the check,
+  which is what really let #360 live. Not covered: an interface or abstract class given a `status_code` in
+  `framework.exceptions` (its implementations are not in `src/`, so nothing lists it as rendered) — don't
+  write one.
   **Both maps are read compiled, never parsed from YAML** (issue #357): `tests/Support/CompiledExceptionConfig`
   reads the `exception_listener` mapping, the `api_platform.exception_to_status` parameter and the
   resource metadata from the test container, so an entry from another config file or a `when@test`
@@ -118,14 +131,24 @@ paths:
   `api_platform.state_provider.deserialize` and, **on an operation that deserializes only**, turns the
   Serializer's `UnexpectedValueException` family — the only one a client can trigger — into
   `MalformedRequestBodyException` (400, `info`): unreadable JSON, and valid JSON whose root is not an
-  object (`123`, `null`, `"x"`), which is *not* collected as a 422. A server fault raised at the same step
+  object (`123`, `null`, `"x"`), which is *not* collected as a 422 — plus, since #360, two precise classes
+  of its `RuntimeException` family that only a body can cause and no operation triggers today:
+  `ExtraAttributesException` (`allow_extra_attributes: false`) and `MissingConstructorArgumentsException`
+  (`collect_denormalization_errors` off); with the broad entry at 500, a context change would otherwise hand
+  anonymous callers a `critical` 500. Never `RuntimeException` itself. A server fault raised at the same step
   (`LogicException`, `MappingException`, an `UnsupportedFormatException` for a negotiated format with no
   encoder) passes through untouched and stays a `critical` 500 — never widen the `catch` to
-  `Serializer\ExceptionInterface`. The broad entry keeps covering the output side (a non-encodable
-  response, invalid UTF-8 in the database), a server fault that must stay `critical`: never give it a
-  `log_level`, and never move the conversion to the JSON decoder, which also decodes internal data. The
-  `UnsupportedFormatException`s of `var/log/test.log` are output-side too: `GET /api`, the Hydra
-  entrypoint serialized as `jsonld` (not a declared format), disabled in prod (`enable_entrypoint: false`).
+  `Serializer\ExceptionInterface`. The broad entry keeps covering the output side only (a non-encodable
+  response — a `NaN` in a `double precision` column; invalid UTF-8 never reaches the `UTF8` database —,
+  a misconfigured Serializer, a negotiated format with no encoder): server faults, so it maps to **500**
+  since issue #360, **not** API Platform's default 400 — never "restore" it, `ServerSideSerializerFailureTest`
+  pins the 500 end to end. That column now refuses `NaN` through a `CHECK` (#372), so the test lifts the
+  constraint (`LiftsExperienceYearsConstraint`) to write its row. It must stay `critical`: never give it a `log_level`, and never move the
+  conversion to the JSON decoder, which also decodes internal data. The Hydra entrypoint (`GET /api`) is
+  disabled in **every** environment (`enable_entrypoint: false`, #360): API Platform hard-codes its
+  formats to `jsonld`/`jsonhal`/`jsonapi`/`html` (`entrypoint_formats`, a `json` added to `docs_formats`
+  is dropped), none of which the project declares, so in dev/test it only ever answered an
+  `UnsupportedFormatException`. `/api/docs` stays available in dev.
   One caveat: on a write, the decorator also sees the providers `DeserializeProvider` wraps (read of the
   existing item, our own Providers) — a Provider of `src/` that calls the Serializer must catch its own
   failures.
@@ -135,14 +158,34 @@ paths:
   `problemStatus()`): API Platform then emits `type: /errors/<slug>` in the problem+json, which the client keys
   on instead of substring-matching the localized `detail`.
   **Two traps of that map, both paid for** (audit A15): declaring `exception_to_status` **replaces** API
-  Platform's defaults instead of extending them, so the three it ships with are restored explicitly at the
-  **end** of the list (`Serializer\ExceptionInterface: 400`, `ApiPlatform\Metadata\Exception\InvalidArgumentException: 400`,
-  `Doctrine\ORM\OptimisticLockException: 409`) — without them, unparsable JSON or a wrongly-typed field
+  Platform's defaults instead of extending them, so two of the three it ships with sit explicitly at the
+  **end** of the list (`Serializer\ExceptionInterface: 500`, `ApiPlatform\Metadata\Exception\InvalidArgumentException: 500`),
+  both **deliberately not** at API Platform's 400; the third, `Doctrine\ORM\OptimisticLockException: 409`,
+  was **removed** by issue #373 (no entity is versioned, and its only possible throw today, `notVersioned()`,
+  is a programming error — a `critical` 500, what no entry gives; map the conflict back to a 409 with a
+  `log_level` the day an `#[ORM\Version]` appears). The API Platform `InvalidArgumentException` (subclass
+  `ItemNotFoundException`; `OperationNotFoundException` is **not** one, it extends PHP's) was reachable by a
+  client: an `id` in the body of any PUT — a "standard" PUT populates no object in API Platform 4, so the key
+  went to IRI resolution and came out 400 + `critical`. `defaults.denormalization_context.api_allow_update:
+  false` now makes the Serializer refuse it (`MalformedRequestBodyException`, `info`), and
+  `MalformedRequestBodyTest::testEveryUpdateOperationRefusesAnUpdateByIri` checks it holds on every compiled
+  PUT/PATCH — a `denormalizationContext` declared on a resource or an operation is **merged** with that
+  default (`OperationDefaultsTrait::addGlobalDefaults`), but an empty `[]` or an explicit
+  `api_allow_update: true` neutralizes it. What is left for the broad entry is server faults (IRI
+  generation, metadata), hence 500. Two client paths would reopen it: **pagination** (`?page=0`) the day a
+  provider paginates, and a **`writableLink` relation**, for which `AbstractItemNormalizer::denormalizeRelation`
+  sets `api_allow_update: true` again — give either case its own class first, never move the entry back
+  to 400. When audit A15 restored them, unparsable JSON or a wrongly-typed field
   answered **500 on every POST, public ones included**, i.e. an anonymous caller could manufacture 500s at
-  will and drown real server errors in the logs. And resolution takes the **first matching entry**, with
+  will and drown real server errors in the logs; the Serializer's default 400 was the cure then. #239 and
+  #355 have since given every client case its own class, so what still reaches that entry is a server
+  fault, mapped to **500** (issue #360, see above) — the client side is guarded by `MalformedRequestBodyTest`,
+  not by this entry. The status/level check of `ExceptionLogLevelCoverageTest` covers `EXEMPT` entries
+  and interface keys since issue #373 (see above): both blind spots had let #360 live.
+  And resolution takes the **first matching entry**, with
   `is_a()` matching interfaces and parents too, so a broad entry must stay **below** the precise ones: add a
-  new exception *above* those three restored defaults, never after. Since 2026-09-22 (issue #239)
-  `defaults.collect_denormalization_errors: true` narrows what that 400 covers: a **wrongly-typed field**
+  new exception *above* those two restored defaults, never after. Since 2026-09-22 (issue #239)
+  `defaults.collect_denormalization_errors: true` narrowed what the Serializer's 400 covered: a **wrongly-typed field**
   (`{"name":123}`) is collected instead of aborting the deserialization and comes out as a **422 with
   `violations` naming the field**, the same shape the admin forms already render for an `Assert`; only
   unreadable JSON and a root that is not an object stay a 400 (`MalformedRequestBodyException` since
@@ -185,5 +228,34 @@ paths:
   priority 64** and sets the header at `kernel.response` — **on a 429 only** (a failed render that ends in a 500 must not carry it) — with an injected `ClockInterface`. 64 is not
   arbitrary: it must sit above every listener that *builds* the 429 and so stops propagation — API
   Platform (-96) and, on a controller, `ApiProblemResponseListener` (-98). A new quota exception implements the interface; never write a fifth
-  per-context copy. `RateLimiterLockFailureListener` stays apart on purpose (fixed delay, priority 16).
+  per-context copy. It must also be traced: `ThrottledRequestAuditCoverageTest` (issue #361) wants every
+  `RetryAfterAware` either sorted by `ThrottledRequestAuditListener` or justified, as a per-account quota
+  (`PER_ACCOUNT`) or as one traced before it is thrown (`TRACED_UPSTREAM`, the login refusal, issue #399)
+  (see `.claude/rules/security-authentication.md`). `RateLimiterLockFailureListener` stays apart on purpose (fixed delay, priority 16).
+  **And every quota 429 carries `type: /errors/rate-limited`** (issue #369), the `type` of the nginx zones
+  (`@rate_limited`): one cause, one value for a client to recognise. A quota exception therefore declares
+  `implements ProblemExceptionInterface, RetryAfterAware` and `use IsRateLimitedProblem`
+  (`Shared/Domain/Exception`, `rate-limited` + 429 over `HasProblemType`) — never its own
+  `problemType()`. Without it, on an API Platform operation, the `type` falls back to `/errors/429`,
+  derived from the status alone, which is what the contact, set-password and translation quotas answered
+  until #369. `QuotaExceptionsContractTest` (formerly `QuotaExceptionsAreRetryAfterAwareTest`) walks every
+  `RetryAfterAware` of `src/` (`DeclaredClasses`) and enforces both the deadline and the problem type;
+  each route's functional 429 test reads the `type`. **No `exception_to_status` entry for a quota**: on an
+  API Platform operation `getStatus()` already gives the 429, and an entry is a second source that can
+  only diverge — `ErrorListener::getStatusCode` reads the map *first* for the HTTP status, while
+  `Error::createFromException` fills the body's `status` from `getStatus()`, so an entry at 503 would answer
+  HTTP 503 with `"status": 429` and no `Retry-After`. `ProblemStatusMatchesExceptionToStatusTest` (#369)
+  turns red when any entry, global or on a resource or operation, contradicts the `getStatus()` of a
+  `ProblemExceptionInterface` of `src/` — the 409s that keep both (`CannotModifyOwnRolesException`…) included.
+  **`login_throttling` is one of them since issue #399**: `Security/Authentication/Infrastructure/Security/LoginThrottlingRefusalListener`
+  (`LoginFailureEvent`, `login` firewall, priority **-200**, after the counter, the `login-throttled` audit
+  and `FailedLoginTimingEqualizer`) throws `LoginRateLimitExceededException` on a
+  `TooManyLoginAttemptsAuthenticationException`, and the shared path above renders it — never build that
+  429 in a failure handler. Its deadline is the exception's `%minutes%` (Symfony's ceiling of the limiter's
+  deadline, an upper bound off by at most 59 s, falling back to one minute): no second read of the
+  limiter's storage on the path an attacker hammers. Every other login failure keeps Lexik's 401, byte for
+  byte (audit A10). Three consumers read that 429: `LoginThrottlingTest`, the login page
+  (`LoginRateLimitedError`) and the preprod smoke test (`tools/smoke-login-throttling.sh`), which tells it
+  from the nginx `login` zone's 429 by its `Retry-After` and its literal `detail` — nginx sends the same
+  `type`, without the header and with its own `detail`.
 

@@ -12,6 +12,7 @@ use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Tests\Portfolio\Shared\Support\ImmediateOrderScopeLock;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
 
@@ -22,7 +23,7 @@ final class AboutMeCardAdministratorTest extends TestCase
         $repository = $this->createMock(AboutMeCardRepositoryInterface::class);
         $repository->expects(self::once())->method('save')->with(self::isInstanceOf(AboutMeCard::class));
 
-        $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner());
+        $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
         $card = $administrator->create(Locale::FR, AboutMeCardCategory::TECHNICAL, 'Développeur', 'Description.', 'code');
 
@@ -38,7 +39,7 @@ final class AboutMeCardAdministratorTest extends TestCase
         $repository->expects(self::once())->method('findOneById')->with($card->getId())->willReturn($card);
         $repository->expects(self::once())->method('save')->with($card);
 
-        $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner());
+        $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
         $updated = $administrator->update($card->getId(), 'Moto', 'New description.', 'motorbike', null);
 
@@ -51,7 +52,7 @@ final class AboutMeCardAdministratorTest extends TestCase
         $repository = self::createStub(AboutMeCardRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
-        $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner());
+        $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
         $this->expectException(AboutMeCardNotFoundException::class);
 
@@ -66,7 +67,7 @@ final class AboutMeCardAdministratorTest extends TestCase
         $repository->expects(self::once())->method('findOneById')->with($card->getId())->willReturn($card);
         $repository->expects(self::once())->method('remove')->with($card);
 
-        $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner());
+        $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
         $administrator->delete($card->getId());
     }
@@ -76,7 +77,7 @@ final class AboutMeCardAdministratorTest extends TestCase
         $repository = self::createStub(AboutMeCardRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
-        $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner());
+        $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
         $this->expectException(AboutMeCardNotFoundException::class);
 
@@ -104,7 +105,7 @@ final class AboutMeCardAdministratorTest extends TestCase
         $repository->expects(self::never())->method('save');
         $repository->expects(self::once())->method('saveAll')->with([$first, $second]);
 
-        $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner());
+        $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
         $administrator->reorder(AboutMeCardCategory::TECHNICAL, [$second->getTranslationGroup()->toRfc4122(), $first->getTranslationGroup()->toRfc4122()]);
 

@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Ai\Translation\Domain\Exception;
 
+use InvalidArgumentException;
+
 /**
  * Requête de traduction incohérente (locales identiques, dictionnaire vide,
  * valeur blanche). Le DTO d'entrée la prévient par validation (422) : si elle
  * remonte jusqu'ici, c'est un défaut de programmation, pas une saisie.
  */
-final class InvalidTranslationRequestException extends \InvalidArgumentException
+final class InvalidTranslationRequestException extends InvalidArgumentException
 {
     public static function identicalLocales(string $locale): self
     {

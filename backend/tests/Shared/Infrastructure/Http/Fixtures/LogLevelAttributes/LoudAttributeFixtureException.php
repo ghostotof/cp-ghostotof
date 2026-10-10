@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes;
 
+use DomainException;
 use Psr\Log\LogLevel;
 use Symfony\Component\HttpKernel\Attribute\WithHttpStatus;
 use Symfony\Component\HttpKernel\Attribute\WithLogLevel;
@@ -14,6 +15,6 @@ use Symfony\Component\HttpKernel\Attribute\WithLogLevel;
  */
 #[WithHttpStatus(404)]
 #[WithLogLevel(LogLevel::CRITICAL)]
-final class LoudAttributeFixtureException extends \DomainException
+final class LoudAttributeFixtureException extends DomainException
 {
 }

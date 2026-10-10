@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\Tests\Ai\Assistant\Infrastructure\Pdf;
 
-use Monolog\LogRecord;
 use App\Ai\Assistant\Infrastructure\Pdf\ExtractedTextNormalizer;
 use App\Ai\Assistant\Infrastructure\Pdf\PopplerPdfTextExtractor;
+use FilesystemIterator;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
+use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -42,7 +43,7 @@ final class PopplerPdfTextExtractorTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (new \FilesystemIterator($this->workDirectory) as $file) {
+        foreach (new FilesystemIterator($this->workDirectory) as $file) {
             unlink((string) $file);
         }
         rmdir($this->workDirectory);

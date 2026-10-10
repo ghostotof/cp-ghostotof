@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ai\Assistant\Domain\ValueObject;
 
 use App\Ai\Assistant\Domain\Exception\InvalidConversationException;
+use Countable;
 
 /**
  * Conversation envoyée par la personne, dans l'ordre reçu. Rien n'en est
@@ -21,7 +22,7 @@ use App\Ai\Assistant\Domain\Exception\InvalidConversationException;
  * à 26 000 caractères. Le frontend retire les échanges les plus anciens de sa
  * fenêtre glissante pour rester dessous.
  */
-final readonly class Conversation implements \Countable
+final readonly class Conversation implements Countable
 {
     public const int MAX_MESSAGES = 11;
     public const int MAX_TOTAL_LENGTH = 16000;

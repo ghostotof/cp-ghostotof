@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Http;
 
 use App\Shared\Infrastructure\Http\CanonicalPath;
+use App\Shared\Infrastructure\Http\MalformedPathPrefixException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -105,7 +106,7 @@ final class CanonicalPathTest extends TestCase
     #[DataProvider('malformedPrefixes')]
     public function testAMalformedPrefixIsRefused(string $prefix): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(MalformedPathPrefixException::class);
 
         CanonicalPath::isUnder(Request::create('/api/assistant/answers'), $prefix);
     }

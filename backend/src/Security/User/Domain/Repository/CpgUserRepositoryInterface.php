@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Security\User\Domain\Repository;
 
 use App\Security\User\Domain\Entity\CpgUser;
+use DateTimeImmutable;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -38,7 +39,7 @@ interface CpgUserRepositoryInterface
      *
      * @return list<CpgUser>
      */
-    public function findAwaitingPasswordSetupInvitedBefore(\DateTimeImmutable $threshold): array;
+    public function findAwaitingPasswordSetupInvitedBefore(DateTimeImmutable $threshold): array;
 
     /**
      * Nombre d'utilisateurs possédant le rôle donné (rôles implicites inclus,

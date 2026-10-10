@@ -96,7 +96,7 @@ final readonly class SendAccountInvitationHandler
         // serveur, il n'atteint donc ni les access logs du nginx frontend ni
         // ceux de l'ingress. La page le lit côté client, puis l'efface de
         // l'URL (cf. SetPasswordPage.vue).
-        $setupUrl = sprintf(
+        $setupUrl = \sprintf(
             '%s/%s/set-password#%s',
             rtrim($this->frontendBaseUrl, '/'),
             $locale->value,

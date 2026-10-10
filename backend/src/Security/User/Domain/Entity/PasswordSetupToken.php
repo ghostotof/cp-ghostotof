@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Security\User\Domain\Entity;
 
 use App\Security\User\Infrastructure\Doctrine\PasswordSetupTokenRepository;
+use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
@@ -37,12 +38,12 @@ class PasswordSetupToken
     private string $tokenHash;
 
     #[ORM\Column]
-    private \DateTimeImmutable $expiresAt;
+    private DateTimeImmutable $expiresAt;
 
     #[ORM\Column(nullable: true)]
-    private ?\DateTimeImmutable $usedAt = null;
+    private ?DateTimeImmutable $usedAt = null;
 
-    public function __construct(CpgUser $user, string $tokenHash, \DateTimeImmutable $expiresAt)
+    public function __construct(CpgUser $user, string $tokenHash, DateTimeImmutable $expiresAt)
     {
         $this->id = Uuid::v7();
         $this->user = $user;
@@ -65,18 +66,18 @@ class PasswordSetupToken
         return $this->tokenHash;
     }
 
-    public function getExpiresAt(): \DateTimeImmutable
+    public function getExpiresAt(): DateTimeImmutable
     {
         return $this->expiresAt;
     }
 
-    public function getUsedAt(): ?\DateTimeImmutable
+    public function getUsedAt(): ?DateTimeImmutable
     {
         return $this->usedAt;
     }
 
     /** Ni déjà utilisé, ni expiré à l'instant `$now`. */
-    public function isUsable(\DateTimeImmutable $now): bool
+    public function isUsable(DateTimeImmutable $now): bool
     {
         return !$this->wasUsed() && $now < $this->expiresAt;
     }
@@ -90,7 +91,7 @@ class PasswordSetupToken
         return null !== $this->usedAt;
     }
 
-    public function markUsed(\DateTimeImmutable $usedAt): void
+    public function markUsed(DateTimeImmutable $usedAt): void
     {
         $this->usedAt = $usedAt;
     }

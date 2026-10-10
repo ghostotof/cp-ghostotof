@@ -11,6 +11,9 @@ use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\AttributeLo
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\LoudAttributeFixtureException;
 use App\Tests\Support\CompiledExceptionConfig;
 use App\Tests\Support\ExtraConfigKernel;
+use DomainException;
+use OverflowException;
+use RuntimeException;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpKernel\KernelInterface;
 
@@ -56,7 +59,7 @@ final class CompiledExceptionConfigTest extends KernelTestCase
         $mapping = CompiledExceptionConfig::exceptionsMapping(self::getContainer()->get('exception_listener'));
 
         self::assertSame('warning', $mapping[CpgUserNotFoundException::class]['log_level'] ?? null, 'La surcharge déclarée ailleurs n\'est pas lue.');
-        self::assertSame('info', $mapping[\DomainException::class]['log_level'] ?? null, 'L\'entrée déclarée ailleurs n\'est pas lue.');
+        self::assertSame('info', $mapping[DomainException::class]['log_level'] ?? null, 'L\'entrée déclarée ailleurs n\'est pas lue.');
     }
 
     /**
@@ -68,7 +71,7 @@ final class CompiledExceptionConfigTest extends KernelTestCase
     {
         self::assertSame(
             [500],
-            CompiledExceptionConfig::statusesFor([[\RuntimeException::class => 500, \OverflowException::class => 404]], \OverflowException::class),
+            CompiledExceptionConfig::statusesFor([[RuntimeException::class => 500, OverflowException::class => 404]], OverflowException::class),
         );
     }
 
@@ -83,10 +86,10 @@ final class CompiledExceptionConfigTest extends KernelTestCase
         $mappings = CompiledExceptionConfig::apiPlatformMappings(
             self::getContainer()->get('api_platform.metadata.resource.metadata_collection_factory'),
             [ExceptionToStatusFixtureResource::class],
-            [\OverflowException::class => 404],
+            [OverflowException::class => 404],
         );
 
-        self::assertSame([404, 422], CompiledExceptionConfig::statusesFor($mappings, \OverflowException::class));
+        self::assertSame([404, 422], CompiledExceptionConfig::statusesFor($mappings, OverflowException::class));
     }
 
     /**
@@ -113,9 +116,9 @@ final class CompiledExceptionConfigTest extends KernelTestCase
      */
     public function testAStatusCodeEntryConvertsTheException(): void
     {
-        $listener = CompiledExceptionConfig::listenerWith([\OverflowException::class => ['status_code' => 404]]);
+        $listener = CompiledExceptionConfig::listenerWith([OverflowException::class => ['status_code' => 404]]);
 
-        self::assertSame([\OverflowException::class => 404], CompiledExceptionConfig::kernelHttpStatus($listener, [\OverflowException::class]));
+        self::assertSame([OverflowException::class => 404], CompiledExceptionConfig::kernelHttpStatus($listener, [OverflowException::class]));
     }
 
     /**
@@ -124,7 +127,7 @@ final class CompiledExceptionConfigTest extends KernelTestCase
      */
     public function testAStatusCodeEntryTakesPrecedenceOverWithHttpStatus(): void
     {
-        $listener = CompiledExceptionConfig::listenerWith([\DomainException::class => ['status_code' => 503]]);
+        $listener = CompiledExceptionConfig::listenerWith([DomainException::class => ['status_code' => 503]]);
 
         self::assertSame(
             [AttributeLoggedFixtureException::class => 503],
@@ -146,7 +149,7 @@ final class CompiledExceptionConfigTest extends KernelTestCase
      */
     public function testAnEntryTakesPrecedenceOverTheAttribute(): void
     {
-        $listener = CompiledExceptionConfig::listenerWith([\DomainException::class => ['log_level' => 'info']]);
+        $listener = CompiledExceptionConfig::listenerWith([DomainException::class => ['log_level' => 'info']]);
 
         self::assertSame('info', CompiledExceptionConfig::kernelLogLevel($listener, LoudAttributeFixtureException::class));
     }

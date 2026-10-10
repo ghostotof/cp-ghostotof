@@ -11,10 +11,13 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
+use App\Portfolio\Experience\Domain\Exception\InvalidExperienceYearsException;
+use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use App\Portfolio\Experience\Infrastructure\ApiPlatform\BackofficeExperienceTechnologyProcessor;
 use App\Portfolio\Experience\Infrastructure\ApiPlatform\BackofficeExperienceTechnologyProvider;
 use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
  * CRUD réservé ROLE_SUPER (cf. access_control ^/api/backoffice dans
@@ -60,7 +63,7 @@ final class BackofficeExperienceTechnologyResource
         #[Assert\NotBlank]
         #[Assert\Length(max: 180)]
         public string $name = '',
-        #[Assert\PositiveOrZero]
+        /** Validé par validateYears(), qui délègue à ExperienceYears (issue #372). */
         public float $years = 0.0,
         #[Assert\Length(max: 60)]
         public ?string $iconKey = null,
@@ -72,6 +75,25 @@ final class BackofficeExperienceTechnologyResource
          */
         public bool $secondary = false,
     ) {
+    }
+
+    /**
+     * La règle de la durée n'est écrite qu'une fois, dans ExperienceYears : la
+     * recopier en `PositiveOrZero` + `LessThanOrEqual` la dupliquait, et
+     * rendait à l'admin le « This value should be… » générique au lieu du
+     * message du domaine. La violation reste attachée à `years`, la forme que
+     * les formulaires d'administration affichent déjà sous le champ.
+     */
+    #[Assert\Callback]
+    public function validateYears(ExecutionContextInterface $context): void
+    {
+        try {
+            ExperienceYears::fromFloat($this->years);
+        } catch (InvalidExperienceYearsException $exception) {
+            $context->buildViolation($exception->getMessage())
+                ->atPath('years')
+                ->addViolation();
+        }
     }
 
     /**

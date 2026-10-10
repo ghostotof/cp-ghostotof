@@ -6,7 +6,9 @@ namespace App\Security\User\Presentation\Command;
 
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\InvalidUsernameException;
 use App\Security\User\Domain\Exception\UsernameAlreadyUsedException;
+use App\Shared\Presentation\Command\InvalidConsoleAnswerException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -61,7 +63,7 @@ final class CreateCpgUserCommand extends Command
         $this
             ->addOption('username', null, InputOption::VALUE_REQUIRED, 'Nom d\'utilisateur')
             ->addOption('password', null, InputOption::VALUE_REQUIRED, 'Mot de passe en clair (usage scripté uniquement)')
-            ->addOption('role', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, sprintf('Rôle additionnel à attribuer (répétable), parmi : %s', implode(', ', self::ALLOWED_ROLES)))
+            ->addOption('role', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, \sprintf('Rôle additionnel à attribuer (répétable), parmi : %s', implode(', ', self::ALLOWED_ROLES)))
         ;
     }
 
@@ -69,26 +71,26 @@ final class CreateCpgUserCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        $username = $input->getOption('username') ?? $io->ask('Nom d\'utilisateur', validator: $this->validateUsername(...));
-        \assert(\is_string($username));
+        $username = $this->resolveUsername($input, $io);
 
-        if (1 !== preg_match(CpgUser::USERNAME_PATTERN, $username)) {
-            $io->error('Le nom d\'utilisateur doit contenir entre 3 et 60 caractères (lettres, chiffres, ".", "_" ou "-").');
-
+        if (null === $username) {
             return Command::FAILURE;
         }
 
-        $plainPassword = $input->getOption('password') ?? $this->askPassword($io);
-        \assert(\is_string($plainPassword));
+        $plainPassword = $this->resolvePassword($input, $io);
+
+        if (null === $plainPassword) {
+            return Command::FAILURE;
+        }
 
         if (\strlen($plainPassword) < CpgUser::MIN_PASSWORD_LENGTH) {
-            $io->error(sprintf('Le mot de passe doit contenir au moins %d caractères.', CpgUser::MIN_PASSWORD_LENGTH));
+            $io->error(\sprintf('Le mot de passe doit contenir au moins %d caractères.', CpgUser::MIN_PASSWORD_LENGTH));
 
             return Command::FAILURE;
         }
 
         if (\strlen($plainPassword) > CpgUser::MAX_PASSWORD_LENGTH) {
-            $io->error(sprintf('Le mot de passe ne doit pas dépasser %d caractères.', CpgUser::MAX_PASSWORD_LENGTH));
+            $io->error(\sprintf('Le mot de passe ne doit pas dépasser %d caractères.', CpgUser::MAX_PASSWORD_LENGTH));
 
             return Command::FAILURE;
         }
@@ -107,7 +109,7 @@ final class CreateCpgUserCommand extends Command
         $unknownRoles = array_diff($roles, self::ALLOWED_ROLES);
 
         if ([] !== $unknownRoles) {
-            $io->error(sprintf('Rôle(s) inconnu(s) : %s. Rôles autorisés : %s.', implode(', ', $unknownRoles), implode(', ', self::ALLOWED_ROLES)));
+            $io->error(\sprintf('Rôle(s) inconnu(s) : %s. Rôles autorisés : %s.', implode(', ', $unknownRoles), implode(', ', self::ALLOWED_ROLES)));
 
             return Command::FAILURE;
         }
@@ -120,45 +122,117 @@ final class CreateCpgUserCommand extends Command
             return Command::FAILURE;
         }
 
-        $io->success(sprintf('Utilisateur "%s" créé (id: %s).', $user->getUsername(), $user->getId()->toRfc4122()));
+        $io->success(\sprintf('Utilisateur "%s" créé (id: %s).', $user->getUsername(), $user->getId()->toRfc4122()));
 
         return Command::SUCCESS;
     }
 
+    /**
+     * L'option, ou la question, dont le validateur fait reposer la saisie tant
+     * qu'elle est refusée. Null après un message d'erreur : la commande échoue.
+     *
+     * Deux pièges du QuestionHelper (issue #383) : en non interactif, `ask()`
+     * rend la valeur par défaut (null) sans passer par le validateur, d'où le
+     * refus qui nomme l'option ; et sur une fin d'entrée après une saisie
+     * refusée, il relance la dernière erreur du validateur, d'où `ask()` dans
+     * le `try` — sans quoi elle quitterait la commande et le ErrorListener de
+     * la console la journaliserait en `critical`.
+     */
+    private function resolveUsername(InputInterface $input, SymfonyStyle $io): ?string
+    {
+        try {
+            $username = $input->getOption('username') ?? $io->ask('Nom d\'utilisateur', validator: $this->validateUsername(...));
+
+            if (null === $username) {
+                $io->error('Aucun nom d\'utilisateur : en mode non interactif, passez --username.');
+
+                return null;
+            }
+
+            return $this->validateUsername($username);
+        } catch (InvalidUsernameException $exception) {
+            $io->error($exception->getMessage());
+
+            return null;
+        }
+    }
+
+    /**
+     * La règle est celle du domaine (CpgUser::USERNAME_PATTERN), le message
+     * aussi, sans la saisie : le QuestionHelper l'affiche et repose la question.
+     *
+     * @throws InvalidUsernameException
+     */
     private function validateUsername(mixed $username): string
     {
         if (!\is_string($username) || 1 !== preg_match(CpgUser::USERNAME_PATTERN, $username)) {
-            throw new \InvalidArgumentException('Le nom d\'utilisateur doit contenir entre 3 et 60 caractères (lettres, chiffres, ".", "_" ou "-").');
+            throw InvalidUsernameException::invalidFormat();
         }
 
         return $username;
     }
 
-    private function askPassword(SymfonyStyle $io): string
+    /**
+     * L'option, ou deux questions masquées. Null après un message d'erreur :
+     * pas de saisie en non interactif, une fin d'entrée après une saisie vide
+     * (mêmes pièges que resolveUsername()), ou une confirmation qui diffère —
+     * refusée comme toute autre saisie, par un message et le code 1, pas par
+     * une exception qui quitterait la commande.
+     */
+    private function resolvePassword(InputInterface $input, SymfonyStyle $io): ?string
     {
-        $question = new Question('Mot de passe');
-        $question->setHidden(true);
-        $question->setHiddenFallback(false);
-        $question->setValidator(function (mixed $value): string {
-            if (!\is_string($value) || '' === $value) {
-                throw new \InvalidArgumentException('Le mot de passe ne peut pas être vide.');
-            }
+        $option = $input->getOption('password');
 
-            return $value;
-        });
+        if (\is_string($option)) {
+            return $option;
+        }
 
-        $password = $io->askQuestion($question);
-        \assert(\is_string($password));
+        try {
+            $password = $io->askQuestion($this->hiddenQuestion('Mot de passe', static function (mixed $value): string {
+                if (!\is_string($value) || '' === $value) {
+                    throw InvalidConsoleAnswerException::empty('Le mot de passe');
+                }
 
-        $confirmationQuestion = new Question('Confirmez le mot de passe');
-        $confirmationQuestion->setHidden(true);
-        $confirmationQuestion->setHiddenFallback(false);
-        $confirmation = $io->askQuestion($confirmationQuestion);
+                return $value;
+            }));
+        } catch (InvalidConsoleAnswerException $exception) {
+            $io->error($exception->getMessage());
 
-        if ($password !== $confirmation) {
-            throw new \InvalidArgumentException('Les deux mots de passe saisis ne correspondent pas.');
+            return null;
+        }
+
+        if (!\is_string($password)) {
+            $io->error('Aucun mot de passe : en mode non interactif, passez --password.');
+
+            return null;
+        }
+
+        if ($password !== $io->askQuestion($this->hiddenQuestion('Confirmez le mot de passe'))) {
+            $io->error('Les deux mots de passe saisis ne correspondent pas.');
+
+            return null;
         }
 
         return $password;
+    }
+
+    /**
+     * Une question masquée qui rend le mot de passe tel qu'il a été tapé.
+     * Une question est rognée par défaut, alors que `--password` et json_login
+     * le prennent tel quel : une espace en tête ou en fin donnait un compte
+     * inutilisable (issue #383). Sans rognage, la lecture garde en revanche la
+     * fin de ligne de la saisie : le normaliseur, appliqué avant le
+     * validateur, retire celle-là et rien d'autre.
+     */
+    private function hiddenQuestion(string $label, ?callable $validator = null): Question
+    {
+        $question = new Question($label);
+        $question->setHidden(true);
+        $question->setHiddenFallback(false);
+        $question->setTrimmable(false);
+        $question->setNormalizer(static fn (mixed $value): mixed => \is_string($value) ? preg_replace('/\r?\n\z/', '', $value) : $value);
+        $question->setValidator($validator);
+
+        return $question;
     }
 }

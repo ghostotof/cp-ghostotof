@@ -7,17 +7,26 @@ namespace App\Portfolio\Incident\Application;
 use App\Portfolio\Incident\Domain\Entity\Incident;
 use App\Portfolio\Incident\Domain\Exception\IncidentNotFoundException;
 use App\Portfolio\Incident\Domain\Repository\IncidentRepositoryInterface;
+use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use DateTimeImmutable;
 use Symfony\Component\Uid\Uuid;
 
 final readonly class IncidentAdministrator implements IncidentAdministratorInterface
 {
+    /**
+     * Périmètre d'ordre, verrouillé par toute écriture qui place une entrée
+     * (issue #389) : la table entière, toutes langues confondues.
+     */
+    private const string ORDER_SCOPE = Incident::class;
+
     public function __construct(
         private IncidentRepositoryInterface $incidentRepository,
         private ContentPlacement $contentPlacement,
         private OrderAssigner $orderAssigner,
+        private OrderScopeLockInterface $orderScopeLock,
     ) {
     }
 
@@ -25,56 +34,60 @@ final readonly class IncidentAdministrator implements IncidentAdministratorInter
         Locale $locale,
         string $title,
         string $version,
-        \DateTimeImmutable $occurredAt,
+        DateTimeImmutable $occurredAt,
         string $impact,
         string $rootCause,
         string $resolution,
         string $invariant,
         ?Uuid $translationGroup = null,
     ): Incident {
-        $incident = new Incident($locale, $title, $version, $occurredAt, $impact, $rootCause, $resolution, $invariant, $this->positionFor($locale, $translationGroup), $translationGroup);
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($locale, $title, $version, $occurredAt, $impact, $rootCause, $resolution, $invariant, $translationGroup): Incident {
+            $incident = new Incident($locale, $title, $version, $occurredAt, $impact, $rootCause, $resolution, $invariant, $this->positionFor($locale, $translationGroup), $translationGroup);
 
-        $this->incidentRepository->save($incident);
+            $this->incidentRepository->save($incident);
 
-        return $incident;
+            return $incident;
+        });
     }
 
     public function update(
         Uuid $id,
         string $title,
         string $version,
-        \DateTimeImmutable $occurredAt,
+        DateTimeImmutable $occurredAt,
         string $impact,
         string $rootCause,
         string $resolution,
         string $invariant,
         ?Uuid $translationGroup,
     ): Incident {
-        $incident = $this->incidentRepository->findOneById($id);
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $title, $version, $occurredAt, $impact, $rootCause, $resolution, $invariant, $translationGroup): Incident {
+            $incident = $this->incidentRepository->findOneById($id);
 
-        if (null === $incident) {
-            throw IncidentNotFoundException::forId($id);
-        }
+            if (null === $incident) {
+                throw IncidentNotFoundException::forId($id);
+            }
 
-        if (null === $translationGroup) {
-            // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
-            // le chargement du périmètre — le même qu'à la création sans groupe.
-            $this->contentPlacement->detach(
-                $incident,
-                $this->incidentRepository->findByTranslationGroup($incident->getTranslationGroup()),
-                $this->incidentRepository->findAll(),
-            );
-        } else {
-            $this->contentPlacement->reattach(
-                $incident,
-                $translationGroup,
-                $this->incidentRepository->findByTranslationGroup($translationGroup),
-            );
-        }
-        $incident->update($title, $version, $occurredAt, $impact, $rootCause, $resolution, $invariant);
-        $this->incidentRepository->save($incident);
+            if (null === $translationGroup) {
+                // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
+                // le chargement du périmètre — le même qu'à la création sans groupe.
+                $this->contentPlacement->detach(
+                    $incident,
+                    $this->incidentRepository->findByTranslationGroup($incident->getTranslationGroup()),
+                    $this->incidentRepository->findAll(),
+                );
+            } else {
+                $this->contentPlacement->reattach(
+                    $incident,
+                    $translationGroup,
+                    $this->incidentRepository->findByTranslationGroup($translationGroup),
+                );
+            }
+            $incident->update($title, $version, $occurredAt, $impact, $rootCause, $resolution, $invariant);
+            $this->incidentRepository->save($incident);
 
-        return $incident;
+            return $incident;
+        });
     }
 
     public function delete(Uuid $id): void
@@ -90,11 +103,13 @@ final readonly class IncidentAdministrator implements IncidentAdministratorInter
 
     public function reorder(array $keys): void
     {
-        $scope = $this->incidentRepository->findAll();
+        $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($keys): void {
+            $scope = $this->incidentRepository->findAll();
 
-        $this->orderAssigner->assign($scope, $keys);
+            $this->orderAssigner->assign($scope, $keys);
 
-        $this->incidentRepository->saveAll($scope);
+            $this->incidentRepository->saveAll($scope);
+        });
     }
 
     /**

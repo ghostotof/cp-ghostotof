@@ -6,6 +6,7 @@ namespace App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources;
 
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use App\Shared\Domain\Exception\HasProblemType;
+use DomainException;
 
 /*
  * Fixture d'ExceptionLogLevelCoverageTest (issue #348) : un fichier qui
@@ -13,7 +14,7 @@ use App\Shared\Domain\Exception\HasProblemType;
  * déduirait la classe du chemin (PSR-4) ne verrait ni l'une ni l'autre.
  */
 
-final class UnloggedFixtureProblemException extends \DomainException implements ProblemExceptionInterface
+final class UnloggedFixtureProblemException extends DomainException implements ProblemExceptionInterface
 {
     use HasProblemType;
 
@@ -28,7 +29,7 @@ final class UnloggedFixtureProblemException extends \DomainException implements 
     }
 }
 
-final class LoggedFixtureProblemException extends \DomainException implements ProblemExceptionInterface
+final class LoggedFixtureProblemException extends DomainException implements ProblemExceptionInterface
 {
     use HasProblemType;
 

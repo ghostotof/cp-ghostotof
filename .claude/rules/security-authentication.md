@@ -88,9 +88,10 @@ paths:
     changes. The submitted password is never read. The response is untouched — the three 401s must stay
     byte-identical, which is the other half of non-enumeration.
     `FailedLoginTimingEqualizerTest` + `tests/Security/Authentication/LoginFailureTimingTest.php` pin it.
-    Related fact worth knowing: `login_throttling` answers **401** with `Too many failed login attempts`,
-    not 429 — it is Lexik's failure handler that shapes the response (`LoginThrottlingTest`,
-    `tools/smoke-login-throttling.sh`).
+    Related fact worth knowing: `login_throttling` answers a **429** `/errors/rate-limited` with
+    `Retry-After` since issue #399, the only failure that leaves Lexik's 401 — it says nothing about the
+    account. `LoginThrottlingRefusalListener` throws it at priority -200, below this listener; see "Every
+    quota 429" in `.claude/rules/backoffice-api.md`.
   - **`Infrastructure/Log/SecurityAuditLogger.php` is the single entry point of the security audit log**
     (3rd audit, A5/D5, Monolog channel `security_audit`, `info`, JSON on stderr in prod — see
     `monolog.yaml`). Implements `Application/SecurityAuditLoggerInterface`, one method per event:
@@ -150,8 +151,8 @@ paths:
     `contact-throttled`, `base-access-throttled`, no subject (the limiter's key is the IP). A listener rather
     than a call at the three throw sites on purpose: `Contact` would otherwise be the first context to
     depend on `Security` — the price is that this listener imports `Contact`'s quota exception. The
-    translator's quota is **not** there: it is a `ROLE_SUPER` account, traced on `ai_usage` (see
-    `.claude/rules/ai.md`). Since these events exist, the matching exceptions are back to `info` in
+    per-account quotas are **not** there — the translator's (`ROLE_SUPER`) and the career assistant's
+    (`ROLE_TRUSTED`), both traced with the account on `ai_usage` (see `.claude/rules/ai.md`). Since these events exist, the matching exceptions are back to `info` in
     `framework.exceptions`. Accepted limits, settled in the review of #356 — don't "fix" them without
     revisiting the trade-off: **`replayed` and `rejected` have legitimate sources** — the set-password page
     calls `validate` on every load, so a person reopening their own link after activation writes
@@ -161,7 +162,18 @@ paths:
     nginx zones (10/min/IP contact, 20/min/IP base-access), well below what `csrf-rejected` already allows.
     **Blind spots of the listener**: a 429 answered by nginx's `limit_req` never reaches PHP (the access log
     is its trace), and a quota exception wrapped in another one would go unseen (`instanceof` on the
-    top-level throwable only). **Replay and expiry must cost the same**: `findOneByTokenHash` loads the
+    top-level throwable only). **The sort is a closed list, so a guard holds it open** (issue #361):
+    `ThrottledRequestAuditCoverageTest` walks every `RetryAfterAware` of `src/` (through `DeclaredClasses`),
+    hands each one to the real listener, and turns red unless it yields exactly one event of its own — a
+    `…Throttled` method, never `loginThrottled` nor an unrelated one such as `rateLimiterUnavailable` — or
+    sits in a justified list: `PER_ACCOUNT` (the translator and the assistant, both on `ai_usage`, pinned by
+    their own tests) or `TRACED_UPSTREAM` (issue #399: `LoginRateLimitExceededException`, whose
+    `login-throttled` — with the tried username — `SecurityEventsSubscriber` writes on `LoginFailureEvent`
+    before the exception exists; sorting it again would log the refusal twice). The guard checks that the
+    listener ignores every justified entry. A new anonymous quota therefore gets its `…Throttled` interface
+    method, its `match` arm and its event in the same change — never a justified entry to make the suite
+    pass. The guard calls the listener directly: it proves the sort, not that the
+    exception reaches priority 0 unwrapped — `SecurityAuditLogTest` covers the real wiring, extend it too. **Replay and expiry must cost the same**: `findOneByTokenHash` loads the
     account by explicit join, so the `replayed` path, which logs it, pays no extra query behind the
     shared 410 — keep the join. **Consumption is atomic**: `PasswordSetupService::complete()` hashes, then
     `PasswordSetupTokenRepository::claim()` (`UPDATE … WHERE used_at IS NULL`, one row or none), and only

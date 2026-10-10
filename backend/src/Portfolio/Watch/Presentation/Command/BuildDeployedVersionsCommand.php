@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Portfolio\Watch\Presentation\Command;
 
 use App\Portfolio\Watch\Infrastructure\Manifest\DeployedVersionsBuilder;
+use DateTimeImmutable;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -38,7 +39,7 @@ final class BuildDeployedVersionsCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        $versions = $this->builder->build(new \DateTimeImmutable());
+        $versions = $this->builder->build(new DateTimeImmutable());
 
         if ([] === $versions) {
             // Sortie en succès malgré tout : hors du conteneur outillé, les
@@ -50,10 +51,10 @@ final class BuildDeployedVersionsCommand extends Command
         }
 
         foreach ($versions as $slug => $version) {
-            $io->writeln(sprintf('  <info>%-12s</info> %s', $slug, $version));
+            $io->writeln(\sprintf('  <info>%-12s</info> %s', $slug, $version));
         }
 
-        $io->success(sprintf('%d version(s) relevée(s).', \count($versions)));
+        $io->success(\sprintf('%d version(s) relevée(s).', \count($versions)));
 
         return Command::SUCCESS;
     }

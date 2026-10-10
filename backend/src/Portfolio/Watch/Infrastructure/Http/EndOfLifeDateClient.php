@@ -11,6 +11,8 @@ use App\Portfolio\Watch\Domain\Service\ReleaseCycleSourceInterface;
 use App\Portfolio\Watch\Domain\ValueObject\ProductReleaseCycles;
 use App\Portfolio\Watch\Domain\ValueObject\ReleaseCycle;
 use App\Portfolio\Watch\Infrastructure\ReadsUntrustedArrays;
+use DateTimeImmutable;
+use Exception;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExceptionInterface;
@@ -229,7 +231,7 @@ final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
     /**
      * @param array<mixed> $data
      */
-    private function readDate(array $data, string $key): ?\DateTimeImmutable
+    private function readDate(array $data, string $key): ?DateTimeImmutable
     {
         $value = $this->readString($data, $key);
         if (null === $value) {
@@ -237,8 +239,8 @@ final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
         }
 
         try {
-            return new \DateTimeImmutable($value);
-        } catch (\Exception) {
+            return new DateTimeImmutable($value);
+        } catch (Exception) {
             return null;
         }
     }

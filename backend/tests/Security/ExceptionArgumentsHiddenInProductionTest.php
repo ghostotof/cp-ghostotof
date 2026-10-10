@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
  * La valeur intégrée de PHP est `zend.exception_ignore_args = Off` : chaque
  * frame d'une trace garde alors ses arguments, un DSN avec son mot de passe, un
  * mot de passe soumis, un jeton. Aujourd'hui rien ne fuit — les signatures qui
- * les reçoivent portent `#[\SensitiveParameter]` et le formateur JSON de
+ * les reçoivent portent `#[SensitiveParameter]` et le formateur JSON de
  * Monolog n'écrit pas les stacktraces — mais cette protection tient signature
  * par signature : la première qui l'oublie suffit. La directive la rend globale.
  *

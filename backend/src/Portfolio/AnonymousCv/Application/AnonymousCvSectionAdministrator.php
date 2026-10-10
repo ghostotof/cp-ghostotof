@@ -7,6 +7,7 @@ namespace App\Portfolio\AnonymousCv\Application;
 use App\Portfolio\AnonymousCv\Domain\Entity\AnonymousCvSection;
 use App\Portfolio\AnonymousCv\Domain\Exception\AnonymousCvSectionNotFoundException;
 use App\Portfolio\AnonymousCv\Domain\Repository\AnonymousCvSectionRepositoryInterface;
+use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -14,10 +15,17 @@ use Symfony\Component\Uid\Uuid;
 
 final readonly class AnonymousCvSectionAdministrator implements AnonymousCvSectionAdministratorInterface
 {
+    /**
+     * Périmètre d'ordre, verrouillé par toute écriture qui place une entrée
+     * (issue #389) : la table entière, toutes langues confondues.
+     */
+    private const string ORDER_SCOPE = AnonymousCvSection::class;
+
     public function __construct(
         private AnonymousCvSectionRepositoryInterface $sectionRepository,
         private ContentPlacement $contentPlacement,
         private OrderAssigner $orderAssigner,
+        private OrderScopeLockInterface $orderScopeLock,
     ) {
     }
 
@@ -29,11 +37,13 @@ final readonly class AnonymousCvSectionAdministrator implements AnonymousCvSecti
         string $achievements,
         ?Uuid $translationGroup = null,
     ): AnonymousCvSection {
-        $section = new AnonymousCvSection($locale, $title, $skills, $yearsOfExperience, $achievements, $this->positionFor($locale, $translationGroup), $translationGroup);
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($locale, $title, $skills, $yearsOfExperience, $achievements, $translationGroup): AnonymousCvSection {
+            $section = new AnonymousCvSection($locale, $title, $skills, $yearsOfExperience, $achievements, $this->positionFor($locale, $translationGroup), $translationGroup);
 
-        $this->sectionRepository->save($section);
+            $this->sectionRepository->save($section);
 
-        return $section;
+            return $section;
+        });
     }
 
     public function update(
@@ -44,31 +54,33 @@ final readonly class AnonymousCvSectionAdministrator implements AnonymousCvSecti
         string $achievements,
         ?Uuid $translationGroup,
     ): AnonymousCvSection {
-        $section = $this->sectionRepository->findOneById($id);
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $title, $skills, $yearsOfExperience, $achievements, $translationGroup): AnonymousCvSection {
+            $section = $this->sectionRepository->findOneById($id);
 
-        if (null === $section) {
-            throw AnonymousCvSectionNotFoundException::forId($id);
-        }
+            if (null === $section) {
+                throw AnonymousCvSectionNotFoundException::forId($id);
+            }
 
-        if (null === $translationGroup) {
-            // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
-            // le chargement du périmètre — le même qu'à la création sans groupe.
-            $this->contentPlacement->detach(
-                $section,
-                $this->sectionRepository->findByTranslationGroup($section->getTranslationGroup()),
-                $this->sectionRepository->findAll(),
-            );
-        } else {
-            $this->contentPlacement->reattach(
-                $section,
-                $translationGroup,
-                $this->sectionRepository->findByTranslationGroup($translationGroup),
-            );
-        }
-        $section->update($title, $skills, $yearsOfExperience, $achievements);
-        $this->sectionRepository->save($section);
+            if (null === $translationGroup) {
+                // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
+                // le chargement du périmètre — le même qu'à la création sans groupe.
+                $this->contentPlacement->detach(
+                    $section,
+                    $this->sectionRepository->findByTranslationGroup($section->getTranslationGroup()),
+                    $this->sectionRepository->findAll(),
+                );
+            } else {
+                $this->contentPlacement->reattach(
+                    $section,
+                    $translationGroup,
+                    $this->sectionRepository->findByTranslationGroup($translationGroup),
+                );
+            }
+            $section->update($title, $skills, $yearsOfExperience, $achievements);
+            $this->sectionRepository->save($section);
 
-        return $section;
+            return $section;
+        });
     }
 
     public function delete(Uuid $id): void
@@ -84,11 +96,13 @@ final readonly class AnonymousCvSectionAdministrator implements AnonymousCvSecti
 
     public function reorder(array $keys): void
     {
-        $scope = $this->sectionRepository->findAll();
+        $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($keys): void {
+            $scope = $this->sectionRepository->findAll();
 
-        $this->orderAssigner->assign($scope, $keys);
+            $this->orderAssigner->assign($scope, $keys);
 
-        $this->sectionRepository->saveAll($scope);
+            $this->sectionRepository->saveAll($scope);
+        });
     }
 
     /**

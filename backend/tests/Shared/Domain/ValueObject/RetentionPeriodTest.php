@@ -6,11 +6,12 @@ namespace App\Tests\Shared\Domain\ValueObject;
 
 use App\Shared\Domain\Exception\InvalidRetentionPeriodException;
 use App\Shared\Domain\ValueObject\RetentionPeriod;
+use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Issue #248 : `new \DateTimeImmutable('-'.$olderThan)` acceptait en silence
+ * Issue #248 : `new DateTimeImmutable('-'.$olderThan)` acceptait en silence
  * une double négation ("-30 days" -> '--30 days', interprété comme "+30
  * days") et plaçait le seuil de purge dans le futur. `RetentionPeriod` répare
  * ça en comparant le seuil obtenu à `$now`, qui est le seul invariant qui
@@ -90,8 +91,8 @@ final class RetentionPeriodTest extends TestCase
         }
     }
 
-    private function now(): \DateTimeImmutable
+    private function now(): DateTimeImmutable
     {
-        return new \DateTimeImmutable(self::NOW);
+        return new DateTimeImmutable(self::NOW);
     }
 }

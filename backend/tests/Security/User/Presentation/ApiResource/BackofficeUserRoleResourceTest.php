@@ -9,6 +9,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use RuntimeException;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
@@ -78,16 +79,16 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
         $janeId = $this->findId($this->fetchUsers($client), self::PLAIN_USERNAME);
 
         // Promotion
-        $client->request('PUT', sprintf('/api/backoffice/users/%s/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => true]));
+        $client->request('PUT', \sprintf('/api/backoffice/users/%s/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => true]));
         self::assertResponseStatusCodeSame(204);
         self::assertContains(CpgUser::ROLE_SUPER, $this->findRoles($this->fetchUsers($client), self::PLAIN_USERNAME));
 
         // Idempotent
-        $client->request('PUT', sprintf('/api/backoffice/users/%s/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => true]));
+        $client->request('PUT', \sprintf('/api/backoffice/users/%s/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => true]));
         self::assertResponseStatusCodeSame(204);
 
         // Rétrogradation (le compte "super" reste ROLE_SUPER)
-        $client->request('PUT', sprintf('/api/backoffice/users/%s/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => false]));
+        $client->request('PUT', \sprintf('/api/backoffice/users/%s/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => false]));
         self::assertResponseStatusCodeSame(204);
         self::assertNotContains(CpgUser::ROLE_SUPER, $this->findRoles($this->fetchUsers($client), self::PLAIN_USERNAME));
     }
@@ -109,9 +110,9 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
 
         $janeId = $this->findId($this->fetchUsers($client), self::PLAIN_USERNAME);
 
-        $client->request('PUT', sprintf('/api/backoffice/users/%s/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => true]));
+        $client->request('PUT', \sprintf('/api/backoffice/users/%s/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => true]));
         self::assertResponseStatusCodeSame(204);
-        $client->request('PUT', sprintf('/api/backoffice/users/%s/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => false]));
+        $client->request('PUT', \sprintf('/api/backoffice/users/%s/roles', $janeId), server: $server, content: self::jsonBody(['superAdmin' => false]));
         self::assertResponseStatusCodeSame(204);
 
         self::assertNotContains(CpgUser::ROLE_TRUSTED, $this->findRoles($this->fetchUsers($client), self::PLAIN_USERNAME));
@@ -132,7 +133,7 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
 
         $superId = $this->findId($this->fetchUsers($client), self::SUPER_USERNAME);
 
-        $client->request('PUT', sprintf('/api/backoffice/users/%s/roles', $superId), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/users/%s/roles', $superId), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['superAdmin' => false]));
@@ -162,7 +163,7 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $janeId = $this->findId($this->fetchUsers($client), self::PLAIN_USERNAME);
 
-        $client->request('PUT', sprintf('/api/backoffice/users/%s/roles', $janeId), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/users/%s/roles', $janeId), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody([]));
@@ -229,7 +230,7 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
             }
         }
 
-        throw new \RuntimeException(sprintf('User "%s" not found.', $username));
+        throw new RuntimeException(\sprintf('User "%s" not found.', $username));
     }
 
     /**
@@ -243,7 +244,7 @@ final class BackofficeUserRoleResourceTest extends WebTestCase
             }
         }
 
-        throw new \RuntimeException(sprintf('User "%s" not found.', $username));
+        throw new RuntimeException(\sprintf('User "%s" not found.', $username));
     }
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string

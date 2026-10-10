@@ -28,6 +28,7 @@ use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPasspor
 use Symfony\Component\Security\Http\Event\LoginFailureEvent;
 use Symfony\Component\Security\Http\Event\LoginSuccessEvent;
 use Symfony\Component\Security\Http\Event\LogoutEvent;
+use Throwable;
 
 /**
  * Le subscriber ne fait que traduire les événements Symfony en appels au
@@ -250,7 +251,7 @@ final class SecurityEventsSubscriberTest extends TestCase
         );
     }
 
-    private function exceptionEvent(string $uri, \Throwable $throwable, int $requestType = HttpKernelInterface::MAIN_REQUEST): ExceptionEvent
+    private function exceptionEvent(string $uri, Throwable $throwable, int $requestType = HttpKernelInterface::MAIN_REQUEST): ExceptionEvent
     {
         return new ExceptionEvent(
             self::createStub(HttpKernelInterface::class),

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Shared\Infrastructure\Lock;
 
+use InvalidArgumentException;
+
 /**
  * `DATABASE_URL` n'est pas une URL PostgreSQL : aucun verrou partagé entre
  * pods ne peut en être dérivé (issue #272).
@@ -14,7 +16,7 @@ namespace App\Shared\Infrastructure\Lock;
  * la préprod attrape, qu'un limiteur qui tourne sans verrou. Le message ne
  * reprend jamais l'URL, qui porte le mot de passe de la base.
  */
-final class UnsupportedLockDatabaseUrlException extends \InvalidArgumentException
+final class UnsupportedLockDatabaseUrlException extends InvalidArgumentException
 {
     /**
      * La syntaxe d'un schéma d'URI (RFC 3986, § 3.1). Tout ce qui s'en écarte

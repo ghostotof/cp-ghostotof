@@ -8,7 +8,7 @@ declare(strict_types=1);
 return [
     'when@prod' => [
         'api_platform' => [
-            'exception_to_status' => [\LengthException::class => 404],
+            'exception_to_status' => [LengthException::class => 404],
         ],
     ],
 ];

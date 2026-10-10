@@ -11,6 +11,7 @@ use App\Security\User\Domain\Exception\AccountInvitationDeliveryException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler;
+use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -156,7 +157,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
     public function testItDoesNothingWhenTheAccountIsAlreadyActivated(): void
     {
         $user = $this->pendingUser('newcomer', 'newcomer@example.com');
-        $user->markActivated(new \DateTimeImmutable('2026-09-01 09:00:00'));
+        $user->markActivated(new DateTimeImmutable('2026-09-01 09:00:00'));
 
         $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
         $tokenRepository->expects(self::never())->method('save');
@@ -203,7 +204,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
     {
         $user = new CpgUser($username, '');
         $user->setEmail($email);
-        $user->markInvited(new \DateTimeImmutable('2026-09-03 11:00:00'));
+        $user->markInvited(new DateTimeImmutable('2026-09-03 11:00:00'));
 
         // L'identité du compte rechargé n'a pas à correspondre à celle du
         // message : le dépôt est bouchonné, c'est lui qui décide ce qu'il rend.

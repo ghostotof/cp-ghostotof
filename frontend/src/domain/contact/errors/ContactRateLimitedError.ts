@@ -4,13 +4,12 @@
  * consigne au visiteur n'est pas la même — attendre quelques minutes suffit,
  * il n'a rien à corriger.
  *
- * Limite connue et acceptée : en pratique seul le limiteur **applicatif**
- * Symfony (`contact_form`) mène ici. Le 429 de la zone nginx `contact` est
- * émis par nginx sans passer par PHP, donc sans en-têtes CORS ; en production
- * le front est sur une autre origine que l'API, le navigateur rejette la
- * réponse et `fetch` lève un `TypeError` — ce cas retombe sur
- * ContactSubmissionFailedError. Le quota applicatif étant le plus bas, il
- * tombe le premier de toute façon.
+ * Le limiteur **applicatif** Symfony (`contact_form`) et la zone nginx
+ * `contact` mènent tous deux ici : en préprod et en prod le front partage
+ * l'origine de l'API, le 429 de nginx est donc lisible malgré l'absence
+ * d'en-têtes CORS (#368). Le quota applicatif, le plus bas, tombe le premier.
+ * En dev seulement (Vite et nginx sur deux ports), le navigateur rejette le
+ * 429 de nginx et le cas retombe sur ContactSubmissionFailedError.
  */
 export class ContactRateLimitedError extends Error {
   constructor() {

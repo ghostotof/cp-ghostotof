@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../../application/auth/useAuth'
 import { InvalidCredentialsError } from '../../domain/auth/errors/InvalidCredentialsError'
+import { LoginRateLimitedError } from '../../domain/auth/errors/LoginRateLimitedError'
+import { retryAfterMinutes } from '../ui/retryAfterMinutes'
 import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
 
 const { t, locale } = useI18n()
@@ -36,6 +38,21 @@ function redirectTarget(): string {
   return `/${currentLocale()}`
 }
 
+/** Un message par cause : ce que la personne doit faire n'est pas le même (corriger, attendre, réessayer). */
+function loginErrorMessage(error: unknown): string {
+  if (error instanceof InvalidCredentialsError) {
+    return t('auth.invalidCredentials')
+  }
+  if (error instanceof LoginRateLimitedError) {
+    if (null === error.retryAfterSeconds) {
+      return t('auth.rateLimited')
+    }
+    const minutes = retryAfterMinutes(error.retryAfterSeconds)
+    return t('auth.rateLimitedIn', { minutes }, minutes)
+  }
+  return t('auth.genericError')
+}
+
 async function handleSubmit(): Promise<void> {
   errorMessage.value = ''
   isSubmitting.value = true
@@ -44,7 +61,7 @@ async function handleSubmit(): Promise<void> {
     await login(username.value, password.value)
     await router.push(redirectTarget())
   } catch (error) {
-    errorMessage.value = error instanceof InvalidCredentialsError ? t('auth.invalidCredentials') : t('auth.genericError')
+    errorMessage.value = loginErrorMessage(error)
   } finally {
     isSubmitting.value = false
   }

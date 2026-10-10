@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Ai\Support;
 
+use Generator;
 use Symfony\AI\Agent\AgentInterface;
 use Symfony\AI\Agent\Execution\Execution;
 use Symfony\AI\Agent\Execution\Update\Progress;
@@ -14,6 +15,7 @@ use Symfony\AI\Platform\Message\UserMessage;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\TextResult;
 use Symfony\AI\Platform\TokenUsage\TokenUsage;
+use Throwable;
 
 /**
  * Agent de test en flux. Comme le vrai Runner, il est paresseux : rien ne se
@@ -35,7 +37,7 @@ final class FakeStreamingAgent implements AgentInterface
     public function __construct(
         private readonly array $fragments,
         private readonly ?TokenUsage $tokenUsage = null,
-        private readonly ?\Throwable $failure = null,
+        private readonly ?Throwable $failure = null,
         private readonly int $failAfter = 0,
     ) {
     }
@@ -56,9 +58,9 @@ final class FakeStreamingAgent implements AgentInterface
     }
 
     /**
-     * @return \Generator<int, Progress|ResultUpdate, mixed, void>
+     * @return Generator<int, Progress|ResultUpdate, mixed, void>
      */
-    private function run(): \Generator
+    private function run(): Generator
     {
         foreach ($this->fragments as $index => $fragment) {
             if (null !== $this->failure && $index === $this->failAfter) {

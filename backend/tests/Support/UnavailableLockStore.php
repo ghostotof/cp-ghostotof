@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
+use RuntimeException;
 use Symfony\Component\Lock\Key;
 use Symfony\Component\Lock\PersistingStoreInterface;
 
@@ -18,7 +19,7 @@ final class UnavailableLockStore implements PersistingStoreInterface
 {
     public function save(Key $key): void
     {
-        throw new \RuntimeException('SQLSTATE[08006] connection to server failed (simulé).');
+        throw new RuntimeException('SQLSTATE[08006] connection to server failed (simulé).');
     }
 
     public function delete(Key $key): void

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Http;
 
+use SensitiveParameter;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
@@ -38,7 +39,7 @@ final readonly class CsrfCookieTokenSigner
     private const int RANDOM_BYTES = 32;
 
     public function __construct(
-        #[\SensitiveParameter]
+        #[SensitiveParameter]
         #[Autowire('%kernel.secret%')]
         private string $secret,
     ) {

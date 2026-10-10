@@ -6,6 +6,7 @@ namespace App\Tests\Security\User\Domain\Entity;
 
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\UuidV7;
 
@@ -39,7 +40,7 @@ final class PasswordSetupTokenTest extends TestCase
     public function testTheReferencedUserIsIdentifiedByItsOwnUuid(): void
     {
         $user = new CpgUser('jane', 'hashed-password');
-        $token = new PasswordSetupToken($user, hash('sha256', 'clear'), new \DateTimeImmutable('2026-09-05 12:00:00'));
+        $token = new PasswordSetupToken($user, hash('sha256', 'clear'), new DateTimeImmutable('2026-09-05 12:00:00'));
 
         self::assertInstanceOf(UuidV7::class, $token->getUser()->getId());
         self::assertTrue($token->getUser()->getId()->equals($user->getId()));
@@ -50,7 +51,7 @@ final class PasswordSetupTokenTest extends TestCase
         return new PasswordSetupToken(
             new CpgUser('jane', 'hashed-password'),
             hash('sha256', uniqid('', true)),
-            new \DateTimeImmutable('2026-09-05 12:00:00'),
+            new DateTimeImmutable('2026-09-05 12:00:00'),
         );
     }
 
@@ -61,9 +62,9 @@ final class PasswordSetupTokenTest extends TestCase
     public function testWasUsedTellsAConsumedTokenFromAnExpiredOne(): void
     {
         $user = new CpgUser('jane', 'hashed-password');
-        $expired = new PasswordSetupToken($user, hash('sha256', 'x'), new \DateTimeImmutable('2026-09-03 12:00:00'));
-        $used = new PasswordSetupToken($user, hash('sha256', 'y'), new \DateTimeImmutable('2026-09-05 12:00:00'));
-        $used->markUsed(new \DateTimeImmutable('2026-09-04 12:00:00'));
+        $expired = new PasswordSetupToken($user, hash('sha256', 'x'), new DateTimeImmutable('2026-09-03 12:00:00'));
+        $used = new PasswordSetupToken($user, hash('sha256', 'y'), new DateTimeImmutable('2026-09-05 12:00:00'));
+        $used->markUsed(new DateTimeImmutable('2026-09-04 12:00:00'));
 
         self::assertFalse($expired->wasUsed());
         self::assertTrue($used->wasUsed());

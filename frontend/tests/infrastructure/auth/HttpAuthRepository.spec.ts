@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HttpAuthRepository } from '../../../src/infrastructure/auth/HttpAuthRepository'
 import { InvalidCredentialsError } from '../../../src/domain/auth/errors/InvalidCredentialsError'
+import { LoginRateLimitedError } from '../../../src/domain/auth/errors/LoginRateLimitedError'
 
-function stubFetch(status: number, body: unknown = undefined): ReturnType<typeof vi.fn> {
+function stubFetch(status: number, body: unknown = undefined, headers: Record<string, string> = {}): ReturnType<typeof vi.fn> {
   const fetchMock = vi.fn(async () => ({
     ok: status >= 200 && status < 300,
     status,
+    headers: new Headers(headers),
     json: async () => body,
   }) as unknown as Response)
   vi.stubGlobal('fetch', fetchMock)
@@ -93,5 +95,27 @@ describe('HttpAuthRepository.login()', () => {
     stubFetch(401)
 
     await expect(new HttpAuthRepository('https://api.example.test').login(username, 'wrong')).rejects.toBeInstanceOf(InvalidCredentialsError)
+  })
+
+  /**
+   * Issue #399 : le refus de `login_throttling` répond 429 `/errors/rate-limited`,
+   * comme la zone nginx `login` — les deux mènent au même message.
+   */
+  it('429 : LoginRateLimitedError, pas une erreur générique', async () => {
+    stubFetch(429, { type: '/errors/rate-limited', status: 429 })
+
+    await expect(new HttpAuthRepository('https://api.example.test').login(username, 'wrong')).rejects.toBeInstanceOf(LoginRateLimitedError)
+  })
+
+  it('429 de login_throttling : le délai de Retry-After accompagne l\'erreur', async () => {
+    stubFetch(429, { type: '/errors/rate-limited', status: 429 }, { 'Retry-After': '900' })
+
+    await expect(new HttpAuthRepository('https://api.example.test').login(username, 'wrong')).rejects.toMatchObject({ retryAfterSeconds: 900 })
+  })
+
+  it('429 de la zone nginx, sans Retry-After : pas de délai', async () => {
+    stubFetch(429, { type: '/errors/rate-limited', status: 429 })
+
+    await expect(new HttpAuthRepository('https://api.example.test').login(username, 'wrong')).rejects.toMatchObject({ retryAfterSeconds: null })
   })
 })

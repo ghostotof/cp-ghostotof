@@ -1,10 +1,12 @@
 import type { AuthRepository } from '../../domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../domain/auth/entities/AuthenticatedUser'
 import { InvalidCredentialsError } from '../../domain/auth/errors/InvalidCredentialsError'
+import { LoginRateLimitedError } from '../../domain/auth/errors/LoginRateLimitedError'
 import { ANONYMOUS_SESSION, BASE_ACCESS_SESSION, type AuthSession } from '../../domain/auth/entities/AuthSession'
 import { sessionForUser } from '../../domain/auth/services/sessionForUser'
 import { readCsrfToken } from './csrfCookie'
 import { LOGIN_CSRF_HEADER } from '../http/loginCsrfHeader'
+import { retryAfterSeconds } from '../http/retryAfterSeconds'
 
 interface UserResponseBody {
   user: { username: string; roles: string[] }
@@ -33,6 +35,12 @@ export class HttpAuthRepository implements AuthRepository {
 
     if (401 === response.status) {
       throw new InvalidCredentialsError()
+    }
+    // Le refus de `login_throttling` comme celui de la zone nginx `login`
+    // (issue #399) : un statut suffit, le corps n'est pas lu. Le délai vient
+    // de Retry-After, que seul le throttling de Symfony pose.
+    if (429 === response.status) {
+      throw new LoginRateLimitedError(retryAfterSeconds(response))
     }
     if (!response.ok) {
       throw new Error(`Login failed with status ${response.status}`)

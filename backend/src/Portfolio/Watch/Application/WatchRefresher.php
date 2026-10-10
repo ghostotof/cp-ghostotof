@@ -21,6 +21,7 @@ use App\Portfolio\Watch\Domain\ValueObject\KnownVulnerability;
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotSourceStatus;
 use App\Portfolio\Watch\Domain\ValueObject\SupportStatus;
 use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
+use DateTimeImmutable;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -62,7 +63,7 @@ final readonly class WatchRefresher implements WatchRefresherInterface
     ) {
     }
 
-    public function refresh(\DateTimeImmutable $now, bool $dryRun = false): WatchRefreshReport
+    public function refresh(DateTimeImmutable $now, bool $dryRun = false): WatchRefreshReport
     {
         return new WatchRefreshReport(
             $this->refreshReleaseCycles($now, $dryRun),
@@ -70,7 +71,7 @@ final readonly class WatchRefresher implements WatchRefresherInterface
         );
     }
 
-    private function refreshReleaseCycles(\DateTimeImmutable $now, bool $dryRun): ReleaseCyclesRefreshReport
+    private function refreshReleaseCycles(DateTimeImmutable $now, bool $dryRun): ReleaseCyclesRefreshReport
     {
         $entries = [];
         $unknownSlugs = [];
@@ -150,7 +151,7 @@ final readonly class WatchRefresher implements WatchRefresherInterface
      * ici — écrire un snapshot amputé priverait l'administrateur de ce qu'il
      * est précisément le seul à avoir le droit de voir.
      */
-    private function refreshVulnerabilities(\DateTimeImmutable $now, bool $dryRun): VulnerabilityRefreshReport
+    private function refreshVulnerabilities(DateTimeImmutable $now, bool $dryRun): VulnerabilityRefreshReport
     {
         $manifest = $this->packageManifestReader->read();
 
@@ -251,7 +252,7 @@ final readonly class WatchRefresher implements WatchRefresherInterface
     private function persist(
         WatchSnapshotType $type,
         array $payload,
-        \DateTimeImmutable $now,
+        DateTimeImmutable $now,
         SnapshotSourceStatus $status,
     ): void {
         $snapshot = $this->snapshotRepository->findOneByType($type);

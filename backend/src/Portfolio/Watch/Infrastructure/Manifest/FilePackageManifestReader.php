@@ -8,6 +8,9 @@ use App\Portfolio\Watch\Domain\Service\PackageManifestReaderInterface;
 use App\Portfolio\Watch\Domain\ValueObject\PackageCoordinates;
 use App\Portfolio\Watch\Domain\ValueObject\PackageManifest;
 use App\Portfolio\Watch\Infrastructure\ReadsUntrustedArrays;
+use DateTimeImmutable;
+use Exception;
+use JsonException;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -43,7 +46,7 @@ final readonly class FilePackageManifestReader implements PackageManifestReaderI
 
         try {
             $decoded = json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
-        } catch (\JsonException $exception) {
+        } catch (JsonException $exception) {
             $this->logger->warning('Manifeste de paquets malformé.', [
                 'path' => $this->manifestPath,
                 'exception' => $exception,
@@ -62,18 +65,18 @@ final readonly class FilePackageManifestReader implements PackageManifestReaderI
     /**
      * @param array<mixed> $decoded
      */
-    private function generatedAt(array $decoded): \DateTimeImmutable
+    private function generatedAt(array $decoded): DateTimeImmutable
     {
         $value = $decoded['generatedAt'] ?? null;
 
         if (!\is_string($value)) {
-            return new \DateTimeImmutable('@0');
+            return new DateTimeImmutable('@0');
         }
 
         try {
-            return new \DateTimeImmutable($value);
-        } catch (\Exception) {
-            return new \DateTimeImmutable('@0');
+            return new DateTimeImmutable($value);
+        } catch (Exception) {
+            return new DateTimeImmutable('@0');
         }
     }
 
@@ -101,7 +104,7 @@ final readonly class FilePackageManifestReader implements PackageManifestReaderI
             $name = $this->readString($package, 'name');
             $version = $this->readString($package, 'version');
 
-            if (in_array(null, [$ecosystem, $name, $version], true)) {
+            if (\in_array(null, [$ecosystem, $name, $version], true)) {
                 continue;
             }
 

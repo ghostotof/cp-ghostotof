@@ -14,12 +14,16 @@ use App\Shared\Infrastructure\ApiPlatform\MalformedRequestBodyException;
 use App\Shared\Infrastructure\ApiPlatform\MalformedRequestBodyProvider;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use stdClass;
+use Symfony\Component\Serializer\Exception\ExtraAttributesException;
 use Symfony\Component\Serializer\Exception\LogicException as SerializerLogicException;
 use Symfony\Component\Serializer\Exception\MappingException;
+use Symfony\Component\Serializer\Exception\MissingConstructorArgumentsException;
 use Symfony\Component\Serializer\Exception\NotEncodableValueException;
 use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
 use Symfony\Component\Serializer\Exception\UnsupportedFormatException;
 use Symfony\Component\Validator\ConstraintViolationList;
+use Throwable;
 
 /**
  * Le décorateur de la désérialisation d'API Platform (issue #355) : ce que le
@@ -29,16 +33,25 @@ use Symfony\Component\Validator\ConstraintViolationList;
 final class MalformedRequestBodyProviderTest extends TestCase
 {
     /**
-     * @return iterable<string, array{\Throwable}>
+     * @return iterable<string, array{Throwable}>
      */
     public static function serializerFailures(): iterable
     {
         yield 'JSON illisible' => [new NotEncodableValueException('Syntax error')];
         yield 'racine qui n\'est pas un objet' => [NotNormalizableValueException::createForUnexpectedDataType('Mauvais type.', 123, ['array'])];
+        // Hors de la famille UnexpectedValueException, mais tout aussi
+        // provoquées par le corps (issue #360) : aucune opération ne les
+        // déclenche aujourd'hui — `allow_extra_attributes` reste à vrai,
+        // `collect_denormalization_errors` collecte l'argument manquant en
+        // 422 —, mais une opération qui changerait l'un ou l'autre en ferait,
+        // depuis que l'entrée large du Serializer rend 500, un 500 `critical`
+        // à la portée de n'importe quel anonyme.
+        yield 'attribut inconnu refusé' => [new ExtraAttributesException(['zzz'])];
+        yield 'argument de constructeur absent' => [new MissingConstructorArgumentsException('Cannot create an instance of "stdClass" from serialized data because its constructor requires the following parameters to be present : "$name".', 0, null, ['name'], stdClass::class)];
     }
 
     #[DataProvider('serializerFailures')]
-    public function testASerializerFailureBecomesAMalformedRequestBody(\Throwable $failure): void
+    public function testASerializerFailureBecomesAMalformedRequestBody(Throwable $failure): void
     {
         $provider = new MalformedRequestBodyProvider($this->throwing($failure));
 
@@ -66,7 +79,7 @@ final class MalformedRequestBodyProviderTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{\Throwable, HttpOperation}>
+     * @return iterable<string, array{Throwable, HttpOperation}>
      */
     public static function failuresThatAreNotTheClients(): iterable
     {
@@ -92,21 +105,21 @@ final class MalformedRequestBodyProviderTest extends TestCase
      * reconstruction qui perdrait sa trace.
      */
     #[DataProvider('failuresThatAreNotTheClients')]
-    public function testAnyOtherFailurePassesThroughUntouched(\Throwable $failure, HttpOperation $operation): void
+    public function testAnyOtherFailurePassesThroughUntouched(Throwable $failure, HttpOperation $operation): void
     {
         $provider = new MalformedRequestBodyProvider($this->throwing($failure));
 
         try {
             $provider->provide($operation);
             self::fail('L\'exception d\'origine était attendue.');
-        } catch (\Throwable $caught) {
+        } catch (Throwable $caught) {
             self::assertSame($failure, $caught);
         }
     }
 
     public function testTheProvidedDataIsReturnedAsIs(): void
     {
-        $data = new \stdClass();
+        $data = new stdClass();
         $provider = new MalformedRequestBodyProvider(new readonly class($data) implements ProviderInterface {
             public function __construct(private object $data)
             {
@@ -124,10 +137,10 @@ final class MalformedRequestBodyProviderTest extends TestCase
     /**
      * @return ProviderInterface<object>
      */
-    private function throwing(\Throwable $failure): ProviderInterface
+    private function throwing(Throwable $failure): ProviderInterface
     {
         return new readonly class($failure) implements ProviderInterface {
-            public function __construct(private \Throwable $failure)
+            public function __construct(private Throwable $failure)
             {
             }
 

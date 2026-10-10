@@ -102,16 +102,22 @@ final class ConversationTest extends TestCase
         self::assertSame(600, mb_strlen(new ConversationMessage(Role::User, str_repeat('é', 600))->content));
     }
 
-    public function testAnAssistantMessageOfFourThousandCharactersIsAccepted(): void
+    /**
+     * Issue #406 : une réponse pleine (`max_tokens` 1 024) atteint ~4 230
+     * caractères en anglais (4,13 car./jeton mesurés en préprod, #324), au-delà
+     * des 4 000 d'origine. Valeur écrite en dur : le test ne suit pas la
+     * constante, il la fixe.
+     */
+    public function testAnAssistantMessageOfFiveThousandCharactersIsAccepted(): void
     {
-        self::assertSame(4000, mb_strlen(new ConversationMessage(Role::Assistant, str_repeat('a', 4000))->content));
+        self::assertSame(5000, mb_strlen(new ConversationMessage(Role::Assistant, str_repeat('a', 5000))->content));
     }
 
-    public function testAnAssistantMessageOfFourThousandAndOneCharactersIsRefused(): void
+    public function testAnAssistantMessageOfFiveThousandAndOneCharactersIsRefused(): void
     {
         $this->expectException(InvalidConversationException::class);
 
-        new ConversationMessage(Role::Assistant, str_repeat('a', 4001));
+        new ConversationMessage(Role::Assistant, str_repeat('a', 5001));
     }
 
     /**

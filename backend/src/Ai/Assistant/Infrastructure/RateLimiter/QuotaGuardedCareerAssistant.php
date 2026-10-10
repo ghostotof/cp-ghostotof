@@ -9,6 +9,7 @@ use App\Ai\Assistant\Application\CareerAssistantInterface;
 use App\Ai\Assistant\Domain\Exception\AssistantRateLimitExceededException;
 use App\Ai\Assistant\Domain\ValueObject\Conversation;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Generator;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\AsDecorator;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -54,7 +55,7 @@ final readonly class QuotaGuardedCareerAssistant implements CareerAssistantInter
     // Jamais de `yield` ici : answer() deviendrait un générateur, le quota ne
     // serait consommé qu'au premier fragment lu — après l'envoi du 200, donc
     // sans 429 possible, et après le lancement de l'appel facturé.
-    public function answer(Conversation $conversation, Locale $locale): \Generator
+    public function answer(Conversation $conversation, Locale $locale): Generator
     {
         $account = $this->tokenStorage->getToken()?->getUserIdentifier();
         if (null === $account || '' === $account) {

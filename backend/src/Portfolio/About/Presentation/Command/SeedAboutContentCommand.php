@@ -86,7 +86,7 @@ final class SeedAboutContentCommand extends Command
             $this->createMeCards($locale, AboutMeCardCategory::PERSONAL, $content['me']['personalCards'], $translationGroups);
             $this->createMeCards($locale, AboutMeCardCategory::HOBBY, $content['me']['hobbiesCards'], $translationGroups);
 
-            $io->success(sprintf(
+            $io->success(\sprintf(
                 '[%s] Réglages à jour, %d carte(s) site, %d carte(s) technique(s), %d carte(s) personnelle(s), %d carte(s) loisir(s).',
                 $localeValue,
                 \count($content['site']['cards']),

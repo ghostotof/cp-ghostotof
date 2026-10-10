@@ -58,7 +58,7 @@ trait GuardsExistingContent
             return false;
         }
 
-        $io->success(sprintf(
+        $io->success(\sprintf(
             '%d entrée(s) déjà en place : rien à faire. Relancer avec --force pour les remplacer par le contenu de référence (destructif).',
             $existing,
         ));

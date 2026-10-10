@@ -29,7 +29,9 @@ paths:
   kept: `apply -k` never deletes a renamed object). `tests/Security/RateLimiterStorageTest`
   pins it (every limiter + `cache.app` DBAL-backed, never Filesystem — add a new limiter to its
   list); `tools/smoke-login-throttling.sh`, run by `smoke-test-preprod`, is the only check that
-  exercises a real pod (6 wrong logins, the 6th must say "Too many failed login attempts")
+  exercises a real pod (6 wrong logins, the 6th must be a 429 `/errors/rate-limited` **with** a
+  `Retry-After` and the application's `detail` — otherwise it is the nginx zone answering, which
+  proves nothing, issue #399)
   and the nginx `login` zone (10 r/m, burst 10, both confs) is the backstop if the storage ever
   fails again. Anything that "just writes a file" at runtime (a lock, a session, a render cache)
   falls under the same rule: DB, a dedicated service, or nowhere.
@@ -52,7 +54,11 @@ paths:
   lock, no table — a bare `postgresql://` would give the table-based `DoctrineDbalStore`); any
   other scheme is refused, the URL never echoed. With the component configured, every
   `rate_limiter.yaml` limiter (`lock_factory: 'auto'`) and both `login_throttling` ones get
-  `lock.factory`, and `RateLimiterStorageTest` asserts that store for each. **Never `flock` or
+  `lock.factory`, and `RateLimiterStorageTest` asserts that store for each;
+  `RateLimiterConcurrencyTest` (issue #277) checks the behaviour — ten processes released by a
+  file barrier consume one key at once, every unit must be counted (red with `lock_factory: null`).
+  It runs the consumers as separate processes on purpose: a test that held the lock itself would
+  wait forever on its own children. **Never `flock` or
   `semaphore`** (pod-local — they fix dev and CI and leave prod open from two replicas on); the
   Flex recipe writes `LOCK_DSN=flock` into `.env` and `phpunit.dist.xml`, remove it again if a
   recipe update brings it back. No separate `LOCK_DSN` either: it would be a second secret
@@ -96,7 +102,8 @@ paths:
   variable added by this release would be missing; running pods don't re-read their env, so this
   changes nothing for them — the filename `v1_configmap_backend-config.yaml` is stable because the
   ConfigMap has `disableNameSuffixHash`), then `migrate-job.yaml` with the release image (300 s
-  timeout), then `kubectl apply -k .` + `rollout status`. **Fail-closed**: a failed Job exits before the
+  timeout, `tools/wait-rollout.sh`), then `kubectl apply -k .` + the rollout waits
+  (`tools/wait-rollout.sh`, see below). **Fail-closed**: a failed Job exits before the
   `apply`, so the previous release keeps serving on the old schema, which is exactly the safe state
   (PostgreSQL DDL is transactional and Doctrine wraps each migration in its own transaction) — fix the
   migration, cut a new tag. The discipline that makes this order safe, to respect in every migration:
@@ -126,6 +133,43 @@ paths:
   (`needs.deploy-preprod.result == 'success'`): `failure()` is true as soon as any *ancestor* job
   fails, so a deploy stopped before its rollout used to trigger `rollout undo` anyway and roll the
   still-serving release back to the one before it.
+- **Every deploy wait fails early on a container that will not start** (issue #353). The `Deploy`
+  steps never call `kubectl rollout status` or `kubectl wait --for=condition=complete` directly:
+  `tools/wait-rollout.sh <ns> deployment/NAME|job/NAME --timeout N` cuts kubectl's own wait into
+  5 s slices — so "done" keeps kubectl's meaning — and between slices reads the pods of the
+  *current* revision only: for a Deployment, the ReplicaSet whose `deployment.kubernetes.io/revision`
+  matches, once `status.observedGeneration` has caught up (pods of an earlier stuck rollout would be
+  a false positive); for a Job, the pods owned by its uid (the previous `backend-migrate`, just
+  deleted, may still be around). Containers **and** initContainers. It fails naming pod, container,
+  reason and the kubelet's message — which names the missing key or Secret, never a value — on
+  `InvalidImageName` at once, `CreateContainerConfigError` persisting 15 s, `ErrImagePull` and
+  `ImagePullBackOff` persisting 150 s **together** (the kubelet alternates them; long on purpose:
+  images are checked on GHCR first, so a pull error is mostly a registry hiccup, and after `apply -k`
+  in prod there is no rollback — a deploy that would have converged must not go red); a Job with
+  `Failed=True` fails at once instead of waiting out its timeout. `CrashLoopBackOff` is deliberately
+  not fatal. Slicing must not swallow kubectl's own errors: a slice that exits non-zero *without*
+  having expired ("timed out waiting for the condition", or "context deadline exceeded" when a slow
+  API outlasts the slice before the cache syncs) — Forbidden, NotFound, ProgressDeadlineExceeded —
+  is tolerated twice, the third in a row fails quoting it. A missing Secret or ConfigMap mounted as
+  a non-optional *volume* (`jwt-keys`, `backend-nginx-conf`) gives no telling reason — the pod sits
+  in `ContainerCreating` (`PodInitializing` with initContainers) and the cause is only in a
+  `FailedMount` event: while a current-revision pod still waits for its volumes
+  (`PodReadyToStartContainers` present **and** `False`, no container started or blocked otherwise)
+  the script reads the namespace's `FailedMount` events — once per round, all pods together — and
+  fails after 15 s, one count per volume, on `secret|configmap "…" not found` / `references
+  non-existent … key` only — **never on any `FailedMount`**: a `Recreate` (postgres) reattaching its
+  PVC emits transient ones. Condition absent (pod not scheduled yet, node without the feature): no
+  judgement, since an event kept an hour cannot be told from a live failure. A transient read error
+  keeps the running counts. That needs
+  `get`/`list` on `events` in the deployer Role (added for #353 — **re-run `k8s/README.md` §4 after
+  changing the Role**); refused, the script warns once and waits on — a forgotten bootstrap must
+  never break every deploy. The reasons live in one table, `REASON_CLASS`, with their delays in
+  `GRACE`. It never reads a Secret.
+  Each wait may overrun its timeout by ~35 s, counted in `timeout-minutes`. Fail-closed is
+  unchanged: a failure before `apply -k` leaves the previous release serving; after it, no automatic
+  rollback in prod, and `rollback-preprod` still runs only on a successful deploy. The 60 s
+  `rollout status` checks of `smoke-test-preprod` are not deploy waits and stay. Offline test:
+  `tools/tests/wait-rollout.test.sh`.
 - **`DEPLOY_MAINTENANCE_WINDOW` (repository variable) opts a deploy into a maintenance window** — added
   for v0.11.0's irreversible integer→UUID primary-key migrations, where the new code cannot read the old
   schema **and vice versa**, so no pod may serve a request while the migration runs. That is the only
@@ -134,7 +178,7 @@ paths:
   `kubectl patch` on `spec.replicas` — the deployer `Role` has no `deployments/scale` subresource, so
   never `kubectl scale`), wait for their pods to disappear, run `migrate-job.yaml` against the quiet
   database, then let `kubectl apply -k .` restore the manifests' replica counts and the existing
-  `rollout status` wait for the new pods. The frontend keeps serving; only the API returns 503 through
+  rollout waits (`tools/wait-rollout.sh`) wait for the new pods. The frontend keeps serving; only the API returns 503 through
   the ingress for the window's duration. It is opt-in specifically so an ordinary release stays
   zero-downtime — **set it before pushing the release tag and unset it right after the production
   deploy**: a forgotten `true` turns every subsequent deploy into a downtime deploy for no reason.
@@ -190,9 +234,15 @@ paths:
   503, which that `error_page` would not catch. Two traps: a `location` that declares an
   `error_page` of its own loses the inherited one, and an `add_header` in `@rate_limited` would drop
   the seven security headers (A16). Symfony's own 429s pass through
-  untouched (no `fastcgi_intercept_errors`), `Retry-After` included. **Accepted limit**: these 429s
-  carry no CORS headers (only `nelmio_cors` sets them), so a browser on another origin cannot read
-  them and `fetch` throws — the frontend sees a network error, not "rate-limited". Guard:
+  untouched (no `fastcgi_intercept_errors`), `Retry-After` included. **No CORS headers on these
+  429s, on purpose** (issue #368): only `nelmio_cors` sets them, and none is needed — in preprod and
+  prod the frontend and the API share **one origin** (single-host ingress, `/api` → `backend`,
+  `API_URL` = the site's own origin), so the browser applies no CORS check and the frontend reads
+  the 429 and its problem+json body (checked in a real browser on preprod, 2026-10-10: response
+  `type` `basic`, nginx's own `/errors/rate-limited` body read by `fetch`). Only dev is cross-origin (Vite on
+  `:5173`, nginx on `:8080`): there `fetch` throws a `TypeError` on these 429s. Don't add CORS to
+  `@rate_limited` (a second source of truth for the origin, plus the A16 header trap) and don't map
+  a `TypeError` to "rate-limited" — revisit only if the API ever moves to its own host. Guard:
   `tools/check-backend-nginx-rate-limits.sh` (`make back-nginx-rate-limits`, CI job
   `backend-nginx-rate-limits`) runs the pinned sidecar image on each conf, saturates every
   `limit_req` zone and checks the body, the type and the headers; it fails naming any `limit_req`
@@ -258,7 +308,8 @@ paths:
   `get`/`patch` on them, never `create`. A PSA refusal is *not* visible at `kubectl apply` — the namespace
   updates fine and the next pod creation fails — so validate in preprod first.
   Because this change rewrites the pod template of the `Recreate` workloads, `deploy-preprod`/`deploy-prod`
-  now also `rollout status` **`postgres`, `rabbitmq` and `worker`** after `apply -k`, not just
+  now also wait for the rollout (`tools/wait-rollout.sh`) of **`postgres`, `rabbitmq` and `worker`**
+  after `apply -k`, not just
   `backend`/`frontend`: without the wait the seed Job ran against a database that hadn't come back, and in
   prod a downed broker left the deploy green. Accept the corollary: such a change is a short, frank outage
   of those two stateful workloads.

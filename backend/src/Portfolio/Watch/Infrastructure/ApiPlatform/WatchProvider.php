@@ -17,6 +17,8 @@ use App\Portfolio\Watch\Presentation\ApiResource\WatchedProductResource;
 use App\Portfolio\Watch\Presentation\ApiResource\WatchReleaseCyclesResource;
 use App\Portfolio\Watch\Presentation\ApiResource\WatchResource;
 use App\Portfolio\Watch\Presentation\ApiResource\WatchVulnerabilitiesResource;
+use DateTimeImmutable;
+use DateTimeZone;
 
 /**
  * Relie WatchResource au snapshot local, et rien d'autre.
@@ -49,7 +51,7 @@ final readonly class WatchProvider implements ProviderInterface
         // La fraîcheur se juge à l'instant de la lecture : c'est ce qui fait
         // qu'un snapshot devient périmé tout seul quand le rafraîchissement
         // cesse d'aboutir, sans que personne n'ait à venir le marquer.
-        $now = new \DateTimeImmutable();
+        $now = new DateTimeImmutable();
 
         return new WatchResource(
             $this->releaseCycles($now),
@@ -57,7 +59,7 @@ final readonly class WatchProvider implements ProviderInterface
         );
     }
 
-    private function releaseCycles(\DateTimeImmutable $now): WatchReleaseCyclesResource
+    private function releaseCycles(DateTimeImmutable $now): WatchReleaseCyclesResource
     {
         $snapshot = $this->snapshotRepository->findOneByType(WatchSnapshotType::RELEASE_CYCLES);
 
@@ -83,7 +85,7 @@ final readonly class WatchProvider implements ProviderInterface
      * anonyme. Il ne doit jamais être assoupli : c'est la seule chose qui
      * empêche une évolution distraite de publier la surface d'attaque du site.
      */
-    private function vulnerabilities(\DateTimeImmutable $now): WatchVulnerabilitiesResource
+    private function vulnerabilities(DateTimeImmutable $now): WatchVulnerabilitiesResource
     {
         $snapshot = $this->snapshotRepository->findOneByType(WatchSnapshotType::VULNERABILITIES);
 
@@ -110,9 +112,9 @@ final readonly class WatchProvider implements ProviderInterface
      * date.timezone du conteneur, qui pourrait changer sans que personne n'y
      * voie un changement d'interface.
      */
-    private function utc(\DateTimeImmutable $date): string
+    private function utc(DateTimeImmutable $date): string
     {
-        return $date->setTimezone(new \DateTimeZone('UTC'))->format(\DATE_ATOM);
+        return $date->setTimezone(new DateTimeZone('UTC'))->format(\DATE_ATOM);
     }
 
     /**

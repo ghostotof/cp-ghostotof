@@ -7,6 +7,7 @@ namespace App\Portfolio\Shared\Domain\Exception;
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Domain\Exception\HasProblemType;
+use DomainException;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -22,13 +23,13 @@ use Symfony\Component\Uid\Uuid;
  * Le `type` stable `/errors/translation-already-exists` est ce sur quoi le
  * frontend s'appuiera : le `detail` est localisé et peut changer.
  */
-final class TranslationAlreadyExistsException extends \DomainException implements ProblemExceptionInterface
+final class TranslationAlreadyExistsException extends DomainException implements ProblemExceptionInterface
 {
     use HasProblemType;
 
     public static function forGroupAndLocale(Uuid $translationGroup, Locale $locale): self
     {
-        return new self(sprintf(
+        return new self(\sprintf(
             'Le groupe de traduction "%s" porte déjà une entrée en "%s".',
             $translationGroup->toRfc4122(),
             $locale->value,

@@ -4,16 +4,21 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Http;
 
-use App\Security\User\Domain\Exception\CannotModifyOwnRolesException;
-use App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException;
-use App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException;
-use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
-use App\Portfolio\Shared\Domain\Exception\IncompleteOrderException;
-use App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException;
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
+use App\Portfolio\Shared\Domain\Exception\IncompleteOrderException;
+use App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException;
+use App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException;
+use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
+use App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException;
+use App\Security\User\Domain\Exception\CannotModifyOwnRolesException;
 use App\Tests\Support\DeclaredClasses;
+use FilesystemIterator;
+use PhpToken;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use SplFileInfo;
 
 /**
  * ApiProblemResponseListener renvoie au client le `detail` (le message) de
@@ -122,9 +127,9 @@ final class ProblemDetailStaysStaticTest extends TestCase
      */
     private function sourceFiles(): iterable
     {
-        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator(self::SOURCES, \FilesystemIterator::SKIP_DOTS));
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(self::SOURCES, FilesystemIterator::SKIP_DOTS));
         foreach ($files as $file) {
-            if ($file instanceof \SplFileInfo && 'php' === $file->getExtension()) {
+            if ($file instanceof SplFileInfo && 'php' === $file->getExtension()) {
                 yield $file->getPathname() => (string) file_get_contents($file->getPathname());
             }
         }
@@ -180,8 +185,8 @@ final class ProblemDetailStaysStaticTest extends TestCase
     private function parse(string $code): array
     {
         $tokens = array_values(array_filter(
-            \PhpToken::tokenize($code),
-            static fn (\PhpToken $token): bool => !$token->is(self::IGNORED),
+            PhpToken::tokenize($code),
+            static fn (PhpToken $token): bool => !$token->is(self::IGNORED),
         ));
 
         $namespace = '';
@@ -230,8 +235,8 @@ final class ProblemDetailStaysStaticTest extends TestCase
     }
 
     /**
-     * @param list<\PhpToken>                 $tokens
-     * @param int|string|list<int|string>     $kind
+     * @param list<PhpToken>              $tokens
+     * @param int|string|list<int|string> $kind
      */
     private function tokenAt(array $tokens, int $index, int|string|array $kind): bool
     {
@@ -239,7 +244,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
     }
 
     /**
-     * @param list<\PhpToken>       $tokens
+     * @param list<PhpToken>        $tokens
      * @param array<string, string> $aliases
      */
     private function collectAlias(array $tokens, int $index, array &$aliases): void
@@ -278,9 +283,9 @@ final class ProblemDetailStaysStaticTest extends TestCase
      * Arguments d'un appel dont la parenthèse ouvrante est en $open, découpés
      * sur les virgules de premier niveau.
      *
-     * @param list<\PhpToken> $tokens
+     * @param list<PhpToken> $tokens
      *
-     * @return list<list<\PhpToken>>
+     * @return list<list<PhpToken>>
      */
     private function arguments(array $tokens, int $open): array
     {
@@ -310,7 +315,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
      * Le message est le premier argument positionnel, ou l'argument nommé
      * `message` ; absent, il reste celui que la classe déclare.
      *
-     * @param list<list<\PhpToken>> $arguments
+     * @param list<list<PhpToken>> $arguments
      */
     private function messageIsLiteral(array $arguments): bool
     {
@@ -328,7 +333,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
     }
 
     /**
-     * @param list<\PhpToken> $tokens
+     * @param list<PhpToken> $tokens
      */
     private function isLiteral(array $tokens): bool
     {
@@ -336,7 +341,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
             return $tokens[0]->is(\T_CONSTANT_ENCAPSED_STRING);
         }
 
-        return [] !== $tokens && array_all($tokens, static fn (\PhpToken $token): bool => $token->is(self::LITERAL_HEREDOC_TOKENS));
+        return [] !== $tokens && array_all($tokens, static fn (PhpToken $token): bool => $token->is(self::LITERAL_HEREDOC_TOKENS));
     }
 
     /**
@@ -344,7 +349,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
      * `parent::__construct` est-il littéral ? Sans appel au parent, le message
      * reste celui par défaut (vide) : littéral.
      *
-     * @param list<\PhpToken> $tokens
+     * @param list<PhpToken> $tokens
      */
     private function parentMessageIsLiteral(array $tokens, int $function): bool
     {

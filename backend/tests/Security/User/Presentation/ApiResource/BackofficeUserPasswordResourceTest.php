@@ -75,7 +75,7 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
         $jane = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::variant('old'));
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->request('PUT', sprintf('/api/backoffice/users/%s/password', $jane->getId()->toRfc4122()), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/users/%s/password', $jane->getId()->toRfc4122()), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['password' => TestCredentials::variant('new')]));
@@ -104,7 +104,7 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
         $jane = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::variant('old'));
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->request('PUT', sprintf('/api/backoffice/users/%s/password', $jane->getId()->toRfc4122()), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/users/%s/password', $jane->getId()->toRfc4122()), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['password' => 'short']));
@@ -122,7 +122,7 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
         // 4097 caractères : au-delà de CpgUser::MAX_PASSWORD_LENGTH, le hasher
         // Symfony lèverait une exception (500). La contrainte Assert\Length
         // doit intercepter en 422 avant d'atteindre le Processor.
-        $client->request('PUT', sprintf('/api/backoffice/users/%s/password', $jane->getId()->toRfc4122()), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/users/%s/password', $jane->getId()->toRfc4122()), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['password' => str_repeat('a', CpgUser::MAX_PASSWORD_LENGTH + 1)]));

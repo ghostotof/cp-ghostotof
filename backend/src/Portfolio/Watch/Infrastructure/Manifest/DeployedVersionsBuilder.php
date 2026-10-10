@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Infrastructure\Manifest;
 
+use DateTimeImmutable;
+
 /**
  * Relève, au moment de la construction de l'image, les versions des composants
  * que le projet déploie ou avec lesquels il construit.
@@ -27,6 +29,8 @@ namespace App\Portfolio\Watch\Infrastructure\Manifest;
  */
 final readonly class DeployedVersionsBuilder
 {
+    use WritesManifestFile;
+
     /**
      * Où lire chaque version, par slug de produit suivi.
      *
@@ -56,7 +60,7 @@ final readonly class DeployedVersionsBuilder
     /**
      * @return array<string, string> version par slug, celles qui ont pu être lues
      */
-    public function build(\DateTimeImmutable $generatedAt): array
+    public function build(DateTimeImmutable $generatedAt): array
     {
         $versions = [];
 
@@ -161,19 +165,13 @@ final readonly class DeployedVersionsBuilder
     /**
      * @param array<string, string> $versions
      */
-    private function write(array $versions, \DateTimeImmutable $generatedAt): void
+    private function write(array $versions, DateTimeImmutable $generatedAt): void
     {
-        $directory = \dirname($this->outputPath);
-
-        if (!is_dir($directory) && !mkdir($directory, 0o775, true) && !is_dir($directory)) {
-            throw new \RuntimeException(sprintf('Impossible de créer le répertoire « %s ».', $directory));
-        }
-
         $encoded = json_encode(
             ['generatedAt' => $generatedAt->format(\DATE_ATOM), 'versions' => $versions],
             \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR,
         );
 
-        file_put_contents($this->outputPath, $encoded."\n");
+        self::writeManifestFile($this->outputPath, $encoded."\n");
     }
 }

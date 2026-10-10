@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Portfolio\Experience\Domain\Entity;
 
 use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
+use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\UuidV7;
 
@@ -17,7 +18,7 @@ final class ExperienceTechnologyTest extends TestCase
      */
     public function testANewTechnologyIsIdentifiedByAUuidV7BeforeAnyPersistence(): void
     {
-        $technology = new ExperienceTechnology('PHP', 13.5);
+        $technology = new ExperienceTechnology('PHP', ExperienceYears::fromFloat(13.5));
 
         self::assertInstanceOf(UuidV7::class, $technology->getId());
     }
@@ -29,8 +30,8 @@ final class ExperienceTechnologyTest extends TestCase
      */
     public function testTwoTechnologiesBuiltInSequenceGetDistinctIncreasingIds(): void
     {
-        $first = new ExperienceTechnology('PHP', 13.5);
-        $second = new ExperienceTechnology('Symfony', 9.5);
+        $first = new ExperienceTechnology('PHP', ExperienceYears::fromFloat(13.5));
+        $second = new ExperienceTechnology('Symfony', ExperienceYears::fromFloat(9.5));
 
         self::assertNotSame($first->getId()->toRfc4122(), $second->getId()->toRfc4122());
         self::assertLessThan($second->getId()->toRfc4122(), $first->getId()->toRfc4122());
@@ -38,7 +39,7 @@ final class ExperienceTechnologyTest extends TestCase
 
     public function testConstructorSetsAllProperties(): void
     {
-        $technology = new ExperienceTechnology('PHP', 13.5, 'php', 'HTML / CSS / JavaScript');
+        $technology = new ExperienceTechnology('PHP', ExperienceYears::fromFloat(13.5), 'php', 'HTML / CSS / JavaScript');
 
         self::assertSame('PHP', $technology->getName());
         self::assertSame(13.5, $technology->getYears());
@@ -49,7 +50,7 @@ final class ExperienceTechnologyTest extends TestCase
 
     public function testIconKeyAndRelatedTechnologyAreOptional(): void
     {
-        $technology = new ExperienceTechnology('MySQL / PostgreSQL / SQL Server', 13.5);
+        $technology = new ExperienceTechnology('MySQL / PostgreSQL / SQL Server', ExperienceYears::fromFloat(13.5));
 
         self::assertNull($technology->getIconKey());
         self::assertNull($technology->getRelatedTechnologyName());
@@ -63,27 +64,27 @@ final class ExperienceTechnologyTest extends TestCase
      */
     public function testSecondaryIsOptInAndReadBack(): void
     {
-        $secondary = new ExperienceTechnology('Python', 0.5, 'python', null, true);
+        $secondary = new ExperienceTechnology('Python', ExperienceYears::fromFloat(0.5), 'python', null, true);
 
         self::assertTrue($secondary->isSecondary());
     }
 
     public function testUpdateCanCollapseAndRestoreATechnology(): void
     {
-        $technology = new ExperienceTechnology('Python', 0.5, 'python', null, true);
+        $technology = new ExperienceTechnology('Python', ExperienceYears::fromFloat(0.5), 'python', null, true);
 
-        $technology->update('Python', 0.5, 'python', null, false);
+        $technology->update('Python', ExperienceYears::fromFloat(0.5), 'python', null, false);
         self::assertFalse($technology->isSecondary());
 
-        $technology->update('Python', 0.5, 'python', null, true);
+        $technology->update('Python', ExperienceYears::fromFloat(0.5), 'python', null, true);
         self::assertTrue($technology->isSecondary());
     }
 
     public function testUpdateReplacesAllMutableProperties(): void
     {
-        $technology = new ExperienceTechnology('PHP', 13.5, 'php', 'HTML / CSS / JavaScript');
+        $technology = new ExperienceTechnology('PHP', ExperienceYears::fromFloat(13.5), 'php', 'HTML / CSS / JavaScript');
 
-        $technology->update('Symfony', 9.5, 'symfony', null);
+        $technology->update('Symfony', ExperienceYears::fromFloat(9.5), 'symfony', null);
 
         self::assertFalse($technology->isSecondary());
         self::assertSame('Symfony', $technology->getName());

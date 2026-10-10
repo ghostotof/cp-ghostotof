@@ -12,6 +12,8 @@ use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Portfolio\Incident\Support\InMemoryIncidentRepository;
+use App\Tests\Portfolio\Shared\Support\ImmediateOrderScopeLock;
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
 
@@ -29,7 +31,7 @@ final class IncidentAdministratorTest extends TestCase
             $locale,
             $title,
             '1.0',
-            new \DateTimeImmutable('2026-01-01'),
+            new DateTimeImmutable('2026-01-01'),
             'Impact.',
             'Cause.',
             'Résolution.',
@@ -50,7 +52,7 @@ final class IncidentAdministratorTest extends TestCase
         $second = $this->incident(Locale::FR, 1, 'Second incident');
         $repository = new InMemoryIncidentRepository([$first, $second]);
 
-        $administrator = new IncidentAdministrator($repository, new ContentPlacement(), new OrderAssigner());
+        $administrator = new IncidentAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
         $administrator->reorder([
             $second->getTranslationGroup()->toRfc4122(),
@@ -77,7 +79,7 @@ final class IncidentAdministratorTest extends TestCase
             Locale::EN,
             'Incident EN',
             '1.0',
-            new \DateTimeImmutable('2026-01-01'),
+            new DateTimeImmutable('2026-01-01'),
             'Impact.',
             'Cause.',
             'Resolution.',
@@ -88,7 +90,7 @@ final class IncidentAdministratorTest extends TestCase
         $other = $this->incident(Locale::FR, 1, 'Autre incident');
         $repository = new InMemoryIncidentRepository([$groupFr, $groupEn, $other]);
 
-        $administrator = new IncidentAdministrator($repository, new ContentPlacement(), new OrderAssigner());
+        $administrator = new IncidentAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
         $administrator->reorder([
             $other->getTranslationGroup()->toRfc4122(),
@@ -105,7 +107,7 @@ final class IncidentAdministratorTest extends TestCase
         $incident = $this->incident(Locale::FR, 0, 'Incident');
         $repository = new InMemoryIncidentRepository([$incident]);
 
-        $administrator = new IncidentAdministrator($repository, new ContentPlacement(), new OrderAssigner());
+        $administrator = new IncidentAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
         $this->expectException(UnknownOrderEntryException::class);
 
@@ -118,7 +120,7 @@ final class IncidentAdministratorTest extends TestCase
         $second = $this->incident(Locale::FR, 1, 'Second incident');
         $repository = new InMemoryIncidentRepository([$first, $second]);
 
-        $administrator = new IncidentAdministrator($repository, new ContentPlacement(), new OrderAssigner());
+        $administrator = new IncidentAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
         $this->expectException(IncompleteOrderException::class);
 

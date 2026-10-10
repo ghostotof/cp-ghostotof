@@ -96,13 +96,15 @@ final class ApiErrorFormatTest extends WebTestCase
      * prévoyait la lettre de D8) fait échouer la négociation de contenu
      * d'API Platform quand l'appelant n'envoie pas d'en-tête `Accept` : les
      * opérations dont les formats n'incluent pas `application/json` — la
-     * documentation et le point d'entrée Hydra, dont les formats sont
-     * `application/vnd.openapi+json` et `text/html` — répondaient alors 406.
+     * documentation, dont les formats sont `application/vnd.openapi+json` et
+     * `text/html` — répondaient alors 406. Le point d'entrée Hydra en était
+     * le second témoin, jusqu'à sa coupure dans tous les environnements
+     * (issue #360).
      *
-     * Ces deux routes sont coupées en production (`enable_docs` /
-     * `enable_entrypoint` dans `when@prod`), mais elles sont ici le seul
-     * témoin disponible d'une classe de régression plus large : une future
-     * ressource servie en CSV ou en PDF se casserait de la même façon.
+     * Cette route est coupée en production (`enable_docs` dans `when@prod`),
+     * mais elle est ici le seul témoin disponible d'une classe de régression
+     * plus large : une future ressource servie en CSV ou en PDF se casserait
+     * de la même façon.
      *
      * @param non-empty-string $path
      */
@@ -122,7 +124,6 @@ final class ApiErrorFormatTest extends WebTestCase
     public static function pathsNegotiatingANonJsonFormat(): iterable
     {
         yield 'documentation' => ['/api/docs'];
-        yield 'point d\'entrée' => ['/api'];
     }
 
     /**

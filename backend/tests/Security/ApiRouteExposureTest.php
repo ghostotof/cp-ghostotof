@@ -71,11 +71,11 @@ final class ApiRouteExposureTest extends WebTestCase
         '/api/account/base-access' => 'ADR 0003 D6 : émet un jeton ROLE_USER (palier de base, publiable/non-identifiant) sans authentification — c\'est exactement l\'objet de l\'endpoint. Rate limité par IP (BaseAccessRateLimitRequestListener). N\'ouvre jamais /api/cv ni /api/me (ROLE_TRUSTED requis), voir BaseAccessControllerTest.',
         '/api/login_check' => 'Point d\'entrée du login : par définition atteint sans être authentifié.',
 
-        // --- Infrastructure API Platform. enable_docs/enable_entrypoint sont à
-        // false sous when@prod (cf. api_platform.yaml) : ces routes n'existent
-        // ni en préprod ni en prod, seulement en dev/test.
+        // --- Infrastructure API Platform. enable_docs est à false sous
+        // when@prod (cf. api_platform.yaml) : le schéma n'existe ni en préprod
+        // ni en prod, seulement en dev/test. Le point d'entrée Hydra
+        // (/api/{index}.{_format}) est coupé partout depuis l'issue #360.
         '/api/docs.{_format}' => 'Schéma OpenAPI — désactivé en préprod/prod (when@prod).',
-        '/api/{index}.{_format}' => 'Point d\'entrée Hydra — désactivé en préprod/prod (when@prod).',
         '/api/errors/{status}.{_format}' => 'Ressource d\'erreur interne d\'API Platform, aucune donnée métier.',
         '/api/validation_errors/{id}' => 'Ressource d\'erreur de validation interne d\'API Platform.',
         '/api/.well-known/genid/{id}' => 'Identifiants anonymes générés par API Platform, aucune donnée métier.',
@@ -128,7 +128,7 @@ final class ApiRouteExposureTest extends WebTestCase
             self::assertContains(
                 $client->getResponse()->getStatusCode(),
                 [401, 403],
-                sprintf(
+                \sprintf(
                     '%s %s a répondu %d à un appelant anonyme. Soit la route doit être protégée, '
                     .'soit elle est publique et doit être inscrite dans PUBLIC_PATHS avec sa justification.',
                     $method,
@@ -167,7 +167,7 @@ final class ApiRouteExposureTest extends WebTestCase
             self::assertContains(
                 $path,
                 $declaredPaths,
-                sprintf('PUBLIC_PATHS déclare "%s", qui n\'existe plus dans le routeur.', $path),
+                \sprintf('PUBLIC_PATHS déclare "%s", qui n\'existe plus dans le routeur.', $path),
             );
         }
     }
@@ -198,7 +198,7 @@ final class ApiRouteExposureTest extends WebTestCase
             self::assertSame(
                 403,
                 $client->getResponse()->getStatusCode(),
-                sprintf('%s %s doit répondre 403 à un compte sans ROLE_SUPER.', $method, $path),
+                \sprintf('%s %s doit répondre 403 à un compte sans ROLE_SUPER.', $method, $path),
             );
         }
     }
@@ -221,7 +221,7 @@ final class ApiRouteExposureTest extends WebTestCase
             self::assertSame(
                 403,
                 $client->getResponse()->getStatusCode(),
-                sprintf('GET %s doit répondre 403 à un compte sans ROLE_TRUSTED.', $path),
+                \sprintf('GET %s doit répondre 403 à un compte sans ROLE_TRUSTED.', $path),
             );
         }
     }
@@ -244,7 +244,7 @@ final class ApiRouteExposureTest extends WebTestCase
             self::assertSame(
                 403,
                 $client->getResponse()->getStatusCode(),
-                sprintf('GET %s doit répondre 403 à un jeton du palier de base (sans ROLE_TRUSTED).', $path),
+                \sprintf('GET %s doit répondre 403 à un jeton du palier de base (sans ROLE_TRUSTED).', $path),
             );
         }
     }
@@ -281,7 +281,7 @@ final class ApiRouteExposureTest extends WebTestCase
             self::assertSame(
                 403,
                 $client->getResponse()->getStatusCode(),
-                sprintf(
+                \sprintf(
                     '%s %s a répondu %d à un jeton du palier de base. Soit la route doit exiger '
                     .'ROLE_TRUSTED ou ROLE_SUPER, soit elle appartient au palier de base et doit être '
                     .'inscrite dans BASE_TIER_PATHS avec sa justification.',
@@ -305,7 +305,7 @@ final class ApiRouteExposureTest extends WebTestCase
         $declaredPaths = $this->allApiRoutePaths();
 
         foreach (self::BASE_TIER_PATHS as $path => $reason) {
-            self::assertContains($path, $declaredPaths, sprintf('BASE_TIER_PATHS déclare "%s", qui n\'existe plus dans le routeur.', $path));
+            self::assertContains($path, $declaredPaths, \sprintf('BASE_TIER_PATHS déclare "%s", qui n\'existe plus dans le routeur.', $path));
 
             self::ensureKernelShutdown();
             $client = self::createClient();
@@ -320,7 +320,7 @@ final class ApiRouteExposureTest extends WebTestCase
                 self::assertNotContains(
                     $client->getResponse()->getStatusCode(),
                     [401, 403],
-                    sprintf('%s %s est inscrit dans BASE_TIER_PATHS mais refuse le jeton du palier de base.', $method, $path),
+                    \sprintf('%s %s est inscrit dans BASE_TIER_PATHS mais refuse le jeton du palier de base.', $method, $path),
                 );
             }
         }
@@ -335,10 +335,10 @@ final class ApiRouteExposureTest extends WebTestCase
     {
         foreach (array_keys(self::BASE_TIER_PATHS) as $path) {
             foreach (['/api/backoffice', '/api/cv', '/api/me'] as $forbiddenPrefix) {
-                self::assertStringStartsNotWith($forbiddenPrefix, $path, sprintf('"%s" ne peut pas appartenir au palier de base.', $path));
+                self::assertStringStartsNotWith($forbiddenPrefix, $path, \sprintf('"%s" ne peut pas appartenir au palier de base.', $path));
             }
 
-            self::assertArrayNotHasKey($path, self::PUBLIC_PATHS, sprintf('"%s" est déjà public : inutile (et trompeur) dans BASE_TIER_PATHS.', $path));
+            self::assertArrayNotHasKey($path, self::PUBLIC_PATHS, \sprintf('"%s" est déjà public : inutile (et trompeur) dans BASE_TIER_PATHS.', $path));
         }
     }
 

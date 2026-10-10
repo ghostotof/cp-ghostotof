@@ -106,7 +106,7 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
         $product = $client->getContainer()->get(WatchedProductAdministratorInterface::class)
             ->create('postgresql', 'PostgreSQL', VersionSource::MANUAL, '18.4');
 
-        $client->request('GET', sprintf('/api/backoffice/watch/products/%s', $product->getId()->toRfc4122()));
+        $client->request('GET', \sprintf('/api/backoffice/watch/products/%s', $product->getId()->toRfc4122()));
         self::assertResponseIsSuccessful();
         $item = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame($product->getId()->toRfc4122(), $item['id']);
@@ -141,7 +141,7 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
         self::assertTrue(Uuid::isValid($id));
 
         // Get
-        $client->request('GET', sprintf('/api/backoffice/watch/products/%s', $id));
+        $client->request('GET', \sprintf('/api/backoffice/watch/products/%s', $id));
         self::assertResponseIsSuccessful();
 
         // Post
@@ -171,7 +171,7 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(409);
 
         // Put
-        $client->request('PUT', sprintf('/api/backoffice/watch/products/%s', $id), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/watch/products/%s', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody([
@@ -185,7 +185,7 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
         self::assertSame('18.6', $updated['version']);
 
         // Put - changement de slug => 409
-        $client->request('PUT', sprintf('/api/backoffice/watch/products/%s', $id), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/watch/products/%s', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody([
@@ -213,7 +213,7 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
 
         // Delete
-        $client->request('DELETE', sprintf('/api/backoffice/watch/products/%s', $id), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
+        $client->request('DELETE', \sprintf('/api/backoffice/watch/products/%s', $id), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
         self::assertResponseStatusCodeSame(204);
     }
 
@@ -248,7 +248,7 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
         $created = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame(2, $created['position']);
 
-        $client->request('PUT', sprintf('/api/backoffice/watch/products/%s', $created['id']), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/watch/products/%s', $created['id']), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody([
@@ -392,7 +392,7 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
         $product = $client->getContainer()->get(WatchedProductAdministratorInterface::class)
             ->create('postgresql', 'PostgreSQL', VersionSource::DEPLOYED, null);
 
-        $client->request('PUT', sprintf('/api/backoffice/watch/products/%s', $product->getId()->toRfc4122()), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/watch/products/%s', $product->getId()->toRfc4122()), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody([

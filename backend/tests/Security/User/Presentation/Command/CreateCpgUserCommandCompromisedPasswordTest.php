@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\User\Presentation\Command;
 
-use App\Security\User\Domain\Entity\CpgUser;
-use Symfony\Component\Validator\Constraints\NotCompromisedPassword;
 use App\Security\User\Application\CpgUserRegistrarInterface;
+use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Presentation\Command\CreateCpgUserCommand;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\Validator\Constraint;
+use Symfony\Component\Validator\Constraints\NotCompromisedPassword;
 use Symfony\Component\Validator\ConstraintViolation;
 use Symfony\Component\Validator\ConstraintViolationList;
 use Symfony\Component\Validator\Validator\ValidatorInterface;

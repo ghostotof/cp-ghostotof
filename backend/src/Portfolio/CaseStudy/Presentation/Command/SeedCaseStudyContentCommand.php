@@ -86,7 +86,7 @@ final class SeedCaseStudyContentCommand extends Command
                 $translationGroups->remember('case-study', $index, $created->getTranslationGroup());
             }
 
-            $io->success(sprintf('[%s] %d étude(s) de cas.', $localeValue, \count($caseStudies)));
+            $io->success(\sprintf('[%s] %d étude(s) de cas.', $localeValue, \count($caseStudies)));
         }
 
         return Command::SUCCESS;

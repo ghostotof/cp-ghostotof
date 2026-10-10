@@ -6,6 +6,7 @@ namespace App\Tests\Security\User\Infrastructure\Doctrine;
 
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -56,24 +57,24 @@ final class CpgUserRepositoryTest extends KernelTestCase
     {
         $stale = new CpgUser('stale-invitee', '');
         $stale->setEmail('stale@example.com');
-        $stale->markInvited(new \DateTimeImmutable('-40 days'));
+        $stale->markInvited(new DateTimeImmutable('-40 days'));
         $this->em->persist($stale);
 
         $recent = new CpgUser('recent-invitee', '');
         $recent->setEmail('recent@example.com');
-        $recent->markInvited(new \DateTimeImmutable('-10 days'));
+        $recent->markInvited(new DateTimeImmutable('-10 days'));
         $this->em->persist($recent);
 
         $activated = new CpgUser('activated-invitee', '');
         $activated->setEmail('activated@example.com');
-        $activated->markInvited(new \DateTimeImmutable('-40 days'));
-        $activated->markActivated(new \DateTimeImmutable('-5 days'));
+        $activated->markInvited(new DateTimeImmutable('-40 days'));
+        $activated->markActivated(new DateTimeImmutable('-5 days'));
         $this->em->persist($activated);
 
         $this->em->flush();
         $this->em->clear();
 
-        $found = $this->repository->findAwaitingPasswordSetupInvitedBefore(new \DateTimeImmutable('-30 days'));
+        $found = $this->repository->findAwaitingPasswordSetupInvitedBefore(new DateTimeImmutable('-30 days'));
 
         self::assertCount(1, $found);
         self::assertSame('stale-invitee', $found[0]->getUsername());
@@ -83,12 +84,12 @@ final class CpgUserRepositoryTest extends KernelTestCase
     {
         $recent = new CpgUser('recent-invitee', '');
         $recent->setEmail('recent@example.com');
-        $recent->markInvited(new \DateTimeImmutable('-10 days'));
+        $recent->markInvited(new DateTimeImmutable('-10 days'));
         $this->em->persist($recent);
         $this->em->flush();
         $this->em->clear();
 
-        self::assertSame([], $this->repository->findAwaitingPasswordSetupInvitedBefore(new \DateTimeImmutable('-30 days')));
+        self::assertSame([], $this->repository->findAwaitingPasswordSetupInvitedBefore(new DateTimeImmutable('-30 days')));
     }
 
     /**
@@ -101,12 +102,12 @@ final class CpgUserRepositoryTest extends KernelTestCase
     {
         $passwordSet = new CpgUser('password-set-invitee', 'a-real-hash-set-from-the-backoffice');
         $passwordSet->setEmail('password-set@example.com');
-        $passwordSet->markInvited(new \DateTimeImmutable('-40 days'));
+        $passwordSet->markInvited(new DateTimeImmutable('-40 days'));
         $this->em->persist($passwordSet);
         $this->em->flush();
         $this->em->clear();
 
-        self::assertSame([], $this->repository->findAwaitingPasswordSetupInvitedBefore(new \DateTimeImmutable('-30 days')));
+        self::assertSame([], $this->repository->findAwaitingPasswordSetupInvitedBefore(new DateTimeImmutable('-30 days')));
     }
 
     /**
@@ -123,7 +124,7 @@ final class CpgUserRepositoryTest extends KernelTestCase
         $this->em->flush();
         $this->em->clear();
 
-        self::assertSame([], $this->repository->findAwaitingPasswordSetupInvitedBefore(new \DateTimeImmutable('+1 day')));
+        self::assertSame([], $this->repository->findAwaitingPasswordSetupInvitedBefore(new DateTimeImmutable('+1 day')));
     }
 
     /**
@@ -134,18 +135,18 @@ final class CpgUserRepositoryTest extends KernelTestCase
     {
         $newer = new CpgUser('older-of-the-stale-two', '');
         $newer->setEmail('newer-stale@example.com');
-        $newer->markInvited(new \DateTimeImmutable('-35 days'));
+        $newer->markInvited(new DateTimeImmutable('-35 days'));
         $this->em->persist($newer);
 
         $older = new CpgUser('newer-of-the-stale-two', '');
         $older->setEmail('older-stale@example.com');
-        $older->markInvited(new \DateTimeImmutable('-50 days'));
+        $older->markInvited(new DateTimeImmutable('-50 days'));
         $this->em->persist($older);
 
         $this->em->flush();
         $this->em->clear();
 
-        $found = $this->repository->findAwaitingPasswordSetupInvitedBefore(new \DateTimeImmutable('-30 days'));
+        $found = $this->repository->findAwaitingPasswordSetupInvitedBefore(new DateTimeImmutable('-30 days'));
 
         self::assertCount(2, $found);
         self::assertSame('newer-of-the-stale-two', $found[0]->getUsername());

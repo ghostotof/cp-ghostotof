@@ -46,8 +46,11 @@ paths:
   is lost on an `#[AsDecorator]` service** (decoration rewrites its tags, the record silently went to the app
   channel): inject `monolog.logger.<channel>` by id there. The quota takes the shared PostgreSQL advisory lock like
   every limiter (#272, v0.18.2, ADR 0005 D8–D10 — see the ADR 0005 invariant in `.claude/rules/deploiement.md`), so a burst of synchronised
-  calls counts one unit each; never consume it inside a Doctrine transaction; body over 128 KiB (the longest valid conversation in 4-byte characters is ~104 kB — 64 KiB, the spec's
-  first figure, refused it) → 413 `/errors/request-too-large`, judged by
+  calls counts one unit each; never consume it inside a Doctrine transaction; body over 128 KiB (the longest valid conversation, 16 000 characters in all, is ~64 kB in 4-byte
+  characters; 64 KiB, the spec's first figure, predates that total and refused the 104 kB the per-message
+  bounds alone then allowed. 128 KiB also lets through a conversation whose every message respects its own
+  bound but not the total — 6 × 1 000 + 5 × 5 000 since #406, 124 372 bytes measured — so it gets the VO's
+  typed 422, not a 413: an assistant bound above 5 335, measured, would break that) → 413 `/errors/request-too-large`, judged by
   `AssistantRequestSizeListener` at priority 4, *after* the firewall, so an anonymous or base-tier caller only
   ever learns it is refused); task 6 (#265) done: the `/(fr|en)/assistant` page
   (`ROLE_TRUSTED`/`ROLE_SUPER`), see "API-backed content" in `.claude/rules/frontend.md`; task 4 (#263) done: the **nominative CV opens

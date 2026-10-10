@@ -13,6 +13,7 @@ use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
 use App\Security\User\Domain\Exception\EmailAlreadyUsedException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Service\UsernameGenerator;
+use DateTimeImmutable;
 use Doctrine\DBAL\Driver\Exception as DriverException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -150,7 +151,7 @@ final class CpgUserInviterTest extends TestCase
         $clock = new MockClock('2026-09-22 08:00:00');
         $user = new CpgUser('newcomer', '');
         $user->setEmail('newcomer@example.com');
-        $user->markInvited(new \DateTimeImmutable('2026-09-01 09:00:00'));
+        $user->markInvited(new DateTimeImmutable('2026-09-01 09:00:00'));
 
         $cpgUserRepository = $this->createMock(CpgUserRepositoryInterface::class);
         $cpgUserRepository->expects(self::once())->method('save')->with($user);
@@ -188,8 +189,8 @@ final class CpgUserInviterTest extends TestCase
     {
         $user = new CpgUser('active', 'hashed-password');
         $user->setEmail('active@example.com');
-        $user->markInvited(new \DateTimeImmutable('2026-09-01 09:00:00'));
-        $user->markActivated(new \DateTimeImmutable('2026-09-02 10:00:00'));
+        $user->markInvited(new DateTimeImmutable('2026-09-01 09:00:00'));
+        $user->markActivated(new DateTimeImmutable('2026-09-02 10:00:00'));
 
         $cpgUserRepository = self::createStub(CpgUserRepositoryInterface::class);
 

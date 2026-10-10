@@ -6,6 +6,8 @@ namespace App\Tests\Shared\Infrastructure\Http\Fixtures;
 
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Get;
+use OverflowException;
+use UnderflowException;
 
 /**
  * Fixture d'ExceptionLogLevelCoverageTest (issue #357) : une ressource qui
@@ -18,8 +20,8 @@ use ApiPlatform\Metadata\Get;
  * classes natives qu'aucune entrée de `framework.exceptions` ne vise.
  */
 #[ApiResource(
-    operations: [new Get(exceptionToStatus: [\OverflowException::class => 422])],
-    exceptionToStatus: [\UnderflowException::class => 409],
+    operations: [new Get(exceptionToStatus: [OverflowException::class => 422])],
+    exceptionToStatus: [UnderflowException::class => 409],
 )]
 final class ExceptionToStatusFixtureResource
 {

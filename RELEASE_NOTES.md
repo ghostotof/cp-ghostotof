@@ -1,73 +1,95 @@
-# v0.21.0 — Refus attribuables, 429 nginx en problem+json et livraison plus sûre
+# v0.22.0 — Erreurs typées, écritures ordonnées verrouillées et déploiement qui échoue tôt
 
-Release de consolidation, sans nouvelle fonctionnalité visible. Elle rend attribuables dans le
-journal de sécurité les refus qui ne l'étaient pas, retire les adresses e-mail des exceptions
-journalisées, fixe le niveau de journalisation de chaque erreur de l'API, met en problem+json les
-429 émis par nginx et fait échouer le déploiement tôt si un secret n'est pas synchronisé. Aucune
-migration, aucun secret nouveau. Un seul manifeste Kubernetes change : l'annotation qui rend
-facultatif le secret Xdebug de préprod.
+Release de consolidation. Elle donne un type et un statut précis aux erreurs qui n'en avaient pas,
+verrouille les écritures qui placent un contenu ordonné, fait échouer le déploiement en quelques
+secondes quand un conteneur ne démarrera pas, et laisse l'assistant de parcours renvoyer une réponse
+anglaise entière. **Une migration** (contrainte `CHECK` sur les années d'expérience), **un droit RBAC
+de plus** pour le déployeur (déjà appliqué en préprod et en prod), aucun secret nouveau.
 
-## Journal de sécurité et données personnelles (#356)
+## Comportements qui changent
 
-- **Cinq refus deviennent attribuables** dans le canal `security_audit` (IP, chemin canonique,
-  jamais le jeton) : `password-setup-token-rejected` (lien inconnu), `password-setup-token-replayed`
-  (lien déjà utilisé, avec le compte qu'il activait), `password-setup-throttled`,
-  `contact-throttled` et `base-access-throttled`. La réponse ne change pas : rejoué et expiré
-  restent le même 410.
-- **Consommation atomique du lien de définition de mot de passe.** Deux soumissions simultanées
-  du même lien passaient toutes les deux ; la seconde est maintenant refusée et journalisée.
-- **Aucune adresse e-mail dans un message d'exception journalisé.** La chaîne d'erreur du
-  transport SMTP n'est plus conservée (seules sa classe et un code numérique restent), et
-  l'exception « adresse déjà utilisée » ne cite plus l'adresse.
-- **Validation stricte des adresses** (`email_validation_mode: strict`) : une adresse que l'envoi
-  aurait refusée (`a..b@example.com`) est rejetée en 422 à la saisie, au lieu d'échouer en boucle
-  dans le worker.
-- **Le traducteur journalise son usage sur `ai_usage`**, comme l'assistant : jetons, durée et
-  refus de quota, jamais le contenu.
+À lire avant de déployer : un client ou une alerte peut s'appuyer sur l'ancien comportement.
 
-## Niveaux de journalisation (#348, #355, #357)
+| Cas | Avant | Après | Issue |
+|---|---|---|---|
+| Connexion refusée par `login_throttling` | 401 de Lexik | **429** `/errors/rate-limited` avec `Retry-After`, la page de connexion annonce le délai | #399 |
+| Quotas de contact, de définition de mot de passe et de traduction | 429 de `type` `/errors/429` | 429 de `type` **`/errors/rate-limited`**, comme les zones nginx (le `title` change aussi) | #369 |
+| `PUT` du backoffice avec un `id` dans le corps | 400 `critical` (IRI non résolue) | **400 `info`**, corps refusé | #373 |
+| Groupe de traduction aux positions divergentes | 409 « langue déjà présente » sur une paire FR/EN | **500 `critical`** (`TranslationGroupHasSeveralPositionsException`), quelle que soit la langue | #384 |
+| Verrou d'ordre non obtenu en 5 s | — | **500 nommé** `OrderScopeLockTimeoutException` | #389 |
+| Défaut du Serializer côté sortie (réponse non encodable…) | 400 | **500**, c'est un défaut serveur | #360 |
+| `GET /api` (point d'entrée Hydra) | ne rendait qu'une erreur de format (400 `critical` en dev/test) | désactivé dans tous les environnements | #360 |
+| Années d'une technologie hors de `[0, 100]` ou non finies | acceptées (`1e999` → `INF`, puis 500 sur la page publique) | **422** nommant `years` dans l'API, refus en CLI, et la base refuse aussi | #372 |
+| Message de l'assistant renvoyé | tronqué à 4 000 caractères | jusqu'à **5 000** caractères | #406 |
 
-- **Chaque exception rendue par l'API a un niveau explicite**, vérifié sur la configuration
-  compilée et identique entre environnements. Les refus attendus (quotas, liens inconnus) passent
-  en `info`.
-- **Un corps de requête illisible** (JSON mal formé, type inattendu) sort en 400 `info`, et non
-  plus en `critical`.
+## Contenus ordonnés (#389)
 
-## 429 de nginx en problem+json (#347)
+- **Toute écriture qui place une entrée prend le verrou de son périmètre** : création, modification
+  et réordonnancement, dans les neuf contextes ordonnés. Un réordonnancement concurrent d'une
+  « Créer la version EN » laissait un groupe sur deux positions, et deux créations simultanées
+  recevaient la même position.
+- Verrou consultatif PostgreSQL de transaction, attente bornée à 5 s dans PHP-FPM.
 
-- **Toutes les zones de débit nginx** (contact, définition de mot de passe, accès instantané,
-  connexion, filet général de l'API et assistant) refusent en `application/problem+json`, type
-  `/errors/rate-limited`, au lieu de la page HTML de nginx. Les 429 rendus par Symfony passent
-  inchangés, `Retry-After` compris.
-- **Limite connue**, suivie dans #368 : ces 429 ne portent pas d'en-têtes CORS, donc un
-  navigateur sur une autre origine ne peut pas les lire.
-- **Nouveau garde CI `backend-nginx-rate-limits`**, requis avant la release et la prod : il lance
-  le nginx du sidecar sur les deux confs, sature chaque zone et vérifie le corps, le type et les
-  7 en-têtes de sécurité.
+## Expérience : années bornées (#372)
 
-## Livraison (#325)
+- **Migration `Version20261006120000`** : une contrainte `CHECK` borne `experience_technology.years`
+  à `[0, 100]`. Avant de la poser, la migration ramène toute ligne fautive dans les bornes, la passe
+  en `secondary` et l'écrit en **`warning`** dans la sortie du Job de migration, avec sa valeur
+  d'origine.
+- L'ancien code lit et écrit ce schéma sans difficulté : migration avant rollout, sans fenêtre de
+  maintenance (`DEPLOY_MAINTENANCE_WINDOW` non défini).
 
-- **Le déploiement attend que chaque `ExternalSecret` soit synchronisé** avant la migration et le
-  rollout, et échoue en nommant le secret et ses clés distantes. Avant, une clé absente de Secret
-  Manager ne se voyait qu'après l'expiration du rollout, en `CreateContainerConfigError`.
-- Le secret Xdebug de préprod est annoté facultatif : son absence donne un avertissement, pas un
-  échec.
-- `rollback-preprod` ne se déclenche plus quand le déploiement s'est arrêté avant son rollout.
-- **Première exécution réelle sur cette release.**
+## Livraison (#353)
 
-## Outillage et dépendances
+- **`tools/wait-rollout.sh` remplace les 13 attentes du déploiement** (Jobs de migration et de seed,
+  Deployments). Il échoue en quelques secondes en nommant le pod, le conteneur et la raison :
+  `CreateContainerConfigError`, échec de pull, `InvalidImageName`, Job `Failed`, Secret ou ConfigMap
+  absent monté en volume (`FailedMount`). Avant, il fallait attendre l'expiration de chaque délai.
+- Le Role du déployeur lit les `events` du namespace (`get`, `list`), pour voir les `FailedMount`.
+  **Déjà appliqué en préprod et en prod.** Sans ce droit, le script avertit et le déploiement
+  continue.
+- **Première exécution réelle sur cette release** : les cas d'échec ne sont éprouvés qu'hors ligne.
 
-- `CLAUDE.md` découpé en règles par zone du dépôt sous `.claude/rules/`, avec un garde CI (#346).
-- `source-map-js` et `postcss-selector-parser` montés de version, ce qui lève un avis npm de
-  niveau élevé dans l'outillage du frontend (#367).
+## Erreurs et exceptions (#338, #383, #360, #373)
+
+- **Plus aucune exception générique levée nue dans `src/`** (`\LogicException`, `\RuntimeException`,
+  `\InvalidArgumentException`, `\Exception`) : chaque échec a sa classe, ciblable dans
+  `framework.exceptions` et reconnaissable dans les journaux. Un garde CI interdit leur retour.
+- Effets visibles : un manifeste de paquets impossible à écrire casse désormais le `docker build` ;
+  `app:user:create` ne rogne plus le mot de passe saisi à l'invite, et en mode `-n` une option
+  absente est refusée en la nommant.
+- Les entrées de repli d'API Platform sont contrôlées comme les autres : leur statut et leur niveau
+  de journalisation doivent concorder (#373).
+
+## Sécurité et quotas (#399, #369, #361)
+
+- Le refus de connexion pour excès de tentatives porte son délai (`Retry-After`) et le même type
+  que tous les autres quotas. Les autres échecs de connexion gardent le 401 de Lexik, à l'octet
+  près.
+- Un garde CI exige qu'un quota anonyme ait son propre événement `…-throttled` dans
+  `security_audit`, ou une justification écrite.
+- Le smoke test de préprod `smoke-login-throttling.sh` attend désormais le 429 de Symfony, distinct
+  de celui de la zone nginx par son `Retry-After` et son `detail`.
+
+## Outillage et documentation
+
+- Toute classe s'importe par `use`, natives comprises, et les `use` sont triés. Deux gardes CI
+  vérifient l'ordre des imports et la qualification des fonctions natives (#391, #394).
+- Test de concurrence rejouable des limiteurs de débit, avec de vrais processus (#277).
+- Les 429 de nginx sont lisibles sans CORS en préprod et en prod, où le front partage l'origine de
+  l'API. Seul le dev ne peut pas les lire, c'est documenté (#368).
+- Archive épurée des assistants de bascule DNS et messagerie (#231).
 
 ## À vérifier en préprod
 
-- Smoke tests et audit verts.
-- `deploy-preprod` : l'étape d'attente des `ExternalSecret` passe, et `backend-xdebug-trigger`
-  n'y est qu'un avertissement s'il n'est pas synchronisé.
-- `kubectl exec … -c nginx -- nginx -T | grep -E 'error_page|_status'` sur le sidecar :
-  `error_page 429 = @rate_limited`, `limit_req_status 429` et `limit_conn_status 429` au niveau
-  server (critère 2 de #347).
-- `POST /api/account/base-access` rejoué au-delà de la zone nginx : 429 en
-  `application/problem+json`, type `/errors/rate-limited`.
+- Smoke tests et audit verts, dont `smoke-login-throttling` sur le nouveau 429.
+- `deploy-preprod` : lire les lignes `Attente de …` de `wait-rollout.sh`, première exécution réelle.
+- Journal du Job de migration : aucun `warning` attendu en préprod (contenu issu des seeds).
+- `\d experience_technology` : la contrainte `CHECK` est présente.
+- Page de connexion : au-delà du seuil, le message annonce le délai.
+
+## À vérifier en prod
+
+- Journal du Job de migration : chaque `warning` nomme une ligne ramenée dans les bornes et passée
+  en `secondary`, à corriger dans le backoffice.
+- `deploy-prod` : lignes `Attente de …` de `wait-rollout.sh`.

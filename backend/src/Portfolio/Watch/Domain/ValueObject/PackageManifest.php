@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Domain\ValueObject;
 
+use DateTimeImmutable;
+
 /**
  * La liste des paquets déployés, telle qu'elle a été relevée au moment du
  * build.
@@ -23,7 +25,7 @@ final readonly class PackageManifest
      * @param list<PackageCoordinates> $packages
      */
     public function __construct(
-        public \DateTimeImmutable $generatedAt,
+        public DateTimeImmutable $generatedAt,
         public array $packages,
     ) {
     }

@@ -107,7 +107,7 @@ final class LoginFirewallScopeTest extends WebTestCase
         // « login », ils ne compteraient pas et la 6e tentative passerait.
         for ($attempt = 1; $attempt <= 5; ++$attempt) {
             $this->attemptLogin($client, self::ENCODED_LOGIN_PATH, 'wrong-password');
-            self::assertResponseStatusCodeSame(401, sprintf('La tentative n°%d aurait dû répondre 401.', $attempt));
+            self::assertResponseStatusCodeSame(401, \sprintf('La tentative n°%d aurait dû répondre 401.', $attempt));
         }
 
         // Sixième tentative par le chemin non encodé, avec le **bon** mot de
@@ -115,8 +115,11 @@ final class LoginFirewallScopeTest extends WebTestCase
         // bien été comptées sur la même clé.
         $this->attemptLogin($client, '/api/login_check', TestCredentials::plainPassword());
 
-        self::assertResponseStatusCodeSame(401);
-        self::assertStringContainsStringIgnoringCase('too many failed login attempts', (string) $client->getResponse()->getContent());
+        // Le refus de débit de login_throttling (issue #399).
+        self::assertResponseStatusCodeSame(429);
+        $problem = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($problem);
+        self::assertSame('/errors/rate-limited', $problem['type'] ?? null);
         self::assertNull($client->getCookieJar()->get(AuthCookieFactory::BEARER));
     }
 
@@ -144,9 +147,9 @@ final class LoginFirewallScopeTest extends WebTestCase
         self::assertContains(
             $client->getResponse()->getStatusCode(),
             [401, 403, 404],
-            sprintf('%s devrait être refusé (401/403/404).', $path),
+            \sprintf('%s devrait être refusé (401/403/404).', $path),
         );
-        self::assertNull($client->getCookieJar()->get(AuthCookieFactory::BEARER), sprintf('%s a posé un cookie BEARER.', $path));
+        self::assertNull($client->getCookieJar()->get(AuthCookieFactory::BEARER), \sprintf('%s a posé un cookie BEARER.', $path));
     }
 
     private function createClientWithAccount(): KernelBrowser

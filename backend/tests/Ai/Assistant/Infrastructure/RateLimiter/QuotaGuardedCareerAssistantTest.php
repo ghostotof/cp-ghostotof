@@ -15,6 +15,9 @@ use App\Ai\Assistant\Infrastructure\RateLimiter\QuotaGuardedCareerAssistant;
 use App\Ai\Assistant\Infrastructure\RateLimiter\UnauthenticatedAssistantCallException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Ai\Translation\Support\InMemoryLogger;
+use ArrayObject;
+use DateTimeImmutable;
+use Generator;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorage;
 use Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken;
@@ -29,15 +32,15 @@ final class QuotaGuardedCareerAssistantTest extends TestCase
     /**
      * Appels reçus par les deux doublures, dans l'ordre.
      *
-     * @var \ArrayObject<int, string>
+     * @var ArrayObject<int, string>
      */
-    private \ArrayObject $journal;
+    private ArrayObject $journal;
 
     private InMemoryLogger $logger;
 
     protected function setUp(): void
     {
-        $this->journal = new \ArrayObject();
+        $this->journal = new ArrayObject();
         $this->logger = new InMemoryLogger();
     }
 
@@ -120,20 +123,20 @@ final class QuotaGuardedCareerAssistantTest extends TestCase
     private function decorated(): CareerAssistantInterface
     {
         return new readonly class($this->journal) implements CareerAssistantInterface {
-            /** @param \ArrayObject<int, string> $journal */
-            public function __construct(private \ArrayObject $journal)
+            /** @param ArrayObject<int, string> $journal */
+            public function __construct(private ArrayObject $journal)
             {
             }
 
-            public function answer(Conversation $conversation, Locale $locale): \Generator
+            public function answer(Conversation $conversation, Locale $locale): Generator
             {
                 $this->journal[] = 'answer';
 
                 return $this->fragments();
             }
 
-            /** @return \Generator<int, string, mixed, AnswerUsage> */
-            private function fragments(): \Generator
+            /** @return Generator<int, string, mixed, AnswerUsage> */
+            private function fragments(): Generator
             {
                 yield 'réponse';
 
@@ -145,8 +148,8 @@ final class QuotaGuardedCareerAssistantTest extends TestCase
     private function rateLimiter(bool $accepts): AssistantRateLimiterInterface
     {
         return new readonly class($this->journal, $accepts) implements AssistantRateLimiterInterface {
-            /** @param \ArrayObject<int, string> $journal */
-            public function __construct(private \ArrayObject $journal, private bool $accepts)
+            /** @param ArrayObject<int, string> $journal */
+            public function __construct(private ArrayObject $journal, private bool $accepts)
             {
             }
 
@@ -154,7 +157,7 @@ final class QuotaGuardedCareerAssistantTest extends TestCase
             {
                 $this->journal[] = 'consume:'.$accountIdentifier;
                 if (!$this->accepts) {
-                    throw new AssistantRateLimitExceededException(new \DateTimeImmutable('+1 hour'));
+                    throw new AssistantRateLimitExceededException(new DateTimeImmutable('+1 hour'));
                 }
             }
         };

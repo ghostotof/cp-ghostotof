@@ -247,8 +247,7 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         }
 
         $this->postValidate($client, ['token' => $unknown]);
-        self::assertResponseStatusCodeSame(429);
-        self::assertResponseHasHeader('Retry-After');
+        $this->assertRateLimitedProblem($client);
     }
 
     /**
@@ -270,8 +269,7 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
 
         $this->postSetup($client, ['password' => 'short']);
 
-        self::assertResponseStatusCodeSame(429);
-        self::assertResponseHasHeader('Retry-After');
+        $this->assertRateLimitedProblem($client);
     }
 
     /**
@@ -357,6 +355,24 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
     private function postSetup(KernelBrowser $client, array $payload): void
     {
         $client->request('POST', '/api/account/password-setup', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody($payload));
+    }
+
+    /**
+     * Le refus de débit tel qu'un client le lit, sur chacune des deux
+     * ressources du parcours (validation et définition) : 429, échéance
+     * Retry-After, et le `type` de tout refus de débit, nginx compris
+     * (issue #369) — pas le `/errors/429` qu'API Platform déduirait du seul
+     * statut.
+     */
+    private function assertRateLimitedProblem(KernelBrowser $client): void
+    {
+        self::assertResponseStatusCodeSame(429);
+        self::assertResponseHasHeader('Retry-After');
+        self::assertGreaterThan(0, (int) $client->getResponse()->headers->get('Retry-After'));
+        $problem = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($problem);
+        self::assertSame('/errors/rate-limited', $problem['type'] ?? null);
+        self::assertSame(429, $problem['status'] ?? null);
     }
 
     private function freshClient(): KernelBrowser

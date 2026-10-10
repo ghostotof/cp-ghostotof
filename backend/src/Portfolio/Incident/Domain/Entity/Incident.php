@@ -8,6 +8,7 @@ use App\Portfolio\Incident\Infrastructure\Doctrine\IncidentRepository;
 use App\Portfolio\Shared\Domain\Orderable;
 use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
@@ -72,7 +73,7 @@ class Incident implements Orderable, TranslatableContent
 
     #[ORM\Column(type: 'date_immutable')]
     #[Assert\NotNull]
-    private \DateTimeImmutable $occurredAt;
+    private DateTimeImmutable $occurredAt;
 
     /** Conséquence visible, et sa durée. */
     #[ORM\Column(type: 'text')]
@@ -99,7 +100,7 @@ class Incident implements Orderable, TranslatableContent
         Locale $locale,
         string $title,
         string $version,
-        \DateTimeImmutable $occurredAt,
+        DateTimeImmutable $occurredAt,
         string $impact,
         string $rootCause,
         string $resolution,
@@ -140,7 +141,7 @@ class Incident implements Orderable, TranslatableContent
         return $this->version;
     }
 
-    public function getOccurredAt(): \DateTimeImmutable
+    public function getOccurredAt(): DateTimeImmutable
     {
         return $this->occurredAt;
     }
@@ -173,7 +174,7 @@ class Incident implements Orderable, TranslatableContent
     public function update(
         string $title,
         string $version,
-        \DateTimeImmutable $occurredAt,
+        DateTimeImmutable $occurredAt,
         string $impact,
         string $rootCause,
         string $resolution,

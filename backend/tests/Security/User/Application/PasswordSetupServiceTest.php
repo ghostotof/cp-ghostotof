@@ -13,6 +13,7 @@ use App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Tests\Support\TestCredentials;
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
@@ -54,7 +55,7 @@ final class PasswordSetupServiceTest extends TestCase
         $expired = new PasswordSetupToken(
             new CpgUser('jane', ''),
             hash('sha256', self::CLEAR_TOKEN),
-            new \DateTimeImmutable('2026-09-09 10:00:00'),
+            new DateTimeImmutable('2026-09-09 10:00:00'),
         );
         $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
         $tokenRepository->method('findOneByTokenHash')->willReturn($expired);
@@ -68,7 +69,7 @@ final class PasswordSetupServiceTest extends TestCase
     {
         $clock = new MockClock('2026-09-10 10:00:00');
         $used = $this->usableToken($clock);
-        $used->markUsed(new \DateTimeImmutable('2026-09-10 09:00:00'));
+        $used->markUsed(new DateTimeImmutable('2026-09-10 09:00:00'));
         $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
         $tokenRepository->method('findOneByTokenHash')->willReturn($used);
 
@@ -106,7 +107,7 @@ final class PasswordSetupServiceTest extends TestCase
         $clock = new MockClock('2026-09-10 10:00:00');
         $user = new CpgUser('jane', 'hashed-password');
         $used = $this->tokenFor($user, $clock);
-        $used->markUsed(new \DateTimeImmutable('2026-09-10 09:00:00'));
+        $used->markUsed(new DateTimeImmutable('2026-09-10 09:00:00'));
         $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
         $tokenRepository->method('findOneByTokenHash')->willReturn($used);
 
@@ -130,7 +131,7 @@ final class PasswordSetupServiceTest extends TestCase
         $expired = new PasswordSetupToken(
             new CpgUser('jane', ''),
             hash('sha256', self::CLEAR_TOKEN),
-            new \DateTimeImmutable('2026-09-09 10:00:00'),
+            new DateTimeImmutable('2026-09-09 10:00:00'),
         );
         $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
         $tokenRepository->method('findOneByTokenHash')->willReturn($expired);
@@ -148,7 +149,7 @@ final class PasswordSetupServiceTest extends TestCase
     {
         $clock = new MockClock('2026-09-10 10:00:00');
         $user = new CpgUser('jane', '');
-        $user->markInvited(new \DateTimeImmutable('2026-09-08 08:00:00'));
+        $user->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
         $token = $this->tokenFor($user, $clock);
 
         $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
@@ -190,7 +191,7 @@ final class PasswordSetupServiceTest extends TestCase
     {
         $clock = new MockClock('2026-09-10 10:00:00');
         $user = new CpgUser('jane', '');
-        $user->markInvited(new \DateTimeImmutable('2026-09-08 08:00:00'));
+        $user->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
         $token = $this->tokenFor($user, $clock);
 
         $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
@@ -224,7 +225,7 @@ final class PasswordSetupServiceTest extends TestCase
         $expired = new PasswordSetupToken(
             new CpgUser('jane', ''),
             hash('sha256', self::CLEAR_TOKEN),
-            new \DateTimeImmutable('2026-09-01 10:00:00'),
+            new DateTimeImmutable('2026-09-01 10:00:00'),
         );
 
         $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);

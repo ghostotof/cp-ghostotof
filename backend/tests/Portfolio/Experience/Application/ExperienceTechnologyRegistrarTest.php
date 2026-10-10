@@ -8,6 +8,7 @@ use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrar;
 use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException;
 use App\Portfolio\Experience\Domain\Repository\ExperienceTechnologyRepositoryInterface;
+use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use PHPUnit\Framework\TestCase;
 
 final class ExperienceTechnologyRegistrarTest extends TestCase
@@ -25,7 +26,7 @@ final class ExperienceTechnologyRegistrarTest extends TestCase
 
         $registrar = new ExperienceTechnologyRegistrar($repository);
 
-        $technology = $registrar->register('PHP', 13.5, 'php', 'HTML / CSS / JavaScript');
+        $technology = $registrar->register('PHP', ExperienceYears::fromFloat(13.5), 'php', 'HTML / CSS / JavaScript');
 
         self::assertSame('PHP', $technology->getName());
         self::assertSame(13.5, $technology->getYears());
@@ -35,7 +36,7 @@ final class ExperienceTechnologyRegistrarTest extends TestCase
 
     public function testRegisterThrowsWhenNameAlreadyUsed(): void
     {
-        $existingTechnology = new ExperienceTechnology('PHP', 13.5);
+        $existingTechnology = new ExperienceTechnology('PHP', ExperienceYears::fromFloat(13.5));
 
         $repository = $this->createMock(ExperienceTechnologyRepositoryInterface::class);
         $repository->expects(self::once())->method('findOneByName')->with('PHP')->willReturn($existingTechnology);
@@ -45,6 +46,6 @@ final class ExperienceTechnologyRegistrarTest extends TestCase
 
         $this->expectException(ExperienceTechnologyAlreadyExistsException::class);
 
-        $registrar->register('PHP', 13.5, null, null);
+        $registrar->register('PHP', ExperienceYears::fromFloat(13.5), null, null);
     }
 }

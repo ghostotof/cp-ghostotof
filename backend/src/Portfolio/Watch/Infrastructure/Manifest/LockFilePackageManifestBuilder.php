@@ -8,6 +8,8 @@ use App\Portfolio\Watch\Domain\Service\PackageManifestBuilderInterface;
 use App\Portfolio\Watch\Domain\ValueObject\PackageCoordinates;
 use App\Portfolio\Watch\Domain\ValueObject\PackageManifest;
 use App\Portfolio\Watch\Infrastructure\ReadsUntrustedArrays;
+use DateTimeImmutable;
+use JsonException;
 
 /**
  * Produit le manifeste des paquets déployés à partir des fichiers de
@@ -26,6 +28,7 @@ use App\Portfolio\Watch\Infrastructure\ReadsUntrustedArrays;
 final readonly class LockFilePackageManifestBuilder implements PackageManifestBuilderInterface
 {
     use ReadsUntrustedArrays;
+    use WritesManifestFile;
 
     public function __construct(
         private string $composerLockPath,
@@ -34,7 +37,7 @@ final readonly class LockFilePackageManifestBuilder implements PackageManifestBu
     ) {
     }
 
-    public function build(\DateTimeImmutable $generatedAt): PackageManifest
+    public function build(DateTimeImmutable $generatedAt): PackageManifest
     {
         $manifest = new PackageManifest($generatedAt, [
             ...$this->composerPackages(),
@@ -153,7 +156,7 @@ final readonly class LockFilePackageManifestBuilder implements PackageManifestBu
 
         try {
             $decoded = json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
+        } catch (JsonException) {
             return [];
         }
 
@@ -163,12 +166,6 @@ final readonly class LockFilePackageManifestBuilder implements PackageManifestBu
 
     private function write(PackageManifest $manifest): void
     {
-        $directory = \dirname($this->manifestPath);
-
-        if (!is_dir($directory) && !mkdir($directory, 0o775, true) && !is_dir($directory)) {
-            throw new \RuntimeException(sprintf('Impossible de créer le répertoire "%s".', $directory));
-        }
-
         $payload = [
             'generatedAt' => $manifest->generatedAt->format(\DATE_ATOM),
             'packages' => array_map(
@@ -181,7 +178,7 @@ final readonly class LockFilePackageManifestBuilder implements PackageManifestBu
             ),
         ];
 
-        file_put_contents(
+        self::writeManifestFile(
             $this->manifestPath,
             json_encode($payload, \JSON_THROW_ON_ERROR | \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES),
         );

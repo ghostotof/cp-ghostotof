@@ -161,7 +161,10 @@ premier, puisqu'un compte peut y envoyer des salves synchronisées.
   pointe sur un advisory lock PostgreSQL de la base de l'application
   (`DoctrineDbalPostgreSqlStore`). Dès que le composant est configuré, les limiteurs de
   `rate_limiter.yaml` (`lock_factory: 'auto'`) et ceux de `login_throttling` reçoivent
-  `lock.factory`. `RateLimiterStorageTest` exige ce store pour chacun.
+  `lock.factory`. `RateLimiterStorageTest` exige ce store pour chacun ;
+  `RateLimiterConcurrencyTest` (issue #277) en vérifie l'effet : dix processus consomment au même
+  instant la même clé d'un limiteur par politique (`sliding_window`, `fixed_window`), et chaque
+  unité doit être décomptée — sans verrou, des unités sont perdues (une sur dix décomptée en dev).
 - **D9 — Le DSN du verrou est dérivé de `DATABASE_URL`, jamais déclaré à part.** L'env processor
   `pg_advisory:` suffixe le schéma de `+advisory` — c'est ce suffixe qui fait choisir le store
   advisory à `StoreFactory` ; `postgresql://` seul donnerait un `DoctrineDbalStore` à table. Tout
