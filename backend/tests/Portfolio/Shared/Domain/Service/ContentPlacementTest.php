@@ -10,6 +10,7 @@ use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Portfolio\Shared\Support\FakeTranslatableContent;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
 
@@ -119,24 +120,50 @@ final class ContentPlacementTest extends TestCase
      * dépend. Un groupe hétérogène est un défaut du pipeline, pas une saisie :
      * il doit surfacer, pas être arbitré en silence par `$members[0]`.
      *
-     * Les deux membres sont en FR et la langue demandée est EN : avec deux
-     * langues seulement, c'est la seule façon d'atteindre ce contrôle, la
-     * présence de la langue demandée étant vérifiée avant (issue #338 — une
-     * paire FR/EN levait TranslationAlreadyExistsException, une \LogicException
-     * elle aussi, et le test passait sans jamais arriver jusqu'ici). Un tel
-     * groupe viole aussi l'index unique `(translation_group, locale)` : c'est
-     * précisément le groupe corrompu que la garde suppose.
+     * Le groupe est une paire FR/EN, qui respecte l'index unique
+     * `(translation_group, locale)` : c'est le seul groupe corrompu possible
+     * en production avec deux langues. Il contient donc forcément la langue
+     * demandée, et le contrôle de cohérence doit passer avant celui de la
+     * langue (issue #384) : sinon ce défaut sortait en 409 `info`, comme une
+     * saisie ordinaire, et aucune alerte ne partait.
      */
-    public function testAGroupWhoseMembersDisagreeOnThePositionIsABug(): void
+    #[DataProvider('everyLocale')]
+    public function testAGroupWhoseMembersDisagreeOnThePositionIsABugWhateverTheLocale(Locale $requested): void
     {
         $group = Uuid::v7();
-        $members = [new FakeTranslatableContent(Locale::FR, 3, $group), new FakeTranslatableContent(Locale::FR, 5, $group)];
+        $members = [new FakeTranslatableContent(Locale::FR, 3, $group), new FakeTranslatableContent(Locale::EN, 5, $group)];
 
         $this->expectException(TranslationGroupHasSeveralPositionsException::class);
         // Le groupe fautif est ce qu'il faut retrouver en base.
         $this->expectExceptionMessage($group->toRfc4122());
 
-        (new ContentPlacement())->inGroup($group, Locale::EN, $members);
+        (new ContentPlacement())->inGroup($group, $requested, $members);
+    }
+
+    /**
+     * Le chemin du `PUT` (#384) : rattacher une entrée EN à une paire FR/EN
+     * corrompue doit faire surfacer le défaut, pas le 409 de la langue déjà
+     * présente — même ordre de contrôles que la création.
+     */
+    public function testReattachingToAGroupWhoseMembersDisagreeOnThePositionIsABug(): void
+    {
+        $entry = new FakeTranslatableContent(Locale::EN, 9);
+        $target = Uuid::v7();
+        $members = [new FakeTranslatableContent(Locale::FR, 3, $target), new FakeTranslatableContent(Locale::EN, 5, $target)];
+
+        $this->expectException(TranslationGroupHasSeveralPositionsException::class);
+
+        (new ContentPlacement())->reattach($entry, $target, $members);
+    }
+
+    /**
+     * @return iterable<string, array{Locale}>
+     */
+    public static function everyLocale(): iterable
+    {
+        foreach (Locale::cases() as $locale) {
+            yield $locale->value => [$locale];
+        }
     }
 
     /**
