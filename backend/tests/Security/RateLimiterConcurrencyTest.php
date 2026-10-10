@@ -7,6 +7,7 @@ namespace App\Tests\Security;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Process\Process;
+use Symfony\Component\RateLimiter\LimiterInterface;
 use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
 
 /**
@@ -26,11 +27,18 @@ use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
  * se bloquent sur un verrou partagé d'un fichier-barrière que le test tient
  * en exclusif. Une fois tous prêts, le test relâche la barrière : ils
  * consomment au même instant. Barrière par fichier plutôt que par horloge :
- * un démarrage lent en CI ne fait que retarder la libération, il ne peut pas
- * sérialiser les consommateurs et rendre le test vert sans rien prouver.
+ * un démarrage lent en CI retarde la libération au lieu d'étaler les
+ * consommations, ce qui rendrait le test vert sans rien prouver. Pour la même
+ * raison, chaque fils ouvre ses connexions PostgreSQL avant la barrière.
+ *
+ * Ce qui peut encore affaiblir la course : un fils écrit « ready » juste avant
+ * de se bloquer sur la barrière, et pourrait l'atteindre après sa libération.
+ * RELEASE_DELAY_MICROSECONDS couvre cet intervalle. Le seul effet possible est
+ * un test moins sensible, jamais un faux rouge : avec le verrou, l'ordre
+ * d'arrivée ne change pas le décompte.
  *
  * Rouge vérifié le 2026-10-10 avec `lock_factory: null` sur chaque limiteur
- * exercé : le décompte perd des unités dès le premier passage.
+ * exercé : le décompte perd des unités à chaque passage.
  */
 final class RateLimiterConcurrencyTest extends KernelTestCase
 {
@@ -43,6 +51,9 @@ final class RateLimiterConcurrencyTest extends KernelTestCase
 
     /** Borne de chaque attente : un verrou jamais relâché fait échouer le test au lieu de le suspendre. */
     private const int TIMEOUT_SECONDS = 60;
+
+    /** Laisse à chaque fils, après son « ready », le temps d'atteindre son flock(). */
+    private const int RELEASE_DELAY_MICROSECONDS = 100_000;
 
     private const string CONSUMER_SCRIPT = __DIR__.'/Fixtures/consume-rate-limiter.php';
 
@@ -89,9 +100,10 @@ final class RateLimiterConcurrencyTest extends KernelTestCase
                 $consumers[] = $this->startConsumer($limiterName, $key, $barrierPath);
             }
             $this->waitUntilAllReady($consumers);
+            usleep(self::RELEASE_DELAY_MICROSECONDS);
             flock($barrier, \LOCK_UN);
 
-            $results = $this->waitForAll($consumers);
+            $remainingSeen = $this->collectRemainingTokensSeen($consumers);
             $after = $limiter->consume(0)->getRemainingTokens();
 
             self::assertSame(
@@ -102,7 +114,7 @@ final class RateLimiterConcurrencyTest extends KernelTestCase
                     self::SIMULTANEOUS_CONSUMERS,
                     $limiterName,
                     $before - $after,
-                    implode(', ', $results),
+                    implode(', ', $remainingSeen),
                 ),
             );
         } finally {
@@ -111,7 +123,21 @@ final class RateLimiterConcurrencyTest extends KernelTestCase
             }
             fclose($barrier);
             unlink($barrierPath);
+            $this->forgetKey($limiter);
+        }
+    }
+
+    /**
+     * Efface la fenêtre de la clé. reset() prend le verrou et écrit en base :
+     * s'il échoue (verrou jamais relâché, connexion perdue), il ne doit pas
+     * remplacer l'échec ou le timeout qui l'explique. La clé est aléatoire, une
+     * ligne oubliée n'affecte aucun autre test.
+     */
+    private function forgetKey(LimiterInterface $limiter): void
+    {
+        try {
             $limiter->reset();
+        } catch (\Throwable) {
         }
     }
 
@@ -125,16 +151,37 @@ final class RateLimiterConcurrencyTest extends KernelTestCase
 
     private function startConsumer(string $limiterName, string $key, string $barrierPath): Process
     {
-        // APP_ENV explicite : PHPUnit ne le pose que dans $_SERVER, que le
-        // processus fils n'hérite pas ; sans lui, Dotenv chargerait le .env de dev.
         $process = new Process(
             [\PHP_BINARY, self::CONSUMER_SCRIPT, $limiterName, $key, $barrierPath],
-            env: ['APP_ENV' => 'test'],
+            env: $this->consumerEnvironment(),
             timeout: self::TIMEOUT_SECONDS,
         );
         $process->start();
 
         return $process;
+    }
+
+    /**
+     * Les variables que phpunit.dist.xml force par `<server force="true">`
+     * (APP_ENV, clés d'API factices…) ne vivent que dans $_SERVER : un
+     * processus fils ne les hérite pas. Sans elles, Dotenv chargerait le .env
+     * de dev, et une vraie ANTHROPIC_API_KEY exportée dans le shell parviendrait
+     * au fils à la place de la valeur factice, ce qui contournerait le filet de
+     * phpunit.dist.xml. Les transmettre explicitement donne au fils
+     * l'environnement exact du test.
+     *
+     * @return array<string, string>
+     */
+    private function consumerEnvironment(): array
+    {
+        $environment = [];
+        foreach ($_SERVER as $name => $value) {
+            if (\is_string($name) && \is_string($value)) {
+                $environment[$name] = $value;
+            }
+        }
+
+        return $environment;
     }
 
     /**
@@ -164,9 +211,9 @@ final class RateLimiterConcurrencyTest extends KernelTestCase
      *
      * @return list<string>
      */
-    private function waitForAll(array $consumers): array
+    private function collectRemainingTokensSeen(array $consumers): array
     {
-        $results = [];
+        $remainingSeen = [];
         foreach ($consumers as $consumer) {
             $consumer->wait();
             self::assertSame(
@@ -175,9 +222,9 @@ final class RateLimiterConcurrencyTest extends KernelTestCase
                 \sprintf("Un consommateur a échoué ou s'est vu refuser son unité :\n%s%s", $consumer->getOutput(), $consumer->getErrorOutput()),
             );
             $lines = explode("\n", trim($consumer->getOutput()));
-            $results[] = end($lines);
+            $remainingSeen[] = end($lines);
         }
 
-        return $results;
+        return $remainingSeen;
     }
 }
