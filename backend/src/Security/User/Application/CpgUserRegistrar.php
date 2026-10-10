@@ -9,6 +9,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\UsernameAlreadyUsedException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use SensitiveParameter;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
 final readonly class CpgUserRegistrar implements CpgUserRegistrarInterface
@@ -20,7 +21,7 @@ final readonly class CpgUserRegistrar implements CpgUserRegistrarInterface
     ) {
     }
 
-    public function register(string $username, string $plainPassword, array $roles = []): CpgUser
+    public function register(string $username, #[SensitiveParameter] string $plainPassword, array $roles = []): CpgUser
     {
         if (null !== $this->cpgUserRepository->findOneByUsername($username)) {
             throw UsernameAlreadyUsedException::forUsername($username);

@@ -10,6 +10,7 @@ use App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CannotDeleteOwnAccountException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use SensitiveParameter;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Uid\Uuid;
 
@@ -51,7 +52,7 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
         $this->auditLogger->userDeleted($user);
     }
 
-    public function changePassword(Uuid $id, string $newPlainPassword): void
+    public function changePassword(Uuid $id, #[SensitiveParameter] string $newPlainPassword): void
     {
         $user = $this->cpgUserRepository->findOneById($id);
 
