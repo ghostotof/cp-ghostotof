@@ -15,7 +15,7 @@ use Symfony\Component\Uid\Uuid;
  *
  * Elle sort donc en 500 `critical` : ni `ProblemExceptionInterface`, ni
  * entrée `exception_to_status`, et elle étend {@see LogicException} plutôt que
- * \DomainException, que les erreurs clientes de ce dossier étendent. Le
+ * {@see \DomainException}, que les erreurs clientes de ce dossier étendent. Le
  * message donne le groupe, ce qu'il faut retrouver en base.
  */
 final class TranslationGroupHasSeveralPositionsException extends LogicException

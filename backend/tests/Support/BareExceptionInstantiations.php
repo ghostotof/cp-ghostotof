@@ -18,7 +18,7 @@ use PhpToken;
  * Toute instanciation compte, levée ou non : une exception construite puis
  * levée plus loin reste une exception générique, et une classe anonyme qui
  * l'étend sans rien y ajouter aussi. Les autres classes de la SPL
- * (\DomainException…) sont hors périmètre : aucune n'est levée nue dans
+ * ({@see \DomainException}…) sont hors périmètre : aucune n'est levée nue dans
  * `src/`, et les ajouter ici est la marche à suivre le jour où l'une le serait.
  *
  * Limite assumée : un import groupé (`use Foo\{A, B};`) n'est pas résolu. Le

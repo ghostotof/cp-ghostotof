@@ -9,7 +9,7 @@ use RuntimeException;
 /**
  * Exception métier levée lorsque l'envoi effectif de l'e-mail d'invitation
  * échoue (SMTP indisponible, DSN mal configuré, etc.), dans
- * App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler.
+ * {@see \App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler}.
  */
 final class AccountInvitationDeliveryException extends RuntimeException
 {

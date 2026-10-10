@@ -10,7 +10,7 @@ use InvalidArgumentException;
  * Une réponse à une question console est refusée par le validateur de la
  * question (issue #383).
  *
- * Le QuestionHelper rattrape toute \Exception d'un validateur, en affiche le
+ * Le QuestionHelper rattrape toute {@see \Exception} d'un validateur, en affiche le
  * message à l'opérateur et repose la question. Sur une fin d'entrée, il relance
  * la dernière : la commande doit donc la rattraper autour de `ask()`, sans quoi
  * elle sort et le ErrorListener de la console la journalise en `critical`. Le

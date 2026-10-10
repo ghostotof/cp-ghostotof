@@ -78,11 +78,15 @@ take the day one is.
 ones included** (issue #391). `use LogicException;` then `new LogicException(…)`, `use Throwable;` then
 `catch (Throwable $e)`, `use DateTimeImmutable;` then `DateTimeImmutable $at`, likewise `Stringable`,
 `JsonSerializable`, `Closure`, `Generator`, `ReflectionClass`…: never `\LogicException`, never
-`\App\…\Foo` inline, in code, attributes and phpdoc types alike (settled on 2026-10-10).
+`\App\…\Foo` inline, in code, attributes and phpdoc types alike (settled on 2026-10-10) — a `{@see}`
+in a comment is not a type, see below.
 **A comment never adds a `use`** (settled on 2026-10-10, review of #391). A class the file imports for
 its code is cited by its short name — `{@see Foo}` in a docblock, `Foo` in a `//` comment. Any other class
-is cited by its **full name, without `use` and without `{@see}`**: `\ValueError` for a native one,
-`App\Shared\Infrastructure\Http\RetryAfterListener` otherwise. Two reasons. An import only a docblock needs
+is cited by **`{@see}` with its full name, without `use`**: `{@see \ValueError}`,
+`{@see \App\Shared\Infrastructure\Http\RetryAfterListener}`, `{@see \DateInterval::createFromDateString()}`
+— the leading `\` makes it unambiguous for the IDE, which keeps it clickable and renames it. Rector leaves
+such a `{@see}` alone (verified on 2026-10-10). In a `//` comment, where `{@see}` means nothing, the full
+name stands alone (`Monolog\Logger` in `ReadsSecurityAuditLog`). Two reasons. An import only a docblock needs
 is checked by nothing — PHP does not resolve an unused `use`, PHPStan does not read `{@see}`, Rector keeps
 it — so a deleted or renamed class leaves it dangling with a green CI; and it would make an inner layer
 import an outer one (`Domain` → `Application`/`Infrastructure`/`Presentation`, `Application` →

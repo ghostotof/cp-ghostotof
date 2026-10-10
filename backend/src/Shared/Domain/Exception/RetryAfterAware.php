@@ -8,7 +8,7 @@ use DateTimeImmutable;
 
 /**
  * Une exception de dépassement de quota qui sait quand le client pourra
- * réessayer. App\Shared\Infrastructure\Http\RetryAfterListener en tire
+ * réessayer. {@see \App\Shared\Infrastructure\Http\RetryAfterListener} en tire
  * l'en-tête HTTP `Retry-After`, quelle que soit la route ou l'écouteur qui
  * construit la réponse 429 (issue #273).
  *

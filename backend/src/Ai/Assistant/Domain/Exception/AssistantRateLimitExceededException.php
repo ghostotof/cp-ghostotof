@@ -16,7 +16,7 @@ use DomainException;
  * que celui que rend la zone nginx `assistant`) : le frontend n'a qu'une
  * raison à reconnaître, quelle que soit la borne atteinte. Rendue par
  * ApiProblemResponseListener (Shared) ; l'en-tête Retry-After est posé par
- * App\Shared\Infrastructure\Http\RetryAfterListener à partir de $retryAfter
+ * {@see \App\Shared\Infrastructure\Http\RetryAfterListener} à partir de $retryAfter
  * (RetryAfterAware).
  */
 final class AssistantRateLimitExceededException extends DomainException implements ProblemExceptionInterface, RetryAfterAware

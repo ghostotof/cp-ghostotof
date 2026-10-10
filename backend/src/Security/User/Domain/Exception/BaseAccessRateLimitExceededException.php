@@ -12,13 +12,13 @@ use DomainException;
 
 /**
  * Levée lorsqu'un même client (identifié par IP, cf.
- * App\Security\User\Infrastructure\RateLimiter\SymfonyBaseAccessRateLimiter)
+ * {@see \App\Security\User\Infrastructure\RateLimiter\SymfonyBaseAccessRateLimiter})
  * dépasse le quota d'appels autorisé sur l'endpoint d'accès au palier de base
  * (ADR 0003 D6).
  *
  * POST /api/account/base-access est un contrôleur, pas une opération API
  * Platform : `exception_to_status` ne s'y applique pas. Le 429 est rendu par
- * App\Shared\Infrastructure\Http\ApiProblemResponseListener (issue #322), avec
+ * {@see \App\Shared\Infrastructure\Http\ApiProblemResponseListener} (issue #322), avec
  * le `type` `/errors/rate-limited` que portent déjà le quota de l'assistant et
  * la zone nginx `assistant` : un client n'a qu'une raison à reconnaître.
  * L'en-tête Retry-After est posé par RetryAfterListener (RetryAfterAware), et

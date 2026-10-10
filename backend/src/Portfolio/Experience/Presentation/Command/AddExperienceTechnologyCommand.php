@@ -163,7 +163,7 @@ final class AddExperienceTechnologyCommand extends Command
     }
 
     /**
-     * Le QuestionHelper rattrape toute \Exception d'un validateur, l'exception
+     * Le QuestionHelper rattrape toute {@see \Exception} d'un validateur, l'exception
      * du domaine comprise : nul besoin de la ré-emballer pour que la question
      * soit reposée avec son message.
      *

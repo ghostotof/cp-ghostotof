@@ -9,7 +9,7 @@ use RuntimeException;
 /**
  * Exception métier levée lorsque l'envoi effectif de l'email de contact
  * échoue (SMTP indisponible, DSN mal configuré, etc.), typiquement dans
- * App\Contact\Infrastructure\Messenger\SendContactMessageHandler.
+ * {@see \App\Contact\Infrastructure\Messenger\SendContactMessageHandler}.
  */
 final class ContactMessageDeliveryException extends RuntimeException
 {
