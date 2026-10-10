@@ -7,6 +7,7 @@ import { SUPPORTED_LOCALES, LOCALE_NATIVE_NAMES, isSupportedLocale, type Locale 
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import type { AdminUser } from '../../../domain/admin/users/entities/AdminUser'
+import { MAX_PASSWORD_BYTES, MIN_PASSWORD_LENGTH } from '../../../domain/account/services/passwordLength'
 
 const { t } = useI18n()
 const { users, isLoading, hasError, errorMessage, invite, setSuperAdmin, resendInvitation, remove, changePassword } = useAdminUsers()
@@ -90,7 +91,17 @@ onBeforeUnmount(() => {
 })
 
 // --- Rôles / statut ---
-const errorText = computed(() => (errorMessage.value ? t(`admin.users.errors.${errorMessage.value.reason}`) : null))
+/**
+ * Les bornes ne servent qu'au motif `validation` (le 422 du changement de mot
+ * de passe), dont le message cite les règles du backend : passées depuis le
+ * domaine plutôt qu'écrites en dur dans la traduction (#410). Les autres
+ * messages ignorent ces paramètres.
+ */
+const errorText = computed(() =>
+  errorMessage.value
+    ? t(`admin.users.errors.${errorMessage.value.reason}`, { min: MIN_PASSWORD_LENGTH, max: MAX_PASSWORD_BYTES })
+    : null,
+)
 
 function isCurrentUser(user: AdminUser): boolean {
   return user.username === currentUser.value?.username
