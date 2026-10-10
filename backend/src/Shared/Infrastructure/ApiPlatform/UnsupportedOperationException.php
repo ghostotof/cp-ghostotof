@@ -12,12 +12,12 @@ use ApiPlatform\Metadata\Operation;
  * Défaut de câblage d'un `#[ApiResource]`, jamais une requête cliente : le
  * routeur ne publie que les opérations déclarées. Elle sort donc en 500
  * `critical`, sans `ProblemExceptionInterface` ni entrée `exception_to_status`.
- * Partagée par tous les Processors du backoffice, qui suivent le même patron
- * Post/Put/Delete ; la trace dit lequel l'a levée.
+ * Levée par DispatchesWriteOperations, le `process()` commun des Processors
+ * CRUD du backoffice ; la trace dit lequel l'a reçue.
  */
 final class UnsupportedOperationException extends \LogicException
 {
-    public static function for(Operation $operation): self
+    public static function forOperation(Operation $operation): self
     {
         return new self(\sprintf('Opération non gérée : %s.', $operation::class));
     }

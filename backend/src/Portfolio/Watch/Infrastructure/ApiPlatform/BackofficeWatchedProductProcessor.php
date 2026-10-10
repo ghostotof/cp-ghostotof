@@ -4,62 +4,70 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Infrastructure\ApiPlatform;
 
-use ApiPlatform\Metadata\Delete;
-use ApiPlatform\Metadata\Operation;
-use ApiPlatform\Metadata\Post;
-use ApiPlatform\Metadata\Put;
 use ApiPlatform\State\ProcessorInterface;
 use App\Portfolio\Watch\Application\WatchedProductAdministratorInterface;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use App\Portfolio\Watch\Presentation\ApiResource\BackofficeWatchedProductResource;
-use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
-use App\Shared\Infrastructure\ApiPlatform\UnsupportedOperationException;
+use App\Shared\Infrastructure\ApiPlatform\DispatchesWriteOperations;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @implements ProcessorInterface<BackofficeWatchedProductResource, BackofficeWatchedProductResource|null>
  */
 final readonly class BackofficeWatchedProductProcessor implements ProcessorInterface
 {
-    use ResolvesUriVariables;
+    /** @use DispatchesWriteOperations<BackofficeWatchedProductResource> */
+    use DispatchesWriteOperations;
 
     public function __construct(
         private WatchedProductAdministratorInterface $watchedProductAdministrator,
     ) {
     }
 
-    public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeWatchedProductResource
+    /**
+     * @param BackofficeWatchedProductResource $data
+     */
+    private function create(mixed $data): BackofficeWatchedProductResource
     {
-        if ($operation instanceof Delete) {
-            $this->watchedProductAdministrator->delete($this->uriVariableUuid($uriVariables));
-
-            return null;
-        }
-
         // VersionSource::from : valeur déjà bornée par #[Assert\Choice]. Un
         // ValueError ici serait un vrai défaut et doit remonter en 500.
         $versionSource = VersionSource::from($data->versionSource);
         $version = $this->normalizeVersion($data->version);
 
-        if ($operation instanceof Put) {
-            $product = $this->watchedProductAdministrator->update(
-                $this->uriVariableUuid($uriVariables),
-                $data->slug,
-                $data->label,
-                $versionSource,
-                $version,
-            );
-        } elseif ($operation instanceof Post) {
-            $product = $this->watchedProductAdministrator->create(
-                $data->slug,
-                $data->label,
-                $versionSource,
-                $version,
-            );
-        } else {
-            throw UnsupportedOperationException::for($operation);
-        }
+        $product = $this->watchedProductAdministrator->create(
+            $data->slug,
+            $data->label,
+            $versionSource,
+            $version,
+        );
 
         return BackofficeWatchedProductResource::fromEntity($product);
+    }
+
+    /**
+     * @param BackofficeWatchedProductResource $data
+     */
+    private function update(Uuid $id, mixed $data): BackofficeWatchedProductResource
+    {
+        // VersionSource::from : valeur déjà bornée par #[Assert\Choice]. Un
+        // ValueError ici serait un vrai défaut et doit remonter en 500.
+        $versionSource = VersionSource::from($data->versionSource);
+        $version = $this->normalizeVersion($data->version);
+
+        $product = $this->watchedProductAdministrator->update(
+            $id,
+            $data->slug,
+            $data->label,
+            $versionSource,
+            $version,
+        );
+
+        return BackofficeWatchedProductResource::fromEntity($product);
+    }
+
+    private function delete(Uuid $id): void
+    {
+        $this->watchedProductAdministrator->delete($id);
     }
 
     /**

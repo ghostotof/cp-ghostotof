@@ -4,24 +4,21 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Experience\Infrastructure\ApiPlatform;
 
-use ApiPlatform\Metadata\Delete;
-use ApiPlatform\Metadata\Operation;
-use ApiPlatform\Metadata\Post;
-use ApiPlatform\Metadata\Put;
 use ApiPlatform\State\ProcessorInterface;
 use App\Portfolio\Experience\Application\ExperienceTechnologyAdministratorInterface;
 use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
 use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use App\Portfolio\Experience\Presentation\ApiResource\BackofficeExperienceTechnologyResource;
-use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
-use App\Shared\Infrastructure\ApiPlatform\UnsupportedOperationException;
+use App\Shared\Infrastructure\ApiPlatform\DispatchesWriteOperations;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @implements ProcessorInterface<BackofficeExperienceTechnologyResource, BackofficeExperienceTechnologyResource|null>
  */
 final readonly class BackofficeExperienceTechnologyProcessor implements ProcessorInterface
 {
-    use ResolvesUriVariables;
+    /** @use DispatchesWriteOperations<BackofficeExperienceTechnologyResource> */
+    use DispatchesWriteOperations;
 
     public function __construct(
         private ExperienceTechnologyRegistrarInterface $experienceTechnologyRegistrar,
@@ -29,38 +26,47 @@ final readonly class BackofficeExperienceTechnologyProcessor implements Processo
     ) {
     }
 
-    public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeExperienceTechnologyResource
+    /**
+     * @param BackofficeExperienceTechnologyResource $data
+     */
+    private function create(mixed $data): BackofficeExperienceTechnologyResource
     {
-        if ($operation instanceof Delete) {
-            $this->experienceTechnologyAdministrator->delete($this->uriVariableUuid($uriVariables));
-
-            return null;
-        }
-
-        // Déjà validé par le Callback du DTO : construit une fois pour les deux branches.
+        // Déjà validé par le Callback du DTO : une valeur hors bornes n'atteint pas ce point.
         $years = ExperienceYears::fromFloat($data->years);
 
-        if ($operation instanceof Put) {
-            $technology = $this->experienceTechnologyAdministrator->update(
-                $this->uriVariableUuid($uriVariables),
-                $data->name,
-                $years,
-                $data->iconKey,
-                $data->relatedTechnologyName,
-                $data->secondary,
-            );
-        } elseif ($operation instanceof Post) {
-            $technology = $this->experienceTechnologyRegistrar->register(
-                $data->name,
-                $years,
-                $data->iconKey,
-                $data->relatedTechnologyName,
-                $data->secondary,
-            );
-        } else {
-            throw UnsupportedOperationException::for($operation);
-        }
+        $technology = $this->experienceTechnologyRegistrar->register(
+            $data->name,
+            $years,
+            $data->iconKey,
+            $data->relatedTechnologyName,
+            $data->secondary,
+        );
 
         return BackofficeExperienceTechnologyResource::fromEntity($technology);
+    }
+
+    /**
+     * @param BackofficeExperienceTechnologyResource $data
+     */
+    private function update(Uuid $id, mixed $data): BackofficeExperienceTechnologyResource
+    {
+        // Déjà validé par le Callback du DTO : une valeur hors bornes n'atteint pas ce point.
+        $years = ExperienceYears::fromFloat($data->years);
+
+        $technology = $this->experienceTechnologyAdministrator->update(
+            $id,
+            $data->name,
+            $years,
+            $data->iconKey,
+            $data->relatedTechnologyName,
+            $data->secondary,
+        );
+
+        return BackofficeExperienceTechnologyResource::fromEntity($technology);
+    }
+
+    private function delete(Uuid $id): void
+    {
+        $this->experienceTechnologyAdministrator->delete($id);
     }
 }

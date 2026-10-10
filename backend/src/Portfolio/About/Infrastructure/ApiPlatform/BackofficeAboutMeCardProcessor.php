@@ -4,17 +4,12 @@ declare(strict_types=1);
 
 namespace App\Portfolio\About\Infrastructure\ApiPlatform;
 
-use ApiPlatform\Metadata\Delete;
-use ApiPlatform\Metadata\Operation;
-use ApiPlatform\Metadata\Post;
-use ApiPlatform\Metadata\Put;
 use ApiPlatform\State\ProcessorInterface;
 use App\Portfolio\About\Application\AboutMeCardAdministratorInterface;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\About\Presentation\ApiResource\BackofficeAboutMeCardResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
-use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
-use App\Shared\Infrastructure\ApiPlatform\UnsupportedOperationException;
+use App\Shared\Infrastructure\ApiPlatform\DispatchesWriteOperations;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -22,43 +17,50 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class BackofficeAboutMeCardProcessor implements ProcessorInterface
 {
-    use ResolvesUriVariables;
+    /** @use DispatchesWriteOperations<BackofficeAboutMeCardResource> */
+    use DispatchesWriteOperations;
 
     public function __construct(
         private AboutMeCardAdministratorInterface $aboutMeCardAdministrator,
     ) {
     }
 
-    public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeAboutMeCardResource
+    /**
+     * @param BackofficeAboutMeCardResource $data
+     */
+    private function create(mixed $data): BackofficeAboutMeCardResource
     {
-        if ($operation instanceof Delete) {
-            $this->aboutMeCardAdministrator->delete($this->uriVariableUuid($uriVariables));
-
-            return null;
-        }
-
-        if ($operation instanceof Put) {
-            $card = $this->aboutMeCardAdministrator->update(
-                $this->uriVariableUuid($uriVariables),
-                $data->title,
-                $data->description,
-                $data->iconKey,
-                $this->translationGroup($data),
-            );
-        } elseif ($operation instanceof Post) {
-            $card = $this->aboutMeCardAdministrator->create(
-                Locale::from((string) $data->locale),
-                AboutMeCardCategory::from((string) $data->category),
-                $data->title,
-                $data->description,
-                $data->iconKey,
-                $this->translationGroup($data),
-            );
-        } else {
-            throw UnsupportedOperationException::for($operation);
-        }
+        $card = $this->aboutMeCardAdministrator->create(
+            Locale::from((string) $data->locale),
+            AboutMeCardCategory::from((string) $data->category),
+            $data->title,
+            $data->description,
+            $data->iconKey,
+            $this->translationGroup($data),
+        );
 
         return BackofficeAboutMeCardResource::fromEntity($card);
+    }
+
+    /**
+     * @param BackofficeAboutMeCardResource $data
+     */
+    private function update(Uuid $id, mixed $data): BackofficeAboutMeCardResource
+    {
+        $card = $this->aboutMeCardAdministrator->update(
+            $id,
+            $data->title,
+            $data->description,
+            $data->iconKey,
+            $this->translationGroup($data),
+        );
+
+        return BackofficeAboutMeCardResource::fromEntity($card);
+    }
+
+    private function delete(Uuid $id): void
+    {
+        $this->aboutMeCardAdministrator->delete($id);
     }
 
     /**
