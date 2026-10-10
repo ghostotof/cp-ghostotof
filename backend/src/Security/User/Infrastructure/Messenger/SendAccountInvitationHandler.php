@@ -22,6 +22,7 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Uid\Uuid;
 use Throwable;
+use Twig\Error\Error as TwigError;
 
 /**
  * Consommé par `make consume` (messenger:consume async -vv). Depuis le point
@@ -127,30 +128,46 @@ final readonly class SendAccountInvitationHandler
 
             throw AccountInvitationDeliveryException::becauseTransportFailed($failure->exceptionClass, $failure->code);
         } catch (Throwable $exception) {
-            // Le rendu du gabarit a lieu ici, dans send() (MessageListener →
-            // BodyRenderer → Twig), alors que le jeton est déjà valide en base :
-            // son exception, message compris, ne doit pas atteindre le stamp
-            // d'erreur du worker (issue #419, audit C2). Le réessai n'en change
-            // pas : ni l'exception remplacée ni celle-ci ne sont
-            // « unrecoverable », Messenger applique la stratégie du transport.
-            throw AccountInvitationDeliveryException::becauseSendingFailed($this->failureClassOf($exception));
+            // Le rendu du gabarit a lieu ici, dans send(), alors que le jeton
+            // est déjà valide en base : son exception, message compris, ne doit
+            // atteindre ni le stamp d'erreur du worker ni ses logs (issue #419,
+            // audit C2). Le réessai n'en change pas dans ce câblage : ni
+            // l'exception remplacée ni celle-ci ne sont « (un)recoverable », la
+            // stratégie du transport décide. Limite : une exception de ce genre
+            // levée nue par send() (un listener du MessageEvent) perdrait son
+            // effet ; il n'en existe aucune aujourd'hui.
+            throw AccountInvitationDeliveryException::becauseSendingFailed($this->describeFailure($exception));
         }
     }
 
     /**
-     * Le mailer passe par le bus (SendEmailMessage, traité en synchrone faute
-     * de routage) : un échec du rendu arrive enveloppé dans une
-     * HandlerFailedException, et la classe qui renseigne est celle du dedans.
+     * Ce que l'échec peut dire sans risque : son type et, pour une erreur de
+     * gabarit, le gabarit et la ligne. Jamais son message, qui peut citer une
+     * valeur du contexte (`Key "…/set-password#<jeton>" … does not exist`).
+     *
+     * Le gabarit est rendu deux fois dans send() : au MessageEvent « queued »
+     * que Mailer émet avant le bus (MessageListener rend sans regarder
+     * isQueued()), d'où un échec nu, puis dans le transport, derrière le bus
+     * (SendEmailMessage traité en synchrone faute de routage), d'où un échec
+     * enveloppé dans une HandlerFailedException : on décrit alors la première
+     * exception enveloppée.
      */
-    private function failureClassOf(Throwable $exception): string
+    private function describeFailure(Throwable $exception): string
     {
         if ($exception instanceof HandlerFailedException) {
-            foreach ($exception->getWrappedExceptions() as $wrapped) {
-                return $wrapped::class;
+            $exception = array_first($exception->getWrappedExceptions()) ?? $exception;
+        }
+
+        $description = get_debug_type($exception);
+
+        if ($exception instanceof TwigError) {
+            $template = $exception->getSourceContext()?->getName();
+            if (null !== $template) {
+                $description .= \sprintf(', %s:%d', $template, $exception->getTemplateLine());
             }
         }
 
-        return $exception::class;
+        return $description;
     }
 
     private function subjectFor(Locale $locale): string

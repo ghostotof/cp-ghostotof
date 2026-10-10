@@ -7,9 +7,11 @@ namespace App\Security\User\Domain\Exception;
 use RuntimeException;
 
 /**
- * Exception métier levée lorsque l'envoi effectif de l'e-mail d'invitation
- * échoue (SMTP indisponible, DSN mal configuré, etc.), dans
- * {@see \App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler}.
+ * Exception métier levée lorsque l'e-mail d'invitation ne part pas, dans
+ * {@see \App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler} :
+ * transport en échec (SMTP indisponible, DSN mal configuré, etc.) ou toute
+ * autre défaillance de l'envoi, en pratique le rendu du gabarit (issue #419).
+ * Dans les deux cas, ni l'exception d'origine ni son message.
  */
 final class AccountInvitationDeliveryException extends RuntimeException
 {
@@ -36,13 +38,17 @@ final class AccountInvitationDeliveryException extends RuntimeException
      * (`Key "https://…/set-password#<jeton>" … does not exist`). Le stamp
      * d'erreur que le worker pose garde le message et toute la chaîne
      * `previous` jusque dans le failure_transport (audit C2) : seule la
-     * classe de l'échec est gardée, ni son message ni l'exception elle-même.
+     * description sûre de l'échec est gardée, ni son message ni l'exception
+     * elle-même.
+     *
+     * @param string $failure le type de l'échec et, pour une erreur de gabarit,
+     *                        `<gabarit>:<ligne>` — jamais son message
      */
-    public static function becauseSendingFailed(string $failureClass): self
+    public static function becauseSendingFailed(string $failure): self
     {
         return new self(\sprintf(
             'La préparation ou l\'envoi de l\'e-mail d\'invitation a échoué (%s).',
-            $failureClass,
+            $failure,
         ));
     }
 }
