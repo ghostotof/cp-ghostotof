@@ -19,6 +19,10 @@ use App\Security\User\Presentation\ApiResource\AccountPasswordSetupResource;
 use App\Security\User\Presentation\ApiResource\BackofficeUserPasswordResource;
 use App\Security\User\Presentation\Command\CreateCpgUserCommand;
 use App\Tests\Security\User\Fixtures\PlainPasswordFieldsFixture;
+use App\Tests\Security\User\Fixtures\Traits\DesignatesTheAdministratorFixture;
+use App\Tests\Security\User\Fixtures\Traits\UsesTheCallerTraitFixture;
+use App\Tests\Security\User\Fixtures\Traits\UsesTheHasherTraitFixture;
+use App\Tests\Security\User\Fixtures\Traits\UsesThePasswordFieldTraitFixture;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Support\PhpSources;
 use App\Tests\Support\PlainPasswordInputs;
@@ -86,15 +90,28 @@ use ReflectionProperty;
  * Le 3 ferme le trou du 1 : un champ nommé `$secret` qui alimenterait
  * `changePassword()` échappe au recensement par nom, pas à celui des appelants.
  *
+ * Les trois lisent les classes, interfaces, traits et enums de `src/`
+ * ({@see DeclaredClasses::classLikes()}, issue #421). Un trait utilisé est lu
+ * avec la classe qui l'utilise, à qui il est attribué : son champ, son
+ * paramètre, le hasher qu'il nomme ou l'appel qu'il fait sont ceux de la
+ * classe, la seule qui puisse implémenter l'interface de HASHERS ou être le
+ * processor d'une ressource. Un trait sans utilisateur voit ses champs et ses
+ * paramètres recensés pour lui-même, mais n'est ni un hasher ni un appelant :
+ * rien ne l'exécute.
+ *
  * **Limites assumées.** Un hasher obtenu sans nommer son type (service
  * injecté par son identifiant) n'est pas vu ; un cas d'usage qui hacherait un
  * mot de passe reçu sous un nom sans « pass » non plus, mais il nommerait le
  * hasher et tomberait dans le 3. La connexion (`json_login`) n'est pas une
  * entrée de `src/` : Symfony y refuse lui-même un mot de passe au-delà de la
- * borne du hasher.
+ * borne du hasher. Les closures, fonctions fléchées, classes anonymes et
+ * fonctions hors classe ne sont pas recensées, pour les raisons que donne
+ * {@see \App\Tests\Security\SecretParametersTest}.
  */
 final class PlainPasswordInputsTest extends TestCase
 {
+    private const string TRAIT_FIXTURES = __DIR__.'/Fixtures/Traits';
+
     /**
      * Champs dont le nom dit « mot de passe » sans être une saisie.
      *
@@ -342,6 +359,38 @@ final class PlainPasswordInputsTest extends TestCase
     }
 
     /**
+     * Une classe hache si son code, ou celui de ses traits, nomme le hasher :
+     * la classe qui utilise le trait ne le cite que par `use`. C'est elle qui
+     * se déclare dans HASHERS, avec la méthode d'interface qu'elle
+     * implémente — un trait n'implémente rien (issue #421).
+     */
+    public function testTheHasherCensusReadsTheTraitsOfAClass(): void
+    {
+        self::assertSame([UsesTheHasherTraitFixture::class], PlainPasswordInputs::hasherUsers($this->classesIn(self::TRAIT_FIXTURES)));
+    }
+
+    /**
+     * Même lecture pour les appelants : la voie d'entrée est la classe, que
+     * VALIDATED_BY peut relier à sa ressource API Platform. L'interface peut
+     * être nommée dans un fichier et appelée dans l'autre.
+     */
+    public function testTheCallerCensusReadsTheTraitsOfAClass(): void
+    {
+        self::assertSame([DesignatesTheAdministratorFixture::class, UsesTheCallerTraitFixture::class], PlainPasswordInputs::callers($this->classesIn(self::TRAIT_FIXTURES), CpgUserAdministratorInterface::class, 'changePassword'));
+    }
+
+    /**
+     * Le champ d'un trait est lu une fois, dans la classe qui l'utilise, pas
+     * une seconde sous le nom du trait.
+     */
+    public function testAFieldDeclaredByAUsedTraitIsCensusedOnce(): void
+    {
+        $fields = array_map(PlainPasswordInputs::label(...), PlainPasswordInputs::fields($this->classesIn(self::TRAIT_FIXTURES)));
+
+        self::assertSame([UsesThePasswordFieldTraitFixture::class.'::$password'], $fields);
+    }
+
+    /**
      * @return list<ReflectionProperty>
      */
     private function srcFields(): array
@@ -361,13 +410,12 @@ final class PlainPasswordInputsTest extends TestCase
      */
     private function assertNamesBothPasswordConstraints(string $entryPoint): void
     {
-        $file = (new ReflectionClass($entryPoint))->getFileName();
-        self::assertIsString($file);
-
-        // Le dernier segment : la CLI écrit `Assert\NotCompromisedPassword`.
+        // Son fichier et ceux de ses traits, comme pour le recensement des
+        // appelants (issue #421). Le dernier segment : la CLI écrit
+        // `Assert\NotCompromisedPassword`.
         $names = array_map(
             static fn (PhpToken $token): string => substr($token->text, (int) strrpos('\\'.$token->text, '\\')),
-            PhpSources::significantTokens((string) file_get_contents($file)),
+            array_merge(...array_map(PhpSources::significantTokens(...), PlainPasswordInputs::sourcesOf($entryPoint))),
         );
 
         self::assertContains('PlainPasswordLength', $names, \sprintf('%s ne valide pas la longueur par PlainPasswordLength.', $entryPoint));
@@ -379,7 +427,18 @@ final class PlainPasswordInputsTest extends TestCase
      */
     private function srcClasses(): array
     {
-        return DeclaredClasses::all(\dirname(__DIR__, 3).'/src');
+        return $this->classesIn(\dirname(__DIR__, 3).'/src');
+    }
+
+    /**
+     * Le périmètre des trois recensements, sur src/ comme sur un répertoire
+     * fixture : classes, interfaces, traits et enums (issue #421).
+     *
+     * @return list<class-string>
+     */
+    private function classesIn(string $directory): array
+    {
+        return DeclaredClasses::classLikes($directory);
     }
 
     /**

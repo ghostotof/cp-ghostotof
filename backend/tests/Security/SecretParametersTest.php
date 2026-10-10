@@ -10,8 +10,12 @@ use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
 use App\Security\User\Application\PasswordSetupService;
 use App\Security\User\Application\PasswordSetupServiceInterface;
 use App\Security\User\Infrastructure\Log\PasswordOptionRedactor;
+use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersEnumFixture;
+use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersOrphanInterfaceFixture;
+use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersOrphanTraitFixture;
 use App\Tests\Security\Fixtures\SecretParametersFixture;
 use App\Tests\Security\Fixtures\SecretParametersFixtureInterface;
+use App\Tests\Security\Fixtures\UsedTrait\IssuesTokensFixture;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Support\SensitiveParameters;
 use PHPUnit\Framework\TestCase;
@@ -50,8 +54,11 @@ use ReflectionParameter;
  * peut porter une chaîne, dont le nom dit « jeton », « JWT », « secret »,
  * « clé », « DSN »… ({@see self::SECRET_NAME}) sans désigner un condensat, ou
  * dont le paramètre de même position dans une interface ou une classe mère
- * `App\…` le dit. Sur les méthodes des classes de `src/` et de leurs
- * interfaces et classes mères `App\…` ; tout `src/`, et non les seuls
+ * `App\…` le dit. Sur les méthodes des classes, interfaces, traits et
+ * enums de `src/` ({@see DeclaredClasses::classLikes()}, issue #421 : un enum,
+ * une interface sans implémentation ou un trait sans utilisateur n'étaient
+ * atteints par aucune classe) et des interfaces et classes mères `App\…` des
+ * classes ; tout `src/`, et non les seuls
  * `Security/User` et `Security/Authentication` que l'issue nomme : le résultat
  * est le même aujourd'hui, et une clé passée un jour à un adaptateur de
  * `Ai/` y serait vue.
@@ -63,9 +70,22 @@ use ReflectionParameter;
  * — sans `APP_SECRET`, elle ne permet pas de forger l'autre moitié. Un
  * secret porté par un objet (`TokenInterface`) : la trace n'affiche d'un
  * objet que sa classe. Un secret dans un tableau (`array $options`) : le
- * filtre de type l'écarte, ceux de `src/` sont dans HIDDEN_BY_HAND. Les
- * enums, les closures, les classes anonymes et les fonctions hors classe, que
- * {@see DeclaredClasses} ne recense pas.
+ * filtre de type l'écarte, ceux de `src/` sont dans HIDDEN_BY_HAND.
+ *
+ * **Les closures, les fonctions fléchées, les classes anonymes et les
+ * fonctions hors classe** : limite acceptée (issue #421). La réflexion ne les
+ * atteint pas sans exécuter le code, et un recensement par jetons serait
+ * aveugle au cas qui le motiverait : un rappel reçoit sa valeur sous le nom
+ * générique de son contrat (le validateur et le normaliseur de mot de passe de
+ * {@see \App\Security\User\Presentation\Command\CreateCpgUserCommand} la
+ * reçoivent en `$value`), qu'aucun recensement par nom ne voit ; il devrait en
+ * outre réécrire par jetons le filtre de type et l'exclusion des condensats,
+ * sans prototype à consulter. Au relevé de #421 (2026-10-10), aucune
+ * closure de `src/` n'a de paramètre au nom de secret, et `src/` n'a ni
+ * classe anonyme ni fonction hors classe. Une variable capturée par `use`
+ * (le `$clearToken` de
+ * {@see \App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler})
+ * n'est pas un argument : elle ne figure dans aucune trace.
  */
 final class SecretParametersTest extends TestCase
 {
@@ -183,11 +203,45 @@ final class SecretParametersTest extends TestCase
     }
 
     /**
+     * Un enum, une interface sans implémentation et un trait sans utilisateur
+     * déclarent des méthodes que la réflexion n'atteint par aucune classe :
+     * le recensement de src/ doit les lire eux-mêmes (issue #421).
+     */
+    public function testTheCensusSeesEnumsAndOrphanInterfacesAndTraits(): void
+    {
+        self::assertSame([
+            SecretParametersEnumFixture::class.'::fromToken($token)',
+            SecretParametersOrphanInterfaceFixture::class.'::authenticate($apiKey)',
+            SecretParametersOrphanTraitFixture::class.'::decrypt($secret)',
+        ], SensitiveParameters::exposed($this->parametersIn(__DIR__.'/Fixtures/BeyondClasses')));
+    }
+
+    /**
+     * La méthode d'un trait utilisé est signalée une fois, sous la classe qui
+     * l'utilise : c'est là que se lit son prototype, une interface de la
+     * classe (issue #421).
+     */
+    public function testAMethodOfAUsedTraitIsCensusedOnce(): void
+    {
+        self::assertSame([IssuesTokensFixture::class.'::issue($token)'], SensitiveParameters::exposed($this->parametersIn(__DIR__.'/Fixtures/UsedTrait')));
+    }
+
+    /**
      * @return list<ReflectionParameter>
      */
     private function srcParameters(): array
     {
-        return SensitiveParameters::named(DeclaredClasses::all(\dirname(__DIR__, 2).'/src'), self::SECRET_NAME);
+        return $this->parametersIn(\dirname(__DIR__, 2).'/src');
+    }
+
+    /**
+     * Le recensement de la garde, sur src/ comme sur un répertoire fixture.
+     *
+     * @return list<ReflectionParameter>
+     */
+    private function parametersIn(string $directory): array
+    {
+        return SensitiveParameters::named(DeclaredClasses::classLikes($directory), self::SECRET_NAME);
     }
 
     private function parameter(string $label): ReflectionParameter
