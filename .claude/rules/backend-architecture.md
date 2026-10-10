@@ -74,3 +74,20 @@ question that reads a password is `setTrimmable(false)` (a question is trimmed b
 none is thrown bare in `src/`, and adding one to `BareExceptionInstantiations::FORBIDDEN` is the step to
 take the day one is.
 
+**Every class is imported with `use` and written by its short name — native classes included** (issue
+#391). `use LogicException;` then `new LogicException(…)`, `use DateTimeImmutable;` then
+`DateTimeImmutable $at`: never `\LogicException`, never `\App\…\Foo` inline, in code, attributes and phpdoc
+types alike. A class only a comment refers to is cited as `{@see Foo}` with its `use`: Rector's
+`removeUnusedImports` keeps an import referenced by `{@see}` but **deletes** one cited in plain prose
+(verified on 2026-10-10), so a bare short name in a sentence loses its import on the next `rector:fix`. A
+name clash with a project class gets an alias (`use InvalidArgumentException as NativeInvalidArgumentException;`),
+never a qualified name. Out of scope: native **functions and constants** keep their leading backslash
+(`\sprintf`, `\in_array`, `\T_CLASS`) — `importShortClasses` does not touch them, and the backslash lets
+OPcache compile some functions to dedicated opcodes; namespaces cited in prose (`App\Shared`);
+`config/bundles.php` and `config/reference.php` (Flex-generated); class names held in strings as test data;
+`migrations/` (frozen, outside Rector's paths). The guard is Rector's `withImportNames()` in
+`backend/rector.php`, checked by the blocking `rector-backend` job: it already rejects a qualified
+namespaced class, and rejects a qualified native class once `importShortClasses` is `true` — the switch
+and the migration of the existing code (≈ 200 files) are issue #391. Until it lands, write new code the
+target way: an explicit `use DateTimeImmutable;` passes Rector today.
+
