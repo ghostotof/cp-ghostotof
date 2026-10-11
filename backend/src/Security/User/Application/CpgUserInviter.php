@@ -92,13 +92,17 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
     /**
      * Le handler régénère le jeton (invalidant le précédent) : redispatcher le
      * message suffit à « renvoyer » l'invitation.
+     *
+     * Le message porte la génération que markInvited() vient d'avancer
+     * (issue #434) : un message plus ancien encore en file, réessai ou rejeu,
+     * saura qu'une invitation plus récente l'a remplacé.
      */
     private function dispatchInvitation(CpgUser $user, Locale $locale): void
     {
         // L'identité est posée par le constructeur de l'entité (spec 0003 D1) :
         // elle existe avant même le save(), et voyage en chaîne RFC 4122 (D7).
         $this->messageBus->dispatch(
-            new SendAccountInvitationMessage($user->getId()->toRfc4122(), $locale->value),
+            new SendAccountInvitationMessage($user->getId()->toRfc4122(), $locale->value, $user->getInvitationGeneration()),
         );
     }
 }

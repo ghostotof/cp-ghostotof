@@ -98,7 +98,7 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
             // activatedAt) — le compte se connecte déjà et ne doit plus
             // ressortir ici, même s'il reste isPendingActivation() vrai.
             ->andWhere("u.password = ''")
-            ->setParameter('threshold', $threshold, Types::DATETIME_IMMUTABLE)
+            ->setParameter('threshold', $threshold, Types::DATETIMETZ_IMMUTABLE)
             ->orderBy('u.invitedAt', 'ASC')
             ->getQuery()
             ->getResult();

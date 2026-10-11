@@ -4,50 +4,40 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\User\Infrastructure\Messenger;
 
-use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Exception\AccountInvitationDeliveryException;
-use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler;
-use Closure;
+use App\Tests\Support\RunsInvitationHandlerOnTestDatabase;
 use DateTimeImmutable;
-use Doctrine\ORM\EntityManagerInterface;
 use LogicException;
 use PHPUnit\Framework\Attributes\DataProvider;
-use Psr\Log\NullLogger;
 use Symfony\Bridge\Twig\Mime\TemplatedEmail;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
-use Symfony\Component\Clock\MockClock;
-use Symfony\Component\Mailer\Envelope;
 use Symfony\Component\Mailer\Exception\TransportException;
-use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\RawMessage;
 use Throwable;
 
 /**
  * Issue #425 : le jeton d'invitation est validé en base avant que l'e-mail ne
  * parte. Si l'envoi échoue, ce jeton n'a été remis à personne : il ne doit
- * pas rester utilisable 48 h en attendant une fuite. Base `_test` réelle, et
- * dépôts du conteneur : c'est l'état de la table qui est vérifié, pas un appel
- * de bouchon.
+ * pas rester utilisable 48 h en attendant une fuite. Base `_test` réelle
+ * (RunsInvitationHandlerOnTestDatabase).
  */
 final class SendAccountInvitationDeliveryFailureTest extends KernelTestCase
 {
-    private EntityManagerInterface $em;
+    use RunsInvitationHandlerOnTestDatabase;
 
     protected function setUp(): void
     {
         self::bootKernel();
-        $this->em = self::getContainer()->get(EntityManagerInterface::class);
-
-        $this->purge();
+        $this->purgeInvitationTables();
     }
 
     protected function tearDown(): void
     {
-        $this->purge();
+        $this->purgeInvitationTables();
         parent::tearDown();
     }
 
@@ -73,7 +63,7 @@ final class SendAccountInvitationDeliveryFailureTest extends KernelTestCase
             throw $failure;
         });
 
-        $this->expectDeliveryFailure($this->handler($mailer), $user);
+        $this->expectDeliveryFailure($this->invitationHandler($mailer), $user);
 
         self::assertSame([], $this->tokenHashesOf($user));
     }
@@ -88,12 +78,12 @@ final class SendAccountInvitationDeliveryFailureTest extends KernelTestCase
     {
         $user = $this->pendingUser('newcomer', 'newcomer@example.com');
         $mailer = $this->mailerThat(function (): never {
-            $this->em->clear();
+            $this->entityManager()->clear();
 
             throw new TransportException('Connexion impossible');
         });
 
-        $this->expectDeliveryFailure($this->handler($mailer), $user);
+        $this->expectDeliveryFailure($this->invitationHandler($mailer), $user);
 
         self::assertSame([], $this->tokenHashesOf($user));
     }
@@ -107,7 +97,7 @@ final class SendAccountInvitationDeliveryFailureTest extends KernelTestCase
         $user = $this->pendingUser('newcomer', 'newcomer..refused@example.com');
         $mailer = $this->mailerThat(static fn (): never => throw new LogicException('send() ne doit pas être atteint.'));
 
-        $this->expectDeliveryFailure($this->handler($mailer), $user);
+        $this->expectDeliveryFailure($this->invitationHandler($mailer), $user);
 
         self::assertSame([], $this->tokenHashesOf($user));
     }
@@ -127,10 +117,10 @@ final class SendAccountInvitationDeliveryFailureTest extends KernelTestCase
             }
             $sentEmail = $message;
         });
-        $handler = $this->handler($mailer);
+        $handler = $this->invitationHandler($mailer);
 
         $this->expectDeliveryFailure($handler, $user);
-        $handler(new SendAccountInvitationMessage($user->getId()->toRfc4122(), 'fr'));
+        $handler($this->invitationMessage($user));
 
         self::assertInstanceOf(TemplatedEmail::class, $sentEmail);
         $setupUrl = $sentEmail->getContext()['setupUrl'] ?? null;
@@ -159,7 +149,7 @@ final class SendAccountInvitationDeliveryFailureTest extends KernelTestCase
             throw new TransportException('Connexion impossible');
         });
 
-        $this->expectDeliveryFailure($this->handler($mailer), $user);
+        $this->expectDeliveryFailure($this->invitationHandler($mailer), $user);
 
         self::assertSame([$concurrentHash], $this->tokenHashesOf($user));
     }
@@ -167,78 +157,10 @@ final class SendAccountInvitationDeliveryFailureTest extends KernelTestCase
     private function expectDeliveryFailure(SendAccountInvitationHandler $handler, CpgUser $user): void
     {
         try {
-            $handler(new SendAccountInvitationMessage($user->getId()->toRfc4122(), 'fr'));
+            $handler($this->invitationMessage($user));
             self::fail('AccountInvitationDeliveryException aurait dû être levée.');
         } catch (AccountInvitationDeliveryException $exception) {
             self::assertNull($exception->getPrevious());
         }
-    }
-
-    /**
-     * @param Closure(RawMessage): void $send
-     */
-    private function mailerThat(Closure $send): MailerInterface
-    {
-        return new readonly class($send) implements MailerInterface {
-            /**
-             * @param Closure(RawMessage): void $send
-             */
-            public function __construct(private Closure $send)
-            {
-            }
-
-            public function send(RawMessage $message, ?Envelope $envelope = null): void
-            {
-                ($this->send)($message);
-            }
-        };
-    }
-
-    private function handler(MailerInterface $mailer): SendAccountInvitationHandler
-    {
-        $container = self::getContainer();
-
-        return new SendAccountInvitationHandler(
-            $mailer,
-            $container->get(CpgUserRepositoryInterface::class),
-            $container->get(PasswordSetupTokenRepositoryInterface::class),
-            $this->em,
-            new MockClock(),
-            new NullLogger(),
-            'noreply@cp-ghostotof.com',
-            'https://front.test',
-        );
-    }
-
-    private function pendingUser(string $username, string $email): CpgUser
-    {
-        $user = new CpgUser($username, '');
-        $user->setEmail($email);
-        $user->markInvited(new DateTimeImmutable('-1 hour'));
-        $this->em->persist($user);
-        $this->em->flush();
-
-        return $user;
-    }
-
-    /**
-     * Lu en SQL, hors de l'EntityManager : ce que la base garde vraiment.
-     *
-     * @return list<string>
-     */
-    private function tokenHashesOf(CpgUser $user): array
-    {
-        /** @var list<string> */
-        return $this->em->getConnection()->fetchFirstColumn(
-            'SELECT token_hash FROM password_setup_token WHERE user_id = :user',
-            ['user' => $user->getId()->toRfc4122()],
-        );
-    }
-
-    private function purge(): void
-    {
-        $this->em->getConnection()->executeStatement('DELETE FROM password_setup_token');
-        $this->em->getConnection()->executeStatement('DELETE FROM cpg_user');
-        $this->em->clear();
     }
 }

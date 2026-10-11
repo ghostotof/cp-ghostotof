@@ -56,6 +56,51 @@ final class CpgUserRepositoryTest extends KernelTestCase
     }
 
     /**
+     * Issue #434 : la colonne garde l'instant, pas l'heure murale. Le 25
+     * octobre, 02:30 existe deux fois à Paris ; sans fuseau en base, la
+     * première occurrence (CEST) revenait comme la seconde (CET), une heure
+     * plus tard.
+     */
+    public function testTheInvitationInstantSurvivesTheRepeatedHourOfTheAutumnClockChange(): void
+    {
+        $invitedAt = new DateTimeImmutable('2026-10-25T02:30:00+02:00');
+        $activatedAt = new DateTimeImmutable('2026-10-25T02:45:00+02:00');
+        $user = new CpgUser('autumn-invitee', '');
+        $user->setEmail('autumn@example.com');
+        $user->markInvited($invitedAt);
+        $user->markActivated($activatedAt);
+        $this->em->persist($user);
+        $this->em->flush();
+        $this->em->clear();
+
+        $reloaded = $this->repository->findOneById($user->getId());
+
+        self::assertNotNull($reloaded);
+        self::assertSame($invitedAt->getTimestamp(), $reloaded->getInvitedAt()?->getTimestamp());
+        self::assertSame($activatedAt->getTimestamp(), $reloaded->getActivatedAt()?->getTimestamp());
+    }
+
+    /**
+     * Le seuil de la purge est comparé en instant, quel que soit le fuseau
+     * de l'objet qui le porte — ici UTC, celui d'une valeur relue. Écrit en
+     * heure murale sans décalage, 07:30 UTC serait lu 07:30 dans le fuseau de
+     * la session (Paris), soit 05:30 UTC, et le compte invité à 07:00 UTC ne
+     * passerait plus pour plus ancien que le seuil.
+     */
+    public function testThePurgeThresholdIsComparedAsAnInstant(): void
+    {
+        $user = new CpgUser('threshold-invitee', '');
+        $user->setEmail('threshold@example.com');
+        $user->markInvited(new DateTimeImmutable('2026-10-11T07:00:00+00:00'));
+        $this->em->persist($user);
+        $this->em->flush();
+        $this->em->clear();
+
+        self::assertSame([], $this->repository->findAwaitingPasswordSetupInvitedBefore(new DateTimeImmutable('2026-10-11T06:30:00+00:00')));
+        self::assertCount(1, $this->repository->findAwaitingPasswordSetupInvitedBefore(new DateTimeImmutable('2026-10-11T07:30:00+00:00')));
+    }
+
+    /**
      * Trois comptes : invité il y a 40 jours (encore en attente), invité il y
      * a 10 jours (encore en attente, trop récent) et invité il y a 40 jours
      * puis activé (donc plus en attente). Avec un seuil à -30 jours, seul le

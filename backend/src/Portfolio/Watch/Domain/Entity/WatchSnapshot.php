@@ -50,7 +50,7 @@ class WatchSnapshot
     private array $payload;
 
     /** Date de la donnée elle-même, pas de sa lecture par le visiteur. */
-    #[ORM\Column(type: 'datetime_immutable')]
+    #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE)]
     private DateTimeImmutable $refreshedAt;
 
     #[ORM\Column(enumType: SnapshotSourceStatus::class, length: 10)]

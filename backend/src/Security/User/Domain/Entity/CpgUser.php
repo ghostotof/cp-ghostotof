@@ -7,6 +7,7 @@ namespace App\Security\User\Domain\Entity;
 use App\Security\User\Domain\Exception\InvalidUsernameException;
 use App\Security\User\Infrastructure\Doctrine\CpgUserRepository;
 use DateTimeImmutable;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
@@ -100,10 +101,25 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
     #[Ignore]
     private string $password;
 
-    /** Date d'envoi de l'invitation (comptes créés depuis le backoffice ; `null` pour un compte CLI). */
-    #[ORM\Column(nullable: true)]
+    /**
+     * Date d'envoi de l'invitation (comptes créés depuis le backoffice ; `null`
+     * pour un compte CLI). Avec fuseau, comme tout horodatage (issue #434).
+     */
+    #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
     #[Ignore]
     private ?DateTimeImmutable $invitedAt = null;
+
+    /**
+     * Numéro de la dernière (re)invitation, avancé par markInvited() (issue
+     * #434). Chaque message d'invitation porte le sien : un message dont le
+     * numéro est dépassé (réessai différé, rejeu du failure_transport) ne
+     * purge pas le jeton d'une relance plus récente. Un compteur plutôt que
+     * l'instant : deux relances dans la même seconde se distinguent, et
+     * aucune horloge n'entre dans la comparaison.
+     */
+    #[ORM\Column(options: ['default' => 0])]
+    #[Ignore]
+    private int $invitationGeneration = 0;
 
     /**
      * Date à laquelle la personne invitée a défini son mot de passe via le lien
@@ -111,7 +127,7 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
      * encore activé (cf. isPendingActivation()) ; un compte CLI, lui, n'a ni
      * invitation ni activation et reste utilisable d'emblée.
      */
-    #[ORM\Column(nullable: true)]
+    #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
     #[Ignore]
     private ?DateTimeImmutable $activatedAt = null;
 
@@ -151,6 +167,22 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
         return $this->invitedAt;
     }
 
+    public function getInvitationGeneration(): int
+    {
+        return $this->invitationGeneration;
+    }
+
+    /**
+     * Vrai si le compte a été (re)invité depuis la génération donnée : un
+     * message qui sert celle-ci est périmé (issue #434). Une génération
+     * d'avance sur la base (relance pas encore commitée quand le worker la
+     * lit) ne l'est jamais : le dernier message ne doit pas se perdre.
+     */
+    public function wasReinvitedSince(int $invitationGeneration): bool
+    {
+        return $this->invitationGeneration > $invitationGeneration;
+    }
+
     public function getActivatedAt(): ?DateTimeImmutable
     {
         return $this->activatedAt;
@@ -159,6 +191,7 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
     public function markInvited(DateTimeImmutable $invitedAt): void
     {
         $this->invitedAt = $invitedAt;
+        ++$this->invitationGeneration;
     }
 
     public function markActivated(DateTimeImmutable $activatedAt): void

@@ -6,6 +6,7 @@ namespace App\Security\User\Domain\Entity;
 
 use App\Security\User\Infrastructure\Doctrine\PasswordSetupTokenRepository;
 use DateTimeImmutable;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
@@ -37,10 +38,10 @@ class PasswordSetupToken
     #[ORM\Column(length: 64, unique: true)]
     private string $tokenHash;
 
-    #[ORM\Column]
+    #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE)]
     private DateTimeImmutable $expiresAt;
 
-    #[ORM\Column(nullable: true)]
+    #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
     private ?DateTimeImmutable $usedAt = null;
 
     public function __construct(CpgUser $user, string $tokenHash, DateTimeImmutable $expiresAt)
