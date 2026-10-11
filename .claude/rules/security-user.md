@@ -140,7 +140,10 @@ paths:
     shape: a malformed message (missing or mistyped field, invalid UUID or locale, a generation below 1,
     which `CpgUserInviter` never sends) throws `MalformedAccountInvitationMessageException`: a decoding
     failure, which follows the transport's retries then the `failure_transport` without ever reaching the
-    handler (`InvitationEnvelopeDecodingTest`, through the container's serializer). **A message without a
+    handler (`InvitationEnvelopeDecodingTest`, through the container's serializer). The `C:` (Serializable)
+    form bypasses `__unserialize()` — PHP returns the message with its `readonly` properties uninitialised
+    and only an `E_WARNING` —: what refuses it is `PhpSerializer::safelyUnserialize()`'s error handler, a
+    Symfony detail no code of ours writes, pinned by the same test (issue #465). **A message without a
     generation is refused too** (issue #448): the format queued before #434 was tolerated through v0.23.0,
     then refused once production's queues were checked empty of it. Only the code of v0.22.0 or earlier
     writes it — redeploying such an image, or a consumer still running it. Its refusal has its own
