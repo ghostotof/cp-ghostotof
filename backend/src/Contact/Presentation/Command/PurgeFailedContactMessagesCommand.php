@@ -6,6 +6,7 @@ namespace App\Contact\Presentation\Command;
 
 use App\Shared\Domain\Exception\InvalidRetentionPeriodException;
 use App\Shared\Domain\ValueObject\RetentionPeriod;
+use DateTimeZone;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\TableNotFoundException;
 use Psr\Clock\ClockInterface;
@@ -26,9 +27,15 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * corps libre). Cette commande, lancée périodiquement (CronJob Kubernetes,
  * cf. k8s/base/messenger-purge-cronjob.yaml), applique une durée de rétention.
  *
- * La file `failed` n'accueille aujourd'hui que des SendContactMessageMessage
- * (unique message asynchrone du projet) : filtrer sur queue_name = 'failed'
- * revient donc à ne purger que ces messages-là.
+ * La purge porte sur toute la file `failed` : messages de contact, mais
+ * aussi invitations (SendAccountInvitationMessage, qui ne porte que des
+ * identifiants) et enveloppes en échec de décodage (issue #444). Elle se fait
+ * en SQL, sans rien désérialiser.
+ *
+ * Le seuil est comparé en heure murale **UTC** (issue #446) : c'est ainsi que
+ * le transport Doctrine de Messenger écrit `created_at`
+ * (`new DateTimeImmutable('UTC')`, colonne sans fuseau). Formaté dans le
+ * fuseau de PHP (Europe/Paris), il purgeait une à deux heures trop tôt.
  */
 #[AsCommand(
     name: 'app:contact:purge-failed-messages',
@@ -74,7 +81,8 @@ final class PurgeFailedContactMessagesCommand extends Command
             return Command::INVALID;
         }
 
-        $threshold = $retentionPeriod->threshold();
+        // Dans l'horloge du transport, qui écrit `created_at` en UTC.
+        $threshold = $retentionPeriod->threshold()->setTimezone(new DateTimeZone('UTC'));
 
         try {
             $deleted = $this->connection->executeStatement(
@@ -89,7 +97,7 @@ final class PurgeFailedContactMessagesCommand extends Command
             return Command::SUCCESS;
         }
 
-        $io->success(\sprintf('%d message(s) en échec antérieur(s) à %s purgé(s).', $deleted, $threshold->format('Y-m-d H:i:s')));
+        $io->success(\sprintf('%d message(s) en échec antérieur(s) à %s UTC purgé(s).', $deleted, $threshold->format('Y-m-d H:i:s')));
 
         return Command::SUCCESS;
     }

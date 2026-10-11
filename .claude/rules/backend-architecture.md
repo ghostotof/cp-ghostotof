@@ -61,7 +61,11 @@ zone and stays a `DATE`. A value read back is in the session's zone (UTC): compa
 (`WatchProvider::utc()`). `tests/Shared/Infrastructure/Doctrine/TimestampColumnsCarryTheirOffsetTest.php`
 walks every entity's metadata and fails on any `datetime`, `datetime_immutable`, `time` or
 `time_immutable` field. Migration `Version20261011120000` converted the five existing timestamps with
-`AT TIME ZONE 'Europe/Paris'`. Messenger's own tables are not entities and stay as the vendor made them.
+`AT TIME ZONE 'Europe/Paris'`. Messenger's own tables are not entities and stay as the vendor made them:
+`messenger_messages.created_at`/`available_at`/`delivered_at` are `TIMESTAMP WITHOUT TIME ZONE` holding
+**UTC wall time** (the Doctrine transport writes `new DateTimeImmutable('UTC')`), so a value compared with
+them in SQL is converted to UTC first — `PurgeFailedContactMessagesCommand` formatted its threshold in
+Paris time and purged one to two hours early (issue #446).
 **The database's sessions read wall times in PHP's zone** (`ALTER DATABASE … SET timezone TO
 'Europe/Paris'`, same migration, settled in the review of #434): the second net, for a time without
 offset that still reaches the database — an untyped query parameter, which the ORM infers as
