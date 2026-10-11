@@ -88,7 +88,8 @@ paths:
     Mime refuses, which it quotes — #356) or of `send()` becomes `AccountInvitationDeliveryException` —
     `becauseTransportFailed()` (class + code) or `becauseSendingFailed()` (type plus `<template>:<line>`
     for a Twig error, `<file basename>:<line>` otherwise, described from the innermost exception of nested
-    `HandlerFailedException`s) —, never with a `previous`, never quoting the original message. Retry
+    `HandlerFailedException`s by `Shared/Infrastructure/Mailer/MailerSendingFailure`, shared with the contact
+    handler since #427) —, never with a `previous`, never quoting the original message. Retry
     is unchanged in this wiring: neither the replaced exception nor this one is (un)recoverable, the
     transport's strategy applies; one bare from `send()` would lose that effect (none exists).
     `SendAccountInvitationHandlerTest` drives the real mailer chain (transport, bus, dispatcher,
