@@ -72,10 +72,8 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
         private bool $requireMac,
         private LoggerInterface $logger,
     ) {
-        if ('' === $secret) {
-            throw MissingEnvelopeKeyException::emptySecret();
-        }
-
+        // Un secret vide lève EmptyApplicationSecretException, à la première
+        // construction : le premier message mis en file ou lu.
         $this->key = SecretKeyDerivation::derive($secret, self::KEY_CONTEXT);
     }
 

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Tests\Security\Authentication\Infrastructure\Http;
 
 use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
+use App\Shared\Infrastructure\Security\EmptyApplicationSecretException;
+use App\Tests\Support\TestKeys;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -15,13 +17,11 @@ use PHPUnit\Framework\TestCase;
  */
 final class CsrfCookieTokenSignerTest extends TestCase
 {
-    private const string SECRET = 'unit-test-app-secret';
-
     private CsrfCookieTokenSigner $signer;
 
     protected function setUp(): void
     {
-        $this->signer = new CsrfCookieTokenSigner(self::SECRET);
+        $this->signer = new CsrfCookieTokenSigner(TestKeys::material());
     }
 
     public function testIssuedTokenIsValid(): void
@@ -44,7 +44,7 @@ final class CsrfCookieTokenSignerTest extends TestCase
 
     public function testTokenSignedByAnotherSecretIsRejected(): void
     {
-        $foreignToken = (new CsrfCookieTokenSigner('another-secret'))->issue();
+        $foreignToken = (new CsrfCookieTokenSigner(TestKeys::material('autre')))->issue();
 
         self::assertFalse($this->signer->isValid($foreignToken));
     }
@@ -58,7 +58,26 @@ final class CsrfCookieTokenSignerTest extends TestCase
     {
         $random = bin2hex(random_bytes(32));
 
-        self::assertFalse($this->signer->isValid($random.'.'.hash_hmac('sha256', $random, self::SECRET)));
+        self::assertFalse($this->signer->isValid($random.'.'.hash_hmac('sha256', $random, TestKeys::material())));
+    }
+
+    /**
+     * Issue #455 : un secret vide ne signe plus rien. Avant la dérivation,
+     * `hash_hmac()` sous une clé vide passait, et n'importe qui forgeait un
+     * jeton valide ; c'est désormais une panne serveur, au premier usage.
+     */
+    public function testAnEmptySecretSignsNothing(): void
+    {
+        $signer = new CsrfCookieTokenSigner('');
+
+        try {
+            $signer->issue();
+            self::fail('EmptyApplicationSecretException attendue à l\'émission.');
+        } catch (EmptyApplicationSecretException) {
+        }
+
+        $this->expectException(EmptyApplicationSecretException::class);
+        $signer->isValid(str_repeat('a', 64).'.'.hash_hmac('sha256', str_repeat('a', 64), ''));
     }
 
     public function testTamperedRandomPartIsRejected(): void

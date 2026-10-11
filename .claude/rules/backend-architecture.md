@@ -117,12 +117,23 @@ queued message** (order in `k8s/README.md`).
 `kernel.secret` declares a versioned `KEY_CONTEXT` (`cp-ghostotof/<use>/v1`): the CSRF cookie signer, the
 login-identifier fingerprint, the Messenger envelope MAC. Keyed by the raw secret and told apart only in
 the message (a prefix, or nothing), any future feature returning `HMAC(APP_SECRET, x)` for a client-chosen
-`x` would have been a signing oracle for every other use. Changing a context is a targeted rotation; the
-switch itself invalidated the `XSRF-TOKEN` cookies already issued (writes answer 403 until the next login,
-at most the JWT's lifetime — accepted) and changed every login fingerprint.
-`tests/Shared/Infrastructure/Security/ApplicationSecretUsesTest.php` finds, by tokens, every file of
-`src/` injecting `'%kernel.secret%'` or `'kernel.secret'` and requires it to call
-`SecretKeyDerivation::derive()` with a `KEY_CONTEXT` no other file uses.
+`x` would have been a signing oracle for every other use. Changing a context is a targeted rotation. The
+switch itself changed every login fingerprint and invalidated the `XSRF-TOKEN` cookies already issued, and
+so does a **rolling update** (two prod replicas, old and new keys for a moment) or a **rollback**: writes,
+`POST /api/logout` included, answer 403 until a new login. Since a refused logout used to leave the UI
+"logged in" — and `/login` redirects a logged-in user home —, the frontend resets the local session to
+anonymous on **any** logout failure and leads to the login page (`useAuth.logout()`, `AppHeader`); a new
+login replaces both cookies, a reload reads the real tier from `/api/me`. HKDF stretches nothing: `APP_SECRET`
+must be high-entropy (32 random bytes; CI uses `openssl rand -hex 16`). An empty secret raises
+`EmptyApplicationSecretException` at first use — the CSRF signer used to accept it, which let anyone forge a
+token. `tests/Shared/Infrastructure/Security/ApplicationSecretUsesTest.php` finds, by tokens, every file of
+`src/` naming `%kernel.secret%`, `kernel.secret`, `APP_SECRET` or `%env(APP_SECRET)%` (either quotes),
+requires an actual `SecretKeyDerivation::derive(…, self::KEY_CONTEXT)` call and a `KEY_CONTEXT` no other file
+uses, and refuses any `config/**.yaml` naming the secret besides `framework.secret`. Not covered, accepted: a
+class handing the raw secret to another, and Symfony's own uses (`login_throttling`, `SigningSerializer`),
+which keep the raw secret but never return their output to a client. Unit tests take key material from
+`tests/Support/TestKeys` (generated, like `TestCredentials`): a literal assigned to a name saying "secret"
+gets flagged by GitGuardian.
 
 **`src/` never instantiates a bare `\Exception`, `\LogicException`, `\RuntimeException` or
 `\InvalidArgumentException`** (issues #338, #383).

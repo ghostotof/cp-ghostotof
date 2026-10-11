@@ -720,6 +720,22 @@ describe('AppHeader', () => {
       expect(wrapper.find('#account-menu').exists()).toBe(false)
     })
 
+    it("une déconnexion refusée par le serveur mène à la page de login : un nouveau login remplace les cookies (issue #455)", async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const authRepository = createStubAuthRepository({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      authRepository.logout = vi.fn(async () => {
+        throw new Error('Logout failed with status 403')
+      })
+      const { wrapper, router } = await mountHeader('/fr', authRepository)
+
+      await openAccountMenu(wrapper)
+      const logout = wrapper.get('#account-menu').findAll('button').find((button) => 'Déconnexion' === button.text())
+      await logout?.trigger('click')
+      await flushPromises()
+
+      expect(router.currentRoute.value.name).toBe('login')
+    })
+
     it('Échap referme le menu', async () => {
       await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Log;
 
+use App\Shared\Infrastructure\Security\EmptyApplicationSecretException;
 use App\Shared\Infrastructure\Security\SecretKeyDerivation;
 use SensitiveParameter;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -25,7 +26,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * - **À clé** (HMAC-SHA256 sous une clé dérivée de `kernel.secret`, c.-à-d. `APP_SECRET`), pas
  *   un simple condensat : sans la clé, passer un dictionnaire de mots de
  *   passe sur les empreintes d'un journal ne donne rien. Une clé vide est
- *   refusée ({@see MissingLoginFingerprintKeyException}). La clé protège
+ *   refusée ({@see \App\Shared\Infrastructure\Security\EmptyApplicationSecretException}). La clé protège
  *   déjà la signature des jetons CSRF et les clés des compteurs de
  *   `login_throttling` (HMAC de `identifiant-IP`, 48 bits, en base dans
  *   `cache_items`) : sa fuite est un incident en soi. La clé est dérivée pour
@@ -84,14 +85,10 @@ final readonly class LoginIdentifierFingerprint
      * @param string $identifier l'identifiant tel que saisi — possiblement un
      *                           mot de passe, d'où l'attribut
      *
-     * @throws MissingLoginFingerprintKeyException si `kernel.secret` est vide
+     * @throws EmptyApplicationSecretException si `kernel.secret` est vide (SecretKeyDerivation)
      */
     public function of(#[SensitiveParameter] string $identifier): string
     {
-        if ('' === $this->secret) {
-            throw MissingLoginFingerprintKeyException::emptySecret();
-        }
-
         // Même repli de casse que
         // Symfony\Component\Security\Http\RateLimiter\DefaultLoginRateLimiter::getLimiters().
         $folded = 1 === preg_match('//u', $identifier) ? mb_strtolower($identifier, 'UTF-8') : strtolower($identifier);

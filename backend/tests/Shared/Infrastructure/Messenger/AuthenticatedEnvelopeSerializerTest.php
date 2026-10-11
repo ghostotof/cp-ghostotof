@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Messenger;
 
 use App\Shared\Infrastructure\Messenger\AuthenticatedEnvelopeSerializer;
-use App\Shared\Infrastructure\Messenger\MissingEnvelopeKeyException;
+use App\Shared\Infrastructure\Security\EmptyApplicationSecretException;
 use App\Tests\Shared\Infrastructure\Messenger\Fixtures\Probe\UnserializationProbe;
+use App\Tests\Support\TestKeys;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
@@ -30,8 +31,6 @@ use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
  */
 final class AuthenticatedEnvelopeSerializerTest extends TestCase
 {
-    private const string SECRET = 'un-secret-de-test-de-trente-deux-octets';
-
     protected function setUp(): void
     {
         UnserializationProbe::$unserializations = 0;
@@ -154,7 +153,7 @@ final class AuthenticatedEnvelopeSerializerTest extends TestCase
     public function testTheMacIsNotAnHmacUnderTheRawSecret(): void
     {
         $encoded = $this->forgedWithoutMac();
-        $encoded['headers'][AuthenticatedEnvelopeSerializer::HEADER] = hash_hmac('sha256', $encoded['body'], self::SECRET);
+        $encoded['headers'][AuthenticatedEnvelopeSerializer::HEADER] = hash_hmac('sha256', $encoded['body'], TestKeys::material());
 
         $decoded = $this->serializer(requireMac: true)->decode($encoded)->getMessage();
 
@@ -175,14 +174,14 @@ final class AuthenticatedEnvelopeSerializerTest extends TestCase
 
     public function testAnEmptySecretIsRefused(): void
     {
-        $this->expectException(MissingEnvelopeKeyException::class);
+        $this->expectException(EmptyApplicationSecretException::class);
 
         new AuthenticatedEnvelopeSerializer(new PhpSerializer(), '', true, new NullLogger());
     }
 
     private function serializer(bool $requireMac, ?Logger $logger = null): AuthenticatedEnvelopeSerializer
     {
-        return new AuthenticatedEnvelopeSerializer(new PhpSerializer(), self::SECRET, $requireMac, $logger ?? new NullLogger());
+        return new AuthenticatedEnvelopeSerializer(new PhpSerializer(), TestKeys::material(), $requireMac, $logger ?? new NullLogger());
     }
 
     /**
