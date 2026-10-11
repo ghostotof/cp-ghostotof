@@ -137,6 +137,18 @@ paths:
   failure skipped the rest): the worker reads what the API queues under the same envelope MAC key, so
   undoing one without the other sends every message to `failed` (issue #450). A manual rollback in
   prod follows the same rule, see `k8s/README.md`, « Retour arrière applicatif ».
+- **`smoke-test-preprod` proves a message travels from the API to the worker** (issue #470), not only that
+  the worker is `Ready`: a MAC key mismatch between `backend` and `worker` (a `KEY_CONTEXT` badly deployed,
+  a worker left on the previous release) used to leave preprod green with every message in `failed`.
+  `tools/smoke-messenger-probe.sh preprod <image>` applies `k8s/base/messenger-probe-job.yaml` (outside
+  kustomize, `${BACKEND_IMAGE}` only, the previous Job deleted first), which runs `app:messenger:probe
+  --timeout=90` with the release image and **the backend's Secrets**, so it signs under the API's key: it
+  queues a `MessengerProbeMessage` (a random id, no mail, no business data) and waits for the mark the
+  worker's `MessengerProbeHandler` leaves in `cache.app`. No mark in 90 s → exit 1 → the Job fails
+  (`backoffLimit: 0`, `activeDeadlineSeconds: 150`, waited 180 s by `tools/wait-rollout.sh`) → the smoke fails
+  → `rollback-preprod`. The pipeline reads no Secret (the variables stay in the pod). A refused probe stays in
+  `failed`: read it with the Job's logs. Offline test: `tools/tests/smoke-messenger-probe.test.sh`. Preprod
+  only — prod has no rollback to trigger.
 - **Every deploy wait fails early on a container that will not start** (issue #353). The `Deploy`
   steps never call `kubectl rollout status` or `kubectl wait --for=condition=complete` directly:
   `tools/wait-rollout.sh <ns> deployment/NAME|job/NAME --timeout N` cuts kubectl's own wait into
