@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Support;
 
 use ReflectionClass;
+use ReflectionMethod;
 use ReflectionNamedType;
 use ReflectionParameter;
 use ReflectionType;
@@ -21,19 +22,29 @@ use SensitiveParameter;
  * n'est pas un secret en clair : le condensat d'un jeton aléatoire ne se
  * renverse pas. Il est écarté ici, pas par une liste d'exemptions — mais un
  * nom qui contient seulement « hash » reste vu : `$unhashedToken`,
- * `$tokenToHash`, une clé HMAC `$hashSecret` (revue de #414).
+ * `$tokenToHash`, une clé HMAC `$hashSecret` (revue de #414),
+ * `$secretToBeHashed` (issue #428).
  *
  * Un paramètre est vu par son nom, ou par celui du paramètre de même position
  * dans une interface ou une classe mère `App\…` de sa classe : une
  * implémentation qui renomme `$clearToken` en `$value` reçoit le même secret,
  * et l'attribut posé sur l'interface ne cache rien à l'exécution (revue de
- * #414). La méthode d'un trait utilisé est vue dans chaque classe qui
+ * #414). Ni un constructeur de classe mère ni une méthode privée ne sont des
+ * prototypes : PHP n'impose rien entre leur signature et celle de la fille
+ * (issue #428) ; le constructeur d'une interface, ou abstrait, en est un.
+ * La méthode d'un trait utilisé est vue dans chaque classe qui
  * l'utilise, celle d'un trait sans utilisateur pour elle-même (issue #421).
  */
 final class SensitiveParameters
 {
-    /** `hashed` (sauf `unhashed`) n'importe où, ou `hash` en fin de nom (sauf `toHash`). */
-    private const string HASHED = '/(?<!un)hashed|(?<!to)hash\z/i';
+    /**
+     * `hashed` (sauf `unhashed`) qui qualifie le mot suivant — une majuscule
+     * ou `_` après lui : `$hashedPassword`, `$newHashedToken`, `$HASHED_TOKEN`
+     * —, ou `hash` en fin de nom (sauf `toHash`). Un `hashed` final dit au
+     * contraire que la valeur ne l'est pas encore : `$secretToBeHashed`
+     * (issue #428).
+     */
+    private const string HASHED = '/(?i:(?<!un)hashed)(?=[A-Z_])|(?i:(?<!to)hash)\z/';
 
     /**
      * @param list<class-string> $classes
@@ -128,13 +139,33 @@ final class SensitiveParameters
             if (!str_starts_with($ancestor->getName(), 'App\\') || !$ancestor->hasMethod($method)) {
                 continue;
             }
-            $prototype = $ancestor->getMethod($method)->getParameters()[$parameter->getPosition()] ?? null;
+            $declaration = $ancestor->getMethod($method);
+            if (!self::isAPrototype($ancestor, $declaration)) {
+                continue;
+            }
+            $prototype = $declaration->getParameters()[$parameter->getPosition()] ?? null;
             if (null !== $prototype && self::namesAClearSecret($prototype->getName(), $pattern)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * Une méthode privée n'est pas héritée, et un constructeur concret de
+     * classe mère n'impose rien au constructeur de la fille : leurs
+     * paramètres de même position n'ont rien en commun.
+     *
+     * @param ReflectionClass<object> $ancestor
+     */
+    private static function isAPrototype(ReflectionClass $ancestor, ReflectionMethod $declaration): bool
+    {
+        if ($declaration->isPrivate()) {
+            return false;
+        }
+
+        return !$declaration->isConstructor() || $ancestor->isInterface() || $declaration->isAbstract();
     }
 
     /**
