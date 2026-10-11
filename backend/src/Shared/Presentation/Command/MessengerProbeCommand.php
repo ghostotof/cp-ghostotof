@@ -68,7 +68,7 @@ final class MessengerProbeCommand extends Command
 
         $io->error(\sprintf(
             'Le worker n\'a pas consommé le message témoin en %d s. Vérifier `failed` (messenger:failed:show, une enveloppe refusée y part sans réessai), '
-            .'les journaux du worker, et que `backend` et `worker` tournent la même release.',
+            .'les journaux du worker, que `backend` et `worker` tournent la même release, et que la base est joignable depuis ce pod.',
             (int) $timeout,
         ));
 

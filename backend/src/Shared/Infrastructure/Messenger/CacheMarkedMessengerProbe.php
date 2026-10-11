@@ -17,7 +17,9 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *
  * La marque passe par `cache.app`, en base (ADR 0005) : le seul stockage que
  * le pod du Job et celui du worker partagent sans rien ajouter. Elle est
- * signée comme toute valeur de ce pool (issue #468). L'identifiant, propre à
+ * signée comme toute valeur de ce pool (issue #468), et relue par sa valeur,
+ * donc vérifiée. Une base injoignable depuis le Job se lit comme une marque
+ * absente : la commande le cite parmi les causes. L'identifiant, propre à
  * chaque sonde, empêche la marque d'une sonde précédente de faire réussir la
  * suivante ; la marque lue est retirée.
  */
@@ -41,19 +43,32 @@ final readonly class CacheMarkedMessengerProbe implements MessengerRoundTripProb
     {
         $probeId = bin2hex(random_bytes(16));
         $key = self::markerKey($probeId);
-        $deadline = $this->clock->now()->getTimestamp() + $timeoutSeconds;
 
         $this->bus->dispatch(new MessengerProbeMessage($probeId));
+        // Après la publication : une connexion AMQP lente (un broker qui vient
+        // de redémarrer) ne prend rien au délai laissé au worker.
+        $deadline = $this->clock->now()->getTimestamp() + $timeoutSeconds;
 
-        while ($this->clock->now()->getTimestamp() < $deadline) {
-            if ($this->cache->hasItem($key)) {
+        do {
+            if ($this->isMarked($key)) {
+                // Au mieux : une marque restée expire d'elle-même.
                 $this->cache->deleteItem($key);
 
                 return true;
             }
             $this->clock->sleep(self::POLL_INTERVAL_SECONDS);
-        }
+        } while ($this->clock->now()->getTimestamp() < $deadline);
 
-        return $this->cache->hasItem($key) && $this->cache->deleteItem($key);
+        return $this->isMarked($key);
+    }
+
+    /**
+     * Par la valeur, jamais par `hasItem()` : sur l'adaptateur DBAL, ce dernier
+     * ne fait qu'un `SELECT 1`, sans passer par le marshaller qui vérifie le MAC
+     * (issue #468). Une ligne forgée en base ferait sinon réussir le smoke.
+     */
+    private function isMarked(string $key): bool
+    {
+        return $this->cache->getItem($key)->isHit();
     }
 }

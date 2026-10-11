@@ -7,7 +7,10 @@ namespace App\Tests\Shared\Infrastructure\Messenger;
 use App\Shared\Application\Message\MessengerProbeMessage;
 use App\Shared\Infrastructure\Messenger\CacheMarkedMessengerProbe;
 use App\Shared\Infrastructure\Messenger\MessengerProbeHandler;
+use App\Shared\Infrastructure\Messenger\ProbeMarkNotSavedException;
 use PHPUnit\Framework\TestCase;
+use Psr\Cache\CacheItemInterface;
+use Psr\Cache\CacheItemPoolInterface;
 use ReflectionClass;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Clock\MockClock;
@@ -18,7 +21,7 @@ use Symfony\Component\Clock\MockClock;
  */
 final class MessengerProbeHandlerTest extends TestCase
 {
-    public function testItMarksTheNonceItReceives(): void
+    public function testItMarksTheProbeIdItReceives(): void
     {
         $cache = new ArrayAdapter();
 
@@ -45,6 +48,23 @@ final class MessengerProbeHandlerTest extends TestCase
 
         $clock->sleep(2);
         self::assertFalse($cache->hasItem($key));
+    }
+
+    /**
+     * L'adaptateur DBAL avale une écriture qui échoue (`save()` rend false,
+     * constat A1 de l'audit du 2026-09-16) : le worker acquitterait le témoin
+     * sans marque, la sonde échouerait, et la préprod repartirait en arrière à
+     * tort. L'exception laisse Messenger réessayer.
+     */
+    public function testAMarkThatCannotBeSavedFailsTheMessage(): void
+    {
+        $cache = self::createStub(CacheItemPoolInterface::class);
+        $cache->method('getItem')->willReturnCallback(static fn (string $key): CacheItemInterface => new ArrayAdapter()->getItem($key));
+        $cache->method('save')->willReturn(false);
+
+        $this->expectException(ProbeMarkNotSavedException::class);
+
+        new MessengerProbeHandler($cache)(new MessengerProbeMessage(str_repeat('d', 32)));
     }
 
     /** Le handler ne reçoit que le cache : il ne peut envoyer aucun mail. */

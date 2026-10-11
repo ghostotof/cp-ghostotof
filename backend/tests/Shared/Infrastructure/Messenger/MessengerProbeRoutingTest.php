@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Messenger;
 
 use App\Shared\Application\Message\MessengerProbeMessage;
+use App\Shared\Infrastructure\Messenger\CacheMarkedMessengerProbe;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 
 /**
@@ -29,5 +31,22 @@ final class MessengerProbeRoutingTest extends KernelTestCase
         self::assertCount(1, $sent);
         self::assertInstanceOf(MessengerProbeMessage::class, $sent[0]->getMessage());
         $transport->reset();
+    }
+
+    /**
+     * Le handler est bien celui du bus : sans lui, chaque smoke préprod
+     * échouerait, et on ne le verrait qu'en préprod. Envoyé sur `sync`, le
+     * témoin est traité ici même et sa marque se relit dans `cache.app`.
+     */
+    public function testTheContainerHandlesTheProbeMessage(): void
+    {
+        self::bootKernel();
+        $probeId = bin2hex(random_bytes(16));
+
+        self::getContainer()->get(MessageBusInterface::class)->dispatch(new MessengerProbeMessage($probeId), [new TransportNamesStamp(['sync'])]);
+
+        $cache = self::getContainer()->get('cache.app');
+        self::assertTrue($cache->getItem(CacheMarkedMessengerProbe::markerKey($probeId))->isHit());
+        $cache->deleteItem(CacheMarkedMessengerProbe::markerKey($probeId));
     }
 }

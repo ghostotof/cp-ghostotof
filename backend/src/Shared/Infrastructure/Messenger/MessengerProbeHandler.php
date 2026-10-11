@@ -30,6 +30,13 @@ final readonly class MessengerProbeHandler
     public function __invoke(MessengerProbeMessage $message): void
     {
         $item = $this->cache->getItem(CacheMarkedMessengerProbe::markerKey($message->probeId));
-        $this->cache->save($item->set(true)->expiresAfter(self::MARK_LIFETIME_SECONDS));
+
+        // L'adaptateur DBAL avale une écriture qui échoue et rend false
+        // (constat A1 de l'audit du 2026-09-16) : sans cette exception, le
+        // témoin serait acquitté sans marque, et le smoke reprocherait au
+        // worker ce qui est une panne de base. Messenger réessaie.
+        if (!$this->cache->save($item->set(true)->expiresAfter(self::MARK_LIFETIME_SECONDS))) {
+            throw ProbeMarkNotSavedException::forProbe();
+        }
     }
 }

@@ -9,8 +9,11 @@ use App\Shared\Infrastructure\Messenger\CacheMarkedMessengerProbe;
 use App\Shared\Infrastructure\Messenger\MessengerProbeHandler;
 use App\Tests\Shared\Infrastructure\Messenger\Fixtures\RecordingBus;
 use PHPUnit\Framework\TestCase;
+use Psr\Cache\CacheItemInterface;
+use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\Messenger\Exception\TransportException;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
@@ -37,9 +40,53 @@ final class CacheMarkedMessengerProbeTest extends TestCase
     public function testTheProbeSucceedsWhenTheWorkerHandlesTheMessage(): void
     {
         $bus = new RecordingBus(new MessengerProbeHandler($this->cache));
+        $start = $this->clock->now()->getTimestamp();
 
         self::assertTrue($this->probe($bus)->probe(30));
         self::assertCount(1, $bus->dispatched);
+        // Lue dès qu'elle est posée, pas au terme du délai.
+        self::assertLessThan(1, $this->clock->now()->getTimestamp() - $start);
+    }
+
+    /**
+     * Une marque n'est crue que si sa valeur se relit : `hasItem()` ne fait
+     * qu'un `SELECT 1`, sans passer par le marshaller qui vérifie son MAC
+     * (#468). Une ligne forgée en base ferait sinon réussir le smoke.
+     */
+    public function testAMarkWhoseValueCannotBeReadDoesNotCount(): void
+    {
+        $forged = self::createStub(CacheItemPoolInterface::class);
+        $forged->method('hasItem')->willReturn(true);
+        $forged->method('getItem')->willReturnCallback(static fn (string $key): CacheItemInterface => new ArrayAdapter()->getItem($key));
+
+        self::assertFalse(new CacheMarkedMessengerProbe(new RecordingBus(null), $forged, $this->clock)->probe(5));
+    }
+
+    /**
+     * Le délai du worker court après la publication : une connexion AMQP lente
+     * (un broker qui vient de redémarrer) ne le consomme pas.
+     */
+    public function testTheTimeoutStartsOnceTheMessageIsQueued(): void
+    {
+        $start = $this->clock->now()->getTimestamp();
+
+        self::assertFalse($this->probe(new RecordingBus(null, $this->clock, 60))->probe(30));
+
+        // 60 s de publication, puis les 30 s du délai en entier.
+        self::assertGreaterThanOrEqual(90, $this->clock->now()->getTimestamp() - $start);
+    }
+
+    /** Un broker en panne fait échouer la sonde par son exception, sans attendre. */
+    public function testAFailedDispatchPropagatesWithoutWaiting(): void
+    {
+        $start = $this->clock->now()->getTimestamp();
+
+        try {
+            $this->probe(new RecordingBus(null, failure: new TransportException('broker injoignable')))->probe(30);
+            self::fail('L\'échec de publication doit remonter.');
+        } catch (TransportException) {
+            self::assertSame($start, $this->clock->now()->getTimestamp());
+        }
     }
 
     /**

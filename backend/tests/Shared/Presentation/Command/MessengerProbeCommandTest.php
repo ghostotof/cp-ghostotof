@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Presentation\Command;
 
 use App\Shared\Presentation\Command\MessengerProbeCommand;
+use App\Tests\Shared\Presentation\Command\Fixtures\RecordingProbe;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Command\Command;
