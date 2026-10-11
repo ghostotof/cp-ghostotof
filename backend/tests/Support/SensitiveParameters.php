@@ -21,19 +21,28 @@ use SensitiveParameter;
  * n'est pas un secret en clair : le condensat d'un jeton aléatoire ne se
  * renverse pas. Il est écarté ici, pas par une liste d'exemptions — mais un
  * nom qui contient seulement « hash » reste vu : `$unhashedToken`,
- * `$tokenToHash`, une clé HMAC `$hashSecret` (revue de #414).
+ * `$tokenToHash`, une clé HMAC `$hashSecret` (revue de #414),
+ * `$secretToBeHashed` (issue #428).
  *
  * Un paramètre est vu par son nom, ou par celui du paramètre de même position
  * dans une interface ou une classe mère `App\…` de sa classe : une
  * implémentation qui renomme `$clearToken` en `$value` reçoit le même secret,
  * et l'attribut posé sur l'interface ne cache rien à l'exécution (revue de
- * #414). La méthode d'un trait utilisé est vue dans chaque classe qui
+ * #414). Une méthode privée de la mère n'est pas un prototype : elle n'est
+ * pas héritée (issue #428). La méthode d'un trait utilisé est vue dans chaque classe qui
  * l'utilise, celle d'un trait sans utilisateur pour elle-même (issue #421).
  */
 final class SensitiveParameters
 {
-    /** `hashed` (sauf `unhashed`) n'importe où, ou `hash` en fin de nom (sauf `toHash`). */
-    private const string HASHED = '/(?<!un)hashed|(?<!to)hash\z/i';
+    /**
+     * `hashed` (sauf `unhashed`) qui qualifie le mot suivant — une majuscule
+     * ou `_` après lui : `$hashedPassword`, `$newHashedToken`, `$HASHED_TOKEN`
+     * —, ou `hash` en fin de nom (sauf `toHash`). Un `hashed` final reste
+     * vu : `$secretToBeHashed` n'est pas haché, et `$tokenHashed`, qui le
+     * serait, se renomme `$tokenHash` — un faux positif se voit, un faux
+     * négatif non (issue #428).
+     */
+    private const string HASHED = '/(?i:(?<!un)hashed)(?=[A-Z_])|(?i:(?<!to)hash)\z/';
 
     /**
      * @param list<class-string> $classes
@@ -128,7 +137,17 @@ final class SensitiveParameters
             if (!str_starts_with($ancestor->getName(), 'App\\') || !$ancestor->hasMethod($method)) {
                 continue;
             }
-            $prototype = $ancestor->getMethod($method)->getParameters()[$parameter->getPosition()] ?? null;
+            $declaration = $ancestor->getMethod($method);
+            // Une méthode privée n'est pas héritée : son homonyme dans la
+            // fille ne reçoit rien d'elle. Un constructeur de classe mère
+            // reste un prototype, bien que PHP n'impose rien entre leurs
+            // signatures : une fille qui reçoit le secret sous un autre nom
+            // pour le passer à parent::__construct() serait sinon invisible,
+            // et un faux négatif ne se voit pas (revue de #428).
+            if ($declaration->isPrivate()) {
+                continue;
+            }
+            $prototype = $declaration->getParameters()[$parameter->getPosition()] ?? null;
             if (null !== $prototype && self::namesAClearSecret($prototype->getName(), $pattern)) {
                 return true;
             }

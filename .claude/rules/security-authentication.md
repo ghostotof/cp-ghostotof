@@ -158,7 +158,19 @@ paths:
     chain their tests fail the rendering through. A test checking that a value never reaches a verbose
     trace passes the value's **name** to its data provider, never the value: the test method's own
     arguments are in the trace. The price: the SMTP enhanced status (`5.1.1`) and Scaleway's error
-    text are gone from the logs. **An address that `Mime\Address` would refuse never gets past
+    text are gone from the logs. **Nor does a database error quote a value** (issue #428):
+    PostgreSQL copies it into its message — `DETAIL: Key (email)=(…) already exists`, `DETAIL: Failing row
+    contains (…)` (the password hash included), `invalid input syntax for type uuid: "…"`, a bound parameter
+    in `CONTEXT:` — and the kernel and the worker log the message and the whole `previous` chain.
+    `Shared/Infrastructure/Doctrine/DriverErrorRedactionMiddleware` (`#[AsMiddleware]`, every connection)
+    wraps the driver's exception converter: each driver exception is handed to PostgreSQL's converter as a
+    `RedactedDriverException` — `DETAIL`/`CONTEXT` lines dropped, a value quoted after a colon at the end
+    of a line or in `value "…" is out of range` masked, chain cut —, so the DBAL class and the SQLSTATE
+    that callers read (`CpgUserInviter`'s unique violation, the order lock's `55P03`) are unchanged, and
+    the constraint, column and table names stay. `DriverErrorRedactionMiddlewareTest` checks the real
+    server's messages, `RedactedDriverExceptionTest` the other forms. Not covered: a value PostgreSQL would
+    quote in a form neither pattern knows — add it to `RedactedDriverException::redact()` with its test.
+    **An address that `Mime\Address` would refuse never gets past
     validation**: `framework.validation.email_validation_mode: strict` (`validator.yaml`), egulias'
     grammar, the one Mime uses — the default `html5` mode accepted `a..b@example.com`, and the worker then
     failed on a `RfcComplianceException` quoting it, logged on every retry. Don't override `mode:` on an

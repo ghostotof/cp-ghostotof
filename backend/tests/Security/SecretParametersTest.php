@@ -18,6 +18,10 @@ use App\Security\User\Infrastructure\Log\PasswordOptionRedactor;
 use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersEnumFixture;
 use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersOrphanInterfaceFixture;
 use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersOrphanTraitFixture;
+use App\Tests\Security\Fixtures\Prototypes\SecretParametersChildFixture;
+use App\Tests\Security\Fixtures\Prototypes\SecretParametersConstructorInterfaceFixture;
+use App\Tests\Security\Fixtures\Prototypes\SecretParametersImplementedConstructorFixture;
+use App\Tests\Security\Fixtures\Prototypes\SecretParametersParentFixture;
 use App\Tests\Security\Fixtures\SecretParametersFixture;
 use App\Tests\Security\Fixtures\SecretParametersFixtureInterface;
 use App\Tests\Security\Fixtures\UsedTrait\IssuesTokensFixture;
@@ -98,7 +102,8 @@ final class SecretParametersTest extends TestCase
      * Ce qu'un nom de secret contient, quelle que soit la casse : `token`,
      * `clearToken`, `jwt`, `secret`, `apiKey`, `api_key`, `bearer`, `xsrf`,
      * `credentials`, `authorization`, `dsn`, `privateKey`, `signingKey`,
-     * `cookie`, `signature`, `nonce`… Jamais `key` seul, qui viserait
+     * `cookie`, `signature`, `nonce`, `basicAuth`, `databaseUrl`, `amqpUrl`…
+     * (une URL de service porte ses identifiants, issue #428). Jamais `key` seul, qui viserait
      * `ResolvesUriVariables::uriVariableString(…, string $key)`.
      *
      * Large exprès, comme le nom de mot de passe de #411 : un faux négatif ne
@@ -108,7 +113,7 @@ final class SecretParametersTest extends TestCase
      * entrée devenue sans objet, sur le modèle de la liste `NOT_AN_INPUT` de
      * {@see \App\Tests\Security\User\PlainPasswordInputsTest}.
      */
-    private const string SECRET_NAME = '/token|jwt|secret|api_?key|bearer|[xc]srf|credential|(?:private|signing|access|encryption|hmac)_?key|authori[sz]ation|dsn|cookie|signature|nonce/i';
+    private const string SECRET_NAME = '/token|jwt|secret|api_?key|bearer|[xc]srf|credential|(?:private|signing|access|encryption|hmac)_?key|authori[sz]ation|dsn|cookie|signature|nonce|basic_?auth|(?:database|db|amqp|broker|redis|mailer|transport|messenger)_?url/i';
 
     /**
      * Les secrets de `src/` que le recensement ne voit pas, cachés à la main.
@@ -202,9 +207,16 @@ final class SecretParametersTest extends TestCase
             $fixture.'::sign($cookie)' => false,
             $fixture.'::sign($signature)' => false,
             $fixture.'::sign($nonce)' => false,
+            $fixture.'::sign($basicAuth)' => false,
+            $fixture.'::sign($databaseUrl)' => false,
+            $fixture.'::sign($db_url)' => false,
+            $fixture.'::sign($amqpUrl)' => false,
+            $fixture.'::sign($redisUrl)' => false,
             $fixture.'::digest($unhashedToken)' => false,
             $fixture.'::digest($tokenToHash)' => false,
             $fixture.'::digest($hashSecret)' => false,
+            $fixture.'::digest($secretToBeHashed)' => false,
+            $fixture.'::digest($tokenNotYetHashed)' => false,
             // Le prototype nomme le jeton, l'implémentation l'appelle $value.
             $fixture.'::verify($value)' => false,
             SecretParametersFixtureInterface::class.'::verify($clearToken)' => true,
@@ -243,6 +255,24 @@ final class SecretParametersTest extends TestCase
     public function testAMethodOfAUsedTraitIsCensusedOnce(): void
     {
         self::assertSame([IssuesTokensFixture::class.'::issue($token)'], SensitiveParameters::exposed($this->parametersIn(__DIR__.'/Fixtures/UsedTrait')));
+    }
+
+    /**
+     * Une méthode privée de la mère n'est pas le prototype d'une méthode
+     * homonyme de la fille : elle n'est pas héritée (issue #428). Un
+     * constructeur, si : une fille peut recevoir le secret de la mère sous un
+     * autre nom pour le lui passer. Le `$title` de la fixture est donc vu,
+     * faux positif assumé — il se renommerait.
+     */
+    public function testAPrivateParentMethodIsNoPrototypeButAConstructorIs(): void
+    {
+        self::assertSame([
+            SecretParametersChildFixture::class.'::__construct($title)',
+            SecretParametersConstructorInterfaceFixture::class.'::__construct($secret)',
+            SecretParametersImplementedConstructorFixture::class.'::__construct($value)',
+            SecretParametersParentFixture::class.'::__construct($secret)',
+            SecretParametersParentFixture::class.'::sign($token)',
+        ], SensitiveParameters::exposed($this->parametersIn(__DIR__.'/Fixtures/Prototypes')));
     }
 
     /**

@@ -53,24 +53,34 @@ final class SecretParametersFixture implements SecretParametersFixtureInterface
         string $cookie,
         string $signature,
         string $nonce,
+        string $basicAuth,
+        string $databaseUrl,
+        string $db_url,
+        string $amqpUrl,
+        string $redisUrl,
     ): array {
-        return [$xsrf, $credentials, $authorization, $dsn, $privateKey, $signingKey, $hmacKey, $cookie, $signature, $nonce];
+        return [$xsrf, $credentials, $authorization, $dsn, $privateKey, $signingKey, $hmacKey, $cookie, $signature, $nonce, $basicAuth, $databaseUrl, $db_url, $amqpUrl, $redisUrl];
     }
 
     /**
      * Un condensat n'est pas un secret en clair ; un nom qui contient
-     * seulement « hash » peut l'être.
+     * seulement « hash » peut l'être, et « hashed » ne désigne un condensat
+     * que s'il qualifie le mot qui suit (issue #428).
      *
      * @return list<string>
      */
     public function digest(
         string $tokenHash,
         string $hashedSecret,
+        string $newHashedToken,
+        string $HASHED_TOKEN,
         string $unhashedToken,
         string $tokenToHash,
         string $hashSecret,
+        string $secretToBeHashed,
+        string $tokenNotYetHashed,
     ): array {
-        return [$tokenHash, $hashedSecret, $unhashedToken, $tokenToHash, $hashSecret];
+        return [$tokenHash, $hashedSecret, $newHashedToken, $HASHED_TOKEN, $unhashedToken, $tokenToHash, $hashSecret, $secretToBeHashed, $tokenNotYetHashed];
     }
 
     /** Le jeton du prototype, reçu sous un nom que le recensement par nom ne verrait pas. */

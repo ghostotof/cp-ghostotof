@@ -341,6 +341,43 @@ final class SymfonyAiCareerAssistantTest extends TestCase
     }
 
     /**
+     * Issue #428, point 1 : le renvoi que ReplayRefusingHttpClient refuse est
+     * une TransportException dont la trace garde, sous elle, la frame vendor
+     * `AsyncContext::replaceRequest($method, $url, $options)` — la clé d'API
+     * Scaleway et le corpus du CV nominatif en arguments, en dev
+     * (`zend.exception_ignore_args` n'est On qu'en prod et sous PHPUnit).
+     * Écarté sans retirer la trace, parce qu'elle n'est rendue nulle part :
+     * l'exception ne quitte jamais le service, ni levée ni en `previous`
+     * (que la page d'erreur de debug ou le formateur des logs rendraient), et
+     * seul son nom de classe est journalisé. C'est ce qui est épinglé ici,
+     * aux deux étapes de l'appel.
+     */
+    public function testARefusedReplayNeverLeavesTheServiceNorReachesTheLogs(): void
+    {
+        $failure = new TransportException('Renvoi refusé');
+
+        foreach ([
+            'before-first-fragment' => new FakeStreamingAgent([], failure: $failure),
+            'during-stream' => new FakeStreamingAgent(['Il a '], failure: $failure, failAfter: 1),
+        ] as $stage => $agent) {
+            $this->logger = new InMemoryLogger();
+            try {
+                // Avant le premier fragment, answer() lève ; pendant le flux,
+                // c'est le générateur.
+                [, $leaving] = $this->consume($this->assistant($agent)->answer($this->conversation(), Locale::FR));
+            } catch (AssistantUnavailableException $exception) {
+                $leaving = $exception;
+            }
+
+            self::assertInstanceOf(AssistantUnavailableException::class, $leaving, $stage);
+            self::assertNull($leaving->getPrevious(), $stage.' : l\'exception du client HTTP ne doit pas sortir en `previous`.');
+            self::assertSame($stage, $this->logger->records[0]['context']['stage'] ?? null);
+            self::assertSame(TransportException::class, $this->logger->records[0]['context']['exception'] ?? null);
+            self::assertStringNotContainsString('Renvoi refusé', $this->logger->dump(), $stage);
+        }
+    }
+
+    /**
      * Consomme le flux jusqu'au bout ou jusqu'à l'échec, et rend les deux.
      *
      * @param Generator<int, string, mixed, mixed> $stream

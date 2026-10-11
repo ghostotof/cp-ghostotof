@@ -47,6 +47,9 @@ use ReflectionClass;
  */
 final class DeclaredClasses
 {
+    /** @var array<string, list<class-string>> répertoire réel => déclarations */
+    private static array $classLikes = [];
+
     /**
      * Les jetons qui ouvrent une déclaration nommée. `class` ne suffit pas :
      * précédé de `new`, il ouvre une classe anonyme, de `::`, il lit un nom.
@@ -83,15 +86,29 @@ final class DeclaredClasses
      * Toutes les déclarations nommées des fichiers du répertoire : classes,
      * interfaces, traits et enums.
      *
+     * Lu une fois par répertoire et par processus (issue #428) : chaque garde
+     * le redemandait, au prix d'un parcours par jetons de tout `src/`
+     * (≈ 60 ms) à chaque test. Les répertoires lus — `src/` et les fixtures
+     * des tests — ne changent pas pendant une exécution de PHPUnit.
+     *
      * @return list<class-string> triées, pour un diagnostic stable
      */
     public static function classLikes(string $directory): array
     {
+        $key = realpath($directory);
+        if (false !== $key && isset(self::$classLikes[$key])) {
+            return self::$classLikes[$key];
+        }
+
         $found = [];
         foreach (PhpSources::files($directory) as $path) {
             array_push($found, ...self::declaredIn($path));
         }
         sort($found);
+
+        if (false !== $key) {
+            self::$classLikes[$key] = $found;
+        }
 
         return $found;
     }

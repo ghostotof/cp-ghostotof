@@ -87,8 +87,14 @@ authorization, DSN, cookie, signature or nonce (`SECRET_NAME`, any case; never `
 or whose parameter at the same position in an `App\…` interface or parent class says so: PHP only reads
 the attribute of the implementation called, so the one on an interface is declarative, required for
 consistency, and an implementation renaming `$clearToken` to `$value` is still caught. A digest is not a
-secret: `hashed` (not `unhashed`) or a trailing `hash` (not `toHash`) excludes the name (`$tokenHash`,
-`$hashedPassword`). Scope: methods of the classes, interfaces, traits and enums of `src/`
+secret: `hashed` (not `unhashed`) qualifying the next word (`$hashedPassword`, `$newHashedToken`,
+`$HASHED_TOKEN`) or a trailing `hash` (not `toHash`) excludes the name (`$tokenHash`); a trailing `hashed`
+does not (`$secretToBeHashed` is clear — name a digest `…Hash`), issue #428. The vocabulary also covers
+`basicAuth` and a service URL that carries its credentials (`databaseUrl`, `amqpUrl`, `redisUrl`…). A
+parent's **private** method is no prototype (it is not inherited); a parent's constructor still is, on
+purpose: a child receiving the secret under another name for `parent::__construct()` would otherwise be
+missed, and a false negative is invisible while a false positive gets renamed (review of #428).
+`DeclaredClasses::classLikes()` is read once per directory and process (≈ 60 ms per walk of `src/`). Scope: methods of the classes, interfaces, traits and enums of `src/`
 (`DeclaredClasses::classLikes()`, issue #421: an enum, an interface nothing implements or a trait nothing
 uses was reached by no class) and of the classes' `App\…` interfaces and parents; a used trait is read
 in each class using it, where its prototype lives, and reported under that class, never a second time
