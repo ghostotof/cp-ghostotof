@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Shared\Infrastructure\Messenger;
 
-use App\Shared\Infrastructure\Security\SecretKeyDerivation;
+use App\Shared\Infrastructure\Security\KeyedMac;
+use App\Shared\Infrastructure\Security\MacEncoding;
 use SensitiveParameter;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\Envelope;
@@ -99,7 +100,7 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
      */
     private const string KEY_CONTEXT = 'cp-ghostotof/messenger-envelope/v2';
 
-    private string $key;
+    private KeyedMac $mac;
 
     public function __construct(
         #[Autowire(service: 'messenger.transport.native_php_serializer')]
@@ -110,7 +111,7 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
     ) {
         // Un secret vide lève EmptyApplicationSecretException, à la première
         // construction : le premier message mis en file ou lu.
-        $this->key = SecretKeyDerivation::derive($secret, self::KEY_CONTEXT);
+        $this->mac = KeyedMac::fromSecret($secret, self::KEY_CONTEXT, MacEncoding::Hex);
     }
 
     /**
@@ -119,7 +120,7 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
     public function encode(Envelope $envelope): array
     {
         $encoded = $this->inner->encode($envelope);
-        $encoded['headers'][self::HEADER] = $this->mac($encoded['body']);
+        $encoded['headers'][self::HEADER] = $this->mac->sign($encoded['body']);
 
         return $encoded;
     }
@@ -140,13 +141,13 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
             return EnvelopeTooLargeException::forSize($markedSize, self::MAX_ENVELOPE_BYTES);
         }
 
-        $mac = $encodedEnvelope['headers'][self::HEADER] ?? null;
+        $givenMac = $encodedEnvelope['headers'][self::HEADER] ?? null;
 
         // Un transport peut rendre un en-tête qui n'est pas une chaîne (AMQP,
         // JSON du transport Doctrine) : refusé comme un MAC faux, plutôt
         // qu'une erreur de type qui ferait tomber le worker.
-        if (!\is_string($mac) || !hash_equals($this->mac($encodedEnvelope['body']), $mac)) {
-            return null === $mac ? EnvelopeMacRefusedException::missing($encodedEnvelope) : EnvelopeMacRefusedException::invalid($encodedEnvelope);
+        if (!\is_string($givenMac) || !$this->mac->verifies($givenMac, $encodedEnvelope['body'])) {
+            return null === $givenMac ? EnvelopeMacRefusedException::missing($encodedEnvelope) : EnvelopeMacRefusedException::invalid($encodedEnvelope);
         }
 
         $authenticated = $encodedEnvelope;
@@ -235,10 +236,5 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
         }
 
         return (int) $size > self::MAX_ENVELOPE_BYTES ? (int) $size : null;
-    }
-
-    private function mac(string $body): string
-    {
-        return hash_hmac('sha256', $body, $this->key);
     }
 }

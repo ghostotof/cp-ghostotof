@@ -41,6 +41,18 @@ final class KeyedMacTest extends TestCase
         );
     }
 
+    /**
+     * Le cache découpe sa valeur stockée sur cette longueur : elle suit
+     * l'algorithme, que seule cette classe connaît.
+     */
+    public function testABinaryMacIsBinaryLengthBytesLong(): void
+    {
+        self::assertSame(
+            KeyedMac::BINARY_LENGTH,
+            \strlen(KeyedMac::fromSecret(TestKeys::material(), self::CONTEXT, MacEncoding::Binary)->sign('donnée')),
+        );
+    }
+
     #[DataProvider('encodings')]
     public function testItsOwnMacVerifies(MacEncoding $encoding): void
     {

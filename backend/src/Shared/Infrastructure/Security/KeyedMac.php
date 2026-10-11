@@ -24,6 +24,12 @@ use SensitiveParameter;
  */
 final readonly class KeyedMac
 {
+    /**
+     * Longueur en octets d'un MAC {@see MacEncoding::Binary} : ce qu'un usage
+     * qui le stocke devant sa valeur découpe à la relecture.
+     */
+    public const int BINARY_LENGTH = 32;
+
     private const string ALGORITHM = 'sha256';
 
     private function __construct(
@@ -45,9 +51,12 @@ final readonly class KeyedMac
     }
 
     /**
+     * @param string $data caché des traces : l'empreinte de login y passe
+     *                     l'identifiant tenté, possiblement un mot de passe
+     *
      * @return non-empty-string le MAC de `$data`, dans l'encodage de l'usage
      */
-    public function sign(string $data): string
+    public function sign(#[SensitiveParameter] string $data): string
     {
         return hash_hmac(self::ALGORITHM, $data, $this->key, MacEncoding::Binary === $this->encoding);
     }

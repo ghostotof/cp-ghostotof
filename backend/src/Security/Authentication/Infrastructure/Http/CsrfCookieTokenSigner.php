@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Http;
 
-use App\Shared\Infrastructure\Security\SecretKeyDerivation;
+use App\Shared\Infrastructure\Security\KeyedMac;
+use App\Shared\Infrastructure\Security\MacEncoding;
 use SensitiveParameter;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -60,7 +61,7 @@ final readonly class CsrfCookieTokenSigner
     {
         $random = bin2hex(random_bytes(self::RANDOM_BYTES));
 
-        return $random.self::SEPARATOR.$this->signature($random);
+        return $random.self::SEPARATOR.$this->mac()->sign($random);
     }
 
     /**
@@ -82,13 +83,13 @@ final readonly class CsrfCookieTokenSigner
             return false;
         }
 
-        return hash_equals($this->signature($random), $providedSignature);
+        return $this->mac()->verifies($providedSignature, $random);
     }
 
-    private function signature(string $random): string
+    private function mac(): KeyedMac
     {
         // Dérivée à chaque appel (quelques microsecondes) : une clé vide lève
         // au premier usage plutôt qu'à la construction de chaque requête.
-        return hash_hmac('sha256', $random, SecretKeyDerivation::derive($this->secret, self::KEY_CONTEXT));
+        return KeyedMac::fromSecret($this->secret, self::KEY_CONTEXT, MacEncoding::Hex);
     }
 }

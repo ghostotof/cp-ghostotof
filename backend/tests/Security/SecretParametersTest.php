@@ -16,6 +16,7 @@ use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Infrastructure\Doctrine\CpgUserRepository;
 use App\Security\User\Infrastructure\Log\PasswordOptionRedactor;
 use App\Security\User\Presentation\Command\CreateCpgUserCommand;
+use App\Shared\Infrastructure\Security\KeyedMac;
 use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersEnumFixture;
 use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersOrphanInterfaceFixture;
 use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersOrphanTraitFixture;
@@ -76,8 +77,8 @@ use ReflectionParameter;
  * **Ce qu'elle ne voit pas.** Un secret reçu sous un autre nom, sans
  * prototype qui le nomme : ceux de `src/` sont cachés à la main et épinglés
  * par {@see self::HIDDEN_BY_HAND}. La moitié aléatoire du jeton CSRF arrive à
- * `CsrfCookieTokenSigner::signature()` sous le nom `$random`, laissée visible
- * — sans `APP_SECRET`, elle ne permet pas de forger l'autre moitié. Un
+ * `KeyedMac::verifies()` sous le nom `$data`, laissée visible — sans
+ * `APP_SECRET`, elle ne permet pas de forger l'autre moitié. Un
  * secret porté par un objet (`TokenInterface`) : la trace n'affiche d'un
  * objet que sa classe. Un secret dans un tableau (`array $options`) : le
  * filtre de type l'écarte, ceux de `src/` sont dans HIDDEN_BY_HAND.
@@ -139,6 +140,8 @@ final class SecretParametersTest extends TestCase
         SecurityAuditLogger::class.'::loginThrottled($triedIdentifier)' => self::TRIED_IDENTIFIER,
         SecurityAuditLogger::class.'::attemptSubject($triedIdentifier)' => self::TRIED_IDENTIFIER,
         LoginIdentifierFingerprint::class.'::of($identifier)' => self::TRIED_IDENTIFIER,
+        // Issue #487 : l'empreinte passe l'identifiant à KeyedMac sous un nom générique.
+        KeyedMac::class.'::sign($data)' => self::TRIED_IDENTIFIER.' (calcul de l\'empreinte)',
         CpgUserRepository::class.'::loadUserByIdentifier($identifier)' => self::TRIED_IDENTIFIER.' (chargeur du fournisseur `cpg_users`)',
         CpgUserRepositoryInterface::class.'::findOneByUsername($username)' => self::TRIED_IDENTIFIER.' (appelé par le chargeur)',
         CpgUserRepository::class.'::findOneByUsername($username)' => self::TRIED_IDENTIFIER.' (appelé par le chargeur)',

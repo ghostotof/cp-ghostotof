@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace App\Security\Authentication\Infrastructure\Log;
 
 use App\Shared\Infrastructure\Security\EmptyApplicationSecretException;
-use App\Shared\Infrastructure\Security\SecretKeyDerivation;
+use App\Shared\Infrastructure\Security\KeyedMac;
+use App\Shared\Infrastructure\Security\MacEncoding;
 use SensitiveParameter;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -93,6 +94,6 @@ final readonly class LoginIdentifierFingerprint
         // Symfony\Component\Security\Http\RateLimiter\DefaultLoginRateLimiter::getLimiters().
         $folded = 1 === preg_match('//u', $identifier) ? mb_strtolower($identifier, 'UTF-8') : strtolower($identifier);
 
-        return substr(hash_hmac('sha256', $folded, SecretKeyDerivation::derive($this->secret, self::KEY_CONTEXT)), 0, self::LENGTH);
+        return substr(KeyedMac::fromSecret($this->secret, self::KEY_CONTEXT, MacEncoding::Hex)->sign($folded), 0, self::LENGTH);
     }
 }

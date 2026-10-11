@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Shared\Infrastructure\Cache;
 
-use App\Shared\Infrastructure\Security\SecretKeyDerivation;
+use App\Shared\Infrastructure\Security\KeyedMac;
+use App\Shared\Infrastructure\Security\MacEncoding;
 use SensitiveParameter;
 use Symfony\Component\Cache\Marshaller\MarshallerInterface;
 use Symfony\Component\DependencyInjection\Attribute\AsDecorator;
@@ -68,14 +69,7 @@ final class AuthenticatedCacheMarshaller implements MarshallerInterface
      */
     private const string KEY_CONTEXT = 'cp-ghostotof/cache-value/v1';
 
-    private const string ALGORITHM = 'sha256';
-
-    /**
-     * Longueur en octets d'un HMAC binaire sous {@see self::ALGORITHM}.
-     */
-    private const int MAC_LENGTH = 32;
-
-    private ?string $key = null;
+    private ?KeyedMac $mac = null;
 
     public function __construct(
         #[AutowireDecorated]
@@ -107,7 +101,7 @@ final class AuthenticatedCacheMarshaller implements MarshallerInterface
                 continue;
             }
 
-            $signed[$id] = $this->mac($value).$value;
+            $signed[$id] = $this->mac()->sign($value).$value;
         }
 
         return $signed;
@@ -115,21 +109,16 @@ final class AuthenticatedCacheMarshaller implements MarshallerInterface
 
     public function unmarshall(string $value): mixed
     {
-        $mac = substr($value, 0, self::MAC_LENGTH);
-        $payload = substr($value, self::MAC_LENGTH);
+        $mac = substr($value, 0, KeyedMac::BINARY_LENGTH);
+        $payload = substr($value, KeyedMac::BINARY_LENGTH);
 
         // Une valeur plus courte qu'un MAC laisse un `$payload` vide, dont le
         // MAC ne peut pas valoir les octets lus : elle est refusée ici aussi.
-        if (!hash_equals($this->mac($payload), $mac)) {
+        if (!$this->mac()->verifies($mac, $payload)) {
             throw CacheValueMacRefusedException::invalid();
         }
 
         return $this->inner->unmarshall($payload);
-    }
-
-    private function mac(string $value): string
-    {
-        return hash_hmac(self::ALGORITHM, $value, $this->key(), true);
     }
 
     /**
@@ -142,8 +131,8 @@ final class AuthenticatedCacheMarshaller implements MarshallerInterface
      * l'attrape comme toute `Exception` et la journalise en `warning`, mais les
      * autres usages du secret (CSRF, enveloppes Messenger) échouent en 500.
      */
-    private function key(): string
+    private function mac(): KeyedMac
     {
-        return $this->key ??= SecretKeyDerivation::derive($this->secret, self::KEY_CONTEXT);
+        return $this->mac ??= KeyedMac::fromSecret($this->secret, self::KEY_CONTEXT, MacEncoding::Binary);
     }
 }
