@@ -12,15 +12,12 @@ use DomainException;
  */
 final class InvalidUsernameException extends DomainException
 {
-    public static function forUsername(string $username): self
-    {
-        return new self(\sprintf('Le nom d\'utilisateur "%s" est invalide : il doit contenir entre 3 et 60 caractères (lettres, chiffres, ".", "_" ou "-").', $username));
-    }
-
     /**
-     * Même règle, sans la saisie : pour un chemin où elle peut être n'importe
-     * quoi (une invite console où un mot de passe a été collé par erreur) et
-     * où le message peut finir dans un journal (issue #383).
+     * Jamais la saisie : elle peut être n'importe quoi (une invite console où
+     * un mot de passe a été collé par erreur), et le message d'une exception
+     * finit dans un journal (issues #383, #386). La variante qui la citait,
+     * `forUsername()`, a disparu avec son dernier appelant, le constructeur
+     * de CpgUser.
      */
     public static function invalidFormat(): self
     {

@@ -117,6 +117,18 @@ paths:
   the API it is unreachable unless a write path bypasses the DTO, a server fault that must stay a
   `critical` 500.
 
+  **`ExperienceTechnology.name` is a `Domain/ValueObject/TechnologyName`** (issue #386): valid UTF-8, trimmed
+  of **Unicode** blanks (`\s`, `\p{Z}`, zero-width characters, BOM — `trim()` only knows ASCII, and a pasted
+  non-breaking space rebuilt the duplicate), not blank, no control character (PostgreSQL refuses NUL in a
+  `varchar`: the DBAL exception was a `critical` 500), at most `MAX_LENGTH` (the column's 180) characters. The
+  entity, the registrar and the administrator only receive one, so the uniqueness check (`findOneByName()`)
+  runs on the trimmed value — trimming in the entity alone would have let `" PHP "` through to the unique
+  index, whose exception closes the EntityManager. The backoffice DTO validates `name` through an
+  `Assert\Callback` that delegates to the Value Object, exactly like `years` — never a copied `NotBlank` or
+  `Length`, which is how the NUL and the non-breaking space got through; `InvalidTechnologyNameException` is
+  unmapped on purpose, like `InvalidExperienceYearsException`. No `CHECK` in the database, unlike `years`: an untrimmed name is a
+  duplicate on the public page, not a 500, and no write path reaches SQL without the Value Object. `relatedTechnologyName` is a free label, not trimmed.
+
   `Contribution` is the odd one out and deliberately so: it carries a long `body` (the argument, not
   just a link to it) alongside `title`/`project`/`reference`/`url`/`summary`. That text is **plain
   text**, paragraphs separated by a blank line, rendered by splitting on those blanks —

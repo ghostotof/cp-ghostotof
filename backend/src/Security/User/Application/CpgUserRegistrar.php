@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Security\User\Application;
 
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\UsernameAlreadyUsedException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use SensitiveParameter;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
 final readonly class CpgUserRegistrar implements CpgUserRegistrarInterface
@@ -15,10 +17,11 @@ final readonly class CpgUserRegistrar implements CpgUserRegistrarInterface
     public function __construct(
         private CpgUserRepositoryInterface $cpgUserRepository,
         private UserPasswordHasherInterface $passwordHasher,
+        private SecurityAuditLoggerInterface $auditLogger,
     ) {
     }
 
-    public function register(string $username, string $plainPassword, array $roles = []): CpgUser
+    public function register(string $username, #[SensitiveParameter] string $plainPassword, array $roles = []): CpgUser
     {
         if (null !== $this->cpgUserRepository->findOneByUsername($username)) {
             throw UsernameAlreadyUsedException::forUsername($username);
@@ -36,6 +39,10 @@ final readonly class CpgUserRegistrar implements CpgUserRegistrarInterface
             // la contrainte unique en base reste le dernier rempart.
             throw UsernameAlreadyUsedException::forUsername($username);
         }
+
+        // Après l'enregistrement, comme les autres cas d'usage : une création
+        // refusée n'écrit rien (issue #386).
+        $this->auditLogger->userCreated($user);
 
         return $user;
     }

@@ -51,7 +51,7 @@ final readonly class Conversation implements Countable
             }
         }
 
-        if (Role::User !== $messages[array_key_last($messages)]->role) {
+        if (Role::User !== array_last($messages)->role) {
             throw new InvalidConversationException('La conversation doit se terminer par une question.');
         }
 

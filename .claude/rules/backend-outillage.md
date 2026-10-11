@@ -20,7 +20,8 @@ reordered by drag-and-drop with an explicit FR/EN link in the database (spec 000
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
 over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
 recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
-`tests/`, mirrors the `src/` bounded-context tree) and runnable via `php bin/phpunit` inside `make sh`.
+`tests/`, mirrors the `src/` bounded-context tree) and runnable via `php bin/phpunit` inside `make sh`;
+its traces carry no call arguments (see the last section, issue #420).
 **PHPStan** is configured (`backend/phpstan.dist.neon`, level `max` + `phpstan-strict-rules` +
 `phpstan-symfony`/`-doctrine`/`-phpunit`/`-deprecation-rules` via `extension-installer`): run it with
 `composer phpstan` inside `make sh` (warms the dev container first), CI job `phpstan-backend` (blocking,
@@ -93,3 +94,50 @@ Vitest configured with `npm test`. A `ROLE_SUPER`-gated backoffice (`/admin` on 
 on the backend) lets an authenticated super-admin manage all of the above content plus user accounts — see
 `.claude/rules/backoffice-api.md` and `.claude/rules/frontend-backoffice.md`.
 
+## Target PHP version (issue #429)
+
+`composer.json` requires **`"php": ">=8.5"`**, the runtime of every image, of CI (`setup-php`
+`php-version: '8.5'`) and of the dev container — decided on 2026-10-11, rather than keeping `>=8.4` and
+forbidding 8.5 functions through the analysers. The lower bound used to allow an install nobody tested or
+deployed, and let an 8.5 function (`array_first`, during #419) through on a transitive polyfill alone,
+since PHPStan, Rector (`withPhpSets()` without argument) and Psalm all read their target version from
+that constraint — none sets its own, keep it that way so the one constraint drives all three. The
+polyfill of the runtime's version is listed in `replace` like the older ones (`symfony/polyfill-php85`,
+removed from the lock); `polyfill-php86` stays, its functions are not native yet. Moving to 8.5 let
+Rector's `ArrayFirstLastRector` rewrite four `$a[array_key_last($a)]` / `array_values($a)[0]` into
+`array_last()` / `array_first()`. No `config.platform.php`: Composer only ever runs in the container.
+`tests/Shared/PhpConstraintMatchesRuntimeTest.php` fails when the constraint is not exactly
+`>=<runtime major.minor>` or that version's polyfill is not replaced — so a runtime bump turns it red
+until both move in the same change.
+
+## Exception traces under PHPUnit (issue #420)
+
+`phpunit.dist.xml` sets `<ini name="zend.exception_ignore_args" value="1"/>`, as `php.prod.ini` does in
+the deployed images: a trace carries no call arguments. `#[SensitiveParameter]` (#411, #414, see
+`.claude/rules/backend-architecture.md`) only covers `src/`; the vendor keeps its arguments
+(`Cookie::create($value)`, `JWTManager::parse($token)`, `LcobucciJWTEncoder::decode($token)`…), and the
+risk is a test trace pasted in a ticket or an assistant session. Facts measured before deciding
+(2026-10-10): **CI already ran with it On** — `setup-php` loads `php.ini-production` by default
+(`ini-file: production`) — while no ini file of the dev container sets it (no `php.ini`, `php.dev.ini`
+as `conf.d/zz-app.ini` is silent: PHP's built-in Off); the directive is `PHP_INI_ALL`, so PHPUnit's
+`ini_set()` applies it. **PHPUnit's report loses nothing**: it prints a trace as `file:line`, and its
+exporter skips an exception's `trace`. What loses the arguments is a trace rendered by a test or by
+Symfony (`getTraceAsString()`, a `FlattenException` in Messenger's `ErrorDetailsStamp` or in the debug
+`ProblemNormalizer` body of a non-API-Platform route — API Platform's own debug body already drops them).
+No test asserted on trace arguments, and the #411/#414 guards read the attribute by reflection, never
+a trace, so none became vacuous. **A `php` process a test starts** does not get PHPUnit's `<ini>`: it is
+built by `tests/Support/ChildPhpProcess::command()`, which passes the parent's value with `-d` (its
+stderr, trace included, ends up in the failure message) — the two concurrency tests and
+`CreateCpgUserCommandTest`'s pseudo-terminal run. **To debug with arguments**, write a local
+`phpunit.xml` (gitignored, read instead of the dist file) that sets it **explicitly** to 0 —
+`bin/phpunit -d …=0` does not work, the XML `<ini>` is applied after the CLI one. The two runtime
+tests then **skip**, naming the cause, rather than fail; a local `phpunit.xml` that merely omits it (an
+old copy of the dist) fails them. `ExceptionArgumentsHiddenInTestsTest` pins the dist entry and the
+shape of the child's command (the runtime checks alone would stay green in CI), the effect on
+`getTrace()`, on a `FlattenException` and in a child, and that no test names `PHP_BINARY` outside the
+helper. **Not covered**: `debug_backtrace()` (the directive only acts on exceptions — measured), the
+frame of a `require`, which keeps the included path, a child started otherwise (a literal `'php'`,
+`PhpExecutableFinder`, `bin/console` by its shebang — a token heuristic cannot tell a literal `'php'`
+command from test data, so the guard does not try), and dev over HTTP (`APP_DEBUG` error bodies, Off
+there) — which is why the #411/#414 guards stay. Setting it in `php.dev.ini` would cover every child at
+once, at the cost of dev CLI traces: not done, an open question of #420.

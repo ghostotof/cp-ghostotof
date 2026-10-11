@@ -795,6 +795,32 @@ suivi d'un `kubectl rollout restart deployment/backend -n $NS` pour que les
 pods relisent la nouvelle valeur (les Secrets montés en `envFrom` ne sont pas
 rechargés à chaud).
 
+### Cas d'`APP_SECRET`
+
+Le secret signe plus qu'une session : les cookies `XSRF-TOKEN`, les empreintes du journal de sécurité
+(§ Journal de sécurité) et, depuis l'issue #444, **le MAC de chaque message Messenger mis en file**,
+vérifié par le worker avant toute désérialisation. Chaque usage en dérive sa propre clé (issue #455) :
+changer le `KEY_CONTEXT` d'une seule classe est une rotation ciblée de cet usage, sans toucher au
+secret. Une rotation invalide les `XSRF-TOKEN` déjà émis : une écriture, déconnexion comprise, répond
+403 ; l'interface ramène alors à la page de connexion, et un nouveau login remplace les cookies. Une enveloppe signée avec l'ancien secret est refusée par un worker qui a
+le nouveau (échec de décodage, réessais, puis `failed`, où elle reste refusée et part avec la purge
+des 30 jours). Ordre, en période calme :
+
+1. Vider les files : la file `async` est consommée par le worker ; lire `failed`
+   (`messenger:failed:show`, depuis un Job sur le modèle de `create-user-job.yaml`, jamais
+   `kubectl exec`) et rejouer ou purger ce qui doit l'être.
+2. Publier la nouvelle version dans Secret Manager, puis
+   `kubectl annotate externalsecret backend-secrets -n $NS force-sync=$(date +%s) --overwrite`.
+3. Redémarrer ensemble : `kubectl rollout restart deployment/backend deployment/worker -n $NS`.
+
+**Perte acceptée** : entre l'étape 2 et la fin des deux redémarrages (le backend en `RollingUpdate`,
+le worker en `Recreate`), un ancien pod d'API peut encore mettre en file un message signé avec
+l'ancien secret, que le nouveau worker refusera — un message de contact ou une invitation, à
+relancer. Seul le worker vérifie ; l'API ne décode jamais. Accepter l'ancienne clé en vérification
+le temps d'une rotation éviterait cette perte : non fait, à reprendre si les rotations deviennent
+fréquentes. Garder des secrets distincts en préprod et en prod, sans quoi un message capturé dans
+l'une serait accepté par l'autre.
+
 ## Administration de la base (Adminer)
 
 `k8s/base/adminer.yaml` déploie Adminer (interface web PostgreSQL) **sans
@@ -1122,12 +1148,32 @@ défaut, `debug` dans l'image préprod). Chaque ligne `security_audit` porte `ev
 visé (`user`, `userId`), l'auteur (`actor`), `ip` et `path` — jamais un mot de passe, un jeton ni
 un e-mail (un test le pince).
 
+L'identifiant **tenté** au login n'est jamais écrit tel quel (issue #418) : ce peut être un mot de
+passe tapé dans le mauvais champ. `login-failed` et `login-throttled` portent son empreinte,
+`userFingerprint` (HMAC sous une clé dérivée d'`APP_SECRET`, insensible à la casse comme le compteur de
+`login_throttling`), et ne nomment le compte (`user`, `userId`) que s'il existe et a été chargé :
+`user` vaut donc `null` pour un identifiant inconnu, et **toujours** pour `login-throttled` (refusé
+avant tout chargement). Pour relier un refus aux échecs qui l'ont causé, filtrer sur l'empreinte :
+
+```bash
+kubectl -n preprod logs deploy/backend -c php-fpm --tail=2000 \
+  | grep '"channel":"security_audit"' \
+  | jq -r 'select(.context.userFingerprint == "<empreinte>") | [.datetime, .context.event, .context.user // "-", .context.ip] | @tsv'
+```
+
+Une rotation d'`APP_SECRET` (procédure : § Rotation / mise à jour d'un Secret, cas
+d'`APP_SECRET`) change toutes les empreintes : les lignes d'avant et d'après ne se
+relient plus. Un refus du compteur **par IP seule** (25 essais en 15 min, toutes saisies confondues)
+peut porter l'empreinte d'une saisie jamais vue : rien ne s'y relie, lire alors les lignes de la
+même `ip`. L'empreinte est courte exprès (6 caractères hexadécimaux, 24 bits) : deux saisies
+différentes peuvent coïncider, c'est un indice à IP et fenêtre fixées, pas une preuve entre IP.
+
 Lecture sur un pod, canal d'audit seulement, une ligne lisible par événement :
 
 ```bash
 kubectl -n preprod logs deploy/backend -c php-fpm --tail=500 \
   | grep '"channel":"security_audit"' \
-  | jq -r '[.datetime, .context.event, .context.user // "-", .context.actor, .context.ip, .context.path] | @tsv'
+  | jq -r '[.datetime, .context.event, .context.user // "-", .context.userFingerprint // "-", .context.actor, .context.ip, .context.path] | @tsv'
 ```
 
 Vérification après un déploiement (checkpoint 3 du plan) : un `POST /api/login_check` erroné
@@ -1135,6 +1181,46 @@ contre la préprod doit produire une ligne `login-failed` avec l'IP publique de 
 `100.64.x.x` ni celle du LB, cf. ADR 0005 D6/D7), et le sixième essai une ligne `login-throttled`.
 Les logs de pod ne sont conservés que par Kubernetes (rotation locale, perdus au remplacement du
 pod) : la rétention et le statut RGPD de ces lignes sont traités dans `docs/rgpd/` (plan, T5.8).
+
+### Créer un compte super-administrateur (issue #386)
+
+`app:user:create` est la seule voie qui crée un compte sans invitation : l'amorçage du premier
+`ROLE_SUPER` (ADR 0001), ou sa recréation si tous ont été perdus. **Jamais par `kubectl exec`** :
+la ligne `user-created` du journal partirait sur le terminal de l'opérateur, pas sur le flux du
+conteneur, et `kubectl logs` ne la verrait jamais. Le Job `k8s/base/create-user-job.yaml` (hors
+`kustomization.yaml`, comme le Job de migration) lance la commande dans son propre pod. Le mot
+de passe passe par un Secret temporaire créé **depuis un fichier**, monté en lecture seule et lu
+par `--password-stdin` : jamais par un argument ni une variable. Dans un **terminal séparé**,
+jamais derrière un `!` dans une session Claude Code (cf. « Deployment invariants » de
+`.claude/CLAUDE.md`). La préprod d'abord, pour valider la procédure.
+
+```bash
+NS=preprod   # puis prod
+umask 077
+dir="$(mktemp -d)"
+# Saisie sans écho, écrite sans fin de ligne (une fin de ligne restante serait refusée).
+IFS= read -rs pw && printf '%s' "$pw" > "$dir/password" && unset pw
+kubectl -n "$NS" create secret generic backend-create-user-password --from-file=password="$dir/password"
+rm -rf "$dir"
+
+# L'image qui tourne, pour que le Job exécute exactement le code déployé.
+IMAGE="$(kubectl -n "$NS" get deploy backend -o jsonpath='{.spec.template.spec.containers[?(@.name=="php-fpm")].image}')"
+kubectl -n "$NS" delete job backend-create-user --ignore-not-found
+# Liste explicite : sans elle, envsubst effacerait toute autre `$VARIABLE` du manifeste.
+BACKEND_IMAGE="$IMAGE" CPG_USERNAME='<nom-du-compte>' \
+  envsubst '${BACKEND_IMAGE} ${CPG_USERNAME}' < k8s/base/create-user-job.yaml \
+  | kubectl -n "$NS" apply -f -
+# Sur un refus, le Job échoue aussitôt mais `wait` épuise son délai : lire les logs sans attendre.
+kubectl -n "$NS" wait --for=condition=complete --timeout=180s job/backend-create-user
+kubectl -n "$NS" logs job/backend-create-user   # succès ou refus, et la ligne `user-created`
+kubectl -n "$NS" delete secret backend-create-user-password
+```
+
+Le Job ne se rejoue pas (`backoffLimit: 0`) : un nom pris ou un mot de passe refusé (trop court,
+compromis, fin de ligne) s'y lisent dans les logs, et l'on recommence depuis le début. Il
+disparaît de lui-même au bout d'un jour (`ttlSecondsAfterFinished`), et ses logs avec lui :
+l'acteur `console` de l'événement ne nomme personne, l'attribution de l'`apply` reste celle du
+kubeconfig qui l'a fait.
 
 ## Durcissement des pods (jeton de ServiceAccount et Pod Security Admission)
 

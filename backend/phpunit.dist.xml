@@ -13,6 +13,12 @@
     <php>
         <ini name="display_errors" value="1" />
         <ini name="error_reporting" value="-1" />
+        <!-- Issue #420 : les traces d'exception ne portent pas les arguments
+             des appels, vendor compris, comme en déployé (php.prod.ini) et en
+             CI. Pourquoi, limites, et comment déboguer avec les arguments (un
+             phpunit.xml local, pas -d) : .claude/rules/backend-outillage.md.
+             Épinglé par ExceptionArgumentsHiddenInTestsTest. -->
+        <ini name="zend.exception_ignore_args" value="1" />
         <server name="APP_ENV" value="test" force="true" />
         <server name="SHELL_VERBOSITY" value="-1" />
         <!-- Point d'audit I4 : CONTACT_* sont vides dans le .env versionné

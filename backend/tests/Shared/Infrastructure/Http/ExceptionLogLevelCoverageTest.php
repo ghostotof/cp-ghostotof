@@ -425,7 +425,7 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     {
         return array_map(
             static fn (int $status): array => [$status],
-            CompiledExceptionConfig::kernelHttpStatus($this->errorListener(), DeclaredClasses::all($directory)),
+            CompiledExceptionConfig::kernelHttpStatus($this->errorListener(), DeclaredClasses::classes($directory)),
         );
     }
 
@@ -532,7 +532,7 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
             DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class),
             static fn (string $class): bool => !(new ReflectionClass($class))->isAbstract(),
         ));
-        $converted = CompiledExceptionConfig::kernelHttpStatus($listener, [...DeclaredClasses::all(self::SOURCES), ...$this->statusCodeKeys()]);
+        $converted = CompiledExceptionConfig::kernelHttpStatus($listener, [...DeclaredClasses::classes(self::SOURCES), ...$this->statusCodeKeys()]);
 
         $classes = array_unique([...array_merge(...array_map(array_keys(...), $mappings)), ...$problems, ...array_keys($converted)]);
         $statuses = [];

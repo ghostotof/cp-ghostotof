@@ -13,12 +13,20 @@ use SplFileInfo;
 /**
  * Ce que les recenseurs par jetons ont en commun (DeclaredClasses,
  * BareExceptionInstantiations, CommentedClassNames, UnsortedImports,
- * MisqualifiedNativeCalls) : quels fichiers ils lisent, et quels jetons ils
- * ignorent. Partagé pour qu'un garde-fou ne voie jamais un autre périmètre que
- * son voisin.
+ * MisqualifiedNativeCalls, AnonymousClassesAndFreeFunctions) : quels fichiers
+ * ils lisent, quels jetons ils ignorent, et lesquels ouvrent une déclaration
+ * de classe. Partagé pour qu'un garde-fou ne voie jamais un autre périmètre
+ * que son voisin.
  */
 final class PhpSources
 {
+    /**
+     * Les jetons qui ouvrent une déclaration de classe, d'interface, de trait
+     * ou d'enum. Seul `class` peut aussi ouvrir une classe anonyme (après
+     * `new`) ou lire un nom (après `::`) ; chaque recenseur fait le tri.
+     */
+    public const array CLASS_LIKE = [\T_CLASS, \T_INTERFACE, \T_TRAIT, \T_ENUM];
+
     private const array IGNORED = [\T_WHITESPACE, \T_COMMENT, \T_DOC_COMMENT];
 
     /**

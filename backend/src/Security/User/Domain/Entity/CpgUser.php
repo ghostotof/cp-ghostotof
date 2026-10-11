@@ -7,6 +7,7 @@ namespace App\Security\User\Domain\Entity;
 use App\Security\User\Domain\Exception\InvalidUsernameException;
 use App\Security\User\Infrastructure\Doctrine\CpgUserRepository;
 use DateTimeImmutable;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
@@ -45,17 +46,26 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
      */
     public const string ROLE_TRUSTED = 'ROLE_TRUSTED';
 
+    /** En caractères : la règle que lit la personne qui choisit son mot de passe. */
     public const int MIN_PASSWORD_LENGTH = 8;
 
     /**
      * Borne haute alignée sur PasswordHasherInterface::MAX_PASSWORD_LENGTH de
      * Symfony : au-delà, le hasher lève une exception (défense anti-DoS sur
      * bcrypt/argon). On valide donc en amont pour répondre 422, jamais 500.
+     * En **octets**, comme le hasher la contrôle (`strlen`) : comptée en
+     * caractères, un mot de passe multioctet passait la validation et
+     * finissait en 500 (issue #386). Les deux bornes ne s'appliquent qu'à
+     * travers Presentation\Validator\PlainPasswordLength.
      */
     public const int MAX_PASSWORD_LENGTH = 4096;
 
-    /** Lettres, chiffres, ".", "_" ou "-", 3 à 60 caractères. */
-    public const string USERNAME_PATTERN = '/^[a-zA-Z0-9_.-]{3,60}$/';
+    /**
+     * Lettres, chiffres, ".", "_" ou "-", 3 à 60 caractères. Ancré par `\z`
+     * et non par `$`, qui accepte la position précédant un `\n` final : un
+     * nom suivi d'un retour à la ligne passait (issue #386).
+     */
+    public const string USERNAME_PATTERN = '/^[a-zA-Z0-9_.-]{3,60}\z/';
 
     /**
      * Spec 0003 D1/D2 : UUID v7 natif PostgreSQL, posé par le constructeur et
@@ -91,10 +101,25 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
     #[Ignore]
     private string $password;
 
-    /** Date d'envoi de l'invitation (comptes créés depuis le backoffice ; `null` pour un compte CLI). */
-    #[ORM\Column(nullable: true)]
+    /**
+     * Date d'envoi de l'invitation (comptes créés depuis le backoffice ; `null`
+     * pour un compte CLI). Avec fuseau, comme tout horodatage (issue #434).
+     */
+    #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
     #[Ignore]
     private ?DateTimeImmutable $invitedAt = null;
+
+    /**
+     * Numéro de la dernière (re)invitation, avancé par markInvited() (issue
+     * #434). Chaque message d'invitation porte le sien : un message dont le
+     * numéro est dépassé (réessai différé, rejeu du failure_transport) ne
+     * purge pas le jeton d'une relance plus récente. Un compteur plutôt que
+     * l'instant : deux relances dans la même seconde se distinguent, et
+     * aucune horloge n'entre dans la comparaison.
+     */
+    #[ORM\Column(options: ['default' => 0])]
+    #[Ignore]
+    private int $invitationGeneration = 0;
 
     /**
      * Date à laquelle la personne invitée a défini son mot de passe via le lien
@@ -102,14 +127,14 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
      * encore activé (cf. isPendingActivation()) ; un compte CLI, lui, n'a ni
      * invitation ni activation et reste utilisable d'emblée.
      */
-    #[ORM\Column(nullable: true)]
+    #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
     #[Ignore]
     private ?DateTimeImmutable $activatedAt = null;
 
     public function __construct(string $username, string $hashedPassword)
     {
         if (1 !== preg_match(self::USERNAME_PATTERN, $username)) {
-            throw InvalidUsernameException::forUsername($username);
+            throw InvalidUsernameException::invalidFormat();
         }
 
         $this->id = Uuid::v7();
@@ -142,6 +167,22 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
         return $this->invitedAt;
     }
 
+    public function getInvitationGeneration(): int
+    {
+        return $this->invitationGeneration;
+    }
+
+    /**
+     * Vrai si le compte a été (re)invité depuis la génération donnée : un
+     * message qui sert celle-ci est périmé (issue #434). Une génération
+     * d'avance sur la base (relance pas encore commitée quand le worker la
+     * lit) ne l'est jamais : le dernier message ne doit pas se perdre.
+     */
+    public function wasReinvitedSince(int $invitationGeneration): bool
+    {
+        return $this->invitationGeneration > $invitationGeneration;
+    }
+
     public function getActivatedAt(): ?DateTimeImmutable
     {
         return $this->activatedAt;
@@ -150,6 +191,18 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
     public function markInvited(DateTimeImmutable $invitedAt): void
     {
         $this->invitedAt = $invitedAt;
+        ++$this->invitationGeneration;
+    }
+
+    /**
+     * Une relance dont la génération vient d'être avancée en base, de façon
+     * atomique (CpgUserRepositoryInterface::advanceInvitationGeneration(),
+     * issue #435) : l'entité reprend l'état écrit, sans recompter elle-même.
+     */
+    public function markReinvited(DateTimeImmutable $invitedAt, int $invitationGeneration): void
+    {
+        $this->invitedAt = $invitedAt;
+        $this->invitationGeneration = $invitationGeneration;
     }
 
     public function markActivated(DateTimeImmutable $activatedAt): void

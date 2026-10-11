@@ -6,9 +6,11 @@ namespace App\Security\User\Application;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Exception\InvalidPurgeRetentionException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use DateInterval;
+use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -19,6 +21,7 @@ final readonly class PendingInvitationPurger implements PendingInvitationPurgerI
         private ClockInterface $clock,
         private SecurityAuditLoggerInterface $auditLogger,
         private LoggerInterface $logger,
+        private AccountLockInterface $accountLock,
     ) {
     }
 
@@ -68,7 +71,9 @@ final readonly class PendingInvitationPurger implements PendingInvitationPurgerI
             }
 
             if (!$dryRun) {
-                $this->cpgUserRepository->remove($user);
+                if (!$this->removeIfStillPurgeable($user, $threshold)) {
+                    continue;
+                }
                 // Journal de sécurité : après la suppression effective,
                 // jamais en dry-run (rien ne s'est réellement passé).
                 $this->auditLogger->userPurged($user);
@@ -78,5 +83,31 @@ final readonly class PendingInvitationPurger implements PendingInvitationPurgerI
         }
 
         return new PendingInvitationPurgeResult($purged, $skipped, $threshold);
+    }
+
+    /**
+     * Sous le verrou du compte (issue #459), celui de l'invitation et de
+     * l'activation : la liste a été lue hors verrou, et une relance, une
+     * activation ou un mot de passe posé depuis le backoffice a pu être
+     * commité depuis. Les critères de la lecture sont refaits sur le compte
+     * relu ; un compte déjà supprimé (par l'admin) n'est plus à purger.
+     */
+    private function removeIfStillPurgeable(CpgUser $user, DateTimeImmutable $threshold): bool
+    {
+        try {
+            return $this->accountLock->whileLocked($user, function (CpgUser $locked) use ($threshold): bool {
+                $invitedAt = $locked->getInvitedAt();
+                if (!$locked->isAwaitingPasswordSetup() || null === $invitedAt || $invitedAt >= $threshold
+                    || \in_array(CpgUser::ROLE_SUPER, $locked->getRoles(), true)) {
+                    return false;
+                }
+
+                $this->cpgUserRepository->remove($locked);
+
+                return true;
+            });
+        } catch (CpgUserNotFoundException) {
+            return false;
+        }
     }
 }

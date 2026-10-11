@@ -7,6 +7,7 @@ import { createAppI18n } from '../../../src/presentation/i18n'
 import type { AccountRepository } from '../../../src/domain/account/repositories/AccountRepository'
 import { PasswordSetupLinkError } from '../../../src/domain/account/errors/PasswordSetupLinkError'
 import { applySeoMeta } from '../../../src/presentation/router/seo'
+import { expectNoAccessibilityViolation } from '../../support/axe'
 
 const StubPage = { template: '<div />' }
 
@@ -240,6 +241,74 @@ describe('SetPasswordPage', () => {
 
     expect(repository.completePasswordSetup).not.toHaveBeenCalled()
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+  })
+
+  it('compte la longueur en points de code comme le backend : quatre emojis sont refusés localement (#410)', async () => {
+    // 4 points de code, mais 8 unités UTF-16 : `string.length` les laissait
+    // passer, et le backend (`mb_strlen`) répondait 422.
+    const fourEmojis = '🔑🔑🔑🔑'
+    const repository = createStubRepository()
+    const { wrapper } = await mountPage(repository)
+
+    const inputs = wrapper.findAll('input[type="password"]')
+    await inputs[0].setValue(fourEmojis)
+    await inputs[1].setValue(fourEmojis)
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(repository.completePasswordSetup).not.toHaveBeenCalled()
+    expect(wrapper.get('[role="alert"]').text()).toContain('au moins 8 caractères')
+  })
+
+  it('refuse localement un mot de passe de plus de 4 096 octets UTF-8, avec un message qui le dit (#410)', async () => {
+    // 2 049 « é » : 2 049 caractères (sous toute borne en caractères), mais
+    // 4 098 octets. Sans ce contrôle, le 422 du backend s'affichait comme un
+    // mot de passe « trop courant ou présent dans une fuite », ce qui est faux.
+    const tooLong = 'é'.repeat(2049)
+    const repository = createStubRepository()
+    const { wrapper } = await mountPage(repository)
+
+    const inputs = wrapper.findAll('input[type="password"]')
+    await inputs[0].setValue(tooLong)
+    await inputs[1].setValue(tooLong)
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(repository.completePasswordSetup).not.toHaveBeenCalled()
+    expect(wrapper.get('[role="alert"]').text()).toContain('trop long')
+    expect(wrapper.get('[role="alert"]').text()).toContain('4096 octets')
+  })
+
+  it('relie le champ mot de passe à la règle de longueur, puis au message d\'erreur quand il apparaît (a11y)', async () => {
+    const { wrapper } = await mountPage(createStubRepository())
+
+    const passwordInput = wrapper.get('#set-password-password')
+    const describedBy = (): string[] => (passwordInput.attributes('aria-describedby') ?? '').split(' ').filter(Boolean)
+    // Avant toute saisie : l'indication « Au moins 8 caractères » seule.
+    expect(describedBy()).toHaveLength(1)
+    expect(wrapper.get(`#${describedBy()[0]}`).text()).toContain('Au moins 8 caractères')
+
+    await passwordInput.setValue('🔑🔑🔑🔑')
+    await wrapper.get('#set-password-confirmation').setValue('🔑🔑🔑🔑')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    // Le message d'erreur, rendu dans une région `alert`, est aussi annoncé
+    // quand on revient sur le champ.
+    expect(describedBy()).toHaveLength(2)
+    expect(wrapper.get(`#${describedBy()[1]}`).attributes('role')).toBe('alert')
+    expect(wrapper.get(`#${describedBy()[1]}`).text()).toContain('au moins 8 caractères')
+  })
+
+  it('formulaire avec une erreur affichée : aucune violation axe', async () => {
+    const { wrapper } = await mountPage(createStubRepository())
+
+    await wrapper.get('#set-password-password').setValue('short')
+    await wrapper.get('#set-password-confirmation').setValue('short')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    await expectNoAccessibilityViolation(wrapper)
   })
 
   it('soumet le mot de passe puis affiche un écran de succès avec un lien vers la connexion', async () => {

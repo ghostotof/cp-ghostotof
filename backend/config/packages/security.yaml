@@ -5,10 +5,15 @@ security:
 
     # https://symfony.com/doc/current/security.html#loading-the-user-the-user-provider
     providers:
+        # Sans `property` : le fournisseur passe alors par
+        # CpgUserRepository::loadUserByIdentifier() (issue #418). Avec
+        # `property: username`, il levait lui-même `User "<identifiant>" not
+        # found.`, message que le canal `security` journalise en production —
+        # et l'identifiant tenté est parfois un mot de passe tapé dans le
+        # mauvais champ. Ne pas remettre l'option.
         cpg_users:
             entity:
                 class: App\Security\User\Domain\Entity\CpgUser
-                property: username
 
         # ADR 0003 D6 : reconnaît un jeton du palier de base (marqueur "guest"
         # dans le payload JWT signé) sans jamais interroger Doctrine — voir

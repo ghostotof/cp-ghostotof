@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Security\User\Domain\Repository;
 
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
+use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use DateTimeImmutable;
+use SensitiveParameter;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -15,7 +18,11 @@ use Symfony\Component\Uid\Uuid;
  */
 interface CpgUserRepositoryInterface
 {
-    public function findOneByUsername(string $username): ?CpgUser;
+    /**
+     * @param string $username au login, l'identifiant tenté — possiblement un
+     *                         mot de passe tapé dans le mauvais champ (#418)
+     */
+    public function findOneByUsername(#[SensitiveParameter] string $username): ?CpgUser;
 
     public function findOneByEmail(string $email): ?CpgUser;
 
@@ -49,6 +56,18 @@ interface CpgUserRepositoryInterface
     public function countByRole(string $role): int;
 
     public function save(CpgUser $user): void;
+
+    /**
+     * Avance la génération d'invitation du compte et pose `invited_at`, en une
+     * seule écriture atomique (issue #435) : deux relances concurrentes
+     * reçoivent deux générations distinctes, quel que soit l'état que chacune
+     * avait chargé, et seulement si le compte est toujours en attente
+     * d'activation. Rend la génération ainsi posée.
+     *
+     * @throws CpgUserNotFoundException              si le compte a disparu entre-temps
+     * @throws AccountNotAwaitingActivationException si le compte a été activé entre-temps
+     */
+    public function advanceInvitationGeneration(CpgUser $user, DateTimeImmutable $invitedAt): int;
 
     public function remove(CpgUser $user): void;
 }

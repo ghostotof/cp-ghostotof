@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Presentation\ApiResource;
 
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\InvitesUsers;
 use App\Tests\Support\TestCredentials;
@@ -191,6 +192,24 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(422);
 
         // Le refus n'a rien consommé : le jeton reste exploitable.
+        $this->postValidate($client, ['token' => $token]);
+        self::assertResponseStatusCodeSame(204);
+    }
+
+    /**
+     * Issue #386 : la borne haute est celle du hasher, en octets. Un mot de
+     * passe multioctet sous 4 096 caractères mais au-delà de 4 096 octets
+     * passait la validation et faisait lever le hasher : un 500.
+     */
+    public function testSetupReturns422ForAMultibytePasswordBeyondTheHasherLimitInBytes(): void
+    {
+        $client = $this->freshClient();
+        $token = $this->inviteAndCollectToken();
+
+        $this->postSetup($client, ['token' => $token, 'password' => str_repeat('é', intdiv(CpgUser::MAX_PASSWORD_LENGTH, 2) + 1)]);
+
+        self::assertResponseStatusCodeSame(422);
+
         $this->postValidate($client, ['token' => $token]);
         self::assertResponseStatusCodeSame(204);
     }

@@ -6,6 +6,11 @@ framework:
         # `php bin/console messenger:consume failed -vv` pour les rejouer.
         failure_transport: failed
 
+        # Toute enveloppe porte un MAC vérifié avant tout unserialize() (issue
+        # #444, AuthenticatedEnvelopeSerializer) : les deux transports en héritent.
+        serializer:
+            default_serializer: App\Shared\Infrastructure\Messenger\AuthenticatedEnvelopeSerializer
+
         transports:
             # https://symfony.com/doc/current/messenger.html#transport-configuration
             # RabbitMQ. Consommé par `make consume` en dev, et par le Deployment
@@ -16,6 +21,10 @@ framework:
 
         routing:
             # Route your messages to the transports
+            # Jamais Symfony\Component\Mailer\Messenger\SendEmailMessage (ni un
+            # joker qui l'atteint) : l'e-mail partirait non rendu, jeton
+            # d'invitation compris, dans la file puis le failure_transport
+            # (issue #426, garde SendEmailMessageStaysSynchronousTest).
             'App\Contact\Application\Message\SendContactMessageMessage': async
             'App\Security\User\Application\Message\SendAccountInvitationMessage': async
 

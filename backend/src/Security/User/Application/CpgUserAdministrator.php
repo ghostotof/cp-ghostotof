@@ -10,6 +10,8 @@ use App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CannotDeleteOwnAccountException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
+use SensitiveParameter;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Uid\Uuid;
 
@@ -19,6 +21,8 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
         private CpgUserRepositoryInterface $cpgUserRepository,
         private UserPasswordHasherInterface $passwordHasher,
         private SecurityAuditLoggerInterface $auditLogger,
+        private PasswordSetupTokenRepositoryInterface $passwordSetupTokenRepository,
+        private AccountLockInterface $accountLock,
     ) {
     }
 
@@ -51,7 +55,7 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
         $this->auditLogger->userDeleted($user);
     }
 
-    public function changePassword(Uuid $id, string $newPlainPassword): void
+    public function changePassword(Uuid $id, #[SensitiveParameter] string $newPlainPassword): void
     {
         $user = $this->cpgUserRepository->findOneById($id);
 
@@ -59,8 +63,22 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
             throw CpgUserNotFoundException::forId($id);
         }
 
-        $user->setPassword($this->passwordHasher->hashPassword($user, $newPlainPassword));
-        $this->cpgUserRepository->save($user);
+        // Le hachage hors verrou (il est lent), l'écriture sous le verrou du
+        // compte, celui de l'invitation et de l'activation (issue #460) : une
+        // activation concurrente ne se mêle pas à ce changement.
+        $hashedPassword = $this->passwordHasher->hashPassword($user, $newPlainPassword);
+        $this->accountLock->whileLocked($user, function (CpgUser $locked) use ($hashedPassword): void {
+            $locked->setPassword($hashedPassword);
+            $this->cpgUserRepository->save($locked);
+            // Compte encore en attente d'activation : le mot de passe posé ici
+            // fait foi, le lien d'invitation en circulation meurt (décision du
+            // 2026-10-11) — c'est le cas utile quand le lien est douteux
+            // (e-mail transféré, boîte compromise). Une nouvelle invitation
+            // reste possible.
+            if ($locked->isPendingActivation()) {
+                $this->passwordSetupTokenRepository->deleteUnusedForUser($locked);
+            }
+        });
         // Le compte, jamais le mot de passe (D5).
         $this->auditLogger->passwordChanged($user);
     }

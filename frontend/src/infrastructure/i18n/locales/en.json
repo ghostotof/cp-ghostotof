@@ -242,7 +242,7 @@
         "cannot-modify-own-roles": "You cannot change your own roles.",
         "cannot-demote-last-super": "Not allowed: this is the last administrator account.",
         "already-activated": "This account has already set its password.",
-        "validation": "The password must be at least 8 characters long.",
+        "validation": "This password was rejected: it must be at least {min} characters long and at most {max} bytes, and must not appear in any known breach.",
         "unknown": "Something went wrong. Please try again later."
       }
     },
@@ -519,6 +519,7 @@
       "expired": "This link has expired or has already been used. Ask the person who invited you for a new one.",
       "errors": {
         "tooShort": "The password must be at least {min} characters long.",
+        "tooLong": "The password is too long: {max} bytes at most (an accented character or an emoji takes up several).",
         "mismatch": "The two passwords do not match.",
         "weak-password": "This password was rejected (too common or found in a known breach). Please choose another one.",
         "rate-limited": "Too many attempts. Please try again in a few minutes.",

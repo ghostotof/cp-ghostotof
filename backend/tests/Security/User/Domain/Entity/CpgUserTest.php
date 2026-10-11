@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Domain\Entity;
 
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\InvalidUsernameException;
+use App\Tests\Support\TestCredentials;
 use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\UuidV7;
@@ -43,6 +45,38 @@ final class CpgUserTest extends TestCase
 
         self::assertSame('jane', $user->getUserIdentifier());
         self::assertSame('jane', $user->getUsername());
+    }
+
+    /**
+     * Issue #386 : le `$` de PCRE accepte la position qui précède un `\n`
+     * final. Un nom suivi d'un retour à la ligne passait, et donnait un compte
+     * distinct qui s'affiche comme son homonyme dans le backoffice et dans
+     * `security_audit`.
+     */
+    public function testAUsernameEndingWithALineFeedIsRefused(): void
+    {
+        $this->expectException(InvalidUsernameException::class);
+
+        new CpgUser("jane\n", 'hashed-password');
+    }
+
+    /**
+     * Revue de #386 : comme l'invite de la CLI (issue #383), le constructeur
+     * ne cite pas la saisie refusée — elle peut être n'importe quoi, un mot de
+     * passe collé au mauvais endroit compris, et le message d'une exception
+     * finit dans les journaux.
+     */
+    public function testARefusedUsernameIsNotQuotedInTheException(): void
+    {
+        // Le « ! » le rend invalide comme nom : la valeur générée seule passerait le motif.
+        $pasted = TestCredentials::variant('pasted').'!';
+
+        try {
+            new CpgUser($pasted, 'hashed-password');
+            self::fail('Le nom d\'utilisateur aurait dû être refusé.');
+        } catch (InvalidUsernameException $exception) {
+            self::assertStringNotContainsString($pasted, $exception->getMessage());
+        }
     }
 
     public function testRolesAlwaysIncludeRoleUser(): void
@@ -105,6 +139,41 @@ final class CpgUserTest extends TestCase
 
         self::assertSame($invitedAt, $user->getInvitedAt());
         self::assertTrue($user->isPendingActivation());
+    }
+
+    /**
+     * Issue #434 : chaque (re)invitation a son numéro, que porte son message.
+     * Un message dont le numéro est dépassé est périmé, quel que soit
+     * l'instant affiché par l'horloge.
+     */
+    public function testEachInvitationAdvancesTheInvitationGeneration(): void
+    {
+        $user = new CpgUser('jane', '');
+        self::assertSame(0, $user->getInvitationGeneration());
+
+        $user->markInvited(new DateTimeImmutable('2026-09-03 12:00:00'));
+        self::assertSame(1, $user->getInvitationGeneration());
+
+        // Une relance horodatée plus tôt (horloge reculée) avance quand même.
+        $user->markInvited(new DateTimeImmutable('2026-09-03 11:00:00'));
+        self::assertSame(2, $user->getInvitationGeneration());
+    }
+
+    /**
+     * Issue #434 : un message d'invitation est périmé quand le compte a été
+     * relancé depuis la génération qu'il sert.
+     */
+    public function testAnAccountWasReinvitedSinceAnyEarlierGenerationOnly(): void
+    {
+        $user = new CpgUser('jane', '');
+        $user->markInvited(new DateTimeImmutable('2026-09-03 12:00:00'));
+        $user->markInvited(new DateTimeImmutable('2026-09-04 12:00:00'));
+
+        self::assertTrue($user->wasReinvitedSince(1));
+        self::assertFalse($user->wasReinvitedSince(2));
+        // Un message d'avance sur la base (relance pas encore commitée) n'est
+        // jamais écarté : le dernier message ne doit pas se perdre.
+        self::assertFalse($user->wasReinvitedSince(3));
     }
 
     public function testMarkActivatedClearsThePendingState(): void

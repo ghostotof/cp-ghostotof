@@ -21,9 +21,11 @@ final class UnsupportedLockDatabaseUrlException extends InvalidArgumentException
     /**
      * La syntaxe d'un schéma d'URI (RFC 3986, § 3.1). Tout ce qui s'en écarte
      * n'est pas repris : une URL sans schéma ferait passer pour « schéma » ce
-     * qui précède un `://` plus loin, identifiants compris.
+     * qui précède un `://` plus loin, identifiants compris. Ancrée par `\z`
+     * et non `$`, qui accepte un `\n` final (issue #409) : il partirait tel
+     * quel dans le message, donc dans le journal.
      */
-    private const string SCHEME_SYNTAX = '/^[a-z][a-z0-9+.-]*$/i';
+    private const string SCHEME_SYNTAX = '/^[a-z][a-z0-9+.-]*\z/i';
 
     public static function forScheme(string $scheme): self
     {

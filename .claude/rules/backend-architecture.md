@@ -46,6 +46,95 @@ survives `cache:clear` after a DTO's `id` type changes — `rm -rf var/cache/<en
 bind-mount desync (`docker compose restart backend`) can make a container run a stale Provider/Processor
 mid-migration.
 
+**Every entity timestamp is stored with its offset** (issue #434): `#[ORM\Column(type:
+Types::DATETIMETZ_IMMUTABLE)]` (`datetimetz` for a mutable object), PostgreSQL `TIMESTAMP(0) WITH TIME
+ZONE` — never `datetime` nor `datetime_immutable`, the type Doctrine infers from a bare
+`DateTimeImmutable` property. Those store the wall time of PHP's zone (`date.timezone = Europe/Paris`)
+with no offset: the hour repeated when the clocks go back is read back one hour late (measured: an
+invitation of 2026-10-25 02:30 CEST came back at 02:30 CET, +3600 s), and a value compared with a
+column that has a zone is read in the PostgreSQL session's zone, **UTC**. Likewise a query parameter
+compared with such a column is typed `Types::DATETIMETZ_IMMUTABLE` (`findAwaitingPasswordSetupInvitedBefore`'s
+threshold, `claim()`'s `usedAt`): typed `DATETIME_IMMUTABLE`, Paris wall time would be read as UTC, two
+hours off all year. A calendar day without a time (`Incident::$occurredAt`, `date_immutable`) has no
+zone and stays a `DATE`. A value read back is in the session's zone (UTC): compare instants
+(`getTimestamp()`), never `format('Y-m-d H:i:s')`, and convert before displaying a wall time
+(`WatchProvider::utc()`). `tests/Shared/Infrastructure/Doctrine/TimestampColumnsCarryTheirOffsetTest.php`
+walks every entity's metadata and fails on any `datetime`, `datetime_immutable`, `time` or
+`time_immutable` field. Migration `Version20261011120000` converted the five existing timestamps with
+`AT TIME ZONE 'Europe/Paris'`. Messenger's own tables are not entities and stay as the vendor made them:
+`messenger_messages.created_at`/`available_at`/`delivered_at` are `TIMESTAMP WITHOUT TIME ZONE` holding
+**UTC wall time** (the Doctrine transport writes `new DateTimeImmutable('UTC')`), so a value compared with
+them in SQL is converted to UTC first — `PurgeFailedContactMessagesCommand` formatted its threshold in
+Paris time and purged one to two hours early (issue #446).
+**The database's sessions read wall times in PHP's zone** (`ALTER DATABASE … SET timezone TO
+'Europe/Paris'`, same migration, settled in the review of #434): the second net, for a time without
+offset that still reaches the database — an untyped query parameter, which the ORM infers as
+`datetime_immutable`, or the old code during a rollout and **indefinitely after a rollback**, since
+`rollout undo` never replays a migration's `down()` (two hours off: a 50-hour link, an invitation purge two
+hours early, irreversible). The trade-off: it hides a typing mistake instead of revealing it — the
+mapping guard above is what reveals it. The same test checks `SHOW timezone` equals
+`date_default_timezone_get()`: changing `date.timezone` in `php.*.ini` means a migration that moves the
+database with it. A value read back therefore carries Paris's offset; still compare instants.
+**A duration in hours is added as elapsed hours** (issue #445): `add(new DateInterval('PT48H'))`, never
+`modify('+48 hours')`, which counts wall-clock hours in PHP's zone — measured under PHP 8.5, 49 h on the eve
+of the autumn change and 47 h on the eve of the spring one (the invitation link announced as "valid 48 hours",
+the tech watch's 36-hour freshness threshold). `modify()` stays exact for minutes, and a number of days is
+meant as calendar days. `tests/Shared/ElapsedDurationsTest.php` walks the tokens of `src/` and fails on
+any string literal adding or subtracting hours (`'+48 hours'` in a constant, `'+%d hours'` for `sprintf()`),
+comments excluded.
+
+**Every queued envelope is authenticated before anything unserializes it** (issue #444). Both queues —
+`async` on RabbitMQ, `failed` in the Doctrine table — are read back by `PhpSerializer`, that is
+`unserialize()` with no class allow-list: writing into either would be an object injection into the
+worker (or into an operator running `messenger:failed:show`). `framework.messenger.serializer.default_serializer`
+is `Shared/Infrastructure/Messenger/AuthenticatedEnvelopeSerializer`: it adds an HMAC of the body
+(header `X-Envelope-Mac`, key derived from `kernel.secret` through `SecretKeyDerivation` with its own context, an
+empty secret refused at construction) and, on decoding, refuses an envelope whose MAC is wrong — or not
+a string, which AMQP or the Doctrine transport's JSON headers can yield — **before** the inner
+`PhpSerializer` sees it — any type, including the decoding-failure envelopes the retry puts back in
+the queue. It must never implement `MessageTypeAwareSerializerInterface`: Messenger's `SigningSerializer`,
+which decorates it (FrameworkBundle signs `RunCommandMessage` and `RunProcessMessage`), would then read
+the envelope's type — a restricted unserialization, but one — before the MAC. **Never rely on `#[AsMessageHandler(sign: true)]` for this**: Messenger's `SigningSerializer`
+only requires a signature for the listed types, and an unsigned envelope of any other type (a `stdClass`
+carrying a gadget) is still unserialized — measured in the review of #444, a `Process::__unserialize()`
+ran that way. A refusal is a decoding failure (`MessageDecodingFailedException`, strings only, quoting
+its cause, never the body): transport retries, then `failed`. **Two steps**: while the parameter
+`app.messenger.require_envelope_mac` is `false` (the release that introduced it), an envelope with
+**no** MAC — queued by the old code before or during the rollout, or after a rollback — is still
+decoded, with a `warning`; a MAC present but wrong is refused in both modes. The follow-up issue sets it
+to `true` once the queues hold no unsigned envelope, which is what actually closes the injection.
+`AuthenticatedEnvelopeSerializerTest` (an `UnserializationProbe` fixture counts its
+`__unserialize()` calls: zero for a tampered, unsigned-when-required or wrongly signed envelope) and
+`QueuedEnvelopesAreAuthenticatedTest` (the real container's chain, both transports' serializer, a
+round trip through the Doctrine `failed` transport, the interface above) pin it. Accepted limits: an
+authenticated message can be replayed by whoever writes into the queue (no nonce — an invitation of the
+current generation replayed kills the link already received); **rotating `APP_SECRET` invalidates every
+queued message** (order in `k8s/README.md`).
+
+**`APP_SECRET` never keys an HMAC directly: each use derives its own key** (issue #455).
+`Shared/Infrastructure/Security/SecretKeyDerivation::derive($secret, $context)` is HKDF-SHA256 (RFC 5869,
+32 bytes, an empty secret refused with `EmptyApplicationSecretException`), and each class receiving
+`kernel.secret` declares a versioned `KEY_CONTEXT` (`cp-ghostotof/<use>/v1`): the CSRF cookie signer, the
+login-identifier fingerprint, the Messenger envelope MAC. Keyed by the raw secret and told apart only in
+the message (a prefix, or nothing), any future feature returning `HMAC(APP_SECRET, x)` for a client-chosen
+`x` would have been a signing oracle for every other use. Changing a context is a targeted rotation. The
+switch itself changed every login fingerprint and invalidated the `XSRF-TOKEN` cookies already issued, and
+so does a **rolling update** (two prod replicas, old and new keys for a moment) or a **rollback**: writes,
+`POST /api/logout` included, answer 403 until a new login. Since a refused logout used to leave the UI
+"logged in" — and `/login` redirects a logged-in user home —, the frontend resets the local session to
+anonymous on **any** logout failure and leads to the login page (`useAuth.logout()`, `AppHeader`); a new
+login replaces both cookies, a reload reads the real tier from `/api/me`. HKDF stretches nothing: `APP_SECRET`
+must be high-entropy (32 random bytes; CI uses `openssl rand -hex 16`). An empty secret raises
+`EmptyApplicationSecretException` at first use — the CSRF signer used to accept it, which let anyone forge a
+token. `tests/Shared/Infrastructure/Security/ApplicationSecretUsesTest.php` finds, by tokens, every file of
+`src/` naming `%kernel.secret%`, `kernel.secret`, `APP_SECRET` or `%env(APP_SECRET)%` (either quotes),
+requires an actual `SecretKeyDerivation::derive(…, self::KEY_CONTEXT)` call and a `KEY_CONTEXT` no other file
+uses, and refuses any `config/**.yaml` naming the secret besides `framework.secret`. Not covered, accepted: a
+class handing the raw secret to another, and Symfony's own uses (`login_throttling`, `SigningSerializer`),
+which keep the raw secret but never return their output to a client. Unit tests take key material from
+`tests/Support/TestKeys` (generated, like `TestCredentials`): a literal assigned to a name saying "secret"
+gets flagged by GitGuardian.
+
 **`src/` never instantiates a bare `\Exception`, `\LogicException`, `\RuntimeException` or
 `\InvalidArgumentException`** (issues #338, #383).
 Every failure gets its own class: a client error implements `ProblemExceptionInterface` (see
@@ -69,10 +158,86 @@ instead of relying on an `assert()` that production compiles out. On end of inpu
 `ask()` **rethrows the validator's last exception**, so `ask()` sits inside the `try` that turns it into
 `$io->error()` — otherwise it leaves the command and the console's `ErrorListener` logs it `critical`. And a
 `CommandTester` is **interactive by default**, so a `-n` test passes `['interactive' => false]`. A hidden
-question that reads a password is `setTrimmable(false)` (a question is trimmed by default, `--password` and
-`json_login` are not), with a normalizer that strips the one line ending the read keeps when untrimmed. The other SPL classes (`\DomainException`…) are out of the guard's scope:
+question that reads a password is `setTrimmable(false)` (a question is trimmed by default, `--password-stdin`
+and `json_login` are not), with a normalizer that strips the one line ending the read keeps when untrimmed. **A password is never an
+option value** (#386): `app:user:create` reads it from standard input (`--password-stdin`, which requires
+`--username` — a prompt would read the password instead), never from `--password`, whose argv shows in `ps`,
+the shell history and the `command` context the console's `ErrorListener` logs. An operator still typing
+`--password` out of habit gets an `InvalidOptionException`, which that listener logs `critical` with the argv:
+`Security/User/Infrastructure/Log/PasswordOptionRedactor` (Monolog processor, channel `console`) masks the
+value in `command` and in the message, `=`, space and `escapeshellarg()` forms alike. The other SPL classes (`\DomainException`…) are out of the guard's scope:
 none is thrown bare in `src/`, and adding one to `BareExceptionInstantiations::FORBIDDEN` is the step to
 take the day one is.
+
+**A parameter that receives a secret in clear carries `#[SensitiveParameter]`** (issues #411 for passwords,
+#414 for the rest). `tests/Security/SecretParametersTest.php` fails on a parameter that may hold a string
+(`string`, `mixed`, a union with one) whose name says token, JWT, secret, key, bearer, CSRF, credentials,
+authorization, DSN, cookie, signature or nonce (`SECRET_NAME`, any case; never `key` alone) without it —
+or whose parameter at the same position in an `App\…` interface or parent class says so: PHP only reads
+the attribute of the implementation called, so the one on an interface is declarative, required for
+consistency, and an implementation renaming `$clearToken` to `$value` is still caught. A digest is not a
+secret: `hashed` (not `unhashed`) qualifying the next word (`$hashedPassword`, `$newHashedToken`,
+`$HASHED_TOKEN`) or a trailing `hash` (not `toHash`) excludes the name (`$tokenHash`); a trailing `hashed`
+does not (`$secretToBeHashed` is clear — name a digest `…Hash`), issue #428. The vocabulary also covers
+`basicAuth` and a service URL that carries its credentials (`databaseUrl`, `amqpUrl`, `redisUrl`…). A
+parent's **private** method is no prototype (it is not inherited); a parent's constructor still is, on
+purpose: a child receiving the secret under another name for `parent::__construct()` would otherwise be
+missed, and a false negative is invisible while a false positive gets renamed (review of #428).
+`DeclaredClasses::classLikes()` is read once per directory and process (≈ 60 ms per walk of `src/`). Scope: methods of the classes, interfaces, traits and enums of `src/`
+(`DeclaredClasses::classLikes()`, issue #421: an enum, an interface nothing implements or a trait nothing
+uses was reached by no class) and of the classes' `App\…` interfaces and parents; a used trait is read
+in each class using it, where its prototype lives, and reported under that class, never a second time
+under its own name (`DeclaredClasses::withoutUsedTraits()`, the one place that rule is written — go
+through it in any new guard on `classLikes()`). **`DeclaredClasses` has
+two censuses, and each guard picks one explicitly**: `classes()` (abstract included) for a guard that
+reasons on what is thrown or instantiated (`implementing()` builds on it — `is_subclass_of()` is true of an
+interface extending the type), `classLikes()` for one that reads signatures, attributes or a file's source
+(the secret and password guards, `RegexEndAnchorTest` — the Validator merges an interface's constraints
+into its implementations). Never widen `classes()` silently. **Closures and arrow functions stay out,
+an accepted limit** (#421, reasons in `SecretParametersTest`'s docblock): reflection cannot reach them
+without running the code, and a token census by name would miss the very case that would justify it — a
+callback gets its value under its contract's generic name (the `$value` that `app:user:create`'s password
+validator and normalizer used to receive). **A callback that receives a secret is therefore a method,
+never a closure** (issue #433): `CreateCpgUserCommand::validatePassword()` and `withoutLineEnding()`,
+passed as `$this->validatePassword(...)`, name their parameter `$password`, so the password guard
+requires their `#[SensitiveParameter]` like any other; `CreateCpgUserCommandTest` also reads the attribute
+on the callbacks of the hidden questions as built, closure or method, and the username prompt's
+`validateUsername($username)` is in `HIDDEN_BY_HAND` (a password pasted into the wrong prompt).
+**Anonymous classes and free functions are forbidden in `src/`** (issue #432),
+so that the census misses nothing else: name the class (`RedactingDriver`, extracted from
+`DriverErrorRedactionMiddleware::wrap()` for that reason), make the function a method.
+`tests/Shared/NoAnonymousClassNorFreeFunctionTest.php` (`tests/Support/AnonymousClassesAndFreeFunctions`,
+by tokens through `PhpSources`) fails on any `new class` — `readonly` or under an attribute too — and on
+any named `function` whose enclosing brace is not a class-like body, a function declared inside a method
+or a closure included (PHP declares it global when it runs); an imported function (`use function`, grouped
+import included) is not one. The same walk tells `MisqualifiedNativeCalls` (below) which functions a file
+declares: one definition of "outside any class". No exemption list. A secret under
+another name or in an `array` is hidden by hand and pinned in `HIDDEN_BY_HAND` (`AuthCookieFactory::create($value)`,
+`ReplayRefusingHttpClient::request($options)` — the Scaleway key and the nominative CV —,
+`PasswordOptionRedactor::redact($text)`); an entry the census already sees is refused there.
+`CsrfCookieTokenSigner::signature($random)` stays visible on purpose (half the token, useless without
+`APP_SECRET`). No exclusion list until a first false positive needs one. Why it matters although
+production and, since #420, PHPUnit strip arguments (`zend.exception_ignore_args`, see
+`.claude/rules/backend-outillage.md`): dev does not (the debug JSON error body, Messenger's
+`ErrorDetailsStamp`, output pasted in a ticket or an assistant session), and `debug_backtrace()` never
+does. The attribute only hides that frame's arguments: not a message, a local variable, nor a vendor call that
+receives the value next (`Cookie::create()`, Lexik). The walk and the hash exclusion are shared with the
+password guard (`tests/Support/SensitiveParameters`), so a change there moves both.
+
+**A regex of `src/` ends on `\z`, never on `$`** (issues #386, #409). In PCRE `$` also matches before a
+final `\n`, so `/^[a-z]+$/` accepts `"abc\n"`: a username, a watched-product slug and a translation field
+name all went through that way. `\z` rather than the `D` modifier: the anchor reads where it acts, and
+survives a copy of the pattern's body without its modifiers. `tests/Shared/RegexEndAnchorTest.php`
+(`tests/Support/DollarAnchoredPatterns`) fails on any string literal of `src/` shaped like a regex that
+holds an anchoring `$` (escaped, in a character class or a `Q…E` quote it is literal) without `D` or
+`m` — constants, `#[Assert\Regex]`, inline `preg_*` calls alike. Not seen: a pattern built by
+concatenation, a heredoc. **An `#[Assert\Regex]` anchored by `\z` declares its `htmlPattern`**: API
+Platform publishes the OpenAPI `pattern` from `getHtmlPattern()`, which only strips a final `$`, and
+ECMAScript reads a leftover `\z` as a literal `z` (`BackofficeWatchedProductResource::$slug`); the same
+test checks every `Regex` constraint of `src/`, nested ones included. `security.yaml`'s path patterns
+are out of scope and keep their `$`: the router refuses a path ending in `%0A` (404) before any
+firewall or `access_control` rule is consulted, and on `access_control` the wider `$` is the
+fail-closed side.
 
 **Every class, interface, enum and trait is imported with `use` and written by its short name — native
 ones included** (issue #391). `use LogicException;` then `new LogicException(…)`, `use Throwable;` then

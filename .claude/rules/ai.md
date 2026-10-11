@@ -86,7 +86,14 @@ paths:
   `{reason}` — and a provider failure **before the first fragment** is a 503 problem+json
   (`/errors/assistant-unavailable`, rendered by the shared `ApiProblemResponseListener`, the route not being an
   API Platform operation), the call being primed before the 200 is sent; `ReplayRefusingHttpClient` stops the
-  bridge's `EventSourceHttpClient` from replaying a cut stream (a second, billed generation). Two rules from
+  bridge's `EventSourceHttpClient` from replaying a cut stream (a second, billed generation). Its refusal is a
+  `TransportException` whose trace keeps, below it, the vendor frame `AsyncContext::replaceRequest($method,
+  $url, $options)` — the Scaleway key and the nominative CV as arguments in dev, where
+  `zend.exception_ignore_args` is Off and `#[SensitiveParameter]` cannot reach the vendor. **Left as is, on
+  purpose (issue #428, pt 1)**: the trace is rendered nowhere, because that exception never leaves
+  `SymfonyAiCareerAssistant` — neither thrown nor as a `previous` (`AssistantUnavailableException` takes none)
+  — and only its class is logged. `SymfonyAiCareerAssistantTest::testARefusedReplayNeverLeavesTheServiceNorReachesTheLogs`
+  pins it at both stages; a change that let it out would need the trace stripped first. Two rules from
   the task's security review: **`AssistantUnavailableException` never chains the bridge's exception** — the
   kernel's `ErrorListener` logs the whole `previous` chain, and the bridge copies the provider's response
   body into its message (issue #269 tracks the same defect on the translator); and every assistant exception

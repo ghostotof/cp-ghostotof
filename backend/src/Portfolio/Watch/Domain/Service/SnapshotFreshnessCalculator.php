@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Portfolio\Watch\Domain\Service;
 
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotFreshness;
+use DateInterval;
 use DateTimeImmutable;
 
 /**
@@ -36,7 +37,9 @@ final readonly class SnapshotFreshnessCalculator
             return SnapshotFreshness::NEVER_REFRESHED;
         }
 
-        $deadline = $refreshedAt->modify(\sprintf('+%d hours', self::STALE_AFTER_HOURS));
+        // Des heures écoulées : `modify('+36 hours')` compte en heure murale et
+        // donnait 37 h ou 35 h à Paris autour d'un changement d'heure (#445).
+        $deadline = $refreshedAt->add(new DateInterval(\sprintf('PT%dH', self::STALE_AFTER_HOURS)));
 
         return $now < $deadline ? SnapshotFreshness::FRESH : SnapshotFreshness::STALE;
     }

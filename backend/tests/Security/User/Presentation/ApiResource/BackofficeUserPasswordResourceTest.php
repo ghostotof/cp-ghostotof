@@ -131,6 +131,28 @@ final class BackofficeUserPasswordResourceTest extends WebTestCase
     }
 
     /**
+     * Issue #386 : le hasher borne le mot de passe en **octets**
+     * (PasswordHasherInterface::MAX_PASSWORD_LENGTH, `strlen`), Assert\Length
+     * comptait des caractères. 2 049 « é » font 2 049 caractères mais 4 098
+     * octets : la validation passait, le hasher levait, et la réponse était
+     * un 500 au lieu d'un 422.
+     */
+    public function testAMultibytePasswordBeyondTheHasherLimitInBytesIsRejected(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $jane = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::variant('old'));
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $client->request('PUT', \sprintf('/api/backoffice/users/%s/password', $jane->getId()->toRfc4122()), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $csrfToken,
+        ], content: self::jsonBody(['password' => str_repeat('é', intdiv(CpgUser::MAX_PASSWORD_LENGTH, 2) + 1)]));
+
+        self::assertResponseStatusCodeSame(422);
+    }
+
+    /**
      * Spec 0003 D6 : un `{id}` malformé est un 404 du **routeur** (priorité
      * 32), donc avant le contrôle CSRF (20) et le firewall (8) — d'où
      * l'absence de problem+json applicatif.

@@ -7,6 +7,9 @@ namespace App\Tests\Security\Authentication\Infrastructure\Log;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\Authentication\Infrastructure\Log\SecurityEventsSubscriber;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Support\TestCredentials;
+use Closure;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -18,8 +21,11 @@ use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Core\Exception\AuthenticationException;
+use Symfony\Component\Security\Core\Exception\AuthenticationServiceException;
 use Symfony\Component\Security\Core\Exception\BadCredentialsException;
 use Symfony\Component\Security\Core\Exception\TooManyLoginAttemptsAuthenticationException;
+use Symfony\Component\Security\Core\Exception\UserNotFoundException;
+use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Security\Http\Authenticator\AuthenticatorInterface;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
 use Symfony\Component\Security\Http\Authenticator\Passport\Credentials\PasswordCredentials;
@@ -39,6 +45,9 @@ use Throwable;
 final class SecurityEventsSubscriberTest extends TestCase
 {
     private (SecurityAuditLoggerInterface&MockObject)|null $auditLogger = null;
+
+    /** Appels au chargeur de {@see self::loaderThatMustNotRun()}. */
+    private int $loaderCalls = 0;
 
     /**
      * Créé à la demande : PHPUnit 13 signale un mock sans attente, et le
@@ -74,25 +83,81 @@ final class SecurityEventsSubscriberTest extends TestCase
         $this->subscriber()->onLoginSuccess($this->loginSuccess('api', 'jane'));
     }
 
-    public function testAFailedLoginIsLoggedWithTheAttemptedIdentifier(): void
+    /**
+     * Mauvais mot de passe sur un compte existant :
+     * {@see \Symfony\Component\Security\Http\EventListener\CheckCredentialsListener}
+     * a déjà chargé le compte (UserBadge le mémorise), le subscriber le
+     * transmet pour que la ligne le nomme (issue #418).
+     */
+    public function testAFailedLoginOnAnExistingAccountIsLoggedWithTheAccount(): void
     {
-        $this->auditLogger()->expects(self::once())->method('loginFailed')->with('jane');
+        $jane = new CpgUser('jane', 'hashed-password');
+        $this->auditLogger()->expects(self::once())->method('loginFailed')->with('jane', $jane);
         $this->auditLogger()->expects(self::never())->method('loginThrottled');
 
-        $this->subscriber()->onLoginFailure($this->loginFailure('login', new BadCredentialsException(), 'jane'));
+        $this->subscriber()->onLoginFailure($this->loginFailure('login', new BadCredentialsException(), 'jane', static fn (): CpgUser => $jane));
     }
 
-    public function testAThrottledLoginIsItsOwnEvent(): void
+    /**
+     * Identifiant inconnu — par exemple un mot de passe tapé dans le mauvais
+     * champ (issue #418) : aucun compte, et le chargeur n'est pas rappelé
+     * (UserBadge ne mémorise pas l'échec, ce serait une requête SQL de plus).
+     * {@see \Symfony\Component\Security\Http\Authentication\AuthenticatorManager}
+     * masque l'UserNotFoundException derrière une
+     * BadCredentialsException ; les deux formes sont reconnues.
+     */
+    #[DataProvider('unknownIdentifierFailures')]
+    public function testAFailedLoginOnAnUnknownIdentifierIsLoggedWithoutAccountAndWithoutReloading(AuthenticationException $exception): void
+    {
+        $this->auditLogger()->expects(self::once())->method('loginFailed')->with(TestCredentials::variant('typed-as-identifier'), null);
+
+        $this->subscriber()->onLoginFailure($this->loginFailure('login', $exception, TestCredentials::variant('typed-as-identifier'), $this->loaderThatMustNotRun()));
+
+        self::assertSame(0, $this->loaderCalls, 'Le compte ne doit pas être rechargé : une requête SQL de plus par identifiant inconnu.');
+    }
+
+    /** @return iterable<string, array{AuthenticationException}> */
+    public static function unknownIdentifierFailures(): iterable
+    {
+        yield 'masquée (expose_security_errors ≠ all)' => [new BadCredentialsException('Bad credentials.', 0, new UserNotFoundException())];
+        yield 'nue' => [new UserNotFoundException()];
+    }
+
+    /**
+     * Le throttling refuse avant que le compte ne soit chargé : le charger
+     * ici coûterait une requête sur le chemin que l'attaquant martèle. Pas de
+     * compte, donc ; l'empreinte de l'identifiant fait le lien.
+     */
+    public function testAThrottledLoginIsItsOwnEventWithoutLoadingTheAccount(): void
     {
         $this->auditLogger()->expects(self::once())->method('loginThrottled')->with('jane');
         $this->auditLogger()->expects(self::never())->method('loginFailed');
 
-        $this->subscriber()->onLoginFailure($this->loginFailure('login', new TooManyLoginAttemptsAuthenticationException(), 'jane'));
+        $this->subscriber()->onLoginFailure($this->loginFailure('login', new TooManyLoginAttemptsAuthenticationException(), 'jane', $this->loaderThatMustNotRun()));
+
+        self::assertSame(0, $this->loaderCalls, 'Le throttling doit rester bon marché : aucune requête SQL.');
+    }
+
+    /**
+     * Échec du chargeur sous forme d'AuthenticationException (un fournisseur
+     * qui ne rend pas un utilisateur) : le 401 est déjà construit, la ligne
+     * sort quand même, sans compte. Une panne de la base, elle, n'arrive
+     * jamais ici : l'exception DBAL n'est pas une AuthenticationException,
+     * {@see \Symfony\Component\Security\Http\Authentication\AuthenticatorManager}
+     * ne la rattrape pas.
+     */
+    public function testAFailingUserLoaderStillLogsTheFailureWithoutAccount(): void
+    {
+        $this->auditLogger()->expects(self::once())->method('loginFailed')->with('jane', null);
+
+        $this->subscriber()->onLoginFailure($this->loginFailure('login', new BadCredentialsException(), 'jane', static function (): never {
+            throw new AuthenticationServiceException('Le fournisseur n\'a pas rendu d\'utilisateur.');
+        }));
     }
 
     public function testAFailureWithoutPassportIsLoggedWithoutIdentifier(): void
     {
-        $this->auditLogger()->expects(self::once())->method('loginFailed')->with(null);
+        $this->auditLogger()->expects(self::once())->method('loginFailed')->with(null, null);
 
         $this->subscriber()->onLoginFailure($this->loginFailure('login', new BadCredentialsException(), null));
     }
@@ -235,11 +300,14 @@ final class SecurityEventsSubscriberTest extends TestCase
         );
     }
 
-    private function loginFailure(string $firewall, AuthenticationException $exception, ?string $username): LoginFailureEvent
+    /**
+     * @param (Closure(string): UserInterface)|null $loader le chargeur du UserBadge ; par défaut, un compte du même nom
+     */
+    private function loginFailure(string $firewall, AuthenticationException $exception, ?string $username, ?Closure $loader = null): LoginFailureEvent
     {
         $passport = null === $username
             ? null
-            : new Passport(new UserBadge($username, static fn (): CpgUser => new CpgUser($username, 'hashed-password')), new PasswordCredentials('irrelevant'));
+            : new Passport(new UserBadge($username, $loader ?? static fn (): CpgUser => new CpgUser($username, 'hashed-password')), new PasswordCredentials('irrelevant'));
 
         return new LoginFailureEvent(
             $exception,
@@ -249,6 +317,22 @@ final class SecurityEventsSubscriberTest extends TestCase
             $firewall,
             $passport,
         );
+    }
+
+    /**
+     * Un chargeur qui compte ses appels plutôt que d'échouer : le subscriber
+     * rattrape les pannes du chargeur, il avalerait un `self::fail()` levé
+     * ici. L'attente porte sur le compteur, relu après l'appel.
+     *
+     * @return Closure(string): UserInterface
+     */
+    private function loaderThatMustNotRun(): Closure
+    {
+        return function (string $identifier): UserInterface {
+            ++$this->loaderCalls;
+
+            return new CpgUser($identifier, 'hashed-password');
+        };
     }
 
     private function exceptionEvent(string $uri, Throwable $throwable, int $requestType = HttpKernelInterface::MAIN_REQUEST): ExceptionEvent

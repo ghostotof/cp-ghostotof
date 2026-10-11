@@ -7,6 +7,7 @@ namespace App\Security\User\Application;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\CannotDeleteOwnAccountException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
+use SensitiveParameter;
 use Symfony\Component\Uid\Uuid;
 
 interface CpgUserAdministratorInterface
@@ -20,5 +21,5 @@ interface CpgUserAdministratorInterface
     /**
      * @throws CpgUserNotFoundException si l'id est inconnu
      */
-    public function changePassword(Uuid $id, string $newPlainPassword): void;
+    public function changePassword(Uuid $id, #[SensitiveParameter] string $newPlainPassword): void;
 }

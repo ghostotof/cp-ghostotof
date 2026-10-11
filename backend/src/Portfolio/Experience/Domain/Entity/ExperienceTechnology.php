@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Portfolio\Experience\Domain\Entity;
 
 use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
+use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
 use App\Portfolio\Experience\Infrastructure\Doctrine\ExperienceTechnologyRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -32,9 +33,9 @@ class ExperienceTechnology
     #[ORM\Column(type: UuidType::NAME)]
     private Uuid $id;
 
-    #[ORM\Column(length: 180)]
+    #[ORM\Column(length: TechnologyName::MAX_LENGTH)]
     #[Assert\NotBlank]
-    #[Assert\Length(max: 180)]
+    #[Assert\Length(max: TechnologyName::MAX_LENGTH)]
     private string $name;
 
     /**
@@ -68,15 +69,16 @@ class ExperienceTechnology
     #[ORM\Column(options: ['default' => false])]
     private bool $secondary;
 
+    /** Toujours issu d'un TechnologyName (issue #386) : rogné, donc comparable par le contrôle d'unicité. */
     public function __construct(
-        string $name,
+        TechnologyName $name,
         ExperienceYears $years,
         ?string $iconKey = null,
         ?string $relatedTechnologyName = null,
         bool $secondary = false,
     ) {
         $this->id = Uuid::v7();
-        $this->name = $name;
+        $this->name = $name->value;
         $this->years = $years->value;
         $this->iconKey = $iconKey;
         $this->relatedTechnologyName = $relatedTechnologyName;
@@ -114,13 +116,13 @@ class ExperienceTechnology
     }
 
     public function update(
-        string $name,
+        TechnologyName $name,
         ExperienceYears $years,
         ?string $iconKey,
         ?string $relatedTechnologyName,
         bool $secondary = false,
     ): void {
-        $this->name = $name;
+        $this->name = $name->value;
         $this->years = $years->value;
         $this->iconKey = $iconKey;
         $this->relatedTechnologyName = $relatedTechnologyName;

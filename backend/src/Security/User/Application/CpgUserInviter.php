@@ -80,10 +80,13 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
         // Round de correction (C1, issue #238) : la relance *est* une nouvelle
         // invitation au sens de la purge automatique — le délai de 30 jours
         // doit repartir de zéro, pas continuer de courir depuis le tout
-        // premier envoi. Même ordre que invite() : on marque et on sauvegarde
-        // avant de dispatcher.
-        $user->markInvited($this->clock->now());
-        $this->cpgUserRepository->save($user);
+        // premier envoi. Même ordre que invite() : on écrit avant de
+        // dispatcher. La génération est avancée en base, atomiquement (issue
+        // #435) : sur un double clic, deux requêtes chargent la même
+        // génération, et l'avancer en mémoire publiait deux messages de même
+        // génération, que le handler ne savait plus départager.
+        $now = $this->clock->now();
+        $user->markReinvited($now, $this->cpgUserRepository->advanceInvitationGeneration($user, $now));
 
         $this->dispatchInvitation($user, $locale);
         $this->auditLogger->userReinvited($user);
@@ -92,13 +95,17 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
     /**
      * Le handler régénère le jeton (invalidant le précédent) : redispatcher le
      * message suffit à « renvoyer » l'invitation.
+     *
+     * Le message porte la génération que markInvited() vient d'avancer
+     * (issue #434) : un message plus ancien encore en file, réessai ou rejeu,
+     * saura qu'une invitation plus récente l'a remplacé.
      */
     private function dispatchInvitation(CpgUser $user, Locale $locale): void
     {
         // L'identité est posée par le constructeur de l'entité (spec 0003 D1) :
         // elle existe avant même le save(), et voyage en chaîne RFC 4122 (D7).
         $this->messageBus->dispatch(
-            new SendAccountInvitationMessage($user->getId()->toRfc4122(), $locale->value),
+            new SendAccountInvitationMessage($user->getId()->toRfc4122(), $locale->value, $user->getInvitationGeneration()),
         );
     }
 }
