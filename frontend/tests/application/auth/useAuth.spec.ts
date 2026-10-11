@@ -118,6 +118,23 @@ describe('useAuth', () => {
     expect(auth.user.value).toBeNull()
   })
 
+  it("logout() refusé par le serveur (403 du contrôle CSRF) : l'état local revient quand même à anonyme, et l'erreur remonte", async () => {
+    // Issue #455 : un XSRF-TOKEN signé sous l'ancienne clé fait répondre 403
+    // à POST /api/logout. Rester « connecté » bloquerait la page de login,
+    // donc la seule sortie : un nouveau login, qui remplace les deux cookies.
+    const repository = createStubRepository()
+    repository.logout = vi.fn(async () => {
+      throw new Error('Logout failed with status 403')
+    })
+    const auth = mountWithComposable(repository)
+    await auth.login('jane', 'password')
+
+    await expect(auth.logout()).rejects.toThrow('403')
+
+    expect(auth.isAuthenticated.value).toBe(false)
+    expect(auth.user.value).toBeNull()
+  })
+
   describe('palier d\'accès (ADR 0003 D1 — trois cas)', () => {
     it('anonyme par défaut : tier=anonymous, ni authentifié ni de confiance', async () => {
       const auth = mountWithComposable(createStubRepository())

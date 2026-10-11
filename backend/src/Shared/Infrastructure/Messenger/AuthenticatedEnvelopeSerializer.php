@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Shared\Infrastructure\Messenger;
 
+use App\Shared\Infrastructure\Security\SecretKeyDerivation;
 use Psr\Log\LoggerInterface;
 use SensitiveParameter;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -71,11 +72,9 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
         private bool $requireMac,
         private LoggerInterface $logger,
     ) {
-        if ('' === $secret) {
-            throw MissingEnvelopeKeyException::emptySecret();
-        }
-
-        $this->key = hash_hkdf('sha256', $secret, 32, self::KEY_CONTEXT);
+        // Un secret vide lève EmptyApplicationSecretException, à la première
+        // construction : le premier message mis en file ou lu.
+        $this->key = SecretKeyDerivation::derive($secret, self::KEY_CONTEXT);
     }
 
     /**

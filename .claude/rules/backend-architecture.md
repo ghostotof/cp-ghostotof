@@ -88,7 +88,7 @@ comments excluded.
 `unserialize()` with no class allow-list: writing into either would be an object injection into the
 worker (or into an operator running `messenger:failed:show`). `framework.messenger.serializer.default_serializer`
 is `Shared/Infrastructure/Messenger/AuthenticatedEnvelopeSerializer`: it adds an HMAC of the body
-(header `X-Envelope-Mac`, key derived from `kernel.secret` by `hash_hkdf` with its own context, an
+(header `X-Envelope-Mac`, key derived from `kernel.secret` through `SecretKeyDerivation` with its own context, an
 empty secret refused at construction) and, on decoding, refuses an envelope whose MAC is wrong — or not
 a string, which AMQP or the Doctrine transport's JSON headers can yield — **before** the inner
 `PhpSerializer` sees it — any type, including the decoding-failure envelopes the retry puts back in
@@ -110,6 +110,30 @@ round trip through the Doctrine `failed` transport, the interface above) pin it.
 authenticated message can be replayed by whoever writes into the queue (no nonce — an invitation of the
 current generation replayed kills the link already received); **rotating `APP_SECRET` invalidates every
 queued message** (order in `k8s/README.md`).
+
+**`APP_SECRET` never keys an HMAC directly: each use derives its own key** (issue #455).
+`Shared/Infrastructure/Security/SecretKeyDerivation::derive($secret, $context)` is HKDF-SHA256 (RFC 5869,
+32 bytes, an empty secret refused with `EmptyApplicationSecretException`), and each class receiving
+`kernel.secret` declares a versioned `KEY_CONTEXT` (`cp-ghostotof/<use>/v1`): the CSRF cookie signer, the
+login-identifier fingerprint, the Messenger envelope MAC. Keyed by the raw secret and told apart only in
+the message (a prefix, or nothing), any future feature returning `HMAC(APP_SECRET, x)` for a client-chosen
+`x` would have been a signing oracle for every other use. Changing a context is a targeted rotation. The
+switch itself changed every login fingerprint and invalidated the `XSRF-TOKEN` cookies already issued, and
+so does a **rolling update** (two prod replicas, old and new keys for a moment) or a **rollback**: writes,
+`POST /api/logout` included, answer 403 until a new login. Since a refused logout used to leave the UI
+"logged in" — and `/login` redirects a logged-in user home —, the frontend resets the local session to
+anonymous on **any** logout failure and leads to the login page (`useAuth.logout()`, `AppHeader`); a new
+login replaces both cookies, a reload reads the real tier from `/api/me`. HKDF stretches nothing: `APP_SECRET`
+must be high-entropy (32 random bytes; CI uses `openssl rand -hex 16`). An empty secret raises
+`EmptyApplicationSecretException` at first use — the CSRF signer used to accept it, which let anyone forge a
+token. `tests/Shared/Infrastructure/Security/ApplicationSecretUsesTest.php` finds, by tokens, every file of
+`src/` naming `%kernel.secret%`, `kernel.secret`, `APP_SECRET` or `%env(APP_SECRET)%` (either quotes),
+requires an actual `SecretKeyDerivation::derive(…, self::KEY_CONTEXT)` call and a `KEY_CONTEXT` no other file
+uses, and refuses any `config/**.yaml` naming the secret besides `framework.secret`. Not covered, accepted: a
+class handing the raw secret to another, and Symfony's own uses (`login_throttling`, `SigningSerializer`),
+which keep the raw secret but never return their output to a client. Unit tests take key material from
+`tests/Support/TestKeys` (generated, like `TestCredentials`): a literal assigned to a name saying "secret"
+gets flagged by GitGuardian.
 
 **`src/` never instantiates a bare `\Exception`, `\LogicException`, `\RuntimeException` or
 `\InvalidArgumentException`** (issues #338, #383).

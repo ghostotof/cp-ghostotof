@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\Tests\Security\Authentication\Infrastructure\Log;
 
 use App\Security\Authentication\Infrastructure\Log\LoginIdentifierFingerprint;
-use App\Security\Authentication\Infrastructure\Log\MissingLoginFingerprintKeyException;
+use App\Shared\Infrastructure\Security\EmptyApplicationSecretException;
 use App\Tests\Support\TestCredentials;
+use App\Tests\Support\TestKeys;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -17,11 +18,9 @@ use PHPUnit\Framework\TestCase;
  */
 final class LoginIdentifierFingerprintTest extends TestCase
 {
-    private const string SECRET = 'test-kernel-secret';
-
     public function testTheSameIdentifierAlwaysGivesTheSameFingerprint(): void
     {
-        $fingerprint = new LoginIdentifierFingerprint(self::SECRET);
+        $fingerprint = new LoginIdentifierFingerprint(TestKeys::material());
 
         self::assertSame($fingerprint->of('jane'), $fingerprint->of('jane'));
     }
@@ -35,7 +34,7 @@ final class LoginIdentifierFingerprintTest extends TestCase
      */
     public function testTheFingerprintFollowsTheCaseFoldingOfTheThrottlingCounter(): void
     {
-        $fingerprint = new LoginIdentifierFingerprint(self::SECRET);
+        $fingerprint = new LoginIdentifierFingerprint(TestKeys::material());
 
         self::assertSame($fingerprint->of('jane'), $fingerprint->of('JANE'));
         self::assertSame($fingerprint->of('élodie'), $fingerprint->of('ÉLODIE'), 'Minuscules multioctets, comme mb_strtolower du limiteur.');
@@ -47,7 +46,7 @@ final class LoginIdentifierFingerprintTest extends TestCase
      */
     public function testAnIdentifierThatIsNotUtf8IsFingerprintedLikeTheThrottlingCounterDoes(): void
     {
-        $fingerprint = new LoginIdentifierFingerprint(self::SECRET);
+        $fingerprint = new LoginIdentifierFingerprint(TestKeys::material());
 
         self::assertSame($fingerprint->of("JANE\xFF"), $fingerprint->of("jane\xFF"));
     }
@@ -60,14 +59,26 @@ final class LoginIdentifierFingerprintTest extends TestCase
     {
         $fingerprint = new LoginIdentifierFingerprint('');
 
-        $this->expectException(MissingLoginFingerprintKeyException::class);
+        $this->expectException(EmptyApplicationSecretException::class);
 
         $fingerprint->of('jane');
     }
 
+    /**
+     * Issue #455 : l'empreinte est calculée sous une clé dérivée, jamais sous
+     * `APP_SECRET` brut (l'ancien calcul, préfixe de contexte dans le message).
+     */
+    public function testTheFingerprintIsNotAnHmacUnderTheRawSecret(): void
+    {
+        self::assertNotSame(
+            substr(hash_hmac('sha256', 'security-audit/login-identifier:jane', TestKeys::material()), 0, 6),
+            (new LoginIdentifierFingerprint(TestKeys::material()))->of('jane'),
+        );
+    }
+
     public function testTwoIdentifiersGiveTwoFingerprints(): void
     {
-        $fingerprint = new LoginIdentifierFingerprint(self::SECRET);
+        $fingerprint = new LoginIdentifierFingerprint(TestKeys::material());
 
         self::assertNotSame($fingerprint->of('jane'), $fingerprint->of('john'));
     }
@@ -80,10 +91,10 @@ final class LoginIdentifierFingerprintTest extends TestCase
     public function testTheFingerprintDependsOnTheSecret(): void
     {
         self::assertNotSame(
-            (new LoginIdentifierFingerprint(self::SECRET))->of('jane'),
-            (new LoginIdentifierFingerprint('another-secret'))->of('jane'),
+            (new LoginIdentifierFingerprint(TestKeys::material()))->of('jane'),
+            (new LoginIdentifierFingerprint(TestKeys::material('autre')))->of('jane'),
         );
-        self::assertNotSame(hash('sha256', 'jane'), (new LoginIdentifierFingerprint(self::SECRET))->of('jane'));
+        self::assertNotSame(hash('sha256', 'jane'), (new LoginIdentifierFingerprint(TestKeys::material()))->of('jane'));
     }
 
     /**
@@ -98,7 +109,7 @@ final class LoginIdentifierFingerprintTest extends TestCase
     public function testTheFingerprintIsSixLowercaseHexCharactersAndNeverTheIdentifier(): void
     {
         $identifier = TestCredentials::variant('typed-as-identifier');
-        $value = (new LoginIdentifierFingerprint(self::SECRET))->of($identifier);
+        $value = (new LoginIdentifierFingerprint(TestKeys::material()))->of($identifier);
 
         self::assertMatchesRegularExpression('/^[0-9a-f]{6}\z/', $value);
         self::assertStringNotContainsStringIgnoringCase(substr($identifier, 0, 6), $value);

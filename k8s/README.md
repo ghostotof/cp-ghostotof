@@ -797,9 +797,12 @@ rechargés à chaud).
 
 ### Cas d'`APP_SECRET`
 
-Le secret signe plus qu'une session : les empreintes du journal de sécurité (§ Journal de sécurité)
-et, depuis l'issue #444, **le MAC de chaque message Messenger mis en file**, vérifié par le worker
-avant toute désérialisation. Une enveloppe signée avec l'ancien secret est refusée par un worker qui a
+Le secret signe plus qu'une session : les cookies `XSRF-TOKEN`, les empreintes du journal de sécurité
+(§ Journal de sécurité) et, depuis l'issue #444, **le MAC de chaque message Messenger mis en file**,
+vérifié par le worker avant toute désérialisation. Chaque usage en dérive sa propre clé (issue #455) :
+changer le `KEY_CONTEXT` d'une seule classe est une rotation ciblée de cet usage, sans toucher au
+secret. Une rotation invalide les `XSRF-TOKEN` déjà émis : une écriture, déconnexion comprise, répond
+403 ; l'interface ramène alors à la page de connexion, et un nouveau login remplace les cookies. Une enveloppe signée avec l'ancien secret est refusée par un worker qui a
 le nouveau (échec de décodage, réessais, puis `failed`, où elle reste refusée et part avec la purge
 des 30 jours). Ordre, en période calme :
 
@@ -1147,7 +1150,7 @@ un e-mail (un test le pince).
 
 L'identifiant **tenté** au login n'est jamais écrit tel quel (issue #418) : ce peut être un mot de
 passe tapé dans le mauvais champ. `login-failed` et `login-throttled` portent son empreinte,
-`userFingerprint` (HMAC sur `APP_SECRET`, insensible à la casse comme le compteur de
+`userFingerprint` (HMAC sous une clé dérivée d'`APP_SECRET`, insensible à la casse comme le compteur de
 `login_throttling`), et ne nomment le compte (`user`, `userId`) que s'il existe et a été chargé :
 `user` vaut donc `null` pour un identifiant inconnu, et **toujours** pour `login-throttled` (refusé
 avant tout chargement). Pour relier un refus aux échecs qui l'ont causé, filtrer sur l'empreinte :

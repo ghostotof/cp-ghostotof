@@ -111,8 +111,8 @@ paths:
     exception** in any context: an invited account is named by `username` + `userId`, not by its e-mail.
     **The identifier tried at login is never written as typed** (issue #418): a password typed in the
     username field would otherwise reach the production log. `login-failed` and `login-throttled` carry
-    `userFingerprint` instead — `Infrastructure/Log/LoginIdentifierFingerprint`, an HMAC-SHA256 keyed on
-    `kernel.secret`, case-folded like `login_throttling`'s counter (`mb_strtolower`), **6 hex chars
+    `userFingerprint` instead — `Infrastructure/Log/LoginIdentifierFingerprint`, an HMAC-SHA256 keyed by a
+    key derived from `kernel.secret` for this use alone (issue #455, see `.claude/rules/backend-architecture.md`), case-folded like `login_throttling`'s counter (`mb_strtolower`), **6 hex chars
     (24 bits) on purpose**, an empty key refused (with the key, a longer fingerprint would confirm
     offline, at SHA-256 speed, a password typed as identifier; the class docblock has the numbers) — and
     name the account (`user` + `userId`, from the loaded `CpgUser`, never from the input) **only when the
