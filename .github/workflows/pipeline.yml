@@ -857,7 +857,7 @@ jobs:
     needs: [deploy-preprod, smoke-test-preprod, audit-preprod]
     if: failure() && startsWith(github.ref, 'refs/heads/release/') && needs.deploy-preprod.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 10 # deux `rollout undo`, sans attente
+    timeout-minutes: 10 # trois `rollout undo`, sans attente
     # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
     # l'environnement, et sa politique de branche borne d'où ils sont lisibles
     # (audit 2026-09-16, A4).
@@ -869,10 +869,20 @@ jobs:
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBE_CONFIG_PREPROD }}" > ~/.kube/config
+      # Le worker revient avec l'API (issue #450) : il lit ce qu'elle met en
+      # file, sous la même clé de MAC. Laissé sur la release refusée, il
+      # exigerait une signature que l'API ramenée ne produit pas (clé
+      # `messenger-envelope/v2` contre `v1`, ou MAC absent avant #444) et
+      # enverrait chaque message dans `failed`.
+      # Chaque `undo` est tenté même si un autre échoue (`bash -e` s'arrêterait
+      # au premier, laissant la préprod à moitié ramenée) ; le job reste rouge.
       - name: Rollback
         run: |
-          kubectl -n preprod rollout undo deployment/backend
-          kubectl -n preprod rollout undo deployment/frontend
+          status=0
+          for workload in backend worker frontend; do
+            kubectl -n preprod rollout undo "deployment/$workload" || status=1
+          done
+          exit "$status"
 
   # ---------------------------------------------------------------------------
   # Phase 3 — sur `main` seulement (spec 0006, D7/D8)

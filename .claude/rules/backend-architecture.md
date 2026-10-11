@@ -97,28 +97,47 @@ which decorates it (FrameworkBundle signs `RunCommandMessage` and `RunProcessMes
 the envelope's type — a restricted unserialization, but one — before the MAC. **Never rely on `#[AsMessageHandler(sign: true)]` for this**: Messenger's `SigningSerializer`
 only requires a signature for the listed types, and an unsigned envelope of any other type (a `stdClass`
 carrying a gadget) is still unserialized — measured in the review of #444, a `Process::__unserialize()`
-ran that way. A refusal is a decoding failure (`MessageDecodingFailedException`, holding the received
-envelope, never an object of its body, and quoting its cause, never the body): transport retries, then `failed`. **Any decoding failure it returns keeps the
+ran that way. A refusal is a decoding failure (`EnvelopeMacRefusedException`, holding the received
+envelope, never an object of its body, and quoting its cause, never the body): final, straight to `failed` (see below). **Any decoding failure it returns keeps the
 original encoded envelope, MAC included** (issue #465): `DecodeFailedMessageMiddleware` decodes that
 envelope again with the same serializer, at reception and after every retry, so a failure of the inner
 `PhpSerializer` — which wraps the envelope it was handed, header already removed — is re-wrapped around
-the original. Without it, every undecodable signed message logged a false « sans MAC » `warning` in
-transition, and its real cause became « sans MAC refusée » once the MAC is required
-(`DecodingFailureKeepsItsMacTest`). **Only the failure of the decoding in progress is re-wrapped**,
+the original. Without it, every undecodable signed message had its real cause replaced by « sans MAC
+refusée » (`DecodingFailureKeepsItsMacTest`). **Only the failure of the decoding in progress is re-wrapped**,
 recognised by its body (the one handed to `PhpSerializer`, or its base64-decoded form): a failure that a
 retry carries **as its message** comes back untouched, stamps included — re-wrapped, it lost its
 `RedeliveryStamp` (endless retries) and `SentToFailureTransportStamp` (`messenger:failed:*`), and nested
-each retry inside the next (caught in the review of #465). Not covered: a decoding failure queued before
-#465 still carries the envelope without its MAC, so it logs « sans MAC » in transition and is refused
-for that reason once the MAC is required — read `messenger:failed:show` before #450. **Two steps**: while the parameter
-`app.messenger.require_envelope_mac` is `false` (the release that introduced it), an envelope with
-**no** MAC — queued by the old code before or during the rollout, or after a rollback — is still
-decoded, with a `warning`; a MAC present but wrong is refused in both modes. The follow-up issue sets it
-to `true` once the queues hold no unsigned envelope, which is what actually closes the injection.
+each retry inside the next (caught in the review of #465). **An envelope with no MAC is refused
+unconditionally** (issue #450). The release of #444 (v0.23.0) still decoded one, with a `warning`, so
+that messages queued by the old code would not be lost; #450 **removed** that transition mode rather
+than switching it off — there is no parameter left that could reopen the injection, don't reintroduce
+one. In the same change the envelope `KEY_CONTEXT` moved to **`…/v2`**: during the transition, a forged
+unsigned envelope was decoded, then re-signed by `encode()` on retry and stored in `failed` with a valid
+MAC, gadget included (reproduced in the audit of #465, also through `__PHP_Incomplete_Class`, which
+defers the real class to the first decoding after signature) — no inspection of the queues can tell it
+from a legitimate message, a new key invalidates every signature of that era. The cost, at each change
+of the context, **every** envelope signed under the old key becomes unreadable — `async`, its delay
+queues and `failed` alike. Before merging such a release: drain `async`, **read `failed` and replay or
+purge it** (`messenger:failed:show` from a Job), and deploy with `DEPLOY_MAINTENANCE_WINDOW=true`
+(`.claude/rules/deploiement.md`): otherwise an old API pod (`RollingUpdate`) still signs under the old key
+while the worker (`Recreate`) already demands the new one, and a contact message sent then is lost — it
+exists only in the queue. Say so in the release notes. A rollback past #444 followed by a redeploy
+recreates unsigned messages, refused as such. `rollback-preprod` undoes `worker` together with `backend`
+(#450): left on the refused release, the worker would demand a key the restored API does not sign with;
+a manual rollback in prod follows the same rule (`k8s/README.md`, « Retour arrière applicatif »).
+**A refused MAC is final** (`EnvelopeMacRefusedException`, a `MessageDecodingFailedException` that
+implements `UnrecoverableExceptionInterface`, point 4 of #450): straight to `failed`, no retry. A retry
+re-encodes the failure under the retrying worker's key, but the original envelope it keeps is still the
+refused one, so no retry ever saves it — not even across a change of key (the reason first given to rule
+point 4 out, « a retry may reach a pod with the other key », was wrong, caught by the reviews of #450);
+the three retries were noise and four decodings per forged message. A failure of the inner
+`PhpSerializer` stays an ordinary, retried `MessageDecodingFailedException`: a worker of another
+version may read it (`DecodingFailureKeepsItsMacTest` runs the container's retry listener on both).
 `AuthenticatedEnvelopeSerializerTest` (an `UnserializationProbe` fixture counts its
-`__unserialize()` calls: zero for a tampered, unsigned-when-required or wrongly signed envelope) and
-`QueuedEnvelopesAreAuthenticatedTest` (the real container's chain, both transports' serializer, a
-round trip through the Doctrine `failed` transport, the interface above) pin it. Accepted limits: an
+`__unserialize()` calls: zero for a tampered, unsigned, wrongly signed or `v1`-signed envelope) and
+`QueuedEnvelopesAreAuthenticatedTest` (the real container's chain, an unsigned envelope refused there,
+both transports' serializer, a round trip through the Doctrine `failed` transport, the interface above)
+pin it. Accepted limits: an
 authenticated message can be replayed by whoever writes into the queue (no nonce — an invitation of the
 current generation replayed kills the link already received); **rotating `APP_SECRET` invalidates every
 queued message** (order in `k8s/README.md`).
@@ -126,8 +145,8 @@ queued message** (order in `k8s/README.md`).
 **`APP_SECRET` never keys an HMAC directly: each use derives its own key** (issue #455).
 `Shared/Infrastructure/Security/SecretKeyDerivation::derive($secret, $context)` is HKDF-SHA256 (RFC 5869,
 32 bytes, an empty secret refused with `EmptyApplicationSecretException`), and each class receiving
-`kernel.secret` declares a versioned `KEY_CONTEXT` (`cp-ghostotof/<use>/v1`): the CSRF cookie signer, the
-login-identifier fingerprint, the Messenger envelope MAC. Keyed by the raw secret and told apart only in
+`kernel.secret` declares a versioned `KEY_CONTEXT` (`cp-ghostotof/<use>/v<n>`): the CSRF cookie signer, the
+login-identifier fingerprint, the Messenger envelope MAC (`v2` since #450, see above). Keyed by the raw secret and told apart only in
 the message (a prefix, or nothing), any future feature returning `HMAC(APP_SECRET, x)` for a client-chosen
 `x` would have been a signing oracle for every other use. Changing a context is a targeted rotation. The
 switch itself changed every login fingerprint and invalidated the `XSRF-TOKEN` cookies already issued, and

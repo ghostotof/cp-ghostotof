@@ -6,7 +6,6 @@ namespace App\Tests\Support;
 
 use App\Shared\Infrastructure\Messenger\AuthenticatedEnvelopeSerializer;
 use LogicException;
-use Psr\Log\NullLogger;
 use SensitiveParameter;
 use stdClass;
 use Symfony\Component\Messenger\Envelope;
@@ -49,6 +48,6 @@ final class SignedEnvelope
             }
         };
 
-        return new AuthenticatedEnvelopeSerializer($fabricatedBody, $secret, true, new NullLogger())->encode(new Envelope(new stdClass()));
+        return new AuthenticatedEnvelopeSerializer($fabricatedBody, $secret)->encode(new Envelope(new stdClass()));
     }
 }
