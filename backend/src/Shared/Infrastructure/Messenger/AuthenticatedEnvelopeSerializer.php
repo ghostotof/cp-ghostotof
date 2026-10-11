@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Shared\Infrastructure\Messenger;
 
 use App\Shared\Infrastructure\Security\SecretKeyDerivation;
-use Psr\Log\LoggerInterface;
 use SensitiveParameter;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\Envelope;
@@ -39,15 +38,19 @@ use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
  * l'enveloppe — une désérialisation, même restreinte — avant le MAC.
  * QueuedEnvelopesAreAuthenticatedTest l'épingle.
  *
- * Deux temps, pour ne perdre aucun message au déploiement : tant que
- * `app.messenger.require_envelope_mac` est faux, une enveloppe **sans** MAC
- * (mise en file par l'ancien code, avant ou pendant le rollout, ou après un
- * retour arrière) reste décodée, avec un `warning` ; un MAC présent mais faux
- * est refusé dans les deux modes. Une release suivante exige le MAC.
+ * Une enveloppe **sans** MAC est refusée comme un MAC faux (issue #450). La
+ * release de #444 l'acceptait encore, avec un `warning`, le temps que les
+ * files se vident des messages de l'ancien code ; ce mode transition est
+ * supprimé, pas désactivé : aucun paramètre ne rouvre l'injection.
  *
- * Un refus est un échec de décodage ({@see MessageDecodingFailedException},
- * qui ne garde que des chaînes) : il suit les réessais du transport, puis
- * `failed`. Son message ne cite que sa cause.
+ * Un refus est un échec de décodage définitif ({@see EnvelopeMacRefusedException},
+ * qui garde l'enveloppe reçue, jamais un objet de son corps) : droit dans
+ * `failed`, sans réessai (issue #450). Son message ne cite que sa cause.
+ * Tout échec de ce décodage, refus du MAC ou échec du sérialiseur interne,
+ * garde l'enveloppe encodée reçue, MAC compris (issue #465) :
+ * {@see \Symfony\Component\Messenger\Middleware\DecodeFailedMessageMiddleware}
+ * la redécode. L'échec qu'un réessai transporte comme message revient tel
+ * quel.
  *
  * Limites acceptées : un message authentifié peut être rejoué par qui écrit
  * dans la file (aucun nonce) ; une rotation d'`APP_SECRET` invalide les
@@ -57,8 +60,13 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
 {
     public const string HEADER = 'X-Envelope-Mac';
 
-    /** Sépare cette clé des autres usages d'`APP_SECRET`. */
-    private const string KEY_CONTEXT = 'cp-ghostotof/messenger-envelope/v1';
+    /**
+     * Sépare cette clé des autres usages d'`APP_SECRET`. En `v2` depuis
+     * l'issue #450 : la transition de #444 a pu re-signer sous `v1` une
+     * enveloppe forgée sans MAC (au réessai, vers `failed`) ; aucune signature
+     * de cette ère n'est plus reconnue.
+     */
+    private const string KEY_CONTEXT = 'cp-ghostotof/messenger-envelope/v2';
 
     private string $key;
 
@@ -68,9 +76,6 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
         #[Autowire(param: 'kernel.secret')]
         #[SensitiveParameter]
         string $secret,
-        #[Autowire(param: 'app.messenger.require_envelope_mac')]
-        private bool $requireMac,
-        private LoggerInterface $logger,
     ) {
         // Un secret vide lève EmptyApplicationSecretException, à la première
         // construction : le premier message mis en file ou lu.
@@ -95,25 +100,54 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
     {
         $mac = $encodedEnvelope['headers'][self::HEADER] ?? null;
 
-        if (null === $mac && !$this->requireMac) {
-            $this->logger->warning('Enveloppe Messenger sans MAC acceptée : transition de l\'issue #444, à exiger à la release suivante.');
-
-            return $this->inner->decode($encodedEnvelope);
-        }
-
         // Un transport peut rendre un en-tête qui n'est pas une chaîne (AMQP,
         // JSON du transport Doctrine) : refusé comme un MAC faux, plutôt
         // qu'une erreur de type qui ferait tomber le worker.
         if (!\is_string($mac) || !hash_equals($this->mac($encodedEnvelope['body']), $mac)) {
-            return MessageDecodingFailedException::wrap(
-                $encodedEnvelope,
-                null === $mac ? 'Enveloppe Messenger sans MAC refusée (issue #444).' : 'Enveloppe Messenger au MAC invalide refusée (issue #444).',
-            );
+            return null === $mac ? EnvelopeMacRefusedException::missing($encodedEnvelope) : EnvelopeMacRefusedException::invalid($encodedEnvelope);
         }
 
-        unset($encodedEnvelope['headers'][self::HEADER]);
+        $authenticated = $encodedEnvelope;
+        unset($authenticated['headers'][self::HEADER]);
+        $decoded = $this->inner->decode($authenticated);
 
-        return $this->inner->decode($encodedEnvelope);
+        // L'échec garde l'enveloppe encodée, que
+        // Symfony\Component\Messenger\Middleware\DecodeFailedMessageMiddleware
+        // redécode par ce sérialiseur, à la réception puis après chaque réessai
+        // (issue #465) : celle d'origine, MAC compris, sinon ce redécodage la
+        // voit « sans MAC » et la refuse : la cause réelle serait remplacée
+        // par ce refus. Le PhpSerializer interne y écrit aussi le corps décodé
+        // du base64, que le MAC ne couvre pas.
+        $failure = $decoded->getMessage();
+        if ($failure instanceof MessageDecodingFailedException && $this->isFailureToDecode($failure, $authenticated)) {
+            return MessageDecodingFailedException::wrap($encodedEnvelope, $failure->getMessage(), $failure->getCode(), $failure->getPrevious());
+        }
+
+        return $decoded;
+    }
+
+    /**
+     * L'échec que le sérialiseur interne vient de rendre pour `$handed`, et non
+     * celui qu'un réessai transporte comme message : ce dernier revient tel
+     * quel, avec son enveloppe d'origine et ses tampons —
+     * {@see \Symfony\Component\Messenger\Stamp\RedeliveryStamp}, qui compte les
+     * réessais, et
+     * {@see \Symfony\Component\Messenger\Stamp\SentToFailureTransportStamp}, que
+     * lit `messenger:failed:*`. Ré-enveloppé, il les perdait — réessais sans
+     * fin — et chaque réessai s'emboîtait dans le suivant.
+     *
+     * {@see \Symfony\Component\Messenger\Transport\Serialization\PhpSerializer}
+     * garde l'enveloppe qu'on lui passe, son corps décodé du base64 le cas
+     * échéant. L'échec transporté garde le corps du message d'origine, que le
+     * corps courant contient : jamais le même.
+     *
+     * @param array{body: string, headers?: array<string, string>} $handed
+     */
+    private function isFailureToDecode(MessageDecodingFailedException $failure, array $handed): bool
+    {
+        $body = $failure->encodedEnvelope['body'] ?? null;
+
+        return $body === $handed['body'] || $body === base64_decode($handed['body'], true);
     }
 
     private function mac(string $body): string

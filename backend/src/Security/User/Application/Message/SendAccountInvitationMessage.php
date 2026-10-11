@@ -34,44 +34,28 @@ use Symfony\Component\Uid\Uuid;
 final readonly class SendAccountInvitationMessage
 {
     /**
-     * Génération que sert un message mis en file avant l'issue #434 : la
-     * migration Version20261011120000 a posé 1 à tout compte déjà invité.
+     * La génération de la première invitation d'un compte
+     * ({@see \App\Security\User\Domain\Entity\CpgUser::markInvited()} part de 0).
      */
-    private const int GENERATION_BEFORE_NUMBERING = 1;
-
-    /**
-     * `null` pour un message mis en file avant l'issue #434 (cf.
-     * __unserialize()) : le constructeur, lui, l'exige toujours.
-     */
-    public ?int $invitationGeneration;
+    private const int FIRST_GENERATION = 1;
 
     public function __construct(
         public string $userId,
         public string $locale,
-        int $invitationGeneration,
+        public int $invitationGeneration,
     ) {
-        $this->invitationGeneration = $invitationGeneration;
-    }
-
-    /**
-     * La génération d'invitation que sert ce message, à comparer à celle du
-     * compte ({@see \App\Security\User\Domain\Entity\CpgUser::wasReinvitedSince()}).
-     * Un message d'avant #434 sert la première : une relance faite depuis le
-     * déploiement l'écarte, il est traité sinon.
-     */
-    public function servedGeneration(): int
-    {
-        return $this->invitationGeneration ?? self::GENERATION_BEFORE_NUMBERING;
     }
 
     /**
      * {@see \Symfony\Component\Messenger\Transport\Serialization\PhpSerializer}
-     * ne repasse pas par le constructeur : sans cette méthode, un message
-     * sérialisé avant l'issue #434 laisserait `invitationGeneration` non
-     * initialisée, et sa lecture planterait le worker. La forme est vérifiée
-     * au passage : un message altéré échoue au décodage, sans atteindre le
-     * handler (il suit alors les réessais du transport, puis le
-     * failure_transport, comme tout échec).
+     * ne repasse pas par le constructeur : cette méthode vérifie la forme du
+     * message qu'il restaure. Un message altéré échoue au décodage, sans
+     * atteindre le handler (il suit alors les réessais du transport, puis le
+     * failure_transport, comme tout échec). Un message sans génération — le
+     * format d'avant l'issue #434, toléré jusqu'à la v0.23.0 — est refusé de
+     * même depuis l'issue #448 : le handler ne saurait pas s'il sert une
+     * invitation dépassée. Une génération inférieure à 1 ne vient pas de
+     * CpgUserInviter (un compte invité a au moins la première).
      *
      * @param array<string, mixed> $data
      */
@@ -81,8 +65,15 @@ final readonly class SendAccountInvitationMessage
         $locale = $data['locale'] ?? null;
         $invitationGeneration = $data['invitationGeneration'] ?? null;
         if (!\is_string($userId) || !Uuid::isValid($userId)
-            || !\is_string($locale) || null === Locale::tryFrom($locale)
-            || (null !== $invitationGeneration && !\is_int($invitationGeneration))) {
+            || !\is_string($locale) || null === Locale::tryFrom($locale)) {
+            throw MalformedAccountInvitationMessageException::fromSerializedData();
+        }
+
+        if (null === $invitationGeneration) {
+            throw MalformedAccountInvitationMessageException::withoutGeneration();
+        }
+
+        if (!\is_int($invitationGeneration) || $invitationGeneration < self::FIRST_GENERATION) {
             throw MalformedAccountInvitationMessageException::fromSerializedData();
         }
 
