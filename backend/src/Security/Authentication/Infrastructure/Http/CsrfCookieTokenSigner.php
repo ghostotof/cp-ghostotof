@@ -22,8 +22,9 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  *
  * La valeur devient `<random>.<hmac>` où `hmac = HMAC-SHA256(random, clé)`, la
  * clé étant dérivée d'`APP_SECRET` pour ce seul usage (issue #455,
- * {@see \App\Shared\Infrastructure\Security\SecretKeyDerivation}). Changer
- * de clé invalide les cookies déjà émis : une écriture répond 403 jusqu'à la
+ * {@see \App\Shared\Infrastructure\Security\SecretKeyDerivation}) ; le HMAC
+ * est calculé et vérifié en temps constant par {@see KeyedMac} (issue #487).
+ * Changer de clé invalide les cookies déjà émis : une écriture répond 403 jusqu'à la
  * reconnexion suivante (au plus la durée de vie du JWT).
  * Sans `APP_SECRET`, l'attaquant ne peut plus produire de couple valide : un
  * cookie forgé est rejeté à la vérification de signature, avant même la

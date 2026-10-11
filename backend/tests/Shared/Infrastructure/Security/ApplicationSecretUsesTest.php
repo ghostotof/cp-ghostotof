@@ -18,7 +18,7 @@ use SplFileInfo;
  * self::KEY_CONTEXT, …)` ou `SecretKeyDerivation::derive($secret,
  * self::KEY_CONTEXT)` — prend exactement `self::KEY_CONTEXT` en deuxième
  * argument, et elle déclare un `KEY_CONTEXT` au format de
- * SecretKeyDerivation::CONTEXT_PATTERN que nulle autre n'emploie. Le secret
+ * {@see SecretKeyDerivation::CONTEXT_PATTERN} que nulle autre n'emploie. Le secret
  * brut ne signe plus rien dans `src/`, et deux usages ne partagent jamais une
  * clé.
  *
@@ -36,8 +36,8 @@ use SplFileInfo;
  *
  * Ne voit pas, limites acceptées : une classe qui transmettrait le secret brut
  * à une autre, qui l'emploierait sans le dériver ; une écriture obfusquée
- * (`getenv('APP_'.'SECRET')`) ; un MAC comparé hors de KeyedMac à `===` après
- * un `sign()` public (aucune heuristique sur `sign` n'y distinguerait un appel
+ * (`getenv('APP_'.'SECRET')`) ; un MAC comparé à `===` après un `sign()` public
+ * plutôt que par `verifies()` (aucune heuristique sur `sign` n'y distinguerait un appel
  * légitime) ; les usages de Symfony lui-même (`login_throttling`,
  * `SigningSerializer`…), qui gardent le secret brut — aucun ne rend sa sortie
  * au client, et HKDF ne l'emploie que comme message, jamais comme clé.
@@ -56,8 +56,8 @@ final class ApplicationSecretUsesTest extends TestCase
 
     /**
      * Les appels qui dérivent une clé du secret, et leur nombre d'arguments :
-     * KeyedMac pour un MAC, la dérivation seule pour un usage qui ne serait
-     * pas un MAC. Le contexte est toujours le deuxième.
+     * `KeyedMac::fromSecret()` pour un MAC, `SecretKeyDerivation::derive()`
+     * seule pour un usage qui ne serait pas un MAC. Le contexte est toujours le deuxième.
      */
     private const array DERIVATIONS = [
         'KeyedMac::fromSecret' => 3,
@@ -71,7 +71,8 @@ final class ApplicationSecretUsesTest extends TestCase
     private const string KEYED_MAC_FILE = '/src/Shared/Infrastructure/Security/KeyedMac.php';
 
     /**
-     * Ce que KeyedMac écrit une fois (issue #487), et les autres façons d'en
+     * Ce que `KeyedMac::sign()` et `verifies()` écrivent une fois (issue #487),
+     * et les autres façons d'en
      * calculer ou d'en comparer un : HMAC d'un fichier, HMAC incrémental,
      * authentificateur de libsodium.
      */

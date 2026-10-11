@@ -109,12 +109,12 @@ final class AuthenticatedCacheMarshaller implements MarshallerInterface
 
     public function unmarshall(string $value): mixed
     {
-        $mac = substr($value, 0, KeyedMac::BINARY_LENGTH);
+        $storedMac = substr($value, 0, KeyedMac::BINARY_LENGTH);
         $payload = substr($value, KeyedMac::BINARY_LENGTH);
 
         // Une valeur plus courte qu'un MAC laisse un `$payload` vide, dont le
         // MAC ne peut pas valoir les octets lus : elle est refusée ici aussi.
-        if (!$this->mac()->verifies($mac, $payload)) {
+        if (!$this->mac()->verifies($storedMac, $payload)) {
             throw CacheValueMacRefusedException::invalid();
         }
 
@@ -122,9 +122,9 @@ final class AuthenticatedCacheMarshaller implements MarshallerInterface
     }
 
     /**
-     * Dérivée à la première lecture ou écriture, jamais au constructeur : le
-     * préchauffage du cache au `docker build` (`cache:clear`, `APP_SECRET`
-     * vide) construit ce service par l'EntityManager et le cache de résultats
+     * La clé est dérivée à la première lecture ou écriture, jamais au
+     * constructeur : le préchauffage du cache au `docker build`
+     * (`cache:clear`, `APP_SECRET` vide) construit ce service par l'EntityManager et le cache de résultats
      * Doctrine sans jamais s'en servir. Un secret vide lève alors
      * {@see \App\Shared\Infrastructure\Security\EmptyApplicationSecretException}
      * à la première utilisation ; l'adaptateur

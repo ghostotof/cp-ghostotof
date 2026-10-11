@@ -123,7 +123,8 @@ final class DerivedMacsSurviveKeyedMacTest extends TestCase
 
     /**
      * La dérivation de #455, écrite ici plutôt qu'appelée : un changement de
-     * SecretKeyDerivation serait lui aussi une rotation.
+     * {@see \App\Shared\Infrastructure\Security\SecretKeyDerivation} serait lui
+     * aussi une rotation.
      */
     private function keyBefore(string $context): string
     {

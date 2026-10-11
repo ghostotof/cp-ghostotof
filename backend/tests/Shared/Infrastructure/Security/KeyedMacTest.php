@@ -56,6 +56,20 @@ final class KeyedMacTest extends TestCase
         );
     }
 
+    /**
+     * Une donnée vide se signe comme une autre : jamais un MAC vide, que
+     * `hash_equals('', '')` accepterait.
+     */
+    #[DataProvider('encodings')]
+    public function testAnEmptyDataGetsANonEmptyMacThatVerifies(MacEncoding $encoding): void
+    {
+        $mac = KeyedMac::fromSecret(TestKeys::material(), self::CONTEXT, $encoding);
+
+        self::assertSame(MacEncoding::Hex === $encoding ? 2 * KeyedMac::BINARY_LENGTH : KeyedMac::BINARY_LENGTH, \strlen($mac->sign('')));
+        self::assertTrue($mac->verifies($mac->sign(''), ''));
+        self::assertFalse($mac->verifies('', ''));
+    }
+
     #[DataProvider('encodings')]
     public function testItsOwnMacVerifies(MacEncoding $encoding): void
     {

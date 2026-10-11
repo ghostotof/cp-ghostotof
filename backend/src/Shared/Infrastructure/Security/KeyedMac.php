@@ -13,12 +13,15 @@ use SensitiveParameterValue;
  * comparaison en temps constant, écrits une fois pour tous les usages du
  * secret.
  *
- * Objet de valeur plutôt que service : chaque usage a sa clé, son contexte et
- * son encodage, fixés à la création, et rien d'autre ne varie. La dérivation
- * a lieu dans {@see self::fromSecret()}, qui refuse un secret vide : l'usage
- * qui veut ce refus au premier calcul plutôt qu'à sa propre construction crée
- * l'objet à ce moment-là (le cache de #474, le cookie CSRF, l'empreinte de
- * login).
+ * Objet immuable plutôt que service : chaque usage a sa clé, son contexte et
+ * son encodage, fixés à la création, et rien d'autre ne varie. Pas un objet
+ * de valeur au sens strict : il porte une clé et n'a pas d'égalité à offrir.
+ * Construit par un **constructeur nommé**, {@see self::fromSecret()}, seul
+ * point d'entrée (le constructeur est privé) : la création dérive la clé et
+ * peut échouer, ce qu'un `new` ne dirait pas. La dérivation y a lieu, et un
+ * secret vide y est refusé : l'usage qui veut ce refus au premier calcul
+ * plutôt qu'à sa propre construction crée l'objet à ce moment-là (le cache de
+ * #474, le cookie CSRF, l'empreinte de login).
  *
  * Un contexte donné produit exactement le MAC que l'usage calculait à la main
  * avant #487 : passer par cette classe n'est pas une rotation.
