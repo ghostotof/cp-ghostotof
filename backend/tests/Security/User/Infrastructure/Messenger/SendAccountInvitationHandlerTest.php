@@ -19,6 +19,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Stringable;
 use Symfony\Bridge\Twig\Mime\BodyRenderer;
 use Symfony\Bridge\Twig\Mime\TemplatedEmail;
 use Symfony\Component\Clock\MockClock;
@@ -394,6 +395,77 @@ final class SendAccountInvitationHandlerTest extends TestCase
 
         self::assertStringContainsString('RfcComplianceException', $exception->getMessage());
         self::assertStringNotContainsString('sentinel', $exception->getMessage());
+    }
+
+    /**
+     * L'échec de l'envoi, et le mot de son message qui dit quelle fabrique de
+     * l'exception de domaine l'a converti.
+     *
+     * @return iterable<string, array{Throwable, string}>
+     */
+    public static function deliveryFailures(): iterable
+    {
+        yield 'transport' => [new TransportException('Connexion impossible'), TransportException::class];
+        yield 'autre échec de l\'envoi' => [new LogicException('rendu impossible'), LogicException::class.', SendAccountInvitationHandlerTest.php:'];
+    }
+
+    /**
+     * Issue #425 : si le retrait du jeton non remis échoue à son tour, c'est
+     * toujours l'échec de l'envoi qui remonte au worker — sa politique de
+     * réessai en dépend —, et le retrait raté est journalisé par sa seule
+     * classe : le message d'une exception Doctrine peut citer le condensat.
+     * L'identifiant du jeton, qui n'est pas un secret, permet de le révoquer
+     * seul.
+     */
+    #[DataProvider('deliveryFailures')]
+    public function testAFailedTokenRemovalNeitherReplacesTheDeliveryFailureNorQuotesItsMessage(Throwable $failure, string $describedAs): void
+    {
+        $savedTokenId = null;
+        $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('save')->willReturnCallback(
+            static function (PasswordSetupToken $token) use (&$savedTokenId): void {
+                $savedTokenId = $token->getId()->toRfc4122();
+            },
+        );
+        $tokenRepository->method('remove')->willThrowException(new LogicException('DELETE … token_hash = sentinel'));
+        $mailer = self::createStub(MailerInterface::class);
+        $mailer->method('send')->willThrowException($failure);
+
+        $logged = [];
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects(self::once())->method('error')->willReturnCallback(
+            static function (string|Stringable $message, array $context) use (&$logged): void {
+                $logged = ['message' => (string) $message, 'context' => $context];
+            },
+        );
+
+        $cpgUserRepository = self::createStub(CpgUserRepositoryInterface::class);
+        $cpgUserRepository->method('findOneById')->willReturn($this->pendingUser('newcomer', 'newcomer@example.com'));
+        $handler = new SendAccountInvitationHandler(
+            $mailer,
+            $cpgUserRepository,
+            $tokenRepository,
+            $this->passthroughEntityManager(),
+            new MockClock(),
+            $logger,
+            self::SENDER_EMAIL,
+            self::FRONTEND_BASE_URL,
+        );
+
+        try {
+            $handler(new SendAccountInvitationMessage(self::USER_ID, 'fr'));
+            self::fail('AccountInvitationDeliveryException aurait dû être levée.');
+        } catch (AccountInvitationDeliveryException $exception) {
+            self::assertNull($exception->getPrevious());
+            self::assertStringContainsString($describedAs, $exception->getMessage());
+        }
+
+        self::assertIsString($savedTokenId);
+        self::assertSame(
+            ['exceptionClass' => LogicException::class, 'userId' => self::USER_ID, 'tokenId' => $savedTokenId],
+            $logged['context'] ?? null,
+        );
+        self::assertStringNotContainsString('sentinel', json_encode($logged, \JSON_THROW_ON_ERROR));
     }
 
     /**
