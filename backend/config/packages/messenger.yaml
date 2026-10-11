@@ -27,6 +27,8 @@ framework:
             # (issue #426, garde SendEmailMessageStaysSynchronousTest).
             'App\Contact\Application\Message\SendContactMessageMessage': async
             'App\Security\User\Application\Message\SendAccountInvitationMessage': async
+            # Issue #470 : le témoin du smoke préprod fait le trajet réel, par la file.
+            'App\Shared\Application\Message\MessengerProbeMessage': async
 
 when@test:
     framework:

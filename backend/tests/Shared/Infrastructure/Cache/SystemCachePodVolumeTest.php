@@ -35,7 +35,7 @@ final class SystemCachePodVolumeTest extends TestCase
     public const string MOUNT_PATH = '/var/www/backend/var/cache/prod/pools/system';
 
     /**
-     * Les sept manifestes qui exécutent l'image backend. La liste est vérifiée
+     * Les huit manifestes qui exécutent l'image backend. La liste est vérifiée
      * dans l'autre sens par testNoOtherManifestRunsTheBackendImage().
      */
     private const array MANIFESTS = [
@@ -46,6 +46,7 @@ final class SystemCachePodVolumeTest extends TestCase
         'migrate-job.yaml',
         'seed-job.yaml',
         'create-user-job.yaml',
+        'messenger-probe-job.yaml',
     ];
 
     /**
