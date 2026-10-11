@@ -173,6 +173,26 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
     }
 
     /**
+     * Issue #447 : l'expiration est atomique comme la consommation. Un jeton
+     * expiré à l'instant de la réclamation n'est pas consommé — à l'échéance
+     * pile non plus, comme `isUsable()`.
+     */
+    public function testClaimRefusesATokenExpiredAtTheClaimInstant(): void
+    {
+        $user = $this->persistUser('jane');
+        $expiresAt = new DateTimeImmutable('2026-10-05 12:00:00');
+        $token = new PasswordSetupToken($user, hash('sha256', 'clear-jane'), $expiresAt);
+        $this->repository->save($token);
+
+        self::assertFalse($this->repository->claim($token, $expiresAt));
+
+        self::assertNull($this->em->getConnection()->fetchOne(
+            'SELECT used_at FROM password_setup_token WHERE id = :id',
+            ['id' => $token->getId()->toRfc4122()],
+        ), 'Un jeton expiré a été consommé.');
+    }
+
+    /**
      * Le cas que la vérification en mémoire (`isUsable()`) laissait passer :
      * deux requêtes lisent le jeton inutilisé, l'autre le consomme entre-temps.
      * L'entité de celle-ci le croit encore libre ; la base, elle, tranche.
