@@ -133,6 +133,18 @@ point 4 out, « a retry may reach a pod with the other key », was wrong, caught
 the three retries were noise and four decodings per forged message. A failure of the inner
 `PhpSerializer` stays an ordinary, retried `MessageDecodingFailedException`: a worker of another
 version may read it (`DecodingFailureKeepsItsMacTest` runs the container's retry listener on both).
+**A body over `AuthenticatedEnvelopeSerializer::MAX_BODY_BYTES` (256 KiB) is refused before its MAC is
+even computed** (issue #469): whoever writes into the broker could publish a body of several MB, HMACed
+whole, then re-encoded into `failed` — enough to loop the worker (`--memory-limit=120M`, 192 Mi). The
+bound was measured, not guessed: the largest contact message the validation allows is 13.5 KB bare and
+28.7 KB after three retries (an `ErrorDetailsStamp` per distinct failure, trace included), an invitation
+0.6 KB and 15.8 KB. A legitimate message over it would be lost like the rest: raise the bound, never add
+an exception to it. The refusal, `EnvelopeTooLargeException` (final, like a refused MAC), **does not keep
+the body**: it keeps a marker (empty body, size in `X-Envelope-Refused-Size`) that the serializer decodes
+back into the same refusal, since `DecodeFailedMessageMiddleware` decodes the kept envelope again and an
+empty unsigned body would otherwise be refused « sans MAC », its real cause lost. The marker
+authenticates nothing and needs not: forged, it only leads to that refusal, and on a non-empty body it is
+ignored.
 `AuthenticatedEnvelopeSerializerTest` (an `UnserializationProbe` fixture counts its
 `__unserialize()` calls: zero for a tampered, unsigned, wrongly signed or `v1`-signed envelope) and
 `QueuedEnvelopesAreAuthenticatedTest` (the real container's chain, an unsigned envelope refused there,
