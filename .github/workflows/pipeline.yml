@@ -784,7 +784,7 @@ jobs:
     needs: [release-version, deploy-preprod]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # habituel ~1 min 30 ; rollouts bornés à 60 s, curl à 15 s, Job témoin à 180 s (+ ~35 s de wait-rollout.sh)
+    timeout-minutes: 15 # habituel ~1 min 30 ; rollouts bornés à 60 s, curl à 15 s, Job témoin attendu 300 s (+ ~35 s de wait-rollout.sh)
     # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
     # l'environnement, et sa politique de branche borne d'où ils sont lisibles
     # (audit 2026-09-16, A4).

@@ -31,6 +31,8 @@ set -euo pipefail
 printf '%s\n' "$*" >> "$FAKE_DIR/args"
 case " $* " in
   *" apply -f - "*) cat > "$FAKE_DIR/applied.yaml" ;;
+  *" get deployment/backend "*) echo "${FAKE_BACKEND_IMAGES:-ghcr.io/example/backend:1.2.3-abcdef0-preprod nginx:1.29}" ;;
+  *" get deployment/worker "*) echo "${FAKE_WORKER_IMAGES:-ghcr.io/example/backend:1.2.3-abcdef0-preprod}" ;;
   *" logs "*) echo "[ERROR] Le worker n'a pas consommé le message témoin en 90 s." ;;
 esac
 FAKE
@@ -68,18 +70,34 @@ else
   fail "le manifeste appliqué porte l'image et plus aucun placeholder" "$(grep -n 'image:\|\${' "$ok/applied.yaml")"
 fi
 
-if grep -qx 'preprod job/backend-messenger-probe --timeout 180' "$ok/wait-args"; then
+if grep -qx 'preprod job/backend-messenger-probe --timeout 300' "$ok/wait-args"; then
   pass "l'attente vise le Job, au-delà de son activeDeadlineSeconds"
 else
   fail "l'attente vise le Job, au-delà de son activeDeadlineSeconds" "$(cat "$ok/wait-args")"
 fi
 
 deadline=$(sed -n 's/^  activeDeadlineSeconds: \([0-9]*\)$/\1/p' "$(dirname "$SCRIPT")/../k8s/base/messenger-probe-job.yaml")
-if [ -n "$deadline" ] && [ "$deadline" -lt 180 ]; then
+if [ -n "$deadline" ] && [ "$deadline" -lt 300 ]; then
   pass "activeDeadlineSeconds ($deadline) reste sous l'attente du script"
 else
   fail "activeDeadlineSeconds reste sous l'attente du script" "lu : « $deadline »"
 fi
+
+# --- Un Deployment ne tourne pas l'image de la release ---------------------
+# Le Job prouve le trajet depuis l'image de la release ; il ne prouve rien des
+# pods réels si `backend` ou `worker` en tournent une autre (relecture de #470).
+for d in backend worker; do
+  stale="$TMP/stale-$d"
+  upper=$(printf '%s' "$d" | tr '[:lower:]' '[:upper:]')
+  if env "FAKE_${upper}_IMAGES=ghcr.io/example/backend:1.2.2-0000000-preprod nginx:1.29" FAKE_DIR="$stale" SMOKE_PROBE_KUBECTL="$TMP/kubectl" SMOKE_PROBE_WAIT="$TMP/wait" \
+      bash -c 'mkdir -p "$FAKE_DIR"; "$0" preprod ghcr.io/example/backend:1.2.3-abcdef0-preprod > "$FAKE_DIR/out" 2>&1' "$SCRIPT"; then
+    fail "$d sur une autre image fait échouer le smoke" "sorti en 0"
+  elif grep -q "deployment/$d" "$stale/out" && ! grep -q 'apply -f -' "$stale/args"; then
+    pass "$d sur une autre image fait échouer le smoke, avant tout Job"
+  else
+    fail "$d sur une autre image fait échouer le smoke, avant tout Job" "$(cat "$stale/out")"
+  fi
+done
 
 # --- Le témoin n'est pas consommé ------------------------------------------
 ko="$TMP/ko"

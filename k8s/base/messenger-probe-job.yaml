@@ -23,9 +23,12 @@ metadata:
 spec:
   # Une sonde qui échoue doit faire échouer le smoke, pas réessayer.
   backoffLimit: 0
-  # Démarrage du pod plus les 90 s de la sonde, sous les 180 s que le pipeline
-  # attend (tools/smoke-messenger-probe.sh).
-  activeDeadlineSeconds: 150
+  # Compté dès la création du Job : ordonnancement, deux pulls de l'image
+  # (initContainer et conteneur, `Always`), démarrage, puis les 90 s de la
+  # sonde. 150 s laissaient ~55 s aux pulls, une release saine aurait été
+  # annulée sur un GHCR lent (relecture de #470). Sous les 300 s que le
+  # pipeline attend (tools/smoke-messenger-probe.sh).
+  activeDeadlineSeconds: 240
   # Une heure pour relire `kubectl logs job/backend-messenger-probe`.
   ttlSecondsAfterFinished: 3600
   template:

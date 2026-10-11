@@ -30,8 +30,8 @@ final class MessengerProbeJobManifestTest extends TestCase
 
     /**
      * Le Job doit finir avant que le pipeline ne cesse de l'attendre
-     * (`wait-rollout.sh … --timeout 180`), sonde comprise : 90 s d'attente,
-     * plus le démarrage du pod.
+     * (`wait-rollout.sh … --timeout 300`), sonde comprise : 90 s d'attente,
+     * plus les pulls et le démarrage du pod.
      */
     public function testTheJobIsBoundedAndNeverRetried(): void
     {
@@ -39,7 +39,7 @@ final class MessengerProbeJobManifestTest extends TestCase
         self::assertIsArray($spec);
 
         self::assertSame(0, $spec['backoffLimit'] ?? null);
-        self::assertSame(150, $spec['activeDeadlineSeconds'] ?? null);
+        self::assertSame(240, $spec['activeDeadlineSeconds'] ?? null);
     }
 
     /** Les mêmes Secrets que l'API, donc la même clé de MAC qu'elle. */
