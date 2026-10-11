@@ -43,18 +43,14 @@ use ReflectionClass;
  *
  * Ni l'un ni l'autre ne voit les classes anonymes, les closures, les
  * fonctions fléchées ni les fonctions hors classe : aucune n'a de nom que la
- * réflexion puisse charger sans exécuter le code.
+ * réflexion puisse charger sans exécuter le code. Les classes anonymes et les
+ * fonctions hors classe sont donc interdites dans `src/` (issue #432,
+ * {@see \App\Tests\Shared\NoAnonymousClassNorFreeFunctionTest}).
  */
 final class DeclaredClasses
 {
     /** @var array<string, list<class-string>> répertoire réel => déclarations */
     private static array $classLikes = [];
-
-    /**
-     * Les jetons qui ouvrent une déclaration nommée. `class` ne suffit pas :
-     * précédé de `new`, il ouvre une classe anonyme, de `::`, il lit un nom.
-     */
-    private const array CLASS_LIKE = [\T_CLASS, \T_INTERFACE, \T_TRAIT, \T_ENUM];
 
     /**
      * Les classes du répertoire qui implémentent ou étendent un type donné.
@@ -199,7 +195,8 @@ final class DeclaredClasses
         foreach ($tokens as $index => $token) {
             if ($token->is(\T_NAMESPACE)) {
                 $namespace = $tokens[$index + 1]->text ?? '';
-            } elseif ($token->is(self::CLASS_LIKE)
+            } elseif ($token->is(PhpSources::CLASS_LIKE)
+                // `class` ne suffit pas : précédé de `new`, il ouvre une classe anonyme, de `::`, il lit un nom.
                 && (!isset($tokens[$index - 1]) || !$tokens[$index - 1]->is([\T_NEW, \T_DOUBLE_COLON]))
                 && isset($tokens[$index + 1]) && $tokens[$index + 1]->is(\T_STRING)) {
                 $names[] = ltrim($namespace.'\\'.$tokens[$index + 1]->text, '\\');

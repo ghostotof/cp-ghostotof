@@ -93,9 +93,11 @@ use ReflectionParameter;
  * Le remède est donc d'en faire des méthodes, que la réflexion atteint :
  * c'est ce que #433 a fait de ces deux rappels, passés en
  * `$this->validatePassword(...)`. Au relevé de #421 (2026-10-10), aucune
- * closure de `src/` n'a de paramètre au nom de secret, et `src/` n'a ni
- * classe anonyme ni fonction hors classe. Une variable capturée par `use`
- * (le `$clearToken` de
+ * closure de `src/` n'a de paramètre au nom de secret. Les classes anonymes
+ * et les fonctions hors classe, elles, sont interdites dans `src/` depuis
+ * #432 ({@see \App\Tests\Shared\NoAnonymousClassNorFreeFunctionTest}) : il ne
+ * reste hors d'atteinte que les closures et les fonctions fléchées. Une
+ * variable capturée par `use` (le `$clearToken` de
  * {@see \App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler})
  * n'est pas un argument : elle ne figure dans aucune trace.
  */
