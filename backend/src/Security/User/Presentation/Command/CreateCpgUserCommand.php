@@ -274,13 +274,7 @@ final class CreateCpgUserCommand extends Command
         }
 
         try {
-            $password = $io->askQuestion($this->hiddenQuestion('Mot de passe', static function (mixed $value): string {
-                if (!\is_string($value) || '' === $value) {
-                    throw InvalidConsoleAnswerException::empty('Le mot de passe');
-                }
-
-                return $value;
-            }));
+            $password = $io->askQuestion($this->hiddenQuestion('Mot de passe', $this->nonEmptyPassword(...)));
         } catch (InvalidConsoleAnswerException $exception) {
             $io->error($exception->getMessage());
 
@@ -363,9 +357,31 @@ final class CreateCpgUserCommand extends Command
         $question->setHidden(true);
         $question->setHiddenFallback(false);
         $question->setTrimmable(false);
-        $question->setNormalizer(static fn (mixed $value): mixed => \is_string($value) ? preg_replace('/\r?\n\z/', '', $value) : $value);
+        $question->setNormalizer($this->withoutLineEnding(...));
         $question->setValidator($validator);
 
         return $question;
+    }
+
+    /**
+     * Le normaliseur des questions masquées. Une méthode plutôt qu'une
+     * closure (issue #433) : son paramètre reçoit le mot de passe tapé, et
+     * {@see \App\Tests\Security\User\PlainPasswordInputsTest} n'exige
+     * `#[SensitiveParameter]` que de ce que la réflexion atteint — une closure
+     * lui échappait sous le nom générique `$value`.
+     */
+    private function withoutLineEnding(#[SensitiveParameter] mixed $password): mixed
+    {
+        return \is_string($password) ? preg_replace('/\r?\n\z/', '', $password) : $password;
+    }
+
+    /** Le validateur de la première question : même raison d'être une méthode (issue #433). */
+    private function nonEmptyPassword(#[SensitiveParameter] mixed $password): string
+    {
+        if (!\is_string($password) || '' === $password) {
+            throw InvalidConsoleAnswerException::empty('Le mot de passe');
+        }
+
+        return $password;
     }
 }

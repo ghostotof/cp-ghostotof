@@ -87,8 +87,11 @@ use ReflectionParameter;
  * aveugle au cas qui le motiverait : un rappel reçoit sa valeur sous le nom
  * générique de son contrat (le validateur et le normaliseur de mot de passe de
  * {@see \App\Security\User\Presentation\Command\CreateCpgUserCommand} la
- * reçoivent en `$value`), qu'aucun recensement par nom ne voit ; il devrait en
- * outre réécrire par jetons le filtre de type et l'exclusion des condensats,
+ * recevaient en `$value`, jusqu'à ce que #433 en fasse des méthodes que la
+ * réflexion atteint, passées en `$this->nonEmptyPassword(...)` : c'est le
+ * remède quand un rappel reçoit un secret), qu'aucun recensement par nom ne
+ * voit ; il devrait en outre réécrire par jetons le filtre de type et
+ * l'exclusion des condensats,
  * sans prototype à consulter. Au relevé de #421 (2026-10-10), aucune
  * closure de `src/` n'a de paramètre au nom de secret, et `src/` n'a ni
  * classe anonyme ni fonction hors classe. Une variable capturée par `use`
