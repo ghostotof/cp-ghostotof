@@ -133,6 +133,22 @@ point 4 out, « a retry may reach a pod with the other key », was wrong, caught
 the three retries were noise and four decodings per forged message. A failure of the inner
 `PhpSerializer` stays an ordinary, retried `MessageDecodingFailedException`: a worker of another
 version may read it (`DecodingFailureKeepsItsMacTest` runs the container's retry listener on both).
+**An envelope over `AuthenticatedEnvelopeSerializer::MAX_ENVELOPE_BYTES` (256 KiB, body and headers, header
+names included) is refused before its MAC is even computed** (issue #469): whoever writes into the broker
+could publish several MB — in the body, or in a header, which a MAC refusal kept and copied into `failed`
+too — HMACed whole, then re-encoded into `failed`: enough to loop the worker (`--memory-limit=120M`,
+192 Mi). The bound was measured on the real messages; the figures live in the constant's docblock only.
+A message grows by one `ErrorDetailsStamp` per distinct failure (Symfony empties its trace), so a
+legitimate one could only cross the bound after many distinct failures and `failed:retry` cycles: it would
+then be lost, accepted — raise the bound, never add an exception to it. The refusal,
+`EnvelopeTooLargeException` (final, like a refused MAC), **keeps nothing of the envelope**: a marker (empty
+body, size in `X-Envelope-Refused-Size`) that the serializer decodes back into the same refusal, since
+`DecodeFailedMessageMiddleware` decodes the kept envelope again and an empty unsigned body would otherwise be
+refused « sans MAC », its real cause lost. The marker counts only on an empty body and above the bound;
+forged, it only yields that refusal with a made-up size. Its **trace is emptied** at creation (reflection on
+`Exception::$trace`): without `zend.exception_ignore_args`, as in dev, the trace kept `decode()`'s and the
+transports' arguments — the body — and copied it into `failed` (measured: 800 KB for a 300 KB body).
+**The transport has already loaded the whole message** before `decode()` runs: the broker-side cap is #477.
 `AuthenticatedEnvelopeSerializerTest` (an `UnserializationProbe` fixture counts its
 `__unserialize()` calls: zero for a tampered, unsigned, wrongly signed or `v1`-signed envelope) and
 `QueuedEnvelopesAreAuthenticatedTest` (the real container's chain, an unsigned envelope refused there,
