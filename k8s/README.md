@@ -803,8 +803,8 @@ vérifié par le worker avant toute désérialisation. Chaque usage en dérive s
 changer le `KEY_CONTEXT` d'une seule classe est une rotation ciblée de cet usage, sans toucher au
 secret. Une rotation invalide les `XSRF-TOKEN` déjà émis : une écriture, déconnexion comprise, répond
 403 ; l'interface ramène alors à la page de connexion, et un nouveau login remplace les cookies. Une enveloppe signée avec l'ancien secret est refusée par un worker qui a
-le nouveau (échec de décodage, réessais, puis `failed`, où elle reste refusée et part avec la purge
-des 30 jours). Ordre, en période calme :
+le nouveau (échec de décodage définitif, droit dans `failed` sans réessai depuis l'issue #450, où
+elle reste refusée et part avec la purge des 30 jours). Ordre, en période calme :
 
 1. Vider les files : la file `async` est consommée par le worker ; lire `failed`
    (`messenger:failed:show`, depuis un Job sur le modèle de `create-user-job.yaml`, jamais
@@ -820,6 +820,42 @@ relancer. Seul le worker vérifie ; l'API ne décode jamais. Accepter l'ancienne
 le temps d'une rotation éviterait cette perte : non fait, à reprendre si les rotations deviennent
 fréquentes. Garder des secrets distincts en préprod et en prod, sans quoi un message capturé dans
 l'une serait accepté par l'autre.
+
+### Cas du `KEY_CONTEXT` des enveloppes Messenger
+
+Changer `KEY_CONTEXT` dans `AuthenticatedEnvelopeSerializer` (passé de `…/v1` à `…/v2` par l'issue
+#450) invalide, comme une rotation d'`APP_SECRET`, **tout** MAC d'enveloppe déjà émis : `async`, ses
+files de délai et `failed`. Un refus de MAC est définitif (`EnvelopeMacRefusedException`, sans
+réessai) et `messenger:failed:retry` ne le sauve pas. Ce n'est donc pas une « rotation ciblée » sans
+conséquence. Avant le merge de la release :
+
+1. Vider `async` et lire `failed`, rejouer ou purger ce qui doit l'être (étape 1 ci-dessus) : une
+   ligne laissée là devient illisible.
+2. Déployer avec la **fenêtre de maintenance** (`DEPLOY_MAINTENANCE_WINDOW=true`, cf.
+   `.claude/rules/deploiement.md`) : `backend` et `worker` passent à 0 avant la migration et
+   repartent ensemble sous la nouvelle clé. Sans elle, le backend en `RollingUpdate` garde un ancien
+   pod qui signe sous l'ancienne clé pendant que le worker, en `Recreate`, exige déjà la nouvelle :
+   un message de contact envoyé à ce moment est perdu (il n'existe que dans la file). Prix de la
+   fenêtre : l'API répond 503 le temps du basculement, le frontend reste servi. Retirer la variable
+   juste après le déploiement en prod.
+
+## Retour arrière applicatif
+
+Il n'y a pas de retour arrière automatique en prod (`rollback-preprod` n'existe qu'en préprod) :
+**préférer une correction en avant**, par une nouvelle branche de release. S'il faut défaire à la
+main :
+
+- **`backend` et `worker` ensemble, toujours** :
+  `kubectl -n $NS rollout undo deployment/backend`, puis `deployment/worker`, puis
+  `deployment/frontend`. Le worker lit ce que l'API met en file, sous la même clé de MAC : défaire
+  l'un sans l'autre (une clé `messenger-envelope/v2` face à `v1`) envoie chaque message dans
+  `failed`, sans rattrapage. Lire `failed` ensuite (`messenger:failed:show` depuis un Job).
+- **Jamais vers une version antérieure à #450 (v0.23.0 et avant)** sans l'avoir décidé : ces images
+  acceptent encore une enveloppe **sans** MAC (mode transition de #444) et rouvrent l'injection
+  d'objet par la file tant qu'elles tournent. Au redéploiement suivant, ce qu'elles ont mis en file
+  sans MAC est refusé.
+- `rollout undo` ne rejoue jamais le `down()` d'une migration : le schéma reste celui de la release
+  défaite (`.claude/rules/deploiement.md`, migration avant le rollout).
 
 ## Administration de la base (Adminer)
 
