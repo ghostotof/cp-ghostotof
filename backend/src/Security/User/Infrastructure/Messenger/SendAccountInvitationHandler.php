@@ -14,6 +14,7 @@ use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Shared\Infrastructure\Mailer\MailerSendingFailure;
 use App\Shared\Infrastructure\Mailer\MailerTransportFailure;
 use DateInterval;
+use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
@@ -111,10 +112,32 @@ final readonly class SendAccountInvitationHandler
         // (issue #425) : le compte reste alors sans lien valable jusqu'au
         // réessai suivant, une relance comprise — choix assumé, un lien
         // qu'on relance est souvent perdu ou douteux.
-        $this->entityManager->wrapInTransaction(function () use ($user, $token): void {
+        $issued = $this->entityManager->wrapInTransaction(function () use ($user, $token, $message): bool {
+            // Verrou du compte (issue #435) : en READ COMMITTED, la purge d'un
+            // second consommateur (un `messenger:consume failed` lancé à la
+            // main pendant que le worker tourne) ne voyait pas le jeton non
+            // commité du premier, et deux jetons restaient utilisables. Le
+            // second attend ici le commit du premier, puis relit le compte :
+            // les contrôles faits plus haut, hors verrou, sont refaits sur
+            // l'état que ce verrou garantit.
+            $this->entityManager->refresh($user, LockMode::PESSIMISTIC_WRITE);
+            if (!$user->isPendingActivation() || $user->wasReinvitedSince($message->servedGeneration())) {
+                return false;
+            }
+
             $this->passwordSetupTokenRepository->deleteForUser($user);
             $this->passwordSetupTokenRepository->save($token);
+
+            return true;
         });
+
+        if (true !== $issued) {
+            $this->logger->warning('Invitation ignorée : compte activé ou invitation plus récente, constaté sous verrou.', [
+                'userId' => $message->userId,
+            ]);
+
+            return;
+        }
 
         try {
             $this->mailer->send($this->invitationEmail($user, $recipientEmail, $locale, $clearToken));

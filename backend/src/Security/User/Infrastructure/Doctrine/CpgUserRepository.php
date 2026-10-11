@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Security\User\Infrastructure\Doctrine;
 
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
@@ -12,6 +13,7 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\Persistence\ManagerRegistry;
 use SensitiveParameter;
 use Symfony\Bridge\Doctrine\Security\User\UserLoaderInterface;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Security\Core\Exception\UnsupportedUserException;
 use Symfony\Component\Security\Core\Exception\UserNotFoundException;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
@@ -123,6 +125,28 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
     {
         $this->getEntityManager()->persist($user);
         $this->getEntityManager()->flush();
+    }
+
+    /**
+     * Un `UPDATE … RETURNING` : PostgreSQL verrouille la ligne le temps de
+     * l'écriture, donc deux relances concurrentes s'enchaînent et lisent
+     * chacune la génération que l'autre vient de poser — là où avancer le
+     * compteur en mémoire puis l'écrire en valeur absolue perdait l'une des
+     * deux (issue #435).
+     */
+    public function advanceInvitationGeneration(CpgUser $user, DateTimeImmutable $invitedAt): int
+    {
+        $generation = $this->getEntityManager()->getConnection()->fetchOne(
+            'UPDATE cpg_user SET invitation_generation = invitation_generation + 1, invited_at = :invitedAt WHERE id = :id RETURNING invitation_generation',
+            ['invitedAt' => $invitedAt, 'id' => $user->getId()],
+            ['invitedAt' => Types::DATETIMETZ_IMMUTABLE, 'id' => UuidType::NAME],
+        );
+
+        if (!\is_int($generation)) {
+            throw CpgUserNotFoundException::forId($user->getId());
+        }
+
+        return $generation;
     }
 
     public function remove(CpgUser $user): void

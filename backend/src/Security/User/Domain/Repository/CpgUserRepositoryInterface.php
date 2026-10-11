@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Security\User\Domain\Repository;
 
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use DateTimeImmutable;
 use SensitiveParameter;
 use Symfony\Component\Uid\Uuid;
@@ -54,6 +55,16 @@ interface CpgUserRepositoryInterface
     public function countByRole(string $role): int;
 
     public function save(CpgUser $user): void;
+
+    /**
+     * Avance la génération d'invitation du compte et pose `invited_at`, en une
+     * seule écriture atomique (issue #435) : deux relances concurrentes
+     * reçoivent deux générations distinctes, quel que soit l'état que chacune
+     * avait chargé. Rend la génération ainsi posée.
+     *
+     * @throws CpgUserNotFoundException si le compte a disparu entre-temps
+     */
+    public function advanceInvitationGeneration(CpgUser $user, DateTimeImmutable $invitedAt): int;
 
     public function remove(CpgUser $user): void;
 }

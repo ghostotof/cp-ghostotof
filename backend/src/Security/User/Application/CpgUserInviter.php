@@ -80,10 +80,13 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
         // Round de correction (C1, issue #238) : la relance *est* une nouvelle
         // invitation au sens de la purge automatique — le délai de 30 jours
         // doit repartir de zéro, pas continuer de courir depuis le tout
-        // premier envoi. Même ordre que invite() : on marque et on sauvegarde
-        // avant de dispatcher.
-        $user->markInvited($this->clock->now());
-        $this->cpgUserRepository->save($user);
+        // premier envoi. Même ordre que invite() : on écrit avant de
+        // dispatcher. La génération est avancée en base, atomiquement (issue
+        // #435) : sur un double clic, deux requêtes chargent la même
+        // génération, et l'avancer en mémoire publiait deux messages de même
+        // génération, que le handler ne savait plus départager.
+        $now = $this->clock->now();
+        $user->markReinvited($now, $this->cpgUserRepository->advanceInvitationGeneration($user, $now));
 
         $this->dispatchInvitation($user, $locale);
         $this->auditLogger->userReinvited($user);
