@@ -13,6 +13,7 @@ use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Shared\Infrastructure\Mailer\MailerSendingFailure;
 use App\Shared\Infrastructure\Mailer\MailerTransportFailure;
+use DateInterval;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
@@ -42,8 +43,12 @@ use Throwable;
 #[AsMessageHandler]
 final readonly class SendAccountInvitationHandler
 {
-    /** Durée de validité du jeton de définition de mot de passe. */
-    private const string TOKEN_LIFETIME = '+48 hours';
+    /**
+     * Durée de validité du jeton de définition de mot de passe, en heures
+     * écoulées : `modify('+48 hours')` compte en heure murale et donnait 49 h
+     * ou 47 h à Paris la veille d'un changement d'heure (issue #445).
+     */
+    private const string TOKEN_LIFETIME = 'PT48H';
 
     public function __construct(
         private MailerInterface $mailer,
@@ -97,7 +102,7 @@ final readonly class SendAccountInvitationHandler
         $token = new PasswordSetupToken(
             $user,
             hash('sha256', $clearToken),
-            $this->clock->now()->modify(self::TOKEN_LIFETIME),
+            $this->clock->now()->add(new DateInterval(self::TOKEN_LIFETIME)),
         );
 
         // Un seul jeton actif à la fois : la purge de l'ancien et l'insertion

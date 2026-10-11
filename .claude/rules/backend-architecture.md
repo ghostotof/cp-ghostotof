@@ -71,6 +71,13 @@ hours early, irreversible). The trade-off: it hides a typing mistake instead of 
 mapping guard above is what reveals it. The same test checks `SHOW timezone` equals
 `date_default_timezone_get()`: changing `date.timezone` in `php.*.ini` means a migration that moves the
 database with it. A value read back therefore carries Paris's offset; still compare instants.
+**A duration in hours is added as elapsed hours** (issue #445): `add(new DateInterval('PT48H'))`, never
+`modify('+48 hours')`, which counts wall-clock hours in PHP's zone — measured under PHP 8.5, 49 h on the eve
+of the autumn change and 47 h on the eve of the spring one (the invitation link announced as "valid 48 hours",
+the tech watch's 36-hour freshness threshold). `modify()` stays exact for minutes, and a number of days is
+meant as calendar days. `tests/Shared/ElapsedDurationsTest.php` walks the tokens of `src/` and fails on
+any string literal adding or subtracting hours (`'+48 hours'` in a constant, `'+%d hours'` for `sprintf()`),
+comments excluded.
 
 **Every queued envelope is authenticated before anything unserializes it** (issue #444). Both queues —
 `async` on RabbitMQ, `failed` in the Doctrine table — are read back by `PhpSerializer`, that is

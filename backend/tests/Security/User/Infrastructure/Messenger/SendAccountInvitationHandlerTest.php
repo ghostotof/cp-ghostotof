@@ -609,6 +609,39 @@ final class SendAccountInvitationHandlerTest extends TestCase
         });
     }
 
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function eveOfAClockChange(): iterable
+    {
+        yield 'veille du passage à l\'heure d\'hiver' => ['2026-10-24 12:00:00'];
+        yield 'veille du passage à l\'heure d\'été' => ['2026-03-28 12:00:00'];
+    }
+
+    /**
+     * Issue #445 : le lien annoncé « valable 48 heures » vit 48 heures
+     * écoulées, même quand une heure murale disparaît ou se répète entre-temps
+     * (`modify('+48 hours')` donnait 49 h ou 47 h à Paris).
+     */
+    #[DataProvider('eveOfAClockChange')]
+    public function testTheLinkLivesFortyEightElapsedHoursAcrossAClockChange(string $issuedAt): void
+    {
+        $savedToken = null;
+        $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('save')->willReturnCallback(
+            static function (PasswordSetupToken $token) use (&$savedToken): void {
+                $savedToken = $token;
+            },
+        );
+        $clock = new MockClock($issuedAt, 'Europe/Paris');
+        $handler = $this->handler($this->pendingUser('newcomer', 'newcomer@example.com'), $tokenRepository, self::createStub(MailerInterface::class), $clock);
+
+        $handler(self::invitationMessage('fr'));
+
+        self::assertInstanceOf(PasswordSetupToken::class, $savedToken);
+        self::assertSame(48 * 3600, $savedToken->getExpiresAt()->getTimestamp() - $clock->now()->getTimestamp());
+    }
+
     private function handler(
         CpgUser $user,
         PasswordSetupTokenRepositoryInterface $tokenRepository,
