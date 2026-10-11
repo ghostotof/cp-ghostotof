@@ -387,6 +387,7 @@ jobs:
           tools/tests/rotate-deployer-token.test.sh
           tools/tests/wait-external-secrets.test.sh
           tools/tests/wait-rollout.test.sh
+          tools/tests/smoke-messenger-probe.test.sh
           tools/tests/security-headers.test.sh
           tools/tests/check-workflow-timeouts.test.sh
           tools/tests/git-config-isolation.test.sh
@@ -779,10 +780,11 @@ jobs:
   # stop humain (spec 0006, D6/D7) — plus d'approbation d'environnement.
   # ---------------------------------------------------------------------------
   smoke-test-preprod:
-    needs: [deploy-preprod]
+    # release-version : pour le tag de l'image que tourne le Job témoin (#470).
+    needs: [release-version, deploy-preprod]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
-    timeout-minutes: 10 # habituel ~30 s ; rollouts bornés à 60 s, curl à 15 s
+    timeout-minutes: 15 # habituel ~1 min 30 ; rollouts bornés à 60 s, curl à 15 s, Job témoin à 180 s (+ ~35 s de wait-rollout.sh)
     # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
     # l'environnement, et sa politique de branche borne d'où ils sont lisibles
     # (audit 2026-09-16, A4).
@@ -828,6 +830,16 @@ jobs:
           kubectl -n preprod rollout status deployment/postgres --timeout=60s
           kubectl -n preprod rollout status deployment/rabbitmq --timeout=60s
           kubectl -n preprod rollout status deployment/worker --timeout=60s
+      # Issue #470 : un worker `Ready` ne prouve pas qu'il décode ce que l'API
+      # signe. Un écart de clé de MAC (KEY_CONTEXT mal déployé, worker resté sur
+      # l'ancienne release) laissait la préprod verte, chaque message dans
+      # `failed`. Un Job tourne l'image de la release avec les Secrets du
+      # backend, met en file un message témoin sans effet de bord, et échoue si
+      # le worker ne l'a pas traité en 90 s — donc rollback-preprod.
+      - name: Un message témoin passe de l'API au worker
+        env:
+          TAG: ${{ needs.release-version.outputs.image_tag }}
+        run: tools/smoke-messenger-probe.sh preprod "$IMAGE_BACKEND:$TAG-preprod"
 
   # Gate bloquant : une régression de sécurité en préprod laisse la PR vers
   # `main` rouge (check requis du ruleset), donc pas de merge, donc pas de prod.
