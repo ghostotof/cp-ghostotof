@@ -116,6 +116,6 @@ final readonly class WatchedProductAdministrator implements WatchedProductAdmini
             return 0;
         }
 
-        return $catalogue[array_key_last($catalogue)]->getPosition() + 1;
+        return array_last($catalogue)->getPosition() + 1;
     }
 }
