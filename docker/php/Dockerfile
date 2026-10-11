@@ -188,9 +188,16 @@ COPY --chown=${APP_UID}:${APP_GID} backend/ ./
 
 RUN set -eux; \
     # Les scripts sautés au stage `vendor` sont rejoués maintenant que le code
-    # est présent (génération de .env.local.php, cache warmup…).
+    # est présent (cache:clear, qui préchauffe, et assets:install). Jamais de
+    # `|| true` ici (issue #474) : il avalait l'échec du préchauffage, et
+    # l'image partait sans cache système, que l'initContainer
+    # `seed-cache-system` copie dans chaque pod — aucun pod ne démarrait. Le
+    # `find` exige au moins un fichier dans ce répertoire : PhpFilesAdapter y
+    # crée son sous-répertoire de namespace avant toute écriture.
     composer dump-autoload --no-dev --classmap-authoritative; \
-    composer run-script --no-dev post-install-cmd || true; \
+    composer run-script --no-dev post-install-cmd; \
+    find var/cache/prod/pools/system -type f | grep -q . \
+        || { echo 'Cache système non préchauffé : seed-cache-system échouerait (issue #474).' >&2; exit 1; }; \
     # Compilation des assets : uniquement en mode full-stack (AssetMapper).
     # En mode API, il n'y a aucun asset à compiler.
     if [ "${BACKEND_FLAVOR}" = "full" ]; then \

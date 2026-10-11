@@ -154,7 +154,7 @@ reaches every adapter given `cache.default_marshaller` (filesystem, APCu, Redis,
 today, only the Doctrine DBAL pools; `cache.system` (PhpFilesAdapter) does not use it. **The key is derived
 on first use, never in the constructor**: the `docker build` warm-up (`cache:clear`, empty `APP_SECRET`)
 builds the service through the EntityManager, and an eager derivation failed it behind the Dockerfile's
-`|| true` (caught in review). Measured: ≈ 2 µs per round trip. **A value signed under another key is
+`|| true` (caught in review); since #474 such a failure fails the image build (`.claude/rules/images-docker.md`). Measured: ≈ 2 µs per round trip. **A value signed under another key is
 refused**: the deployment of #468, an `APP_SECRET` rotation or a new context drop the database cache, and
 during the rollout old and new pods keep refusing and overwriting each other's values, so limiter counters
 restart at each alternation. Say so in the release notes. A refused row is never deleted:
