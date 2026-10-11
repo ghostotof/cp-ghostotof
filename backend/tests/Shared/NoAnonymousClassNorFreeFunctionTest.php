@@ -73,6 +73,10 @@ final class NoAnonymousClassNorFreeFunctionTest extends TestCase
         yield 'classe anonyme dans les arguments d\'une classe anonyme' => ["<?php\nnamespace App;\n\$a = new class(function () { return new class {}; }) {\n    public function m(): void {}\n};\n", ['3: classe anonyme', '3: classe anonyme']];
         yield 'fonction au nom de mot-clé' => ["<?php\nnamespace App;\nfunction readonly(): void {}\n", ['3: fonction readonly()']];
         yield 'fonction déclarée sous condition' => ["<?php\nnamespace App;\nif (\$a) { function helper(): void {} }\n", ['3: fonction helper()']];
+        // L'adaptation de trait se ferme par `}`, sans `;` : l'instruction `use` s'arrête là.
+        yield 'fonction après une adaptation de trait vide' => ["<?php\nnamespace App;\nfinal class A { use T {} }\nfunction helper(): void {}\n", ['4: fonction helper()']];
+        // Un argument nommé `class:` n'attend aucun corps : la closure qui suit n'en est pas un.
+        yield 'fonction dans une closure après un argument nommé class' => ["<?php\nnamespace App;\nf(class: 1, g: function (): void {\n    function inner(): void {}\n});\n", ['4: fonction inner()']];
         yield 'les deux dans un fichier' => ["<?php\nnamespace App;\nfunction helper(): void {}\n\$a = new class {};\n", ['3: fonction helper()', '4: classe anonyme']];
 
         // Ce que la garde laisse passer.
@@ -85,6 +89,7 @@ final class NoAnonymousClassNorFreeFunctionTest extends TestCase
         yield 'fonction fléchée' => ["<?php\nnamespace App;\n\$f = fn (\$value) => \$value;\n", []];
         yield 'nom de classe lu par ::class' => ["<?php\nnamespace App;\n\$a = Foo::class;\n\$b = \$o::class;\n", []];
         yield 'import de fonction' => ["<?php\nnamespace App;\nuse function strlen;\n", []];
+        yield 'arguments nommés class et function' => ["<?php\nnamespace App;\nf(class: 1, function: 2, interface: 3);\n", []];
         yield 'import groupé de fonctions' => ["<?php\nnamespace App;\nuse Foo\\{Bar, function baz, function qux};\n", []];
         // Une accolade d'interpolation se referme comme une autre : la méthode suivante reste une méthode.
         yield 'accolade d\'interpolation dans une méthode' => ["<?php\nnamespace App;\nfinal class A {\n    public function m(): string { return \"{\$this->a}\"; }\n    public function n(): void {}\n}\n", []];

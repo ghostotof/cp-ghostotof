@@ -8,7 +8,7 @@ use PhpToken;
 
 /**
  * Recense les classes anonymes et les fonctions hors classe d'un répertoire
- * (issue #432) : ce que {@see DeclaredClasses} ne voit pas, et donc ce
+ * (issue #432) : ce que {@see \App\Tests\Support\DeclaredClasses} ne voit pas, et donc ce
  * qu'aucune garde de signatures ne lit.
  *
  * Une fonction est hors classe quand l'accolade qui l'entoure n'est pas le
@@ -21,15 +21,13 @@ use PhpToken;
  * Lu par jetons et non par un grep : `new readonly class`, `new #[Attr]
  * class` et `Foo::class` ne se distinguent qu'au jeton qui suit `class`, et
  * une méthode d'une fonction déclarée dans une méthode qu'à l'accolade qui
- * l'entoure. Le même parcours sert à {@see MisqualifiedNativeCalls}, qui
+ * l'entoure. Le même parcours sert à
+ * {@see \App\Tests\Support\MisqualifiedNativeCalls}, qui
  * exempte les homonymes de fonctions natives déclarés par le fichier : une
  * seule définition de « hors classe ».
  */
 final class AnonymousClassesAndFreeFunctions
 {
-    /** Les jetons qui ouvrent une déclaration dont l'accolade suivante est le corps. */
-    private const array CLASS_LIKE = [\T_CLASS, \T_INTERFACE, \T_TRAIT, \T_ENUM];
-
     /**
      * @return list<string> `chemin:ligne: nature` de chaque déclaration, triés pour un diagnostic stable
      */
@@ -87,12 +85,12 @@ final class AnonymousClassesAndFreeFunctions
         // `function` importe une fonction, il n'en déclare aucune.
         $inUseStatement = false;
         foreach ($tokens as $index => $token) {
-            if ($token->is(self::CLASS_LIKE) && !self::readsAClassName($tokens, $index)) {
+            if ($token->is(PhpSources::CLASS_LIKE) && !self::declaresNothing($tokens, $index)) {
                 $pendingBodies[] = $parentheses;
                 if ($token->is(\T_CLASS) && !self::isNamed($tokens, $index)) {
                     $found[] = [$token->line, null];
                 }
-            } elseif ($token->is(\T_FUNCTION)) {
+            } elseif ($token->is(\T_FUNCTION) && !self::declaresNothing($tokens, $index)) {
                 $name = $inUseStatement ? null : self::declaredFunctionName($tokens, $index);
                 // Au niveau du fichier, la pile est vide et end() rend false : hors classe aussi.
                 if (null !== $name && !end($braces)) {
@@ -104,6 +102,11 @@ final class AnonymousClassesAndFreeFunctions
             } elseif (';' === $token->text) {
                 $inUseStatement = false;
             } elseif (PhpSources::opensBrace($token)) {
+                // Hors d'un import groupé (`Foo\{`), l'accolade ouvre l'adaptation
+                // d'un trait (`use T { … }`), qui se ferme sans `;` : l'import est fini.
+                if ($inUseStatement && true !== ($tokens[$index - 1] ?? null)?->is(\T_NS_SEPARATOR)) {
+                    $inUseStatement = false;
+                }
                 $opensBody = end($pendingBodies) === $parentheses;
                 $braces[] = $opensBody;
                 if ($opensBody) {
@@ -122,15 +125,18 @@ final class AnonymousClassesAndFreeFunctions
     }
 
     /**
-     * `Foo::class` ou `$o::class` : `class` lit un nom, il n'ouvre rien.
+     * Un mot-clé qui ne déclare rien : `Foo::class` ou `$o::class` lit un nom,
+     * et un argument nommé (`f(class: 1)`, `f(function: 2)`) n'est qu'une
+     * étiquette.
      *
      * @param list<PhpToken> $tokens
      */
-    private static function readsAClassName(array $tokens, int $index): bool
+    private static function declaresNothing(array $tokens, int $index): bool
     {
         $previous = $tokens[$index - 1] ?? null;
+        $next = $tokens[$index + 1] ?? null;
 
-        return null !== $previous && $previous->is(\T_DOUBLE_COLON);
+        return (null !== $previous && $previous->is(\T_DOUBLE_COLON)) || ':' === $next?->text;
     }
 
     /**

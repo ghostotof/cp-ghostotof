@@ -8,7 +8,8 @@ use Doctrine\DBAL\Driver\API\ExceptionConverter;
 use Doctrine\DBAL\Driver\Middleware\AbstractDriverMiddleware;
 
 /**
- * Le pilote enveloppé par {@see DriverErrorRedactionMiddleware} : tout ce
+ * Le pilote enveloppé par
+ * {@see \App\Shared\Infrastructure\Doctrine\DriverErrorRedactionMiddleware} : tout ce
  * qu'il fait passe au pilote d'origine, sauf la conversion des exceptions,
  * confiée à {@see RedactingExceptionConverter}.
  *
