@@ -142,11 +142,28 @@ authenticated message can be replayed by whoever writes into the queue (no nonce
 current generation replayed kills the link already received); **rotating `APP_SECRET` invalidates every
 queued message** (order in `k8s/README.md`).
 
+**Every value of a database cache pool is authenticated before anything unserializes it** (issue #468,
+ADR 0005 D8). `cache_items` is read back by `DefaultMarshaller`, `unserialize()` with every class allowed:
+whoever writes into the table (Adminer, an SQL injection, the database credentials) had an object
+injection into the API (rate limiters) and the worker (Messenger's restart signal). The envelope MAC above
+never covered it. `Shared/Infrastructure/Cache/AuthenticatedCacheMarshaller` decorates
+`cache.default_marshaller` (`#[AsDecorator]`): a binary HMAC-SHA256 (32 bytes, key from `SecretKeyDerivation`,
+context `cp-ghostotof/cache-value/v1`) prefixes each value, and a wrong or missing MAC throws
+`CacheValueMacRefusedException`, which the adapter turns into a cache miss logged `warning`. That decoration
+covers exactly the Doctrine DBAL pools (`cache.app`, the Doctrine result cache, the restart signal, the HTTP
+client pool); `cache.system` (PhpFilesAdapter) does not use that marshaller. Measured: ≈ 2 µs per round
+trip. **Each deployment that changes the key** (the first one, an `APP_SECRET` rotation, a new context)
+drops the whole database cache once: rate-limiter counters start over. Say so in the release notes.
+Accepted limit: the MAC does not cover the row's key, so a signed value can be copied to another key or
+replayed, rolling a limiter counter back (a quota denial, never code execution). `SodiumMarshaller` was
+ruled out: a sealed box authenticates nothing once its public key is known. `AuthenticatedCacheMarshallerTest`
+and `CacheItemsAreAuthenticatedTest` (a real tampered row, every database pool's marshaller) pin it.
+
 **`APP_SECRET` never keys an HMAC directly: each use derives its own key** (issue #455).
 `Shared/Infrastructure/Security/SecretKeyDerivation::derive($secret, $context)` is HKDF-SHA256 (RFC 5869,
 32 bytes, an empty secret refused with `EmptyApplicationSecretException`), and each class receiving
 `kernel.secret` declares a versioned `KEY_CONTEXT` (`cp-ghostotof/<use>/v<n>`): the CSRF cookie signer, the
-login-identifier fingerprint, the Messenger envelope MAC (`v2` since #450, see above). Keyed by the raw secret and told apart only in
+login-identifier fingerprint, the Messenger envelope MAC (`v2` since #450, see above), the database cache value MAC (#468). Keyed by the raw secret and told apart only in
 the message (a prefix, or nothing), any future feature returning `HMAC(APP_SECRET, x)` for a client-chosen
 `x` would have been a signing oracle for every other use. Changing a context is a targeted rotation. The
 switch itself changed every login fingerprint and invalidated the `XSRF-TOKEN` cookies already issued, and

@@ -309,3 +309,47 @@ Conséquences :
 - Leçon, dans le prolongement de celle de D1 : **un commentaire qui affirme qu'un chemin n'est
   que lu est une hypothèse à vérifier dans les journaux d'un vrai pod**, pas une propriété du
   code.
+
+## Amendement du 2026-10-11 : les valeurs de `cache_items` sont authentifiées (issue #468)
+
+**Constat** (audit de sécurité de #450, F4). D1 a mis le cache en base. Le revers : `cache_items`
+est relue par `DefaultMarshaller`, soit `unserialize()` avec toutes les classes permises. Qui écrit
+dans la table (Adminer, une injection SQL, les identifiants de la base, que porte le même Secret
+qu'`APP_SECRET`) obtenait une injection d'objet dans l'API, par les limiteurs de débit, et dans
+le worker, par le signal de redémarrage de Messenger. Le MAC des enveloppes (#444, #450) ne
+couvrait que les files.
+
+**D8 — Toute valeur d'un pool en base porte un MAC, vérifié avant `unserialize()`.**
+`Shared/Infrastructure/Cache/AuthenticatedCacheMarshaller` décore `cache.default_marshaller` :
+il préfixe chaque valeur d'un HMAC-SHA256 binaire (32 octets) sous une clé dérivée
+d'`APP_SECRET` par `SecretKeyDerivation` (contexte `cp-ghostotof/cache-value/v1`). Une valeur au MAC
+absent ou faux lève `CacheValueMacRefusedException`, que l'adaptateur traite comme une absence de
+cache, journalisée en `warning` sur le canal `cache`. Cette décoration couvre exactement les pools
+Doctrine DBAL (`cache.app`, le cache de résultats Doctrine, le signal de redémarrage du worker,
+le pool du client HTTP). `cache.system` (PhpFilesAdapter) ne passe pas par ce marshaller.
+
+Mesuré : environ 2 µs de plus par aller-retour sur l'état d'un limiteur (1,2 → 3,3 µs, conteneur
+de dev), pour 32 octets par ligne. C'est négligeable devant l'aller-retour PostgreSQL.
+
+Alternatives écartées :
+
+- **Consigner la limite comme acceptée.** Sans code, mais l'injection restait ouverte à qui
+  atteint la base, la cible la plus exposée du cluster (Adminer en dev, `DATABASE_URL` dans le
+  Secret du backend).
+- **`SodiumMarshaller` de Symfony.** Une boîte scellée chiffre pour une clé publique : elle
+  n'authentifie l'auteur que tant que cette clé publique reste secrète, ce qui n'est pas sa
+  garantie. Le besoin est l'intégrité, pas la confidentialité, et une paire de clés de plus
+  serait à gérer.
+
+Conséquences :
+
+- **Au premier déploiement, chaque valeur déjà en table est refusée une fois** : les compteurs des
+  limiteurs repartent de zéro, un `warning` « Failed to fetch » par clé lue. Il en va de même à
+  chaque rotation d'`APP_SECRET` ou changement du contexte. À écrire dans la note de release.
+- Limite acceptée : le MAC ne couvre pas l'identifiant de la ligne. Qui écrit dans la table peut
+  recopier une valeur authentifiée d'une clé à une autre, ou la rejouer plus tard : au pire, un
+  compteur de limiteur revient à un état antérieur. C'est un déni de quota, jamais une exécution
+  de code.
+- `AuthenticatedCacheMarshallerTest` (marshaller seul) et `CacheItemsAreAuthenticatedTest`
+  (conteneur, vraie ligne altérée) pincent la décision. Le second vérifie que chaque pool en base
+  a bien ce marshaller.
