@@ -85,7 +85,9 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
      * 124 Ko. Un `ErrorDetailsStamp` ne garde pas de trace (Symfony la vide) :
      * c'est le nombre d'échecs distincts qui fait grossir un message. La borne
      * reste anodine face aux 120 Mo du worker. Seule source de ces chiffres :
-     * la règle backend-architecture y renvoie.
+     * la règle backend-architecture y renvoie. Le broker plafonne un corps à
+     * quatre fois cette borne (`max_message_size`, k8s/base/rabbitmq.conf,
+     * issue #477) : RabbitMqMessageSizeCapTest lie les deux valeurs.
      */
     public const int MAX_ENVELOPE_BYTES = 256 * 1024;
 

@@ -57,6 +57,12 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/rabbitmq
+            # Issue #477 : un fichier dans conf.d, par subPath, à côté du
+            # 10-defaults.conf de l'image (max_message_size).
+            - name: conf
+              mountPath: /etc/rabbitmq/conf.d/20-cp-ghostotof.conf
+              subPath: rabbitmq.conf
+              readOnly: true
           resources:
             requests:
               cpu: 250m
@@ -102,6 +108,9 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: rabbitmq-data
+        - name: conf
+          configMap:
+            name: rabbitmq-conf
 ---
 apiVersion: v1
 kind: Service

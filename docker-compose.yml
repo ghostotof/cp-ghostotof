@@ -149,6 +149,9 @@ services:
       - "127.0.0.1:${RABBITMQ_UI_PORT}:15672"  # interface d'administration web
     volumes:
       - mq_data:/var/lib/rabbitmq
+      # Issue #477 : la configuration de la prod (max_message_size), un seul
+      # fichier pour les deux, monté à côté du 10-defaults.conf de l'image.
+      - ./k8s/base/rabbitmq.conf:/etc/rabbitmq/conf.d/20-cp-ghostotof.conf:ro
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s

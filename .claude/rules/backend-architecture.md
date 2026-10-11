@@ -148,7 +148,8 @@ refused « sans MAC », its real cause lost. The marker counts only on an empty 
 forged, it only yields that refusal with a made-up size. Its **trace is emptied** at creation (reflection on
 `Exception::$trace`): without `zend.exception_ignore_args`, as in dev, the trace kept `decode()`'s and the
 transports' arguments — the body — and copied it into `failed` (measured: 800 KB for a 300 KB body).
-**The transport has already loaded the whole message** before `decode()` runs: the broker-side cap is #477.
+**The transport has already loaded the whole message** before `decode()` runs: RabbitMQ caps a body at
+1 MiB at publication (`max_message_size`, issue #477, `.claude/rules/deploiement.md`).
 `AuthenticatedEnvelopeSerializerTest` (an `UnserializationProbe` fixture counts its
 `__unserialize()` calls: zero for a tampered, unsigned, wrongly signed or `v1`-signed envelope) and
 `QueuedEnvelopesAreAuthenticatedTest` (the real container's chain, an unsigned envelope refused there,
