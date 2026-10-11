@@ -1440,10 +1440,13 @@ de fusionner la release :
    ```
    Le volume projeté `kube-api-access-xxxxx` ne doit plus exister, et donc
    `/var/run/secrets/kubernetes.io/serviceaccount` non plus.
-7. **Enfin seulement**, fusionner la release : `deploy-prod` posera les mêmes
-   labels et rejouera le même redémarrage sur la prod. Attention, la pipeline
-   n'attend en prod que `backend` et `frontend` — surveiller `postgres`,
-   `rabbitmq` et `worker` à la main avec la boucle de l'étape 4 sur `prod`.
+7. **Enfin seulement**, fusionner la PR de la release vers `main` : `deploy-prod`
+   posera les mêmes labels et rejouera le même redémarrage sur la prod. Il
+   attend, comme `deploy-preprod`, le rollout de `postgres`, `rabbitmq` et
+   `worker` en plus de `backend`/`frontend` (`tools/wait-rollout.sh`, issue
+   #353, cf. l'encadré de l'étape 4) : un workload à état qui ne remonte pas
+   met le job en échec. Lire tout de même leurs journaux (étape 5, sur `prod`) :
+   en prod, aucun retour arrière automatique ne suit.
 
 ### Retour arrière
 

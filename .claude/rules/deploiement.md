@@ -106,7 +106,9 @@ paths:
   (`tools/wait-rollout.sh`, see below). **Fail-closed**: a failed Job exits before the
   `apply`, so the previous release keeps serving on the old schema, which is exactly the safe state
   (PostgreSQL DDL is transactional and Doctrine wraps each migration in its own transaction) — fix the
-  migration, cut a new tag. The discipline that makes this order safe, to respect in every migration:
+  migration by a new commit on the `release/*` branch (a `fix/*` PR targeting it; every push redeploys
+  preprod), or by a hotfix release once `main` has moved — never a tag by hand, the pipeline tags.
+  The discipline that makes this order safe, to respect in every migration:
   a column added `NOT NULL` has a default or is filled by the migration itself
   (`Version20260914170000` is the model); **never drop or rename a column in the release that stops
   reading it**, only in the next one; a Messenger message in flight at deploy time must stay readable
@@ -206,13 +208,13 @@ paths:
   database, then let `kubectl apply -k .` restore the manifests' replica counts and the existing
   rollout waits (`tools/wait-rollout.sh`) wait for the new pods. The frontend keeps serving; only the API returns 503 through
   the ingress for the window's duration. It is opt-in specifically so an ordinary release stays
-  zero-downtime — **set it before pushing the release tag and unset it right after the production
-  deploy**: a forgotten `true` turns every subsequent deploy into a downtime deploy for no reason.
+  zero-downtime — **set it before the first push of the `release/*` branch (every push deploys
+  preprod) and unset it right after the production deploy**: a forgotten `true` turns every subsequent deploy into a downtime deploy for no reason.
   **Fail-closed on a migration failure**: the script exits before reaching `kubectl apply -k .`, so
   `backend`/`worker` stay at 0 replicas until someone intervenes — deliberate, never serve traffic
   against a half-migrated schema. To recover: if the migration wrote nothing, `kubectl apply -k .` on
   that overlay redeploys the previous image against the still-old schema; otherwise fix the migration
-  and cut a new tag.
+  through the release branch (or a hotfix release), as above — the pipeline tags, never a hand.
 - **`watch-refresh-cronjob.yaml` *is* in `kustomization.yaml`'s `resources:`** — the opposite of
   `migrate-job.yaml` above, and deliberately: it wants kustomize's image transformer, since it must run the
   same image as the Deployment. It used to be **the only object in the cluster that makes outbound calls
