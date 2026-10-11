@@ -97,8 +97,8 @@ which decorates it (FrameworkBundle signs `RunCommandMessage` and `RunProcessMes
 the envelope's type — a restricted unserialization, but one — before the MAC. **Never rely on `#[AsMessageHandler(sign: true)]` for this**: Messenger's `SigningSerializer`
 only requires a signature for the listed types, and an unsigned envelope of any other type (a `stdClass`
 carrying a gadget) is still unserialized — measured in the review of #444, a `Process::__unserialize()`
-ran that way. A refusal is a decoding failure (`MessageDecodingFailedException`, holding the received
-envelope, never an object of its body, and quoting its cause, never the body): transport retries, then `failed`. **Any decoding failure it returns keeps the
+ran that way. A refusal is a decoding failure (`EnvelopeMacRefusedException`, holding the received
+envelope, never an object of its body, and quoting its cause, never the body): final, straight to `failed` (see below). **Any decoding failure it returns keeps the
 original encoded envelope, MAC included** (issue #465): `DecodeFailedMessageMiddleware` decodes that
 envelope again with the same serializer, at reception and after every retry, so a failure of the inner
 `PhpSerializer` — which wraps the envelope it was handed, header already removed — is re-wrapped around
@@ -116,13 +116,23 @@ unsigned envelope was decoded, then re-signed by `encode()` on retry and stored 
 MAC, gadget included (reproduced in the audit of #465, also through `__PHP_Incomplete_Class`, which
 defers the real class to the first decoding after signature) — no inspection of the queues can tell it
 from a legitimate message, a new key invalidates every signature of that era. The cost, at each change
-of the context: a message in flight during the rollout is signed under one key and read under the other,
-so it ends in `failed`, from which `failed:retry` cannot save it — drain `async` before merging such a
-release, and say so in its notes. A rollback past #444 followed by a redeploy recreates unsigned
-messages, refused as such. `rollback-preprod` undoes `worker` together with `backend` (#450): left on
-the refused release, the worker would demand a key the restored API does not sign with. A refusal is
-deliberately **not** made unrecoverable (point 4 of #450, ruled out): during a rollout of the key it is
-not deterministic, a retry may reach a pod with the other key.
+of the context, **every** envelope signed under the old key becomes unreadable — `async`, its delay
+queues and `failed` alike. Before merging such a release: drain `async`, **read `failed` and replay or
+purge it** (`messenger:failed:show` from a Job), and deploy with `DEPLOY_MAINTENANCE_WINDOW=true`
+(`.claude/rules/deploiement.md`): otherwise an old API pod (`RollingUpdate`) still signs under the old key
+while the worker (`Recreate`) already demands the new one, and a contact message sent then is lost — it
+exists only in the queue. Say so in the release notes. A rollback past #444 followed by a redeploy
+recreates unsigned messages, refused as such. `rollback-preprod` undoes `worker` together with `backend`
+(#450): left on the refused release, the worker would demand a key the restored API does not sign with;
+a manual rollback in prod follows the same rule (`k8s/README.md`, « Retour arrière applicatif »).
+**A refused MAC is final** (`EnvelopeMacRefusedException`, a `MessageDecodingFailedException` that
+implements `UnrecoverableExceptionInterface`, point 4 of #450): straight to `failed`, no retry. A retry
+re-encodes the failure under the retrying worker's key, but the original envelope it keeps is still the
+refused one, so no retry ever saves it — not even across a change of key (the reason first given to rule
+point 4 out, « a retry may reach a pod with the other key », was wrong, caught by the reviews of #450);
+the three retries were noise and four decodings per forged message. A failure of the inner
+`PhpSerializer` stays an ordinary, retried `MessageDecodingFailedException`: a worker of another
+version may read it (`DecodingFailureKeepsItsMacTest` runs the container's retry listener on both).
 `AuthenticatedEnvelopeSerializerTest` (an `UnserializationProbe` fixture counts its
 `__unserialize()` calls: zero for a tampered, unsigned, wrongly signed or `v1`-signed envelope) and
 `QueuedEnvelopesAreAuthenticatedTest` (the real container's chain, an unsigned envelope refused there,

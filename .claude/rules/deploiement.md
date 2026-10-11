@@ -132,7 +132,11 @@ paths:
   a key is always safe. And `rollback-preprod` runs only when `deploy-preprod` *succeeded*
   (`needs.deploy-preprod.result == 'success'`): `failure()` is true as soon as any *ancestor* job
   fails, so a deploy stopped before its rollout used to trigger `rollout undo` anyway and roll the
-  still-serving release back to the one before it.
+  still-serving release back to the one before it. It undoes **`backend`, `worker` and `frontend`**,
+  each attempted even when another fails (`|| status=1`, the job stays red — under `bash -e` the first
+  failure skipped the rest): the worker reads what the API queues under the same envelope MAC key, so
+  undoing one without the other sends every message to `failed` (issue #450). A manual rollback in
+  prod follows the same rule, see `k8s/README.md`, « Retour arrière applicatif ».
 - **Every deploy wait fails early on a container that will not start** (issue #353). The `Deploy`
   steps never call `kubectl rollout status` or `kubectl wait --for=condition=complete` directly:
   `tools/wait-rollout.sh <ns> deployment/NAME|job/NAME --timeout N` cuts kubectl's own wait into
@@ -172,8 +176,11 @@ paths:
   `tools/tests/wait-rollout.test.sh`.
 - **`DEPLOY_MAINTENANCE_WINDOW` (repository variable) opts a deploy into a maintenance window** — added
   for v0.11.0's irreversible integer→UUID primary-key migrations, where the new code cannot read the old
-  schema **and vice versa**, so no pod may serve a request while the migration runs. That is the only
-  case that needs it since #175; an additive migration doesn't. When it equals `true`,
+  schema **and vice versa**, so no pod may serve a request while the migration runs. Since #175 it is
+  needed in two cases only: such a migration, and a change of the Messenger envelope `KEY_CONTEXT`
+  (issue #450, `AuthenticatedEnvelopeSerializer`), where an old API pod still signing under the old key
+  meets a worker already demanding the new one — a refused MAC is final, the message is lost. An
+  additive migration doesn't. When it equals `true`,
   `deploy-preprod`/`deploy-prod` in `pipeline.yml` patch `backend` and `worker` to `replicas: 0` (a
   `kubectl patch` on `spec.replicas` — the deployer `Role` has no `deployments/scale` subresource, so
   never `kubectl scale`), wait for their pods to disappear, run `migrate-job.yaml` against the quiet
