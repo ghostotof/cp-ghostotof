@@ -47,7 +47,9 @@ use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
  *
  * Un refus est un échec de décodage ({@see MessageDecodingFailedException},
  * qui ne garde que des chaînes) : il suit les réessais du transport, puis
- * `failed`. Son message ne cite que sa cause.
+ * `failed`. Son message ne cite que sa cause. Tout échec rendu, refus du MAC
+ * ou échec du sérialiseur interne, garde l'enveloppe encodée d'origine, MAC
+ * compris (issue #465) : DecodeFailedMessageMiddleware la redécode.
  *
  * Limites acceptées : un message authentifié peut être rejoué par qui écrit
  * dans la file (aucun nonce) ; une rotation d'`APP_SECRET` invalide les
@@ -111,9 +113,22 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
             );
         }
 
-        unset($encodedEnvelope['headers'][self::HEADER]);
+        $authenticated = $encodedEnvelope;
+        unset($authenticated['headers'][self::HEADER]);
+        $decoded = $this->inner->decode($authenticated);
 
-        return $this->inner->decode($encodedEnvelope);
+        // L'échec garde l'enveloppe encodée, que DecodeFailedMessageMiddleware
+        // redécode par ce sérialiseur, à la réception puis après chaque réessai
+        // (issue #465) : celle d'origine, MAC compris, sinon ce redécodage la
+        // voit « sans MAC » — faux warning en transition, cause réelle
+        // remplacée par un refus une fois le MAC exigé. PhpSerializer y écrit
+        // aussi le corps décodé du base64, que le MAC ne couvre pas.
+        $failure = $decoded->getMessage();
+        if ($failure instanceof MessageDecodingFailedException) {
+            return MessageDecodingFailedException::wrap($encodedEnvelope, $failure->getMessage(), $failure->getCode(), $failure->getPrevious());
+        }
+
+        return $decoded;
     }
 
     private function mac(string $body): string
