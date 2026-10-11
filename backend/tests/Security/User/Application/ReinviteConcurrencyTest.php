@@ -7,6 +7,9 @@ namespace App\Tests\Security\User\Application;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Application\CpgUserInviterInterface;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
+use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
+use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Tests\Support\ChildPhpProcess;
 use Doctrine\ORM\EntityManagerInterface;
@@ -65,6 +68,81 @@ final class ReinviteConcurrencyTest extends KernelTestCase
         self::assertSame(2, (int) $matches[1]);
         self::assertSame(3, $this->lastPublishedGeneration(), 'La relance du premier worker a repris la génération du second : mise à jour perdue (#435).');
         self::assertSame(3, $this->storedGeneration($userId->toRfc4122()));
+    }
+
+    /**
+     * L'écriture atomique ne suffit pas si l'unité de travail garde l'ancienne
+     * génération pour état d'origine : un `flush()` ultérieur réécrirait la
+     * sienne en valeur absolue, par-dessus celle d'une relance concurrente
+     * (seconde passe d'audit de #435).
+     */
+    public function testAFlushAfterTheResendDoesNotOverwriteAConcurrentGeneration(): void
+    {
+        $container = self::getContainer();
+        $container->get(CpgUserInviterInterface::class)->invite('newcomer@example.com', Locale::FR);
+        $container->get(EntityManagerInterface::class)->clear();
+        $userId = $this->userIdOf('newcomer@example.com');
+        $user = $container->get(CpgUserRepositoryInterface::class)->findOneById($userId);
+        self::assertNotNull($user);
+
+        $container->get(CpgUserInviterInterface::class)->reinvite($user, Locale::FR);
+        (new Process(ChildPhpProcess::command(self::REINVITE_SCRIPT, $userId->toRfc4122()), env: $this->childEnvironment(), timeout: self::TIMEOUT_SECONDS))->mustRun();
+        $container->get(EntityManagerInterface::class)->flush();
+
+        self::assertSame(3, $this->storedGeneration($userId->toRfc4122()), 'Un flush après la relance a écrasé la génération d\'une relance concurrente (#435).');
+    }
+
+    /**
+     * Le contrôle « en attente » est porté par l'écriture elle-même : un compte
+     * activé entre le chargement et la relance n'est pas relancé (409), et sa
+     * génération ne bouge pas.
+     */
+    public function testResendingAnAccountActivatedMeanwhileIsRefused(): void
+    {
+        [$stale, $userId] = $this->staleCopyOfANewInvitation();
+        self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement(
+            'UPDATE cpg_user SET activated_at = now() WHERE id = :id',
+            ['id' => $userId],
+        );
+
+        try {
+            self::getContainer()->get(CpgUserInviterInterface::class)->reinvite($stale, Locale::FR);
+            self::fail('AccountNotAwaitingActivationException attendue.');
+        } catch (AccountNotAwaitingActivationException) {
+        }
+
+        self::assertSame(1, $this->storedGeneration($userId));
+    }
+
+    /**
+     * Un compte supprimé entre le chargement et la relance : 404, rien d'écrit.
+     */
+    public function testResendingAnAccountDeletedMeanwhileIsANotFound(): void
+    {
+        [$stale, $userId] = $this->staleCopyOfANewInvitation();
+        self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement(
+            'DELETE FROM cpg_user WHERE id = :id',
+            ['id' => $userId],
+        );
+
+        $this->expectException(CpgUserNotFoundException::class);
+
+        self::getContainer()->get(CpgUserInviterInterface::class)->reinvite($stale, Locale::FR);
+    }
+
+    /**
+     * @return array{CpgUser, string}
+     */
+    private function staleCopyOfANewInvitation(): array
+    {
+        $container = self::getContainer();
+        $container->get(CpgUserInviterInterface::class)->invite('newcomer@example.com', Locale::FR);
+        $container->get(EntityManagerInterface::class)->clear();
+        $userId = $this->userIdOf('newcomer@example.com');
+        $stale = $container->get(CpgUserRepositoryInterface::class)->findOneById($userId);
+        self::assertNotNull($stale);
+
+        return [$stale, $userId->toRfc4122()];
     }
 
     private function userIdOf(string $email): Uuid

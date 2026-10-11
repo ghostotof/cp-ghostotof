@@ -14,6 +14,7 @@ use App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler;
 use App\Tests\Support\DrivesTheMailerChain;
 use ArrayObject;
 use DateTimeImmutable;
+use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use LogicException;
 use Monolog\Handler\TestHandler;
@@ -667,10 +668,6 @@ final class SendAccountInvitationHandlerTest extends TestCase
     }
 
     /**
-     * EntityManager dont seule wrapInTransaction() est utile ici : elle exécute
-     * la fermeture reçue, comme le ferait une vraie transaction validée.
-     */
-    /**
      * Issue #435 : les contrôles sont refaits sous le verrou du compte. Une
      * relance commitée pendant que ce message attendait le verrou le rend
      * périmé : aucun jeton, aucun e-mail, un warning.
@@ -700,12 +697,21 @@ final class SendAccountInvitationHandlerTest extends TestCase
         self::assertTrue($logs->hasWarningThatContains('constaté sous verrou'));
     }
 
+    /**
+     * EntityManager dont seules wrapInTransaction() et la connexion sont utiles
+     * ici : la transaction exécute la fermeture reçue, comme une vraie
+     * transaction validée, et le verrou du compte trouve sa ligne (#435).
+     */
     private function passthroughEntityManager(): EntityManagerInterface&Stub
     {
         $entityManager = self::createStub(EntityManagerInterface::class);
         $entityManager->method('wrapInTransaction')->willReturnCallback(
             static fn (callable $func): mixed => $func($entityManager),
         );
+        // Le verrou du compte (issue #435) trouve la ligne.
+        $connection = self::createStub(Connection::class);
+        $connection->method('fetchOne')->willReturn(1);
+        $entityManager->method('getConnection')->willReturn($connection);
 
         return $entityManager;
     }

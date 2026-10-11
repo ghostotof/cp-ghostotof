@@ -14,11 +14,11 @@ use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Shared\Infrastructure\Mailer\MailerSendingFailure;
 use App\Shared\Infrastructure\Mailer\MailerTransportFailure;
 use DateInterval;
-use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use SensitiveParameter;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Bridge\Twig\Mime\TemplatedEmail;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
@@ -120,7 +120,26 @@ final readonly class SendAccountInvitationHandler
             // second attend ici le commit du premier, puis relit le compte :
             // les contrôles faits plus haut, hors verrou, sont refaits sur
             // l'état que ce verrou garantit.
-            $this->entityManager->refresh($user, LockMode::PESSIMISTIC_WRITE);
+            //
+            // Attente bornée : la console n'a pas le `lock_timeout` de FPM
+            // (PGOPTIONS), et le worker unique sert aussi le formulaire de
+            // contact. Au-delà, le réessai de Messenger reprend. `SET LOCAL`
+            // s'éteint avec la transaction.
+            $connection = $this->entityManager->getConnection();
+            $connection->executeStatement("SET LOCAL lock_timeout = '5s'");
+            // Une lecture qui dit si la ligne existe encore : `refresh()` sur
+            // un compte supprimé entre-temps (admin, purge) ne lève rien, et
+            // l'insertion du jeton échouait alors sur la clé étrangère.
+            $locked = $connection->fetchOne(
+                'SELECT 1 FROM cpg_user WHERE id = :id FOR UPDATE',
+                ['id' => $user->getId()],
+                ['id' => UuidType::NAME],
+            );
+            if (false === $locked) {
+                return false;
+            }
+
+            $this->entityManager->refresh($user);
             if (!$user->isPendingActivation() || $user->wasReinvitedSince($message->servedGeneration())) {
                 return false;
             }
@@ -132,7 +151,7 @@ final readonly class SendAccountInvitationHandler
         });
 
         if (true !== $issued) {
-            $this->logger->warning('Invitation ignorée : compte activé ou invitation plus récente, constaté sous verrou.', [
+            $this->logger->warning('Invitation ignorée : compte supprimé, activé ou relancé depuis, constaté sous verrou.', [
                 'userId' => $message->userId,
             ]);
 

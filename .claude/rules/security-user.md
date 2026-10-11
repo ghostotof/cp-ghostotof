@@ -142,12 +142,21 @@ paths:
     `UPDATE … SET invitation_generation = invitation_generation + 1 … RETURNING`) and the entity takes the
     returned value (`CpgUser::markReinvited()`), so two concurrent resends (two FPM workers on a double
     click) publish two distinct generations — advanced in memory then written as an absolute value, both
-    got N+1. And the handler takes the account's row lock inside its transaction
-    (`refresh($user, LockMode::PESSIMISTIC_WRITE)`, a `SELECT … FOR UPDATE`) and re-checks activation and
-    generation **under that lock** before `deleteForUser()`: in `READ COMMITTED` a second consumer's purge
-    did not see the first one's uncommitted token, and two tokens stayed usable; the second now waits for
-    the first commit, re-reads the account, then replaces that token (or drops its message, `warning`
-    "constaté sous verrou"). Two real-process tests pin both: `ReinviteConcurrencyTest` and
+    got N+1. The same statement carries the "pending activation" condition (an account activated
+    meanwhile → `AccountNotAwaitingActivationException`, 409; deleted → `CpgUserNotFoundException`, 404), and
+    the repository gives the unit of work the written values as original state — otherwise a later
+    `flush()` rewrote the entity's generation as an absolute value over a concurrent resend. And the
+    handler, inside its transaction, bounds its wait (`SET LOCAL lock_timeout = '5s'`: the console has no
+    FPM `PGOPTIONS`), takes the account's row lock by a `SELECT 1 … FOR UPDATE` that says whether the row
+    still exists (`refresh()` on a deleted row raises nothing, and the token insert then failed on the
+    foreign key, closing the EntityManager), refreshes the account and re-checks activation and generation
+    **under that lock** before `deleteForUser()`: in `READ COMMITTED` a second consumer's purge did not see
+    the first one's uncommitted token, and two tokens stayed usable; the second now waits for the first
+    commit, re-reads the account, then replaces that token (or drops its message, `warning` "constaté sous
+    verrou"). **What that lock does not cover**: `PasswordSetupService::complete()` does not take it, so an
+    activation committing while a consumer holds the lock can still leave an activated account with a
+    usable token — follow-up issue, which must lock the account **before** claiming the token (account then
+    token, the handler's order, or the two deadlock). Two real-process tests pin both: `ReinviteConcurrencyTest` and
     `SendAccountInvitationConcurrencyTest` (interleaved at the `postFlush`, like
     `ContributionOrderConcurrencyTest`), with their child scripts under `tests/Security/User/Fixtures/`.
     Accepted limits:

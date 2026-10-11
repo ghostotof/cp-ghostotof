@@ -9,6 +9,7 @@ use App\Security\User\Application\CpgUserInviterInterface;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler;
 use App\Tests\Support\ChildPhpProcess;
 use App\Tests\Support\OpensProbeConnection;
@@ -17,7 +18,12 @@ use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Event\PostFlushEventArgs;
 use Doctrine\ORM\Events;
+use Psr\Log\NullLogger;
+use Symfony\Bridge\Twig\Mime\TemplatedEmail;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Bundle\FrameworkBundle\Test\MailerAssertionsTrait;
+use Symfony\Component\Clock\MockClock;
+use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Process\Process;
 
 /**
@@ -41,6 +47,7 @@ use Symfony\Component\Process\Process;
  */
 final class SendAccountInvitationConcurrencyTest extends KernelTestCase
 {
+    use MailerAssertionsTrait;
     use OpensProbeConnection;
 
     private const int TIMEOUT_SECONDS = 30;
@@ -76,6 +83,69 @@ final class SendAccountInvitationConcurrencyTest extends KernelTestCase
         self::assertSame(0, $concurrent->getExitCode(), $concurrent->getOutput().$concurrent->getErrorOutput());
 
         self::assertSame(1, $this->tokenCountOf($userId), 'Deux consommateurs du même compte ont laissé deux jetons utilisables (#435).');
+        // B a attendu A, puis remplacé son jeton : celui qui reste est le
+        // sien, pas celui de l'e-mail que A a envoyé.
+        self::assertNotSame([hash('sha256', $this->lastSentSetupToken())], $this->tokenHashesOf($userId));
+    }
+
+    /**
+     * Un compte supprimé entre son chargement et le verrou (par l'admin, ou
+     * par la purge) : le verrou ne trouve pas la ligne, le message est
+     * abandonné sans exception — sans quoi l'insertion du jeton échouait sur
+     * la clé étrangère et fermait l'EntityManager (seconde passe d'audit).
+     */
+    public function testAnAccountDeletedBeforeTheLockIsDroppedWithoutError(): void
+    {
+        $container = self::getContainer();
+        $container->get(CpgUserInviterInterface::class)->invite('newcomer@example.com', Locale::FR);
+        $entityManager = $container->get(EntityManagerInterface::class);
+        $entityManager->clear();
+        $user = $container->get(CpgUserRepositoryInterface::class)->findOneByEmail('newcomer@example.com');
+        self::assertInstanceOf(CpgUser::class, $user);
+        $entityManager->getConnection()->executeStatement('DELETE FROM cpg_user WHERE id = :id', ['id' => $user->getId()->toRfc4122()]);
+        $repository = self::createStub(CpgUserRepositoryInterface::class);
+        $repository->method('findOneById')->willReturn($user);
+        $handler = new SendAccountInvitationHandler(
+            $container->get(MailerInterface::class),
+            $repository,
+            $container->get(PasswordSetupTokenRepositoryInterface::class),
+            $entityManager,
+            new MockClock(),
+            new NullLogger(),
+            'noreply@cp-ghostotof.com',
+            'https://front.test',
+        );
+
+        $handler(new SendAccountInvitationMessage($user->getId()->toRfc4122(), 'fr', $user->getInvitationGeneration()));
+
+        self::assertTrue($entityManager->isOpen());
+        self::assertSame(0, $this->tokenCountOf($user->getId()->toRfc4122()));
+        self::assertCount(0, self::getMailerMessages());
+    }
+
+    private function lastSentSetupToken(): string
+    {
+        $emails = self::getMailerMessages();
+        $email = end($emails);
+        self::assertInstanceOf(TemplatedEmail::class, $email);
+        // Rendu, l'e-mail ne garde plus son contexte : le lien se lit dans le corps.
+        $body = $email->getTextBody();
+        self::assertIsString($body);
+        self::assertSame(1, preg_match('~/set-password#([0-9a-f]{64})~', $body, $matches));
+
+        return $matches[1];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function tokenHashesOf(string $userId): array
+    {
+        /** @var list<string> */
+        return self::getContainer()->get(EntityManagerInterface::class)->getConnection()->fetchFirstColumn(
+            'SELECT token_hash FROM password_setup_token WHERE user_id = :user',
+            ['user' => $userId],
+        );
     }
 
     /**
