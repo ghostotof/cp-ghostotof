@@ -333,9 +333,22 @@ paths:
   and bind-mounted from the same file by `docker-compose.yml`. It sets `max_message_size = 1048576`: the
   default 16 MiB let anyone who can publish make the worker load a message whole before
   `AuthenticatedEnvelopeSerializer` refuses it (#469); headers are bounded by `frame_max` (128 KiB).
-  `RabbitMqMessageSizeCapTest` keeps the cap above `MAX_ENVELOPE_BYTES` and within four times it, and pins the
-  generator and the mount. **Any change to that file restarts the broker** (`Recreate`): a short outage of
-  `POST /api/contact` and invitations, in the release notes, validated in preprod like any change here.
+  `RabbitMqMessageSizeCapTest` pins the cap at exactly four times `MAX_ENVELOPE_BYTES`, a single
+  `max_message_size` line, the generator (no `disableNameSuffixHash`, global or per overlay) and the k8s
+  mount. **That file can stop the broker from booting** (an unknown key is refused), and `rollback-preprod`
+  does not undo `rabbitmq`: `tools/check-rabbitmq-conf.sh` (`make rabbitmq-conf`, CI job `rabbitmq-conf`,
+  needed by `release-version`) boots the pinned image with the file, reads the value the node kept, and
+  checks the `docker-compose.yml` mount — the one thing the PHPUnit test cannot see. Its CLI calls run as
+  the `rabbitmq` user: run as root before the server, the CLI creates `.erlang.cookie` owned by root and
+  the node dies on `eacces`. It does not prove a boot on an initialised PVC — only preprod does; recover a
+  broken preprod broker with `kubectl -n preprod rollout undo deployment/rabbitmq`. In dev the file is read
+  at boot: `docker compose up -d rabbitmq` after changing it (and after any git operation that replaced
+  it). **Any change to that file restarts the broker** (`Recreate`): a short outage of `POST /api/contact`
+  and invitations, in the release notes, validated in preprod like any change here. **The broker's refusal
+  is asynchronous**: without publisher confirms, a publish over the cap returns fine, the request answers
+  2xx and the message is lost; only the next operation on that channel fails. No legitimate producer gets
+  near 1 MiB (the validation and #469's 256 KiB bound cut far below, retries included); whether to turn
+  confirms on is #479.
   **RabbitMQ's probes are `tcpSocket` on 5672, never `rabbitmq-diagnostics`** (issue #295): the CLI
   starts an Erlang node per call, which overran its 10 s timeout under CPU load — during a boot,
   precisely — and the kubelet killed a broker that had been up for 35 s (nine restarts in eight
