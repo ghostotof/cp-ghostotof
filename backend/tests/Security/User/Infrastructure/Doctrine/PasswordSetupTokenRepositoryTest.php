@@ -193,6 +193,26 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
     }
 
     /**
+     * Issue #458 : à l'activation, les jetons encore utilisables du compte
+     * disparaissent ; le jeton consommé reste, pour qu'un rejeu soit reconnu.
+     */
+    public function testDeleteUnusedForUserKeepsOnlyTheConsumedToken(): void
+    {
+        $user = $this->persistUser('jane');
+        $consumed = new PasswordSetupToken($user, hash('sha256', 'consumed-jane'), new DateTimeImmutable('+48 hours'));
+        $this->repository->save($consumed);
+        $this->repository->save(new PasswordSetupToken($user, hash('sha256', 'pending-jane'), new DateTimeImmutable('+48 hours')));
+        self::assertTrue($this->repository->claim($consumed, new DateTimeImmutable()));
+
+        $this->repository->deleteUnusedForUser($user);
+
+        self::assertSame([hash('sha256', 'consumed-jane')], $this->em->getConnection()->fetchFirstColumn(
+            'SELECT token_hash FROM password_setup_token WHERE user_id = :user',
+            ['user' => $user->getId()->toRfc4122()],
+        ));
+    }
+
+    /**
      * Le cas que la vérification en mémoire (`isUsable()`) laissait passer :
      * deux requêtes lisent le jeton inutilisé, l'autre le consomme entre-temps.
      * L'entité de celle-ci le croit encore libre ; la base, elle, tranche.

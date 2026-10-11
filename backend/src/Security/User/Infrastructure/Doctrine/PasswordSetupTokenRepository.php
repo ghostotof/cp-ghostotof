@@ -86,6 +86,17 @@ class PasswordSetupTokenRepository extends ServiceEntityRepository implements Pa
         return 1 === $claimed;
     }
 
+    public function deleteUnusedForUser(CpgUser $user): void
+    {
+        $this->createQueryBuilder('token')
+            ->delete()
+            ->where('token.user = :user')
+            ->andWhere('token.usedAt IS NULL')
+            ->setParameter('user', $user)
+            ->getQuery()
+            ->execute();
+    }
+
     public function deleteForUser(CpgUser $user): void
     {
         $this->createQueryBuilder('token')

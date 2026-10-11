@@ -39,4 +39,12 @@ interface PasswordSetupTokenRepositoryInterface
      * jeton (invitation renvoyée) pour qu'un seul reste valide à la fois.
      */
     public function deleteForUser(CpgUser $user): void;
+
+    /**
+     * Supprime les jetons encore utilisables du compte, à son activation
+     * (issue #458) : un compte activé n'en garde aucun. Le jeton consommé
+     * reste, pour qu'un lien déjà utilisé qui revient soit reconnu comme un
+     * rejeu (410), pas comme un lien inconnu (404).
+     */
+    public function deleteUnusedForUser(CpgUser $user): void;
 }

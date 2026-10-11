@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Security\User\Application;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
+use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
+use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException;
 use App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
@@ -22,6 +24,7 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         private UserPasswordHasherInterface $passwordHasher,
         private ClockInterface $clock,
         private SecurityAuditLoggerInterface $auditLogger,
+        private AccountLockInterface $accountLock,
     ) {
     }
 
@@ -35,11 +38,46 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         $token = $this->usableTokenOrFail($clearToken);
         $user = $token->getUser();
 
-        // Le hash d'abord : s'il échouait, le jeton ne serait pas consommé.
+        // Le hash d'abord, hors verrou (il est lent) : s'il échouait, le jeton
+        // ne serait pas consommé.
         $hashedPassword = $this->passwordHasher->hashPassword($user, $plainPassword);
+
+        // Sous le verrou du compte (issue #458), celui du handler d'invitation
+        // et dans le même ordre — compte puis jetons : sans lui, un handler
+        // passé entre la réclamation et l'activation voyait le compte encore
+        // en attente et émettait un jeton, valable sur un compte actif.
+        try {
+            $this->accountLock->whileLocked($user, function (CpgUser $locked) use ($token, $hashedPassword): void {
+                $this->activate($token, $locked, $hashedPassword);
+            });
+        } catch (CpgUserNotFoundException) {
+            // Supprimé entre-temps : la cascade a emporté le jeton, réponse
+            // d'un lien inconnu.
+            throw InvalidPasswordSetupTokenException::unknownToken();
+        }
+
+        // Journal de sécurité (D5) : le compte activé, jamais le jeton ni le
+        // mot de passe. Parcours anonyme : l'auteur sera « anonymous ».
+        $this->auditLogger->accountActivated($user);
+    }
+
+    /**
+     * Sous le verrou du compte, compte relu.
+     */
+    private function activate(PasswordSetupToken $token, CpgUser $user, string $hashedPassword): void
+    {
         // L'heure d'après le hachage, qui prend du temps : un lien expiré
         // entre-temps ne doit pas être consommé (issue #447).
         $now = $this->clock->now();
+
+        // Déjà activé, par un autre lien du compte : celui-ci ne doit plus
+        // rien pouvoir faire. Un lien présenté pour un compte actif est un
+        // rejeu au sens du journal.
+        if (!$user->isPendingActivation()) {
+            $this->auditLogger->passwordSetupTokenReplayed($user);
+
+            throw PasswordSetupTokenExpiredException::expiredOrAlreadyUsed();
+        }
 
         // Puis la réclamation atomique (issue #356) : `isUsable()` n'a lu que
         // l'état chargé, qu'une requête concurrente sur le même lien a pu
@@ -62,9 +100,8 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
 
         $this->cpgUserRepository->save($user);
         $this->passwordSetupTokenRepository->save($token);
-        // Journal de sécurité (D5) : le compte activé, jamais le jeton ni le
-        // mot de passe. Parcours anonyme : l'auteur sera « anonymous ».
-        $this->auditLogger->accountActivated($user);
+        // Un compte activé ne garde aucun jeton utilisable (issue #458).
+        $this->passwordSetupTokenRepository->deleteUnusedForUser($user);
     }
 
     private function usableTokenOrFail(#[SensitiveParameter] string $clearToken): PasswordSetupToken
