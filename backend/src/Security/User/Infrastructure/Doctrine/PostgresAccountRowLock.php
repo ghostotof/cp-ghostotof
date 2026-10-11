@@ -8,6 +8,7 @@ use App\Security\User\Application\AccountLockInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use Closure;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 
@@ -28,8 +29,12 @@ use Symfony\Bridge\Doctrine\Types\UuidType;
  */
 final readonly class PostgresAccountRowLock implements AccountLockInterface
 {
+    /** SQLSTATE `lock_not_available`, levé à l'expiration de `lock_timeout`. */
+    private const string LOCK_NOT_AVAILABLE = '55P03';
+
     public function __construct(
         private EntityManagerInterface $entityManager,
+        private string $lockTimeout = '5s',
     ) {
     }
 
@@ -37,12 +42,22 @@ final readonly class PostgresAccountRowLock implements AccountLockInterface
     {
         return $this->entityManager->getConnection()->transactional(function () use ($user, $operation): mixed {
             $connection = $this->entityManager->getConnection();
-            $connection->executeStatement("SET LOCAL lock_timeout = '5s'");
-            $locked = $connection->fetchOne(
-                'SELECT 1 FROM cpg_user WHERE id = :id FOR UPDATE',
-                ['id' => $user->getId()],
-                ['id' => UuidType::NAME],
-            );
+            $connection->executeStatement(\sprintf("SET LOCAL lock_timeout = '%s'", $this->lockTimeout));
+            try {
+                $locked = $connection->fetchOne(
+                    'SELECT 1 FROM cpg_user WHERE id = :id FOR UPDATE',
+                    ['id' => $user->getId()],
+                    ['id' => UuidType::NAME],
+                );
+            } catch (DriverException $exception) {
+                // Le convertisseur de DBAL n'en fait pas une
+                // LockWaitTimeoutException, seulement une DriverException.
+                if (self::LOCK_NOT_AVAILABLE === $exception->getSQLState()) {
+                    throw AccountLockTimeoutException::forAccount($user->getId()->toRfc4122(), $exception);
+                }
+
+                throw $exception;
+            }
             if (false === $locked) {
                 throw CpgUserNotFoundException::forId($user->getId());
             }

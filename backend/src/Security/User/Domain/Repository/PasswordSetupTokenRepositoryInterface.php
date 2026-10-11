@@ -6,6 +6,7 @@ namespace App\Security\User\Domain\Repository;
 
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
+use App\Security\User\Domain\ValueObject\TokenClaim;
 use DateTimeImmutable;
 
 /**
@@ -31,8 +32,10 @@ interface PasswordSetupTokenRepositoryInterface
      * même lien au même instant, une seule l'emporte. Rend `false` à la
      * perdante, sans rien écrire. L'expiration est jugée dans la même
      * écriture (issue #447) : un jeton expiré à `$usedAt` n'est pas consommé.
+     * Un échec dit sa cause (TokenClaim, issue #458) : déjà consommé, expiré,
+     * ou disparu.
      */
-    public function claim(PasswordSetupToken $token, DateTimeImmutable $usedAt): bool;
+    public function claim(PasswordSetupToken $token, DateTimeImmutable $usedAt): TokenClaim;
 
     /**
      * Supprime tous les jetons de l'utilisateur : appelé avant de régénérer un

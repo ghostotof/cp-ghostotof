@@ -16,7 +16,9 @@ use Closure;
  * en gardait un.
  *
  * L'opération s'exécute dans une transaction, compte verrouillé et relu ; elle
- * reçoit ce compte relu, à lire plutôt que tout état antérieur au verrou. Ordre imposé à toute
+ * reçoit ce compte relu, à lire plutôt que tout état antérieur au verrou. Le
+ * compte passé doit être une entité gérée, sans changement en attente : la
+ * relecture écrase sans prévenir toute modification faite en mémoire. Ordre imposé à toute
  * opération : le compte d'abord, ses jetons ensuite — l'ordre inverse
  * provoquerait un interblocage.
  */

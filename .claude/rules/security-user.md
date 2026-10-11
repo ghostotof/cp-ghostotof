@@ -160,7 +160,16 @@ paths:
     activates, and **purges the account's unused tokens** (`deleteUnusedForUser()`; the consumed one stays,
     so a replay is still a 410 `replayed`, not a 404). The purge alone guarantees no usable token on an
     activated account; the lock adds that a concurrent handler waits instead of deleting the claimed token —
-    without it, the link's replay answered 404 and the audit lost `replayed`.
+    without it, the link's replay answered 404 and the audit lost `replayed`. `claim()` says why it failed
+    (`Domain/ValueObject/TokenClaim`: `Claimed`, `AlreadyUsed`, `Expired`, `Gone`, read back on the table):
+    only `AlreadyUsed` is a `replayed`; `Expired` is no event; `Gone` — a resend replaced the token while
+    the password was being hashed, or the account was deleted — is an unknown link (404, `rejected`), never
+    a replay. `validate()` refuses a still-usable link of an account already active (410, `replayed`, a token
+    left over from before #458), as `complete()` does under the lock. The removal of an undelivered token
+    (#425, `remove()`) never takes a consumed one (`used_at IS NULL`): the e-mail may have left despite the
+    error and the person activated meanwhile. A lock held past `lock_timeout` raises
+    `Infrastructure/Doctrine/AccountLockTimeoutException` (SQLSTATE `55P03`, named, unmapped: a `critical`
+    500, like the order-scope lock of #389; the worker's Messenger retry takes over).
     The operation receives the account as re-read under the lock (`Closure(CpgUser)`): read that one, never
     a state from before the lock. Pinned by three real-process tests — `ReinviteConcurrencyTest`,
     `SendAccountInvitationConcurrencyTest` (interleaved at the `postFlush`) and

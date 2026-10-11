@@ -12,6 +12,7 @@ use App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException;
 use App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
+use App\Security\User\Domain\ValueObject\TokenClaim;
 use Psr\Clock\ClockInterface;
 use SensitiveParameter;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
@@ -52,7 +53,9 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
             });
         } catch (CpgUserNotFoundException) {
             // Supprimé entre-temps : la cascade a emporté le jeton, réponse
-            // d'un lien inconnu.
+            // et journal d'un lien inconnu.
+            $this->auditLogger->passwordSetupTokenRejected();
+
             throw InvalidPasswordSetupTokenException::unknownToken();
         }
 
@@ -81,16 +84,22 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
 
         // Puis la réclamation atomique (issue #356) : `isUsable()` n'a lu que
         // l'état chargé, qu'une requête concurrente sur le même lien a pu
-        // consommer depuis. La perdante est un rejeu — c'est le scénario du
-        // lien fuité soumis en même temps que la personne invitée —, et rien
-        // de ce qu'elle a envoyé ne touche le compte. Un lien expiré pendant
-        // le hachage perd aussi, mais n'est pas un rejeu : un lien simplement
-        // expiré n'est pas un événement de sécurité.
-        if (!$this->passwordSetupTokenRepository->claim($token, $now)) {
-            if ($now < $token->getExpiresAt()) {
-                $this->auditLogger->passwordSetupTokenReplayed($user);
-            }
+        // consommer depuis. Seule une perdante face à un jeton déjà consommé
+        // est un rejeu — le lien fuité soumis en même temps que la personne
+        // invitée —, et rien de ce qu'elle a envoyé ne touche le compte. Un
+        // lien expiré pendant le hachage n'est pas un événement de sécurité,
+        // et un jeton disparu (une relance l'a remplacé pendant le hachage,
+        // issue #458) est un lien inconnu, pas un rejeu.
+        $claim = $this->passwordSetupTokenRepository->claim($token, $now);
+        if (TokenClaim::Gone === $claim) {
+            $this->auditLogger->passwordSetupTokenRejected();
 
+            throw InvalidPasswordSetupTokenException::unknownToken();
+        }
+        if (TokenClaim::AlreadyUsed === $claim) {
+            $this->auditLogger->passwordSetupTokenReplayed($user);
+        }
+        if (TokenClaim::Claimed !== $claim) {
             throw PasswordSetupTokenExpiredException::expiredOrAlreadyUsed();
         }
 
@@ -124,6 +133,15 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
             if ($token->wasUsed()) {
                 $this->auditLogger->passwordSetupTokenReplayed($token->getUser());
             }
+
+            throw PasswordSetupTokenExpiredException::expiredOrAlreadyUsed();
+        }
+
+        // Un lien encore utilisable d'un compte déjà actif (un jeton resté
+        // d'avant #458) : même réponse que celle de complete(), qui le refuse
+        // sous le verrou.
+        if (!$token->getUser()->isPendingActivation()) {
+            $this->auditLogger->passwordSetupTokenReplayed($token->getUser());
 
             throw PasswordSetupTokenExpiredException::expiredOrAlreadyUsed();
         }
