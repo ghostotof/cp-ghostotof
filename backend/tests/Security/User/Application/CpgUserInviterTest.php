@@ -144,24 +144,36 @@ final class CpgUserInviterTest extends TestCase
     /**
      * Round de correction (C1) : la relance doit repousser le délai de purge
      * (issue #238) exactement comme la première invitation, en remettant
-     * `invitedAt` à l'instant de l'horloge et en sauvegardant *avant* de
+     * `invitedAt` à l'instant de l'horloge et en écrivant *avant* de
      * redispatcher — sinon le seuil de 30 jours court toujours depuis la
-     * toute première invitation.
+     * toute première invitation. Issue #435 : l'écriture avance la génération
+     * en base, atomiquement, et c'est la génération rendue par la base que
+     * porte le message, jamais un recomptage en mémoire.
      */
-    public function testReinviteResetsInvitedAtToNowAndSavesBeforeDispatching(): void
+    public function testReinviteAdvancesTheGenerationInTheDatabaseBeforeDispatching(): void
     {
         $clock = new MockClock('2026-09-22 08:00:00');
         $user = new CpgUser('newcomer', '');
         $user->setEmail('newcomer@example.com');
         $user->markInvited(new DateTimeImmutable('2026-09-01 09:00:00'));
 
+        $written = false;
         $cpgUserRepository = $this->createMock(CpgUserRepositoryInterface::class);
-        $cpgUserRepository->expects(self::once())->method('save')->with($user);
+        $cpgUserRepository->expects(self::never())->method('save');
+        // 5 et non 2 : une relance concurrente a déjà avancé la base.
+        $cpgUserRepository->expects(self::once())->method('advanceInvitationGeneration')
+            ->with($user, $clock->now())
+            ->willReturnCallback(static function () use (&$written): int {
+                $written = true;
+
+                return 5;
+            });
 
         $dispatched = null;
         $messageBus = $this->createMock(MessageBusInterface::class);
         $messageBus->expects(self::once())->method('dispatch')->willReturnCallback(
-            static function (object $message) use (&$dispatched): Envelope {
+            static function (object $message) use (&$dispatched, &$written): Envelope {
+                self::assertTrue($written, 'Le message part avant l\'écriture de la relance.');
                 $dispatched = $message;
 
                 return new Envelope($message);
@@ -185,9 +197,8 @@ final class CpgUserInviterTest extends TestCase
         self::assertInstanceOf(SendAccountInvitationMessage::class, $dispatched);
         self::assertSame($user->getId()->toRfc4122(), $dispatched->userId);
         self::assertSame('en', $dispatched->locale);
-        // La génération de la relance, pas celle de l'invitation (#434) :
-        // invité une fois, relancé une fois.
-        self::assertSame(2, $dispatched->invitationGeneration);
+        self::assertSame(5, $dispatched->invitationGeneration);
+        self::assertSame(5, $user->getInvitationGeneration());
     }
 
     public function testReinviteRejectsAnAlreadyActivatedAccount(): void

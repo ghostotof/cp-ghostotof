@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Security\User\Infrastructure\Doctrine;
 
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
+use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
@@ -12,6 +14,7 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\Persistence\ManagerRegistry;
 use SensitiveParameter;
 use Symfony\Bridge\Doctrine\Security\User\UserLoaderInterface;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Security\Core\Exception\UnsupportedUserException;
 use Symfony\Component\Security\Core\Exception\UserNotFoundException;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
@@ -123,6 +126,45 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
     {
         $this->getEntityManager()->persist($user);
         $this->getEntityManager()->flush();
+    }
+
+    /**
+     * Un `UPDATE … RETURNING` : PostgreSQL verrouille la ligne le temps de
+     * l'écriture, donc deux relances concurrentes s'enchaînent et lisent
+     * chacune la génération que l'autre vient de poser — là où avancer le
+     * compteur en mémoire puis l'écrire en valeur absolue perdait l'une des
+     * deux (issue #435). La condition « en attente d'activation »
+     * (CpgUser::isPendingActivation()) est portée par l'écriture elle-même :
+     * un compte activé entre son chargement et la relance n'est pas relancé.
+     *
+     * L'unité de travail reçoit les valeurs écrites pour état d'origine : sans
+     * quoi elle garderait l'ancienne génération, et un `flush()` ultérieur
+     * réécrirait celle de l'entité en valeur absolue, par-dessus une relance
+     * concurrente.
+     */
+    public function advanceInvitationGeneration(CpgUser $user, DateTimeImmutable $invitedAt): int
+    {
+        $connection = $this->getEntityManager()->getConnection();
+        $generation = $connection->fetchOne(
+            'UPDATE cpg_user SET invitation_generation = invitation_generation + 1, invited_at = :invitedAt'
+            .' WHERE id = :id AND invited_at IS NOT NULL AND activated_at IS NULL RETURNING invitation_generation',
+            ['invitedAt' => $invitedAt, 'id' => $user->getId()],
+            ['invitedAt' => Types::DATETIMETZ_IMMUTABLE, 'id' => UuidType::NAME],
+        );
+
+        if (!\is_int($generation)) {
+            $exists = false !== $connection->fetchOne('SELECT 1 FROM cpg_user WHERE id = :id', ['id' => $user->getId()], ['id' => UuidType::NAME]);
+
+            throw $exists ? AccountNotAwaitingActivationException::forUsername($user->getUsername()) : CpgUserNotFoundException::forId($user->getId());
+        }
+
+        $unitOfWork = $this->getEntityManager()->getUnitOfWork();
+        if ($unitOfWork->isInIdentityMap($user)) {
+            $unitOfWork->setOriginalEntityProperty(spl_object_id($user), 'invitationGeneration', $generation);
+            $unitOfWork->setOriginalEntityProperty(spl_object_id($user), 'invitedAt', $invitedAt);
+        }
+
+        return $generation;
     }
 
     public function remove(CpgUser $user): void

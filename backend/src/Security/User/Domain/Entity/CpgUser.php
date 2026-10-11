@@ -194,6 +194,17 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
         ++$this->invitationGeneration;
     }
 
+    /**
+     * Une relance dont la génération vient d'être avancée en base, de façon
+     * atomique (CpgUserRepositoryInterface::advanceInvitationGeneration(),
+     * issue #435) : l'entité reprend l'état écrit, sans recompter elle-même.
+     */
+    public function markReinvited(DateTimeImmutable $invitedAt, int $invitationGeneration): void
+    {
+        $this->invitedAt = $invitedAt;
+        $this->invitationGeneration = $invitationGeneration;
+    }
+
     public function markActivated(DateTimeImmutable $activatedAt): void
     {
         $this->activatedAt = $activatedAt;

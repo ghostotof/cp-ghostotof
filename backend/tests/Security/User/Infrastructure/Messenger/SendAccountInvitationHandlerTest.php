@@ -14,9 +14,13 @@ use App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler;
 use App\Tests\Support\DrivesTheMailerChain;
 use ArrayObject;
 use DateTimeImmutable;
+use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use LogicException;
+use Monolog\Handler\TestHandler;
+use Monolog\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -664,15 +668,50 @@ final class SendAccountInvitationHandlerTest extends TestCase
     }
 
     /**
-     * EntityManager dont seule wrapInTransaction() est utile ici : elle exécute
-     * la fermeture reçue, comme le ferait une vraie transaction validée.
+     * Issue #435 : les contrôles sont refaits sous le verrou du compte. Une
+     * relance commitée pendant que ce message attendait le verrou le rend
+     * périmé : aucun jeton, aucun e-mail, un warning.
      */
-    private function passthroughEntityManager(): EntityManagerInterface
+    public function testAnInvitationResentWhileWaitingForTheAccountLockIssuesNoToken(): void
+    {
+        $user = $this->pendingUser('newcomer', 'newcomer@example.com');
+        $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->expects(self::never())->method('deleteForUser');
+        $tokenRepository->expects(self::never())->method('save');
+        $mailer = $this->createMock(MailerInterface::class);
+        $mailer->expects(self::never())->method('send');
+
+        $entityManager = $this->passthroughEntityManager();
+        // Ce que relit le verrou : la relance concurrente, déjà commitée.
+        $entityManager->method('refresh')->willReturnCallback(static function (object $entity) use ($user): void {
+            self::assertSame($user, $entity);
+            $user->markReinvited(new DateTimeImmutable('2026-09-03 11:30:00'), 2);
+        });
+        $logs = new TestHandler();
+        $cpgUserRepository = self::createStub(CpgUserRepositoryInterface::class);
+        $cpgUserRepository->method('findOneById')->willReturn($user);
+        $handler = new SendAccountInvitationHandler($mailer, $cpgUserRepository, $tokenRepository, $entityManager, new MockClock(), new Logger('test', [$logs]), self::SENDER_EMAIL, self::FRONTEND_BASE_URL);
+
+        $handler(self::invitationMessage('fr'));
+
+        self::assertTrue($logs->hasWarningThatContains('constaté sous verrou'));
+    }
+
+    /**
+     * EntityManager dont seules wrapInTransaction() et la connexion sont utiles
+     * ici : la transaction exécute la fermeture reçue, comme une vraie
+     * transaction validée, et le verrou du compte trouve sa ligne (#435).
+     */
+    private function passthroughEntityManager(): EntityManagerInterface&Stub
     {
         $entityManager = self::createStub(EntityManagerInterface::class);
         $entityManager->method('wrapInTransaction')->willReturnCallback(
             static fn (callable $func): mixed => $func($entityManager),
         );
+        // Le verrou du compte (issue #435) trouve la ligne.
+        $connection = self::createStub(Connection::class);
+        $connection->method('fetchOne')->willReturn(1);
+        $entityManager->method('getConnection')->willReturn($connection);
 
         return $entityManager;
     }
