@@ -112,7 +112,7 @@ final class QueuedEnvelopesAreAuthenticatedTest extends KernelTestCase
     {
         $transport = self::getContainer()->get('messenger.transport.failed');
         $connection = self::getContainer()->get('doctrine.dbal.default_connection');
-        $message = new SendContactMessageMessage('Jane', 'jane@example.com', str_repeat('x', AuthenticatedEnvelopeSerializer::MAX_BODY_BYTES));
+        $message = new SendContactMessageMessage('Jane', 'jane@example.com', str_repeat('x', AuthenticatedEnvelopeSerializer::MAX_ENVELOPE_BYTES));
 
         try {
             $transport->send(new Envelope($message));
