@@ -324,12 +324,22 @@ couvrait que les files.
 il préfixe chaque valeur d'un HMAC-SHA256 binaire (32 octets) sous une clé dérivée
 d'`APP_SECRET` par `SecretKeyDerivation` (contexte `cp-ghostotof/cache-value/v1`). Une valeur au MAC
 absent ou faux lève `CacheValueMacRefusedException`, que l'adaptateur traite comme une absence de
-cache, journalisée en `warning` sur le canal `cache`. Cette décoration couvre exactement les pools
-Doctrine DBAL (`cache.app`, le cache de résultats Doctrine, le signal de redémarrage du worker,
-le pool du client HTTP). `cache.system` (PhpFilesAdapter) ne passe pas par ce marshaller.
+cache, journalisée en `warning` sur le canal `cache`. La décoration vaut pour tout adaptateur qui
+reçoit `cache.default_marshaller` (FrameworkBundle le passe aussi aux adaptateurs fichiers, APCu,
+Redis, Memcached et PDO) : aujourd'hui, ce sont les seuls pools Doctrine DBAL (`cache.app` et
+`cache.rate_limiter`, le cache de résultats Doctrine, le signal de redémarrage du worker, le pool
+du client HTTP). `cache.system` (PhpFilesAdapter) ne passe pas par ce marshaller.
 
-Mesuré : environ 2 µs de plus par aller-retour sur l'état d'un limiteur (1,2 → 3,3 µs, conteneur
-de dev), pour 32 octets par ligne. C'est négligeable devant l'aller-retour PostgreSQL.
+**La clé est dérivée à la première utilisation, jamais au constructeur.** Le préchauffage du cache
+au `docker build` (`cache:clear` avec `APP_SECRET` vide) construit le service par l'EntityManager
+et le cache de résultats, sans s'en servir. La première version dérivait au constructeur : le
+préchauffage échouait, le `|| true` du Dockerfile masquait l'échec, et l'image serait partie sans
+cache système (trouvé en relecture, rejoué à l'identique).
+
+Mesuré : environ 2 µs de plus par aller-retour `marshall()` + `unmarshall()` sur l'état d'un
+limiteur (1,2 → 3,3 µs, conteneur de dev), pour 32 octets par ligne. Pas mesuré sur un `consume()`
+entier : il coûte un aller-retour PostgreSQL et un verrou consultatif (~1,5 ms, D4 amendé), devant
+lesquels ces 2 µs ne se voient pas.
 
 Alternatives écartées :
 
@@ -340,16 +350,33 @@ Alternatives écartées :
   n'authentifie l'auteur que tant que cette clé publique reste secrète, ce qui n'est pas sa
   garantie. Le besoin est l'intégrité, pas la confidentialité, et une paire de clés de plus
   serait à gérer.
+- **Une clé par pool.** Elle fermerait la recopie d'un pool à l'autre (ci-dessous), au prix d'une
+  instance du marshaller par pool au lieu d'une décoration. Non fait : le gain se mesure contre un
+  attaquant qui lit et réécrit déjà toutes les données de la base.
 
 Conséquences :
 
-- **Au premier déploiement, chaque valeur déjà en table est refusée une fois** : les compteurs des
-  limiteurs repartent de zéro, un `warning` « Failed to fetch » par clé lue. Il en va de même à
-  chaque rotation d'`APP_SECRET` ou changement du contexte. À écrire dans la note de release.
-- Limite acceptée : le MAC ne couvre pas l'identifiant de la ligne. Qui écrit dans la table peut
-  recopier une valeur authentifiée d'une clé à une autre, ou la rejouer plus tard : au pire, un
-  compteur de limiteur revient à un état antérieur. C'est un déni de quota, jamais une exécution
-  de code.
+- **Une valeur signée sous une autre clé est refusée.** Au déploiement de #468, à une rotation
+  d'`APP_SECRET` ou à un changement du contexte, le cache en base est perdu. Il le reste tant que
+  le rollout fait servir anciens et nouveaux pods : chacun refuse les valeurs de l'autre et les
+  écrase, et les compteurs des limiteurs repartent de zéro à chaque alternance, avec un `warning`
+  « Failed to fetch » par lecture refusée. À écrire dans la note de release.
+- **Une ligne refusée n'est jamais supprimée.** Les compteurs expirent, mais le signal de
+  redémarrage du worker, posé sans expiration par `messenger:stop-workers`, serait refusé à chaque
+  tour du worker, un `warning` par tour. La migration `Version20261011140000` vide donc
+  `cache_items` au déploiement de #468. À une rotation d'`APP_SECRET`, relancer
+  `messenger:stop-workers` depuis un Job réécrit la ligne sous la nouvelle clé (`k8s/README.md`,
+  cas d'`APP_SECRET`).
+- Dans une lecture par lot (`getItems()`), un refus interrompt le lot : les clés suivantes
+  reviennent absentes, comme avec tout échec de `DefaultMarshaller`. Les lecteurs actuels lisent
+  clé par clé.
+- **Limite acceptée** : le MAC ne couvre ni l'identifiant de la ligne ni le pool (l'interface du
+  marshaller ne reçoit pas l'identifiant à la lecture). Qui écrit dans la table peut recopier une
+  valeur authentifiée d'une clé ou d'un pool à l'autre, ou la rejouer : ramener un compteur de
+  limiteur en arrière, ou poser un tableau sur la ligne du signal de redémarrage, que le worker
+  compare à un horodatage et prend pour une demande d'arrêt permanente. C'est un déni de service,
+  jamais une exécution de code, à la portée de qui peut déjà lire et réécrire toutes les données.
+  Le cache de résultats Doctrine, autre cible d'une recopie, ne sert aujourd'hui à aucune requête.
 - `AuthenticatedCacheMarshallerTest` (marshaller seul) et `CacheItemsAreAuthenticatedTest`
-  (conteneur, vraie ligne altérée) pincent la décision. Le second vérifie que chaque pool en base
-  a bien ce marshaller.
+  (conteneur, vraie ligne altérée) pincent la décision. Le second énumère les pools par
+  `cache.global_clearer` et exige le marshaller sur chacun de ceux en base.
