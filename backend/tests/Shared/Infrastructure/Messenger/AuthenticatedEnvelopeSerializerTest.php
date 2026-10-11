@@ -8,12 +8,8 @@ use App\Shared\Infrastructure\Messenger\AuthenticatedEnvelopeSerializer;
 use App\Shared\Infrastructure\Security\EmptyApplicationSecretException;
 use App\Tests\Shared\Infrastructure\Messenger\Fixtures\Probe\UnserializationProbe;
 use App\Tests\Support\TestKeys;
-use Monolog\Handler\TestHandler;
-use Monolog\Level;
-use Monolog\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
 use stdClass;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\MessageDecodingFailedException;
@@ -38,7 +34,7 @@ final class AuthenticatedEnvelopeSerializerTest extends TestCase
 
     public function testAnEnvelopeItEncodedIsDecoded(): void
     {
-        $serializer = $this->serializer(requireMac: true);
+        $serializer = $this->serializer();
         $message = new stdClass();
         $message->text = 'bonjour';
 
@@ -48,21 +44,11 @@ final class AuthenticatedEnvelopeSerializerTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{bool}>
-     */
-    public static function modes(): iterable
-    {
-        yield 'transition' => [false];
-        yield 'MAC exigé' => [true];
-    }
-
-    /**
      * Une valeur changée dans le corps, qui reste un objet sérialisé valide.
      */
-    #[DataProvider('modes')]
-    public function testATamperedEnvelopeIsRefusedBeforeAnyUnserialization(bool $requireMac): void
+    public function testATamperedEnvelopeIsRefusedBeforeAnyUnserialization(): void
     {
-        $serializer = $this->serializer($requireMac);
+        $serializer = $this->serializer();
         $encoded = $serializer->encode(new Envelope($this->carrying(new UnserializationProbe())));
         self::assertStringContainsString('gadget', $encoded['body']);
         $encoded['body'] = str_replace('gadget', 'forged', $encoded['body']);
@@ -75,57 +61,36 @@ final class AuthenticatedEnvelopeSerializerTest extends TestCase
 
     /**
      * Le cas que la signature par type de Messenger laissait passer : une
-     * enveloppe sans MAC, d'un type quelconque, qui porte un objet.
+     * enveloppe sans MAC, d'un type quelconque, qui porte un objet. Refusée
+     * sans condition depuis l'issue #450, qui a supprimé la transition de #444.
      */
-    public function testAnEnvelopeWithoutMacIsRefusedBeforeAnyUnserializationOnceTheMacIsRequired(): void
+    public function testAnEnvelopeWithoutMacIsRefusedBeforeAnyUnserialization(): void
     {
-        $decoded = $this->serializer(requireMac: true)->decode($this->forgedWithoutMac())->getMessage();
+        $decoded = $this->serializer()->decode($this->forgedWithoutMac())->getMessage();
 
         self::assertInstanceOf(MessageDecodingFailedException::class, $decoded);
         self::assertSame(0, UnserializationProbe::$unserializations);
     }
 
-    /**
-     * Première release : une enveloppe sans MAC (mise en file par l'ancien
-     * code, avant ou pendant le rollout, ou après un retour arrière) reste
-     * traitée, et le dit.
-     */
-    public function testAnEnvelopeWithoutMacIsStillDecodedDuringTheTransition(): void
-    {
-        $logs = new TestHandler();
-
-        $decoded = $this->serializer(requireMac: false, logger: new Logger('messenger', [$logs]))->decode($this->forgedWithoutMac())->getMessage();
-
-        self::assertInstanceOf(stdClass::class, $decoded);
-        self::assertTrue($logs->hasRecordThatContains('sans MAC', Level::Warning));
-    }
-
-    /**
-     * Un MAC présent mais faux n'est jamais une enveloppe de l'ancien code :
-     * refusé dans les deux modes.
-     */
-    #[DataProvider('modes')]
-    public function testAWrongMacIsRefusedInBothModes(bool $requireMac): void
+    public function testAWrongMacIsRefusedBeforeAnyUnserialization(): void
     {
         $encoded = $this->forgedWithoutMac();
         $encoded['headers'][AuthenticatedEnvelopeSerializer::HEADER] = str_repeat('0', 64);
 
-        $decoded = $this->serializer($requireMac)->decode($encoded)->getMessage();
+        $decoded = $this->serializer()->decode($encoded)->getMessage();
 
         self::assertInstanceOf(MessageDecodingFailedException::class, $decoded);
         self::assertSame(0, UnserializationProbe::$unserializations);
     }
 
     /**
-     * @return iterable<string, array{bool, mixed}>
+     * @return iterable<string, array{mixed}>
      */
     public static function nonStringMacs(): iterable
     {
-        foreach (['transition' => false, 'MAC exigé' => true] as $mode => $requireMac) {
-            yield $mode.', entier' => [$requireMac, 42];
-            yield $mode.', tableau' => [$requireMac, ['mac']];
-            yield $mode.', booléen' => [$requireMac, true];
-        }
+        yield 'entier' => [42];
+        yield 'tableau' => [['mac']];
+        yield 'booléen' => [true];
     }
 
     /**
@@ -134,13 +99,13 @@ final class AuthenticatedEnvelopeSerializerTest extends TestCase
      * ferait tomber le worker (aucun décorateur ne la rattrape ici).
      */
     #[DataProvider('nonStringMacs')]
-    public function testAMacThatIsNotAStringIsRefused(bool $requireMac, mixed $mac): void
+    public function testAMacThatIsNotAStringIsRefused(mixed $mac): void
     {
         $encoded = $this->forgedWithoutMac();
         $encoded['headers'][AuthenticatedEnvelopeSerializer::HEADER] = $mac;
 
         // @phpstan-ignore argument.type (un transport peut livrer un en-tête qui n'est pas une chaîne, malgré le contrat : c'est ce que le test éprouve)
-        $decoded = $this->serializer($requireMac)->decode($encoded)->getMessage();
+        $decoded = $this->serializer()->decode($encoded)->getMessage();
 
         self::assertInstanceOf(MessageDecodingFailedException::class, $decoded);
         self::assertSame(0, UnserializationProbe::$unserializations);
@@ -155,7 +120,7 @@ final class AuthenticatedEnvelopeSerializerTest extends TestCase
         $encoded = $this->forgedWithoutMac();
         $encoded['headers'][AuthenticatedEnvelopeSerializer::HEADER] = hash_hmac('sha256', $encoded['body'], TestKeys::material());
 
-        $decoded = $this->serializer(requireMac: true)->decode($encoded)->getMessage();
+        $decoded = $this->serializer()->decode($encoded)->getMessage();
 
         self::assertInstanceOf(MessageDecodingFailedException::class, $decoded);
     }
@@ -165,7 +130,7 @@ final class AuthenticatedEnvelopeSerializerTest extends TestCase
      */
     public function testTheRefusalQuotesNothingOfTheEnvelope(): void
     {
-        $decoded = $this->serializer(requireMac: true)->decode($this->forgedWithoutMac())->getMessage();
+        $decoded = $this->serializer()->decode($this->forgedWithoutMac())->getMessage();
 
         self::assertInstanceOf(MessageDecodingFailedException::class, $decoded);
         self::assertStringNotContainsString('gadget', $decoded->getMessage());
@@ -176,12 +141,12 @@ final class AuthenticatedEnvelopeSerializerTest extends TestCase
     {
         $this->expectException(EmptyApplicationSecretException::class);
 
-        new AuthenticatedEnvelopeSerializer(new PhpSerializer(), '', true, new NullLogger());
+        new AuthenticatedEnvelopeSerializer(new PhpSerializer(), '');
     }
 
-    private function serializer(bool $requireMac, ?Logger $logger = null): AuthenticatedEnvelopeSerializer
+    private function serializer(): AuthenticatedEnvelopeSerializer
     {
-        return new AuthenticatedEnvelopeSerializer(new PhpSerializer(), TestKeys::material(), $requireMac, $logger ?? new NullLogger());
+        return new AuthenticatedEnvelopeSerializer(new PhpSerializer(), TestKeys::material());
     }
 
     /**

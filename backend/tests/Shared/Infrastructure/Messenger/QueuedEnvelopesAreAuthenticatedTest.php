@@ -15,6 +15,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\MessageDecodingFailedException;
 use Symfony\Component\Messenger\Transport\Serialization\MessageTypeAwareSerializerInterface;
+use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 
 /**
@@ -110,14 +111,19 @@ final class QueuedEnvelopesAreAuthenticatedTest extends KernelTestCase
     }
 
     /**
-     * Première release de #444 : le MAC n'est pas encore exigé. L'issue de
-     * suivi qui l'exige retourne cette assertion.
+     * Par la chaîne réelle : ce qu'écrirait un attaquant dans la file — une
+     * enveloppe PhpSerializer sans MAC, d'un type que rien ne signe, qui porte
+     * un objet — n'atteint pas `unserialize()` (issue #450, après la transition
+     * de #444).
      */
-    public function testTheMacIsNotRequiredYet(): void
+    public function testAnEnvelopeWithoutMacIsRefusedBeforeAnyUnserialization(): void
     {
-        self::bootKernel();
+        $message = new stdClass();
+        $message->gadget = new UnserializationProbe();
+        $forged = new PhpSerializer()->encode(new Envelope($message));
 
-        self::assertFalse(self::getContainer()->getParameter('app.messenger.require_envelope_mac'));
+        self::assertInstanceOf(MessageDecodingFailedException::class, $this->serializer()->decode($forged)->getMessage());
+        self::assertSame(0, UnserializationProbe::$unserializations);
     }
 
     private function serializer(): SerializerInterface

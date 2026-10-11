@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Shared\Infrastructure\Messenger;
 
 use App\Shared\Infrastructure\Security\SecretKeyDerivation;
-use Psr\Log\LoggerInterface;
 use SensitiveParameter;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\Envelope;
@@ -39,11 +38,10 @@ use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
  * l'enveloppe — une désérialisation, même restreinte — avant le MAC.
  * QueuedEnvelopesAreAuthenticatedTest l'épingle.
  *
- * Deux temps, pour ne perdre aucun message au déploiement : tant que
- * `app.messenger.require_envelope_mac` est faux, une enveloppe **sans** MAC
- * (mise en file par l'ancien code, avant ou pendant le rollout, ou après un
- * retour arrière) reste décodée, avec un `warning` ; un MAC présent mais faux
- * est refusé dans les deux modes. Une release suivante exige le MAC.
+ * Une enveloppe **sans** MAC est refusée comme un MAC faux (issue #450). La
+ * release de #444 l'acceptait encore, avec un `warning`, le temps que les
+ * files se vident des messages de l'ancien code ; ce mode transition est
+ * supprimé, pas désactivé : aucun paramètre ne rouvre l'injection.
  *
  * Un refus est un échec de décodage ({@see MessageDecodingFailedException},
  * qui garde l'enveloppe reçue, jamais un objet de son corps) : il suit les
@@ -73,9 +71,6 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
         #[Autowire(param: 'kernel.secret')]
         #[SensitiveParameter]
         string $secret,
-        #[Autowire(param: 'app.messenger.require_envelope_mac')]
-        private bool $requireMac,
-        private LoggerInterface $logger,
     ) {
         // Un secret vide lève EmptyApplicationSecretException, à la première
         // construction : le premier message mis en file ou lu.
@@ -100,12 +95,6 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
     {
         $mac = $encodedEnvelope['headers'][self::HEADER] ?? null;
 
-        if (null === $mac && !$this->requireMac) {
-            $this->logger->warning('Enveloppe Messenger sans MAC acceptée : transition de l\'issue #444, à exiger à la release suivante.');
-
-            return $this->inner->decode($encodedEnvelope);
-        }
-
         // Un transport peut rendre un en-tête qui n'est pas une chaîne (AMQP,
         // JSON du transport Doctrine) : refusé comme un MAC faux, plutôt
         // qu'une erreur de type qui ferait tomber le worker.
@@ -124,8 +113,8 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
         // Symfony\Component\Messenger\Middleware\DecodeFailedMessageMiddleware
         // redécode par ce sérialiseur, à la réception puis après chaque réessai
         // (issue #465) : celle d'origine, MAC compris, sinon ce redécodage la
-        // voit « sans MAC » — faux warning en transition, cause réelle
-        // remplacée par un refus une fois le MAC exigé. Le PhpSerializer
+        // voit « sans MAC » et la refuse : la cause réelle serait remplacée
+        // par ce refus. Le PhpSerializer
         // interne y écrit aussi le corps décodé du base64, que le MAC ne
         // couvre pas.
         $failure = $decoded->getMessage();

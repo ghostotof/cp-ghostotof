@@ -6,9 +6,6 @@ namespace App\Tests\Shared\Infrastructure\Messenger;
 
 use App\Shared\Infrastructure\Messenger\AuthenticatedEnvelopeSerializer;
 use App\Tests\Support\SignedEnvelope;
-use Monolog\Handler\TestHandler;
-use Monolog\Level;
-use Monolog\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
 use stdClass;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -28,14 +25,13 @@ use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
  * ({@see MessageDecodingFailedException::wrap()}) qui garde l'enveloppe
  * encodée ; DecodeFailedMessageMiddleware la redécode avec ce même
  * sérialiseur, à la réception puis après chaque réessai. Si l'enveloppe gardée
- * a perdu son MAC, ce redécodage voit une enveloppe « sans MAC » : un faux
- * warning en mode transition, un refus qui remplace la cause réelle une fois
- * le MAC exigé.
+ * a perdu son MAC, ce redécodage voit une enveloppe « sans MAC » et la
+ * refuse : un refus qui remplace la cause réelle.
  *
  * La chaîne est la vraie : {@see \Symfony\Component\Messenger\Transport\Serialization\PhpSerializer}
  * du conteneur, réexpédition du réessai par `encode()`, puis le middleware de
- * Messenger. Le sérialiseur authentifiant est construit ici, pour choisir son
- * mode et lire ses journaux ; son câblage dans le conteneur, sous le
+ * Messenger. Le sérialiseur authentifiant est construit ici, sous le secret du
+ * conteneur ; son câblage dans le conteneur, sous le
  * SigningSerializer de Messenger, est couvert par
  * QueuedEnvelopesAreAuthenticatedTest.
  */
@@ -46,50 +42,32 @@ final class DecodingFailureKeepsItsMacTest extends KernelTestCase
 
     private const string WRONG_MAC_CAUSE = 'Enveloppe Messenger au MAC invalide refusée (issue #444).';
 
-    /** Les deux temps de #444 : MAC toléré absent, puis exigé. */
-    private const array MODES = ['transition' => false, 'MAC exigé' => true];
-
     /**
-     * @return iterable<string, array{bool}>
-     */
-    public static function modes(): iterable
-    {
-        foreach (self::MODES as $mode => $requireMac) {
-            yield $mode => [$requireMac];
-        }
-    }
-
-    /**
-     * Chaque mode, croisé avec chaque façon d'échouer : le corps à signer, le
-     * MAC qui remplace le vrai s'il en faut un faux, la cause attendue.
+     * Chaque façon d'échouer : le corps à signer, le MAC qui remplace le vrai
+     * s'il en faut un faux, la cause attendue.
      *
-     * @return iterable<string, array{bool, string, ?string, string}>
+     * @return iterable<string, array{string, ?string, string}>
      */
-    public static function modesAndFailures(): iterable
+    public static function failures(): iterable
     {
         // Un objet sérialisé valide, mais pas une enveloppe : la forme la plus
         // simple d'un corps que PhpSerializer refuse après `unserialize()`.
         $undecodable = addslashes(serialize(new stdClass()));
 
-        foreach (self::MODES as $mode => $requireMac) {
-            yield $mode.', signée, corps texte' => [$requireMac, $undecodable, null, self::UNDECODABLE_CAUSE];
-            // Ce que PhpSerializer écrit d'un corps qui n'est pas de l'UTF-8.
-            yield $mode.', signée, corps base64' => [$requireMac, base64_encode($undecodable), null, self::UNDECODABLE_CAUSE];
-            // Le cas qu'un attaquant contrôle : il suffit d'écrire dans la file.
-            yield $mode.', MAC faux' => [$requireMac, $undecodable, str_repeat('0', 64), self::WRONG_MAC_CAUSE];
-        }
+        yield 'signée, corps texte' => [$undecodable, null, self::UNDECODABLE_CAUSE];
+        // Ce que PhpSerializer écrit d'un corps qui n'est pas de l'UTF-8.
+        yield 'signée, corps base64' => [base64_encode($undecodable), null, self::UNDECODABLE_CAUSE];
+        // Le cas qu'un attaquant contrôle : il suffit d'écrire dans la file.
+        yield 'MAC faux' => [$undecodable, str_repeat('0', 64), self::WRONG_MAC_CAUSE];
     }
 
-    #[DataProvider('modes')]
-    public function testTheFailureKeepsItsCauseAtReception(bool $requireMac): void
+    public function testTheFailureKeepsItsCauseAtReception(): void
     {
-        $logs = new TestHandler();
-        $serializer = $this->serializer($requireMac, $logs);
+        $serializer = $this->serializer();
 
         $received = $serializer->decode($this->signed(addslashes(serialize(new stdClass()))));
 
         $this->assertTheMiddlewareRaises(self::UNDECODABLE_CAUSE, $serializer, $received);
-        self::assertFalse($logs->hasRecordThatContains('sans MAC', Level::Warning), 'Un échec de décodage signé a été pris pour une enveloppe sans MAC.');
     }
 
     /**
@@ -97,12 +75,12 @@ final class DecodingFailureKeepsItsMacTest extends KernelTestCase
      * garde l'en-tête retiré et, pour un corps base64, le corps décodé, que le
      * MAC ne couvre pas.
      */
-    #[DataProvider('modesAndFailures')]
-    public function testTheFailureKeepsTheEnvelopeAsReceived(bool $requireMac, string $body, ?string $forgedMac, string $cause): void
+    #[DataProvider('failures')]
+    public function testTheFailureKeepsTheEnvelopeAsReceived(string $body, ?string $forgedMac, string $cause): void
     {
         $encoded = $this->signed($body, $forgedMac);
 
-        $failure = $this->serializer($requireMac, new TestHandler())->decode($encoded)->getMessage();
+        $failure = $this->serializer()->decode($encoded)->getMessage();
 
         self::assertInstanceOf(MessageDecodingFailedException::class, $failure);
         self::assertSame($cause, $failure->getMessage());
@@ -118,11 +96,10 @@ final class DecodingFailureKeepsItsMacTest extends KernelTestCase
      * (réessais sans fin, jusqu'à épuiser la mémoire du worker) et emboîtait
      * chaque réessai dans le suivant.
      */
-    #[DataProvider('modesAndFailures')]
-    public function testTheFailureKeepsItsCauseAndItsStampsAfterRetries(bool $requireMac, string $body, ?string $forgedMac, string $cause): void
+    #[DataProvider('failures')]
+    public function testTheFailureKeepsItsCauseAndItsStampsAfterRetries(string $body, ?string $forgedMac, string $cause): void
     {
-        $logs = new TestHandler();
-        $serializer = $this->serializer($requireMac, $logs);
+        $serializer = $this->serializer();
         $encoded = $this->signed($body, $forgedMac);
         $received = $serializer->decode($encoded);
 
@@ -135,7 +112,6 @@ final class DecodingFailureKeepsItsMacTest extends KernelTestCase
         $carried = $retriedTwice->getMessage();
         self::assertInstanceOf(MessageDecodingFailedException::class, $carried);
         self::assertSame($encoded, $carried->encodedEnvelope);
-        self::assertFalse($logs->hasRecordThatContains('sans MAC', Level::Warning), 'Un échec de décodage signé a été pris pour une enveloppe sans MAC.');
     }
 
     private function assertTheMiddlewareRaises(string $cause, SerializerInterface $serializer, Envelope $received): void
@@ -151,11 +127,11 @@ final class DecodingFailureKeepsItsMacTest extends KernelTestCase
         }
     }
 
-    private function serializer(bool $requireMac, TestHandler $logs): AuthenticatedEnvelopeSerializer
+    private function serializer(): AuthenticatedEnvelopeSerializer
     {
         $inner = self::getContainer()->get('messenger.transport.native_php_serializer');
 
-        return new AuthenticatedEnvelopeSerializer($inner, $this->secret(), $requireMac, new Logger('messenger', [$logs]));
+        return new AuthenticatedEnvelopeSerializer($inner, $this->secret());
     }
 
     /**

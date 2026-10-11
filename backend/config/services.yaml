@@ -30,12 +30,6 @@ parameters:
     # La valeur courante vient de LOG_LEVEL (backend/.env, `debug` dans l'image
     # préprod) ; ce paramètre ne sert que si la variable disparaît.
     app.log_level: 'warning'
-    # Issue #444 : faux le temps d'une release, pour que les messages mis en file
-    # par l'ancien code (avant ou pendant le rollout, ou après un retour
-    # arrière) restent traités ; une enveloppe sans MAC est alors acceptée avec
-    # un warning. À passer à vrai à la release suivante, files vidées (issue de
-    # suivi), ce qui ferme l'injection d'objet par la file.
-    app.messenger.require_envelope_mac: false
 
 services:
     # default configuration for services in *this* file
