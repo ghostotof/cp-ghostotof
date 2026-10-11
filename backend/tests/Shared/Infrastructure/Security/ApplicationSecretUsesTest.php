@@ -96,6 +96,7 @@ final class ApplicationSecretUsesTest extends TestCase
         $contexts = [];
         foreach ($uses as $file => $code) {
             self::assertTrue($this->derivesWithItsOwnContext($code), \sprintf('%s reçoit APP_SECRET ou en dérive une clé : chaque KeyedMac::fromSecret($secret, self::KEY_CONTEXT, $encoding) ou SecretKeyDerivation::derive($secret, self::KEY_CONTEXT) prend exactement self::KEY_CONTEXT en deuxième argument (#455, #487).', $file));
+            self::assertFalse($this->holdsTheSecretAsAString($code), \sprintf('%s garde le secret dans une propriété string, que tout dump du service affiche : SensitiveParameterValue (#493).', $file));
             self::assertFalse($this->computesAMacItself($code), \sprintf('%s reçoit APP_SECRET et calcule ou compare un MAC (%s) : passer par KeyedMac (#487).', $file, implode(', ', self::MAC_FUNCTIONS)));
             self::assertSame(1, preg_match_all("/const string KEY_CONTEXT = '([^']+)'/", $code, $matches), \sprintf('%s doit déclarer un KEY_CONTEXT, et un seul.', $file));
             self::assertMatchesRegularExpression(SecretKeyDerivation::CONTEXT_PATTERN, $matches[1][0], \sprintf('%s : KEY_CONTEXT hors du format cp-ghostotof/<usage>/v<n> (#487).', $file));
@@ -180,6 +181,22 @@ final class ApplicationSecretUsesTest extends TestCase
         self::assertTrue($this->isAUse('<?php SecretKeyDerivation::derive($fromElsewhere, self::KEY_CONTEXT);'));
         self::assertFalse($this->isAUse("<?php \$m = 'kernel.secret (APP_SECRET) est vide.';"));
         self::assertFalse($this->isAUse('<?php // KeyedMac::fromSecret($s, self::KEY_CONTEXT, MacEncoding::Hex);'));
+    }
+
+    /**
+     * Issue #493 : une propriété `string` qui porte le secret l'affiche dans
+     * tout dump du service ; un paramètre, lui, n'est pas gardé.
+     */
+    public function testTheCensusSeesTheSecretHeldAsAString(): void
+    {
+        self::assertTrue($this->holdsTheSecretAsAString('<?php final class A { public function __construct(private string $secret) {} }'));
+        self::assertTrue($this->holdsTheSecretAsAString('<?php final class A { public function __construct(private readonly string $secret) {} }'));
+        self::assertTrue($this->holdsTheSecretAsAString('<?php final class A { readonly private ?string $appSecret; }'));
+        self::assertTrue($this->holdsTheSecretAsAString('<?php final class A { public string $SECRET = ""; }'));
+        self::assertFalse($this->holdsTheSecretAsAString('<?php final class A { public function __construct(string $secret) {} }'));
+        self::assertFalse($this->holdsTheSecretAsAString('<?php final class A { private SensitiveParameterValue $secret; }'));
+        self::assertFalse($this->holdsTheSecretAsAString('<?php final class A { private string $context; }'));
+        self::assertFalse($this->holdsTheSecretAsAString('<?php // private string $secret;'));
     }
 
     /**
@@ -289,6 +306,25 @@ final class ApplicationSecretUsesTest extends TestCase
         }
 
         return array_values(array_filter($arguments, static fn (array $argument): bool => [] !== $argument));
+    }
+
+    /**
+     * Une propriété — déclarée ou promue — typée `string` ou `?string` dont le
+     * nom dit « secret », lue par jetons significatifs : un paramètre sans
+     * modificateur n'est pas gardé, une propriété d'un autre type non plus.
+     */
+    private function holdsTheSecretAsAString(string $code): bool
+    {
+        $tokens = PhpSources::significantTokens($code);
+
+        return array_any(array_keys($tokens), static function (int $i) use ($tokens): bool {
+            if (!$tokens[$i]->is(\T_VARIABLE) || 1 !== preg_match('/secret/i', $tokens[$i]->text) || 'string' !== ($tokens[$i - 1]->text ?? null)) {
+                return false;
+            }
+            $modifier = '?' === ($tokens[$i - 2]->text ?? null) ? $i - 3 : $i - 2;
+
+            return \in_array(strtolower($tokens[$modifier]->text ?? ''), ['private', 'protected', 'public', 'readonly', 'var'], true);
+        });
     }
 
     /**

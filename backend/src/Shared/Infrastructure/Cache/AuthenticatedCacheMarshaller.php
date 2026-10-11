@@ -7,6 +7,7 @@ namespace App\Shared\Infrastructure\Cache;
 use App\Shared\Infrastructure\Security\KeyedMac;
 use App\Shared\Infrastructure\Security\MacEncoding;
 use SensitiveParameter;
+use SensitiveParameterValue;
 use Symfony\Component\Cache\Marshaller\MarshallerInterface;
 use Symfony\Component\DependencyInjection\Attribute\AsDecorator;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -71,13 +72,23 @@ final class AuthenticatedCacheMarshaller implements MarshallerInterface
 
     private ?KeyedMac $mac = null;
 
+    /**
+     * Gardé pour dériver la clé plus tard ({@see self::mac()}), dans un
+     * {@see SensitiveParameterValue} : aucun dump du service ne l'affiche
+     * (issue #493).
+     *
+     * @var SensitiveParameterValue<string>
+     */
+    private readonly SensitiveParameterValue $secret;
+
     public function __construct(
         #[AutowireDecorated]
         private readonly MarshallerInterface $inner,
         #[Autowire(param: 'kernel.secret')]
         #[SensitiveParameter]
-        private readonly string $secret,
+        string $secret,
     ) {
+        $this->secret = new SensitiveParameterValue($secret);
     }
 
     /**
@@ -133,6 +144,6 @@ final class AuthenticatedCacheMarshaller implements MarshallerInterface
      */
     private function mac(): KeyedMac
     {
-        return $this->mac ??= KeyedMac::fromSecret($this->secret, self::KEY_CONTEXT, MacEncoding::Binary);
+        return $this->mac ??= KeyedMac::fromSecret($this->secret->getValue(), self::KEY_CONTEXT, MacEncoding::Binary);
     }
 }

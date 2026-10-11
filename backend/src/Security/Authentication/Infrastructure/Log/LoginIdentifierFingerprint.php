@@ -8,6 +8,7 @@ use App\Shared\Infrastructure\Security\EmptyApplicationSecretException;
 use App\Shared\Infrastructure\Security\KeyedMac;
 use App\Shared\Infrastructure\Security\MacEncoding;
 use SensitiveParameter;
+use SensitiveParameterValue;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
@@ -69,11 +70,21 @@ final readonly class LoginIdentifierFingerprint
     /** 24 bits en hexadécimal : voir « Courte exprès » ci-dessus. */
     private const int LENGTH = 6;
 
+    /**
+     * Gardé pour dériver la clé plus tard ({@see self::of()}), dans un
+     * {@see SensitiveParameterValue} : aucun dump du service ne l'affiche
+     * (issue #493).
+     *
+     * @var SensitiveParameterValue<string>
+     */
+    private SensitiveParameterValue $secret;
+
     public function __construct(
         #[SensitiveParameter]
         #[Autowire('%kernel.secret%')]
-        private string $secret,
+        string $secret,
     ) {
+        $this->secret = new SensitiveParameterValue($secret);
     }
 
     /**
@@ -95,7 +106,7 @@ final readonly class LoginIdentifierFingerprint
         // Symfony\Component\Security\Http\RateLimiter\DefaultLoginRateLimiter::getLimiters().
         $folded = 1 === preg_match('//u', $identifier) ? mb_strtolower($identifier, 'UTF-8') : strtolower($identifier);
 
-        $mac = KeyedMac::fromSecret($this->secret, self::KEY_CONTEXT, MacEncoding::Hex);
+        $mac = KeyedMac::fromSecret($this->secret->getValue(), self::KEY_CONTEXT, MacEncoding::Hex);
 
         return substr($mac->sign($folded), 0, self::LENGTH);
     }
