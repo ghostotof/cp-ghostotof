@@ -17,6 +17,10 @@ interface PasswordSetupTokenRepositoryInterface
 {
     public function save(PasswordSetupToken $token): void;
 
+    /**
+     * Supprime ce jeton-là, et lui seul : celui d'une invitation dont l'e-mail
+     * n'est pas parti (issue #425).
+     */
     public function remove(PasswordSetupToken $token): void;
 
     public function findOneByTokenHash(string $tokenHash): ?PasswordSetupToken;

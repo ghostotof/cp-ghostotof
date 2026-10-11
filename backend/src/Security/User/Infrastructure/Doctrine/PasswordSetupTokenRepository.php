@@ -29,10 +29,21 @@ class PasswordSetupTokenRepository extends ServiceEntityRepository implements Pa
         $this->getEntityManager()->flush();
     }
 
+    /**
+     * Par son identifiant, en DQL (issue #425) : l'appelant est un chemin
+     * d'échec, il ne doit dépendre ni de l'unité de travail (un `clear()`
+     * survenu entre-temps détache l'entité, et `EntityManager::remove()`
+     * lèverait), ni d'un `flush()` global qui écrirait au passage d'autres
+     * changements en attente. Une ligne déjà supprimée n'est pas une erreur.
+     */
     public function remove(PasswordSetupToken $token): void
     {
-        $this->getEntityManager()->remove($token);
-        $this->getEntityManager()->flush();
+        $this->createQueryBuilder('token')
+            ->delete()
+            ->where('token.id = :id')
+            ->setParameter('id', $token->getId(), UuidType::NAME)
+            ->getQuery()
+            ->execute();
     }
 
     /**
