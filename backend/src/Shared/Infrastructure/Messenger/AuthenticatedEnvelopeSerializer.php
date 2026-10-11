@@ -116,9 +116,8 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
         // redécode par ce sérialiseur, à la réception puis après chaque réessai
         // (issue #465) : celle d'origine, MAC compris, sinon ce redécodage la
         // voit « sans MAC » et la refuse : la cause réelle serait remplacée
-        // par ce refus. Le PhpSerializer
-        // interne y écrit aussi le corps décodé du base64, que le MAC ne
-        // couvre pas.
+        // par ce refus. Le PhpSerializer interne y écrit aussi le corps décodé
+        // du base64, que le MAC ne couvre pas.
         $failure = $decoded->getMessage();
         if ($failure instanceof MessageDecodingFailedException && $this->isFailureToDecode($failure, $authenticated)) {
             return MessageDecodingFailedException::wrap($encodedEnvelope, $failure->getMessage(), $failure->getCode(), $failure->getPrevious());

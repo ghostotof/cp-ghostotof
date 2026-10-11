@@ -21,7 +21,9 @@ use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 /**
  * Le câblage d'AuthenticatedEnvelopeSerializer (issue #444) : c'est lui, sous
  * la décoration de Messenger, que les deux transports utilisent. Son
- * comportement est couvert par AuthenticatedEnvelopeSerializerTest.
+ * comportement est couvert par AuthenticatedEnvelopeSerializerTest ; les deux
+ * refus rejoués ici (enveloppe altérée, enveloppe sans MAC) le sont par la
+ * chaîne réelle, décoration comprise.
  */
 final class QueuedEnvelopesAreAuthenticatedTest extends KernelTestCase
 {

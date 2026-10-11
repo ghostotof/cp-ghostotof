@@ -21,7 +21,7 @@ use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
  * tout handler, au lieu de faire tomber le worker.
  *
  * L'enveloppe est signée avec la vraie clé : le refus tient au format du
- * message, pas au MAC, et le test ne dépend pas du mode de transition de #444.
+ * message, pas au MAC.
  */
 final class InvitationEnvelopeDecodingTest extends KernelTestCase
 {

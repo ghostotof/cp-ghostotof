@@ -32,8 +32,9 @@ use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
  * La chaîne est la vraie : {@see \Symfony\Component\Messenger\Transport\Serialization\PhpSerializer}
  * du conteneur, réexpédition du réessai par `encode()`, puis le middleware de
  * Messenger. Le sérialiseur authentifiant est construit ici, sous le secret du
- * conteneur ; son câblage dans le conteneur, sous le
- * SigningSerializer de Messenger, est couvert par
+ * conteneur, sans le SigningSerializer qui le décore dans le conteneur :
+ * l'échec rendu est le sien, à l'enveloppe près, que le décorateur ne
+ * remplacerait pas. Ce câblage est couvert par
  * QueuedEnvelopesAreAuthenticatedTest.
  */
 final class DecodingFailureKeepsItsMacTest extends KernelTestCase
