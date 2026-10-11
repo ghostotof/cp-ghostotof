@@ -11,6 +11,7 @@ use App\Security\User\Domain\Exception\AccountInvitationDeliveryException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler;
+use App\Tests\Support\DrivesTheMailerChain;
 use ArrayObject;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
@@ -20,19 +21,13 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Stringable;
-use Symfony\Bridge\Twig\Mime\BodyRenderer;
 use Symfony\Bridge\Twig\Mime\TemplatedEmail;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\DependencyInjection\ServiceLocator;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Mailer\Envelope as MailerEnvelope;
-use Symfony\Component\Mailer\EventListener\MessageListener;
 use Symfony\Component\Mailer\Exception\TransportException;
-use Symfony\Component\Mailer\Mailer;
 use Symfony\Component\Mailer\MailerInterface;
-use Symfony\Component\Mailer\Messenger\MessageHandler;
 use Symfony\Component\Mailer\Messenger\SendEmailMessage;
-use Symfony\Component\Mailer\Transport\NullTransport;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 use Symfony\Component\Messenger\EventListener\SendFailedMessageForRetryListener;
@@ -46,9 +41,7 @@ use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\RawMessage;
 use Throwable;
-use Twig\Environment;
 use Twig\Error\RuntimeError;
-use Twig\Loader\ArrayLoader;
 use Twig\Source;
 
 /**
@@ -58,6 +51,8 @@ use Twig\Source;
  */
 final class SendAccountInvitationHandlerTest extends TestCase
 {
+    use DrivesTheMailerChain;
+
     private const string SENDER_EMAIL = 'noreply@cp-ghostotof.com';
     private const string FRONTEND_BASE_URL = 'https://front.test';
     /** Le message transporte l'identifiant en chaîne RFC 4122 (spec 0003 D7). */
@@ -303,8 +298,9 @@ final class SendAccountInvitationHandlerTest extends TestCase
         );
 
         self::assertSame(AccountInvitationDeliveryException::class, $stamp->getExceptionClass());
+        self::assertNotNull($stamp->getFlattenException());
         self::assertNull(
-            $stamp->getFlattenException()?->getPrevious(),
+            $stamp->getFlattenException()->getPrevious(),
             'Aucune exception du rendu ne doit rester en `previous`.',
         );
         self::assertStringContainsString(
@@ -362,6 +358,24 @@ final class SendAccountInvitationHandlerTest extends TestCase
             $exception->getMessage(),
         );
         self::assertStringNotContainsString('sentinel', $exception->getMessage());
+    }
+
+    /**
+     * Enveloppé par les bus du mailer, l'échec du transport reste un échec du
+     * transport : sa classe et son code, jamais son message (issue #427).
+     */
+    public function testAWrappedTransportFailureKeepsItsClassAndCode(): void
+    {
+        $envelope = new Envelope(new SendEmailMessage(new TemplatedEmail()));
+        $mailer = self::createStub(MailerInterface::class);
+        $mailer->method('send')->willThrowException(new HandlerFailedException($envelope, [
+            new HandlerFailedException($envelope, [new TransportException('550 <sentinel@example.com> rejected', 550)]),
+        ]));
+
+        $message = $this->deliveryFailureWith($mailer)->getMessage();
+
+        self::assertStringContainsString(TransportException::class.', code 550', $message);
+        self::assertStringNotContainsString('sentinel', $message);
     }
 
     /**
@@ -505,7 +519,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
 
     /**
      * Fait échouer le rendu de l'e-mail par la vraie chaîne du mailer
-     * ({@see self::renderingMailer()}), derrière un vrai bus Messenger comme
+     * ({@see DrivesTheMailerChain::renderingMailer()}), derrière un vrai bus Messenger comme
      * dans le worker. Rend le jeton émis, l'échec que le worker reçoit, et
      * leurs formes texte : l'exception du rendu telle que send() la lève, le
      * stamp sérialisé, l'échec du worker tel qu'un log l'écrit. PHP tronque
@@ -517,7 +531,10 @@ final class SendAccountInvitationHandlerTest extends TestCase
      */
     private function failToRender(string $brokenTextTemplate): array
     {
-        $mailer = new class($this->renderingMailer($brokenTextTemplate)) implements MailerInterface {
+        $mailer = new class($this->renderingMailer([
+            'emails/account_invitation.html.twig' => '<p>{{ setupUrl }}</p>',
+            'emails/account_invitation.txt.twig' => $brokenTextTemplate,
+        ])) implements MailerInterface {
             public ?string $setupUrl = null;
             public ?Throwable $failure = null;
 
@@ -583,58 +600,6 @@ final class SendAccountInvitationHandlerTest extends TestCase
                 ];
             }
         });
-    }
-
-    /**
-     * La chaîne du mailer câblée comme `mailer.mailer` (transport, bus,
-     * dispatcher). Le gabarit y est rendu deux fois : au
-     * {@see \Symfony\Component\Mailer\Event\MessageEvent} « queued » que
-     * Mailer::send() émet avant le bus (MessageListener rend
-     * sans regarder isQueued()), puis dans le transport, derrière le bus
-     * (SendEmailMessage traité en synchrone faute de routage). Un gabarit cassé
-     * échoue donc dès le premier rendu, hors de toute HandlerFailedException.
-     */
-    private function renderingMailer(string $brokenTextTemplate): MailerInterface
-    {
-        $twig = new Environment(new ArrayLoader([
-            'emails/account_invitation.html.twig' => '<p>{{ setupUrl }}</p>',
-            'emails/account_invitation.txt.twig' => $brokenTextTemplate,
-        ]), ['strict_variables' => true]);
-        $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new MessageListener(null, new BodyRenderer($twig)));
-        $transport = new NullTransport($dispatcher);
-
-        return new Mailer($transport, new MessageBus([new HandleMessageMiddleware(new HandlersLocator([
-            SendEmailMessage::class => [new MessageHandler($transport)],
-        ]))]), $dispatcher);
-    }
-
-    /**
-     * Exécute `$run` avec les réglages du dev et du test (arguments gardés dans
-     * les traces), et au pire une longueur de chaîne relevée : ce que le test
-     * prouve ne doit pas dépendre d'un php.ini.
-     *
-     * @template T
-     *
-     * @param callable(): T $run
-     *
-     * @return T
-     */
-    private function withVerboseTraces(callable $run): mixed
-    {
-        $ignoreArgs = ini_set('zend.exception_ignore_args', '0');
-        $maxLength = ini_set('zend.exception_string_param_max_len', '1000000');
-
-        try {
-            return $run();
-        } finally {
-            if (false !== $ignoreArgs) {
-                ini_set('zend.exception_ignore_args', $ignoreArgs);
-            }
-            if (false !== $maxLength) {
-                ini_set('zend.exception_string_param_max_len', $maxLength);
-            }
-        }
     }
 
     private function handler(

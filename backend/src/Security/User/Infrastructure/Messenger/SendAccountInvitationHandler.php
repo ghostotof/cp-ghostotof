@@ -11,6 +11,7 @@ use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Exception\AccountInvitationDeliveryException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
+use App\Shared\Infrastructure\Mailer\MailerSendingFailure;
 use App\Shared\Infrastructure\Mailer\MailerTransportFailure;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Clock\ClockInterface;
@@ -21,10 +22,8 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
-use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Uid\Uuid;
 use Throwable;
-use Twig\Error\Error as TwigError;
 
 /**
  * Consommé par `make consume` (messenger:consume async -vv). Depuis le point
@@ -161,14 +160,17 @@ final readonly class SendAccountInvitationHandler
      */
     private function deliveryFailure(Throwable $exception): AccountInvitationDeliveryException
     {
-        if ($exception instanceof TransportExceptionInterface) {
+        // Sous les enveloppes des bus : un échec du transport garde sa classe
+        // et son code (issue #427).
+        $cause = MailerSendingFailure::innermost($exception);
+        if ($cause instanceof TransportExceptionInterface) {
             // La classe et le code seulement.
-            $failure = MailerTransportFailure::from($exception);
+            $failure = MailerTransportFailure::from($cause);
 
             return AccountInvitationDeliveryException::becauseTransportFailed($failure->exceptionClass, $failure->code);
         }
 
-        return AccountInvitationDeliveryException::becauseSendingFailed($this->describeFailure($exception));
+        return AccountInvitationDeliveryException::becauseSendingFailed(MailerSendingFailure::describe($exception));
     }
 
     private function invitationEmail(
@@ -202,46 +204,6 @@ final readonly class SendAccountInvitationHandler
                 'strings' => $this->stringsFor($locale),
             ])
         ;
-    }
-
-    /**
-     * Ce que l'échec peut dire sans risque : son type et son emplacement — le
-     * gabarit et la ligne pour une erreur Twig, le fichier et la ligne sinon.
-     * Jamais son message, qui peut citer une valeur du contexte
-     * (`Key "…/set-password#<jeton>" … does not exist`). Le nom d'un gabarit
-     * est celui que le loader connaît ; seul `template_from_string(x, nom)`
-     * en ferait une donnée, et son extension n'est pas chargée.
-     *
-     * Le gabarit est rendu deux fois dans send() : au
-     * {@see \Symfony\Component\Mailer\Event\MessageEvent} « queued » que
-     * {@see \Symfony\Component\Mailer\Mailer} émet avant son bus
-     * ({@see \Symfony\Component\Mailer\EventListener\MessageListener} rend
-     * sans regarder `isQueued()`), d'où un échec nu, puis dans le transport,
-     * derrière le bus ({@see \Symfony\Component\Mailer\Messenger\SendEmailMessage}
-     * traité en synchrone faute de routage), d'où un échec enveloppé dans une
-     * HandlerFailedException par bus traversé : on décrit celle du fond.
-     */
-    private function describeFailure(Throwable $exception): string
-    {
-        while ($exception instanceof HandlerFailedException && $exception->getPrevious() instanceof Throwable) {
-            $exception = $exception->getPrevious();
-        }
-
-        $type = get_debug_type($exception);
-
-        if (!$exception instanceof TwigError) {
-            return \sprintf('%s, %s:%d', $type, basename($exception->getFile()), $exception->getLine());
-        }
-
-        $template = $exception->getSourceContext()?->getName();
-        $line = $exception->getTemplateLine();
-
-        return match (true) {
-            null === $template => $type,
-            // Twig rend -1 quand il ne sait pas la ligne.
-            $line < 1 => \sprintf('%s, %s', $type, $template),
-            default => \sprintf('%s, %s:%d', $type, $template, $line),
-        };
     }
 
     private function subjectFor(Locale $locale): string

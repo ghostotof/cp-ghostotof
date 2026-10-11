@@ -145,8 +145,19 @@ paths:
     context keeps its own delivery exception, whose transport factory is identical on purpose (`Domain/`
     never imports `Shared/Infrastructure`). The invitation one has a second factory since issue #419,
     `becauseSendingFailed()`, for any other failure of `send()` (template rendering, after the token is
-    valid — see `.claude/rules/security-user.md`); the contact handler still converts the transport
-    failure only. The price: the SMTP enhanced status (`5.1.1`) and Scaleway's error
+    valid — see `.claude/rules/security-user.md`); the contact one too since issue #427
+    (`ContactMessageDeliveryException::becauseSendingFailed()`): a template error or an `Address` Mime
+    refuses quotes what the visitor typed (address, name, text), on every retry and up to the
+    `failure_transport`. Both handlers build the e-mail **inside** the `try`, catch any `Throwable` and
+    describe it through `Shared/Infrastructure/Mailer/MailerSendingFailure::describe()` (type plus
+    `<template>:<line>`, or `<file basename>:<line>`, from the innermost exception under every Messenger
+    wrapper — `MailerSendingFailure::innermost()`, which is also where a transport failure is recognised, so a
+    wrapped one keeps its class and code), the one place that description is written; the contact handler
+    names a refused `Address` by its **role** (`from`, `to`, `replyTo` — visitor input or the site's own
+    configuration, e.g. a secret left empty), never by its value (`becauseAddressRefused()`); `tests/Support/DrivesTheMailerChain` is the real mailer
+    chain their tests fail the rendering through. A test checking that a value never reaches a verbose
+    trace passes the value's **name** to its data provider, never the value: the test method's own
+    arguments are in the trace. The price: the SMTP enhanced status (`5.1.1`) and Scaleway's error
     text are gone from the logs. **An address that `Mime\Address` would refuse never gets past
     validation**: `framework.validation.email_validation_mode: strict` (`validator.yaml`), egulias'
     grammar, the one Mime uses — the default `html5` mode accepted `a..b@example.com`, and the worker then
