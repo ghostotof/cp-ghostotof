@@ -111,7 +111,8 @@ final class AuthenticatedCacheMarshallerTest extends TestCase
     }
 
     /**
-     * Le message part dans les journaux (CacheItem::log, en `warning`) : il
+     * Le message part dans les journaux, en `warning`
+     * ({@see \Symfony\Component\Cache\CacheItem::log()}) : il
      * nomme la cause, jamais le contenu de la valeur.
      */
     public function testTheRefusalNeverQuotesTheValue(): void
@@ -152,11 +153,33 @@ final class AuthenticatedCacheMarshallerTest extends TestCase
         self::assertSame(['ko'], $failed);
     }
 
-    public function testAnEmptySecretIsRefused(): void
+    /**
+     * Le préchauffage du cache au `docker build` (`cache:clear`, `APP_SECRET`
+     * vide) construit ce service par l'EntityManager et le cache de résultats
+     * Doctrine : une dérivation au constructeur faisait échouer le
+     * préchauffage, masqué par le `|| true` du Dockerfile, et l'image partait
+     * sans cache système (relecture de #468).
+     */
+    public function testAnEmptySecretDoesNotPreventConstruction(): void
+    {
+        $marshaller = new AuthenticatedCacheMarshaller(new DefaultMarshaller(), '');
+
+        // Rien à signer, donc rien à dériver : c'est la première valeur qui refuse.
+        self::assertSame([], $marshaller->marshall([], $failed));
+    }
+
+    public function testAnEmptySecretIsRefusedAtTheFirstWrite(): void
     {
         $this->expectException(EmptyApplicationSecretException::class);
 
-        new AuthenticatedCacheMarshaller(new DefaultMarshaller(), '');
+        new AuthenticatedCacheMarshaller(new DefaultMarshaller(), '')->marshall(['key' => 'valeur'], $failed);
+    }
+
+    public function testAnEmptySecretIsRefusedAtTheFirstRead(): void
+    {
+        $this->expectException(EmptyApplicationSecretException::class);
+
+        new AuthenticatedCacheMarshaller(new DefaultMarshaller(), '')->unmarshall(str_repeat('x', 40));
     }
 
     private function marshaller(?string $secret = null): AuthenticatedCacheMarshaller

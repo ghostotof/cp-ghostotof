@@ -17,21 +17,31 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireDecorated;
  *
  * `cache.app` est un adaptateur Doctrine DBAL (ADR 0005), comme le signal de
  * redémarrage du worker, le cache de résultats Doctrine et le pool du client
- * HTTP. Tous relisent `cache_items` par
+ * HTTP. Tous relisaient `cache_items` par
  * {@see \Symfony\Component\Cache\Marshaller\DefaultMarshaller}, soit
  * `unserialize()` avec toutes les classes permises : qui écrit dans la table
  * (Adminer, injection SQL, identifiants de la base, que le même Secret porte
  * qu'`APP_SECRET`) obtenait une injection d'objet dans l'API, par les
- * limiteurs de débit, et dans le worker. Décorer `cache.default_marshaller`
- * couvre exactement ces pools : `cache.system` (PhpFilesAdapter) ne passe pas
- * par lui.
+ * limiteurs de débit, et dans le worker. La décoration de
+ * `cache.default_marshaller` vaut pour tout adaptateur qui le reçoit
+ * (FrameworkBundle le passe aussi aux adaptateurs fichiers, APCu, Redis,
+ * Memcached et PDO) : aujourd'hui, les seuls pools en base.
+ * `cache.system` ({@see \Symfony\Component\Cache\Adapter\PhpFilesAdapter}) ne
+ * passe pas par lui.
  *
  * Format stocké : le MAC binaire (HMAC-SHA256, 32 octets) suivi de la valeur
  * que rend le marshaller interne. `item_data` est un `BYTEA`, que l'adaptateur
  * lie en binaire. Une valeur au MAC absent ou faux lève
  * {@see CacheValueMacRefusedException}, que l'adaptateur traite comme une
- * absence de cache. Au premier déploiement, chaque valeur déjà en table est
- * donc perdue une fois : les compteurs des limiteurs repartent de zéro.
+ * absence de cache. Dans une lecture par lot (`getItems()`), l'exception
+ * interrompt le lot : les clés suivantes reviennent absentes elles aussi, comme
+ * avec tout échec de DefaultMarshaller. Les lecteurs actuels lisent clé par clé.
+ *
+ * Une valeur signée sous une autre clé est refusée : au premier déploiement, à
+ * une rotation d'`APP_SECRET` ou à un changement de `KEY_CONTEXT`, le cache en
+ * base est perdu, et le reste tant que le rollout fait servir anciens et
+ * nouveaux pods, chacun refusant et réécrasant les valeurs de l'autre : les
+ * compteurs des limiteurs repartent de zéro à chaque alternance.
  *
  * Écarté : {@see \Symfony\Component\Cache\Marshaller\SodiumMarshaller}. Une
  * boîte scellée chiffre pour une clé publique : elle n'authentifie l'auteur
@@ -39,13 +49,18 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireDecorated;
  * qu'elle promet. Le besoin est l'intégrité, pas la confidentialité, et un HMAC
  * le couvre sans gestion de paire de clés.
  *
- * Limite acceptée : une valeur authentifiée peut être recopiée d'une clé de
- * cache à une autre, ou rejouée plus tard, par qui écrit dans la table (le MAC
- * ne couvre pas l'identifiant). Au pire, un compteur de limiteur revient à un
- * état antérieur : un déni de quota, jamais une exécution de code.
+ * Limite acceptée : le MAC ne couvre ni l'identifiant de la ligne ni le pool
+ * (l'interface ne passe pas l'identifiant à la lecture). Qui écrit dans la
+ * table peut recopier une valeur authentifiée d'une clé ou d'un pool à l'autre,
+ * ou la rejouer plus tard : ramener un compteur de limiteur en arrière, ou
+ * poser un tableau sur la ligne du signal de redémarrage, que le worker compare
+ * à un horodatage et prend pour une demande d'arrêt permanente. C'est un déni
+ * de service, jamais une exécution de code, à la portée de qui peut déjà lire et
+ * réécrire toutes les données de la base. Une clé par pool le fermerait, au
+ * prix d'une instance par pool au lieu d'une décoration.
  */
 #[AsDecorator(decorates: 'cache.default_marshaller')]
-final readonly class AuthenticatedCacheMarshaller implements MarshallerInterface
+final class AuthenticatedCacheMarshaller implements MarshallerInterface
 {
     /**
      * Sépare cette clé des autres usages d'`APP_SECRET` ; la changer invalide
@@ -53,20 +68,22 @@ final readonly class AuthenticatedCacheMarshaller implements MarshallerInterface
      */
     private const string KEY_CONTEXT = 'cp-ghostotof/cache-value/v1';
 
+    private const string ALGORITHM = 'sha256';
+
+    /**
+     * Longueur en octets d'un HMAC binaire sous {@see self::ALGORITHM}.
+     */
     private const int MAC_LENGTH = 32;
 
-    private string $key;
+    private ?string $key = null;
 
     public function __construct(
         #[AutowireDecorated]
-        private MarshallerInterface $inner,
+        private readonly MarshallerInterface $inner,
         #[Autowire(param: 'kernel.secret')]
         #[SensitiveParameter]
-        string $secret,
+        private readonly string $secret,
     ) {
-        // Un secret vide lève EmptyApplicationSecretException, à la première
-        // construction : la première lecture ou écriture d'un pool en base.
-        $this->key = SecretKeyDerivation::derive($secret, self::KEY_CONTEXT);
     }
 
     /**
@@ -112,6 +129,21 @@ final readonly class AuthenticatedCacheMarshaller implements MarshallerInterface
 
     private function mac(string $value): string
     {
-        return hash_hmac('sha256', $value, $this->key, true);
+        return hash_hmac(self::ALGORITHM, $value, $this->key(), true);
+    }
+
+    /**
+     * Dérivée à la première lecture ou écriture, jamais au constructeur : le
+     * préchauffage du cache au `docker build` (`cache:clear`, `APP_SECRET`
+     * vide) construit ce service par l'EntityManager et le cache de résultats
+     * Doctrine sans jamais s'en servir. Un secret vide lève alors
+     * {@see \App\Shared\Infrastructure\Security\EmptyApplicationSecretException}
+     * à la première utilisation ; l'adaptateur
+     * l'attrape comme toute `Exception` et la journalise en `warning`, mais les
+     * autres usages du secret (CSRF, enveloppes Messenger) échouent en 500.
+     */
+    private function key(): string
+    {
+        return $this->key ??= SecretKeyDerivation::derive($this->secret, self::KEY_CONTEXT);
     }
 }
