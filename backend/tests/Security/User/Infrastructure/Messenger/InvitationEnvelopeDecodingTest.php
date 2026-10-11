@@ -51,6 +51,24 @@ final class InvitationEnvelopeDecodingTest extends KernelTestCase
     }
 
     /**
+     * Issue #465 : le format `C:` (Serializable) contourne `__unserialize()`
+     * et rendrait un message aux propriétés `readonly` non initialisées ; PHP
+     * n'en dit qu'un `E_WARNING` (« has no unserializer »). Ce refus tient au
+     * gestionnaire d'erreurs de PhpSerializer::safelyUnserialize(), un détail
+     * de Symfony qu'aucun code du projet n'écrit : ce test le garde contre une
+     * montée de version qui le changerait.
+     */
+    public function testASignedEnvelopeOfTheSerializableFormatFailsToDecode(): void
+    {
+        $serializableFormat = \sprintf('C:%d:"%s":0:{}', \strlen(SendAccountInvitationMessage::class), SendAccountInvitationMessage::class);
+
+        $decoded = $this->queueSerializer()->decode($this->signedEnvelopeCarrying($serializableFormat))->getMessage();
+
+        self::assertInstanceOf(MessageDecodingFailedException::class, $decoded);
+        self::assertStringContainsString('has no unserializer', $decoded->getMessage());
+    }
+
+    /**
      * Ce que PhpSerializer écrirait pour une enveloppe d'invitation, le
      * message remplacé par `$serializedMessage` s'il est donné, signé comme
      * le signerait l'application.
