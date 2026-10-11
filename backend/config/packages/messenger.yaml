@@ -16,6 +16,10 @@ framework:
 
         routing:
             # Route your messages to the transports
+            # Jamais Symfony\Component\Mailer\Messenger\SendEmailMessage (ni un
+            # joker qui l'atteint) : l'e-mail partirait non rendu, jeton
+            # d'invitation compris, dans la file puis le failure_transport
+            # (issue #426, garde SendEmailMessageStaysSynchronousTest).
             'App\Contact\Application\Message\SendContactMessageMessage': async
             'App\Security\User\Application\Message\SendAccountInvitationMessage': async
 
