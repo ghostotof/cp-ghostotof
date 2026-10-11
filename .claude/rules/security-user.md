@@ -71,7 +71,7 @@ paths:
     Contact rate limiter). Presenters: `CpgUserPresenter` (`/api/me`), `CpgUserAdminPresenter`
     (backoffice list — `id`, `username`, `email`, `roles`, `status`).
   - **The invitation token is created by the Messenger handler, never by the use case** (audit C2):
-    `SendAccountInvitationMessage` carries `{userId, locale}` and nothing else, so a message parked in the
+    `SendAccountInvitationMessage` carries `{userId, locale, invitedAt}` and nothing else, so a message parked in the
     doctrine `failure_transport` (SMTP down…) exposes no usable secret. `SendAccountInvitationHandler` reloads
     the user (missing or already activated → `logger->warning` + return, no retry), then in a single
     `wrapInTransaction` purges the previous `PasswordSetupToken` and issues a fresh one. Keep it that way: do
@@ -121,6 +121,15 @@ paths:
     a resent link is often lost or doubtful); an asynchronous bounce after the provider accepted the
     message is out of reach (only a TEM events webhook would close it).
     `SendAccountInvitationDeliveryFailureTest` reads the table on the real `_test` database.
+    **A message older than the account's last (re)invitation is dropped** (issue #434): `invitedAt` is the
+    instant `markInvited()` set before the dispatch, in Unix seconds — the precision of `invited_at`
+    (`TIMESTAMP(0)`). When the reloaded account's `invitedAt` is later, the handler logs a `warning` and
+    returns without retry: a delayed retry, or a message replayed from the `failure_transport` days later,
+    would otherwise purge the token of a resend already delivered. Same second → processed. A message
+    queued before #434 has no `invitedAt` (`null`, restored by `__unserialize()`, since `PhpSerializer`
+    never calls the constructor) and is processed as before; a malformed one throws
+    `MalformedAccountInvitationMessageException`, which the serializer turns into a decoding failure.
+    `SendAccountInvitationStaleMessageTest` replays the issue's scenario on the real `_test` database.
   - `Infrastructure/` — `Doctrine/{CpgUser,PasswordSetupToken}Repository.php` (sole impls;
     `CpgUserRepository` is also the **loader of the `cpg_users` provider**, `UserLoaderInterface`, issue #418:
     the `entity` provider has no `property` option on purpose — with it, Doctrine's provider threw

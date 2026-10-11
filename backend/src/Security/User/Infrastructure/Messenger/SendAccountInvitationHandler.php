@@ -80,6 +80,18 @@ final readonly class SendAccountInvitationHandler
         // statique.
         \assert(null !== $recipientEmail);
 
+        if ($this->isSupersededByALaterInvitation($user, $message)) {
+            // Issue #434 : une relance plus récente a déjà émis son jeton, et
+            // son e-mail est peut-être déjà arrivé. Ce message (réessai
+            // différé, rejeu du failure_transport) le purgerait : il sort sans
+            // exception, donc sans réessai, comme pour un compte activé.
+            $this->logger->warning('Invitation ignorée : une invitation plus récente du compte l\'a remplacée.', [
+                'userId' => $message->userId,
+            ]);
+
+            return;
+        }
+
         $locale = Locale::from($message->locale);
         $clearToken = bin2hex(random_bytes(32));
         $token = new PasswordSetupToken(
@@ -108,6 +120,21 @@ final readonly class SendAccountInvitationHandler
 
             throw $this->deliveryFailure($exception);
         }
+    }
+
+    /**
+     * Comparaison à la seconde, la précision de la colonne `invited_at` : un
+     * message de la même seconde que la dernière invitation est traité. Un
+     * message mis en file avant l'issue #434 ne porte pas d'instant
+     * (`invitedAt` à `null`) : il est traité comme avant.
+     */
+    private function isSupersededByALaterInvitation(CpgUser $user, SendAccountInvitationMessage $message): bool
+    {
+        $lastInvitedAt = $user->getInvitedAt();
+
+        return null !== $message->invitedAt
+            && null !== $lastInvitedAt
+            && $lastInvitedAt->getTimestamp() > $message->invitedAt;
     }
 
     /**

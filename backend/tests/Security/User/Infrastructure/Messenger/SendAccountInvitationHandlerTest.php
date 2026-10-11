@@ -47,7 +47,8 @@ use Twig\Source;
 /**
  * Périmètre du handler depuis l'audit C2 (décision D3) : c'est lui qui
  * (re)crée l'unique PasswordSetupToken du compte, dans une transaction, puis
- * envoie l'e-mail. Le message d'entrée ne porte plus que { userId, locale }.
+ * envoie l'e-mail. Le message d'entrée ne porte que { userId, locale,
+ * invitedAt } (issue #434 pour le dernier).
  */
 final class SendAccountInvitationHandlerTest extends TestCase
 {
@@ -57,6 +58,8 @@ final class SendAccountInvitationHandlerTest extends TestCase
     private const string FRONTEND_BASE_URL = 'https://front.test';
     /** Le message transporte l'identifiant en chaîne RFC 4122 (spec 0003 D7). */
     private const string USER_ID = '01998b2e-2d2c-73f4-9f39-8f5b0c1f0a11';
+    /** Dernière invitation du compte bouchonné, celle que sert le message (issue #434). */
+    private const string INVITED_AT = '2026-09-03 11:00:00';
 
     public function testItCreatesAFreshTokenAndSendsALocalisedInvitationEmail(): void
     {
@@ -81,7 +84,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
 
         $handler = $this->handler($user, $tokenRepository, $mailer, new MockClock('2026-09-03 12:00:00'));
 
-        $handler(new SendAccountInvitationMessage(self::USER_ID, 'fr'));
+        $handler(self::invitationMessage('fr'));
 
         self::assertInstanceOf(PasswordSetupToken::class, $savedToken);
         self::assertSame(64, \strlen($savedToken->getTokenHash()));
@@ -141,7 +144,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
 
         $handler = $this->handler($user, $tokenRepository, $mailer, new MockClock('2026-09-03 12:00:00'));
 
-        $message = new SendAccountInvitationMessage(self::USER_ID, 'en');
+        $message = self::invitationMessage('en');
         $handler($message);
         $handler($message);
 
@@ -175,7 +178,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
             self::FRONTEND_BASE_URL,
         );
 
-        $handler(new SendAccountInvitationMessage(self::USER_ID, 'fr'));
+        $handler(self::invitationMessage('fr'));
     }
 
     public function testItDoesNothingWhenTheAccountIsAlreadyActivated(): void
@@ -191,7 +194,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
 
         $handler = $this->handler($user, $tokenRepository, $mailer, new MockClock());
 
-        $handler(new SendAccountInvitationMessage(self::USER_ID, 'fr'));
+        $handler(self::invitationMessage('fr'));
     }
 
     public function testItWrapsAMailerTransportFailureIntoADeliveryException(): void
@@ -211,7 +214,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
         );
 
         try {
-            $handler(new SendAccountInvitationMessage(self::USER_ID, 'en'));
+            $handler(self::invitationMessage('en'));
             self::fail('AccountInvitationDeliveryException aurait dû être levée.');
         } catch (AccountInvitationDeliveryException $exception) {
             // Chaîne coupée (issue #356) : le worker journalise toute la
@@ -326,7 +329,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
             new ServiceLocator(['async' => static fn (): MultiplierRetryStrategy => new MultiplierRetryStrategy(3)]),
         );
         $event = new WorkerMessageFailedEvent(
-            new Envelope(new SendAccountInvitationMessage(self::USER_ID, 'fr')),
+            new Envelope(self::invitationMessage('fr')),
             'async',
             $failure['workerFailure'],
         );
@@ -467,7 +470,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
         );
 
         try {
-            $handler(new SendAccountInvitationMessage(self::USER_ID, 'fr'));
+            $handler(self::invitationMessage('fr'));
             self::fail('AccountInvitationDeliveryException aurait dû être levée.');
         } catch (AccountInvitationDeliveryException $exception) {
             self::assertNull($exception->getPrevious());
@@ -496,7 +499,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
         );
 
         try {
-            $handler(new SendAccountInvitationMessage(self::USER_ID, 'fr'));
+            $handler(self::invitationMessage('fr'));
         } catch (AccountInvitationDeliveryException $exception) {
             self::assertNull($exception->getPrevious());
 
@@ -506,11 +509,16 @@ final class SendAccountInvitationHandlerTest extends TestCase
         self::fail('AccountInvitationDeliveryException aurait dû être levée.');
     }
 
+    private static function invitationMessage(string $locale): SendAccountInvitationMessage
+    {
+        return new SendAccountInvitationMessage(self::USER_ID, $locale, (new DateTimeImmutable(self::INVITED_AT))->getTimestamp());
+    }
+
     private function pendingUser(string $username, string $email): CpgUser
     {
         $user = new CpgUser($username, '');
         $user->setEmail($email);
-        $user->markInvited(new DateTimeImmutable('2026-09-03 11:00:00'));
+        $user->markInvited(new DateTimeImmutable(self::INVITED_AT));
 
         // L'identité du compte rechargé n'a pas à correspondre à celle du
         // message : le dépôt est bouchonné, c'est lui qui décide ce qu'il rend.
@@ -582,7 +590,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
 
         return $this->withVerboseTraces(static function () use ($bus, $mailer, $savedToken): array {
             try {
-                $bus->dispatch(new SendAccountInvitationMessage(self::USER_ID, 'fr'));
+                $bus->dispatch(self::invitationMessage('fr'));
                 self::fail('Le rendu aurait dû échouer.');
             } catch (HandlerFailedException $workerFailure) {
                 self::assertInstanceOf(Throwable::class, $mailer->failure);

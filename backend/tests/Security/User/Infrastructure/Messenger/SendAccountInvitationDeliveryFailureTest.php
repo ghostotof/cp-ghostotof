@@ -130,7 +130,7 @@ final class SendAccountInvitationDeliveryFailureTest extends KernelTestCase
         $handler = $this->handler($mailer);
 
         $this->expectDeliveryFailure($handler, $user);
-        $handler(new SendAccountInvitationMessage($user->getId()->toRfc4122(), 'fr'));
+        $handler($this->invitationMessage($user));
 
         self::assertInstanceOf(TemplatedEmail::class, $sentEmail);
         $setupUrl = $sentEmail->getContext()['setupUrl'] ?? null;
@@ -167,11 +167,19 @@ final class SendAccountInvitationDeliveryFailureTest extends KernelTestCase
     private function expectDeliveryFailure(SendAccountInvitationHandler $handler, CpgUser $user): void
     {
         try {
-            $handler(new SendAccountInvitationMessage($user->getId()->toRfc4122(), 'fr'));
+            $handler($this->invitationMessage($user));
             self::fail('AccountInvitationDeliveryException aurait dû être levée.');
         } catch (AccountInvitationDeliveryException $exception) {
             self::assertNull($exception->getPrevious());
         }
+    }
+
+    private function invitationMessage(CpgUser $user): SendAccountInvitationMessage
+    {
+        $invitedAt = $user->getInvitedAt();
+        self::assertNotNull($invitedAt);
+
+        return new SendAccountInvitationMessage($user->getId()->toRfc4122(), 'fr', $invitedAt->getTimestamp());
     }
 
     /**
