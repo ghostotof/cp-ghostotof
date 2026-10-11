@@ -65,6 +65,18 @@ final class LoginIdentifierFingerprintTest extends TestCase
         $fingerprint->of('jane');
     }
 
+    /**
+     * Issue #455 : l'empreinte est calculée sous une clé dérivée, jamais sous
+     * `APP_SECRET` brut (l'ancien calcul, préfixe de contexte dans le message).
+     */
+    public function testTheFingerprintIsNotAnHmacUnderTheRawSecret(): void
+    {
+        self::assertNotSame(
+            substr(hash_hmac('sha256', 'security-audit/login-identifier:jane', self::SECRET), 0, 6),
+            (new LoginIdentifierFingerprint(self::SECRET))->of('jane'),
+        );
+    }
+
     public function testTwoIdentifiersGiveTwoFingerprints(): void
     {
         $fingerprint = new LoginIdentifierFingerprint(self::SECRET);

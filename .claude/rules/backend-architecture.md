@@ -88,7 +88,7 @@ comments excluded.
 `unserialize()` with no class allow-list: writing into either would be an object injection into the
 worker (or into an operator running `messenger:failed:show`). `framework.messenger.serializer.default_serializer`
 is `Shared/Infrastructure/Messenger/AuthenticatedEnvelopeSerializer`: it adds an HMAC of the body
-(header `X-Envelope-Mac`, key derived from `kernel.secret` by `hash_hkdf` with its own context, an
+(header `X-Envelope-Mac`, key derived from `kernel.secret` through `SecretKeyDerivation` with its own context, an
 empty secret refused at construction) and, on decoding, refuses an envelope whose MAC is wrong — or not
 a string, which AMQP or the Doctrine transport's JSON headers can yield — **before** the inner
 `PhpSerializer` sees it — any type, including the decoding-failure envelopes the retry puts back in
@@ -110,6 +110,19 @@ round trip through the Doctrine `failed` transport, the interface above) pin it.
 authenticated message can be replayed by whoever writes into the queue (no nonce — an invitation of the
 current generation replayed kills the link already received); **rotating `APP_SECRET` invalidates every
 queued message** (order in `k8s/README.md`).
+
+**`APP_SECRET` never keys an HMAC directly: each use derives its own key** (issue #455).
+`Shared/Infrastructure/Security/SecretKeyDerivation::derive($secret, $context)` is HKDF-SHA256 (RFC 5869,
+32 bytes, an empty secret refused with `EmptyApplicationSecretException`), and each class receiving
+`kernel.secret` declares a versioned `KEY_CONTEXT` (`cp-ghostotof/<use>/v1`): the CSRF cookie signer, the
+login-identifier fingerprint, the Messenger envelope MAC. Keyed by the raw secret and told apart only in
+the message (a prefix, or nothing), any future feature returning `HMAC(APP_SECRET, x)` for a client-chosen
+`x` would have been a signing oracle for every other use. Changing a context is a targeted rotation; the
+switch itself invalidated the `XSRF-TOKEN` cookies already issued (writes answer 403 until the next login,
+at most the JWT's lifetime — accepted) and changed every login fingerprint.
+`tests/Shared/Infrastructure/Security/ApplicationSecretUsesTest.php` finds, by tokens, every file of
+`src/` injecting `'%kernel.secret%'` or `'kernel.secret'` and requires it to call
+`SecretKeyDerivation::derive()` with a `KEY_CONTEXT` no other file uses.
 
 **`src/` never instantiates a bare `\Exception`, `\LogicException`, `\RuntimeException` or
 `\InvalidArgumentException`** (issues #338, #383).

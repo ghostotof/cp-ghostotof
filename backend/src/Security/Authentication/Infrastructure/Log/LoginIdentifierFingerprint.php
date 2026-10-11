@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Log;
 
+use App\Shared\Infrastructure\Security\SecretKeyDerivation;
 use SensitiveParameter;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -21,16 +22,18 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * valeur revient, d'une tentative à l'autre et d'un `login-failed` au
  * `login-throttled` qu'ils déclenchent.
  *
- * - **À clé** (HMAC-SHA256 sur `kernel.secret`, c.-à-d. `APP_SECRET`), pas
+ * - **À clé** (HMAC-SHA256 sous une clé dérivée de `kernel.secret`, c.-à-d. `APP_SECRET`), pas
  *   un simple condensat : sans la clé, passer un dictionnaire de mots de
  *   passe sur les empreintes d'un journal ne donne rien. Une clé vide est
  *   refusée ({@see MissingLoginFingerprintKeyException}). La clé protège
  *   déjà la signature des jetons CSRF et les clés des compteurs de
  *   `login_throttling` (HMAC de `identifiant-IP`, 48 bits, en base dans
- *   `cache_items`) : sa fuite est un incident en soi. Le message est préfixé
- *   d'un contexte propre, qui sépare l'empreinte des HMAC du limiteur — pas
- *   de façon absolue (un identifiant tenté pourrait commencer par ce
- *   préfixe), sans rien d'exploitable.
+ *   `cache_items`) : sa fuite est un incident en soi. La clé est dérivée pour
+ *   ce seul usage (issue #455, {@see \App\Shared\Infrastructure\Security\SecretKeyDerivation}) :
+ *   aucune empreinte ne vaut HMAC d'un autre usage du secret, ni l'inverse.
+ *   Elle a remplacé un préfixe de contexte dans le message, qui ne séparait
+ *   pas les usages de façon absolue. Changer de clé change toutes les
+ *   empreintes, comme une rotation d'`APP_SECRET`.
  * - **Insensible à la casse comme le compteur** :
  *   {@see \Symfony\Component\Security\Http\RateLimiter\DefaultLoginRateLimiter}
  *   compte `mb_strtolower()` de l'identifiant (`strtolower()` hors UTF-8) ;
@@ -54,8 +57,11 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  */
 final readonly class LoginIdentifierFingerprint
 {
-    /** Séparation de domaine : cette clé sert aussi à d'autres HMAC. */
-    private const string CONTEXT = 'security-audit/login-identifier:';
+    /**
+     * Contexte de la clé dérivée d'`APP_SECRET` (issue #455) : la séparation
+     * de domaine se fait par la clé, plus par un préfixe du message.
+     */
+    private const string KEY_CONTEXT = 'cp-ghostotof/login-identifier-fingerprint/v1';
 
     /** 24 bits en hexadécimal : voir « Courte exprès » ci-dessus. */
     private const int LENGTH = 6;
@@ -90,6 +96,6 @@ final readonly class LoginIdentifierFingerprint
         // Symfony\Component\Security\Http\RateLimiter\DefaultLoginRateLimiter::getLimiters().
         $folded = 1 === preg_match('//u', $identifier) ? mb_strtolower($identifier, 'UTF-8') : strtolower($identifier);
 
-        return substr(hash_hmac('sha256', self::CONTEXT.$folded, $this->secret), 0, self::LENGTH);
+        return substr(hash_hmac('sha256', $folded, SecretKeyDerivation::derive($this->secret, self::KEY_CONTEXT)), 0, self::LENGTH);
     }
 }

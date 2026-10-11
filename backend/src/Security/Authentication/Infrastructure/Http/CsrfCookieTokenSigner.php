@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Http;
 
+use App\Shared\Infrastructure\Security\SecretKeyDerivation;
 use SensitiveParameter;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -18,7 +19,11 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * qu'il connaît, puis la recopier dans l'en-tête `X-XSRF-TOKEN` : le
  * double-submit seul (cookie == header) était satisfait.
  *
- * La valeur devient `<random>.<hmac>` où `hmac = HMAC-SHA256(random, APP_SECRET)`.
+ * La valeur devient `<random>.<hmac>` où `hmac = HMAC-SHA256(random, clé)`, la
+ * clé étant dérivée d'`APP_SECRET` pour ce seul usage (issue #455,
+ * {@see \App\Shared\Infrastructure\Security\SecretKeyDerivation}). Changer
+ * de clé invalide les cookies déjà émis : une écriture répond 403 jusqu'à la
+ * reconnexion suivante (au plus la durée de vie du JWT).
  * Sans `APP_SECRET`, l'attaquant ne peut plus produire de couple valide : un
  * cookie forgé est rejeté à la vérification de signature, avant même la
  * comparaison cookie/header. Le secret ne quitte jamais le serveur.
@@ -34,6 +39,9 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 final readonly class CsrfCookieTokenSigner
 {
     private const string SEPARATOR = '.';
+
+    /** Contexte de la clé dérivée d'`APP_SECRET` (issue #455). */
+    private const string KEY_CONTEXT = 'cp-ghostotof/csrf-cookie/v1';
 
     /** Entropie de la partie aléatoire, en octets (64 caractères hexadécimaux). */
     private const int RANDOM_BYTES = 32;
@@ -79,6 +87,8 @@ final readonly class CsrfCookieTokenSigner
 
     private function signature(string $random): string
     {
-        return hash_hmac('sha256', $random, $this->secret);
+        // Dérivée à chaque appel (quelques microsecondes) : une clé vide lève
+        // au premier usage plutôt qu'à la construction de chaque requête.
+        return hash_hmac('sha256', $random, SecretKeyDerivation::derive($this->secret, self::KEY_CONTEXT));
     }
 }

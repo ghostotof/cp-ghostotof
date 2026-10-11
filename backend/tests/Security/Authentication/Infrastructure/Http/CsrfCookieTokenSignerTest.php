@@ -49,6 +49,18 @@ final class CsrfCookieTokenSignerTest extends TestCase
         self::assertFalse($this->signer->isValid($foreignToken));
     }
 
+    /**
+     * Issue #455 : la clé de signature est dérivée d'`APP_SECRET`, jamais le
+     * secret brut. Un HMAC sous le secret brut — celui qu'émettrait une autre
+     * fonction du site — ne vaut pas signature CSRF.
+     */
+    public function testASignatureUnderTheRawSecretIsRejected(): void
+    {
+        $random = bin2hex(random_bytes(32));
+
+        self::assertFalse($this->signer->isValid($random.'.'.hash_hmac('sha256', $random, self::SECRET)));
+    }
+
     public function testTamperedRandomPartIsRejected(): void
     {
         [$random, $signature] = explode('.', $this->signer->issue());
