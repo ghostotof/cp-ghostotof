@@ -65,8 +65,13 @@ final readonly class KeyedMac
      * Vrai si `$mac` est le MAC de `$data` sous cette clé et dans cet
      * encodage, comparé en temps constant. Un MAC vide n'est jamais valable :
      * le MAC calculé ne l'est jamais.
+     *
+     * Les deux paramètres sont cachés des traces, comme ceux de
+     * `hash_equals()` qu'ils remplacent : le cookie CSRF y passe ses deux
+     * moitiés, qui forment ensemble un jeton valable, et Messenger le corps
+     * d'une enveloppe.
      */
-    public function verifies(string $mac, string $data): bool
+    public function verifies(#[SensitiveParameter] string $mac, #[SensitiveParameter] string $data): bool
     {
         return hash_equals($this->sign($data), $mac);
     }

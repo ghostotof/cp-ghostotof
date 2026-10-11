@@ -76,11 +76,8 @@ use ReflectionParameter;
  *
  * **Ce qu'elle ne voit pas.** Un secret reçu sous un autre nom, sans
  * prototype qui le nomme : ceux de `src/` sont cachés à la main et épinglés
- * par {@see self::HIDDEN_BY_HAND}. La moitié aléatoire du jeton CSRF arrive à
- * `KeyedMac::verifies()` sous le nom `$data`, laissée visible — sans
- * `APP_SECRET`, elle ne permet pas de forger l'autre moitié. Un
- * secret porté par un objet (`TokenInterface`) : la trace n'affiche d'un
- * objet que sa classe. Un secret dans un tableau (`array $options`) : le
+ * par {@see self::HIDDEN_BY_HAND}. Un secret porté par un objet
+ * (`TokenInterface`) : la trace n'affiche d'un objet que sa classe. Un secret dans un tableau (`array $options`) : le
  * filtre de type l'écarte, ceux de `src/` sont dans HIDDEN_BY_HAND.
  *
  * **Les closures, les fonctions fléchées, les classes anonymes et les
@@ -140,8 +137,14 @@ final class SecretParametersTest extends TestCase
         SecurityAuditLogger::class.'::loginThrottled($triedIdentifier)' => self::TRIED_IDENTIFIER,
         SecurityAuditLogger::class.'::attemptSubject($triedIdentifier)' => self::TRIED_IDENTIFIER,
         LoginIdentifierFingerprint::class.'::of($identifier)' => self::TRIED_IDENTIFIER,
-        // Issue #487 : l'empreinte passe l'identifiant à KeyedMac sous un nom générique.
+        // Issue #487 : les quatre usages d'APP_SECRET passent leurs valeurs à
+        // KeyedMac sous des noms génériques. L'empreinte y passe l'identifiant
+        // tenté ; le cookie CSRF ses deux moitiés, qui forment ensemble un
+        // jeton valable ; Messenger le corps des enveloppes (le message de
+        // contact) — `hash_equals()`, qui les recevait avant, les cache aussi.
         KeyedMac::class.'::sign($data)' => self::TRIED_IDENTIFIER.' (calcul de l\'empreinte)',
+        KeyedMac::class.'::verifies($mac)' => 'la moitié signée du jeton CSRF reçu',
+        KeyedMac::class.'::verifies($data)' => 'la moitié aléatoire du jeton CSRF reçu, ou le corps d\'une enveloppe Messenger',
         CpgUserRepository::class.'::loadUserByIdentifier($identifier)' => self::TRIED_IDENTIFIER.' (chargeur du fournisseur `cpg_users`)',
         CpgUserRepositoryInterface::class.'::findOneByUsername($username)' => self::TRIED_IDENTIFIER.' (appelé par le chargeur)',
         CpgUserRepository::class.'::findOneByUsername($username)' => self::TRIED_IDENTIFIER.' (appelé par le chargeur)',

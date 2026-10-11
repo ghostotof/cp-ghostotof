@@ -223,8 +223,8 @@ methods per encoding (sign one way, verify the other). Going through it is no ro
 `DerivedMacsSurviveKeyedMacTest` writes, per use, the computation from before #487 with its **literal**
 context and checks both directions (a MAC signed before is accepted, the class signs what it would have
 signed); a changed `KEY_CONTEXT` turns it red, which is intended — a rotation is decided and announced in the
-release notes, never slipped in by a refactoring. `sign()`'s `$data` carries `#[SensitiveParameter]` and is
-pinned in `HIDDEN_BY_HAND` (the fingerprint hands it the tried identifier, possibly a password).
+release notes, never slipped in by a refactoring. `sign()`'s `$data` and both of `verifies()`'s parameters carry
+`#[SensitiveParameter]`, pinned in `HIDDEN_BY_HAND` (see the parameters rule below).
 `ApplicationSecretUsesTest` refuses `hash_hmac()` and `hash_equals()` (qualified or not, never a method of the
 same name nor a comment) in any file receiving the secret: such a class has no other key than the one it
 derives. `hash_equals()` elsewhere (the double-submit comparison of `CsrfCookieRequestSubscriber`) is not a
@@ -328,8 +328,10 @@ declares: one definition of "outside any class". No exemption list. A secret und
 another name or in an `array` is hidden by hand and pinned in `HIDDEN_BY_HAND` (`AuthCookieFactory::create($value)`,
 `ReplayRefusingHttpClient::request($options)` — the Scaleway key and the nominative CV —,
 `PasswordOptionRedactor::redact($text)`); an entry the census already sees is refused there.
-`KeyedMac::verifies($mac, $data)` stays visible on purpose (the CSRF token's two halves, useless without
-`APP_SECRET`; `sign($data)` is hidden, issue #487). No exclusion list until a first false positive needs one. Why it matters although
+`KeyedMac::sign($data)` and both parameters of `verifies($mac, $data)` are hidden and pinned there (issue
+#487): the tried login identifier, the CSRF token's two halves — together a valid token — and the Messenger
+envelope body go through them under generic names, and `hash_equals()`, which received them before, hides its
+own. No exclusion list until a first false positive needs one. Why it matters although
 production and, since #420, PHPUnit strip arguments (`zend.exception_ignore_args`, see
 `.claude/rules/backend-outillage.md`): dev does not (the debug JSON error body, Messenger's
 `ErrorDetailsStamp`, output pasted in a ticket or an assistant session), and `debug_backtrace()` never
