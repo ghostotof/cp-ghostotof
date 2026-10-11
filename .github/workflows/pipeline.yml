@@ -443,6 +443,17 @@ jobs:
       - name: 429 problem+json sur chaque zone nginx, deux confs
         run: make back-nginx-rate-limits
 
+  # Issue #477 : rabbitmq.conf peut empêcher le broker de démarrer, et rien ne
+  # ramène `rabbitmq` en cas d'échec en préprod. L'image épinglée démarre ici
+  # avec le fichier, avant toute release.
+  rabbitmq-conf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10 # habituel ~40 s, pull de l'image rabbitmq compris
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: RabbitMQ démarre avec rabbitmq.conf et applique son plafond
+        run: make rabbitmq-conf
+
   # ---------------------------------------------------------------------------
   # Phase 2 — sur `release/**` seulement (spec 0006, D2/D3/D6)
   # ---------------------------------------------------------------------------
@@ -453,7 +464,7 @@ jobs:
   # qui nomme les trois valeurs — on renomme la branche, on ne « corrige » pas
   # la CI. Ses sorties nomment les images de tout le reste de la phase.
   release-version:
-    needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests, frontend-image-headers, backend-nginx-rate-limits]
+    needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests, frontend-image-headers, backend-nginx-rate-limits, rabbitmq-conf]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
     timeout-minutes: 5 # habituel ~6 s

@@ -6,8 +6,11 @@ DC := docker compose
 # pour que les trois ne puissent pas diverger. Vide si le manifeste change de
 # forme : tools/check-backend-nginx-rate-limits.sh refuse alors `nginx:`.
 NGINX_SIDECAR_TAG := $(shell sed -n 's/.*image: nginx:\([^[:space:]]*\).*/\1/p' k8s/base/backend-deployment.yaml | head -1)
+# Tag du broker que déploient les manifestes, pour rabbitmq-conf (#477). Vide si
+# le manifeste change de forme : tools/check-rabbitmq-conf.sh refuse alors `rabbitmq:`.
+RABBITMQ_MANIFEST_TAG := $(shell sed -n 's/.*image: rabbitmq:\([^[:space:]]*\).*/\1/p' k8s/base/rabbitmq.yaml | head -1)
 
-.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality back-lsp build-front-prod build-front-preprod front-image-headers back-nginx-rate-limits get-secret
+.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality back-lsp build-front-prod build-front-preprod front-image-headers back-nginx-rate-limits rabbitmq-conf get-secret
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -167,6 +170,9 @@ front-image-headers: ## Construit l'image frontend de prod et vérifie les 7 en-
 # confs avec le nginx qui les sert réellement.
 back-nginx-rate-limits: ## Vérifie que chaque zone nginx du backend refuse en 429 problem+json, sur les deux confs (#347)
 	tools/check-backend-nginx-rate-limits.sh nginx:$(NGINX_SIDECAR_TAG)
+
+rabbitmq-conf: ## Démarre le RabbitMQ des manifestes avec k8s/base/rabbitmq.conf et vérifie son plafond (#477)
+	tools/check-rabbitmq-conf.sh rabbitmq:$(RABBITMQ_MANIFEST_TAG)
 
 # --- Secrets Kubernetes (préprod/prod) ---------------------------------------
 # Lit les Secrets déjà présents dans le cluster (remplis par External Secrets
