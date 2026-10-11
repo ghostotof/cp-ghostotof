@@ -60,8 +60,13 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
 {
     public const string HEADER = 'X-Envelope-Mac';
 
-    /** Sépare cette clé des autres usages d'`APP_SECRET`. */
-    private const string KEY_CONTEXT = 'cp-ghostotof/messenger-envelope/v1';
+    /**
+     * Sépare cette clé des autres usages d'`APP_SECRET`. En `v2` depuis
+     * l'issue #450 : la transition de #444 a pu re-signer sous `v1` une
+     * enveloppe forgée sans MAC (au réessai, vers `failed`) ; aucune signature
+     * de cette ère n'est plus reconnue.
+     */
+    private const string KEY_CONTEXT = 'cp-ghostotof/messenger-envelope/v2';
 
     private string $key;
 

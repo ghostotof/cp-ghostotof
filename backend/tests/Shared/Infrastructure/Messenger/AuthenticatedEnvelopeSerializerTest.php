@@ -6,6 +6,7 @@ namespace App\Tests\Shared\Infrastructure\Messenger;
 
 use App\Shared\Infrastructure\Messenger\AuthenticatedEnvelopeSerializer;
 use App\Shared\Infrastructure\Security\EmptyApplicationSecretException;
+use App\Shared\Infrastructure\Security\SecretKeyDerivation;
 use App\Tests\Shared\Infrastructure\Messenger\Fixtures\Probe\UnserializationProbe;
 use App\Tests\Support\TestKeys;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -123,6 +124,25 @@ final class AuthenticatedEnvelopeSerializerTest extends TestCase
         $decoded = $this->serializer()->decode($encoded)->getMessage();
 
         self::assertInstanceOf(MessageDecodingFailedException::class, $decoded);
+    }
+
+    /**
+     * Issue #450 : la clé change de contexte avec la fin de la transition de
+     * #444. Pendant celle-ci, une enveloppe forgée sans MAC était décodée,
+     * puis re-signée au réessai — gadget compris — et rangée dans `failed`
+     * avec un MAC valable : aucune signature de cette ère ne doit plus être
+     * reconnue, sans dépendre d'une inspection des files.
+     */
+    public function testAnEnvelopeSignedUnderTheTransitionKeyIsRefused(): void
+    {
+        $encoded = $this->forgedWithoutMac();
+        $transitionKey = SecretKeyDerivation::derive(TestKeys::material(), 'cp-ghostotof/messenger-envelope/v1');
+        $encoded['headers'][AuthenticatedEnvelopeSerializer::HEADER] = hash_hmac('sha256', $encoded['body'], $transitionKey);
+
+        $decoded = $this->serializer()->decode($encoded)->getMessage();
+
+        self::assertInstanceOf(MessageDecodingFailedException::class, $decoded);
+        self::assertSame(0, UnserializationProbe::$unserializations);
     }
 
     /**
