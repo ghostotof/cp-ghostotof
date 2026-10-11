@@ -1141,6 +1141,14 @@ peut porter l'empreinte d'une saisie jamais vue : rien ne s'y relie, lire alors 
 même `ip`. L'empreinte est courte exprès (6 caractères hexadécimaux, 24 bits) : deux saisies
 différentes peuvent coïncider, c'est un indice à IP et fenêtre fixées, pas une preuve entre IP.
 
+Une rotation d'`APP_SECRET` invalide aussi **les messages Messenger déjà en file** (issue #444) :
+chaque enveloppe porte un MAC dérivé du secret, vérifié avant toute désérialisation. Une enveloppe
+signée avec l'ancien secret est refusée (échec de décodage, réessais, puis `failed`, où elle reste
+refusée). Ordre : vider la file `async` (le worker la consomme) et rejouer ou purger `failed`
+(`messenger:failed:show`, `messenger:failed:retry`), changer le secret, puis redémarrer **ensemble**
+`backend` et `worker` (`kubectl rollout restart deployment/backend deployment/worker`) : un pod
+d'API et un worker qui ne partagent pas le même secret se refusent mutuellement leurs messages.
+
 Lecture sur un pod, canal d'audit seulement, une ligne lisible par événement :
 
 ```bash

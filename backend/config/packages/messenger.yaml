@@ -6,6 +6,11 @@ framework:
         # `php bin/console messenger:consume failed -vv` pour les rejouer.
         failure_transport: failed
 
+        # Toute enveloppe porte un MAC vérifié avant tout unserialize() (issue
+        # #444, AuthenticatedEnvelopeSerializer) : les deux transports en héritent.
+        serializer:
+            default_serializer: App\Shared\Infrastructure\Messenger\AuthenticatedEnvelopeSerializer
+
         transports:
             # https://symfony.com/doc/current/messenger.html#transport-configuration
             # RabbitMQ. Consommé par `make consume` en dev, et par le Deployment

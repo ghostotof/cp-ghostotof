@@ -72,6 +72,30 @@ mapping guard above is what reveals it. The same test checks `SHOW timezone` equ
 `date_default_timezone_get()`: changing `date.timezone` in `php.*.ini` means a migration that moves the
 database with it. A value read back therefore carries Paris's offset; still compare instants.
 
+**Every queued envelope is authenticated before anything unserializes it** (issue #444). Both queues —
+`async` on RabbitMQ, `failed` in the Doctrine table — are read back by `PhpSerializer`, that is
+`unserialize()` with no class allow-list: writing into either would be an object injection into the
+worker (or into an operator running `messenger:failed:show`). `framework.messenger.serializer.default_serializer`
+is `Shared/Infrastructure/Messenger/AuthenticatedEnvelopeSerializer`: it adds an HMAC of the body
+(header `X-Envelope-Mac`, key derived from `kernel.secret` with its own context, an empty secret refused
+at construction) and, on decoding, refuses an envelope whose MAC is wrong **before** the inner
+`PhpSerializer` sees it — any type, including the decoding-failure envelopes the retry puts back in
+the queue. **Never rely on `#[AsMessageHandler(sign: true)]` for this**: Messenger's `SigningSerializer`
+only requires a signature for the listed types, and an unsigned envelope of any other type (a `stdClass`
+carrying a gadget) is still unserialized — measured in the review of #444, a `Process::__unserialize()`
+ran that way. A refusal is a decoding failure (`MessageDecodingFailedException`, strings only, quoting
+its cause, never the body): transport retries, then `failed`. **Two steps**: while the parameter
+`app.messenger.require_envelope_mac` is `false` (the release that introduced it), an envelope with
+**no** MAC — queued by the old code before or during the rollout, or after a rollback — is still
+decoded, with a `warning`; a MAC present but wrong is refused in both modes. The follow-up issue sets it
+to `true` once the queues hold no unsigned envelope, which is what actually closes the injection.
+`AuthenticatedEnvelopeSerializerTest` (an `UnserializationProbe` fixture counts its
+`__unserialize()` calls: zero for a tampered, unsigned-when-required or wrongly signed envelope) and
+`QueuedEnvelopesAreAuthenticatedTest` (the real container's chain) pin it. Accepted limits: an
+authenticated message can be replayed by whoever writes into the queue (no nonce — an invitation of the
+current generation replayed kills the link already received); **rotating `APP_SECRET` invalidates every
+queued message** (order in `k8s/README.md`).
+
 **`src/` never instantiates a bare `\Exception`, `\LogicException`, `\RuntimeException` or
 `\InvalidArgumentException`** (issues #338, #383).
 Every failure gets its own class: a client error implements `ProblemExceptionInterface` (see
