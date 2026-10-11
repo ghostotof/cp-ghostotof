@@ -150,8 +150,11 @@ paths:
     refuses quotes what the visitor typed (address, name, text), on every retry and up to the
     `failure_transport`. Both handlers build the e-mail **inside** the `try`, catch any `Throwable` and
     describe it through `Shared/Infrastructure/Mailer/MailerSendingFailure::describe()` (type plus
-    `<template>:<line>`, or `<file basename>:<line>`, from the innermost of nested `HandlerFailedException`s),
-    the one place that description is written; `tests/Support/DrivesTheMailerChain` is the real mailer
+    `<template>:<line>`, or `<file basename>:<line>`, from the innermost exception under every Messenger
+    wrapper — `MailerSendingFailure::innermost()`, which is also where a transport failure is recognised, so a
+    wrapped one keeps its class and code), the one place that description is written; the contact handler
+    names a refused `Address` by its **role** (`from`, `to`, `replyTo` — visitor input or the site's own
+    configuration, e.g. a secret left empty), never by its value (`becauseAddressRefused()`); `tests/Support/DrivesTheMailerChain` is the real mailer
     chain their tests fail the rendering through. A test checking that a value never reaches a verbose
     trace passes the value's **name** to its data provider, never the value: the test method's own
     arguments are in the trace. The price: the SMTP enhanced status (`5.1.1`) and Scaleway's error

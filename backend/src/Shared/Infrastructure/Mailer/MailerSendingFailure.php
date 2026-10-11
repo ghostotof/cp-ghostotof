@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Shared\Infrastructure\Mailer;
 
-use Symfony\Component\Messenger\Exception\HandlerFailedException;
+use Symfony\Component\Messenger\Exception\WrappedExceptionsInterface;
 use Throwable;
 use Twig\Error\Error as TwigError;
 
@@ -33,30 +33,41 @@ use Twig\Error\Error as TwigError;
  * le bus ({@see \Symfony\Component\Mailer\Messenger\SendEmailMessage} traité
  * en synchrone, issue #426), d'où un échec enveloppé dans une
  * HandlerFailedException par bus traversé : c'est celle du fond qui est
- * décrite.
+ * décrite ({@see self::innermost()}).
  */
 final class MailerSendingFailure
 {
     public static function describe(Throwable $exception): string
     {
-        while ($exception instanceof HandlerFailedException && $exception->getPrevious() instanceof Throwable) {
-            $exception = $exception->getPrevious();
-        }
-
+        $exception = self::innermost($exception);
         $type = get_debug_type($exception);
+        $template = $exception instanceof TwigError ? $exception->getSourceContext()?->getName() : null;
 
-        if (!$exception instanceof TwigError) {
+        if (!$exception instanceof TwigError || null === $template) {
+            // Hors gabarit, ou erreur Twig levée hors rendu (une extension,
+            // un runtime) : l'emplacement PHP, sûr.
             return \sprintf('%s, %s:%d', $type, basename($exception->getFile()), $exception->getLine());
         }
 
-        $template = $exception->getSourceContext()?->getName();
         $line = $exception->getTemplateLine();
 
-        return match (true) {
-            null === $template => $type,
-            // Twig rend -1 quand il ne sait pas la ligne.
-            $line < 1 => \sprintf('%s, %s', $type, $template),
-            default => \sprintf('%s, %s:%d', $type, $template, $line),
-        };
+        // Twig rend -1 quand il ne sait pas la ligne.
+        return $line < 1 ? \sprintf('%s, %s', $type, $template) : \sprintf('%s, %s:%d', $type, $template, $line);
+    }
+
+    /**
+     * L'exception du fond, sous toutes les enveloppes de Messenger
+     * (HandlerFailedException, une par bus traversé, mais aussi
+     * DelayedMessageHandlingException) : c'est elle qui dit ce qui a échoué,
+     * et c'est sur elle qu'un handler reconnaît un échec du transport. Une
+     * enveloppe de plusieurs échecs est décrite par le premier.
+     */
+    public static function innermost(Throwable $exception): Throwable
+    {
+        while ($exception instanceof WrappedExceptionsInterface && $exception->getPrevious() instanceof Throwable) {
+            $exception = $exception->getPrevious();
+        }
+
+        return $exception;
     }
 }

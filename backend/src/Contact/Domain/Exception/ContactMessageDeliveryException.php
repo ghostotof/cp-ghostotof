@@ -47,4 +47,18 @@ final class ContactMessageDeliveryException extends RuntimeException
             $failure,
         ));
     }
+
+    /**
+     * Une adresse que Mime refuse, nommée par son rôle (`from`, `to`,
+     * `replyTo`), jamais par sa valeur, que le RfcComplianceException cite :
+     * l'opérateur sait si c'est la saisie du visiteur ou sa propre
+     * configuration (un secret vide après une rotation).
+     */
+    public static function becauseAddressRefused(string $role): self
+    {
+        return new self(\sprintf(
+            'La préparation du message de contact a échoué (adresse « %s » refusée par Mime).',
+            $role,
+        ));
+    }
 }

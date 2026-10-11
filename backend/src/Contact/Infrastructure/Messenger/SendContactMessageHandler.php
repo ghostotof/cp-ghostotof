@@ -14,6 +14,7 @@ use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Mime\Address;
+use Symfony\Component\Mime\Exception\RfcComplianceException;
 use Throwable;
 
 /**
@@ -38,6 +39,9 @@ final readonly class SendContactMessageHandler
     {
         try {
             $this->mailer->send($this->notificationEmail($message));
+        } catch (ContactMessageDeliveryException $exception) {
+            // Déjà sûre : une adresse refusée, nommée par son rôle.
+            throw $exception;
         } catch (Throwable $exception) {
             throw $this->deliveryFailure($exception);
         }
@@ -56,9 +60,9 @@ final readonly class SendContactMessageHandler
         // de l'envoi (BodyRenderer, enregistré par twig-bundle), à partir du
         // layout de marque commun (templates/emails/base.*.twig).
         return (new TemplatedEmail())
-            ->from($this->contactSenderEmail)
-            ->to($this->contactRecipientEmail)
-            ->replyTo(new Address($message->senderEmail, $message->senderName))
+            ->from($this->address('from', $this->contactSenderEmail))
+            ->to($this->address('to', $this->contactRecipientEmail))
+            ->replyTo($this->address('replyTo', $message->senderEmail, $message->senderName))
             ->subject(\sprintf('Nouveau message de contact — %s', $message->senderName))
             ->htmlTemplate('emails/contact_notification.html.twig')
             ->textTemplate('emails/contact_notification.txt.twig')
@@ -70,12 +74,29 @@ final readonly class SendContactMessageHandler
     }
 
     /**
+     * Mime refuse l'adresse en la citant (`RfcComplianceException`) : elle
+     * est nommée par son rôle, qui dit si c'est la saisie du visiteur ou la
+     * configuration du site (un secret vide après une rotation).
+     */
+    private function address(string $role, string $email, string $name = ''): Address
+    {
+        try {
+            return new Address($email, $name);
+        } catch (RfcComplianceException) {
+            throw ContactMessageDeliveryException::becauseAddressRefused($role);
+        }
+    }
+
+    /**
      * Ni le message du transport (qui peut citer une adresse, issue #356), ni
      * celui d'une erreur de rendu ou d'une adresse que Mime refuse (qui citent
      * ce que le visiteur a saisi, issue #427) ne doivent atteindre les logs du
      * worker ni son stamp d'erreur : jamais de `previous`. Le réessai n'en
      * change pas : ni l'exception remplacée ni celle-ci ne sont
-     * « (un)recoverable », la stratégie du transport décide.
+     * « (un)recoverable », la stratégie du transport décide. Limite : une
+     * exception de ce genre levée par send() (un listener de
+     * Symfony\Component\Mailer\Event\MessageEvent) perdrait son effet ; il
+     * n'en existe aucune aujourd'hui.
      *
      * Le message Messenger lui-même, sérialisé dans le failure_transport,
      * porte toujours ce qu'il transporte : c'est sa rétention qui le règle
@@ -83,9 +104,12 @@ final readonly class SendContactMessageHandler
      */
     private function deliveryFailure(Throwable $exception): ContactMessageDeliveryException
     {
-        if ($exception instanceof TransportExceptionInterface) {
+        // Sous les enveloppes des bus : un échec du transport garde sa classe
+        // et son code (550 : adresse rejetée, pas SMTP indisponible).
+        $cause = MailerSendingFailure::innermost($exception);
+        if ($cause instanceof TransportExceptionInterface) {
             // La classe et le code seulement.
-            $failure = MailerTransportFailure::from($exception);
+            $failure = MailerTransportFailure::from($cause);
 
             return ContactMessageDeliveryException::becauseTransportFailed($failure->exceptionClass, $failure->code);
         }

@@ -160,9 +160,12 @@ final readonly class SendAccountInvitationHandler
      */
     private function deliveryFailure(Throwable $exception): AccountInvitationDeliveryException
     {
-        if ($exception instanceof TransportExceptionInterface) {
+        // Sous les enveloppes des bus : un échec du transport garde sa classe
+        // et son code (issue #427).
+        $cause = MailerSendingFailure::innermost($exception);
+        if ($cause instanceof TransportExceptionInterface) {
             // La classe et le code seulement.
-            $failure = MailerTransportFailure::from($exception);
+            $failure = MailerTransportFailure::from($cause);
 
             return AccountInvitationDeliveryException::becauseTransportFailed($failure->exceptionClass, $failure->code);
         }

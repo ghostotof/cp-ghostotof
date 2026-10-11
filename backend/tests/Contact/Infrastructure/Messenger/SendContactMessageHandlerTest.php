@@ -159,29 +159,69 @@ final class SendContactMessageHandlerTest extends TestCase
         $stamp = ErrorDetailsStamp::create($this->failToRender("{{ senderName }}\n{{ undefinedVariable }}")['workerFailure']);
 
         self::assertSame(ContactMessageDeliveryException::class, $stamp->getExceptionClass());
-        self::assertNull($stamp->getFlattenException()?->getPrevious(), 'Aucune exception du rendu ne doit rester en `previous`.');
+        self::assertNotNull($stamp->getFlattenException());
+        self::assertNull($stamp->getFlattenException()->getPrevious(), 'Aucune exception du rendu ne doit rester en `previous`.');
         self::assertStringContainsString('(Twig\Error\RuntimeError, emails/contact_notification.txt.twig:2)', $stamp->getExceptionMessage());
     }
 
     /**
-     * Une adresse que Mime refuse : la validation stricte l'arrête en amont
-     * (`email_validation_mode: strict`), mais un message déjà en file avant
-     * elle, ou rejoué depuis le failure_transport, passerait. Le
-     * RfcComplianceException la cite.
+     * L'adresse que Mime refuse, et le rôle que l'exception doit nommer.
+     *
+     * @return iterable<string, array{string, string, string}>
      */
-    public function testAVisitorAddressMimeRefusesIsNeverQuoted(): void
+    public static function refusedAddresses(): iterable
+    {
+        // La validation stricte l'arrête en amont (`email_validation_mode:
+        // strict`), mais un message en file avant elle, ou rejoué depuis le
+        // failure_transport, passerait.
+        yield 'adresse du visiteur' => ['sentinel..visitor@example.com', self::CONTACT_RECIPIENT_EMAIL, 'replyTo'];
+        // Un secret manquant après une rotation : chaque message échoue.
+        yield 'destinataire de configuration vide' => [self::VISITOR_EMAIL, '', 'to'];
+    }
+
+    /**
+     * Le RfcComplianceException cite l'adresse : il n'en reste que le rôle
+     * de l'adresse refusée, qui dit à l'opérateur si c'est une saisie du
+     * visiteur ou sa propre configuration.
+     */
+    #[DataProvider('refusedAddresses')]
+    public function testARefusedAddressIsNamedByItsRoleOnly(string $visitorEmail, string $recipientEmail, string $role): void
     {
         $mailer = $this->createMock(MailerInterface::class);
         $mailer->expects(self::never())->method('send');
-        $handler = new SendContactMessageHandler($mailer, self::CONTACT_SENDER_EMAIL, self::CONTACT_RECIPIENT_EMAIL);
+        $handler = new SendContactMessageHandler($mailer, self::CONTACT_SENDER_EMAIL, $recipientEmail);
 
         try {
-            $handler(new SendContactMessageMessage(self::VISITOR_NAME, 'sentinel..visitor@example.com', self::VISITOR_BODY));
+            $handler(new SendContactMessageMessage(self::VISITOR_NAME, $visitorEmail, self::VISITOR_BODY));
             self::fail('ContactMessageDeliveryException aurait dû être levée.');
         } catch (ContactMessageDeliveryException $exception) {
             self::assertNull($exception->getPrevious());
-            self::assertStringContainsString('RfcComplianceException', $exception->getMessage());
-            self::assertStringNotContainsString('sentinel', $exception->getMessage());
+            self::assertStringContainsString(\sprintf('adresse « %s » refusée', $role), $exception->getMessage());
+            self::assertStringNotContainsStringIgnoringCase('sentinel', $exception->getMessage());
+        }
+    }
+
+    /**
+     * Enveloppé par les bus du mailer, l'échec du transport reste un échec du
+     * transport : sa classe et son code (550 : adresse rejetée, pas SMTP
+     * indisponible), jamais son message.
+     */
+    public function testAWrappedTransportFailureKeepsItsClassAndCode(): void
+    {
+        $envelope = new Envelope(new SendEmailMessage(new TemplatedEmail()));
+        $mailer = self::createStub(MailerInterface::class);
+        $mailer->method('send')->willThrowException(new HandlerFailedException($envelope, [
+            new HandlerFailedException($envelope, [new TransportException('550 <'.self::VISITOR_EMAIL.'> rejected', 550)]),
+        ]));
+        $handler = new SendContactMessageHandler($mailer, self::CONTACT_SENDER_EMAIL, self::CONTACT_RECIPIENT_EMAIL);
+
+        try {
+            $handler($this->visitorMessage());
+            self::fail('ContactMessageDeliveryException aurait dû être levée.');
+        } catch (ContactMessageDeliveryException $exception) {
+            self::assertNull($exception->getPrevious());
+            self::assertStringContainsString(TransportException::class.', code 550', $exception->getMessage());
+            self::assertStringNotContainsStringIgnoringCase('sentinel', $exception->getMessage());
         }
     }
 
@@ -205,7 +245,7 @@ final class SendContactMessageHandlerTest extends TestCase
         } catch (ContactMessageDeliveryException $exception) {
             self::assertNull($exception->getPrevious());
             self::assertMatchesRegularExpression('~\(LogicException, SendContactMessageHandlerTest\.php:\d+\)~', $exception->getMessage());
-            self::assertStringNotContainsString('sentinel', $exception->getMessage());
+            self::assertStringNotContainsStringIgnoringCase('sentinel', $exception->getMessage());
         }
     }
 

@@ -298,8 +298,9 @@ final class SendAccountInvitationHandlerTest extends TestCase
         );
 
         self::assertSame(AccountInvitationDeliveryException::class, $stamp->getExceptionClass());
+        self::assertNotNull($stamp->getFlattenException());
         self::assertNull(
-            $stamp->getFlattenException()?->getPrevious(),
+            $stamp->getFlattenException()->getPrevious(),
             'Aucune exception du rendu ne doit rester en `previous`.',
         );
         self::assertStringContainsString(
@@ -357,6 +358,24 @@ final class SendAccountInvitationHandlerTest extends TestCase
             $exception->getMessage(),
         );
         self::assertStringNotContainsString('sentinel', $exception->getMessage());
+    }
+
+    /**
+     * Enveloppé par les bus du mailer, l'échec du transport reste un échec du
+     * transport : sa classe et son code, jamais son message (issue #427).
+     */
+    public function testAWrappedTransportFailureKeepsItsClassAndCode(): void
+    {
+        $envelope = new Envelope(new SendEmailMessage(new TemplatedEmail()));
+        $mailer = self::createStub(MailerInterface::class);
+        $mailer->method('send')->willThrowException(new HandlerFailedException($envelope, [
+            new HandlerFailedException($envelope, [new TransportException('550 <sentinel@example.com> rejected', 550)]),
+        ]));
+
+        $message = $this->deliveryFailureWith($mailer)->getMessage();
+
+        self::assertStringContainsString(TransportException::class.', code 550', $message);
+        self::assertStringNotContainsString('sentinel', $message);
     }
 
     /**

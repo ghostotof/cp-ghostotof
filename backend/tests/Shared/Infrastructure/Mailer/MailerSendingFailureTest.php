@@ -7,8 +7,10 @@ namespace App\Tests\Shared\Infrastructure\Mailer;
 use App\Shared\Infrastructure\Mailer\MailerSendingFailure;
 use LogicException;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mailer\Messenger\SendEmailMessage;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Exception\DelayedMessageHandlingException;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Mime\Email;
 use Twig\Error\RuntimeError;
@@ -46,9 +48,16 @@ final class MailerSendingFailureTest extends TestCase
         );
     }
 
-    public function testATemplateErrorWithoutASourceNamesItsTypeOnly(): void
+    /**
+     * Levée hors rendu (une extension, un runtime), sans gabarit connu :
+     * l'emplacement PHP, sûr, plutôt que rien.
+     */
+    public function testATemplateErrorWithoutASourceFallsBackToItsFileAndLine(): void
     {
-        self::assertSame(RuntimeError::class, MailerSendingFailure::describe(new RuntimeError('sentinel')));
+        $line = __LINE__ + 1;
+        $description = MailerSendingFailure::describe(new RuntimeError('sentinel'));
+
+        self::assertSame(\sprintf('%s, MailerSendingFailureTest.php:%d', RuntimeError::class, $line), $description);
     }
 
     /** Une HandlerFailedException par bus traversé : celle du fond est décrite. */
@@ -60,5 +69,19 @@ final class MailerSendingFailureTest extends TestCase
         ]);
 
         self::assertSame('Twig\Error\RuntimeError, emails/x.html.twig:2', MailerSendingFailure::describe($failure));
+    }
+
+    /**
+     * Toute enveloppe de Messenger est déballée, pas la seule
+     * HandlerFailedException : DispatchAfterCurrentBusMiddleware lève une
+     * DelayedMessageHandlingException.
+     */
+    public function testEveryMessengerWrapperIsUnwrapped(): void
+    {
+        $envelope = new Envelope(new SendEmailMessage(new Email()));
+        $transport = new TransportException('550 sentinel', 550);
+        $failure = new DelayedMessageHandlingException([new HandlerFailedException($envelope, [$transport])], $envelope);
+
+        self::assertSame($transport, MailerSendingFailure::innermost($failure));
     }
 }
