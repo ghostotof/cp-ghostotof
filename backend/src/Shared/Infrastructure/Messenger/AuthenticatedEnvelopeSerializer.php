@@ -43,9 +43,9 @@ use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
  * files se vident des messages de l'ancien code ; ce mode transition est
  * supprimé, pas désactivé : aucun paramètre ne rouvre l'injection.
  *
- * Un refus est un échec de décodage ({@see MessageDecodingFailedException},
- * qui garde l'enveloppe reçue, jamais un objet de son corps) : il suit les
- * réessais du transport, puis `failed`. Son message ne cite que sa cause.
+ * Un refus est un échec de décodage définitif ({@see EnvelopeMacRefusedException},
+ * qui garde l'enveloppe reçue, jamais un objet de son corps) : droit dans
+ * `failed`, sans réessai (issue #450). Son message ne cite que sa cause.
  * Tout échec de ce décodage, refus du MAC ou échec du sérialiseur interne,
  * garde l'enveloppe encodée reçue, MAC compris (issue #465) :
  * {@see \Symfony\Component\Messenger\Middleware\DecodeFailedMessageMiddleware}
@@ -104,10 +104,7 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
         // JSON du transport Doctrine) : refusé comme un MAC faux, plutôt
         // qu'une erreur de type qui ferait tomber le worker.
         if (!\is_string($mac) || !hash_equals($this->mac($encodedEnvelope['body']), $mac)) {
-            return MessageDecodingFailedException::wrap(
-                $encodedEnvelope,
-                null === $mac ? 'Enveloppe Messenger sans MAC refusée (issue #444).' : 'Enveloppe Messenger au MAC invalide refusée (issue #444).',
-            );
+            return null === $mac ? EnvelopeMacRefusedException::missing($encodedEnvelope) : EnvelopeMacRefusedException::invalid($encodedEnvelope);
         }
 
         $authenticated = $encodedEnvelope;

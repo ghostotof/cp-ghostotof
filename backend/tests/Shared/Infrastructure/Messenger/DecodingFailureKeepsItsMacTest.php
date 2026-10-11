@@ -11,6 +11,7 @@ use stdClass;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 use Symfony\Component\Messenger\Exception\MessageDecodingFailedException;
 use Symfony\Component\Messenger\Middleware\DecodeFailedMessageMiddleware;
 use Symfony\Component\Messenger\Middleware\StackMiddleware;
@@ -41,6 +42,9 @@ final class DecodingFailureKeepsItsMacTest extends KernelTestCase
     private const string UNDECODABLE_CAUSE = 'Could not decode message into an Envelope.';
 
     private const string WRONG_MAC_CAUSE = 'Enveloppe Messenger au MAC invalide refusée (issue #444).';
+
+    /** Valeur de `$forgedMac` qui retire l'en-tête au lieu de le remplacer. */
+    private const string NO_MAC = '';
 
     /**
      * Chaque façon d'échouer : le corps à signer, le MAC qui remplace le vrai
@@ -114,17 +118,58 @@ final class DecodingFailureKeepsItsMacTest extends KernelTestCase
         self::assertSame($encoded, $carried->encodedEnvelope);
     }
 
+    /**
+     * @return iterable<string, array{?string, bool}>
+     */
+    public static function retries(): iterable
+    {
+        // Un corps signé que PhpSerializer ne sait pas lire : un worker d'une
+        // autre version (classe absente pendant un rollout) le pourrait.
+        yield 'échec du sérialiseur interne' => [null, true];
+        yield 'MAC faux' => [str_repeat('0', 64), false];
+        yield 'sans MAC' => [self::NO_MAC, false];
+    }
+
+    /**
+     * Issue #450, point 4 : un refus de MAC part dans `failed` sans réessai.
+     * Le réessai ré-encode l'échec sous la clé du worker qui réessaie, mais
+     * l'enveloppe d'origine qu'il garde reste celle refusée : aucun réessai ne
+     * la sauve, même au changement de clé. Un échec du sérialiseur interne, lui,
+     * reste réessayé.
+     */
+    #[DataProvider('retries')]
+    public function testOnlyARefusedMacSkipsTheRetries(?string $forgedMac, bool $retried): void
+    {
+        $serializer = $this->serializer();
+        $encoded = $this->signed(addslashes(serialize(new stdClass())), $forgedMac);
+        if (self::NO_MAC === $forgedMac) {
+            unset($encoded['headers'][AuthenticatedEnvelopeSerializer::HEADER]);
+        }
+        $received = $serializer->decode($encoded)->with(new ReceivedStamp('async'));
+        $event = new WorkerMessageFailedEvent($received, 'async', $this->failureRaisedByTheMiddleware($serializer, $received));
+
+        self::getContainer()->get('messenger.retry.send_failed_message_for_retry_listener')->onMessageFailed($event);
+
+        self::assertSame($retried, $event->willRetry());
+    }
+
     private function assertTheMiddlewareRaises(string $cause, SerializerInterface $serializer, Envelope $received): void
+    {
+        self::assertSame($cause, $this->failureRaisedByTheMiddleware($serializer, $received)->getMessage());
+    }
+
+    private function failureRaisedByTheMiddleware(SerializerInterface $serializer, Envelope $received): MessageDecodingFailedException
     {
         self::assertInstanceOf(MessageDecodingFailedException::class, $received->getMessage());
         $middleware = new DecodeFailedMessageMiddleware(new ServiceLocator(['async' => static fn (): SerializerInterface => $serializer]));
 
         try {
             $middleware->handle($received->with(new ReceivedStamp('async')), new StackMiddleware());
-            self::fail('Le middleware a décodé une enveloppe indécodable.');
         } catch (MessageDecodingFailedException $failure) {
-            self::assertSame($cause, $failure->getMessage());
+            return $failure;
         }
+
+        self::fail('Le middleware a décodé une enveloppe indécodable.');
     }
 
     private function serializer(): AuthenticatedEnvelopeSerializer
