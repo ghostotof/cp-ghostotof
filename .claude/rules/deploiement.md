@@ -366,11 +366,17 @@ paths:
   broken preprod broker with `kubectl -n preprod rollout undo deployment/rabbitmq`. In dev the file is read
   at boot: `docker compose up -d rabbitmq` after changing it (and after any git operation that replaced
   it). **Any change to that file restarts the broker** (`Recreate`): a short outage of `POST /api/contact`
-  and invitations, in the release notes, validated in preprod like any change here. **The broker's refusal
-  is asynchronous**: without publisher confirms, a publish over the cap returns fine, the request answers
-  2xx and the message is lost; only the next operation on that channel fails. No legitimate producer gets
-  near 1 MiB (the validation and #469's 256 KiB bound cut far below, retries included); whether to turn
-  confirms on is #479.
+  and invitations, in the release notes, validated in preprod like any change here. **Publications wait for
+  the broker's confirmation** (issue #479, `confirm_timeout: 5` on the `async` transport's options in
+  `messenger.yaml`, never in the DSN Secret): a broker refusal is asynchronous, so without it a publish
+  over the cap — or into a broker going down — returned fine, the request answered 2xx and the message
+  was lost; with it, `dispatch` throws a `TransportException` (a 500 for `POST /api/contact`, a visible
+  failure for a worker retry). Measured ≈ +0.13 ms per publish. The price: while RabbitMQ restarts
+  (`Recreate`, a release), publications fail loudly instead of vanishing — and a broker that never answers
+  holds a request 5 s. `AmqpPublisherConfirmsTest` bounds the option in every declared environment;
+  `AmqpPublisherConfirmsIntegrationTest` publishes against a real broker carrying `rabbitmq.conf`
+  (`RABBITMQ_INTEGRATION_DSN`: Compose's broker in dev, a container the `test-backend` job starts in CI —
+  not a `services:`, which cannot mount a repository file): 100 KB sent, 2 MiB refused.
   **RabbitMQ's probes are `tcpSocket` on 5672, never `rabbitmq-diagnostics`** (issue #295): the CLI
   starts an Erlang node per call, which overran its 10 s timeout under CPU load — during a boot,
   precisely — and the kubelet killed a broker that had been up for 35 s (nine restarts in eight
