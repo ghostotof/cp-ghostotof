@@ -107,7 +107,8 @@ paths:
   `apply`, so the previous release keeps serving on the old schema, which is exactly the safe state
   (PostgreSQL DDL is transactional and Doctrine wraps each migration in its own transaction) — fix the
   migration by a new commit on the `release/*` branch (a `fix/*` PR targeting it; every push redeploys
-  preprod), or by a hotfix release once `main` has moved — never a tag by hand, the pipeline tags.
+  preprod) — a new migration if an earlier one of the release already ran —, or by a hotfix release once
+  `main` has moved; never a tag by hand, the pipeline tags.
   The discipline that makes this order safe, to respect in every migration:
   a column added `NOT NULL` has a default or is filled by the migration itself
   (`Version20260914170000` is the model); **never drop or rename a column in the release that stops
@@ -214,7 +215,7 @@ paths:
   `backend`/`worker` stay at 0 replicas until someone intervenes — deliberate, never serve traffic
   against a half-migrated schema. To recover: if the migration wrote nothing, `kubectl apply -k .` on
   that overlay redeploys the previous image against the still-old schema; otherwise fix the migration
-  through the release branch (or a hotfix release), as above — the pipeline tags, never a hand.
+  through the release branch (or a hotfix release), as above — the pipeline tags, never by hand.
 - **`watch-refresh-cronjob.yaml` *is* in `kustomization.yaml`'s `resources:`** — the opposite of
   `migrate-job.yaml` above, and deliberately: it wants kustomize's image transformer, since it must run the
   same image as the Deployment. It used to be **the only object in the cluster that makes outbound calls
