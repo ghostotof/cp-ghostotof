@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Shared\Infrastructure\Security;
 
 use SensitiveParameter;
+use SensitiveParameterValue;
 
 /**
  * HMAC-SHA256 sous une clé dérivée d'`APP_SECRET` pour un seul usage (issue
@@ -21,6 +22,13 @@ use SensitiveParameter;
  *
  * Un contexte donné produit exactement le MAC que l'usage calculait à la main
  * avant #487 : passer par cette classe n'est pas une rotation.
+ *
+ * La clé est gardée dans un {@see SensitiveParameterValue} : aucun canal qui
+ * affiche un objet ne la montre (`var_dump()`, `print_r()`, `var_export()`,
+ * un transtypage en tableau, `json_encode()`, et le VarDumper de `dump()` et
+ * du profiler, qui lit les propriétés privées même quand un `__debugInfo()`
+ * les masquerait), et PHP en refuse la sérialisation. Mesuré à la relecture
+ * de #487.
  */
 final readonly class KeyedMac
 {
@@ -32,11 +40,15 @@ final readonly class KeyedMac
 
     private const string ALGORITHM = 'sha256';
 
+    /** @var SensitiveParameterValue<string> */
+    private SensitiveParameterValue $key;
+
     private function __construct(
         #[SensitiveParameter]
-        private string $key,
+        string $key,
         private MacEncoding $encoding,
     ) {
+        $this->key = new SensitiveParameterValue($key);
     }
 
     /**
@@ -58,7 +70,7 @@ final readonly class KeyedMac
      */
     public function sign(#[SensitiveParameter] string $data): string
     {
-        return hash_hmac(self::ALGORITHM, $data, $this->key, MacEncoding::Binary === $this->encoding);
+        return hash_hmac(self::ALGORITHM, $data, $this->key->getValue(), MacEncoding::Binary === $this->encoding);
     }
 
     /**

@@ -9,8 +9,11 @@ use App\Shared\Infrastructure\Security\KeyedMac;
 use App\Shared\Infrastructure\Security\MacEncoding;
 use App\Shared\Infrastructure\Security\SecretKeyDerivation;
 use App\Tests\Support\TestKeys;
+use Exception;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\VarDumper\Cloner\VarCloner;
+use Symfony\Component\VarDumper\Dumper\CliDumper;
 
 /**
  * Le HMAC sous clé dérivée d'`APP_SECRET`, écrit une fois (issue #487) :
@@ -119,6 +122,46 @@ final class KeyedMacTest extends TestCase
         $this->expectException(EmptyApplicationSecretException::class);
 
         KeyedMac::fromSecret('', self::CONTEXT, MacEncoding::Hex);
+    }
+
+    /**
+     * Relecture de #487 : la clé dérivée ne sort par aucun des canaux qui
+     * affichent un objet — `dump()` et le profiler (VarDumper, qui lit les
+     * propriétés privées même en présence d'un `__debugInfo()`), un contexte
+     * de journal, une sortie de débogage.
+     */
+    public function testTheDerivedKeyNeverShowsWhenTheObjectIsDumped(): void
+    {
+        $key = SecretKeyDerivation::derive(TestKeys::material(), self::CONTEXT);
+        $mac = KeyedMac::fromSecret(TestKeys::material(), self::CONTEXT, MacEncoding::Hex);
+
+        ob_start();
+        var_dump($mac);
+        $dumps = [
+            'var_dump' => (string) ob_get_clean(),
+            'print_r' => print_r($mac, true),
+            'var_export' => var_export($mac, true),
+            'cast' => print_r((array) $mac, true),
+            'json_encode' => (string) json_encode($mac),
+            'VarDumper' => (string) new CliDumper()->dump(new VarCloner()->cloneVar($mac), true),
+        ];
+
+        // Un échec ne cite que le canal : afficher le dump afficherait la clé.
+        foreach ($dumps as $channel => $dump) {
+            self::assertFalse(str_contains($dump, $key) || str_contains($dump, bin2hex($key)), $channel.' affiche la clé dérivée.');
+        }
+    }
+
+    /**
+     * Une file, un cache ou une session ne garde jamais la clé : la
+     * sérialisation est refusée.
+     */
+    public function testAKeyedMacCannotBeSerialized(): void
+    {
+        $this->expectException(Exception::class);
+        $this->expectExceptionMessage('Serialization of');
+
+        serialize(KeyedMac::fromSecret(TestKeys::material(), self::CONTEXT, MacEncoding::Hex));
     }
 
     /**
