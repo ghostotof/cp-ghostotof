@@ -243,7 +243,7 @@ final class CpgUserInviterTest extends TestCase
         $cpgUserRepository->expects(self::once())->method('save')->willReturnCallback(static function (CpgUser $user) use (&$saved): void {
             $saved = $user;
         });
-        $cpgUserRepository->expects(self::once())->method('remove')->willReturnCallback(static function (CpgUser $user) use (&$saved): void {
+        $cpgUserRepository->expects(self::once())->method('removePendingInvitation')->willReturnCallback(static function (CpgUser $user) use (&$saved): void {
             self::assertSame($saved, $user, 'Seul le compte créé par cette invitation est retiré.');
         });
 
@@ -275,7 +275,7 @@ final class CpgUserInviterTest extends TestCase
 
         $cpgUserRepository = $this->createMock(CpgUserRepositoryInterface::class);
         $cpgUserRepository->method('advanceInvitationGeneration')->willReturn(2);
-        $cpgUserRepository->expects(self::never())->method('remove');
+        $cpgUserRepository->expects(self::never())->method('removePendingInvitation');
 
         $messageBus = self::createStub(MessageBusInterface::class);
         $messageBus->method('dispatch')->willThrowException(new TransportException('Connection refused'));

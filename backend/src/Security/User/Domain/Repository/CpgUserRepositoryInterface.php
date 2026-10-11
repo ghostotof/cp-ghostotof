@@ -70,4 +70,12 @@ interface CpgUserRepositoryInterface
     public function advanceInvitationGeneration(CpgUser $user, DateTimeImmutable $invitedAt): int;
 
     public function remove(CpgUser $user): void;
+
+    /**
+     * Défait une invitation que la file n'a pas prise (issue #485) : supprime
+     * le compte par son identifiant, jamais s'il a été activé entre-temps.
+     * Chemin d'échec : ne dépend ni de l'unité de travail ni d'un `flush()`
+     * global. Un compte déjà supprimé n'est pas une erreur.
+     */
+    public function removePendingInvitation(CpgUser $user): void;
 }

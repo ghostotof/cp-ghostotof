@@ -70,8 +70,10 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
             // créé est retiré, pour que l'administrateur réessaie sans buter
             // sur « adresse déjà utilisée ». Si le broker l'avait reçu malgré
             // tout (accusé perdu, #479), le handler trouve un compte absent,
-            // journalise un warning et s'arrête sans réessai.
-            $this->cpgUserRepository->remove($user);
+            // journalise un warning et s'arrête sans réessai ; s'il l'avait
+            // traité avant ce retrait, son lien est mort (jeton parti avec le
+            // compte) et l'administrateur renvoie une invitation.
+            $this->cpgUserRepository->removePendingInvitation($user);
 
             throw $unavailable;
         }
