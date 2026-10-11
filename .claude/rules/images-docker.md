@@ -25,6 +25,13 @@ prod run the identical PHP engine:
   the build context is the repo root, so this is the one place `composer.lock` and
   `frontend/package-lock.json` coexist — the manifest describes exactly what the image deploys and cannot
   drift from it. Keep that `COPY`/`RUN` pair *after* the big install layer so an npm bump doesn't invalidate it.
+  **A failed warm-up fails the build** (issue #474). The stage replays `post-install-cmd` (`cache:clear` in
+  `prod` with an empty `APP_SECRET`, then `assets:install`) without `|| true`, then checks that
+  `var/cache/prod/pools/system` is not empty: the `seed-cache-system` initContainer copies it into every
+  pod. The `|| true` used to swallow every failure — the first version of #468 (a key derived in a
+  constructor) built an image without that directory, green. So a service the warm-up builds must not need
+  a runtime secret in its constructor: derive it on first use. `ProductionImageWarmUpTest` pins both lines;
+  proven both ways with a real `make build-prod` (the #468 defect now fails the `RUN`).
 - **`preprod`** — built **`FROM production`** (not a parallel build) so its application layers are byte-identical
   to prod; only adds Xdebug (**inert in the image**, see `.claude/rules/deploiement.md`) and verbose logs.
   Pipeline order is dev → preprod → prod regardless of declaration order in the Dockerfile.
