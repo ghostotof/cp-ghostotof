@@ -52,6 +52,9 @@ use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
  * la redécode. L'échec qu'un réessai transporte comme message revient tel
  * quel.
  *
+ * Un corps au-delà de {@see self::MAX_BODY_BYTES} est refusé avant même le MAC
+ * (issue #469), par {@see EnvelopeTooLargeException}, qui ne garde pas le corps.
+ *
  * Limites acceptées : un message authentifié peut être rejoué par qui écrit
  * dans la file (aucun nonce) ; une rotation d'`APP_SECRET` invalide les
  * messages déjà en file (procédure dans k8s/README.md).
@@ -59,6 +62,18 @@ use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterface
 {
     public const string HEADER = 'X-Envelope-Mac';
+
+    /**
+     * Taille maximale d'un corps, vérifiée avant le MAC (issue #469). Mesurée
+     * sur les deux messages réels, au pire de leur validation : un message de
+     * contact de 5 000 caractères multi-octets à échapper fait 13,5 Ko nu,
+     * 28,7 Ko après trois réessais (un `ErrorDetailsStamp` par échec distinct,
+     * trace comprise) ; une invitation, 0,6 Ko et 15,8 Ko. La borne laisse plus
+     * de huit fois cette marge à une trace plus profonde, et reste anodine face
+     * aux 120 Mo du worker. Un message légitime qui la dépasserait serait perdu,
+     * refusé comme les autres : la relever plutôt que d'y faire exception.
+     */
+    public const int MAX_BODY_BYTES = 256 * 1024;
 
     /**
      * Sépare cette clé des autres usages d'`APP_SECRET`. En `v2` depuis
@@ -98,6 +113,17 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
      */
     public function decode(array $encodedEnvelope): Envelope
     {
+        // Avant le MAC (issue #469) : ni HMAC ni copie d'un corps démesuré. Le
+        // refus redécode en lui-même, cf. EnvelopeTooLargeException.
+        $size = \strlen($encodedEnvelope['body']);
+        if ($size > self::MAX_BODY_BYTES) {
+            return EnvelopeTooLargeException::forSize($size);
+        }
+        $markedSize = EnvelopeTooLargeException::markedSize($encodedEnvelope);
+        if (null !== $markedSize) {
+            return EnvelopeTooLargeException::forSize($markedSize);
+        }
+
         $mac = $encodedEnvelope['headers'][self::HEADER] ?? null;
 
         // Un transport peut rendre un en-tête qui n'est pas une chaîne (AMQP,

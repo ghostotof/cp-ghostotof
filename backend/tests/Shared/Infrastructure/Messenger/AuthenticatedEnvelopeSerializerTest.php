@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Messenger;
 
 use App\Shared\Infrastructure\Messenger\AuthenticatedEnvelopeSerializer;
+use App\Shared\Infrastructure\Messenger\EnvelopeMacRefusedException;
+use App\Shared\Infrastructure\Messenger\EnvelopeTooLargeException;
 use App\Shared\Infrastructure\Security\EmptyApplicationSecretException;
 use App\Shared\Infrastructure\Security\SecretKeyDerivation;
 use App\Tests\Support\TestKeys;
@@ -157,6 +159,88 @@ final class AuthenticatedEnvelopeSerializerTest extends TestCase
         self::assertStringNotContainsString('UnserializationProbe', $decoded->getMessage());
     }
 
+    /**
+     * Issue #469 : un corps au-delà de la borne est refusé avant son MAC, même
+     * valable, et définitivement (EnvelopeTooLargeException est
+     * irrécupérable par construction). Le HMAC de plusieurs Mo, le `unserialize()` et la copie du
+     * corps dans `failed` pouvaient faire boucler le worker (`--memory-limit`
+     * de 120 Mo dans un conteneur de 192 Mi).
+     */
+    public function testABodyOverTheBoundIsRefusedEvenWithAValidMac(): void
+    {
+        $serializer = $this->serializer();
+        $encoded = $serializer->encode(new Envelope($this->paddedTo(AuthenticatedEnvelopeSerializer::MAX_BODY_BYTES + 1)));
+        self::assertSame(AuthenticatedEnvelopeSerializer::MAX_BODY_BYTES + 1, \strlen($encoded['body']));
+
+        $refusal = $serializer->decode($encoded)->getMessage();
+
+        self::assertInstanceOf(EnvelopeTooLargeException::class, $refusal);
+        self::assertSame(0, UnserializationProbe::$unserializations);
+    }
+
+    public function testABodyAtTheBoundIsDecoded(): void
+    {
+        $serializer = $this->serializer();
+        $message = $this->paddedTo(AuthenticatedEnvelopeSerializer::MAX_BODY_BYTES);
+        $encoded = $serializer->encode(new Envelope($message));
+        self::assertSame(AuthenticatedEnvelopeSerializer::MAX_BODY_BYTES, \strlen($encoded['body']));
+
+        self::assertEquals($message, $serializer->decode($encoded)->getMessage());
+    }
+
+    /**
+     * Le refus part dans `failed` : il ne doit pas y recopier le corps, ni le
+     * citer dans son message, qui ne donne que la taille.
+     */
+    public function testTheRefusalKeepsNothingOfTheOversizedBody(): void
+    {
+        $serializer = $this->serializer();
+        $encoded = $serializer->encode(new Envelope($this->paddedTo(AuthenticatedEnvelopeSerializer::MAX_BODY_BYTES + 1)));
+
+        $refusal = $serializer->decode($encoded)->getMessage();
+
+        self::assertInstanceOf(EnvelopeTooLargeException::class, $refusal);
+        self::assertSame('', $refusal->encodedEnvelope['body']);
+        self::assertLessThan(200, \strlen(serialize($refusal->encodedEnvelope)));
+        self::assertStringContainsString((string) (AuthenticatedEnvelopeSerializer::MAX_BODY_BYTES + 1), $refusal->getMessage());
+        self::assertStringNotContainsString('gadget', $refusal->getMessage());
+    }
+
+    /**
+     * DecodeFailedMessageMiddleware redécode l'enveloppe que garde le refus, à
+     * la réception puis à chaque relecture de `failed` : elle doit redonner le
+     * même refus, pas un « sans MAC » qui en masquerait la cause.
+     */
+    public function testTheRefusalDecodesAgainAsTheSameRefusal(): void
+    {
+        $serializer = $this->serializer();
+        $encoded = $serializer->encode(new Envelope($this->paddedTo(AuthenticatedEnvelopeSerializer::MAX_BODY_BYTES + 1)));
+        $refusal = $serializer->decode($encoded)->getMessage();
+        self::assertInstanceOf(EnvelopeTooLargeException::class, $refusal);
+
+        /** @var array{body: string, headers?: array<string, string>} $kept l'exception ne type pas son enveloppe */
+        $kept = $refusal->encodedEnvelope;
+        $again = $serializer->decode($kept)->getMessage();
+
+        self::assertInstanceOf(EnvelopeTooLargeException::class, $again);
+        self::assertSame($refusal->getMessage(), $again->getMessage());
+    }
+
+    /**
+     * Le marqueur de taille ne vaut que sur un corps vide, et que pour un
+     * nombre : sur un vrai corps, il ne dispense pas du MAC.
+     */
+    public function testTheSizeMarkerNeverStandsInForAMac(): void
+    {
+        $encoded = $this->forgedWithoutMac();
+        $encoded['headers'][EnvelopeTooLargeException::SIZE_HEADER] = '12';
+
+        $decoded = $this->serializer()->decode($encoded)->getMessage();
+
+        self::assertInstanceOf(EnvelopeMacRefusedException::class, $decoded);
+        self::assertSame(0, UnserializationProbe::$unserializations);
+    }
+
     public function testAnEmptySecretIsRefused(): void
     {
         $this->expectException(EmptyApplicationSecretException::class);
@@ -179,6 +263,25 @@ final class AuthenticatedEnvelopeSerializerTest extends TestCase
     {
         /** @var array{body: string, headers?: array<string, string>} */
         return new PhpSerializer()->encode(new Envelope($this->carrying(new UnserializationProbe())));
+    }
+
+    /**
+     * Un message porteur de la sonde, bourré pour que son corps encodé fasse
+     * exactement `$bytes` octets (des `x`, que PhpSerializer n'échappe pas).
+     */
+    private function paddedTo(int $bytes): stdClass
+    {
+        $message = $this->carrying(new UnserializationProbe());
+        $message->padding = '';
+
+        // La longueur de la chaîne s'écrit en chiffres dans `serialize()` : le
+        // bourrage s'ajuste jusqu'à tomber juste (deux tours suffisent).
+        do {
+            $gap = $bytes - \strlen(new PhpSerializer()->encode(new Envelope($message))['body']);
+            $message->padding = str_repeat('x', \strlen($message->padding) + $gap);
+        } while (0 !== $gap);
+
+        return $message;
     }
 
     private function carrying(UnserializationProbe $probe): stdClass
