@@ -107,8 +107,14 @@ interface extending the type), `classLikes()` for one that reads signatures, att
 into its implementations). Never widen `classes()` silently. **Closures and arrow functions stay out,
 an accepted limit** (#421, reasons in `SecretParametersTest`'s docblock): reflection cannot reach them
 without running the code, and a token census by name would miss the very case that would justify it — a
-callback gets its value under its contract's generic name (the `$value` of `app:user:create`'s password
-validator and normalizer). **Anonymous classes and free functions are forbidden in `src/`** (issue #432),
+callback gets its value under its contract's generic name (the `$value` that `app:user:create`'s password
+validator and normalizer used to receive). **A callback that receives a secret is therefore a method,
+never a closure** (issue #433): `CreateCpgUserCommand::validatePassword()` and `withoutLineEnding()`,
+passed as `$this->validatePassword(...)`, name their parameter `$password`, so the password guard
+requires their `#[SensitiveParameter]` like any other; `CreateCpgUserCommandTest` also reads the attribute
+on the callbacks of the hidden questions as built, closure or method, and the username prompt's
+`validateUsername($username)` is in `HIDDEN_BY_HAND` (a password pasted into the wrong prompt).
+**Anonymous classes and free functions are forbidden in `src/`** (issue #432),
 so that the census misses nothing else: name the class (`RedactingDriver`, extracted from
 `DriverErrorRedactionMiddleware::wrap()` for that reason), make the function a method.
 `tests/Shared/NoAnonymousClassNorFreeFunctionTest.php` (`tests/Support/AnonymousClassesAndFreeFunctions`,

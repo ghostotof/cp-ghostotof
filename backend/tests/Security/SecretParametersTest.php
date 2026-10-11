@@ -15,6 +15,7 @@ use App\Security\User\Application\PasswordSetupServiceInterface;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Infrastructure\Doctrine\CpgUserRepository;
 use App\Security\User\Infrastructure\Log\PasswordOptionRedactor;
+use App\Security\User\Presentation\Command\CreateCpgUserCommand;
 use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersEnumFixture;
 use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersOrphanInterfaceFixture;
 use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersOrphanTraitFixture;
@@ -86,10 +87,12 @@ use ReflectionParameter;
  * atteint pas sans exécuter le code, et un recensement par jetons serait
  * aveugle au cas qui le motiverait : un rappel reçoit sa valeur sous le nom
  * générique de son contrat (le validateur et le normaliseur de mot de passe de
- * {@see \App\Security\User\Presentation\Command\CreateCpgUserCommand} la
- * reçoivent en `$value`), qu'aucun recensement par nom ne voit ; il devrait en
- * outre réécrire par jetons le filtre de type et l'exclusion des condensats,
- * sans prototype à consulter. Au relevé de #421 (2026-10-10), aucune
+ * {@see CreateCpgUserCommand} le recevaient en `$value`), qu'aucun
+ * recensement par nom ne voit ; il devrait en outre réécrire par jetons le
+ * filtre de type et l'exclusion des condensats, sans prototype à consulter.
+ * Le remède est donc d'en faire des méthodes, que la réflexion atteint :
+ * c'est ce que #433 a fait de ces deux rappels, passés en
+ * `$this->validatePassword(...)`. Au relevé de #421 (2026-10-10), aucune
  * closure de `src/` n'a de paramètre au nom de secret. Les classes anonymes
  * et les fonctions hors classe, elles, sont interdites dans `src/` depuis
  * #432 ({@see \App\Tests\Shared\NoAnonymousClassNorFreeFunctionTest}) : il ne
@@ -126,6 +129,8 @@ final class SecretParametersTest extends TestCase
         AuthCookieFactory::class.'::create($value)' => 'le JWT ou le jeton CSRF de bearer() et xsrf()',
         ReplayRefusingHttpClient::class.'::request($options)' => 'la clé d\'API Scaleway (`auth_bearer`) et le corps : le corpus du CV nominatif',
         PasswordOptionRedactor::class.'::redact($text)' => 'l\'argv d\'app:user:create, `--password=<mot de passe>` compris',
+        // Issue #433 : la saisie de l'invite peut être un mot de passe collé au mauvais endroit.
+        CreateCpgUserCommand::class.'::validateUsername($username)' => 'la saisie de l\'invite « Nom d\'utilisateur », possiblement un mot de passe',
         // Issue #418 : l'identifiant tenté au login peut être un mot de passe
         // tapé dans le mauvais champ.
         SecurityAuditLoggerInterface::class.'::loginFailed($triedIdentifier)' => self::TRIED_IDENTIFIER,

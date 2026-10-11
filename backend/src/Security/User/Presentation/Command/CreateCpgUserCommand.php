@@ -75,6 +75,13 @@ final class CreateCpgUserCommand extends Command
     /** Indicateur d'ordre des octets qu'un éditeur Windows place en tête de fichier. */
     private const string BYTE_ORDER_MARK = "\u{FEFF}";
 
+    /**
+     * La fin de ligne que la lecture garde, retirée seule et de la même façon
+     * à l'invite et sur l'entrée standard : les deux voies doivent rendre le
+     * même mot de passe pour la même saisie.
+     */
+    private const string FINAL_LINE_ENDING = '/\r?\n\z/';
+
     public function __construct(
         private readonly CpgUserRegistrarInterface $cpgUserRegistrar,
         private readonly ValidatorInterface $validator,
@@ -247,10 +254,13 @@ final class CreateCpgUserCommand extends Command
     /**
      * La règle est celle du domaine (CpgUser::USERNAME_PATTERN), le message
      * aussi, sans la saisie : le QuestionHelper l'affiche et repose la question.
+     * La saisie peut être un mot de passe collé dans la mauvaise invite : elle
+     * est cachée des traces à la main (issue #433), le nom du paramètre ne le
+     * disant pas.
      *
      * @throws InvalidUsernameException
      */
-    private function validateUsername(mixed $username): string
+    private function validateUsername(#[SensitiveParameter] mixed $username): string
     {
         if (!\is_string($username) || 1 !== preg_match(CpgUser::USERNAME_PATTERN, $username)) {
             throw InvalidUsernameException::invalidFormat();
@@ -274,13 +284,7 @@ final class CreateCpgUserCommand extends Command
         }
 
         try {
-            $password = $io->askQuestion($this->hiddenQuestion('Mot de passe', static function (mixed $value): string {
-                if (!\is_string($value) || '' === $value) {
-                    throw InvalidConsoleAnswerException::empty('Le mot de passe');
-                }
-
-                return $value;
-            }));
+            $password = $io->askQuestion($this->passwordQuestion());
         } catch (InvalidConsoleAnswerException $exception) {
             $io->error($exception->getMessage());
 
@@ -293,7 +297,7 @@ final class CreateCpgUserCommand extends Command
             return null;
         }
 
-        if ($password !== $io->askQuestion($this->hiddenQuestion('Confirmez le mot de passe'))) {
+        if ($password !== $io->askQuestion($this->confirmationQuestion())) {
             $io->error('Les deux mots de passe saisis ne correspondent pas.');
 
             return null;
@@ -332,7 +336,7 @@ final class CreateCpgUserCommand extends Command
             return null;
         }
 
-        $password = false === $read ? '' : (string) preg_replace('/\r?\n\z/', '', $read);
+        $password = false === $read ? '' : (string) preg_replace(self::FINAL_LINE_ENDING, '', $read);
 
         if ('' === $password) {
             $io->error('Aucun mot de passe lu sur l\'entrée standard.');
@@ -349,6 +353,16 @@ final class CreateCpgUserCommand extends Command
         return $password;
     }
 
+    private function passwordQuestion(): Question
+    {
+        return $this->hiddenQuestion('Mot de passe', $this->validatePassword(...));
+    }
+
+    private function confirmationQuestion(): Question
+    {
+        return $this->hiddenQuestion('Confirmez le mot de passe');
+    }
+
     /**
      * Une question masquée qui rend le mot de passe tel qu'il a été tapé.
      * Une question est rognée par défaut, alors que `--password-stdin` et json_login
@@ -356,6 +370,10 @@ final class CreateCpgUserCommand extends Command
      * inutilisable (issue #383). Sans rognage, la lecture garde en revanche la
      * fin de ligne de la saisie : le normaliseur, appliqué avant le
      * validateur, retire celle-là et rien d'autre.
+     *
+     * Chacun de ses rappels reçoit le mot de passe en clair : une méthode qui
+     * porte `#[SensitiveParameter]`, jamais une closure (issue #433,
+     * CreateCpgUserCommandTest le vérifie sur la question construite).
      */
     private function hiddenQuestion(string $label, ?callable $validator = null): Question
     {
@@ -363,9 +381,36 @@ final class CreateCpgUserCommand extends Command
         $question->setHidden(true);
         $question->setHiddenFallback(false);
         $question->setTrimmable(false);
-        $question->setNormalizer(static fn (mixed $value): mixed => \is_string($value) ? preg_replace('/\r?\n\z/', '', $value) : $value);
+        $question->setNormalizer($this->withoutLineEnding(...));
         $question->setValidator($validator);
 
         return $question;
+    }
+
+    /**
+     * Le normaliseur des questions masquées. Une méthode plutôt qu'une
+     * closure (issue #433) : son paramètre reçoit le mot de passe tapé, et
+     * {@see \App\Tests\Security\User\PlainPasswordInputsTest} n'exige
+     * `#[SensitiveParameter]` que de ce que la réflexion atteint — une closure
+     * lui échappait sous le nom générique `$value`.
+     */
+    private function withoutLineEnding(#[SensitiveParameter] mixed $password): mixed
+    {
+        return \is_string($password) ? preg_replace(self::FINAL_LINE_ENDING, '', $password) : $password;
+    }
+
+    /**
+     * Le validateur de la première question : même raison d'être une méthode
+     * (issue #433).
+     *
+     * @throws InvalidConsoleAnswerException
+     */
+    private function validatePassword(#[SensitiveParameter] mixed $password): string
+    {
+        if (!\is_string($password) || '' === $password) {
+            throw InvalidConsoleAnswerException::empty('Le mot de passe');
+        }
+
+        return $password;
     }
 }
