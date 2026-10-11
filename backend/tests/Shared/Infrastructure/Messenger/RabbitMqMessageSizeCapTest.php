@@ -19,10 +19,13 @@ use Symfony\Component\Yaml\Yaml;
  * Les en-têtes, eux, sont déjà bornés par `frame_max` (128 Kio par défaut) :
  * une trame d'en-tête ne se découpe pas.
  *
- * Le plafond reste au-dessus de la borne du sérialiseur, sans quoi une
- * enveloppe légitime à la borne serait refusée par le broker, et dans un
- * facteur quatre, pour que les deux valeurs restent liées : relever l'une
- * sans l'autre fait rougir ce test.
+ * Le plafond vaut exactement quatre fois la borne du sérialiseur : au-dessus,
+ * pour qu'une enveloppe légitime à la borne passe le broker, et lié à elle,
+ * pour que relever l'une sans l'autre fasse rougir ce test.
+ *
+ * Ce test lit la base ; tools/check-rabbitmq-conf.sh (CI `rabbitmq-conf`)
+ * démarre l'image épinglée avec le fichier, lit la valeur que le nœud a
+ * retenue, et vérifie le montage de docker-compose.yml.
  */
 final class RabbitMqMessageSizeCapTest extends TestCase
 {
@@ -30,15 +33,16 @@ final class RabbitMqMessageSizeCapTest extends TestCase
 
     private const string MOUNT_PATH = '/etc/rabbitmq/conf.d/20-cp-ghostotof.conf';
 
-    public function testTheBrokerCapsTheMessageSizeJustAboveTheSerializerBound(): void
+    public function testTheBrokerCapsTheMessageSizeAtFourTimesTheSerializerBound(): void
     {
         $path = $this->k8sBase().'/rabbitmq.conf';
         self::assertFileIsReadable($path);
-        self::assertSame(1, preg_match('/^max_message_size\s*=\s*(\d+)\s*$/m', (string) file_get_contents($path), $matches));
-        $cap = (int) $matches[1];
 
-        self::assertGreaterThan(AuthenticatedEnvelopeSerializer::MAX_ENVELOPE_BYTES, $cap);
-        self::assertLessThanOrEqual(4 * AuthenticatedEnvelopeSerializer::MAX_ENVELOPE_BYTES, $cap);
+        // Une seule ligne : RabbitMQ retiendrait la dernière, un test qui lirait
+        // la première pourrait passer à côté.
+        self::assertSame(1, preg_match_all('/^\s*max_message_size\s*=\s*(\d+)\s*$/m', (string) file_get_contents($path), $matches));
+
+        self::assertSame(4 * AuthenticatedEnvelopeSerializer::MAX_ENVELOPE_BYTES, (int) $matches[1][0]);
     }
 
     /**
@@ -59,6 +63,16 @@ final class RabbitMqMessageSizeCapTest extends TestCase
 
         self::assertSame(['rabbitmq.conf'], $generator['files'] ?? null);
         self::assertArrayNotHasKey('options', $generator, 'Le hachage du nom doit rester actif.');
+
+        // Un `generatorOptions` global, dans la base ou un overlay, couperait
+        // aussi le hachage (incident de backend-nginx-conf, #18).
+        foreach (['', '/../overlays/preprod', '/../overlays/prod'] as $directory) {
+            $file = Yaml::parseFile($this->k8sBase().$directory.'/kustomization.yaml');
+            self::assertIsArray($file);
+            $options = $file['generatorOptions'] ?? [];
+            self::assertIsArray($options);
+            self::assertNotTrue($options['disableNameSuffixHash'] ?? false, 'generatorOptions.disableNameSuffixHash dans k8s/base'.$directory);
+        }
     }
 
     public function testTheBrokerMountsTheConfigurationBesideTheImageDefaults(): void
@@ -66,7 +80,7 @@ final class RabbitMqMessageSizeCapTest extends TestCase
         $podSpec = $this->rabbitMqPodSpec();
         $containers = $podSpec['containers'] ?? null;
         self::assertIsArray($containers);
-        $container = array_first(array_filter($containers, static fn (mixed $c): bool => \is_array($c) && 'rabbitmq' === ($c['name'] ?? null))) ?? null;
+        $container = array_first(array_filter($containers, static fn (mixed $c): bool => \is_array($c) && 'rabbitmq' === ($c['name'] ?? null)));
         self::assertIsArray($container);
 
         // Un fichier dans conf.d, par subPath : le dossier garde le
@@ -84,7 +98,7 @@ final class RabbitMqMessageSizeCapTest extends TestCase
             \is_array($podSpec['volumes'] ?? null) ? $podSpec['volumes'] : [],
             static fn (mixed $v): bool => \is_array($v) && ($v['name'] ?? null) === $mount['name'],
         );
-        $volume = array_first($volumes) ?? null;
+        $volume = array_first($volumes);
         self::assertIsArray($volume);
         self::assertSame(['name' => self::CONFIG_MAP], $volume['configMap'] ?? null);
     }
