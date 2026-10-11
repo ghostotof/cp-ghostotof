@@ -200,12 +200,35 @@ must be high-entropy (32 random bytes; CI uses `openssl rand -hex 16`). An empty
 `EmptyApplicationSecretException` at first use — the CSRF signer used to accept it, which let anyone forge a
 token. `tests/Shared/Infrastructure/Security/ApplicationSecretUsesTest.php` finds, by tokens, every file of
 `src/` naming `%kernel.secret%`, `kernel.secret`, `APP_SECRET` or `%env(APP_SECRET)%` (either quotes),
-requires an actual `SecretKeyDerivation::derive(…, self::KEY_CONTEXT)` call and a `KEY_CONTEXT` no other file
-uses, and refuses any `config/**.yaml` naming the secret besides `framework.secret`. Not covered, accepted: a
+requires an actual `KeyedMac::fromSecret(…, self::KEY_CONTEXT, …)` or `SecretKeyDerivation::derive(…,
+self::KEY_CONTEXT)` call, a `KEY_CONTEXT` no other file uses and no `hash_hmac()` / `hash_equals()` call of its
+own (see the next paragraph), and refuses any `config/**.yaml` naming the secret besides `framework.secret`. Not covered, accepted: a
 class handing the raw secret to another, and Symfony's own uses (`login_throttling`, `SigningSerializer`),
 which keep the raw secret but never return their output to a client. Unit tests take key material from
 `tests/Support/TestKeys` (generated, like `TestCredentials`): a literal assigned to a name saying "secret"
 gets flagged by GitGuardian.
+
+**The HMAC under a derived key is written once, in `Shared/Infrastructure/Security/KeyedMac`** (issue #487).
+`KeyedMac::fromSecret($secret, self::KEY_CONTEXT, MacEncoding::Hex|Binary)` derives the key (an empty secret
+refused there), then `sign($data)` and `verifies($mac, $data)` (HMAC-SHA256, `hash_equals()`) — the four uses
+above go through it, and none calls `hash_hmac()` or `hash_equals()` itself any more. A value object, not a
+service: each use has its own key, context and encoding, fixed at creation, so a use cannot sign in hex and
+verify in binary. **The derivation happens in `fromSecret()`, the laziness stays with the caller**, each
+keeping its moment: the cache derives on first use (`??=`, #474 — the build's warm-up has no secret), the CSRF
+signer and the login fingerprint on every call (a refusal at first use, not at every request's
+construction), the Messenger serializer in its constructor. `KeyedMac::BINARY_LENGTH` is the length the cache
+splits its stored value on. Truncation stays with the caller (the fingerprint's 6 hex chars). Rejected: a lazy
+`KeyedMac` holding the raw secret (mutable, and it would have moved Messenger's refusal), and a pair of
+methods per encoding (sign one way, verify the other). Going through it is no rotation:
+`DerivedMacsSurviveKeyedMacTest` writes, per use, the computation from before #487 with its **literal**
+context and checks both directions (a MAC signed before is accepted, the class signs what it would have
+signed); a changed `KEY_CONTEXT` turns it red, which is intended — a rotation is decided and announced in the
+release notes, never slipped in by a refactoring. `sign()`'s `$data` carries `#[SensitiveParameter]` and is
+pinned in `HIDDEN_BY_HAND` (the fingerprint hands it the tried identifier, possibly a password).
+`ApplicationSecretUsesTest` refuses `hash_hmac()` and `hash_equals()` (qualified or not, never a method of the
+same name nor a comment) in any file receiving the secret: such a class has no other key than the one it
+derives. `hash_equals()` elsewhere (the double-submit comparison of `CsrfCookieRequestSubscriber`) is not a
+MAC and stays.
 
 **`src/` never instantiates a bare `\Exception`, `\LogicException`, `\RuntimeException` or
 `\InvalidArgumentException`** (issues #338, #383).
@@ -305,8 +328,8 @@ declares: one definition of "outside any class". No exemption list. A secret und
 another name or in an `array` is hidden by hand and pinned in `HIDDEN_BY_HAND` (`AuthCookieFactory::create($value)`,
 `ReplayRefusingHttpClient::request($options)` — the Scaleway key and the nominative CV —,
 `PasswordOptionRedactor::redact($text)`); an entry the census already sees is refused there.
-`CsrfCookieTokenSigner::signature($random)` stays visible on purpose (half the token, useless without
-`APP_SECRET`). No exclusion list until a first false positive needs one. Why it matters although
+`KeyedMac::verifies($mac, $data)` stays visible on purpose (the CSRF token's two halves, useless without
+`APP_SECRET`; `sign($data)` is hidden, issue #487). No exclusion list until a first false positive needs one. Why it matters although
 production and, since #420, PHPUnit strip arguments (`zend.exception_ignore_args`, see
 `.claude/rules/backend-outillage.md`): dev does not (the debug JSON error body, Messenger's
 `ErrorDetailsStamp`, output pasted in a ticket or an assistant session), and `debug_backtrace()` never
