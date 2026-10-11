@@ -29,15 +29,26 @@ use Doctrine\Migrations\AbstractMigration;
  * compte déjà invité part de 1, comme s'il venait d'être invité une fois ;
  * les messages déjà en file n'ont pas de génération et restent traités.
  *
+ * Fuseau de session. Une heure sans décalage qui atteint encore la base est
+ * lue dans le fuseau de la session PostgreSQL, UTC par défaut : celles de
+ * l'ancien code, pendant le rollout ou indéfiniment après un retour arrière
+ * (`rollout undo` ne rejoue pas `down()`), et celle d'un futur paramètre de
+ * requête non typé. Deux heures d'écart : un lien valable 50 h, une purge des
+ * invitations deux heures trop tôt, irréversible. La base règle donc ses
+ * sessions sur le fuseau de PHP, qui produit ces heures — à l'heure répétée
+ * près. Effet sur les sessions suivantes seulement : le Job de migration,
+ * lui, convertit par des `AT TIME ZONE` explicites. Le rôle applicatif est
+ * propriétaire de la base (image PostgreSQL officielle, POSTGRES_USER), ce
+ * que demande `ALTER DATABASE`.
+ *
  * Expand/contract (#175) : déploiement standard, migration avant le rollout,
  * sans fenêtre de maintenance. L'ancien code ignore la nouvelle colonne et
  * relit un `TIMESTAMP WITH TIME ZONE` sans erreur (DBAL retombe sur
- * `new DateTimeImmutable()`, qui comprend le décalage). Une écriture de
- * l'ancien code pendant le rollout — heure murale sans décalage — serait lue
- * dans le fuseau de la session, UTC : deux heures d'écart sur une invitation,
- * une activation, une expiration de lien ou un rafraîchissement de la veille
- * écrits dans cette fenêtre. Accepté : aucune de ces valeurs ne décide d'un
- * accès à la minute près (la purge compte en jours, le lien vit 48 h).
+ * `new DateTimeImmutable()`, qui comprend le décalage) ; ses écritures sont
+ * lues en heure de Paris, ci-dessus. Les `ALTER … TYPE` réécrivent trois
+ * petites tables sous verrou exclusif : `lock_timeout` borne l'attente à
+ * 5 s, pour que le Job échoue vite plutôt que de mettre le login en file
+ * derrière une transaction qui traîne.
  */
 final class Version20261011120000 extends AbstractMigration
 {
@@ -55,6 +66,7 @@ final class Version20261011120000 extends AbstractMigration
 
     public function up(Schema $schema): void
     {
+        $this->addSql("SET LOCAL lock_timeout = '5s'");
         $this->addSql('ALTER TABLE cpg_user ADD invitation_generation INT DEFAULT 0 NOT NULL');
         $this->addSql('UPDATE cpg_user SET invitation_generation = 1 WHERE invited_at IS NOT NULL');
 
@@ -67,6 +79,8 @@ final class Version20261011120000 extends AbstractMigration
                 ));
             }
         }
+
+        $this->addSql("DO $$ BEGIN EXECUTE format('ALTER DATABASE %I SET timezone TO %L', current_database(), 'Europe/Paris'); END $$");
     }
 
     /**
@@ -76,6 +90,9 @@ final class Version20261011120000 extends AbstractMigration
      */
     public function down(Schema $schema): void
     {
+        $this->addSql("SET LOCAL lock_timeout = '5s'");
+        $this->addSql("DO $$ BEGIN EXECUTE format('ALTER DATABASE %I RESET timezone', current_database()); END $$");
+
         foreach (self::TIMESTAMPS as $table => $columns) {
             foreach ($columns as $column) {
                 $this->addSql(\sprintf(

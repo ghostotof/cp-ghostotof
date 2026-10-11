@@ -172,6 +172,17 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
         return $this->invitationGeneration;
     }
 
+    /**
+     * Vrai si le compte a été (re)invité depuis la génération donnée : un
+     * message qui sert celle-ci est périmé (issue #434). Une génération
+     * d'avance sur la base (relance pas encore commitée quand le worker la
+     * lit) ne l'est jamais : le dernier message ne doit pas se perdre.
+     */
+    public function wasReinvitedSince(int $invitationGeneration): bool
+    {
+        return $this->invitationGeneration > $invitationGeneration;
+    }
+
     public function getActivatedAt(): ?DateTimeImmutable
     {
         return $this->activatedAt;

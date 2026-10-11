@@ -48,4 +48,19 @@ final class TimestampColumnsCarryTheirOffsetTest extends KernelTestCase
 
         self::assertSame([], $offenders, 'Horodatage sans décalage : mapper la colonne en Types::DATETIMETZ_IMMUTABLE, migration comprise (#434).');
     }
+
+    /**
+     * Second filet : une heure sans décalage qui atteint encore la base — un
+     * paramètre de requête non typé, ou l'ancien code pendant un rollout ou
+     * après un retour arrière, qui ne rejoue pas le `down()` de la migration —
+     * est lue dans le fuseau de la session. La base le règle sur celui de PHP
+     * (migration Version20261011120000), qui produit ces heures.
+     */
+    public function testTheDatabaseSessionReadsWallTimesInPhpsTimeZone(): void
+    {
+        self::bootKernel();
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+
+        self::assertSame(date_default_timezone_get(), $connection->fetchOne('SHOW timezone'));
+    }
 }

@@ -34,6 +34,12 @@ use Symfony\Component\Uid\Uuid;
 final readonly class SendAccountInvitationMessage
 {
     /**
+     * Génération que sert un message mis en file avant l'issue #434 : la
+     * migration Version20261011120000 a posé 1 à tout compte déjà invité.
+     */
+    private const int GENERATION_BEFORE_NUMBERING = 1;
+
+    /**
      * `null` pour un message mis en file avant l'issue #434 (cf.
      * __unserialize()) : le constructeur, lui, l'exige toujours.
      */
@@ -48,15 +54,14 @@ final readonly class SendAccountInvitationMessage
     }
 
     /**
-     * Vrai si une invitation plus récente que celle de ce message a été
-     * envoyée au compte. Un message d'avance sur la génération lue (relance
-     * pas encore commitée quand le worker le lit) ne précède rien : le
-     * dernier message ne se perd jamais. Un message d'avant #434 non plus,
-     * faute de génération : il est traité comme avant.
+     * La génération d'invitation que sert ce message, à comparer à celle du
+     * compte ({@see \App\Security\User\Domain\Entity\CpgUser::wasReinvitedSince()}).
+     * Un message d'avant #434 sert la première : une relance faite depuis le
+     * déploiement l'écarte, il est traité sinon.
      */
-    public function predates(int $accountInvitationGeneration): bool
+    public function servedGeneration(): int
     {
-        return null !== $this->invitationGeneration && $this->invitationGeneration < $accountInvitationGeneration;
+        return $this->invitationGeneration ?? self::GENERATION_BEFORE_NUMBERING;
     }
 
     /**
@@ -64,8 +69,9 @@ final readonly class SendAccountInvitationMessage
      * ne repasse pas par le constructeur : sans cette méthode, un message
      * sérialisé avant l'issue #434 laisserait `invitationGeneration` non
      * initialisée, et sa lecture planterait le worker. La forme est vérifiée
-     * au passage, pour qu'un message altéré soit refusé au décodage plutôt
-     * qu'au fil des réessais du handler.
+     * au passage : un message altéré échoue au décodage, sans atteindre le
+     * handler (il suit alors les réessais du transport, puis le
+     * failure_transport, comme tout échec).
      *
      * @param array<string, mixed> $data
      */

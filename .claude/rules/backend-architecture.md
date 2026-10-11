@@ -62,6 +62,15 @@ zone and stays a `DATE`. A value read back is in the session's zone (UTC): compa
 walks every entity's metadata and fails on any `datetime`, `datetime_immutable`, `time` or
 `time_immutable` field. Migration `Version20261011120000` converted the five existing timestamps with
 `AT TIME ZONE 'Europe/Paris'`. Messenger's own tables are not entities and stay as the vendor made them.
+**The database's sessions read wall times in PHP's zone** (`ALTER DATABASE … SET timezone TO
+'Europe/Paris'`, same migration, settled in the review of #434): the second net, for a time without
+offset that still reaches the database — an untyped query parameter, which the ORM infers as
+`datetime_immutable`, or the old code during a rollout and **indefinitely after a rollback**, since
+`rollout undo` never replays a migration's `down()` (two hours off: a 50-hour link, an invitation purge two
+hours early, irreversible). The trade-off: it hides a typing mistake instead of revealing it — the
+mapping guard above is what reveals it. The same test checks `SHOW timezone` equals
+`date_default_timezone_get()`: changing `date.timezone` in `php.*.ini` means a migration that moves the
+database with it. A value read back therefore carries Paris's offset; still compare instants.
 
 **`src/` never instantiates a bare `\Exception`, `\LogicException`, `\RuntimeException` or
 `\InvalidArgumentException`** (issues #338, #383).

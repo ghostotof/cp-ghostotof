@@ -123,22 +123,29 @@ paths:
     `SendAccountInvitationDeliveryFailureTest` reads the table on the real `_test` database.
     **A message of a superseded invitation is dropped** (issue #434): `CpgUser::$invitationGeneration`
     (`invitation_generation`, default 0) is advanced by every `markInvited()`, and the message carries the
-    generation it serves. When the reloaded account's generation is **higher**, the handler logs a
-    `warning` and returns without retry: a delayed retry, or a message replayed from the
-    `failure_transport` days later, would otherwise purge the token of a resend already delivered. A
-    counter rather than the instant, chosen in the review of #434: an instant compared at the second
-    missed two resends in the same second (a double click), and `invited_at` was then a wall time with no
-    offset (see the timestamp rule in `.claude/rules/backend-architecture.md`). A message **ahead** of the
-    stored generation (a resend not committed yet when the worker reads it) is processed: the last message
-    is never lost. A message queued before #434 has no generation (`null`, restored by `__unserialize()`,
-    since `PhpSerializer` never calls the constructor) and is processed as before — a follow-up removes that
-    path once no such message is left; a malformed one (missing or mistyped field, invalid UUID or locale)
-    throws `MalformedAccountInvitationMessageException`, which the serializer turns into a decoding
-    failure. `SendAccountInvitationStaleMessageTest` replays the issue's scenario with the real
-    `CpgUserInviter` on the `_test` database. Accepted limits: if `reinvite()` saves the new generation but
-    its dispatch fails (broker down, the admin gets a 500), a pending retry of the previous invitation is
-    dropped too, until the admin resends; an old worker (rollback) cannot decode a message carrying the
-    generation — it goes to `failed` with its raw body and replays once the new code is back.
+    generation it serves. When `CpgUser::wasReinvitedSince($message->servedGeneration())` — the account's
+    generation is **higher** —, the handler logs a `warning` and returns without retry: a delayed retry,
+    or a message replayed from the `failure_transport` days later, would otherwise purge the token of a
+    resend already delivered. A counter rather than the instant, chosen in the review of #434: an instant
+    compared at the second missed two resends in the same second, and `invited_at` was then a wall time
+    with no offset (see the timestamp rule in `.claude/rules/backend-architecture.md`). A message **ahead**
+    of the stored generation (a resend not committed yet when the worker reads it) is processed: the last
+    message is never lost. A message queued before #434 has no generation (`null`, restored by
+    `__unserialize()`, since `PhpSerializer` never calls the constructor) and serves the **first** one —
+    the migration set 1 on every account already invited —, so it is processed until the account is
+    resent, dropped after. A malformed one (missing or mistyped field, invalid UUID or locale) throws
+    `MalformedAccountInvitationMessageException`: a decoding failure, which follows the transport's
+    retries then the `failure_transport` without ever reaching the handler.
+    `SendAccountInvitationStaleMessageTest` replays the issue's scenario with the real `CpgUserInviter` on
+    the `_test` database. **Not covered here, scope of #435**: two *concurrent* `reinvite()` (two FPM
+    workers on a double click) both read generation N and publish two messages of generation N+1, and the
+    handler checks the generation outside its transaction, without locking the account. Accepted limits:
+    if `reinvite()` saves the new generation but its dispatch fails (broker down, the admin gets a 500), a
+    pending retry of the previous invitation is dropped too, until the admin resends; an **old worker**
+    cannot decode a message carrying the generation (`Cannot create dynamic property`) — during a rollout,
+    a new API pod can publish before the `Recreate` worker is replaced, and after a rollback every new
+    message is concerned —: it goes to `failed` with its raw body and replays once the new code runs, so
+    read `messenger:failed:show` after a release or a rollback.
   - `Infrastructure/` — `Doctrine/{CpgUser,PasswordSetupToken}Repository.php` (sole impls;
     `CpgUserRepository` is also the **loader of the `cpg_users` provider**, `UserLoaderInterface`, issue #418:
     the `entity` provider has no `property` option on purpose — with it, Doctrine's provider threw

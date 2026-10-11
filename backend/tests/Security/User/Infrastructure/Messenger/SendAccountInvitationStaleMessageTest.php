@@ -12,11 +12,13 @@ use App\Security\User\Domain\Exception\AccountInvitationDeliveryException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler;
 use App\Tests\Support\RunsInvitationHandlerOnTestDatabase;
+use App\Tests\Support\SerializedInvitationMessage;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
 use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 use Symfony\Component\Mime\RawMessage;
@@ -31,6 +33,7 @@ use Symfony\Component\Uid\Uuid;
  */
 final class SendAccountInvitationStaleMessageTest extends KernelTestCase
 {
+    use ClockSensitiveTrait;
     use RunsInvitationHandlerOnTestDatabase;
 
     /** @var list<RawMessage> */
@@ -88,11 +91,13 @@ final class SendAccountInvitationStaleMessageTest extends KernelTestCase
     }
 
     /**
-     * L'instant ne compte pas, seule la génération : deux relances dans la
-     * même seconde (un double clic sur « Renvoyer ») se distinguent.
+     * L'instant ne compte pas, seule la génération : deux relances
+     * successives dans la même seconde, horloge figée, se distinguent. Deux
+     * relances *concurrentes* relèvent de #435.
      */
     public function testTheEarlierOfTwoResendsInTheSameSecondIsStale(): void
     {
+        self::mockTime('2026-10-11 09:00:00');
         $first = $this->reinvite($this->reloaded($this->invite('newcomer@example.com')));
         $second = $this->reinvite($this->reloaded($first));
 
@@ -121,28 +126,44 @@ final class SendAccountInvitationStaleMessageTest extends KernelTestCase
     }
 
     /**
-     * Un message mis en file avant #434 ne porte pas de génération : il reste
-     * traité comme avant, plutôt que de planter le worker à la lecture de la
-     * propriété. Forme sérialisée littérale, celle que PhpSerializer a écrite
-     * dans RabbitMQ ou le `failure_transport`.
+     * Un message mis en file avant #434 ne porte pas de génération : il sert
+     * la première, celle que la migration a posée aux comptes déjà invités.
+     * Il reste traité tant que le compte n'a pas été relancé, plutôt que de
+     * planter le worker à la lecture de la propriété.
      */
     public function testAMessageQueuedBeforeTheGenerationExistedIsStillProcessed(): void
     {
         $user = $this->pendingUser('newcomer', 'newcomer@example.com');
-        $userId = $user->getId()->toRfc4122();
-        $legacy = unserialize(\sprintf(
-            'O:%d:"%s":2:{s:6:"userId";s:%d:"%s";s:6:"locale";s:2:"fr";}',
-            \strlen(SendAccountInvitationMessage::class),
-            SendAccountInvitationMessage::class,
-            \strlen($userId),
-            $userId,
-        ));
-        self::assertInstanceOf(SendAccountInvitationMessage::class, $legacy);
+
+        $this->handler()($this->legacyMessageFor($user));
+
+        self::assertSame(1, $this->sentEmailCount());
+        self::assertCount(1, $this->tokenHashesOf($user));
+    }
+
+    /**
+     * Le même message, rejoué depuis le `failure_transport` après une relance
+     * faite depuis le déploiement : il est périmé comme les autres.
+     */
+    public function testAMessageQueuedBeforeTheGenerationExistedIsStaleOnceTheAccountIsResent(): void
+    {
+        $user = $this->reloaded($this->invite('newcomer@example.com'));
+        $legacy = $this->legacyMessageFor($user);
+        $resend = $this->reinvite($user);
+        $this->handler()($resend);
 
         $this->handler()($legacy);
 
         self::assertSame(1, $this->sentEmailCount());
         self::assertCount(1, $this->tokenHashesOf($user));
+    }
+
+    private function legacyMessageFor(CpgUser $user): SendAccountInvitationMessage
+    {
+        $legacy = unserialize(SerializedInvitationMessage::withoutGeneration($user->getId()->toRfc4122()));
+        self::assertInstanceOf(SendAccountInvitationMessage::class, $legacy);
+
+        return $legacy;
     }
 
     private function invite(string $email): SendAccountInvitationMessage

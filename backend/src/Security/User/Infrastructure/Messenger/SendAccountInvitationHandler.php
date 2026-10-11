@@ -80,7 +80,7 @@ final readonly class SendAccountInvitationHandler
         // statique.
         \assert(null !== $recipientEmail);
 
-        if ($message->predates($user->getInvitationGeneration())) {
+        if ($user->wasReinvitedSince($message->servedGeneration())) {
             // Issue #434 : une relance plus récente a déjà émis son jeton, et
             // son e-mail est peut-être déjà arrivé. Ce message (réessai
             // différé, rejeu du failure_transport) le purgerait : il sort sans

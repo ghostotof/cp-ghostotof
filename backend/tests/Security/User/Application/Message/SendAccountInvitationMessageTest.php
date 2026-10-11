@@ -6,6 +6,7 @@ namespace App\Tests\Security\User\Application\Message;
 
 use App\Security\User\Application\Message\MalformedAccountInvitationMessageException;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
+use App\Tests\Support\SerializedInvitationMessage;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -29,28 +30,23 @@ final class SendAccountInvitationMessageTest extends TestCase
         self::assertSame(3, $restored->invitationGeneration);
     }
 
-    public function testAMessageOfAnEarlierGenerationPredatesTheAccountsInvitation(): void
+    public function testAMessageServesTheGenerationItCarries(): void
     {
-        $message = new SendAccountInvitationMessage(self::USER_ID, 'fr', 2);
-
-        self::assertTrue($message->predates(3));
-        self::assertFalse($message->predates(2));
-        // Un message d'avance sur la base (relance pas encore commitée) n'est
-        // jamais écarté : le dernier message ne doit pas se perdre.
-        self::assertFalse($message->predates(1));
+        self::assertSame(2, (new SendAccountInvitationMessage(self::USER_ID, 'fr', 2))->servedGeneration());
     }
 
     /**
-     * Un message mis en file avant #434 ne porte pas de génération : il ne
-     * précède rien, il est traité comme avant.
+     * Un message mis en file avant #434 ne porte pas de génération. Il sert
+     * la première : la migration a posé 1 à tout compte déjà invité, si bien
+     * qu'une relance faite depuis l'écarte, et qu'il reste traité sinon.
      */
-    public function testAMessageQueuedBeforeTheGenerationExistedPredatesNothing(): void
+    public function testAMessageQueuedBeforeTheGenerationExistedServesTheFirstOne(): void
     {
-        $legacy = unserialize($this->serialized(2, 's:6:"userId";s:36:"'.self::USER_ID.'";s:6:"locale";s:2:"fr";'));
+        $legacy = unserialize(SerializedInvitationMessage::withoutGeneration(self::USER_ID));
 
         self::assertInstanceOf(SendAccountInvitationMessage::class, $legacy);
         self::assertNull($legacy->invitationGeneration);
-        self::assertFalse($legacy->predates(1));
+        self::assertSame(1, $legacy->servedGeneration());
     }
 
     /**
@@ -79,26 +75,12 @@ final class SendAccountInvitationMessageTest extends TestCase
     public function testAMalformedSerializedMessageIsRefused(int $propertyCount, string $properties): void
     {
         try {
-            unserialize($this->serialized($propertyCount, $properties));
+            unserialize(SerializedInvitationMessage::of($propertyCount, $properties));
             self::fail('MalformedAccountInvitationMessageException aurait dû être levée.');
         } catch (MalformedAccountInvitationMessageException $exception) {
             self::assertStringNotContainsString(self::USER_ID, $exception->getMessage());
             self::assertStringNotContainsString('abc', $exception->getMessage());
             self::assertStringNotContainsString('"de"', $exception->getMessage());
         }
-    }
-
-    /**
-     * La forme que PhpSerializer écrit pour un objet aux propriétés publiques.
-     */
-    private function serialized(int $propertyCount, string $properties): string
-    {
-        return \sprintf(
-            'O:%d:"%s":%d:{%s}',
-            \strlen(SendAccountInvitationMessage::class),
-            SendAccountInvitationMessage::class,
-            $propertyCount,
-            $properties,
-        );
     }
 }

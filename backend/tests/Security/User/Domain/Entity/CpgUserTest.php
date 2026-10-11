@@ -159,6 +159,23 @@ final class CpgUserTest extends TestCase
         self::assertSame(2, $user->getInvitationGeneration());
     }
 
+    /**
+     * Issue #434 : un message d'invitation est périmé quand le compte a été
+     * relancé depuis la génération qu'il sert.
+     */
+    public function testAnAccountWasReinvitedSinceAnyEarlierGenerationOnly(): void
+    {
+        $user = new CpgUser('jane', '');
+        $user->markInvited(new DateTimeImmutable('2026-09-03 12:00:00'));
+        $user->markInvited(new DateTimeImmutable('2026-09-04 12:00:00'));
+
+        self::assertTrue($user->wasReinvitedSince(1));
+        self::assertFalse($user->wasReinvitedSince(2));
+        // Un message d'avance sur la base (relance pas encore commitée) n'est
+        // jamais écarté : le dernier message ne doit pas se perdre.
+        self::assertFalse($user->wasReinvitedSince(3));
+    }
+
     public function testMarkActivatedClearsThePendingState(): void
     {
         $user = new CpgUser('jane', 'hashed-password');
