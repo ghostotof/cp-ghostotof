@@ -84,6 +84,12 @@ jobs:
           php-version: '8.5'
           extensions: intl, pdo_pgsql, zip, sockets, amqp-2.2.0
           coverage: none
+          # Le fuseau des images (docker/php/php.*.ini) : setup-php tourne
+          # sinon en UTC, et la base, réglée sur Europe/Paris par la
+          # migration Version20261011120000, ne lirait plus les heures sans
+          # décalage dans le fuseau de PHP (issue #434,
+          # TimestampColumnsCarryTheirOffsetTest).
+          ini-values: date.timezone=Europe/Paris
       - name: pdftotext (extraction du CV nominatif, spec 0005 D7)
         # L'image l'installe dans son étape `base` (poppler-utils) ; le test de
         # l'extracteur appelle le vrai binaire sur un PDF de fixture. Borne
