@@ -37,6 +37,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      # Issue #479 : le broker de AmqpPublisherConfirmsIntegrationTest, sur le
+      # vhost par défaut (le test n'y crée que des files jetables).
+      RABBITMQ_INTEGRATION_DSN: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/%2f
     volumes:
       # Bind mount : le code vit sur l'hôte, l'IDE l'édite directement.
       - ./backend:/var/www/backend

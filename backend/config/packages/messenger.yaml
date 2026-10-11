@@ -15,7 +15,16 @@ framework:
             # https://symfony.com/doc/current/messenger.html#transport-configuration
             # RabbitMQ. Consommé par `make consume` en dev, et par le Deployment
             # `worker` en préprod/prod (k8s/base/messenger-worker-deployment.yaml).
-            async: '%env(MESSENGER_TRANSPORT_DSN)%'
+            async:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    # Issue #479 : attendre l'accusé du broker. Sans lui, un refus
+                    # (max_message_size de #477, broker qui se coupe) est
+                    # asynchrone : le dispatch réussit et le message est perdu en
+                    # silence. Avec, il lève une TransportException (500 pour le
+                    # contact). 5 s : ce qu'une requête attend, au pire, un broker
+                    # muet. AmqpPublisherConfirmsTest borne la valeur.
+                    confirm_timeout: 5
             failed: 'doctrine://default?queue_name=failed'
             sync: 'sync://'
 
