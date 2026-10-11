@@ -76,6 +76,15 @@ paths:
     the user (missing or already activated → `logger->warning` + return, no retry), then in a single
     `wrapInTransaction` purges the previous `PasswordSetupToken` and issues a fresh one. Keep it that way: do
     not move token creation back up into `CpgUserInviter`, and never add a secret to the message.
+    **Nor in the mailer's own message** (issue #426): `Symfony\Component\Mailer\Messenger\SendEmailMessage`
+    is routed to **no** transport, `sync` included, so `send()` handles it synchronously. Routed to `async`,
+    the e-mail would leave **unrendered** — its context holds the set-password URL and its clear token —
+    into RabbitMQ, then the `failure_transport`; and `send()` would return at enqueueing, so neither #419's
+    conversion nor #425's removal would ever see the failure. `tests/Shared/Infrastructure/Messenger/SendEmailMessageStaysSynchronousTest.php`
+    reads the declared `framework.messenger.routing` of **every** allowed environment (`EnvironmentConfigKernel`,
+    preprod and prod run `prod`) and matches it as Messenger does (`HandlersLocator::listTypes()`: class,
+    parents, interfaces, namespace wildcards, `*`), plus the compiled senders locator of `test`; its
+    fixture project proves each form is caught.
     **Nor in the worker's failure** (issue #419): the template is rendered inside `mailer->send()`, after
     the token is valid — first on the "queued" `MessageEvent` `Mailer` dispatches before its bus
     (`MessageListener` renders regardless of `isQueued()`, so a broken template fails **bare**), then in the
