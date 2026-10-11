@@ -18,19 +18,31 @@ use SensitiveParameter;
  *
  * Un contexte est une chaîne versionnée propre à l'usage
  * (`cp-ghostotof/<usage>/v1`) ; le changer change la clé, ce qui sert de
- * rotation ciblée. `ApplicationSecretUsesTest` exige que toute classe de
+ * rotation ciblée. Un contexte hors de ce format est refusé (issue #487). `ApplicationSecretUsesTest` exige que toute classe de
  * `src/` qui reçoit `kernel.secret` passe par ici, avec un contexte que nulle
  * autre n'emploie.
  */
 final class SecretKeyDerivation
 {
     /**
+     * Format d'un contexte : `cp-ghostotof/<usage>/v<n>`, usage en minuscules,
+     * version à partir de 1. `ApplicationSecretUsesTest` le lit aussi pour
+     * vérifier chaque `KEY_CONTEXT` sans l'exécuter.
+     */
+    public const string CONTEXT_PATTERN = '#\Acp-ghostotof/[a-z0-9]+(?:-[a-z0-9]+)*/v[1-9][0-9]*\z#';
+
+    /**
      * @return non-empty-string clé binaire de 32 octets
      *
+     * @throws InvalidKeyContextException      si le contexte est hors format
      * @throws EmptyApplicationSecretException si le secret est vide
      */
     public static function derive(#[SensitiveParameter] string $secret, string $context): string
     {
+        if (1 !== preg_match(self::CONTEXT_PATTERN, $context)) {
+            throw InvalidKeyContextException::forContext($context);
+        }
+
         if ('' === $secret) {
             throw EmptyApplicationSecretException::forContext($context);
         }
