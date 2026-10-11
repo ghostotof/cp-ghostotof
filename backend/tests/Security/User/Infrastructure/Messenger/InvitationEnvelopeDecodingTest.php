@@ -8,6 +8,7 @@ use App\Security\User\Application\Message\MalformedAccountInvitationMessageExcep
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Shared\Infrastructure\Messenger\AuthenticatedEnvelopeSerializer;
 use App\Tests\Support\SerializedInvitationMessage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\NullLogger;
 use stdClass;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -51,21 +52,32 @@ final class InvitationEnvelopeDecodingTest extends KernelTestCase
     }
 
     /**
-     * Issue #465 : le format `C:` (Serializable) contourne `__unserialize()`
-     * et rendrait un message aux propriétés `readonly` non initialisées ; PHP
-     * n'en dit qu'un `E_WARNING` (« has no unserializer »). Ce refus tient au
-     * gestionnaire d'erreurs de PhpSerializer::safelyUnserialize(), un détail
-     * de Symfony qu'aucun code du projet n'écrit : ce test le garde contre une
-     * montée de version qui le changerait.
+     * @return iterable<string, array{string, string}>
      */
-    public function testASignedEnvelopeOfTheSerializableFormatFailsToDecode(): void
+    public static function formatsBypassingUnserialize(): iterable
     {
-        $serializableFormat = \sprintf('C:%d:"%s":0:{}', \strlen(SendAccountInvitationMessage::class), SendAccountInvitationMessage::class);
+        $class = SendAccountInvitationMessage::class;
 
-        $decoded = $this->queueSerializer()->decode($this->signedEnvelopeCarrying($serializableFormat))->getMessage();
+        yield 'C: (Serializable)' => [\sprintf('C:%d:"%s":0:{}', \strlen($class), $class), 'has no unserializer'];
+        yield 'E: (cas d\'enum)' => [\sprintf('E:%d:"%s:A";', \strlen($class) + 2, $class), 'is not an enum'];
+    }
+
+    /**
+     * Issue #465 : les formats `C:` (Serializable) et `E:` (cas d'enum)
+     * contournent `__unserialize()` ; PHP n'en dit qu'un `E_WARNING` et, pour
+     * `C:`, rend un message aux propriétés `readonly` non initialisées. Ce
+     * refus tient au gestionnaire d'erreurs de
+     * PhpSerializer::safelyUnserialize(), un détail de Symfony qu'aucun code
+     * du projet n'écrit : ce test le garde contre une montée de version qui le
+     * changerait.
+     */
+    #[DataProvider('formatsBypassingUnserialize')]
+    public function testASignedEnvelopeOfAFormatBypassingUnserializeFailsToDecode(string $serializedMessage, string $phpWarning): void
+    {
+        $decoded = $this->queueSerializer()->decode($this->signedEnvelopeCarrying($serializedMessage))->getMessage();
 
         self::assertInstanceOf(MessageDecodingFailedException::class, $decoded);
-        self::assertStringContainsString('has no unserializer', $decoded->getMessage());
+        self::assertStringContainsString($phpWarning, $decoded->getMessage());
     }
 
     /**

@@ -97,14 +97,20 @@ which decorates it (FrameworkBundle signs `RunCommandMessage` and `RunProcessMes
 the envelope's type — a restricted unserialization, but one — before the MAC. **Never rely on `#[AsMessageHandler(sign: true)]` for this**: Messenger's `SigningSerializer`
 only requires a signature for the listed types, and an unsigned envelope of any other type (a `stdClass`
 carrying a gadget) is still unserialized — measured in the review of #444, a `Process::__unserialize()`
-ran that way. A refusal is a decoding failure (`MessageDecodingFailedException`, strings only, quoting
-its cause, never the body): transport retries, then `failed`. **Any decoding failure it returns keeps the
+ran that way. A refusal is a decoding failure (`MessageDecodingFailedException`, holding the received
+envelope, never an object of its body, and quoting its cause, never the body): transport retries, then `failed`. **Any decoding failure it returns keeps the
 original encoded envelope, MAC included** (issue #465): `DecodeFailedMessageMiddleware` decodes that
 envelope again with the same serializer, at reception and after every retry, so a failure of the inner
 `PhpSerializer` — which wraps the envelope it was handed, header already removed — is re-wrapped around
 the original. Without it, every undecodable signed message logged a false « sans MAC » `warning` in
 transition, and its real cause became « sans MAC refusée » once the MAC is required
-(`DecodingFailureKeepsItsMacTest`). **Two steps**: while the parameter
+(`DecodingFailureKeepsItsMacTest`). **Only the failure of the decoding in progress is re-wrapped**,
+recognised by its body (the one handed to `PhpSerializer`, or its base64-decoded form): a failure that a
+retry carries **as its message** comes back untouched, stamps included — re-wrapped, it lost its
+`RedeliveryStamp` (endless retries) and `SentToFailureTransportStamp` (`messenger:failed:*`), and nested
+each retry inside the next (caught in the review of #465). Not covered: a decoding failure queued before
+#465 still carries the envelope without its MAC, so it logs « sans MAC » in transition and is refused
+for that reason once the MAC is required — read `messenger:failed:show` before #450. **Two steps**: while the parameter
 `app.messenger.require_envelope_mac` is `false` (the release that introduced it), an envelope with
 **no** MAC — queued by the old code before or during the rollout, or after a rollback — is still
 decoded, with a `warning`; a MAC present but wrong is refused in both modes. The follow-up issue sets it

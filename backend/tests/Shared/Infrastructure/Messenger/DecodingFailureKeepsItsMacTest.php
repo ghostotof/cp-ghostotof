@@ -17,6 +17,7 @@ use Symfony\Component\Messenger\Exception\MessageDecodingFailedException;
 use Symfony\Component\Messenger\Middleware\DecodeFailedMessageMiddleware;
 use Symfony\Component\Messenger\Middleware\StackMiddleware;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
+use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
 use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 
 /**
@@ -55,24 +56,53 @@ final class DecodingFailureKeepsItsMacTest extends KernelTestCase
 
         $received = $serializer->decode($this->signedUndecodableEnvelope());
 
-        $this->assertTheMiddlewareRaisesTheOriginalCause($serializer, $received);
+        $this->assertTheMiddlewareRaises(self::ORIGINAL_CAUSE, $serializer, $received);
         self::assertFalse($logs->hasRecordThatContains('sans MAC', Level::Warning), 'Un échec de décodage signé a été pris pour une enveloppe sans MAC.');
     }
 
     /**
-     * Le réessai réexpédie l'échec par `encode()`, puis le relit : l'enveloppe
-     * encodée qu'il porte doit toujours être celle d'origine, MAC compris.
+     * @return iterable<string, array{bool, string}>
      */
-    #[DataProvider('modes')]
-    public function testTheFailureKeepsItsCauseAfterARetry(bool $requireMac): void
+    public static function modesAndFailures(): iterable
+    {
+        foreach (['transition' => false, 'MAC exigé' => true] as $mode => $requireMac) {
+            yield $mode.', signée, corps texte' => [$requireMac, 'texte'];
+            yield $mode.', signée, corps base64' => [$requireMac, 'base64'];
+            // Le cas qu'un attaquant contrôle : il suffit d'écrire dans la file.
+            yield $mode.', MAC faux' => [$requireMac, 'MAC faux'];
+        }
+    }
+
+    /**
+     * Le réessai réexpédie l'échec par `encode()`, avec ses tampons, puis le
+     * relit : cet échec-là est le message transporté, pas un échec du
+     * décodage en cours. Il revient tel quel — l'enveloppe encodée d'origine,
+     * MAC compris, et les tampons dont dépendent le compte des réessais et
+     * `messenger:failed:*`. Ré-enveloppé, il perdait son RedeliveryStamp
+     * (réessais sans fin, jusqu'à épuiser la mémoire du worker) et emboîtait
+     * chaque réessai dans le suivant.
+     */
+    #[DataProvider('modesAndFailures')]
+    public function testTheFailureKeepsItsCauseAndItsStampsAfterRetries(bool $requireMac, string $failure): void
     {
         $logs = new TestHandler();
         $serializer = $this->serializer($requireMac, $logs);
-        $received = $serializer->decode($this->signedUndecodableEnvelope());
+        $encoded = $this->signedUndecodableEnvelope('base64' === $failure);
+        if ('MAC faux' === $failure) {
+            $encoded['headers'][AuthenticatedEnvelopeSerializer::HEADER] = str_repeat('0', 64);
+        }
+        $cause = 'MAC faux' === $failure ? 'Enveloppe Messenger au MAC invalide refusée (issue #444).' : self::ORIGINAL_CAUSE;
+        $received = $serializer->decode($encoded);
 
-        $retried = $serializer->decode($serializer->encode($received));
+        $retried = $serializer->decode($serializer->encode($received->with(new RedeliveryStamp(1))));
+        $retriedTwice = $serializer->decode($serializer->encode($retried->with(new RedeliveryStamp(2))));
 
-        $this->assertTheMiddlewareRaisesTheOriginalCause($serializer, $retried);
+        $this->assertTheMiddlewareRaises($cause, $serializer, $retriedTwice);
+        self::assertSame(2, $retriedTwice->last(RedeliveryStamp::class)?->getRetryCount());
+        self::assertCount(2, $retriedTwice->all(RedeliveryStamp::class));
+        $carried = $retriedTwice->getMessage();
+        self::assertInstanceOf(MessageDecodingFailedException::class, $carried);
+        self::assertSame($encoded, $carried->encodedEnvelope);
         self::assertFalse($logs->hasRecordThatContains('sans MAC', Level::Warning), 'Un échec de décodage signé a été pris pour une enveloppe sans MAC.');
     }
 
@@ -105,7 +135,7 @@ final class DecodingFailureKeepsItsMacTest extends KernelTestCase
         self::assertSame($encoded, $failure->encodedEnvelope);
     }
 
-    private function assertTheMiddlewareRaisesTheOriginalCause(SerializerInterface $serializer, Envelope $received): void
+    private function assertTheMiddlewareRaises(string $cause, SerializerInterface $serializer, Envelope $received): void
     {
         self::assertInstanceOf(MessageDecodingFailedException::class, $received->getMessage());
         $middleware = new DecodeFailedMessageMiddleware(new ServiceLocator(['async' => static fn (): SerializerInterface => $serializer]));
@@ -114,7 +144,7 @@ final class DecodingFailureKeepsItsMacTest extends KernelTestCase
             $middleware->handle($received->with(new ReceivedStamp('async')), new StackMiddleware());
             self::fail('Le middleware a décodé une enveloppe indécodable.');
         } catch (MessageDecodingFailedException $failure) {
-            self::assertSame(self::ORIGINAL_CAUSE, $failure->getMessage());
+            self::assertSame($cause, $failure->getMessage());
         }
     }
 

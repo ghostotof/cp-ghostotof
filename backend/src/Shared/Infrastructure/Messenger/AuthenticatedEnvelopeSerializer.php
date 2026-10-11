@@ -46,10 +46,12 @@ use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
  * est refusé dans les deux modes. Une release suivante exige le MAC.
  *
  * Un refus est un échec de décodage ({@see MessageDecodingFailedException},
- * qui ne garde que des chaînes) : il suit les réessais du transport, puis
- * `failed`. Son message ne cite que sa cause. Tout échec rendu, refus du MAC
- * ou échec du sérialiseur interne, garde l'enveloppe encodée d'origine, MAC
- * compris (issue #465) : DecodeFailedMessageMiddleware la redécode.
+ * qui garde l'enveloppe reçue, jamais un objet de son corps) : il suit les
+ * réessais du transport, puis `failed`. Son message ne cite que sa cause.
+ * Tout échec de ce décodage, refus du MAC ou échec du sérialiseur interne,
+ * garde l'enveloppe encodée reçue, MAC compris (issue #465) :
+ * DecodeFailedMessageMiddleware la redécode. L'échec qu'un réessai transporte
+ * comme message revient tel quel.
  *
  * Limites acceptées : un message authentifié peut être rejoué par qui écrit
  * dans la file (aucun nonce) ; une rotation d'`APP_SECRET` invalide les
@@ -124,11 +126,32 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
         // remplacée par un refus une fois le MAC exigé. PhpSerializer y écrit
         // aussi le corps décodé du base64, que le MAC ne couvre pas.
         $failure = $decoded->getMessage();
-        if ($failure instanceof MessageDecodingFailedException) {
+        if ($failure instanceof MessageDecodingFailedException && $this->isFailureToDecode($failure, $authenticated)) {
             return MessageDecodingFailedException::wrap($encodedEnvelope, $failure->getMessage(), $failure->getCode(), $failure->getPrevious());
         }
 
         return $decoded;
+    }
+
+    /**
+     * L'échec que le sérialiseur interne vient de rendre pour `$handed`, et non
+     * celui qu'un réessai transporte comme message : ce dernier revient tel
+     * quel, avec ses tampons (RedeliveryStamp, qui compte les réessais ;
+     * SentToFailureTransportStamp, que lit `messenger:failed:*`) et son
+     * enveloppe d'origine. Ré-enveloppé, il les perdait — réessais sans fin —
+     * et chaque réessai s'emboîtait dans le suivant.
+     *
+     * PhpSerializer garde l'enveloppe qu'on lui passe, son corps décodé du
+     * base64 le cas échéant. L'échec transporté garde le corps du message
+     * d'origine, que le corps courant contient : jamais le même.
+     *
+     * @param array{body: string, headers?: array<string, string>} $handed
+     */
+    private function isFailureToDecode(MessageDecodingFailedException $failure, array $handed): bool
+    {
+        $body = $failure->encodedEnvelope['body'] ?? null;
+
+        return $body === $handed['body'] || $body === base64_decode($handed['body'], true);
     }
 
     private function mac(string $body): string
