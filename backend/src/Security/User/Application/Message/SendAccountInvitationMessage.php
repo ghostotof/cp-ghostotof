@@ -33,6 +33,12 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class SendAccountInvitationMessage
 {
+    /**
+     * La génération de la première invitation d'un compte
+     * ({@see \App\Security\User\Domain\Entity\CpgUser::markInvited()} part de 0).
+     */
+    private const int FIRST_GENERATION = 1;
+
     public function __construct(
         public string $userId,
         public string $locale,
@@ -46,9 +52,10 @@ final readonly class SendAccountInvitationMessage
      * message qu'il restaure. Un message altéré échoue au décodage, sans
      * atteindre le handler (il suit alors les réessais du transport, puis le
      * failure_transport, comme tout échec). Un message sans génération — le
-     * format d'avant l'issue #434, toléré jusqu'à la v0.23.0 — l'est aussi
-     * depuis l'issue #448 : le handler ne saurait pas s'il sert une
-     * invitation dépassée.
+     * format d'avant l'issue #434, toléré jusqu'à la v0.23.0 — est refusé de
+     * même depuis l'issue #448 : le handler ne saurait pas s'il sert une
+     * invitation dépassée. Une génération inférieure à 1 ne vient pas de
+     * CpgUserInviter (un compte invité a au moins la première).
      *
      * @param array<string, mixed> $data
      */
@@ -58,8 +65,15 @@ final readonly class SendAccountInvitationMessage
         $locale = $data['locale'] ?? null;
         $invitationGeneration = $data['invitationGeneration'] ?? null;
         if (!\is_string($userId) || !Uuid::isValid($userId)
-            || !\is_string($locale) || null === Locale::tryFrom($locale)
-            || !\is_int($invitationGeneration)) {
+            || !\is_string($locale) || null === Locale::tryFrom($locale)) {
+            throw MalformedAccountInvitationMessageException::fromSerializedData();
+        }
+
+        if (null === $invitationGeneration) {
+            throw MalformedAccountInvitationMessageException::withoutGeneration();
+        }
+
+        if (!\is_int($invitationGeneration) || $invitationGeneration < self::FIRST_GENERATION) {
             throw MalformedAccountInvitationMessageException::fromSerializedData();
         }
 

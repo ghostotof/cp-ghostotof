@@ -137,13 +137,20 @@ paths:
     with no offset (see the timestamp rule in `.claude/rules/backend-architecture.md`). A message **ahead**
     of the stored generation (a resend not committed yet when the worker reads it) is processed: the last
     message is never lost. `PhpSerializer` never calls the constructor, so `__unserialize()` checks the
-    shape: a malformed message (missing or mistyped field, invalid UUID or locale) throws
-    `MalformedAccountInvitationMessageException`: a decoding failure, which follows the transport's
-    retries then the `failure_transport` without ever reaching the handler. **A message without a
-    generation is malformed** (issue #448): the format queued before #434 was tolerated through v0.23.0,
+    shape: a malformed message (missing or mistyped field, invalid UUID or locale, a generation below 1,
+    which `CpgUserInviter` never sends) throws `MalformedAccountInvitationMessageException`: a decoding
+    failure, which follows the transport's retries then the `failure_transport` without ever reaching the
+    handler (`InvitationEnvelopeDecodingTest`, through the container's serializer). **A message without a
+    generation is refused too** (issue #448): the format queued before #434 was tolerated through v0.23.0,
     then refused once production's queues were checked empty of it. Only the code of v0.22.0 or earlier
-    writes it: redeploying such an image would park its invitations in `failed`, to be resent from the
-    backoffice.
+    writes it — redeploying such an image, or a consumer still running it. Its refusal has its own
+    factory, `withoutGeneration()`, whose message tells the two cases apart in `failed` (a resend to
+    do, not a tampered queue to investigate) and quotes no value. **What to do with one**: read
+    `messenger:failed:show <id>` for its `userId`, resend the invitation from the backoffice, then
+    `messenger:failed:remove <id>`. Never `messenger:failed:retry` it: it fails to decode again, every
+    time — at best it comes back to `failed` after the retries, at worst the entry is dropped and the
+    `userId` to resend with it (not measured: `SendFailedMessageToFailureTransportListener` declines
+    to send a message back to the failure transport it came from, in some cases).
     `SendAccountInvitationStaleMessageTest` replays the issue's scenario with the real `CpgUserInviter` on
     the `_test` database. **Concurrency, per account** (issue #435): `reinvite()` advances the generation
     in the database in one statement (`CpgUserRepositoryInterface::advanceInvitationGeneration()`, an
