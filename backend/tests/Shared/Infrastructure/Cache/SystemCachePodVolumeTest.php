@@ -28,7 +28,11 @@ use Symfony\Component\Yaml\Yaml;
 final class SystemCachePodVolumeTest extends TestCase
 {
     private const string VOLUME = 'cache-system';
-    private const string MOUNT_PATH = '/var/www/backend/var/cache/prod/pools/system';
+    /**
+     * Le répertoire du cache système dans l'image ; ProductionImageWarmUpTest
+     * vérifie que le build contrôle ce même répertoire.
+     */
+    public const string MOUNT_PATH = '/var/www/backend/var/cache/prod/pools/system';
 
     /**
      * Les sept manifestes qui exécutent l'image backend. La liste est vérifiée
