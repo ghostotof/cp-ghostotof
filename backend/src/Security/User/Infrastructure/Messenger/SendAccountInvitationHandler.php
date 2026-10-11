@@ -86,7 +86,7 @@ final readonly class SendAccountInvitationHandler
         // statique.
         \assert(null !== $recipientEmail);
 
-        if ($user->wasReinvitedSince($message->servedGeneration())) {
+        if ($user->wasReinvitedSince($message->invitationGeneration)) {
             // Issue #434 : une relance plus récente a déjà émis son jeton, et
             // son e-mail est peut-être déjà arrivé. Ce message (réessai
             // différé, rejeu du failure_transport) le purgerait : il sort sans
@@ -122,7 +122,7 @@ final readonly class SendAccountInvitationHandler
         // supprimé entre-temps (admin, purge) abandonne de même.
         try {
             $issued = $this->accountLock->whileLocked($user, function (CpgUser $locked) use ($token, $message): bool {
-                if (!$locked->isPendingActivation() || $locked->wasReinvitedSince($message->servedGeneration())) {
+                if (!$locked->isPendingActivation() || $locked->wasReinvitedSince($message->invitationGeneration)) {
                     return false;
                 }
 

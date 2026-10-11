@@ -153,7 +153,7 @@ final class ReinviteConcurrencyTest extends KernelTestCase
         return $user->getId();
     }
 
-    private function lastPublishedGeneration(): ?int
+    private function lastPublishedGeneration(): int
     {
         $transport = self::getContainer()->get('messenger.transport.async');
         self::assertInstanceOf(InMemoryTransport::class, $transport);

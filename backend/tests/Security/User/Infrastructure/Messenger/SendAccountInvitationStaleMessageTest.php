@@ -12,7 +12,6 @@ use App\Security\User\Domain\Exception\AccountInvitationDeliveryException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler;
 use App\Tests\Support\RunsInvitationHandlerOnTestDatabase;
-use App\Tests\Support\SerializedInvitationMessage;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
@@ -123,47 +122,6 @@ final class SendAccountInvitationStaleMessageTest extends KernelTestCase
 
         self::assertSame(1, $this->sentEmailCount());
         self::assertCount(1, $this->tokenHashesOf($user));
-    }
-
-    /**
-     * Un message mis en file avant #434 ne porte pas de génération : il sert
-     * la première, celle que la migration a posée aux comptes déjà invités.
-     * Il reste traité tant que le compte n'a pas été relancé, plutôt que de
-     * planter le worker à la lecture de la propriété.
-     */
-    public function testAMessageQueuedBeforeTheGenerationExistedIsStillProcessed(): void
-    {
-        $user = $this->pendingUser('newcomer', 'newcomer@example.com');
-
-        $this->handler()($this->legacyMessageFor($user));
-
-        self::assertSame(1, $this->sentEmailCount());
-        self::assertCount(1, $this->tokenHashesOf($user));
-    }
-
-    /**
-     * Le même message, rejoué depuis le `failure_transport` après une relance
-     * faite depuis le déploiement : il est périmé comme les autres.
-     */
-    public function testAMessageQueuedBeforeTheGenerationExistedIsStaleOnceTheAccountIsResent(): void
-    {
-        $user = $this->reloaded($this->invite('newcomer@example.com'));
-        $legacy = $this->legacyMessageFor($user);
-        $resend = $this->reinvite($user);
-        $this->handler()($resend);
-
-        $this->handler()($legacy);
-
-        self::assertSame(1, $this->sentEmailCount());
-        self::assertCount(1, $this->tokenHashesOf($user));
-    }
-
-    private function legacyMessageFor(CpgUser $user): SendAccountInvitationMessage
-    {
-        $legacy = unserialize(SerializedInvitationMessage::withoutGeneration($user->getId()->toRfc4122()));
-        self::assertInstanceOf(SendAccountInvitationMessage::class, $legacy);
-
-        return $legacy;
     }
 
     private function invite(string $email): SendAccountInvitationMessage

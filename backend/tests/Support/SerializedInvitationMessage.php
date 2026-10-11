@@ -14,14 +14,6 @@ use App\Security\User\Application\Message\SendAccountInvitationMessage;
 final class SerializedInvitationMessage
 {
     /**
-     * Le format d'avant #434, sans génération.
-     */
-    public static function withoutGeneration(string $userId, string $locale = 'fr'): string
-    {
-        return self::of(2, \sprintf('s:6:"userId";s:%d:"%s";s:6:"locale";s:%d:"%s";', \strlen($userId), $userId, \strlen($locale), $locale));
-    }
-
-    /**
      * @param string $properties les propriétés déjà sérialisées, clé puis valeur
      */
     public static function of(int $propertyCount, string $properties): string

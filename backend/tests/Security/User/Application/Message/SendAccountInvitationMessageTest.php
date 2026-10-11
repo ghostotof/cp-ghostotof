@@ -30,25 +30,6 @@ final class SendAccountInvitationMessageTest extends TestCase
         self::assertSame(3, $restored->invitationGeneration);
     }
 
-    public function testAMessageServesTheGenerationItCarries(): void
-    {
-        self::assertSame(2, (new SendAccountInvitationMessage(self::USER_ID, 'fr', 2))->servedGeneration());
-    }
-
-    /**
-     * Un message mis en file avant #434 ne porte pas de génération. Il sert
-     * la première : la migration a posé 1 à tout compte déjà invité, si bien
-     * qu'une relance faite depuis l'écarte, et qu'il reste traité sinon.
-     */
-    public function testAMessageQueuedBeforeTheGenerationExistedServesTheFirstOne(): void
-    {
-        $legacy = unserialize(SerializedInvitationMessage::withoutGeneration(self::USER_ID));
-
-        self::assertInstanceOf(SendAccountInvitationMessage::class, $legacy);
-        self::assertNull($legacy->invitationGeneration);
-        self::assertSame(1, $legacy->servedGeneration());
-    }
-
     /**
      * @return iterable<string, array{int, string}>
      */
@@ -65,11 +46,17 @@ final class SendAccountInvitationMessageTest extends TestCase
         yield 'locale entière' => [3, $userId.'s:6:"locale";i:1;'.$generation];
         yield 'locale inconnue' => [3, $userId.'s:6:"locale";s:2:"de";'.$generation];
         yield 'génération en chaîne' => [3, $userId.$locale.'s:20:"invitationGeneration";s:1:"1";'];
+        // Le format d'avant #434 : accepté jusqu'à la v0.23.0, refusé depuis
+        // que les files en sont vides (issue #448).
+        yield 'génération absente' => [2, $userId.$locale];
+        yield 'génération nulle' => [3, $userId.$locale.'s:20:"invitationGeneration";N;'];
     }
 
     /**
      * Un message altéré dans la file n'est jamais traité à moitié, et
-     * l'exception ne cite aucune valeur lue.
+     * l'exception ne cite aucune valeur lue. Un message sans génération est
+     * refusé de même (issue #448) : le handler ne saurait pas s'il sert une
+     * invitation dépassée.
      */
     #[DataProvider('malformedPayloads')]
     public function testAMalformedSerializedMessageIsRefused(int $propertyCount, string $properties): void
