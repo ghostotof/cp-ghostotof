@@ -208,7 +208,7 @@ context turn it red), the `KEY_CONTEXT` must match `SecretKeyDerivation::CONTEXT
 use it, and no MAC is computed by hand (see the next paragraph); it refuses any `config/**.yaml` naming the
 secret besides `framework.secret`. Not covered, accepted: a
 class handing the raw secret to another that uses it without deriving, an obfuscated name
-(`getenv('APP_'.'SECRET')`), a MAC compared with `===` after a public `sign()` instead of `verifies()`, and Symfony's own uses (`login_throttling`, `SigningSerializer`),
+(`getenv('APP_'.'SECRET')`), and Symfony's own uses (`login_throttling`, `SigningSerializer`),
 which keep the raw secret but never return their output to a client. Unit tests take key material from
 `tests/Support/TestKeys` (generated, like `TestCredentials`): a literal assigned to a name saying "secret"
 gets flagged by GitGuardian.
@@ -235,9 +235,19 @@ release notes, never slipped in by a refactoring. `sign()`'s `$data` and both of
 **The derived key never shows in a dump**: it is held in a `SensitiveParameterValue`, which `var_dump()`,
 `print_r()`, `var_export()`, an array cast, `json_encode()` and Symfony's VarDumper (`dump()`, the profiler) all
 show empty, and which PHP refuses to serialize. Not a `__debugInfo()`: VarDumper reads the private properties
-first and only adds what it returns (`Caster::castObject`, measured in the review of #487). Not covered: the
-**raw** `APP_SECRET` the CSRF signer, the fingerprint and the cache marshaller keep as a string property to
-derive later (pre-existing). `ApplicationSecretUsesTest` refuses, in any file of the census, `hash_hmac()`,
+first and only adds what it returns (`Caster::castObject`, measured in the review of #487). **Nor does the raw
+`APP_SECRET`** (issue #493): the CSRF signer, the fingerprint and the cache marshaller keep it to derive later,
+in a `SensitiveParameterValue` too. `ApplicationSecretNeverShowsInADumpTest` dumps the four services, put to
+use first so that their lazy derivations have run, through every channel (`tests/Support/Dumps`, shared with
+`KeyedMacTest`), and `ApplicationSecretUsesTest` refuses a `string` / `?string` property, declared or promoted,
+whose name says "secret" in a class of the census. **A MAC is only ever checked by `verifies()`** (issue
+#493): `sign()` stays public, so `tests/Shared/Infrastructure/Security/SignaturesAreNeverComparedByHandTest.php`
+reads all of `src/` statement by statement (bounded by `;`, `{`, `}` and the PHP tags; a `match` block stays
+with its subject) and refuses a comparison (`===`, `!==`, `==`, `!=`, `<>`, `<=>`, `strcmp` and its variants,
+`in_array`, `array_search`, `match`) in a statement that calls `->sign(` or reads a target (variable, property,
+offset) another statement of the file assigns from `->sign(`. Not seen: a MAC handed to another method or
+returned, then compared there. The reading ignores scope: a homonym assigned from `sign()` elsewhere in the
+file is enough to refuse — rename it. `ApplicationSecretUsesTest` refuses, in any file of the census, `hash_hmac()`,
 `hash_equals()`, `hash_hmac_file()`, `hash_init()` and `sodium_crypto_auth(_verify)()` — called, qualified or
 not, imported by `use function`, taken as a first-class callable or named in a string for `call_user_func()`;
 never a method or constant of the same name, its declaration nor a comment: such a class has no other key than

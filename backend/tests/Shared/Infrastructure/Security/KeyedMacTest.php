@@ -8,12 +8,11 @@ use App\Shared\Infrastructure\Security\EmptyApplicationSecretException;
 use App\Shared\Infrastructure\Security\KeyedMac;
 use App\Shared\Infrastructure\Security\MacEncoding;
 use App\Shared\Infrastructure\Security\SecretKeyDerivation;
+use App\Tests\Support\Dumps;
 use App\Tests\Support\TestKeys;
 use Exception;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\VarDumper\Cloner\VarCloner;
-use Symfony\Component\VarDumper\Dumper\CliDumper;
 
 /**
  * Le HMAC sous clé dérivée d'`APP_SECRET`, écrit une fois (issue #487) :
@@ -149,21 +148,9 @@ final class KeyedMacTest extends TestCase
         $key = SecretKeyDerivation::derive(TestKeys::material(), self::CONTEXT);
         $mac = KeyedMac::fromSecret(TestKeys::material(), self::CONTEXT, MacEncoding::Hex);
 
-        ob_start();
-        var_dump($mac);
-        $dumps = [
-            'var_dump' => (string) ob_get_clean(),
-            'print_r' => print_r($mac, true),
-            'var_export' => var_export($mac, true),
-            'cast' => print_r((array) $mac, true),
-            'json_encode' => (string) json_encode($mac),
-            'VarDumper' => (string) new CliDumper()->dump(new VarCloner()->cloneVar($mac), true),
-        ];
-
-        // Un échec ne cite que le canal : afficher le dump afficherait la clé.
-        foreach ($dumps as $channel => $dump) {
-            self::assertFalse(str_contains($dump, $key) || str_contains($dump, bin2hex($key)), $channel.' affiche la clé dérivée.');
-        }
+        // Un échec ne cite que les canaux : afficher le dump afficherait la clé.
+        self::assertSame([], Dumps::channelsShowing($mac, $key), 'Canaux qui affichent la clé dérivée.');
+        self::assertSame([], Dumps::channelsShowing($mac, TestKeys::material()), 'Canaux qui affichent le secret.');
     }
 
     /**
