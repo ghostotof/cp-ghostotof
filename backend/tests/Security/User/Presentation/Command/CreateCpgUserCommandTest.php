@@ -6,16 +6,22 @@ namespace App\Tests\Security\User\Presentation\Command;
 
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Security\User\Presentation\Command\CreateCpgUserCommand;
 use App\Tests\Support\ChildPhpProcess;
 use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestCredentials;
+use Closure;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionFunction;
+use ReflectionMethod;
+use SensitiveParameter;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Exception\InvalidOptionException;
+use Symfony\Component\Console\Question\Question;
 use Symfony\Component\Console\Tester\ApplicationTester;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -516,6 +522,42 @@ final class CreateCpgUserCommandTest extends KernelTestCase
         $tester->setInputs([$password]);
 
         return $tester->execute([...$arguments, '--password-stdin' => true], ['interactive' => false]);
+    }
+
+    /**
+     * Les rappels que portent les questions masquées reçoivent le mot de passe
+     * en clair, et le cachent des traces (issue #433). Lu sur la question
+     * réellement construite, closure ou méthode : avant #433, c'étaient des
+     * closures `static fn (mixed $value)`, qu'aucune garde par réflexion ne
+     * voyait, et ce test échouait sur elles.
+     *
+     * SymfonyStyle construit son propre QuestionHelper : la question ne
+     * s'intercepte pas pendant l'exécution, d'où l'appel par réflexion de la
+     * méthode privée qui la construit.
+     */
+    #[DataProvider('hiddenQuestions')]
+    public function testEveryCallbackOfAHiddenQuestionHidesThePasswordFromTraces(string $builder, bool $validated): void
+    {
+        $command = self::getContainer()->get(CreateCpgUserCommand::class);
+        $question = new ReflectionMethod($command, $builder)->invoke($command);
+        self::assertInstanceOf(Question::class, $question);
+
+        $callbacks = ['normaliseur' => $question->getNormalizer(), 'validateur' => $question->getValidator()];
+        // Sans validateur attendu, rien à vérifier de ce côté ; avec, il doit être là.
+        self::assertSame($validated, null !== $callbacks['validateur']);
+        foreach (array_filter($callbacks) as $role => $callback) {
+            $password = new ReflectionFunction(Closure::fromCallable($callback))->getParameters()[0];
+            self::assertNotEmpty($password->getAttributes(SensitiveParameter::class), \sprintf('Le %s de %s() reçoit le mot de passe en clair : il porte #[SensitiveParameter].', $role, $builder));
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string, bool}> méthode qui construit la question, et si elle a un validateur
+     */
+    public static function hiddenQuestions(): iterable
+    {
+        yield 'mot de passe' => ['passwordQuestion', true];
+        yield 'confirmation' => ['confirmationQuestion', false];
     }
 
     private function commandTester(): CommandTester
