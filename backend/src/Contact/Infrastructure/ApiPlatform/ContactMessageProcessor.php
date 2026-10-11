@@ -32,31 +32,23 @@ final readonly class ContactMessageProcessor implements ProcessorInterface
     {
         // Vérifié avant même le honeypot : borne le débit de l'endpoint quel
         // que soit l'émetteur (légitime ou bot), le honeypot ne filtrant lui
-        // que les bots naïfs qui remplissent tous les champs. Vérifié sans
-        // être consommé (issue #485) : seul un message qui part le consomme.
+        // que les bots naïfs qui remplissent tous les champs.
         $request = $context['request'] ?? null;
         \assert($request instanceof Request);
-        $client = $request->getClientIp() ?? 'unknown';
-        $this->contactRateLimiter->assertWithinQuota($client);
+        $this->contactRateLimiter->consume($request->getClientIp() ?? 'unknown');
 
         // Honeypot rempli : très probablement un bot. On répond comme si tout
         // s'était bien passé, sans jamais dispatcher le message ni prévenir
-        // l'appelant que la détection a eu lieu — et en consommant le quota,
-        // comme pour un envoi réussi.
+        // l'appelant que la détection a eu lieu.
         if (null !== $data->website && '' !== trim($data->website)) {
-            $this->contactRateLimiter->record($client);
-
             return $data;
         }
 
-        // Une file indisponible lève ContactMessageQueueUnavailableException
-        // (503) avant la consommation : le visiteur peut réessayer.
         $this->contactMessageSender->send(new ContactMessage(
             senderName: trim($data->name),
             senderEmail: trim($data->email),
             body: trim($data->message),
         ));
-        $this->contactRateLimiter->record($client);
 
         return $data;
     }

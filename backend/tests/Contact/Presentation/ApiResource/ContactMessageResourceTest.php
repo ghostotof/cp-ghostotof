@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Contact\Presentation\ApiResource;
 
-use App\Contact\Application\ContactMessageSender;
 use App\Contact\Application\Message\SendContactMessageMessage;
-use App\Tests\Contact\Presentation\ApiResource\Fixtures\UnavailableQueueContactSender;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\UnavailableTransport;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -265,31 +264,35 @@ final class ContactMessageResourceTest extends WebTestCase
     }
 
     /**
-     * Issue #485 : une file indisponible répond 503 problem+json, sous le
-     * `type` que le client reconnaît, et ne consomme pas le quota. Six envois
-     * d'affilée, au-delà du quota de cinq, restent des 503 : aucun 429.
+     * Issue #485, par la vraie chaîne (processor, ContactMessageSender, bus,
+     * transport) : une file indisponible répond 503 problem+json, sous le
+     * `type` que le client reconnaît, sans citer la panne. Le quota est
+     * consommé avant l'envoi (décision du 2026-10-11 : il reste strict, une
+     * rafale ne le dépasse pas) : au sixième essai, c'est un 429.
      */
-    public function testAnUnavailableQueueAnswers503WithoutConsumingTheQuota(): void
+    public function testAnUnavailableQueueAnswers503AndTheQuotaStaysStrict(): void
     {
         $client = $this->createClientWithFreshRateLimiter();
         $client->disableReboot();
-        self::getContainer()->set(ContactMessageSender::class, new UnavailableQueueContactSender());
+        self::getContainer()->set('messenger.transport.async', new UnavailableTransport());
         $payload = self::jsonBody([
             'name' => 'Jane Doe',
             'email' => 'jane@example.com',
             'message' => 'Bonjour, je souhaite vous contacter pour un projet.',
         ]);
 
-        for ($i = 0; $i < 6; ++$i) {
+        for ($i = 0; $i < 5; ++$i) {
             $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: $payload);
             self::assertResponseStatusCodeSame(503);
         }
-
         $problem = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertIsArray($problem);
         self::assertSame('/errors/message-queue-unavailable', $problem['type'] ?? null);
         self::assertIsString($problem['detail'] ?? null);
-        self::assertStringNotContainsString('Connection refused', $problem['detail']);
+        self::assertStringNotContainsString('AMQP', $problem['detail']);
+
+        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: $payload);
+        self::assertResponseStatusCodeSame(429);
     }
 
     public function testTheEndpointIsNotSubjectToTheDoubleSubmitCookieCsrfCheck(): void

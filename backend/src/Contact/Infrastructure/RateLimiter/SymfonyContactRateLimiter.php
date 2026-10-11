@@ -21,22 +21,12 @@ final readonly class SymfonyContactRateLimiter implements ContactRateLimiterInte
     ) {
     }
 
-    public function assertWithinQuota(string $clientIdentifier): void
+    public function consume(string $clientIdentifier): void
     {
-        // consume(0) lit la fenêtre sans y rien inscrire, et rend toujours
-        // « accepté » : c'est le nombre de jetons restants qui décide. À zéro,
-        // l'échéance rendue est celle où le quota se libère.
-        $limit = $this->rateLimiterFactory->create($clientIdentifier)->consume(0);
+        $limit = $this->rateLimiterFactory->create($clientIdentifier)->consume();
 
-        if (0 === $limit->getRemainingTokens()) {
+        if (!$limit->isAccepted()) {
             throw new ContactRateLimitExceededException($limit->getRetryAfter());
         }
-    }
-
-    public function record(string $clientIdentifier): void
-    {
-        // Le résultat est ignoré à dessein : refusé (soumission concurrente),
-        // consume() n'inscrit rien, et le message est parti de toute façon.
-        $this->rateLimiterFactory->create($clientIdentifier)->consume();
     }
 }
