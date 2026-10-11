@@ -14,6 +14,7 @@ use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Tests\Support\TestCredentials;
 use DateTimeImmutable;
+use DateTimeZone;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
@@ -215,6 +216,47 @@ final class PasswordSetupServiceTest extends TestCase
             self::fail('PasswordSetupTokenExpiredException attendue.');
         } catch (PasswordSetupTokenExpiredException) {
             self::assertSame('', $user->getPassword(), 'Le mot de passe de la perdante ne doit pas toucher le compte.');
+            self::assertTrue($user->isPendingActivation());
+        }
+    }
+
+    /**
+     * Issue #447 : le hachage du mot de passe prend du temps. La réclamation
+     * se fait à l'heure qui le suit, sans quoi un lien qui expire pendant le
+     * hachage serait consommé. Le perdant n'est alors pas un rejeu : un lien
+     * simplement expiré n'est pas un événement de sécurité.
+     */
+    public function testALinkThatExpiresWhileThePasswordIsHashedIsNotConsumed(): void
+    {
+        $clock = new MockClock('2026-09-10 10:00:00');
+        $user = new CpgUser('jane', '');
+        $user->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
+        $token = new PasswordSetupToken($user, hash('sha256', self::CLEAR_TOKEN), $clock->now()->modify('+1 second'));
+
+        $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('findOneByTokenHash')->willReturn($token);
+        $tokenRepository->expects(self::once())->method('claim')
+            // MockClock est en UTC : deux secondes après le début du hachage.
+            ->with($token, new DateTimeImmutable('2026-09-10 10:00:02', new DateTimeZone('UTC')))
+            ->willReturn(false);
+        $tokenRepository->expects(self::never())->method('save');
+
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('passwordSetupTokenReplayed');
+        $auditLogger->expects(self::never())->method('accountActivated');
+
+        $hasher = self::createStub(UserPasswordHasherInterface::class);
+        $hasher->method('hashPassword')->willReturnCallback(static function () use ($clock): string {
+            $clock->sleep(2);
+
+            return 'hashed-too-late';
+        });
+
+        try {
+            $this->service($tokenRepository, hasher: $hasher, clock: $clock, auditLogger: $auditLogger)
+                ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
+            self::fail('PasswordSetupTokenExpiredException attendue.');
+        } catch (PasswordSetupTokenExpiredException) {
             self::assertTrue($user->isPendingActivation());
         }
     }

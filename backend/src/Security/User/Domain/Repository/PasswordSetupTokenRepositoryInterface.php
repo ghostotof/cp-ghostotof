@@ -29,7 +29,8 @@ interface PasswordSetupTokenRepositoryInterface
      * Marque le jeton consommé si et seulement s'il ne l'était pas encore, en
      * une écriture atomique (issue #356) : de deux requêtes qui présentent le
      * même lien au même instant, une seule l'emporte. Rend `false` à la
-     * perdante, sans rien écrire.
+     * perdante, sans rien écrire. L'expiration est jugée dans la même
+     * écriture (issue #447) : un jeton expiré à `$usedAt` n'est pas consommé.
      */
     public function claim(PasswordSetupToken $token, DateTimeImmutable $usedAt): bool;
 

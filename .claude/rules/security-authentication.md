@@ -231,8 +231,11 @@ paths:
     exception reaches priority 0 unwrapped — `SecurityAuditLogTest` covers the real wiring, extend it too. **Replay and expiry must cost the same**: `findOneByTokenHash` loads the
     account by explicit join, so the `replayed` path, which logs it, pays no extra query behind the
     shared 410 — keep the join. **Consumption is atomic**: `PasswordSetupService::complete()` hashes, then
-    `PasswordSetupTokenRepository::claim()` (`UPDATE … WHERE used_at IS NULL`, one row or none), and only
-    the winner writes the account; the loser of a concurrent submission is a `replayed`. Never go back to
+    `PasswordSetupTokenRepository::claim()` (`UPDATE … WHERE used_at IS NULL AND expires_at > :usedAt`, one
+    row or none), and only the winner writes the account; the loser of a concurrent submission is a
+    `replayed`. **So is expiry** (issue #447): the claim instant is read **after** the hash, which takes
+    time, and the same `UPDATE` refuses a token expired by then (strict bound, like `isUsable()`); that
+    loser is not a replay — no event, a merely expired link never is one —, the 410 is unchanged. Never go back to
     deciding on `isUsable()` alone, which reads the loaded state. Functional tests read the records through
     `tests/Support/ReadsSecurityAuditLog.php` (a
     Monolog `test` handler on the channel, `when@test`, found among `monolog.logger.security_audit`'s

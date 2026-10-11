@@ -65,8 +65,10 @@ class PasswordSetupTokenRepository extends ServiceEntityRepository implements Pa
     }
 
     /**
-     * `UPDATE … WHERE used_at IS NULL` : la base, pas l'entité en mémoire,
-     * décide qui consomme. Le nombre de lignes touchées dit si c'est nous.
+     * `UPDATE … WHERE used_at IS NULL AND expires_at > :usedAt` : la base, pas
+     * l'entité en mémoire, décide qui consomme, et si le jeton vit encore à
+     * cet instant (issue #447, même borne stricte qu'`isUsable()`). Le nombre
+     * de lignes touchées dit si c'est nous.
      */
     public function claim(PasswordSetupToken $token, DateTimeImmutable $usedAt): bool
     {
@@ -75,6 +77,7 @@ class PasswordSetupTokenRepository extends ServiceEntityRepository implements Pa
             ->set('token.usedAt', ':usedAt')
             ->where('token.id = :id')
             ->andWhere('token.usedAt IS NULL')
+            ->andWhere('token.expiresAt > :usedAt')
             ->setParameter('usedAt', $usedAt, Types::DATETIMETZ_IMMUTABLE)
             ->setParameter('id', $token->getId(), UuidType::NAME)
             ->getQuery()
