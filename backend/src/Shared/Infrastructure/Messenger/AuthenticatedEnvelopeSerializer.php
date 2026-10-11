@@ -29,8 +29,14 @@ use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
  *
  * Le MAC couvre le corps seul : c'est tout ce que PhpSerializer lit, les
  * en-têtes que les transports ajoutent n'y entrent pas. Clé dérivée
- * d'`APP_SECRET`, pour qu'aucun autre HMAC du site sous le secret brut ne
- * vaille MAC d'enveloppe.
+ * d'`APP_SECRET` par HKDF, avec son contexte : aucun HMAC du site sous le
+ * secret brut ne la donne.
+ *
+ * La classe ne doit jamais implémenter
+ * {@see \Symfony\Component\Messenger\Transport\Serialization\MessageTypeAwareSerializerInterface} :
+ * le SigningSerializer de Messenger, qui la décore, lirait alors le type de
+ * l'enveloppe — une désérialisation, même restreinte — avant le MAC.
+ * QueuedEnvelopesAreAuthenticatedTest l'épingle.
  *
  * Deux temps, pour ne perdre aucun message au déploiement : tant que
  * `app.messenger.require_envelope_mac` est faux, une enveloppe **sans** MAC
@@ -69,7 +75,7 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
             throw MissingEnvelopeKeyException::emptySecret();
         }
 
-        $this->key = hash_hmac('sha256', self::KEY_CONTEXT, $secret);
+        $this->key = hash_hkdf('sha256', $secret, 32, self::KEY_CONTEXT);
     }
 
     /**
@@ -96,7 +102,10 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
             return $this->inner->decode($encodedEnvelope);
         }
 
-        if (null === $mac || !hash_equals($this->mac($encodedEnvelope['body']), $mac)) {
+        // Un transport peut rendre un en-tête qui n'est pas une chaîne (AMQP,
+        // JSON du transport Doctrine) : refusé comme un MAC faux, plutôt
+        // qu'une erreur de type qui ferait tomber le worker.
+        if (!\is_string($mac) || !hash_equals($this->mac($encodedEnvelope['body']), $mac)) {
             return MessageDecodingFailedException::wrap(
                 $encodedEnvelope,
                 null === $mac ? 'Enveloppe Messenger sans MAC refusée (issue #444).' : 'Enveloppe Messenger au MAC invalide refusée (issue #444).',

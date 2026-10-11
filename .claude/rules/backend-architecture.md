@@ -77,10 +77,13 @@ database with it. A value read back therefore carries Paris's offset; still comp
 `unserialize()` with no class allow-list: writing into either would be an object injection into the
 worker (or into an operator running `messenger:failed:show`). `framework.messenger.serializer.default_serializer`
 is `Shared/Infrastructure/Messenger/AuthenticatedEnvelopeSerializer`: it adds an HMAC of the body
-(header `X-Envelope-Mac`, key derived from `kernel.secret` with its own context, an empty secret refused
-at construction) and, on decoding, refuses an envelope whose MAC is wrong **before** the inner
+(header `X-Envelope-Mac`, key derived from `kernel.secret` by `hash_hkdf` with its own context, an
+empty secret refused at construction) and, on decoding, refuses an envelope whose MAC is wrong — or not
+a string, which AMQP or the Doctrine transport's JSON headers can yield — **before** the inner
 `PhpSerializer` sees it — any type, including the decoding-failure envelopes the retry puts back in
-the queue. **Never rely on `#[AsMessageHandler(sign: true)]` for this**: Messenger's `SigningSerializer`
+the queue. It must never implement `MessageTypeAwareSerializerInterface`: Messenger's `SigningSerializer`,
+which decorates it (FrameworkBundle signs `RunCommandMessage` and `RunProcessMessage`), would then read
+the envelope's type — a restricted unserialization, but one — before the MAC. **Never rely on `#[AsMessageHandler(sign: true)]` for this**: Messenger's `SigningSerializer`
 only requires a signature for the listed types, and an unsigned envelope of any other type (a `stdClass`
 carrying a gadget) is still unserialized — measured in the review of #444, a `Process::__unserialize()`
 ran that way. A refusal is a decoding failure (`MessageDecodingFailedException`, strings only, quoting
@@ -91,7 +94,8 @@ decoded, with a `warning`; a MAC present but wrong is refused in both modes. The
 to `true` once the queues hold no unsigned envelope, which is what actually closes the injection.
 `AuthenticatedEnvelopeSerializerTest` (an `UnserializationProbe` fixture counts its
 `__unserialize()` calls: zero for a tampered, unsigned-when-required or wrongly signed envelope) and
-`QueuedEnvelopesAreAuthenticatedTest` (the real container's chain) pin it. Accepted limits: an
+`QueuedEnvelopesAreAuthenticatedTest` (the real container's chain, both transports' serializer, a
+round trip through the Doctrine `failed` transport, the interface above) pin it. Accepted limits: an
 authenticated message can be replayed by whoever writes into the queue (no nonce — an invitation of the
 current generation replayed kills the link already received); **rotating `APP_SECRET` invalidates every
 queued message** (order in `k8s/README.md`).

@@ -118,6 +118,36 @@ final class AuthenticatedEnvelopeSerializerTest extends TestCase
     }
 
     /**
+     * @return iterable<string, array{bool, mixed}>
+     */
+    public static function nonStringMacs(): iterable
+    {
+        foreach (['transition' => false, 'MAC exigé' => true] as $mode => $requireMac) {
+            yield $mode.', entier' => [$requireMac, 42];
+            yield $mode.', tableau' => [$requireMac, ['mac']];
+            yield $mode.', booléen' => [$requireMac, true];
+        }
+    }
+
+    /**
+     * AMQP et le JSON du transport Doctrine peuvent rendre un en-tête qui
+     * n'est pas une chaîne : refusé comme un MAC faux, sans erreur de type qui
+     * ferait tomber le worker (aucun décorateur ne la rattrape ici).
+     */
+    #[DataProvider('nonStringMacs')]
+    public function testAMacThatIsNotAStringIsRefused(bool $requireMac, mixed $mac): void
+    {
+        $encoded = $this->forgedWithoutMac();
+        $encoded['headers'][AuthenticatedEnvelopeSerializer::HEADER] = $mac;
+
+        // @phpstan-ignore argument.type (un transport peut livrer un en-tête qui n'est pas une chaîne, malgré le contrat : c'est ce que le test éprouve)
+        $decoded = $this->serializer($requireMac)->decode($encoded)->getMessage();
+
+        self::assertInstanceOf(MessageDecodingFailedException::class, $decoded);
+        self::assertSame(0, UnserializationProbe::$unserializations);
+    }
+
+    /**
      * La clé est dérivée : un HMAC du corps sous APP_SECRET brut — celui
      * qu'émettrait une autre fonction du site — ne vaut pas MAC d'enveloppe.
      */

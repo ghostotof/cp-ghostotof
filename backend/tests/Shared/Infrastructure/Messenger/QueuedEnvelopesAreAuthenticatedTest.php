@@ -9,10 +9,12 @@ use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Shared\Infrastructure\Messenger\AuthenticatedEnvelopeSerializer;
 use App\Tests\Shared\Infrastructure\Messenger\Fixtures\Probe\UnserializationProbe;
 use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionClass;
 use stdClass;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\MessageDecodingFailedException;
+use Symfony\Component\Messenger\Transport\Serialization\MessageTypeAwareSerializerInterface;
 use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 
 /**
@@ -58,6 +60,53 @@ final class QueuedEnvelopesAreAuthenticatedTest extends KernelTestCase
 
         self::assertInstanceOf(MessageDecodingFailedException::class, $this->serializer()->decode($encoded)->getMessage());
         self::assertSame(0, UnserializationProbe::$unserializations);
+    }
+
+    /**
+     * Les deux transports reçoivent ce sérialiseur : un `serializer:` posé
+     * sur l'un d'eux contournerait la protection.
+     */
+    public function testBothTransportsUseTheAuthenticatingSerializer(): void
+    {
+        $locator = self::getContainer()->get('messenger.transport.serializer_locator');
+
+        foreach (['async', 'failed'] as $transport) {
+            self::assertSame($this->serializer(), $locator->get($transport), \sprintf('Le transport « %s » n\'utilise pas le sérialiseur par défaut.', $transport));
+        }
+    }
+
+    /**
+     * Aller-retour réel par le transport Doctrine du `failure_transport` :
+     * l'en-tête survit au stockage JSON des en-têtes, le message à la base.
+     */
+    public function testAnEnvelopeSurvivesTheDoctrineFailureTransport(): void
+    {
+        $transport = self::getContainer()->get('messenger.transport.failed');
+        $message = new SendContactMessageMessage('Jane', 'jane@example.com', 'Bonjour');
+        $connection = self::getContainer()->get('doctrine.dbal.default_connection');
+
+        try {
+            $transport->send(new Envelope($message));
+            $headers = $connection->fetchOne("SELECT headers FROM messenger_messages WHERE queue_name = 'failed' ORDER BY id DESC LIMIT 1");
+            self::assertIsString($headers);
+            self::assertStringContainsString(AuthenticatedEnvelopeSerializer::HEADER, $headers);
+
+            $received = [...$transport->get()];
+            self::assertCount(1, $received);
+            self::assertEquals($message, $received[0]->getMessage());
+        } finally {
+            $connection->executeStatement("DELETE FROM messenger_messages WHERE queue_name = 'failed'");
+        }
+    }
+
+    /**
+     * L'ordre voulu tient à ce que le sérialiseur ne sache pas lire le type
+     * d'une enveloppe : sinon SigningSerializer appellerait son
+     * `getMessageType()` — une désérialisation, même restreinte — avant le MAC.
+     */
+    public function testTheSerializerCannotReadAMessageTypeBeforeTheMac(): void
+    {
+        self::assertFalse(new ReflectionClass(AuthenticatedEnvelopeSerializer::class)->implementsInterface(MessageTypeAwareSerializerInterface::class));
     }
 
     /**
