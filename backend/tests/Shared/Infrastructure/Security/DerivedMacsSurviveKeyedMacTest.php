@@ -8,7 +8,6 @@ use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
 use App\Security\Authentication\Infrastructure\Log\LoginIdentifierFingerprint;
 use App\Shared\Infrastructure\Cache\AuthenticatedCacheMarshaller;
 use App\Shared\Infrastructure\Messenger\AuthenticatedEnvelopeSerializer;
-use App\Shared\Infrastructure\Security\SecretKeyDerivation;
 use App\Tests\Support\TestKeys;
 use PHPUnit\Framework\TestCase;
 use stdClass;
@@ -17,18 +16,22 @@ use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 
 /**
- * Passer les quatre usages d'`APP_SECRET` par KeyedMac n'est pas une rotation
+ * Passer les quatre usages d'`APP_SECRET` par
+ * {@see \App\Shared\Infrastructure\Security\KeyedMac} n'est pas une rotation
  * (issue #487) : un MAC signé par le code d'avant est accepté par le code
  * d'après, et le code d'après signe ce que le code d'avant aurait signé.
  *
- * « Le code d'avant » est écrit ici en clair, une fois par usage : son
- * contexte **littéral** et son appel `hash_hmac()` d'avant #487. Une valeur
+ * « Le code d'avant » est écrit ici en clair, de bout en bout : la dérivation
+ * de #455 (`hash_hkdf('sha256', $secret, 32, $context)`), le contexte
+ * **littéral** de chaque usage et son appel `hash_hmac()` d'avant #487, ainsi
+ * que sa mise en forme (séparateur `.` du cookie CSRF, 6 caractères de
+ * l'empreinte, 32 octets de MAC en tête de la valeur de cache) — des
+ * littéraux voulus, jamais les constantes des classes testées. Une valeur
  * figée serait plus directe, mais la clé des tests est tirée à chaque
- * exécution (TestKeys) ; la formule, elle, ne dépend que du contexte et de
- * l'encodage, précisément ce qu'une rotation changerait. Changer un
- * `KEY_CONTEXT` fait donc rougir ce test : c'est voulu, une rotation se
- * décide et s'annonce dans les notes de release, elle ne passe pas en
- * refactorisation.
+ * exécution (TestKeys) ; la formule ne dépend que de ce qu'une rotation
+ * changerait. Changer un `KEY_CONTEXT`, la dérivation ou l'encodage fait donc
+ * rougir ce test : c'est voulu, une rotation se décide et s'annonce dans les
+ * notes de release, elle ne passe pas en refactorisation.
  */
 final class DerivedMacsSurviveKeyedMacTest extends TestCase
 {
@@ -107,7 +110,7 @@ final class DerivedMacsSurviveKeyedMacTest extends TestCase
      */
     private function hexMacBefore(string $context, string $data): string
     {
-        return hash_hmac('sha256', $data, SecretKeyDerivation::derive(TestKeys::material(), $context));
+        return hash_hmac('sha256', $data, $this->keyBefore($context));
     }
 
     /**
@@ -115,7 +118,16 @@ final class DerivedMacsSurviveKeyedMacTest extends TestCase
      */
     private function binaryMacBefore(string $context, string $data): string
     {
-        return hash_hmac('sha256', $data, SecretKeyDerivation::derive(TestKeys::material(), $context), true);
+        return hash_hmac('sha256', $data, $this->keyBefore($context), true);
+    }
+
+    /**
+     * La dérivation de #455, écrite ici plutôt qu'appelée : un changement de
+     * SecretKeyDerivation serait lui aussi une rotation.
+     */
+    private function keyBefore(string $context): string
+    {
+        return hash_hkdf('sha256', TestKeys::material(), 32, $context);
     }
 
     private function envelopeSerializer(): AuthenticatedEnvelopeSerializer
