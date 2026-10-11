@@ -26,6 +26,15 @@ use ReflectionMethod;
  */
 final class AmqpPublisherConfirmsTest extends TestCase
 {
+    /**
+     * L'attente de la confirmation, et celles qui la précèdent : ext-amqp les
+     * laisse illimitées par défaut, et `confirm.select` comme la déclaration de
+     * l'échange sont des allers-retours. Un broker qui accepte la connexion TCP
+     * sans répondre tenait une requête jusqu'au `request_terminate_timeout` de
+     * 65 s (relecture de #479).
+     */
+    private const array BOUNDED_WAITS = ['confirm_timeout', 'connect_timeout', 'read_timeout', 'write_timeout', 'rpc_timeout'];
+
     public function testTheAsyncTransportWaitsForTheBrokerConfirmationInEveryAmqpEnvironment(): void
     {
         $checked = 0;
@@ -38,10 +47,12 @@ final class AmqpPublisherConfirmsTest extends TestCase
                 continue;
             }
 
-            $timeout = $async['options']['confirm_timeout'] ?? null;
-            self::assertIsNumeric($timeout, \sprintf('%s : transports.async.options.confirm_timeout absent.', $environment));
-            self::assertGreaterThan(0, (float) $timeout, $environment);
-            self::assertLessThanOrEqual(10, (float) $timeout, \sprintf('%s : une requête attendrait plus de 10 s un broker muet.', $environment));
+            foreach (self::BOUNDED_WAITS as $option) {
+                $timeout = $async['options'][$option] ?? null;
+                self::assertIsNumeric($timeout, \sprintf('%s : transports.async.options.%s absent.', $environment, $option));
+                self::assertGreaterThan(0, (float) $timeout, $environment.' '.$option);
+                self::assertLessThanOrEqual(10, (float) $timeout, \sprintf('%s : %s ferait attendre une requête plus de 10 s.', $environment, $option));
+            }
             ++$checked;
         }
 

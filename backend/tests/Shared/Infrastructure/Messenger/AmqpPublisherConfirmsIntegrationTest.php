@@ -28,36 +28,66 @@ use Symfony\Component\Messenger\Transport\TransportInterface;
  *
  * Le broker est donné par RABBITMQ_INTEGRATION_DSN : celui de Compose en dev
  * (docker-compose.yml), un conteneur démarré par le job `test-backend` en CI.
- * Sans lui, le test est sauté en le disant.
+ * Sans lui, le test est sauté en le disant — sauf en CI, où il échoue.
  */
 final class AmqpPublisherConfirmsIntegrationTest extends TestCase
 {
+    /** @var array<mixed>|null */
+    private static ?array $declaredOptions = null;
+
+    /**
+     * Par le refus du broker lui-même, au-delà du max_message_size de 1 Mio
+     * (#477) : une autre TransportException (broker injoignable, mauvais
+     * identifiants) ne prouverait rien.
+     */
     public function testAPublicationTheBrokerRefusesFailsTheSend(): void
     {
-        $transport = $this->transport();
-
-        $this->expectException(TransportException::class);
-
-        // Au-delà du max_message_size de 1 Mio (#477).
-        $transport->send(new Envelope($this->carrying(2 * 1024 * 1024)));
+        try {
+            $this->transport()->send(new Envelope($this->carrying(2 * 1024 * 1024)));
+            self::fail('Le broker refuse ce message : l\'envoi doit échouer.');
+        } catch (TransportException $refusal) {
+            $causes = [];
+            for ($cause = $refusal; null !== $cause; $cause = $cause->getPrevious()) {
+                $causes[] = $cause->getMessage();
+            }
+            self::assertStringContainsString('larger than configured max size', implode(' | ', $causes));
+        }
     }
 
-    public function testAPublicationTheBrokerAcceptsIsSent(): void
+    /** Le message accepté est bien dans la file, pas seulement « envoyé ». */
+    public function testAPublicationTheBrokerAcceptsReachesTheQueue(): void
     {
-        $sent = $this->transport()->send(new Envelope($this->carrying(100 * 1024)));
+        $transport = $this->transport();
+        $transport->send(new Envelope($this->carrying(100 * 1024)));
 
-        self::assertInstanceOf(stdClass::class, $sent->getMessage());
+        $received = [...$transport->get()];
+        self::assertCount(1, $received);
+        $message = $received[0]->getMessage();
+        self::assertInstanceOf(stdClass::class, $message);
+        self::assertIsString($message->padding ?? null);
+        self::assertSame(100 * 1024, \strlen($message->padding));
+        $transport->ack($received[0]);
     }
 
     private function transport(): TransportInterface
     {
         $dsn = getenv('RABBITMQ_INTEGRATION_DSN');
         if (!\is_string($dsn) || '' === $dsn) {
+            // En CI, le job démarre le broker : son absence est une faute, pas
+            // une raison de passer au vert sans rien vérifier.
+            if (false !== getenv('CI')) {
+                self::fail('RABBITMQ_INTEGRATION_DSN absent en CI : le job test-backend doit démarrer le broker (#479).');
+            }
             self::markTestSkipped('RABBITMQ_INTEGRATION_DSN absent : aucun broker pour l\'intégration (#479).');
         }
 
-        $declared = new EnvironmentConfigKernel('prod')->declaredMapping('framework', 'messenger')['transports']['async']['options'] ?? [];
-        self::assertIsArray($declared);
+        // Une seule construction du noyau de configuration pour la classe.
+        $declared = self::$declaredOptions ??= (static function (): array {
+            $options = new EnvironmentConfigKernel('prod')->declaredMapping('framework', 'messenger')['transports']['async']['options'] ?? [];
+            self::assertIsArray($options);
+
+            return $options;
+        })();
         $name = 'it479-'.bin2hex(random_bytes(4));
         $options = [
             ...$declared,
