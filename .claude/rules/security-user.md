@@ -67,7 +67,10 @@ paths:
     exempts the account — invited more than N days ago, 30 by default, never a `ROLE_SUPER` one;
     `app:user:purge-pending-invitations`, daily in the housekeeping CronJob, `--dry-run` for a hand run;
     retention ≥ 1 day, `InvalidPurgeRetentionException` → exit 2, a shorter one would otherwise purge nearly
-    every pending account in one manual run) · `PasswordSetupRateLimiterInterface` (calqued on the
+    every pending account in one manual run; each deletion runs under the account lock, `AccountLockInterface`,
+    and re-checks the criteria on the re-read account — a resend, an activation or a password set from the
+    backoffice committed after the list was read spares it, an account already deleted is ignored, issue #459;
+    `--dry-run` writes nothing and takes no lock) · `PasswordSetupRateLimiterInterface` (calqued on the
     Contact rate limiter). Presenters: `CpgUserPresenter` (`/api/me`), `CpgUserAdminPresenter`
     (backoffice list — `id`, `username`, `email`, `roles`, `status`).
   - **The invitation token is created by the Messenger handler, never by the use case** (audit C2):
