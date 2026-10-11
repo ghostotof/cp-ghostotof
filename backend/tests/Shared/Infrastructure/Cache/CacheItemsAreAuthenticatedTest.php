@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Cache;
 
 use App\Shared\Infrastructure\Cache\AuthenticatedCacheMarshaller;
-use App\Tests\Shared\Infrastructure\Messenger\Fixtures\Probe\UnserializationProbe;
+use App\Tests\Support\UnserializationProbe;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
-use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Cache\CacheItemPoolInterface;
 use ReflectionProperty;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Cache\Adapter\DoctrineDbalAdapter;
 use Symfony\Component\Cache\Adapter\TraceableAdapter;
+use Symfony\Component\HttpKernel\CacheClearer\Psr6CacheClearer;
 
 /**
  * Par le conteneur et la vraie table : une ligne `cache_items` altérée
@@ -40,27 +40,40 @@ final class CacheItemsAreAuthenticatedTest extends KernelTestCase
     }
 
     /**
-     * Les pools que DefaultMarshaller relisait : `cache.app` (limiteurs de
-     * débit), le signal de redémarrage que lit le worker et le pool du client
-     * HTTP. Le cache de résultats Doctrine (`doctrine.result_cache_pool`)
-     * n'existe qu'en `when@prod`, absent du conteneur de test : il prend
-     * `cache.app` pour adaptateur, donc le même marshaller.
-     *
-     * @return iterable<string, array{string}>
+     * Chaque pool en base du conteneur, énuméré plutôt que listé à la main : un
+     * pool ajouté plus tard, ou un adaptateur construit sans
+     * `cache.default_marshaller`, fait rougir ce test au lieu de lui échapper.
+     * `cache.global_clearer` reçoit tous les pools que déclare
+     * {@see \Symfony\Component\Cache\DependencyInjection\CachePoolPass}.
+     * Le cache de résultats Doctrine (`doctrine.result_cache_pool`) n'existe
+     * qu'en `when@prod`, absent du conteneur de test : il prend `cache.app` pour
+     * adaptateur, donc le même marshaller.
      */
-    public static function databasePools(): iterable
+    public function testEveryDatabasePoolUsesTheAuthenticatedMarshaller(): void
     {
-        yield 'cache.app' => ['cache.app'];
-        yield 'signal de redémarrage du worker' => ['cache.messenger.restart_workers_signal'];
-        yield 'pool du client HTTP' => ['cache.http_client.pool'];
-    }
+        $clearer = self::getContainer()->get('cache.global_clearer');
+        /** @var array<string, CacheItemPoolInterface> $pools */
+        $pools = new ReflectionProperty(Psr6CacheClearer::class, 'pools')->getValue($clearer);
 
-    #[DataProvider('databasePools')]
-    public function testEveryDatabasePoolUsesTheAuthenticatedMarshaller(string $serviceId): void
-    {
-        $marshaller = new ReflectionProperty(DoctrineDbalAdapter::class, 'marshaller')->getValue($this->adapter($serviceId));
+        $databasePools = [];
+        foreach ($pools as $name => $pool) {
+            while ($pool instanceof TraceableAdapter) {
+                $pool = $pool->getPool();
+            }
+            if (!$pool instanceof DoctrineDbalAdapter) {
+                continue;
+            }
 
-        self::assertInstanceOf(AuthenticatedCacheMarshaller::class, $marshaller, $serviceId.' relit cache_items sans authentifier les valeurs.');
+            $databasePools[] = $name;
+            $marshaller = new ReflectionProperty(DoctrineDbalAdapter::class, 'marshaller')->getValue($pool);
+            self::assertInstanceOf(AuthenticatedCacheMarshaller::class, $marshaller, $name.' relit cache_items sans authentifier les valeurs.');
+        }
+
+        // Les lecteurs que nomme l'issue : l'API par les limiteurs, le worker
+        // par le signal de redémarrage. Garde contre une énumération vide.
+        self::assertContains('cache.app', $databasePools);
+        self::assertContains('cache.rate_limiter', $databasePools);
+        self::assertContains('cache.messenger.restart_workers_signal', $databasePools);
     }
 
     /**
