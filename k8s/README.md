@@ -795,6 +795,29 @@ suivi d'un `kubectl rollout restart deployment/backend -n $NS` pour que les
 pods relisent la nouvelle valeur (les Secrets montés en `envFrom` ne sont pas
 rechargés à chaud).
 
+### Cas d'`APP_SECRET`
+
+Le secret signe plus qu'une session : les empreintes du journal de sécurité (§ Journal de sécurité)
+et, depuis l'issue #444, **le MAC de chaque message Messenger mis en file**, vérifié par le worker
+avant toute désérialisation. Une enveloppe signée avec l'ancien secret est refusée par un worker qui a
+le nouveau (échec de décodage, réessais, puis `failed`, où elle reste refusée et part avec la purge
+des 30 jours). Ordre, en période calme :
+
+1. Vider les files : la file `async` est consommée par le worker ; lire `failed`
+   (`messenger:failed:show`, depuis un Job sur le modèle de `create-user-job.yaml`, jamais
+   `kubectl exec`) et rejouer ou purger ce qui doit l'être.
+2. Publier la nouvelle version dans Secret Manager, puis
+   `kubectl annotate externalsecret backend-secrets -n $NS force-sync=$(date +%s) --overwrite`.
+3. Redémarrer ensemble : `kubectl rollout restart deployment/backend deployment/worker -n $NS`.
+
+**Perte acceptée** : entre l'étape 2 et la fin des deux redémarrages (le backend en `RollingUpdate`,
+le worker en `Recreate`), un ancien pod d'API peut encore mettre en file un message signé avec
+l'ancien secret, que le nouveau worker refusera — un message de contact ou une invitation, à
+relancer. Seul le worker vérifie ; l'API ne décode jamais. Accepter l'ancienne clé en vérification
+le temps d'une rotation éviterait cette perte : non fait, à reprendre si les rotations deviennent
+fréquentes. Garder des secrets distincts en préprod et en prod, sans quoi un message capturé dans
+l'une serait accepté par l'autre.
+
 ## Administration de la base (Adminer)
 
 `k8s/base/adminer.yaml` déploie Adminer (interface web PostgreSQL) **sans
@@ -1135,7 +1158,8 @@ kubectl -n preprod logs deploy/backend -c php-fpm --tail=2000 \
   | jq -r 'select(.context.userFingerprint == "<empreinte>") | [.datetime, .context.event, .context.user // "-", .context.ip] | @tsv'
 ```
 
-Une rotation d'`APP_SECRET` change toutes les empreintes : les lignes d'avant et d'après ne se
+Une rotation d'`APP_SECRET` (procédure : § Rotation / mise à jour d'un Secret, cas
+d'`APP_SECRET`) change toutes les empreintes : les lignes d'avant et d'après ne se
 relient plus. Un refus du compteur **par IP seule** (25 essais en 15 min, toutes saisies confondues)
 peut porter l'empreinte d'une saisie jamais vue : rien ne s'y relie, lire alors les lignes de la
 même `ip`. L'empreinte est courte exprès (6 caractères hexadécimaux, 24 bits) : deux saisies
