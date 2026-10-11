@@ -15,7 +15,26 @@ framework:
             # https://symfony.com/doc/current/messenger.html#transport-configuration
             # RabbitMQ. Consommé par `make consume` en dev, et par le Deployment
             # `worker` en préprod/prod (k8s/base/messenger-worker-deployment.yaml).
-            async: '%env(MESSENGER_TRANSPORT_DSN)%'
+            async:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    # Issue #479 : attendre l'accusé du broker. Sans lui, un refus
+                    # (max_message_size de #477, broker qui se coupe) est
+                    # asynchrone : le dispatch réussit et le message est perdu en
+                    # silence. Avec, il lève une TransportException (500 pour le
+                    # contact). 5 s pour l'accusé ; AmqpPublisherConfirmsTest borne
+                    # cette option et les quatre suivantes.
+                    confirm_timeout: 5
+                    # Les attentes qui la précèdent : ext-amqp les laisse
+                    # illimitées, et confirm.select comme la déclaration de
+                    # l'échange sont des allers-retours. Un broker qui accepte le
+                    # TCP sans répondre tenait une requête jusqu'aux 65 s du
+                    # request_terminate_timeout. Sans effet sur le worker au
+                    # repos : il interroge la file par basic.get, rien n'attend.
+                    connect_timeout: 5
+                    read_timeout: 5
+                    write_timeout: 5
+                    rpc_timeout: 5
             failed: 'doctrine://default?queue_name=failed'
             sync: 'sync://'
 

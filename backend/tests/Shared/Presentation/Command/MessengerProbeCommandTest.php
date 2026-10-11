@@ -10,6 +10,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\Messenger\Exception\TransportException;
 
 /**
  * `app:messenger:probe` (issue #470) : son code de sortie est ce que lit le
@@ -36,6 +37,20 @@ final class MessengerProbeCommandTest extends TestCase
         self::assertSame(Command::FAILURE, $tester->execute(['--timeout' => '30']));
         self::assertStringContainsString('failed', $tester->getDisplay());
         self::assertStringContainsString('worker', $tester->getDisplay());
+    }
+
+    /**
+     * Depuis #479, une publication refusée ou non confirmée par le broker lève
+     * une exception de transport : la sonde dit laquelle et échoue, au lieu
+     * d'une trace d'exception non rattrapée dans les journaux du Job.
+     */
+    public function testAPublicationTheBrokerRefusesFailsWithItsCause(): void
+    {
+        $tester = new CommandTester(new MessengerProbeCommand(new RecordingProbe(true, new TransportException('Message publication failed: PRECONDITION_FAILED.'))));
+
+        self::assertSame(Command::FAILURE, $tester->execute([]));
+        self::assertStringContainsString('publication', $tester->getDisplay());
+        self::assertStringContainsString('PRECONDITION_FAILED', $tester->getDisplay());
     }
 
     public function testItWaitsSixtySecondsByDefault(): void

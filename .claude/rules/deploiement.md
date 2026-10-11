@@ -366,11 +366,27 @@ paths:
   broken preprod broker with `kubectl -n preprod rollout undo deployment/rabbitmq`. In dev the file is read
   at boot: `docker compose up -d rabbitmq` after changing it (and after any git operation that replaced
   it). **Any change to that file restarts the broker** (`Recreate`): a short outage of `POST /api/contact`
-  and invitations, in the release notes, validated in preprod like any change here. **The broker's refusal
-  is asynchronous**: without publisher confirms, a publish over the cap returns fine, the request answers
-  2xx and the message is lost; only the next operation on that channel fails. No legitimate producer gets
-  near 1 MiB (the validation and #469's 256 KiB bound cut far below, retries included); whether to turn
-  confirms on is #479.
+  and invitations, in the release notes, validated in preprod like any change here. **Publications wait for
+  the broker's confirmation** (issue #479, `confirm_timeout: 5` on the `async` transport's options in
+  `messenger.yaml`, never in the DSN Secret): a broker refusal is asynchronous, so without it a publish
+  over the cap — or into a broker going down — returned fine, the request answered 2xx and the message
+  was lost; with it, `dispatch` throws a `TransportException` (a 500 for `POST /api/contact`, a visible
+  failure for a worker retry; the channel is recreated for the next publish). Measured ≈ +0.13 ms per
+  publish on a reused connection, plus one `confirm.select` round trip per FPM request. The waits before it
+  are bounded too — `connect_timeout`, `read_timeout`, `write_timeout`, `rpc_timeout` at 5 s, ext-amqp
+  leaving them unlimited: a broker accepting TCP without answering held a request until the 65 s
+  `request_terminate_timeout`. The worker polls by `basic.get`, so nothing waits while it idles (checked).
+  Accepted limits: a connection lost after the broker stored a message but before its ack makes Symfony
+  republish it (a duplicate contact e-mail, or an invitation token regenerated once more); after a confirm
+  timeout the long-lived worker channel may take a late ack for the next publish; while RabbitMQ restarts
+  (`Recreate`, a release) publications fail loudly instead of vanishing. What that failure looks like to
+  the caller — a `critical` 500, a contact quota consumed, an invitation saved without its audit entry —
+  predates #479 (a downed broker did the same) and is #485. `AmqpPublisherConfirmsTest` bounds the five
+  options in every declared environment; `AmqpPublisherConfirmsIntegrationTest` publishes against a real
+  broker carrying `rabbitmq.conf` (`RABBITMQ_INTEGRATION_DSN`: Compose's broker in dev, the `rabbitmq-conf`
+  boot kept running by `RABBITMQ_CONF_KEEP=1` in the `test-backend` job — not a `services:`, which cannot
+  mount a repository file; missing in CI, the test fails rather than skips): 100 KB read back from the
+  queue, 2 MiB refused with the broker's own `larger than configured max size`.
   **RabbitMQ's probes are `tcpSocket` on 5672, never `rabbitmq-diagnostics`** (issue #295): the CLI
   starts an Erlang node per call, which overran its 10 s timeout under CPU load — during a boot,
   precisely — and the kubelet killed a broker that had been up for 35 s (nine restarts in eight

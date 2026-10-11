@@ -61,7 +61,7 @@ jobs:
   # ---------------------------------------------------------------------------
   test-backend:
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # habituel ~80 s
+    timeout-minutes: 15 # habituel ~2 min, démarrage de RabbitMQ compris (#479)
     services:
       database:
         image: postgres:18.4-alpine
@@ -131,8 +131,18 @@ jobs:
         run: |
           php bin/console doctrine:database:create --if-not-exists
           php bin/console doctrine:migrations:migrate --no-interaction
+      # Issue #479 : AmqpPublisherConfirmsIntegrationTest publie contre un vrai
+      # RabbitMQ, avec k8s/base/rabbitmq.conf (max_message_size, #477). Pas un
+      # `services:` : il ne peut pas monter un fichier du dépôt, absent avant le
+      # checkout. Le démarrage est celui du job `rabbitmq-conf`, broker gardé.
+      - name: Démarre RabbitMQ (intégration des confirmations, #479)
+        timeout-minutes: 5
+        run: RABBITMQ_CONF_KEEP=1 make rabbitmq-conf
       - name: PHPUnit
         working-directory: backend
+        env:
+          # `guest` est admis hors loopback par le 10-defaults.conf de l'image.
+          RABBITMQ_INTEGRATION_DSN: 'amqp://guest:guest@localhost:5672/%2f'
         run: php bin/phpunit --log-junit "$RUNNER_TEMP/junit.xml"
       # Carte de synthèse sur la page du run, dans l'esprit de celle que Vitest
       # écrit lui-même (reporter github-actions intégré) : PHPUnit n'en produit

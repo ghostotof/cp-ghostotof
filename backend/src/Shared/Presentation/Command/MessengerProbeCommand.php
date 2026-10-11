@@ -11,6 +11,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Symfony\Component\Messenger\Exception\TransportException;
 
 /**
  * Smoke préprod du trajet API → worker (issue #470), lancé par le Job
@@ -60,7 +61,18 @@ final class MessengerProbeCommand extends Command
             return Command::INVALID;
         }
 
-        if ($this->probe->probe((int) $timeout)) {
+        try {
+            $handled = $this->probe->probe((int) $timeout);
+        } catch (TransportException $failure) {
+            // Depuis #479, la publication attend l'accusé du broker : un refus
+            // (taille, broker qui redémarre) ou un délai dépassé arrive ici. Le
+            // message de Messenger ne cite que le transport et le code AMQP.
+            $io->error(\sprintf('La publication du message témoin a échoué, avant même le worker : %s', $failure->getMessage()));
+
+            return Command::FAILURE;
+        }
+
+        if ($handled) {
             $io->success('Le worker a consommé le message témoin.');
 
             return Command::SUCCESS;
