@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\User\Infrastructure\Messenger;
 
+use App\Security\User\Application\AccountLockInterface;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
@@ -13,14 +14,12 @@ use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler;
 use App\Tests\Support\DrivesTheMailerChain;
 use ArrayObject;
+use Closure;
 use DateTimeImmutable;
-use Doctrine\DBAL\Connection;
-use Doctrine\ORM\EntityManagerInterface;
 use LogicException;
 use Monolog\Handler\TestHandler;
 use Monolog\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -173,7 +172,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
             $mailer,
             $cpgUserRepository,
             $tokenRepository,
-            $this->passthroughEntityManager(),
+            $this->passthroughAccountLock(),
             new MockClock(),
             $logger,
             self::SENDER_EMAIL,
@@ -464,7 +463,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
             $mailer,
             $cpgUserRepository,
             $tokenRepository,
-            $this->passthroughEntityManager(),
+            $this->passthroughAccountLock(),
             new MockClock(),
             $logger,
             self::SENDER_EMAIL,
@@ -659,7 +658,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
             $mailer,
             $cpgUserRepository,
             $tokenRepository,
-            $this->passthroughEntityManager(),
+            $this->passthroughAccountLock(),
             $clock,
             new NullLogger(),
             self::SENDER_EMAIL,
@@ -681,16 +680,15 @@ final class SendAccountInvitationHandlerTest extends TestCase
         $mailer = $this->createMock(MailerInterface::class);
         $mailer->expects(self::never())->method('send');
 
-        $entityManager = $this->passthroughEntityManager();
         // Ce que relit le verrou : la relance concurrente, déjà commitée.
-        $entityManager->method('refresh')->willReturnCallback(static function (object $entity) use ($user): void {
-            self::assertSame($user, $entity);
+        $accountLock = $this->passthroughAccountLock(static function (CpgUser $locked) use ($user): void {
+            self::assertSame($user, $locked);
             $user->markReinvited(new DateTimeImmutable('2026-09-03 11:30:00'), 2);
         });
         $logs = new TestHandler();
         $cpgUserRepository = self::createStub(CpgUserRepositoryInterface::class);
         $cpgUserRepository->method('findOneById')->willReturn($user);
-        $handler = new SendAccountInvitationHandler($mailer, $cpgUserRepository, $tokenRepository, $entityManager, new MockClock(), new Logger('test', [$logs]), self::SENDER_EMAIL, self::FRONTEND_BASE_URL);
+        $handler = new SendAccountInvitationHandler($mailer, $cpgUserRepository, $tokenRepository, $accountLock, new MockClock(), new Logger('test', [$logs]), self::SENDER_EMAIL, self::FRONTEND_BASE_URL);
 
         $handler(self::invitationMessage('fr'));
 
@@ -698,21 +696,25 @@ final class SendAccountInvitationHandlerTest extends TestCase
     }
 
     /**
-     * EntityManager dont seules wrapInTransaction() et la connexion sont utiles
-     * ici : la transaction exécute la fermeture reçue, comme une vraie
-     * transaction validée, et le verrou du compte trouve sa ligne (#435).
+     * Verrou du compte qui exécute l'opération telle quelle, comme une vraie
+     * transaction validée ; `$whileLocked` simule ce que le verrou relit (une
+     * écriture concurrente déjà commitée).
+     *
+     * @param (Closure(CpgUser): void)|null $whileLocked
      */
-    private function passthroughEntityManager(): EntityManagerInterface&Stub
+    private function passthroughAccountLock(?Closure $whileLocked = null): AccountLockInterface
     {
-        $entityManager = self::createStub(EntityManagerInterface::class);
-        $entityManager->method('wrapInTransaction')->willReturnCallback(
-            static fn (callable $func): mixed => $func($entityManager),
-        );
-        // Le verrou du compte (issue #435) trouve la ligne.
-        $connection = self::createStub(Connection::class);
-        $connection->method('fetchOne')->willReturn(1);
-        $entityManager->method('getConnection')->willReturn($connection);
+        $accountLock = self::createStub(AccountLockInterface::class);
+        $accountLock->method('whileLocked')->willReturnCallback(
+            static function (CpgUser $user, Closure $operation) use ($whileLocked): mixed {
+                if (null !== $whileLocked) {
+                    $whileLocked($user);
+                }
 
-        return $entityManager;
+                return $operation($user);
+            },
+        );
+
+        return $accountLock;
     }
 }

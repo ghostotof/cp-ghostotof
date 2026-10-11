@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
+use App\Security\User\Application\AccountLockInterface;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
@@ -42,7 +43,7 @@ trait RunsInvitationHandlerOnTestDatabase
             $mailer,
             $container->get(CpgUserRepositoryInterface::class),
             $container->get(PasswordSetupTokenRepositoryInterface::class),
-            $this->entityManager(),
+            $container->get(AccountLockInterface::class),
             new MockClock(),
             $logger,
             'noreply@cp-ghostotof.com',

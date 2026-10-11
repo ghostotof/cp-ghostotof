@@ -233,7 +233,8 @@ paths:
     shared 410 — keep the join. **Consumption is atomic**: `PasswordSetupService::complete()` hashes, then
     `PasswordSetupTokenRepository::claim()` (`UPDATE … WHERE used_at IS NULL AND expires_at > :usedAt`, one
     row or none), and only the winner writes the account; the loser of a concurrent submission is a
-    `replayed`. **So is expiry** (issue #447): the claim instant is read **after** the hash, which takes
+    `replayed` (only when the token is `AlreadyUsed`: `claim()` returns a `TokenClaim`, a token gone meanwhile
+    is a `rejected` 404, issue #458). **So is expiry** (issue #447): the claim instant is read **after** the hash, which takes
     time, and the same `UPDATE` refuses a token expired by then (strict bound, like `isUsable()`); that
     loser is not a replay — no event, a merely expired link never is one —, the 410 is unchanged. Never go back to
     deciding on `isUsable()` alone, which reads the loaded state. Functional tests read the records through

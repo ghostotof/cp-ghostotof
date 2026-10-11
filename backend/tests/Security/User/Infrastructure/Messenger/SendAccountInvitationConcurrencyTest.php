@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Infrastructure\Messenger;
 
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Security\User\Application\AccountLockInterface;
 use App\Security\User\Application\CpgUserInviterInterface;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Entity\CpgUser;
@@ -109,7 +110,7 @@ final class SendAccountInvitationConcurrencyTest extends KernelTestCase
             $container->get(MailerInterface::class),
             $repository,
             $container->get(PasswordSetupTokenRepositoryInterface::class),
-            $entityManager,
+            $container->get(AccountLockInterface::class),
             new MockClock(),
             new NullLogger(),
             'noreply@cp-ghostotof.com',

@@ -5,14 +5,18 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Application;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
+use App\Security\User\Application\AccountLockInterface;
 use App\Security\User\Application\PasswordSetupService;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
+use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException;
 use App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
+use App\Security\User\Domain\ValueObject\TokenClaim;
 use App\Tests\Support\TestCredentials;
+use Closure;
 use DateTimeImmutable;
 use DateTimeZone;
 use PHPUnit\Framework\TestCase;
@@ -156,7 +160,7 @@ final class PasswordSetupServiceTest extends TestCase
         $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
         $tokenRepository->method('findOneByTokenHash')->willReturn($token);
         // La consommation se réclame en base avant toute écriture (issue #356).
-        $tokenRepository->expects(self::once())->method('claim')->with($token, $clock->now())->willReturn(true);
+        $tokenRepository->expects(self::once())->method('claim')->with($token, $clock->now())->willReturn(TokenClaim::Claimed);
         $tokenRepository->expects(self::once())->method('save')->with($token);
 
         $cpgUserRepository = $this->createMock(CpgUserRepositoryInterface::class);
@@ -197,7 +201,7 @@ final class PasswordSetupServiceTest extends TestCase
 
         $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
         $tokenRepository->method('findOneByTokenHash')->willReturn($token);
-        $tokenRepository->expects(self::once())->method('claim')->willReturn(false);
+        $tokenRepository->expects(self::once())->method('claim')->willReturn(TokenClaim::AlreadyUsed);
         $tokenRepository->expects(self::never())->method('save');
 
         $cpgUserRepository = $this->createMock(CpgUserRepositoryInterface::class);
@@ -238,7 +242,7 @@ final class PasswordSetupServiceTest extends TestCase
         $tokenRepository->expects(self::once())->method('claim')
             // MockClock est en UTC : deux secondes après le début du hachage.
             ->with($token, new DateTimeImmutable('2026-09-10 10:00:02', new DateTimeZone('UTC')))
-            ->willReturn(false);
+            ->willReturn(TokenClaim::Expired);
         $tokenRepository->expects(self::never())->method('save');
 
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
@@ -259,6 +263,118 @@ final class PasswordSetupServiceTest extends TestCase
         } catch (PasswordSetupTokenExpiredException) {
             self::assertTrue($user->isPendingActivation());
         }
+    }
+
+    /**
+     * Issue #458 : sous le verrou, un compte déjà activé (par un autre lien du
+     * compte) refuse ce lien sans réclamer le jeton. Un lien présenté pour un
+     * compte actif est un rejeu au sens du journal.
+     */
+    public function testALinkForAnAccountActivatedMeanwhileIsRefusedUnderTheLock(): void
+    {
+        $clock = new MockClock('2026-09-10 10:00:00');
+        $user = new CpgUser('jane', '');
+        $user->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
+        $token = $this->tokenFor($user, $clock);
+        // Activé entre la lecture du jeton et la prise du verrou.
+        $user->markActivated(new DateTimeImmutable('2026-09-10 09:59:59'));
+
+        $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('findOneByTokenHash')->willReturn($token);
+        $tokenRepository->expects(self::never())->method('claim');
+        $tokenRepository->expects(self::never())->method('save');
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('passwordSetupTokenReplayed')->with($user);
+        $auditLogger->expects(self::never())->method('accountActivated');
+
+        $this->expectException(PasswordSetupTokenExpiredException::class);
+
+        $this->service($tokenRepository, clock: $clock, auditLogger: $auditLogger)
+            ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
+    }
+
+    /**
+     * Issue #458 : un compte activé ne garde aucun jeton utilisable.
+     */
+    public function testTheActivationRemovesTheAccountsUnusedTokens(): void
+    {
+        $clock = new MockClock('2026-09-10 10:00:00');
+        $user = new CpgUser('jane', '');
+        $user->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
+        $token = $this->tokenFor($user, $clock);
+
+        $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('findOneByTokenHash')->willReturn($token);
+        $tokenRepository->method('claim')->willReturn(TokenClaim::Claimed);
+        $tokenRepository->expects(self::once())->method('deleteUnusedForUser')->with($user);
+
+        $this->service($tokenRepository, clock: $clock)->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
+
+        self::assertFalse($user->isPendingActivation());
+    }
+
+    /**
+     * Seconde passe d'audit de #458 : une relance a remplacé le jeton pendant
+     * le hachage. Le lien n'a jamais servi : réponse d'un lien inconnu (404,
+     * `rejected`), jamais un rejeu.
+     */
+    public function testATokenReplacedWhileThePasswordIsHashedIsUnknownNotReplayed(): void
+    {
+        $clock = new MockClock('2026-09-10 10:00:00');
+        $user = new CpgUser('jane', '');
+        $user->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
+        $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('findOneByTokenHash')->willReturn($this->tokenFor($user, $clock));
+        $tokenRepository->method('claim')->willReturn(TokenClaim::Gone);
+        $tokenRepository->expects(self::never())->method('save');
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('passwordSetupTokenReplayed');
+        $auditLogger->expects(self::once())->method('passwordSetupTokenRejected');
+
+        $this->expectException(InvalidPasswordSetupTokenException::class);
+
+        $this->service($tokenRepository, clock: $clock, auditLogger: $auditLogger)
+            ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
+    }
+
+    /**
+     * Un compte supprimé pendant le hachage : lien inconnu (404), journalisé
+     * comme tel.
+     */
+    public function testAnAccountDeletedBeforeTheLockIsAnUnknownLink(): void
+    {
+        $clock = new MockClock('2026-09-10 10:00:00');
+        $user = new CpgUser('jane', '');
+        $user->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
+        $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('findOneByTokenHash')->willReturn($this->tokenFor($user, $clock));
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('passwordSetupTokenRejected');
+        $accountLock = self::createStub(AccountLockInterface::class);
+        $accountLock->method('whileLocked')->willThrowException(CpgUserNotFoundException::forId($user->getId()));
+        $service = new PasswordSetupService($tokenRepository, self::createStub(CpgUserRepositoryInterface::class), self::createStub(UserPasswordHasherInterface::class), $clock, $auditLogger, $accountLock);
+
+        $this->expectException(InvalidPasswordSetupTokenException::class);
+
+        $service->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
+    }
+
+    /**
+     * Le lien d'un compte déjà actif n'ouvre plus le formulaire : `validate()`
+     * et `complete()` répondent pareil (seconde passe d'audit de #458).
+     */
+    public function testValidateRefusesALinkOfAnAccountAlreadyActive(): void
+    {
+        $clock = new MockClock('2026-09-10 10:00:00');
+        $user = new CpgUser('jane', '');
+        $user->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
+        $user->markActivated(new DateTimeImmutable('2026-09-09 08:00:00'));
+        $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('findOneByTokenHash')->willReturn($this->tokenFor($user, $clock));
+
+        $this->expectException(PasswordSetupTokenExpiredException::class);
+
+        $this->service($tokenRepository, clock: $clock)->validate(self::CLEAR_TOKEN);
     }
 
     public function testCompleteRejectsAnExpiredTokenWithoutTouchingAnything(): void
@@ -288,7 +404,11 @@ final class PasswordSetupServiceTest extends TestCase
 
     private function usableToken(MockClock $clock): PasswordSetupToken
     {
-        return $this->tokenFor(new CpgUser('jane', ''), $clock);
+        // Un jeton n'existe que pour un compte invité, encore en attente.
+        $user = new CpgUser('jane', '');
+        $user->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
+
+        return $this->tokenFor($user, $clock);
     }
 
     private function tokenFor(CpgUser $user, MockClock $clock): PasswordSetupToken
@@ -309,6 +429,21 @@ final class PasswordSetupServiceTest extends TestCase
             $hasher ?? self::createStub(UserPasswordHasherInterface::class),
             $clock ?? new MockClock(),
             $auditLogger ?? self::createStub(SecurityAuditLoggerInterface::class),
+            $this->passthroughAccountLock(),
         );
+    }
+
+    /**
+     * Verrou du compte qui exécute l'opération telle quelle : le verrou réel
+     * est couvert par PasswordSetupActivationConcurrencyTest, sur la base.
+     */
+    private function passthroughAccountLock(): AccountLockInterface
+    {
+        $accountLock = self::createStub(AccountLockInterface::class);
+        $accountLock->method('whileLocked')->willReturnCallback(
+            static fn (CpgUser $user, Closure $operation): mixed => $operation($user),
+        );
+
+        return $accountLock;
     }
 }

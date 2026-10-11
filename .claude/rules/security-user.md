@@ -145,20 +145,36 @@ paths:
     got N+1. The same statement carries the "pending activation" condition (an account activated
     meanwhile → `AccountNotAwaitingActivationException`, 409; deleted → `CpgUserNotFoundException`, 404), and
     the repository gives the unit of work the written values as original state — otherwise a later
-    `flush()` rewrote the entity's generation as an absolute value over a concurrent resend. And the
-    handler, inside its transaction, bounds its wait (`SET LOCAL lock_timeout = '5s'`: the console has no
-    FPM `PGOPTIONS`), takes the account's row lock by a `SELECT 1 … FOR UPDATE` that says whether the row
-    still exists (`refresh()` on a deleted row raises nothing, and the token insert then failed on the
-    foreign key, closing the EntityManager), refreshes the account and re-checks activation and generation
-    **under that lock** before `deleteForUser()`: in `READ COMMITTED` a second consumer's purge did not see
-    the first one's uncommitted token, and two tokens stayed usable; the second now waits for the first
-    commit, re-reads the account, then replaces that token (or drops its message, `warning` "constaté sous
-    verrou"). **What that lock does not cover**: `PasswordSetupService::complete()` does not take it, so an
-    activation committing while a consumer holds the lock can still leave an activated account with a
-    usable token — follow-up issue, which must lock the account **before** claiming the token (account then
-    token, the handler's order, or the two deadlock). Two real-process tests pin both: `ReinviteConcurrencyTest` and
-    `SendAccountInvitationConcurrencyTest` (interleaved at the `postFlush`, like
-    `ContributionOrderConcurrencyTest`), with their child scripts under `tests/Security/User/Fixtures/`.
+    `flush()` rewrote the entity's generation as an absolute value over a concurrent resend. **One account
+    lock for the handler and the activation** (issues #435, #458): `Application/AccountLockInterface::whileLocked()`,
+    adapter `Infrastructure/Doctrine/PostgresAccountRowLock` — `Connection::transactional()` (a refusal
+    inside must not close the EntityManager), `SET LOCAL lock_timeout = '5s'` (the console has no FPM
+    `PGOPTIONS`), a `SELECT 1 … FOR UPDATE` that says whether the row still exists (`refresh()` on a
+    deleted row raises nothing, and the token insert then failed on the foreign key) →
+    `CpgUserNotFoundException`, then `refresh()` of the account. Order for every operation: **the account,
+    then its tokens**, or the two deadlock. The handler re-checks activation and generation under it before
+    `deleteForUser()` — in `READ COMMITTED` a second consumer's purge did not see the first one's
+    uncommitted token, and two tokens stayed usable —; a deleted, activated or resent account drops the
+    message (`warning` "constaté sous verrou"). `PasswordSetupService::complete()` hashes **outside** the
+    lock (slow), then under it refuses an account already activated (410, `replayed`), claims the token,
+    activates, and **purges the account's unused tokens** (`deleteUnusedForUser()`; the consumed one stays,
+    so a replay is still a 410 `replayed`, not a 404). The purge alone guarantees no usable token on an
+    activated account; the lock adds that a concurrent handler waits instead of deleting the claimed token —
+    without it, the link's replay answered 404 and the audit lost `replayed`. `claim()` says why it failed
+    (`Domain/ValueObject/TokenClaim`: `Claimed`, `AlreadyUsed`, `Expired`, `Gone`, read back on the table):
+    only `AlreadyUsed` is a `replayed`; `Expired` is no event; `Gone` — a resend replaced the token while
+    the password was being hashed, or the account was deleted — is an unknown link (404, `rejected`), never
+    a replay. `validate()` refuses a still-usable link of an account already active (410, `replayed`, a token
+    left over from before #458), as `complete()` does under the lock. The removal of an undelivered token
+    (#425, `remove()`) never takes a consumed one (`used_at IS NULL`): the e-mail may have left despite the
+    error and the person activated meanwhile. A lock held past `lock_timeout` raises
+    `Infrastructure/Doctrine/AccountLockTimeoutException` (SQLSTATE `55P03`, named, unmapped: a `critical`
+    500, like the order-scope lock of #389; the worker's Messenger retry takes over).
+    The operation receives the account as re-read under the lock (`Closure(CpgUser)`): read that one, never
+    a state from before the lock. Pinned by three real-process tests — `ReinviteConcurrencyTest`,
+    `SendAccountInvitationConcurrencyTest` (interleaved at the `postFlush`) and
+    `PasswordSetupActivationConcurrencyTest` (at the `preFlush`), like `ContributionOrderConcurrencyTest`,
+    child scripts under `tests/Security/User/Fixtures/` — and `PostgresAccountRowLockTest`.
     Accepted limits:
     if `reinvite()` saves the new generation but its dispatch fails (broker down, the admin gets a 500), a
     pending retry of the previous invitation is dropped too, until the admin resends; an **old worker**
