@@ -144,11 +144,18 @@ paths:
   kustomize, `${BACKEND_IMAGE}` only, the previous Job deleted first), which runs `app:messenger:probe
   --timeout=90` with the release image and **the backend's Secrets**, so it signs under the API's key: it
   queues a `MessengerProbeMessage` (a random id, no mail, no business data) and waits for the mark the
-  worker's `MessengerProbeHandler` leaves in `cache.app`. No mark in 90 s → exit 1 → the Job fails
-  (`backoffLimit: 0`, `activeDeadlineSeconds: 150`, waited 180 s by `tools/wait-rollout.sh`) → the smoke fails
-  → `rollback-preprod`. The pipeline reads no Secret (the variables stay in the pod). A refused probe stays in
-  `failed`: read it with the Job's logs. Offline test: `tools/tests/smoke-messenger-probe.test.sh`. Preprod
-  only — prod has no rollback to trigger.
+  worker's `MessengerProbeHandler` leaves in `cache.app`, read back **by value** (`getItem()->isHit()`, never
+  `hasItem()`, a bare `SELECT 1` that skips the #468 MAC). No mark in 90 s → exit 1 → the Job fails
+  (`backoffLimit: 0`, `activeDeadlineSeconds: 240` — counted from creation, two `Always` pulls included —,
+  waited 300 s by `tools/wait-rollout.sh`) → the smoke fails → `rollback-preprod`. A mark the worker could not
+  save raises `ProbeMarkNotSavedException` (Messenger retries) instead of acknowledging silently. **The Job
+  proves the path from the release image, not from the running pods**: the script first requires
+  `deployment/backend` and `deployment/worker` to run that very image, or a fresh worker behind a stale API
+  would pass. The pipeline reads no Secret (the variables stay in the pod). A refused probe stays in `failed`
+  (no purge covers it: read it with the Job's logs, then `messenger:failed:remove`); a probe left unconsumed
+  is handled later, harmlessly — except by a worker rolled back past #470, which does not know the class
+  (one more `failed` row). Offline test: `tools/tests/smoke-messenger-probe.test.sh`. Preprod only — prod has
+  no rollback to trigger.
 - **Every deploy wait fails early on a container that will not start** (issue #353). The `Deploy`
   steps never call `kubectl rollout status` or `kubectl wait --for=condition=complete` directly:
   `tools/wait-rollout.sh <ns> deployment/NAME|job/NAME --timeout N` cuts kubectl's own wait into
@@ -317,7 +324,7 @@ paths:
   trigger travels in a **cookie** — Xdebug 3.5 does not read HTTP headers, and nginx logs the query string.
   Production receives none of this. Procedure in `k8s/README.md`.
 - **No pod mounts a ServiceAccount token, and both namespaces carry Pod Security Admission labels**
-  (audit A17). `automountServiceAccountToken: false` on all ten pod specs, the Jobs outside kustomize
+  (audit A17). `automountServiceAccountToken: false` on all twelve pod specs, the four Jobs outside kustomize
   included — none of them talks to the Kubernetes API (RabbitMQ does no peer discovery here, ESO runs in
   its own namespace), so the default `default`-SA token was pure standing credential. The `preprod` and
   `prod` `Namespace` objects set `enforce: baseline` with `audit`/`warn: restricted`: RabbitMQ declares no

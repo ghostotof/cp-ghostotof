@@ -1272,7 +1272,7 @@ le premier déploiement qui les emporte **redémarre tous les workloads**, y
 compris Postgres et RabbitMQ. La validation en préprod décrite plus bas n'est
 donc pas facultative.
 
-### `automountServiceAccountToken: false` sur les dix pod specs
+### `automountServiceAccountToken: false` sur chaque pod spec
 
 Par défaut, Kubernetes monte le jeton du ServiceAccount `default` dans
 `/var/run/secrets/kubernetes.io/serviceaccount` de **chaque** conteneur. Un
@@ -1299,11 +1299,12 @@ Aucun pod de ce dépôt n'en a l'usage — vérifié plutôt que supposé :
 
 Le champ est posé au niveau du **pod spec** (`spec.template.spec`, et
 `spec.jobTemplate.spec.template.spec` pour les CronJob), pas sur le
-ServiceAccount `default` que ce dépôt ne gère pas. Les dix objets concernés :
+ServiceAccount `default` que ce dépôt ne gère pas. Les douze objets concernés :
 `backend`, `worker`, `frontend`, `postgres`, `rabbitmq`, `adminer`, les
-CronJob `watch-refresh` et `contact-failed-messages-purge`, **et les deux Jobs
-hors kustomize** `migrate-job.yaml` / `seed-job.yaml` — ces derniers ne passent
-par aucun transformateur, ils ont donc été modifiés directement.
+CronJob `watch-refresh` et `contact-failed-messages-purge`, **et les quatre Jobs
+hors kustomize** `migrate-job.yaml`, `seed-job.yaml`, `create-user-job.yaml`
+(issue #386) et `messenger-probe-job.yaml` (issue #470) — ces derniers ne
+passent par aucun transformateur, ils portent donc le champ directement.
 
 ### Labels Pod Security Admission sur les deux namespaces
 
@@ -1372,11 +1373,12 @@ coupées : quelques requêtes peuvent répondre 500 pendant la reprise.
 Dans l'ordre, avec un kubeconfig **d'administrateur**, sur la préprod, **avant**
 de fusionner la release :
 
-1. **Hors ligne.** Le rendu doit passer et les dix pod specs porter le champ :
+1. **Hors ligne.** Le rendu doit passer et les douze pod specs porter le champ :
    ```bash
    kubectl kustomize k8s/overlays/preprod >/dev/null && echo rendu-ok
    kubectl kustomize k8s/overlays/preprod | grep -c 'automountServiceAccountToken: false'   # 8 attendu
-   grep -c 'automountServiceAccountToken: false' k8s/base/migrate-job.yaml k8s/base/seed-job.yaml
+   grep -c 'automountServiceAccountToken: false' k8s/base/migrate-job.yaml k8s/base/seed-job.yaml \
+     k8s/base/create-user-job.yaml k8s/base/messenger-probe-job.yaml
    ```
 2. **Lire les avertissements sans rien bloquer.** Poser d'abord `audit` et
    `warn` seuls. Au moment où un label PSA est posé ou modifié, l'API évalue
