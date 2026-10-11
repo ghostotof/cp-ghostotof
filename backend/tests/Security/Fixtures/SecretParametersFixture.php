@@ -56,8 +56,10 @@ final class SecretParametersFixture implements SecretParametersFixtureInterface
         string $basicAuth,
         string $databaseUrl,
         string $db_url,
+        string $amqpUrl,
+        string $redisUrl,
     ): array {
-        return [$xsrf, $credentials, $authorization, $dsn, $privateKey, $signingKey, $hmacKey, $cookie, $signature, $nonce, $basicAuth, $databaseUrl, $db_url];
+        return [$xsrf, $credentials, $authorization, $dsn, $privateKey, $signingKey, $hmacKey, $cookie, $signature, $nonce, $basicAuth, $databaseUrl, $db_url, $amqpUrl, $redisUrl];
     }
 
     /**

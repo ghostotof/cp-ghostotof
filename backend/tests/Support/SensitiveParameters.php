@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Tests\Support;
 
 use ReflectionClass;
-use ReflectionMethod;
 use ReflectionNamedType;
 use ReflectionParameter;
 use ReflectionType;
@@ -29,10 +28,8 @@ use SensitiveParameter;
  * dans une interface ou une classe mère `App\…` de sa classe : une
  * implémentation qui renomme `$clearToken` en `$value` reçoit le même secret,
  * et l'attribut posé sur l'interface ne cache rien à l'exécution (revue de
- * #414). Ni un constructeur de classe mère ni une méthode privée ne sont des
- * prototypes : PHP n'impose rien entre leur signature et celle de la fille
- * (issue #428) ; le constructeur d'une interface, ou abstrait, en est un.
- * La méthode d'un trait utilisé est vue dans chaque classe qui
+ * #414). Une méthode privée de la mère n'est pas un prototype : elle n'est
+ * pas héritée (issue #428). La méthode d'un trait utilisé est vue dans chaque classe qui
  * l'utilise, celle d'un trait sans utilisateur pour elle-même (issue #421).
  */
 final class SensitiveParameters
@@ -40,9 +37,10 @@ final class SensitiveParameters
     /**
      * `hashed` (sauf `unhashed`) qui qualifie le mot suivant — une majuscule
      * ou `_` après lui : `$hashedPassword`, `$newHashedToken`, `$HASHED_TOKEN`
-     * —, ou `hash` en fin de nom (sauf `toHash`). Un `hashed` final dit au
-     * contraire que la valeur ne l'est pas encore : `$secretToBeHashed`
-     * (issue #428).
+     * —, ou `hash` en fin de nom (sauf `toHash`). Un `hashed` final reste
+     * vu : `$secretToBeHashed` n'est pas haché, et `$tokenHashed`, qui le
+     * serait, se renomme `$tokenHash` — un faux positif se voit, un faux
+     * négatif non (issue #428).
      */
     private const string HASHED = '/(?i:(?<!un)hashed)(?=[A-Z_])|(?i:(?<!to)hash)\z/';
 
@@ -140,7 +138,13 @@ final class SensitiveParameters
                 continue;
             }
             $declaration = $ancestor->getMethod($method);
-            if (!self::isAPrototype($ancestor, $declaration)) {
+            // Une méthode privée n'est pas héritée : son homonyme dans la
+            // fille ne reçoit rien d'elle. Un constructeur de classe mère
+            // reste un prototype, bien que PHP n'impose rien entre leurs
+            // signatures : une fille qui reçoit le secret sous un autre nom
+            // pour le passer à parent::__construct() serait sinon invisible,
+            // et un faux négatif ne se voit pas (revue de #428).
+            if ($declaration->isPrivate()) {
                 continue;
             }
             $prototype = $declaration->getParameters()[$parameter->getPosition()] ?? null;
@@ -150,22 +154,6 @@ final class SensitiveParameters
         }
 
         return false;
-    }
-
-    /**
-     * Une méthode privée n'est pas héritée, et un constructeur concret de
-     * classe mère n'impose rien au constructeur de la fille : leurs
-     * paramètres de même position n'ont rien en commun.
-     *
-     * @param ReflectionClass<object> $ancestor
-     */
-    private static function isAPrototype(ReflectionClass $ancestor, ReflectionMethod $declaration): bool
-    {
-        if ($declaration->isPrivate()) {
-            return false;
-        }
-
-        return !$declaration->isConstructor() || $ancestor->isInterface() || $declaration->isAbstract();
     }
 
     /**

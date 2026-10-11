@@ -13,7 +13,8 @@ final class SecretParametersChildFixture extends SecretParametersParentFixture
 {
     public function __construct(string $title)
     {
-        parent::__construct($title);
+        // Pas une simple délégation : le paramètre n'est pas celui de la mère.
+        parent::__construct('titre : '.$title);
     }
 
     private function sign(string $label): string

@@ -18,6 +18,7 @@ use App\Security\User\Infrastructure\Log\PasswordOptionRedactor;
 use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersEnumFixture;
 use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersOrphanInterfaceFixture;
 use App\Tests\Security\Fixtures\BeyondClasses\SecretParametersOrphanTraitFixture;
+use App\Tests\Security\Fixtures\Prototypes\SecretParametersChildFixture;
 use App\Tests\Security\Fixtures\Prototypes\SecretParametersConstructorInterfaceFixture;
 use App\Tests\Security\Fixtures\Prototypes\SecretParametersImplementedConstructorFixture;
 use App\Tests\Security\Fixtures\Prototypes\SecretParametersParentFixture;
@@ -101,8 +102,8 @@ final class SecretParametersTest extends TestCase
      * Ce qu'un nom de secret contient, quelle que soit la casse : `token`,
      * `clearToken`, `jwt`, `secret`, `apiKey`, `api_key`, `bearer`, `xsrf`,
      * `credentials`, `authorization`, `dsn`, `privateKey`, `signingKey`,
-     * `cookie`, `signature`, `nonce`, `basicAuth`, `databaseUrl` (qui porte
-     * le mot de passe de la base, issue #428)… Jamais `key` seul, qui viserait
+     * `cookie`, `signature`, `nonce`, `basicAuth`, `databaseUrl`, `amqpUrl`…
+     * (une URL de service porte ses identifiants, issue #428). Jamais `key` seul, qui viserait
      * `ResolvesUriVariables::uriVariableString(…, string $key)`.
      *
      * Large exprès, comme le nom de mot de passe de #411 : un faux négatif ne
@@ -112,7 +113,7 @@ final class SecretParametersTest extends TestCase
      * entrée devenue sans objet, sur le modèle de la liste `NOT_AN_INPUT` de
      * {@see \App\Tests\Security\User\PlainPasswordInputsTest}.
      */
-    private const string SECRET_NAME = '/token|jwt|secret|api_?key|bearer|[xc]srf|credential|(?:private|signing|access|encryption|hmac)_?key|authori[sz]ation|dsn|cookie|signature|nonce|basic_?auth|(?:database|db)_?url/i';
+    private const string SECRET_NAME = '/token|jwt|secret|api_?key|bearer|[xc]srf|credential|(?:private|signing|access|encryption|hmac)_?key|authori[sz]ation|dsn|cookie|signature|nonce|basic_?auth|(?:database|db|amqp|broker|redis|mailer|transport|messenger)_?url/i';
 
     /**
      * Les secrets de `src/` que le recensement ne voit pas, cachés à la main.
@@ -209,6 +210,8 @@ final class SecretParametersTest extends TestCase
             $fixture.'::sign($basicAuth)' => false,
             $fixture.'::sign($databaseUrl)' => false,
             $fixture.'::sign($db_url)' => false,
+            $fixture.'::sign($amqpUrl)' => false,
+            $fixture.'::sign($redisUrl)' => false,
             $fixture.'::digest($unhashedToken)' => false,
             $fixture.'::digest($tokenToHash)' => false,
             $fixture.'::digest($hashSecret)' => false,
@@ -255,15 +258,16 @@ final class SecretParametersTest extends TestCase
     }
 
     /**
-     * Un constructeur n'est pas le prototype de celui d'une classe fille, ni
-     * une méthode privée de la mère celui d'une méthode homonyme de la fille :
-     * PHP n'impose rien entre leurs signatures, leurs paramètres de même
-     * position n'ont rien en commun (issue #428). Seuls ceux de la mère sont
-     * vus. Le constructeur d'une interface, lui, est un prototype.
+     * Une méthode privée de la mère n'est pas le prototype d'une méthode
+     * homonyme de la fille : elle n'est pas héritée (issue #428). Un
+     * constructeur, si : une fille peut recevoir le secret de la mère sous un
+     * autre nom pour le lui passer. Le `$title` de la fixture est donc vu,
+     * faux positif assumé — il se renommerait.
      */
-    public function testAConstructorOrAPrivateParentMethodIsNoPrototype(): void
+    public function testAPrivateParentMethodIsNoPrototypeButAConstructorIs(): void
     {
         self::assertSame([
+            SecretParametersChildFixture::class.'::__construct($title)',
             SecretParametersConstructorInterfaceFixture::class.'::__construct($secret)',
             SecretParametersImplementedConstructorFixture::class.'::__construct($value)',
             SecretParametersParentFixture::class.'::__construct($secret)',
