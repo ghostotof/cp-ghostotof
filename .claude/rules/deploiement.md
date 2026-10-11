@@ -327,6 +327,15 @@ paths:
   change to those two workloads needs a real preprod rollout with `rollout status` + logs before promotion.
   `seccompProfile: RuntimeDefault` (audit I6) is a syscall filter and touches neither uid nor file modes, but
   the rule stands.
+  **RabbitMQ's own settings live in `k8s/base/rabbitmq.conf`** (issue #477), mounted by `subPath` as
+  `/etc/rabbitmq/conf.d/20-cp-ghostotof.conf` beside the image's `10-defaults.conf` — through the
+  `rabbitmq-conf` `configMapGenerator` (hashed, so a change rolls the broker out, like `backend-nginx-conf`),
+  and bind-mounted from the same file by `docker-compose.yml`. It sets `max_message_size = 1048576`: the
+  default 16 MiB let anyone who can publish make the worker load a message whole before
+  `AuthenticatedEnvelopeSerializer` refuses it (#469); headers are bounded by `frame_max` (128 KiB).
+  `RabbitMqMessageSizeCapTest` keeps the cap above `MAX_ENVELOPE_BYTES` and within four times it, and pins the
+  generator and the mount. **Any change to that file restarts the broker** (`Recreate`): a short outage of
+  `POST /api/contact` and invitations, in the release notes, validated in preprod like any change here.
   **RabbitMQ's probes are `tcpSocket` on 5672, never `rabbitmq-diagnostics`** (issue #295): the CLI
   starts an Erlang node per call, which overran its 10 s timeout under CPU load — during a boot,
   precisely — and the kubelet killed a broker that had been up for 35 s (nine restarts in eight
