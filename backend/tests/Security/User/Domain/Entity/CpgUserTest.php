@@ -141,6 +141,24 @@ final class CpgUserTest extends TestCase
         self::assertTrue($user->isPendingActivation());
     }
 
+    /**
+     * Issue #434 : chaque (re)invitation a son numéro, que porte son message.
+     * Un message dont le numéro est dépassé est périmé, quel que soit
+     * l'instant affiché par l'horloge.
+     */
+    public function testEachInvitationAdvancesTheInvitationGeneration(): void
+    {
+        $user = new CpgUser('jane', '');
+        self::assertSame(0, $user->getInvitationGeneration());
+
+        $user->markInvited(new DateTimeImmutable('2026-09-03 12:00:00'));
+        self::assertSame(1, $user->getInvitationGeneration());
+
+        // Une relance horodatée plus tôt (horloge reculée) avance quand même.
+        $user->markInvited(new DateTimeImmutable('2026-09-03 11:00:00'));
+        self::assertSame(2, $user->getInvitationGeneration());
+    }
+
     public function testMarkActivatedClearsThePendingState(): void
     {
         $user = new CpgUser('jane', 'hashed-password');

@@ -97,7 +97,7 @@ final class BackofficeUserInviteResourceTest extends WebTestCase
         self::assertContains(CpgUser::ROLE_TRUSTED, $body['roles']);
         self::assertArrayNotHasKey('password', $body);
 
-        // Le message ne porte que { userId, locale, invitedAt } (audit C2 / D3, #434) :
+        // Le message ne porte que { userId, locale, invitationGeneration } (audit C2 / D3, #434) :
         // aucun secret, et le jeton est créé côté handler.
         $sent = $this->asyncTransport()->getSent();
         self::assertCount(1, $sent);

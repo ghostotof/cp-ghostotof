@@ -4,37 +4,34 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\User\Infrastructure\Messenger;
 
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Security\User\Application\CpgUserInviterInterface;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\AccountInvitationDeliveryException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
-use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler;
-use Closure;
-use DateTimeImmutable;
-use Doctrine\ORM\EntityManagerInterface;
+use App\Tests\Support\RunsInvitationHandlerOnTestDatabase;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
 use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
-use Symfony\Component\Clock\MockClock;
-use Symfony\Component\Mailer\Envelope;
-use Symfony\Component\Mailer\MailerInterface;
+use Symfony\Component\Mailer\Exception\TransportException;
+use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 use Symfony\Component\Mime\RawMessage;
+use Symfony\Component\Uid\Uuid;
 
 /**
- * Issue #434 : un message d'invitation antérieur à la dernière (re)invitation
- * du compte — un réessai différé, ou un message rejoué à la main depuis le
+ * Issue #434 : un message d'invitation d'une génération dépassée — un
+ * réessai différé, ou un message rejoué à la main depuis le
  * `failure_transport` des jours plus tard — ne doit pas purger le jeton d'une
- * relance plus récente, déjà remise. Base `_test` réelle : c'est l'état de la
- * table qui est vérifié.
+ * relance plus récente, déjà remise. Les messages sont ceux que publie le vrai
+ * CpgUserInviter, sur la base `_test` réelle.
  */
 final class SendAccountInvitationStaleMessageTest extends KernelTestCase
 {
-    private const string FIRST_INVITATION = '2026-10-11 09:00:00';
-    private const string REINVITATION = '2026-10-11 09:05:00';
-
-    private EntityManagerInterface $em;
+    use RunsInvitationHandlerOnTestDatabase;
 
     /** @var list<RawMessage> */
     private array $sentEmails = [];
@@ -44,38 +41,45 @@ final class SendAccountInvitationStaleMessageTest extends KernelTestCase
     protected function setUp(): void
     {
         self::bootKernel();
-        $this->em = self::getContainer()->get(EntityManagerInterface::class);
         $this->logs = new TestHandler();
-
-        $this->purge();
+        $this->purgeInvitationTables();
     }
 
     protected function tearDown(): void
     {
-        $this->purge();
+        $this->purgeInvitationTables();
         parent::tearDown();
     }
 
     /**
-     * Le scénario de l'issue : M1 échoue et part en réessai, l'admin relance,
-     * M2 passe avant le réessai de M1 et son lien arrive. Le réessai de M1 ne
-     * touche plus à rien.
+     * Le scénario de l'issue :
+     *  1. M1 (invitation) échoue, son réessai attend ;
+     *  2. l'admin relance, M2 passe avant le réessai : le jeton TB part ;
+     *  3. le réessai de M1 ne touche plus à rien.
      */
-    public function testAMessageOlderThanTheLastInvitationLeavesTheCurrentTokenInPlace(): void
+    public function testARetryOfAnEarlierInvitationLeavesTheResendsTokenInPlace(): void
     {
-        $user = $this->pendingUser(self::FIRST_INVITATION);
-        $firstMessage = $this->messageFor($user);
+        $firstMessage = $this->invite('newcomer@example.com');
+        try {
+            $this->invitationHandler($this->mailerThat(static fn (): never => throw new TransportException('Connexion impossible')))($firstMessage);
+            self::fail('AccountInvitationDeliveryException aurait dû être levée.');
+        } catch (AccountInvitationDeliveryException) {
+            // Étape 1 : le worker reprogramme M1.
+        }
 
-        $this->reinvite($user, self::REINVITATION);
-        $this->handler()($this->messageFor($user));
-        $currentTokenHashes = $this->tokenHashesOf($user);
-        self::assertCount(1, $currentTokenHashes);
+        $user = $this->reloaded($firstMessage);
+        // En deux temps : handler() vide l'EntityManager, et PHP l'évaluerait
+        // avant reinvite(), qui sauvegarderait alors un compte détaché.
+        $resend = $this->reinvite($user);
+        $this->handler()($resend);
+        $resendTokenHashes = $this->tokenHashesOf($user);
+        self::assertCount(1, $resendTokenHashes);
         self::assertSame(1, $this->sentEmailCount());
 
         $this->handler()($firstMessage);
 
-        self::assertSame($currentTokenHashes, $this->tokenHashesOf($user), 'Le message périmé a remplacé le jeton de la relance.');
-        self::assertSame(1, $this->sentEmailCount(), 'Le message périmé a envoyé un second e-mail.');
+        self::assertSame($resendTokenHashes, $this->tokenHashesOf($user), 'Le réessai périmé a remplacé le jeton de la relance.');
+        self::assertSame(1, $this->sentEmailCount(), 'Le réessai périmé a envoyé un second e-mail.');
         self::assertTrue($this->logs->hasRecordThatPasses(
             static fn (LogRecord $record): bool => str_starts_with($record->message, 'Invitation ignorée')
                 && ['userId' => $user->getId()->toRfc4122()] === $record->context,
@@ -84,28 +88,47 @@ final class SendAccountInvitationStaleMessageTest extends KernelTestCase
     }
 
     /**
-     * La colonne `invited_at` est à la seconde : un message de la même seconde
-     * que la dernière invitation est celui de cette invitation.
+     * L'instant ne compte pas, seule la génération : deux relances dans la
+     * même seconde (un double clic sur « Renvoyer ») se distinguent.
      */
-    public function testAMessageOfTheLastInvitationIsProcessed(): void
+    public function testTheEarlierOfTwoResendsInTheSameSecondIsStale(): void
     {
-        $user = $this->pendingUser(self::FIRST_INVITATION);
+        $first = $this->reinvite($this->reloaded($this->invite('newcomer@example.com')));
+        $second = $this->reinvite($this->reloaded($first));
 
-        $this->handler()($this->messageFor($user));
+        $this->handler()($second);
+        $this->handler()($first);
 
-        self::assertCount(1, $this->tokenHashesOf($user));
+        $user = $this->reloaded($second);
         self::assertSame(1, $this->sentEmailCount());
+        self::assertCount(1, $this->tokenHashesOf($user));
     }
 
     /**
-     * Un message mis en file avant #434 ne porte pas `invitedAt` : il reste
+     * Un message d'avance sur la base (la relance n'est pas encore commitée
+     * quand le worker le lit) est traité : le dernier message ne se perd
+     * jamais.
+     */
+    public function testAMessageAheadOfTheStoredGenerationIsProcessed(): void
+    {
+        $user = $this->pendingUser('newcomer', 'newcomer@example.com');
+        $ahead = new SendAccountInvitationMessage($user->getId()->toRfc4122(), 'fr', $user->getInvitationGeneration() + 1);
+
+        $this->handler()($ahead);
+
+        self::assertSame(1, $this->sentEmailCount());
+        self::assertCount(1, $this->tokenHashesOf($user));
+    }
+
+    /**
+     * Un message mis en file avant #434 ne porte pas de génération : il reste
      * traité comme avant, plutôt que de planter le worker à la lecture de la
      * propriété. Forme sérialisée littérale, celle que PhpSerializer a écrite
      * dans RabbitMQ ou le `failure_transport`.
      */
-    public function testAMessageQueuedBeforeTheInvitationInstantExistedIsStillProcessed(): void
+    public function testAMessageQueuedBeforeTheGenerationExistedIsStillProcessed(): void
     {
-        $user = $this->pendingUser(self::FIRST_INVITATION);
+        $user = $this->pendingUser('newcomer', 'newcomer@example.com');
         $userId = $user->getId()->toRfc4122();
         $legacy = unserialize(\sprintf(
             'O:%d:"%s":2:{s:6:"userId";s:%d:"%s";s:6:"locale";s:2:"fr";}',
@@ -115,37 +138,60 @@ final class SendAccountInvitationStaleMessageTest extends KernelTestCase
             $userId,
         ));
         self::assertInstanceOf(SendAccountInvitationMessage::class, $legacy);
-        self::assertNull($legacy->invitedAt);
 
         $this->handler()($legacy);
 
-        self::assertCount(1, $this->tokenHashesOf($user));
         self::assertSame(1, $this->sentEmailCount());
+        self::assertCount(1, $this->tokenHashesOf($user));
     }
 
-    private function messageFor(CpgUser $user): SendAccountInvitationMessage
+    private function invite(string $email): SendAccountInvitationMessage
     {
-        $invitedAt = $user->getInvitedAt();
-        self::assertNotNull($invitedAt);
+        self::getContainer()->get(CpgUserInviterInterface::class)->invite($email, Locale::FR);
 
-        return new SendAccountInvitationMessage($user->getId()->toRfc4122(), 'fr', $invitedAt->getTimestamp());
+        return $this->lastPublishedInvitation();
+    }
+
+    private function reinvite(CpgUser $user): SendAccountInvitationMessage
+    {
+        self::getContainer()->get(CpgUserInviterInterface::class)->reinvite($user, Locale::FR);
+
+        return $this->lastPublishedInvitation();
+    }
+
+    private function lastPublishedInvitation(): SendAccountInvitationMessage
+    {
+        $transport = self::getContainer()->get('messenger.transport.async');
+        self::assertInstanceOf(InMemoryTransport::class, $transport);
+        $envelopes = $transport->getSent();
+        self::assertNotEmpty($envelopes, 'Aucun message d\'invitation publié.');
+        $message = end($envelopes)->getMessage();
+        self::assertInstanceOf(SendAccountInvitationMessage::class, $message);
+
+        return $message;
+    }
+
+    /**
+     * Le worker relit le compte en base, jamais l'instance du dispatch.
+     */
+    private function reloaded(SendAccountInvitationMessage $message): CpgUser
+    {
+        $this->entityManager()->clear();
+        $user = self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneById(Uuid::fromString($message->userId));
+        self::assertNotNull($user);
+
+        return $user;
     }
 
     private function handler(): SendAccountInvitationHandler
     {
-        $container = self::getContainer();
-        // Le worker relit le compte en base, jamais l'instance du dispatch.
-        $this->em->clear();
+        $this->entityManager()->clear();
 
-        return new SendAccountInvitationHandler(
-            $this->recordingMailer(),
-            $container->get(CpgUserRepositoryInterface::class),
-            $container->get(PasswordSetupTokenRepositoryInterface::class),
-            $this->em,
-            new MockClock(self::REINVITATION),
+        return $this->invitationHandler(
+            $this->mailerThat(function (RawMessage $message): void {
+                $this->sentEmails[] = $message;
+            }),
             new Logger('test', [$this->logs]),
-            'noreply@cp-ghostotof.com',
-            'https://front.test',
         );
     }
 
@@ -157,68 +203,4 @@ final class SendAccountInvitationStaleMessageTest extends KernelTestCase
     {
         return \count($this->sentEmails);
     }
-
-    private function recordingMailer(): MailerInterface
-    {
-        return new readonly class(function (RawMessage $message): void {
-            $this->sentEmails[] = $message;
-        }) implements MailerInterface {
-            /**
-             * @param Closure(RawMessage): void $send
-             */
-            public function __construct(private Closure $send)
-            {
-            }
-
-            public function send(RawMessage $message, ?Envelope $envelope = null): void
-            {
-                ($this->send)($message);
-            }
-        };
-    }
-
-    private function pendingUser(string $invitedAt): CpgUser
-    {
-        $user = new CpgUser('newcomer', '');
-        $user->setEmail('newcomer@example.com');
-        $user->markInvited(new DateTimeImmutable($invitedAt));
-        $this->em->persist($user);
-        $this->em->flush();
-
-        return $user;
-    }
-
-    /**
-     * Ce que fait CpgUserInviter::reinvite() avant de dispatcher.
-     */
-    private function reinvite(CpgUser $user, string $at): void
-    {
-        $reloaded = $this->em->find(CpgUser::class, $user->getId());
-        self::assertNotNull($reloaded);
-        $reloaded->markInvited(new DateTimeImmutable($at));
-        $this->em->flush();
-        $user->markInvited(new DateTimeImmutable($at));
-    }
-
-    /**
-     * Lu en SQL, hors de l'EntityManager : ce que la base garde vraiment.
-     *
-     * @return list<string>
-     */
-    private function tokenHashesOf(CpgUser $user): array
-    {
-        /** @var list<string> */
-        return $this->em->getConnection()->fetchFirstColumn(
-            'SELECT token_hash FROM password_setup_token WHERE user_id = :user',
-            ['user' => $user->getId()->toRfc4122()],
-        );
-    }
-
-    private function purge(): void
-    {
-        $this->em->getConnection()->executeStatement('DELETE FROM password_setup_token');
-        $this->em->getConnection()->executeStatement('DELETE FROM cpg_user');
-        $this->em->clear();
-    }
 }
-

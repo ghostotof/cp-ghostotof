@@ -46,6 +46,23 @@ survives `cache:clear` after a DTO's `id` type changes — `rm -rf var/cache/<en
 bind-mount desync (`docker compose restart backend`) can make a container run a stale Provider/Processor
 mid-migration.
 
+**Every entity timestamp is stored with its offset** (issue #434): `#[ORM\Column(type:
+Types::DATETIMETZ_IMMUTABLE)]` (`datetimetz` for a mutable object), PostgreSQL `TIMESTAMP(0) WITH TIME
+ZONE` — never `datetime` nor `datetime_immutable`, the type Doctrine infers from a bare
+`DateTimeImmutable` property. Those store the wall time of PHP's zone (`date.timezone = Europe/Paris`)
+with no offset: the hour repeated when the clocks go back is read back one hour late (measured: an
+invitation of 2026-10-25 02:30 CEST came back at 02:30 CET, +3600 s), and a value compared with a
+column that has a zone is read in the PostgreSQL session's zone, **UTC**. Likewise a query parameter
+compared with such a column is typed `Types::DATETIMETZ_IMMUTABLE` (`findAwaitingPasswordSetupInvitedBefore`'s
+threshold, `claim()`'s `usedAt`): typed `DATETIME_IMMUTABLE`, Paris wall time would be read as UTC, two
+hours off all year. A calendar day without a time (`Incident::$occurredAt`, `date_immutable`) has no
+zone and stays a `DATE`. A value read back is in the session's zone (UTC): compare instants
+(`getTimestamp()`), never `format('Y-m-d H:i:s')`, and convert before displaying a wall time
+(`WatchProvider::utc()`). `tests/Shared/Infrastructure/Doctrine/TimestampColumnsCarryTheirOffsetTest.php`
+walks every entity's metadata and fails on any `datetime`, `datetime_immutable`, `time` or
+`time_immutable` field. Migration `Version20261011120000` converted the five existing timestamps with
+`AT TIME ZONE 'Europe/Paris'`. Messenger's own tables are not entities and stay as the vendor made them.
+
 **`src/` never instantiates a bare `\Exception`, `\LogicException`, `\RuntimeException` or
 `\InvalidArgumentException`** (issues #338, #383).
 Every failure gets its own class: a client error implements `ProblemExceptionInterface` (see

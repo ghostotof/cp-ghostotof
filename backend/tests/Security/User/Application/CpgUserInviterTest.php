@@ -25,7 +25,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
 /**
  * Depuis l'audit C2 (décision D3), CpgUserInviter ne crée plus de jeton : il
  * crée / marque le compte en attente d'activation et publie
- * SendAccountInvitationMessage { userId, locale, invitedAt }. La création du
+ * SendAccountInvitationMessage { userId, locale, invitationGeneration }. La création du
  * PasswordSetupToken et l'envoi de l'e-mail sont couverts par
  * SendAccountInvitationHandlerTest.
  */
@@ -87,8 +87,8 @@ final class CpgUserInviterTest extends TestCase
         // rejouable sans dépendre de la sérialisation d'un objet.
         self::assertSame($user->getId()->toRfc4122(), $dispatched->userId);
         self::assertSame('fr', $dispatched->locale);
-        // L'instant de l'invitation qu'il sert (issue #434), à la seconde.
-        self::assertSame($clock->now()->getTimestamp(), $dispatched->invitedAt);
+        // La génération de l'invitation qu'il sert (issue #434) : la première.
+        self::assertSame(1, $dispatched->invitationGeneration);
     }
 
     public function testInviteRejectsAnAlreadyUsedEmailWithoutCreatingAnything(): void
@@ -185,8 +185,9 @@ final class CpgUserInviterTest extends TestCase
         self::assertInstanceOf(SendAccountInvitationMessage::class, $dispatched);
         self::assertSame($user->getId()->toRfc4122(), $dispatched->userId);
         self::assertSame('en', $dispatched->locale);
-        // L'instant de la relance, pas celui de la première invitation (#434).
-        self::assertSame($clock->now()->getTimestamp(), $dispatched->invitedAt);
+        // La génération de la relance, pas celle de l'invitation (#434) :
+        // invité une fois, relancé une fois.
+        self::assertSame(2, $dispatched->invitationGeneration);
     }
 
     public function testReinviteRejectsAnAlreadyActivatedAccount(): void

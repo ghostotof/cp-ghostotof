@@ -167,7 +167,9 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
 
         $this->em->clear();
         $reloaded = $this->repository->findOneByTokenHash($hash);
-        self::assertSame('2026-10-05 12:00:00', $reloaded?->getUsedAt()?->format('Y-m-d H:i:s'));
+        // L'instant, pas l'heure murale : la colonne est avec fuseau (#434) et
+        // PostgreSQL le rend dans le fuseau de sa session.
+        self::assertSame((new DateTimeImmutable('2026-10-05 12:00:00'))->getTimestamp(), $reloaded?->getUsedAt()?->getTimestamp());
     }
 
     /**

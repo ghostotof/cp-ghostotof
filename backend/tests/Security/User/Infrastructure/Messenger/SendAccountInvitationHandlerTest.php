@@ -48,7 +48,7 @@ use Twig\Source;
  * Périmètre du handler depuis l'audit C2 (décision D3) : c'est lui qui
  * (re)crée l'unique PasswordSetupToken du compte, dans une transaction, puis
  * envoie l'e-mail. Le message d'entrée ne porte que { userId, locale,
- * invitedAt } (issue #434 pour le dernier).
+ * invitationGeneration } (issue #434 pour le dernier).
  */
 final class SendAccountInvitationHandlerTest extends TestCase
 {
@@ -58,8 +58,6 @@ final class SendAccountInvitationHandlerTest extends TestCase
     private const string FRONTEND_BASE_URL = 'https://front.test';
     /** Le message transporte l'identifiant en chaîne RFC 4122 (spec 0003 D7). */
     private const string USER_ID = '01998b2e-2d2c-73f4-9f39-8f5b0c1f0a11';
-    /** Dernière invitation du compte bouchonné, celle que sert le message (issue #434). */
-    private const string INVITED_AT = '2026-09-03 11:00:00';
 
     public function testItCreatesAFreshTokenAndSendsALocalisedInvitationEmail(): void
     {
@@ -511,14 +509,15 @@ final class SendAccountInvitationHandlerTest extends TestCase
 
     private static function invitationMessage(string $locale): SendAccountInvitationMessage
     {
-        return new SendAccountInvitationMessage(self::USER_ID, $locale, (new DateTimeImmutable(self::INVITED_AT))->getTimestamp());
+        // pendingUser() invite une fois : première génération (issue #434).
+        return new SendAccountInvitationMessage(self::USER_ID, $locale, 1);
     }
 
     private function pendingUser(string $username, string $email): CpgUser
     {
         $user = new CpgUser($username, '');
         $user->setEmail($email);
-        $user->markInvited(new DateTimeImmutable(self::INVITED_AT));
+        $user->markInvited(new DateTimeImmutable('2026-09-03 11:00:00'));
 
         // L'identité du compte rechargé n'a pas à correspondre à celle du
         // message : le dépôt est bouchonné, c'est lui qui décide ce qu'il rend.

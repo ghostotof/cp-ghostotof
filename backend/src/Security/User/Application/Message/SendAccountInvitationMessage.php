@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Security\User\Application\Message;
 
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Symfony\Component\Uid\Uuid;
+
 /**
  * Commande Messenger : demande d'envoi de l'e-mail d'invitation à définir son
  * mot de passe. Dispatchée par {@see \App\Security\User\Application\CpgUserInviter},
@@ -14,19 +17,19 @@ namespace App\Security\User\Application\Message;
  * message sérialisé dans RabbitMQ, ou parqué dans le failure_transport, doit
  * rester lisible et rejouable sans dépendre de la sérialisation d'un objet.
  *
- * Point d'audit C2 (décision D3) : le message ne transporte QUE l'identifiant
- * du compte et la langue — aucun secret. Le handler recharge le compte, crée
- * le PasswordSetupToken (dans une transaction) et n'a donc besoin ni de
- * l'e-mail, ni du nom d'utilisateur, ni surtout du jeton en clair. Un message
- * routé vers le failure_transport (SMTP indisponible…) ne révèle ainsi rien
- * d'exploitable si la base des messages échoués venait à fuiter.
+ * Point d'audit C2 (décision D3) : le message ne transporte aucun secret —
+ * l'identifiant du compte, la langue et la génération d'invitation, rien
+ * d'autre. Le handler recharge le compte, crée le PasswordSetupToken (dans
+ * une transaction) et n'a donc besoin ni de l'e-mail, ni du nom
+ * d'utilisateur, ni surtout du jeton en clair. Un message routé vers le
+ * failure_transport (SMTP indisponible…) ne révèle ainsi rien d'exploitable si
+ * la base des messages échoués venait à fuiter.
  *
- * Issue #434 : il porte aussi l'instant de l'invitation qu'il sert, en
- * secondes Unix — la précision de la colonne `invited_at`. Un message plus
- * ancien que la dernière (re)invitation du compte (réessai différé, message
- * rejoué depuis le failure_transport) est écarté par le handler au lieu de
- * purger le jeton d'une relance déjà remise. Cet instant n'est pas un secret :
- * l'invariant ci-dessus tient.
+ * Issue #434 : la génération est le numéro de l'invitation que sert le
+ * message ({@see \App\Security\User\Domain\Entity\CpgUser::getInvitationGeneration()}).
+ * Un message d'une génération dépassée (réessai différé, rejeu du
+ * failure_transport) est écarté par le handler au lieu de purger le jeton
+ * d'une relance déjà remise. Ce numéro n'est pas un secret.
  */
 final readonly class SendAccountInvitationMessage
 {
@@ -34,21 +37,35 @@ final readonly class SendAccountInvitationMessage
      * `null` pour un message mis en file avant l'issue #434 (cf.
      * __unserialize()) : le constructeur, lui, l'exige toujours.
      */
-    public ?int $invitedAt;
+    public ?int $invitationGeneration;
 
     public function __construct(
         public string $userId,
         public string $locale,
-        int $invitedAt,
+        int $invitationGeneration,
     ) {
-        $this->invitedAt = $invitedAt;
+        $this->invitationGeneration = $invitationGeneration;
     }
 
     /**
-     * PhpSerializer (le sérialiseur de Messenger) ne repasse pas par le
-     * constructeur : sans cette méthode, un message sérialisé avant l'issue
-     * #434 laisserait `invitedAt` non initialisée, et sa lecture planterait
-     * le worker. Il est traité comme avant, sans contrôle d'ancienneté.
+     * Vrai si une invitation plus récente que celle de ce message a été
+     * envoyée au compte. Un message d'avance sur la génération lue (relance
+     * pas encore commitée quand le worker le lit) ne précède rien : le
+     * dernier message ne se perd jamais. Un message d'avant #434 non plus,
+     * faute de génération : il est traité comme avant.
+     */
+    public function predates(int $accountInvitationGeneration): bool
+    {
+        return null !== $this->invitationGeneration && $this->invitationGeneration < $accountInvitationGeneration;
+    }
+
+    /**
+     * {@see \Symfony\Component\Messenger\Transport\Serialization\PhpSerializer}
+     * ne repasse pas par le constructeur : sans cette méthode, un message
+     * sérialisé avant l'issue #434 laisserait `invitationGeneration` non
+     * initialisée, et sa lecture planterait le worker. La forme est vérifiée
+     * au passage, pour qu'un message altéré soit refusé au décodage plutôt
+     * qu'au fil des réessais du handler.
      *
      * @param array<string, mixed> $data
      */
@@ -56,13 +73,15 @@ final readonly class SendAccountInvitationMessage
     {
         $userId = $data['userId'] ?? null;
         $locale = $data['locale'] ?? null;
-        $invitedAt = $data['invitedAt'] ?? null;
-        if (!\is_string($userId) || !\is_string($locale) || (null !== $invitedAt && !\is_int($invitedAt))) {
+        $invitationGeneration = $data['invitationGeneration'] ?? null;
+        if (!\is_string($userId) || !Uuid::isValid($userId)
+            || !\is_string($locale) || null === Locale::tryFrom($locale)
+            || (null !== $invitationGeneration && !\is_int($invitationGeneration))) {
             throw MalformedAccountInvitationMessageException::fromSerializedData();
         }
 
         $this->userId = $userId;
         $this->locale = $locale;
-        $this->invitedAt = $invitedAt;
+        $this->invitationGeneration = $invitationGeneration;
     }
 }

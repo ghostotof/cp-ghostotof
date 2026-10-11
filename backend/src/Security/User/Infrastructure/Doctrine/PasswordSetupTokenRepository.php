@@ -75,7 +75,7 @@ class PasswordSetupTokenRepository extends ServiceEntityRepository implements Pa
             ->set('token.usedAt', ':usedAt')
             ->where('token.id = :id')
             ->andWhere('token.usedAt IS NULL')
-            ->setParameter('usedAt', $usedAt, Types::DATETIME_IMMUTABLE)
+            ->setParameter('usedAt', $usedAt, Types::DATETIMETZ_IMMUTABLE)
             ->setParameter('id', $token->getId(), UuidType::NAME)
             ->getQuery()
             ->execute();
