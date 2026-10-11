@@ -812,6 +812,12 @@ elle reste refusée et part avec la purge des 30 jours). Ordre, en période calm
 2. Publier la nouvelle version dans Secret Manager, puis
    `kubectl annotate externalsecret backend-secrets -n $NS force-sync=$(date +%s) --overwrite`.
 3. Redémarrer ensemble : `kubectl rollout restart deployment/backend deployment/worker -n $NS`.
+4. Relancer `messenger:stop-workers` depuis un Job (même modèle) : le cache en base (`cache_items`)
+   est signé sous une clé dérivée du secret (issue #468), et la ligne du signal de redémarrage,
+   sans expiration, serait sinon refusée à chaque tour du worker, un `warning` par tour. La
+   commande la réécrit sous la nouvelle clé. Le reste du cache se perd et se reconstruit : les
+   compteurs des limiteurs repartent de zéro, y compris à chaque alternance d'anciens et de
+   nouveaux pods pendant le redémarrage.
 
 **Perte acceptée** : entre l'étape 2 et la fin des deux redémarrages (le backend en `RollingUpdate`,
 le worker en `Recreate`), un ancien pod d'API peut encore mettre en file un message signé avec

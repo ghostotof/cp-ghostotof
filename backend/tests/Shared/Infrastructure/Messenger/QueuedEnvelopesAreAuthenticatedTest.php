@@ -7,7 +7,7 @@ namespace App\Tests\Shared\Infrastructure\Messenger;
 use App\Contact\Application\Message\SendContactMessageMessage;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Shared\Infrastructure\Messenger\AuthenticatedEnvelopeSerializer;
-use App\Tests\Shared\Infrastructure\Messenger\Fixtures\Probe\UnserializationProbe;
+use App\Tests\Support\UnserializationProbe;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use stdClass;

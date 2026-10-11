@@ -2,12 +2,13 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Shared\Infrastructure\Messenger\Fixtures\Probe;
+namespace App\Tests\Support;
 
 /**
- * Sonde d'injection d'objet (issue #444) : compte ses désérialisations. Un
- * gadget réel exécuterait du code à cet endroit ; aucune enveloppe non
- * authentifiée ne doit l'atteindre.
+ * Sonde d'injection d'objet : compte ses désérialisations. Un gadget réel
+ * exécuterait du code à cet endroit ; aucune enveloppe Messenger (issue #444)
+ * ni aucune valeur de cache en base (issue #468) non authentifiée ne doit
+ * l'atteindre.
  */
 final class UnserializationProbe
 {

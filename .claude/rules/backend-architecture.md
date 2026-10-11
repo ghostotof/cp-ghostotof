@@ -142,13 +142,37 @@ authenticated message can be replayed by whoever writes into the queue (no nonce
 current generation replayed kills the link already received); **rotating `APP_SECRET` invalidates every
 queued message** (order in `k8s/README.md`).
 
+**Every value of a database cache pool is authenticated before anything unserializes it** (issue #468,
+ADR 0005 D8). `cache_items` is read back by `DefaultMarshaller`, `unserialize()` with every class allowed:
+whoever writes into the table (Adminer, an SQL injection, the database credentials) had an object
+injection into the API (rate limiters) and the worker (Messenger's restart signal). The envelope MAC above
+never covered it. `Shared/Infrastructure/Cache/AuthenticatedCacheMarshaller` decorates
+`cache.default_marshaller` (`#[AsDecorator]`): a binary HMAC-SHA256 (32 bytes, key from `SecretKeyDerivation`,
+context `cp-ghostotof/cache-value/v1`) prefixes each value, and a wrong or missing MAC throws
+`CacheValueMacRefusedException`, which the adapter turns into a cache miss logged `warning`. The decoration
+reaches every adapter given `cache.default_marshaller` (filesystem, APCu, Redis, Memcached and PDO too):
+today, only the Doctrine DBAL pools; `cache.system` (PhpFilesAdapter) does not use it. **The key is derived
+on first use, never in the constructor**: the `docker build` warm-up (`cache:clear`, empty `APP_SECRET`)
+builds the service through the EntityManager, and an eager derivation failed it behind the Dockerfile's
+`|| true` (caught in review). Measured: ≈ 2 µs per round trip. **A value signed under another key is
+refused**: the deployment of #468, an `APP_SECRET` rotation or a new context drop the database cache, and
+during the rollout old and new pods keep refusing and overwriting each other's values, so limiter counters
+restart at each alternation. Say so in the release notes. A refused row is never deleted:
+`Version20261011140000` empties `cache_items` once, and after an `APP_SECRET` rotation
+`messenger:stop-workers` (from a Job) rewrites the restart signal, which never expires. Accepted limit: the
+MAC covers neither the row's key nor its pool, so a signed value can be copied across keys and pools or
+replayed: a limiter counter rolled back, or an array on the restart-signal row that stops the worker on
+every loop. That is a denial of service by someone who can already rewrite every row, never code
+execution. `AuthenticatedCacheMarshallerTest` and `CacheItemsAreAuthenticatedTest` (a real tampered row;
+every database pool found through `cache.global_clearer` must carry the marshaller) pin it.
+
 **`APP_SECRET` never keys an HMAC directly: each use derives its own key** (issue #455).
 `Shared/Infrastructure/Security/SecretKeyDerivation::derive($secret, $context)` is HKDF-SHA256 (RFC 5869,
 32 bytes, an empty secret refused with `EmptyApplicationSecretException`), and each class receiving
 `kernel.secret` declares a versioned `KEY_CONTEXT` (`cp-ghostotof/<use>/v<n>`): the CSRF cookie signer, the
-login-identifier fingerprint, the Messenger envelope MAC (`v2` since #450, see above). Keyed by the raw secret and told apart only in
-the message (a prefix, or nothing), any future feature returning `HMAC(APP_SECRET, x)` for a client-chosen
-`x` would have been a signing oracle for every other use. Changing a context is a targeted rotation. The
+login-identifier fingerprint, the Messenger envelope MAC (`v2` since #450, see above), the database cache
+value MAC (#468). Keyed by the raw secret and told apart only in the message (a prefix, or nothing), any
+future feature returning `HMAC(APP_SECRET, x)` for a client-chosen `x` would have been a signing oracle for every other use. Changing a context is a targeted rotation. The
 switch itself changed every login fingerprint and invalidated the `XSRF-TOKEN` cookies already issued, and
 so does a **rolling update** (two prod replicas, old and new keys for a moment) or a **rollback**: writes,
 `POST /api/logout` included, answer 403 until a new login. Since a refused logout used to leave the UI
