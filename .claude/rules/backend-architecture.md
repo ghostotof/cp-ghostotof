@@ -104,11 +104,17 @@ two censuses, and each guard picks one explicitly**: `classes()` (abstract inclu
 reasons on what is thrown or instantiated (`implementing()` builds on it — `is_subclass_of()` is true of an
 interface extending the type), `classLikes()` for one that reads signatures, attributes or a file's source
 (the secret and password guards, `RegexEndAnchorTest` — the Validator merges an interface's constraints
-into its implementations). Never widen `classes()` silently. **Closures, arrow functions, anonymous
-classes and free functions stay out, an accepted limit** (#421, reasons in `SecretParametersTest`'s
-docblock): reflection cannot reach them without running the code, and a token census by name would miss
-the very case that would justify it — a callback gets its value under its contract's generic name (the
-`$value` of `app:user:create`'s password validator and normalizer). A secret under
+into its implementations). Never widen `classes()` silently. **Closures and arrow functions stay out,
+an accepted limit** (#421, reasons in `SecretParametersTest`'s docblock): reflection cannot reach them
+without running the code, and a token census by name would miss the very case that would justify it — a
+callback gets its value under its contract's generic name (the `$value` of `app:user:create`'s password
+validator and normalizer). **Anonymous classes and free functions are forbidden in `src/`** (issue #432),
+so that the census misses nothing else: name the class (`RedactingDriver`, extracted from
+`DriverErrorRedactionMiddleware::wrap()` for that reason), make the function a method.
+`tests/Shared/NoAnonymousClassNorFreeFunctionTest.php` (`tests/Support/AnonymousClassesAndFreeFunctions`,
+by tokens through `PhpSources`) fails on any `new class` — `readonly` or under an attribute too — and on
+any named `function` whose enclosing brace is not a class-like body, a function declared inside a method
+or a closure included (PHP declares it global when it runs). No exemption list. A secret under
 another name or in an `array` is hidden by hand and pinned in `HIDDEN_BY_HAND` (`AuthCookieFactory::create($value)`,
 `ReplayRefusingHttpClient::request($options)` — the Scaleway key and the nominative CV —,
 `PasswordOptionRedactor::redact($text)`); an entry the census already sees is refused there.

@@ -43,7 +43,9 @@ use ReflectionClass;
  *
  * Ni l'un ni l'autre ne voit les classes anonymes, les closures, les
  * fonctions fléchées ni les fonctions hors classe : aucune n'a de nom que la
- * réflexion puisse charger sans exécuter le code.
+ * réflexion puisse charger sans exécuter le code. Les classes anonymes et les
+ * fonctions hors classe sont donc interdites dans `src/` (issue #432,
+ * {@see \App\Tests\Shared\NoAnonymousClassNorFreeFunctionTest}).
  */
 final class DeclaredClasses
 {

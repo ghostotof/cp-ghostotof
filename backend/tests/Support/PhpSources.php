@@ -13,7 +13,8 @@ use SplFileInfo;
 /**
  * Ce que les recenseurs par jetons ont en commun (DeclaredClasses,
  * BareExceptionInstantiations, CommentedClassNames, UnsortedImports,
- * MisqualifiedNativeCalls) : quels fichiers ils lisent, et quels jetons ils
+ * MisqualifiedNativeCalls, AnonymousClassesAndFreeFunctions) : quels
+ * fichiers ils lisent, et quels jetons ils
  * ignorent. Partagé pour qu'un garde-fou ne voie jamais un autre périmètre que
  * son voisin.
  */
