@@ -134,22 +134,10 @@ jobs:
       # Issue #479 : AmqpPublisherConfirmsIntegrationTest publie contre un vrai
       # RabbitMQ, avec k8s/base/rabbitmq.conf (max_message_size, #477). Pas un
       # `services:` : il ne peut pas monter un fichier du dépôt, absent avant le
-      # checkout. L'image est celle des manifestes.
+      # checkout. Le démarrage est celui du job `rabbitmq-conf`, broker gardé.
       - name: Démarre RabbitMQ (intégration des confirmations, #479)
         timeout-minutes: 5
-        run: |
-          tag=$(sed -n 's/.*image: rabbitmq:\([^[:space:]]*\).*/\1/p' k8s/base/rabbitmq.yaml | head -1)
-          docker run -d --name rabbitmq -p 5672:5672 \
-            -v "$GITHUB_WORKSPACE/k8s/base/rabbitmq.conf:/etc/rabbitmq/conf.d/20-cp-ghostotof.conf:ro" \
-            "rabbitmq:$tag"
-          # CLI sous l'utilisateur rabbitmq : en root, il créerait un
-          # .erlang.cookie illisible pour le nœud (cf. tools/check-rabbitmq-conf.sh).
-          for _ in $(seq 1 60); do
-            if docker exec -u rabbitmq rabbitmq rabbitmq-diagnostics -q check_running >/dev/null 2>&1; then exit 0; fi
-            sleep 2
-          done
-          docker logs --tail 40 rabbitmq
-          exit 1
+        run: RABBITMQ_CONF_KEEP=1 make rabbitmq-conf
       - name: PHPUnit
         working-directory: backend
         env:

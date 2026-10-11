@@ -22,6 +22,11 @@
 #
 # Usage :  tools/check-rabbitmq-conf.sh rabbitmq:<tag>
 #          (make rabbitmq-conf, qui lit le tag dans k8s/base/rabbitmq.yaml)
+# Env :    RABBITMQ_CONF_KEEP=1  garde le broker démarré, nommé `rabbitmq`, son
+#          port AMQP publié sur l'hôte (RABBITMQ_CONF_KEEP_PORT, 5672 par
+#          défaut) : le job `test-backend` y publie pour
+#          AmqpPublisherConfirmsIntegrationTest (issue #479), sans recopier ce
+#          démarrage.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -47,9 +52,24 @@ if ! grep -qF -- "- $COMPOSE_MOUNT" "$ROOT/docker-compose.yml"; then
   exit 1
 fi
 
-name="check-rabbitmq-conf-$$"
-trap 'docker rm -f "$name" >/dev/null 2>&1 || true' EXIT
-docker run -d --name "$name" -v "$CONF:$MOUNT:ro" "$IMAGE" >/dev/null
+keep="${RABBITMQ_CONF_KEEP:-}"
+if [ "$keep" = 1 ]; then
+  name=rabbitmq
+  ports=(-p "${RABBITMQ_CONF_KEEP_PORT:-5672}:5672")
+else
+  name="check-rabbitmq-conf-$$"
+  ports=()
+fi
+# Gardé, le broker n'est retiré que si le contrôle échoue : vert, il reste pour
+# la suite du job.
+on_exit() {
+  local status=$?
+  if [ "$keep" != 1 ] || [ "$status" -ne 0 ]; then
+    docker rm -f "$name" >/dev/null 2>&1 || true
+  fi
+}
+trap on_exit EXIT
+docker run -d --name "$name" "${ports[@]}" -v "$CONF:$MOUNT:ro" "$IMAGE" >/dev/null
 
 # Jusqu'à 2 min : le premier démarrage de l'Erlang VM est lent sur un runner.
 # Le CLI tourne sous l'utilisateur `rabbitmq`, jamais en root (défaut de
