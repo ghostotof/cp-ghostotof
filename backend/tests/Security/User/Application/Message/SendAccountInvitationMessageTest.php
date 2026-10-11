@@ -30,25 +30,6 @@ final class SendAccountInvitationMessageTest extends TestCase
         self::assertSame(3, $restored->invitationGeneration);
     }
 
-    public function testAMessageServesTheGenerationItCarries(): void
-    {
-        self::assertSame(2, (new SendAccountInvitationMessage(self::USER_ID, 'fr', 2))->servedGeneration());
-    }
-
-    /**
-     * Un message mis en file avant #434 ne porte pas de génération. Il sert
-     * la première : la migration a posé 1 à tout compte déjà invité, si bien
-     * qu'une relance faite depuis l'écarte, et qu'il reste traité sinon.
-     */
-    public function testAMessageQueuedBeforeTheGenerationExistedServesTheFirstOne(): void
-    {
-        $legacy = unserialize(SerializedInvitationMessage::withoutGeneration(self::USER_ID));
-
-        self::assertInstanceOf(SendAccountInvitationMessage::class, $legacy);
-        self::assertNull($legacy->invitationGeneration);
-        self::assertSame(1, $legacy->servedGeneration());
-    }
-
     /**
      * @return iterable<string, array{int, string}>
      */
@@ -65,6 +46,12 @@ final class SendAccountInvitationMessageTest extends TestCase
         yield 'locale entière' => [3, $userId.'s:6:"locale";i:1;'.$generation];
         yield 'locale inconnue' => [3, $userId.'s:6:"locale";s:2:"de";'.$generation];
         yield 'génération en chaîne' => [3, $userId.$locale.'s:20:"invitationGeneration";s:1:"1";'];
+        yield 'génération flottante' => [3, $userId.$locale.'s:20:"invitationGeneration";d:1;'];
+        yield 'génération booléenne' => [3, $userId.$locale.'s:20:"invitationGeneration";b:1;'];
+        // Un compte invité a une génération d'au moins 1 (markInvited() part
+        // de 0) : 0 ou moins ne vient pas de CpgUserInviter.
+        yield 'génération à zéro' => [3, $userId.$locale.'s:20:"invitationGeneration";i:0;'];
+        yield 'génération négative' => [3, $userId.$locale.'s:20:"invitationGeneration";i:-1;'];
     }
 
     /**
@@ -74,13 +61,60 @@ final class SendAccountInvitationMessageTest extends TestCase
     #[DataProvider('malformedPayloads')]
     public function testAMalformedSerializedMessageIsRefused(int $propertyCount, string $properties): void
     {
+        $exception = $this->refusalOf($propertyCount, $properties);
+
+        self::assertSame(MalformedAccountInvitationMessageException::fromSerializedData()->getMessage(), $exception->getMessage());
+        self::assertStringNotContainsString(self::USER_ID, $exception->getMessage());
+        self::assertStringNotContainsString('abc', $exception->getMessage());
+        self::assertStringNotContainsString('"de"', $exception->getMessage());
+    }
+
+    /**
+     * @return iterable<string, array{int, string}>
+     */
+    public static function payloadsWithoutGeneration(): iterable
+    {
+        $userIdAndLocale = 's:6:"userId";s:36:"'.self::USER_ID.'";s:6:"locale";s:2:"fr";';
+
+        yield 'génération absente' => [2, $userIdAndLocale];
+        yield 'génération nulle' => [3, $userIdAndLocale.'s:20:"invitationGeneration";N;'];
+    }
+
+    /**
+     * Le format d'avant #434, toléré jusqu'à la v0.23.0, est refusé depuis
+     * que les files en sont vides (issue #448) : le handler ne saurait pas
+     * s'il sert une invitation dépassée. Son refus se distingue de celui d'un
+     * message altéré : l'opérateur qui le trouve dans `failed` relance
+     * l'invitation, il n'enquête pas sur une file compromise.
+     */
+    #[DataProvider('payloadsWithoutGeneration')]
+    public function testAMessageWithoutGenerationIsRefusedAsTheFormerFormat(int $propertyCount, string $properties): void
+    {
+        $exception = $this->refusalOf($propertyCount, $properties);
+
+        self::assertSame(MalformedAccountInvitationMessageException::withoutGeneration()->getMessage(), $exception->getMessage());
+        self::assertStringNotContainsString(self::USER_ID, $exception->getMessage());
+    }
+
+    /**
+     * Un message à la fois sans génération et altéré ailleurs est d'abord un
+     * message altéré.
+     */
+    public function testAMessageWithoutGenerationAndAnInvalidUserIdIsRefusedAsTampered(): void
+    {
+        $exception = $this->refusalOf(2, 's:6:"userId";s:3:"abc";s:6:"locale";s:2:"fr";');
+
+        self::assertSame(MalformedAccountInvitationMessageException::fromSerializedData()->getMessage(), $exception->getMessage());
+    }
+
+    private function refusalOf(int $propertyCount, string $properties): MalformedAccountInvitationMessageException
+    {
         try {
             unserialize(SerializedInvitationMessage::of($propertyCount, $properties));
-            self::fail('MalformedAccountInvitationMessageException aurait dû être levée.');
         } catch (MalformedAccountInvitationMessageException $exception) {
-            self::assertStringNotContainsString(self::USER_ID, $exception->getMessage());
-            self::assertStringNotContainsString('abc', $exception->getMessage());
-            self::assertStringNotContainsString('"de"', $exception->getMessage());
+            return $exception;
         }
+
+        self::fail('MalformedAccountInvitationMessageException aurait dû être levée.');
     }
 }

@@ -129,19 +129,28 @@ paths:
     `SendAccountInvitationDeliveryFailureTest` reads the table on the real `_test` database.
     **A message of a superseded invitation is dropped** (issue #434): `CpgUser::$invitationGeneration`
     (`invitation_generation`, default 0) is advanced by every `markInvited()`, and the message carries the
-    generation it serves. When `CpgUser::wasReinvitedSince($message->servedGeneration())` — the account's
+    generation it serves. When `CpgUser::wasReinvitedSince($message->invitationGeneration)` — the account's
     generation is **higher** —, the handler logs a `warning` and returns without retry: a delayed retry,
     or a message replayed from the `failure_transport` days later, would otherwise purge the token of a
     resend already delivered. A counter rather than the instant, chosen in the review of #434: an instant
     compared at the second missed two resends in the same second, and `invited_at` was then a wall time
     with no offset (see the timestamp rule in `.claude/rules/backend-architecture.md`). A message **ahead**
     of the stored generation (a resend not committed yet when the worker reads it) is processed: the last
-    message is never lost. A message queued before #434 has no generation (`null`, restored by
-    `__unserialize()`, since `PhpSerializer` never calls the constructor) and serves the **first** one —
-    the migration set 1 on every account already invited —, so it is processed until the account is
-    resent, dropped after. A malformed one (missing or mistyped field, invalid UUID or locale) throws
-    `MalformedAccountInvitationMessageException`: a decoding failure, which follows the transport's
-    retries then the `failure_transport` without ever reaching the handler.
+    message is never lost. `PhpSerializer` never calls the constructor, so `__unserialize()` checks the
+    shape: a malformed message (missing or mistyped field, invalid UUID or locale, a generation below 1,
+    which `CpgUserInviter` never sends) throws `MalformedAccountInvitationMessageException`: a decoding
+    failure, which follows the transport's retries then the `failure_transport` without ever reaching the
+    handler (`InvitationEnvelopeDecodingTest`, through the container's serializer). **A message without a
+    generation is refused too** (issue #448): the format queued before #434 was tolerated through v0.23.0,
+    then refused once production's queues were checked empty of it. Only the code of v0.22.0 or earlier
+    writes it — redeploying such an image, or a consumer still running it. Its refusal has its own
+    factory, `withoutGeneration()`, whose message tells the two cases apart in `failed` (a resend to
+    do, not a tampered queue to investigate) and quotes no value. **What to do with one**: read
+    `messenger:failed:show <id>` for its `userId`, resend the invitation from the backoffice, then
+    `messenger:failed:remove <id>`. Never `messenger:failed:retry` it: it fails to decode again, every
+    time — at best it comes back to `failed` after the retries, at worst the entry is dropped and the
+    `userId` to resend with it (not measured: `SendFailedMessageToFailureTransportListener` declines
+    to send a message back to the failure transport it came from, in some cases).
     `SendAccountInvitationStaleMessageTest` replays the issue's scenario with the real `CpgUserInviter` on
     the `_test` database. **Concurrency, per account** (issue #435): `reinvite()` advances the generation
     in the database in one statement (`CpgUserRepositoryInterface::advanceInvitationGeneration()`, an
