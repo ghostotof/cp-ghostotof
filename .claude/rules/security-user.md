@@ -59,7 +59,10 @@ paths:
     `CpgUserRegistrar` (CLI creation, password provided up front) · `CpgUserInviter`
     (`invite(email, Locale)` / `reinvite(user, Locale)`: derives username, creates/marks the pending account,
     then **only** dispatches `SendAccountInvitationMessage`) · `PasswordSetupService` (`validate` / `complete`
-    the public flow) · `CpgUserAdministrator` (delete / change-password) · `CpgUserRoleAdministrator`
+    the public flow) · `CpgUserAdministrator` (delete / change-password; a password set from the backoffice on an account still
+    pending activation **revokes its unused invitation tokens**, under the account lock — the admin's password
+    is authoritative and the link in circulation dies, the useful case when the link is doubtful, decided on
+    2026-10-11, issue #460; a new invitation remains possible) · `CpgUserRoleAdministrator`
     (`setSuperAdmin`, idempotent, anti-lockout guards; on demotion `ROLE_TRUSTED` is kept **only if the account
     has an `email`** — nominative grant, ADR 0003 D1, issue #78 pt 3 — a CLI account falls back to the base
     tier) · `PendingInvitationPurger` (deletes accounts whose password hash is still empty — the literal
