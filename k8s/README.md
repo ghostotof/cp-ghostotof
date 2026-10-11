@@ -141,7 +141,8 @@ détail des jobs.
    1. `tools/rotate-deployer-token.sh preprod`, puis `… prod` ;
    2. `tools/github-settings.sh` : l'étape k doit voir `KUBE_CONFIG_PREPROD`
       et `KUBE_CONFIG_PROD` présents dans leur environnement ;
-   3. un run de release complet **vert** (`deploy-preprod` → `deploy-prod`) :
+   3. les deux runs d'une release **verts**, celui de la branche `release/*`
+      (`deploy-preprod`) puis celui du merge dans `main` (`deploy-prod`) :
       les jobs déclarant `environment:` reçoivent le secret d'environnement,
       donc le nouveau jeton, par priorité sur l'homonyme de dépôt ;
    4. seulement alors, supprimer le Secret durable des deux namespaces —
@@ -1408,7 +1409,8 @@ de fusionner la release :
    kubectl get namespace preprod -o jsonpath='{.metadata.labels}' | tr ',' '\n'
    ```
 4. **Déployer la release sur la préprod** (push sur `release/*`), puis attendre
-   chaque workload — y compris ceux que la pipeline n'attend pas elle-même :
+   chaque workload — la pipeline les attend tous désormais, cette boucle le
+   confirme à la main :
    ```bash
    for d in postgres rabbitmq backend worker frontend; do
      kubectl -n preprod rollout status deployment/$d --timeout=180s
@@ -1440,10 +1442,14 @@ de fusionner la release :
    ```
    Le volume projeté `kube-api-access-xxxxx` ne doit plus exister, et donc
    `/var/run/secrets/kubernetes.io/serviceaccount` non plus.
-7. **Enfin seulement**, fusionner la release : `deploy-prod` posera les mêmes
-   labels et rejouera le même redémarrage sur la prod. Attention, la pipeline
-   n'attend en prod que `backend` et `frontend` — surveiller `postgres`,
-   `rabbitmq` et `worker` à la main avec la boucle de l'étape 4 sur `prod`.
+7. **Enfin seulement**, fusionner la PR de la release vers `main` : `deploy-prod`
+   posera les mêmes labels et rejouera le même redémarrage sur la prod. Il
+   attend, comme `deploy-preprod`, le rollout de `postgres`, `rabbitmq` et
+   `worker` en plus de `backend`/`frontend` (`tools/wait-rollout.sh`, issue
+   #353, cf. l'encadré de l'étape 4) : un workload à état qui ne remonte pas
+   met le job en échec. Lire tout de même leurs journaux (étape 5, sur `prod`) :
+   en prod, aucun retour arrière automatique ne suit (cf. « Retour arrière
+   applicatif »).
 
 ### Retour arrière
 
