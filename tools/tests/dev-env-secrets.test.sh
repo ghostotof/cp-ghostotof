@@ -43,7 +43,9 @@ if [[ "$dev_secret" =~ ^[0-9a-f]{64}$ ]] && [[ "$test_secret" =~ ^[0-9a-f]{64}$ 
 else
   fail "APP_SECRET aléatoire de 32 octets, distinct en dev et en test" "dev=${#dev_secret} car., test=${#test_secret} car."
 fi
-if grep -qF -e "$dev_secret" -e "$test_secret" "$fresh/out"; then
+if [ -z "$dev_secret" ] || [ -z "$test_secret" ]; then
+  fail "aucune valeur dans la sortie" "un secret manque, rien à chercher"
+elif grep -qF -e "$dev_secret" -e "$test_secret" "$fresh/out"; then
   fail "aucune valeur dans la sortie" "un secret généré est imprimé"
 else
   pass "aucune valeur dans la sortie"
@@ -74,14 +76,42 @@ else
 fi
 if [ "$(value "$existing/.env.test.local" APP_SECRET)" = "deja-la-test" ]; then pass "un secret déjà là est gardé"; else fail "un secret déjà là est gardé" "remplacé"; fi
 
-# --- .env.test.local absent : créé, réservé au propriétaire -------------------
+# --- Une valeur vide écrite autrement que `APP_SECRET=` ----------------------
+# Dotenv lit `""`, `''` et des espaces comme vides : le script aussi
+# (relecture de #481). Une ligne `export` compte, et n'est pas doublée.
+for form in 'APP_SECRET=""' "APP_SECRET=''" 'APP_SECRET=   ' 'export APP_SECRET=""'; do
+  quoted="$TMP/quoted-$RANDOM"; mkdir -p "$quoted"
+  printf 'APP_ENV=dev\n%s\n' "$form" > "$quoted/.env.local"
+  printf 'APP_SECRET=deja-la-test\n' > "$quoted/.env.test.local"
+  "$SCRIPT" "$quoted" > "$quoted/out" 2>&1
+  if [[ "$(value "$quoted/.env.local" APP_SECRET)" =~ ^[0-9a-f]{64}$ ]] && [ "$(grep -c 'APP_SECRET=' "$quoted/.env.local")" = 1 ]; then
+    pass "« $form » est lu comme vide, et remplacé par une seule ligne"
+  else
+    fail "« $form » est lu comme vide, et remplacé par une seule ligne" "$(grep -c 'APP_SECRET=' "$quoted/.env.local") ligne(s)"
+  fi
+done
+
+# --- Un secret entre guillemets est gardé tel quel ---------------------------
+kept="$TMP/kept"; mkdir -p "$kept"
+printf 'APP_SECRET="un-secret-local"\n' > "$kept/.env.local"
+printf 'APP_SECRET=deja-la-test\n' > "$kept/.env.test.local"
+"$SCRIPT" "$kept" > "$kept/out" 2>&1
+if grep -qx 'APP_SECRET="un-secret-local"' "$kept/.env.local" && [ ! -s "$kept/out" ]; then pass "un secret entre guillemets est gardé"; else fail "un secret entre guillemets est gardé" "$(cat "$kept/out")"; fi
+
+# --- Aucun fichier temporaire dans le répertoire du backend ------------------
+if find "$fresh" "$existing" "$kept" -mindepth 1 ! -name '.env.local' ! -name '.env.test.local' ! -name 'out*' | grep -q .; then
+  fail "aucun fichier temporaire laissé à côté des .env" "$(ls -A "$fresh" "$existing" "$kept")"
+else
+  pass "aucun fichier temporaire laissé à côté des .env"
+fi
+
+# --- .env.test.local absent : init d'abord, plutôt qu'un fichier incomplet ---
 notest="$TMP/notest"; mkdir -p "$notest"
 printf 'APP_ENV=dev\n' > "$notest/.env.local"
-"$SCRIPT" "$notest" > "$notest/out" 2>&1
-if [[ "$(value "$notest/.env.test.local" APP_SECRET)" =~ ^[0-9a-f]{64}$ ]] && [ "$(stat -c '%a' "$notest/.env.test.local")" = 600 ]; then
-  pass ".env.test.local absent est créé en 600"
+if "$SCRIPT" "$notest" > "$notest/out" 2>&1 || [ -e "$notest/.env.test.local" ]; then
+  fail ".env.test.local absent est refusé, sans être créé" "$(cat "$notest/out")"
 else
-  fail ".env.test.local absent est créé en 600" "$(stat -c '%a' "$notest/.env.test.local" 2>&1)"
+  pass ".env.test.local absent est refusé, sans être créé"
 fi
 
 # --- Pas de .env.local : init d'abord ----------------------------------------

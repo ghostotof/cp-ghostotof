@@ -34,29 +34,42 @@ DIR="${1:?usage : $0 <répertoire backend>}"
 DEV="$DIR/.env.local"
 TEST="$DIR/.env.test.local"
 
-if [ ! -f "$DEV" ]; then
-  echo "$DEV absent : initialiser le projet d'abord (make init)." >&2
-  exit 1
-fi
-if [ ! -f "$TEST" ]; then
-  : > "$TEST"
-fi
+for file in "$DEV" "$TEST"; do
+  if [ ! -f "$file" ]; then
+    # Pas de fichier incomplet : init-symfony.sh y écrit aussi DATABASE_URL.
+    echo "$file absent : le générer d'abord (make init)." >&2
+    exit 1
+  fi
+done
+
+# Hors du dépôt, et retiré même sur une interruption : il porte le secret.
+SCRATCH="$(mktemp)"
+trap 'rm -f "$SCRATCH"' EXIT
 
 random_hex() { od -An -tx1 -N32 /dev/urandom | tr -d ' \n'; }
 
-# Dernière valeur d'une variable (celle que Dotenv retient), vide si absente.
-current() { sed -n "s/^$2=//p" "$1" | tail -n 1; }
+# Valeur de la dernière ligne `[export ]NAME=…` (celle que Dotenv retient),
+# lue comme Dotenv : espaces et une paire de guillemets autour retirés, si
+# bien que `""`, `''` ou des espaces valent vide.
+current() {
+  local raw
+  raw="$(sed -n "s/^\(export[[:space:]]\{1,\}\)\{0,1\}$2=//p" "$1" | tail -n 1)"
+  raw="$(printf '%s' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  case "$raw" in
+    \"*\") raw="${raw#\"}"; raw="${raw%\"}" ;;
+    \'*\') raw="${raw#\'}"; raw="${raw%\'}" ;;
+  esac
+  printf '%s' "$raw"
+}
 
-# Remplace toutes les lignes de la variable par une seule, en place.
+# Remplace toutes les lignes de la variable, `export` compris, par une seule,
+# en place : même inode, mêmes droits (cf. l'en-tête). Une écriture qui
+# échouerait en route laisserait le fichier tronqué : c'est un fichier de dev,
+# régénérable par make init, accepté.
 set_var() {
-  local file="$1" name="$2" value="$3" kept
-  kept="$(grep -v "^$name=" "$file" || true)"
-  {
-    if [ -n "$kept" ]; then printf '%s\n' "$kept"; fi
-    printf '%s=%s\n' "$name" "$value"
-  } > "$file.dev-env-secrets.tmp"
-  cat "$file.dev-env-secrets.tmp" > "$file"
-  rm -f "$file.dev-env-secrets.tmp"
+  local file="$1" name="$2" value="$3"
+  { grep -v "^\(export[[:space:]]\{1,\}\)\{0,1\}$name=" "$file" || true; printf '%s=%s\n' "$name" "$value"; } > "$SCRATCH"
+  cat "$SCRATCH" > "$file"
 }
 
 for file in "$DEV" "$TEST"; do

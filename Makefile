@@ -36,8 +36,8 @@ sh: ## Ouvre un shell dans le backend, en tant qu'utilisateur dev
 init: ## (Re)joue l'initialisation du projet Symfony
 	$(DC) run --rm --user dev backend init-symfony
 
-dev-secrets: ## Pose APP_SECRET et JWT_PASSPHRASE manquants dans backend/.env.local et .env.test.local (#481), sans les afficher
-	docker/php/dev-env-secrets.sh backend
+dev-secrets: ## Pose un APP_SECRET aléatoire là où il manque, dans backend/.env.local et .env.test.local (#481), sans l'afficher
+	$(DC) run --rm --no-deps --user dev backend /var/www/docker/php/dev-env-secrets.sh /var/www/backend
 
 db-migrate: ## Applique les migrations Doctrine
 	$(DC) exec --user dev backend php bin/console doctrine:migrations:migrate --no-interaction

@@ -1,15 +1,65 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Initialise le projet Symfony dans /var/www/backend (monté depuis l'hôte).
-# Idempotent : si composer.json existe déjà, le script ne fait rien.
+# Idempotent : si composer.json existe déjà, seule la configuration locale
+# (.env.local, .env.test.local, APP_SECRET) est complétée, jamais écrasée.
 # =============================================================================
 set -Eeuo pipefail
 
-APP_DIR="/var/www/backend"
+# Surchargeable pour essayer le script hors du vrai projet.
+APP_DIR="${APP_DIR:-/var/www/backend}"
 cd "$APP_DIR"
 
+write_local_env() {
+# -----------------------------------------------------------------------------
+# Configuration locale : .env.local n'est pas versionné et surcharge .env.
+# On y pointe les DSN vers les noms de services Docker (`database`, `rabbitmq`),
+# résolus par le DNS interne du réseau Compose.
+# -----------------------------------------------------------------------------
+if [[ ! -f .env.local ]]; then
+cat > .env.local <<LOCALENV
+# Généré automatiquement à l'initialisation du projet — non versionné.
+APP_ENV=dev
+DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}?serverVersion=16&charset=utf8"
+MESSENGER_TRANSPORT_DSN="amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/%2f/messages"
+# Point d'audit I4 : laissées vides dans le .env versionné (dépôt public), donc
+# posées ici. Adresses de test : en dev le mailer pointe sur Mailpit ou
+# null://null, rien ne part vers l'extérieur.
+CONTACT_SENDER_EMAIL=noreply@example.test
+CONTACT_RECIPIENT_EMAIL=contact@example.test
+# Clé Anthropic de l'assistant du backoffice (ADR 0004). Vide par défaut : sans
+# clé, seul le bouton de traduction du backoffice échoue (503), rien d'autre.
+ANTHROPIC_API_KEY=
+# Clé Scaleway Generative APIs de l'assistant de parcours (spec 0005). Vide par
+# défaut : sans clé, seul l'assistant échoue, rien d'autre.
+SCALEWAY_AI_API_KEY=
+# Projet Scaleway de cette clé (Paramètres du projet -> Project ID) : sans lui,
+# l'API répond 403 à une clé d'application restreinte à un projet.
+SCALEWAY_AI_PROJECT_ID=
+LOCALENV
+fi
+
+# .env.local n'est jamais chargé par Symfony en environnement test (comportement
+# documenté du composant Dotenv) : il faut donc son propre DATABASE_URL. Même
+# nom de base que le dev : config/packages/doctrine.yaml ajoute déjà un
+# dbname_suffix "_test" en env test (défaut Flex, pensé pour ParaTest) -> la
+# base réelle ("${POSTGRES_DB}_test") reste séparée des données du dev.
+if [[ ! -f .env.test.local ]]; then
+cat > .env.test.local <<TESTENV
+# Généré automatiquement à l'initialisation du projet — non versionné.
+DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}?serverVersion=16&charset=utf8"
+TESTENV
+fi
+
+  # Issue #481 : APP_SECRET, distinct en dev et en test, que le .env versionné
+  # laisse vide. Script monté depuis docker/php (Compose). JWT_PASSPHRASE n'y est
+  # pas : vide, il est la norme locale (paire de clés générée sans).
+  /var/www/docker/php/dev-env-secrets.sh "$APP_DIR"
+}
+
 if [[ -f composer.json ]]; then
-  echo "→ Projet Symfony déjà initialisé, rien à faire."
+  echo "→ Projet Symfony déjà initialisé : seule la configuration locale est complétée."
+  write_local_env
   exit 0
 fi
 
@@ -54,45 +104,6 @@ else
   composer require --no-interaction symfony/amqp-messenger
 fi
 
-# -----------------------------------------------------------------------------
-# Configuration locale : .env.local n'est pas versionné et surcharge .env.
-# On y pointe les DSN vers les noms de services Docker (`database`, `rabbitmq`),
-# résolus par le DNS interne du réseau Compose.
-# -----------------------------------------------------------------------------
-cat > .env.local <<LOCALENV
-# Généré automatiquement à l'initialisation du projet — non versionné.
-APP_ENV=dev
-DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}?serverVersion=16&charset=utf8"
-MESSENGER_TRANSPORT_DSN="amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/%2f/messages"
-# Point d'audit I4 : laissées vides dans le .env versionné (dépôt public), donc
-# posées ici. Adresses de test : en dev le mailer pointe sur Mailpit ou
-# null://null, rien ne part vers l'extérieur.
-CONTACT_SENDER_EMAIL=noreply@example.test
-CONTACT_RECIPIENT_EMAIL=contact@example.test
-# Clé Anthropic de l'assistant du backoffice (ADR 0004). Vide par défaut : sans
-# clé, seul le bouton de traduction du backoffice échoue (503), rien d'autre.
-ANTHROPIC_API_KEY=
-# Clé Scaleway Generative APIs de l'assistant de parcours (spec 0005). Vide par
-# défaut : sans clé, seul l'assistant échoue, rien d'autre.
-SCALEWAY_AI_API_KEY=
-# Projet Scaleway de cette clé (Paramètres du projet -> Project ID) : sans lui,
-# l'API répond 403 à une clé d'application restreinte à un projet.
-SCALEWAY_AI_PROJECT_ID=
-LOCALENV
-
-# .env.local n'est jamais chargé par Symfony en environnement test (comportement
-# documenté du composant Dotenv) : il faut donc son propre DATABASE_URL. Même
-# nom de base que le dev : config/packages/doctrine.yaml ajoute déjà un
-# dbname_suffix "_test" en env test (défaut Flex, pensé pour ParaTest) -> la
-# base réelle ("${POSTGRES_DB}_test") reste séparée des données du dev.
-cat > .env.test.local <<TESTENV
-# Généré automatiquement à l'initialisation du projet — non versionné.
-DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}?serverVersion=16&charset=utf8"
-TESTENV
-
-# Issue #481 : APP_SECRET (dev et test, distincts) et JWT_PASSPHRASE (partagée),
-# que le .env versionné laisse vides. Script monté depuis docker/php (Compose) ;
-# un checkout déjà initialisé le relance par `make dev-secrets`.
-/var/www/docker/php/dev-env-secrets.sh "$APP_DIR"
+write_local_env
 
 echo "✔ Projet Symfony initialisé."
