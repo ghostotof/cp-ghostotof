@@ -19,6 +19,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Stringable;
 use Symfony\Bridge\Twig\Mime\BodyRenderer;
 use Symfony\Bridge\Twig\Mime\TemplatedEmail;
 use Symfony\Component\Clock\MockClock;
@@ -394,6 +395,52 @@ final class SendAccountInvitationHandlerTest extends TestCase
 
         self::assertStringContainsString('RfcComplianceException', $exception->getMessage());
         self::assertStringNotContainsString('sentinel', $exception->getMessage());
+    }
+
+    /**
+     * Issue #425 : si le retrait du jeton non remis échoue à son tour, c'est
+     * toujours l'échec de l'envoi qui remonte au worker — sa politique de
+     * réessai en dépend —, et le retrait raté est journalisé par sa seule
+     * classe : le message d'une exception Doctrine peut citer le condensat.
+     */
+    public function testAFailedTokenRemovalNeitherReplacesTheDeliveryFailureNorQuotesItsMessage(): void
+    {
+        $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('remove')->willThrowException(new LogicException('DELETE … token_hash = sentinel'));
+        $mailer = self::createStub(MailerInterface::class);
+        $mailer->method('send')->willThrowException(new TransportException('Connexion impossible'));
+
+        $logged = [];
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects(self::once())->method('error')->willReturnCallback(
+            static function (string|Stringable $message, array $context) use (&$logged): void {
+                $logged = ['message' => (string) $message, 'context' => $context];
+            },
+        );
+
+        $cpgUserRepository = self::createStub(CpgUserRepositoryInterface::class);
+        $cpgUserRepository->method('findOneById')->willReturn($this->pendingUser('newcomer', 'newcomer@example.com'));
+        $handler = new SendAccountInvitationHandler(
+            $mailer,
+            $cpgUserRepository,
+            $tokenRepository,
+            $this->passthroughEntityManager(),
+            new MockClock(),
+            $logger,
+            self::SENDER_EMAIL,
+            self::FRONTEND_BASE_URL,
+        );
+
+        try {
+            $handler(new SendAccountInvitationMessage(self::USER_ID, 'fr'));
+            self::fail('AccountInvitationDeliveryException aurait dû être levée.');
+        } catch (AccountInvitationDeliveryException $exception) {
+            self::assertNull($exception->getPrevious());
+            self::assertStringContainsString(TransportException::class, $exception->getMessage());
+        }
+
+        self::assertSame(['exception' => LogicException::class, 'userId' => self::USER_ID], $logged['context'] ?? null);
+        self::assertStringNotContainsString('sentinel', json_encode($logged, \JSON_THROW_ON_ERROR));
     }
 
     /**

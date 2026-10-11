@@ -83,17 +83,18 @@ final readonly class SendAccountInvitationHandler
 
         $locale = Locale::from($message->locale);
         $clearToken = bin2hex(random_bytes(32));
+        $token = new PasswordSetupToken(
+            $user,
+            hash('sha256', $clearToken),
+            $this->clock->now()->modify(self::TOKEN_LIFETIME),
+        );
 
         // Un seul jeton actif à la fois : la purge de l'ancien et l'insertion
         // du nouveau sont atomiques (un retry qui échouerait entre les deux ne
         // doit pas laisser le compte sans jeton).
-        $this->entityManager->wrapInTransaction(function () use ($user, $clearToken): void {
+        $this->entityManager->wrapInTransaction(function () use ($user, $token): void {
             $this->passwordSetupTokenRepository->deleteForUser($user);
-            $this->passwordSetupTokenRepository->save(new PasswordSetupToken(
-                $user,
-                hash('sha256', $clearToken),
-                $this->clock->now()->modify(self::TOKEN_LIFETIME),
-            ));
+            $this->passwordSetupTokenRepository->save($token);
         });
 
         try {
@@ -102,13 +103,16 @@ final readonly class SendAccountInvitationHandler
             // La classe et le code seulement : le message du transport peut
             // citer une adresse (issue #356), il ne remonte pas.
             $failure = MailerTransportFailure::from($exception);
+            $this->discardUndeliveredToken($token, $message->userId);
 
             throw AccountInvitationDeliveryException::becauseTransportFailed($failure->exceptionClass, $failure->code);
         } catch (Throwable $exception) {
-            // Le jeton est déjà valide en base : ni l'exception de la
-            // construction de l'e-mail (une adresse que Mime refuse, qu'il cite)
-            // ni celle du rendu du gabarit, dans send() (un message Twig peut
-            // citer l'URL), ne doivent atteindre le stamp d'erreur du worker ni
+            $this->discardUndeliveredToken($token, $message->userId);
+
+            // Le jeton était valide en base (et l'est encore si son retrait
+            // a échoué) : ni l'exception de la construction de l'e-mail (une
+            // adresse que Mime refuse, qu'il cite) ni celle du rendu du
+            // gabarit, dans send() (un message Twig peut citer l'URL), ne doivent atteindre le stamp d'erreur du worker ni
             // ses logs (issue #419, audit C2). Le réessai n'en change pas dans
             // ce câblage : ni l'exception remplacée ni celle-ci ne sont
             // « (un)recoverable », la stratégie du transport décide. Limite :
@@ -116,6 +120,33 @@ final readonly class SendAccountInvitationHandler
             // Symfony\Component\Mailer\Event\MessageEvent) perdrait son effet ;
             // il n'en existe aucune aujourd'hui.
             throw AccountInvitationDeliveryException::becauseSendingFailed($this->describeFailure($exception));
+        }
+    }
+
+    /**
+     * Le jeton n'a été remis à personne : il ne reste pas valable 48 h en
+     * attendant une fuite (issue #425). Le réessai de Messenger repasse ici et
+     * en émet un nouveau.
+     *
+     * Ce jeton seul, jamais tous ceux du compte : une invitation renvoyée,
+     * traitée au même moment par un autre worker, a pu purger celui-ci et
+     * émettre le sien, déjà parti. Le supprimer casserait le lien reçu.
+     *
+     * Un retrait raté ne remplace pas l'échec de l'envoi, que le worker doit
+     * recevoir tel quel (sa stratégie de réessai en dépend) : il est
+     * journalisé par sa classe seule, le message d'une exception Doctrine
+     * pouvant citer le condensat du jeton. Le jeton expire alors à son terme,
+     * comme avant #425.
+     */
+    private function discardUndeliveredToken(PasswordSetupToken $token, string $userId): void
+    {
+        try {
+            $this->passwordSetupTokenRepository->remove($token);
+        } catch (Throwable $exception) {
+            $this->logger->error('Invitation non remise : le retrait de son jeton a échoué, il reste valable jusqu\'à son expiration.', [
+                'exception' => $exception::class,
+                'userId' => $userId,
+            ]);
         }
     }
 
