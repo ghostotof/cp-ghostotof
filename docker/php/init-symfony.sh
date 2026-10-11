@@ -90,4 +90,9 @@ cat > .env.test.local <<TESTENV
 DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}?serverVersion=16&charset=utf8"
 TESTENV
 
+# Issue #481 : APP_SECRET (dev et test, distincts) et JWT_PASSPHRASE (partagée),
+# que le .env versionné laisse vides. Script monté depuis docker/php (Compose) ;
+# un checkout déjà initialisé le relance par `make dev-secrets`.
+/var/www/docker/php/dev-env-secrets.sh "$APP_DIR"
+
 echo "✔ Projet Symfony initialisé."

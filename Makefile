@@ -10,7 +10,7 @@ NGINX_SIDECAR_TAG := $(shell sed -n 's/.*image: nginx:\([^[:space:]]*\).*/\1/p' 
 # le manifeste change de forme : tools/check-rabbitmq-conf.sh refuse alors `rabbitmq:`.
 RABBITMQ_MANIFEST_TAG := $(shell sed -n 's/.*image: rabbitmq:\([^[:space:]]*\).*/\1/p' k8s/base/rabbitmq.yaml | head -1)
 
-.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality back-lsp build-front-prod build-front-preprod front-image-headers back-nginx-rate-limits rabbitmq-conf get-secret
+.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality back-lsp build-front-prod build-front-preprod front-image-headers back-nginx-rate-limits rabbitmq-conf dev-secrets get-secret
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -35,6 +35,9 @@ sh: ## Ouvre un shell dans le backend, en tant qu'utilisateur dev
 
 init: ## (Re)joue l'initialisation du projet Symfony
 	$(DC) run --rm --user dev backend init-symfony
+
+dev-secrets: ## Pose APP_SECRET et JWT_PASSPHRASE manquants dans backend/.env.local et .env.test.local (#481), sans les afficher
+	docker/php/dev-env-secrets.sh backend
 
 db-migrate: ## Applique les migrations Doctrine
 	$(DC) exec --user dev backend php bin/console doctrine:migrations:migrate --no-interaction
