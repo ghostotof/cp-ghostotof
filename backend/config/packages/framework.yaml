@@ -82,6 +82,14 @@ framework:
             log_level: info
         App\Contact\Domain\Exception\ContactMessageDeliveryException:
             log_level: warning
+        # File de messages indisponible (issue #485) : le redémarrage `Recreate`
+        # de RabbitMQ à chaque release, un refus ou un accusé manquant (#479).
+        # Panne d'un tiers, temporaire : 503 `warning`, une entrée par classe
+        # concrète de MessageQueueUnavailableException (jamais sur l'abstraite).
+        App\Contact\Domain\Exception\ContactMessageQueueUnavailableException:
+            log_level: warning
+        App\Security\User\Domain\Exception\InvitationQueueUnavailableException:
+            log_level: warning
         # Assistant de traduction (ADR 0004) : panne du fournisseur, quota.
         App\Ai\Translation\Domain\Exception\TranslationUnavailableException:
             log_level: warning

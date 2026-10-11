@@ -174,6 +174,26 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
     }
 
     /**
+     * En DQL par identifiant, comme PasswordSetupTokenRepository::remove()
+     * (#425) : un `flush()` global écrirait au passage d'autres changements en
+     * attente, et un `clear()` survenu entre-temps ferait lever
+     * `EntityManager::remove()`. Jamais un compte activé : l'e-mail a pu partir
+     * malgré l'erreur (accusé du broker perdu, #479) et la personne définir son
+     * mot de passe. Un jeton émis entre-temps par le handler part avec le
+     * compte (`ON DELETE CASCADE`).
+     */
+    public function removePendingInvitation(CpgUser $user): void
+    {
+        $this->createQueryBuilder('user')
+            ->delete()
+            ->where('user.id = :id')
+            ->andWhere('user.activatedAt IS NULL')
+            ->setParameter('id', $user->getId(), UuidType::NAME)
+            ->getQuery()
+            ->execute();
+    }
+
+    /**
      * Ré-encode et persiste le mot de passe si l'algorithme de hash configuré a changé.
      */
     public function upgradePassword(PasswordAuthenticatedUserInterface $user, string $newHashedPassword): void

@@ -194,8 +194,16 @@ paths:
     `PasswordSetupActivationConcurrencyTest` (at the `preFlush`), like `ContributionOrderConcurrencyTest`,
     child scripts under `tests/Security/User/Fixtures/` — and `PostgresAccountRowLockTest`.
     Accepted limits:
-    if `reinvite()` saves the new generation but its dispatch fails (broker down, the admin gets a 500), a
-    pending retry of the previous invitation is dropped too, until the admin resends; an **old worker**
+    if `reinvite()` saves the new generation but its dispatch fails (broker down, refusal or missing ack,
+    #479 — the admin gets a 503 `InvitationQueueUnavailableException`, issue #485, no audit entry), a
+    pending retry of the previous invitation is dropped too, until the admin resends. **A first invitation
+    that cannot be queued is undone** (#485): `invite()` removes the account it has just saved, so the
+    admin retries without an « adresse déjà utilisée » 409 and the log announces no invitation that never
+    left — by `removePendingInvitation()`, a DQL `DELETE` by id that never touches an account activated
+    meanwhile and needs neither the unit of work nor a global `flush()` (the #425 rule); were the message
+    stored anyway (a lost ack), the handler finds no account, logs a `warning` and stops without retry —
+    or, had it run before the removal, its link is dead (the token leaves with the account) and the admin
+    resends; a failure of that removal surfaces as itself (a `critical` 500), the account left pending; an **old worker**
     cannot decode a message carrying the generation (`Cannot create dynamic property`) — during a rollout,
     a new API pod can publish before the `Recreate` worker is replaced, and after a rollback every new
     message is concerned —: it goes to `failed` with its raw body and replays once the new code runs, so

@@ -379,9 +379,13 @@ paths:
   Accepted limits: a connection lost after the broker stored a message but before its ack makes Symfony
   republish it (a duplicate contact e-mail, or an invitation token regenerated once more); after a confirm
   timeout the long-lived worker channel may take a late ack for the next publish; while RabbitMQ restarts
-  (`Recreate`, a release) publications fail loudly instead of vanishing. What that failure looks like to
-  the caller — a `critical` 500, a contact quota consumed, an invitation saved without its audit entry —
-  predates #479 (a downed broker did the same) and is #485. `AmqpPublisherConfirmsTest` bounds the five
+  (`Recreate`, a release) publications fail loudly instead of vanishing — and since #485 that failure is a
+  named **503** (`MessageQueueUnavailableException`, see `.claude/rules/backend-architecture.md`) logged
+  `warning`, never a `critical` 500, and a first invitation that could not be queued removes the account
+  it had just created. The contact quota stays consumed **before** the send, on purpose (decided
+  2026-10-11, review of #485): consuming it after the send let a concurrent burst through (×6 to ×12),
+  could fail after a message had left (a duplicate on retry) and bounded nothing during an outage; the
+  price kept is that a visitor retrying during a broker restart burns their quota. `AmqpPublisherConfirmsTest` bounds the five
   options in every declared environment; `AmqpPublisherConfirmsIntegrationTest` publishes against a real
   broker carrying `rabbitmq.conf` (`RABBITMQ_INTEGRATION_DSN`: Compose's broker in dev, the `rabbitmq-conf`
   boot kept running by `RABBITMQ_CONF_KEEP=1` in the `test-backend` job — not a `services:`, which cannot

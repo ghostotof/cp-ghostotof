@@ -10,10 +10,12 @@ use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
 use App\Security\User\Domain\Exception\EmailAlreadyUsedException;
+use App\Security\User\Domain\Exception\InvitationQueueUnavailableException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Service\UsernameGenerator;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Psr\Clock\ClockInterface;
+use Symfony\Component\Messenger\Exception\TransportException;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
@@ -61,7 +63,20 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
             throw EmailAlreadyUsedException::alreadyLinkedToAnAccount();
         }
 
-        $this->dispatchInvitation($user, $locale);
+        try {
+            $this->dispatchInvitation($user, $locale);
+        } catch (InvitationQueueUnavailableException $unavailable) {
+            // Issue #485 : la file n'a pas pris le message. Le compte tout juste
+            // créé est retiré, pour que l'administrateur réessaie sans buter
+            // sur « adresse déjà utilisée ». Si le broker l'avait reçu malgré
+            // tout (accusé perdu, #479), le handler trouve un compte absent,
+            // journalise un warning et s'arrête sans réessai ; s'il l'avait
+            // traité avant ce retrait, son lien est mort (jeton parti avec le
+            // compte) et l'administrateur renvoie une invitation.
+            $this->cpgUserRepository->removePendingInvitation($user);
+
+            throw $unavailable;
+        }
         // Journal de sécurité (D5) : après le save() et le dispatch réussis.
         // L'auteur (le ROLE_SUPER qui invite) est lu par le logger dans le
         // jeton de sécurité de la requête, le compte est nommé par son
@@ -104,8 +119,15 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
     {
         // L'identité est posée par le constructeur de l'entité (spec 0003 D1) :
         // elle existe avant même le save(), et voyage en chaîne RFC 4122 (D7).
-        $this->messageBus->dispatch(
-            new SendAccountInvitationMessage($user->getId()->toRfc4122(), $locale->value, $user->getInvitationGeneration()),
-        );
+        try {
+            $this->messageBus->dispatch(
+                new SendAccountInvitationMessage($user->getId()->toRfc4122(), $locale->value, $user->getInvitationGeneration()),
+            );
+        } catch (TransportException $failure) {
+            // Broker arrêté, refus ou accusé manquant (#479) : un 503 nommé
+            // (issue #485), sans audit — l'invitation n'est pas partie. Une
+            // relance garde sa génération avancée en base (limite écrite).
+            throw new InvitationQueueUnavailableException($failure);
+        }
     }
 }

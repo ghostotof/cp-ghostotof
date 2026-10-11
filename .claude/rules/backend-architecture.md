@@ -241,6 +241,24 @@ value in `command` and in the message, `=`, space and `escapeshellarg()` forms a
 none is thrown bare in `src/`, and adding one to `BareExceptionInstantiations::FORBIDDEN` is the step to
 take the day one is.
 
+**A message queue that does not take a message is a named 503, worded per context** (issue #485).
+`Shared/Domain/Exception/MessageQueueUnavailableException` is a **Template Method**: the abstract class holds
+what every publishing context shares — status 503 and `type` `/errors/message-queue-unavailable` (through
+`HasProblemType`, `final`) —, and each context adds a `final` subclass in its own `Domain/Exception` whose
+constructor takes the cause and passes its own **literal** sentence (`ContactMessageQueueUnavailableException`,
+`InvitationQueueUnavailableException`). Literal, not composed by a shared factory: the message is the client's
+`detail`, and `ProblemDetailStaysStaticTest` refuses any composed one — a factory building it from a
+`subject()` hook was written first and dropped for that reason, rather than allow-listed. A context's `Domain`
+depends on `Shared/Domain` only, and `Shared` never lists the contexts (the rejected alternative, a single
+class with an enum of contexts, would change `Shared` for every new producer). The code that dispatches
+catches Messenger's `TransportException` — which does **not** implement `TransportExceptionInterface`,
+verified — and throws `new <Context>QueueUnavailableException($failure)`, keeping the cause as `previous` (an AMQP channel error quotes
+only the code and the transport, never the body, unlike an SMTP answer); the message is the client's
+`detail` and never quotes the failure. Each concrete class has its own `log_level: warning` in
+`framework.exceptions` (`ExceptionLogLevelCoverageTest` refuses an entry on the abstract one); no
+`exception_to_status`, `getStatus()` already gives 503 on an API Platform operation. A new producer of
+messages adds its subclass and its entry, nothing else.
+
 **A parameter that receives a secret in clear carries `#[SensitiveParameter]`** (issues #411 for passwords,
 #414 for the rest). `tests/Security/SecretParametersTest.php` fails on a parameter that may hold a string
 (`string`, `mixed`, a union with one) whose name says token, JWT, secret, key, bearer, CSRF, credentials,

@@ -11,6 +11,7 @@ use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
 use App\Security\User\Domain\Exception\EmailAlreadyUsedException;
+use App\Security\User\Domain\Exception\InvitationQueueUnavailableException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Service\UsernameGenerator;
 use DateTimeImmutable;
@@ -20,6 +21,7 @@ use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Exception\TransportException;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
@@ -222,6 +224,71 @@ final class CpgUserInviterTest extends TestCase
         );
 
         $this->expectException(AccountNotAwaitingActivationException::class);
+
+        $inviter->reinvite($user, Locale::FR);
+    }
+
+    /**
+     * Issue #485 : la file refuse ou ne répond pas après le save(). Le compte
+     * tout juste créé est retiré dans la foulée : l'administrateur reçoit un
+     * 503 et réessaie sans buter sur « adresse déjà utilisée », et le journal
+     * n'annonce pas une invitation jamais partie.
+     */
+    public function testInviteRemovesTheAccountWhenTheInvitationCannotBeQueued(): void
+    {
+        $saved = null;
+        $cpgUserRepository = $this->createMock(CpgUserRepositoryInterface::class);
+        $cpgUserRepository->method('findOneByEmail')->willReturn(null);
+        $cpgUserRepository->method('findOneByUsername')->willReturn(null);
+        $cpgUserRepository->expects(self::once())->method('save')->willReturnCallback(static function (CpgUser $user) use (&$saved): void {
+            $saved = $user;
+        });
+        $cpgUserRepository->expects(self::once())->method('removePendingInvitation')->willReturnCallback(static function (CpgUser $user) use (&$saved): void {
+            self::assertSame($saved, $user, 'Seul le compte créé par cette invitation est retiré.');
+        });
+
+        $messageBus = self::createStub(MessageBusInterface::class);
+        $messageBus->method('dispatch')->willThrowException(new TransportException('Connection refused'));
+
+        $inviter = new CpgUserInviter(
+            $cpgUserRepository,
+            new UsernameGenerator($cpgUserRepository),
+            $messageBus,
+            new MockClock(),
+            $this->auditLoggerExpectingNothing(),
+        );
+
+        $this->expectException(InvitationQueueUnavailableException::class);
+
+        $inviter->invite('jean.dupont@example.com', Locale::FR);
+    }
+
+    /**
+     * La relance porte sur un compte qui existe déjà : rien à retirer. Sa
+     * génération reste avancée en base (limite déjà écrite) ; aucun audit.
+     */
+    public function testReinviteReportsAQueueFailureWithoutAuditOrRemoval(): void
+    {
+        $user = new CpgUser('newcomer', '');
+        $user->setEmail('newcomer@example.com');
+        $user->markInvited(new DateTimeImmutable('2026-09-01 09:00:00'));
+
+        $cpgUserRepository = $this->createMock(CpgUserRepositoryInterface::class);
+        $cpgUserRepository->method('advanceInvitationGeneration')->willReturn(2);
+        $cpgUserRepository->expects(self::never())->method('removePendingInvitation');
+
+        $messageBus = self::createStub(MessageBusInterface::class);
+        $messageBus->method('dispatch')->willThrowException(new TransportException('Connection refused'));
+
+        $inviter = new CpgUserInviter(
+            $cpgUserRepository,
+            new UsernameGenerator($cpgUserRepository),
+            $messageBus,
+            new MockClock(),
+            $this->auditLoggerExpectingNothing(),
+        );
+
+        $this->expectException(InvitationQueueUnavailableException::class);
 
         $inviter->reinvite($user, Locale::FR);
     }

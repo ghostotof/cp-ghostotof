@@ -8,6 +8,7 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
 use App\Security\User\Domain\Exception\EmailAlreadyUsedException;
+use App\Security\User\Domain\Exception\InvitationQueueUnavailableException;
 
 /**
  * Cas d'usage "inviter un utilisateur depuis le backoffice" : crée un compte
@@ -21,7 +22,9 @@ interface CpgUserInviterInterface
     /**
      * @param Locale $locale langue de l'e-mail d'invitation et du lien envoyé
      *
-     * @throws EmailAlreadyUsedException si l'adresse est déjà rattachée à un compte
+     * @throws EmailAlreadyUsedException           si l'adresse est déjà rattachée à un compte
+     * @throws InvitationQueueUnavailableException si la file n'a pas pris l'invitation ;
+     *                                             le compte créé est alors retiré (issue #485)
      */
     public function invite(string $email, Locale $locale): CpgUser;
 
@@ -31,6 +34,8 @@ interface CpgUserInviterInterface
      *
      * @throws AccountNotAwaitingActivationException si le compte est déjà activé
      *                                               ou n'a jamais été invité
+     * @throws InvitationQueueUnavailableException   si la file n'a pas pris l'invitation
+     *                                               (issue #485) ; la génération reste avancée
      */
     public function reinvite(CpgUser $user, Locale $locale): void;
 }
