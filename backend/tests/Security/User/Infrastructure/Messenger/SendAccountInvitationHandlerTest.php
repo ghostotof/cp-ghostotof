@@ -398,17 +398,38 @@ final class SendAccountInvitationHandlerTest extends TestCase
     }
 
     /**
+     * L'échec de l'envoi, et le mot de son message qui dit quelle fabrique de
+     * l'exception de domaine l'a converti.
+     *
+     * @return iterable<string, array{Throwable, string}>
+     */
+    public static function deliveryFailures(): iterable
+    {
+        yield 'transport' => [new TransportException('Connexion impossible'), TransportException::class];
+        yield 'autre échec de l\'envoi' => [new LogicException('rendu impossible'), LogicException::class.', SendAccountInvitationHandlerTest.php:'];
+    }
+
+    /**
      * Issue #425 : si le retrait du jeton non remis échoue à son tour, c'est
      * toujours l'échec de l'envoi qui remonte au worker — sa politique de
      * réessai en dépend —, et le retrait raté est journalisé par sa seule
      * classe : le message d'une exception Doctrine peut citer le condensat.
+     * L'identifiant du jeton, qui n'est pas un secret, permet de le révoquer
+     * seul.
      */
-    public function testAFailedTokenRemovalNeitherReplacesTheDeliveryFailureNorQuotesItsMessage(): void
+    #[DataProvider('deliveryFailures')]
+    public function testAFailedTokenRemovalNeitherReplacesTheDeliveryFailureNorQuotesItsMessage(Throwable $failure, string $describedAs): void
     {
+        $savedTokenId = null;
         $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('save')->willReturnCallback(
+            static function (PasswordSetupToken $token) use (&$savedTokenId): void {
+                $savedTokenId = $token->getId()->toRfc4122();
+            },
+        );
         $tokenRepository->method('remove')->willThrowException(new LogicException('DELETE … token_hash = sentinel'));
         $mailer = self::createStub(MailerInterface::class);
-        $mailer->method('send')->willThrowException(new TransportException('Connexion impossible'));
+        $mailer->method('send')->willThrowException($failure);
 
         $logged = [];
         $logger = $this->createMock(LoggerInterface::class);
@@ -436,10 +457,14 @@ final class SendAccountInvitationHandlerTest extends TestCase
             self::fail('AccountInvitationDeliveryException aurait dû être levée.');
         } catch (AccountInvitationDeliveryException $exception) {
             self::assertNull($exception->getPrevious());
-            self::assertStringContainsString(TransportException::class, $exception->getMessage());
+            self::assertStringContainsString($describedAs, $exception->getMessage());
         }
 
-        self::assertSame(['exception' => LogicException::class, 'userId' => self::USER_ID], $logged['context'] ?? null);
+        self::assertIsString($savedTokenId);
+        self::assertSame(
+            ['exceptionClass' => LogicException::class, 'userId' => self::USER_ID, 'tokenId' => $savedTokenId],
+            $logged['context'] ?? null,
+        );
         self::assertStringNotContainsString('sentinel', json_encode($logged, \JSON_THROW_ON_ERROR));
     }
 

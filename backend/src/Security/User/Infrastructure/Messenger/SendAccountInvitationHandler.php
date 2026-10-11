@@ -90,8 +90,11 @@ final readonly class SendAccountInvitationHandler
         );
 
         // Un seul jeton actif à la fois : la purge de l'ancien et l'insertion
-        // du nouveau sont atomiques (un retry qui échouerait entre les deux ne
-        // doit pas laisser le compte sans jeton).
+        // du nouveau sont atomiques, aucun état intermédiaire n'est visible.
+        // Si l'e-mail ne part pas, ce nouveau jeton est retiré à son tour
+        // (issue #425) : le compte reste alors sans lien valable jusqu'au
+        // réessai suivant, une relance comprise — choix assumé, un lien
+        // qu'on relance est souvent perdu ou douteux.
         $this->entityManager->wrapInTransaction(function () use ($user, $token): void {
             $this->passwordSetupTokenRepository->deleteForUser($user);
             $this->passwordSetupTokenRepository->save($token);
@@ -99,27 +102,12 @@ final readonly class SendAccountInvitationHandler
 
         try {
             $this->mailer->send($this->invitationEmail($user, $recipientEmail, $locale, $clearToken));
-        } catch (TransportExceptionInterface $exception) {
-            // La classe et le code seulement : le message du transport peut
-            // citer une adresse (issue #356), il ne remonte pas.
-            $failure = MailerTransportFailure::from($exception);
-            $this->discardUndeliveredToken($token, $message->userId);
-
-            throw AccountInvitationDeliveryException::becauseTransportFailed($failure->exceptionClass, $failure->code);
         } catch (Throwable $exception) {
+            // Avant toute conversion : rien de ce qui suit ne doit pouvoir
+            // laisser le jeton en place.
             $this->discardUndeliveredToken($token, $message->userId);
 
-            // Le jeton était valide en base (et l'est encore si son retrait
-            // a échoué) : ni l'exception de la construction de l'e-mail (une
-            // adresse que Mime refuse, qu'il cite) ni celle du rendu du
-            // gabarit, dans send() (un message Twig peut citer l'URL), ne doivent atteindre le stamp d'erreur du worker ni
-            // ses logs (issue #419, audit C2). Le réessai n'en change pas dans
-            // ce câblage : ni l'exception remplacée ni celle-ci ne sont
-            // « (un)recoverable », la stratégie du transport décide. Limite :
-            // une exception de ce genre levée nue par send() (un listener de
-            // Symfony\Component\Mailer\Event\MessageEvent) perdrait son effet ;
-            // il n'en existe aucune aujourd'hui.
-            throw AccountInvitationDeliveryException::becauseSendingFailed($this->describeFailure($exception));
+            throw $this->deliveryFailure($exception);
         }
     }
 
@@ -128,26 +116,59 @@ final readonly class SendAccountInvitationHandler
      * attendant une fuite (issue #425). Le réessai de Messenger repasse ici et
      * en émet un nouveau.
      *
-     * Ce jeton seul, jamais tous ceux du compte : une invitation renvoyée,
-     * traitée au même moment par un autre worker, a pu purger celui-ci et
-     * émettre le sien, déjà parti. Le supprimer casserait le lien reçu.
+     * Une exception de transport ne prouve pas que l'e-mail est resté chez
+     * nous (réponse perdue après acceptation, reconnexion SMTP ratée après le
+     * `250`) : le lien reçu est alors mort, et le réessai en envoie un autre.
+     * Limite acceptée, du côté de la sûreté.
+     *
+     * Ce jeton seul, jamais tous ceux du compte : un second consommateur (un
+     * `messenger:consume failed` lancé à la main pendant que le worker tourne)
+     * a pu purger celui-ci et émettre le sien, déjà parti. Le supprimer
+     * casserait le lien reçu.
      *
      * Un retrait raté ne remplace pas l'échec de l'envoi, que le worker doit
      * recevoir tel quel (sa stratégie de réessai en dépend) : il est
-     * journalisé par sa classe seule, le message d'une exception Doctrine
-     * pouvant citer le condensat du jeton. Le jeton expire alors à son terme,
-     * comme avant #425.
+     * journalisé par la classe de son exception seule, le message d'une
+     * exception Doctrine pouvant citer le condensat, et par l'identifiant du
+     * jeton, qui n'est pas un secret (la recherche passe par le condensat) et
+     * permet de le révoquer seul. Le jeton vit alors jusqu'au prochain envoi
+     * réussi, qui le purge, ou jusqu'à son expiration.
      */
     private function discardUndeliveredToken(PasswordSetupToken $token, string $userId): void
     {
         try {
             $this->passwordSetupTokenRepository->remove($token);
         } catch (Throwable $exception) {
-            $this->logger->error('Invitation non remise : le retrait de son jeton a échoué, il reste valable jusqu\'à son expiration.', [
-                'exception' => $exception::class,
+            $this->logger->error('Invitation non remise : le retrait de son jeton a échoué, il reste valable jusqu\'au prochain envoi réussi ou à son expiration.', [
+                'exceptionClass' => $exception::class,
                 'userId' => $userId,
+                'tokenId' => $token->getId()->toRfc4122(),
             ]);
         }
+    }
+
+    /**
+     * Ni l'exception de la construction de l'e-mail (une adresse que Mime
+     * refuse, qu'il cite) ni celle du rendu du gabarit, dans send() (un
+     * message Twig peut citer l'URL), ni le message du transport (qui peut
+     * citer une adresse, issue #356) ne doivent atteindre le stamp d'erreur
+     * du worker ni ses logs (issue #419, audit C2) : jamais de `previous`.
+     * Le réessai n'en change pas dans ce câblage : ni l'exception remplacée ni
+     * celle-ci ne sont « (un)recoverable », la stratégie du transport décide.
+     * Limite : une exception de ce genre levée nue par send() (un listener de
+     * Symfony\Component\Mailer\Event\MessageEvent) perdrait son effet ; il
+     * n'en existe aucune aujourd'hui.
+     */
+    private function deliveryFailure(Throwable $exception): AccountInvitationDeliveryException
+    {
+        if ($exception instanceof TransportExceptionInterface) {
+            // La classe et le code seulement.
+            $failure = MailerTransportFailure::from($exception);
+
+            return AccountInvitationDeliveryException::becauseTransportFailed($failure->exceptionClass, $failure->code);
+        }
+
+        return AccountInvitationDeliveryException::becauseSendingFailed($this->describeFailure($exception));
     }
 
     private function invitationEmail(

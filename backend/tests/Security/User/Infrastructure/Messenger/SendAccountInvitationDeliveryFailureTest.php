@@ -65,8 +65,35 @@ final class SendAccountInvitationDeliveryFailureTest extends KernelTestCase
     public function testAFailedDeliveryLeavesNoTokenOfTheInvitation(Throwable $failure): void
     {
         $user = $this->pendingUser('newcomer', 'newcomer@example.com');
+        $mailer = $this->mailerThat(function () use ($user, $failure): never {
+            // Sans ce contrôle, la table vide en fin de test passerait aussi
+            // pour un jeton jamais validé.
+            self::assertCount(1, $this->tokenHashesOf($user), 'Le jeton doit être validé en base avant l\'envoi.');
 
-        $this->expectDeliveryFailure($this->handler($this->failingMailer(static fn (): never => throw $failure)), $user);
+            throw $failure;
+        });
+
+        $this->expectDeliveryFailure($this->handler($mailer), $user);
+
+        self::assertSame([], $this->tokenHashesOf($user));
+    }
+
+    /**
+     * Le retrait ne dépend pas de l'unité de travail : un `clear()` de
+     * l'EntityManager pendant l'envoi (un listener, un middleware) détache le
+     * jeton, et un `EntityManager::remove()` lèverait alors au lieu de le
+     * supprimer.
+     */
+    public function testAFailedDeliveryRemovesTheTokenEvenOnceDetachedFromTheEntityManager(): void
+    {
+        $user = $this->pendingUser('newcomer', 'newcomer@example.com');
+        $mailer = $this->mailerThat(function (): never {
+            $this->em->clear();
+
+            throw new TransportException('Connexion impossible');
+        });
+
+        $this->expectDeliveryFailure($this->handler($mailer), $user);
 
         self::assertSame([], $this->tokenHashesOf($user));
     }
@@ -78,7 +105,7 @@ final class SendAccountInvitationDeliveryFailureTest extends KernelTestCase
     public function testARecipientAddressMimeRefusesLeavesNoToken(): void
     {
         $user = $this->pendingUser('newcomer', 'newcomer..refused@example.com');
-        $mailer = $this->failingMailer(static fn (): never => throw new LogicException('send() ne doit pas être atteint.'));
+        $mailer = $this->mailerThat(static fn (): never => throw new LogicException('send() ne doit pas être atteint.'));
 
         $this->expectDeliveryFailure($this->handler($mailer), $user);
 
@@ -94,7 +121,7 @@ final class SendAccountInvitationDeliveryFailureTest extends KernelTestCase
         $user = $this->pendingUser('newcomer', 'newcomer@example.com');
         $attempts = 0;
         $sentEmail = null;
-        $mailer = $this->failingMailer(static function (RawMessage $message) use (&$attempts, &$sentEmail): void {
+        $mailer = $this->mailerThat(static function (RawMessage $message) use (&$attempts, &$sentEmail): void {
             if (1 === ++$attempts) {
                 throw new TransportException('Connexion impossible');
             }
@@ -113,16 +140,18 @@ final class SendAccountInvitationDeliveryFailureTest extends KernelTestCase
     }
 
     /**
-     * Seul le jeton de ce passage est retiré. Une invitation renvoyée traitée
-     * en même temps par un autre worker a pu purger ce jeton et émettre le
-     * sien, déjà parti : supprimer tous les jetons du compte le casserait.
+     * Seul le jeton de ce passage est retiré. Un second consommateur (un
+     * `messenger:consume failed` lancé à la main pendant que le worker tourne)
+     * a pu purger ce jeton et émettre le sien, déjà parti : supprimer tous les
+     * jetons du compte le casserait. Simulé sur la même connexion : le test
+     * fixe le retrait par identifiant, pas l'isolation de deux transactions.
      */
     public function testAFailedDeliveryRemovesItsOwnTokenOnly(): void
     {
         $user = $this->pendingUser('newcomer', 'newcomer@example.com');
         $concurrentHash = hash('sha256', 'jeton-du-worker-concurrent');
         $repository = self::getContainer()->get(PasswordSetupTokenRepositoryInterface::class);
-        $mailer = $this->failingMailer(function () use ($repository, $user, $concurrentHash): never {
+        $mailer = $this->mailerThat(function () use ($repository, $user, $concurrentHash): never {
             // L'autre worker, entre la création de notre jeton et l'échec.
             $repository->deleteForUser($user);
             $repository->save(new PasswordSetupToken($user, $concurrentHash, new DateTimeImmutable('+48 hours')));
@@ -148,7 +177,7 @@ final class SendAccountInvitationDeliveryFailureTest extends KernelTestCase
     /**
      * @param Closure(RawMessage): void $send
      */
-    private function failingMailer(Closure $send): MailerInterface
+    private function mailerThat(Closure $send): MailerInterface
     {
         return new readonly class($send) implements MailerInterface {
             /**

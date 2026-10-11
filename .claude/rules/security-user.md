@@ -96,11 +96,20 @@ paths:
     token with verbose trace settings, checks that each leaking case did quote it before conversion, and
     runs the real retry listener.
     **A token whose e-mail did not leave does not stay valid** (issue #425): on any failure of building or
-    sending the e-mail, the handler removes **its own** token (`remove($token)`) before throwing, and the
-    Messenger retry issues a fresh one. Never `deleteForUser()` there: a resend handled at the same time by
-    another worker may already have purged this token and sent its own. A failed removal never replaces
-    the delivery exception (the retry strategy reads it): it is logged `error` with the exception class
-    and `userId` only — a Doctrine message can quote the digest — and the token then expires at its term.
+    sending the e-mail, the handler removes **its own** token (`remove($token)`, a DQL `DELETE` by id that
+    depends neither on the unit of work nor on a global `flush()`) first, then converts the failure, and the
+    Messenger retry issues a fresh one. Never `deleteForUser()` there: a second consumer (a hand-run
+    `messenger:consume failed` while the worker runs) may already have purged this token and sent its own.
+    A failed removal never replaces the delivery exception (the retry strategy reads it): it is logged
+    `error` with `exceptionClass`, `userId` and `tokenId` only — a Doctrine message can quote the digest,
+    the id is no secret and lets an operator revoke that token alone — and the token then lives until the
+    next successful send purges it, or until it expires. Accepted limits, settled in the review of #425:
+    a transport exception does not prove the e-mail stayed home (lost response after acceptance, SMTP
+    reconnection failing after the `250`), so a received link can be dead — the retry sends another; a
+    **resend during an outage** leaves the account with no valid link until a retry succeeds, since the
+    transaction purged the previous link before sending (kept on purpose: one active token at a time, and
+    a resent link is often lost or doubtful); an asynchronous bounce after the provider accepted the
+    message is out of reach (only a TEM events webhook would close it).
     `SendAccountInvitationDeliveryFailureTest` reads the table on the real `_test` database.
   - `Infrastructure/` — `Doctrine/{CpgUser,PasswordSetupToken}Repository.php` (sole impls;
     `CpgUserRepository` is also the **loader of the `cpg_users` provider**, `UserLoaderInterface`, issue #418:
