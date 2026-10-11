@@ -26,7 +26,7 @@ final class LoginThrottlingRefusalListenerPriorityTest extends KernelTestCase
         $listeners = $dispatcher->getListeners(LoginFailureEvent::class);
         self::assertNotEmpty($listeners, 'Aucun écouteur de LoginFailureEvent sur le firewall `login`.');
 
-        $last = $listeners[array_key_last($listeners)];
+        $last = array_last($listeners);
         $target = \is_array($last) ? $last[0] : $last;
 
         self::assertInstanceOf(

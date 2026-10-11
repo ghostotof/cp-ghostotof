@@ -94,6 +94,22 @@ Vitest configured with `npm test`. A `ROLE_SUPER`-gated backoffice (`/admin` on 
 on the backend) lets an authenticated super-admin manage all of the above content plus user accounts — see
 `.claude/rules/backoffice-api.md` and `.claude/rules/frontend-backoffice.md`.
 
+## Target PHP version (issue #429)
+
+`composer.json` requires **`"php": ">=8.5"`**, the runtime of every image, of CI (`setup-php`
+`php-version: '8.5'`) and of the dev container — decided on 2026-10-11, rather than keeping `>=8.4` and
+forbidding 8.5 functions through the analysers. The lower bound used to allow an install nobody tested or
+deployed, and let an 8.5 function (`array_first`, during #419) through on a transitive polyfill alone,
+since PHPStan, Rector (`withPhpSets()` without argument) and Psalm all read their target version from
+that constraint — none sets its own, keep it that way so the one constraint drives all three. The
+polyfill of the runtime's version is listed in `replace` like the older ones (`symfony/polyfill-php85`,
+removed from the lock); `polyfill-php86` stays, its functions are not native yet. Moving to 8.5 let
+Rector's `ArrayFirstLastRector` rewrite four `$a[array_key_last($a)]` / `array_values($a)[0]` into
+`array_last()` / `array_first()`. No `config.platform.php`: Composer only ever runs in the container.
+`tests/Shared/PhpConstraintMatchesRuntimeTest.php` fails when the constraint is not exactly
+`>=<runtime major.minor>` or that version's polyfill is not replaced — so a runtime bump turns it red
+until both move in the same change.
+
 ## Exception traces under PHPUnit (issue #420)
 
 `phpunit.dist.xml` sets `<ini name="zend.exception_ignore_args" value="1"/>`, as `php.prod.ini` does in
