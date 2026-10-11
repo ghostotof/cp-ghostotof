@@ -114,7 +114,9 @@ so that the census misses nothing else: name the class (`RedactingDriver`, extra
 `tests/Shared/NoAnonymousClassNorFreeFunctionTest.php` (`tests/Support/AnonymousClassesAndFreeFunctions`,
 by tokens through `PhpSources`) fails on any `new class` — `readonly` or under an attribute too — and on
 any named `function` whose enclosing brace is not a class-like body, a function declared inside a method
-or a closure included (PHP declares it global when it runs). No exemption list. A secret under
+or a closure included (PHP declares it global when it runs); an imported function (`use function`, grouped
+import included) is not one. The same walk tells `MisqualifiedNativeCalls` (below) which functions a file
+declares: one definition of "outside any class". No exemption list. A secret under
 another name or in an `array` is hidden by hand and pinned in `HIDDEN_BY_HAND` (`AuthCookieFactory::create($value)`,
 `ReplayRefusingHttpClient::request($options)` — the Scaleway key and the nominative CV —,
 `PasswordOptionRedactor::redact($text)`); an entry the census already sees is refused there.

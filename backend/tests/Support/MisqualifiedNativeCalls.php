@@ -183,9 +183,9 @@ final class MisqualifiedNativeCalls
 
     /**
      * Les fonctions que le fichier déclare hors de toute classe, en minuscules :
-     * au premier niveau, ou dans le corps d'une fonction. Une méthode est une
-     * déclaration posée directement dans le corps d'une classe, d'une
-     * interface, d'un trait ou d'une énumération.
+     * au premier niveau, ou dans le corps d'une fonction. Le parcours est celui
+     * de la garde de #432 ({@see AnonymousClassesAndFreeFunctions}), pour une
+     * seule définition de « hors classe ».
      *
      * @param list<PhpToken> $tokens
      *
@@ -193,39 +193,7 @@ final class MisqualifiedNativeCalls
      */
     private static function declaredFunctions(array $tokens): array
     {
-        $declared = [];
-        $depth = 0;
-        /** @var list<int> $classBodies profondeur d'accolades à l'intérieur de chaque corps de classe ouvert */
-        $classBodies = [];
-        $classDeclared = false;
-        foreach ($tokens as $index => $token) {
-            if ($token->is([\T_CLASS, \T_INTERFACE, \T_TRAIT, \T_ENUM])
-                && true !== ($tokens[$index - 1] ?? null)?->is(\T_DOUBLE_COLON)) {
-                // Le corps s'ouvre à la prochaine accolade ; `Foo::class` n'en déclare aucun.
-                $classDeclared = true;
-            } elseif (PhpSources::opensBrace($token)) {
-                ++$depth;
-                if ($classDeclared) {
-                    $classBodies[] = $depth;
-                    $classDeclared = false;
-                }
-            } elseif ('}' === $token->text) {
-                if (end($classBodies) === $depth) {
-                    array_pop($classBodies);
-                }
-                --$depth;
-            } elseif ($token->is(\T_FUNCTION) && end($classBodies) !== $depth) {
-                $name = $tokens[$index + 1] ?? null;
-                if ('&' === $name?->text) {
-                    $name = $tokens[$index + 2] ?? null;
-                }
-                if (null !== $name && $name->is(\T_STRING)) {
-                    $declared[strtolower($name->text)] = true;
-                }
-            }
-        }
-
-        return $declared;
+        return array_fill_keys(array_map(strtolower(...), AnonymousClassesAndFreeFunctions::freeFunctionNames($tokens)), true);
     }
 
     private static function isOptimized(string $function): bool

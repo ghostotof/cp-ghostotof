@@ -31,13 +31,11 @@ use PHPUnit\Framework\TestCase;
  */
 final class NoAnonymousClassNorFreeFunctionTest extends TestCase
 {
-    private const string SOURCES = __DIR__.'/../../src';
-
     public function testNoSourceFileDeclaresAnAnonymousClassOrAFreeFunction(): void
     {
         self::assertSame(
             [],
-            AnonymousClassesAndFreeFunctions::in(self::SOURCES),
+            AnonymousClassesAndFreeFunctions::in(\dirname(__DIR__, 2).'/src'),
             'Nommez la classe ou faites de la fonction une méthode : les gardes de signatures ne voient que les'
             .' déclarations nommées (issue #432, .claude/rules/backend-architecture.md).',
         );
@@ -71,6 +69,10 @@ final class NoAnonymousClassNorFreeFunctionTest extends TestCase
         yield 'méthode d\'une classe anonyme : seule la classe compte' => ["<?php\nnamespace App;\n\$a = new class {\n    public function m(): void {}\n};\n", ['3: classe anonyme']];
         // Une closure en argument ouvre une accolade avant le corps de la classe anonyme.
         yield 'classe anonyme qui reçoit une closure' => ["<?php\nnamespace App;\n\$a = new class(function () {}) {\n    public function m(): void {}\n};\n", ['3: classe anonyme']];
+        // Le corps attendu de la classe externe survit à la classe déclarée dans ses arguments.
+        yield 'classe anonyme dans les arguments d\'une classe anonyme' => ["<?php\nnamespace App;\n\$a = new class(function () { return new class {}; }) {\n    public function m(): void {}\n};\n", ['3: classe anonyme', '3: classe anonyme']];
+        yield 'fonction au nom de mot-clé' => ["<?php\nnamespace App;\nfunction readonly(): void {}\n", ['3: fonction readonly()']];
+        yield 'fonction déclarée sous condition' => ["<?php\nnamespace App;\nif (\$a) { function helper(): void {} }\n", ['3: fonction helper()']];
         yield 'les deux dans un fichier' => ["<?php\nnamespace App;\nfunction helper(): void {}\n\$a = new class {};\n", ['3: fonction helper()', '4: classe anonyme']];
 
         // Ce que la garde laisse passer.
@@ -83,6 +85,7 @@ final class NoAnonymousClassNorFreeFunctionTest extends TestCase
         yield 'fonction fléchée' => ["<?php\nnamespace App;\n\$f = fn (\$value) => \$value;\n", []];
         yield 'nom de classe lu par ::class' => ["<?php\nnamespace App;\n\$a = Foo::class;\n\$b = \$o::class;\n", []];
         yield 'import de fonction' => ["<?php\nnamespace App;\nuse function strlen;\n", []];
+        yield 'import groupé de fonctions' => ["<?php\nnamespace App;\nuse Foo\\{Bar, function baz, function qux};\n", []];
         // Une accolade d'interpolation se referme comme une autre : la méthode suivante reste une méthode.
         yield 'accolade d\'interpolation dans une méthode' => ["<?php\nnamespace App;\nfinal class A {\n    public function m(): string { return \"{\$this->a}\"; }\n    public function n(): void {}\n}\n", []];
     }
