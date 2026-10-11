@@ -200,12 +200,49 @@ must be high-entropy (32 random bytes; CI uses `openssl rand -hex 16`). An empty
 `EmptyApplicationSecretException` at first use — the CSRF signer used to accept it, which let anyone forge a
 token. `tests/Shared/Infrastructure/Security/ApplicationSecretUsesTest.php` finds, by tokens, every file of
 `src/` naming `%kernel.secret%`, `kernel.secret`, `APP_SECRET` or `%env(APP_SECRET)%` (either quotes),
-requires an actual `SecretKeyDerivation::derive(…, self::KEY_CONTEXT)` call and a `KEY_CONTEXT` no other file
-uses, and refuses any `config/**.yaml` naming the secret besides `framework.secret`. Not covered, accepted: a
-class handing the raw secret to another, and Symfony's own uses (`login_throttling`, `SigningSerializer`),
+or its expression-language forms (`parameter('kernel.secret')`, `env('APP_SECRET')`), and since #487 every file
+deriving a key at all (a secret received from another class); in each, **every** `KeyedMac::fromSecret()` /
+`SecretKeyDerivation::derive()` call must take exactly `self::KEY_CONTEXT` as its second argument with its
+exact argument count (swapped arguments, an extra one, a concatenated context or a second call under a literal
+context turn it red), the `KEY_CONTEXT` must match `SecretKeyDerivation::CONTEXT_PATTERN` and no other file may
+use it, and no MAC is computed by hand (see the next paragraph); it refuses any `config/**.yaml` naming the
+secret besides `framework.secret`. Not covered, accepted: a
+class handing the raw secret to another that uses it without deriving, an obfuscated name
+(`getenv('APP_'.'SECRET')`), a MAC compared with `===` after a public `sign()` instead of `verifies()`, and Symfony's own uses (`login_throttling`, `SigningSerializer`),
 which keep the raw secret but never return their output to a client. Unit tests take key material from
 `tests/Support/TestKeys` (generated, like `TestCredentials`): a literal assigned to a name saying "secret"
 gets flagged by GitGuardian.
+
+**The HMAC under a derived key is written once, in `Shared/Infrastructure/Security/KeyedMac`** (issue #487).
+`KeyedMac::fromSecret($secret, self::KEY_CONTEXT, MacEncoding::Hex|Binary)` — a named constructor, the only
+entry point — derives the key (an empty secret refused there, and since #487 a context outside
+`cp-ghostotof/<use>/v<n>`, `InvalidKeyContextException`, checked by `SecretKeyDerivation::derive()` itself), then `sign($data)` and `verifies($mac, $data)` (HMAC-SHA256, `hash_equals()`) — the four uses
+above go through it, and none calls `hash_hmac()` or `hash_equals()` itself any more. An immutable object, not a
+service (not a value object strictly: it carries a key and has no equality to offer): each use has its own key, context and encoding, fixed at creation, so a use cannot sign in hex and
+verify in binary. **The derivation happens in `fromSecret()`, the laziness stays with the caller**, each
+keeping its moment: the cache derives on first use (`??=`, #474 — the build's warm-up has no secret), the CSRF
+signer and the login fingerprint on every call (a refusal at first use, not at every request's
+construction), the Messenger serializer in its constructor. `KeyedMac::BINARY_LENGTH` is the length the cache
+splits its stored value on. Truncation stays with the caller (the fingerprint's 6 hex chars). Rejected: a lazy
+`KeyedMac` holding the raw secret (mutable, and it would have moved Messenger's refusal), and a pair of
+methods per encoding (sign one way, verify the other). Going through it is no rotation:
+`DerivedMacsSurviveKeyedMacTest` writes, per use, the whole computation from before #487 — the #455
+derivation as `hash_hkdf('sha256', …, 32, …)`, never a call to `SecretKeyDerivation`, its **literal** context
+and its `hash_hmac()` — and checks both directions (a MAC signed before is accepted, the class signs what it would have
+signed); a changed `KEY_CONTEXT` turns it red, which is intended — a rotation is decided and announced in the
+release notes, never slipped in by a refactoring. `sign()`'s `$data` and both of `verifies()`'s parameters carry
+`#[SensitiveParameter]`, pinned in `HIDDEN_BY_HAND` (see the parameters rule below).
+**The derived key never shows in a dump**: it is held in a `SensitiveParameterValue`, which `var_dump()`,
+`print_r()`, `var_export()`, an array cast, `json_encode()` and Symfony's VarDumper (`dump()`, the profiler) all
+show empty, and which PHP refuses to serialize. Not a `__debugInfo()`: VarDumper reads the private properties
+first and only adds what it returns (`Caster::castObject`, measured in the review of #487). Not covered: the
+**raw** `APP_SECRET` the CSRF signer, the fingerprint and the cache marshaller keep as a string property to
+derive later (pre-existing). `ApplicationSecretUsesTest` refuses, in any file of the census, `hash_hmac()`,
+`hash_equals()`, `hash_hmac_file()`, `hash_init()` and `sodium_crypto_auth(_verify)()` — called, qualified or
+not, imported by `use function`, taken as a first-class callable or named in a string for `call_user_func()`;
+never a method or constant of the same name, its declaration nor a comment: such a class has no other key than
+the one it derives. `hash_equals()` elsewhere (the double-submit comparison of `CsrfCookieRequestSubscriber`) is not a
+MAC and stays.
 
 **`src/` never instantiates a bare `\Exception`, `\LogicException`, `\RuntimeException` or
 `\InvalidArgumentException`** (issues #338, #383).
@@ -305,8 +342,10 @@ declares: one definition of "outside any class". No exemption list. A secret und
 another name or in an `array` is hidden by hand and pinned in `HIDDEN_BY_HAND` (`AuthCookieFactory::create($value)`,
 `ReplayRefusingHttpClient::request($options)` — the Scaleway key and the nominative CV —,
 `PasswordOptionRedactor::redact($text)`); an entry the census already sees is refused there.
-`CsrfCookieTokenSigner::signature($random)` stays visible on purpose (half the token, useless without
-`APP_SECRET`). No exclusion list until a first false positive needs one. Why it matters although
+`KeyedMac::sign($data)` and both parameters of `verifies($mac, $data)` are hidden and pinned there (issue
+#487): the tried login identifier, the CSRF token's two halves — together a valid token — and the Messenger
+envelope body go through them under generic names, and `hash_equals()`, which received them before, hides its
+own. No exclusion list until a first false positive needs one. Why it matters although
 production and, since #420, PHPUnit strip arguments (`zend.exception_ignore_args`, see
 `.claude/rules/backend-outillage.md`): dev does not (the debug JSON error body, Messenger's
 `ErrorDetailsStamp`, output pasted in a ticket or an assistant session), and `debug_backtrace()` never
