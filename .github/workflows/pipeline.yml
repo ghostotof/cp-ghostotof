@@ -874,11 +874,15 @@ jobs:
       # exigerait une signature que l'API ramenée ne produit pas (clé
       # `messenger-envelope/v2` contre `v1`, ou MAC absent avant #444) et
       # enverrait chaque message dans `failed`.
+      # Chaque `undo` est tenté même si un autre échoue (`bash -e` s'arrêterait
+      # au premier, laissant la préprod à moitié ramenée) ; le job reste rouge.
       - name: Rollback
         run: |
-          kubectl -n preprod rollout undo deployment/backend
-          kubectl -n preprod rollout undo deployment/worker
-          kubectl -n preprod rollout undo deployment/frontend
+          status=0
+          for workload in backend worker frontend; do
+            kubectl -n preprod rollout undo "deployment/$workload" || status=1
+          done
+          exit "$status"
 
   # ---------------------------------------------------------------------------
   # Phase 3 — sur `main` seulement (spec 0006, D7/D8)
