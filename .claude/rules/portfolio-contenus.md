@@ -78,20 +78,27 @@ paths:
     its short list (unique, foreign key, deadlock…) — measured, `PostgresAdvisoryOrderScopeLockTest`
     pins it. No `rollBack()` after a failed `commit()`: PostgreSQL already rolled the transaction back,
     and the lock with it. The check runs before the COMMIT, hence still under the scope lock for the
-    application's writes. **A COMMIT the database refuses closes the EntityManager** (issue #502), whatever
-    the SQLSTATE (`forgetWritesRefusedAtCommit()`, the adapter's `onCommitRefused`): the operation's
+    application's writes. **A COMMIT the database refuses closes the EntityManager** (issue #502): any
+    `DriverException` the COMMIT raises, whatever its SQLSTATE — the only family the skeleton hands to
+    `onCommitRefused` (`forgetWritesRefusedAtCommit()`; a `CommitFailedRollbackOnly`, which nothing here
+    can cause, leaves it open); the hook stays the place for it, wherever the SQLSTATE knowledge moves. The operation's
     `flush()`es had succeeded at the savepoint, so the UnitOfWork held as written what the refusal had just
     rolled back — a read on the same EntityManager returned the refused position, `find()` an entry never
     committed, and a write outside the lock started from there (a following locked operation of the same
-    scope was already repaired by the #402 re-read below, measured). Closed, it behaves as after Doctrine's
-    own failed COMMIT (`UnitOfWork::commit()` closes it too): identity map emptied, a read re-reads the
-    database, a write fails with `EntityManagerClosed` — the refusal is terminal for the unit of work that
-    got it. Never a business refusal: those are thrown by the operation before the COMMIT and leave it
-    open. A Messenger worker gets a fresh one at the next message (DoctrineBundle's `Registry::reset()`
+    scope was already repaired by the #402 re-read below, measured). It is closed, as Doctrine's own failed
+    COMMIT closes it (`UnitOfWork::commit()`): identity map emptied, a **new** read re-reads the database, an
+    ORM write fails with `EntityManagerClosed` — the refusal is terminal for the unit of work that got it.
+    What the caller already holds keeps the refused values (detached), and a raw DBAL statement or a DQL
+    `UPDATE`/`DELETE` still goes through the closed manager (no repository of `Portfolio` writes that way).
+    A session lost at the COMMIT (`ConnectionLost`, a `DriverException` too) leaves its outcome unknown:
+    closing is the safe answer there as well. A business refusal (409, 404) is thrown by the operation and
+    leaves the manager open — which holds because every `Administrator` throws it **before** any write: an
+    operation that threw after its own `flush()` would leave the same stale state (the savepoint rolled
+    back, the manager open); keep it so. A Messenger worker gets a fresh one at the next message (DoctrineBundle's `Registry::reset()`
     resets a closed manager); a command stops on the exception. Rejected: re-reading the scope on the
     refusal (one more query on the failure path, to guard so it never masks the refusal, the scope's class
-    only, and writes that carry on after a broken invariant); `clear()` (detaches what the caller holds of
-    other contexts and leaves the manager writing). `PostgresAdvisoryOrderScopeLockTest` pins a read, a
+    only, and writes that carry on after a broken invariant); `clear()` alone (it leaves the manager writing
+    — `close()` empties the identity map just as wide, every class included, then refuses ORM writes). `PostgresAdvisoryOrderScopeLockTest` pins a read, a
     following write and a refusal under another SQLSTATE (a deferred unique constraint on a temporary
     table). **Accepted limits**: two concurrent SQL transactions that skip that lock can
     each re-read the group without the other's uncommitted write and both commit; the check costs one

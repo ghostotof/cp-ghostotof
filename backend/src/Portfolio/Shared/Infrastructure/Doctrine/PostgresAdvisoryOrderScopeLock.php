@@ -57,23 +57,36 @@ use Psr\Log\LoggerInterface;
  * sous le nom de l'invariant » tient ainsi par construction, au lieu de
  * reposer sur la mémoire du prochain appelant.
  *
- * **Un COMMIT refusé par la base ferme l'EntityManager** (issue #502), quel
- * que soit le SQLSTATE. Les `flush()` de l'opération ont réussi au point de
- * sauvegarde ; le refus annule ce qu'ils ont écrit, mais l'UnitOfWork le tient
- * pour écrit : une lecture sur le même EntityManager rendait la position
- * refusée, `find()` une entrée jamais validée, et une écriture hors verrou
- * repartait de là. Fermé, il se comporte comme après l'échec du COMMIT de
- * Doctrine lui-même (`UnitOfWork::commit()`) : sa carte d'identité est vidée,
- * une lecture relit la base, une écriture échoue en `EntityManagerClosed`. Ce
- * n'est jamais un refus métier — ceux-là sont levés par l'opération, avant le
- * COMMIT, et laissent l'EntityManager ouvert. Un worker Messenger le retrouve
- * neuf au message suivant (`Registry::reset()` de DoctrineBundle réinitialise
- * un EntityManager fermé) ; une commande s'arrête sur l'exception. Rejetés :
+ * **Un COMMIT refusé par la base ferme l'EntityManager** (issue #502) : toute
+ * `DriverException` levée par le COMMIT, quel que soit son SQLSTATE — la seule
+ * famille que le squelette passe à `onCommitRefused`. Les `flush()` de
+ * l'opération ont réussi au point de sauvegarde ; le refus annule ce qu'ils
+ * ont écrit, mais l'UnitOfWork le tient pour écrit : une lecture sur le même
+ * EntityManager rendait la position refusée, `find()` une entrée jamais
+ * validée, et une écriture hors verrou repartait de là. Il est fermé comme
+ * l'échec du COMMIT de Doctrine lui-même le ferme
+ * ({@see \Doctrine\ORM\UnitOfWork::commit()}) : sa carte d'identité est vidée,
+ * une **nouvelle** lecture relit la base, une écriture par l'ORM échoue en
+ * {@see \Doctrine\ORM\Exception\EntityManagerClosed}. Ce que l'appelant tient
+ * déjà garde les valeurs refusées (détaché), et une instruction DBAL brute ou
+ * un `UPDATE` DQL passe encore — aucun dépôt du Portfolio n'écrit ainsi. Une
+ * session perdue au COMMIT (`ConnectionLost`, une `DriverException` aussi)
+ * laisse son issue inconnue : fermer reste la réponse sûre. Un refus métier
+ * (409, 404) est levé par l'opération et laisse l'EntityManager ouvert, ce
+ * qui ne tient que parce que chaque `Administrator` le lève **avant** toute
+ * écriture : levé après un `flush()`, il laisserait le même état périmé. Un worker Messenger le retrouve neuf au message
+ * suivant ({@see \Doctrine\Bundle\DoctrineBundle\Registry::reset()}
+ * réinitialise un EntityManager fermé) ; une commande s'arrête sur
+ * l'exception. Un COMMIT que DBAL refuse lui-même avant d'écrire
+ * (`CommitFailedRollbackOnly`, après un `setRollbackOnly()` que rien
+ * n'appelle ici) n'est pas une `DriverException` et laisse l'EntityManager
+ * ouvert. Rejetés :
  * relire le seul périmètre sur le refus (une requête de plus sur le chemin
  * d'échec, à protéger pour ne pas masquer le refus, la seule classe du
  * périmètre couverte, et des écritures qui reprennent après un invariant
- * cassé) ; `clear()`, qui détacherait aussi ce que l'appelant tient d'autres
- * contextes en laissant l'EntityManager écrire.
+ * cassé) ; `clear()` seul, qui laisserait l'EntityManager écrire — `close()`
+ * vide la carte d'identité de la même façon, toutes classes confondues, mais
+ * refuse ensuite toute écriture par l'ORM.
  *
  * Ce que l'EntityManager a chargé **avant** le verrou est relu une fois le
  * verrou pris (issue #402) : `find()` rendrait l'instance de la carte
@@ -166,15 +179,11 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
     }
 
     /**
-     * La base a refusé le COMMIT (issue #502) : tout ce que les `flush()` de
-     * l'opération avaient écrit est annulé, quel qu'en soit le SQLSTATE, alors
-     * que l'UnitOfWork le tient pour écrit. L'EntityManager est donc fermé,
-     * comme Doctrine le fait quand son propre COMMIT échoue
-     * ({@see \Doctrine\ORM\UnitOfWork::commit()}) : sa carte d'identité vidée,
-     * une lecture relit la base, et une écriture échoue en
-     * {@see \Doctrine\ORM\Exception\EntityManagerClosed} au lieu de repartir de
-     * ce que la base a refusé. Le refus des groupes de traduction (`23T90`)
-     * est nommé ; tout autre remonte tel quel.
+     * Le crochet `onCommitRefused` du squelette, qui fait ici deux choses
+     * (issue #502, voir plus haut) : il ferme l'EntityManager, dont l'UnitOfWork
+     * tient pour écrit ce que le refus vient d'annuler, quel que soit le
+     * SQLSTATE ; puis il nomme le refus des groupes de traduction (`23T90`),
+     * tout autre remontant tel quel.
      */
     private function forgetWritesRefusedAtCommit(DriverException $refusal): ?TranslationGroupHasSeveralPositionsException
     {

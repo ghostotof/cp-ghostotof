@@ -6,6 +6,7 @@ namespace App\Tests\Portfolio\Shared\Infrastructure\Doctrine;
 
 use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
 use App\Portfolio\Contribution\Domain\Entity\Contribution;
+use App\Portfolio\Contribution\Domain\Repository\ContributionRepositoryInterface;
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\Exception\TranslationGroupHasSeveralPositionsException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -40,6 +41,9 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     private const string SCOPE = FakeTranslatableContent::class;
 
     private const string OTHER_SCOPE = FakeOrderable::class;
+
+    /** Un décalage qui sort une entrée de la position de son groupe : le trigger différé refuse le COMMIT. */
+    private const int OUT_OF_ITS_GROUP = 7;
 
     private Connection $probe;
 
@@ -217,18 +221,15 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     public function testACommitRefusedByTheGroupGuardFailsUnderTheInvariantsName(): void
     {
         $connection = $this->entityManager()->getConnection();
-        $administrator = self::getContainer()->get(ContributionAdministratorInterface::class);
-        $french = $administrator->create(Locale::FR, 'T', 'P', 'R', 'https://example.com', 'S', 'B');
-        $english = $administrator->create(Locale::EN, 'T', 'P', 'R', 'https://example.com', 'S', 'B', $french->getTranslationGroup());
-        $caught = null;
 
         try {
-            $this->lock()->withLock(Contribution::class, static fn (): int|string => $connection->executeStatement(
-                'UPDATE contribution SET position = position + 7 WHERE id = ?',
-                [$english->getId()->toRfc4122()],
-            ));
-        } catch (Throwable $exception) {
-            $caught = $exception;
+            [$french, $english] = $this->contributionPair();
+            $caught = $this->failureOfALockedRun(static function () use ($connection, $english): void {
+                $connection->executeStatement(
+                    'UPDATE contribution SET position = position + ? WHERE id = ?',
+                    [self::OUT_OF_ITS_GROUP, $english->getId()->toRfc4122()],
+                );
+            });
         } finally {
             $connection->executeStatement('DELETE FROM contribution');
         }
@@ -253,18 +254,13 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     public function testAReadAfterACommitRefusedByTheGroupGuardSeesTheDatabase(): void
     {
         $entityManager = $this->entityManager();
-        [, $english] = $this->contributionPair();
-        $storedPosition = $english->getPosition();
         $neverCommitted = new Contribution(Locale::FR, 'Jamais validée', 'P', 'R', 'https://example.com', 'S', 'B', 0);
 
         try {
-            $caught = $this->refusedAtCommit(static function () use ($entityManager, $english, $neverCommitted): void {
-                $english->moveToPosition($english->getPosition() + 7);
-                $entityManager->persist($neverCommitted);
-                $entityManager->flush();
-            });
+            [, $english] = $this->contributionPair();
+            $storedPosition = $english->getPosition();
+            $this->refuseTheNextCommit($english, $neverCommitted);
 
-            self::assertInstanceOf(TranslationGroupHasSeveralPositionsException::class, $caught, \sprintf('Le COMMIT n\'a pas été refusé par la garde des groupes : %s.', get_debug_type($caught)));
             self::assertSame($storedPosition, $entityManager->find(Contribution::class, $english->getId())?->getPosition(), 'Une lecture après le refus rend la position que la base a refusée.');
             self::assertNull($entityManager->find(Contribution::class, $neverCommitted->getId()), 'Une lecture après le refus rend une entrée que la base n\'a jamais validée.');
         } finally {
@@ -275,32 +271,31 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     /**
      * Issue #502 : après un COMMIT refusé, une écriture sur le même
      * EntityManager échoue bruyamment au lieu de repartir de ce que la base a
-     * refusé. Avant, l'opération suivante passait — sous verrou, la relecture
-     * de #402 la réparait ; hors verrou, elle écrivait sur l'état refusé.
+     * refusé — hors verrou, où rien ne relisait l'état refusé, comme sous
+     * verrou, où la relecture de #402 réparait déjà le périmètre (mesuré :
+     * avant le correctif, les deux passaient).
      */
     public function testAWriteAfterACommitRefusedByTheGroupGuardFailsOnTheClosedEntityManager(): void
     {
         $entityManager = $this->entityManager();
-        [$french, $english] = $this->contributionPair();
-        $administrator = self::getContainer()->get(ContributionAdministratorInterface::class);
-        $nextWrite = null;
+        $container = self::getContainer();
 
         try {
-            $this->refusedAtCommit(static function () use ($entityManager, $english): void {
-                $english->moveToPosition($english->getPosition() + 7);
-                $entityManager->flush();
-            });
+            [$french, $english] = $this->contributionPair();
+            $this->refuseTheNextCommit($english);
 
-            try {
-                $administrator->reorder([$french->getTranslationGroup()->toRfc4122()]);
-            } catch (Throwable $exception) {
-                $nextWrite = $exception;
-            }
+            $outsideTheLock = $this->failureOf(static fn () => $container->get(ContributionRepositoryInterface::class)->save(
+                new Contribution(Locale::FR, 'Après le refus', 'P', 'R', 'https://example.com', 'S', 'B', 0),
+            ));
+            $underTheLock = $this->failureOf(static fn () => $container->get(ContributionAdministratorInterface::class)->reorder(
+                [$french->getTranslationGroup()->toRfc4122()],
+            ));
         } finally {
             $entityManager->getConnection()->executeStatement('DELETE FROM contribution');
         }
 
-        self::assertInstanceOf(EntityManagerClosed::class, $nextWrite, \sprintf('L\'écriture suivant un COMMIT refusé n\'a pas été refusée : %s.', get_debug_type($nextWrite)));
+        self::assertInstanceOf(EntityManagerClosed::class, $outsideTheLock, \sprintf('Une écriture hors verrou suivant un COMMIT refusé n\'a pas été refusée : %s.', get_debug_type($outsideTheLock)));
+        self::assertInstanceOf(EntityManagerClosed::class, $underTheLock, \sprintf('Une écriture sous verrou suivant un COMMIT refusé n\'a pas été refusée : %s.', get_debug_type($underTheLock)));
         self::assertFalse($entityManager->getConnection()->isTransactionActive());
     }
 
@@ -315,7 +310,7 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     {
         $connection = $this->entityManager()->getConnection();
 
-        $caught = $this->refusedAtCommit(static function () use ($connection): void {
+        $caught = $this->failureOfALockedRun(static function () use ($connection): void {
             $connection->executeStatement('CREATE TEMPORARY TABLE refused_at_commit (value int UNIQUE DEFERRABLE INITIALLY DEFERRED)');
             $connection->executeStatement('INSERT INTO refused_at_commit (value) VALUES (1), (1)');
         });
@@ -416,15 +411,46 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     }
 
     /**
-     * Lance `$operation` sous le verrou des contributions et rend ce que le
-     * COMMIT a levé — `null` s'il a validé.
+     * Sous le verrou des contributions, sort `$entry` de la position de son
+     * groupe et persiste `$neverCommitted`, puis vérifie que le trigger différé
+     * refuse le COMMIT : le point de départ des tests de #502.
+     */
+    private function refuseTheNextCommit(Contribution $entry, ?Contribution $neverCommitted = null): void
+    {
+        $entityManager = $this->entityManager();
+        $refusal = $this->failureOfALockedRun(static function () use ($entityManager, $entry, $neverCommitted): void {
+            $entry->moveToPosition($entry->getPosition() + self::OUT_OF_ITS_GROUP);
+            if (null !== $neverCommitted) {
+                $entityManager->persist($neverCommitted);
+            }
+            $entityManager->flush();
+        });
+
+        self::assertInstanceOf(TranslationGroupHasSeveralPositionsException::class, $refusal, \sprintf('Le COMMIT n\'a pas été refusé par la garde des groupes : %s.', get_debug_type($refusal)));
+    }
+
+    /**
+     * Lance `$operation` sous le verrou des contributions et rend ce que
+     * `withLock()` a levé — l'opération ou le COMMIT —, `null` s'il a validé.
      *
      * @param Closure(): void $operation
      */
-    private function refusedAtCommit(Closure $operation): ?Throwable
+    private function failureOfALockedRun(Closure $operation): ?Throwable
+    {
+        return $this->failureOf(function () use ($operation): void {
+            $this->lock()->withLock(Contribution::class, $operation);
+        });
+    }
+
+    /**
+     * Ce que `$run` a levé, `null` s'il a abouti.
+     *
+     * @param Closure(): mixed $run
+     */
+    private function failureOf(Closure $run): ?Throwable
     {
         try {
-            $this->lock()->withLock(Contribution::class, $operation);
+            $run();
         } catch (Throwable $exception) {
             return $exception;
         }

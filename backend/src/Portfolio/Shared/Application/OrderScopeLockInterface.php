@@ -41,9 +41,9 @@ interface OrderScopeLockInterface
      * et remonte telle quelle.
      *
      * Un COMMIT que la base refuse (issue #502) annule ce que l'opération a
-     * écrit, et **ferme l'EntityManager** : une lecture suivante relit la
-     * base, une écriture suivante échoue. Le refus est terminal pour l'unité
-     * de travail qui l'a reçu.
+     * écrit, et **clôt l'unité de travail de l'appelant** : une lecture
+     * suivante relit la base, une écriture suivante échoue. Le refus est
+     * terminal pour l'unité de travail qui l'a reçu.
      *
      * **Jamais dans une transaction déjà ouverte** (issue #526), ni sous un
      * autre `withLock()` : le verrou ouvre et valide la sienne, seul moyen de
