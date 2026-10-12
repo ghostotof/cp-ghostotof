@@ -34,6 +34,13 @@ interface OrderScopeLockInterface
      * Une exception de `$operation` annule la transaction, relâche le verrou
      * et remonte telle quelle.
      *
+     * Une fois le verrou pris, les entrées de `$scope` que l'appelant a déjà
+     * chargées sont relues (issue #402) : `$operation` décide sur ce que la
+     * base porte, pas sur ce qui a été lu avant le verrou. Une modification
+     * non écrite de l'une d'elles est donc écrasée, et une entrée supprimée
+     * entre-temps devient introuvable — à modifier dans `$operation`, jamais
+     * avant.
+     *
      * @template T
      *
      * @param class-string $scope     l'entité qui porte les positions : ses lignes forment le
