@@ -111,7 +111,7 @@ final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
             $caught = $exception;
         }
 
-        self::assertInstanceOf(LogicException::class, $caught, "L'exception de l'opération aurait dû remonter.");
+        self::assertSame('refus', $caught->getMessage(), "L'exception de l'opération aurait dû remonter telle quelle.");
         self::assertTrue($this->em->isOpen());
         self::assertFalse($this->em->getConnection()->isTransactionActive());
     }

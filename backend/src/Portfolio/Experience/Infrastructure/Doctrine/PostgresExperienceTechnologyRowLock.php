@@ -79,9 +79,7 @@ final readonly class PostgresExperienceTechnologyRowLock implements ExperienceTe
             },
             onTimeout: static fn (DriverException $timeout): ExperienceTechnologyLockTimeoutException => ExperienceTechnologyLockTimeoutException::forTechnology($id->toRfc4122(), $timeout),
             onNested: static fn (): ExperienceTechnologyLockInsideTransactionException => ExperienceTechnologyLockInsideTransactionException::forTechnology($id->toRfc4122()),
-            operation: function () use ($id, $operation): mixed {
-                return $operation($this->reread($id));
-            },
+            operation: fn (): mixed => $operation($this->reread($id)),
         );
     }
 
