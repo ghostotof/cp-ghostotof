@@ -7,6 +7,7 @@ namespace App\Portfolio\Experience\Infrastructure\Doctrine;
 use App\Portfolio\Experience\Application\ExperienceTechnologyLockInterface;
 use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException;
+use App\Shared\Infrastructure\Doctrine\VanishedEntities;
 use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
 use Closure;
 use Doctrine\DBAL\Exception\DriverException;
@@ -37,7 +38,9 @@ use Symfony\Component\Uid\Uuid;
  *   l'instance périmée.
  * - Ligne absente : l'instance périmée que l'EntityManager gère encore est
  *   détachée, pour qu'un appelant qui continue (une commande) ne la croie pas
- *   en base, puis la technologie est dite introuvable (404). Une instance
+ *   en base, puis la technologie est dite introuvable (404). Détachée par
+ *   {@see VanishedEntities}, qui refuse qu'on la sauve de nouveau : Doctrine
+ *   la tiendrait pour neuve et la réinsérerait (issue #548). Une instance
  *   planifiée pour insertion ou suppression n'est pas détachée : ce serait
  *   annuler en silence son écriture en attente (même filtre que la relecture
  *   du verrou d'ordre, #402).
@@ -66,6 +69,7 @@ final readonly class PostgresExperienceTechnologyRowLock implements ExperienceTe
     public function __construct(
         private EntityManagerInterface $entityManager,
         private LoggerInterface $logger,
+        private VanishedEntities $vanishedEntities,
         private string $fallbackLockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT,
     ) {
     }
@@ -130,7 +134,8 @@ final readonly class PostgresExperienceTechnologyRowLock implements ExperienceTe
         $stale = $unitOfWork->tryGetById(['id' => $id], ExperienceTechnology::class);
 
         if (false !== $stale && !$unitOfWork->isScheduledForInsert($stale) && !$unitOfWork->isScheduledForDelete($stale)) {
-            $this->entityManager->detach($stale);
+            // Détachée et retenue : re-sauvée, elle serait réinsérée (#548).
+            $this->vanishedEntities->forget($this->entityManager, $stale);
         }
     }
 }

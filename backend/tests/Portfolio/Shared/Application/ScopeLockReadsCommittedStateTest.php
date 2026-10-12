@@ -13,12 +13,14 @@ use App\Portfolio\Watch\Application\WatchedProductAdministratorInterface;
 use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Domain\Exception\WatchedProductNotFoundException;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
+use App\Shared\Infrastructure\Doctrine\VanishedEntitySavedAgainException;
 use App\Tests\Support\OpensProbeConnection;
 use Closure;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
+use Throwable;
 
 /**
  * Sous le verrou de périmètre, une opération décide sur ce que la base porte,
@@ -149,6 +151,35 @@ final class ScopeLockReadsCommittedStateTest extends KernelTestCase
     }
 
     /**
+     * L'instance que la relecture a détachée — sa ligne supprimée par une
+     * autre session — et qu'un appelant tient encore ne doit pas revenir en
+     * base s'il la sauve (issue #548). Doctrine tient pour **neuve** une
+     * instance qu'il ne gère pas (`persist()` suppose `STATE_NEW`, sans lire
+     * la base) : le `save()` d'un dépôt, `persist()` puis `flush()`,
+     * réinsérait l'entrée supprimée, sans erreur ni trace.
+     *
+     * @param class-string<TranslatableContent> $entityClass
+     * @param Closure(): LocalizedContext       $context
+     */
+    #[DataProvider('provideLocalizedContexts')]
+    public function testSavingAnEntryDetachedByTheRereadIsRefusedInsteadOfReinserted(string $entityClass, Closure $context): void
+    {
+        [$operations, $entry] = $this->prepare($entityClass, $context);
+        $this->deleteFromAnotherSession($entityClass, $entry);
+        try {
+            $operations['update']($entry, $entry->getTranslationGroup());
+            self::fail("L'entrée supprimée a été mise à jour : la relecture ne l'a pas détachée (#402).");
+        } catch (Throwable $notFound) {
+            self::assertInstanceOf($operations['notFound'], $notFound);
+        }
+
+        $refusal = $this->saveAgain($entry);
+
+        self::assertSame(0, $this->storedCount($entityClass, $this->idOf($entityClass, $entry)), "L'entrée supprimée, détachée par la relecture puis re-sauvée, a été réinsérée (#548).");
+        self::assertInstanceOf(VanishedEntitySavedAgainException::class, $refusal, \sprintf('La re-sauvegarde aurait dû être refusée sous son nom : %s.', get_debug_type($refusal)));
+    }
+
+    /**
      * « Créer la version EN » de G, dont le membre FR — déjà chargé — a été
      * déplacé par un réordonnancement validé entre-temps : la version EN doit
      * hériter de la position que G porte en base, pas de celle qu'il quittait.
@@ -222,6 +253,25 @@ final class ScopeLockReadsCommittedStateTest extends KernelTestCase
 
         $this->expectException(WatchedProductNotFoundException::class);
         self::getContainer()->get(WatchedProductAdministratorInterface::class)->delete($product->getId());
+    }
+
+    /**
+     * Le produit de veille partage la relecture, donc le refus de #548 : un
+     * produit supprimé, détaché par la relecture puis re-sauvé, ne revient pas.
+     */
+    public function testSavingAProductDetachedByTheRereadIsRefusedInsteadOfReinserted(): void
+    {
+        $product = $this->loadProductThenDeleteItFromAnotherSession();
+        try {
+            self::getContainer()->get(WatchedProductAdministratorInterface::class)->delete($product->getId());
+            self::fail("Le produit supprimé a été supprimé une seconde fois : la relecture ne l'a pas détaché (#499).");
+        } catch (WatchedProductNotFoundException) {
+        }
+
+        $refusal = $this->saveAgain($product);
+
+        self::assertSame(0, $this->storedCount(WatchedProduct::class, $product->getId()->toRfc4122()), 'Le produit supprimé, détaché par la relecture puis re-sauvé, a été réinséré (#548).');
+        self::assertInstanceOf(VanishedEntitySavedAgainException::class, $refusal, \sprintf('La re-sauvegarde aurait dû être refusée sous son nom : %s.', get_debug_type($refusal)));
     }
 
     /**
@@ -341,6 +391,43 @@ final class ScopeLockReadsCommittedStateTest extends KernelTestCase
             \sprintf('DELETE FROM %s WHERE %s = ?', $metadata->getTableName(), $metadata->getColumnName('id')),
             [$this->idOf($entityClass, $entry)],
         );
+    }
+
+    /**
+     * Re-sauve l'instance comme le `save()` d'un dépôt — `persist()` puis
+     * `flush()` — et rend ce que cela a levé.
+     */
+    private function saveAgain(object $entry): ?Throwable
+    {
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+
+        try {
+            $entityManager->persist($entry);
+            $entityManager->flush();
+        } catch (Throwable $refusal) {
+            return $refusal;
+        }
+
+        return null;
+    }
+
+    /**
+     * Le nombre de lignes de cet identifiant, lu en base.
+     *
+     * @param class-string $entityClass
+     */
+    private function storedCount(string $entityClass, string $id): int
+    {
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $metadata = $entityManager->getClassMetadata($entityClass);
+
+        $count = $entityManager->getConnection()->fetchOne(
+            \sprintf('SELECT COUNT(*) FROM %s WHERE %s = ?', $metadata->getTableName(), $metadata->getColumnName('id')),
+            [$id],
+        );
+        self::assertIsInt($count);
+
+        return $count;
     }
 
     /**

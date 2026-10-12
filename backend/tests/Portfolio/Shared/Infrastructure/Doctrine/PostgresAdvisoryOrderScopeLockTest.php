@@ -13,6 +13,7 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Portfolio\Shared\Infrastructure\Doctrine\OrderScopeLockInsideTransactionException;
 use App\Portfolio\Shared\Infrastructure\Doctrine\OrderScopeLockTimeoutException;
 use App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock;
+use App\Shared\Infrastructure\Doctrine\VanishedEntities;
 use App\Tests\Portfolio\Shared\Support\FakeOrderable;
 use App\Tests\Portfolio\Shared\Support\FakeTranslatableContent;
 use App\Tests\Support\OpensProbeConnection;
@@ -171,7 +172,7 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
         $caught = null;
 
         try {
-            (new PostgresAdvisoryOrderScopeLock($this->entityManager(), new NullLogger(), '100ms'))->withLock(self::SCOPE, static fn (): null => null);
+            (new PostgresAdvisoryOrderScopeLock($this->entityManager(), new NullLogger(), new VanishedEntities(), '100ms'))->withLock(self::SCOPE, static fn (): null => null);
         } catch (Throwable $exception) {
             $caught = $exception;
         } finally {
@@ -507,7 +508,7 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
      */
     private function lock(): OrderScopeLockInterface
     {
-        return new PostgresAdvisoryOrderScopeLock($this->entityManager(), new NullLogger());
+        return new PostgresAdvisoryOrderScopeLock($this->entityManager(), new NullLogger(), new VanishedEntities());
     }
 
     private function entityManager(): EntityManagerInterface

@@ -6,6 +6,7 @@ namespace App\Portfolio\Shared\Infrastructure\Doctrine;
 
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\Exception\TranslationGroupHasSeveralPositionsException;
+use App\Shared\Infrastructure\Doctrine\VanishedEntities;
 use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
 use Closure;
 use Doctrine\DBAL\ArrayParameterType;
@@ -103,7 +104,10 @@ use Psr\Log\LoggerInterface;
  * une requête : celles que la base porte encore sont rafraîchies sur place
  * (même objet, qu'un appelant peut continuer de tenir et de sauver), celles
  * qu'elle ne rend plus — supprimées entre-temps — sont détachées, et `find()`
- * les dit introuvables. Pas `refresh()` entrée par entrée : il ne voit pas une
+ * les dit introuvables. Celles-là, un appelant ne peut **pas** les sauver de
+ * nouveau : Doctrine les tiendrait pour neuves et les réinsérerait, d'où le
+ * détachement par {@see VanishedEntities}, qui refuse leur `persist()`
+ * (issue #548). Pas `refresh()` entrée par entrée : il ne voit pas une
  * ligne supprimée (il n'hydrate rien et garde l'instance), et coûte une
  * requête par entrée. Pas de détachement de tout le périmètre non plus : une
  * instance tenue d'avant l'opération, sauvée ensuite, entrerait en collision
@@ -154,6 +158,7 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
     public function __construct(
         private EntityManagerInterface $entityManager,
         private LoggerInterface $logger,
+        private VanishedEntities $vanishedEntities,
         private string $fallbackLockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT,
     ) {
     }
@@ -245,7 +250,8 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
         $stillStored = array_flip(array_map(spl_object_id(...), $reread));
         foreach ($loaded as $entry) {
             if (!isset($stillStored[spl_object_id($entry)])) {
-                $this->entityManager->detach($entry);
+                // Détachée et retenue : re-sauvée, elle serait réinsérée (#548).
+                $this->vanishedEntities->forget($this->entityManager, $entry);
             }
         }
     }
