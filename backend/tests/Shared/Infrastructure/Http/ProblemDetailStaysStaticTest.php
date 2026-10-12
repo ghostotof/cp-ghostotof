@@ -12,13 +12,10 @@ use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
 use App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CannotModifyOwnRolesException;
 use App\Tests\Support\DeclaredClasses;
-use FilesystemIterator;
+use App\Tests\Support\PhpSources;
 use PhpToken;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use RecursiveDirectoryIterator;
-use RecursiveIteratorIterator;
-use SplFileInfo;
 
 /**
  * ApiProblemResponseListener renvoie au client le `detail` (le message) de
@@ -41,7 +38,10 @@ use SplFileInfo;
  * justification : c'est la seule façon d'échapper au garde-fou, et elle se voit.
  *
  * Analyse par jetons (PhpToken), pas par expression régulière : commentaires,
- * `;` dans une chaîne et arguments nommés ne le trompent pas. Ce qu'il ne voit
+ * `;` dans une chaîne et arguments nommés ne le trompent pas. Les fichiers lus
+ * et les jetons ignorés sont ceux de {@see PhpSources}, comme pour les autres
+ * recenseurs (issue #395) : ce garde-fou ne voit jamais un autre périmètre
+ * qu'eux. Ce qu'il ne voit
  * pas, et c'est assumé : une classe instanciée dynamiquement (`new $classe`,
  * Reflection). Le garde-fou vise l'oubli, pas la malveillance.
  */
@@ -64,13 +64,12 @@ final class ProblemDetailStaysStaticTest extends TestCase
         UnknownOrderEntryException::class => 'PUT /api/backoffice/<x>/order : cite la clé inconnue.',
     ];
 
-    private const array IGNORED = [\T_WHITESPACE, \T_COMMENT, \T_DOC_COMMENT];
     private const array NAME_TOKENS = [\T_STRING, \T_NAME_QUALIFIED, \T_NAME_FULLY_QUALIFIED, \T_STATIC];
     private const array LITERAL_HEREDOC_TOKENS = [\T_START_HEREDOC, \T_ENCAPSED_AND_WHITESPACE, \T_END_HEREDOC];
 
     public function testEveryProblemDetailInSourcesIsALiteral(): void
     {
-        $sources = iterator_to_array($this->sourceFiles());
+        $sources = $this->sourceFiles();
         $problems = DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class);
         self::assertNotEmpty($problems, 'Aucune ProblemExceptionInterface trouvée : le garde-fou ne garderait rien.');
         self::assertSame([], array_diff(array_keys(self::DYNAMIC_DETAIL_ALLOWED), $problems), 'Entrée admise qui n\'existe plus : la retirer.');
@@ -123,16 +122,16 @@ final class ProblemDetailStaysStaticTest extends TestCase
     }
 
     /**
-     * @return iterable<string, string>
+     * @return array<string, string> chemin => contenu, dans l'ordre trié de {@see PhpSources::files()}
      */
-    private function sourceFiles(): iterable
+    private function sourceFiles(): array
     {
-        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(self::SOURCES, FilesystemIterator::SKIP_DOTS));
-        foreach ($files as $file) {
-            if ($file instanceof SplFileInfo && 'php' === $file->getExtension()) {
-                yield $file->getPathname() => (string) file_get_contents($file->getPathname());
-            }
+        $sources = [];
+        foreach (PhpSources::files(self::SOURCES) as $path) {
+            $sources[$path] = (string) file_get_contents($path);
         }
+
+        return $sources;
     }
 
     /**
@@ -177,17 +176,13 @@ final class ProblemDetailStaysStaticTest extends TestCase
 
     /**
      * @return array{
-     *     classes: list<string>,
      *     declarations: array<string, array{overridesDetail: bool, constructorMessageIsLiteral: ?bool}>,
      *     constructions: list<array{string, bool, int}>,
      * }
      */
     private function parse(string $code): array
     {
-        $tokens = array_values(array_filter(
-            PhpToken::tokenize($code),
-            static fn (PhpToken $token): bool => !$token->is(self::IGNORED),
-        ));
+        $tokens = PhpSources::significantTokens($code);
 
         $namespace = '';
         $aliases = [];
@@ -199,7 +194,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
         $constructions = [];
 
         foreach ($tokens as $index => $token) {
-            if ($token->is(['{', \T_CURLY_OPEN, \T_DOLLAR_OPEN_CURLY_BRACES])) {
+            if (PhpSources::opensBrace($token)) {
                 ++$depth;
             } elseif ($token->is('}')) {
                 --$depth;
@@ -231,7 +226,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
             ];
         }
 
-        return ['classes' => $classes, 'declarations' => $declarations, 'constructions' => $constructions];
+        return ['declarations' => $declarations, 'constructions' => $constructions];
     }
 
     /**
@@ -244,6 +239,9 @@ final class ProblemDetailStaysStaticTest extends TestCase
     }
 
     /**
+     * Retient l'alias du `use` en $index (premier nom seulement, voir
+     * {@see self::resolve()}).
+     *
      * @param list<PhpToken>        $tokens
      * @param array<string, string> $aliases
      */
@@ -260,6 +258,19 @@ final class ProblemDetailStaysStaticTest extends TestCase
     }
 
     /**
+     * La classe que désigne le nom écrit après `new`, avec la casse des
+     * sources : `self`/`static` donnent la classe en cours, un alias de `use`
+     * sa cible, un nom relatif l'espace de noms courant.
+     *
+     * Écrite ici plutôt que partagée, après vérification (issue #395) :
+     * {@see DeclaredClasses} ne résout aucun nom — il lit des déclarations,
+     * l'espace de noms puis le nom qui suit `class` —, et la résolution de
+     * {@see \App\Tests\Support\BareExceptionInstantiations} répond à une autre
+     * question : elle met tout en minuscules, rend null pour un nom relatif à
+     * l'espace de noms (elle ne vise que des classes globales), ignore
+     * `self`/`static` et lit les listes `use A, B;`. Ce n'est pas la même
+     * chose ; les rapprocher changerait le comportement de l'un ou de l'autre.
+     *
      * @param array<string, string> $aliases
      */
     private function resolve(string $name, string $namespace, array $aliases, ?string $currentClass): string
