@@ -515,8 +515,10 @@
       "successHeading": "Password set",
       "successBody": "Your account is ready. You can now log in.",
       "toLogin": "Go to login",
-      "invalid": "This password setup link is not valid. Open it again from the invitation email.",
-      "expired": "This link has expired or has already been used. Ask the person who invited you for a new one.",
+      "incomplete": "This link is incomplete. Open it again from the invitation email, without changing it.",
+      "unusable": "This link is not or no longer valid: it may be incomplete, expired or already used. Open it again from the invitation email; if it still does not work, ask the person who invited you for a new link.",
+      "alreadySet": "Already set your password?",
+      "logIn": "Log in",
       "errors": {
         "tooShort": "The password must be at least {min} characters long.",
         "tooLong": "The password is too long: {max} bytes at most (an accented character or an emoji takes up several).",

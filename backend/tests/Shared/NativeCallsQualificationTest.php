@@ -31,6 +31,16 @@ final class NativeCallsQualificationTest extends TestCase
     }
 
     /**
+     * La correction passe par `make back-style-fix` (issue #398), qui épingle
+     * php-cs-fixer et vérifie sa somme : le message la nomme au lieu de
+     * recopier des commandes.
+     */
+    public function testTheFailureMessageNamesTheMakeTarget(): void
+    {
+        self::assertStringContainsString('make back-style-fix', MisqualifiedNativeCalls::fix());
+    }
+
+    /**
      * @param list<string> $expected
      */
     #[DataProvider('snippets')]

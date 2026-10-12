@@ -55,7 +55,7 @@ class PasswordSetupTokenRepository extends ServiceEntityRepository implements Pa
      * Le compte est chargé avec le jeton, par jointure explicite (issue #356) :
      * en proxy paresseux, seul le chemin « lien déjà consommé », qui journalise
      * le compte, payait une requête de plus que le chemin « expiré » — un
-     * écart de temps qui distinguait les deux cas derrière le même 410.
+     * écart de temps qui distinguait les deux cas derrière le même refus.
      */
     public function findOneByTokenHash(string $tokenHash): ?PasswordSetupToken
     {

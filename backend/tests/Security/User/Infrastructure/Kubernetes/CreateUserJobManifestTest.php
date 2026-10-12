@@ -63,6 +63,21 @@ final class CreateUserJobManifestTest extends TestCase
         self::assertSame(0, $this->job()['spec']['backoffLimit'] ?? null);
     }
 
+    /**
+     * Revue de #488 : un pod qui ne démarre jamais (Secret supprimé avant son
+     * montage, image introuvable) laissait le Job actif sans fin — et
+     * `ttlSecondsAfterFinished` ne compte qu'à partir de la fin, si bien que
+     * le nom du compte restait dans sa spec. Le Job porte donc un délai, 360 s.
+     * Sa place face à l'attente de la procédure (`tools/run-job.sh … 300`,
+     * k8s/README.md) suit la convention de tous les Jobs (issue #535) : au-dessus,
+     * pour que les journaux d'un pod bloqué soient lus avant sa suppression ;
+     * `tools/tests/run-job.test.sh` la vérifie, seul garde de cette relation.
+     */
+    public function testTheJobIsBounded(): void
+    {
+        self::assertSame(360, $this->job()['spec']['activeDeadlineSeconds'] ?? null);
+    }
+
     public function testThePodIsHardenedLikeTheMigrationJob(): void
     {
         $spec = $this->podSpec();
@@ -80,7 +95,7 @@ final class CreateUserJobManifestTest extends TestCase
     }
 
     /**
-     * Appliqué à la main avec `envsubst` : seules ces deux variables sont
+     * Appliqué à la main par tools/run-job.sh : seules ces deux variables sont
      * substituées, une autre resterait littérale. Aucun nom de compte réel
      * dans le dépôt (Goal #9) : le nom arrive au moment de l'apply.
      */
@@ -95,7 +110,8 @@ final class CreateUserJobManifestTest extends TestCase
      * `envsubst` remplace aussi la forme `$VAR`, et, sans liste de variables,
      * toute variable inconnue de l'opérateur par une chaîne vide. Le script
      * lit donc le nom sous une autre variable que le placeholder, que la
-     * procédure ne substitue pas (`envsubst '${BACKEND_IMAGE} ${CPG_USERNAME}'`) :
+     * procédure ne substitue pas (tools/run-job.sh ne passe à envsubst que
+     * `${BACKEND_IMAGE}` et `${CPG_USERNAME}`) :
      * sans quoi le nom serait inliné dans le script shell, ou effacé.
      */
     public function testTheShellScriptReadsTheUsernameFromAVariableEnvsubstLeavesAlone(): void

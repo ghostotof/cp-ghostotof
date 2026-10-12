@@ -37,6 +37,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      # Issue #479 : le broker de AmqpPublisherConfirmsIntegrationTest, sur le
+      # vhost par défaut (le test n'y crée que des files jetables).
+      RABBITMQ_INTEGRATION_DSN: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/%2f
     volumes:
       # Bind mount : le code vit sur l'hôte, l'IDE l'édite directement.
       - ./backend:/var/www/backend
@@ -44,16 +47,27 @@ services:
       # le `docker build` relève en production : les versions déployées viennent
       # des manifestes k8s, celle de Node de .env, celle de Vue du lock npm.
       # Sans ces montages, le conteneur ne voit que backend/ et ces commandes
-      # rendraient un résultat vide — indistinguable d'un défaut.
+      # rendraient un résultat vide — indistinguable d'un défaut. Le .env sert
+      # aussi de repli à docker/php/php-cs-fixer.sh lancé à la main (#398 ;
+      # `make back-style-fix` lui passe les valeurs du .env de l'hôte).
       - ./k8s:/var/www/k8s:ro
       - ./.env:/var/www/.env:ro
       - ./frontend/package-lock.json:/var/www/frontend/package-lock.json:ro
       # Lecture seule, pour que PHPUnit fige la configuration PHP-FPM de
       # production (FpmLockWaitBoundTest, issue #272) comme il le fait en CI,
       # où le dépôt entier est extrait. `make back-lsp` y exécute aussi
-      # install-symfony-language-tools.sh (issue #343) : ne pas retirer ce
-      # montage sans déplacer ces deux usages.
+      # install-symfony-language-tools.sh (issue #343), et `make back-style-fix`
+      # php-cs-fixer.sh (issue #398) : ne pas retirer ce montage sans déplacer
+      # ces trois usages.
       - ./docker/php:/var/www/docker/php:ro
+      # Lecture seule, pour que PHPUnit vérifie que les fichiers .env propres au
+      # poste n'entrent pas dans le contexte de build de l'image, d'où
+      # `composer dump-env prod` les compilerait (ProductionImageCompilesDotenvTest,
+      # issue #489). Un montage de fichier suit son inode : après une
+      # modification par remplacement (éditeur, git), ni `restart` ni la
+      # resynchronisation ne suffisent, `docker compose up -d --force-recreate
+      # backend` le recharge.
+      - ./.dockerignore:/var/www/.dockerignore:ro
     depends_on:
       database:
         condition: service_healthy
@@ -112,8 +126,10 @@ services:
 
   # ---------------------------------------------------------------------------
   # adminer : interface web d'administration de la base PostgreSQL.
-  # Dev uniquement — pas d'équivalent en préprod/prod (voir k8s/base/adminer.yaml :
-  # déployé sans Ingress, accessible seulement via `kubectl port-forward`).
+  # Ce service-ci ne sert qu'en dev. La préprod et la prod ont leur propre Adminer
+  # (k8s/base/adminer.yaml) : sans Ingress, à zéro pod par défaut dans les deux
+  # overlays, allumé le temps d'une intervention puis atteint par
+  # `kubectl port-forward` (k8s/README.md, « Administration de la base »).
   # ---------------------------------------------------------------------------
   adminer:
     image: adminer:${ADMINER_TAG}

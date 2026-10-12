@@ -31,7 +31,7 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
         // equals() et non === : deux Uuid identiques restent deux objets
         // distincts, qu'une comparaison d'identité déclarerait différents.
         if ($id->equals($actingUser->getId())) {
-            throw CannotDeleteOwnAccountException::forUsername($actingUser->getUsername());
+            throw CannotDeleteOwnAccountException::forActingAccount();
         }
 
         $user = $this->cpgUserRepository->findOneById($id);
@@ -46,7 +46,7 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
         if (\in_array(CpgUser::ROLE_SUPER, $user->getRoles(), true)
             && $this->cpgUserRepository->countByRole(CpgUser::ROLE_SUPER) <= 1
         ) {
-            throw CannotDeleteLastSuperAdminException::forUsername($user->getUsername());
+            throw CannotDeleteLastSuperAdminException::lastOne();
         }
 
         $this->cpgUserRepository->remove($user);

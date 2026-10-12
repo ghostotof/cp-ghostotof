@@ -50,8 +50,13 @@ async function mountPage(repository: AccountRepository = createStubRepository(),
   await router.push(path)
   await router.isReady()
 
+  // La langue suit le préfixe de l'URL, comme le fait le garde du routeur de
+  // l'application (presentation/router/index.ts), absent de ce routeur de test.
+  const i18n = createAppI18n()
+  i18n.global.locale.value = path.startsWith('/en/') ? 'en' : 'fr'
+
   const wrapper = mount(SetPasswordPage, {
-    global: { plugins: [router, createAppI18n()], provide: { [ACCOUNT_REPOSITORY as symbol]: repository } },
+    global: { plugins: [router, i18n], provide: { [ACCOUNT_REPOSITORY as symbol]: repository } },
   })
   await flushPromises()
 
@@ -141,7 +146,7 @@ describe('SetPasswordPage — lecture du jeton et nettoyage de l\'URL (audit A7)
     await flushPromises()
 
     expect(window.location.pathname).toBe('/fr/set-password')
-    // Un remontage relancerait la validation avec un jeton vide -> `invalid`.
+    // Un remontage relancerait la validation avec un jeton vide -> `incomplete`.
     expect(repository.validateSetupToken).toHaveBeenCalledTimes(1)
 
     const inputs = wrapper.findAll('input[type="password"]')
@@ -161,14 +166,14 @@ describe('SetPasswordPage — lecture du jeton et nettoyage de l\'URL (audit A7)
     expect(JSON.stringify({ ...window.sessionStorage })).not.toContain(TOKEN)
   })
 
-  it('aucun jeton (pas de fragment) : lien invalide, sans appel au backend', async () => {
+  it('aucun jeton (pas de fragment) : lien incomplet, sans appel au backend', async () => {
     const repository = createStubRepository()
     const { wrapper } = await mountPage(repository, '/fr/set-password')
 
     expect(repository.validateSetupToken).not.toHaveBeenCalled()
     // Cas aussi atteint en rechargeant la page après le nettoyage de l'URL :
     // le message doit dire quoi faire, pas seulement que ça a échoué.
-    expect(wrapper.get('[role="alert"]').text()).toContain("n'est pas valide")
+    expect(wrapper.get('[role="alert"]').text()).toContain('incomplet')
     expect(wrapper.get('[role="alert"]').text()).toContain("e-mail d'invitation")
     expect(wrapper.find('input[type="password"]').exists()).toBe(false)
   })
@@ -204,14 +209,69 @@ describe('SetPasswordPage', () => {
     expect(wrapper.find('input[type="password"]').exists()).toBe(true)
   })
 
-  it('affiche un message et pas de formulaire si le lien est expiré', async () => {
+  it('lien inutilisable : un seul message pour tous les motifs, avec les deux issues possibles, et pas de formulaire (#362)', async () => {
     const repository = createStubRepository({
-      validateSetupToken: vi.fn(async () => Promise.reject(new PasswordSetupLinkError('expired', 'x'))),
+      validateSetupToken: vi.fn(async () => Promise.reject(new PasswordSetupLinkError('unusable', 'x'))),
     })
     const { wrapper } = await mountPage(repository)
 
-    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+    // Le backend ne dit plus pourquoi : le message recouvre chaque motif et
+    // dit quoi faire dans chacun.
+    const alert = wrapper.get('[role="alert"]').text()
+    expect(alert).toContain('incomplet, expiré ou déjà utilisé')
+    expect(alert).toContain("e-mail d'invitation")
+    expect(alert).toContain('nouveau lien')
     expect(wrapper.find('input[type="password"]').exists()).toBe(false)
+  })
+
+  it('lien inutilisable : propose la connexion à qui a déjà défini son mot de passe (#362)', async () => {
+    const repository = createStubRepository({
+      validateSetupToken: vi.fn(async () => Promise.reject(new PasswordSetupLinkError('unusable', 'x'))),
+    })
+    const { wrapper } = await mountPage(repository)
+
+    expect(wrapper.text()).toContain('Vous avez déjà défini votre mot de passe ?')
+    const loginLink = wrapper.get('a[href="/fr/login"]')
+    expect(loginLink.text()).toBe('Se connecter')
+    // Hors de la région `alert` : le message s'annonce seul, le lien se
+    // trouve au clavier.
+    expect(wrapper.get('[role="alert"]').find('a').exists()).toBe(false)
+  })
+
+  it('lien inutilisable, en anglais : les mêmes deux issues (#362)', async () => {
+    const repository = createStubRepository({
+      validateSetupToken: vi.fn(async () => Promise.reject(new PasswordSetupLinkError('unusable', 'x'))),
+    })
+    const { wrapper } = await mountPage(repository, '/en/set-password#tok123')
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('incomplete, expired or already used')
+    expect(wrapper.get('a[href="/en/login"]').text()).toBe('Log in')
+  })
+
+  it('lien inutilisable : aucune violation axe', async () => {
+    const repository = createStubRepository({
+      validateSetupToken: vi.fn(async () => Promise.reject(new PasswordSetupLinkError('unusable', 'x'))),
+    })
+    const { wrapper } = await mountPage(repository)
+
+    await expectNoAccessibilityViolation(wrapper)
+  })
+
+  it('lien devenu inutilisable pendant la saisie : ferme le formulaire sur le même écran (#362)', async () => {
+    const repository = createStubRepository({
+      completePasswordSetup: vi.fn(async () => Promise.reject(new PasswordSetupLinkError('unusable', 'x'))),
+    })
+    const { wrapper } = await mountPage(repository)
+
+    const inputs = wrapper.findAll('input[type="password"]')
+    await inputs[0].setValue('NotCompromisedPass1')
+    await inputs[1].setValue('NotCompromisedPass1')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(wrapper.find('input[type="password"]').exists()).toBe(false)
+    expect(wrapper.get('[role="alert"]').text()).toContain('incomplet, expiré ou déjà utilisé')
+    expect(wrapper.find('a[href="/fr/login"]').exists()).toBe(true)
   })
 
   it('état d\'erreur (ex. rate-limit) : propose un bouton « Réessayer » qui relance la validation', async () => {

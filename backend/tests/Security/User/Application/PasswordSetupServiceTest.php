@@ -10,8 +10,7 @@ use App\Security\User\Application\PasswordSetupService;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
-use App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException;
-use App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException;
+use App\Security\User\Domain\Exception\UnusablePasswordSetupLinkException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Domain\ValueObject\TokenClaim;
@@ -49,7 +48,7 @@ final class PasswordSetupServiceTest extends TestCase
         $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
         $tokenRepository->method('findOneByTokenHash')->willReturn(null);
 
-        $this->expectException(InvalidPasswordSetupTokenException::class);
+        $this->expectException(UnusablePasswordSetupLinkException::class);
 
         $this->service($tokenRepository)->validate(self::CLEAR_TOKEN);
     }
@@ -65,7 +64,7 @@ final class PasswordSetupServiceTest extends TestCase
         $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
         $tokenRepository->method('findOneByTokenHash')->willReturn($expired);
 
-        $this->expectException(PasswordSetupTokenExpiredException::class);
+        $this->expectException(UnusablePasswordSetupLinkException::class);
 
         $this->service($tokenRepository, clock: $clock)->validate(self::CLEAR_TOKEN);
     }
@@ -78,7 +77,7 @@ final class PasswordSetupServiceTest extends TestCase
         $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
         $tokenRepository->method('findOneByTokenHash')->willReturn($used);
 
-        $this->expectException(PasswordSetupTokenExpiredException::class);
+        $this->expectException(UnusablePasswordSetupLinkException::class);
 
         $this->service($tokenRepository, clock: $clock)->validate(self::CLEAR_TOKEN);
     }
@@ -97,15 +96,15 @@ final class PasswordSetupServiceTest extends TestCase
         $auditLogger->expects(self::once())->method('passwordSetupTokenRejected');
         $auditLogger->expects(self::never())->method('passwordSetupTokenReplayed');
 
-        $this->expectException(InvalidPasswordSetupTokenException::class);
+        $this->expectException(UnusablePasswordSetupLinkException::class);
 
         $this->service($tokenRepository, auditLogger: $auditLogger)->validate(self::CLEAR_TOKEN);
     }
 
     /**
      * Issue #356 : un lien déjà consommé est tracé comme rejoué, avec le
-     * compte visé, côté journal seulement — la réponse garde le 410 fusionné
-     * avec « expiré », qui ne dit pas à l'appelant que le lien a servi.
+     * compte visé, côté journal seulement — la réponse est celle de tout lien
+     * inutilisable (issue #362), qui ne dit pas à l'appelant que le lien a servi.
      */
     public function testAnAlreadyUsedTokenIsLoggedAsReplayedForItsAccount(): void
     {
@@ -120,7 +119,7 @@ final class PasswordSetupServiceTest extends TestCase
         $auditLogger->expects(self::once())->method('passwordSetupTokenReplayed')->with($user);
         $auditLogger->expects(self::never())->method('passwordSetupTokenRejected');
 
-        $this->expectException(PasswordSetupTokenExpiredException::class);
+        $this->expectException(UnusablePasswordSetupLinkException::class);
 
         $this->service($tokenRepository, clock: $clock, auditLogger: $auditLogger)
             ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
@@ -128,7 +127,7 @@ final class PasswordSetupServiceTest extends TestCase
 
     /**
      * Un lien simplement expiré est le cas ordinaire d'une invitation ouverte
-     * trop tard : aucun événement de sécurité, le 410 en `info` suffit.
+     * trop tard : aucun événement de sécurité, le refus en `info` suffit.
      */
     public function testAnExpiredButUnusedTokenIsNotASecurityEvent(): void
     {
@@ -145,7 +144,7 @@ final class PasswordSetupServiceTest extends TestCase
         $auditLogger->expects(self::never())->method('passwordSetupTokenRejected');
         $auditLogger->expects(self::never())->method('passwordSetupTokenReplayed');
 
-        $this->expectException(PasswordSetupTokenExpiredException::class);
+        $this->expectException(UnusablePasswordSetupLinkException::class);
 
         $this->service($tokenRepository, clock: $clock, auditLogger: $auditLogger)->validate(self::CLEAR_TOKEN);
     }
@@ -217,8 +216,8 @@ final class PasswordSetupServiceTest extends TestCase
         try {
             $this->service($tokenRepository, $cpgUserRepository, $hasher, $clock, $auditLogger)
                 ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
-            self::fail('PasswordSetupTokenExpiredException attendue.');
-        } catch (PasswordSetupTokenExpiredException) {
+            self::fail('UnusablePasswordSetupLinkException attendue.');
+        } catch (UnusablePasswordSetupLinkException) {
             self::assertSame('', $user->getPassword(), 'Le mot de passe de la perdante ne doit pas toucher le compte.');
             self::assertTrue($user->isPendingActivation());
         }
@@ -259,8 +258,8 @@ final class PasswordSetupServiceTest extends TestCase
         try {
             $this->service($tokenRepository, hasher: $hasher, clock: $clock, auditLogger: $auditLogger)
                 ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
-            self::fail('PasswordSetupTokenExpiredException attendue.');
-        } catch (PasswordSetupTokenExpiredException) {
+            self::fail('UnusablePasswordSetupLinkException attendue.');
+        } catch (UnusablePasswordSetupLinkException) {
             self::assertTrue($user->isPendingActivation());
         }
     }
@@ -287,7 +286,7 @@ final class PasswordSetupServiceTest extends TestCase
         $auditLogger->expects(self::once())->method('passwordSetupTokenReplayed')->with($user);
         $auditLogger->expects(self::never())->method('accountActivated');
 
-        $this->expectException(PasswordSetupTokenExpiredException::class);
+        $this->expectException(UnusablePasswordSetupLinkException::class);
 
         $this->service($tokenRepository, clock: $clock, auditLogger: $auditLogger)
             ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
@@ -315,8 +314,8 @@ final class PasswordSetupServiceTest extends TestCase
 
     /**
      * Seconde passe d'audit de #458 : une relance a remplacé le jeton pendant
-     * le hachage. Le lien n'a jamais servi : réponse d'un lien inconnu (404,
-     * `rejected`), jamais un rejeu.
+     * le hachage. Le lien n'a jamais servi : journalisé comme un lien inconnu
+     * (`rejected`), jamais comme un rejeu.
      */
     public function testATokenReplacedWhileThePasswordIsHashedIsUnknownNotReplayed(): void
     {
@@ -331,15 +330,15 @@ final class PasswordSetupServiceTest extends TestCase
         $auditLogger->expects(self::never())->method('passwordSetupTokenReplayed');
         $auditLogger->expects(self::once())->method('passwordSetupTokenRejected');
 
-        $this->expectException(InvalidPasswordSetupTokenException::class);
+        $this->expectException(UnusablePasswordSetupLinkException::class);
 
         $this->service($tokenRepository, clock: $clock, auditLogger: $auditLogger)
             ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
     }
 
     /**
-     * Un compte supprimé pendant le hachage : lien inconnu (404), journalisé
-     * comme tel.
+     * Un compte supprimé pendant le hachage : journalisé comme un lien
+     * inconnu.
      */
     public function testAnAccountDeletedBeforeTheLockIsAnUnknownLink(): void
     {
@@ -354,7 +353,7 @@ final class PasswordSetupServiceTest extends TestCase
         $accountLock->method('whileLocked')->willThrowException(CpgUserNotFoundException::forId($user->getId()));
         $service = new PasswordSetupService($tokenRepository, self::createStub(CpgUserRepositoryInterface::class), self::createStub(UserPasswordHasherInterface::class), $clock, $auditLogger, $accountLock);
 
-        $this->expectException(InvalidPasswordSetupTokenException::class);
+        $this->expectException(UnusablePasswordSetupLinkException::class);
 
         $service->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
     }
@@ -372,7 +371,7 @@ final class PasswordSetupServiceTest extends TestCase
         $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
         $tokenRepository->method('findOneByTokenHash')->willReturn($this->tokenFor($user, $clock));
 
-        $this->expectException(PasswordSetupTokenExpiredException::class);
+        $this->expectException(UnusablePasswordSetupLinkException::class);
 
         $this->service($tokenRepository, clock: $clock)->validate(self::CLEAR_TOKEN);
     }
@@ -396,7 +395,7 @@ final class PasswordSetupServiceTest extends TestCase
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
         $auditLogger->expects(self::never())->method('accountActivated');
 
-        $this->expectException(PasswordSetupTokenExpiredException::class);
+        $this->expectException(UnusablePasswordSetupLinkException::class);
 
         $this->service($tokenRepository, $cpgUserRepository, clock: $clock, auditLogger: $auditLogger)
             ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));

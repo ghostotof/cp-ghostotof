@@ -73,8 +73,8 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
      * Issue #356 (audit) : le compte arrive chargé avec le jeton, par
      * jointure. En proxy paresseux, le seul chemin « lien déjà consommé »
      * — qui journalise le compte — payait une requête de plus que le chemin
-     * « expiré », et la différence de temps disait à l'appelant ce que le 410
-     * fusionné doit taire.
+     * « expiré », et la différence de temps disait à l'appelant ce que le
+     * refus fusionné doit taire.
      */
     public function testFindOneByTokenHashLoadsTheAccountWithTheToken(): void
     {
@@ -232,7 +232,7 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
      * Le retrait d'un jeton dont l'e-mail n'est pas parti (#425) n'emporte
      * jamais un jeton déjà consommé : l'e-mail a pu partir malgré l'erreur, et
      * la personne activer son compte entre-temps (seconde passe d'audit de
-     * #458). Le rejeu du lien doit rester un 410 « replayed ».
+     * #458). Le rejeu du lien doit rester journalisé « replayed ».
      */
     public function testRemoveSparesAConsumedToken(): void
     {

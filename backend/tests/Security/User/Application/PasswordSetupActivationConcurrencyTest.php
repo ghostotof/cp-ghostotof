@@ -7,17 +7,15 @@ namespace App\Tests\Security\User\Application;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Application\PasswordSetupServiceInterface;
 use App\Security\User\Domain\Entity\CpgUser;
-use App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException;
+use App\Security\User\Domain\Exception\UnusablePasswordSetupLinkException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Tests\Support\ChildPhpProcess;
+use App\Tests\Support\FlushInterleaving;
 use App\Tests\Support\InvitesUsers;
-use App\Tests\Support\OpensProbeConnection;
+use App\Tests\Support\ProcessBarrier;
+use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestCredentials;
-use Closure;
-use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Event\PreFlushEventArgs;
-use Doctrine\ORM\Events;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Process\Process;
 
@@ -40,13 +38,14 @@ use Symfony\Component\Process\Process;
  *
  * La purge des jetons non utilisés à l'activation suffit à n'en laisser
  * aucun. Le verrou garantit en plus que le handler attend au lieu de supprimer
- * le jeton déjà réclamé : sans lui, le rejeu du lien répondait 404 au lieu de
- * 410, et le journal perdait l'événement `replayed`.
+ * le jeton déjà réclamé : sans lui, le rejeu du lien passait pour un lien
+ * inconnu, et le journal perdait l'événement `replayed`. La réponse, elle,
+ * est la même dans les deux cas (issue #362) : seul le journal les distingue.
  */
 final class PasswordSetupActivationConcurrencyTest extends KernelTestCase
 {
     use InvitesUsers;
-    use OpensProbeConnection;
+    use ReadsSecurityAuditLog;
 
     private const int TIMEOUT_SECONDS = 30;
 
@@ -83,118 +82,29 @@ final class PasswordSetupActivationConcurrencyTest extends KernelTestCase
 
         // Ce que seul le verrou garantit : le handler a attendu l'activation
         // au lieu de supprimer le jeton déjà réclamé. Le lien consommé reste
-        // connu, et son rejeu est reconnu comme tel (410, `replayed`), pas pris
-        // pour un lien inconnu (404).
+        // connu, et son rejeu est journalisé comme tel (`replayed`), pas pris
+        // pour un lien inconnu (`rejected`).
         self::getContainer()->get(EntityManagerInterface::class)->clear();
-        $this->expectException(PasswordSetupTokenExpiredException::class);
-        self::getContainer()->get(PasswordSetupServiceInterface::class)->complete($clearToken, TestCredentials::variant('rejeu'));
-    }
-
-    private function interleaveBeforeNextFlush(string $userId, int $generation): Process
-    {
-        $barrierPath = tempnam(sys_get_temp_dir(), 'activation-barrier-');
-        self::assertIsString($barrierPath);
-        $barrier = fopen($barrierPath, 'r');
-        self::assertNotFalse($barrier);
-        self::assertTrue(flock($barrier, \LOCK_EX));
-
-        $concurrent = new Process(
-            ChildPhpProcess::command(self::HANDLER_SCRIPT, $barrierPath, $userId, (string) $generation),
-            env: $this->childEnvironment(),
-            timeout: self::TIMEOUT_SECONDS,
-        );
-        $concurrent->start();
-        $concurrentPid = $this->waitUntilReady($concurrent);
-
-        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
-        $probe = self::openProbeBeside($entityManager->getConnection());
-
-        $listener = new class($barrier, $barrierPath, $concurrent, $concurrentPid, $probe, $this->waitUntilDoneOrBlocked(...)) {
-            public bool $fired = false;
-
-            /**
-             * @param resource                                $barrier
-             * @param Closure(Process, int, Connection): void $waitUntilDoneOrBlocked
-             */
-            public function __construct(
-                private $barrier,
-                private readonly string $barrierPath,
-                private readonly Process $concurrent,
-                private readonly int $concurrentPid,
-                private readonly Connection $probe,
-                private readonly Closure $waitUntilDoneOrBlocked,
-            ) {
-            }
-
-            public function preFlush(PreFlushEventArgs $args): void
-            {
-                if ($this->fired) {
-                    return;
-                }
-                $this->fired = true;
-
-                flock($this->barrier, \LOCK_UN);
-                fclose($this->barrier);
-                unlink($this->barrierPath);
-                ($this->waitUntilDoneOrBlocked)($this->concurrent, $this->concurrentPid, $this->probe);
-                $this->probe->close();
-            }
-        };
-        $entityManager->getEventManager()->addEventListener([Events::preFlush], $listener);
-
-        return $concurrent;
-    }
-
-    private function waitUntilDoneOrBlocked(Process $concurrent, int $concurrentPid, Connection $probe): void
-    {
-        $deadline = microtime(true) + self::TIMEOUT_SECONDS;
-
-        while ($concurrent->isRunning()) {
-            $blocked = $probe->fetchOne(
-                "SELECT wait_event_type IS NOT DISTINCT FROM 'Lock' FROM pg_stat_activity WHERE pid = ?",
-                [$concurrentPid],
-            );
-            if (true === $blocked) {
-                return;
-            }
-            if (microtime(true) > $deadline) {
-                self::fail('Le handler concurrent ni fini ni bloqué après '.self::TIMEOUT_SECONDS.' s.');
-            }
-            usleep(10_000);
-        }
-    }
-
-    private function waitUntilReady(Process $concurrent): int
-    {
-        $deadline = microtime(true) + self::TIMEOUT_SECONDS;
-
-        while (true) {
-            if (1 === preg_match('/^ready (\d+)$/m', $concurrent->getOutput(), $matches)) {
-                return (int) $matches[1];
-            }
-            if (!$concurrent->isRunning()) {
-                self::fail(\sprintf("Le handler concurrent s'est arrêté avant la barrière :\n%s", $concurrent->getErrorOutput()));
-            }
-            if (microtime(true) > $deadline) {
-                self::fail("Le handler concurrent n'est pas prêt après ".self::TIMEOUT_SECONDS.' s.');
-            }
-            usleep(10_000);
+        try {
+            self::getContainer()->get(PasswordSetupServiceInterface::class)->complete($clearToken, TestCredentials::variant('rejeu'));
+            self::fail('UnusablePasswordSetupLinkException attendue au rejeu du lien.');
+        } catch (UnusablePasswordSetupLinkException) {
+            self::assertCount(1, self::securityAuditEvents('password-setup-token-replayed'));
+            self::assertSame([], self::securityAuditEvents('password-setup-token-rejected'));
         }
     }
 
     /**
-     * @return array<string, string>
+     * Démarre B et le relâche au prochain `preFlush` ({@see FlushInterleaving}).
      */
-    private function childEnvironment(): array
+    private function interleaveBeforeNextFlush(string $userId, int $generation): Process
     {
-        $environment = [];
-        foreach ($_SERVER as $name => $value) {
-            if (\is_string($name) && \is_string($value)) {
-                $environment[$name] = $value;
-            }
-        }
+        $barrier = ProcessBarrier::hold('activation-barrier-');
+        $concurrent = ChildPhpProcess::inTestEnvironment(self::TIMEOUT_SECONDS, self::HANDLER_SCRIPT, $barrier->path(), $userId, (string) $generation);
+        $concurrent->start();
+        FlushInterleaving::releaseBeforeNextFlush(self::getContainer()->get(EntityManagerInterface::class), $barrier, $concurrent, self::TIMEOUT_SECONDS);
 
-        return $environment;
+        return $concurrent;
     }
 
     private function isActivated(string $userId): bool

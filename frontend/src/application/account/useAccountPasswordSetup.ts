@@ -9,15 +9,16 @@ export const ACCOUNT_REPOSITORY: InjectionKey<AccountRepository> = Symbol('Accou
  * - `ready`      : lien exploitable, formulaire affichable ;
  * - `submitting` : soumission du mot de passe en cours ;
  * - `done`       : mot de passe défini, on peut rediriger vers /login ;
- * - `invalid`    : lien corrompu (404) ou sans jeton, état terminal, pas de formulaire ;
- * - `expired`    : lien expiré ou déjà utilisé (410), état terminal ;
+ * - `incomplete` : lien sans jeton ou au jeton mal formé (422), état terminal, pas de formulaire ;
+ * - `unusable`   : lien inutilisable (404), quel qu'en soit le motif — inconnu, expiré, déjà
+ *                  utilisé… le backend ne le dit pas (issue #362) —, état terminal ;
  * - `error`      : échec non récupérable de la *validation* (rate-limited /
  *                  réseau) — le formulaire n'a jamais été montré.
  *
  * Un échec *récupérable* de la soumission (mot de passe faible, rate-limited)
  * ramène à `ready` en renseignant `errorReason` : le formulaire reste utilisable.
  */
-export type PasswordSetupState = 'checking' | 'ready' | 'submitting' | 'done' | 'invalid' | 'expired' | 'error'
+export type PasswordSetupState = 'checking' | 'ready' | 'submitting' | 'done' | 'incomplete' | 'unusable' | 'error'
 
 export interface UseAccountPasswordSetupResult {
   state: DeepReadonly<Ref<PasswordSetupState>>
@@ -38,9 +39,9 @@ export function useAccountPasswordSetup(): UseAccountPasswordSetupResult {
   const state = ref<PasswordSetupState>('checking')
   const errorReason = ref<PasswordSetupLinkErrorReason | null>(null)
 
-  /** `invalid` / `expired` sont terminaux ; les autres motifs restent récupérables. */
-  function isTerminal(reason: PasswordSetupLinkErrorReason): reason is 'invalid' | 'expired' {
-    return 'invalid' === reason || 'expired' === reason
+  /** `incomplete` / `unusable` sont terminaux ; les autres motifs restent récupérables. */
+  function isTerminal(reason: PasswordSetupLinkErrorReason): reason is 'incomplete' | 'unusable' {
+    return 'incomplete' === reason || 'unusable' === reason
   }
 
   const validate = async (token: string): Promise<void> => {
@@ -48,8 +49,8 @@ export function useAccountPasswordSetup(): UseAccountPasswordSetupResult {
     // nettoyée) : il n'y a rien à vérifier. On conclut sans appeler le backend,
     // qui répondrait 422 en entamant pour rien le quota par IP.
     if ('' === token) {
-      state.value = 'invalid'
-      errorReason.value = 'invalid'
+      state.value = 'incomplete'
+      errorReason.value = 'incomplete'
       return
     }
 

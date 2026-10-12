@@ -47,6 +47,9 @@ final class SystemCachePodVolumeTest extends TestCase
         'seed-job.yaml',
         'create-user-job.yaml',
         'messenger-probe-job.yaml',
+        'messenger-stop-workers-job.yaml',
+        'messenger-failed-retry-job.yaml',
+        'messenger-failed-remove-job.yaml',
     ];
 
     /**

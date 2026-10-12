@@ -283,6 +283,7 @@ make front-build       # vue-tsc -b + vite build, in the container
 make back-test         # phpunit, in the container
 make back-quality      # phpstan + rector + psalm + lsp:check, in the container
 make back-lsp          # symfony lsp:check alone (Symfony Language Tools)
+make back-style-fix    # sort `use` + qualify compiler-optimized natives (pinned php-cs-fixer, #398)
 ```
 
 `make init` and `make front-init` (re)run the Symfony/Vite project scaffolding — both are already applied in
@@ -327,17 +328,27 @@ there too (audit I4 — real addresses in a public repo feed harvesters and reve
 identity); their values come from outside the repo: `.env.local` in dev, Secret Manager in preprod/prod, and
 **`phpunit.dist.xml` in test**, since the test env never loads `.env.local` — with `force="true"`, without
 which Dotenv overwrites them with the empty value from `.env`. `ANTHROPIC_API_KEY` (ADR 0004) follows the
-exact same route, with a dummy forced value in test: no test may reach the real API. Beware: `init-symfony.sh` returns early when
-`composer.json` exists, so an already-initialised checkout needs those two lines added to `.env.local` by hand.
+exact same route, with a dummy forced value in test: no test may reach the real API. `backend/composer.json` is
+tracked, so `init-symfony.sh` skips the project creation on every clone, but since #481 it still **creates
+`.env.local` / `.env.test.local` when missing** (never overwriting them) and sets `APP_SECRET`; an existing
+`.env.local` older than a new line (those two, say) still needs it added by hand. `make init` runs the copy
+baked into the dev image (`/usr/local/bin/init-symfony`): `make build` after changing the script.
 Don't re-add either file to git — extend `docker/php/init-symfony.sh`
 instead if a fresh-clone default needs to change. Locally, `init-symfony.sh` generates both `.env.local` (dev)
 and `.env.test.local` (test) with the Docker-internal `DATABASE_URL` (`database:5432`); since Symfony never
 loads `.env.local` when `APP_ENV=test`, the test env needs its own `.env.test.local` — same database name as
 dev is fine, `config/packages/doctrine.yaml`'s `dbname_suffix: '_test'` (Flex default, meant for ParaTest)
-already separates the real test DB (`<name>_test`) from dev data. `.env.dev`/`.env.test.local` also carry
-`JWT_PASSPHRASE`, which **must be identical between the two** — `lexik_jwt_authentication.yaml` doesn't split
-the keypair path per environment, so one `config/jwt/*.pem` (gitignored) is shared by both; after changing
-either passphrase, regenerate it with `php bin/console lexik:jwt:generate-keypair --overwrite`. CI
+already separates the real test DB (`<name>_test`) from dev data. **`APP_SECRET` comes from the same two
+files** (issue #481): `.env` leaves it empty, and since #455 an empty secret fails every derived key (CSRF,
+Messenger envelopes, cache values) — the dev contact form answered 500. `docker/php/dev-env-secrets.sh`,
+called by `init-symfony.sh` and by `make dev-secrets` (in the container), sets a random one, distinct per
+file, only where it is missing or empty — `APP_SECRET=""`, `''` or blanks read as empty, as Dotenv reads
+them —, and never prints it (its scratch file lives outside the repo, removed on exit). `JWT_PASSPHRASE` **must be
+identical between dev and test** — `lexik_jwt_authentication.yaml` doesn't split the keypair path per
+environment, so one `config/jwt/*.pem` (gitignored) is shared by both; locally it is empty in both (each
+resolves it from `.env` unless a local file sets it), the keypair being generated without one — the script
+never touches it, an empty value is not a missing one. After changing it, regenerate the keypair with
+`php bin/console lexik:jwt:generate-keypair --overwrite`. CI
 (`.github/workflows/pipeline.yml`, job `test-backend`) doesn't use any of this — it writes its own
 `backend/.env.test.local` with fresh random secrets at the start of every run.
 

@@ -11,7 +11,7 @@ use App\Security\User\Presentation\ApiResource\AccountPasswordSetupValidationRes
 
 /**
  * POST /api/account/password-setup/validate : délègue la validation du jeton
- * (lu dans le corps) à PasswordSetupService, qui lève 404 / 410 selon le cas.
+ * (lu dans le corps) à PasswordSetupService, qui refuse en 404 tout lien inutilisable.
  * Un retour sans exception = jeton exploitable = 204. Rien n'est écrit : c'est
  * un Processor parce que le jeton arrive dans un corps (audit A7, D6), pas
  * parce que l'opération modifie quoi que ce soit.

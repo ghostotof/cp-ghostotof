@@ -210,6 +210,42 @@ final class CpgUserRepositoryTest extends KernelTestCase
      * Issue #418 : le chargeur du fournisseur `cpg_users` (security.yaml).
      * Un compte existant est rendu tel quel.
      */
+    /**
+     * Issue #485 : l'invitation que la file a refusée est défaite par un
+     * DELETE ciblé, sans flush() global — l'appelant est un chemin d'échec,
+     * comme PasswordSetupTokenRepository::remove() (#425).
+     */
+    public function testRemovePendingInvitationDeletesTheAccountByItsIdentifier(): void
+    {
+        $user = new CpgUser('undispatched', '');
+        $user->setEmail('undispatched@example.com');
+        $user->markInvited(new DateTimeImmutable('2026-10-11T18:00:00+02:00'));
+        $this->repository->save($user);
+        $this->em->clear();
+
+        $this->repository->removePendingInvitation($user);
+
+        self::assertSame(0, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM cpg_user'));
+    }
+
+    /**
+     * Jamais un compte activé entre-temps : l'e-mail a pu partir malgré
+     * l'erreur (accusé du broker perdu, #479) et la personne définir son mot
+     * de passe ; le supprimer effacerait un compte vivant.
+     */
+    public function testRemovePendingInvitationSparesAnActivatedAccount(): void
+    {
+        $user = new CpgUser('activated-meanwhile', 'hashed-password');
+        $user->setEmail('activated@example.com');
+        $user->markInvited(new DateTimeImmutable('2026-10-11T18:00:00+02:00'));
+        $user->markActivated(new DateTimeImmutable('2026-10-11T18:01:00+02:00'));
+        $this->repository->save($user);
+
+        $this->repository->removePendingInvitation($user);
+
+        self::assertSame(1, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM cpg_user'));
+    }
+
     public function testLoadUserByIdentifierReturnsTheAccount(): void
     {
         $this->em->persist(new CpgUser('jane', 'hashed-password'));

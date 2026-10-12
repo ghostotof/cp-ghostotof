@@ -10,7 +10,7 @@ NGINX_SIDECAR_TAG := $(shell sed -n 's/.*image: nginx:\([^[:space:]]*\).*/\1/p' 
 # le manifeste change de forme : tools/check-rabbitmq-conf.sh refuse alors `rabbitmq:`.
 RABBITMQ_MANIFEST_TAG := $(shell sed -n 's/.*image: rabbitmq:\([^[:space:]]*\).*/\1/p' k8s/base/rabbitmq.yaml | head -1)
 
-.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality back-lsp build-front-prod build-front-preprod front-image-headers back-nginx-rate-limits rabbitmq-conf get-secret
+.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality back-lsp back-style-fix build-front-prod build-front-preprod front-image-headers back-nginx-rate-limits rabbitmq-conf dev-secrets get-secret
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -35,6 +35,9 @@ sh: ## Ouvre un shell dans le backend, en tant qu'utilisateur dev
 
 init: ## (Re)joue l'initialisation du projet Symfony
 	$(DC) run --rm --user dev backend init-symfony
+
+dev-secrets: ## Pose un APP_SECRET aléatoire là où il manque, dans backend/.env.local et .env.test.local (#481), sans l'afficher
+	$(DC) run --rm --no-deps --user dev backend /var/www/docker/php/dev-env-secrets.sh /var/www/backend
 
 db-migrate: ## Applique les migrations Doctrine
 	$(DC) exec --user dev backend php bin/console doctrine:migrations:migrate --no-interaction
@@ -133,6 +136,24 @@ back-lsp: ## Lance symfony lsp:check (diagnostics Symfony) dans le conteneur
 	$(DC) exec -u dev backend /var/www/docker/php/install-symfony-language-tools.sh
 	$(DC) exec -u dev backend symfony lsp:check --fail-on=$(LSP_FAIL_ON)
 	$(DC) exec -u dev backend /var/www/docker/php/install-symfony-language-tools.sh --verify
+
+# Correction ponctuelle du style que gardent ImportsStaySortedTest et
+# NativeCallsQualificationTest (issue #398) : tri des `use`, puis qualification
+# des fonctions natives optimisées par le compilateur, sur src/ et tests/. À
+# lancer après un `composer rector:fix` qui ajoute un import. php-cs-fixer n'est
+# pas une dépendance (#391) : le script pose son phar sous backend/var/, à la
+# version PHP_CS_FIXER_VERSION (.env), et ne l'exécute qu'après avoir vérifié
+# PHP_CS_FIXER_SHA256. Pas de mode « vérification seule » : les deux gardes
+# PHPUnit le sont déjà, et plus strictes (elles refusent `use function`).
+#
+# La version et la somme sont lues ici, dans le .env de l'hôte, et passées au
+# conteneur : son /var/www/.env est un montage de fichier, qui garde l'ancien
+# contenu après un `git pull` qui le remplace.
+PHP_CS_FIXER_VERSION := $(shell sed -n 's/^PHP_CS_FIXER_VERSION=//p' .env)
+PHP_CS_FIXER_SHA256 := $(shell sed -n 's/^PHP_CS_FIXER_SHA256=//p' .env)
+
+back-style-fix: ## Trie les `use` et qualifie les fonctions natives optimisées (php-cs-fixer épinglé) dans le conteneur
+	$(DC) exec -u dev -e PHP_CS_FIXER_VERSION=$(PHP_CS_FIXER_VERSION) -e PHP_CS_FIXER_SHA256=$(PHP_CS_FIXER_SHA256) backend /var/www/docker/php/php-cs-fixer.sh
 
 front-init: ## Crée le projet Vite en mode INTERACTIF (à lancer une seule fois)
 	$(DC) run --rm frontend npm create vite@$(shell grep '^CREATE_VITE_VERSION=' .env | cut -d= -f2) .

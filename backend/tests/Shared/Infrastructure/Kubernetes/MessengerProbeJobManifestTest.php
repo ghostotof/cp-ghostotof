@@ -29,9 +29,10 @@ final class MessengerProbeJobManifestTest extends TestCase
     }
 
     /**
-     * Le Job doit finir avant que le pipeline ne cesse de l'attendre
-     * (`wait-rollout.sh … --timeout 300`), sonde comprise : 90 s d'attente,
-     * plus les pulls et le démarrage du pod.
+     * Le pipeline attend le Job 300 s (`wait-rollout.sh … --timeout 300`), sonde
+     * comprise : 90 s d'attente, plus les pulls et le démarrage du pod. Le délai
+     * du Job est au-dessus (issue #535) : un pod bloqué tourne encore quand
+     * `run-job.sh` lit ses journaux. La relation : tools/tests/run-job.test.sh.
      */
     public function testTheJobIsBoundedAndNeverRetried(): void
     {
@@ -39,7 +40,7 @@ final class MessengerProbeJobManifestTest extends TestCase
         self::assertIsArray($spec);
 
         self::assertSame(0, $spec['backoffLimit'] ?? null);
-        self::assertSame(240, $spec['activeDeadlineSeconds'] ?? null);
+        self::assertSame(360, $spec['activeDeadlineSeconds'] ?? null);
     }
 
     /** Les mêmes Secrets que l'API, donc la même clé de MAC qu'elle. */
@@ -65,7 +66,7 @@ final class MessengerProbeJobManifestTest extends TestCase
         ], $this->container()['securityContext'] ?? null);
     }
 
-    /** Seule l'image est substituée, par tools/smoke-messenger-probe.sh. */
+    /** Seule l'image est substituée, par tools/run-job.sh (lancé par tools/smoke-messenger-probe.sh). */
     public function testOnlyTheImageIsSubstituted(): void
     {
         preg_match_all('/\$\{([A-Z_]+)\}/', $this->source(), $matches);
