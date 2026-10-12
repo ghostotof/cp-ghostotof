@@ -248,7 +248,9 @@ final class CpgUserInviterTest extends TestCase
         });
 
         $messageBus = self::createStub(MessageBusInterface::class);
-        $messageBus->method('dispatch')->willThrowException(new TransportException('Connection refused'));
+        // Ce que lève le bus réel depuis #491
+        // (App\Shared\Infrastructure\Messenger\QueueUnavailableMiddleware).
+        $messageBus->method('dispatch')->willThrowException(new InvitationQueueUnavailableException(new TransportException('Connection refused')));
 
         $inviter = new CpgUserInviter(
             $cpgUserRepository,
@@ -278,7 +280,9 @@ final class CpgUserInviterTest extends TestCase
         $cpgUserRepository->expects(self::never())->method('removePendingInvitation');
 
         $messageBus = self::createStub(MessageBusInterface::class);
-        $messageBus->method('dispatch')->willThrowException(new TransportException('Connection refused'));
+        // Ce que lève le bus réel depuis #491
+        // (App\Shared\Infrastructure\Messenger\QueueUnavailableMiddleware).
+        $messageBus->method('dispatch')->willThrowException(new InvitationQueueUnavailableException(new TransportException('Connection refused')));
 
         $inviter = new CpgUserInviter(
             $cpgUserRepository,

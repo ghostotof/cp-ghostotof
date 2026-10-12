@@ -297,14 +297,50 @@ constructor takes the cause and passes its own **literal** sentence (`ContactMes
 `detail`, and `ProblemDetailStaysStaticTest` refuses any composed one — a factory building it from a
 `subject()` hook was written first and dropped for that reason, rather than allow-listed. A context's `Domain`
 depends on `Shared/Domain` only, and `Shared` never lists the contexts (the rejected alternative, a single
-class with an enum of contexts, would change `Shared` for every new producer). The code that dispatches
-catches Messenger's `TransportException` — which does **not** implement `TransportExceptionInterface`,
-verified — and throws `new <Context>QueueUnavailableException($failure)`, keeping the cause as `previous` (an AMQP channel error quotes
-only the code and the transport, never the body, unlike an SMTP answer); the message is the client's
-`detail` and never quotes the failure. Each concrete class has its own `log_level: warning` in
+class with an enum of contexts, would change `Shared` for every new producer). **The conversion is written
+once, in the bus** (issue #491, replacing #485's `try`/`catch` copied at each dispatch site, which nothing
+forced a new producer to write): every message routed to a publishing transport implements
+`Shared/Application/Message/QueuedMessageInterface`, whose `queueUnavailableException(Throwable $cause)` returns
+`new <Context>QueueUnavailableException($cause)` — a **Factory Method**: the middleware, written once in
+`Shared`, cannot know which exception to build, each message builds its own. An interface rather than an
+attribute, settled in #491: typed end to end, where an attribute would need `new $class($failure)`, which PHPStan checks against
+`RuntimeException`'s constructor and refuses. `Shared/Infrastructure/Messenger/QueueUnavailableMiddleware`,
+declared on `messenger.bus.default` (Symfony places it before `send_message`, which it wraps), catches
+Messenger's `TransportException` — which does **not** implement `TransportExceptionInterface`, verified —
+and throws what the message names, keeping the cause as `previous` (an AMQP channel error quotes only the
+code and the transport, never the body, unlike an SMTP answer); the message is the client's `detail` and
+never quotes the failure. The producers (`ContactMessageSender`, `CpgUserInviter`) just dispatch;
+`CpgUserInviter::invite()` still catches `InvitationQueueUnavailableException` to remove the account.
+**It leaves the worker's messages alone**: a received envelope (`ReceivedStamp`) is left as is, and the
+retries and the `failure_transport` call their sender without going back through the bus; only a **new**
+publication made from the worker (a handler dispatching one, none today) would be converted, as from a
+request. A message that does not implement the interface keeps the bare `TransportException`. Accepted
+limit: a message routed to several senders (none is) is converted when the second refuses, even if the
+first took it.
+`tests/Shared/Infrastructure/Messenger/QueuedMessagesNameTheirQueueFailureTest.php` covers the three ways
+Messenger picks a message's transports (`SendersLocator`), in **every** allowed environment
+(`EnvironmentConfigKernel`, like `SendEmailMessageStaysSynchronousTest`; the list comes from
+`EnvironmentConfigKernel::allowedEnvironments()`, the one reflective read of `Kernel::getAllowedEnvs()`),
+since a transport publishes or not depending on its DSN there. It fails on any key of the declared
+`framework.messenger.routing` sent to a transport whose DSN is not `sync://` (`async`, `failed`, an unknown
+sender name) that is not a subtype of the interface — a wildcard (namespace or `*`) included, since the
+messages it reaches cannot be listed —; on any declaration of `src/` (class, interface or abstract class:
+`SendersLocator` reads the attribute on the parents and interfaces too) carrying `#[AsMessage(transport: …)]`
+towards such a transport under the same rule; and on any **`TransportNamesStamp`** named in the code of
+`src/` (tokens, comments and strings excluded), with no exemption list: passed to `dispatch()`, it overrides
+both and is only known at run time, so a message is routed by the configuration or by its attribute,
+never at dispatch. Its fixture project `Fixtures/AsyncRoutingProject` and the fixture messages
+(`AttributeRoutedMessage`, `SynchronousAttributeMessage`) prove each form is caught in its environment,
+and the stamp detector is proven on snippets. Its only way out is
+`NO_CONVERSION`, with a justification and a check that the entry is still needed: the #470 probe
+(`MessengerProbeMessage`), published by `app:messenger:probe`, never from an HTTP request, whose command
+catches the `TransportException` itself to quote it in the Job's logs. `AsyncPublishFailureTest` drives
+the container's bus behind `tests/Support/UnavailableTransport`, and the #485 end-to-end tests
+(`ContactMessageResourceTest`, `BackofficeUserInviteResourceTest`) turn red when the middleware is left
+off the bus (checked). Each concrete class has its own `log_level: warning` in
 `framework.exceptions` (`ExceptionLogLevelCoverageTest` refuses an entry on the abstract one); no
 `exception_to_status`, `getStatus()` already gives 503 on an API Platform operation. A new producer of
-messages adds its subclass and its entry, nothing else.
+messages adds its subclass, its entry and `implements QueuedMessageInterface` on its message, nothing else.
 
 **A parameter that receives a secret in clear carries `#[SensitiveParameter]`** (issues #411 for passwords,
 #414 for the rest). `tests/Security/SecretParametersTest.php` fails on a parameter that may hold a string

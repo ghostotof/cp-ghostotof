@@ -8,8 +8,10 @@ use App\Shared\Domain\Exception\MessageQueueUnavailableException;
 use Throwable;
 
 /**
- * Le message de contact n'a pas pu être mis en file (issue #485) : 503, et
- * le quota du visiteur n'est pas consommé (ContactMessageProcessor).
+ * Le message de contact n'a pas pu être mis en file (issue #485) : 503. Le
+ * quota du visiteur reste consommé, avant l'envoi et à dessein (relecture de
+ * #485, `.claude/rules/deploiement.md`) : le consommer après laissait passer
+ * une rafale concurrente.
  */
 final class ContactMessageQueueUnavailableException extends MessageQueueUnavailableException
 {

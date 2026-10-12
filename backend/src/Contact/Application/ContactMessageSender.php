@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace App\Contact\Application;
 
 use App\Contact\Application\Message\SendContactMessageMessage;
-use App\Contact\Domain\Exception\ContactMessageQueueUnavailableException;
 use App\Contact\Domain\ValueObject\ContactMessage;
-use Symfony\Component\Messenger\Exception\TransportException;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 final readonly class ContactMessageSender implements ContactMessageSenderInterface
@@ -19,15 +17,13 @@ final readonly class ContactMessageSender implements ContactMessageSenderInterfa
 
     public function send(ContactMessage $message): void
     {
-        try {
-            $this->messageBus->dispatch(new SendContactMessageMessage(
-                senderName: $message->senderName,
-                senderEmail: $message->senderEmail,
-                body: $message->body,
-            ));
-        } catch (TransportException $failure) {
-            // Issue #485 : broker arrêté, refus ou accusé manquant (#479).
-            throw new ContactMessageQueueUnavailableException($failure);
-        }
+        // Une file qui ne prend pas le message lève l'exception qu'il nomme
+        // (App\Contact\Domain\Exception\ContactMessageQueueUnavailableException,
+        // issues #485 et #491).
+        $this->messageBus->dispatch(new SendContactMessageMessage(
+            senderName: $message->senderName,
+            senderEmail: $message->senderEmail,
+            body: $message->body,
+        ));
     }
 }
