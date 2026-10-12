@@ -85,7 +85,7 @@ final class OperatorExecBoundaryTest extends TestCase
     {
         $command = $this->lookupCommand();
 
-        self::assertStringContainsString('PGOPTIONS="-c default_transaction_read_only=on" psql ', $command);
+        self::assertStringContainsString('PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql ', $command);
         // -X : aucun ~/.psqlrc du conteneur ; ON_ERROR_STOP : une erreur sort en code non nul.
         self::assertMatchesRegularExpression('/\bpsql -X\b/', $command);
         self::assertStringContainsString('-v ON_ERROR_STOP=1', $command);
@@ -180,7 +180,7 @@ final class OperatorExecBoundaryTest extends TestCase
 
         foreach ($calls as $call) {
             self::assertMatchesRegularExpression('/kubectl -n "\$\{NS:\?[^}]+\}" exec deploy\/backend -c php-fpm --/', $call);
-            self::assertStringContainsString("env PGOPTIONS='-c default_transaction_read_only=on' php bin/console messenger:failed:show ", $call);
+            self::assertStringContainsString("env PGOPTIONS='-c default_transaction_read_only=on -c lock_timeout=5s' php bin/console messenger:failed:show ", $call);
             self::assertDoesNotMatchRegularExpression('/-n (preprod|prod)\b/', $call);
         }
     }
