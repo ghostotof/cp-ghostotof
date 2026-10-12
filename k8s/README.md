@@ -1089,6 +1089,71 @@ prochaine connexion, aucune action corrective nécessaire. Avec les deux
 environnements à zéro pod par défaut, "Permanent login" ne sert donc plus
 guère qu'à l'intérieur d'une même session d'intervention.
 
+## Sessions fantômes PostgreSQL (keepalives TCP, issue #279)
+
+Le verrou des limiteurs est un advisory lock **de session** (#272). Un pod
+perdu sans fermer son socket (nœud tombé, partition réseau) laissait sa
+session ouverte côté serveur, verrou compris, jusqu'au keepalive Linux par
+défaut : deux heures pendant lesquelles chaque requête sur la clé répondait 500
+au bout de `lock_timeout` (5 s). `k8s/base/postgres.yaml` passe au serveur
+`tcp_keepalives_idle=60`, `tcp_keepalives_interval=10` et
+`tcp_keepalives_count=3` : une session muette est fermée, et ses verrous
+libérés, en 60 + 10 × 3 = 90 s. Linux n'envoie toutefois aucune sonde tant que
+des données attendent leur accusé de réception : si le client disparaît pendant
+que le serveur lui répond (fenêtre étroite, mais réelle), ce sont les
+retransmissions qui décident, une quinzaine de minutes. `tcp_user_timeout=90000`
+(millisecondes) borne ce cas aussi.
+
+Mesuré sur `postgres:18.6-alpine`, client coupé du réseau sans FIN
+(`docker network disconnect`, relevé toutes les 5 s) :
+
+| Coupure | Sans réglage | Keepalives seuls | Keepalives + `tcp_user_timeout` |
+|---|---|---|---|
+| session inactive | tenu après 202 s | libéré en 96 s | libéré en 96 s |
+| réponse en cours d'envoi | — | tenu après 303 s | libéré en 106 s (15 s de requête + 90) |
+
+Un pod supprimé, même en force, n'est pas une session fantôme : le kubelet tue
+le conteneur, le noyau ferme le socket et le serveur reçoit le FIN.
+
+Changer ces réglages redémarre Postgres (`Recreate`) : une coupure courte de
+l'API, à annoncer dans les notes de release et à valider en préprod
+(`rollout status` + journaux), comme toute modification de cette charge.
+
+**Vérifier qu'ils sont actifs, par TCP.** Sur une connexion par socket Unix,
+PostgreSQL ignore ces paramètres et `SHOW` les lit à `0` : la commande
+habituelle `psql` dans le pod mentirait. Depuis un terminal séparé, avec un
+kubeconfig d'administrateur (lecture seule, la sortie reste sur le terminal) :
+
+```bash
+NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
+printf '%s\n' 'SHOW tcp_keepalives_idle;' 'SHOW tcp_keepalives_interval;' 'SHOW tcp_keepalives_count;' 'SHOW tcp_user_timeout;' \
+  | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
+    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -t -v ON_ERROR_STOP=1 -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+# attendu : 60, 10, 3 et 90000 sur quatre lignes ; 0 : connexion par socket
+# (-h manquant) ou serveur démarré sans les args.
+```
+
+Comme pour la recherche d'un compte (§ « Journal de sécurité »), la requête arrive
+par l'entrée standard, rien dans l'argv de l'`exec`. Aucun mot de passe : le
+`pg_hba.conf` de l'image fait confiance (`trust`) aux connexions TCP de
+127.0.0.1, c'est-à-dire de l'intérieur du pod.
+
+Ce qui n'est pas posé, volontairement :
+
+- **`idle_session_timeout`** fermerait aussi les sessions saines restées
+  inactives, celle du worker Messenger entre deux messages par exemple. Les
+  keepalives ne ferment que celles dont le client ne répond plus.
+- **`client_connection_check_interval`** ne surveille le client que pendant
+  qu'une requête s'exécute. Une session fantôme qui tient un verrou est
+  inactive, et ses attentes sont déjà bornées à 5 s.
+
+Limite acceptée : après une partition réseau qui guérit, le client peut croire
+tenir encore un verrou que le serveur a libéré, et un autre pod peut l'avoir
+pris entre-temps. Le client l'apprend à sa requête suivante sur cette
+connexion, qui échoue (le serveur a fermé la session). Pour un limiteur,
+l'effet se borne à un décompte non atomique pendant cet intervalle, jamais à un
+blocage.
+
 ## Profilage Xdebug en préprod (3e audit, constat A12)
 
 L'image `…-preprod` embarque Xdebug (`docker/php/Dockerfile`, stage `preprod`).
