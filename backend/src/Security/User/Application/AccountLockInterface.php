@@ -25,6 +25,15 @@ use Closure;
 interface AccountLockInterface
 {
     /**
+     * Un COMMIT que la base refuse (issue #547, comme #502 pour le verrou
+     * d'ordre) annule ce que l'opération a écrit, et **clôt l'unité de travail
+     * de l'appelant** : une nouvelle lecture relit la base (une instance
+     * déjà tenue garde les valeurs refusées), une écriture suivante par
+     * l'ORM échoue — une instruction DQL `UPDATE`/`DELETE` ou DBAL brute
+     * passe encore. Le refus est terminal pour l'unité de travail qui l'a
+     * reçu. Sur ces tables sans contrainte différée, seule une session perdue
+     * à ce moment-là peut le provoquer.
+     *
      * **Jamais dans une transaction déjà ouverte** (issue #532), ni sous un
      * autre verrou du compte ou de l'application : le verrou ouvre et valide
      * la sienne, et ce que fait l'appelant à son retour (le handler envoie le

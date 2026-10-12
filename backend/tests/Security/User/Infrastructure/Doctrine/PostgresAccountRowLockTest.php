@@ -167,8 +167,38 @@ final class PostgresAccountRowLockTest extends KernelTestCase
 
         self::assertInstanceOf(DriverException::class, $caught, \sprintf('Le COMMIT refusé est remonté sous un autre nom : %s.', get_debug_type($caught)));
         self::assertSame(CommitRefusal::SQLSTATE, $caught->getSQLState());
-        self::assertTrue($this->em->isOpen());
+        self::assertFalse($this->em->isOpen(), 'Un COMMIT refusé a laissé l\'EntityManager ouvert (issue #547).');
         self::assertFalse($connection->isTransactionActive());
+    }
+
+    /**
+     * Issue #547 : le `flush()` de l'opération a réussi au point de
+     * sauvegarde, puis la base a refusé le COMMIT. L'UnitOfWork tenait pour
+     * écrit ce que le refus venait d'annuler : le squelette ferme donc
+     * l'EntityManager, comme le verrou d'ordre depuis #502, et une nouvelle
+     * lecture relit la base.
+     */
+    public function testACommitRefusedByTheDatabaseClosesTheEntityManagerOnItsRefusedWrites(): void
+    {
+        $user = $this->pendingUser();
+        $connection = $this->em->getConnection();
+        $caught = null;
+
+        try {
+            $this->lock()->whileLocked($user, function (CpgUser $locked) use ($connection): null {
+                $locked->setEmail('refused@example.com');
+                $this->em->flush();
+                CommitRefusal::scheduleIn($connection);
+
+                return null;
+            });
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(DriverException::class, $caught, \sprintf('Le COMMIT refusé est remonté sous un autre nom : %s.', get_debug_type($caught)));
+        self::assertFalse($this->em->isOpen(), 'Un COMMIT refusé a laissé l\'EntityManager ouvert sur une écriture annulée.');
+        self::assertSame('newcomer@example.com', $this->em->find(CpgUser::class, $user->getId())?->getEmail(), 'Une lecture après le refus rend l\'adresse que la base a refusée.');
     }
 
     /**

@@ -49,6 +49,8 @@ final class PostgresLockedTransactionTest extends KernelTestCase
      */
     private const string CAUSE_MESSAGE = 'cause avec une donnée à ne pas journaliser';
 
+    private EntityManagerInterface $entityManager;
+
     private Connection $connection;
 
     private Connection $probe;
@@ -58,7 +60,8 @@ final class PostgresLockedTransactionTest extends KernelTestCase
     protected function setUp(): void
     {
         self::bootKernel();
-        $this->connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        $this->entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $this->connection = $this->entityManager->getConnection();
         $this->probe = self::openProbeBeside($this->connection);
         $this->logs = new TestHandler();
     }
@@ -232,6 +235,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
             self::assertSame($refusal, $caught, "L'exception de l'opération n'est pas remontée telle quelle.");
             self::assertSame(0, $this->connection->fetchOne('SELECT COUNT(*) FROM locked_write'), "L'écriture de l'opération refusée a été validée.");
             self::assertFalse($this->connection->isTransactionActive());
+            self::assertTrue($this->entityManager->isOpen(), "Un refus levé par l'opération a fermé l'EntityManager.");
             self::assertTrue($this->probeCanTakeTheLock(), "Le verrou a survécu à l'échec de l'opération.");
         } finally {
             $this->connection->executeStatement('DROP TABLE locked_write');
@@ -242,7 +246,8 @@ final class PostgresLockedTransactionTest extends KernelTestCase
      * Un COMMIT refusé remonte sous l'erreur de la base, sans `rollBack()`
      * de repli : PostgreSQL a déjà annulé la transaction, et DBAL l'a déjà
      * close — `Connection::transactional()` levait « There is no active
-     * transaction » par-dessus.
+     * transaction » par-dessus. L'EntityManager reçu est fermé (issue #547)
+     * sans qu'aucun crochet ne le demande : un verrou ne peut pas l'oublier.
      */
     public function testACommitRefusedByTheDatabaseSurfacesUnderItsOwnError(): void
     {
@@ -262,6 +267,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
         self::assertInstanceOf(DriverException::class, $caught, \sprintf('Le COMMIT refusé est remonté sous un autre nom : %s.', get_debug_type($caught)));
         self::assertSame(CommitRefusal::SQLSTATE, $caught->getSQLState());
         self::assertFalse($this->connection->isTransactionActive());
+        self::assertFalse($this->entityManager->isOpen(), "Un COMMIT refusé a laissé l'EntityManager ouvert.");
         self::assertTrue($this->probeCanTakeTheLock(), 'Le verrou a survécu au COMMIT refusé.');
     }
 
@@ -270,6 +276,9 @@ final class PostgresLockedTransactionTest extends KernelTestCase
      * (`setRollbackOnly()`), laisse sa transaction ouverte : le squelette
      * l'annule, sans quoi la session — un worker qui vit longtemps — garde
      * la transaction et le verrou. `Connection::transactional()` le faisait.
+     * Ce n'est pas une `DriverException` : l'EntityManager reste ouvert, la
+     * portée de #502 gardée par #547 (aucun appelant ne fait de
+     * `setRollbackOnly()`).
      */
     public function testACommitRefusedByDbalBeforeTheDatabaseStillReleasesTheLock(): void
     {
@@ -288,6 +297,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
 
         self::assertInstanceOf(CommitFailedRollbackOnly::class, $caught, \sprintf('Le refus de DBAL est remonté sous un autre nom : %s.', get_debug_type($caught)));
         self::assertFalse($this->connection->isTransactionActive(), 'La transaction est restée ouverte.');
+        self::assertTrue($this->entityManager->isOpen());
         self::assertTrue($this->probeCanTakeTheLock(), 'Le verrou a survécu au COMMIT refusé par DBAL.');
     }
 
@@ -460,12 +470,14 @@ final class PostgresLockedTransactionTest extends KernelTestCase
     /**
      * Un verrou peut nommer un refus du COMMIT qu'il reconnaît (le trigger
      * des groupes de traduction, #390) ; un refus qu'il ne reconnaît pas
-     * remonte tel quel.
+     * remonte tel quel. Le crochet ne fait que nommer : l'EntityManager est
+     * déjà fermé quand il est appelé, et le reste quand il renomme (#547).
      */
     public function testACommitRefusalCanBeRenamedByTheLockThatRecognisesIt(): void
     {
         $recognised = null;
         $unrecognised = null;
+        $openWhenNamed = null;
 
         try {
             $this->transaction()->run(
@@ -473,7 +485,11 @@ final class PostgresLockedTransactionTest extends KernelTestCase
                 onTimeout: $this->unexpectedTimeout(...),
                 onNested: $this->unexpectedNesting(...),
                 operation: fn () => CommitRefusal::scheduleIn($this->connection),
-                onCommitRefused: static fn (DriverException $refusal): ?Throwable => CommitRefusal::SQLSTATE === $refusal->getSQLState() ? new DomainException('invariant', 0, $refusal) : null,
+                onCommitRefused: function (DriverException $refusal) use (&$openWhenNamed): ?Throwable {
+                    $openWhenNamed = $this->entityManager->isOpen();
+
+                    return CommitRefusal::SQLSTATE === $refusal->getSQLState() ? new DomainException('invariant', 0, $refusal) : null;
+                },
             );
         } catch (Throwable $exception) {
             $recognised = $exception;
@@ -493,6 +509,8 @@ final class PostgresLockedTransactionTest extends KernelTestCase
 
         self::assertInstanceOf(DomainException::class, $recognised);
         self::assertInstanceOf(DriverException::class, $recognised->getPrevious());
+        self::assertFalse($openWhenNamed, "L'EntityManager était encore ouvert quand le crochet a été appelé.");
+        self::assertFalse($this->entityManager->isOpen(), "Un refus renommé par le crochet a laissé l'EntityManager ouvert.");
         self::assertInstanceOf(DriverException::class, $unrecognised, 'Un refus non reconnu a été renommé.');
         self::assertFalse($this->connection->isTransactionActive());
     }
@@ -520,7 +538,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
 
     private function transaction(string $lockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT): PostgresLockedTransaction
     {
-        return new PostgresLockedTransaction($this->connection, new Logger('test', [$this->logs]), $lockTimeout);
+        return new PostgresLockedTransaction($this->entityManager, new Logger('test', [$this->logs]), $lockTimeout);
     }
 
     /**

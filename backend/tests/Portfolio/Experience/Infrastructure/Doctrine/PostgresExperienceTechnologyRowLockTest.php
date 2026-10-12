@@ -12,8 +12,10 @@ use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
 use App\Portfolio\Experience\Infrastructure\Doctrine\ExperienceTechnologyLockInsideTransactionException;
 use App\Portfolio\Experience\Infrastructure\Doctrine\ExperienceTechnologyLockTimeoutException;
 use App\Portfolio\Experience\Infrastructure\Doctrine\PostgresExperienceTechnologyRowLock;
+use App\Tests\Support\CommitRefusal;
 use App\Tests\Support\OpensProbeConnection;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use LogicException;
@@ -143,6 +145,38 @@ final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
         self::assertInstanceOf(UniqueConstraintViolationException::class, $caught, \sprintf('Le refus du flush est remonté sous un autre nom : %s.', get_debug_type($caught)));
         self::assertFalse($this->em->getConnection()->isTransactionActive());
         self::assertSame('PHP', $this->em->getConnection()->fetchOne('SELECT name FROM experience_technology WHERE id = :id', ['id' => $technology->getId()->toRfc4122()]));
+    }
+
+    /**
+     * Issue #547 : le `flush()` de l'opération a réussi au point de
+     * sauvegarde, puis la base a refusé le COMMIT — ici une contrainte
+     * différée sur une table temporaire, la table des technologies n'en ayant
+     * aucune : en production, seule une session perdue à ce moment-là le
+     * refuse. L'UnitOfWork tenait pour écrit ce que le refus venait d'annuler :
+     * le squelette ferme donc l'EntityManager, le refus remonte tel quel, et
+     * une nouvelle lecture relit la base.
+     */
+    public function testACommitRefusedByTheDatabaseClosesTheEntityManagerOnItsRefusedWrites(): void
+    {
+        $technology = $this->storedTechnology();
+        $connection = $this->em->getConnection();
+        $caught = null;
+
+        try {
+            $this->lock()->whileLocked($technology->getId(), function (ExperienceTechnology $locked) use ($connection): void {
+                $locked->update(TechnologyName::fromString('PHP'), ExperienceYears::fromFloat(9.0), null, null, false);
+                $this->em->flush();
+                CommitRefusal::scheduleIn($connection);
+            });
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(DriverException::class, $caught, \sprintf('Le COMMIT refusé est remonté sous un autre nom : %s.', get_debug_type($caught)));
+        self::assertSame(CommitRefusal::SQLSTATE, $caught->getSQLState());
+        self::assertFalse($connection->isTransactionActive());
+        self::assertFalse($this->em->isOpen(), 'Un COMMIT refusé a laissé l\'EntityManager ouvert sur une écriture annulée.');
+        self::assertSame(3.0, $this->em->find(ExperienceTechnology::class, $technology->getId())?->getYears(), 'Une lecture après le refus rend la durée que la base a refusée.');
     }
 
     /**

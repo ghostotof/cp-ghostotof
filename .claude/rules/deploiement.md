@@ -119,17 +119,19 @@ paths:
   (below) repeats `-c lock_timeout=5s` in its own `PGOPTIONS`, which replaces the variable whole.
   For the worker, a handler waiting past 5 s raises `55P03` and Messenger retries it. **The
   application's own PostgreSQL locks keep a fallback bound, now a safety net** (issue #512, kept on
-  2026-10-12, #525) for sessions with none — the dev container's console, CI: the order-scope lock, the account lock and the username
-  allocation lock share one skeleton, `Shared/Infrastructure/Lock/PostgresLockedTransaction`
+  2026-10-12, #525) for sessions with none — the dev container's console, CI: the order-scope lock, the account lock, the username
+  allocation lock and the technology row lock (#545) share one skeleton, `Shared/Infrastructure/Lock/PostgresLockedTransaction`
   (an *Execute Around*: hand-made transaction, wait bounded, `55P03` — defined there only, as
-  `LOCK_NOT_AVAILABLE` — renamed per lock, a refused COMMIT never masked, nor the cause by a
+  `LOCK_NOT_AVAILABLE` — renamed per lock, a refused COMMIT closing the EntityManager the skeleton
+  receives, issue #547, a refused COMMIT never masked, nor the cause by a
   ROLLBACK the database refuses after it, issue #526: that failure is logged `error` with classes and
   SQLSTATE only, the session is closed — never reused, PostgreSQL rolls it back, DBAL reopens one —, and
   the cause is rethrown as is; a programming error of the ROLLBACK, `NoActiveTransaction`, still
   surfaces; **never inside a transaction already open**, issues #526, #532: `run()` refuses before
   opening anything, under the name each adapter gives its required `onNested` —
   `OrderScopeLockInsideTransactionException`, `AccountLockInsideTransactionException`,
-  `UsernameAllocationLockInsideTransactionException`, `LogicException`s, unmapped `critical` 500s —, since
+  `UsernameAllocationLockInsideTransactionException`, `ExperienceTechnologyLockInsideTransactionException`,
+  `LogicException`s, unmapped `critical` 500s —, since
   nested its COMMIT would only be a `RELEASE SAVEPOINT` and what each lock promises « after the commit »
   would not hold; the check lives in the skeleton, required, so a new lock cannot forget it, and DBAL's
   count is the judge — a raw `executeStatement('BEGIN')` is not seen), which gives the

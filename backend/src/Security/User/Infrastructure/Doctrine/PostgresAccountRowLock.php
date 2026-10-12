@@ -22,9 +22,9 @@ use Symfony\Bridge\Doctrine\Types\UuidType;
  *   (issue #512) : une transaction à la main — un refus levé par l'opération
  *   (un lien déjà utilisé, 404) est une issue ordinaire, qui ne doit pas
  *   fermer l'EntityManager, et un COMMIT refusé remonte sous l'erreur de la
- *   base —, l'attente bornée si la session ne la borne pas (un filet depuis
- *   #525, où le worker Messenger et les Jobs ont reçu le `PGOPTIONS` de FPM),
- *   son `55P03` renommé.
+ *   base, l'EntityManager fermé (issue #547) —, l'attente bornée si la
+ *   session ne la borne pas (un filet depuis #525, où le worker Messenger et
+ *   les Jobs ont reçu le `PGOPTIONS` de FPM), son `55P03` renommé.
  * - Une lecture qui dit si la ligne existe : `refresh()` sur un compte
  *   supprimé entre-temps ne lève rien, et l'écriture suivante échouait sur la
  *   clé étrangère.
@@ -47,7 +47,7 @@ final readonly class PostgresAccountRowLock implements AccountLockInterface
     {
         $connection = $this->entityManager->getConnection();
 
-        return new PostgresLockedTransaction($connection, $this->logger, $this->fallbackLockTimeout)->run(
+        return new PostgresLockedTransaction($this->entityManager, $this->logger, $this->fallbackLockTimeout)->run(
             acquire: static function () use ($connection, $user): void {
                 $locked = $connection->fetchOne(
                     'SELECT 1 FROM cpg_user WHERE id = :id FOR UPDATE',

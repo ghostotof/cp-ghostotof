@@ -58,9 +58,10 @@ use Psr\Log\LoggerInterface;
  * reposer sur la mémoire du prochain appelant.
  *
  * **Un COMMIT refusé par la base ferme l'EntityManager** (issue #502) : toute
- * `DriverException` levée par le COMMIT, quel que soit son SQLSTATE — la seule
- * famille que le squelette passe à `onCommitRefused`. Les `flush()` de
- * l'opération ont réussi au point de sauvegarde ; le refus annule ce qu'ils
+ * `DriverException` levée par le COMMIT, quel que soit son SQLSTATE. C'est le
+ * squelette qui le ferme depuis #547, pour tous ses verrous, avant
+ * d'appeler `onCommitRefused`, qui ne fait plus ici que nommer le `23T90`.
+ * Les `flush()` de l'opération ont réussi au point de sauvegarde ; le refus annule ce qu'ils
  * ont écrit, mais l'UnitOfWork le tient pour écrit : une lecture sur le même
  * EntityManager rendait la position refusée, `find()` une entrée jamais
  * validée, et une écriture hors verrou repartait de là. Il est fermé comme
@@ -159,7 +160,7 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
     {
         $connection = $this->entityManager->getConnection();
 
-        return new PostgresLockedTransaction($connection, $this->logger, $this->fallbackLockTimeout)->run(
+        return new PostgresLockedTransaction($this->entityManager, $this->logger, $this->fallbackLockTimeout)->run(
             // Bloquant : attend la fin de la transaction qui tient ce périmètre.
             acquire: static fn (): mixed => $connection->executeQuery(
                 'SELECT pg_advisory_xact_lock(?, hashtext(?))',
@@ -174,21 +175,18 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
 
                 return $operation();
             },
-            onCommitRefused: $this->forgetWritesRefusedAtCommit(...),
+            onCommitRefused: $this->nameTheGroupRefusal(...),
         );
     }
 
     /**
-     * Le crochet `onCommitRefused` du squelette, qui fait ici deux choses
-     * (issue #502, voir plus haut) : il ferme l'EntityManager, dont l'UnitOfWork
-     * tient pour écrit ce que le refus vient d'annuler, quel que soit le
-     * SQLSTATE ; puis il nomme le refus des groupes de traduction (`23T90`),
-     * tout autre remontant tel quel.
+     * Le crochet `onCommitRefused` du squelette : nomme le refus des groupes
+     * de traduction (`23T90`), tout autre remontant tel quel. L'EntityManager
+     * est déjà fermé par le squelette, quel que soit le SQLSTATE (issues #502,
+     * #547, voir plus haut).
      */
-    private function forgetWritesRefusedAtCommit(DriverException $refusal): ?TranslationGroupHasSeveralPositionsException
+    private function nameTheGroupRefusal(DriverException $refusal): ?TranslationGroupHasSeveralPositionsException
     {
-        $this->entityManager->close();
-
         return self::TRANSLATION_GROUP_ON_SEVERAL_POSITIONS === $refusal->getSQLState()
             ? TranslationGroupHasSeveralPositionsException::refusedAtCommit($refusal)
             : null;
