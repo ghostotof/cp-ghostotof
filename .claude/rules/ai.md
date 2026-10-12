@@ -99,7 +99,8 @@ paths:
   body into its message (issue #269 tracks the same defect on the translator); and every assistant exception
   a client can cause implements `ProblemExceptionInterface`, since `exception_to_status` has no effect on
   this route — with a **literal** message only, since the listener returns it as `detail`
-  (`ProblemDetailStaysStaticTest` parses every `ProblemExceptionInterface` of `src/` by tokens; a
+  (`ProblemDetailStaysStaticTest` parses every `ProblemExceptionInterface` of `src/` by tokens, with the
+  traits it uses, whose `getDetail()` must be `return $this->getMessage();`, #507; a
   dynamic message elsewhere needs a justified entry in its allow-list), and a `log_level` in
   `framework.exceptions` — never `#[WithLogLevel]`, which would make the domain depend on HttpKernel —
   or the kernel logs it `critical`. The corpus's `<documents>` neutralisation is **linear by
