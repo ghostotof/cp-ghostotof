@@ -10,8 +10,8 @@ use Symfony\Component\HttpKernel\Attribute\WithHttpStatus;
 /*
  * Fixture d'ExceptionLogLevelCoverageTest (issue #357) : une exception qui
  * déclare son statut par #[WithHttpStatus], et une autre qui en hérite sans le
- * redéclarer. Le noyau convertit l'une et l'autre en HttpException, mais
- * résout leur niveau sur l'exception d'origine : sans entrée, `critical`.
+ * redéclarer. Le noyau convertit l'une et l'autre en HttpException ; sans
+ * entrée, il lit leur niveau sur cette conversion (Symfony ≥ 8.1.8) : `error`.
  */
 
 #[WithHttpStatus(404)]

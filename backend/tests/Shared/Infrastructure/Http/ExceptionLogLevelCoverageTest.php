@@ -383,7 +383,10 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     public static function nonInstantiableKeyCases(): iterable
     {
         yield 'interface sans entrée' => [SerializerExceptionInterface::class, [], '400 : critical'];
-        yield 'classe abstraite sans entrée' => [AbstractAttributedFixtureException::class, [], '400 : critical'];
+        // Son #[WithHttpStatus(404)] fait convertir une implémentation par le
+        // noyau, qui en lit le niveau par défaut sur la conversion depuis
+        // Symfony 8.1.8 : `error`, toujours hors politique pour un 4xx.
+        yield 'classe abstraite sans entrée' => [AbstractAttributedFixtureException::class, [], '400 : error'];
         yield 'interface couverte par son entrée' => [SerializerExceptionInterface::class, [SerializerExceptionInterface::class => ['log_level' => 'info']], null];
         yield 'classe abstraite couverte par son entrée' => [AbstractAttributedFixtureException::class, [AbstractAttributedFixtureException::class => ['log_level' => 'info']], null];
     }

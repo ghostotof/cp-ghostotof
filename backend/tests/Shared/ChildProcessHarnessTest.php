@@ -250,7 +250,7 @@ final class ChildProcessHarnessTest extends TestCase
             $child = ChildPhpProcess::inTestEnvironment(
                 self::TIMEOUT_SECONDS,
                 '-r',
-                'require '.var_export(\dirname(__DIR__).'/bootstrap.php', true).'; echo hash("sha256", (string) ($_SERVER["'.self::FORCED_VARIABLE.'"] ?? ""));',
+                'require '.var_export(__DIR__.'/../bootstrap.php', true).'; echo hash("sha256", (string) ($_SERVER["'.self::FORCED_VARIABLE.'"] ?? ""));',
             );
             $child->mustRun();
 

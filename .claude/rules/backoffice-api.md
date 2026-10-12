@@ -87,7 +87,8 @@ paths:
   `exceptionToStatus` carried by an `#[ApiResource]` or one of its operations (merged by the vendor at
   render time, `ErrorListener::getOperationExceptionToStatus`), every exception the kernel converts
   itself — a `framework.exceptions` entry with a `status_code`, which wins, else a `#[WithHttpStatus]`
-  of `src/`; either way the level is resolved on the original exception — and every concrete
+  of `src/`; either way the entries and `#[WithLogLevel]` are matched on the original exception, the
+  default level (`critical`, or `error` for a 4xx) on the conversion since Symfony 8.1.8 — and every concrete
   `ProblemExceptionInterface` of `src/` (found by token parsing
   through `tests/Support/DeclaredClasses`, shared with `ProblemDetailStaysStaticTest`, never inferred from
   file paths); a level that matches **every** status the exception can be rendered with (4xx:
@@ -121,7 +122,9 @@ paths:
   everywhere but resolves per environment, and the same test refuses it. The level checked is the one
   the kernel resolves, read from `ErrorListener::resolveLogLevel` itself: the first matching entry by
   `instanceof`, else an inherited `#[WithLogLevel]` — honoured, though the project keeps levels in
-  `framework.exceptions` so the domain does not depend on HttpKernel. Three vendor internals are read by
+  `framework.exceptions` so the domain does not depend on HttpKernel, else the default, read on the
+  `HttpException` the kernel substituted (`CompiledExceptionConfig::kernelConversion()` hands it the same
+  one — Symfony 8.1.8 added that second parameter, PR #441). Three vendor internals are read by
   reflection rather than reimplemented (the compiled mapping, `getInheritedAttribute`,
   `resolveLogLevel`); `ErrorListenerInternalsTest` pins their signature, so a Symfony upgrade that
   changes them fails there first. GraphQL operations are not covered:
