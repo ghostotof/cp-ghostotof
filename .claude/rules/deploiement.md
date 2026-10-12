@@ -105,6 +105,22 @@ paths:
   it replaced. If a console command must run at deploy time, declare another Job — never bring `pods/exec`
   back. The RBAC is a **manual bootstrap the pipeline never replays**: after changing it, re-run the loop in
   `k8s/README.md` §4 *before* the next deploy, or the job fails on `cannot create resource "jobs"`.
+- **What « never `kubectl exec` » covers, exactly** (issue #520). Three cases, three answers:
+  - **the CI identity never gets `pods/exec`** (nor `pods/attach`, `pods/portforward`) — audit C8 above;
+  - **a command with a side effect, or one that writes an audit line, runs as a Job** (`tools/run-job.sh`),
+    never through `exec`: its stderr would be the operator's terminal and `kubectl logs` would never see
+    the line (issue #386, `app:user:create`, see `.claude/rules/security-user.md`);
+  - **a human holding an admin kubeconfig may `exec` for read-only diagnosis whose output stays on their
+    terminal**, from a separate terminal, never behind a `!` in an assistant session: `nginx -T` on the
+    sidecar (below), the Xdebug checks and `kubectl cp` of the profiles, and naming an account from its
+    `userId` (`k8s/README.md`, « Journal de sécurité »). That last one is an exec *on purpose*: a Job
+    would write the name and address into its pod's logs, readable until the pod is deleted, by the CI
+    token too (`pods/log`) — the very thing issue #363 removed from the logs. The query goes on stdin
+    (nothing in the exec's argv, so nothing in the API server's request URL) inside a
+    `default_transaction_read_only` session, a guard rather than a boundary.
+  `OperatorExecBoundaryTest` pins the Role half and the shape of the account lookup. A new manual `exec`
+  in the runbook must fit the third case; if its output carries a secret or personal data, it stays on
+  the terminal, and if it writes anything, it is a Job.
 - **The standard deploy runs the migration *before* the rollout, with the old pods still serving**
   (issue #175, expand/contract). Doctrine selects every mapped column on each hydration, so with the
   old order (rollout, then Job) any release that adds a field made the new pods `SELECT` a column the

@@ -116,6 +116,9 @@ paths:
     so no context depends on `Security`. To name an account during an incident:
     `SELECT username, email FROM cpg_user WHERE id = '<userId>'` — once deleted, its lines designate no one,
     which is the point (minimisation, RGPD register §6; not Goal #9, which is about what the API exposes).
+    It runs through a human's read-only `kubectl exec` on the `postgres` pod (`k8s/README.md`, « Journal de
+    sécurité »), **never a Job**: a Job would print the name and address into its pod's logs, readable by
+    the CI token's `pods/log` — the exception and its bounds are in `.claude/rules/deploiement.md` (issue #520).
     **Never a password, a token (JWT, XSRF, invitation), an e-mail, a login identifier, a request body or a
     serialized exception** in any context.
     **The identifier tried at login is never written as typed** (issue #418): a password typed in the

@@ -255,7 +255,8 @@ paths:
     standard input through `--password-stdin` — refused on a terminal, never an option value, issue #386;
     in preprod/prod it runs **only** through `k8s/base/create-user-job.yaml`, never `kubectl exec`, whose
     stderr is the operator's terminal and loses the `user-created` audit line — procedure in `k8s/README.md`,
-    « Créer un compte super-administrateur ») and
+    « Créer un compte super-administrateur »; the scope of « never `kubectl exec` », and its one read-only
+    exception for a human, is in `.claude/rules/deploiement.md`, issue #520) and
     `Presentation/Controller/CurrentUserController.php` (`GET /api/me`). Everything else is API Platform
     resources — see `.claude/rules/backoffice-api.md` for the `ROLE_SUPER` ones, plus the two **public** (no auth, no CSRF,
     IP rate-limited) ones of the set-password flow.
