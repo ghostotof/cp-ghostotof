@@ -9,7 +9,7 @@ use PhpToken;
 /**
  * Recense les imports mal ordonnés d'un répertoire (issue #394), selon le tri
  * de php-cs-fixer `ordered_imports` `alpha` (`OrderedImportsFixer::sortAlphabetically()`,
- * à la version {@see PhpCsFixer::VERSION}) :
+ * à la version `PHP_CS_FIXER_VERSION` du `.env` racine, issue #398) :
  * - la clé est l'import tel qu'écrit, alias compris (`Foo as Bar`) ;
  * - chaque `\` y devient une espace, donc `Foo\Bar` précède `Foo2` ;
  * - les clés se comparent par `strcasecmp`, sans tenir compte de la casse.
@@ -36,7 +36,8 @@ final class UnsortedImports
     {
         return "Un `use function`, un `use const` ou un import groupé se réécrit à la main : la règle les interdit,\n"
             ."et le tri ne les corrige pas. Pour l'ordre, tri ponctuel depuis la racine du dépôt :\n"
-            .PhpCsFixer::command('ordered_imports');
+            ."make back-style-fix\n"
+            .'(php-cs-fixer épinglé et vérifié par docker/php/php-cs-fixer.sh ; qualifie aussi les fonctions natives)';
     }
 
     /**
