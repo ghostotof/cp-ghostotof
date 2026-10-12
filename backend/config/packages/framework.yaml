@@ -155,6 +155,8 @@ framework:
             log_level: info
         App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException:
             log_level: info
+        App\Security\User\Domain\Exception\ActingAccountNoLongerSuperAdminException:
+            log_level: info
         App\Security\User\Domain\Exception\EmailAlreadyUsedException:
             log_level: info
         App\Security\User\Domain\Exception\AccountNotAwaitingActivationException:

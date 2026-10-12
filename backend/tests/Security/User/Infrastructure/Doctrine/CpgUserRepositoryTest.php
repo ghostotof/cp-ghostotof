@@ -316,6 +316,54 @@ final class CpgUserRepositoryTest extends KernelTestCase
         ));
     }
 
+    /**
+     * Issue #551 : la garde du dernier ROLE_SUPER compte les **autres**
+     * comptes ROLE_SUPER capables de se connecter — la cible exclue, un compte
+     * invité jamais activé (mot de passe vide) exclu, un compte sans le rôle
+     * exclu.
+     */
+    public function testCountOtherSuperAdminsAbleToSignInExcludesTheTargetThePendingOnesAndThePlainOnes(): void
+    {
+        $target = $this->storedSuperAdmin('target', 'hashed-password');
+        $this->storedSuperAdmin('able', 'hashed-password');
+        $this->storedSuperAdmin('pending', '');
+        $this->storedUser('plain', 'hashed-password', []);
+
+        self::assertSame(1, $this->repository->countOtherSuperAdminsAbleToSignIn($target));
+    }
+
+    /**
+     * Compté en base, jamais sur la carte d'identité : le seul autre ROLE_SUPER
+     * est encore ROLE_SUPER en mémoire, plus en base.
+     */
+    public function testCountOtherSuperAdminsAbleToSignInReadsTheDatabaseNotTheIdentityMap(): void
+    {
+        $target = $this->storedSuperAdmin('target', 'hashed-password');
+        $demotedMeanwhile = $this->storedSuperAdmin('demoted', 'hashed-password');
+        $this->em->getConnection()->executeStatement("UPDATE cpg_user SET roles = '[]' WHERE id = :id", ['id' => $demotedMeanwhile->getId()->toRfc4122()]);
+
+        self::assertContains(CpgUser::ROLE_SUPER, $demotedMeanwhile->getRoles(), 'La carte d\'identité doit encore tenir le rôle, c\'est elle que le test accuse.');
+        self::assertSame(0, $this->repository->countOtherSuperAdminsAbleToSignIn($target));
+    }
+
+    private function storedSuperAdmin(string $username, string $hashedPassword): CpgUser
+    {
+        return $this->storedUser($username, $hashedPassword, [CpgUser::ROLE_SUPER]);
+    }
+
+    /**
+     * @param list<string> $roles
+     */
+    private function storedUser(string $username, string $hashedPassword, array $roles): CpgUser
+    {
+        $user = new CpgUser($username, $hashedPassword);
+        $user->setRoles($roles);
+        $this->em->persist($user);
+        $this->em->flush();
+
+        return $user;
+    }
+
     /** @return iterable<string, array{string}> */
     public static function identifiersNoAccountCanHave(): iterable
     {
