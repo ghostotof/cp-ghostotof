@@ -6,6 +6,7 @@ namespace App\Tests\Portfolio\Shared\Infrastructure\Doctrine;
 
 use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock;
 use App\Tests\Portfolio\Shared\Application\ProvidesLocalizedAdministrators;
 use App\Tests\Support\OpensProbeConnection;
 use Closure;
@@ -30,7 +31,8 @@ use Symfony\Component\Uid\Uuid;
  *
  * Chaque écriture fautive passe par une **seconde session** (la sonde), dans sa
  * propre transaction : le refus tombe au COMMIT, et rien ne rejaillit sur la
- * connexion de l'ORM.
+ * connexion de l'ORM. Ce que l'application reçoit d'un tel refus est épinglé
+ * par PostgresAdvisoryOrderScopeLockTest.
  *
  * @phpstan-import-type LocalizedContext from ProvidesLocalizedAdministrators
  */
@@ -38,9 +40,6 @@ final class TranslationGroupSinglePositionTest extends KernelTestCase
 {
     use OpensProbeConnection;
     use ProvidesLocalizedAdministrators;
-
-    /** SQLSTATE `integrity_constraint_violation`, levé par la fonction du trigger. */
-    private const string INTEGRITY_CONSTRAINT_VIOLATION = '23000';
 
     /** Nom du trigger, le même sur chaque table (un nom de trigger est propre à sa table). */
     private const string TRIGGER = 'trg_translation_group_single_position';
@@ -247,7 +246,7 @@ final class TranslationGroupSinglePositionTest extends KernelTestCase
             $probe->commit();
             self::fail('La base a validé un groupe de traduction sur plusieurs positions (#390).');
         } catch (DriverException $exception) {
-            self::assertSame(self::INTEGRITY_CONSTRAINT_VIOLATION, $exception->getSQLState(), $exception->getMessage());
+            self::assertSame(PostgresAdvisoryOrderScopeLock::TRANSLATION_GROUP_ON_SEVERAL_POSITIONS, $exception->getSQLState(), $exception->getMessage());
             self::assertStringContainsString($group->toRfc4122(), $exception->getMessage(), 'Le refus ne nomme pas le groupe fautif.');
         } finally {
             $probe->close();
