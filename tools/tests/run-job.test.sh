@@ -52,7 +52,9 @@ cat > "$TMP/kubectl" <<'FAKE'
 set -euo pipefail
 printf '%s\n' "$*" >> "$FAKE_DIR/args"
 case " $* " in
+  *" --cascade=foreground "*) exit "${FAKE_STOP_EXIT:-0}" ;;
   *" delete "*) exit "${FAKE_DELETE_EXIT:-0}" ;;
+  *" get job/"*) printf '%s' "${FAKE_JOB_CONDITIONS:-}"; exit "${FAKE_GET_EXIT:-0}" ;;
   *" apply -f - "*) cat > "$FAKE_DIR/applied.yaml"; exit "${FAKE_APPLY_EXIT:-0}" ;;
   *" logs "*) echo "[php-fpm] journal du Job" ;;
 esac
@@ -344,6 +346,59 @@ else
   fail "l'échec nomme le Job et imprime ses 200 dernières lignes, tous conteneurs, sur stderr" "$(cat "$ko/err" "$ko/args")"
 fi
 
+# --- Un échec veut dire « arrêté » (issue #535) ------------------------------
+# Le délai du Job dépasse l'attente : un Job dont l'attente a expiré tourne
+# encore. run-job.sh l'arrête après avoir imprimé ses journaux, en attendant la
+# fin de ses pods ; un Job déjà `Failed` est gardé (journaux lisibles jusqu'à
+# son ttlSecondsAfterFinished) ; un arrêt refusé est dit, sans changer le code.
+STOP_LINE='-n preprod delete job/demo-job --ignore-not-found --cascade=foreground --wait=true --timeout=90s'
+LOGS_LINE='-n preprod logs job/demo-job --all-containers --prefix --tail=200'
+logs_at=$(grep -n -x -- "$LOGS_LINE" "$ko/args" | cut -d: -f1 || true)
+stop_at=$(grep -n -x -- "$STOP_LINE" "$ko/args" | cut -d: -f1 || true)
+if [ -n "$logs_at" ] && [ -n "$stop_at" ] && [ "$logs_at" -lt "$stop_at" ] \
+    && grep -q '::error::.*demo-job.*arrêté' "$ko/err" && [ "$(cat "$ko/status")" = 1 ]; then
+  pass "un Job encore actif est arrêté après l'impression de ses journaux, en attendant ses pods, et le dit"
+else
+  fail "un Job encore actif est arrêté après l'impression de ses journaux, en attendant ses pods, et le dit" "$(cat "$ko/args" "$ko/err")"
+fi
+
+for conditions in 'FailureTarget Failed' 'SuccessCriteriaMet Complete'; do
+  kept="$TMP/kept-${conditions##* }"
+  FAKE_WAIT_EXIT=1 FAKE_JOB_CONDITIONS="$conditions" run "$kept" preprod "$TMP/demo-job.yaml" "$IMAGE" 240 CPG_USERNAME=x
+  if [ "$(cat "$kept/status")" = 1 ] && ! grep -q -- '--cascade=foreground' "$kept/args" \
+      && grep -qx -- "$LOGS_LINE" "$kept/args"; then
+    pass "un Job « $conditions » n'est pas supprimé après l'échec (sortie 1, journaux imprimés)"
+  else
+    fail "un Job « $conditions » n'est pas supprimé après l'échec (sortie 1, journaux imprimés)" "sortie $(cat "$kept/status") ; $(cat "$kept/args")"
+  fi
+done
+
+# Une lecture refusée vaut « actif » : mieux vaut arrêter un Job fini (ses
+# journaux sont déjà imprimés) que laisser tourner un Job actif.
+unread="$TMP/unread"
+FAKE_WAIT_EXIT=1 FAKE_GET_EXIT=1 run "$unread" preprod "$TMP/demo-job.yaml" "$IMAGE" 240 CPG_USERNAME=x
+if [ "$(cat "$unread/status")" = 1 ] && grep -qx -- "$STOP_LINE" "$unread/args"; then
+  pass "une lecture des conditions refusée vaut « actif » : le Job est arrêté"
+else
+  fail "une lecture des conditions refusée vaut « actif » : le Job est arrêté" "sortie $(cat "$unread/status") ; $(cat "$unread/args")"
+fi
+
+stuck="$TMP/stuck"
+FAKE_WAIT_EXIT=1 FAKE_STOP_EXIT=1 run "$stuck" preprod "$TMP/demo-job.yaml" "$IMAGE" 240 CPG_USERNAME=x
+if [ "$(cat "$stuck/status")" = 1 ] && grep -qx -- "$STOP_LINE" "$stuck/args" \
+    && grep -q '::error::.*arrêt du Job demo-job a échoué.*activeDeadlineSeconds' "$stuck/err" \
+    && ! grep -q 'est arrêté' "$stuck/err"; then
+  pass "un arrêt refusé est dit (::error::, délai du Job nommé), sortie 1"
+else
+  fail "un arrêt refusé est dit (::error::, délai du Job nommé), sortie 1" "sortie $(cat "$stuck/status") ; $(cat "$stuck/err")"
+fi
+
+if ! grep -q -- ' get job/' "$ok/args" && ! grep -q -- '--cascade=foreground' "$ok/args"; then
+  pass "un Job réussi n'est ni relu ni arrêté"
+else
+  fail "un Job réussi n'est ni relu ni arrêté" "$(cat "$ok/args")"
+fi
+
 if grep -qi 'secret' "$ok/args" "$ko/args"; then
   fail "aucun Secret n'est lu" "$(grep -i secret "$ok/args" "$ko/args")"
 else
@@ -433,7 +488,10 @@ REPO="$TOOLS/.."
 all_calls=""
 for source in $SOURCES; do
   file="${source%%:*}"; minimum="${source#*:}"
-  calls="$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$REPO/$file" | grep -oE "$CALL_PATTERN" || true)"
+  # Lignes commentées (`#` en tête, après l'indentation) écartées : un appel
+  # cité en exemple ou laissé en commentaire ne lance rien.
+  calls="$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$REPO/$file" | grep -vE '^[[:space:]]*#' \
+    | grep -oE "$CALL_PATTERN" || true)"
   count="$(printf '%s\n' "$calls" | grep -c 'run-job' || true)"
   if [ "$count" -ge "$minimum" ]; then
     pass "$file : les appels de run-job.sh sont lus ($count)"

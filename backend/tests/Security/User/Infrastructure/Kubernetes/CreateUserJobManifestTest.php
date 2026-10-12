@@ -67,17 +67,15 @@ final class CreateUserJobManifestTest extends TestCase
      * Revue de #488 : un pod qui ne démarre jamais (Secret supprimé avant son
      * montage, image introuvable) laissait le Job actif sans fin — et
      * `ttlSecondsAfterFinished` ne compte qu'à partir de la fin, si bien que
-     * le nom du compte restait dans sa spec. Le Job porte donc un délai. Sa
-     * place face à l'attente de la procédure (`tools/run-job.sh … <délai>`,
+     * le nom du compte restait dans sa spec. Le Job porte donc un délai, 360 s.
+     * Sa place face à l'attente de la procédure (`tools/run-job.sh … 300`,
      * k8s/README.md) suit la convention de tous les Jobs (issue #535) : au-dessus,
      * pour que les journaux d'un pod bloqué soient lus avant sa suppression ;
      * `tools/tests/run-job.test.sh` la vérifie, seul garde de cette relation.
      */
     public function testTheJobIsBounded(): void
     {
-        $deadline = $this->job()['spec']['activeDeadlineSeconds'] ?? null;
-        self::assertIsInt($deadline);
-        self::assertGreaterThan(0, $deadline);
+        self::assertSame(360, $this->job()['spec']['activeDeadlineSeconds'] ?? null);
     }
 
     public function testThePodIsHardenedLikeTheMigrationJob(): void

@@ -27,12 +27,10 @@ spec:
   # (initContainer et conteneur, `Always`), démarrage, puis les 90 s de la
   # sonde. 150 s laissaient ~55 s aux pulls, une release saine aurait été
   # annulée sur un GHCR lent (relecture de #470). Le budget de la sonde est
-  # l'attente de tools/smoke-messenger-probe.sh (300 s, ~210 s aux pulls) ;
-  # ce délai est AU-DESSUS (issue #535, convention de #525) : un pod bloqué
-  # tourne encore quand `run-job.sh` lit ses journaux, alors qu'à l'échéance
-  # le contrôleur de Job le supprime, journaux compris. Puis il meurt (SIGTERM,
-  # SIGKILL 30 s plus tard). `tools/tests/run-job.test.sh` vérifie
-  # l'encadrement (attente + 35 s < délai ≤ attente + 120 s).
+  # l'attente de tools/smoke-messenger-probe.sh (300 s, ~210 s aux pulls).
+  # Délai : convention de tous les Jobs, attente + 35 s < délai ≤ attente + 120 s
+  # (issues #525, #535 ; .claude/rules/deploiement.md, « One rule for every Job's
+  # deadline » ; vérifiée par tools/tests/run-job.test.sh).
   activeDeadlineSeconds: 360
   # Une heure pour relire `kubectl logs job/backend-messenger-probe`.
   ttlSecondsAfterFinished: 3600

@@ -35,15 +35,11 @@ spec:
   # plus le message.
   backoffLimit: 0
   # Compté dès la création : ordonnancement, deux tirages `Always` de l'image
-  # (initContainer et conteneur), puis la commande. AU-DESSUS des 300 s
-  # qu'attend la procédure (tools/run-job.sh … 300) augmentées des ~35 s de
-  # dépassement de tools/wait-rollout.sh (issue #535, convention de #525) : un
-  # pod bloqué tourne encore quand `run-job.sh` lit ses journaux, alors qu'à
-  # l'échéance le contrôleur de Job le supprime, journaux compris. Le Job peut
-  # donc aboutir jusqu'à 360 s après sa création, après un `::error::` de
-  # l'attente : relire `kubectl get job` avant de le relancer (k8s/README.md).
-  # `tools/tests/run-job.test.sh` vérifie l'encadrement (attente + 35 s <
-  # délai ≤ attente + 120 s).
+  # (initContainer et conteneur), puis la commande, attendus 300 s par la
+  # procédure (tools/run-job.sh … 300).
+  # Délai : convention de tous les Jobs, attente + 35 s < délai ≤ attente + 120 s
+  # (issues #525, #535 ; .claude/rules/deploiement.md, « One rule for every Job's
+  # deadline » ; vérifiée par tools/tests/run-job.test.sh).
   activeDeadlineSeconds: 360
   # Une heure pour relire `kubectl logs job/backend-messenger-failed-retry`.
   ttlSecondsAfterFinished: 3600
