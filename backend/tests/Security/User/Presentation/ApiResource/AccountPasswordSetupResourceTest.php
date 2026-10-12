@@ -9,13 +9,16 @@ use App\Security\User\Application\CpgUserAdministratorInterface;
 use App\Security\User\Application\CpgUserInviterInterface;
 use App\Security\User\Application\PendingInvitationPurgerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\InvitesUsers;
 use App\Tests\Support\TestCredentials;
 use DateInterval;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Psr\Clock\ClockInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
@@ -141,6 +144,63 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         // inutilisable (issue #362).
         $this->postSetup($client, ['token' => $token, 'password' => TestCredentials::variant('new')]);
         self::assertResponseStatusCodeSame(404);
+    }
+
+    /**
+     * Issue #519 : un compte activé ne garde aucun jeton utilisable (#458),
+     * vérifié sur la base réelle et non plus par le seul mock de
+     * `PasswordSetupServiceTest`. Un second lien encore valable sur le même
+     * compte, tel qu'en laissaient deux handlers concurrents avant le verrou
+     * de #458, est posé par le dépôt — aucun cas d'usage n'en produit plus.
+     *
+     * Seul le décompte de la table rougit si la purge disparaît de
+     * `complete()` : le lien restant serait de toute façon refusé, par la
+     * garde « compte déjà actif » de validate()/complete(). Les réponses
+     * vérifient l'autre moitié du contrat, celle de #362 : ce lien purgé ne se
+     * distingue pas d'un lien inconnu.
+     */
+    public function testActivationPurgesTheOtherUsableLinksOfTheAccount(): void
+    {
+        $client = $this->freshClient();
+        $token = $this->inviteAndCollectToken();
+        $otherToken = $this->issueAnotherUsableToken(self::EMAIL);
+        self::assertSame(['unused' => 2, 'total' => 2], $this->tokenCountsOf(self::EMAIL));
+        // Le second lien fonctionne avant l'activation : sans quoi la
+        // comparaison à un lien inconnu, plus bas, ne prouverait rien.
+        $this->postValidate($client, ['token' => $otherToken]);
+        self::assertResponseStatusCodeSame(204);
+
+        $this->postSetup($client, ['token' => $token, 'password' => TestCredentials::variant('new')]);
+        self::assertResponseStatusCodeSame(204);
+
+        // Le jeton consommé reste (un rejeu est journalisé `replayed`), aucun
+        // autre ne survit.
+        self::assertSame(['unused' => 0, 'total' => 1], $this->tokenCountsOf(self::EMAIL));
+
+        $unknown = bin2hex(random_bytes(32));
+        foreach (['validate', 'setup'] as $route) {
+            $responses = [];
+            foreach (['autre lien du compte' => $otherToken, 'inconnu' => $unknown] as $case => $link) {
+                if ('validate' === $route) {
+                    $this->postValidate($client, ['token' => $link]);
+                } else {
+                    $this->postSetup($client, ['token' => $link, 'password' => TestCredentials::variant('other')]);
+                }
+                $responses[$case] = $this->observableResponse($client);
+            }
+
+            self::assertSame(404, $responses['inconnu']['status'], $route);
+            self::assertIsArray($responses['inconnu']['body'], $route);
+            self::assertSame($responses['inconnu'], $responses['autre lien du compte'], \sprintf('Route %s : le lien purgé se distingue d\'un lien inconnu.', $route));
+        }
+
+        // Le mot de passe de l'activation tient : le second lien n'a rien
+        // écrasé.
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
+            'username' => self::DERIVED_USERNAME,
+            'password' => TestCredentials::variant('new'),
+        ]));
+        self::assertResponseIsSuccessful();
     }
 
     public function testSetupReturns404ForAnUnknownToken(): void
@@ -397,6 +457,9 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         }
 
         self::assertSame(404, $responses['inconnu']['status']);
+        // Un corps vide n'est plus une erreur de décodage : le refus de
+        // référence doit en porter un.
+        self::assertIsArray($responses['inconnu']['body']);
         foreach ($responses as $case => $response) {
             self::assertSame($responses['inconnu'], $response, \sprintf('Le lien « %s » se distingue d\'un lien inconnu.', $case));
         }
@@ -439,7 +502,10 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         $this->runInvitationHandlerAndCollectSetupToken();
 
         // Révoqué : un ROLE_SUPER a défini le mot de passe depuis le
-        // backoffice, ce qui tue le lien en circulation (#460).
+        // backoffice, ce qui tue le lien en circulation (#460). Seul test réel
+        // de cette révocation : sans `deleteUnusedForUser()` dans
+        // `CpgUserAdministrator::changePassword()`, ce lien d'un compte encore
+        // en attente répond 204 (mutation vérifiée dans #519).
         $links['révoqué par le backoffice'] = $this->inviteAndCollectSetupToken('revoked@example.com', Locale::FR);
         $revoked = self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByEmail('revoked@example.com');
         self::assertNotNull($revoked);
@@ -476,7 +542,10 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
     private function observableResponse(KernelBrowser $client): array
     {
         $response = $client->getResponse();
-        $body = json_decode((string) $response->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        // Un lien resté utilisable répond 204 sans corps : le comparer, plutôt
+        // que de lever au décodage, nomme le lien fautif (issue #519).
+        $content = (string) $response->getContent();
+        $body = '' === $content ? null : json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
         if (\is_array($body)) {
             unset($body['trace']);
         }
@@ -541,6 +610,46 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         // Invite + exécute le handler + relit le jeton en clair dans l'e-mail
         // (il ne transite plus par le message Messenger, cf. audit C2 / D3).
         return $this->inviteAndCollectSetupToken(self::EMAIL, Locale::FR);
+    }
+
+    /**
+     * Pose par le dépôt un second jeton utilisable sur le compte de l'adresse,
+     * et renvoie sa valeur en clair (aléatoire, jamais un littéral).
+     */
+    private function issueAnotherUsableToken(string $email): string
+    {
+        $user = self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByEmail($email);
+        self::assertNotNull($user);
+
+        $clearToken = bin2hex(random_bytes(32));
+        self::getContainer()->get(PasswordSetupTokenRepositoryInterface::class)->save(
+            // L'horloge du service, qui juge l'échéance, pas l'heure murale.
+            new PasswordSetupToken($user, hash('sha256', $clearToken), self::getContainer()->get(ClockInterface::class)->now()->add(new DateInterval('PT48H'))),
+        );
+        self::getContainer()->get(EntityManagerInterface::class)->clear();
+
+        return $clearToken;
+    }
+
+    /**
+     * Jetons du compte de l'adresse, lus dans la table : non consommés
+     * (`used_at IS NULL`, expirés compris) et au total.
+     *
+     * @return array{unused: int, total: int}
+     */
+    private function tokenCountsOf(string $email): array
+    {
+        $row = self::getContainer()->get(EntityManagerInterface::class)->getConnection()->fetchAssociative(
+            'SELECT count(*) FILTER (WHERE t.used_at IS NULL) AS unused, count(*) AS total
+               FROM password_setup_token t JOIN cpg_user u ON u.id = t.user_id
+              WHERE u.email = :email',
+            ['email' => $email],
+        );
+        self::assertIsArray($row);
+        self::assertIsInt($row['unused']);
+        self::assertIsInt($row['total']);
+
+        return ['unused' => $row['unused'], 'total' => $row['total']];
     }
 
     private function expireAllTokens(): void

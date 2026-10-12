@@ -194,4 +194,11 @@ that a mutation removing the bound (`boundTheWait()`) fails it in `57014` instea
 proves nothing for #435: its flush then commits on its own before the `postFlush`, the child purges a
 committed token and the count is right. Removing the purge of unused tokens from the activation leaves
 #458's test green: with the lock, the handler waits and drops the message (« constaté sous verrou »); the
-purge is pinned by `PasswordSetupServiceTest` instead.
+purge is pinned sequentially, on the real `_test` database, by
+`AccountPasswordSetupResourceTest::testActivationPurgesTheOtherUsableLinksOfTheAccount` (issue #519: a
+second usable token saved through the repository, activation by the first; measured, only the table count turns
+red: the leftover link is refused anyway by the « account already active » guard), and by
+`PasswordSetupServiceTest`'s mock. Removing it from `CpgUserAdministrator::changePassword()` (#460) turns
+`testEveryUnusableLinkGetsTheSameResponse` red on its « révoqué par le backoffice » link (204 instead of
+the common 404 — the account is still pending, nothing else refuses the link), measured in #519. No
+concurrency harness for either: the purge is no race.
