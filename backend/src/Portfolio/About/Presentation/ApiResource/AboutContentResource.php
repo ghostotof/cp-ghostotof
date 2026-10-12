@@ -18,7 +18,8 @@ use App\Portfolio\About\Infrastructure\ApiPlatform\AboutContentProvider;
  * "technical", "personal" ET "hobbies" — est délibérément publique ; c'est le
  * backoffice qui décide de ce qui est publié ici, il n'y a donc rien à masquer
  * a posteriori. Ne pas réintroduire de filtre conditionnel sans revoir cette
- * décision (cf. tasks/plan.md, phase 3).
+ * décision (cf. `.claude/specs/archive/2026-09-04-remediation-audit-securite/plan.md`,
+ * phase 3).
  */
 #[ApiResource(
     shortName: 'AboutContent',

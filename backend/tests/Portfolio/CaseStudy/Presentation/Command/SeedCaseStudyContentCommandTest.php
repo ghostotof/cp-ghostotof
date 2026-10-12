@@ -13,12 +13,12 @@ use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpKernel\KernelInterface;
 
 /**
- * ADR 0003 D5, Task 7 (#52). Même garde-fou que les cinq autres commandes
+ * ADR 0003 D5, Task 7 (#52). Même garde-fou que les autres commandes
  * app:*:seed (GuardsExistingContent) — mirroring
  * SeedContributionsContentCommandTest. Le contenu posé est un placeholder
  * explicite (titre préfixé « [Exemple] ») : le texte réel des études de cas
- * est la matière de Christophe, pas quelque chose à inventer (cf.
- * tasks/plan.md).
+ * est la matière de Christophe, pas quelque chose à inventer (cf. le plan
+ * archivé, `.claude/specs/archive/2026-09-13-adr-0003-paliers-d-acces/plan.md`).
  */
 final class SeedCaseStudyContentCommandTest extends KernelTestCase
 {
