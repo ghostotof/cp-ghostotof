@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Dotenv;
 
-use App\Tests\Support\ProductionDockerfile;
+use App\Tests\Support\PhpImageBuild;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -16,44 +16,75 @@ use PHPUnit\Framework\TestCase;
  * analysaient `backend/.env` avec Dotenv. Le tableau PHP compilé, lui, reste
  * dans OPcache (`validate_timestamps = 0`). Le stage `production` le produit
  * par `composer dump-env prod`, dans l'instruction qui dispose encore de
- * Composer.
+ * Composer, et sous `env -i` : Dotenv résout un `${VAR}` de `.env` dans
+ * `$_SERVER` avant de laisser Flex le différer à l'exécution. Une variable du
+ * build homonyme (un `ARG`, un `ENV`, celles de l'image de base) serait sinon
+ * figée dans l'image.
  *
  * Ce que le fichier peut contenir est borné par le contexte de build :
  * `dump-env prod` lit `.env`, `.env.local`, `.env.prod` et `.env.prod.local`.
  * Seul `.env` doit y entrer : il est versionné et ne porte aucune valeur
  * réelle. Les trois autres n'existent que sur un poste et peuvent en porter.
- * La priorité des variables du pod sur les valeurs compilées est vérifiée par
- * {@see CompiledDotenvNeverMasksPodVariablesTest}.
+ * {@see CompiledDotenvNeverMasksPodVariablesTest} exécute cette commande même
+ * et vérifie le fichier qu'elle produit.
  */
 final class ProductionImageCompilesDotenvTest extends TestCase
 {
-    private const string DUMP = 'composer dump-env prod';
+    /**
+     * La commande exacte : ni `--empty` (le fichier ne garderait que
+     * `APP_ENV`, et toutes les valeurs par défaut de `.env` disparaîtraient),
+     * ni `||`, `&` ou `if` qui avaleraient son échec. Le RUN est en `set -e`
+     * ({@see \App\Tests\Shared\Infrastructure\Cache\ProductionImageWarmUpTest}).
+     */
+    public const string DUMP_COMMAND = 'env -i PATH="$PATH" HOME="$HOME" COMPOSER_ALLOW_SUPERUSER=1 composer dump-env prod';
 
-    public function testTheProductionStageCompilesTheEnvironment(): void
+    /**
+     * Les seules variables que la compilation voit : Composer en a besoin
+     * pour démarrer.
+     */
+    private const array KEPT_VARIABLES = ['PATH', 'HOME', 'COMPOSER_ALLOW_SUPERUSER'];
+
+    public function testTheProductionStageCompilesTheEnvironmentAlone(): void
     {
-        $instruction = ProductionDockerfile::instructionContaining('post-install-cmd');
-        $dump = strpos($instruction, self::DUMP);
+        self::assertSame(self::DUMP_COMMAND, PhpImageBuild::commandContaining('dump-env'));
 
-        self::assertNotFalse($dump, 'Le stage production doit compiler .env par « composer dump-env prod ».');
-        self::assertGreaterThan(strpos($instruction, 'post-install-cmd'), $dump, 'La compilation suit post-install-cmd.');
+        $instruction = PhpImageBuild::instructionContaining('dump-env');
+        $dumpOffset = strpos($instruction, self::DUMP_COMMAND);
+        $warmUpOffset = strpos($instruction, 'post-install-cmd');
+        $composerRemovalOffset = strpos($instruction, 'rm -f /usr/local/bin/composer');
 
-        $composerRemoval = strpos($instruction, 'rm -f /usr/local/bin/composer');
-        self::assertNotFalse($composerRemoval);
-        self::assertLessThan($composerRemoval, $dump, 'Composer doit encore être présent pour compiler.');
+        self::assertNotFalse($warmUpOffset, 'La compilation partage l\'instruction du préchauffage.');
+        self::assertNotFalse($composerRemovalOffset);
+        self::assertGreaterThan($warmUpOffset, $dumpOffset, 'La compilation suit post-install-cmd.');
+        self::assertLessThan($composerRemovalOffset, $dumpOffset, 'Composer doit encore être présent pour compiler.');
     }
 
     /**
-     * Le RUN est déjà en `set -e` ({@see \App\Tests\Shared\Infrastructure\Cache\ProductionImageWarmUpTest}) :
-     * seul un `||` pourrait avaler un échec de la compilation, et l'image
-     * repartirait sur `.env` sans que rien ne le signale.
+     * Un `rm`, un `cp` ou un `echo` sur le fichier compilé, plus loin dans le
+     * stage ou dans `preprod`, déferait la compilation sans bruit.
      */
-    public function testAFailedCompilationFailsTheBuild(): void
+    public function testNoOtherInstructionTouchesTheCompiledFile(): void
     {
-        self::assertSame(
-            0,
-            preg_match('/dump-env[^;]*\|\|/', ProductionDockerfile::instructionContaining(self::DUMP)),
-            'Un « || » après dump-env avale l\'échec de la compilation.',
-        );
+        self::assertSame([], array_values(array_filter(
+            PhpImageBuild::instructions(),
+            static fn (string $instruction): bool => str_contains($instruction, '.env.local.php'),
+        )));
+    }
+
+    public function testNoDotenvReferenceNamesAVariableTheCompilationKeeps(): void
+    {
+        $references = $this->dotenvReferences();
+
+        self::assertNotSame([], $references, 'Aucune référence ${…} relevée dans backend/.env : le relevé est cassé.');
+        self::assertSame([], array_values(array_intersect($references, self::KEPT_VARIABLES)), 'Cette référence serait résolue au build, avec la valeur du build.');
+    }
+
+    public function testNoExceptionReincludesAnExcludedFile(): void
+    {
+        self::assertSame([], array_values(array_filter(
+            PhpImageBuild::dockerignorePatterns(),
+            static fn (string $pattern): bool => str_starts_with($pattern, '!'),
+        )), 'Une exception « ! » du .dockerignore pourrait réintroduire un fichier exclu.');
     }
 
     /**
@@ -70,33 +101,41 @@ final class ProductionImageCompilesDotenvTest extends TestCase
         yield '.env.local.php' => ['backend/.env.local.php'];
     }
 
+    /**
+     * `fnmatch()` n'est qu'une approximation du moteur de Docker (Go
+     * `filepath.Match`, `**`, `/` initial retiré) : elle suffit aux motifs
+     * littéraux du dépôt. Un motif réécrit dans une forme qu'elle ne lit pas
+     * fait échouer le test, il ne le fait pas passer à tort.
+     */
     #[DataProvider('workstationOnlyDotenvFiles')]
     public function testAWorkstationDotenvFileNeverEntersTheBuildContext(string $path): void
     {
-        $patterns = $this->dockerignorePatterns();
-
-        self::assertSame([], array_values(array_filter(
-            $patterns,
-            static fn (string $pattern): bool => str_starts_with($pattern, '!'),
-        )), 'Une exception « ! » du .dockerignore pourrait réintroduire un fichier exclu.');
-
         self::assertNotSame([], array_values(array_filter(
-            $patterns,
+            PhpImageBuild::dockerignorePatterns(),
             static fn (string $pattern): bool => fnmatch($pattern, $path, \FNM_PATHNAME),
         )), \sprintf('%s doit être exclu du contexte de build (.dockerignore).', $path));
     }
 
     /**
+     * Les variables que `backend/.env` référence par `$NAME` ou `${NAME}`.
+     * Une valeur entre apostrophes n'est pas interpolée, un `\$` non plus.
+     *
      * @return list<string>
      */
-    private function dockerignorePatterns(): array
+    private function dotenvReferences(): array
     {
-        $path = \dirname(__DIR__, 5).'/.dockerignore';
+        $path = \dirname(__DIR__, 4).'/.env';
         self::assertFileIsReadable($path);
 
-        return array_values(array_filter(
-            array_map(trim(...), explode("\n", (string) file_get_contents($path))),
-            static fn (string $line): bool => '' !== $line && !str_starts_with($line, '#'),
-        ));
+        $references = [];
+        foreach (explode("\n", (string) file_get_contents($path)) as $line) {
+            if (1 !== preg_match('/^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=(.*)\z/', $line, $assignment) || str_starts_with($assignment[1], "'")) {
+                continue;
+            }
+            preg_match_all('/(?<!\\\\)\$\{?([A-Za-z_][A-Za-z0-9_]*)/', $assignment[1], $names);
+            array_push($references, ...$names[1]);
+        }
+
+        return array_values(array_unique($references));
     }
 }

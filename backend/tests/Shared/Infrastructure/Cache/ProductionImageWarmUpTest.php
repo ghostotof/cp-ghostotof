@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Cache;
 
-use App\Tests\Support\ProductionDockerfile;
+use App\Tests\Support\PhpImageBuild;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -21,7 +21,7 @@ use PHPUnit\Framework\TestCase;
  * déploiement en préprod.
  *
  * Le test lit l'instruction `RUN` telle que Docker l'exécute
- * ({@see ProductionDockerfile}) : un `|| true` renvoyé à la ligne suivante ne
+ * ({@see PhpImageBuild}) : un `|| true` renvoyé à la ligne suivante ne
  * lui échappe donc pas.
  */
 final class ProductionImageWarmUpTest extends TestCase
@@ -54,9 +54,9 @@ final class ProductionImageWarmUpTest extends TestCase
      */
     public function testTheBuildChecksTheSystemCacheHoldsFiles(): void
     {
-        self::assertStringContainsString("\nWORKDIR ".ProductionDockerfile::WORKDIR."\n", ProductionDockerfile::contents());
-        self::assertStringStartsWith(ProductionDockerfile::WORKDIR.'/', SystemCachePodVolumeTest::MOUNT_PATH);
-        $directory = substr(SystemCachePodVolumeTest::MOUNT_PATH, \strlen(ProductionDockerfile::WORKDIR) + 1);
+        self::assertStringContainsString("\nWORKDIR ".PhpImageBuild::WORKDIR."\n", PhpImageBuild::dockerfile());
+        self::assertStringStartsWith(PhpImageBuild::WORKDIR.'/', SystemCachePodVolumeTest::MOUNT_PATH);
+        $directory = substr(SystemCachePodVolumeTest::MOUNT_PATH, \strlen(PhpImageBuild::WORKDIR) + 1);
 
         $instruction = $this->postInstallInstruction();
         $check = strpos($instruction, \sprintf('find %s -type f | grep -q .', $directory));
@@ -67,6 +67,6 @@ final class ProductionImageWarmUpTest extends TestCase
 
     private function postInstallInstruction(): string
     {
-        return ProductionDockerfile::instructionContaining('post-install-cmd');
+        return PhpImageBuild::instructionContaining('post-install-cmd');
     }
 }

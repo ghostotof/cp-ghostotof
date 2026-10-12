@@ -203,8 +203,11 @@ RUN set -eux; \
     # par Dotenv à chaque requête et à chaque commande. Une variable posée par
     # le pod prime toujours sur la valeur compilée, vide ou non, comme elle
     # primait sur `.env`. Seul `.env`, sans valeur réelle, alimente le
-    # fichier : .dockerignore écarte les `.env.*` propres au poste.
-    composer dump-env prod; \
+    # fichier : .dockerignore écarte les `.env.*` propres au poste. `env -i`
+    # parce que Dotenv résout un `${VAR}` de `.env` dans l'environnement avant
+    # de laisser Flex le différer à l'exécution : un ARG ou un ENV homonyme
+    # serait sinon figé dans l'image.
+    env -i PATH="$PATH" HOME="$HOME" COMPOSER_ALLOW_SUPERUSER=1 composer dump-env prod; \
     # Compilation des assets : uniquement en mode full-stack (AssetMapper).
     # En mode API, il n'y a aucun asset à compiler.
     if [ "${BACKEND_FLAVOR}" = "full" ]; then \
