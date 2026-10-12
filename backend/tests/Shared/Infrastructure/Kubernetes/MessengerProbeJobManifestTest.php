@@ -65,7 +65,7 @@ final class MessengerProbeJobManifestTest extends TestCase
         ], $this->container()['securityContext'] ?? null);
     }
 
-    /** Seule l'image est substituée, par tools/smoke-messenger-probe.sh. */
+    /** Seule l'image est substituée, par tools/run-job.sh (lancé par tools/smoke-messenger-probe.sh). */
     public function testOnlyTheImageIsSubstituted(): void
     {
         preg_match_all('/\$\{([A-Z_]+)\}/', $this->source(), $matches);

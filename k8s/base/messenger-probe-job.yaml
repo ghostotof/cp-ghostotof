@@ -11,9 +11,9 @@
 # marque ne vient pas, et `smoke-test-preprod`, donc `rollback-preprod`, suit.
 #
 # DÉLIBÉRÉMENT ABSENT de kustomization.yaml `resources:`, comme migrate-job.yaml :
-# appliqué par tools/smoke-messenger-probe.sh, qui substitue ${BACKEND_IMAGE}
-# par envsubst (liste explicite) et supprime d'abord le Job précédent (la spec
-# d'un Job est immuable).
+# lancé par tools/smoke-messenger-probe.sh au travers de tools/run-job.sh, qui
+# substitue ${BACKEND_IMAGE} par envsubst (liste explicite) et supprime d'abord
+# le Job précédent (la spec d'un Job est immuable).
 apiVersion: batch/v1
 kind: Job
 metadata:

@@ -18,8 +18,9 @@
 # un `apply -k` ne doit jamais créer de compte. D'où les placeholders substitués
 # par envsubst au moment de l'apply : ${BACKEND_IMAGE} (même règle que
 # migrate-job.yaml) et ${CPG_USERNAME} — aucun nom de compte réel dans ce dépôt.
-# Toujours `envsubst '${BACKEND_IMAGE} ${CPG_USERNAME}'`, liste explicite : sans
-# elle, envsubst effacerait toute autre `$VARIABLE` inconnue de l'opérateur.
+# Lancé par `tools/run-job.sh … CPG_USERNAME=<nom>` (issue #488), qui ne
+# substitue que ces deux-là (liste explicite : sans elle, envsubst effacerait
+# toute autre `$VARIABLE`) et refuse un placeholder resté sans valeur.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -68,8 +69,8 @@ spec:
           # `sh -c` pour la redirection seulement ; `exec` rend à la commande le
           # PID et le code de sortie. Le nom arrive par l'environnement, entre
           # guillemets : jamais interprété par le shell. Sous un autre nom que
-          # le placeholder : `envsubst` remplace aussi `$CPG_USERNAME`, et la
-          # procédure ne lui fait substituer que ${BACKEND_IMAGE} et
+          # le placeholder : `envsubst` remplace aussi `$CPG_USERNAME`, et
+          # tools/run-job.sh ne lui fait substituer que ${BACKEND_IMAGE} et
           # ${CPG_USERNAME}.
           command:
             - sh

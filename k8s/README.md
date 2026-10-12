@@ -1248,14 +1248,12 @@ rm -rf "$dir"
 
 # L'image qui tourne, pour que le Job exécute exactement le code déployé.
 IMAGE="$(kubectl -n "$NS" get deploy backend -o jsonpath='{.spec.template.spec.containers[?(@.name=="php-fpm")].image}')"
-kubectl -n "$NS" delete job backend-create-user --ignore-not-found
-# Liste explicite : sans elle, envsubst effacerait toute autre `$VARIABLE` du manifeste.
-BACKEND_IMAGE="$IMAGE" CPG_USERNAME='<nom-du-compte>' \
-  envsubst '${BACKEND_IMAGE} ${CPG_USERNAME}' < k8s/base/create-user-job.yaml \
-  | kubectl -n "$NS" apply -f -
-# Sur un refus, le Job échoue aussitôt mais `wait` épuise son délai : lire les logs sans attendre.
-kubectl -n "$NS" wait --for=condition=complete --timeout=180s job/backend-create-user
-kubectl -n "$NS" logs job/backend-create-user   # succès ou refus, et la ligne `user-created`
+# Depuis la racine du dépôt (issue #488) : suppression du Job précédent, envsubst à liste
+# explicite, apply, attente par tools/wait-rollout.sh — un refus échoue aussitôt, en imprimant
+# les journaux du Job, au lieu d'épuiser le délai. Requiert bash et jq.
+tools/run-job.sh "$NS" k8s/base/create-user-job.yaml "$IMAGE" 180 CPG_USERNAME='<nom-du-compte>'
+kubectl -n "$NS" logs job/backend-create-user   # la ligne `user-created`
+# Dans tous les cas, succès ou échec :
 kubectl -n "$NS" delete secret backend-create-user-password
 ```
 

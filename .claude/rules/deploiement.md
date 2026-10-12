@@ -82,7 +82,14 @@ paths:
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
   it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would
-  resolve to `docker.io/library/backend`). The deployer `Role` no longer has `pods/exec: create`, so the
+  resolve to `docker.io/library/backend`). **Every Job outside kustomize runs through
+  `tools/run-job.sh <ns> <manifest> <image> <timeout> [NAME=value…]`** (issue #488) — migration and seed
+  in `pipeline.yml`, the messenger probe, the manual `create-user` procedure: name read from
+  `metadata.name`, `envsubst` with an explicit list (`${BACKEND_IMAGE}` + the named variables), refusal of
+  any `${…}` left unfilled before the cluster is touched, previous Job deleted, apply,
+  `tools/wait-rollout.sh`, and on failure an `::error::` plus the Job's last 200 log lines, exit 1.
+  Never re-inline that sequence: a fix made in one copy is a fix missing in the others. Offline test:
+  `tools/tests/run-job.test.sh`. The deployer `Role` no longer has `pods/exec: create`, so the
   CI identity cannot open an interactive shell in a pod — but **that is not a secret boundary** (3rd audit,
   A3/D4): `jobs create` + `pods/log` + `externalsecrets create/update` read every Secret of the namespace
   by construction (a Job that prints its environment is enough). The Role is a full deployer of its
@@ -144,7 +151,7 @@ paths:
   the worker is `Ready`: a MAC key mismatch between `backend` and `worker` (a `KEY_CONTEXT` badly deployed,
   a worker left on the previous release) used to leave preprod green with every message in `failed`.
   `tools/smoke-messenger-probe.sh preprod <image>` applies `k8s/base/messenger-probe-job.yaml` (outside
-  kustomize, `${BACKEND_IMAGE}` only, the previous Job deleted first), which runs `app:messenger:probe
+  kustomize, `${BACKEND_IMAGE}` only, through `tools/run-job.sh`), which runs `app:messenger:probe
   --timeout=90` with the release image and **the backend's Secrets**, so it signs under the API's key: it
   queues a `MessengerProbeMessage` (a random id, no mail, no business data) and waits for the mark the
   worker's `MessengerProbeHandler` leaves in `cache.app`, read back **by value** (`getItem()->isHit()`, never
