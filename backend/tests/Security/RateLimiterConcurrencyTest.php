@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security;
 
 use App\Tests\Support\ChildPhpProcess;
+use App\Tests\Support\ProcessBarrier;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Process\Process;
@@ -26,12 +27,11 @@ use Throwable;
  * Le test ne peut pas consommer lui-même : il tiendrait le verrou que ses
  * consommateurs attendent. Il lance donc SIMULTANEOUS_CONSUMERS processus
  * (Fixtures/consume-rate-limiter.php), qui démarrent chacun le kernel, puis
- * se bloquent sur un verrou partagé d'un fichier-barrière que le test tient
- * en exclusif. Une fois tous prêts, le test relâche la barrière : ils
- * consomment au même instant. Barrière par fichier plutôt que par horloge :
- * un démarrage lent en CI retarde la libération au lieu d'étaler les
- * consommations, ce qui rendrait le test vert sans rien prouver. Pour la même
- * raison, chaque fils ouvre ses connexions PostgreSQL avant la barrière.
+ * se bloquent sur la barrière que le test tient (ProcessBarrier, dont le
+ * docblock dit pourquoi un fichier plutôt qu'une horloge). Une fois tous
+ * prêts, le test relâche la barrière : ils consomment au même instant. Pour
+ * la même raison, chaque fils ouvre ses connexions PostgreSQL avant la
+ * barrière.
  *
  * Ce qui peut encore affaiblir la course : un fils écrit « ready » juste avant
  * de se bloquer sur la barrière, et pourrait l'atteindre après sa libération.
@@ -40,7 +40,8 @@ use Throwable;
  * d'arrivée ne change pas le décompte.
  *
  * Rouge vérifié le 2026-10-10 avec `lock_factory: null` sur chaque limiteur
- * exercé : le décompte perd des unités à chaque passage.
+ * exercé : le décompte perd des unités à chaque passage. Revérifié le
+ * 2026-10-12 après le passage au harnais commun (#403).
  */
 final class RateLimiterConcurrencyTest extends KernelTestCase
 {
@@ -83,9 +84,7 @@ final class RateLimiterConcurrencyTest extends KernelTestCase
         // Clé propre à chaque passage : aucun état hérité d'un passage précédent.
         $key = 'concurrency-test-'.bin2hex(random_bytes(8));
         $limiter = $factory->create($key);
-        $barrierPath = $this->createBarrier();
-        $barrier = fopen($barrierPath, 'r');
-        self::assertNotFalse($barrier);
+        $barrier = ProcessBarrier::hold('rate-limiter-barrier-');
 
         $consumers = [];
 
@@ -97,13 +96,12 @@ final class RateLimiterConcurrencyTest extends KernelTestCase
                 \sprintf('La limite de limiter.%s est passée sous SIMULTANEOUS_CONSUMERS : baisser ce dernier.', $limiterName),
             );
 
-            self::assertTrue(flock($barrier, \LOCK_EX));
             for ($i = 0; $i < self::SIMULTANEOUS_CONSUMERS; ++$i) {
-                $consumers[] = $this->startConsumer($limiterName, $key, $barrierPath);
+                $consumers[] = $this->startConsumer($limiterName, $key, $barrier->path());
             }
-            $this->waitUntilAllReady($consumers);
+            $barrier->waitUntilReady(self::TIMEOUT_SECONDS, ...$consumers);
             usleep(self::RELEASE_DELAY_MICROSECONDS);
-            flock($barrier, \LOCK_UN);
+            $barrier->release();
 
             $remainingSeen = $this->collectRemainingTokensSeen($consumers);
             $after = $limiter->consume(0)->getRemainingTokens();
@@ -123,8 +121,7 @@ final class RateLimiterConcurrencyTest extends KernelTestCase
             foreach ($consumers as $consumer) {
                 $consumer->stop(0);
             }
-            fclose($barrier);
-            unlink($barrierPath);
+            $barrier->release();
             $this->forgetKey($limiter);
         }
     }
@@ -143,67 +140,12 @@ final class RateLimiterConcurrencyTest extends KernelTestCase
         }
     }
 
-    private function createBarrier(): string
-    {
-        $path = tempnam(sys_get_temp_dir(), 'rate-limiter-barrier-');
-        self::assertIsString($path);
-
-        return $path;
-    }
-
     private function startConsumer(string $limiterName, string $key, string $barrierPath): Process
     {
-        $process = new Process(
-            ChildPhpProcess::command(self::CONSUMER_SCRIPT, $limiterName, $key, $barrierPath),
-            env: $this->consumerEnvironment(),
-            timeout: self::TIMEOUT_SECONDS,
-        );
+        $process = ChildPhpProcess::inTestEnvironment(self::TIMEOUT_SECONDS, self::CONSUMER_SCRIPT, $limiterName, $key, $barrierPath);
         $process->start();
 
         return $process;
-    }
-
-    /**
-     * Les variables que phpunit.dist.xml force par `<server force="true">`
-     * (APP_ENV, clés d'API factices…) ne vivent que dans $_SERVER : un
-     * processus fils ne les hérite pas. Sans elles, Dotenv chargerait le .env
-     * de dev, et une vraie ANTHROPIC_API_KEY exportée dans le shell parviendrait
-     * au fils à la place de la valeur factice, ce qui contournerait le filet de
-     * phpunit.dist.xml. Les transmettre explicitement donne au fils
-     * l'environnement exact du test.
-     *
-     * @return array<string, string>
-     */
-    private function consumerEnvironment(): array
-    {
-        $environment = [];
-        foreach ($_SERVER as $name => $value) {
-            if (\is_string($name) && \is_string($value)) {
-                $environment[$name] = $value;
-            }
-        }
-
-        return $environment;
-    }
-
-    /**
-     * @param list<Process> $consumers
-     */
-    private function waitUntilAllReady(array $consumers): void
-    {
-        $deadline = microtime(true) + self::TIMEOUT_SECONDS;
-
-        foreach ($consumers as $consumer) {
-            while (!str_contains($consumer->getOutput(), "ready\n")) {
-                if (!$consumer->isRunning()) {
-                    self::fail(\sprintf("Un consommateur s'est arrêté avant la barrière :\n%s", $consumer->getErrorOutput()));
-                }
-                if (microtime(true) > $deadline) {
-                    self::fail('Les consommateurs ne sont pas tous prêts après '.self::TIMEOUT_SECONDS.' s.');
-                }
-                usleep(10_000);
-            }
-        }
     }
 
     /**

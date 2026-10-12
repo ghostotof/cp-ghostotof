@@ -12,8 +12,8 @@ declare(strict_types=1);
  *
  * Déroulé :
  *  1. démarre le kernel de test et ouvre sa connexion PostgreSQL ;
- *  2. écrit « ready <pid> », pid de cette connexion, puis attend un verrou
- *     partagé sur le fichier-barrière, que le test tient en exclusif ;
+ *  2. attend la barrière (ProcessBarrier::awaitInChild()) en annonçant le pid
+ *     de cette connexion ;
  *  3. exécute le handler sur le message ;
  *  4. code de sortie 0 si le handler a abouti, 2 si le fils n'a pas pu se
  *     mettre en place.
@@ -21,6 +21,7 @@ declare(strict_types=1);
 
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler;
+use App\Tests\Support\ProcessBarrier;
 use App\Tests\Support\TestServiceLocator;
 use Doctrine\ORM\EntityManagerInterface;
 
@@ -46,23 +47,8 @@ if (!\is_int($pid)) {
     exit(2);
 }
 
-$barrier = fopen($barrierPath, 'r');
-if (false === $barrier) {
-    fwrite(\STDERR, \sprintf("Fichier-barrière illisible : %s\n", $barrierPath));
-    exit(2);
-}
-
-echo 'ready '.$pid."\n";
-flush();
-
-if (!flock($barrier, \LOCK_SH)) {
-    fwrite(\STDERR, "Impossible d'attendre la barrière.\n");
-    exit(2);
-}
+ProcessBarrier::awaitInChild($barrierPath, $pid);
 
 $handler(new SendAccountInvitationMessage($userId, 'fr', (int) $generation));
-
-flock($barrier, \LOCK_UN);
-fclose($barrier);
 
 exit(0);
