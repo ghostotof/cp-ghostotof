@@ -11,9 +11,9 @@ use App\Ai\Translation\Application\TranslationRateLimiterInterface;
 use App\Ai\Translation\Domain\ValueObject\TranslationRequest;
 use App\Ai\Translation\Presentation\ApiResource\BackofficeTranslationResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Domain\Security\AccountReference;
 use App\Shared\Infrastructure\ApiPlatform\UnexpectedActingUserException;
 use Symfony\Bundle\SecurityBundle\Security;
-use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
  * Ordre volontaire : la validation du DTO a déjà eu lieu (422) quand on
@@ -44,11 +44,13 @@ final readonly class BackofficeTranslationProcessor implements ProcessorInterfac
         // garde explicite plutôt qu'un TypeError 500 opaque (même patron que
         // BackofficeUserRoleProcessor).
         $actingUser = $this->security->getUser();
-        if (!$actingUser instanceof UserInterface) {
-            throw UnexpectedActingUserException::inProcessor(self::class, UserInterface::class, $actingUser);
+        if (!$actingUser instanceof AccountReference) {
+            throw UnexpectedActingUserException::inProcessor(self::class, AccountReference::class, $actingUser);
         }
 
-        $this->translationRateLimiter->consume($actingUser->getUserIdentifier());
+        // Le quota est clé sur l'UUID du compte, jamais sur son identifiant
+        // de connexion (issue #363).
+        $this->translationRateLimiter->consume($actingUser->accountId());
 
         $translated = $this->contentTranslator->translate(new TranslationRequest(
             Locale::from($data->sourceLocale),

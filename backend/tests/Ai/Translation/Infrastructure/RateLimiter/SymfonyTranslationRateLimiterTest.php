@@ -90,7 +90,7 @@ final class SymfonyTranslationRateLimiterTest extends TestCase
             self::assertSame(Level::Info, $records[0]->level);
             self::assertSame([
                 'outcome' => 'rate-limited',
-                'account' => 'super',
+                'userId' => 'super',
                 'retryAfter' => $exception->retryAfter->format(\DATE_ATOM),
             ], $records[0]->context);
         }

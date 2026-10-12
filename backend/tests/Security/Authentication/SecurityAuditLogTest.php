@@ -55,9 +55,9 @@ final class SecurityAuditLogTest extends WebTestCase
     }
 
     /**
-     * Un compte existant est nommé en clair, `userId` compris (issue #418) :
-     * le nom vient du compte chargé, pas de la saisie. L'empreinte est là
-     * aussi, c'est elle qui relie la ligne au `login-throttled` qui suivra.
+     * Un compte existant est désigné par son `userId` (issues #418, #363) :
+     * celui du compte chargé, jamais la saisie ni l'identifiant. L'empreinte
+     * est là aussi, c'est elle qui relie la ligne au `login-throttled` qui suivra.
      */
     public function testAFailedLoginIsRecorded(): void
     {
@@ -72,7 +72,6 @@ final class SecurityAuditLogTest extends WebTestCase
         self::assertMatchesRegularExpression('/^[0-9a-f]{6}\z/', $event['userFingerprint']);
         self::assertSame([
             'event' => 'login-failed',
-            'user' => self::PLAIN_USERNAME,
             'userId' => $jane->getId()->toRfc4122(),
             'userFingerprint' => $event['userFingerprint'],
             'actor' => 'anonymous',
@@ -91,14 +90,14 @@ final class SecurityAuditLogTest extends WebTestCase
     {
         $username = 'throttle-'.bin2hex(random_bytes(6));
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register($username, TestCredentials::plainPassword());
+        $account = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register($username, TestCredentials::plainPassword());
 
         $fingerprints = [];
 
         for ($attempt = 1; $attempt <= 5; ++$attempt) {
             $this->attemptLogin($client, $username, 'wrong-password');
             $failed = self::singleSecurityAuditEvent('login-failed');
-            self::assertSame($username, $failed['user']);
+            self::assertSame($account->accountId(), $failed['userId']);
             $fingerprints[] = $failed['userFingerprint'];
         }
 
@@ -112,7 +111,8 @@ final class SecurityAuditLogTest extends WebTestCase
         // Issue #418 : le throttling refuse avant de charger le compte, la
         // ligne ne le nomme donc pas ; l'empreinte la relie aux cinq échecs.
         $throttled = self::singleSecurityAuditEvent('login-throttled');
-        self::assertNull($throttled['user']);
+        self::assertArrayNotHasKey('user', $throttled);
+        self::assertArrayNotHasKey('userId', $throttled);
         self::assertSame(array_fill(0, 5, $throttled['userFingerprint']), $fingerprints, 'Le lien login-throttled ↔ identifiant passe par l\'empreinte.');
         self::assertSame([], self::securityAuditEvents('login-failed'), 'Une tentative bloquée par le throttling n\'est pas un login raté : le mot de passe n\'a même pas été vérifié.');
     }
@@ -167,7 +167,7 @@ final class SecurityAuditLogTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(401);
         $event = self::singleSecurityAuditEvent('login-failed');
-        self::assertNull($event['user']);
+        self::assertArrayNotHasKey('user', $event);
         self::assertArrayNotHasKey('userId', $event);
         self::assertIsString($event['userFingerprint']);
         self::assertStringNotContainsStringIgnoringCase($this->typedAsIdentifier(), json_encode($event, \JSON_THROW_ON_ERROR));
@@ -247,10 +247,14 @@ final class SecurityAuditLogTest extends WebTestCase
         $client = $this->clientWithPlainUser();
         self::getContainer()->get('cache.rate_limiter')->clear();
 
+        // Lu avant la requête : les lectures comptées ci-dessous commencent à
+        // la première ligne du firewall.
+        $janeId = $this->idOf(self::PLAIN_USERNAME);
+
         $this->attemptLogin($client, self::PLAIN_USERNAME, 'wrong-password');
 
         self::assertResponseStatusCodeSame(401);
-        self::assertSame(self::PLAIN_USERNAME, self::singleSecurityAuditEvent('login-failed')['user']);
+        self::assertSame($janeId, self::singleSecurityAuditEvent('login-failed')['userId']);
 
         // La sonde garde aussi la création du compte, faite dans le même
         // kernel avant la requête (vérification d'unicité) : on ne compte
@@ -272,8 +276,8 @@ final class SecurityAuditLogTest extends WebTestCase
 
         self::assertSame([
             'event' => 'login-succeeded',
-            'user' => self::PLAIN_USERNAME,
-            'actor' => self::PLAIN_USERNAME,
+            'userId' => $this->idOf(self::PLAIN_USERNAME),
+            'actor' => $this->idOf(self::PLAIN_USERNAME),
             'ip' => '127.0.0.1',
             'path' => '/api/login_check',
         ], self::singleSecurityAuditEvent('login-succeeded'));
@@ -283,8 +287,8 @@ final class SecurityAuditLogTest extends WebTestCase
         self::assertResponseStatusCodeSame(204);
         self::assertSame([
             'event' => 'logged-out',
-            'user' => self::PLAIN_USERNAME,
-            'actor' => self::PLAIN_USERNAME,
+            'userId' => $this->idOf(self::PLAIN_USERNAME),
+            'actor' => $this->idOf(self::PLAIN_USERNAME),
             'ip' => '127.0.0.1',
             'path' => '/api/logout',
         ], self::singleSecurityAuditEvent('logged-out'));
@@ -384,7 +388,7 @@ final class SecurityAuditLogTest extends WebTestCase
         $client->request('GET', '/api/backoffice/users');
 
         self::assertResponseStatusCodeSame(403);
-        self::assertSame(self::PLAIN_USERNAME, self::singleSecurityAuditEvent('backoffice-access-denied')['actor']);
+        self::assertSame($this->idOf(self::PLAIN_USERNAME), self::singleSecurityAuditEvent('backoffice-access-denied')['actor']);
     }
 
     /**
@@ -433,9 +437,8 @@ final class SecurityAuditLogTest extends WebTestCase
 
         self::assertSame([
             'event' => 'user-invited',
-            'user' => 'jean.dupont',
             'userId' => $body['id'],
-            'actor' => self::SUPER_USERNAME,
+            'actor' => $this->idOf(self::SUPER_USERNAME),
             'ip' => '127.0.0.1',
             'path' => '/api/backoffice/users',
         ], self::singleSecurityAuditEvent('user-invited'));
@@ -454,9 +457,9 @@ final class SecurityAuditLogTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(202);
         $event = self::singleSecurityAuditEvent('user-reinvited');
-        self::assertSame('jean.dupont', $event['user']);
+        self::assertArrayNotHasKey('user', $event);
         self::assertSame($invited->getId()->toRfc4122(), $event['userId']);
-        self::assertSame(self::SUPER_USERNAME, $event['actor']);
+        self::assertSame($this->idOf(self::SUPER_USERNAME), $event['actor']);
     }
 
     public function testGrantingSuperAdminIsRecordedWithTheDirection(): void
@@ -473,10 +476,9 @@ final class SecurityAuditLogTest extends WebTestCase
         self::assertResponseStatusCodeSame(204);
         self::assertSame([
             'event' => 'role-changed',
-            'user' => self::PLAIN_USERNAME,
             'userId' => $jane->getId()->toRfc4122(),
             'superAdmin' => true,
-            'actor' => self::SUPER_USERNAME,
+            'actor' => $this->idOf(self::SUPER_USERNAME),
             'ip' => '127.0.0.1',
             'path' => \sprintf('/api/backoffice/users/%s/roles', $jane->getId()->toRfc4122()),
         ], self::singleSecurityAuditEvent('role-changed'));
@@ -495,9 +497,9 @@ final class SecurityAuditLogTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(204);
         $event = self::singleSecurityAuditEvent('password-changed');
-        self::assertSame(self::PLAIN_USERNAME, $event['user']);
+        self::assertArrayNotHasKey('user', $event);
         self::assertSame($jane->getId()->toRfc4122(), $event['userId']);
-        self::assertSame(self::SUPER_USERNAME, $event['actor']);
+        self::assertSame($this->idOf(self::SUPER_USERNAME), $event['actor']);
         self::assertStringNotContainsString(TestCredentials::variant('new'), json_encode(self::securityAuditRecords(), \JSON_THROW_ON_ERROR));
     }
 
@@ -511,9 +513,9 @@ final class SecurityAuditLogTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(204);
         $event = self::singleSecurityAuditEvent('user-deleted');
-        self::assertSame(self::PLAIN_USERNAME, $event['user']);
+        self::assertArrayNotHasKey('user', $event);
         self::assertSame($jane->getId()->toRfc4122(), $event['userId']);
-        self::assertSame(self::SUPER_USERNAME, $event['actor']);
+        self::assertSame($this->idOf(self::SUPER_USERNAME), $event['actor']);
     }
 
     /**
@@ -531,7 +533,8 @@ final class SecurityAuditLogTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(204);
         $event = self::singleSecurityAuditEvent('account-activated');
-        self::assertSame('newcomer', $event['user']);
+        self::assertSame($this->idOf('newcomer'), $event['userId']);
+        self::assertArrayNotHasKey('user', $event);
         self::assertSame('anonymous', $event['actor']);
         self::assertSame('/api/account/password-setup', $event['path']);
         $this->assertTokenAppearsInNoSecurityAuditRecord($token);
@@ -585,7 +588,6 @@ final class SecurityAuditLogTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
         self::assertSame([
             'event' => 'password-setup-token-replayed',
-            'user' => 'newcomer',
             'userId' => $userId,
             'actor' => 'anonymous',
             'ip' => '127.0.0.1',
@@ -714,6 +716,16 @@ final class SecurityAuditLogTest extends WebTestCase
     private function assertTokenAppearsInNoSecurityAuditRecord(string $token): void
     {
         self::assertStringNotContainsString($token, json_encode(self::securityAuditRecords(), \JSON_THROW_ON_ERROR));
+    }
+
+    /** L'UUID d'un compte, tel que le journal le désigne (issue #363). */
+    private function idOf(string $username): string
+    {
+        $id = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->fetchOne('SELECT id FROM cpg_user WHERE username = :username', ['username' => $username]);
+        self::assertIsString($id, \sprintf('Aucun compte « %s ».', $username));
+
+        return $id;
     }
 
     private function clientWithPlainUser(): KernelBrowser

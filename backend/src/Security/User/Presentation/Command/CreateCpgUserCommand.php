@@ -129,8 +129,11 @@ final class CreateCpgUserCommand extends Command
 
         try {
             $user = $this->cpgUserRegistrar->register($username, $plainPassword, $roles);
-        } catch (UsernameAlreadyUsedException $exception) {
-            $io->error($exception->getMessage());
+        } catch (UsernameAlreadyUsedException) {
+            // L'identifiant est rappelé ici, à l'opérateur qui vient de le
+            // saisir, et non dans le message de l'exception (issue #363) : un
+            // message d'exception peut finir dans un journal.
+            $io->error(\sprintf('Un utilisateur existe déjà avec le nom d\'utilisateur "%s".', $username));
 
             return Command::FAILURE;
         }

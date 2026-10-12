@@ -61,10 +61,12 @@ final readonly class PendingInvitationPurger implements PendingInvitationPurgerI
             // compte ROLE_SUPER en attente d'activation reste une décision
             // humaine, jamais une suppression automatique.
             if (\in_array(CpgUser::ROLE_SUPER, $user->getRoles(), true)) {
-                $skipped[] = $user->getUsername();
+                // Par l'UUID, jamais l'identifiant (issue #363) : celui d'un
+                // invité est dérivé de son adresse.
+                $skipped[] = $user->accountId();
                 $this->logger->warning(
                     'Invitation en attente ignorée par la purge automatique : le compte porte ROLE_SUPER.',
-                    ['username' => $user->getUsername()],
+                    ['userId' => $user->accountId()],
                 );
 
                 continue;
@@ -79,7 +81,7 @@ final readonly class PendingInvitationPurger implements PendingInvitationPurgerI
                 $this->auditLogger->userPurged($user);
             }
 
-            $purged[] = $user->getUsername();
+            $purged[] = $user->accountId();
         }
 
         return new PendingInvitationPurgeResult($purged, $skipped, $threshold);

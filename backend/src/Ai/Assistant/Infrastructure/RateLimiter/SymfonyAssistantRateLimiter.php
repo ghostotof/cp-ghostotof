@@ -12,7 +12,9 @@ use Symfony\Component\RateLimiter\RateLimiterFactory;
 /**
  * Adosse AssistantRateLimiterInterface au limiteur "career_assistant" de
  * config/packages/rate_limiter.yaml (fenêtre glissante, 30 appels/heure),
- * clé = identifiant du compte.
+ * clé = UUID du compte (issue #363 : l'identifiant de connexion d'un invité
+ * est dérivé de son adresse, et le stockage du limiteur n'en garde qu'un
+ * SHA-1 sans clé, facile à confirmer pour qui devine le nom).
  */
 final readonly class SymfonyAssistantRateLimiter implements AssistantRateLimiterInterface
 {
@@ -22,9 +24,9 @@ final readonly class SymfonyAssistantRateLimiter implements AssistantRateLimiter
     ) {
     }
 
-    public function consume(string $accountIdentifier): void
+    public function consume(string $accountId): void
     {
-        $limit = $this->rateLimiterFactory->create($accountIdentifier)->consume();
+        $limit = $this->rateLimiterFactory->create($accountId)->consume();
 
         if (!$limit->isAccepted()) {
             throw new AssistantRateLimitExceededException($limit->getRetryAfter());

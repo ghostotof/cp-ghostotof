@@ -70,7 +70,7 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
     public function reinvite(CpgUser $user, Locale $locale): void
     {
         if (!$user->isPendingActivation()) {
-            throw AccountNotAwaitingActivationException::forUsername($user->getUsername());
+            throw AccountNotAwaitingActivationException::alreadyActivated();
         }
 
         // Round de correction (C1, issue #238) : la relance *est* une nouvelle

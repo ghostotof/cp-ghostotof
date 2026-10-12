@@ -9,8 +9,6 @@ use App\Portfolio\Shared\Domain\Exception\IncompleteOrderException;
 use App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException;
 use App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException;
 use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
-use App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException;
-use App\Security\User\Domain\Exception\CannotModifyOwnRolesException;
 use App\Tests\Support\ClassNameResolver;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Support\PhpSources;
@@ -83,8 +81,6 @@ final class ProblemDetailStaysStaticTest extends TestCase
      * que leur appelant connaît déjà.
      */
     private const array DYNAMIC_DETAIL_ALLOWED = [
-        CannotModifyOwnRolesException::class => 'PUT /api/backoffice/users/{id}/roles : cite le username de l\'appelant.',
-        CannotDemoteLastSuperAdminException::class => 'PUT /api/backoffice/users/{id}/roles : cite le username visé.',
         TranslationAlreadyExistsException::class => 'Écritures du backoffice : cite le groupe et la locale envoyés.',
         UnknownTranslationGroupException::class => 'Écritures du backoffice : cite le groupe envoyé.',
         IncompleteOrderException::class => 'PUT /api/backoffice/<x>/order : cite les clés manquantes.',

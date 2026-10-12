@@ -6,12 +6,15 @@ namespace App\Security\Authentication\Infrastructure\Log;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\ValueObject\GuestUser;
+use App\Shared\Domain\Security\AccountReference;
 use App\Shared\Infrastructure\Http\CanonicalPath;
 use Monolog\Attribute\WithMonologChannel;
 use Psr\Log\LoggerInterface;
 use SensitiveParameter;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
+use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
  * Implémentation Monolog du journal de sécurité (D5), sur le canal
@@ -30,6 +33,12 @@ use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInt
  * avant le firewall (rejet CSRF, priorité 20 contre 8) a donc pour auteur
  * `anonymous` même si un cookie BEARER accompagnait la requête — ce qui est
  * exact, la requête a été refusée avant toute authentification.
+ *
+ * Un compte n'y est jamais nommé par son identifiant de connexion, ni comme
+ * sujet ni comme auteur (issue #363) : pour un invité, cet identifiant est
+ * dérivé de son adresse (ADR 0001 D2), souvent un prénom et un nom. Un compte
+ * se désigne par son `userId` ; le marqueur `guest-…` du palier de base,
+ * aléatoire, est le seul identifiant écrit tel quel (`user`).
  */
 #[WithMonologChannel('security_audit')]
 final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
@@ -42,6 +51,13 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
     /** Acteur d'un événement déclenché à la main en ligne de commande, par une personne que rien n'identifie. */
     private const string CONSOLE = 'console';
 
+    /**
+     * Acteur authentifié qui n'est ni un compte ni le sujet du palier de base :
+     * aucun fournisseur n'en produit aujourd'hui. Son identifiant n'est pas
+     * écrit, faute de savoir ce qu'il contient.
+     */
+    private const string UNIDENTIFIED = 'unidentified';
+
     public function __construct(
         private LoggerInterface $logger,
         private RequestStack $requestStack,
@@ -50,9 +66,9 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
     ) {
     }
 
-    public function loginSucceeded(string $username): void
+    public function loginSucceeded(UserInterface $user): void
     {
-        $this->record('login-succeeded', 'Login succeeded.', ['user' => $username]);
+        $this->record('login-succeeded', 'Login succeeded.', $this->principal($user));
     }
 
     public function loginFailed(#[SensitiveParameter] ?string $triedIdentifier, ?CpgUser $account): void
@@ -65,9 +81,9 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         $this->record('login-throttled', 'Login refused by throttling.', $this->attemptSubject($triedIdentifier, null));
     }
 
-    public function loggedOut(?string $username): void
+    public function loggedOut(?UserInterface $user): void
     {
-        $this->record('logged-out', 'Logged out.', ['user' => $username]);
+        $this->record('logged-out', 'Logged out.', $this->principal($user));
     }
 
     public function baseAccessIssued(string $guestIdentifier): void
@@ -172,15 +188,49 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
     }
 
     /**
-     * Un compte se nomme par son identifiant de connexion et son id : jamais
-     * par son e-mail, donnée personnelle qui n'a rien à faire dans un journal
-     * (Goal #9 : rien d'identifiant en dehors du palier nominatif).
+     * Un compte se désigne par son UUID seul (issue #363) : ni son adresse
+     * e-mail, ni son identifiant de connexion, qui pour un invité en est
+     * dérivé (`jean.dupont@…` → `jean.dupont`, ADR 0001 D2). C'est une
+     * minimisation (RGPD art. 5-1-c), pas l'objectif n°9, qui porte sur ce que
+     * l'API expose. Seule la base relie l'UUID à une personne, tant que le
+     * compte existe : une fois supprimé, ses lignes ne désignent plus personne
+     * (registre RGPD, §6). Pour nommer un compte pendant un incident :
+     * `SELECT username, email FROM cpg_user WHERE id = '<userId>'`.
      *
-     * @return array{user: string, userId: string}
+     * @return array{userId: string}
      */
-    private function account(CpgUser $user): array
+    private function account(AccountReference $user): array
     {
-        return ['user' => $user->getUsername(), 'userId' => $user->getId()->toRfc4122()];
+        return ['userId' => $user->accountId()];
+    }
+
+    /**
+     * Le sujet d'un utilisateur authentifié : un compte par son UUID, le
+     * sujet du palier de base par son marqueur `guest-…` (aléatoire, il ne
+     * désigne personne), rien d'autre.
+     *
+     * @return array{userId?: string, user?: string}
+     */
+    private function principal(?UserInterface $user): array
+    {
+        return match (true) {
+            $user instanceof AccountReference => $this->account($user),
+            $user instanceof GuestUser => ['user' => $user->getUserIdentifier()],
+            default => [],
+        };
+    }
+
+    /** L'auteur de la requête courante, désigné comme un sujet ({@see self::principal()}). */
+    private function currentActor(): string
+    {
+        $user = $this->tokenStorage->getToken()?->getUser();
+
+        return match (true) {
+            null === $user => self::ANONYMOUS,
+            $user instanceof AccountReference => $user->accountId(),
+            $user instanceof GuestUser => $user->getUserIdentifier(),
+            default => self::UNIDENTIFIED,
+        };
     }
 
     /**
@@ -188,20 +238,18 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
      * sort jamais : un mot de passe tapé dans le champ identifiant partirait
      * sinon en clair dans les journaux de production. Il est remplacé par son
      * empreinte, qui suffit à corréler les tentatives — entre elles et avec le
-     * compteur de `login_throttling`. Le nom en clair ne vient que d'un compte
-     * chargé : c'est alors `getUsername()` qui est écrit, pas la saisie.
+     * compteur de `login_throttling`. Le compte, quand l'authentification l'a
+     * chargé, est désigné par son UUID (issue #363), jamais par la saisie ni
+     * par son identifiant.
      *
-     * `user` reste présent (à `null`) sans compte, comme avant : les lectures
-     * `jq '.context.user // "-"'` du runbook (k8s/README.md) ne changent pas.
-     *
-     * @return array{user: string|null, userId?: string, userFingerprint: string|null}
+     * @return array{userId?: string, userFingerprint: string|null}
      */
     private function attemptSubject(#[SensitiveParameter] ?string $triedIdentifier, ?CpgUser $account): array
     {
         $fingerprint = null !== $triedIdentifier ? $this->fingerprint->of($triedIdentifier) : null;
 
         if (null === $account) {
-            return ['user' => null, 'userFingerprint' => $fingerprint];
+            return ['userFingerprint' => $fingerprint];
         }
 
         return [...$this->account($account), 'userFingerprint' => $fingerprint];
@@ -221,7 +269,7 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         $this->logger->info($message, [
             'event' => $event,
             ...$subject,
-            'actor' => $actor ?? $this->tokenStorage->getToken()?->getUserIdentifier() ?? self::ANONYMOUS,
+            'actor' => $actor ?? $this->currentActor(),
             'ip' => $request?->getClientIp(),
             // Décodé (issue #77) : la forme que le routeur et le firewall ont vue.
             // Jamais réécrit : aucune route ne porte de secret dans son chemin
