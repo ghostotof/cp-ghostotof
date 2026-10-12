@@ -49,7 +49,7 @@ final class TranslationGroupSinglePositionTest extends KernelTestCase
     protected function tearDown(): void
     {
         if (null !== $this->table) {
-            self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement('DELETE FROM '.$this->table);
+            $this->connection()->executeStatement('DELETE FROM '.$this->table);
         }
         parent::tearDown();
     }
@@ -257,7 +257,13 @@ final class TranslationGroupSinglePositionTest extends KernelTestCase
 
     private function probe(): Connection
     {
-        return self::openProbeBeside(self::getContainer()->get(EntityManagerInterface::class)->getConnection());
+        return self::openProbeBeside($this->connection());
+    }
+
+    /** La connexion de l'ORM, celle des administrateurs. */
+    private function connection(): Connection
+    {
+        return self::getContainer()->get(EntityManagerInterface::class)->getConnection();
     }
 
     /**
@@ -268,7 +274,7 @@ final class TranslationGroupSinglePositionTest extends KernelTestCase
     private function positionsOf(Uuid $group): array
     {
         /** @var list<int> $positions */
-        $positions = self::getContainer()->get(EntityManagerInterface::class)->getConnection()->fetchFirstColumn(
+        $positions = $this->connection()->fetchFirstColumn(
             \sprintf('SELECT position FROM %s WHERE translation_group = ? ORDER BY locale', $this->table),
             [$group->toRfc4122()],
         );
@@ -282,7 +288,7 @@ final class TranslationGroupSinglePositionTest extends KernelTestCase
     private function columnsOf(string $table): array
     {
         /** @var list<string> $columns */
-        $columns = self::getContainer()->get(EntityManagerInterface::class)->getConnection()->fetchFirstColumn(
+        $columns = $this->connection()->fetchFirstColumn(
             'SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? ORDER BY ordinal_position',
             [$table],
         );

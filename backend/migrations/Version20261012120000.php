@@ -62,9 +62,10 @@ use Doctrine\Migrations\AbstractMigration;
  * que les dépôts départagent par l'id de chaque ligne, donc FR et EN dans deux
  * ordres. Une table sans groupe divergent n'est pas touchée. Les cartes « moi »
  * s'ordonnent par catégorie, et se renumérotent par catégorie ; un groupe à
- * cheval sur deux catégories, que l'application interdit, ne peut pas être
- * réaligné ainsi, et il est signalé : le réordonnancement de l'une de ses
- * catégories serait refusé tant qu'il n'est pas corrigé.
+ * cheval sur deux catégories, que l'application interdit, est laissé hors de
+ * la renumérotation (il y recevrait deux rangs) et signalé : le
+ * réordonnancement de l'une de ses catégories serait refusé tant qu'il n'est
+ * pas corrigé au backoffice.
  *
  * Expand/contract (#175) : l'ancien code écrit déjà des groupes cohérents, il
  * ne voit pas la différence. Déploiement standard, sans fenêtre de maintenance.
@@ -104,8 +105,8 @@ final class Version20261012120000 extends AbstractMigration
             if (null !== $scopeColumn) {
                 $this->reportGroupsAcrossScopes($table, $scopeColumn);
             }
-            if ($this->reportDivergentGroups($table) > 0) {
-                $this->addSql($this->renumbering($table, $scopeColumn));
+            if ($this->reportAndCountDivergentGroups($table) > 0) {
+                $this->addSql($this->renumberingSql($table, $scopeColumn));
             }
         }
 
@@ -151,7 +152,7 @@ final class Version20261012120000 extends AbstractMigration
      *
      * @return int le nombre de groupes divergents
      */
-    private function reportDivergentGroups(string $table): int
+    private function reportAndCountDivergentGroups(string $table): int
     {
         $rows = $this->connection->fetchAllAssociative(\sprintf(
             "SELECT translation_group::text AS translation_group, string_agg(locale || ' ' || position, ', ' ORDER BY locale) AS positions"
@@ -201,7 +202,7 @@ final class Version20261012120000 extends AbstractMigration
      * l'ordre de leur plus petite position, le groupe départageant les
      * égalités : un même ordre pour toutes les langues.
      */
-    private function renumbering(string $table, ?string $scopeColumn): string
+    private function renumberingSql(string $table, ?string $scopeColumn): string
     {
         if (null === $scopeColumn) {
             return \sprintf(
@@ -213,10 +214,14 @@ final class Version20261012120000 extends AbstractMigration
             );
         }
 
+        // Un groupe à cheval sur deux périmètres y recevrait deux rangs : la
+        // renumérotation créerait la divergence qu'elle répare. Il garde ses
+        // positions, et il est signalé (reportGroupsAcrossScopes()).
         return \sprintf(
             'UPDATE %1$s AS entry SET position = ranked.position'
             .' FROM (SELECT translation_group, %2$s, ROW_NUMBER() OVER (PARTITION BY %2$s ORDER BY MIN(position), translation_group) - 1 AS position'
-            .' FROM %1$s GROUP BY %2$s, translation_group) AS ranked'
+            .' FROM %1$s WHERE translation_group NOT IN (SELECT translation_group FROM %1$s GROUP BY translation_group HAVING COUNT(DISTINCT %2$s) > 1)'
+            .' GROUP BY %2$s, translation_group) AS ranked'
             .' WHERE entry.translation_group = ranked.translation_group AND entry.%2$s = ranked.%2$s',
             $table,
             $scopeColumn,

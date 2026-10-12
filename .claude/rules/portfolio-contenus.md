@@ -80,8 +80,9 @@ paths:
     its perimeter** `0…n-1` by lowest position, the group breaking ties — aligning on the lowest
     position alone left two groups tied, which the repositories break by each row's own id, so FR and
     EN in two orders; a table with no divergent group was left untouched. Me-cards are renumbered per
-    category; a group spread across two categories (which the application forbids) cannot be fixed that
-    way and is only reported: reordering either category is refused until it is corrected. Rejected: an `EXCLUDE USING gist
+    category; a group spread across two categories (which the application forbids) is left out of the
+    renumbering — each category would give it its own rank, creating the divergence being repaired — and
+    reported: reordering either category is refused until it is corrected in the backoffice. Rejected: an `EXCLUDE USING gist
     (translation_group WITH =, position WITH <>)` (`btree_gist`), safe under concurrency, but DBAL
     introspects its index, which no mapping declares, so every `doctrine:migrations:diff` would propose
     a `DROP INDEX` — DBAL reads neither triggers nor functions; a `CHECK`, which cannot read other rows;

@@ -139,6 +139,26 @@ final class Version20261012120000Test extends KernelTestCase
     }
 
     /**
+     * Renuméroter chaque catégorie séparément donnerait au groupe à cheval deux
+     * rangs différents : la migration créerait la divergence qu'elle répare.
+     * Il garde donc ses positions, et seul le reste de sa catégorie bouge.
+     */
+    public function testAGroupAcrossTwoCategoriesIsLeftOutOfTheRenumbering(): void
+    {
+        $across = Uuid::v7();
+        $divergent = Uuid::v7();
+        $this->insertAboutMeCard($across, 'fr', 'hobby', 4);
+        $this->insertAboutMeCard($across, 'en', 'technical', 4);
+        $this->insertAboutMeCard($divergent, 'fr', 'hobby', 1);
+        $this->insertAboutMeCard($divergent, 'en', 'hobby', 2);
+
+        $this->runUp();
+
+        self::assertSame([4, 4], $this->positionsOf($across, 'about_me_card'), 'La renumérotation a mis le groupe à cheval sur deux positions.');
+        self::assertSame([0, 0], $this->positionsOf($divergent, 'about_me_card'));
+    }
+
+    /**
      * Les positions d'origine ne sont conservées nulle part ailleurs : chaque
      * groupe réaligné est signalé en `warning`, le niveau que la sortie du Job
      * de migration affiche sans `-v`, avec sa table, son groupe et ses
