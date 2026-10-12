@@ -83,6 +83,11 @@ spec:
               case "$MESSAGE_ID" in ''|*[!0-9]*) echo 'FAILED_MESSAGE_ID : un Id numérique de messenger:failed:show est attendu.' >&2; exit 64;; esac;
               exec php bin/console messenger:failed:remove "$MESSAGE_ID" --force --no-interaction
           env:
+            # Issue #525 : toute attente de verrou PostgreSQL de la console est
+            # bornée comme sous FPM (valeur de www.prod.conf, épinglée par
+            # ConsoleLockWaitBoundTest) ; libpq la lit pour chaque connexion.
+            - name: PGOPTIONS
+              value: '-c lock_timeout=5s'
             - name: MESSAGE_ID
               value: '${FAILED_MESSAGE_ID}'
             # Revue de #521 : Symfony Console lit aussi SHELL_VERBOSITY ; posée à 3

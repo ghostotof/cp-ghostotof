@@ -103,6 +103,16 @@ spec:
             - --memory-limit=120M
             - --no-interaction
             - -v
+          env:
+            # Issue #525 : toute attente de verrou PostgreSQL de la console est
+            # bornée comme sous FPM (valeur de www.prod.conf, épinglée par
+            # ConsoleLockWaitBoundTest) ; libpq la lit pour chaque connexion.
+            # Pour le worker : un handler qui attend un verrou plus de 5 s lève
+            # SQLSTATE 55P03 et Messenger le réessaie (puis `failed`), au lieu
+            # d'immobiliser la consommation. La boucle elle-même n'attend aucun
+            # verrou (`async` est sur RabbitMQ, le signal d'arrêt est un SELECT).
+            - name: PGOPTIONS
+              value: '-c lock_timeout=5s'
           envFrom:
             - configMapRef:
                 name: backend-config

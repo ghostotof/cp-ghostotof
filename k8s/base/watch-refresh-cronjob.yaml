@@ -75,6 +75,12 @@ spec:
             - name: refresh
               image: backend
               command: ['php', 'bin/console', 'app:watch:refresh', '--no-interaction']
+              env:
+                # Issue #525 : toute attente de verrou PostgreSQL de la console est
+                # bornée comme sous FPM (valeur de www.prod.conf, épinglée par
+                # ConsoleLockWaitBoundTest) ; libpq la lit pour chaque connexion.
+                - name: PGOPTIONS
+                  value: '-c lock_timeout=5s'
               envFrom:
                 - configMapRef:
                     name: backend-config

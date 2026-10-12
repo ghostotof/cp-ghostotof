@@ -75,6 +75,12 @@ spec:
                   php bin/console app:contact:purge-failed-messages --no-interaction
                   php bin/console app:user:purge-pending-invitations --no-interaction
                   php bin/console cache:pool:prune --no-interaction
+              env:
+                # Issue #525 : toute attente de verrou PostgreSQL de la console est
+                # bornée comme sous FPM (valeur de www.prod.conf, épinglée par
+                # ConsoleLockWaitBoundTest) ; libpq la lit pour chaque connexion.
+                - name: PGOPTIONS
+                  value: '-c lock_timeout=5s'
               envFrom:
                 - configMapRef:
                     name: backend-config

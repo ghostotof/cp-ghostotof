@@ -64,6 +64,12 @@ spec:
           # Cf. migrate-job.yaml : le Job exécute exactement le code de la release.
           imagePullPolicy: Always
           command: ['php', 'bin/console', 'app:messenger:probe', '--no-interaction', '--timeout=90']
+          env:
+            # Issue #525 : toute attente de verrou PostgreSQL de la console est
+            # bornée comme sous FPM (valeur de www.prod.conf, épinglée par
+            # ConsoleLockWaitBoundTest) ; libpq la lit pour chaque connexion.
+            - name: PGOPTIONS
+              value: '-c lock_timeout=5s'
           envFrom:
             - configMapRef:
                 name: backend-config
