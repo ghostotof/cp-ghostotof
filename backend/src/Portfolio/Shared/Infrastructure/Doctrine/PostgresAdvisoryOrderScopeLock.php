@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Portfolio\Shared\Infrastructure\Doctrine;
 
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
-use App\Portfolio\Shared\Domain\Exception\TranslationGroupAcrossSeveralScopesException;
-use App\Portfolio\Shared\Domain\Exception\TranslationGroupHasSeveralPositionsException;
 use App\Shared\Infrastructure\Doctrine\VanishedEntities;
 use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
 use Closure;
@@ -41,10 +39,14 @@ use Psr\Log\LoggerInterface;
  * « There is no active transaction » (#390) —, l'attente bornée si la session
  * ne la borne pas, son `55P03` renommé en {@see OrderScopeLockTimeoutException}.
  * Ce verrou-ci y ajoute le nom des refus que le trigger différé des groupes de
- * traduction oppose au COMMIT : {@see TranslationGroupHasSeveralPositionsException}
- * pour un groupe sur plusieurs positions, {@see TranslationGroupAcrossSeveralScopesException}
- * pour un groupe de cartes « moi » réparti sur plusieurs catégories (#501),
- * avec le message de la base, qui nomme la table et le groupe. Sous FPM, le
+ * traduction oppose au COMMIT, sous l'invariant que chacun dit, avec le
+ * message de la base, qui nomme la table et le groupe. Il en **déclenche** la
+ * traduction parce qu'il possède le COMMIT où tombe un refus différé ; la
+ * correspondance SQLSTATE → invariant, ce que reçoit une écriture qui le
+ * contourne et le middleware DBAL écarté sont décrits par
+ * {@see TranslationGroupRefusal} (#506) — un nouvel invariant du trigger ne
+ * touche plus ce verrou. Aucune écriture applicative capable de réveiller le
+ * trigger ne se fait hors verrou (#389, `OrderScopeLockCoverageTest`). Sous FPM, le
  * délai reste le `lock_timeout` de 5 s de www.prod.conf (#272), et dans les
  * pods console (`app:*:seed`) celui de leur `PGOPTIONS` (#525) ; une console
  * qui n'en a aucun (dev, CI) reçoit celui du squelette, qui attendait sans
@@ -64,8 +66,8 @@ use Psr\Log\LoggerInterface;
  * **Un COMMIT refusé par la base ferme l'EntityManager** (issue #502) : toute
  * `DriverException` levée par le COMMIT, quel que soit son SQLSTATE. C'est le
  * squelette qui le ferme depuis #547, pour tous ses verrous, avant
- * d'appeler `onCommitRefused`, qui ne fait plus ici que nommer le `23T90` et
- * le `23T91`.
+ * d'appeler `onCommitRefused`, qui ne fait plus ici que nommer les refus du
+ * trigger des groupes ({@see TranslationGroupRefusal::nameOf()}).
  * Les `flush()` de l'opération ont réussi au point de sauvegarde ; le refus annule ce qu'ils
  * ont écrit, mais l'UnitOfWork le tient pour écrit : une lecture sur le même
  * EntityManager rendait la position refusée, `find()` une entrée jamais
@@ -150,24 +152,6 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
      */
     public const int ADVISORY_NAMESPACE = 0x4F524452;
 
-    /**
-     * SQLSTATE propre au projet, levé par le trigger différé
-     * `trg_translation_group_single_position` (migration Version20261012120000,
-     * issue #390) : classe 23 (violation d'intégrité), sous-classe hors de
-     * celles que PostgreSQL définit. Le reconnaître ne demande pas de lire le
-     * message.
-     */
-    public const string TRANSLATION_GROUP_ON_SEVERAL_POSITIONS = '23T90';
-
-    /**
-     * SQLSTATE propre au projet, levé par le même trigger quand un groupe est
-     * rangé dans plusieurs périmètres d'ordre de sa table — deux catégories de
-     * cartes « moi » (migration Version20261012160000, issue #501). Contrôlé
-     * avant la position : un groupe à la fois réparti et sur deux positions
-     * sort sous ce nom-ci, la cause, plutôt que sous la conséquence.
-     */
-    public const string TRANSLATION_GROUP_ACROSS_SEVERAL_SCOPES = '23T91';
-
     public function __construct(
         private EntityManagerInterface $entityManager,
         private LoggerInterface $logger,
@@ -195,25 +179,9 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
 
                 return $operation();
             },
-            onCommitRefused: $this->nameTheGroupRefusal(...),
+            // Le nom des refus du trigger des groupes (#506, voir plus haut).
+            onCommitRefused: TranslationGroupRefusal::nameOf(...),
         );
-    }
-
-    /**
-     * Le crochet `onCommitRefused` du squelette : nomme les deux refus du
-     * trigger des groupes de traduction — `23T90`, plusieurs positions (#390),
-     * et `23T91`, plusieurs périmètres (#501) —, tout autre remontant tel
-     * quel. Une seule correspondance SQLSTATE → exception, pour qu'elle se
-     * déplace d'un bloc (#506). L'EntityManager est déjà fermé par le
-     * squelette, quel que soit le SQLSTATE (issues #502, #547, voir plus haut).
-     */
-    private function nameTheGroupRefusal(DriverException $refusal): TranslationGroupHasSeveralPositionsException|TranslationGroupAcrossSeveralScopesException|null
-    {
-        return match ($refusal->getSQLState()) {
-            self::TRANSLATION_GROUP_ON_SEVERAL_POSITIONS => TranslationGroupHasSeveralPositionsException::refusedAtCommit($refusal),
-            self::TRANSLATION_GROUP_ACROSS_SEVERAL_SCOPES => TranslationGroupAcrossSeveralScopesException::refusedAtCommit($refusal),
-            default => null,
-        };
     }
 
     /**
