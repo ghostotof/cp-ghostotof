@@ -50,8 +50,9 @@ final readonly class SendAccountInvitationMessage implements QueuedMessageInterf
     }
 
     /**
-     * Issue #485 : CpgUserInviter retire alors le compte tout juste créé, ou
-     * laisse la génération avancée d'une relance (limite écrite).
+     * Issue #485 : {@see \App\Security\User\Application\CpgUserInviter} retire
+     * alors le compte tout juste créé, ou laisse la génération avancée d'une
+     * relance (limite écrite).
      */
     public function queueUnavailableException(Throwable $cause): InvitationQueueUnavailableException
     {

@@ -26,8 +26,8 @@ final readonly class SendContactMessageMessage implements QueuedMessageInterface
     }
 
     /**
-     * Issue #485 : le quota du visiteur n'est alors pas consommé
-     * (ContactMessageProcessor).
+     * Issue #485 : le 503 que rend alors
+     * {@see \App\Contact\Infrastructure\ApiPlatform\ContactMessageProcessor}.
      */
     public function queueUnavailableException(Throwable $cause): ContactMessageQueueUnavailableException
     {

@@ -18,14 +18,21 @@ use Symfony\Component\Messenger\Stamp\ReceivedStamp;
  *
  * Inscrit sur le bus par défaut (`messenger.yaml`), donc placé par Symfony
  * avant `send_message` : il entoure l'envoi au transport. Rattrape la classe
- * TransportException, que lève l'AmqpSender — elle n'implémente **pas**
- * TransportExceptionInterface (vérifié pendant #479).
+ * TransportException, que lève {@see \Symfony\Component\Messenger\Bridge\Amqp\Transport\AmqpSender}
+ * — elle n'implémente **pas** `TransportExceptionInterface` (vérifié pendant
+ * #479).
  *
- * Ne touche jamais au worker : un message reçu (ReceivedStamp) n'est pas
- * republié par `send_message`, et les réessais comme le `failure_transport`
- * appellent leur sender directement, sans repasser par le bus. Un message qui
- * n'implémente pas {@see QueuedMessageInterface} — la sonde de #470, dont la
- * commande cite la panne — garde la TransportException telle quelle.
+ * Ne touche pas aux messages du worker : un message reçu (ReceivedStamp) n'est
+ * pas republié par `send_message`, et les réessais comme le
+ * `failure_transport` appellent leur sender directement, sans repasser par le
+ * bus. Seule une publication **nouvelle** faite depuis le worker (un handler
+ * qui en dispatcherait une, aucun aujourd'hui) serait convertie, comme depuis
+ * une requête. Un message qui n'implémente pas {@see QueuedMessageInterface} —
+ * la sonde de #470, dont la commande cite la panne — garde la
+ * TransportException telle quelle.
+ *
+ * Limite admise : routé vers plusieurs émetteurs (aucun message ne l'est), un
+ * message dont le second refuse est converti même si le premier l'a pris.
  */
 final readonly class QueueUnavailableMiddleware implements MiddlewareInterface
 {

@@ -20,7 +20,8 @@ use Symfony\Component\Messenger\Attribute\AsMessage;
  * contexte (issue #491) : il implémente {@see QueuedMessageInterface}, que
  * {@see \App\Shared\Infrastructure\Messenger\QueueUnavailableMiddleware}
  * lève quand la file ne le prend pas. Sans elle, un nouveau producteur
- * renverrait le 500 `critical` générique de la TransportException, que #485
+ * renverrait le 500 `critical` générique de la
+ * {@see \Symfony\Component\Messenger\Exception\TransportException}, que #485
  * a supprimé, et rien ne rougirait.
  *
  * La garde porte sur le routage, pas sur la forme du code des producteurs.
