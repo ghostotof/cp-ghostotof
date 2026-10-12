@@ -7,7 +7,6 @@ namespace App\Tests\Portfolio\Experience\Application;
 use App\Portfolio\Experience\Application\ExperienceTechnologyAdministrator;
 use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyAlreadyExistsException;
-use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException;
 use App\Portfolio\Experience\Domain\Repository\ExperienceTechnologyRepositoryInterface;
 use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
@@ -34,18 +33,6 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
         self::assertSame(9.5, $updated->getYears());
     }
 
-    public function testUpdateThrowsWhenIdUnknown(): void
-    {
-        $repository = self::createStub(ExperienceTechnologyRepositoryInterface::class);
-        $repository->method('findOneById')->willReturn(null);
-
-        $administrator = new ExperienceTechnologyAdministrator($repository, new ImmediateExperienceTechnologyLock($repository));
-
-        $this->expectException(ExperienceTechnologyNotFoundException::class);
-
-        $administrator->update(Uuid::v7(), TechnologyName::fromString('Symfony'), ExperienceYears::fromFloat(9.5), null, null);
-    }
-
     public function testUpdateThrowsWhenNameCollidesWithAnotherTechnology(): void
     {
         $technology = new ExperienceTechnology(TechnologyName::fromString('PHP'), ExperienceYears::fromFloat(1.0));
@@ -63,11 +50,14 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
     }
 
     /**
-     * L'id vient de l'URL, donc d'un `Uuid` fraîchement reconstruit, jamais la
-     * même instance que celui porté par l'entité : la comparaison doit se
-     * faire par valeur (`equals()`), pas par identité (`!==`), faute de quoi
-     * le contrôle d'unicité refuserait toute mise à jour, y compris quand le
-     * nom ne change pas.
+     * Garder son propre nom n'est pas un conflit : la technologie trouvée par
+     * `findOneByName()` est celle que l'on modifie, reçue du verrou (l'id de
+     * l'URL, reconstruit, ne sert plus qu'à la trouver).
+     *
+     * « Id inconnu » n'est plus testé ici : c'est le verrou qui dit la
+     * technologie introuvable (issue #545), couvert contre PostgreSQL par
+     * {@see \App\Tests\Portfolio\Experience\Infrastructure\Doctrine\PostgresExperienceTechnologyRowLockTest}
+     * et {@see \App\Tests\Portfolio\Experience\Application\ExperienceTechnologyWritesUnderRowLockTest}.
      */
     public function testUpdateAllowsKeepingTheSameNameOnTheSameTechnology(): void
     {
@@ -96,17 +86,5 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
         $administrator = new ExperienceTechnologyAdministrator($repository, new ImmediateExperienceTechnologyLock($repository));
 
         $administrator->delete($technology->getId());
-    }
-
-    public function testDeleteThrowsWhenIdUnknown(): void
-    {
-        $repository = self::createStub(ExperienceTechnologyRepositoryInterface::class);
-        $repository->method('findOneById')->willReturn(null);
-
-        $administrator = new ExperienceTechnologyAdministrator($repository, new ImmediateExperienceTechnologyLock($repository));
-
-        $this->expectException(ExperienceTechnologyNotFoundException::class);
-
-        $administrator->delete(Uuid::v7());
     }
 }

@@ -253,8 +253,10 @@ paths:
   `update()` and `delete()` now wrap their **whole body** in `Application/ExperienceTechnologyLockInterface::whileLocked($id, …)`;
   the adapter, `Infrastructure/Doctrine/PostgresExperienceTechnologyRowLock`, runs it on the shared skeleton
   (`Shared/Infrastructure/Lock/PostgresLockedTransaction`, like the order scope lock and the two account
-  locks): `SELECT 1 … FOR UPDATE` on the row, then `refresh()` of the managed instance, handed to the
-  operation. Row gone: the stale instance is detached and the technology is not found (**404**, mapping
+  locks): **one** DQL `SELECT … FOR UPDATE` (`LockMode::PESSIMISTIC_WRITE`) with `Query::HINT_REFRESH` locks the
+  row, says whether it still exists (`null`) and refreshes the managed instance in place, handed to the
+  operation. Row gone: the stale instance is detached — unless it is scheduled for insertion or removal,
+  whose pending write detaching would cancel, the #402 filter — and the technology is not found (**404**, mapping
   unchanged; the admin frontend already reads it as `not-found`). So a deletion runs wholly before the write or
   wholly after it. Not `find($id, LockMode::PESSIMISTIC_WRITE)`: on an instance already managed it is a
   `refresh()` with `FOR UPDATE`, which hydrates nothing when the row has gone and returns the stale instance —
@@ -271,13 +273,14 @@ paths:
   constraint (the unique name and the `years` `CHECK` are immediate and refuse at the `flush()`), so only a
   session lost at that moment can refuse it; the `DriverException` surfaces as is and the EntityManager stays
   open, as under the account locks (generalising the close to every lock of the skeleton is #547). Cost per
-  `PUT`/`DELETE`: the transaction, the lock-bound `set_config`, the `FOR UPDATE` and the `refresh()`, a few
-  sub-millisecond round trips. Guards: `ExperienceTechnologyWritesUnderRowLockTest` (a technology loaded as the
+  `PUT`/`DELETE`, all under the lock: `BEGIN`, the lock-bound `set_config`, the locked read, the `flush()`'s
+  `SAVEPOINT`, write and `RELEASE SAVEPOINT`, `COMMIT` — sub-millisecond round trips each. Guards: `ExperienceTechnologyWritesUnderRowLockTest` (a technology loaded as the
   provider does, then deleted in SQL: `update()` and `delete()` say not found; a probe session holds the row,
   and each write must fail on the lock's named timeout — without the lock, the `flush()` waited on the row too
   but failed as a bare `DriverException`, having decided on the provider's instance) and
-  `PostgresExperienceTechnologyRowLockTest` (re-read, not found and detached, wait bound, named timeout,
-  nesting refused). No two-process test (decided for #545): the probe already proves the write waits for the
+  `PostgresExperienceTechnologyRowLockTest` (re-read, not found and detached, a pending insert not found but
+  kept, a `flush()` refused inside the operation rolled back and surfacing as is — the path of the 409 —, wait
+  bound, named timeout, nesting refused). No two-process test (decided for #545): the probe already proves the write waits for the
   row before reading it.
 
   `Contribution` is the odd one out and deliberately so: it carries a long `body` (the argument, not

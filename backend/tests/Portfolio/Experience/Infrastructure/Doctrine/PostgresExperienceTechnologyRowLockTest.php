@@ -14,6 +14,7 @@ use App\Portfolio\Experience\Infrastructure\Doctrine\ExperienceTechnologyLockTim
 use App\Portfolio\Experience\Infrastructure\Doctrine\PostgresExperienceTechnologyRowLock;
 use App\Tests\Support\OpensProbeConnection;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use LogicException;
 use Psr\Log\NullLogger;
@@ -114,6 +115,54 @@ final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
         self::assertSame('refus', $caught->getMessage(), "L'exception de l'opération aurait dû remonter telle quelle.");
         self::assertTrue($this->em->isOpen());
         self::assertFalse($this->em->getConnection()->isTransactionActive());
+    }
+
+    /**
+     * Une écriture que la base refuse au `flush()` de l'opération (le chemin du
+     * 409 de `update()` quand la vérification du nom a été devancée) : le
+     * `flush()` échoue à son point de sauvegarde et ferme l'EntityManager, le
+     * squelette annule la transaction, et l'exception de la base remonte telle
+     * quelle, sans être masquée par le ROLLBACK.
+     */
+    public function testAFlushRefusedInsideTheOperationRollsBackAndSurfacesAsIs(): void
+    {
+        $technology = $this->storedTechnology();
+        $this->em->persist(new ExperienceTechnology(TechnologyName::fromString('Symfony'), ExperienceYears::fromFloat(1.0)));
+        $this->em->flush();
+        $caught = null;
+
+        try {
+            $this->lock()->whileLocked($technology->getId(), function (ExperienceTechnology $locked): void {
+                $locked->update(TechnologyName::fromString('Symfony'), ExperienceYears::fromFloat(2.0), null, null, false);
+                $this->em->flush();
+            });
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(UniqueConstraintViolationException::class, $caught, \sprintf('Le refus du flush est remonté sous un autre nom : %s.', get_debug_type($caught)));
+        self::assertFalse($this->em->getConnection()->isTransactionActive());
+        self::assertSame('PHP', $this->em->getConnection()->fetchOne('SELECT name FROM experience_technology WHERE id = :id', ['id' => $technology->getId()->toRfc4122()]));
+    }
+
+    /**
+     * Une instance persistée mais pas encore écrite n'a pas de ligne : elle est
+     * introuvable, mais son insertion en attente n'est pas annulée.
+     */
+    public function testAPendingInsertIsANotFoundButIsNotDetached(): void
+    {
+        $technology = new ExperienceTechnology(TechnologyName::fromString('Go'), ExperienceYears::fromFloat(1.0));
+        $this->em->persist($technology);
+        $caught = null;
+
+        try {
+            $this->lock()->whileLocked($technology->getId(), static fn (ExperienceTechnology $locked): null => null);
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(ExperienceTechnologyNotFoundException::class, $caught, \sprintf('Une technologie pas encore écrite aurait dû être introuvable : %s.', get_debug_type($caught)));
+        self::assertTrue($this->em->getUnitOfWork()->isScheduledForInsert($technology), "L'insertion en attente a été annulée.");
     }
 
     /**
