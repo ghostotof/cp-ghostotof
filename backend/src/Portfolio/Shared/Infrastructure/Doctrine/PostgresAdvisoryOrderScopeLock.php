@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace App\Portfolio\Shared\Infrastructure\Doctrine;
 
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
+use App\Portfolio\Shared\Domain\Exception\TranslationGroupHasSeveralPositionsException;
 use Closure;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\ConnectionLost;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Query;
+use Throwable;
 
 /**
  * Verrou de périmètre d'ordre sur un advisory lock PostgreSQL **de
@@ -29,11 +32,19 @@ use Doctrine\ORM\Query;
  * distinct des verrous à une clé `bigint` qu'utilise `symfony/lock`, aucune
  * collision n'est donc possible avec ceux des limiteurs de débit.
  *
- * `Connection::transactional()`, pas `EntityManager::wrapInTransaction()` :
- * ce dernier **ferme l'EntityManager** sur toute exception, alors qu'un refus
- * métier (409 « version déjà existante ») est une issue ordinaire de
- * l'opération. Les `flush()` de l'opération s'imbriquent dans la transaction
- * (point de sauvegarde), et ne sont visibles des autres qu'au COMMIT.
+ * Une transaction ouverte et close à la main, ni `EntityManager::wrapInTransaction()`
+ * ni `Connection::transactional()`. Le premier **ferme l'EntityManager** sur
+ * toute exception, alors qu'un refus métier (409 « version déjà existante »)
+ * est une issue ordinaire de l'opération. Le second masque un COMMIT refusé
+ * (issue #390) : DBAL a déjà ramené la transaction à zéro quand `commit()`
+ * échoue, et son `rollBack()` de repli lève « There is no active transaction »
+ * par-dessus, pour tout SQLSTATE hors de sa courte liste (unicité, clé
+ * étrangère, interblocage…). Or le trigger différé des groupes de traduction
+ * refuse précisément au COMMIT ; son refus remonte ici sous le nom de
+ * l'invariant, {@see TranslationGroupHasSeveralPositionsException}, avec le
+ * message de la base, qui nomme la table et le groupe. Les `flush()` de
+ * l'opération s'imbriquent dans la transaction (point de sauvegarde), et ne
+ * sont visibles des autres qu'au COMMIT.
  *
  * Ce que l'EntityManager a chargé **avant** le verrou est relu une fois le
  * verrou pris (issue #402) : `find()` rendrait l'instance de la carte
@@ -89,6 +100,15 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
      */
     private const string LOCK_NOT_AVAILABLE = '55P03';
 
+    /**
+     * SQLSTATE propre au projet, levé par le trigger différé
+     * `trg_translation_group_single_position` (migration Version20261012120000,
+     * issue #390) : classe 23 (violation d'intégrité), sous-classe hors de
+     * celles que PostgreSQL définit. Le reconnaître ne demande pas de lire le
+     * message.
+     */
+    public const string TRANSLATION_GROUP_ON_SEVERAL_POSITIONS = '23T90';
+
     public function __construct(
         private EntityManagerInterface $entityManager,
     ) {
@@ -96,32 +116,71 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
 
     public function withLock(string $scope, Closure $operation): mixed
     {
-        return $this->entityManager->getConnection()->transactional(
-            function (Connection $connection) use ($scope, $operation): mixed {
-                // Bloquant : attend la fin de la transaction qui tient ce
-                // périmètre. Sans délai propre : celui d'une requête web est le
-                // lock_timeout de 5 s de www.prod.conf (#272), largement
-                // au-dessus des quelques millisecondes d'une écriture d'ordre.
-                try {
-                    $connection->executeQuery(
-                        'SELECT pg_advisory_xact_lock(?, hashtext(?))',
-                        [self::ADVISORY_NAMESPACE, $scope],
-                    );
-                } catch (DriverException $exception) {
-                    // Seule l'attente de ce verrou-ci est renommée : un délai
-                    // dépassé dans l'opération remonte tel quel.
-                    if (self::LOCK_NOT_AVAILABLE === $exception->getSQLState()) {
-                        throw OrderScopeLockTimeoutException::forScope($scope, $exception);
-                    }
+        $connection = $this->entityManager->getConnection();
+        $connection->beginTransaction();
 
-                    throw $exception;
-                }
+        try {
+            $result = $this->runLocked($connection, $scope, $operation);
+        } catch (ConnectionLost $exception) {
+            // Plus de session à annuler : PostgreSQL a déjà abandonné la
+            // transaction (même choix que Connection::transactional()).
+            throw $exception;
+        } catch (Throwable $exception) {
+            $connection->rollBack();
 
-                $this->rereadEntriesLoadedBefore($scope);
+            throw $exception;
+        }
 
-                return $operation();
-            },
-        );
+        try {
+            $connection->commit();
+        } catch (DriverException $exception) {
+            // Pas de rollBack() ici : le COMMIT refusé a déjà annulé la
+            // transaction dans PostgreSQL, et commit() a ramené celle de DBAL
+            // à zéro. Le verrou est donc relâché.
+            if (self::TRANSLATION_GROUP_ON_SEVERAL_POSITIONS === $exception->getSQLState()) {
+                throw TranslationGroupHasSeveralPositionsException::refusedAtCommit($exception);
+            }
+
+            throw $exception;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Le corps de la transaction : le verrou, la relecture, puis l'opération.
+     *
+     * @template T
+     *
+     * @param class-string $scope
+     * @param Closure(): T $operation
+     *
+     * @return T
+     */
+    private function runLocked(Connection $connection, string $scope, Closure $operation): mixed
+    {
+        // Bloquant : attend la fin de la transaction qui tient ce périmètre.
+        // Sans délai propre : celui d'une requête web est le lock_timeout de
+        // 5 s de www.prod.conf (#272), largement au-dessus des quelques
+        // millisecondes d'une écriture d'ordre.
+        try {
+            $connection->executeQuery(
+                'SELECT pg_advisory_xact_lock(?, hashtext(?))',
+                [self::ADVISORY_NAMESPACE, $scope],
+            );
+        } catch (DriverException $exception) {
+            // Seule l'attente de ce verrou-ci est renommée : un délai
+            // dépassé dans l'opération remonte tel quel.
+            if (self::LOCK_NOT_AVAILABLE === $exception->getSQLState()) {
+                throw OrderScopeLockTimeoutException::forScope($scope, $exception);
+            }
+
+            throw $exception;
+        }
+
+        $this->rereadEntriesLoadedBefore($scope);
+
+        return $operation();
     }
 
     /**

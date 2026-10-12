@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace App\Tests\Portfolio\Shared\Infrastructure\Doctrine;
 
+use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
+use App\Portfolio\Contribution\Domain\Entity\Contribution;
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
+use App\Portfolio\Shared\Domain\Exception\TranslationGroupHasSeveralPositionsException;
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Portfolio\Shared\Infrastructure\Doctrine\OrderScopeLockTimeoutException;
 use App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock;
 use App\Tests\Portfolio\Shared\Support\FakeOrderable;
@@ -162,6 +166,42 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
         // OrderScopeLockTimeoutException n'est pas une DriverException : un
         // renommage indu ferait échouer cette assertion.
         self::assertInstanceOf(DriverException::class, $timeout, 'Le délai dépassé dans l\'opération a été renommé.');
+    }
+
+    /**
+     * Issue #390 : le trigger différé refuse au COMMIT une transaction qui
+     * laisse un groupe de traduction sur deux positions. Ce refus remonte sous
+     * le nom de l'invariant, celui que lève déjà `ContentPlacement::inGroup()`,
+     * avec le message de la base, qui nomme la table et le groupe. Avec
+     * `Connection::transactional()`, il disparaissait derrière un
+     * « There is no active transaction » : DBAL a déjà clos la transaction
+     * quand le COMMIT échoue, et son `rollBack()` de repli levait par-dessus.
+     */
+    public function testACommitRefusedByTheGroupGuardFailsUnderTheInvariantsName(): void
+    {
+        $connection = $this->entityManager()->getConnection();
+        $administrator = self::getContainer()->get(ContributionAdministratorInterface::class);
+        $french = $administrator->create(Locale::FR, 'T', 'P', 'R', 'https://example.com', 'S', 'B');
+        $english = $administrator->create(Locale::EN, 'T', 'P', 'R', 'https://example.com', 'S', 'B', $french->getTranslationGroup());
+        $caught = null;
+
+        try {
+            $this->lock()->withLock(Contribution::class, static fn (): int|string => $connection->executeStatement(
+                'UPDATE contribution SET position = position + 7 WHERE id = ?',
+                [$english->getId()->toRfc4122()],
+            ));
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        } finally {
+            $connection->executeStatement('DELETE FROM contribution');
+        }
+
+        self::assertInstanceOf(TranslationGroupHasSeveralPositionsException::class, $caught, \sprintf('Le refus du trigger est remonté sous un autre nom : %s.', get_debug_type($caught)));
+        self::assertStringContainsString($french->getTranslationGroup()->toRfc4122(), $caught->getMessage(), 'Le message ne nomme pas le groupe.');
+        self::assertStringContainsString('contribution', $caught->getMessage(), 'Le message ne nomme pas la table.');
+        self::assertInstanceOf(DriverException::class, $caught->getPrevious());
+        self::assertTrue($this->probeCanLock(Contribution::class), 'Le verrou survit au COMMIT refusé.');
+        self::assertFalse($connection->isTransactionActive());
     }
 
     /**
