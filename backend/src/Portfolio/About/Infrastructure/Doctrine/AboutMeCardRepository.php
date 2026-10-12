@@ -85,6 +85,26 @@ class AboutMeCardRepository extends ServiceEntityRepository implements AboutMeCa
             ->getResult();
     }
 
+    public function findInOtherCategoriesSharingAGroupWith(AboutMeCardCategory $category): array
+    {
+        // Sous-requête plutôt que jointure : une carte égarée sort une fois,
+        // même si son groupe avait un jour plusieurs membres dans `$category`.
+        $groupsOfTheCategory = $this->getEntityManager()->createQueryBuilder()
+            ->select('sibling.translationGroup')
+            ->from(AboutMeCard::class, 'sibling')
+            ->andWhere('sibling.category = :category')
+            ->getDQL();
+
+        return $this->createQueryBuilder('card')
+            ->andWhere('card.category <> :category')
+            ->andWhere(\sprintf('card.translationGroup IN (%s)', $groupsOfTheCategory))
+            ->setParameter('category', $category)
+            ->orderBy('card.translationGroup', 'ASC')
+            ->addOrderBy('card.locale', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
     public function save(AboutMeCard $card): void
     {
         $this->getEntityManager()->persist($card);
