@@ -126,8 +126,10 @@ services:
 
   # ---------------------------------------------------------------------------
   # adminer : interface web d'administration de la base PostgreSQL.
-  # Dev uniquement — pas d'équivalent en préprod/prod (voir k8s/base/adminer.yaml :
-  # déployé sans Ingress, accessible seulement via `kubectl port-forward`).
+  # Ce service-ci ne sert qu'en dev. La préprod et la prod ont leur propre Adminer
+  # (k8s/base/adminer.yaml) : sans Ingress, à zéro pod par défaut dans les deux
+  # overlays, allumé le temps d'une intervention puis atteint par
+  # `kubectl port-forward` (k8s/README.md, « Administration de la base »).
   # ---------------------------------------------------------------------------
   adminer:
     image: adminer:${ADMINER_TAG}
