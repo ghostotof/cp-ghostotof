@@ -131,14 +131,17 @@ paths:
     **Trap for future migrations**: a deferred trigger leaves pending events until the COMMIT, and
     PostgreSQL refuses an `ALTER TABLE` on a table that has some (55006, "pending trigger events") — a
     migration that writes into one of the eight tables and then alters it starts with `SET CONSTRAINTS
-    trg_translation_group_single_position IMMEDIATE`. That migration reported every divergent group as
+    trg_translation_group_single_position IMMEDIATE`. Since #501 that includes a write of `category`
+    alone in `about_me_card`, which the trigger now listens to. And a migration that drops and recreates
+    the trigger writes no data: dropping it while writes of the same transaction await their deferred
+    check cancels those checks silently (measured for #505). That migration reported every divergent group as
     a `warning` with its original positions per locale in the migration Job's output, then **renumbered
     its perimeter** `0…n-1` by lowest position, the group breaking ties — aligning on the lowest
     position alone left two groups tied, which the repositories break by each row's own id, so FR and
     EN in two orders; a table with no divergent group was left untouched. Me-cards are renumbered per
     category; a group spread across two categories (which the application forbids) is left out of the
     renumbering — each category would give it its own rank, creating the divergence being repaired — and
-    reported: reordering either category is refused until it is corrected in the backoffice. Rejected: an `EXCLUDE USING gist
+    reported (for its fate since #501, see the next paragraph). Rejected: an `EXCLUDE USING gist
     (translation_group WITH =, position WITH <>)` (`btree_gist`), safe under concurrency, but DBAL
     introspects its index, which no mapping declares, so every `doctrine:migrations:diff` would propose
     a `DROP INDEX` — DBAL reads neither triggers nor functions; a `CHECK`, which cannot read other rows;
@@ -150,6 +153,42 @@ paths:
     `reorder()`); `tests/Migrations/Version20261012120000Test` pins the alignment and its warnings. A test
     that must write a divergent group does it in a transaction it rolls back: a deferred trigger never
     fires there.
+    **Nor a me-card group across two categories** (issue #501). Me-cards are ordered per category, and the
+    members of a group share theirs: the application guarantees it (no category setter on `AboutMeCard`,
+    `AboutMeCardAdministrator::membersOf()` reads a group within the category, the seed groups per
+    category), the database did not — the #390 trigger compared positions across categories and did not
+    listen to `category`, so an EN version inserted in SQL into another category at the same position, or
+    an `UPDATE` of `category` alone, went through. Such a group got two ranks, one per category (FR and EN
+    ranked differently on the public page); « Détacher » saw only the entry and did nothing (`detach()` is
+    a no-op on an entry alone in its category); and a `reorder()` of either category was refused only
+    when it moved the stray member, under the misleading name of the positions. Migration
+    `Version20261012160000` keeps **one function and one trigger name**: the function reads its table's
+    scope column from `TG_ARGV[0]` (none for the seven single-scope tables, untouched), one query returns
+    `MIN`/`MAX` of the positions and the number of distinct scopes (the list of scopes, for the message, is
+    read only on a refusal), and the scope check runs **before**
+    the position check — a group both spread and on two positions is refused for the cause, not its
+    consequence — raising SQLSTATE **`23T91`**, which `PostgresAdvisoryOrderScopeLock` names
+    `TranslationGroupAcrossSeveralScopesException` (`Domain/Exception`, a `LogicException`, `refusedAtCommit()`,
+    unmapped: a `critical` 500, a pipeline defect, like the positions' one; both SQLSTATEs map in one
+    `match` of its `onCommitRefused`). On `about_me_card` the trigger is recreated `AFTER INSERT OR UPDATE OF
+    position, translation_group, category … EXECUTE FUNCTION portfolio_translation_group_single_position('category')`.
+    Moving a whole group to another category in one transaction stays accepted (deferred). Same accepted
+    limit as the positions: two concurrent SQL transactions that skip the scope lock can each add a member
+    in another category without seeing the other's, and both commit. Rejected: a
+    second function or trigger (two reads of the group per row at COMMIT, two names for `SET CONSTRAINTS`);
+    a check in `reorder()` alone (sees only what goes through it, late, SQL writes still unseen); doing
+    nothing (the misleading 500 and the two ranks stayed). **Groups already spread are not corrected** (no
+    category is surely the right one): the migration reports each again as a `warning` with its categories,
+    and any write that touches one (insertion, a member's position, group or category) is now refused —
+    a `DELETE` does not wake the trigger. The fix is in the backoffice: **delete the stray entry, then
+    recreate its version in the right category** — « Détacher » does not see the member in the other
+    category. Open there, follow-up #561: « Créer la version EN » offered in the category where EN is
+    missing hits the unique `(translation_group, locale)` index, a raw 500. `TranslationGroupSinglePositionTest`
+    pins the insertion and the move of one member (refused in `23T91`), a group spread and on two
+    positions (`23T91`, not `23T90`), the whole group moved (accepted), and, for every table, the scope
+    argument and the watched columns (`SCOPE_COLUMNS`: a new per-scope table goes there and in its
+    migration); `PostgresAdvisoryOrderScopeLockTest` the name on the application path;
+    `tests/Migrations/Version20261012160000Test` the warning, the untouched group and `down()`.
     **Every write of an ordered content's `Administrator` runs under its scope's lock** (issues #389, #499):
     `create()`, `update()`, `delete()` and `reorder()` of the eight localized `Administrator`s and of
     `WatchedProductAdministrator` wrap their **whole body** in
@@ -259,7 +298,33 @@ paths:
   read-only API Platform resource (`GetCollection('/experience/technologies')`, or an aggregating `Provider` for
   `/quality/{locale}` and `/about/{locale}` that returns `{principles, traits}` / `{settings, siteCards, meCards}`
   in one call), and a backoffice CRUD resource (see `.claude/rules/backoffice-api.md`). Seeded via idempotent `app:{about,quality,contributions,incidents}:seed`
-  console commands (purge-by-locale then recreate — safe to rerun).
+  console commands (content already there: they decline, unless `--force`, which purges the whole table — every
+  locale, spec 0004 D3 — then recreates; **`AboutSettings` is upserted, never purged**, see below).
+
+  **`AboutSettings` has no lock, by decision** (issue #553). It is the singleton per locale of the About page's
+  section texts, and **nothing in the application deletes it**: `AboutSettingsRepositoryInterface` has no
+  `remove()`, the backoffice resource only `Get`/`Put`, and `app:about:seed` upserts it (`upsertSettings()`:
+  `update()` through the `Administrator` when the locale has its row, a direct `save()` otherwise; its
+  `countExisting()` leaves it out). The defect of #499/#545 — a `PUT` answering 200 on a row deleted since the
+  provider loaded it — does not arise, because `AboutSettingsAdministrator::update()` re-reads the database:
+  `findByLocale()` is a `findOneBy()`, a search by criteria whose `SELECT` Doctrine **always** runs, so a row
+  gone is `null` (**404**, `AboutSettingsNotFoundException`) and a row recreated under another id is the one
+  written — unlike `find($id)`, which hands back the identity-map instance without a query (#545). Its fields
+  are not refreshed, but `AboutSettings::update()` overwrites all five editable ones, and `id`/`locale` never
+  change. **Keep that search by criteria**: a `find($id)`, a second-level or result cache, or a memoizing decorator
+  without a lock reopens the 200 on a vanished row. **Accepted**: a deletion in SQL — or a deletion and re-creation under
+  another id — committed between that `SELECT` and the `flush()`'s `UPDATE` still answers 200, the `UPDATE` on the
+  old id touching no row (the write is lost; milliseconds, SQL only, very low severity); two simultaneous `PUT`s of one locale, last
+  writer wins, like every field (no `#[ORM\Version]`); two concurrent creations (two seeds) meet the unique index
+  `uniq_about_settings_locale`; the seed's settings writes run outside any lock, on purpose (no position, no
+  group). **Trigger**: an application deletion of the settings (a seed purge, a `DELETE`) first requires the
+  row lock of #545 (`ExperienceTechnologyLockInterface`'s pattern on `PostgresLockedTransaction`).
+  `AboutSettingsUpdateReadsCommittedRowTest` pins it: settings loaded as the provider does, deleted in SQL → not
+  found; deleted then re-inserted under a new id → the new row is written (both red with a read from the identity
+  map, measured); and the trigger itself — the repository interface exposes exactly `findByLocale()`/`save()`, the
+  backoffice resource exactly `Get`/`Put` (red with a `remove()` or a `Delete` added, measured). Turning it red
+  means adding the lock first, then updating the test. That guard is partial: an `EntityManager::remove()`, a DQL
+  or DBAL `DELETE` written elsewhere (a command, another processor) does not trip it — review is the net there.
 
   **`ExperienceTechnology.years` is a finite number in `[0, 100]`, checked at three layers** (issue #372).
   A single non-encodable row (`Infinity`, `NaN`) is enough to put the public `GET /api/experience/technologies`
