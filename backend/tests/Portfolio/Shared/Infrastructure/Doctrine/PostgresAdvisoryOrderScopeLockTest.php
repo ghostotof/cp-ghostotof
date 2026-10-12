@@ -9,6 +9,7 @@ use App\Portfolio\Contribution\Domain\Entity\Contribution;
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\Exception\TranslationGroupHasSeveralPositionsException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Portfolio\Shared\Infrastructure\Doctrine\OrderScopeLockInsideTransactionException;
 use App\Portfolio\Shared\Infrastructure\Doctrine\OrderScopeLockTimeoutException;
 use App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock;
 use App\Tests\Portfolio\Shared\Support\FakeOrderable;
@@ -18,6 +19,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 use DomainException;
+use Psr\Log\NullLogger;
 use stdClass;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Throwable;
@@ -162,7 +164,7 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
         $caught = null;
 
         try {
-            (new PostgresAdvisoryOrderScopeLock($this->entityManager(), '100ms'))->withLock(self::SCOPE, static fn (): null => null);
+            (new PostgresAdvisoryOrderScopeLock($this->entityManager(), new NullLogger(), '100ms'))->withLock(self::SCOPE, static fn (): null => null);
         } catch (Throwable $exception) {
             $caught = $exception;
         } finally {
@@ -237,6 +239,61 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     }
 
     /**
+     * Issue #526 : dans une transaction déjà ouverte, le COMMIT du verrou ne
+     * serait qu'un `RELEASE SAVEPOINT`, et le trigger différé des groupes de
+     * traduction refuserait au COMMIT de l'appelant, hors de portée du
+     * verrou : en `DriverException` `23T90` brute, pas sous le nom de
+     * l'invariant. Le verrou refuse donc de s'y imbriquer, avant de rien
+     * écrire ni de lancer l'opération, et laisse la transaction de
+     * l'appelant telle qu'il l'a ouverte.
+     */
+    public function testTheLockRefusesToRunInsideATransactionAlreadyOpen(): void
+    {
+        $connection = $this->entityManager()->getConnection();
+        $connection->beginTransaction();
+        $ran = false;
+        $caught = null;
+
+        try {
+            $this->lock()->withLock(self::SCOPE, static function () use (&$ran): void {
+                $ran = true;
+            });
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        try {
+            self::assertInstanceOf(OrderScopeLockInsideTransactionException::class, $caught, \sprintf("L'imbrication n'a pas été refusée sous son nom : %s.", get_debug_type($caught)));
+            self::assertStringContainsString(self::SCOPE, $caught->getMessage());
+            self::assertFalse($ran, "L'opération a tourné dans la transaction de l'appelant.");
+            self::assertSame(1, $connection->getTransactionNestingLevel(), "La transaction de l'appelant a été touchée.");
+            self::assertTrue($this->probeCanLock(self::SCOPE), 'Le verrou a été pris malgré le refus.');
+        } finally {
+            $connection->rollBack();
+        }
+    }
+
+    /**
+     * Le cas particulier d'un verrou d'ordre pris sous un autre : même
+     * refus, et la transaction du premier est annulée comme après tout échec
+     * de son opération.
+     */
+    public function testTheLockRefusesToNestInsideItself(): void
+    {
+        $caught = null;
+
+        try {
+            $this->lock()->withLock(self::SCOPE, fn (): mixed => $this->lock()->withLock(self::OTHER_SCOPE, static fn (): null => null));
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(OrderScopeLockInsideTransactionException::class, $caught, \sprintf("L'imbrication n'a pas été refusée sous son nom : %s.", get_debug_type($caught)));
+        self::assertFalse($this->entityManager()->getConnection()->isTransactionActive());
+        self::assertTrue($this->probeCanLock(self::SCOPE), 'Le verrou du premier périmètre a survécu au refus.');
+    }
+
+    /**
      * Tente de prendre le verrou depuis la connexion témoin, et le relâche
      * aussitôt s'il l'a obtenu.
      *
@@ -264,7 +321,7 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
      */
     private function lock(): OrderScopeLockInterface
     {
-        return new PostgresAdvisoryOrderScopeLock($this->entityManager());
+        return new PostgresAdvisoryOrderScopeLock($this->entityManager(), new NullLogger());
     }
 
     private function entityManager(): EntityManagerInterface

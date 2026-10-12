@@ -73,7 +73,12 @@ paths:
   own PostgreSQL locks** (issue #512): the order-scope lock, the account lock and the username
   allocation lock share one skeleton, `Shared/Infrastructure/Lock/PostgresLockedTransaction`
   (an *Execute Around*: hand-made transaction, wait bounded, `55P03` — defined there only, as
-  `LOCK_NOT_AVAILABLE` — renamed per lock, a refused COMMIT never masked), which gives the
+  `LOCK_NOT_AVAILABLE` — renamed per lock, a refused COMMIT never masked, nor the cause by a
+  ROLLBACK the database refuses after it, issue #526: that failure is logged `error` with classes and
+  SQLSTATE only, the session is closed — never reused, PostgreSQL rolls it back, DBAL reopens one —, and
+  the cause is rethrown as is; nested, the caller's transaction is gone with the session, so
+  `LockedTransactionRollbackFailedException` says so, the cause as `previous`; a programming error of the
+  ROLLBACK, `NoActiveTransaction`, still surfaces), which gives the
   transaction `FALLBACK_LOCK_TIMEOUT` (`5s`, the FPM value) through `set_config('lock_timeout', …, true)`
   **only when the session has none** (`0`): a bound already chosen (`PGOPTIONS`, a test) is kept,
   neither lengthened nor shortened. A new PostgreSQL lock goes through it. `docker/php` is mounted read-only in the dev

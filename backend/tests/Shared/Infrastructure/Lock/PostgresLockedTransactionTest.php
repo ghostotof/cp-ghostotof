@@ -4,15 +4,20 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Lock;
 
+use App\Shared\Infrastructure\Lock\LockedTransactionRollbackFailedException;
 use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
 use App\Tests\Support\CommitRefusal;
 use App\Tests\Support\OpensProbeConnection;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\CommitFailedRollbackOnly;
 use Doctrine\DBAL\Exception\DriverException;
+use Doctrine\DBAL\Exception\NoActiveTransaction;
 use Doctrine\ORM\EntityManagerInterface;
 use DomainException;
 use LogicException;
+use Monolog\Handler\TestHandler;
+use Monolog\Level;
+use Monolog\Logger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Throwable;
 
@@ -35,15 +40,25 @@ final class PostgresLockedTransactionTest extends KernelTestCase
     /** Le message de l'exception qu'un verrou donnerait à son attente dépassée. */
     private const string NAMED_TIMEOUT = 'délai nommé';
 
+    /**
+     * Le message d'une cause qui ne doit jamais atteindre le journal : celui
+     * d'une `DriverException` peut citer les paramètres de la requête (une
+     * adresse, un identifiant), celui d'un refus métier une donnée reçue.
+     */
+    private const string CAUSE_MESSAGE = 'cause avec une donnée à ne pas journaliser';
+
     private Connection $connection;
 
     private Connection $probe;
+
+    private TestHandler $logs;
 
     protected function setUp(): void
     {
         self::bootKernel();
         $this->connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         $this->probe = self::openProbeBeside($this->connection);
+        $this->logs = new TestHandler();
     }
 
     protected function tearDown(): void
@@ -266,6 +281,128 @@ final class PostgresLockedTransactionTest extends KernelTestCase
     }
 
     /**
+     * Issue #526 : la session meurt entre l'échec de l'opération et le
+     * ROLLBACK — `pg_terminate_backend()`, le `57P01 admin_shutdown` d'un
+     * redémarrage de PostgreSQL —, et le ROLLBACK échoue à son tour. La cause
+     * d'origine remonte quand même, telle quelle : c'est elle que l'appelant
+     * reconnaît (un refus métier, un `55P03` renommé) et elle qui dit ce qui
+     * s'est passé. L'échec du ROLLBACK est journalisé à côté, sans son
+     * message ni celui de la cause, et la session morte est fermée : la
+     * requête suivante en rouvre une.
+     */
+    public function testTheOriginalCauseSurvivesARollbackThatFails(): void
+    {
+        $refusal = new DomainException(self::CAUSE_MESSAGE);
+        $caught = null;
+
+        try {
+            $this->transaction()->run(
+                acquire: fn (): mixed => $this->connection->executeQuery(self::LOCK_SQL),
+                onTimeout: $this->unexpectedTimeout(...),
+                operation: function () use ($refusal): never {
+                    $this->terminateTheSession();
+
+                    throw $refusal;
+                },
+            );
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertSame($refusal, $caught, \sprintf("La cause d'origine a été masquée par l'échec du ROLLBACK : %s.", get_debug_type($caught)));
+        $this->assertTheFailedRollbackIsLoggedWithoutItsCause(DomainException::class, nested: false);
+        $this->assertTheDeadSessionWasReplaced();
+    }
+
+    /**
+     * Même garantie après un COMMIT que DBAL refuse lui-même
+     * (`setRollbackOnly()`) : le ROLLBACK qui le suit échoue sur la session
+     * coupée, et c'est le refus du COMMIT qui remonte.
+     */
+    public function testACommitRefusalSurvivesTheRollbackThatFollowsIt(): void
+    {
+        $caught = null;
+
+        try {
+            $this->transaction()->run(
+                acquire: fn (): mixed => $this->connection->executeQuery(self::LOCK_SQL),
+                onTimeout: $this->unexpectedTimeout(...),
+                operation: function (): void {
+                    $this->terminateTheSession();
+                    $this->connection->setRollbackOnly();
+                },
+            );
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(CommitFailedRollbackOnly::class, $caught, \sprintf("Le refus du COMMIT a été masqué par l'échec du ROLLBACK : %s.", get_debug_type($caught)));
+        $this->assertTheFailedRollbackIsLoggedWithoutItsCause(CommitFailedRollbackOnly::class, nested: false);
+        $this->assertTheDeadSessionWasReplaced();
+    }
+
+    /**
+     * Imbriqué, le ROLLBACK refusé est celui du point de sauvegarde, et DBAL
+     * garde alors son niveau : relancer la seule cause laisserait l'appelant
+     * valider une transaction que la session fermée a emportée. Une exception
+     * nommée le lui dit, avec la cause en `previous`.
+     */
+    public function testANestedRollbackThatFailsTellsTheCallerItsTransactionIsLost(): void
+    {
+        $refusal = new DomainException(self::CAUSE_MESSAGE);
+        $this->connection->beginTransaction();
+        $caught = null;
+
+        try {
+            $this->transaction()->run(
+                acquire: static fn (): null => null,
+                onTimeout: $this->unexpectedTimeout(...),
+                operation: function () use ($refusal): never {
+                    $this->terminateTheSession();
+
+                    throw $refusal;
+                },
+            );
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(LockedTransactionRollbackFailedException::class, $caught, \sprintf("L'appelant n'a pas appris que sa transaction est perdue : %s.", get_debug_type($caught)));
+        self::assertSame($refusal, $caught->getPrevious(), "La cause d'origine n'est pas en previous.");
+        self::assertStringNotContainsString(self::CAUSE_MESSAGE, $caught->getMessage());
+        $this->assertTheFailedRollbackIsLoggedWithoutItsCause(DomainException::class, nested: true);
+        $this->assertTheDeadSessionWasReplaced();
+    }
+
+    /**
+     * Seul un refus de la base est rattrapé autour du ROLLBACK : une erreur
+     * de programmation — l'opération a validé elle-même la transaction du
+     * squelette — remonte comme avant, au lieu de se cacher derrière le
+     * refus métier qui la suit.
+     */
+    public function testAProgrammingErrorOfTheRollbackStillSurfaces(): void
+    {
+        $caught = null;
+
+        try {
+            $this->transaction()->run(
+                acquire: static fn (): null => null,
+                onTimeout: $this->unexpectedTimeout(...),
+                operation: function (): never {
+                    $this->connection->commit();
+
+                    throw new DomainException('refus après un COMMIT indu');
+                },
+            );
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(NoActiveTransaction::class, $caught, \sprintf("L'erreur de programmation a été masquée : %s.", get_debug_type($caught)));
+        self::assertSame([], $this->logs->getRecords());
+    }
+
+    /**
      * Imbriqué dans une transaction déjà ouverte, le squelette n'annule que
      * la sienne (son point de sauvegarde) : celle de l'appelant reste à lui.
      */
@@ -337,9 +474,50 @@ final class PostgresLockedTransactionTest extends KernelTestCase
         $this->connection->executeStatement("SET statement_timeout = '3s'");
     }
 
+    /**
+     * La session dont le ROLLBACK a échoué a été fermée par le squelette, et
+     * DBAL en rouvre une neuve, hors de toute transaction.
+     */
+    private function assertTheDeadSessionWasReplaced(): void
+    {
+        self::assertFalse($this->connection->isConnected(), 'La session morte a été gardée.');
+        self::assertSame(0, $this->connection->getTransactionNestingLevel());
+        self::assertSame(1, $this->connection->fetchOne('SELECT 1'));
+    }
+
     private function transaction(string $lockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT): PostgresLockedTransaction
     {
-        return new PostgresLockedTransaction($this->connection, $lockTimeout);
+        return new PostgresLockedTransaction($this->connection, new Logger('test', [$this->logs]), $lockTimeout);
+    }
+
+    /**
+     * Coupe, depuis la sonde, la session de la connexion testée, et attend
+     * jusqu'à 2 s qu'elle soit partie : PostgreSQL y répond en `57P01`.
+     */
+    private function terminateTheSession(): void
+    {
+        $pid = $this->connection->fetchOne('SELECT pg_backend_pid()');
+
+        self::assertTrue($this->probe->fetchOne('SELECT pg_terminate_backend(?, 2000)', [$pid]), 'La session testée ne s\'est pas terminée.');
+    }
+
+    /**
+     * Une seule ligne `error`, qui nomme la classe de la cause et celle de
+     * l'échec du ROLLBACK, et rien du message de la cause.
+     *
+     * @param class-string<Throwable> $cause
+     */
+    private function assertTheFailedRollbackIsLoggedWithoutItsCause(string $cause, bool $nested): void
+    {
+        $records = $this->logs->getRecords();
+
+        self::assertCount(1, $records, "L'échec du ROLLBACK n'a pas été journalisé, ou l'a été plusieurs fois.");
+        self::assertSame(Level::Error, $records[0]->level);
+        self::assertSame($cause, $records[0]->context['cause'] ?? null);
+        self::assertSame($nested, $records[0]->context['nested'] ?? null);
+        self::assertIsString($records[0]->context['rollbackFailure'] ?? null);
+        self::assertTrue(is_a($records[0]->context['rollbackFailure'], Throwable::class, true), "L'échec du ROLLBACK n'est pas nommé par sa classe.");
+        self::assertStringNotContainsString(self::CAUSE_MESSAGE, $records[0]->message.json_encode($records[0]->context, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE));
     }
 
     private function unexpectedTimeout(DriverException $timeout): Throwable

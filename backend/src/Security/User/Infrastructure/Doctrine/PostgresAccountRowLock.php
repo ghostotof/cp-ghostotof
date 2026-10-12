@@ -11,6 +11,7 @@ use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
 use Closure;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 
 /**
@@ -31,6 +32,7 @@ final readonly class PostgresAccountRowLock implements AccountLockInterface
 {
     public function __construct(
         private EntityManagerInterface $entityManager,
+        private LoggerInterface $logger,
         private string $fallbackLockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT,
     ) {
     }
@@ -39,7 +41,7 @@ final readonly class PostgresAccountRowLock implements AccountLockInterface
     {
         $connection = $this->entityManager->getConnection();
 
-        return new PostgresLockedTransaction($connection, $this->fallbackLockTimeout)->run(
+        return new PostgresLockedTransaction($connection, $this->logger, $this->fallbackLockTimeout)->run(
             acquire: static function () use ($connection, $user): void {
                 $locked = $connection->fetchOne(
                     'SELECT 1 FROM cpg_user WHERE id = :id FOR UPDATE',

@@ -34,6 +34,11 @@ interface OrderScopeLockInterface
      * Une exception de `$operation` annule la transaction, relâche le verrou
      * et remonte telle quelle.
      *
+     * **Jamais dans une transaction déjà ouverte** (issue #526), ni sous un
+     * autre `withLock()` : le verrou ouvre et valide la sienne, seul moyen de
+     * nommer ce que la base refuse au COMMIT. Un appel imbriqué est refusé
+     * avant de rien écrire, en 500 nommé.
+     *
      * Une fois le verrou pris, les entrées de `$scope` que l'appelant a déjà
      * chargées sont relues (issue #402) : `$operation` décide sur ce que la
      * base porte, pas sur ce qui a été lu avant le verrou. Une modification
