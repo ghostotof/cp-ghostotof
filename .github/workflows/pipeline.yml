@@ -397,6 +397,7 @@ jobs:
           tools/tests/rotate-deployer-token.test.sh
           tools/tests/wait-external-secrets.test.sh
           tools/tests/wait-rollout.test.sh
+          tools/tests/run-job.test.sh
           tools/tests/smoke-messenger-probe.test.sh
           tools/tests/security-headers.test.sh
           tools/tests/check-workflow-timeouts.test.sh
