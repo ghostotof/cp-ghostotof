@@ -175,6 +175,24 @@ paths:
     EntityManager loaded before the lock — the `PUT` entry, loaded by the provider; the whole scope, in a command
     chaining operations such as a seed — is refreshed in place (same object, which a caller may keep and save),
     and an instance the query no longer returns (deleted meanwhile) is detached, so `find()` reports it not found.
+    **That detached instance is never saved again** (issue #548): `UnitOfWork::doPersist()` takes an instance it
+    does not manage for **new** — it assumes `STATE_NEW` and reads nothing — so a caller still holding it and
+    calling `<Repository>::save()` re-inserted the deleted entry, no error, no trace (measured before the fix on the eight
+    localized contexts, the watch catalogue and the technologies). The adapter detaches through `Shared/Infrastructure/Doctrine/VanishedEntities::forget()`,
+    which remembers the instance in a `WeakMap` (nothing kept in memory, survives the `reset()` of a closed
+    manager); its `prePersist` listener — emitted only for an instance Doctrine takes for new, exactly the
+    re-insertion path — refuses it with `VanishedEntitySavedAgainException` (a `LogicException`, unmapped, a
+    `critical` 500: a caller's defect), before anything is scheduled. No false positive: an entity's id comes from
+    its constructor, so a new entity is never one it remembers. No caller did it (the `Administrator`s re-find
+    their entry under the lock and only receive ids, processors call no repository, seeds re-save nothing): the
+    guard makes the rule hold by construction, as #526 did, instead of relying on the next caller. Every lock that
+    detaches a vanished row goes through `forget()`, never `detach()` — the technology row lock too (#545, below).
+    Rejected: a check in each repository's `save()` (the UnitOfWork cannot tell a detached entity from a new one
+    with a natural id and no row; it would need the same registry, nine times); removing instead of detaching (a
+    phantom `DELETE` at the flush, then the instance is new again); `markReadOnly` (`find()` would still return
+    it, reopening #402). **Not covered, accepted**: an instance detached otherwise — `close()` (#502, #547,
+    #549) or `clear()` — is not remembered; on the same closed manager its `persist()` already fails with
+    `EntityManagerClosed`, only a reset manager would take it, and no worker writes an entity a lock detaches.
     Before, `find()` handed back the identity-map instance and a query did not rehydrate a managed one: a
     concurrent write committed in between was silently undone (`reattach()` saw a no-op, `detach()` looked in the
     group the entry had left, a version created in a group took the position the group was leaving, a deleted
@@ -196,7 +214,10 @@ paths:
     wins, like every other field; no `#[ORM\Version]`. `ScopeLockReadsCommittedStateTest` pins both (the four
     stale-state cases over the same `ProvidesLocalizedAdministrators` list as `OrderScopeLockCoverageTest`, so a
     new localized context goes there once, the second `DELETE` of an entry deleted meanwhile, the watch
-    catalogue's end, its `PUT` and `DELETE` of a product deleted meanwhile, the pending insert, and the isolation level).
+    catalogue's end, its `PUT` and `DELETE` of a product deleted meanwhile, the pending insert, the re-save of an
+    entry or a product detached by the re-read, refused instead of re-inserted (#548), and the isolation level);
+    `VanishedEntitiesTest` pins the listener's wiring, its refusal before scheduling, no false positive and the
+    `WeakMap` (red with an `SplObjectStorage`, measured).
     In an FPM worker the wait is bounded by `PGOPTIONS` `lock_timeout=5s`; past it the adapter throws
     `OrderScopeLockTimeoutException` (named, unmapped: a `critical` 500 — 5 s for a millisecond write is an
     anomaly, not a conflict to retry), and only for its own lock statement: a timeout inside the operation
@@ -280,7 +301,9 @@ paths:
   (`Shared/Infrastructure/Lock/PostgresLockedTransaction`, like the order scope lock and the two account
   locks): **one** DQL `SELECT … FOR UPDATE` (`LockMode::PESSIMISTIC_WRITE`) with `Query::HINT_REFRESH` locks the
   row, says whether it still exists (`null`) and refreshes the managed instance in place, handed to the
-  operation. Row gone: the stale instance is detached — unless it is scheduled for insertion or removal,
+  operation. Row gone: the stale instance is detached through `VanishedEntities::forget()`, so a caller still
+  holding it cannot save it again (it would be re-inserted, issue #548, see the ordering section) — unless it is
+  scheduled for insertion or removal,
   whose pending write detaching would cancel, the #402 filter — and the technology is not found (**404**, mapping
   unchanged; the admin frontend already reads it as `not-found`). So a deletion runs wholly before the write or
   wholly after it. Not `find($id, LockMode::PESSIMISTIC_WRITE)`: on an instance already managed it is a
@@ -307,7 +330,8 @@ paths:
   provider does, then deleted in SQL: `update()` and `delete()` say not found; a probe session holds the row,
   and each write must fail on the lock's named timeout — without the lock, the `flush()` waited on the row too
   but failed as a bare `DriverException`, having decided on the provider's instance) and
-  `PostgresExperienceTechnologyRowLockTest` (re-read, not found and detached, a pending insert not found but
+  `PostgresExperienceTechnologyRowLockTest` (re-read, not found and detached, its re-save refused rather than
+  re-inserted (#548), a pending insert not found but
   kept, a `flush()` refused inside the operation rolled back and surfacing as is — the path of the 409 —, wait
   bound, named timeout, nesting refused, a COMMIT refused after a successful `flush()` closing the EntityManager
   and a new read seeing the database, #547). No two-process test (decided for #545): the probe already proves the write waits for the
