@@ -39,11 +39,11 @@ use PHPUnit\Framework\TestCase;
  *
  * Analyse par jetons (PhpToken), pas par expression régulière : commentaires,
  * `;` dans une chaîne et arguments nommés ne le trompent pas. Les fichiers lus
- * et les jetons ignorés sont ceux de {@see PhpSources}, comme pour les autres
- * recenseurs (issue #395) : ce garde-fou ne voit jamais un autre périmètre
- * qu'eux. Ce qu'il ne voit
- * pas, et c'est assumé : une classe instanciée dynamiquement (`new $classe`,
- * Reflection). Le garde-fou vise l'oubli, pas la malveillance.
+ * et les jetons écartés (espaces, commentaires) sont ceux de {@see PhpSources},
+ * comme pour les autres recenseurs (issue #395) : une évolution de l'un atteint
+ * ce garde-fou aussi. Ce qu'il ne voit pas, et c'est assumé : une classe
+ * instanciée dynamiquement (`new $classe`, Reflection). Le garde-fou vise
+ * l'oubli, pas la malveillance.
  */
 final class ProblemDetailStaysStaticTest extends TestCase
 {
@@ -239,8 +239,8 @@ final class ProblemDetailStaysStaticTest extends TestCase
     }
 
     /**
-     * Retient l'alias du `use` en $index (premier nom seulement, voir
-     * {@see self::resolve()}).
+     * Retient l'alias du `use` en $index : le premier nom seulement, un
+     * `use A, B;` laisse B non résolu (angle mort connu, issue #507).
      *
      * @param list<PhpToken>        $tokens
      * @param array<string, string> $aliases
@@ -304,7 +304,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
         $level = 0;
         for ($index = $open + 1, $count = \count($tokens); $index < $count; ++$index) {
             $token = $tokens[$index];
-            if ($token->is(['(', '[', '{', \T_CURLY_OPEN, \T_DOLLAR_OPEN_CURLY_BRACES])) {
+            if ($token->is(['(', '[']) || PhpSources::opensBrace($token)) {
                 ++$level;
             } elseif ($token->is([')', ']', '}'])) {
                 if (0 === $level) {
@@ -358,7 +358,8 @@ final class ProblemDetailStaysStaticTest extends TestCase
     /**
      * Dans le constructeur qui commence en $function : le message passé à
      * `parent::__construct` est-il littéral ? Sans appel au parent, le message
-     * reste celui par défaut (vide) : littéral.
+     * reste celui par défaut (vide) : littéral. Seule `{` (donc aussi `{$x}`)
+     * ouvre ici une accolade, pas `${` : angle mort connu, issue #507.
      *
      * @param list<PhpToken> $tokens
      */
