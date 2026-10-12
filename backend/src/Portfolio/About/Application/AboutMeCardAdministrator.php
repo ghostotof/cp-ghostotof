@@ -19,8 +19,9 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
     /**
      * Verrou d'ordre, pris par toute écriture : celles qui placent une entrée
      * (issue #389), et delete(), pour qu'une suppression ne valide pas sous une
-     * autre écriture (issue #499). La table entière, plus large que le périmètre d'ordre (une catégorie). Un
-     * verrou par catégorie n'aurait rien à gagner avec un seul administrateur.
+     * autre écriture (issue #499). La table entière, plus large que le
+     * périmètre d'ordre (une catégorie) : un verrou par catégorie n'aurait rien
+     * à gagner avec un seul administrateur.
      */
     private const string ORDER_SCOPE = AboutMeCard::class;
 

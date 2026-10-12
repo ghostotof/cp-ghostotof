@@ -116,7 +116,8 @@ paths:
     `atEndOf()`. `delete()` and the watch catalogue's `update()` place nothing, and are locked since #499 for
     another reason: outside the lock, a deletion committed between an operation's re-read (below) and its
     `flush()` left a `PUT`'s `UPDATE` touching no row, answered with a 200 on a vanished entry — and the
-    watch `update()`, with neither lock nor re-read, "updated" a product deleted since its loading. The adapter, `Shared/Infrastructure/Doctrine/PostgresAdvisoryOrderScopeLock`, runs the body
+    watch `update()`, with neither lock nor re-read, "updated" a product deleted since its loading.
+    The adapter, `Shared/Infrastructure/Doctrine/PostgresAdvisoryOrderScopeLock`, runs the body
     in a transaction it opens and closes by hand (not `Connection::transactional()`, since issue #390, see
     above) whose first statement is `pg_advisory_xact_lock(ORDR, hashtext(scope))`,
     released by the COMMIT/ROLLBACK itself. Three choices not to undo: a **scope** lock, never `SELECT … FOR

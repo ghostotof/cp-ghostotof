@@ -294,12 +294,13 @@ final class ScopeLockReadsCommittedStateTest extends KernelTestCase
     private function loadProductThenDeleteItFromAnotherSession(): WatchedProduct
     {
         self::bootKernel();
-        $this->table = self::getContainer()->get(EntityManagerInterface::class)->getClassMetadata(WatchedProduct::class)->getTableName();
+        $metadata = self::getContainer()->get(EntityManagerInterface::class)->getClassMetadata(WatchedProduct::class);
+        $this->table = $metadata->getTableName();
         $product = self::getContainer()->get(WatchedProductAdministratorInterface::class)
             ->create('supprime', 'Produit', VersionSource::MANUAL, '1.0');
 
         $this->writeFromAnotherSession(
-            \sprintf('DELETE FROM %s WHERE id = ?', $this->table),
+            \sprintf('DELETE FROM %s WHERE %s = ?', $this->table, $metadata->getColumnName('id')),
             [$product->getId()->toRfc4122()],
         );
 
