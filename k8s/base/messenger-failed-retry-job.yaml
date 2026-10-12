@@ -88,6 +88,11 @@ spec:
           env:
             - name: MESSAGE_ID
               value: '${FAILED_MESSAGE_ID}'
+            # Revue de #521 : Symfony Console lit aussi SHELL_VERBOSITY ; posée à 3
+            # dans backend-config, elle mettrait ce Job en -vv (le message dans
+            # ses journaux). `env` l'emporte sur `envFrom`.
+            - name: SHELL_VERBOSITY
+              value: '0'
           envFrom:
             - configMapRef:
                 name: backend-config

@@ -48,13 +48,23 @@ final class MessengerMaintenanceJobsManifestTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{string, string, list<string>}>
+     * @return iterable<string, array{string, string}>
      */
     public static function namedJobs(): iterable
     {
-        yield 'stop-workers' => [self::STOP_WORKERS, 'backend-messenger-stop-workers', ['BACKEND_IMAGE']];
-        yield 'failed:retry' => [self::FAILED_RETRY, 'backend-messenger-failed-retry', ['BACKEND_IMAGE', 'FAILED_MESSAGE_ID']];
-        yield 'failed:remove' => [self::FAILED_REMOVE, 'backend-messenger-failed-remove', ['BACKEND_IMAGE', 'FAILED_MESSAGE_ID']];
+        yield 'stop-workers' => [self::STOP_WORKERS, 'backend-messenger-stop-workers'];
+        yield 'failed:retry' => [self::FAILED_RETRY, 'backend-messenger-failed-retry'];
+        yield 'failed:remove' => [self::FAILED_REMOVE, 'backend-messenger-failed-remove'];
+    }
+
+    /**
+     * @return iterable<string, array{string, list<string>}>
+     */
+    public static function placeholders(): iterable
+    {
+        yield 'stop-workers' => [self::STOP_WORKERS, ['BACKEND_IMAGE']];
+        yield 'failed:retry' => [self::FAILED_RETRY, ['BACKEND_IMAGE', 'FAILED_MESSAGE_ID']];
+        yield 'failed:remove' => [self::FAILED_REMOVE, ['BACKEND_IMAGE', 'FAILED_MESSAGE_ID']];
     }
 
     /**
@@ -101,26 +111,27 @@ final class MessengerMaintenanceJobsManifestTest extends TestCase
         }
     }
 
-    /**
-     * @param list<string> $placeholders
-     */
     #[DataProvider('namedJobs')]
-    public function testTheJobIsNamedAfterItsManifest(string $manifest, string $name, array $placeholders): void
+    public function testTheJobIsNamedAfterItsManifest(string $manifest, string $name): void
     {
-        self::assertSame($name, $this->job($manifest)['metadata']['name'] ?? null);
-        self::assertSame(['app.kubernetes.io/name' => $name], $this->job($manifest)['metadata']['labels'] ?? null);
+        $metadata = $this->job($manifest)['metadata'] ?? null;
+        self::assertIsArray($metadata);
+
+        self::assertSame($name, $metadata['name'] ?? null);
+        self::assertSame(['app.kubernetes.io/name' => $name], $metadata['labels'] ?? null);
     }
 
     /**
      * Seuls ces placeholders sont substitués par tools/run-job.sh, qui refuse
-     * tout `${…}` resté sans valeur.
+     * tout `${…}` resté sans valeur — même motif que lui, minuscules et
+     * chiffres compris.
      *
      * @param list<string> $placeholders
      */
-    #[DataProvider('namedJobs')]
-    public function testOnlyTheDeclaredPlaceholdersAreSubstituted(string $manifest, string $name, array $placeholders): void
+    #[DataProvider('placeholders')]
+    public function testOnlyTheDeclaredPlaceholdersAreSubstituted(string $manifest, array $placeholders): void
     {
-        preg_match_all('/\$\{([A-Z_]+)\}/', $this->source($manifest), $matches);
+        preg_match_all('/\$\{([A-Za-z_][A-Za-z0-9_]*)/', $this->source($manifest), $matches);
 
         self::assertSame($placeholders, array_values(array_unique($matches[1])));
     }
@@ -176,6 +187,20 @@ final class MessengerMaintenanceJobsManifestTest extends TestCase
         self::assertDoesNotMatchRegularExpression('/(^|\s)(-v+|--verbose)(\s|=|$)/', $command);
     }
 
+    /**
+     * Symfony Console lit aussi `SHELL_VERBOSITY` : posée à 3 dans
+     * `backend-config` pour déboguer la préprod, elle mettrait ces Jobs en
+     * `-vv`. Le Job la fixe à 0 dans son `env`, qui l'emporte sur `envFrom`.
+     */
+    #[DataProvider('jobs')]
+    public function testTheJobPinsTheConsoleVerbosityAgainstItsConfigMap(string $manifest): void
+    {
+        $env = $this->container($manifest)['env'] ?? null;
+        self::assertIsArray($env);
+
+        self::assertContains(['name' => 'SHELL_VERBOSITY', 'value' => '0'], $env);
+    }
+
     /** Hors de `kustomization.yaml` : un `apply -k` ne touche jamais à `failed`. */
     #[DataProvider('jobs')]
     public function testTheJobIsNotPartOfTheKustomization(string $manifest): void
@@ -198,7 +223,10 @@ final class MessengerMaintenanceJobsManifestTest extends TestCase
     #[DataProvider('failedJobs')]
     public function testTheIdReachesTheContainerThroughItsEnvironment(string $manifest): void
     {
-        self::assertSame([['name' => 'MESSAGE_ID', 'value' => '${FAILED_MESSAGE_ID}']], $this->container($manifest)['env'] ?? null);
+        self::assertSame(
+            [['name' => 'MESSAGE_ID', 'value' => '${FAILED_MESSAGE_ID}'], ['name' => 'SHELL_VERBOSITY', 'value' => '0']],
+            $this->container($manifest)['env'] ?? null,
+        );
     }
 
     #[DataProvider('failedCommands')]

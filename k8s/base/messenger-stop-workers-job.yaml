@@ -66,6 +66,11 @@ spec:
           # Cf. migrate-job.yaml : le Job exécute exactement le code de la release.
           imagePullPolicy: Always
           command: ['php', 'bin/console', 'messenger:stop-workers', '--no-interaction']
+          env:
+            # Revue de #521, comme les Jobs de `failed` : Symfony Console lit
+            # aussi SHELL_VERBOSITY, et `env` l'emporte sur `envFrom`.
+            - name: SHELL_VERBOSITY
+              value: '0'
           envFrom:
             - configMapRef:
                 name: backend-config

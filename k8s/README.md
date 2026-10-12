@@ -874,7 +874,8 @@ d'administrateur humain** — le jeton CI n'a pas `pods/exec` (audit C8) :
 
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
-# La liste : Id, classe, date d'échec, erreur. Aucun contenu de message.
+# La liste : Id, classe, date d'échec, erreur. Aucun contenu de message. 50 lignes au plus par
+# défaut : si l'en-tête « There are N messages » dépasse 50, relancer avec --max=N.
 kubectl -n "${NS:?preprod ou prod}" exec deploy/backend -c php-fpm -- \
   env PGOPTIONS='-c default_transaction_read_only=on' php bin/console messenger:failed:show --no-interaction
 # Le compte par classe.
@@ -890,7 +891,10 @@ kubectl -n "${NS:?preprod ou prod}" exec deploy/backend -c php-fpm -- \
   session PostgreSQL de la commande est en `default_transaction_read_only`. Mesuré en dev :
   `failed:show` (liste, `--stats`, `-vv`) y passe, un `failed:remove` y échoue en SQLSTATE 25006
   (« cannot execute DELETE in a read-only transaction »). Un garde-fou, pas une frontière, comme
-  pour « nommer un compte » (§ Journal de sécurité) : la même identité peut tout faire.
+  pour « nommer un compte » (§ Journal de sécurité) : la même identité peut tout faire. Mesuré en
+  dev seulement : à confirmer à la première exécution en préprod (#521) — si la lecture y échoue en
+  SQLSTATE 25006, une écriture annexe (un cache sur DBAL) s'est glissée dans la session, le signaler
+  avant de retirer le garde-fou.
 - **Le `userId` d'une invitation n'apparaît qu'en `-vv`** (dans le corps brut, pour une invitation
   sans génération qui ne se décode pas) : c'est la seule raison de passer `-vv` dans la procédure
   de `.claude/rules/security-user.md`.
@@ -898,11 +902,14 @@ kubectl -n "${NS:?preprod ou prod}" exec deploy/backend -c php-fpm -- \
   release qui sert ; la commande y tourne à côté de php-fpm, sans rien écrire en base.
 
 Pour rejouer, supprimer ou relancer le signal d'arrêt, un Job, par `tools/run-job.sh` (bash ≥ 4,
-jq, envsubst), depuis la racine du dépôt. L'Id est celui de la liste, **un seul par Job**, et le Job
-refuse en 64 tout ce qui n'est pas un entier (`--all` lu comme une option viderait la table) :
+jq, envsubst), depuis la racine du dépôt. L'Id est celui de la liste **du même namespace** — chaque
+base a sa propre séquence, l'Id 42 de la préprod n'est pas celui de la prod —, **un seul par Job**,
+et le Job refuse en 64 tout ce qui n'est pas un entier (`--all` lu comme une option viderait la
+table) :
 
 ```bash
-NS=preprod   # puis prod
+NS=        # preprod ou prod, à renseigner, le même que pour la lecture de l'Id
+: "${NS:?preprod ou prod}"
 IMAGE="$(kubectl -n "$NS" get deploy backend -o jsonpath='{.spec.template.spec.containers[?(@.name=="php-fpm")].image}')"
 # Rejouer : le handler s'exécute dans le pod du Job (un e-mail part) ; un nouvel échec revient dans
 # `failed` sous un nouvel Id.
@@ -916,9 +923,12 @@ tools/run-job.sh "$NS" k8s/base/messenger-stop-workers-job.yaml "$IMAGE" 300
 **Jamais `failed:retry`** pour une enveloppe au MAC refusé ni une invitation sans génération :
 elles échouent au décodage à chaque fois (lire le `userId`, renvoyer l'invitation depuis le
 backoffice, puis supprimer la ligne). Chaque Job garde ses journaux une heure
-(`ttlSecondsAfterFinished`), ne se rejoue pas (`backoffLimit: 0`) et échoue au bout de 240 s s'il
-ne démarre pas. Pour plusieurs Ids, relancer le Job pour chacun : `run-job.sh` supprime le
-précédent.
+(`ttlSecondsAfterFinished`), ne se rejoue pas (`backoffLimit: 0`) et échoue 240 s après sa
+création quoi qu'il fasse (`activeDeadlineSeconds`, démarrage et commande compris). **Un Job à la
+fois** : `run-job.sh` supprime le Job précédent du même nom sans attendre sa fin — lancé depuis un
+second terminal, il couperait un rejeu en plein envoi, et l'e-mail repartirait au rejeu suivant.
+Pour plusieurs Ids, les enchaîner dans un même terminal ; les journaux d'un Job remplacé sont
+perdus, sauf les 200 dernières lignes que `run-job.sh` a imprimées.
 
 ## Retour arrière applicatif
 

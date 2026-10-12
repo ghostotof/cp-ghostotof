@@ -36,8 +36,12 @@ final class OperatorExecBoundaryTest extends TestCase
 
     private const string FAILED_READ_SECTION = 'Pour lire `failed`';
 
-    /** Les commandes Messenger à effet de bord : un Job, jamais un exec (issue #521). */
-    private const string MESSENGER_SIDE_EFFECT = '/messenger:(failed:(retry|remove)|stop-workers|consume)\b/';
+    /**
+     * La seule commande console qu'un `exec` du runbook peut lancer : une
+     * lecture (issue #521). Tout le reste — rejeu, suppression, signal
+     * d'arrêt, purge, abréviations comprises (`m:f:rem`) — est un Job.
+     */
+    private const string READ_ONLY_CONSOLE_COMMAND = 'messenger:failed:show';
 
     /**
      * Toutes les règles qui atteignent le ServiceAccount du déployeur : le Role
@@ -132,15 +136,25 @@ final class OperatorExecBoundaryTest extends TestCase
     /**
      * Issue #521 : rejouer, supprimer un message de `failed` ou relancer le
      * signal d'arrêt des workers a un effet de bord, donc passe par un Job
-     * (`k8s/base/messenger-*-job.yaml`). Aucune commande `kubectl exec` du
-     * runbook ne les lance, sous quelque forme que ce soit.
+     * (`k8s/base/messenger-*-job.yaml`). Un `kubectl exec` du runbook qui lance
+     * la console n'y lance que la lecture de `failed` — une liste blanche : une
+     * abréviation que Symfony accepte (`m:f:rem`) ou une autre commande qui
+     * écrit (`cache:pool:clear`) ne passe pas.
      */
-    public function testNoRunbookExecRunsAMessengerCommandWithASideEffect(): void
+    public function testNoRunbookExecRunsAConsoleCommandOtherThanTheFailedRead(): void
     {
-        $offending = array_values(array_filter(
-            $this->runbookExecLines(),
-            static fn (string $line): bool => 1 === preg_match(self::MESSENGER_SIDE_EFFECT, $line),
-        ));
+        $offending = [];
+        foreach ($this->runbookExecLines() as $line) {
+            preg_match_all('#bin/console\s+(\S+)#', $line, $commands);
+            foreach ($commands[1] as $command) {
+                if (self::READ_ONLY_CONSOLE_COMMAND !== $command) {
+                    $offending[] = $line;
+                }
+            }
+            if (str_contains($line, 'console') && 0 === \count($commands[1])) {
+                $offending[] = $line;
+            }
+        }
 
         self::assertSame([], $offending);
     }

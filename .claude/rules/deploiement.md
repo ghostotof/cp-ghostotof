@@ -141,10 +141,13 @@ paths:
   `env PGOPTIONS='-c default_transaction_read_only=on'` (libpq reads it, so the whole session is
   read-only: a `failed:remove` there fails with SQLSTATE 25006, measured); `failed:retry <id>`,
   `failed:remove <id>` and `stop-workers` have side effects, so `messenger-failed-{retry,remove}-job.yaml`
-  and `messenger-stop-workers-job.yaml`, never with `-v`, the id through `FAILED_MESSAGE_ID` and refused
+  and `messenger-stop-workers-job.yaml`, never with `-v` (and `SHELL_VERBOSITY=0` in their `env`, which
+  beats a `backend-config` value), one at a time (`run-job.sh` deletes a running namesake), the id through `FAILED_MESSAGE_ID` and refused
   in 64 unless all digits (`run-job.sh` admits `-`, and `--all` read as an option empties the table).
   `MessengerMaintenanceJobsManifestTest` pins the Jobs, `OperatorExecBoundaryTest` the read block and
-  that no runbook `exec` runs a Messenger command with a side effect.
+  that a runbook `exec` runs no console command but `messenger:failed:show` (an allow-list, so an
+  abbreviation such as `m:f:rem` fails it). The read-only session is measured in dev only, to confirm in
+  preprod (#521).
 - **The standard deploy runs the migration *before* the rollout, with the old pods still serving**
   (issue #175, expand/contract). Doctrine selects every mapped column on each hydration, so with the
   old order (rollout, then Job) any release that adds a field made the new pods `SELECT` a column the
