@@ -265,7 +265,12 @@ client-supplied value in its message without bounding it (`InputContradictsValid
 `tests/Shared/NoBareGenericExceptionTest.php` enforces it. It counts tokens through
 `tests/Support/BareExceptionInstantiations`, which shares its file walk with `DeclaredClasses` via `PhpSources`, and
 its name resolution with `ProblemDetailStaysStaticTest` via `tests/Support/ClassNameResolver` (#507), so
-an import, an alias, a comma list or an anonymous subclass is seen too. It has **no exemption list**, and
+an import, an alias, a comma list or an anonymous subclass is seen too. `ProblemDetailStaysStaticTest`
+judges the methods PHP retains (#514): the class's, then its traits' (`insteadof` and `as` aliases read),
+then its parent's, a parent that is no `ProblemExceptionInterface` included; `new static` written in a
+parent and `new parent` count too. It stays a token reading, so that its detector is proven on strings;
+`testTheTokenModelResolvesMethodsAsPhpDoes` checks by reflection that, on `src/`, it retains the same
+`getDetail()` and constructor as PHP. It has **no exemption list**, and
 that is deliberate: a site that seems to need one gets a class, shared if several sites throw the same
 failure. **A console question's validator follows the same rule** (#383): the `QuestionHelper` catches
 any `\Exception` a validator throws, shows its message and asks again, so the domain exception is the
