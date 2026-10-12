@@ -11,6 +11,7 @@ use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundExcept
 use App\Portfolio\Experience\Domain\Repository\ExperienceTechnologyRepositoryInterface;
 use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
+use App\Tests\Portfolio\Experience\Support\ImmediateExperienceTechnologyLock;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
 
@@ -25,7 +26,7 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
         $repository->expects(self::once())->method('findOneByName')->with('Symfony')->willReturn(null);
         $repository->expects(self::once())->method('save')->with($technology);
 
-        $administrator = new ExperienceTechnologyAdministrator($repository);
+        $administrator = new ExperienceTechnologyAdministrator($repository, new ImmediateExperienceTechnologyLock($repository));
 
         $updated = $administrator->update($technology->getId(), TechnologyName::fromString('Symfony'), ExperienceYears::fromFloat(9.5), 'symfony', null);
 
@@ -38,7 +39,7 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
         $repository = self::createStub(ExperienceTechnologyRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
-        $administrator = new ExperienceTechnologyAdministrator($repository);
+        $administrator = new ExperienceTechnologyAdministrator($repository, new ImmediateExperienceTechnologyLock($repository));
 
         $this->expectException(ExperienceTechnologyNotFoundException::class);
 
@@ -54,7 +55,7 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
         $repository->method('findOneById')->willReturn($technology);
         $repository->method('findOneByName')->willReturn($otherTechnology);
 
-        $administrator = new ExperienceTechnologyAdministrator($repository);
+        $administrator = new ExperienceTechnologyAdministrator($repository, new ImmediateExperienceTechnologyLock($repository));
 
         $this->expectException(ExperienceTechnologyAlreadyExistsException::class);
 
@@ -77,7 +78,7 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
         $repository->method('findOneById')->willReturn($technology);
         $repository->method('findOneByName')->willReturn($technology);
 
-        $administrator = new ExperienceTechnologyAdministrator($repository);
+        $administrator = new ExperienceTechnologyAdministrator($repository, new ImmediateExperienceTechnologyLock($repository));
 
         $updated = $administrator->update($sameIdFromTheUrl, TechnologyName::fromString('PHP'), ExperienceYears::fromFloat(14.0), null, null);
 
@@ -92,7 +93,7 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
         $repository->expects(self::once())->method('findOneById')->with($technology->getId())->willReturn($technology);
         $repository->expects(self::once())->method('remove')->with($technology);
 
-        $administrator = new ExperienceTechnologyAdministrator($repository);
+        $administrator = new ExperienceTechnologyAdministrator($repository, new ImmediateExperienceTechnologyLock($repository));
 
         $administrator->delete($technology->getId());
     }
@@ -102,7 +103,7 @@ final class ExperienceTechnologyAdministratorTest extends TestCase
         $repository = self::createStub(ExperienceTechnologyRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
-        $administrator = new ExperienceTechnologyAdministrator($repository);
+        $administrator = new ExperienceTechnologyAdministrator($repository, new ImmediateExperienceTechnologyLock($repository));
 
         $this->expectException(ExperienceTechnologyNotFoundException::class);
 
