@@ -20,7 +20,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * Ne fait rien si un catalogue est déjà en place : il faut `--force` pour le
  * remplacer, et c'est alors une purge suivie d'une recréation, qui écrase les
  * produits ajoutés depuis le backoffice. Voir `GuardsExistingContent` — même
- * comportement pour les cinq commandes de peuplement du projet.
+ * comportement pour les autres commandes app:*:seed du projet.
  *
  * Les `slug` sont les identifiants du catalogue endoflife.date, et tous ont été
  * vérifiés à l'écriture de cette commande. Un slug fautif ne casserait pas la

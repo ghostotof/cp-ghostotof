@@ -64,10 +64,10 @@ final class SeedQualityContentCommandTest extends KernelTestCase
     }
 
     /**
-     * Le comptage traverse ici **deux dépôts et deux locales** — la forme la
-     * plus riche des cinq commandes de peuplement. Un seul principe déjà en
-     * base suffit à protéger l'ensemble : c'est ce qui permet de jouer ce seed
-     * à chaque déploiement de préprod sans jamais rien écraser.
+     * Le comptage traverse ici **deux dépôts et deux locales**. Un seul
+     * principe déjà en base suffit à protéger l'ensemble : c'est ce qui permet
+     * de jouer ce seed à chaque déploiement de préprod sans jamais rien
+     * écraser.
      */
     public function testItLeavesExistingContentAlone(): void
     {

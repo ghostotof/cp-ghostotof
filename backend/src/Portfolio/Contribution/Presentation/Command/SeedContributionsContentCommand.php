@@ -17,12 +17,15 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
  * Peuple/réinitialise les contributions affichées sur /contributions (fr/en),
- * servies depuis la base via GET /api/contributions/{locale}. Idempotente :
- * chaque exécution purge et recrée l'intégralité du contenu par locale.
+ * servies depuis la base via GET /api/contributions/{locale}. Même garde-fou
+ * que les autres commandes app:*:seed ({@see GuardsExistingContent}) : si du contenu
+ * est déjà en place, elle décline (code de sortie 0).
  *
- * Attention : rejouer cette commande écrase les contributions ajoutées depuis
- * le backoffice. Elle sert à poser le contenu de référence sur un
- * environnement neuf, pas à synchroniser une base déjà éditée.
+ * Attention : avec --force, elle purge toute la table, toutes locales
+ * confondues, puis recrée le contenu de référence, ce qui écrase les
+ * contributions ajoutées ou éditées depuis le backoffice. Elle sert à poser le
+ * contenu de référence sur un environnement neuf, pas à synchroniser une base
+ * déjà éditée.
  */
 #[AsCommand(
     name: 'app:contributions:seed',

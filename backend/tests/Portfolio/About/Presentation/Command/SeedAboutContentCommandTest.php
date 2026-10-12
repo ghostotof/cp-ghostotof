@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Portfolio\About\Presentation\Command;
 
+use App\Portfolio\About\Application\AboutSettingsAdministratorInterface;
 use App\Portfolio\About\Domain\Entity\AboutMeCard;
 use App\Portfolio\About\Domain\Entity\AboutSiteCard;
 use App\Portfolio\About\Domain\Repository\AboutMeCardRepositoryInterface;
@@ -19,6 +20,11 @@ use Symfony\Component\HttpKernel\KernelInterface;
 
 final class SeedAboutContentCommandTest extends KernelTestCase
 {
+    /**
+     * Cartes « moi » du contenu de référence, par catégorie et par locale.
+     */
+    private const array ME_CARDS_PER_CATEGORY = ['technical' => 3, 'personal' => 3, 'hobby' => 5];
+
     protected function setUp(): void
     {
         self::bootKernel();
@@ -74,9 +80,11 @@ final class SeedAboutContentCommandTest extends KernelTestCase
     /**
      * Subtilité propre à ce contexte : les réglages (`AboutSettings`) sont
      * exclus du décompte, parce que leur écriture est un upsert et non une
-     * purge — ils ne risquent rien. Les compter ferait tenir pour « peuplée »
-     * une base qui n'a pourtant aucune carte, et le peuplement automatique de
-     * la préprod n'aurait alors jamais lieu.
+     * purge — jamais supprimés, mais remis au contenu de référence par tout
+     * peuplement effectif, y compris sans --force quand aucune carte ne
+     * reste. Les compter ferait tenir pour « peuplée » une base qui n'a
+     * pourtant aucune carte, et le peuplement automatique de la préprod
+     * n'aurait alors jamais lieu.
      *
      * Ce test le prouve en ne laissant QUE des réglages en base.
      */
@@ -101,6 +109,79 @@ final class SeedAboutContentCommandTest extends KernelTestCase
 
         self::assertCount(4, $siteCardRepository->findByLocale(Locale::FR));
         self::assertCount(11, $meCardRepository->findByLocale(Locale::FR));
+    }
+
+    /**
+     * `--force` (issue #562) : les cartes sont purgées **toutes locales
+     * confondues** puis recréées, les réglages sont **mis à jour, jamais
+     * purgés**. Une carte EN et une carte « moi » FR manquent, les cinq
+     * réglages FR ont été édités au backoffice : tout revient au contenu de
+     * référence, sans doublon de carte, et chaque locale garde sa ligne de
+     * réglages d'origine (même identifiant).
+     *
+     * Les positions départagent la purge globale d'une purge langue par
+     * langue (spec 0004 D3) : celle-ci laisserait les cartes de l'autre
+     * langue en place pendant la création, et la numérotation commencerait
+     * après elles au lieu de 0. Les comptes seuls seraient les mêmes.
+     */
+    public function testForceRebuildsCardsAndUpdatesSettingsInPlace(): void
+    {
+        $this->commandTester()->execute([]);
+
+        $siteCardRepository = self::getContainer()->get(AboutSiteCardRepositoryInterface::class);
+        $meCardRepository = self::getContainer()->get(AboutMeCardRepositoryInterface::class);
+        $settingsRepository = self::getContainer()->get(AboutSettingsRepositoryInterface::class);
+
+        $siteCardRepository->remove($siteCardRepository->findByLocale(Locale::EN)[0]);
+        $meCardRepository->remove($meCardRepository->findByLocaleAndCategory(Locale::FR, AboutMeCardCategory::PERSONAL)[0]);
+        self::getContainer()->get(AboutSettingsAdministratorInterface::class)->update(
+            Locale::FR,
+            'Édité 1',
+            'Édité 2',
+            'Édité 3',
+            'Édité 4',
+            'Édité 5',
+        );
+        self::assertSame('Édité 1', $settingsRepository->findByLocale(Locale::FR)?->getSiteEyebrow());
+
+        $settingsIdsBefore = $this->settingsIdsByLocale();
+
+        self::assertSame(0, $this->commandTester()->execute(['--force' => true]));
+
+        foreach (Locale::cases() as $locale) {
+            self::assertSame(
+                [0, 1, 2, 3],
+                array_map(static fn (AboutSiteCard $card): int => $card->getPosition(), $siteCardRepository->findByLocale($locale)),
+                $locale->value.' / cartes site',
+            );
+
+            foreach (self::ME_CARDS_PER_CATEGORY as $category => $count) {
+                self::assertSame(
+                    range(0, $count - 1),
+                    array_map(
+                        static fn (AboutMeCard $card): int => $card->getPosition(),
+                        $meCardRepository->findByLocaleAndCategory($locale, AboutMeCardCategory::from($category)),
+                    ),
+                    $locale->value.' / '.$category,
+                );
+            }
+        }
+
+        // Relu par une expression distincte : PHPStan tient pour acquis le
+        // résultat déjà rétréci de `$settingsRepository->findByLocale(FR)`.
+        $settings = self::getContainer()->get(AboutSettingsRepositoryInterface::class)->findByLocale(Locale::FR);
+        self::assertNotNull($settings);
+        self::assertSame(
+            ['À propos de ce site', 'À propos de moi', 'Techniquement', 'Humainement', 'En dehors du travail'],
+            [
+                $settings->getSiteEyebrow(),
+                $settings->getMeEyebrow(),
+                $settings->getTechnicalSubtitle(),
+                $settings->getPersonalSubtitle(),
+                $settings->getHobbiesSubtitle(),
+            ],
+        );
+        self::assertSame($settingsIdsBefore, $this->settingsIdsByLocale());
     }
 
     /**
@@ -177,6 +258,29 @@ final class SeedAboutContentCommandTest extends KernelTestCase
                 \sprintf('[%s] Les cartes de position %d ne partagent pas leur groupe.', $label, $index),
             );
         }
+    }
+
+    /**
+     * Lu en SQL, pas par le dépôt, pour comparer les identifiants tels qu'en
+     * base : une purge suivie d'une recréation des réglages les changerait.
+     * (Un doublon par locale est impossible, l'index unique
+     * `uniq_about_settings_locale` le refuserait dans la commande.)
+     *
+     * @return array<string, list<string>>
+     */
+    private function settingsIdsByLocale(): array
+    {
+        $rows = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->fetchAllAssociative('SELECT locale, id FROM about_settings ORDER BY locale, id');
+
+        $ids = [];
+
+        foreach ($rows as $row) {
+            \assert(\is_string($row['locale']) && \is_string($row['id']));
+            $ids[$row['locale']][] = $row['id'];
+        }
+
+        return $ids;
     }
 
     private function commandTester(): CommandTester
