@@ -18,6 +18,13 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
  */
 interface AboutSettingsRepositoryInterface
 {
+    /**
+     * Interroge la base à chaque appel, jamais une instance seulement gardée en
+     * mémoire : c'est ce qui dispense AboutSettingsAdministrator::update() de
+     * verrou (issue #553). Elle dit quelle ligne existe, pas que les champs
+     * d'une instance déjà chargée sont rafraîchis. Pourquoi, et ce qui imposerait
+     * le verrou : `.claude/rules/portfolio-contenus.md`, section About.
+     */
     public function findByLocale(Locale $locale): ?AboutSettings;
 
     public function save(AboutSettings $settings): void;

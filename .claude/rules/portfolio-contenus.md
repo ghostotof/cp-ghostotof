@@ -258,7 +258,33 @@ paths:
   read-only API Platform resource (`GetCollection('/experience/technologies')`, or an aggregating `Provider` for
   `/quality/{locale}` and `/about/{locale}` that returns `{principles, traits}` / `{settings, siteCards, meCards}`
   in one call), and a backoffice CRUD resource (see `.claude/rules/backoffice-api.md`). Seeded via idempotent `app:{about,quality,contributions,incidents}:seed`
-  console commands (purge-by-locale then recreate — safe to rerun).
+  console commands (content already there: they decline, unless `--force`, which purges the whole table — every
+  locale, spec 0004 D3 — then recreates; **`AboutSettings` is upserted, never purged**, see below).
+
+  **`AboutSettings` has no lock, by decision** (issue #553). It is the singleton per locale of the About page's
+  section texts, and **nothing in the application deletes it**: `AboutSettingsRepositoryInterface` has no
+  `remove()`, the backoffice resource only `Get`/`Put`, and `app:about:seed` upserts it (`upsertSettings()`:
+  `update()` through the `Administrator` when the locale has its row, a direct `save()` otherwise; its
+  `countExisting()` leaves it out). The defect of #499/#545 — a `PUT` answering 200 on a row deleted since the
+  provider loaded it — does not arise, because `AboutSettingsAdministrator::update()` re-reads the database:
+  `findByLocale()` is a `findOneBy()`, a search by criteria whose `SELECT` Doctrine **always** runs, so a row
+  gone is `null` (**404**, `AboutSettingsNotFoundException`) and a row recreated under another id is the one
+  written — unlike `find($id)`, which hands back the identity-map instance without a query (#545). Its fields
+  are not refreshed, but `AboutSettings::update()` overwrites all five editable ones, and `id`/`locale` never
+  change. **Keep that search by criteria**: a `find($id)`, a second-level or result cache, or a memoizing decorator
+  without a lock reopens the 200 on a vanished row. **Accepted**: a deletion in SQL — or a deletion and re-creation under
+  another id — committed between that `SELECT` and the `flush()`'s `UPDATE` still answers 200, the `UPDATE` on the
+  old id touching no row (the write is lost; milliseconds, SQL only, very low severity); two simultaneous `PUT`s of one locale, last
+  writer wins, like every field (no `#[ORM\Version]`); two concurrent creations (two seeds) meet the unique index
+  `uniq_about_settings_locale`; the seed's settings writes run outside any lock, on purpose (no position, no
+  group). **Trigger**: an application deletion of the settings (a seed purge, a `DELETE`) first requires the
+  row lock of #545 (`ExperienceTechnologyLockInterface`'s pattern on `PostgresLockedTransaction`).
+  `AboutSettingsUpdateReadsCommittedRowTest` pins it: settings loaded as the provider does, deleted in SQL → not
+  found; deleted then re-inserted under a new id → the new row is written (both red with a read from the identity
+  map, measured); and the trigger itself — the repository interface exposes exactly `findByLocale()`/`save()`, the
+  backoffice resource exactly `Get`/`Put` (red with a `remove()` or a `Delete` added, measured). Turning it red
+  means adding the lock first, then updating the test. That guard is partial: an `EntityManager::remove()`, a DQL
+  or DBAL `DELETE` written elsewhere (a command, another processor) does not trip it — review is the net there.
 
   **`ExperienceTechnology.years` is a finite number in `[0, 100]`, checked at three layers** (issue #372).
   A single non-encodable row (`Infinity`, `NaN`) is enough to put the public `GET /api/experience/technologies`
