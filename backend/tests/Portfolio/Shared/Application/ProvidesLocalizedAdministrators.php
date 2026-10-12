@@ -32,7 +32,7 @@ use Symfony\Component\Uid\Uuid;
  * opérations qui placent une entrée : `create()`, `update()` et `reorder()`.
  *
  * Partagé par OrderScopeLockCoverageTest (#389) et
- * UpdateReadsTheEntryUnderTheLockTest (#402) : un contexte ajouté ici est
+ * ScopeLockReadsCommittedStateTest (#402) : un contexte ajouté ici est
  * couvert par les deux gardes à la fois. Un trait plutôt qu'une classe : les
  * administrateurs sont des services privés, que seul un KernelTestCase lit
  * dans le conteneur de test.

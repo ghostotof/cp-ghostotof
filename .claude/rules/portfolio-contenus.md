@@ -59,8 +59,23 @@ paths:
     table, so the creation race survives it); **not** `lock.factory` (a session lock on a second connection,
     which would have to be released after the ORM's COMMIT); **not** `wrapInTransaction()`, which closes the
     EntityManager on any exception, while a 409 inside the lock is an ordinary outcome. A read made *before*
-    `withLock()` escapes it, hence the whole body; an entity already in the identity map (the `PUT` entry,
-    loaded by the provider) keeps its pre-lock values, harmless since only its own position is rewritten.
+    `withLock()` escapes it, hence the whole body. **Once the lock is taken, the adapter re-reads every
+    managed instance of the scope's class** (issue #402), in one `HINT_REFRESH` query on their ids: what the
+    EntityManager loaded before the lock — the `PUT` entry, loaded by the provider; the whole scope, in a command
+    chaining operations such as a seed — is refreshed in place (same object, which a caller may keep and save),
+    and an instance the query no longer returns (deleted meanwhile) is detached, so `find()` reports it not found.
+    Before, `find()` handed back the identity-map instance and a query did not rehydrate a managed one: a
+    concurrent write committed in between was silently undone (`reattach()` saw a no-op, `detach()` looked in the
+    group the entry had left, a version created in a group took the position the group was leaving, a deleted
+    entry was "updated" with a 200). Not `refresh()` entry by entry: it does not see a deleted row (it hydrates
+    nothing and keeps the instance) and costs a query each. Not detaching the whole scope either: an instance
+    held from before and saved afterwards collides with the one the operation reloaded
+    (`EntityIdentityCollisionException`, measured on four resource tests). Consequence for a caller: an unwritten
+    change to such an instance is overwritten. It relies on READ COMMITTED (PostgreSQL's default, set nowhere):
+    under REPEATABLE READ the snapshot would be taken by the lock's own `SELECT`, before the wait. Last writer
+    wins, like every other field; no `#[ORM\Version]`. `ScopeLockReadsCommittedStateTest` pins both (the four
+    stale-state cases over the same `ProvidesLocalizedAdministrators` list as `OrderScopeLockCoverageTest`, so a
+    new localized context goes there once, and the isolation level).
     In an FPM worker the wait is bounded by `PGOPTIONS` `lock_timeout=5s`; past it the adapter throws
     `OrderScopeLockTimeoutException` (named, unmapped: a `critical` 500 — 5 s for a millisecond write is an
     anomaly, not a conflict to retry), and only for its own lock statement: a timeout inside the operation
