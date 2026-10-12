@@ -6,6 +6,7 @@ namespace App\Tests\Portfolio\Shared\Infrastructure\Doctrine;
 
 use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
 use App\Portfolio\Contribution\Domain\Entity\Contribution;
+use App\Portfolio\Contribution\Domain\Repository\ContributionRepositoryInterface;
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\Exception\TranslationGroupHasSeveralPositionsException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -15,9 +16,12 @@ use App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock;
 use App\Tests\Portfolio\Shared\Support\FakeOrderable;
 use App\Tests\Portfolio\Shared\Support\FakeTranslatableContent;
 use App\Tests\Support\OpensProbeConnection;
+use Closure;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Exception\EntityManagerClosed;
 use DomainException;
 use Psr\Log\NullLogger;
 use stdClass;
@@ -37,6 +41,9 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     private const string SCOPE = FakeTranslatableContent::class;
 
     private const string OTHER_SCOPE = FakeOrderable::class;
+
+    /** Un décalage qui sort une entrée de la position de son groupe : le trigger différé refuse le COMMIT. */
+    private const int OUT_OF_ITS_GROUP = 7;
 
     private Connection $probe;
 
@@ -214,18 +221,15 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     public function testACommitRefusedByTheGroupGuardFailsUnderTheInvariantsName(): void
     {
         $connection = $this->entityManager()->getConnection();
-        $administrator = self::getContainer()->get(ContributionAdministratorInterface::class);
-        $french = $administrator->create(Locale::FR, 'T', 'P', 'R', 'https://example.com', 'S', 'B');
-        $english = $administrator->create(Locale::EN, 'T', 'P', 'R', 'https://example.com', 'S', 'B', $french->getTranslationGroup());
-        $caught = null;
 
         try {
-            $this->lock()->withLock(Contribution::class, static fn (): int|string => $connection->executeStatement(
-                'UPDATE contribution SET position = position + 7 WHERE id = ?',
-                [$english->getId()->toRfc4122()],
-            ));
-        } catch (Throwable $exception) {
-            $caught = $exception;
+            [$french, $english] = $this->contributionPair();
+            $caught = $this->failureOfALockedRun(static function () use ($connection, $english): void {
+                $connection->executeStatement(
+                    'UPDATE contribution SET position = position + ? WHERE id = ?',
+                    [self::OUT_OF_ITS_GROUP, $english->getId()->toRfc4122()],
+                );
+            });
         } finally {
             $connection->executeStatement('DELETE FROM contribution');
         }
@@ -235,6 +239,84 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
         self::assertStringContainsString('contribution', $caught->getMessage(), 'Le message ne nomme pas la table.');
         self::assertInstanceOf(DriverException::class, $caught->getPrevious());
         self::assertTrue($this->probeCanLock(Contribution::class), 'Le verrou survit au COMMIT refusé.');
+        self::assertFalse($connection->isTransactionActive());
+    }
+
+    /**
+     * Issue #502 : les `flush()` de l'opération ont réussi au point de
+     * sauvegarde, puis la base a refusé le COMMIT. L'UnitOfWork tenait pour
+     * écrit ce qu'elle venait d'annuler : une lecture sur le même EntityManager
+     * rendait la position refusée, et `find()` une entrée jamais validée. Le
+     * verrou ferme donc l'EntityManager, comme Doctrine le fait quand son
+     * propre COMMIT échoue : sa carte d'identité vidée, une lecture relit la
+     * base.
+     */
+    public function testAReadAfterACommitRefusedByTheGroupGuardSeesTheDatabase(): void
+    {
+        $entityManager = $this->entityManager();
+        $neverCommitted = new Contribution(Locale::FR, 'Jamais validée', 'P', 'R', 'https://example.com', 'S', 'B', 0);
+
+        try {
+            [, $english] = $this->contributionPair();
+            $storedPosition = $english->getPosition();
+            $this->refuseTheNextCommit($english, $neverCommitted);
+
+            self::assertSame($storedPosition, $entityManager->find(Contribution::class, $english->getId())?->getPosition(), 'Une lecture après le refus rend la position que la base a refusée.');
+            self::assertNull($entityManager->find(Contribution::class, $neverCommitted->getId()), 'Une lecture après le refus rend une entrée que la base n\'a jamais validée.');
+        } finally {
+            $entityManager->getConnection()->executeStatement('DELETE FROM contribution');
+        }
+    }
+
+    /**
+     * Issue #502 : après un COMMIT refusé, une écriture sur le même
+     * EntityManager échoue bruyamment au lieu de repartir de ce que la base a
+     * refusé — hors verrou, où rien ne relisait l'état refusé, comme sous
+     * verrou, où la relecture de #402 réparait déjà le périmètre (mesuré :
+     * avant le correctif, les deux passaient).
+     */
+    public function testAWriteAfterACommitRefusedByTheGroupGuardFailsOnTheClosedEntityManager(): void
+    {
+        $entityManager = $this->entityManager();
+        $container = self::getContainer();
+
+        try {
+            [$french, $english] = $this->contributionPair();
+            $this->refuseTheNextCommit($english);
+
+            $outsideTheLock = $this->failureOf(static fn () => $container->get(ContributionRepositoryInterface::class)->save(
+                new Contribution(Locale::FR, 'Après le refus', 'P', 'R', 'https://example.com', 'S', 'B', 0),
+            ));
+            $underTheLock = $this->failureOf(static fn () => $container->get(ContributionAdministratorInterface::class)->reorder(
+                [$french->getTranslationGroup()->toRfc4122()],
+            ));
+        } finally {
+            $entityManager->getConnection()->executeStatement('DELETE FROM contribution');
+        }
+
+        self::assertInstanceOf(EntityManagerClosed::class, $outsideTheLock, \sprintf('Une écriture hors verrou suivant un COMMIT refusé n\'a pas été refusée : %s.', get_debug_type($outsideTheLock)));
+        self::assertInstanceOf(EntityManagerClosed::class, $underTheLock, \sprintf('Une écriture sous verrou suivant un COMMIT refusé n\'a pas été refusée : %s.', get_debug_type($underTheLock)));
+        self::assertFalse($entityManager->getConnection()->isTransactionActive());
+    }
+
+    /**
+     * Issue #502 : tout COMMIT que la base refuse annule ce que les `flush()`
+     * avaient écrit, quel qu'en soit le SQLSTATE. L'EntityManager est fermé de
+     * même, et le refus remonte sans être renommé. Une contrainte d'unicité
+     * différée sur une table temporaire, créée dans la transaction et annulée
+     * avec elle, en fournit un.
+     */
+    public function testACommitRefusedForAnyOtherReasonAlsoClosesTheEntityManager(): void
+    {
+        $connection = $this->entityManager()->getConnection();
+
+        $caught = $this->failureOfALockedRun(static function () use ($connection): void {
+            $connection->executeStatement('CREATE TEMPORARY TABLE refused_at_commit (value int UNIQUE DEFERRABLE INITIALLY DEFERRED)');
+            $connection->executeStatement('INSERT INTO refused_at_commit (value) VALUES (1), (1)');
+        });
+
+        self::assertInstanceOf(UniqueConstraintViolationException::class, $caught, \sprintf('Le refus du COMMIT est remonté sous un autre nom : %s.', get_debug_type($caught)));
+        self::assertFalse($this->entityManager()->isOpen(), 'Un COMMIT refusé a laissé l\'EntityManager ouvert sur des écritures annulées.');
         self::assertFalse($connection->isTransactionActive());
     }
 
@@ -313,6 +395,67 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
         }
 
         return $acquired;
+    }
+
+    /**
+     * Une paire FR/EN de contributions, créée par l'administrateur.
+     *
+     * @return array{Contribution, Contribution}
+     */
+    private function contributionPair(): array
+    {
+        $administrator = self::getContainer()->get(ContributionAdministratorInterface::class);
+        $french = $administrator->create(Locale::FR, 'T', 'P', 'R', 'https://example.com', 'S', 'B');
+
+        return [$french, $administrator->create(Locale::EN, 'T', 'P', 'R', 'https://example.com', 'S', 'B', $french->getTranslationGroup())];
+    }
+
+    /**
+     * Sous le verrou des contributions, sort `$entry` de la position de son
+     * groupe et persiste `$neverCommitted`, puis vérifie que le trigger différé
+     * refuse le COMMIT : le point de départ des tests de #502.
+     */
+    private function refuseTheNextCommit(Contribution $entry, ?Contribution $neverCommitted = null): void
+    {
+        $entityManager = $this->entityManager();
+        $refusal = $this->failureOfALockedRun(static function () use ($entityManager, $entry, $neverCommitted): void {
+            $entry->moveToPosition($entry->getPosition() + self::OUT_OF_ITS_GROUP);
+            if (null !== $neverCommitted) {
+                $entityManager->persist($neverCommitted);
+            }
+            $entityManager->flush();
+        });
+
+        self::assertInstanceOf(TranslationGroupHasSeveralPositionsException::class, $refusal, \sprintf('Le COMMIT n\'a pas été refusé par la garde des groupes : %s.', get_debug_type($refusal)));
+    }
+
+    /**
+     * Lance `$operation` sous le verrou des contributions et rend ce que
+     * `withLock()` a levé — l'opération ou le COMMIT —, `null` s'il a validé.
+     *
+     * @param Closure(): void $operation
+     */
+    private function failureOfALockedRun(Closure $operation): ?Throwable
+    {
+        return $this->failureOf(function () use ($operation): void {
+            $this->lock()->withLock(Contribution::class, $operation);
+        });
+    }
+
+    /**
+     * Ce que `$run` a levé, `null` s'il a abouti.
+     *
+     * @param Closure(): mixed $run
+     */
+    private function failureOf(Closure $run): ?Throwable
+    {
+        try {
+            $run();
+        } catch (Throwable $exception) {
+            return $exception;
+        }
+
+        return null;
     }
 
     /**

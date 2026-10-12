@@ -154,7 +154,9 @@ final readonly class PostgresLockedTransaction
      * @param Closure(DriverException): Throwable       $onTimeout       nomme l'attente dépassée de `$acquire`
      * @param Closure(): Throwable                      $onNested        nomme le refus de s'ouvrir dans une transaction déjà ouverte
      * @param Closure(): T                              $operation       tourne sous le verrou, dans la transaction
-     * @param (Closure(DriverException): ?Throwable)|null $onCommitRefused nomme un refus du COMMIT reconnu ; `null` le laisse tel quel
+     * @param (Closure(DriverException): ?Throwable)|null $onCommitRefused appelé pour **toute** `DriverException` du COMMIT, transaction déjà
+     *                                                                   annulée : réagit au refus (le verrou d'ordre y ferme l'EntityManager,
+     *                                                                   #502) et nomme celui qu'il reconnaît ; `null` le laisse tel quel
      *
      * @return T
      */
