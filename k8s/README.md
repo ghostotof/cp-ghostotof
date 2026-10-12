@@ -1197,14 +1197,32 @@ marqueur aléatoire `guest-…` du palier de base, et `actor` vaut l'UUID du com
 `JWTPostAuthenticationToken(userId="…", roles="…")`. Des tests le pincent.
 
 Pour nommer un compte pendant un incident, tant qu'il existe (une fois supprimé, ses lignes ne
-désignent plus personne, et c'est voulu), par Adminer (§ ci-dessus) ou `psql` dans le pod, depuis
-un **terminal séparé** — la réponse est un nom et une adresse, qui n'ont rien à faire dans le
-transcript d'une session d'assistant :
+désignent plus personne, et c'est voulu), par `psql` dans le pod `postgres`, depuis un **terminal
+séparé** — la réponse est un nom et une adresse, qui n'ont rien à faire dans le transcript d'une
+session d'assistant —, avec un **kubeconfig d'administrateur humain**. Le jeton du déployeur CI
+échoue ici, et c'est voulu : son `Role` n'a plus `pods/exec` (audit C8).
 
 ```bash
+NS=preprod   # ou prod
 echo "SELECT username, email FROM cpg_user WHERE id = '<userId>';" \
-  | kubectl -n preprod exec -i deployment/postgres -- sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+  | kubectl -n "$NS" exec -i deploy/postgres -c postgres -- \
+    sh -c 'PGOPTIONS="-c default_transaction_read_only=on" psql -X -At -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 ```
+
+C'est l'**exception assumée** à « jamais `kubectl exec` » (issue #520, règle dans
+`.claude/rules/deploiement.md`) : une lecture humaine dont la sortie reste sur le terminal. Un Job
+aurait écrit le nom et l'adresse dans les journaux de son pod, lisibles jusqu'à sa suppression,
+y compris par le jeton CI (`pods/log`), ce que #363 cherche justement à éviter. La requête arrive
+par l'entrée standard : ni le SQL ni l'UUID ne figurent dans l'argv de l'`exec`, donc dans l'URL
+de la requête à l'API server. `default_transaction_read_only` met la session en lecture seule
+(une écriture par erreur est refusée) ; c'est un garde-fou, pas une frontière, puisque la même
+identité peut tout faire. `psql -X` ignore un `~/.psqlrc`, `-At` rend une ligne brute
+`nom|adresse`, et rien sans compte. La connexion passe par le socket local du conteneur, sans mot de
+passe (méthode `trust` que l'image officielle pose sur les connexions locales — à confirmer à la
+première exécution en préprod, #520) : rien de secret ne sort du pod. Pincé par `OperatorExecBoundaryTest`.
+
+Alternative graphique : Adminer (§ ci-dessus), allumé le temps de la recherche puis éteint, avec le
+mot de passe PostgreSQL à saisir à la main.
 
 L'identifiant **tenté** au login n'est jamais écrit tel quel (issue #418) : ce peut être un mot de
 passe tapé dans le mauvais champ. `login-failed` et `login-throttled` portent son empreinte,
