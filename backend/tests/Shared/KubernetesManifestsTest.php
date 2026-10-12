@@ -32,9 +32,28 @@ final class KubernetesManifestsTest extends TestCase
         new Filesystem()->remove($this->directory);
     }
 
+    /**
+     * Une profondeur de `dirname` fausse pourrait viser un autre répertoire
+     * qui porte lui aussi une kustomization, un overlay par exemple.
+     */
     public function testTheBaseIsTheRepositoryManifestDirectory(): void
     {
-        self::assertSame('Kustomization', KubernetesManifests::base()->resource('kustomization.yaml', 'Kustomization')['kind'] ?? null);
+        $base = KubernetesManifests::base();
+
+        self::assertStringEndsWith('/k8s/base', $base->directory());
+        self::assertDirectoryExists($base->directory());
+    }
+
+    /**
+     * Un overlay se lit tel qu'il est écrit, pas tel que `kustomize build` le
+     * rend : ses propres fichiers, à côté de la base.
+     */
+    public function testAnOverlayIsReadBesideTheBase(): void
+    {
+        $overlay = KubernetesManifests::overlay('prod');
+
+        self::assertSame(\dirname(KubernetesManifests::base()->directory()).'/overlays/prod', $overlay->directory());
+        self::assertDirectoryExists($overlay->directory());
     }
 
     /**
@@ -59,13 +78,38 @@ final class KubernetesManifestsTest extends TestCase
         self::assertSame([['kind' => 'A'], ['kind' => 'B']], $this->manifests()->documents('commented.yaml'));
     }
 
+    /**
+     * L'ancienne expression (`^---\s*$`) découpait un fichier aux fins de ligne
+     * Windows ; la nouvelle aussi, séparateur commenté compris.
+     */
+    public function testAManifestWithWindowsLineEndingsIsSplit(): void
+    {
+        $this->write('crlf.yaml', "kind: A\r\n---\r\nkind: B\r\n--- # le Service\r\nkind: C\r\n");
+
+        self::assertSame([['kind' => 'A'], ['kind' => 'B'], ['kind' => 'C']], $this->manifests()->documents('crlf.yaml'));
+    }
+
+    /**
+     * Le document fautif est désigné par la ligne où il commence : un numéro
+     * d'ordre compterait le morceau vide laissé par un `---` en tête.
+     */
     public function testAnUnparsableDocumentIsRefused(): void
     {
-        $this->write('broken.yaml', "kind: A\n---\nkind: B\n  spec: [\n");
+        $this->write('broken.yaml', "---\nkind: A\n---\nkind: B\n  spec: [\n");
 
         $this->expectException(AssertionFailedError::class);
-        $this->expectExceptionMessage('broken.yaml, document 2');
+        $this->expectExceptionMessage('broken.yaml, document de la ligne 4 illisible');
         $this->manifests()->documents('broken.yaml');
+    }
+
+    /**
+     * `{}` est une table, vide : rien à refuser, rien à lire.
+     */
+    public function testAnEmptyMappingIsAnEmptyResource(): void
+    {
+        $this->write('empty.yaml', "kind: A\n---\n{}\n");
+
+        self::assertSame([['kind' => 'A'], []], $this->manifests()->documents('empty.yaml'));
     }
 
     /**
@@ -87,7 +131,7 @@ final class KubernetesManifestsTest extends TestCase
         $this->write('odd.yaml', $yaml);
 
         $this->expectException(AssertionFailedError::class);
-        $this->expectExceptionMessage('odd.yaml, document 2');
+        $this->expectExceptionMessage('odd.yaml, document de la ligne 3 :');
         $this->manifests()->documents('odd.yaml');
     }
 
@@ -115,7 +159,30 @@ final class KubernetesManifestsTest extends TestCase
 
     public function testAResourceWithoutPodsHasNoPodSpec(): void
     {
-        self::assertNull(KubernetesManifests::podSpecOf(['kind' => 'Service', 'spec' => ['template' => ['spec' => []]]]));
+        self::assertNull(KubernetesManifests::podSpecOf(['kind' => 'Service', 'spec' => ['ports' => [['port' => 80]]]]));
+    }
+
+    /**
+     * @return iterable<string, array{array<mixed>}>
+     */
+    public static function unknownWorkloads(): iterable
+    {
+        yield 'DaemonSet' => [['kind' => 'DaemonSet', 'spec' => ['template' => ['spec' => ['containers' => []]]]]];
+        yield 'jobTemplate hors CronJob' => [['kind' => 'Batch', 'spec' => ['jobTemplate' => ['spec' => []]]]];
+    }
+
+    /**
+     * Une charge que le helper ne sait pas descendre ferait sauter ses pods
+     * aux tests qui recensent tous les pod specs : elle est refusée.
+     *
+     * @param array<mixed> $resource
+     */
+    #[DataProvider('unknownWorkloads')]
+    public function testAWorkloadOfAnUnknownKindIsRefused(array $resource): void
+    {
+        $this->expectException(AssertionFailedError::class);
+        $this->expectExceptionMessage('pod spec d\'un kind que KubernetesManifests ne sait pas lire');
+        KubernetesManifests::podSpecOf($resource);
     }
 
     public function testAContainerIsFoundByNameInTheDocumentOfItsKind(): void
@@ -152,17 +219,40 @@ final class KubernetesManifestsTest extends TestCase
         $this->write('worker.yaml', "kind: Deployment\nspec: {template: {spec: {initContainers: [{name: wait}], containers: [{name: worker}]}}}\n");
 
         $this->expectException(AssertionFailedError::class);
-        $this->expectExceptionMessage('worker.yaml : conteneur « wait » absent du Deployment.');
+        $this->expectExceptionMessage('worker.yaml : 0 conteneur(s) « wait » dans le Deployment, un seul attendu.');
         $this->manifests()->container('worker.yaml', 'Deployment', 'wait');
     }
 
-    public function testTheContainersOfAPodSpecListAreTheTablesOfThatList(): void
+    /**
+     * Un conteneur en double après un copier-coller n'est pas « absent ».
+     */
+    public function testADuplicatedContainerIsReportedAsSuch(): void
     {
-        $podSpec = ['initContainers' => [['name' => 'copy'], 'pas une table'], 'containers' => [['name' => 'app']]];
+        $this->write('twice.yaml', "kind: Deployment\nspec: {template: {spec: {containers: [{name: app}, {name: app}]}}}\n");
+
+        $this->expectException(AssertionFailedError::class);
+        $this->expectExceptionMessage('twice.yaml : 2 conteneur(s) « app » dans le Deployment, un seul attendu.');
+        $this->manifests()->container('twice.yaml', 'Deployment', 'app');
+    }
+
+    public function testTheContainersOfAPodSpecListAreReadInOrder(): void
+    {
+        $podSpec = ['initContainers' => [['name' => 'copy']], 'containers' => [['name' => 'app'], ['name' => 'sidecar']]];
 
         self::assertSame([['name' => 'copy']], KubernetesManifests::containers($podSpec, 'initContainers'));
-        self::assertSame([['name' => 'app']], KubernetesManifests::containers($podSpec));
+        self::assertSame([['name' => 'app'], ['name' => 'sidecar']], KubernetesManifests::containers($podSpec));
         self::assertSame([], KubernetesManifests::containers([]));
+    }
+
+    /**
+     * Un élément qui n'est pas une table est refusé, pas écarté : écarté, il
+     * laissait passer un `assertCount(1)` sur une liste de deux éléments.
+     */
+    public function testAContainerThatIsNoMappingIsRefused(): void
+    {
+        $this->expectException(AssertionFailedError::class);
+        $this->expectExceptionMessage('initContainers : l\'élément 2 n\'est pas une table YAML, string lu.');
+        KubernetesManifests::containers(['initContainers' => [['name' => 'copy'], 'pas une table']], 'initContainers');
     }
 
     public function testThePodSpecsOfEveryWorkloadOfAManifestAreRead(): void

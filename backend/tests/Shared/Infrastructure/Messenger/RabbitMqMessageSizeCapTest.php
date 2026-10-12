@@ -62,11 +62,16 @@ final class RabbitMqMessageSizeCapTest extends TestCase
 
         // Un `generatorOptions` global, dans la base ou un overlay, couperait
         // aussi le hachage (incident de backend-nginx-conf, #18).
-        foreach (['', '../overlays/preprod/', '../overlays/prod/'] as $directory) {
-            $file = KubernetesManifests::base()->resource($directory.'kustomization.yaml', 'Kustomization');
+        $directories = [
+            'k8s/base' => KubernetesManifests::base(),
+            'k8s/overlays/preprod' => KubernetesManifests::overlay('preprod'),
+            'k8s/overlays/prod' => KubernetesManifests::overlay('prod'),
+        ];
+        foreach ($directories as $directory => $manifests) {
+            $file = $manifests->resource('kustomization.yaml', 'Kustomization');
             $options = $file['generatorOptions'] ?? [];
             self::assertIsArray($options);
-            self::assertNotTrue($options['disableNameSuffixHash'] ?? false, 'generatorOptions.disableNameSuffixHash dans k8s/base/'.$directory.'kustomization.yaml');
+            self::assertNotTrue($options['disableNameSuffixHash'] ?? false, 'generatorOptions.disableNameSuffixHash dans '.$directory.'/kustomization.yaml');
         }
     }
 

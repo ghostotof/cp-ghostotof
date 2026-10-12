@@ -21,9 +21,10 @@ use PHPUnit\Framework\TestCase;
  *
  * Chaque pod monte donc un emptyDir sur ce répertoire, rempli au démarrage par
  * un initContainer qui y copie le cache préchauffé de l'image. Ce test vérifie
- * les trois moitiés du dispositif sur chaque pod spec : le volume (borné en
- * taille), le montage inscriptible dans chaque conteneur de l'image backend, et
- * la copie. Un pod ajouté sans elles, ou un montage oublié, fait rougir la suite.
+ * les trois moitiés du dispositif sur chaque pod spec de chaque manifeste — une
+ * seconde charge ajoutée à un fichier compris : le volume (borné en taille), le
+ * montage inscriptible dans chaque conteneur de l'image backend, et la copie.
+ * Un pod ajouté sans elles, ou un montage oublié, fait rougir la suite.
  */
 final class SystemCachePodVolumeTest extends TestCase
 {
@@ -65,26 +66,30 @@ final class SystemCachePodVolumeTest extends TestCase
     #[DataProvider('manifests')]
     public function testThePodDeclaresABoundedEmptyDirForTheSystemCache(string $manifest): void
     {
-        $volume = $this->firstWith($this->podSpec($manifest)['volumes'] ?? null, 'name', self::VOLUME);
+        foreach ($this->podSpecs($manifest) as $where => $podSpec) {
+            $volume = $this->firstWith($podSpec['volumes'] ?? null, 'name', self::VOLUME);
 
-        self::assertNotNull($volume, \sprintf('%s : volume « %s » absent.', $manifest, self::VOLUME));
-        $emptyDir = $volume['emptyDir'] ?? null;
-        self::assertIsArray($emptyDir, \sprintf('%s : « %s » doit être un emptyDir.', $manifest, self::VOLUME));
-        // Borné : un cache qui grossirait sans fin remplirait le disque du nœud.
-        self::assertArrayHasKey('sizeLimit', $emptyDir, \sprintf('%s : emptyDir sans sizeLimit.', $manifest));
+            self::assertNotNull($volume, \sprintf('%s : volume « %s » absent.', $where, self::VOLUME));
+            $emptyDir = $volume['emptyDir'] ?? null;
+            self::assertIsArray($emptyDir, \sprintf('%s : « %s » doit être un emptyDir.', $where, self::VOLUME));
+            // Borné : un cache qui grossirait sans fin remplirait le disque du nœud.
+            self::assertArrayHasKey('sizeLimit', $emptyDir, \sprintf('%s : emptyDir sans sizeLimit.', $where));
+        }
     }
 
     #[DataProvider('manifests')]
     public function testEveryBackendContainerMountsTheSystemCacheWritable(string $manifest): void
     {
-        $containers = $this->backendContainers($this->podSpec($manifest), 'containers');
-        self::assertNotSame([], $containers, \sprintf('%s : aucun conteneur de l\'image backend.', $manifest));
+        foreach ($this->podSpecs($manifest) as $where => $podSpec) {
+            $containers = $this->backendContainers($podSpec, 'containers');
+            self::assertNotSame([], $containers, \sprintf('%s : aucun conteneur de l\'image backend.', $where));
 
-        foreach ($containers as $container) {
-            $mount = $this->firstWith($container['volumeMounts'] ?? null, 'mountPath', self::MOUNT_PATH);
-            self::assertNotNull($mount, \sprintf('%s, conteneur %s : %s non monté.', $manifest, $this->text($container['name'] ?? null), self::MOUNT_PATH));
-            self::assertSame(self::VOLUME, $mount['name'] ?? null);
-            self::assertNotTrue($mount['readOnly'] ?? false, 'Le cache doit rester inscriptible.');
+            foreach ($containers as $container) {
+                $mount = $this->firstWith($container['volumeMounts'] ?? null, 'mountPath', self::MOUNT_PATH);
+                self::assertNotNull($mount, \sprintf('%s, conteneur %s : %s non monté.', $where, $this->text($container['name'] ?? null), self::MOUNT_PATH));
+                self::assertSame(self::VOLUME, $mount['name'] ?? null);
+                self::assertNotTrue($mount['readOnly'] ?? false, 'Le cache doit rester inscriptible.');
+            }
         }
     }
 
@@ -95,13 +100,15 @@ final class SystemCachePodVolumeTest extends TestCase
     #[DataProvider('manifests')]
     public function testAnInitContainerSeedsTheVolumeFromThePrewarmedCache(string $manifest): void
     {
-        $seeders = array_filter(
-            $this->backendContainers($this->podSpec($manifest), 'initContainers'),
-            fn (array $container): bool => null !== $this->firstWith($container['volumeMounts'] ?? null, 'name', self::VOLUME)
-                && str_contains($this->text($container['command'] ?? null), self::MOUNT_PATH.'/.'),
-        );
+        foreach ($this->podSpecs($manifest) as $where => $podSpec) {
+            $seeders = array_filter(
+                $this->backendContainers($podSpec, 'initContainers'),
+                fn (array $container): bool => null !== $this->firstWith($container['volumeMounts'] ?? null, 'name', self::VOLUME)
+                    && str_contains($this->text($container['command'] ?? null), self::MOUNT_PATH.'/.'),
+            );
 
-        self::assertCount(1, $seeders, \sprintf('%s : il faut exactement un initContainer qui copie %s/. dans le volume.', $manifest, self::MOUNT_PATH));
+            self::assertCount(1, $seeders, \sprintf('%s : il faut exactement un initContainer qui copie %s/. dans le volume.', $where, self::MOUNT_PATH));
+        }
     }
 
     public function testNoOtherManifestRunsTheBackendImage(): void
@@ -123,14 +130,22 @@ final class SystemCachePodVolumeTest extends TestCase
     }
 
     /**
-     * @return array<mixed>
+     * Chaque pod spec du manifeste, sous une clé qui le désigne dans les
+     * messages (`seed-job.yaml, pod spec 1`).
+     *
+     * @return array<string, array<mixed>>
      */
-    private function podSpec(string $manifest): array
+    private function podSpecs(string $manifest): array
     {
         $podSpecs = KubernetesManifests::base()->podSpecs($manifest);
         self::assertNotSame([], $podSpecs, \sprintf('%s : aucun pod spec trouvé.', $manifest));
 
-        return $podSpecs[0];
+        $named = [];
+        foreach ($podSpecs as $index => $podSpec) {
+            $named[\sprintf('%s, pod spec %d', $manifest, $index + 1)] = $podSpec;
+        }
+
+        return $named;
     }
 
     /**
