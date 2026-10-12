@@ -272,7 +272,9 @@ failure. (`ProblemDetailStaysStaticTest`, its sibling for the client's `detail`,
 and `as` aliases read —, then its parent's, a parent that is no `ProblemExceptionInterface` included; a
 `new static` written in a parent and a `new parent` count too, and a message follows the constructor chain:
 a parameter passed through as is leaves it to the `new` sites, a literal fixes it, a composition anywhere
-on the way from the constructor called is refused. It stays a token reading so that each case is proven on
+on the way from the constructor called is refused. A class constant (`self::`, `parent::`, `static::`, `Foo::`,
+inherited or from a trait) counts as a literal when its value is a string literal (#523); a composed one, an
+interface's, an enum case or a bare global constant stays refused. It stays a token reading so that each case is proven on
 a string; `testTheTokenModelResolvesMethodsAsPhpDoes` checks by reflection that on `src/` it retains the
 same `getDetail()` and constructor as PHP.) **A console question's validator follows the same rule** (#383): the `QuestionHelper` catches
 any `\Exception` a validator throws, shows its message and asks again, so the domain exception is the
