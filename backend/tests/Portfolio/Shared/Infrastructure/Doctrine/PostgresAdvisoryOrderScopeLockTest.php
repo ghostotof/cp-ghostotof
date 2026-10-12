@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace App\Tests\Portfolio\Shared\Infrastructure\Doctrine;
 
+use App\Portfolio\About\Application\AboutMeCardAdministratorInterface;
+use App\Portfolio\About\Domain\Entity\AboutMeCard;
+use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
 use App\Portfolio\Contribution\Domain\Entity\Contribution;
 use App\Portfolio\Contribution\Domain\Repository\ContributionRepositoryInterface;
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
+use App\Portfolio\Shared\Domain\Exception\TranslationGroupAcrossSeveralScopesException;
 use App\Portfolio\Shared\Domain\Exception\TranslationGroupHasSeveralPositionsException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Portfolio\Shared\Infrastructure\Doctrine\OrderScopeLockInsideTransactionException;
@@ -240,6 +244,42 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
         self::assertStringContainsString('contribution', $caught->getMessage(), 'Le message ne nomme pas la table.');
         self::assertInstanceOf(DriverException::class, $caught->getPrevious());
         self::assertTrue($this->probeCanLock(Contribution::class), 'Le verrou survit au COMMIT refusé.');
+        self::assertFalse($connection->isTransactionActive());
+    }
+
+    /**
+     * Issue #501 : le même trigger refuse un groupe de cartes « moi » rangé
+     * dans deux catégories, sous un SQLSTATE voisin (`23T91`). Sur le chemin
+     * applicatif, ce refus sort lui aussi sous le nom de son invariant, jamais
+     * en `DriverException` brute ni sous celui des positions, que le groupe
+     * respecte ici.
+     */
+    public function testACommitRefusedForAGroupAcrossCategoriesFailsUnderItsOwnName(): void
+    {
+        $connection = $this->entityManager()->getConnection();
+
+        try {
+            $meCards = self::getContainer()->get(AboutMeCardAdministratorInterface::class);
+            $french = $meCards->create(Locale::FR, AboutMeCardCategory::HOBBY, 'T', 'D', null);
+            $english = $meCards->create(Locale::EN, AboutMeCardCategory::HOBBY, 'T', 'D', null, $french->getTranslationGroup());
+            $caught = $this->failureOf(function () use ($connection, $english): void {
+                $this->lock()->withLock(AboutMeCard::class, static function () use ($connection, $english): void {
+                    $connection->executeStatement(
+                        'UPDATE about_me_card SET category = ? WHERE id = ?',
+                        [AboutMeCardCategory::TECHNICAL->value, $english->getId()->toRfc4122()],
+                    );
+                });
+            });
+        } finally {
+            $connection->executeStatement('DELETE FROM about_me_card');
+        }
+
+        self::assertInstanceOf(TranslationGroupAcrossSeveralScopesException::class, $caught, \sprintf('Le refus du trigger est remonté sous un autre nom : %s.', get_debug_type($caught)));
+        self::assertStringContainsString($french->getTranslationGroup()->toRfc4122(), $caught->getMessage(), 'Le message ne nomme pas le groupe.');
+        self::assertStringContainsString('about_me_card', $caught->getMessage(), 'Le message ne nomme pas la table.');
+        self::assertStringContainsString('hobby, technical', $caught->getMessage(), 'Le message ne nomme pas les catégories.');
+        self::assertInstanceOf(DriverException::class, $caught->getPrevious());
+        self::assertTrue($this->probeCanLock(AboutMeCard::class), 'Le verrou survit au COMMIT refusé.');
         self::assertFalse($connection->isTransactionActive());
     }
 
