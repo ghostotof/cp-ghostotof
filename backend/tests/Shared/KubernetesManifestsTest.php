@@ -146,6 +146,9 @@ final class KubernetesManifestsTest extends TestCase
         yield 'StatefulSet' => [['kind' => 'StatefulSet', 'spec' => ['template' => ['spec' => $podSpec]]]];
         yield 'Job' => [['kind' => 'Job', 'spec' => ['template' => ['spec' => $podSpec]]]];
         yield 'CronJob' => [['kind' => 'CronJob', 'spec' => ['jobTemplate' => ['spec' => ['template' => ['spec' => $podSpec]]]]]];
+        // Un Pod nu porte son pod spec sous `spec` : sauté, il échappait au
+        // recensement de l'image que les anciennes expressions faisaient (#542).
+        yield 'Pod' => [['kind' => 'Pod', 'spec' => $podSpec]];
     }
 
     /**
@@ -169,6 +172,7 @@ final class KubernetesManifestsTest extends TestCase
     {
         yield 'DaemonSet' => [['kind' => 'DaemonSet', 'spec' => ['template' => ['spec' => ['containers' => []]]]]];
         yield 'jobTemplate hors CronJob' => [['kind' => 'Batch', 'spec' => ['jobTemplate' => ['spec' => []]]]];
+        yield 'conteneurs hors Pod' => [['kind' => 'PodLike', 'spec' => ['containers' => [['name' => 'app']]]]];
     }
 
     /**
@@ -321,6 +325,7 @@ final class KubernetesManifestsTest extends TestCase
         $this->write('placeholder.yaml', "kind: Job\nspec: {template: {spec: {containers: [{name: seed, image: '\${BACKEND_IMAGE}'}]}}}\n");
         $this->write('tagged.yaml', "kind: CronJob\nspec: {jobTemplate: {spec: {template: {spec: {containers: [{name: cron, image: 'backend:1.2.3'}]}}}}}\n");
         $this->write('init-only.yaml', "kind: Deployment\nspec: {template: {spec: {initContainers: [{name: copy, image: backend}], containers: [{name: web, image: nginx}]}}}\n");
+        $this->write('bare-pod.yaml', "kind: Pod\nspec: {containers: [{name: debug, image: backend}]}\n");
         $this->write('second-document.yaml', "kind: Service\n---\nkind: Deployment\nspec: {template: {spec: {containers: [{name: api, image: backend}]}}}\n");
         $this->write('other-image.yaml', <<<'YAML'
             # image: backend, en commentaire seulement
@@ -336,7 +341,7 @@ final class KubernetesManifestsTest extends TestCase
         $this->write('not-a-manifest.conf', "image: backend\n");
 
         self::assertSame(
-            ['commented.yaml', 'init-only.yaml', 'placeholder.yaml', 'quoted.yaml', 'second-document.yaml', 'tagged.yaml'],
+            ['bare-pod.yaml', 'commented.yaml', 'init-only.yaml', 'placeholder.yaml', 'quoted.yaml', 'second-document.yaml', 'tagged.yaml'],
             $this->manifests()->manifestsRunningTheBackendImage(),
         );
     }

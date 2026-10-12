@@ -242,9 +242,10 @@ final readonly class KubernetesManifests
     /**
      * Le pod spec d'une ressource, ou null si elle n'en porte pas :
      * `spec.template.spec` pour un Deployment, un StatefulSet ou un Job,
-     * `spec.jobTemplate.spec.template.spec` pour un CronJob. Une autre
-     * ressource qui porte un `spec.template` ou un `spec.jobTemplate` (un
-     * DaemonSet…) est refusée : ses pods échapperaient aux recensements.
+     * `spec.jobTemplate.spec.template.spec` pour un CronJob, `spec` pour un
+     * Pod nu. Une autre ressource qui porte un `spec.template`, un
+     * `spec.jobTemplate` ou des `spec.containers` (un DaemonSet…) est
+     * refusée : ses pods échapperaient aux recensements.
      *
      * @param array<mixed> $resource
      *
@@ -259,8 +260,11 @@ final readonly class KubernetesManifests
         if ('CronJob' === $kind) {
             return self::at($resource, 'spec', 'jobTemplate', 'spec', 'template', 'spec');
         }
+        if ('Pod' === $kind) {
+            return self::at($resource, 'spec');
+        }
         $spec = $resource['spec'] ?? null;
-        if (\is_array($spec) && (isset($spec['template']) || isset($spec['jobTemplate']))) {
+        if (\is_array($spec) && (isset($spec['template']) || isset($spec['jobTemplate']) || isset($spec['containers']))) {
             Assert::fail(\sprintf('%s : pod spec d\'un kind que KubernetesManifests ne sait pas lire.', \is_string($kind) ? $kind : '(sans kind)'));
         }
 

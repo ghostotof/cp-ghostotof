@@ -21,7 +21,7 @@ paths:
   (issue #541). `KubernetesManifests::base()` (`k8s/base`) or `::overlay('prod')` (the overlay's
   own files, never the `kustomize build` render — an overlay patch on the base stays invisible to
   every test below). It splits a file into documents (`---` alone or followed by a comment, CRLF
-  included), descends to the pod spec (`Deployment`, `StatefulSet`, `Job`, `CronJob`) and finds a
+  included), descends to the pod spec (`Deployment`, `StatefulSet`, `Job`, `CronJob`, a bare `Pod`) and finds a
   container or initContainer by name; the business assertions stay in each test. It also holds
   the **one census of the manifests running the backend image** (issue #542,
   `manifestsRunningTheBackendImage()`), read from the parsed `image` of every container and
