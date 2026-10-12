@@ -22,10 +22,16 @@ paths:
   own files, never the `kustomize build` render — an overlay patch on the base stays invisible to
   every test below). It splits a file into documents (`---` alone or followed by a comment, CRLF
   included), descends to the pod spec (`Deployment`, `StatefulSet`, `Job`, `CronJob`) and finds a
-  container or initContainer by name; the business assertions stay in each test. It **refuses**
+  container or initContainer by name; the business assertions stay in each test. It also holds
+  the **one census of the manifests running the backend image** (issue #542,
+  `manifestsRunningTheBackendImage()`), read from the parsed `image` of every container and
+  initContainer — never a regex on the text, two copies of which disagreed on quotes and trailing
+  comments — and `isBackendImage()` / `backendContainers()`: `backend` with or without a tag or
+  digest (kustomize rewrites it by name) or `${BACKEND_IMAGE}`. YAML lists are read through it too
+  (`entries()`, `firstWith($node, $list, $key, $value)`, `text()`), never a private copy. It **refuses**
   rather than skips: an unparsable document or one that is not a mapping (named by its first
   line), a workload of another kind carrying a pod template (a `DaemonSet` must be taught to it
-  first), a container entry that is not a mapping, a name found zero or twice. Its own test,
+  first), a list entry that is not a mapping, a name found zero or twice. Its own test,
   `tests/Shared/KubernetesManifestsTest.php`, proves each case on manifests it writes. **Proving
   a manifest guard still fails** takes a mutation the dev container actually sees: `k8s/` is a
   bind mount that Docker Desktop loses track of when a file is replaced by a new inode (`sed -i`,
@@ -58,7 +64,7 @@ paths:
   image's pre-warmed cache (the volume would hide it otherwise). That is allowed because the
   cache is derived, disposable and identical in every pod — not application state. A new pod
   spec running the image needs the three parts; `SystemCachePodVolumeTest` turns red otherwise
-  and also checks no other manifest runs the image.
+  and also checks, on `KubernetesManifests`' census, that no other manifest runs the image.
   **Shared storage is not atomicity: every limiter also takes a lock shared across pods**
   (issue #272, ADR 0005 amended 2026-09-30). Without `symfony/lock`, `consume()` was a
   non-atomic read-modify-write — 20 simultaneous calls on one key counted **one** unit.
@@ -102,7 +108,7 @@ paths:
   included —, exactly www.prod.conf's value. `env:` per manifest rather than a `backend-config` line
   (written twice, one per overlay) or a DBAL middleware (it would not reach the connection
   `symfony/lock` opens itself through `DriverManager`, and could not tell a migration apart).
-  `ConsoleLockWaitBoundTest` finds the manifests **by the image**, so a new one without the bound
+  `ConsoleLockWaitBoundTest` finds the manifests **by the image** (the same census), so a new one without the bound
   turns it red; its only exemption is `backend-deployment.yaml`'s `php-fpm` (the pool sets it).
   Without it a console session has `lock_timeout = 0` (measured). An operator's read-only `exec`
   (below) repeats `-c lock_timeout=5s` in its own `PGOPTIONS`, which replaces the variable whole.
