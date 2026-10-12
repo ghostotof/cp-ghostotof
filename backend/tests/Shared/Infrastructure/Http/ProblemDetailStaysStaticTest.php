@@ -29,12 +29,15 @@ use ReflectionClass;
  *    (`return $this->getMessage();`, celui de HasProblemType) ;
  *  - elle n'affecte jamais `$this->message` (`=`, `.=`, `??=`), ce qui
  *    contournerait le constructeur ;
- *  - une classe qui a un constructeur passe un message littéral à chacun de
- *    ses `parent::__construct` — elle fixe alors son message, et ses sites de
- *    construction importent peu (une cause en `previous`, par exemple) ;
- *  - pour les autres, chaque `new` (y compris `new self`/`new static`, alias
- *    `use … as` résolus, dans n'importe quel contexte syntaxique) ne reçoit
- *    comme message qu'une chaîne littérale, un heredoc sans variable ou rien.
+ *  - le constructeur qu'elle retient ne compose jamais son message : il le
+ *    fixe (un littéral à chacun de ses `parent::__construct`) — ses sites de
+ *    construction importent alors peu (une cause en `previous`, par
+ *    exemple) —, ou transmet tel quel l'un de ses paramètres ;
+ *  - chaque `new` (y compris `new self`/`new static`/`new parent`, alias
+ *    `use … as` résolus, dans n'importe quel contexte syntaxique) d'une
+ *    classe sans constructeur, ou dont le constructeur transmet, ne passe à
+ *    ce paramètre (le premier, ou `message:`, pour le constructeur natif)
+ *    qu'une chaîne littérale, un heredoc sans variable ou rien.
  *
  * Les méthodes jugées sont celles que PHP retient (issue #514) : celles de la
  * classe, puis celles de ses traits (directement ou par un autre trait,
@@ -44,7 +47,11 @@ use ReflectionClass;
  * il s'écrit, ou chaque classe qui utilise le trait où il s'écrit ; un
  * `new static`, aussi chaque sous-classe ; un `new parent`, le parent. Une
  * affectation de `$this->message` compte où qu'elle s'écrive dans cette
- * lignée. Les noms se résolvent comme PHP le fait — casse indifférente,
+ * lignée. Le message suit la chaîne des constructeurs : le premier argument
+ * d'un `parent::__construct` n'est le message que si ce parent est natif ;
+ * lu dans les sources, le constructeur du parent dit lui-même de quels
+ * paramètres son message dépend ({@see self::messageSource()}) — un
+ * littéral qu'on lui passe le fixe, même s'il le compose. Les noms se résolvent comme PHP le fait — casse indifférente,
  * listes `use A, B;`, `namespace\X`, imports propres à chaque espace de noms
  * — par {@see ClassNameResolver}, partagé avec NoBareGenericExceptionTest
  * (issue #507).
@@ -70,7 +77,11 @@ use ReflectionClass;
  * pas la malveillance :
  *  - une classe instanciée dynamiquement (`new $classe`, Reflection) ;
  *  - un parent ou un trait hors des sources lues (vendor, classe native) :
- *    il n'est pas lu, et la classe garde ce qu'elle déclare elle-même ;
+ *    il n'est pas lu — la classe garde ce qu'elle déclare elle-même, et la
+ *    méthode d'un parent lu reste jugée même si un trait non lu la remplace ;
+ *  - un parent dont le message dépend d'autre chose que de ses paramètres
+ *    (un appel, une propriété, une variable locale) : la classe qui
+ *    l'appelle compose, quoi qu'elle lui passe — prudence assumée ;
  *  - une collision que PHP refuse (deux traits sans `insteadof`, un alias
  *    qui en heurte un autre) : le premier trait nommé, ou l'alias,
  *    l'emporte — la classe ne se chargerait pas ;
@@ -82,11 +93,18 @@ use ReflectionClass;
  *    fonctions hors classe sont interdites dans src/ (issue #432), et une
  *    déclaration conditionnelle n'y existe pas.
  *
- * Un Construction est un `new` : sa sorte (BY_NAME ou RELATIVE_NAMES), la
- * classe nommée ou la déclaration où il s'écrit, son message littéral ou
- * non, sa ligne.
+ * Une Method est une méthode concrète : où elle s'écrit, si elle rend le
+ * message, ses paramètres (noms sans `$`), ceux qu'elle réaffecte, et les
+ * arguments de chacun de ses `parent::__construct`. Retenue pour une classe,
+ * elle porte aussi son `context`, la déclaration de la lignée qui la détient
+ * (elle-même ou par un trait) : celle dont `parent` désigne le parent. Un
+ * Construction est un `new` : sa sorte (BY_NAME ou RELATIVE_NAMES), la
+ * classe nommée ou la déclaration où il s'écrit, ses arguments, sa ligne.
+ * Un MessageSource dit de quoi dépend le message d'un constructeur : par
+ * paramètre, composé ou transmis tel quel ; aucun s'il le fixe ; false s'il
+ * dépend d'autre chose ({@see self::messageSource()}).
  *
- * @phpstan-type Method array{path: string, line: int, returnsMessage: bool, messageIsLiteral: bool}
+ * @phpstan-type Method array{path: string, line: int, returnsMessage: bool, parameters: list<string>, reassigned: list<string>, parentCalls: list<list<list<PhpToken>>>, context?: string}
  * @phpstan-type Declaration array{
  *     name: string,
  *     parent: ?string,
@@ -96,7 +114,8 @@ use ReflectionClass;
  *     methods: array<string, Method>,
  *     assignsMessage: bool,
  * }
- * @phpstan-type Construction array{string, string, bool, int}
+ * @phpstan-type Construction array{string, string, list<list<PhpToken>>, int}
+ * @phpstan-type MessageSource false|array<string, bool>
  */
 final class ProblemDetailStaysStaticTest extends TestCase
 {
@@ -121,6 +140,16 @@ final class ProblemDetailStaysStaticTest extends TestCase
     private const array RELATIVE_NAMES = ['self', 'static', 'parent'];
     private const string BY_NAME = 'name';
 
+    /** Le message de {@see \Exception::__construct()} : son premier paramètre, `$message`. */
+    private const array NATIVE_MESSAGE = [[0, 'message']];
+
+    /** Ce qui, écrit après une variable, la réaffecte. */
+    private const array VARIABLE_ASSIGNMENTS = ['=', \T_PLUS_EQUAL, \T_MINUS_EQUAL, \T_MUL_EQUAL, \T_DIV_EQUAL, \T_CONCAT_EQUAL, \T_MOD_EQUAL,
+        \T_AND_EQUAL, \T_OR_EQUAL, \T_XOR_EQUAL, \T_SL_EQUAL, \T_SR_EQUAL, \T_POW_EQUAL, \T_COALESCE_EQUAL];
+
+    /** @var array<string, array{declarations: array<string, Declaration>, constructions: list<Construction>}>|null */
+    private static ?array $sourceModel = null;
+
     /** Ce qui, écrit après `$this->message`, lui affecte une valeur. */
     private const array ASSIGNMENTS = ['=', \T_CONCAT_EQUAL, \T_COALESCE_EQUAL];
     private const array LITERAL_HEREDOC_TOKENS = [\T_START_HEREDOC, \T_ENCAPSED_AND_WHITESPACE, \T_END_HEREDOC];
@@ -130,13 +159,12 @@ final class ProblemDetailStaysStaticTest extends TestCase
 
     public function testEveryProblemDetailInSourcesIsALiteral(): void
     {
-        $sources = $this->sourceFiles();
         $problems = DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class);
         self::assertNotEmpty($problems, 'Aucune ProblemExceptionInterface trouvée : le garde-fou ne garderait rien.');
         self::assertSame([], array_diff(array_keys(self::DYNAMIC_DETAIL_ALLOWED), $problems), 'Entrée admise qui n\'existe plus : la retirer.');
         $problems = array_values(array_diff($problems, array_keys(self::DYNAMIC_DETAIL_ALLOWED)));
 
-        self::assertSame([], $this->violations($sources, $problems));
+        self::assertSame([], $this->violationsIn($this->sourceModel(), $problems));
     }
 
     /**
@@ -252,6 +280,32 @@ final class ProblemDetailStaysStaticTest extends TestCase
             ."final class Thrower { public function f(\\Throwable \$e): never { throw new Problem(\$e); } }", 0];
         yield 'constructeur de la classe, prioritaire sur celui du parent' => [$base."    public function __construct(string \$c) { parent::__construct('Trop long : '.\$c); }\n}\n"
             ."final class Problem extends Base {\n    public function __construct() { parent::__construct('Vide.'); }\n}\n", 0];
+        // Le message suit la chaîne des constructeurs (relecture de #514) :
+        // le premier argument de `parent::__construct` n'est le message que si
+        // ce parent est natif ; lu dans les sources, il dit lui-même lequel de
+        // ses paramètres le devient, ou s'il le fixe, ou s'il le compose.
+        $forwards = $base."    public function __construct(string \$m) { parent::__construct(\$m); }\n}\n";
+        $thrower = static fn (string $arguments): string => "final class Thrower { public function f(string \$c, \\Throwable \$e): never { throw new Problem({$arguments}); } }";
+        yield 'constructeur hérité qui transmet, site littéral' => [$forwards.$child.$thrower("'Vide.'"), 0];
+        yield 'constructeur hérité qui transmet, site composé' => [$forwards.$child.$thrower("'x'.\$c"), 1];
+        yield 'littéral passé à un parent qui transmet' => [$forwards."final class Problem extends Base {\n    public function __construct() { parent::__construct('Vide.'); }\n}\n", 0];
+        yield 'littéral nommé passé à un parent qui transmet' => [$forwards."final class Problem extends Base {\n    public function __construct() { parent::__construct(m: 'Vide.'); }\n}\n", 0];
+        yield 'composé passé à un parent qui transmet' => [$forwards."final class Problem extends Base {\n    public function __construct(string \$c) { parent::__construct('x'.\$c); }\n}\n", 1];
+        yield 'littéral passé à un parent qui compose' => [$base."    public function __construct(string \$p, string \$c) { parent::__construct(\$p.\$c); }\n}\n"
+            ."final class Problem extends Base {\n    public function __construct(string \$c) { parent::__construct('Préfixe', \$c); }\n}\n", 1];
+        yield 'argument passé à un parent au message fixe' => [$base."    public function __construct(public readonly string \$field) { parent::__construct('Vide.'); }\n}\n"
+            ."final class Problem extends Base {\n    public function __construct(string \$f) { parent::__construct(\$f); }\n}\n", 0];
+        $own = $namespace."final class Problem extends \\DomainException {\n    public function __construct(?\\Throwable \$p, string \$m) { parent::__construct(\$m, 0, \$p); }\n}\n";
+        yield 'constructeur qui transmet, site littéral' => [$own.$thrower("\$e, 'Vide.'"), 0];
+        yield 'constructeur qui transmet, site composé' => [$own.$thrower("\$e, 'x'.\$c"), 1];
+        yield 'constructeur qui transmet, site nommé composé' => [$own.$thrower("\$e, m: 'x'.\$c"), 1];
+        yield 'constructeur qui transmet, autre argument composé' => [$own.$thrower("new \\RuntimeException(\$c), 'Vide.'"), 0];
+        yield 'paramètre réaffecté avant transmission' => [$namespace."final class Problem extends \\DomainException {\n    public function __construct(string \$m) { \$m = 'x'.\$m; parent::__construct(\$m); }\n}\n".$thrower("'Vide.'"), 1];
+        yield 'paramètre sous attribut, transmis' => [$namespace."final class Problem extends \\DomainException {\n    public function __construct(#[\\SensitiveParameter] string \$p, string \$m) { parent::__construct(\$m); }\n}\n".$thrower("\$c, 'Vide.'"), 0];
+        yield 'transmis sur deux niveaux, site composé' => [$namespace."abstract class Root extends \\DomainException {\n    public function __construct(string \$r) { parent::__construct(\$r); }\n}\n"
+            ."abstract class Base extends Root {\n    public function __construct(?\\Throwable \$p, string \$b) { parent::__construct(\$b); }\n}\n".$child.$thrower("\$e, 'x'.\$c"), 1];
+        yield 'parent qui compose avec autre chose qu\'un paramètre' => [$base."    public function __construct(string \$m) { parent::__construct(self::describe(\$m)); }\n}\n"
+            ."final class Problem extends Base {\n    public function __construct() { parent::__construct('Vide.'); }\n}\n", 1];
         yield 'affecte $this->message, par un parent' => [$base."    public function rename(string \$c): void { \$this->message = \$c; }\n}\n".$child, 1];
         yield 'new static d\'un parent' => [$base."    public static function tooLong(string \$c): static { return new static('x'.\$c); }\n}\n".$child, 1];
         yield 'new self d\'un parent' => [$base."    public static function tooLong(string \$c): self { return new self('x'.\$c); }\n}\n".$child, 0];
@@ -272,6 +326,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
             ."final class Problem extends \\DomainException {\n    use ".$adaptations."\n}\n";
         yield 'insteadof' => [$adapted('Good, Bad { Bad::getDetail insteadof Good; }'), 1];
         yield 'insteadof, l\'autre sens' => [$adapted('Bad, Good { Good::getDetail insteadof Bad; }'), 0];
+        yield 'insteadof vers un trait hors des sources' => [$adapted('\\Vendor\\Good, Bad { \\Vendor\\Good::getDetail insteadof Bad; }'), 0];
         yield 'alias de trait' => [$adapted('Formats { bad as getDetail; }'), 1];
         yield 'alias qualifié, avec visibilité' => [$adapted('Formats { Formats::bad as public getDetail; }'), 1];
         yield 'alias en casse différente' => [$adapted('Formats { BAD as GetDetail; }'), 1];
@@ -317,11 +372,12 @@ final class ProblemDetailStaysStaticTest extends TestCase
      */
     public function testTheTokenModelResolvesMethodsAsPhpDoes(): void
     {
-        $byName = $this->byName($this->parseAll($this->sourceFiles()));
+        $byName = $this->byName($this->sourceModel());
         $sources = (string) realpath(self::SOURCES);
         $resolved = 0;
         foreach (DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class) as $problem) {
             $class = new ReflectionClass($problem);
+            self::assertArrayHasKey(strtolower($problem), $byName, $problem.' : chargée par PHP, le modèle ne la déclare pas.');
             $methods = $this->methodsOf($byName[strtolower($problem)], $byName);
             $reflected = ['getdetail' => $class->hasMethod('getDetail') ? $class->getMethod('getDetail') : null, '__construct' => $class->getConstructor()];
             foreach ($reflected as $name => $method) {
@@ -365,6 +421,17 @@ final class ProblemDetailStaysStaticTest extends TestCase
     }
 
     /**
+     * Le modèle de src/, lu une fois par processus : les deux tests qui le
+     * lisent ne le reconstruisent pas, src/ ne change pas pendant PHPUnit.
+     *
+     * @return array<string, array{declarations: array<string, Declaration>, constructions: list<Construction>}>
+     */
+    private function sourceModel(): array
+    {
+        return self::$sourceModel ??= $this->parseAll($this->sourceFiles());
+    }
+
+    /**
      * @param array<string, string> $sources
      * @param list<string>          $problems
      *
@@ -372,13 +439,25 @@ final class ProblemDetailStaysStaticTest extends TestCase
      */
     private function violations(array $sources, array $problems): array
     {
+        return $this->violationsIn($this->parseAll($sources), $problems);
+    }
+
+    /**
+     * @param array<string, array{declarations: array<string, Declaration>, constructions: list<Construction>}> $parsed
+     * @param list<string>                                                                                        $problems
+     *
+     * @return list<string>
+     */
+    private function violationsIn(array $parsed, array $problems): array
+    {
         // Les noms se comparent en minuscules (PHP résout les classes sans
         // tenir compte de la casse) et se rapportent sous leur nom déclaré.
         $declaredNames = array_combine(array_map(strtolower(...), $problems), $problems);
-        $parsed = $this->parseAll($sources);
         $byName = $this->byName($parsed);
 
-        $fixesItsMessage = [];
+        // classe jugée => paramètres de son constructeur qui deviennent son
+        // message, ceux que ses sites `new` doivent passer littéraux
+        $messageParameters = [];
         // classe jugée => sorte de `new` => déclarations où ce `new` la construit
         $builtFrom = [];
         $violations = [];
@@ -394,24 +473,28 @@ final class ProblemDetailStaysStaticTest extends TestCase
                     $violations[] = $path.' : '.$class.' affecte $this->message';
                 }
                 $constructor = $methods['__construct'] ?? null;
-                if (null !== $constructor) {
-                    $fixesItsMessage[$name] = true;
-                    if (!$constructor['messageIsLiteral']) {
-                        $violations[] = $path.' : le constructeur de '.$class.' compose son message';
-                    }
+                $source = null !== $constructor ? $this->messageSource($constructor, $byName) : false;
+                if (null === $constructor) {
+                    $messageParameters[$name] = self::NATIVE_MESSAGE;
+                } elseif (false === $source || \in_array(true, $source, true)) {
+                    // Le constructeur compose : ses sites n'y changent rien.
+                    $violations[] = $path.' : le constructeur de '.$class.' compose son message';
+                    $messageParameters[$name] = [];
+                } else {
+                    $messageParameters[$name] = $this->positioned($constructor['parameters'], array_keys($source));
                 }
                 $builtFrom[$name] = $this->constructionSources($declaration, $byName);
             }
         }
 
         foreach ($parsed as $path => $file) {
-            foreach ($file['constructions'] as [$kind, $writtenIn, $literal, $line]) {
+            foreach ($file['constructions'] as [$kind, $writtenIn, $arguments, $line]) {
                 // Un nom désigne la classe jugée même déclarée hors des sources lues.
                 $targets = self::BY_NAME === $kind
-                    ? array_intersect([$writtenIn], array_keys($declaredNames))
+                    ? (isset($declaredNames[$writtenIn]) ? [$writtenIn] : [])
                     : array_keys(array_filter($builtFrom, static fn (array $sourcesByKind): bool => \in_array($writtenIn, $sourcesByKind[$kind] ?? [], true)));
                 foreach ($targets as $target) {
-                    if (!$literal && !isset($fixesItsMessage[$target])) {
+                    if (!$this->argumentsAreLiteral($arguments, $messageParameters[$target] ?? self::NATIVE_MESSAGE)) {
                         $violations[] = $path.':'.$line.' : new '.$declaredNames[$target].' avec un message non littéral';
                     }
                 }
@@ -458,26 +541,28 @@ final class ProblemDetailStaysStaticTest extends TestCase
 
     /**
      * Les méthodes concrètes que PHP retient pour cette déclaration, par nom
-     * en minuscules : les siennes, puis celles de ses traits, puis celles de
-     * son parent — l'ordre de PHP, où une méthode de trait remplace celle
-     * héritée et cède devant celle de la classe. Un parent ou un trait
-     * absent des sources (vendor, classe native) n'est pas lu.
+     * en minuscules, chacune avec son `context` : de haut en bas de sa
+     * lignée ({@see self::ancestry()}), chaque niveau remplace ce qu'il
+     * hérite par les méthodes de ses traits, puis par les siennes — l'ordre
+     * de PHP, où une méthode de trait remplace celle héritée et cède devant
+     * celle de la classe. Un parent ou un trait absent des sources (vendor,
+     * classe native) n'est pas lu.
      *
      * @param Declaration                $declaration
      * @param array<string, Declaration> $byName
-     * @param list<string>               $seen        déclarations déjà lues, contre un cycle
+     * @param list<string>               $seen        traits déjà lus, contre un cycle
      *
      * @return array<string, Method>
      */
     private function methodsOf(array $declaration, array $byName, array $seen = []): array
     {
-        $seen = [...$seen, $declaration['name']];
-        $parent = $declaration['parent'];
-        $inherited = null !== $parent && isset($byName[$parent]) && !\in_array($parent, $seen, true)
-            ? $this->methodsOf($byName[$parent], $byName, $seen)
-            : [];
+        $methods = [];
+        foreach (array_reverse($this->ancestry($declaration, $byName)) as $level) {
+            $own = $level['methods'] + $this->fromTraits($level, $byName, [...$seen, $level['name']]);
+            $methods = array_map(static fn (array $method): array => [...$method, 'context' => $level['name']], $own) + $methods;
+        }
 
-        return $declaration['methods'] + $this->fromTraits($declaration, $byName, $seen) + $inherited;
+        return $methods;
     }
 
     /**
@@ -510,6 +595,10 @@ final class ProblemDetailStaysStaticTest extends TestCase
         $methods = [];
         foreach ($candidates as $method => $byTrait) {
             $chosen = $declaration['insteadof'][$method] ?? null;
+            if (null !== $chosen && !isset($byName[$chosen])) {
+                // PHP retient la méthode d'un trait que le modèle ne lit pas.
+                continue;
+            }
             $body = null !== $chosen ? $byTrait[$chosen] ?? null : null;
             $methods[$method] = $body ?? array_first($byTrait);
         }
@@ -587,6 +676,107 @@ final class ProblemDetailStaysStaticTest extends TestCase
         }
 
         return false;
+    }
+
+    /**
+     * De quels paramètres de ce constructeur, retenu avec son `context`,
+     * dépend le message que reçoit {@see \Exception} — et si chacun y arrive
+     * composé (true) ou transmis tel quel (false) ; false si le message
+     * dépend d'autre chose. Chaque `parent::__construct` passe ce qui
+     * deviendra le message : le premier argument (ou `message:`) si le parent
+     * est natif ou hors des sources, sinon les arguments liés aux paramètres
+     * dont dépend le constructeur du parent, lu de même. Un argument littéral
+     * n'y ajoute rien, quoi qu'en fasse le parent ; une variable seule le
+     * transmet ; une concaténation de littéraux et de paramètres le compose ;
+     * toute autre expression, une variable locale ou un paramètre réaffecté
+     * le rendent inconnu.
+     *
+     * @param Method                     $constructor
+     * @param array<string, Declaration> $byName
+     * @param list<string>               $seen        contextes déjà lus, contre un cycle
+     *
+     * @return MessageSource
+     */
+    private function messageSource(array $constructor, array $byName, array $seen = []): false|array
+    {
+        $context = $constructor['context'] ?? '';
+        if (\in_array($context, $seen, true)) {
+            return false;
+        }
+        $parent = $byName[$context]['parent'] ?? null;
+        $parentConstructor = null !== $parent && isset($byName[$parent]) ? $this->methodsOf($byName[$parent], $byName)['__construct'] ?? null : null;
+        // [position, nom, composé plus haut] des paramètres du parent qui font le message
+        $messageParameters = [[0, 'message', false]];
+        if (null !== $parentConstructor) {
+            $source = $this->messageSource($parentConstructor, $byName, [...$seen, $context]);
+            if (false === $source) {
+                return false;
+            }
+            $messageParameters = array_map(
+                static fn (array $parameter): array => [...$parameter, $source[$parameter[1]]],
+                $this->positioned($parentConstructor['parameters'], array_keys($source)),
+            );
+        }
+
+        $dependencies = [];
+        foreach ($constructor['parentCalls'] as $arguments) {
+            foreach ($messageParameters as [$position, $name, $composedAbove]) {
+                $argument = $this->boundArgument($arguments, $position, $name);
+                if (null === $argument || $this->isLiteral($argument)) {
+                    continue;
+                }
+                $variables = $this->parametersComposing($argument, $constructor);
+                if (null === $variables) {
+                    return false;
+                }
+                foreach ($variables as $variable) {
+                    $dependencies[$variable] = ($dependencies[$variable] ?? false) || $composedAbove || 1 !== \count($argument);
+                }
+            }
+        }
+
+        return $dependencies;
+    }
+
+    /**
+     * Les paramètres du constructeur dont cet argument est fait, s'il n'est
+     * fait que de littéraux, de `.`, de parenthèses et de paramètres jamais
+     * réaffectés ; null sinon (variable locale, appel, propriété…).
+     *
+     * @param list<PhpToken> $argument
+     * @param Method         $constructor
+     *
+     * @return list<string>|null
+     */
+    private function parametersComposing(array $argument, array $constructor): ?array
+    {
+        $variables = [];
+        foreach ($argument as $token) {
+            if ($token->is(\T_VARIABLE)) {
+                $variable = substr($token->text, 1);
+                if (!\in_array($variable, $constructor['parameters'], true) || \in_array($variable, $constructor['reassigned'], true)) {
+                    return null;
+                }
+                $variables[] = $variable;
+            } elseif (!$token->is([\T_CONSTANT_ENCAPSED_STRING, '.', '(', ')', ...self::LITERAL_HEREDOC_TOKENS])) {
+                return null;
+            }
+        }
+
+        return array_values(array_unique($variables));
+    }
+
+    /**
+     * Ces paramètres, avec leur position dans la signature.
+     *
+     * @param list<string> $parameters la signature
+     * @param list<string> $names      certains de ses paramètres
+     *
+     * @return list<array{int, string}>
+     */
+    private function positioned(array $parameters, array $names): array
+    {
+        return array_map(static fn (string $name): array => [(int) array_search($name, $parameters, true), $name], $names);
     }
 
     /**
@@ -679,12 +869,14 @@ final class ProblemDetailStaysStaticTest extends TestCase
                         'path' => $path,
                         'line' => $token->line,
                         'returnsMessage' => $this->returnsTheMessage($tokens, $body),
-                        'messageIsLiteral' => $this->parentMessageIsLiteral($tokens, $body),
+                        'parameters' => $this->parametersOf($tokens, $index),
+                        'parentCalls' => $this->parentCalls($tokens, $body),
+                        'reassigned' => $this->reassignedIn($tokens, $body),
                     ];
                 }
             } elseif ($token->is(\T_NEW) && $this->tokenAt($tokens, $index + 1, self::NAME_TOKENS) && $this->tokenAt($tokens, $index + 2, '(')) {
                 [$kind, $class] = $this->instantiated($tokens[$index + 1], $namespace, $imports, $current);
-                $constructions[] = [$kind, $class, $this->messageIsLiteral($this->arguments($tokens, $index + 2)), $token->line];
+                $constructions[] = [$kind, $class, $this->arguments($tokens, $index + 2), $token->line];
             } elseif (null !== $current && $this->assignsTheMessageAt($tokens, $index)) {
                 $assignsMessage[$current] = true;
             }
@@ -896,24 +1088,44 @@ final class ProblemDetailStaysStaticTest extends TestCase
     }
 
     /**
-     * Le message est le premier argument positionnel, ou l'argument nommé
-     * `message` ; absent, il reste celui que la classe déclare.
+     * Les arguments liés à ces paramètres ([position, nom]) sont-ils tous
+     * littéraux ? Un argument absent laisse la valeur par défaut du
+     * paramètre, une constante : littéral.
+     *
+     * @param list<list<PhpToken>>     $arguments
+     * @param list<array{int, string}> $parameters
+     */
+    private function argumentsAreLiteral(array $arguments, array $parameters): bool
+    {
+        return array_all($parameters, function (array $parameter) use ($arguments): bool {
+            $argument = $this->boundArgument($arguments, $parameter[0], $parameter[1]);
+
+            return null === $argument || $this->isLiteral($argument);
+        });
+    }
+
+    /**
+     * L'argument lié au paramètre de cette position et de ce nom : l'argument
+     * nommé de ce nom, ou le positionnel de ce rang (les positionnels
+     * précèdent les nommés) ; null s'il est absent.
      *
      * @param list<list<PhpToken>> $arguments
+     *
+     * @return list<PhpToken>|null
      */
-    private function messageIsLiteral(array $arguments): bool
+    private function boundArgument(array $arguments, int $position, string $name): ?array
     {
-        foreach ($arguments as $position => $argument) {
+        foreach ($arguments as $index => $argument) {
             $named = $this->tokenAt($argument, 1, ':') && $argument[0]->is(\T_STRING);
-            if ($named && 'message' === $argument[0]->text) {
-                return $this->isLiteral(\array_slice($argument, 2));
+            if ($named && $name === $argument[0]->text) {
+                return \array_slice($argument, 2);
             }
-            if (!$named && 0 === $position) {
-                return $this->isLiteral($argument);
+            if (!$named && $index === $position) {
+                return $argument;
             }
         }
 
-        return true;
+        return null;
     }
 
     /**
@@ -968,17 +1180,17 @@ final class ProblemDetailStaysStaticTest extends TestCase
     }
 
     /**
-     * Dans le constructeur dont le corps s'ouvre en $body : le message passé à
-     * `parent::__construct` est-il littéral, à chacun de ses appels (un par
-     * branche, par exemple) ? Sans appel au parent, le message reste celui par
-     * défaut (vide) : littéral. `{$x}` et `${x}` ouvrent une
-     * accolade comme `{` ({@see PhpSources::opensBrace()}, issue #507).
+     * Les arguments de chaque `parent::__construct(…)` du corps qui s'ouvre
+     * en $body (un appel par branche, par exemple). `{$x}` et `${x}` ouvrent
+     * une accolade comme `{` ({@see PhpSources::opensBrace()}, issue #507).
      *
      * @param list<PhpToken> $tokens
+     *
+     * @return list<list<list<PhpToken>>>
      */
-    private function parentMessageIsLiteral(array $tokens, int $body): bool
+    private function parentCalls(array $tokens, int $body): array
     {
-        $literal = true;
+        $calls = [];
         $depth = 0;
         for ($index = $body, $count = \count($tokens); $index < $count; ++$index) {
             $token = $tokens[$index];
@@ -989,10 +1201,66 @@ final class ProblemDetailStaysStaticTest extends TestCase
             } elseif ($depth > 0 && $token->is(\T_STRING) && 'parent' === strtolower($token->text)
                 && $this->tokenAt($tokens, $index + 1, \T_DOUBLE_COLON)
                 && '__construct' === strtolower($tokens[$index + 2]->text ?? '')) {
-                $literal = $literal && $this->messageIsLiteral($this->arguments($tokens, $index + 3));
+                $calls[] = $this->arguments($tokens, $index + 3);
             }
         }
 
-        return $literal;
+        return $calls;
+    }
+
+    /**
+     * Les variables que le corps qui s'ouvre en $body réaffecte (`$x =`,
+     * `$x .=`…) ou prend par référence (`&$x`), noms sans `$` : un
+     * paramètre réaffecté n'est plus transmis tel quel.
+     *
+     * @param list<PhpToken> $tokens
+     *
+     * @return list<string>
+     */
+    private function reassignedIn(array $tokens, int $body): array
+    {
+        $reassigned = [];
+        $depth = 0;
+        for ($index = $body, $count = \count($tokens); $index < $count; ++$index) {
+            $token = $tokens[$index];
+            if (PhpSources::opensBrace($token)) {
+                ++$depth;
+            } elseif ($token->is('}') && 0 === --$depth) {
+                break;
+            } elseif ($token->is(\T_VARIABLE)
+                && ($this->tokenAt($tokens, $index + 1, self::VARIABLE_ASSIGNMENTS) || $this->tokenAt($tokens, $index - 1, '&'))) {
+                $reassigned[] = substr($token->text, 1);
+            }
+        }
+
+        return array_values(array_unique($reassigned));
+    }
+
+    /**
+     * Les noms, sans `$`, des paramètres de la fonction déclarée en
+     * $function, dans l'ordre : les variables au premier niveau de ses
+     * parenthèses, hors attributs et crochets de propriété d'un paramètre
+     * promu.
+     *
+     * @param list<PhpToken> $tokens
+     *
+     * @return list<string>
+     */
+    private function parametersOf(array $tokens, int $function): array
+    {
+        $parameters = [];
+        $level = 0;
+        for ($index = $function + 1, $count = \count($tokens); $index < $count; ++$index) {
+            $token = $tokens[$index];
+            if ($token->is(['(', '[', \T_ATTRIBUTE]) || PhpSources::opensBrace($token)) {
+                ++$level;
+            } elseif ($token->is([')', ']', '}']) && 0 === --$level) {
+                break;
+            } elseif (1 === $level && $token->is(\T_VARIABLE)) {
+                $parameters[] = substr($token->text, 1);
+            }
+        }
+
+        return $parameters;
     }
 }
