@@ -19,6 +19,8 @@ when@dev:
             routing:
                 # Joker d'espace de noms : ses messages ne se vérifient pas.
                 'App\Tests\Shared\Infrastructure\Messenger\Fixtures\*': async
+                # Le cas du ticket : une classe concrète, sans l'interface.
+                'App\Tests\Shared\Infrastructure\Messenger\Fixtures\UnconvertedQueuedMessage': async
 
 when@prod:
     framework:

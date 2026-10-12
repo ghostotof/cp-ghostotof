@@ -9,6 +9,7 @@ use App\Contact\Domain\Exception\ContactMessageQueueUnavailableException;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Exception\InvitationQueueUnavailableException;
 use App\Shared\Application\Message\MessengerProbeMessage;
+use App\Shared\Domain\Exception\MessageQueueUnavailableException;
 use App\Tests\Support\UnavailableTransport;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -26,7 +27,7 @@ use Throwable;
 final class AsyncPublishFailureTest extends KernelTestCase
 {
     /**
-     * @return iterable<string, array{object, class-string}>
+     * @return iterable<string, array{object, class-string<MessageQueueUnavailableException>}>
      */
     public static function producedMessages(): iterable
     {
@@ -41,7 +42,7 @@ final class AsyncPublishFailureTest extends KernelTestCase
     }
 
     /**
-     * @param class-string $expected
+     * @param class-string<MessageQueueUnavailableException> $expected
      */
     #[DataProvider('producedMessages')]
     public function testTheBusRaisesTheExceptionTheMessageNames(object $message, string $expected): void

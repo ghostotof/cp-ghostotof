@@ -6,7 +6,8 @@ namespace App\Tests\Shared\Infrastructure\Messenger\Fixtures;
 
 /**
  * Message de la fixture AsyncRoutingProject (issue #491) : il ne nomme
- * aucune exception, une file en panne le laisserait en 500 générique.
+ * aucune exception, mais n'est routé que vers `sync` — rien n'est publié,
+ * la garde doit le laisser passer (hors du joker de `dev`).
  */
 final readonly class UnconvertedMessage
 {

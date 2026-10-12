@@ -55,6 +55,7 @@ final class QueuedMessagesNameTheirQueueFailureTest extends TestCase
     {
         self::assertSame([
             'dev : App\Tests\Shared\Infrastructure\Messenger\Fixtures\* → async',
+            'dev : App\Tests\Shared\Infrastructure\Messenger\Fixtures\UnconvertedQueuedMessage → async',
             'prod : App\Tests\Shared\Infrastructure\Messenger\Fixtures\UnconvertedQueuedMessage → failed',
             'test : * → async',
         ], $this->unconvertedRoutings(self::FIXTURE_PROJECT));
