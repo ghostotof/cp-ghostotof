@@ -28,7 +28,7 @@ use Psr\Log\LoggerInterface;
  * - Le squelette — transaction à la main, attente bornée si la session ne
  *   la borne pas (un filet depuis #525 : la console de dev ou de CI),
  *   `55P03` renommé, COMMIT refusé remonté sous
- *   l'erreur de la base — est celui des trois verrous PostgreSQL,
+ *   l'erreur de la base — est celui des verrous PostgreSQL,
  *   {@see PostgresLockedTransaction} (issue #512). Un refus levé par
  *   l'opération ne ferme pas, à lui seul, l'EntityManager ; celui que lève
  *   un `flush()` le ferme, comme avant ce verrou.

@@ -31,7 +31,7 @@ use Psr\Log\LoggerInterface;
  * distinct des verrous à une clé `bigint` qu'utilise `symfony/lock`, aucune
  * collision n'est donc possible avec ceux des limiteurs de débit.
  *
- * Le squelette est celui des trois verrous PostgreSQL,
+ * Le squelette est celui des verrous PostgreSQL,
  * {@see PostgresLockedTransaction} (issue #512) : une transaction ouverte et
  * close à la main — ni `wrapInTransaction()`, qui fermerait l'EntityManager
  * sur un refus métier (409 « version déjà existante »), ni
@@ -48,7 +48,7 @@ use Psr\Log\LoggerInterface;
  *
  * **Il refuse de s'imbriquer** dans une transaction déjà ouverte, la sienne
  * comprise ({@see OrderScopeLockInsideTransactionException}, issue #526 ; la
- * garde vit dans le squelette depuis #532, commune aux trois verrous) :
+ * garde vit dans le squelette depuis #532, commune à tous ses verrous) :
  * imbriqué, son COMMIT ne serait qu'un `RELEASE SAVEPOINT`, le trigger
  * refuserait au COMMIT de l'appelant en `23T90` brut, et le verrou ne serait
  * relâché qu'alors. Refuser plutôt que documenter la limite : aucun appelant
