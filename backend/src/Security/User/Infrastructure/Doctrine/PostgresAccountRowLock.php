@@ -28,6 +28,11 @@ use Symfony\Bridge\Doctrine\Types\UuidType;
  * - Une lecture qui dit si la ligne existe : `refresh()` sur un compte
  *   supprimé entre-temps ne lève rien, et l'écriture suivante échouait sur la
  *   clé étrangère.
+ * - **Jamais dans une transaction déjà ouverte** (issue #532) : le squelette
+ *   le refuse, ici sous {@see AccountLockInsideTransactionException}.
+ *   Imbriqué, son COMMIT ne serait qu'un point de sauvegarde : la ligne
+ *   resterait verrouillée jusqu'au COMMIT de l'appelant, et le handler
+ *   d'invitation enverrait son lien avant la validation du jeton.
  */
 final readonly class PostgresAccountRowLock implements AccountLockInterface
 {
@@ -54,6 +59,7 @@ final readonly class PostgresAccountRowLock implements AccountLockInterface
                 }
             },
             onTimeout: static fn (DriverException $timeout): AccountLockTimeoutException => AccountLockTimeoutException::forAccount($user->getId()->toRfc4122(), $timeout),
+            onNested: static fn (): AccountLockInsideTransactionException => AccountLockInsideTransactionException::forAccount($user->getId()->toRfc4122()),
             operation: function () use ($user, $operation): mixed {
                 $this->entityManager->refresh($user);
 

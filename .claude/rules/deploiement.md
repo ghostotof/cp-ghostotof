@@ -87,9 +87,14 @@ paths:
   `LOCK_NOT_AVAILABLE` — renamed per lock, a refused COMMIT never masked, nor the cause by a
   ROLLBACK the database refuses after it, issue #526: that failure is logged `error` with classes and
   SQLSTATE only, the session is closed — never reused, PostgreSQL rolls it back, DBAL reopens one —, and
-  the cause is rethrown as is; nested, the caller's transaction is gone with the session, so
-  `LockedTransactionRollbackFailedException` says so, the cause as `previous`; a programming error of the
-  ROLLBACK, `NoActiveTransaction`, still surfaces), which gives the
+  the cause is rethrown as is; a programming error of the ROLLBACK, `NoActiveTransaction`, still
+  surfaces; **never inside a transaction already open**, issues #526, #532: `run()` refuses before
+  opening anything, under the name each adapter gives its required `onNested` —
+  `OrderScopeLockInsideTransactionException`, `AccountLockInsideTransactionException`,
+  `UsernameAllocationLockInsideTransactionException`, `LogicException`s, unmapped `critical` 500s —, since
+  nested its COMMIT would only be a `RELEASE SAVEPOINT` and what each lock promises « after the commit »
+  would not hold; the check lives in the skeleton, required, so a new lock cannot forget it, and DBAL's
+  count is the judge — a raw `executeStatement('BEGIN')` is not seen), which gives the
   transaction `FALLBACK_LOCK_TIMEOUT` (`5s`, the FPM value) through `set_config('lock_timeout', …, true)`
   **only when the session has none** (`0`): a bound already chosen (`PGOPTIONS`, a test) is kept,
   neither lengthened nor shortened. A new PostgreSQL lock goes through it. `docker/php` is mounted read-only in the dev

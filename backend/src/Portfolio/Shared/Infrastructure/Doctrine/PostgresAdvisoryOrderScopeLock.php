@@ -47,7 +47,8 @@ use Psr\Log\LoggerInterface;
  * fin avant #512.
  *
  * **Il refuse de s'imbriquer** dans une transaction déjà ouverte, la sienne
- * comprise ({@see OrderScopeLockInsideTransactionException}, issue #526) :
+ * comprise ({@see OrderScopeLockInsideTransactionException}, issue #526 ; la
+ * garde vit dans le squelette depuis #532, commune aux trois verrous) :
  * imbriqué, son COMMIT ne serait qu'un `RELEASE SAVEPOINT`, le trigger
  * refuserait au COMMIT de l'appelant en `23T90` brut, et le verrou ne serait
  * relâché qu'alors. Refuser plutôt que documenter la limite : aucun appelant
@@ -122,13 +123,6 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
     public function withLock(string $scope, Closure $operation): mixed
     {
         $connection = $this->entityManager->getConnection();
-        // Issue #526 : imbriqué, le COMMIT ci-dessous ne serait qu'un
-        // RELEASE SAVEPOINT, et le refus du trigger des groupes tomberait au
-        // COMMIT de l'appelant, sans `onCommitRefused` pour le nommer. Vu
-        // par DBAL, seul juge de ce que `commit()` émettra.
-        if ($connection->isTransactionActive()) {
-            throw OrderScopeLockInsideTransactionException::forScope($scope);
-        }
 
         return new PostgresLockedTransaction($connection, $this->logger, $this->fallbackLockTimeout)->run(
             // Bloquant : attend la fin de la transaction qui tient ce périmètre.
@@ -137,6 +131,9 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
                 [self::ADVISORY_NAMESPACE, $scope],
             ),
             onTimeout: static fn (DriverException $timeout): OrderScopeLockTimeoutException => OrderScopeLockTimeoutException::forScope($scope, $timeout),
+            // Issue #526 : imbriqué, le refus du trigger des groupes tomberait
+            // au COMMIT de l'appelant, sans `onCommitRefused` pour le nommer.
+            onNested: static fn (): OrderScopeLockInsideTransactionException => OrderScopeLockInsideTransactionException::forScope($scope),
             operation: function () use ($scope, $operation): mixed {
                 $this->rereadEntriesLoadedBefore($scope);
 

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Lock;
 
-use App\Shared\Infrastructure\Lock\LockedTransactionRollbackFailedException;
 use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
 use App\Tests\Support\CommitRefusal;
 use App\Tests\Support\OpensProbeConnection;
@@ -40,6 +39,9 @@ final class PostgresLockedTransactionTest extends KernelTestCase
     /** Le message de l'exception qu'un verrou donnerait à son attente dépassée. */
     private const string NAMED_TIMEOUT = 'délai nommé';
 
+    /** Le message de l'exception qu'un verrou donnerait à son imbrication. */
+    private const string NAMED_NESTING = 'imbrication nommée';
+
     /**
      * Le message d'une cause qui ne doit jamais atteindre le journal : celui
      * d'une `DriverException` peut citer les paramètres de la requête (une
@@ -74,6 +76,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
         $result = $this->transaction()->run(
             acquire: fn (): mixed => $this->connection->executeQuery(self::LOCK_SQL),
             onTimeout: $this->unexpectedTimeout(...),
+            onNested: $this->unexpectedNesting(...),
             operation: fn (): array => [$this->connection->isTransactionActive(), $this->probeCanTakeTheLock()],
         );
 
@@ -94,6 +97,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
         $inside = $this->transaction('250ms')->run(
             acquire: static fn (): null => null,
             onTimeout: $this->unexpectedTimeout(...),
+            onNested: $this->unexpectedNesting(...),
             operation: fn (): mixed => $this->connection->fetchOne('SHOW lock_timeout'),
         );
 
@@ -112,6 +116,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
         $inside = $this->transaction('5s')->run(
             acquire: static fn (): null => null,
             onTimeout: $this->unexpectedTimeout(...),
+            onNested: $this->unexpectedNesting(...),
             operation: fn (): mixed => $this->connection->fetchOne('SHOW lock_timeout'),
         );
 
@@ -130,6 +135,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
             $this->transaction('50ms')->run(
                 acquire: fn (): mixed => $this->connection->executeQuery(self::LOCK_SQL),
                 onTimeout: static fn (DriverException $timeout): Throwable => new DomainException(self::NAMED_TIMEOUT, 0, $timeout),
+                onNested: $this->unexpectedNesting(...),
                 operation: static function () use (&$ran): void {
                     $ran = true;
                 },
@@ -163,6 +169,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
             $this->transaction('50ms')->run(
                 acquire: fn (): mixed => $this->connection->executeQuery(self::LOCK_SQL),
                 onTimeout: static fn (DriverException $timeout): Throwable => new DomainException('renommé à tort', 0, $timeout),
+                onNested: $this->unexpectedNesting(...),
                 operation: fn (): mixed => $this->connection->executeQuery('SELECT pg_advisory_xact_lock(512, 513)'),
             );
         } catch (Throwable $exception) {
@@ -188,6 +195,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
             $this->transaction()->run(
                 acquire: static fn (): never => throw $refusal,
                 onTimeout: $this->unexpectedTimeout(...),
+                onNested: $this->unexpectedNesting(...),
                 operation: static fn (): null => null,
             );
             self::fail("Le refus de l'acquisition aurait dû remonter.");
@@ -210,6 +218,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
                 $this->transaction()->run(
                     acquire: fn (): mixed => $this->connection->executeQuery(self::LOCK_SQL),
                     onTimeout: $this->unexpectedTimeout(...),
+                    onNested: $this->unexpectedNesting(...),
                     operation: function () use ($refusal): never {
                         $this->connection->executeStatement('INSERT INTO locked_write (k) VALUES (1)');
 
@@ -243,6 +252,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
             $this->transaction()->run(
                 acquire: fn (): mixed => $this->connection->executeQuery(self::LOCK_SQL),
                 onTimeout: $this->unexpectedTimeout(...),
+                onNested: $this->unexpectedNesting(...),
                 operation: fn () => CommitRefusal::scheduleIn($this->connection),
             );
         } catch (Throwable $exception) {
@@ -269,6 +279,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
             $this->transaction()->run(
                 acquire: fn (): mixed => $this->connection->executeQuery(self::LOCK_SQL),
                 onTimeout: $this->unexpectedTimeout(...),
+                onNested: $this->unexpectedNesting(...),
                 operation: $this->connection->setRollbackOnly(...),
             );
         } catch (Throwable $exception) {
@@ -299,6 +310,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
             $this->transaction()->run(
                 acquire: fn (): mixed => $this->connection->executeQuery(self::LOCK_SQL),
                 onTimeout: $this->unexpectedTimeout(...),
+                onNested: $this->unexpectedNesting(...),
                 operation: function () use ($refusal): never {
                     $this->terminateTheSession();
 
@@ -310,7 +322,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
         }
 
         self::assertSame($refusal, $caught, \sprintf("La cause d'origine a été masquée par l'échec du ROLLBACK : %s.", get_debug_type($caught)));
-        $this->assertTheFailedRollbackIsLoggedWithoutItsCause(DomainException::class, nested: false);
+        $this->assertTheFailedRollbackIsLoggedWithoutItsCause(DomainException::class);
         $this->assertTheDeadSessionWasReplaced();
     }
 
@@ -327,6 +339,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
             $this->transaction()->run(
                 acquire: fn (): mixed => $this->connection->executeQuery(self::LOCK_SQL),
                 onTimeout: $this->unexpectedTimeout(...),
+                onNested: $this->unexpectedNesting(...),
                 operation: function (): void {
                     $this->terminateTheSession();
                     $this->connection->setRollbackOnly();
@@ -337,41 +350,82 @@ final class PostgresLockedTransactionTest extends KernelTestCase
         }
 
         self::assertInstanceOf(CommitFailedRollbackOnly::class, $caught, \sprintf("Le refus du COMMIT a été masqué par l'échec du ROLLBACK : %s.", get_debug_type($caught)));
-        $this->assertTheFailedRollbackIsLoggedWithoutItsCause(CommitFailedRollbackOnly::class, nested: false);
+        $this->assertTheFailedRollbackIsLoggedWithoutItsCause(CommitFailedRollbackOnly::class);
         $this->assertTheDeadSessionWasReplaced();
     }
 
     /**
-     * Imbriqué, le ROLLBACK refusé est celui du point de sauvegarde, et DBAL
-     * garde alors son niveau : relancer la seule cause laisserait l'appelant
-     * valider une transaction que la session fermée a emportée. Une exception
-     * nommée le lui dit, avec la cause en `previous`.
+     * Issue #532 : le squelette refuse de s'ouvrir dans une transaction déjà
+     * ouverte, pour les trois verrous à la fois. Imbriqué, son COMMIT ne
+     * serait qu'un `RELEASE SAVEPOINT` : le verrou tiendrait jusqu'au COMMIT
+     * de l'appelant, et ce que l'adaptateur fait « après la validation »
+     * (publier une invitation, envoyer un lien) partirait avant elle. Le
+     * refus porte le nom que l'adaptateur lui donne, tombe avant de rien
+     * prendre ni lancer, et laisse la transaction de l'appelant intacte.
      */
-    public function testANestedRollbackThatFailsTellsTheCallerItsTransactionIsLost(): void
+    public function testItRefusesToOpenInsideATransactionAlreadyOpen(): void
     {
-        $refusal = new DomainException(self::CAUSE_MESSAGE);
         $this->connection->beginTransaction();
+        $acquired = false;
+        $ran = false;
         $caught = null;
 
         try {
             $this->transaction()->run(
-                acquire: static fn (): null => null,
+                acquire: static function () use (&$acquired): void {
+                    $acquired = true;
+                },
                 onTimeout: $this->unexpectedTimeout(...),
-                operation: function () use ($refusal): never {
-                    $this->terminateTheSession();
-
-                    throw $refusal;
+                onNested: static fn (): Throwable => new DomainException(self::NAMED_NESTING),
+                operation: static function () use (&$ran): void {
+                    $ran = true;
                 },
             );
         } catch (Throwable $exception) {
             $caught = $exception;
         }
 
-        self::assertInstanceOf(LockedTransactionRollbackFailedException::class, $caught, \sprintf("L'appelant n'a pas appris que sa transaction est perdue : %s.", get_debug_type($caught)));
-        self::assertSame($refusal, $caught->getPrevious(), "La cause d'origine n'est pas en previous.");
-        self::assertStringNotContainsString(self::CAUSE_MESSAGE, $caught->getMessage());
-        $this->assertTheFailedRollbackIsLoggedWithoutItsCause(DomainException::class, nested: true);
-        $this->assertTheDeadSessionWasReplaced();
+        try {
+            self::assertInstanceOf(DomainException::class, $caught, \sprintf("L'imbrication n'a pas été refusée sous le nom donné : %s.", get_debug_type($caught)));
+            self::assertSame(self::NAMED_NESTING, $caught->getMessage());
+            self::assertFalse($acquired, 'Le verrou a été pris malgré le refus.');
+            self::assertFalse($ran, "L'opération a tourné dans la transaction de l'appelant.");
+            self::assertSame(1, $this->connection->getTransactionNestingLevel(), "La transaction de l'appelant a été touchée.");
+            self::assertSame([], $this->logs->getRecords());
+        } finally {
+            $this->connection->rollBack();
+        }
+    }
+
+    /**
+     * Le cas particulier d'un verrou pris sous un autre (le même ou un
+     * autre adaptateur) : même refus, et la transaction du premier est
+     * annulée comme après tout échec de son opération, son verrou rendu.
+     */
+    public function testItRefusesToOpenInsideItself(): void
+    {
+        $caught = null;
+
+        try {
+            $this->transaction()->run(
+                acquire: fn (): mixed => $this->connection->executeQuery(self::LOCK_SQL),
+                onTimeout: $this->unexpectedTimeout(...),
+                onNested: $this->unexpectedNesting(...),
+                operation: fn (): mixed => $this->transaction()->run(
+                    acquire: static fn (): null => null,
+                    onTimeout: $this->unexpectedTimeout(...),
+                    onNested: static fn (): Throwable => new DomainException(self::NAMED_NESTING),
+                    operation: static fn (): null => null,
+                ),
+            );
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(DomainException::class, $caught, \sprintf("L'imbrication n'a pas été refusée sous le nom donné : %s.", get_debug_type($caught)));
+        self::assertSame(self::NAMED_NESTING, $caught->getMessage());
+        self::assertFalse($this->connection->isTransactionActive());
+        self::assertTrue($this->probeCanTakeTheLock(), 'Le verrou du premier a survécu au refus.');
     }
 
     /**
@@ -388,6 +442,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
             $this->transaction()->run(
                 acquire: static fn (): null => null,
                 onTimeout: $this->unexpectedTimeout(...),
+                onNested: $this->unexpectedNesting(...),
                 operation: function (): never {
                     $this->connection->commit();
 
@@ -400,30 +455,6 @@ final class PostgresLockedTransactionTest extends KernelTestCase
 
         self::assertInstanceOf(NoActiveTransaction::class, $caught, \sprintf("L'erreur de programmation a été masquée : %s.", get_debug_type($caught)));
         self::assertSame([], $this->logs->getRecords());
-    }
-
-    /**
-     * Imbriqué dans une transaction déjà ouverte, le squelette n'annule que
-     * la sienne (son point de sauvegarde) : celle de l'appelant reste à lui.
-     */
-    public function testInsideAnOuterTransactionOnlyItsOwnLevelIsRolledBack(): void
-    {
-        $this->connection->beginTransaction();
-
-        try {
-            try {
-                $this->transaction()->run(
-                    acquire: static fn (): null => null,
-                    onTimeout: $this->unexpectedTimeout(...),
-                    operation: $this->connection->setRollbackOnly(...),
-                );
-            } catch (Throwable) {
-            }
-
-            self::assertSame(1, $this->connection->getTransactionNestingLevel(), "La transaction de l'appelant a été touchée.");
-        } finally {
-            $this->connection->rollBack();
-        }
     }
 
     /**
@@ -440,6 +471,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
             $this->transaction()->run(
                 acquire: static fn (): null => null,
                 onTimeout: $this->unexpectedTimeout(...),
+                onNested: $this->unexpectedNesting(...),
                 operation: fn () => CommitRefusal::scheduleIn($this->connection),
                 onCommitRefused: static fn (DriverException $refusal): ?Throwable => CommitRefusal::SQLSTATE === $refusal->getSQLState() ? new DomainException('invariant', 0, $refusal) : null,
             );
@@ -451,6 +483,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
             $this->transaction()->run(
                 acquire: static fn (): null => null,
                 onTimeout: $this->unexpectedTimeout(...),
+                onNested: $this->unexpectedNesting(...),
                 operation: fn () => CommitRefusal::scheduleIn($this->connection),
                 onCommitRefused: static fn (DriverException $refusal): ?Throwable => null,
             );
@@ -507,14 +540,13 @@ final class PostgresLockedTransactionTest extends KernelTestCase
      *
      * @param class-string<Throwable> $cause
      */
-    private function assertTheFailedRollbackIsLoggedWithoutItsCause(string $cause, bool $nested): void
+    private function assertTheFailedRollbackIsLoggedWithoutItsCause(string $cause): void
     {
         $records = $this->logs->getRecords();
 
         self::assertCount(1, $records, "L'échec du ROLLBACK n'a pas été journalisé, ou l'a été plusieurs fois.");
         self::assertSame(Level::Error, $records[0]->level);
         self::assertSame($cause, $records[0]->context['cause'] ?? null);
-        self::assertSame($nested, $records[0]->context['nested'] ?? null);
         self::assertIsString($records[0]->context['rollbackFailure'] ?? null);
         self::assertTrue(is_a($records[0]->context['rollbackFailure'], Throwable::class, true), "L'échec du ROLLBACK n'est pas nommé par sa classe.");
         self::assertStringNotContainsString(self::CAUSE_MESSAGE, $records[0]->message.json_encode($records[0]->context, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE));
@@ -523,6 +555,11 @@ final class PostgresLockedTransactionTest extends KernelTestCase
     private function unexpectedTimeout(DriverException $timeout): Throwable
     {
         return new LogicException('Délai inattendu dans ce test.', 0, $timeout);
+    }
+
+    private function unexpectedNesting(): Throwable
+    {
+        return new LogicException('Imbrication inattendue dans ce test.');
     }
 
     /**

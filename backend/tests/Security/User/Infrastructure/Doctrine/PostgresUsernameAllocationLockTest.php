@@ -7,6 +7,7 @@ namespace App\Tests\Security\User\Infrastructure\Doctrine;
 use App\Security\User\Application\UsernameAllocationLockInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Infrastructure\Doctrine\PostgresUsernameAllocationLock;
+use App\Security\User\Infrastructure\Doctrine\UsernameAllocationLockInsideTransactionException;
 use App\Security\User\Infrastructure\Doctrine\UsernameAllocationLockTimeoutException;
 use App\Tests\Support\CommitRefusal;
 use App\Tests\Support\OpensProbeConnection;
@@ -175,6 +176,66 @@ final class PostgresUsernameAllocationLockTest extends KernelTestCase
             self::assertTrue($this->em->isOpen());
             self::assertFalse($connection->isTransactionActive());
             self::assertTrue($this->probeCanTakeTheLock($probe), 'Le verrou a survécu au COMMIT refusé.');
+        } finally {
+            $probe->close();
+        }
+    }
+
+    /**
+     * Issue #532 : dans une transaction déjà ouverte, le COMMIT du verrou ne
+     * serait qu'un `RELEASE SAVEPOINT`. `CpgUserInviter::invite()` publie
+     * l'invitation au retour de `whileAllocating()`, qu'il tient pour le
+     * COMMIT : le worker chercherait un compte encore invisible, n'en
+     * trouverait aucun et abandonnerait le message sans réessai. Le verrou
+     * refuse donc de s'imbriquer, avant de rien prendre ni lancer, et laisse
+     * la transaction de l'appelant telle qu'il l'a ouverte.
+     */
+    public function testTheLockRefusesToRunInsideATransactionAlreadyOpen(): void
+    {
+        $connection = $this->em->getConnection();
+        $probe = self::openProbeBeside($connection);
+        $connection->beginTransaction();
+        $ran = false;
+        $caught = null;
+
+        try {
+            $this->lock()->whileAllocating(static function () use (&$ran): void {
+                $ran = true;
+            });
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        try {
+            self::assertInstanceOf(UsernameAllocationLockInsideTransactionException::class, $caught, \sprintf("L'imbrication n'a pas été refusée sous son nom : %s.", get_debug_type($caught)));
+            self::assertFalse($ran, "L'opération a tourné dans la transaction de l'appelant.");
+            self::assertSame(1, $connection->getTransactionNestingLevel(), "La transaction de l'appelant a été touchée.");
+            self::assertTrue($this->probeCanTakeTheLock($probe), 'Le verrou a été pris malgré le refus.');
+        } finally {
+            $connection->rollBack();
+            $probe->close();
+        }
+    }
+
+    /**
+     * Le cas particulier du verrou pris sous lui-même : même refus, et la
+     * transaction du premier est annulée, son verrou rendu.
+     */
+    public function testTheLockRefusesToNestInsideItself(): void
+    {
+        $probe = self::openProbeBeside($this->em->getConnection());
+        $caught = null;
+
+        try {
+            try {
+                $this->lock()->whileAllocating(fn (): mixed => $this->lock()->whileAllocating(static fn (): null => null));
+            } catch (Throwable $exception) {
+                $caught = $exception;
+            }
+
+            self::assertInstanceOf(UsernameAllocationLockInsideTransactionException::class, $caught, \sprintf("L'imbrication n'a pas été refusée sous son nom : %s.", get_debug_type($caught)));
+            self::assertFalse($this->em->getConnection()->isTransactionActive());
+            self::assertTrue($this->probeCanTakeTheLock($probe), 'Le verrou du premier a survécu au refus.');
         } finally {
             $probe->close();
         }

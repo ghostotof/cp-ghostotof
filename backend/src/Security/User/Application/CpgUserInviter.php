@@ -41,7 +41,9 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
         // Issue #364 : vérifications et enregistrement sous un même verrou.
         // Le message n'est publié qu'après la validation de la transaction —
         // publié avant, le handler pourrait chercher un compte encore
-        // invisible. Sur un refus, rien n'est publié.
+        // invisible. Sur un refus, rien n'est publié. Le retour du verrou est
+        // bien ce COMMIT : il refuse de s'ouvrir dans une transaction déjà
+        // ouverte, où il ne serait qu'un point de sauvegarde (issue #532).
         $user = $this->usernameAllocationLock->whileAllocating(fn (): CpgUser => $this->createPendingAccount($email));
 
         try {

@@ -45,6 +45,16 @@ interface UsernameAllocationLockInterface
      * qu'à la libération. Une exception de `$operation` annule la transaction
      * et remonte telle quelle.
      *
+     * **Jamais dans une transaction déjà ouverte** (issue #532), ni sous un
+     * autre verrou de l'application : le retour de cette méthode *est* le
+     * COMMIT, et l'appelant s'y fie (`CpgUserInviter::invite()` ne publie
+     * l'invitation qu'après). Imbriqué, ce ne serait qu'un point de
+     * sauvegarde : le worker chercherait un compte encore invisible et
+     * abandonnerait le message sans réessai, le verrou tenant toutes les
+     * invitations jusqu'au COMMIT de l'appelant. Un appel imbriqué est refusé
+     * avant de prendre le verrou, sous une exception nommée (un 500 depuis
+     * l'API, une erreur de la commande en CLI).
+     *
      * @template T
      *
      * @param Closure(): T $operation
