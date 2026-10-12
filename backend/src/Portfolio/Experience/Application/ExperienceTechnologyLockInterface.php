@@ -21,9 +21,10 @@ use Symfony\Component\Uid\Uuid;
  * répondait 200 sur une technologie disparue, le perdant de deux `DELETE` 204.
  *
  * Un verrou de **ligne**, et non le verrou de périmètre des contenus ordonnés
- * (`OrderScopeLockInterface`) : une technologie ne porte pas de position, rien
- * n'est placé, et seule la ligne écrite doit être tenue. La création n'est pas
- * concernée : sa course est gardée par l'index unique du nom.
+ * ({@see \App\Portfolio\Shared\Application\OrderScopeLockInterface}) : une
+ * technologie ne porte pas de position, rien n'est placé, et seule la ligne
+ * écrite doit être tenue. La création n'est pas concernée : sa course est
+ * gardée par l'index unique du nom.
  */
 interface ExperienceTechnologyLockInterface
 {

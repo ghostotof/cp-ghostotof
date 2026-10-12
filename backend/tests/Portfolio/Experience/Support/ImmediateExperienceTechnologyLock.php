@@ -15,8 +15,9 @@ use Symfony\Component\Uid\Uuid;
  * dépôt reçu et exécute l'opération sur-le-champ, ou la dit introuvable. Les
  * tests unitaires de l'administrateur vérifient ce qu'il écrit, pas la
  * sérialisation (issue #545) — celle-ci est l'affaire de
- * ExperienceTechnologyWritesUnderRowLockTest et de
- * PostgresExperienceTechnologyRowLockTest, contre PostgreSQL.
+ * {@see \App\Tests\Portfolio\Experience\Application\ExperienceTechnologyWritesUnderRowLockTest} et de
+ * {@see \App\Tests\Portfolio\Experience\Infrastructure\Doctrine\PostgresExperienceTechnologyRowLockTest},
+ * contre PostgreSQL.
  */
 final readonly class ImmediateExperienceTechnologyLock implements ExperienceTechnologyLockInterface
 {

@@ -24,7 +24,7 @@ use Throwable;
 /**
  * Le verrou de ligne d'une technologie sur la base réelle (issue #545). Que
  * les écritures du backoffice le prennent est couvert par
- * ExperienceTechnologyWritesUnderRowLockTest.
+ * {@see \App\Tests\Portfolio\Experience\Application\ExperienceTechnologyWritesUnderRowLockTest}.
  */
 final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
 {

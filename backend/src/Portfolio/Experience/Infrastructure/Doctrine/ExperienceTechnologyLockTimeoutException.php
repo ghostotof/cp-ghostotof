@@ -12,7 +12,8 @@ use Throwable;
  * (issue #545). Ses détenteurs la gardent quelques millisecondes : au-delà,
  * c'est une anomalie, pas un conflit à réessayer. D'où l'absence de mapping
  * HTTP : un 500 `critical` qui porte un nom, comme pour les autres verrous du
- * squelette PostgresLockedTransaction. Le message ne cite que l'UUID.
+ * squelette {@see \App\Shared\Infrastructure\Lock\PostgresLockedTransaction}.
+ * Le message ne cite que l'UUID.
  */
 final class ExperienceTechnologyLockTimeoutException extends RuntimeException
 {

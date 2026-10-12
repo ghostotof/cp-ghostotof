@@ -81,6 +81,32 @@ final class ExperienceTechnologyWritesUnderRowLockTest extends KernelTestCase
     }
 
     /**
+     * Cas nominal sous le vrai verrou : l'écriture est validée, et la ligne
+     * rendue au COMMIT.
+     */
+    public function testAnUpdateUnderTheLockIsCommittedAndReleasesTheRow(): void
+    {
+        $id = $this->loadedAsTheProviderDoes();
+
+        $updated = $this->administrator()->update($id, TechnologyName::fromString('Symfony'), ExperienceYears::fromFloat(4.0), 'symfony', null);
+
+        self::assertSame('Symfony', $updated->getName());
+        self::assertSame('Symfony', $this->em->getConnection()->fetchOne('SELECT name FROM experience_technology WHERE id = :id', ['id' => $id->toRfc4122()]));
+        self::assertFalse($this->em->getConnection()->isTransactionActive());
+        self::assertTrue($this->probeCanLockTheRow($id), 'La ligne est restée verrouillée après le COMMIT.');
+    }
+
+    public function testADeletionUnderTheLockRemovesTheRow(): void
+    {
+        $id = $this->loadedAsTheProviderDoes();
+
+        $this->administrator()->delete($id);
+
+        self::assertFalse($this->em->getConnection()->fetchOne('SELECT 1 FROM experience_technology WHERE id = :id', ['id' => $id->toRfc4122()]));
+        self::assertFalse($this->em->getConnection()->isTransactionActive());
+    }
+
+    /**
      * @return iterable<string, array{Closure(ExperienceTechnologyAdministratorInterface, Uuid): mixed}>
      */
     public static function writes(): iterable
@@ -132,6 +158,21 @@ final class ExperienceTechnologyWritesUnderRowLockTest extends KernelTestCase
         self::assertNotNull($loaded);
 
         return $loaded->getId();
+    }
+
+    /**
+     * Tente la ligne depuis une autre session sans jamais l'attendre
+     * (`SKIP LOCKED` : une ligne tenue n'est pas rendue).
+     */
+    private function probeCanLockTheRow(Uuid $id): bool
+    {
+        $probe = self::openProbeBeside($this->em->getConnection());
+
+        try {
+            return 1 === $probe->fetchOne('SELECT 1 FROM experience_technology WHERE id = :id FOR UPDATE SKIP LOCKED', ['id' => $id->toRfc4122()]);
+        } finally {
+            $probe->close();
+        }
     }
 
     private function deleteInSql(Uuid $id): void

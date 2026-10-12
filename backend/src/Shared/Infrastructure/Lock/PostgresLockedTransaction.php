@@ -79,7 +79,7 @@ use Throwable;
  *
  * Écrit ici une fois plutôt que dans chaque adaptateur, dès qu'il y en a eu
  * trois à le vouloir (#532 ; #526 l'avait laissé dans le seul verrou d'ordre) :
- * `$onNested` est **obligatoire**, un quatrième verrou ne peut donc pas
+ * `$onNested` est **obligatoire**, un nouveau verrou ne peut donc pas
  * l'oublier, alors qu'une copie par adaptateur se serait oubliée comme le
  * délai et le COMMIT refusé avant #512. Chacun garde le nom de son refus, qui
  * dit à l'exploitant quel verrou a été mal pris. Rejetée : une option qui
