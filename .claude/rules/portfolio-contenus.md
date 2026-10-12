@@ -70,7 +70,8 @@ paths:
     `critical` 500), comes before any write; no caller nests today (the `Administrator`s, the seeds, the
     migrations, which write in SQL, the whole suite), so the rule holds by construction instead of relying on
     the next caller's memory. A future operation spanning two scopes takes one lock, or an adapter that owns
-    the outer COMMIT — never a nested `withLock()`. **Never go back to `Connection::transactional()`** there: when
+    the outer COMMIT — never a nested `withLock()`. DBAL's count is the judge: a transaction opened in raw
+    SQL (`executeStatement('BEGIN')`) is not seen, and none may be opened that way around an `Administrator`. **Never go back to `Connection::transactional()`** there: when
     `commit()` fails, DBAL has already brought its nesting level to 0, and `transactional()`'s fallback
     `rollBack()` throws "There is no active transaction" over the real error, for any SQLSTATE outside
     its short list (unique, foreign key, deadlock…) — measured, `PostgresAdvisoryOrderScopeLockTest`
