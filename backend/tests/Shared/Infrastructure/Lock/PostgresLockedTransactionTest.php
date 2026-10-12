@@ -470,12 +470,14 @@ final class PostgresLockedTransactionTest extends KernelTestCase
     /**
      * Un verrou peut nommer un refus du COMMIT qu'il reconnaît (le trigger
      * des groupes de traduction, #390) ; un refus qu'il ne reconnaît pas
-     * remonte tel quel.
+     * remonte tel quel. Le crochet ne fait que nommer : l'EntityManager est
+     * déjà fermé quand il est appelé, et le reste quand il renomme (#547).
      */
     public function testACommitRefusalCanBeRenamedByTheLockThatRecognisesIt(): void
     {
         $recognised = null;
         $unrecognised = null;
+        $openWhenNamed = null;
 
         try {
             $this->transaction()->run(
@@ -483,7 +485,11 @@ final class PostgresLockedTransactionTest extends KernelTestCase
                 onTimeout: $this->unexpectedTimeout(...),
                 onNested: $this->unexpectedNesting(...),
                 operation: fn () => CommitRefusal::scheduleIn($this->connection),
-                onCommitRefused: static fn (DriverException $refusal): ?Throwable => CommitRefusal::SQLSTATE === $refusal->getSQLState() ? new DomainException('invariant', 0, $refusal) : null,
+                onCommitRefused: function (DriverException $refusal) use (&$openWhenNamed): ?Throwable {
+                    $openWhenNamed = $this->entityManager->isOpen();
+
+                    return CommitRefusal::SQLSTATE === $refusal->getSQLState() ? new DomainException('invariant', 0, $refusal) : null;
+                },
             );
         } catch (Throwable $exception) {
             $recognised = $exception;
@@ -503,6 +509,8 @@ final class PostgresLockedTransactionTest extends KernelTestCase
 
         self::assertInstanceOf(DomainException::class, $recognised);
         self::assertInstanceOf(DriverException::class, $recognised->getPrevious());
+        self::assertFalse($openWhenNamed, "L'EntityManager était encore ouvert quand le crochet a été appelé.");
+        self::assertFalse($this->entityManager->isOpen(), "Un refus renommé par le crochet a laissé l'EntityManager ouvert.");
         self::assertInstanceOf(DriverException::class, $unrecognised, 'Un refus non reconnu a été renommé.');
         self::assertFalse($this->connection->isTransactionActive());
     }

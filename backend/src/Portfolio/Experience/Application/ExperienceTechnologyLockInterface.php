@@ -40,8 +40,10 @@ interface ExperienceTechnologyLockInterface
      *
      * Un COMMIT que la base refuse (issue #547, comme #502 pour le verrou
      * d'ordre) annule ce que l'opération a écrit, et **clôt l'unité de travail
-     * de l'appelant** : une lecture suivante relit la base, une écriture
-     * suivante échoue. Le refus est terminal pour l'unité de travail qui l'a
+     * de l'appelant** : une nouvelle lecture relit la base (une instance
+     * déjà tenue garde les valeurs refusées), une écriture suivante par
+     * l'ORM échoue — une instruction DQL `UPDATE`/`DELETE` ou DBAL brute
+     * passe encore. Le refus est terminal pour l'unité de travail qui l'a
      * reçu. Sur cette table sans contrainte différée, seule une session perdue
      * à ce moment-là peut le provoquer.
      *

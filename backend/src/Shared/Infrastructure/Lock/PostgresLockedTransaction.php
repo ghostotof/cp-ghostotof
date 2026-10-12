@@ -77,7 +77,15 @@ use Throwable;
  * Rejetés : un crochet `$onCommitRefused` obligatoire, que chaque adaptateur
  * aurait rempli de son propre `close()` — un verrou aurait pu passer un
  * crochet vide ; une fermeture par adaptateur, oubliable comme le délai et le
- * COMMIT refusé avant #512.
+ * COMMIT refusé avant #512 ; un rappel « oublier les écritures » injecté à la
+ * place de l'EntityManager, qui aurait gardé le squelette sur DBAL seul pour
+ * un verrou sans ORM qui n'existe pas. Le prix assumé : ce squelette de
+ * `Shared` dépend de l'ORM. `close()` n'est pas protégé : il vide la carte
+ * d'identité et ne lève que si un écouteur `onClear` lève, et l'application
+ * n'en a aucun (Doctrine ne le protège pas non plus dans son propre
+ * `UnitOfWork::commit()`). Une exception levée par l'opération elle-même,
+ * après un `flush()` réussi, laisse encore l'EntityManager ouvert : c'est
+ * #549.
  *
  * **L'attente est bornée quand rien ne la borne — un filet** : si la session
  * n'a aucun `lock_timeout` (`0`), la transaction reçoit celui de l'adaptateur,
@@ -163,22 +171,23 @@ final readonly class PostgresLockedTransaction
      */
     public const string FALLBACK_LOCK_TIMEOUT = '5s';
 
-    /**
-     * @param EntityManagerInterface $entityManager celui dont l'opération écrit : le
-     *                                             squelette prend sa connexion, et le
-     *                                             ferme sur un COMMIT refusé
-     * @param LoggerInterface $logger reçoit le seul échec d'un ROLLBACK, que
-     *                                rien d'autre ne verrait : la cause est
-     *                                relancée à sa place
-     * @param string $fallbackLockTimeout une durée PostgreSQL (`5s`, `100ms`),
-     *                                    donnée à la seule session qui n'a
-     *                                    aucun `lock_timeout` — sous FPM, elle
-     *                                    ne sert donc jamais ; une valeur
-     *                                    invalide est refusée par la base à la
-     *                                    première transaction qui la pose
-     */
+    /** Celle de l'EntityManager : la transaction, ses verrous et ses `flush()`. */
     private Connection $connection;
 
+    /**
+     * @param EntityManagerInterface $entityManager       celui dont l'opération écrit : le
+     *                                                    squelette prend sa connexion, et le
+     *                                                    ferme sur un COMMIT refusé
+     * @param LoggerInterface        $logger              reçoit le seul échec d'un ROLLBACK, que
+     *                                                    rien d'autre ne verrait : la cause est
+     *                                                    relancée à sa place
+     * @param string                 $fallbackLockTimeout une durée PostgreSQL (`5s`, `100ms`),
+     *                                                    donnée à la seule session qui n'a
+     *                                                    aucun `lock_timeout` — sous FPM, elle
+     *                                                    ne sert donc jamais ; une valeur
+     *                                                    invalide est refusée par la base à la
+     *                                                    première transaction qui la pose
+     */
     public function __construct(
         private EntityManagerInterface $entityManager,
         private LoggerInterface $logger,

@@ -283,7 +283,8 @@ paths:
   but failed as a bare `DriverException`, having decided on the provider's instance) and
   `PostgresExperienceTechnologyRowLockTest` (re-read, not found and detached, a pending insert not found but
   kept, a `flush()` refused inside the operation rolled back and surfacing as is — the path of the 409 —, wait
-  bound, named timeout, nesting refused). No two-process test (decided for #545): the probe already proves the write waits for the
+  bound, named timeout, nesting refused, a COMMIT refused after a successful `flush()` closing the EntityManager
+  and a new read seeing the database, #547). No two-process test (decided for #545): the probe already proves the write waits for the
   row before reading it.
 
   `Contribution` is the odd one out and deliberately so: it carries a long `body` (the argument, not

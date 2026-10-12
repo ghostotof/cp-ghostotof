@@ -60,8 +60,8 @@ use Psr\Log\LoggerInterface;
  * **Un COMMIT refusé par la base ferme l'EntityManager** (issue #502) : toute
  * `DriverException` levée par le COMMIT, quel que soit son SQLSTATE. C'est le
  * squelette qui le ferme depuis #547, pour tous ses verrous, avant
- * d'appeler `onCommitRefused`, qui ne fait plus ici que nommer le `23T90`. Les `flush()` de
- * l'opération ont réussi au point de sauvegarde ; le refus annule ce qu'ils
+ * d'appeler `onCommitRefused`, qui ne fait plus ici que nommer le `23T90`.
+ * Les `flush()` de l'opération ont réussi au point de sauvegarde ; le refus annule ce qu'ils
  * ont écrit, mais l'UnitOfWork le tient pour écrit : une lecture sur le même
  * EntityManager rendait la position refusée, `find()` une entrée jamais
  * validée, et une écriture hors verrou repartait de là. Il est fermé comme
