@@ -101,7 +101,7 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
 
     public function __construct(
         private EntityManagerInterface $entityManager,
-        private string $lockTimeout = PostgresLockedTransaction::DEFAULT_LOCK_TIMEOUT,
+        private string $fallbackLockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT,
     ) {
     }
 
@@ -109,7 +109,7 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
     {
         $connection = $this->entityManager->getConnection();
 
-        return new PostgresLockedTransaction($connection, $this->lockTimeout)->run(
+        return new PostgresLockedTransaction($connection, $this->fallbackLockTimeout)->run(
             // Bloquant : attend la fin de la transaction qui tient ce périmètre.
             acquire: static fn (): mixed => $connection->executeQuery(
                 'SELECT pg_advisory_xact_lock(?, hashtext(?))',

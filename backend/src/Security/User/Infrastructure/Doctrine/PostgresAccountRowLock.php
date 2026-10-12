@@ -31,7 +31,7 @@ final readonly class PostgresAccountRowLock implements AccountLockInterface
 {
     public function __construct(
         private EntityManagerInterface $entityManager,
-        private string $lockTimeout = PostgresLockedTransaction::DEFAULT_LOCK_TIMEOUT,
+        private string $fallbackLockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT,
     ) {
     }
 
@@ -39,7 +39,7 @@ final readonly class PostgresAccountRowLock implements AccountLockInterface
     {
         $connection = $this->entityManager->getConnection();
 
-        return new PostgresLockedTransaction($connection, $this->lockTimeout)->run(
+        return new PostgresLockedTransaction($connection, $this->fallbackLockTimeout)->run(
             acquire: static function () use ($connection, $user): void {
                 $locked = $connection->fetchOne(
                     'SELECT 1 FROM cpg_user WHERE id = :id FOR UPDATE',

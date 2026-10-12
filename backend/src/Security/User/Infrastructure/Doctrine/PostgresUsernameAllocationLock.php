@@ -45,7 +45,7 @@ final readonly class PostgresUsernameAllocationLock implements UsernameAllocatio
 
     public function __construct(
         private EntityManagerInterface $entityManager,
-        private string $lockTimeout = PostgresLockedTransaction::DEFAULT_LOCK_TIMEOUT,
+        private string $fallbackLockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT,
     ) {
     }
 
@@ -53,7 +53,7 @@ final readonly class PostgresUsernameAllocationLock implements UsernameAllocatio
     {
         $connection = $this->entityManager->getConnection();
 
-        return new PostgresLockedTransaction($connection, $this->lockTimeout)->run(
+        return new PostgresLockedTransaction($connection, $this->fallbackLockTimeout)->run(
             acquire: static fn (): mixed => $connection->executeQuery(
                 'SELECT pg_advisory_xact_lock(?, ?)',
                 [self::ADVISORY_NAMESPACE, self::ADVISORY_KEY],

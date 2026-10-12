@@ -36,9 +36,10 @@ use Throwable;
  * COMMIT refusé (issues #390, #512) : DBAL a déjà ramené la transaction à
  * zéro quand `commit()` échoue, et son `rollBack()` de repli lève « There is
  * no active transaction » par-dessus, pour tout SQLSTATE hors de sa courte
- * liste (unicité, clé étrangère, interblocage…). Ici, aucun `rollBack()` après
- * un COMMIT refusé : PostgreSQL a déjà annulé la transaction, et les verrous
- * de transaction avec elle. Les `flush()` de l'opération s'imbriquent dans la
+ * liste (unicité, clé étrangère, interblocage…). Ici, un COMMIT refusé par la
+ * base n'est suivi d'aucun `rollBack()` : PostgreSQL a déjà annulé la
+ * transaction, et les verrous de transaction avec elle ; seul un COMMIT que
+ * DBAL refuse avant d'écrire, transaction encore ouverte, est annulé. Les `flush()` de l'opération s'imbriquent dans la
  * transaction (point de sauvegarde) ; un `flush()` qui échoue ferme
  * l'EntityManager de lui-même, comme hors de tout verrou.
  *
@@ -49,8 +50,10 @@ use Throwable;
  * s'éteint avec elle. Un délai que la session a déjà choisi (`PGOPTIONS` de
  * www.prod.conf, un test) est gardé tel quel, ni rallongé ni raccourci. Il
  * vaut pour toute la transaction, donc aussi pour les attentes de l'opération
- * elle-même, comme sous FPM. Paramètre lié plutôt qu'interpolé : le délai
- * n'entre jamais dans le texte SQL.
+ * elle-même, comme sous FPM. Imbriqué dans une transaction déjà ouverte, il
+ * vaut jusqu'à la fin de celle-ci (portée de `SET LOCAL`), comme le
+ * `SET LOCAL` des verrous d'avant #512. Paramètre lié plutôt qu'interpolé :
+ * le délai n'entre jamais dans le texte SQL.
  *
  * Seule l'attente de l'acquisition est renommée : un `55P03` levé par
  * l'opération (un verrou de ligne pris plus loin) remonte tel quel.
@@ -69,16 +72,19 @@ final readonly class PostgresLockedTransaction
      * (`PGOPTIONS` de www.prod.conf, épinglé par FpmLockWaitBoundTest), pour
      * qu'une attente se borne de même sous la console et sous FPM.
      */
-    public const string DEFAULT_LOCK_TIMEOUT = '5s';
+    public const string FALLBACK_LOCK_TIMEOUT = '5s';
 
     /**
-     * @param string $lockTimeout une durée PostgreSQL (`5s`, `100ms`) ; une
-     *                            valeur invalide est refusée par la base à
-     *                            la première transaction
+     * @param string $fallbackLockTimeout une durée PostgreSQL (`5s`, `100ms`),
+     *                                    donnée à la seule session qui n'a
+     *                                    aucun `lock_timeout` — sous FPM, elle
+     *                                    ne sert donc jamais ; une valeur
+     *                                    invalide est refusée par la base à la
+     *                                    première transaction qui la pose
      */
     public function __construct(
         private Connection $connection,
-        private string $lockTimeout = self::DEFAULT_LOCK_TIMEOUT,
+        private string $fallbackLockTimeout = self::FALLBACK_LOCK_TIMEOUT,
     ) {
     }
 
@@ -95,6 +101,9 @@ final readonly class PostgresLockedTransaction
     public function run(Closure $acquire, Closure $onTimeout, Closure $operation, ?Closure $onCommitRefused = null): mixed
     {
         $this->connection->beginTransaction();
+        // Le niveau que ce squelette a ouvert : un COMMIT refusé ne laisse à
+        // annuler que celui-ci, jamais celui d'un appelant qui en tient un.
+        $ownLevel = $this->connection->getTransactionNestingLevel();
 
         try {
             $this->boundTheWait();
@@ -112,12 +121,33 @@ final readonly class PostgresLockedTransaction
 
         try {
             $this->connection->commit();
-        } catch (DriverException $refusal) {
-            // Pas de rollBack() : voir la docblock de la classe.
-            throw (null !== $onCommitRefused ? $onCommitRefused($refusal) : null) ?? $refusal;
+        } catch (Throwable $refusal) {
+            $this->rollBackIfStillOpen($ownLevel);
+
+            if ($refusal instanceof DriverException && null !== $onCommitRefused) {
+                throw $onCommitRefused($refusal) ?? $refusal;
+            }
+
+            throw $refusal;
         }
 
         return $result;
+    }
+
+    /**
+     * Après un COMMIT refusé, n'annule que ce qui est encore ouvert. Refusé
+     * par la base, le COMMIT a déjà ramené DBAL au niveau de l'appelant — et
+     * PostgreSQL a annulé la transaction, verrou compris : un `rollBack()` y
+     * lèverait « There is no active transaction » par-dessus le vrai refus.
+     * Refusé par DBAL lui-même avant d'écrire (`CommitFailedRollbackOnly`,
+     * après un `setRollbackOnly()`), il laisse la transaction ouverte, et le
+     * verrou pris : elle est annulée, comme le faisait `transactional()`.
+     */
+    private function rollBackIfStillOpen(int $ownLevel): void
+    {
+        if ($this->connection->getTransactionNestingLevel() === $ownLevel) {
+            $this->connection->rollBack();
+        }
     }
 
     /**
@@ -128,7 +158,7 @@ final readonly class PostgresLockedTransaction
     {
         $this->connection->executeQuery(
             "SELECT set_config('lock_timeout', ?, true) WHERE current_setting('lock_timeout') = '0'",
-            [$this->lockTimeout],
+            [$this->fallbackLockTimeout],
         );
     }
 

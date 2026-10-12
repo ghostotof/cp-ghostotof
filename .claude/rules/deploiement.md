@@ -74,7 +74,7 @@ paths:
   allocation lock share one skeleton, `Shared/Infrastructure/Lock/PostgresLockedTransaction`
   (an *Execute Around*: hand-made transaction, wait bounded, `55P03` — defined there only, as
   `LOCK_NOT_AVAILABLE` — renamed per lock, a refused COMMIT never masked), which gives the
-  transaction `DEFAULT_LOCK_TIMEOUT` (`5s`, the FPM value) through `set_config('lock_timeout', …, true)`
+  transaction `FALLBACK_LOCK_TIMEOUT` (`5s`, the FPM value) through `set_config('lock_timeout', …, true)`
   **only when the session has none** (`0`): a bound already chosen (`PGOPTIONS`, a test) is kept,
   neither lengthened nor shortened. A new PostgreSQL lock goes through it. `docker/php` is mounted read-only in the dev
   container for that test. **Never consume a limiter inside `wrapInTransaction`**: the lock and

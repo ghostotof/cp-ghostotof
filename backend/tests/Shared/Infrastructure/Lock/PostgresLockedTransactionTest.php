@@ -8,6 +8,7 @@ use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
 use App\Tests\Support\CommitRefusal;
 use App\Tests\Support\OpensProbeConnection;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\CommitFailedRollbackOnly;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 use DomainException;
@@ -30,6 +31,9 @@ final class PostgresLockedTransactionTest extends KernelTestCase
 
     /** Une clé qu'aucun verrou de l'application n'emploie. */
     private const string LOCK_SQL = 'SELECT pg_advisory_xact_lock(512, 512)';
+
+    /** Le message de l'exception qu'un verrou donnerait à son attente dépassée. */
+    private const string NAMED_TIMEOUT = 'délai nommé';
 
     private Connection $connection;
 
@@ -104,14 +108,13 @@ final class PostgresLockedTransactionTest extends KernelTestCase
         $this->probe->beginTransaction();
         $this->probe->executeQuery(self::LOCK_SQL);
         $this->unboundedSessionWithASafetyNet();
-        $named = new DomainException('délai nommé');
         $ran = false;
         $caught = null;
 
         try {
             $this->transaction('50ms')->run(
                 acquire: fn (): mixed => $this->connection->executeQuery(self::LOCK_SQL),
-                onTimeout: static fn (DriverException $timeout): Throwable => new DomainException('délai nommé', 0, $timeout),
+                onTimeout: static fn (DriverException $timeout): Throwable => new DomainException(self::NAMED_TIMEOUT, 0, $timeout),
                 operation: static function () use (&$ran): void {
                     $ran = true;
                 },
@@ -123,7 +126,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
         }
 
         self::assertInstanceOf(DomainException::class, $caught, "L'attente n'est pas remontée sous le nom donné.");
-        self::assertSame($named->getMessage(), $caught->getMessage());
+        self::assertSame(self::NAMED_TIMEOUT, $caught->getMessage());
         self::assertInstanceOf(DriverException::class, $caught->getPrevious());
         self::assertSame(PostgresLockedTransaction::LOCK_NOT_AVAILABLE, $caught->getPrevious()->getSQLState());
         self::assertFalse($ran, "L'opération a tourné sans le verrou.");
@@ -238,6 +241,55 @@ final class PostgresLockedTransactionTest extends KernelTestCase
     }
 
     /**
+     * Un COMMIT que DBAL refuse lui-même, avant d'écrire quoi que ce soit
+     * (`setRollbackOnly()`), laisse sa transaction ouverte : le squelette
+     * l'annule, sans quoi la session — un worker qui vit longtemps — garde
+     * la transaction et le verrou. `Connection::transactional()` le faisait.
+     */
+    public function testACommitRefusedByDbalBeforeTheDatabaseStillReleasesTheLock(): void
+    {
+        $caught = null;
+
+        try {
+            $this->transaction()->run(
+                acquire: fn (): mixed => $this->connection->executeQuery(self::LOCK_SQL),
+                onTimeout: $this->unexpectedTimeout(...),
+                operation: $this->connection->setRollbackOnly(...),
+            );
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(CommitFailedRollbackOnly::class, $caught, \sprintf('Le refus de DBAL est remonté sous un autre nom : %s.', get_debug_type($caught)));
+        self::assertFalse($this->connection->isTransactionActive(), 'La transaction est restée ouverte.');
+        self::assertTrue($this->probeCanTakeTheLock(), 'Le verrou a survécu au COMMIT refusé par DBAL.');
+    }
+
+    /**
+     * Imbriqué dans une transaction déjà ouverte, le squelette n'annule que
+     * la sienne (son point de sauvegarde) : celle de l'appelant reste à lui.
+     */
+    public function testInsideAnOuterTransactionOnlyItsOwnLevelIsRolledBack(): void
+    {
+        $this->connection->beginTransaction();
+
+        try {
+            try {
+                $this->transaction()->run(
+                    acquire: static fn (): null => null,
+                    onTimeout: $this->unexpectedTimeout(...),
+                    operation: $this->connection->setRollbackOnly(...),
+                );
+            } catch (Throwable) {
+            }
+
+            self::assertSame(1, $this->connection->getTransactionNestingLevel(), "La transaction de l'appelant a été touchée.");
+        } finally {
+            $this->connection->rollBack();
+        }
+    }
+
+    /**
      * Un verrou peut nommer un refus du COMMIT qu'il reconnaît (le trigger
      * des groupes de traduction, #390) ; un refus qu'il ne reconnaît pas
      * remonte tel quel.
@@ -285,7 +337,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
         $this->connection->executeStatement("SET statement_timeout = '3s'");
     }
 
-    private function transaction(string $lockTimeout = PostgresLockedTransaction::DEFAULT_LOCK_TIMEOUT): PostgresLockedTransaction
+    private function transaction(string $lockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT): PostgresLockedTransaction
     {
         return new PostgresLockedTransaction($this->connection, $lockTimeout);
     }

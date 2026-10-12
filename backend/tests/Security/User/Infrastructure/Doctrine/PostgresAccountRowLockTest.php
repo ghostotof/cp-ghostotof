@@ -39,6 +39,7 @@ final class PostgresAccountRowLockTest extends KernelTestCase
 
     protected function tearDown(): void
     {
+        $this->em->getConnection()->executeStatement('RESET lock_timeout');
         $this->em->getConnection()->executeStatement('DELETE FROM cpg_user');
         parent::tearDown();
     }
@@ -97,6 +98,10 @@ final class PostgresAccountRowLockTest extends KernelTestCase
      */
     public function testTheWaitIsBoundedInsideTheTransaction(): void
     {
+        // Session sans borne, comme la console (le test de base n'a pas le
+        // PGOPTIONS de FPM, mais ne pas en dépendre).
+        $this->em->getConnection()->executeStatement('SET lock_timeout = 0');
+
         $user = $this->pendingUser();
 
         $timeout = $this->lock()->whileLocked($user, fn (CpgUser $locked): mixed => $this->em->getConnection()->fetchOne('SHOW lock_timeout'));
@@ -117,6 +122,9 @@ final class PostgresAccountRowLockTest extends KernelTestCase
 
         // Filet (issue #512) : si la borne venait à manquer, l'attente
         // échouerait en 57014 après 3 s au lieu de pendre.
+        // Session sans borne, comme la console : c'est le délai de
+        // l'adaptateur qui doit s'appliquer.
+        $this->em->getConnection()->executeStatement('SET lock_timeout = 0');
         $this->em->getConnection()->executeStatement("SET statement_timeout = '3s'");
 
         try {
@@ -126,6 +134,7 @@ final class PostgresAccountRowLockTest extends KernelTestCase
             $holder->rollBack();
             $holder->close();
             $this->em->getConnection()->executeStatement('RESET statement_timeout');
+            $this->em->getConnection()->executeStatement('RESET lock_timeout');
         }
     }
 
