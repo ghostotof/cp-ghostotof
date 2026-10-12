@@ -17,10 +17,10 @@ use ReflectionClass;
  * (issue #403) : l'environnement que reçoit le fils ({@see ChildPhpProcess}) et
  * la barrière fichier ({@see ProcessBarrier}), côté test comme côté fils.
  *
- * Cinq tests portaient chacun leur copie (#277, #389, #435 ×2, #458) : un
+ * Six tests portaient chacun leur copie (#277, #364, #389, #435 ×2, #458) : un
  * correctif sur l'une n'aurait pas atteint les autres. Les tests ci-dessous
  * exercent le protocole sur de vrais processus, puis le dernier refuse qu'une
- * sixième copie réapparaisse.
+ * septième copie réapparaisse.
  */
 final class ChildProcessHarnessTest extends TestCase
 {
@@ -271,7 +271,7 @@ final class ChildProcessHarnessTest extends TestCase
             $relative = substr($path, \strlen($tests) + 1);
             $tokens = PhpSources::significantTokens((string) file_get_contents($path));
             foreach (array_keys($tokens) as $index) {
-                $construct = self::constructAt($tokens, $index);
+                $construct = $this->constructAt($tokens, $index);
                 if (null === $construct || $path === $owners[$construct]) {
                     continue;
                 }
@@ -293,7 +293,7 @@ final class ChildProcessHarnessTest extends TestCase
      *
      * @param list<PhpToken> $tokens
      */
-    private static function constructAt(array $tokens, int $index): ?string
+    private function constructAt(array $tokens, int $index): ?string
     {
         $token = $tokens[$index];
         $previous = $tokens[$index - 1] ?? null;
@@ -304,7 +304,7 @@ final class ChildProcessHarnessTest extends TestCase
         return match (true) {
             !$isMember && 'flock' === ltrim($token->text, '\\') && '(' === $next?->text => self::FLOCK,
             $token->is(\T_FOREACH) && '(' === $next?->text && '$_SERVER' === ($tokens[$index + 2] ?? null)?->text => self::SERVER_COPY,
-            $token->is(\T_NEW) && self::buildsAProcessOnCommand(\array_slice($tokens, $index + 1, 6)) => self::PROCESS_ON_COMMAND,
+            $token->is(\T_NEW) && $this->buildsAProcessOnCommand(\array_slice($tokens, $index + 1, 6)) => self::PROCESS_ON_COMMAND,
             default => null,
         };
     }
@@ -315,9 +315,9 @@ final class ChildProcessHarnessTest extends TestCase
      *
      * @param list<PhpToken> $following les six jetons après `new`
      */
-    private static function buildsAProcessOnCommand(array $following): bool
+    private function buildsAProcessOnCommand(array $following): bool
     {
-        $shortNames = array_map(static fn (PhpToken $token): string => (string) array_last(explode('\\', $token->text)), $following);
+        $shortNames = array_map(static fn (PhpToken $token): string => array_last(explode('\\', $token->text)), $following);
 
         return ['Process', '(', 'ChildPhpProcess', '::', 'command', '('] === $shortNames;
     }

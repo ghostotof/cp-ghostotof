@@ -8,7 +8,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
  * Accès à un service du conteneur de test hors d'un test PHPUnit, pour les
- * processus fils des tests de concurrence (issues #277, #389, #435, #458).
+ * processus fils des tests de concurrence (issues #277, #364, #389, #435, #458).
  *
  * Les services applicatifs et les fabriques `limiter.<nom>` sont privés : seul
  * le conteneur de test les expose. Hériter de KernelTestCase l'obtient

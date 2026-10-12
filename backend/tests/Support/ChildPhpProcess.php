@@ -46,7 +46,7 @@ final class ChildPhpProcess
      * Le processus `php` fils, prêt à démarrer, dans l'environnement exact du
      * test : sa ligne de commande ({@see self::command()}) et les variables du
      * test ({@see self::testEnvironment()}). C'est ainsi que les tests de
-     * concurrence lancent leurs fils (#277, #389, #435, #458).
+     * concurrence lancent leurs fils (#277, #364, #389, #435, #458).
      */
     public static function inTestEnvironment(int $timeoutSeconds, string ...$arguments): Process
     {

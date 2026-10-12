@@ -146,7 +146,8 @@ once, at the cost of dev CLI traces: not done, an open question of #420.
 ## Concurrency tests with child processes (issue #403)
 
 A test that puts real processes in a race (`RateLimiterConcurrencyTest`, `ContributionOrderConcurrencyTest`,
-`SendAccountInvitationConcurrencyTest`, `PasswordSetupActivationConcurrencyTest`, `ReinviteConcurrencyTest`)
+`SendAccountInvitationConcurrencyTest`, `PasswordSetupActivationConcurrencyTest`, `ReinviteConcurrencyTest`,
+`InviteUsernameConcurrencyTest`)
 goes through **one harness, written once**. `tests/Support/ChildPhpProcess::inTestEnvironment()` builds the
 child's `Process`: its command line (above) and a copy of the test's `$_SERVER`, where `phpunit.dist.xml`'s
 `<server force="true">` values live (a real `ANTHROPIC_API_KEY` exported in the shell must not reach the
@@ -165,4 +166,4 @@ outside `ChildPhpProcess`, and any `new Process(ChildPhpProcess::command(` outsi
 allow-list (the Dotenv test that isolates a pod's environment on purpose). Not seen: `proc_open()`
 (`CreateCpgUserCommandTest`'s pseudo-terminal child gets the inherited environment only). Not shared yet:
 the one-shot `preFlush`/`postFlush` listener that releases the child and waits until it is done or blocked
-on a lock, copied in three tests (issue #510).
+on a lock, copied in four tests (issue #510).
