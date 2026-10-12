@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared;
 
 use App\Tests\Support\ChildPhpProcess;
+use App\Tests\Support\FlushInterleaving;
 use App\Tests\Support\PhpSources;
 use App\Tests\Support\ProcessBarrier;
 use PhpToken;
@@ -15,12 +16,15 @@ use ReflectionClass;
 /**
  * Le harnais des tests de concurrence à processus fils, écrit une seule fois
  * (issue #403) : l'environnement que reçoit le fils ({@see ChildPhpProcess}) et
- * la barrière fichier ({@see ProcessBarrier}), côté test comme côté fils.
+ * la barrière fichier ({@see ProcessBarrier}), côté test comme côté fils ; puis
+ * le point d'entrelacement au flush ({@see FlushInterleaving}, issue #510),
+ * exercé par FlushInterleavingTest.
  *
- * Six tests portaient chacun leur copie (#277, #364, #389, #435 ×2, #458) : un
- * correctif sur l'une n'aurait pas atteint les autres. Les tests ci-dessous
- * exercent le protocole sur de vrais processus, puis le dernier refuse qu'une
- * septième copie réapparaisse.
+ * Six tests portaient chacun leur copie (#277, #364, #389, #435 ×2, #458), et
+ * quatre celle de l'écouteur de flush (#364, #389, #435, #458) : un correctif
+ * sur l'une n'aurait pas atteint les autres. Les tests ci-dessous exercent le
+ * protocole sur de vrais processus, puis le dernier refuse qu'une nouvelle
+ * copie réapparaisse.
  */
 final class ChildProcessHarnessTest extends TestCase
 {
@@ -39,6 +43,15 @@ final class ChildProcessHarnessTest extends TestCase
     private const string SERVER_COPY = 'foreach ($_SERVER';
 
     private const string PROCESS_ON_COMMAND = 'new Process(ChildPhpProcess::command(';
+
+    /** Un littéral qui nomme la vue : l'attente « fini ou bloqué » de FlushInterleaving. */
+    private const string PG_STAT_ACTIVITY = 'pg_stat_activity';
+
+    /** Un écouteur de flush : celui d'entrelacement s'arme par FlushInterleaving. */
+    private const string FLUSH_EVENT = '::preFlush|onFlush|postFlush';
+
+    /** Les événements du flush de Doctrine, tels que les nomment les constantes de Doctrine\ORM\Events. */
+    private const array FLUSH_EVENTS = ['preFlush', 'onFlush', 'postFlush'];
 
     /** Une variable que phpunit.dist.xml force à une valeur factice, et que le .env laisse vide. */
     private const string FORCED_VARIABLE = 'ANTHROPIC_API_KEY';
@@ -250,18 +263,32 @@ final class ChildProcessHarnessTest extends TestCase
     /**
      * Ni `flock()` hors de ProcessBarrier, ni copie de `$_SERVER` hors de
      * ChildPhpProcess, ni `new Process(ChildPhpProcess::command(…` qui
-     * oublierait l'environnement : un nouveau test de concurrence passe par
-     * eux. Par jetons, comme les autres recenseurs ({@see PhpSources}) : un
-     * appel est un nom suivi de `(`, une copie un `foreach ($_SERVER`. Ne voit
-     * pas une copie écrite autrement (`array_filter($_SERVER, …)`), un
-     * `proc_open()`, ni une barrière qui ne serait pas un verrou de fichier.
+     * oublierait l'environnement, ni écouteur de flush ou requête sur
+     * `pg_stat_activity` hors de FlushInterleaving (issue #510) : un nouveau
+     * test de concurrence passe par eux. Par jetons, comme les autres
+     * recenseurs ({@see PhpSources}) : un appel est un nom suivi de `(`, une
+     * copie un `foreach ($_SERVER`, un écouteur une constante `preFlush`,
+     * `onFlush` ou `postFlush` lue sur une classe, quel que soit son nom
+     * (`Events::`, un alias, un attribut qui la cite), une requête un
+     * littéral qui nomme la vue, commentaires exclus. Large à dessein : un
+     * test qui en aurait un autre usage rejoint la liste de son motif, avec
+     * sa raison. Ne voit pas une copie écrite autrement
+     * (`array_filter($_SERVER, …)`), un `proc_open()`, une barrière qui ne
+     * serait pas un verrou de fichier, un écouteur armé sur le nom de
+     * l'événement en clair (`'preFlush'`), ni une vue nommée par
+     * concaténation.
      */
-    public function testNoTestRewritesTheBarrierOrTheEnvironmentTransmission(): void
+    public function testNoTestRewritesTheHarness(): void
     {
+        $interleaving = (string) (new ReflectionClass(FlushInterleaving::class))->getFileName();
         $owners = [
-            self::FLOCK => (string) (new ReflectionClass(ProcessBarrier::class))->getFileName(),
-            self::SERVER_COPY => (string) (new ReflectionClass(ChildPhpProcess::class))->getFileName(),
-            self::PROCESS_ON_COMMAND => (string) (new ReflectionClass(ChildPhpProcess::class))->getFileName(),
+            self::FLOCK => [(string) (new ReflectionClass(ProcessBarrier::class))->getFileName()],
+            self::SERVER_COPY => [(string) (new ReflectionClass(ChildPhpProcess::class))->getFileName()],
+            self::PROCESS_ON_COMMAND => [(string) (new ReflectionClass(ChildPhpProcess::class))->getFileName()],
+            // Ce test-ci nomme la vue pour la chercher.
+            self::PG_STAT_ACTIVITY => [$interleaving, __FILE__],
+            // FlushInterleavingTest vérifie que l'écouteur se retire.
+            self::FLUSH_EVENT => [$interleaving, __DIR__.'/FlushInterleavingTest.php'],
         ];
         $tests = \dirname(__DIR__);
         $offenders = [];
@@ -272,7 +299,7 @@ final class ChildProcessHarnessTest extends TestCase
             $tokens = PhpSources::significantTokens((string) file_get_contents($path));
             foreach (array_keys($tokens) as $index) {
                 $construct = $this->constructAt($tokens, $index);
-                if (null === $construct || $path === $owners[$construct]) {
+                if (null === $construct || \in_array($path, $owners[$construct], true)) {
                     continue;
                 }
                 if (self::PROCESS_ON_COMMAND === $construct && \in_array($relative, self::OWN_ENVIRONMENT, true)) {
@@ -284,7 +311,7 @@ final class ChildProcessHarnessTest extends TestCase
             }
         }
 
-        self::assertSame([], $offenders, 'La barrière s\'écrit avec ProcessBarrier, l\'environnement du fils avec ChildPhpProcess::inTestEnvironment() (issue #403).');
+        self::assertSame([], $offenders, 'La barrière s\'écrit avec ProcessBarrier, l\'environnement du fils avec ChildPhpProcess::inTestEnvironment() (issue #403), le point d\'entrelacement au flush avec FlushInterleaving (issue #510).');
         self::assertSame(self::OWN_ENVIRONMENT, array_values($exemptionsUsed), 'Exemption devenue sans objet : la retirer de OWN_ENVIRONMENT.');
     }
 
@@ -303,10 +330,21 @@ final class ChildProcessHarnessTest extends TestCase
 
         return match (true) {
             !$isMember && 'flock' === ltrim($token->text, '\\') && '(' === $next?->text => self::FLOCK,
+            $token->is([\T_CONSTANT_ENCAPSED_STRING, \T_ENCAPSED_AND_WHITESPACE]) && false !== stripos($token->text, self::PG_STAT_ACTIVITY) => self::PG_STAT_ACTIVITY,
+            '::' === $token->text && $this->isFlushEventConstant($next, $tokens[$index + 2] ?? null) => self::FLUSH_EVENT,
             $token->is(\T_FOREACH) && '(' === $next?->text && '$_SERVER' === ($tokens[$index + 2] ?? null)?->text => self::SERVER_COPY,
             $token->is(\T_NEW) && $this->buildsAProcessOnCommand(\array_slice($tokens, $index + 1, 6)) => self::PROCESS_ON_COMMAND,
             default => null,
         };
+    }
+
+    /**
+     * Après `::`, une constante qui nomme un événement du flush — pas une
+     * méthode statique homonyme, suivie de `(`.
+     */
+    private function isFlushEventConstant(?PhpToken $name, ?PhpToken $following): bool
+    {
+        return \in_array($name?->text, self::FLUSH_EVENTS, true) && '(' !== $following?->text;
     }
 
     /**

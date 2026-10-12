@@ -7,13 +7,9 @@ namespace App\Tests\Portfolio\Contribution\Application;
 use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Support\ChildPhpProcess;
-use App\Tests\Support\OpensProbeConnection;
+use App\Tests\Support\FlushInterleaving;
 use App\Tests\Support\ProcessBarrier;
-use Closure;
-use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Event\PreFlushEventArgs;
-use Doctrine\ORM\Events;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Process\Process;
 
@@ -39,8 +35,6 @@ use Symfony\Component\Process\Process;
  */
 final class ContributionOrderConcurrencyTest extends KernelTestCase
 {
-    use OpensProbeConnection;
-
     /** Borne de chaque attente : un verrou jamais relâché fait échouer le test au lieu de le suspendre. */
     private const int TIMEOUT_SECONDS = 30;
 
@@ -104,8 +98,7 @@ final class ContributionOrderConcurrencyTest extends KernelTestCase
     }
 
     /**
-     * Démarre B, attend qu'il soit prêt, et arme un `preFlush` à usage unique
-     * qui le lâche puis attend qu'il ait fini ou soit bloqué.
+     * Démarre B et le relâche au prochain `preFlush` ({@see FlushInterleaving}).
      */
     private function interleaveBeforeNextFlush(Locale $locale, ?string $group): Process
     {
@@ -117,67 +110,9 @@ final class ContributionOrderConcurrencyTest extends KernelTestCase
 
         $writer = ChildPhpProcess::inTestEnvironment(self::TIMEOUT_SECONDS, ...$arguments);
         $writer->start();
-        $writerPid = $barrier->sessionPidOf($writer, self::TIMEOUT_SECONDS);
-
-        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
-        $probe = self::openProbeBeside($entityManager->getConnection());
-        $eventManager = $entityManager->getEventManager();
-
-        $listener = new class($barrier, $writer, $writerPid, $probe, $this->waitUntilDoneOrBlocked(...)) {
-            /**
-             * @param Closure(Process, int, Connection): void $waitUntilDoneOrBlocked
-             */
-            public function __construct(
-                private readonly ProcessBarrier $barrier,
-                private readonly Process $writer,
-                private readonly int $writerPid,
-                private readonly Connection $probe,
-                private readonly Closure $waitUntilDoneOrBlocked,
-            ) {
-            }
-
-            public bool $fired = false;
-
-            public function preFlush(PreFlushEventArgs $args): void
-            {
-                if ($this->fired) {
-                    return;
-                }
-                $this->fired = true;
-
-                $this->barrier->release();
-                ($this->waitUntilDoneOrBlocked)($this->writer, $this->writerPid, $this->probe);
-                $this->probe->close();
-            }
-        };
-        $eventManager->addEventListener([Events::preFlush], $listener);
+        FlushInterleaving::releaseBeforeNextFlush(self::getContainer()->get(EntityManagerInterface::class), $barrier, $writer, self::TIMEOUT_SECONDS);
 
         return $writer;
-    }
-
-    /**
-     * Rend la main dès que B a terminé ou que **sa** session attend un verrou
-     * PostgreSQL : une autre session en attente ne doit pas passer pour lui.
-     * Interrogé depuis une connexion à part, hors de toute transaction :
-     * pg_stat_activity est figé pour la durée d'une transaction.
-     */
-    private function waitUntilDoneOrBlocked(Process $writer, int $writerPid, Connection $probe): void
-    {
-        $deadline = microtime(true) + self::TIMEOUT_SECONDS;
-
-        while ($writer->isRunning()) {
-            $blocked = $probe->fetchOne(
-                "SELECT wait_event_type IS NOT DISTINCT FROM 'Lock' FROM pg_stat_activity WHERE pid = ?",
-                [$writerPid],
-            );
-            if (true === $blocked) {
-                return;
-            }
-            if (microtime(true) > $deadline) {
-                self::fail('Le processus concurrent ni fini ni bloqué après '.self::TIMEOUT_SECONDS.' s.');
-            }
-            usleep(10_000);
-        }
     }
 
     private function awaitSuccess(Process $writer): void

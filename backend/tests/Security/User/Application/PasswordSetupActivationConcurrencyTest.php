@@ -10,16 +10,12 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\UnusablePasswordSetupLinkException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Tests\Support\ChildPhpProcess;
+use App\Tests\Support\FlushInterleaving;
 use App\Tests\Support\InvitesUsers;
-use App\Tests\Support\OpensProbeConnection;
 use App\Tests\Support\ProcessBarrier;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestCredentials;
-use Closure;
-use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Event\PreFlushEventArgs;
-use Doctrine\ORM\Events;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Process\Process;
 
@@ -49,7 +45,6 @@ use Symfony\Component\Process\Process;
 final class PasswordSetupActivationConcurrencyTest extends KernelTestCase
 {
     use InvitesUsers;
-    use OpensProbeConnection;
     use ReadsSecurityAuditLog;
 
     private const int TIMEOUT_SECONDS = 30;
@@ -99,65 +94,17 @@ final class PasswordSetupActivationConcurrencyTest extends KernelTestCase
         }
     }
 
+    /**
+     * Démarre B et le relâche au prochain `preFlush` ({@see FlushInterleaving}).
+     */
     private function interleaveBeforeNextFlush(string $userId, int $generation): Process
     {
         $barrier = ProcessBarrier::hold('activation-barrier-');
         $concurrent = ChildPhpProcess::inTestEnvironment(self::TIMEOUT_SECONDS, self::HANDLER_SCRIPT, $barrier->path(), $userId, (string) $generation);
         $concurrent->start();
-        $concurrentPid = $barrier->sessionPidOf($concurrent, self::TIMEOUT_SECONDS);
-
-        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
-        $probe = self::openProbeBeside($entityManager->getConnection());
-
-        $listener = new class($barrier, $concurrent, $concurrentPid, $probe, $this->waitUntilDoneOrBlocked(...)) {
-            public bool $fired = false;
-
-            /**
-             * @param Closure(Process, int, Connection): void $waitUntilDoneOrBlocked
-             */
-            public function __construct(
-                private readonly ProcessBarrier $barrier,
-                private readonly Process $concurrent,
-                private readonly int $concurrentPid,
-                private readonly Connection $probe,
-                private readonly Closure $waitUntilDoneOrBlocked,
-            ) {
-            }
-
-            public function preFlush(PreFlushEventArgs $args): void
-            {
-                if ($this->fired) {
-                    return;
-                }
-                $this->fired = true;
-
-                $this->barrier->release();
-                ($this->waitUntilDoneOrBlocked)($this->concurrent, $this->concurrentPid, $this->probe);
-                $this->probe->close();
-            }
-        };
-        $entityManager->getEventManager()->addEventListener([Events::preFlush], $listener);
+        FlushInterleaving::releaseBeforeNextFlush(self::getContainer()->get(EntityManagerInterface::class), $barrier, $concurrent, self::TIMEOUT_SECONDS);
 
         return $concurrent;
-    }
-
-    private function waitUntilDoneOrBlocked(Process $concurrent, int $concurrentPid, Connection $probe): void
-    {
-        $deadline = microtime(true) + self::TIMEOUT_SECONDS;
-
-        while ($concurrent->isRunning()) {
-            $blocked = $probe->fetchOne(
-                "SELECT wait_event_type IS NOT DISTINCT FROM 'Lock' FROM pg_stat_activity WHERE pid = ?",
-                [$concurrentPid],
-            );
-            if (true === $blocked) {
-                return;
-            }
-            if (microtime(true) > $deadline) {
-                self::fail('Le handler concurrent ni fini ni bloqué après '.self::TIMEOUT_SECONDS.' s.');
-            }
-            usleep(10_000);
-        }
     }
 
     private function isActivated(string $userId): bool
