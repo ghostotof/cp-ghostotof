@@ -44,6 +44,16 @@ use Psr\Log\LoggerInterface;
  * délai reste le `lock_timeout` de 5 s de www.prod.conf (#272) ; la console
  * (`app:*:seed`), qui n'en a aucun, attendait sans fin avant #512.
  *
+ * **Il refuse de s'imbriquer** dans une transaction déjà ouverte, la sienne
+ * comprise ({@see OrderScopeLockInsideTransactionException}, issue #526) :
+ * imbriqué, son COMMIT ne serait qu'un `RELEASE SAVEPOINT`, le trigger
+ * refuserait au COMMIT de l'appelant en `23T90` brut, et le verrou ne serait
+ * relâché qu'alors. Refuser plutôt que documenter la limite : aucun appelant
+ * n'imbrique (ni les `Administrator`s, ni les seeds, ni les migrations, qui
+ * écrivent en SQL), et la règle « sur le chemin applicatif, le refus sort
+ * sous le nom de l'invariant » tient ainsi par construction, au lieu de
+ * reposer sur la mémoire du prochain appelant.
+ *
  * Ce que l'EntityManager a chargé **avant** le verrou est relu une fois le
  * verrou pris (issue #402) : `find()` rendrait l'instance de la carte
  * d'identité, et une requête ne réhydrate pas une entité déjà gérée. Or le
@@ -110,6 +120,13 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
     public function withLock(string $scope, Closure $operation): mixed
     {
         $connection = $this->entityManager->getConnection();
+        // Issue #526 : imbriqué, le COMMIT ci-dessous ne serait qu'un
+        // RELEASE SAVEPOINT, et le refus du trigger des groupes tomberait au
+        // COMMIT de l'appelant, sans `onCommitRefused` pour le nommer. Vu
+        // par DBAL, seul juge de ce que `commit()` émettra.
+        if ($connection->isTransactionActive()) {
+            throw OrderScopeLockInsideTransactionException::forScope($scope);
+        }
 
         return new PostgresLockedTransaction($connection, $this->logger, $this->fallbackLockTimeout)->run(
             // Bloquant : attend la fin de la transaction qui tient ce périmètre.

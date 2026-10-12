@@ -63,7 +63,14 @@ paths:
     `critical` 500: `PostgresAdvisoryOrderScopeLock` opens and closes its transaction by hand — through
     the skeleton it shares with the two account locks since #512, `Shared/Infrastructure/Lock/PostgresLockedTransaction`,
     which also bounds the wait of a session without `lock_timeout` (the console, `app:*:seed`, waited
-    forever before) — and translates `23T90` at `commit()` (its `onCommitRefused`). **Never go back to `Connection::transactional()`** there: when
+    forever before) — and translates `23T90` at `commit()` (its `onCommitRefused`).
+    **It refuses to run inside a transaction already open** (issue #526), another `withLock()` included: there
+    its `commit()` would only be a `RELEASE SAVEPOINT`, and the trigger would refuse at the caller's COMMIT as
+    a bare `23T90`. The refusal, `OrderScopeLockInsideTransactionException` (a `LogicException`, unmapped, a
+    `critical` 500), comes before any write; no caller nests today (the `Administrator`s, the seeds, the
+    migrations, which write in SQL, the whole suite), so the rule holds by construction instead of relying on
+    the next caller's memory. A future operation spanning two scopes takes one lock, or an adapter that owns
+    the outer COMMIT — never a nested `withLock()`. **Never go back to `Connection::transactional()`** there: when
     `commit()` fails, DBAL has already brought its nesting level to 0, and `transactional()`'s fallback
     `rollBack()` throws "There is no active transaction" over the real error, for any SQLSTATE outside
     its short list (unique, foreign key, deadlock…) — measured, `PostgresAdvisoryOrderScopeLockTest`
