@@ -9,11 +9,14 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Infrastructure\Doctrine\AccountLockTimeoutException;
 use App\Security\User\Infrastructure\Doctrine\PostgresAccountRowLock;
+use App\Tests\Support\CommitRefusal;
 use App\Tests\Support\OpensProbeConnection;
 use DateTimeImmutable;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 use LogicException;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Throwable;
 
 /**
  * Le verrou du compte sur la base réelle (issues #435, #458). Sa raison d'être,
@@ -112,13 +115,48 @@ final class PostgresAccountRowLockTest extends KernelTestCase
         $holder->beginTransaction();
         $holder->fetchOne('SELECT 1 FROM cpg_user WHERE id = :id FOR UPDATE', ['id' => $user->getId()->toRfc4122()]);
 
+        // Filet (issue #512) : si la borne venait à manquer, l'attente
+        // échouerait en 57014 après 3 s au lieu de pendre.
+        $this->em->getConnection()->executeStatement("SET statement_timeout = '3s'");
+
         try {
             $this->expectException(AccountLockTimeoutException::class);
             (new PostgresAccountRowLock($this->em, '50ms'))->whileLocked($user, static fn (CpgUser $locked): null => null);
         } finally {
             $holder->rollBack();
             $holder->close();
+            $this->em->getConnection()->executeStatement('RESET statement_timeout');
         }
+    }
+
+    /**
+     * Un COMMIT refusé remonte sous l'erreur de la base (issue #512). Avec
+     * `Connection::transactional()`, un SQLSTATE hors de la courte liste de
+     * DBAL disparaissait derrière « There is no active transaction » : DBAL a
+     * déjà clos la transaction quand le COMMIT échoue, et son `rollBack()` de
+     * repli levait par-dessus — le défaut que #390 a corrigé dans le verrou
+     * d'ordre seulement.
+     */
+    public function testACommitRefusedByTheDatabaseSurfacesUnderItsOwnError(): void
+    {
+        $user = $this->pendingUser();
+        $connection = $this->em->getConnection();
+        $caught = null;
+
+        try {
+            $this->lock()->whileLocked($user, static function (CpgUser $locked) use ($connection): null {
+                CommitRefusal::scheduleIn($connection);
+
+                return null;
+            });
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(DriverException::class, $caught, \sprintf('Le COMMIT refusé est remonté sous un autre nom : %s.', get_debug_type($caught)));
+        self::assertSame(CommitRefusal::SQLSTATE, $caught->getSQLState());
+        self::assertTrue($this->em->isOpen());
+        self::assertFalse($connection->isTransactionActive());
     }
 
     private function lock(): AccountLockInterface

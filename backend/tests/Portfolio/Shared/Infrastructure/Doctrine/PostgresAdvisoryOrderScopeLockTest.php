@@ -143,6 +143,38 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     }
 
     /**
+     * Issue #512 : une session que rien ne borne — la console, qui n'a pas le
+     * `PGOPTIONS` de FPM ; les `app:*:seed` prennent ce verrou — attendait le
+     * périmètre sans fin. Le verrou borne lui-même une telle attente, comme
+     * ceux du compte et de l'attribution des identifiants. Le
+     * `statement_timeout` n'est qu'un filet pour que le test échoue au lieu de
+     * pendre : seul `lock_timeout` lève `55P03`.
+     */
+    public function testAWaitIsBoundedEvenWhenTheSessionSetsNoLockTimeout(): void
+    {
+        $connection = $this->entityManager()->getConnection();
+        $this->probe->executeQuery(
+            'SELECT pg_advisory_lock(?, hashtext(?))',
+            [PostgresAdvisoryOrderScopeLock::ADVISORY_NAMESPACE, self::SCOPE],
+        );
+        $connection->executeStatement('SET lock_timeout = 0');
+        $connection->executeStatement("SET statement_timeout = '3s'");
+        $caught = null;
+
+        try {
+            (new PostgresAdvisoryOrderScopeLock($this->entityManager(), '100ms'))->withLock(self::SCOPE, static fn (): null => null);
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        } finally {
+            $connection->executeStatement('RESET statement_timeout');
+            $connection->executeStatement('RESET lock_timeout');
+        }
+
+        self::assertInstanceOf(OrderScopeLockTimeoutException::class, $caught, \sprintf("L'attente d'une session sans lock_timeout n'est pas bornée : %s.", get_debug_type($caught)));
+        self::assertFalse($connection->isTransactionActive());
+    }
+
+    /**
      * Seule l'attente du verrou de périmètre est renommée : un délai dépassé
      * dans l'opération (verrou de ligne…) remonte tel quel.
      */
