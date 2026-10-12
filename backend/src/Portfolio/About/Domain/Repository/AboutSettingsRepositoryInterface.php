@@ -18,6 +18,15 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
  */
 interface AboutSettingsRepositoryInterface
 {
+    /**
+     * Lit la base à chaque appel, jamais la seule carte d'identité de
+     * l'EntityManager (issue #553) : AboutSettingsAdministrator::update() n'a
+     * pas de verrou parce que cette relecture voit une ligne disparue (null,
+     * donc 404) ou recréée depuis le chargement du provider. Une implémentation
+     * qui rendrait l'instance déjà chargée (un find($id), un cache) ferait
+     * répondre 200 à un PUT sur une ligne disparue : il faudrait alors le verrou
+     * de ligne de #545. Voir `.claude/rules/portfolio-contenus.md`, section About.
+     */
     public function findByLocale(Locale $locale): ?AboutSettings;
 
     public function save(AboutSettings $settings): void;

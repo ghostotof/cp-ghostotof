@@ -16,6 +16,15 @@ final readonly class AboutSettingsAdministrator implements AboutSettingsAdminist
     ) {
     }
 
+    /**
+     * Sans verrou, par décision (issue #553) : aucun chemin applicatif ne
+     * supprime les réglages, et findByLocale() relit la base (recherche par
+     * critère), si bien qu'une ligne supprimée en SQL depuis le chargement du
+     * provider donne un 404 au lieu d'un 200. Ne pas remplacer cette recherche
+     * par un find($id) sans verrou ; une suppression applicative des réglages
+     * (purge du seed, DELETE) imposerait d'abord le verrou de ligne de #545.
+     * Voir `.claude/rules/portfolio-contenus.md`, section About.
+     */
     public function update(
         Locale $locale,
         string $siteEyebrow,
