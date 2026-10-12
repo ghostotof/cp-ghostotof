@@ -21,17 +21,22 @@ paths:
   (issue #541). `KubernetesManifests::base()` (`k8s/base`) or `::overlay('prod')` (the overlay's
   own files, never the `kustomize build` render — an overlay patch on the base stays invisible to
   every test below). It splits a file into documents (`---` alone or followed by a comment, CRLF
-  included), descends to the pod spec (`Deployment`, `StatefulSet`, `Job`, `CronJob`, a bare `Pod`) and finds a
-  container or initContainer by name; the business assertions stay in each test. It also holds
-  the **one census of the manifests running the backend image** (issue #542,
-  `manifestsRunningTheBackendImage()`), read from the parsed `image` of every container and
-  initContainer — never a regex on the text, two copies of which disagreed on quotes and trailing
-  comments — and `isBackendImage()` / `backendContainers()`: `backend` with or without a tag or
-  digest (kustomize rewrites it by name) or `${BACKEND_IMAGE}`. YAML lists are read through it too
-  (`entries()`, `firstWith($node, $list, $key, $value)`, `text()`), never a private copy. It **refuses**
-  rather than skips: an unparsable document or one that is not a mapping (named by its first
-  line), a workload of another kind carrying a pod template (a `DaemonSet` must be taught to it
-  first), a list entry that is not a mapping, a name found zero or twice. Its own test,
+  included), descends to the pod spec (`Deployment`, `StatefulSet`, `Job`, `CronJob`, a bare
+  `Pod`) and finds a container or initContainer by name; the business assertions stay in each
+  test. It also holds the **one census of the manifests running the backend image** (issue #542,
+  `manifestsRunningTheBackendImage()`, `*.yaml` and `*.yml` of the directory, not its
+  subdirectories), read from the parsed `image` of every container and initContainer — never a
+  regex on the text, two copies of which disagreed on quotes and trailing comments — and
+  `isBackendImage()` / `backendContainers()` / `backendContainersIn($manifest)`: `backend` or the
+  pipeline's `ghcr.io/ghostotof/cp-ghostotof-backend`, with or without a tag or digest (kustomize
+  rewrites it by name), or `${BACKEND_IMAGE}` / `$BACKEND_IMAGE` (envsubst fills both). The census
+  parses every manifest of the directory, so an unrelated one it refuses turns both its consumers
+  red. YAML lists are read through it too (`entries()`, `firstWith($node, $list, $key, $value)`,
+  `text()`), never a private copy. It **refuses** rather than skips: an unparsable document or one
+  that is not a mapping (named by its first line), a resource of another kind carrying a pod
+  template or a `containers` list at any depth (a `DaemonSet`, a `PodTemplate`, a `List` of Pods
+  must be taught to it first), a list that is a mapping, a list entry that is not a mapping, a
+  name found zero or twice. Its own test,
   `tests/Shared/KubernetesManifestsTest.php`, proves each case on manifests it writes. **Proving
   a manifest guard still fails** takes a mutation the dev container actually sees: `k8s/` is a
   bind mount that Docker Desktop loses track of when a file is replaced by a new inode (`sed -i`,

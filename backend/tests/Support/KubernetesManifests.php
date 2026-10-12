@@ -33,12 +33,13 @@ final readonly class KubernetesManifests
     private const array TEMPLATED_WORKLOADS = ['Deployment', 'StatefulSet', 'Job'];
 
     /**
-     * L'image backend sous ses deux noms : `backend`, que l'`images:` de la
-     * kustomization réécrit — par son nom, tag ou digest compris —, et le
-     * placeholder des Jobs appliqués hors kustomize, que `envsubst` remplace
-     * tel quel.
+     * L'image backend sous tous ses noms : `backend`, que l'`images:` de la
+     * kustomization réécrit — par son nom, tag ou digest compris —, l'image
+     * que la pipeline publie (`IMAGE_BACKEND`, pipeline.yml) écrite en dur, et
+     * le placeholder des Jobs appliqués hors kustomize, que `envsubst`
+     * remplace avec ou sans accolades.
      */
-    private const string BACKEND_IMAGE = '/\A(?:backend(?:[:@][^\s\/]+)?|\$\{BACKEND_IMAGE\})\z/';
+    private const string BACKEND_IMAGE = '/\A(?:(?:(?:ghcr\.io\/ghostotof\/cp-ghostotof-)?backend)(?:[:@][^\s\/]+)?|\$\{BACKEND_IMAGE\}|\$BACKEND_IMAGE)\z/';
 
     private function __construct(
         private string $directory,
@@ -167,7 +168,7 @@ final readonly class KubernetesManifests
     }
 
     /**
-     * Les manifestes du répertoire (`*.yaml`) dont un conteneur ou un
+     * Les manifestes du répertoire (`*.yaml`, `*.yml`) dont un conteneur ou un
      * initContainer exécute l'image backend, triés (issue #542). Le recensement
      * lit le champ `image` parsé : guillemets et commentaire de fin de ligne
      * n'y changent rien, et une ligne commentée n'est pas une image.
@@ -176,11 +177,14 @@ final readonly class KubernetesManifests
      */
     public function manifestsRunningTheBackendImage(): array
     {
-        $paths = glob($this->directory.'/*.yaml');
-        Assert::assertIsArray($paths);
+        // Deux motifs plutôt que GLOB_BRACE, absent de certaines libc (musl).
+        $yaml = glob($this->directory.'/*.yaml');
+        $yml = glob($this->directory.'/*.yml');
+        Assert::assertIsArray($yaml);
+        Assert::assertIsArray($yml);
 
         $found = [];
-        foreach ($paths as $path) {
+        foreach ([...$yaml, ...$yml] as $path) {
             $manifest = basename($path);
             foreach ($this->podSpecs($manifest) as $podSpec) {
                 if ([] !== self::backendContainers($podSpec) || [] !== self::backendContainers($podSpec, 'initContainers')) {
@@ -220,6 +224,24 @@ final readonly class KubernetesManifests
     }
 
     /**
+     * Les conteneurs de l'image backend d'une liste, dans tous les pod specs
+     * du manifeste, dans l'ordre du fichier.
+     *
+     * @param 'containers'|'initContainers' $list
+     *
+     * @return list<array<mixed>>
+     */
+    public function backendContainersIn(string $manifest, string $list = 'containers'): array
+    {
+        $containers = [];
+        foreach ($this->podSpecs($manifest) as $podSpec) {
+            array_push($containers, ...self::backendContainers($podSpec, $list));
+        }
+
+        return $containers;
+    }
+
+    /**
      * Le conteneur nommé de la ressource de ce `kind`.
      *
      * @return array<mixed>
@@ -244,7 +266,8 @@ final readonly class KubernetesManifests
      * `spec.template.spec` pour un Deployment, un StatefulSet ou un Job,
      * `spec.jobTemplate.spec.template.spec` pour un CronJob, `spec` pour un
      * Pod nu. Une autre ressource qui porte un `spec.template`, un
-     * `spec.jobTemplate` ou des `spec.containers` (un DaemonSet…) est
+     * `spec.jobTemplate` ou une liste `containers` à n'importe quelle
+     * profondeur (un DaemonSet, un PodTemplate, une `List` de Pods…) est
      * refusée : ses pods échapperaient aux recensements.
      *
      * @param array<mixed> $resource
@@ -264,7 +287,7 @@ final readonly class KubernetesManifests
             return self::at($resource, 'spec');
         }
         $spec = $resource['spec'] ?? null;
-        if (\is_array($spec) && (isset($spec['template']) || isset($spec['jobTemplate']) || isset($spec['containers']))) {
+        if ((\is_array($spec) && (isset($spec['template']) || isset($spec['jobTemplate']))) || self::holdsContainers($resource)) {
             Assert::fail(\sprintf('%s : pod spec d\'un kind que KubernetesManifests ne sait pas lire.', \is_string($kind) ? $kind : '(sans kind)'));
         }
 
@@ -299,9 +322,11 @@ final readonly class KubernetesManifests
     {
         $entries = $node[$list] ?? [];
         Assert::assertIsArray($entries, \sprintf('%s : une liste est attendue.', $list));
+        // Une table de tables passerait l'assertion précédente.
+        Assert::assertTrue(array_is_list($entries), \sprintf('%s : une liste est attendue.', $list));
 
         $tables = [];
-        foreach (array_values($entries) as $index => $entry) {
+        foreach ($entries as $index => $entry) {
             if (!\is_array($entry)) {
                 Assert::fail(\sprintf('%s : l\'élément %d n\'est pas une table YAML, %s lu.', $list, $index + 1, get_debug_type($entry)));
             }
@@ -359,6 +384,26 @@ final readonly class KubernetesManifests
         Assert::assertCount(1, $matching, \sprintf('%s : %d %s(s) « %s » dans le %s, un seul attendu.', $manifest, \count($matching), $what, $name, $kind));
 
         return $matching[0];
+    }
+
+    /**
+     * Vrai si le nœud porte, à une profondeur quelconque, une clé
+     * `containers` dont la valeur est une liste ou une table.
+     *
+     * @param array<mixed> $node
+     */
+    private static function holdsContainers(array $node): bool
+    {
+        foreach ($node as $key => $child) {
+            if (!\is_array($child)) {
+                continue;
+            }
+            if ('containers' === $key || self::holdsContainers($child)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

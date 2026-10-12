@@ -37,8 +37,10 @@ use PHPUnit\Framework\TestCase;
  * `SET LOCAL lock_timeout`.
  *
  * Les manifestes viennent du recensement par l'image de KubernetesManifests,
- * pas de la liste de SystemCachePodVolumeTest : un nouveau manifeste qui
- * exécute l'image sans la borne fait rougir ce test de lui-même.
+ * pas de la liste de
+ * {@see \App\Tests\Shared\Infrastructure\Cache\SystemCachePodVolumeTest} : un
+ * nouveau manifeste qui exécute l'image sans la borne fait rougir ce test de
+ * lui-même.
  */
 final class ConsoleLockWaitBoundTest extends TestCase
 {
@@ -97,7 +99,7 @@ final class ConsoleLockWaitBoundTest extends TestCase
     #[DataProvider('manifests')]
     public function testEveryConsoleContainerBoundsItsLockWaitsLikeFpm(string $manifest): void
     {
-        $containers = $this->backendContainers($manifest, 'containers');
+        $containers = KubernetesManifests::base()->backendContainersIn($manifest);
         self::assertNotSame([], $containers, \sprintf('%s : aucun conteneur de l\'image backend.', $manifest));
 
         foreach ($containers as $container) {
@@ -128,7 +130,7 @@ final class ConsoleLockWaitBoundTest extends TestCase
     #[DataProvider('manifests')]
     public function testNoInitContainerOfTheImageRunsTheConsole(string $manifest): void
     {
-        foreach ($this->backendContainers($manifest, 'initContainers') as $container) {
+        foreach (KubernetesManifests::base()->backendContainersIn($manifest, 'initContainers') as $container) {
             self::assertStringNotContainsString(
                 'bin/console',
                 KubernetesManifests::text($container['command'] ?? null).' '.KubernetesManifests::text($container['args'] ?? null),
@@ -146,7 +148,7 @@ final class ConsoleLockWaitBoundTest extends TestCase
         foreach (self::EXEMPT as $manifest => $containers) {
             foreach (array_keys($containers) as $name) {
                 $container = null;
-                foreach ($this->backendContainers($manifest, 'containers') as $candidate) {
+                foreach (KubernetesManifests::base()->backendContainersIn($manifest) as $candidate) {
                     if ($name === ($candidate['name'] ?? null)) {
                         $container = $candidate;
                     }
@@ -185,25 +187,5 @@ final class ConsoleLockWaitBoundTest extends TestCase
         $value = $variable['value'] ?? null;
 
         return \is_string($value) ? $value : '(valeur non littérale)';
-    }
-
-    /**
-     * Les conteneurs de l'image backend d'une liste du pod spec
-     * (`containers` ou `initContainers`), tous documents du fichier confondus.
-     *
-     * @param 'containers'|'initContainers' $list
-     *
-     * @return list<array<mixed>>
-     */
-    private function backendContainers(string $manifest, string $list): array
-    {
-        $containers = [];
-        foreach (KubernetesManifests::base()->podSpecs($manifest) as $podSpec) {
-            foreach (KubernetesManifests::backendContainers($podSpec, $list) as $container) {
-                $containers[] = $container;
-            }
-        }
-
-        return $containers;
     }
 }

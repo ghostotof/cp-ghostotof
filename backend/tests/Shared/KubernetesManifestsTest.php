@@ -173,6 +173,8 @@ final class KubernetesManifestsTest extends TestCase
         yield 'DaemonSet' => [['kind' => 'DaemonSet', 'spec' => ['template' => ['spec' => ['containers' => []]]]]];
         yield 'jobTemplate hors CronJob' => [['kind' => 'Batch', 'spec' => ['jobTemplate' => ['spec' => []]]]];
         yield 'conteneurs hors Pod' => [['kind' => 'PodLike', 'spec' => ['containers' => [['name' => 'app']]]]];
+        yield 'List' => [['kind' => 'List', 'items' => [['kind' => 'Pod', 'spec' => ['containers' => [['name' => 'app']]]]]]];
+        yield 'PodTemplate' => [['kind' => 'PodTemplate', 'template' => ['spec' => ['containers' => [['name' => 'app']]]]]];
     }
 
     /**
@@ -338,10 +340,11 @@ final class KubernetesManifestsTest extends TestCase
                     - {name: tools, image: backend-tools}
                     - {name: proxy, image: 'nginx:1.30 # backend'}
             YAML);
+        $this->write('short-extension.yml', "kind: Job\nspec: {template: {spec: {containers: [{name: cli, image: backend}]}}}\n");
         $this->write('not-a-manifest.conf', "image: backend\n");
 
         self::assertSame(
-            ['bare-pod.yaml', 'commented.yaml', 'init-only.yaml', 'placeholder.yaml', 'quoted.yaml', 'second-document.yaml', 'tagged.yaml'],
+            ['bare-pod.yaml', 'commented.yaml', 'init-only.yaml', 'placeholder.yaml', 'quoted.yaml', 'second-document.yaml', 'short-extension.yml', 'tagged.yaml'],
             $this->manifests()->manifestsRunningTheBackendImage(),
         );
     }
@@ -353,12 +356,18 @@ final class KubernetesManifestsTest extends TestCase
     {
         yield 'nom kustomize' => ['backend', true];
         yield 'placeholder envsubst' => ['${BACKEND_IMAGE}', true];
+        // envsubst remplace aussi la forme sans accolades d'une variable listée.
+        yield 'placeholder sans accolades' => ['$BACKEND_IMAGE', true];
+        // L'image publiée par la pipeline, écrite en dur.
+        yield 'image du registre' => ['ghcr.io/ghostotof/cp-ghostotof-backend:0.24.0-aced988', true];
+        yield 'image du registre sans tag' => ['ghcr.io/ghostotof/cp-ghostotof-backend', true];
         // Kustomize réécrit l'image par son nom, quel que soit le tag ou le digest.
         yield 'avec tag' => ['backend:latest', true];
         yield 'avec digest' => ['backend@sha256:'.str_repeat('0', 64), true];
         yield 'autre image' => ['frontend', false];
         yield 'préfixe seulement' => ['backend-tools', false];
-        yield 'registre explicite' => ['ghcr.io/ghostotof/backend:1.0', false];
+        yield 'autre image du registre' => ['ghcr.io/ghostotof/cp-ghostotof-frontend:1.0', false];
+        yield 'autre registre' => ['ghcr.io/ghostotof/backend:1.0', false];
         yield 'placeholder suffixé' => ['${BACKEND_IMAGE}:x', false];
         yield 'absente' => [null, false];
         yield 'pas une chaîne' => [['backend'], false];
@@ -384,6 +393,24 @@ final class KubernetesManifestsTest extends TestCase
         );
     }
 
+    /**
+     * Tous documents du fichier confondus, dans l'ordre.
+     */
+    public function testTheBackendContainersOfAManifestAreReadAcrossItsDocuments(): void
+    {
+        $this->write('two.yaml', <<<'YAML'
+            kind: Deployment
+            spec: {template: {spec: {initContainers: [{name: copy, image: backend}], containers: [{name: api, image: backend}, {name: web, image: nginx}]}}}
+            ---
+            kind: CronJob
+            spec: {jobTemplate: {spec: {template: {spec: {containers: [{name: cron, image: backend}]}}}}}
+            YAML);
+        $manifests = $this->manifests();
+
+        self::assertSame([['name' => 'api', 'image' => 'backend'], ['name' => 'cron', 'image' => 'backend']], $manifests->backendContainersIn('two.yaml'));
+        self::assertSame([['name' => 'copy', 'image' => 'backend']], $manifests->backendContainersIn('two.yaml', 'initContainers'));
+    }
+
     public function testTheFirstEntryOfAListWithAGivenValueIsFound(): void
     {
         $container = ['volumeMounts' => [
@@ -406,6 +433,17 @@ final class KubernetesManifestsTest extends TestCase
         $this->expectException(AssertionFailedError::class);
         $this->expectExceptionMessage('env : l\'élément 2 n\'est pas une table YAML, string lu.');
         KubernetesManifests::firstWith(['env' => [['name' => 'A'], 'PGOPTIONS=-c lock_timeout=5s']], 'env', 'name', 'PGOPTIONS');
+    }
+
+    /**
+     * Une table de tables n'est pas une liste : `env: {PGOPTIONS: {…}}`, que
+     * Kubernetes refuse, ne doit pas laisser trouver la variable.
+     */
+    public function testAMappingOfMappingsIsNoList(): void
+    {
+        $this->expectException(AssertionFailedError::class);
+        $this->expectExceptionMessage('env : une liste est attendue.');
+        KubernetesManifests::firstWith(['env' => ['PGOPTIONS' => ['name' => 'PGOPTIONS', 'value' => '-c lock_timeout=5s']]], 'env', 'name', 'PGOPTIONS');
     }
 
     public function testAListThatIsNoListIsRefused(): void
