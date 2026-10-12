@@ -21,8 +21,9 @@ use Throwable;
  * Patron **Execute Around** (la méthode qui encadre une opération reçue) : le
  * squelette est écrit une fois, et chaque adaptateur lui passe ce qui varie
  * réellement entre eux — l'instruction qui prend le verrou, l'exception qui
- * nomme son attente dépassée, et, pour le seul verrou d'ordre, le refus du
- * COMMIT qu'il sait nommer. Rejetés : une classe abstraite (Template Method),
+ * nomme son attente dépassée, celle qui nomme son imbrication refusée, et,
+ * pour le seul verrou d'ordre, le refus du COMMIT qu'il sait nommer. Rejetés :
+ * une classe abstraite (Template Method),
  * qui lierait par héritage deux contextes (Portfolio, Security) et forcerait
  * à faire transiter par des crochets ce que chaque appel reçoit (le périmètre,
  * le compte) ; un service injecté, sans implémentation alternative à offrir,
@@ -58,19 +59,40 @@ use Throwable;
  * l'attente compte le plus. Un délai que la session a déjà choisi (`PGOPTIONS`,
  * un test) est gardé tel quel, ni rallongé ni raccourci. Il
  * vaut pour toute la transaction, donc aussi pour les attentes de l'opération
- * elle-même, comme sous FPM. Imbriqué dans une transaction déjà ouverte, il
- * vaut jusqu'à la fin de celle-ci (portée de `SET LOCAL`), comme le
- * `SET LOCAL` des verrous d'avant #512. Paramètre lié plutôt qu'interpolé :
+ * elle-même, comme sous FPM. Paramètre lié plutôt qu'interpolé :
  * le délai n'entre jamais dans le texte SQL.
  *
- * **L'imbrication** : le squelette la tolère, sans la garantir. Imbriqué, son
- * COMMIT n'est qu'un `RELEASE SAVEPOINT` : le verrou tient jusqu'au COMMIT de
- * l'appelant, et un refus différé tombe à ce COMMIT-là, hors de portée de
- * `$onCommitRefused`. Le verrou d'ordre, le seul qui nomme un tel refus, la
- * refuse donc lui-même (issue #526,
- * {@see \App\Portfolio\Shared\Infrastructure\Doctrine\OrderScopeLockInsideTransactionException}).
- * Les deux verrous du compte ne la refusent pas encore, et aucun appelant ne
- * les imbrique (issue #532).
+ * **Il refuse de s'ouvrir dans une transaction déjà ouverte** (issues #526,
+ * #532), celle d'un autre verrou ou la sienne comprise, avant de rien prendre
+ * ni lancer : `run()` lève l'exception que l'adaptateur donne à `$onNested`,
+ * et la transaction de l'appelant reste intacte. Imbriqué, son COMMIT ne
+ * serait qu'un `RELEASE SAVEPOINT`, et ce que chacun des trois verrous promet
+ * « après la validation » ne tiendrait plus : le verrou tiendrait jusqu'au
+ * COMMIT de l'appelant, un refus différé (le trigger des groupes de
+ * traduction, #390) tomberait à ce COMMIT-là hors de portée de
+ * `$onCommitRefused`, une invitation serait publiée — et un lien envoyé —
+ * avant que le compte ou le jeton soient visibles du worker ou du lecteur.
+ * Aucun appelant n'imbrique (cas d'usage, handlers, commandes, seeds, la
+ * suite entière) : le refus rend la règle vraie par construction, au lieu de
+ * la confier à la mémoire du prochain appelant.
+ *
+ * Écrit ici une fois plutôt que dans chaque adaptateur, dès qu'il y en a eu
+ * trois à le vouloir (#532 ; #526 l'avait laissé dans le seul verrou d'ordre) :
+ * `$onNested` est **obligatoire**, un quatrième verrou ne peut donc pas
+ * l'oublier, alors qu'une copie par adaptateur se serait oubliée comme le
+ * délai et le COMMIT refusé avant #512. Chacun garde le nom de son refus, qui
+ * dit à l'exploitant quel verrou a été mal pris. Rejetée : une option qui
+ * laisse un adaptateur tolérer l'imbrication — aucun n'en a l'usage, et elle
+ * aurait gardé vivant un chemin que personne n'emprunte.
+ *
+ * Le juge est DBAL (`isTransactionActive()`), seul à savoir ce que `commit()`
+ * émettra : une transaction ouverte en SQL brut (`executeStatement('BEGIN')`)
+ * ne se voit pas, et aucune ne doit l'être autour d'un verrou. Une session
+ * perdue (`ConnectionLost`) remet son compteur à zéro (`close()`) : le refus
+ * ne survit pas à la transaction qu'elle a emportée. Une transaction qu'un code
+ * aurait laissée ouverte sur une connexion qui dure (un worker) ferait refuser
+ * chaque verrou suivant, en 500 ou en réessais Messenger, jusqu'au redémarrage :
+ * c'est voulu, imbriqué en silence rien n'aurait jamais été validé.
  *
  * Seule l'attente de l'acquisition est renommée : un `55P03` levé par
  * l'opération (un verrou de ligne pris plus loin) remonte tel quel.
@@ -118,17 +140,22 @@ final readonly class PostgresLockedTransaction
      *
      * @param Closure(): mixed                          $acquire         prend le verrou ; peut refuser (la ligne a disparu)
      * @param Closure(DriverException): Throwable       $onTimeout       nomme l'attente dépassée de `$acquire`
+     * @param Closure(): Throwable                      $onNested        nomme le refus de s'ouvrir dans une transaction déjà ouverte
      * @param Closure(): T                              $operation       tourne sous le verrou, dans la transaction
      * @param (Closure(DriverException): ?Throwable)|null $onCommitRefused nomme un refus du COMMIT reconnu ; `null` le laisse tel quel
      *
      * @return T
      */
-    public function run(Closure $acquire, Closure $onTimeout, Closure $operation, ?Closure $onCommitRefused = null): mixed
+    public function run(Closure $acquire, Closure $onTimeout, Closure $onNested, Closure $operation, ?Closure $onCommitRefused = null): mixed
     {
+        // Issues #526, #532 : imbriqué, le COMMIT ci-dessous ne serait qu'un
+        // RELEASE SAVEPOINT. Refusé avant d'ouvrir quoi que ce soit : la
+        // transaction de l'appelant n'est pas touchée.
+        if ($this->connection->isTransactionActive()) {
+            throw $onNested();
+        }
+
         $this->connection->beginTransaction();
-        // Le niveau que ce squelette a ouvert : un COMMIT refusé ne laisse à
-        // annuler que celui-ci, jamais celui d'un appelant qui en tient un.
-        $ownLevel = $this->connection->getTransactionNestingLevel();
 
         try {
             $this->boundTheWait();
@@ -139,7 +166,7 @@ final readonly class PostgresLockedTransaction
             // transaction (même choix que Connection::transactional()).
             throw $exception;
         } catch (Throwable $exception) {
-            $this->rollBackAfter($exception, $ownLevel);
+            $this->rollBackAfter($exception);
 
             throw $exception;
         }
@@ -147,7 +174,7 @@ final readonly class PostgresLockedTransaction
         try {
             $this->connection->commit();
         } catch (Throwable $refusal) {
-            $this->rollBackIfStillOpen($ownLevel, $refusal);
+            $this->rollBackIfStillOpen($refusal);
 
             if ($refusal instanceof DriverException && null !== $onCommitRefused) {
                 throw $onCommitRefused($refusal) ?? $refusal;
@@ -161,17 +188,17 @@ final readonly class PostgresLockedTransaction
 
     /**
      * Après un COMMIT refusé, n'annule que ce qui est encore ouvert. Refusé
-     * par la base, le COMMIT a déjà ramené DBAL au niveau de l'appelant — et
+     * par la base, le COMMIT a déjà ramené DBAL à zéro — et
      * PostgreSQL a annulé la transaction, verrou compris : un `rollBack()` y
      * lèverait « There is no active transaction » par-dessus le vrai refus.
      * Refusé par DBAL lui-même avant d'écrire (`CommitFailedRollbackOnly`,
      * après un `setRollbackOnly()`), il laisse la transaction ouverte, et le
      * verrou pris : elle est annulée, comme le faisait `transactional()`.
      */
-    private function rollBackIfStillOpen(int $ownLevel, Throwable $refusal): void
+    private function rollBackIfStillOpen(Throwable $refusal): void
     {
-        if ($this->connection->getTransactionNestingLevel() === $ownLevel) {
-            $this->rollBackAfter($refusal, $ownLevel);
+        if ($this->connection->isTransactionActive()) {
+            $this->rollBackAfter($refusal);
         }
     }
 
@@ -195,18 +222,18 @@ final readonly class PostgresLockedTransaction
      * verrous compris, et DBAL rouvre une session neuve à la requête suivante.
      * Sans cela, un worker gardait une connexion morte, ou au mieux un état
      * de transaction inconnu.
-     * - Au premier niveau, `$cause` remonte telle quelle (relancée par
-     *   l'appelant de cette méthode) : elle dit déjà que rien n'a été validé.
-     * - Imbriqué, la transaction de l'appelant disparaît avec la session.
-     *   Relancer la cause seule le laisserait poursuivre et valider dans le
-     *   vide. Une exception nommée l'en avertit, avec la cause en `previous`.
+     * `$cause` remonte telle quelle (relancée par l'appelant de cette
+     * méthode) : elle dit déjà que rien n'a été validé. Le squelette ne
+     * s'ouvrant jamais dans une transaction déjà ouverte (#532), aucune
+     * transaction d'appelant ne disparaît avec la session — le cas qu'une
+     * exception nommée signalait depuis #526, retirée avec lui.
      *
      * Seule une `DriverException` (un refus de la base, une session perdue)
      * est rattrapée. Une erreur de programmation, comme `NoActiveTransaction`
      * pour une opération qui a validé elle-même la transaction du squelette,
      * remonte comme avant : rien ne doit la cacher derrière un refus métier.
      *
-     * Rejeté : chaîner les deux exceptions au premier niveau aussi. La cause
+     * Rejeté : chaîner les deux exceptions. La cause
      * aurait été remplacée, et ce que voit chaque appelant aurait changé (un
      * 409 devenu 500, un `CpgUserNotFoundException` relancé par Messenger au
      * lieu d'être écarté).
@@ -217,23 +244,17 @@ final readonly class PostgresLockedTransaction
      * relancée, est journalisée au niveau qui lui est propre par celui qui la
      * rattrape.
      */
-    private function rollBackAfter(Throwable $cause, int $ownLevel): void
+    private function rollBackAfter(Throwable $cause): void
     {
         try {
             $this->connection->rollBack();
         } catch (DriverException $rollbackFailure) {
-            $nested = $ownLevel > 1;
             $this->logger->error('ROLLBACK refusé après un échec sous verrou PostgreSQL : session fermée, cause relancée.', [
                 'cause' => $cause::class,
                 'rollbackFailure' => $rollbackFailure::class,
                 'rollbackSqlState' => $rollbackFailure->getSQLState(),
-                'nested' => $nested,
             ]);
             $this->connection->close();
-
-            if ($nested) {
-                throw LockedTransactionRollbackFailedException::insideOuterTransaction($cause, $rollbackFailure);
-            }
         }
     }
 

@@ -25,6 +25,15 @@ use Closure;
 interface AccountLockInterface
 {
     /**
+     * **Jamais dans une transaction déjà ouverte** (issue #532), ni sous un
+     * autre verrou du compte ou de l'application : le verrou ouvre et valide
+     * la sienne, et ce que fait l'appelant à son retour (le handler envoie le
+     * lien d'invitation) suppose ce COMMIT. Imbriqué, il ne serait qu'un point
+     * de sauvegarde : la ligne resterait verrouillée jusqu'au COMMIT de
+     * l'appelant, et le lien partirait avant que son jeton soit validé. Un
+     * appel imbriqué est refusé avant de verrouiller quoi que ce soit, en 500
+     * nommé.
+     *
      * @template T
      *
      * @param Closure(CpgUser): T $operation reçoit le compte, relu sous le verrou

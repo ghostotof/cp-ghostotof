@@ -32,6 +32,10 @@ use Psr\Log\LoggerInterface;
  *   {@see PostgresLockedTransaction} (issue #512). Un refus levé par
  *   l'opération ne ferme pas, à lui seul, l'EntityManager ; celui que lève
  *   un `flush()` le ferme, comme avant ce verrou.
+ * - **Jamais dans une transaction déjà ouverte** (issue #532) : le squelette
+ *   le refuse, ici sous {@see UsernameAllocationLockInsideTransactionException}.
+ *   Imbriqué, son COMMIT ne serait qu'un point de sauvegarde, et
+ *   `CpgUserInviter::invite()` publierait avant la validation du compte.
  *
  * Suppose READ COMMITTED, le niveau par défaut que rien ne change ici : la
  * première lecture après le verrou voit ce que son détenteur précédent a
@@ -62,6 +66,7 @@ final readonly class PostgresUsernameAllocationLock implements UsernameAllocatio
                 [self::ADVISORY_NAMESPACE, self::ADVISORY_KEY],
             ),
             onTimeout: UsernameAllocationLockTimeoutException::afterWaiting(...),
+            onNested: UsernameAllocationLockInsideTransactionException::create(...),
             operation: $operation,
         );
     }
