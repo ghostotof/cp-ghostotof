@@ -19,7 +19,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 /**
  * Peuple/réinitialise les incidents affichés sur /incidents (fr/en), servis
  * depuis la base via GET /api/incidents/{locale}. Même garde-fou que les
- * autres commandes app:*:seed (GuardsExistingContent) : si du contenu est déjà
+ * autres commandes app:*:seed ({@see GuardsExistingContent}) : si du contenu est déjà
  * en place, elle décline (code de sortie 0).
  *
  * Attention : avec --force, elle purge toute la table, toutes locales

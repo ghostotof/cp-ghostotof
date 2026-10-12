@@ -19,7 +19,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * Peuple/réinitialise les études de cas techniques du palier de base (ADR
  * 0003 D5), servies depuis la base via GET /api/case-studies/{locale}
  * (ROLE_USER). Même garde-fou que les autres commandes app:*:seed
- * (GuardsExistingContent) : une base déjà peuplée est laissée intacte sans
+ * ({@see GuardsExistingContent}) : une base déjà peuplée est laissée intacte sans
  * --force ; avec --force, toute la table est purgée, toutes locales
  * confondues, puis recréée.
  *

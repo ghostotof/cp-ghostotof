@@ -18,7 +18,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 /**
  * Peuple/réinitialise le CV sans identité du palier de base (ADR 0003 D5),
  * servi depuis la base via GET /api/anonymous-cv/{locale} (ROLE_USER).
- * Même garde-fou que les autres commandes app:*:seed (GuardsExistingContent) :
+ * Même garde-fou que les autres commandes app:*:seed ({@see GuardsExistingContent}) :
  * une base déjà peuplée est laissée intacte sans --force ; avec --force, toute
  * la table est purgée, toutes locales confondues, puis recréée.
  *

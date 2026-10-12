@@ -26,12 +26,13 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * de référence (repris de l'ancien contenu statique frontend
  * infrastructure/portfolio/content/{fr,en}.ts, aujourd'hui servi depuis la
  * base via GET /api/about/{locale}). Même garde-fou que les autres commandes
- * app:*:seed (GuardsExistingContent) : si des cartes sont déjà en place, elle
- * décline (code de sortie 0). Avec --force, elle purge toutes les cartes,
- * toutes locales confondues, puis les recrée, ce qui écrase les éditions
- * faites au backoffice. Les réglages (AboutSettings, un singleton par locale)
- * sont mis à jour sur place à chaque peuplement effectif, jamais purgés, et
- * n'entrent pas dans le décompte.
+ * app:*:seed ({@see GuardsExistingContent}) : si des cartes sont déjà en
+ * place, elle décline (code de sortie 0). Avec --force, elle purge toutes les
+ * cartes, toutes locales confondues, puis les recrée, ce qui écrase les
+ * éditions faites au backoffice. Les réglages ({@see AboutSettings}, un
+ * singleton par locale) sont créés s'ils manquent, sinon mis à jour sur
+ * place, à chaque peuplement effectif ; jamais purgés, ils n'entrent pas dans
+ * le décompte.
  */
 #[AsCommand(
     name: 'app:about:seed',
@@ -121,11 +122,13 @@ final class SeedAboutContentCommand extends Command
     {
         $existing = $this->aboutSettingsRepository->findByLocale($locale);
 
-        // Double lecture voulue (#562) : update() relit la ligne par
-        // findByLocale() au lieu de recevoir $existing, et c'est cette
-        // relecture qui fait tenir l'absence de verrou d'AboutSettings (#553).
-        // Ne pas « optimiser » en lui passant l'entité lue ici : un SELECT
-        // indexé de plus par locale, au peuplement seulement.
+        // Double lecture voulue (#562) : update() relit lui-même la ligne par
+        // findByLocale() et ne reçoit jamais d'entité. C'est ce contrat qui
+        // fait tenir l'absence de verrou d'AboutSettings (#553) : une
+        // signature prenant l'entité laisserait le processeur du backoffice
+        // lui passer l'instance chargée par le provider. Ne pas « optimiser »
+        // en lui passant $existing : un SELECT indexé de plus par locale, au
+        // peuplement seulement.
         if (null !== $existing) {
             $this->aboutSettingsAdministrator->update(
                 $locale,
@@ -285,9 +288,10 @@ final class SeedAboutContentCommand extends Command
     /**
      * Cartes site et cartes « moi », toutes locales confondues. Les réglages
      * (`AboutSettings`) sont volontairement exclus du décompte : leur mise à
-     * jour est un upsert, pas une purge — ils ne risquent donc rien, et les
-     * compter ferait considérer comme « peuplée » une base qui n'a pourtant
-     * aucune carte.
+     * jour est un upsert, pas une purge, et les compter ferait considérer
+     * comme « peuplée » une base qui n'a pourtant aucune carte. Ils ne sont
+     * jamais supprimés, mais tout peuplement effectif les remet au contenu de
+     * référence — y compris sans --force, quand aucune carte ne reste.
      */
     private function countExisting(): int
     {
