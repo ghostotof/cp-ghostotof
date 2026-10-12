@@ -22,8 +22,9 @@ use Symfony\Bridge\Doctrine\Types\UuidType;
  *   (issue #512) : une transaction à la main — un refus levé par l'opération
  *   (un lien déjà utilisé, 404) est une issue ordinaire, qui ne doit pas
  *   fermer l'EntityManager, et un COMMIT refusé remonte sous l'erreur de la
- *   base —, l'attente bornée si la session ne la borne pas (la console, le
- *   worker Messenger, n'a pas le `PGOPTIONS` de FPM), son `55P03` renommé.
+ *   base —, l'attente bornée si la session ne la borne pas (un filet depuis
+ *   #525, où le worker Messenger et les Jobs ont reçu le `PGOPTIONS` de FPM),
+ *   son `55P03` renommé.
  * - Une lecture qui dit si la ligne existe : `refresh()` sur un compte
  *   supprimé entre-temps ne lève rien, et l'écriture suivante échouait sur la
  *   clé étrangère.

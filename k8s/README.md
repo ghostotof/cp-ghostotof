@@ -877,20 +877,21 @@ NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant 
 # La liste : Id, classe, date d'échec, erreur. Aucun contenu de message. 50 lignes au plus par
 # défaut : si l'en-tête « There are N messages » dépasse 50, relancer avec --max=N.
 kubectl -n "${NS:?preprod ou prod}" exec deploy/backend -c php-fpm -- \
-  env PGOPTIONS='-c default_transaction_read_only=on' php bin/console messenger:failed:show --no-interaction
+  env PGOPTIONS='-c default_transaction_read_only=on -c lock_timeout=5s' php bin/console messenger:failed:show --no-interaction
 # Le compte par classe.
 kubectl -n "${NS:?preprod ou prod}" exec deploy/backend -c php-fpm -- \
-  env PGOPTIONS='-c default_transaction_read_only=on' php bin/console messenger:failed:show --stats --no-interaction
+  env PGOPTIONS='-c default_transaction_read_only=on -c lock_timeout=5s' php bin/console messenger:failed:show --stats --no-interaction
 # Un message en détail, Id pris dans la liste. -vv affiche le message lui-même : à garder sur ce
 # terminal, jamais collé dans une issue, un ticket ou une session d'assistant.
 kubectl -n "${NS:?preprod ou prod}" exec deploy/backend -c php-fpm -- \
-  env PGOPTIONS='-c default_transaction_read_only=on' php bin/console messenger:failed:show <id> -vv --no-interaction
+  env PGOPTIONS='-c default_transaction_read_only=on -c lock_timeout=5s' php bin/console messenger:failed:show <id> -vv --no-interaction
 ```
 
 - **Lecture seule, vérifiée.** `PGOPTIONS` est lu par libpq, donc par `pdo_pgsql` : toute la
   session PostgreSQL de la commande est en `default_transaction_read_only`. Mesuré en dev :
   `failed:show` (liste, `--stats`, `-vv`) y passe, un `failed:remove` y échoue en SQLSTATE 25006
-  (« cannot execute DELETE in a read-only transaction »). Un garde-fou, pas une frontière, comme
+  (« cannot execute DELETE in a read-only transaction »). `lock_timeout=5s` y borne les attentes
+  de verrou comme dans les Jobs (#525 ; `PGOPTIONS` remplace la variable entière). Un garde-fou, pas une frontière, comme
   pour « nommer un compte » (§ Journal de sécurité) : la même identité peut tout faire. Mesuré en
   dev seulement : à confirmer à la première exécution en préprod (#521) — si la lecture y échoue en
   SQLSTATE 25006, une écriture annexe (un cache sur DBAL) s'est glissée dans la session, le signaler
@@ -1290,7 +1291,7 @@ session d'assistant —, avec un **kubeconfig d'administrateur humain**. Le jeto
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 printf '%s\n' '\set id <userId>' "SELECT username, email FROM cpg_user WHERE id = :'id'::uuid;" \
   | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-    sh -c 'PGOPTIONS="-c default_transaction_read_only=on" psql -X -A -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 # attendu : l'en-tête username|email, une ligne nom|adresse et « (1 row) » ;
 # « (0 rows) » : aucun compte de cet UUID dans CE namespace — relire $NS avant de conclure.
 ```
@@ -1310,7 +1311,8 @@ morceau, essayé sur l'image `postgres:18.6-alpine` en local (pas encore sur le 
 - **Lecture seule.** `default_transaction_read_only` fait refuser une écriture par erreur
   (« cannot execute UPDATE in a read-only transaction ») ; c'est un garde-fou, pas une frontière :
   un `SET default_transaction_read_only = off` dans la session le lève, et la même identité peut
-  de toute façon tout faire.
+  de toute façon tout faire. `lock_timeout=5s` borne ses attentes de verrou comme celles de FPM et
+  des Jobs (#525) : `PGOPTIONS` remplace la variable entière, la borne doit donc y être répétée.
 - **Un résultat lisible.** `-X` ignore un `~/.psqlrc` ; `-A` rend `nom|adresse` sans alignement mais
   garde l'en-tête et le compte de lignes, pour qu'un namespace erroné (« (0 rows) ») ne se confonde
   pas avec une sortie vide ; `ON_ERROR_STOP=1` fait sortir en code 3 sur une erreur au lieu de 0.

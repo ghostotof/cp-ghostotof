@@ -218,13 +218,19 @@ final class MessengerMaintenanceJobsManifestTest extends TestCase
 
     /**
      * L'Id arrive par une variable du conteneur, sous un autre nom que le
-     * placeholder : envsubst remplace aussi `$FAILED_MESSAGE_ID`.
+     * placeholder : envsubst remplace aussi `$FAILED_MESSAGE_ID`. Le reste de
+     * l'environnement est épinglé avec : la borne des attentes de verrou
+     * (issue #525, ConsoleLockWaitBoundTest) et la verbosité (#521).
      */
     #[DataProvider('failedJobs')]
     public function testTheIdReachesTheContainerThroughItsEnvironment(string $manifest): void
     {
         self::assertSame(
-            [['name' => 'MESSAGE_ID', 'value' => '${FAILED_MESSAGE_ID}'], ['name' => 'SHELL_VERBOSITY', 'value' => '0']],
+            [
+                ['name' => 'PGOPTIONS', 'value' => '-c lock_timeout=5s'],
+                ['name' => 'MESSAGE_ID', 'value' => '${FAILED_MESSAGE_ID}'],
+                ['name' => 'SHELL_VERBOSITY', 'value' => '0'],
+            ],
             $this->container($manifest)['env'] ?? null,
         );
     }

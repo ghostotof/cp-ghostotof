@@ -67,6 +67,10 @@ spec:
           imagePullPolicy: Always
           command: ['php', 'bin/console', 'messenger:stop-workers', '--no-interaction']
           env:
+            # Issue #525 : attentes de verrou PostgreSQL bornées comme sous FPM (valeur
+            # de www.prod.conf ; ConsoleLockWaitBoundTest, .claude/rules/deploiement.md).
+            - name: PGOPTIONS
+              value: '-c lock_timeout=5s'
             # Revue de #521, comme les Jobs de `failed` : Symfony Console lit
             # aussi SHELL_VERBOSITY, et `env` l'emporte sur `envFrom`.
             - name: SHELL_VERBOSITY

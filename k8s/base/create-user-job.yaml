@@ -84,6 +84,10 @@ spec:
             - -c
             - exec php bin/console app:user:create --no-interaction --username="$NEW_ACCOUNT_USERNAME" --role=ROLE_SUPER --password-stdin < /run/secrets/create-user/password
           env:
+            # Issue #525 : attentes de verrou PostgreSQL bornées comme sous FPM (valeur
+            # de www.prod.conf ; ConsoleLockWaitBoundTest, .claude/rules/deploiement.md).
+            - name: PGOPTIONS
+              value: '-c lock_timeout=5s'
             - name: NEW_ACCOUNT_USERNAME
               value: '${CPG_USERNAME}'
           envFrom:

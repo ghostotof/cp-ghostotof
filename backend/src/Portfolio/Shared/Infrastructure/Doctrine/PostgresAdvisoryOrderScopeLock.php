@@ -41,8 +41,10 @@ use Psr\Log\LoggerInterface;
  * Ce verrou-ci y ajoute le nom du refus que le trigger différé des groupes de
  * traduction oppose au COMMIT : {@see TranslationGroupHasSeveralPositionsException},
  * avec le message de la base, qui nomme la table et le groupe. Sous FPM, le
- * délai reste le `lock_timeout` de 5 s de www.prod.conf (#272) ; la console
- * (`app:*:seed`), qui n'en a aucun, attendait sans fin avant #512.
+ * délai reste le `lock_timeout` de 5 s de www.prod.conf (#272), et dans les
+ * pods console (`app:*:seed`) celui de leur `PGOPTIONS` (#525) ; une console
+ * qui n'en a aucun (dev, CI) reçoit celui du squelette, qui attendait sans
+ * fin avant #512.
  *
  * **Il refuse de s'imbriquer** dans une transaction déjà ouverte, la sienne
  * comprise ({@see OrderScopeLockInsideTransactionException}, issue #526) :

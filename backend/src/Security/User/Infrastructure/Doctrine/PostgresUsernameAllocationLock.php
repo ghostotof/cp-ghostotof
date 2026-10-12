@@ -26,7 +26,8 @@ use Psr\Log\LoggerInterface;
  * - Forme à deux clés `int4`, espace distinct des verrous à une clé `bigint`
  *   de `symfony/lock` ; première clé distincte de celle du périmètre d'ordre.
  * - Le squelette — transaction à la main, attente bornée si la session ne
- *   la borne pas (la console), `55P03` renommé, COMMIT refusé remonté sous
+ *   la borne pas (un filet depuis #525 : la console de dev ou de CI),
+ *   `55P03` renommé, COMMIT refusé remonté sous
  *   l'erreur de la base — est celui des trois verrous PostgreSQL,
  *   {@see PostgresLockedTransaction} (issue #512). Un refus levé par
  *   l'opération ne ferme pas, à lui seul, l'EntityManager ; celui que lève
