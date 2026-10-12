@@ -1,0 +1,35 @@
+# Fixture de AsyncMessagesNameTheirQueueFailureTest (issue #491) : chaque forme
+# de routage qui publierait un message sans conversion de la panne de la file,
+# dans l'environnement où elle se cache, à côté de deux routages admis.
+framework:
+    messenger:
+        transports:
+            async: 'in-memory://'
+            failed: 'doctrine://default?queue_name=failed'
+            sync: 'sync://'
+        routing:
+            # Admis : le message nomme son exception (AsyncMessageInterface).
+            'App\Contact\Application\Message\SendContactMessageMessage': async
+            # Admis : synchrone, rien n'est publié.
+            'App\Tests\Shared\Infrastructure\Messenger\Fixtures\UnconvertedMessage': sync
+
+when@dev:
+    framework:
+        messenger:
+            routing:
+                # Joker d'espace de noms : ses messages ne se vérifient pas.
+                'App\Tests\Shared\Infrastructure\Messenger\Fixtures\*': async
+
+when@prod:
+    framework:
+        messenger:
+            routing:
+                # Un transport qui publie, même s'il ne s'appelle pas async.
+                'App\Tests\Shared\Infrastructure\Messenger\Fixtures\UnconvertedQueuedMessage': [sync, failed]
+
+when@test:
+    framework:
+        messenger:
+            routing:
+                # Joker universel.
+                '*': async
