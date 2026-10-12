@@ -8,21 +8,26 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Application\CpgUserInviter;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
+use App\Security\User\Application\UsernameAllocationLockInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
 use App\Security\User\Domain\Exception\EmailAlreadyUsedException;
 use App\Security\User\Domain\Exception\InvitationQueueUnavailableException;
+use App\Security\User\Domain\Exception\UsernameAlreadyUsedException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Service\UsernameGenerator;
+use Closure;
 use DateTimeImmutable;
-use Doctrine\DBAL\Driver\Exception as DriverException;
+use Doctrine\DBAL\Driver\AbstractException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\TransportException;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Throwable;
 
 /**
  * Depuis l'audit C2 (décision D3), CpgUserInviter ne crée plus de jeton : il
@@ -71,6 +76,7 @@ final class CpgUserInviterTest extends TestCase
             $messageBus,
             $clock,
             $auditLogger,
+            $this->lockRunningTheOperation(),
         );
 
         $user = $inviter->invite('jean.dupont@example.com', Locale::FR);
@@ -108,6 +114,7 @@ final class CpgUserInviterTest extends TestCase
             $messageBus,
             new MockClock(),
             $this->auditLoggerExpectingNothing(),
+            $this->lockRunningTheOperation(),
         );
 
         $this->expectException(EmailAlreadyUsedException::class);
@@ -115,17 +122,22 @@ final class CpgUserInviterTest extends TestCase
         $inviter->invite('taken@example.com', Locale::FR);
     }
 
-    public function testInviteMapsAConcurrentUniqueViolationToEmailAlreadyUsed(): void
+    /**
+     * La pré-vérification passe, mais une écriture concurrente a déjà inséré
+     * la ligne : la contrainte unique lève, et le refus doit nommer
+     * l'unicité violée (issue #364) — un identifiant pris n'est pas une
+     * adresse prise. Rien ne doit être dispatché ni journalisé.
+     *
+     * @param class-string<Throwable> $expected
+     */
+    #[DataProvider('uniqueViolations')]
+    public function testInviteNamesTheUniquenessThatRefusedTheSave(string $violatedIndex, string $expected): void
     {
-        // La pré-vérification passe, mais un save() concurrent a déjà inséré la
-        // ligne : la contrainte unique en base lève, et on doit répondre 409,
-        // pas 500. Rien ne doit être dispatché.
         $cpgUserRepository = self::createStub(CpgUserRepositoryInterface::class);
         $cpgUserRepository->method('findOneByEmail')->willReturn(null);
         $cpgUserRepository->method('findOneByUsername')->willReturn(null);
-        $cpgUserRepository->method('save')->willThrowException(
-            new UniqueConstraintViolationException(self::createStub(DriverException::class), null),
-        );
+        $violation = $this->uniqueViolationOf($violatedIndex);
+        $cpgUserRepository->method('save')->willThrowException($violation);
 
         $messageBus = $this->createMock(MessageBusInterface::class);
         $messageBus->expects(self::never())->method('dispatch');
@@ -136,11 +148,102 @@ final class CpgUserInviterTest extends TestCase
             $messageBus,
             new MockClock('2026-09-03 12:00:00'),
             $this->auditLoggerExpectingNothing(),
+            $this->lockRunningTheOperation(),
         );
 
-        $this->expectException(EmailAlreadyUsedException::class);
+        try {
+            $inviter->invite('race@example.com', Locale::FR);
+            self::fail($expected.' attendue.');
+        } catch (Throwable $refusal) {
+            self::assertInstanceOf($expected, $refusal);
+            // Le détail de PostgreSQL cite la valeur en conflit (#356) : un
+            // refus converti ne le garde pas. Seule la violation non reconnue
+            // remonte telle quelle.
+            if ($refusal !== $violation) {
+                self::assertNull($refusal->getPrevious());
+                self::assertStringNotContainsString('race@example.com', $refusal->getMessage());
+            }
+        }
+    }
 
-        $inviter->invite('race@example.com', Locale::FR);
+    /**
+     * @return iterable<string, array{string, class-string<Throwable>}>
+     */
+    public static function uniqueViolations(): iterable
+    {
+        yield 'adresse' => [CpgUser::EMAIL_UNIQUE_INDEX, EmailAlreadyUsedException::class];
+        yield 'identifiant' => [CpgUser::USERNAME_UNIQUE_INDEX, UsernameAlreadyUsedException::class];
+        // Un index que ce code ne connaît pas : aucune cause n'est affirmée.
+        yield 'index inconnu' => ['uniq_cpg_user_other', UniqueConstraintViolationException::class];
+    }
+
+    /**
+     * Le verrou d'attribution entoure les vérifications et l'enregistrement,
+     * et le message n'est publié qu'une fois le verrou rendu — donc la
+     * transaction validée (issue #364).
+     */
+    public function testInviteChecksAndSavesUnderTheAllocationLockThenDispatchesOutsideIt(): void
+    {
+        // Le verrou tient aussi le journal des appels du dépôt et du bus, et
+        // dit pour chacun s'il a lieu sous le verrou.
+        $trace = new class implements UsernameAllocationLockInterface {
+            /** @var list<string> */
+            public array $events = [];
+
+            private bool $locked = false;
+
+            public function whileAllocating(Closure $operation): mixed
+            {
+                $this->locked = true;
+                try {
+                    return $operation();
+                } finally {
+                    $this->locked = false;
+                    $this->record('unlock');
+                }
+            }
+
+            public function record(string $call): void
+            {
+                $this->events[] = $call.($this->locked ? ' (verrou)' : '');
+            }
+        };
+
+        $cpgUserRepository = self::createStub(CpgUserRepositoryInterface::class);
+        $cpgUserRepository->method('findOneByEmail')->willReturnCallback(static function () use ($trace): null {
+            $trace->record('findOneByEmail');
+
+            return null;
+        });
+        $cpgUserRepository->method('findOneByUsername')->willReturnCallback(static function () use ($trace): null {
+            $trace->record('findOneByUsername');
+
+            return null;
+        });
+        $cpgUserRepository->method('save')->willReturnCallback(static function () use ($trace): void {
+            $trace->record('save');
+        });
+
+        $messageBus = self::createStub(MessageBusInterface::class);
+        $messageBus->method('dispatch')->willReturnCallback(static function (object $message) use ($trace): Envelope {
+            $trace->record('dispatch');
+
+            return new Envelope($message);
+        });
+
+        new CpgUserInviter(
+            $cpgUserRepository,
+            new UsernameGenerator($cpgUserRepository),
+            $messageBus,
+            new MockClock('2026-10-12 12:00:00'),
+            self::createStub(SecurityAuditLoggerInterface::class),
+            $trace,
+        )->invite('jean@example.com', Locale::FR);
+
+        self::assertSame(
+            ['findOneByEmail (verrou)', 'findOneByUsername (verrou)', 'save (verrou)', 'unlock', 'dispatch'],
+            $trace->events,
+        );
     }
 
     /**
@@ -191,6 +294,7 @@ final class CpgUserInviterTest extends TestCase
             $messageBus,
             $clock,
             $auditLogger,
+            $this->lockRunningTheOperation(),
         );
 
         $inviter->reinvite($user, Locale::EN);
@@ -221,6 +325,7 @@ final class CpgUserInviterTest extends TestCase
             $messageBus,
             new MockClock(),
             $this->auditLoggerExpectingNothing(),
+            $this->lockRunningTheOperation(),
         );
 
         $this->expectException(AccountNotAwaitingActivationException::class);
@@ -258,6 +363,7 @@ final class CpgUserInviterTest extends TestCase
             $messageBus,
             new MockClock(),
             $this->auditLoggerExpectingNothing(),
+            $this->lockRunningTheOperation(),
         );
 
         $this->expectException(InvitationQueueUnavailableException::class);
@@ -290,11 +396,39 @@ final class CpgUserInviterTest extends TestCase
             $messageBus,
             new MockClock(),
             $this->auditLoggerExpectingNothing(),
+            $this->lockRunningTheOperation(),
         );
 
         $this->expectException(InvitationQueueUnavailableException::class);
 
         $inviter->reinvite($user, Locale::FR);
+    }
+
+    /**
+     * Le verrou d'attribution réduit à ce que ces tests unitaires en
+     * attendent : exécuter l'opération. Sa sérialisation réelle est couverte
+     * par InviteUsernameConcurrencyTest.
+     */
+    private function lockRunningTheOperation(): UsernameAllocationLockInterface
+    {
+        return new class implements UsernameAllocationLockInterface {
+            public function whileAllocating(Closure $operation): mixed
+            {
+                return $operation();
+            }
+        };
+    }
+
+    /**
+     * Une violation d'unicité dont le message cite l'index, comme PostgreSQL
+     * le fait (la forme réelle est épinglée par InviteUniqueViolationTest).
+     */
+    private function uniqueViolationOf(string $index): UniqueConstraintViolationException
+    {
+        $driverException = new class(\sprintf('SQLSTATE[23505]: Unique violation: 7 ERROR:  duplicate key value violates unique constraint "%s"', $index), '23505') extends AbstractException {
+        };
+
+        return new UniqueConstraintViolationException($driverException, null);
     }
 
     /**

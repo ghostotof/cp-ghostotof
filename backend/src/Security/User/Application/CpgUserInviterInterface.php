@@ -9,6 +9,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
 use App\Security\User\Domain\Exception\EmailAlreadyUsedException;
 use App\Security\User\Domain\Exception\InvitationQueueUnavailableException;
+use App\Security\User\Domain\Exception\UsernameAlreadyUsedException;
 
 /**
  * Cas d'usage "inviter un utilisateur depuis le backoffice" : crée un compte
@@ -23,6 +24,9 @@ interface CpgUserInviterInterface
      * @param Locale $locale langue de l'e-mail d'invitation et du lien envoyé
      *
      * @throws EmailAlreadyUsedException           si l'adresse est déjà rattachée à un compte
+     * @throws UsernameAlreadyUsedException        si l'identifiant dérivé a été pris par une écriture
+     *                                             qui ne passe pas par l'invitation (issue #364) ;
+     *                                             deux invitations, elles, ne se le disputent jamais
      * @throws InvitationQueueUnavailableException si la file n'a pas pris l'invitation ;
      *                                             le compte créé est alors retiré (issue #485)
      */

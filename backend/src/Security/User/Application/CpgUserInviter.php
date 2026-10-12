@@ -11,9 +11,11 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
 use App\Security\User\Domain\Exception\EmailAlreadyUsedException;
 use App\Security\User\Domain\Exception\InvitationQueueUnavailableException;
+use App\Security\User\Domain\Exception\UsernameAlreadyUsedException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Service\UsernameGenerator;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use DomainException;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -32,35 +34,17 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
         private MessageBusInterface $messageBus,
         private ClockInterface $clock,
         private SecurityAuditLoggerInterface $auditLogger,
+        private UsernameAllocationLockInterface $usernameAllocationLock,
     ) {
     }
 
     public function invite(string $email, Locale $locale): CpgUser
     {
-        if (null !== $this->cpgUserRepository->findOneByEmail($email)) {
-            throw EmailAlreadyUsedException::alreadyLinkedToAnAccount();
-        }
-
-        // Mot de passe vide : le compte n'est utilisable qu'une fois le mot de
-        // passe défini via le lien d'invitation (cf. PasswordSetupService).
-        $user = new CpgUser($this->usernameGenerator->generateFromEmail($email), '');
-        $user->setEmail($email);
-        // ADR 0003 D1 : inviter depuis le backoffice *est* l'octroi nominatif
-        // de ROLE_TRUSTED par un ROLE_SUPER — ce n'est jamais un compte au
-        // seul palier de base.
-        $user->setRoles([CpgUser::ROLE_TRUSTED]);
-        $user->markInvited($this->clock->now());
-
-        try {
-            $this->cpgUserRepository->save($user);
-        } catch (UniqueConstraintViolationException) {
-            // findOneByEmail() ci-dessus n'est pas atomique avec le save() : sur
-            // deux invitations concurrentes de la même adresse (ou deux parties
-            // locales identiques), la contrainte unique en base reste le dernier
-            // rempart — même parti pris que CpgUserRegistrar::register(). Le
-            // message n'est publié qu'après un save() réussi : sur échec, rien.
-            throw EmailAlreadyUsedException::alreadyLinkedToAnAccount();
-        }
+        // Issue #364 : vérifications et enregistrement sous un même verrou.
+        // Le message n'est publié qu'après la validation de la transaction —
+        // publié avant, le handler pourrait chercher un compte encore
+        // invisible. Sur un refus, rien n'est publié.
+        $user = $this->usernameAllocationLock->whileAllocating(fn (): CpgUser => $this->createPendingAccount($email));
 
         try {
             $this->dispatchInvitation($user, $locale);
@@ -104,6 +88,72 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
 
         $this->dispatchInvitation($user, $locale);
         $this->auditLogger->userReinvited($user);
+    }
+
+    /**
+     * Crée et enregistre le compte en attente d'activation. Appelée sous le
+     * verrou d'attribution : les deux lectures d'unicité voient toute
+     * invitation validée avant elle (issue #364).
+     *
+     * @throws EmailAlreadyUsedException    si l'adresse est déjà rattachée à un compte
+     * @throws UsernameAlreadyUsedException si l'identifiant dérivé a été pris hors du verrou
+     */
+    private function createPendingAccount(string $email): CpgUser
+    {
+        if (null !== $this->cpgUserRepository->findOneByEmail($email)) {
+            throw EmailAlreadyUsedException::alreadyLinkedToAnAccount();
+        }
+
+        // Mot de passe vide : le compte n'est utilisable qu'une fois le mot de
+        // passe défini via le lien d'invitation (cf. PasswordSetupService).
+        $user = new CpgUser($this->usernameGenerator->generateFromEmail($email), '');
+        $user->setEmail($email);
+        // ADR 0003 D1 : inviter depuis le backoffice *est* l'octroi nominatif
+        // de ROLE_TRUSTED par un ROLE_SUPER — ce n'est jamais un compte au
+        // seul palier de base.
+        $user->setRoles([CpgUser::ROLE_TRUSTED]);
+        $user->markInvited($this->clock->now());
+
+        try {
+            $this->cpgUserRepository->save($user);
+        } catch (UniqueConstraintViolationException $violation) {
+            // Sous le verrou, deux invitations ne se croisent plus. Reste une
+            // écriture qui ne le prend pas (création CLI, saisie à la main en
+            // base) : la contrainte unique est alors le dernier rempart, même
+            // parti pris que CpgUserRegistrar::register().
+            throw $this->refusalFor($violation, $user);
+        }
+
+        return $user;
+    }
+
+    /**
+     * Nomme l'unicité qui a refusé l'enregistrement (issue #364) : `cpg_user`
+     * en porte deux, et dire « adresse déjà utilisée » pour un identifiant
+     * pris envoyait l'administrateur chercher un compte qui n'existe pas.
+     * PostgreSQL cite l'index violé dans son message, quelle que soit la
+     * langue de ses messages (`lc_messages`) : le nom n'est jamais traduit.
+     *
+     * Aucune des exceptions rendues ne garde la violation pour `previous` :
+     * le détail de PostgreSQL cite la valeur en conflit, donc l'adresse
+     * (issue #356). Une violation qui ne nomme aucun des deux index (index
+     * renommé sans ce code) remonte telle quelle, en 500 : mieux qu'un 409
+     * qui affirmerait une cause non vérifiée.
+     *
+     * Une ligne qui prendrait à la fois l'adresse et l'identifiant ne fait
+     * citer qu'un index, le premier que PostgreSQL vérifie. Sous le verrou,
+     * la vérification de l'adresse l'a déjà écartée ; hors verrou, c'est la
+     * limite écrite dans UsernameAllocationLockInterface.
+     */
+    private function refusalFor(UniqueConstraintViolationException $violation, CpgUser $user): DomainException|UniqueConstraintViolationException
+    {
+        $message = $violation->getMessage();
+
+        return match (true) {
+            str_contains($message, CpgUser::EMAIL_UNIQUE_INDEX) => EmailAlreadyUsedException::alreadyLinkedToAnAccount(),
+            str_contains($message, CpgUser::USERNAME_UNIQUE_INDEX) => UsernameAlreadyUsedException::forUsername($user->getUsername()),
+            default => $violation,
+        };
     }
 
     /**
