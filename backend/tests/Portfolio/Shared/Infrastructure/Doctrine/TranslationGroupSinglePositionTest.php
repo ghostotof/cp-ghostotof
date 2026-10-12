@@ -9,7 +9,7 @@ use App\Portfolio\About\Domain\Entity\AboutMeCard;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
-use App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock;
+use App\Portfolio\Shared\Infrastructure\Doctrine\TranslationGroupRefusal;
 use App\Tests\Portfolio\Shared\Application\ProvidesLocalizedAdministrators;
 use App\Tests\Support\OpensProbeConnection;
 use Closure;
@@ -222,7 +222,7 @@ final class TranslationGroupSinglePositionTest extends KernelTestCase
             \sprintf('INSERT INTO %1$s (%2$s) SELECT %3$s FROM %1$s WHERE id = ?', $table, implode(', ', $columns), implode(', ', $copied)),
             [$french->getId()->toRfc4122()],
             $french->getTranslationGroup(),
-            PostgresAdvisoryOrderScopeLock::TRANSLATION_GROUP_ACROSS_SEVERAL_SCOPES,
+            TranslationGroupRefusal::ACROSS_SEVERAL_SCOPES,
         );
     }
 
@@ -238,7 +238,7 @@ final class TranslationGroupSinglePositionTest extends KernelTestCase
             'UPDATE about_me_card SET category = ? WHERE id = ?',
             [AboutMeCardCategory::TECHNICAL->value, $english->getId()->toRfc4122()],
             $french->getTranslationGroup(),
-            PostgresAdvisoryOrderScopeLock::TRANSLATION_GROUP_ACROSS_SEVERAL_SCOPES,
+            TranslationGroupRefusal::ACROSS_SEVERAL_SCOPES,
         );
     }
 
@@ -255,7 +255,7 @@ final class TranslationGroupSinglePositionTest extends KernelTestCase
             'UPDATE about_me_card SET category = ?, position = position + 7 WHERE id = ?',
             [AboutMeCardCategory::TECHNICAL->value, $english->getId()->toRfc4122()],
             $french->getTranslationGroup(),
-            PostgresAdvisoryOrderScopeLock::TRANSLATION_GROUP_ACROSS_SEVERAL_SCOPES,
+            TranslationGroupRefusal::ACROSS_SEVERAL_SCOPES,
         );
     }
 
@@ -378,7 +378,7 @@ final class TranslationGroupSinglePositionTest extends KernelTestCase
      *
      * @param list<int|string> $parameters
      */
-    private function assertRefused(string $sql, array $parameters, Uuid $group, string $sqlState = PostgresAdvisoryOrderScopeLock::TRANSLATION_GROUP_ON_SEVERAL_POSITIONS): void
+    private function assertRefused(string $sql, array $parameters, Uuid $group, string $sqlState = TranslationGroupRefusal::ON_SEVERAL_POSITIONS): void
     {
         $before = $this->rowsOf($group);
         $probe = $this->probe();
