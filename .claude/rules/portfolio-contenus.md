@@ -44,6 +44,35 @@ paths:
     is an FR/EN pair, which always carries the requested locale, so the reverse order hid the bug as an `info`;
     when it fires, look at migrations and SQL writes, which bypass the scope lock below). `WatchedProduct` is not localized, so it is `Orderable` on its
     own id, and its `Administrator` computes the end of the catalogue itself.
+    **The database refuses a group on several positions** (issue #390). `inGroup()` only saw one when a
+    locale was attached to that very group, which the backoffice almost never offers: the public pages
+    ranked the content differently in FR and EN, and the next `reorder()` repaired it without a trace,
+    erasing the evidence of the upstream defect. Migration `Version20261012120000` puts a **deferred
+    constraint trigger**, `trg_translation_group_single_position` (one name on all eight tables), calling
+    one plpgsql function, `portfolio_translation_group_single_position()`: at COMMIT, for each row
+    inserted or whose `position`/`translation_group` changed, it re-reads the group's **current** `MIN`/`MAX`
+    position (not `NEW.position`, which would refuse a row written twice in the transaction) and raises
+    `integrity_constraint_violation` (`23000`) naming the table and the group — a DBAL `DriverException`,
+    unmapped, a `critical` 500 on the write that caused it, whatever the path (application, migration,
+    SQL). **Deferred, never immediate**: `OrderAssigner` and Doctrine write a group's members one `UPDATE`
+    at a time, and the gap between two statements is legitimate. Since no group can stay divergent, a
+    reorder no longer meets one to repair silently; `inGroup()`'s check stays, as a second net. The check
+    runs before the COMMIT, hence still under the scope lock for the application's writes; **accepted
+    limit**: two concurrent SQL transactions that skip that lock can each re-read the group without the
+    other's uncommitted write and both commit. That migration first aligned any divergent group on its
+    lowest position (a tie the next backoffice reorder renumbers), reporting each one as a `warning` with
+    its original positions per locale in the migration Job's output. Rejected: an `EXCLUDE USING gist
+    (translation_group WITH =, position WITH <>)` (`btree_gist`), safe under concurrency, but DBAL
+    introspects its index, which no mapping declares, so every `doctrine:migrations:diff` would propose
+    a `DROP INDEX` — DBAL reads neither triggers nor functions; a `CHECK`, which cannot read other rows;
+    logging in `OrderAssigner` alone (late, a logger in a pure Domain service, SQL writes still unseen);
+    a periodic check (`watch-refresh`, a preprod smoke test), as late. A new localized context adds its
+    table to a **new** migration creating the same trigger: `TranslationGroupSinglePositionTest` fails on
+    any `TranslatableContent` entity whose table lacks it, and probes each context of
+    `ProvidesLocalizedAdministrators` (`UPDATE` of a position or a group, `INSERT`, a transient gap, a real
+    `reorder()`); `tests/Migrations/Version20261012120000Test` pins the alignment and its warnings. A test
+    that must write a divergent group does it in a transaction it rolls back: a deferred trigger never
+    fires there.
     **Every write that computes a position runs under its scope's lock** (issue #389): `create()`, `update()`
     and `reorder()` of the eight localized `Administrator`s, `create()` and `reorder()` of
     `WatchedProductAdministrator` (its `update()` never touches the position), wrap their **whole body** in
