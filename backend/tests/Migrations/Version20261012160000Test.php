@@ -7,13 +7,8 @@ namespace App\Tests\Migrations;
 use App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
-use Doctrine\DBAL\Schema\Schema;
-use Doctrine\Migrations\AbstractMigration;
-use Doctrine\Migrations\Version\Version;
 use Doctrine\ORM\EntityManagerInterface;
-use Psr\Log\LogLevel;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
-use Symfony\Component\ErrorHandler\BufferingLogger;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
 
@@ -32,9 +27,13 @@ use Symfony\Component\Uid\UuidV7;
  */
 final class Version20261012160000Test extends KernelTestCase
 {
+    use ReplaysMigration;
+
     private const string MIGRATION = 'DoctrineMigrations\Version20261012160000';
 
     private const string TRIGGER = 'trg_translation_group_single_position';
+
+    private const string FUNCTION = 'portfolio_translation_group_single_position';
 
     private Connection $connection;
 
@@ -44,7 +43,7 @@ final class Version20261012160000Test extends KernelTestCase
         $this->connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         $this->connection->beginTransaction();
         $this->connection->executeStatement('DELETE FROM about_me_card');
-        $this->runPlanned(static fn (AbstractMigration $migration) => $migration->down(new Schema()));
+        $this->runDown();
     }
 
     protected function tearDown(): void
@@ -70,6 +69,7 @@ final class Version20261012160000Test extends KernelTestCase
         $this->insertAboutMeCard($coherent, 'en', 'hobby', 2);
 
         $messages = $this->warningsOfUp();
+        $this->runUp();
 
         self::assertCount(1, $messages, 'Seul le groupe réparti est signalé.');
         self::assertStringContainsString('about_me_card', $messages[0]);
@@ -93,8 +93,9 @@ final class Version20261012160000Test extends KernelTestCase
     }
 
     /**
-     * `down()` rend le trigger de #390 : sans argument, sourd à `category`, et
-     * la fonction ne compare plus que les positions.
+     * `down()` rend le trigger de #390 — sans argument, sourd à `category` — et
+     * sa fonction, qui ne compare que les positions : une version insérée dans
+     * une autre catégorie, à la même position, repasse.
      */
     public function testDownRestoresTheGuardOfPositionsAlone(): void
     {
@@ -105,6 +106,10 @@ final class Version20261012160000Test extends KernelTestCase
             'SELECT t.tgnargs FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid WHERE t.tgname = ? AND c.relname = ?',
             [self::TRIGGER, 'about_me_card'],
         ));
+        $function = $this->connection->fetchOne(\sprintf("SELECT pg_get_functiondef('%s()'::regprocedure)", self::FUNCTION));
+        self::assertIsString($function);
+        self::assertStringNotContainsString('23T91', $function, 'down() a laissé la fonction de #501.');
+        self::assertStringContainsString('23T90', $function);
     }
 
     /**
@@ -141,57 +146,6 @@ final class Version20261012160000Test extends KernelTestCase
         }
 
         return null;
-    }
-
-    /**
-     * Les `warning` que `up()` journalise, le niveau que la sortie du Job de
-     * migration affiche sans `-v`.
-     *
-     * @return list<string>
-     */
-    private function warningsOfUp(): array
-    {
-        $logger = new BufferingLogger();
-        $class = $this->migration()::class;
-        new $class($this->connection, $logger)->up(new Schema());
-
-        $messages = [];
-        foreach ($logger->cleanLogs() as $log) {
-            if (\is_array($log) && LogLevel::WARNING === $log[0] && \is_string($log[1])) {
-                $messages[] = $log[1];
-            }
-        }
-
-        return $messages;
-    }
-
-    private function runUp(): void
-    {
-        $this->runPlanned(static fn (AbstractMigration $migration) => $migration->up(new Schema()));
-    }
-
-    /**
-     * Le dépôt de migrations rend toujours la même instance, dont getSql()
-     * cumule : seules les requêtes que `$plan` ajoute sont jouées.
-     *
-     * @param callable(AbstractMigration): void $plan
-     */
-    private function runPlanned(callable $plan): void
-    {
-        $migration = $this->migration();
-        $alreadyPlanned = \count($migration->getSql());
-        $plan($migration);
-
-        foreach (\array_slice($migration->getSql(), $alreadyPlanned) as $query) {
-            $this->connection->executeStatement($query->getStatement());
-        }
-    }
-
-    private function migration(): AbstractMigration
-    {
-        $factory = self::getContainer()->get('doctrine.migrations.dependency_factory');
-
-        return $factory->getMigrationRepository()->getMigration(new Version(self::MIGRATION))->getMigration();
     }
 
     private function insertAboutMeCard(Uuid $group, string $locale, string $category, int $position): void

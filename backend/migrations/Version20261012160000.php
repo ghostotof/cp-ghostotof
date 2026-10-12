@@ -26,7 +26,8 @@ use Doctrine\Migrations\AbstractMigration;
  * Même fonction, même nom de trigger : la fonction reçoit désormais en
  * argument (`TG_ARGV[0]`) la colonne qui découpe l'ordre de sa table en
  * périmètres, et une seule requête rend le min et le max des positions et le
- * nombre de périmètres du groupe. Plus d'un périmètre lève le SQLSTATE `23T91`
+ * nombre de périmètres du groupe (la liste des périmètres, pour le message,
+ * n'est lue que sur un refus). Plus d'un périmètre lève le SQLSTATE `23T91`
  * (voisin du `23T90` des positions, même classe 23), contrôlé **avant** les
  * positions : un groupe à la fois réparti et sur deux positions sort sous le
  * nom de la cause, la position n'en étant que la conséquence. Les sept autres
@@ -92,15 +93,21 @@ final class Version20261012160000 extends AbstractMigration
                 scope_column text := CASE WHEN TG_NARGS > 0 THEN quote_ident(TG_ARGV[0]) ELSE 'NULL::text' END;
             BEGIN
                 EXECUTE format(
-                    'SELECT MIN(position), MAX(position), COUNT(DISTINCT %1$s), string_agg(DISTINCT (%1$s)::text, '', '' ORDER BY (%1$s)::text) FROM %2$I.%3$I WHERE translation_group = $1',
+                    'SELECT MIN(position), MAX(position), COUNT(DISTINCT %1$s) FROM %2$I.%3$I WHERE translation_group = $1',
                     scope_column, TG_TABLE_SCHEMA, TG_TABLE_NAME)
-                    INTO lowest, highest, scope_count, scopes
+                    INTO lowest, highest, scope_count
                     USING NEW.translation_group;
 
                 -- Avant les positions : chaque périmètre numérote ses propres
                 -- rangs, un groupe réparti sur deux positions l'est par voie de
-                -- conséquence. C'est la cause qu'on nomme.
+                -- conséquence. C'est la cause qu'on nomme. La liste des
+                -- périmètres, pour le message, n'est lue que sur ce refus.
                 IF scope_count > 1 THEN
+                    EXECUTE format(
+                        'SELECT string_agg(DISTINCT (%1$s)::text, '', '' ORDER BY (%1$s)::text) FROM %2$I.%3$I WHERE translation_group = $1',
+                        scope_column, TG_TABLE_SCHEMA, TG_TABLE_NAME)
+                        INTO scopes
+                        USING NEW.translation_group;
                     RAISE EXCEPTION 'Groupe de traduction % de la table % rangé dans plusieurs % (%) : toutes ses entrées doivent partager son périmètre d''ordre (issue #501).',
                         NEW.translation_group, TG_TABLE_NAME, TG_ARGV[0], scopes
                         USING ERRCODE = '23T91', CONSTRAINT = TG_NAME, TABLE = TG_TABLE_NAME, COLUMN = TG_ARGV[0];

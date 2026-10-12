@@ -257,19 +257,17 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     public function testACommitRefusedForAGroupAcrossCategoriesFailsUnderItsOwnName(): void
     {
         $connection = $this->entityManager()->getConnection();
+        $meCards = self::getContainer()->get(AboutMeCardAdministratorInterface::class);
+        $french = $meCards->create(Locale::FR, AboutMeCardCategory::HOBBY, 'T', 'D', null);
 
         try {
-            $meCards = self::getContainer()->get(AboutMeCardAdministratorInterface::class);
-            $french = $meCards->create(Locale::FR, AboutMeCardCategory::HOBBY, 'T', 'D', null);
             $english = $meCards->create(Locale::EN, AboutMeCardCategory::HOBBY, 'T', 'D', null, $french->getTranslationGroup());
-            $caught = $this->failureOf(function () use ($connection, $english): void {
-                $this->lock()->withLock(AboutMeCard::class, static function () use ($connection, $english): void {
-                    $connection->executeStatement(
-                        'UPDATE about_me_card SET category = ? WHERE id = ?',
-                        [AboutMeCardCategory::TECHNICAL->value, $english->getId()->toRfc4122()],
-                    );
-                });
-            });
+            $caught = $this->failureOfALockedRun(static function () use ($connection, $english): void {
+                $connection->executeStatement(
+                    'UPDATE about_me_card SET category = ? WHERE id = ?',
+                    [AboutMeCardCategory::TECHNICAL->value, $english->getId()->toRfc4122()],
+                );
+            }, AboutMeCard::class);
         } finally {
             $connection->executeStatement('DELETE FROM about_me_card');
         }
@@ -514,15 +512,17 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     }
 
     /**
-     * Lance `$operation` sous le verrou des contributions et rend ce que
-     * `withLock()` a levé — l'opération ou le COMMIT —, `null` s'il a validé.
+     * Lance `$operation` sous le verrou de `$scope` (les contributions, par
+     * défaut) et rend ce que `withLock()` a levé — l'opération ou le COMMIT —,
+     * `null` s'il a validé.
      *
      * @param Closure(): void $operation
+     * @param class-string    $scope
      */
-    private function failureOfALockedRun(Closure $operation): ?Throwable
+    private function failureOfALockedRun(Closure $operation, string $scope = Contribution::class): ?Throwable
     {
-        return $this->failureOf(function () use ($operation): void {
-            $this->lock()->withLock(Contribution::class, $operation);
+        return $this->failureOf(function () use ($operation, $scope): void {
+            $this->lock()->withLock($scope, $operation);
         });
     }
 

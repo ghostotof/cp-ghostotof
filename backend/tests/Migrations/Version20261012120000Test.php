@@ -5,13 +5,8 @@ declare(strict_types=1);
 namespace App\Tests\Migrations;
 
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\Schema\Schema;
-use Doctrine\Migrations\AbstractMigration;
-use Doctrine\Migrations\Version\Version;
 use Doctrine\ORM\EntityManagerInterface;
-use Psr\Log\LogLevel;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
-use Symfony\Component\ErrorHandler\BufferingLogger;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -30,6 +25,8 @@ use Symfony\Component\Uid\Uuid;
  */
 final class Version20261012120000Test extends KernelTestCase
 {
+    use ReplaysMigration;
+
     private const string MIGRATION = 'DoctrineMigrations\Version20261012120000';
 
     private const string TRIGGER = 'trg_translation_group_single_position';
@@ -43,7 +40,7 @@ final class Version20261012120000Test extends KernelTestCase
         $this->connection->beginTransaction();
         $this->connection->executeStatement('DELETE FROM contribution');
         $this->connection->executeStatement('DELETE FROM about_me_card');
-        $this->runPlanned(static fn (AbstractMigration $migration) => $migration->down(new Schema()));
+        $this->runDown();
     }
 
     protected function tearDown(): void
@@ -200,57 +197,6 @@ final class Version20261012120000Test extends KernelTestCase
     {
         self::assertSame(0, $this->deferredTriggerCount());
         self::assertNull($this->connection->fetchOne("SELECT to_regproc('portfolio_translation_group_single_position')"));
-    }
-
-    /**
-     * Les `warning` que `up()` journalise, le niveau que la sortie du Job de
-     * migration affiche sans `-v`.
-     *
-     * @return list<string>
-     */
-    private function warningsOfUp(): array
-    {
-        $logger = new BufferingLogger();
-        $class = $this->migration()::class;
-        new $class($this->connection, $logger)->up(new Schema());
-
-        $messages = [];
-        foreach ($logger->cleanLogs() as $log) {
-            if (\is_array($log) && LogLevel::WARNING === $log[0] && \is_string($log[1])) {
-                $messages[] = $log[1];
-            }
-        }
-
-        return $messages;
-    }
-
-    private function runUp(): void
-    {
-        $this->runPlanned(static fn (AbstractMigration $migration) => $migration->up(new Schema()));
-    }
-
-    /**
-     * Le dépôt de migrations rend toujours la même instance, dont getSql()
-     * cumule : seules les requêtes que `$plan` ajoute sont jouées.
-     *
-     * @param callable(AbstractMigration): void $plan
-     */
-    private function runPlanned(callable $plan): void
-    {
-        $migration = $this->migration();
-        $alreadyPlanned = \count($migration->getSql());
-        $plan($migration);
-
-        foreach (\array_slice($migration->getSql(), $alreadyPlanned) as $query) {
-            $this->connection->executeStatement($query->getStatement());
-        }
-    }
-
-    private function migration(): AbstractMigration
-    {
-        $factory = self::getContainer()->get('doctrine.migrations.dependency_factory');
-
-        return $factory->getMigrationRepository()->getMigration(new Version(self::MIGRATION))->getMigration();
     }
 
     private function insertContribution(Uuid $group, string $locale, int $position): void

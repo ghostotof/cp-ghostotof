@@ -171,7 +171,9 @@ paths:
     unmapped: a `critical` 500, a pipeline defect, like the positions' one; both SQLSTATEs map in one
     `match` of its `onCommitRefused`). On `about_me_card` the trigger is recreated `AFTER INSERT OR UPDATE OF
     position, translation_group, category … EXECUTE FUNCTION portfolio_translation_group_single_position('category')`.
-    Moving a whole group to another category in one transaction stays accepted (deferred). Rejected: a
+    Moving a whole group to another category in one transaction stays accepted (deferred). Same accepted
+    limit as the positions: two concurrent SQL transactions that skip the scope lock can each add a member
+    in another category without seeing the other's, and both commit. Rejected: a
     second function or trigger (two reads of the group per row at COMMIT, two names for `SET CONSTRAINTS`);
     a check in `reorder()` alone (sees only what goes through it, late, SQL writes still unseen); doing
     nothing (the misleading 500 and the two ranks stayed). **Groups already spread are not corrected** (no
