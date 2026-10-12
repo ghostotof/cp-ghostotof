@@ -301,6 +301,84 @@ final class KubernetesManifestsTest extends TestCase
         $this->manifests()->podSpec('service.yaml', 'Deployment');
     }
 
+    /**
+     * Le recensement lit le champ `image` parsé, pas une ligne de texte : les
+     * deux anciennes expressions divergeaient sur les guillemets et le
+     * commentaire de fin de ligne (issue #542).
+     */
+    public function testTheCensusFindsEveryManifestRunningTheBackendImage(): void
+    {
+        $this->write('quoted.yaml', "kind: Deployment\nspec: {template: {spec: {containers: [{name: api, image: \"backend\"}]}}}\n");
+        $this->write('commented.yaml', <<<'YAML'
+            kind: Job
+            spec:
+              template:
+                spec:
+                  containers:
+                    - name: migrate
+                      image: backend # préchauffé
+            YAML);
+        $this->write('placeholder.yaml', "kind: Job\nspec: {template: {spec: {containers: [{name: seed, image: '\${BACKEND_IMAGE}'}]}}}\n");
+        $this->write('tagged.yaml', "kind: CronJob\nspec: {jobTemplate: {spec: {template: {spec: {containers: [{name: cron, image: 'backend:1.2.3'}]}}}}}\n");
+        $this->write('init-only.yaml', "kind: Deployment\nspec: {template: {spec: {initContainers: [{name: copy, image: backend}], containers: [{name: web, image: nginx}]}}}\n");
+        $this->write('second-document.yaml', "kind: Service\n---\nkind: Deployment\nspec: {template: {spec: {containers: [{name: api, image: backend}]}}}\n");
+        $this->write('other-image.yaml', <<<'YAML'
+            # image: backend, en commentaire seulement
+            kind: Deployment
+            spec:
+              template:
+                spec:
+                  containers:
+                    - {name: web, image: frontend}
+                    - {name: tools, image: backend-tools}
+                    - {name: proxy, image: 'nginx:1.30 # backend'}
+            YAML);
+        $this->write('not-a-manifest.conf', "image: backend\n");
+
+        self::assertSame(
+            ['commented.yaml', 'init-only.yaml', 'placeholder.yaml', 'quoted.yaml', 'second-document.yaml', 'tagged.yaml'],
+            $this->manifests()->manifestsRunningTheBackendImage(),
+        );
+    }
+
+    /**
+     * @return iterable<string, array{mixed, bool}>
+     */
+    public static function images(): iterable
+    {
+        yield 'nom kustomize' => ['backend', true];
+        yield 'placeholder envsubst' => ['${BACKEND_IMAGE}', true];
+        // Kustomize réécrit l'image par son nom, quel que soit le tag ou le digest.
+        yield 'avec tag' => ['backend:latest', true];
+        yield 'avec digest' => ['backend@sha256:'.str_repeat('0', 64), true];
+        yield 'autre image' => ['frontend', false];
+        yield 'préfixe seulement' => ['backend-tools', false];
+        yield 'registre explicite' => ['ghcr.io/ghostotof/backend:1.0', false];
+        yield 'placeholder suffixé' => ['${BACKEND_IMAGE}:x', false];
+        yield 'absente' => [null, false];
+        yield 'pas une chaîne' => [['backend'], false];
+    }
+
+    #[DataProvider('images')]
+    public function testTheBackendImageIsRecognisedByItsName(mixed $image, bool $expected): void
+    {
+        self::assertSame($expected, KubernetesManifests::isBackendImage($image));
+    }
+
+    public function testTheBackendContainersOfAPodSpecListAreKeptInOrder(): void
+    {
+        $podSpec = [
+            'initContainers' => [['name' => 'copy', 'image' => 'backend'], ['name' => 'wait', 'image' => 'busybox']],
+            'containers' => [['name' => 'php-fpm', 'image' => 'backend'], ['name' => 'nginx', 'image' => 'nginx'], ['name' => 'cli', 'image' => '${BACKEND_IMAGE}']],
+        ];
+
+        self::assertSame([['name' => 'copy', 'image' => 'backend']], KubernetesManifests::backendContainers($podSpec, 'initContainers'));
+        self::assertSame(
+            [['name' => 'php-fpm', 'image' => 'backend'], ['name' => 'cli', 'image' => '${BACKEND_IMAGE}']],
+            KubernetesManifests::backendContainers($podSpec),
+        );
+    }
+
     private function manifests(): KubernetesManifests
     {
         return KubernetesManifests::in($this->directory);

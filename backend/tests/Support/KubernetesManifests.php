@@ -32,6 +32,14 @@ final readonly class KubernetesManifests
     /** Les charges dont le pod spec est sous `spec.template.spec`. */
     private const array TEMPLATED_WORKLOADS = ['Deployment', 'StatefulSet', 'Job'];
 
+    /**
+     * L'image backend sous ses deux noms : `backend`, que l'`images:` de la
+     * kustomization réécrit — par son nom, tag ou digest compris —, et le
+     * placeholder des Jobs appliqués hors kustomize, que `envsubst` remplace
+     * tel quel.
+     */
+    private const string BACKEND_IMAGE = '/\A(?:backend(?:[:@][^\s\/]+)?|\$\{BACKEND_IMAGE\})\z/';
+
     private function __construct(
         private string $directory,
     ) {
@@ -156,6 +164,59 @@ final readonly class KubernetesManifests
         }
 
         return $podSpecs;
+    }
+
+    /**
+     * Les manifestes du répertoire (`*.yaml`) dont un conteneur ou un
+     * initContainer exécute l'image backend, triés (issue #542). Le recensement
+     * lit le champ `image` parsé : guillemets et commentaire de fin de ligne
+     * n'y changent rien, et une ligne commentée n'est pas une image.
+     *
+     * @return list<string>
+     */
+    public function manifestsRunningTheBackendImage(): array
+    {
+        $paths = glob($this->directory.'/*.yaml');
+        Assert::assertIsArray($paths);
+
+        $found = [];
+        foreach ($paths as $path) {
+            $manifest = basename($path);
+            foreach ($this->podSpecs($manifest) as $podSpec) {
+                if ([] !== self::backendContainers($podSpec) || [] !== self::backendContainers($podSpec, 'initContainers')) {
+                    $found[] = $manifest;
+
+                    break;
+                }
+            }
+        }
+        sort($found);
+
+        return $found;
+    }
+
+    /**
+     * Vrai si la valeur d'un champ `image` désigne l'image backend.
+     */
+    public static function isBackendImage(mixed $image): bool
+    {
+        return \is_string($image) && 1 === preg_match(self::BACKEND_IMAGE, $image);
+    }
+
+    /**
+     * Les conteneurs de l'image backend d'une liste du pod spec, dans l'ordre.
+     *
+     * @param array<mixed>                  $podSpec
+     * @param 'containers'|'initContainers' $list
+     *
+     * @return list<array<mixed>>
+     */
+    public static function backendContainers(array $podSpec, string $list = 'containers'): array
+    {
+        return array_values(array_filter(
+            self::containers($podSpec, $list),
+            static fn (array $container): bool => self::isBackendImage($container['image'] ?? null),
+        ));
     }
 
     /**

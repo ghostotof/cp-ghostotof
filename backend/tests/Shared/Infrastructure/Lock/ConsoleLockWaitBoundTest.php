@@ -36,9 +36,9 @@ use PHPUnit\Framework\TestCase;
  * migration qui doit attendre plus longtemps l'annonce elle-même par
  * `SET LOCAL lock_timeout`.
  *
- * Le recensement des manifestes est fait ici, par l'image, et non repris de
- * SystemCachePodVolumeTest : un nouveau manifeste qui exécute l'image sans la
- * borne fait rougir ce test de lui-même.
+ * Les manifestes viennent du recensement par l'image de KubernetesManifests,
+ * pas de la liste de SystemCachePodVolumeTest : un nouveau manifeste qui
+ * exécute l'image sans la borne fait rougir ce test de lui-même.
  */
 final class ConsoleLockWaitBoundTest extends TestCase
 {
@@ -61,7 +61,7 @@ final class ConsoleLockWaitBoundTest extends TestCase
      */
     public static function manifests(): iterable
     {
-        foreach (self::manifestsRunningTheBackendImage() as $manifest) {
+        foreach (KubernetesManifests::base()->manifestsRunningTheBackendImage() as $manifest) {
             yield $manifest => [$manifest];
         }
     }
@@ -72,7 +72,7 @@ final class ConsoleLockWaitBoundTest extends TestCase
      */
     public function testTheCensusFindsTheConsoleManifests(): void
     {
-        $found = self::manifestsRunningTheBackendImage();
+        $found = KubernetesManifests::base()->manifestsRunningTheBackendImage();
 
         foreach (['migrate-job.yaml', 'seed-job.yaml', 'messenger-worker-deployment.yaml', 'watch-refresh-cronjob.yaml'] as $expected) {
             self::assertContains($expected, $found);
@@ -190,29 +190,6 @@ final class ConsoleLockWaitBoundTest extends TestCase
     }
 
     /**
-     * Les manifestes de k8s/base qui exécutent l'image backend, sous son nom
-     * kustomize (`backend`) ou sous le placeholder des Jobs hors kustomize,
-     * entre guillemets ou non, commentaire de fin de ligne permis.
-     *
-     * @return list<string>
-     */
-    private static function manifestsRunningTheBackendImage(): array
-    {
-        $paths = glob(KubernetesManifests::base()->directory().'/*.yaml');
-        self::assertIsArray($paths);
-
-        $found = [];
-        foreach ($paths as $path) {
-            if (1 === preg_match('/^\s+image:\s*(["\']?)(backend|\$\{BACKEND_IMAGE\})\1\s*(#.*)?$/m', (string) file_get_contents($path))) {
-                $found[] = basename($path);
-            }
-        }
-        sort($found);
-
-        return $found;
-    }
-
-    /**
      * Les conteneurs de l'image backend d'une liste du pod spec
      * (`containers` ou `initContainers`), tous documents du fichier confondus.
      *
@@ -224,10 +201,8 @@ final class ConsoleLockWaitBoundTest extends TestCase
     {
         $containers = [];
         foreach (KubernetesManifests::base()->podSpecs($manifest) as $podSpec) {
-            foreach (KubernetesManifests::containers($podSpec, $list) as $container) {
-                if (\in_array($container['image'] ?? null, ['backend', '${BACKEND_IMAGE}'], true)) {
-                    $containers[] = $container;
-                }
+            foreach (KubernetesManifests::backendContainers($podSpec, $list) as $container) {
+                $containers[] = $container;
             }
         }
 

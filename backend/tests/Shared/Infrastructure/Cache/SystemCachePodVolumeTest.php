@@ -36,8 +36,9 @@ final class SystemCachePodVolumeTest extends TestCase
     public const string MOUNT_PATH = '/var/www/backend/var/cache/prod/pools/system';
 
     /**
-     * Les huit manifestes qui exécutent l'image backend. La liste est vérifiée
-     * dans l'autre sens par testNoOtherManifestRunsTheBackendImage().
+     * Les manifestes qui exécutent l'image backend. La liste est vérifiée dans
+     * l'autre sens par testNoOtherManifestRunsTheBackendImage(), sur le
+     * recensement de KubernetesManifests.
      */
     private const array MANIFESTS = [
         'backend-deployment.yaml',
@@ -81,7 +82,7 @@ final class SystemCachePodVolumeTest extends TestCase
     public function testEveryBackendContainerMountsTheSystemCacheWritable(string $manifest): void
     {
         foreach ($this->podSpecs($manifest) as $where => $podSpec) {
-            $containers = $this->backendContainers($podSpec, 'containers');
+            $containers = KubernetesManifests::backendContainers($podSpec);
             self::assertNotSame([], $containers, \sprintf('%s : aucun conteneur de l\'image backend.', $where));
 
             foreach ($containers as $container) {
@@ -102,7 +103,7 @@ final class SystemCachePodVolumeTest extends TestCase
     {
         foreach ($this->podSpecs($manifest) as $where => $podSpec) {
             $seeders = array_filter(
-                $this->backendContainers($podSpec, 'initContainers'),
+                KubernetesManifests::backendContainers($podSpec, 'initContainers'),
                 fn (array $container): bool => null !== $this->firstWith($container['volumeMounts'] ?? null, 'name', self::VOLUME)
                     && str_contains($this->text($container['command'] ?? null), self::MOUNT_PATH.'/.'),
             );
@@ -113,16 +114,7 @@ final class SystemCachePodVolumeTest extends TestCase
 
     public function testNoOtherManifestRunsTheBackendImage(): void
     {
-        $paths = glob(KubernetesManifests::base()->directory().'/*.yaml');
-        self::assertIsArray($paths);
-
-        $found = [];
-        foreach ($paths as $path) {
-            if (1 === preg_match('/^\s+image:\s*(backend|\$\{BACKEND_IMAGE\})\s*$/m', (string) file_get_contents($path))) {
-                $found[] = basename($path);
-            }
-        }
-        sort($found);
+        $found = KubernetesManifests::base()->manifestsRunningTheBackendImage();
         $expected = self::MANIFESTS;
         sort($expected);
 
@@ -170,20 +162,6 @@ final class SystemCachePodVolumeTest extends TestCase
         }
 
         return null;
-    }
-
-    /**
-     * @param array<mixed>                  $podSpec
-     * @param 'containers'|'initContainers' $list
-     *
-     * @return list<array<mixed>>
-     */
-    private function backendContainers(array $podSpec, string $list): array
-    {
-        return array_values(array_filter(
-            KubernetesManifests::containers($podSpec, $list),
-            static fn (array $container): bool => \in_array($container['image'] ?? null, ['backend', '${BACKEND_IMAGE}'], true),
-        ));
     }
 
     /**
