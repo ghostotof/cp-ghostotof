@@ -465,7 +465,12 @@ final class AnswerControllerTest extends WebTestCase
         // Le refus est tracé sur le canal qui sort des pods de production.
         $refusals = self::aiUsageRecordsWithOutcome('rate-limited');
         self::assertCount(1, $refusals);
-        self::assertSame(self::TRUSTED_USERNAME, $refusals[0]->context['account'] ?? null);
+        // Le compte par son UUID, jamais son identifiant (issue #363).
+        $accountId = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->fetchOne('SELECT id FROM cpg_user WHERE username = :username', ['username' => self::TRUSTED_USERNAME]);
+        self::assertIsString($accountId);
+        self::assertSame($accountId, $refusals[0]->context['userId'] ?? null);
+        self::assertArrayNotHasKey('account', $refusals[0]->context);
     }
 
     public function testTheQuotaIsKeptPerAccount(): void

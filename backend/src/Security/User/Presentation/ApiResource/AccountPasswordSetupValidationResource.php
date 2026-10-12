@@ -22,8 +22,9 @@ use Symfony\Component\Validator\Constraints as Assert;
  * `GET /api/account/password-setup/{token}`, à ne pas réintroduire.
  *
  * 204 sans corps (`output: false`) : le statut EST la réponse. Jeton absent ou
- * vide -> 422, inconnu -> 404, expiré / déjà utilisé -> 410, quota IP dépassé
- * -> 429 (avant toute validation, cf. PasswordSetupRateLimitRequestListener).
+ * vide -> 422 ; lien inutilisable, quel qu'en soit le motif -> 404, réponse
+ * identique dans tous les cas (issue #362) ; quota IP dépassé -> 429 (avant
+ * toute validation, cf. PasswordSetupRateLimitRequestListener).
  */
 #[ApiResource(
     shortName: 'AccountPasswordSetupValidation',

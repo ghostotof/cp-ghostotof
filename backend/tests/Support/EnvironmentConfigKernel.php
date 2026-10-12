@@ -6,6 +6,8 @@ namespace App\Tests\Support;
 
 use App\Kernel;
 use LogicException;
+use PHPUnit\Framework\Assert;
+use ReflectionMethod;
 use Symfony\Component\Config\Definition\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Extension\ConfigurationExtensionInterface;
@@ -23,6 +25,23 @@ use Symfony\Component\DependencyInjection\Extension\ConfigurationExtensionInterf
 final class EnvironmentConfigKernel extends Kernel
 {
     private ?ContainerBuilder $builder = null;
+
+    /**
+     * Les environnements que le noyau admet, lus dans {@see Kernel::getAllowedEnvs()}
+     * plutôt que recopiés, pour qu'un environnement ajouté soit vérifié par
+     * chaque garde sans qu'on y pense. La méthode est privée : réflexion, ici
+     * seulement (issue #491, quatre copies jusque-là).
+     *
+     * @return list<string>
+     */
+    public static function allowedEnvironments(): array
+    {
+        /** @var list<string> $allowed */
+        $allowed = new ReflectionMethod(Kernel::class, 'getAllowedEnvs')->invoke(new Kernel('test', false));
+        Assert::assertContains('prod', $allowed, 'Le noyau n\'admet plus `prod` : revoir les gardes qui lisent chaque environnement.');
+
+        return $allowed;
+    }
 
     public function __construct(string $environment, private readonly ?string $projectDirectory = null)
     {

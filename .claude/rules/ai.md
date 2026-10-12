@@ -38,11 +38,11 @@ paths:
   window at the same odd count, or its first message is an answer and every full-window send is a 422), plus
   **16 000 characters for the whole conversation** (audit F2 — the bill is in tokens over everything sent);
   `AnswerRequest` caps `messages` at 50 in a `Sequentially` *before* `All` (validating ~4 000 tiny messages
-  cost 113 ms), wide on purpose so a merely too-long conversation keeps the VO's typed 422; quota `career_assistant` (30/h, key `username`) consumed by
+  cost 113 ms), wide on purpose so a merely too-long conversation keeps the VO's typed 422; quota `career_assistant` (30/h, keyed on the account's **UUID**, never its username — issue #363, read through `App\Shared\Domain\Security\AccountReference`, so `Ai` depends on no other context; a user that is not an `AccountReference` is a wiring defect, `UnauthenticatedAssistantCallException`) consumed by
   `QuotaGuardedCareerAssistant`, an `#[AsDecorator]` of `CareerAssistantInterface` — which is why
   `services.yaml` aliases the interface explicitly: with two implementations the automatic single-impl alias
   disappears and the decorator has nothing to decorate — so a 422 never costs quota, 429
-  `/errors/rate-limited` + `Retry-After`, the refusal logged on `ai_usage` with the account. **`#[WithMonologChannel]`
+  `/errors/rate-limited` + `Retry-After`, the refusal logged on `ai_usage` with the account's `userId`. **`#[WithMonologChannel]`
   is lost on an `#[AsDecorator]` service** (decoration rewrites its tags, the record silently went to the app
   channel): inject `monolog.logger.<channel>` by id there. The quota takes the shared PostgreSQL advisory lock like
   every limiter (#272, v0.18.2, ADR 0005 D8–D10 — see the ADR 0005 invariant in `.claude/rules/deploiement.md`), so a burst of synchronised
@@ -99,7 +99,9 @@ paths:
   body into its message (issue #269 tracks the same defect on the translator); and every assistant exception
   a client can cause implements `ProblemExceptionInterface`, since `exception_to_status` has no effect on
   this route — with a **literal** message only, since the listener returns it as `detail`
-  (`ProblemDetailStaysStaticTest` parses every `ProblemExceptionInterface` of `src/` by tokens; a
+  (`ProblemDetailStaysStaticTest` parses every `ProblemExceptionInterface` of `src/` by tokens, with the
+  traits and parents it gets its methods from, whose `getDetail()` must be `return $this->getMessage();`,
+  #507, #514; a
   dynamic message elsewhere needs a justified entry in its allow-list), and a `log_level` in
   `framework.exceptions` — never `#[WithLogLevel]`, which would make the domain depend on HttpKernel —
   or the kernel logs it `critical`. The corpus's `<documents>` neutralisation is **linear by
@@ -136,7 +138,7 @@ paths:
   timeout; **only backoffice-authored content meant for publication may be sent** to a provider, never
   `cpg_user`, a token, the nominative CV or a contact message; **a suggestion is never persisted** without a
   human action (the endpoint reads and writes nothing, the frontend fills a *new* form); **cost is bounded by
-  construction** (per-account quota `translation_assistant`, 30/h keyed on the `username`, `max_tokens`,
+  construction** (per-account quota `translation_assistant`, 30/h keyed on the account's UUID — issue #363, like the assistant's —, `max_tokens`,
   timeout); **no test goes on the wire** (unit tests: a `FakeAgent`; functional tests: the concrete client
   behind the scoped one, `ai.http_client.scoping.inner`, replaced by a `MockHttpClient` answering in the
   Messages API format — **with `$client->disableReboot()`**, otherwise `KernelBrowser` rebuilds the kernel
@@ -145,7 +147,7 @@ paths:
   An anonymous `POST` there answers **403, not 401**: the CSRF subscriber runs before the firewall. Token
   usage and duration are logged, the content never is — **on `ai_usage`** since issue #356, like the
   career assistant (as an `info` of the app channel the line never left a production pod), each line
-  with an `outcome` (`done`, `error`); the quota refusal (`rate-limited`, `account`, `retryAfter`) is
+  with an `outcome` (`done`, `error`); the quota refusal (`rate-limited`, `userId`, `retryAfter`) is
   written by `SymfonyTranslationRateLimiter`, the one place that knows both the key and the deadline, so
   `TranslationRateLimitExceededException` is `info` like the assistant's. Functional tests read the
   channel through `tests/Support/ReadsAiUsageLog`. Two side effects, accepted: the translator's `error`

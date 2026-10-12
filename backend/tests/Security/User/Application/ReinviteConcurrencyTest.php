@@ -15,7 +15,6 @@ use App\Tests\Support\ChildPhpProcess;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
-use Symfony\Component\Process\Process;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -59,7 +58,7 @@ final class ReinviteConcurrencyTest extends KernelTestCase
         self::assertNotNull($stale);
         self::assertSame(1, $stale->getInvitationGeneration());
 
-        $concurrent = new Process(ChildPhpProcess::command(self::REINVITE_SCRIPT, $userId->toRfc4122()), env: $this->childEnvironment(), timeout: self::TIMEOUT_SECONDS);
+        $concurrent = ChildPhpProcess::inTestEnvironment(self::TIMEOUT_SECONDS, self::REINVITE_SCRIPT, $userId->toRfc4122());
         $concurrent->mustRun();
         self::assertSame(1, preg_match('/^generation (\d+)$/m', $concurrent->getOutput(), $matches), $concurrent->getOutput().$concurrent->getErrorOutput());
 
@@ -86,7 +85,7 @@ final class ReinviteConcurrencyTest extends KernelTestCase
         self::assertNotNull($user);
 
         $container->get(CpgUserInviterInterface::class)->reinvite($user, Locale::FR);
-        (new Process(ChildPhpProcess::command(self::REINVITE_SCRIPT, $userId->toRfc4122()), env: $this->childEnvironment(), timeout: self::TIMEOUT_SECONDS))->mustRun();
+        ChildPhpProcess::inTestEnvironment(self::TIMEOUT_SECONDS, self::REINVITE_SCRIPT, $userId->toRfc4122())->mustRun();
         $container->get(EntityManagerInterface::class)->flush();
 
         self::assertSame(3, $this->storedGeneration($userId->toRfc4122()), 'Un flush après la relance a écrasé la génération d\'une relance concurrente (#435).');
@@ -174,24 +173,6 @@ final class ReinviteConcurrencyTest extends KernelTestCase
         self::assertIsInt($generation);
 
         return $generation;
-    }
-
-    /**
-     * Même transmission que les autres tests de concurrence : les variables
-     * que phpunit.dist.xml force ne vivent que dans $_SERVER.
-     *
-     * @return array<string, string>
-     */
-    private function childEnvironment(): array
-    {
-        $environment = [];
-        foreach ($_SERVER as $name => $value) {
-            if (\is_string($name) && \is_string($value)) {
-                $environment[$name] = $value;
-            }
-        }
-
-        return $environment;
     }
 
     private function purge(): void

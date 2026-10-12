@@ -10,6 +10,7 @@ use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\Persistence\ManagerRegistry;
 use SensitiveParameter;
@@ -129,6 +130,20 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
     }
 
     /**
+     * La traduction vit ici, seul endroit qui connaisse la base : ni les
+     * noms d'index ni le format des messages de PostgreSQL ne remontent dans
+     * la couche Application (issue #364).
+     */
+    public function add(CpgUser $user): void
+    {
+        try {
+            $this->save($user);
+        } catch (UniqueConstraintViolationException $violation) {
+            throw CpgUserUniqueViolation::refusalFor($violation);
+        }
+    }
+
+    /**
      * Un `UPDATE … RETURNING` : PostgreSQL verrouille la ligne le temps de
      * l'écriture, donc deux relances concurrentes s'enchaînent et lisent
      * chacune la génération que l'autre vient de poser — là où avancer le
@@ -155,7 +170,7 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
         if (!\is_int($generation)) {
             $exists = false !== $connection->fetchOne('SELECT 1 FROM cpg_user WHERE id = :id', ['id' => $user->getId()], ['id' => UuidType::NAME]);
 
-            throw $exists ? AccountNotAwaitingActivationException::forUsername($user->getUsername()) : CpgUserNotFoundException::forId($user->getId());
+            throw $exists ? AccountNotAwaitingActivationException::alreadyActivated() : CpgUserNotFoundException::forId($user->getId());
         }
 
         $unitOfWork = $this->getEntityManager()->getUnitOfWork();
@@ -171,6 +186,26 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
     {
         $this->getEntityManager()->remove($user);
         $this->getEntityManager()->flush();
+    }
+
+    /**
+     * En DQL par identifiant, comme PasswordSetupTokenRepository::remove()
+     * (#425) : un `flush()` global écrirait au passage d'autres changements en
+     * attente, et un `clear()` survenu entre-temps ferait lever
+     * `EntityManager::remove()`. Jamais un compte activé : l'e-mail a pu partir
+     * malgré l'erreur (accusé du broker perdu, #479) et la personne définir son
+     * mot de passe. Un jeton émis entre-temps par le handler part avec le
+     * compte (`ON DELETE CASCADE`).
+     */
+    public function removePendingInvitation(CpgUser $user): void
+    {
+        $this->createQueryBuilder('user')
+            ->delete()
+            ->where('user.id = :id')
+            ->andWhere('user.activatedAt IS NULL')
+            ->setParameter('id', $user->getId(), UuidType::NAME)
+            ->getQuery()
+            ->execute();
     }
 
     /**

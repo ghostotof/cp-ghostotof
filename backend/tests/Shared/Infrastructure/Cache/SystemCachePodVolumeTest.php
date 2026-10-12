@@ -28,10 +28,14 @@ use Symfony\Component\Yaml\Yaml;
 final class SystemCachePodVolumeTest extends TestCase
 {
     private const string VOLUME = 'cache-system';
-    private const string MOUNT_PATH = '/var/www/backend/var/cache/prod/pools/system';
+    /**
+     * Le répertoire du cache système dans l'image ; ProductionImageWarmUpTest
+     * vérifie que le build contrôle ce même répertoire.
+     */
+    public const string MOUNT_PATH = '/var/www/backend/var/cache/prod/pools/system';
 
     /**
-     * Les sept manifestes qui exécutent l'image backend. La liste est vérifiée
+     * Les huit manifestes qui exécutent l'image backend. La liste est vérifiée
      * dans l'autre sens par testNoOtherManifestRunsTheBackendImage().
      */
     private const array MANIFESTS = [
@@ -42,6 +46,10 @@ final class SystemCachePodVolumeTest extends TestCase
         'migrate-job.yaml',
         'seed-job.yaml',
         'create-user-job.yaml',
+        'messenger-probe-job.yaml',
+        'messenger-stop-workers-job.yaml',
+        'messenger-failed-retry-job.yaml',
+        'messenger-failed-remove-job.yaml',
     ];
 
     /**

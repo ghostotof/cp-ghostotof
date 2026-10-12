@@ -14,6 +14,7 @@ use App\Ai\Assistant\Domain\ValueObject\Role;
 use App\Ai\Assistant\Infrastructure\RateLimiter\QuotaGuardedCareerAssistant;
 use App\Ai\Assistant\Infrastructure\RateLimiter\UnauthenticatedAssistantCallException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Domain\Security\AccountReference;
 use App\Tests\Ai\Translation\Support\InMemoryLogger;
 use ArrayObject;
 use DateTimeImmutable;
@@ -22,13 +23,19 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorage;
 use Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken;
 use Symfony\Component\Security\Core\User\InMemoryUser;
+use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
  * Le quota (spec 0005 D6) est consommé une fois par appel, pour le compte
- * authentifié, avant que l'assistant réel ne contacte le fournisseur.
+ * authentifié, avant que l'assistant réel ne contacte le fournisseur. Le
+ * compte est désigné par son UUID, clé du quota comme du journal, jamais par
+ * son identifiant de connexion (issue #363).
  */
 final class QuotaGuardedCareerAssistantTest extends TestCase
 {
+    private const string ACCOUNT_ID = '01890a5d-ac96-774b-bcce-b302099a8057';
+    private const string LOGIN_IDENTIFIER = 'jean.dupont';
+
     /**
      * Appels reçus par les deux doublures, dans l'ordre.
      *
@@ -49,7 +56,7 @@ final class QuotaGuardedCareerAssistantTest extends TestCase
         $answer = implode('', iterator_to_array($this->guarded(accepts: true)->answer($this->conversation(), Locale::FR), false));
 
         self::assertSame('réponse', $answer);
-        self::assertSame(['consume:trusted', 'answer'], $this->journal->getArrayCopy());
+        self::assertSame(['consume:'.self::ACCOUNT_ID, 'answer'], $this->journal->getArrayCopy());
     }
 
     public function testTheUsageOfTheDecoratedAssistantIsPassedThrough(): void
@@ -66,7 +73,7 @@ final class QuotaGuardedCareerAssistantTest extends TestCase
             $this->guarded(accepts: false)->answer($this->conversation(), Locale::FR);
             self::fail('Une exception était attendue.');
         } catch (AssistantRateLimitExceededException) {
-            self::assertSame(['consume:trusted'], $this->journal->getArrayCopy());
+            self::assertSame(['consume:'.self::ACCOUNT_ID], $this->journal->getArrayCopy());
         }
     }
 
@@ -85,8 +92,9 @@ final class QuotaGuardedCareerAssistantTest extends TestCase
 
         self::assertCount(1, $this->logger->records);
         self::assertSame('info', $this->logger->records[0]['level']);
-        self::assertSame(['outcome' => 'rate-limited', 'account' => 'trusted'], $this->logger->records[0]['context']);
+        self::assertSame(['outcome' => 'rate-limited', 'userId' => self::ACCOUNT_ID], $this->logger->records[0]['context']);
         self::assertStringNotContainsString('Question', $this->logger->dump());
+        self::assertStringNotContainsString(self::LOGIN_IDENTIFIER, $this->logger->dump());
     }
 
     public function testAnAcceptedCallIsNotLoggedHere(): void
@@ -112,10 +120,50 @@ final class QuotaGuardedCareerAssistantTest extends TestCase
         }
     }
 
+    /**
+     * Un utilisateur qui n'est pas un compte (aucun UUID à donner) n'est
+     * jamais compté sous son identifiant : c'est un défaut de câblage.
+     */
+    public function testAUserWithoutAccountIdIsNeverCountedUnderItsIdentifier(): void
+    {
+        $tokenStorage = new TokenStorage();
+        $tokenStorage->setToken(new UsernamePasswordToken(new InMemoryUser(self::LOGIN_IDENTIFIER, null, ['ROLE_TRUSTED']), 'api', ['ROLE_TRUSTED']));
+        $guarded = new QuotaGuardedCareerAssistant($this->decorated(), $this->rateLimiter(true), $tokenStorage, $this->logger);
+
+        try {
+            $guarded->answer($this->conversation(), Locale::FR);
+            self::fail('Une exception était attendue.');
+        } catch (UnauthenticatedAssistantCallException) {
+            self::assertSame([], $this->journal->getArrayCopy());
+        }
+    }
+
     private function guarded(bool $accepts): QuotaGuardedCareerAssistant
     {
         $tokenStorage = new TokenStorage();
-        $tokenStorage->setToken(new UsernamePasswordToken(new InMemoryUser('trusted', null, ['ROLE_TRUSTED']), 'api', ['ROLE_TRUSTED']));
+        $account = new readonly class(self::LOGIN_IDENTIFIER, self::ACCOUNT_ID) implements UserInterface, AccountReference {
+            public function __construct(private string $identifier, private string $id)
+            {
+            }
+
+            public function accountId(): string
+            {
+                return $this->id;
+            }
+
+            public function getRoles(): array
+            {
+                return ['ROLE_TRUSTED'];
+            }
+
+            public function getUserIdentifier(): string
+            {
+                \assert('' !== $this->identifier);
+
+                return $this->identifier;
+            }
+        };
+        $tokenStorage->setToken(new UsernamePasswordToken($account, 'api', ['ROLE_TRUSTED']));
 
         return new QuotaGuardedCareerAssistant($this->decorated(), $this->rateLimiter($accepts), $tokenStorage, $this->logger);
     }
@@ -153,9 +201,9 @@ final class QuotaGuardedCareerAssistantTest extends TestCase
             {
             }
 
-            public function consume(string $accountIdentifier): void
+            public function consume(string $accountId): void
             {
-                $this->journal[] = 'consume:'.$accountIdentifier;
+                $this->journal[] = 'consume:'.$accountId;
                 if (!$this->accepts) {
                     throw new AssistantRateLimitExceededException(new DateTimeImmutable('+1 hour'));
                 }

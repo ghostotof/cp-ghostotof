@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Shared\Infrastructure\Messenger;
 
-use App\Shared\Infrastructure\Security\SecretKeyDerivation;
+use App\Shared\Infrastructure\Security\KeyedMac;
+use App\Shared\Infrastructure\Security\MacEncoding;
 use SensitiveParameter;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\Envelope;
@@ -52,6 +53,21 @@ use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
  * la redécode. L'échec qu'un réessai transporte comme message revient tel
  * quel.
  *
+ * Une enveloppe dont la taille encodée, corps et en-têtes, dépasse
+ * {@see self::MAX_ENVELOPE_BYTES} est refusée avant même le MAC (issue #469), par
+ * {@see EnvelopeTooLargeException}, qui n'en garde rien. Le refus garde un
+ * marqueur, corps vide et taille en en-tête, que ce sérialiseur redécode en ce
+ * même refus : {@see \Symfony\Component\Messenger\Middleware\DecodeFailedMessageMiddleware}
+ * redécode l'enveloppe gardée, et un corps vide sans MAC y serait sinon refusé
+ * « sans MAC », la cause réelle perdue. Le marqueur n'authentifie rien et n'en
+ * a pas besoin : il ne vaut que sur un corps vide et pour une taille au-delà de
+ * la borne, et, forgé, ne mène qu'à ce refus, avec une taille inventée.
+ *
+ * Limite acceptée : un message légitime grossit d'un `ErrorDetailsStamp` par
+ * échec distinct, à chaque passage dans `failed` et à chaque
+ * `messenger:failed:retry`. Au-delà de la borne, il serait remplacé par le
+ * marqueur, donc perdu : relever la borne plutôt que d'y faire exception.
+ *
  * Limites acceptées : un message authentifié peut être rejoué par qui écrit
  * dans la file (aucun nonce) ; une rotation d'`APP_SECRET` invalide les
  * messages déjà en file (procédure dans k8s/README.md).
@@ -61,6 +77,22 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
     public const string HEADER = 'X-Envelope-Mac';
 
     /**
+     * Taille encodée maximale, corps et en-têtes, vérifiée avant le MAC (issue
+     * #469). Mesurée sur les deux messages réels, au pire de leur validation :
+     * un message de contact de 5 000 caractères multi-octets à échapper fait
+     * 13,5 Ko nu, 28,7 Ko après trois réessais distincts ; une invitation,
+     * 0,6 Ko et 15,8 Ko. Le pire cas de la relecture — exceptions emboîtées par
+     * `HandlerFailedException`, quatre `ErrorDetailsStamp` distincts — fait
+     * 124 Ko. Un `ErrorDetailsStamp` ne garde pas de trace (Symfony la vide) :
+     * c'est le nombre d'échecs distincts qui fait grossir un message. La borne
+     * reste anodine face aux 120 Mo du worker. Seule source de ces chiffres :
+     * la règle backend-architecture y renvoie. Le broker plafonne un corps à
+     * quatre fois cette borne (`max_message_size`, k8s/base/rabbitmq.conf,
+     * issue #477) : RabbitMqMessageSizeCapTest lie les deux valeurs.
+     */
+    public const int MAX_ENVELOPE_BYTES = 256 * 1024;
+
+    /**
      * Sépare cette clé des autres usages d'`APP_SECRET`. En `v2` depuis
      * l'issue #450 : la transition de #444 a pu re-signer sous `v1` une
      * enveloppe forgée sans MAC (au réessai, vers `failed`) ; aucune signature
@@ -68,7 +100,7 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
      */
     private const string KEY_CONTEXT = 'cp-ghostotof/messenger-envelope/v2';
 
-    private string $key;
+    private KeyedMac $mac;
 
     public function __construct(
         #[Autowire(service: 'messenger.transport.native_php_serializer')]
@@ -79,7 +111,7 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
     ) {
         // Un secret vide lève EmptyApplicationSecretException, à la première
         // construction : le premier message mis en file ou lu.
-        $this->key = SecretKeyDerivation::derive($secret, self::KEY_CONTEXT);
+        $this->mac = KeyedMac::fromSecret($secret, self::KEY_CONTEXT, MacEncoding::Hex);
     }
 
     /**
@@ -88,7 +120,7 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
     public function encode(Envelope $envelope): array
     {
         $encoded = $this->inner->encode($envelope);
-        $encoded['headers'][self::HEADER] = $this->mac($encoded['body']);
+        $encoded['headers'][self::HEADER] = $this->mac->sign($encoded['body']);
 
         return $encoded;
     }
@@ -98,13 +130,24 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
      */
     public function decode(array $encodedEnvelope): Envelope
     {
-        $mac = $encodedEnvelope['headers'][self::HEADER] ?? null;
+        // Avant le MAC (issue #469) : ni HMAC ni copie d'une enveloppe
+        // démesurée, et le refus redécode en lui-même.
+        $size = $this->encodedSize($encodedEnvelope);
+        if ($size > self::MAX_ENVELOPE_BYTES) {
+            return EnvelopeTooLargeException::forSize($size, self::MAX_ENVELOPE_BYTES);
+        }
+        $markedSize = $this->markedSize($encodedEnvelope);
+        if (null !== $markedSize) {
+            return EnvelopeTooLargeException::forSize($markedSize, self::MAX_ENVELOPE_BYTES);
+        }
+
+        $givenMac = $encodedEnvelope['headers'][self::HEADER] ?? null;
 
         // Un transport peut rendre un en-tête qui n'est pas une chaîne (AMQP,
         // JSON du transport Doctrine) : refusé comme un MAC faux, plutôt
         // qu'une erreur de type qui ferait tomber le worker.
-        if (!\is_string($mac) || !hash_equals($this->mac($encodedEnvelope['body']), $mac)) {
-            return null === $mac ? EnvelopeMacRefusedException::missing($encodedEnvelope) : EnvelopeMacRefusedException::invalid($encodedEnvelope);
+        if (!\is_string($givenMac) || !$this->mac->verifies($givenMac, $encodedEnvelope['body'])) {
+            return null === $givenMac ? EnvelopeMacRefusedException::missing($encodedEnvelope) : EnvelopeMacRefusedException::invalid($encodedEnvelope);
         }
 
         $authenticated = $encodedEnvelope;
@@ -150,8 +193,48 @@ final readonly class AuthenticatedEnvelopeSerializer implements SerializerInterf
         return $body === $handed['body'] || $body === base64_decode($handed['body'], true);
     }
 
-    private function mac(string $body): string
+    /**
+     * Octets du corps et des en-têtes, noms compris. Un en-tête que le
+     * transport rend en tableau compte ses éléments ; un scalaire, sa forme
+     * texte ; un objet AMQP (horodatage, décimal), rien : il est borné par
+     * construction.
+     *
+     * @param array{body: string, headers?: array<string, mixed>} $encodedEnvelope
+     */
+    private function encodedSize(array $encodedEnvelope): int
     {
-        return hash_hmac('sha256', $body, $this->key);
+        return \strlen($encodedEnvelope['body']) + $this->headerBytes($encodedEnvelope['headers'] ?? []);
+    }
+
+    private function headerBytes(mixed $value): int
+    {
+        if (\is_array($value)) {
+            $bytes = 0;
+            foreach ($value as $name => $item) {
+                $bytes += \strlen((string) $name) + $this->headerBytes($item);
+            }
+
+            return $bytes;
+        }
+
+        return \is_scalar($value) ? \strlen((string) $value) : 0;
+    }
+
+    /**
+     * La taille que porte un marqueur de refus de taille, ou null si
+     * l'enveloppe n'en est pas un : un corps non vide, un en-tête qui n'est pas
+     * un nombre, ou une taille sous la borne, qu'aucun refus n'aurait produite.
+     *
+     * @param array{body: string, headers?: array<string, mixed>} $encodedEnvelope
+     */
+    private function markedSize(array $encodedEnvelope): ?int
+    {
+        $size = $encodedEnvelope['headers'][EnvelopeTooLargeException::SIZE_HEADER] ?? null;
+
+        if ('' !== $encodedEnvelope['body'] || !\is_string($size) || 1 !== preg_match('/\A\d{1,12}\z/', $size)) {
+            return null;
+        }
+
+        return (int) $size > self::MAX_ENVELOPE_BYTES ? (int) $size : null;
     }
 }

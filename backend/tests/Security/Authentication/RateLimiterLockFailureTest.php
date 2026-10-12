@@ -101,7 +101,7 @@ final class RateLimiterLockFailureTest extends WebTestCase
     {
         $client = self::createClient();
         $client->disableReboot();
-        self::getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $super = self::getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
             'username' => self::SUPER_USERNAME,
             'password' => TestCredentials::superPassword(),
@@ -121,7 +121,8 @@ final class RateLimiterLockFailureTest extends WebTestCase
             $this->assertRateLimiterUnavailableProblem($client);
             $event = self::securityAuditEvents('rate-limiter-unavailable')[0] ?? null;
             self::assertNotNull($event);
-            self::assertSame(self::SUPER_USERNAME, $event['actor']);
+            // Par son UUID, jamais son identifiant (issue #363).
+            self::assertSame($super->accountId(), $event['actor']);
         } finally {
             self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement('DELETE FROM cpg_user');
         }

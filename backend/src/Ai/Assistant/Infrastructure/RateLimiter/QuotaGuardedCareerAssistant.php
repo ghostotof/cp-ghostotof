@@ -9,6 +9,7 @@ use App\Ai\Assistant\Application\CareerAssistantInterface;
 use App\Ai\Assistant\Domain\Exception\AssistantRateLimitExceededException;
 use App\Ai\Assistant\Domain\ValueObject\Conversation;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Domain\Security\AccountReference;
 use Generator;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\AsDecorator;
@@ -32,7 +33,8 @@ use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInt
  * prolongée peut épuiser le quota d'un compte sans qu'il obtienne de réponse.
  *
  * Un refus est tracé sur `ai_usage` (niveau fixe, voir monolog.yaml) avec le
- * compte, rien du contenu (D10) : le 429 que le noyau journalise en `info` sur
+ * compte, par son UUID (`userId`, issue #363 — comme la clé du quota), rien
+ * du contenu (D10) : le 429 que le noyau journalise en `info` sur
  * le canal applicatif ne sortirait jamais d'un pod de production, et un
  * compte qui boucle sur son plafond passerait inaperçu. Le logger est injecté
  * par son identifiant et non par #[WithMonologChannel] : sur un décorateur,
@@ -57,17 +59,17 @@ final readonly class QuotaGuardedCareerAssistant implements CareerAssistantInter
     // sans 429 possible, et après le lancement de l'appel facturé.
     public function answer(Conversation $conversation, Locale $locale): Generator
     {
-        $account = $this->tokenStorage->getToken()?->getUserIdentifier();
-        if (null === $account || '' === $account) {
+        $account = $this->tokenStorage->getToken()?->getUser();
+        if (!$account instanceof AccountReference) {
             // L'access_control réserve la route à ROLE_TRUSTED : arriver ici
             // sans compte est un défaut de câblage, pas un appel à laisser passer.
             throw new UnauthenticatedAssistantCallException();
         }
 
         try {
-            $this->rateLimiter->consume($account);
+            $this->rateLimiter->consume($account->accountId());
         } catch (AssistantRateLimitExceededException $exception) {
-            $this->logger->info('Assistant de parcours : quota atteint.', ['outcome' => 'rate-limited', 'account' => $account]);
+            $this->logger->info('Assistant de parcours : quota atteint.', ['outcome' => 'rate-limited', 'userId' => $account->accountId()]);
 
             throw $exception;
         }

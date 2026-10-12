@@ -25,6 +25,40 @@ prod run the identical PHP engine:
   the build context is the repo root, so this is the one place `composer.lock` and
   `frontend/package-lock.json` coexist — the manifest describes exactly what the image deploys and cannot
   drift from it. Keep that `COPY`/`RUN` pair *after* the big install layer so an npm bump doesn't invalidate it.
+  **A failed warm-up fails the build** (issue #474). The stage replays `post-install-cmd` (`cache:clear` in
+  `prod` with an empty `APP_SECRET`, then `assets:install`) under `set -e` and without `|| true`, then
+  requires at least one **file** under `var/cache/prod/pools/system` (`find … -type f`, not `ls -A`:
+  PhpFilesAdapter creates its namespace subdirectory before writing anything), failing with a message
+  naming #474: the `seed-cache-system` initContainer copies that directory into every pod. The `|| true`
+  used to swallow every failure — the first version of #468 (a key derived in a constructor) built an image
+  without that directory, green. So a service the warm-up builds must not need a runtime secret in its
+  constructor: derive it on first use. Nothing catches that before `build-images` on a `release/*` branch
+  (feature branches never build the backend image). `ProductionImageWarmUpTest` reads the `RUN` as Docker
+  runs it (comments dropped, continuations joined): `set -e`, no `||` after the script, the check on
+  `SystemCachePodVolumeTest::MOUNT_PATH` after it. Proven both ways with a real `make build-prod` (the #468
+  defect now fails the `RUN`).
+  **The image loads a compiled `.env.local.php`, never a parsed `.env`** (issue #489): the same `RUN` runs
+  `composer dump-env prod` after the warm-up, while Composer is still there (≈ 45 µs saved per request and
+  per command, measured, the `.env` parse against an `include` served by OPcache). Three facts make it safe,
+  each proven on the built image, FPM request included. **A pod variable still wins**, empty or not:
+  `Dotenv::populate()` never replaces a variable already set, exactly as it did over `.env` — never set the
+  runtime's `dotenv_overload`. **A `${VAR}` of `.env` stays resolved at runtime**: Flex compiles it into
+  `($_ENV['VAR'] ?? $_SERVER['VAR'] ?? '')` (`MESSENGER_TRANSPORT_DSN`) — **but only for a variable absent
+  from the compiling process**: Dotenv reads `$_ENV` and `$_SERVER` first, so an `ARG`, an `ENV` or a base
+  image variable of the same name would be frozen into the image (reproduced: the dev container's real
+  `RABBITMQ_PASSWORD` ended up in the file). Hence `env -i PATH="$PATH" HOME="$HOME"
+  COMPOSER_ALLOW_SUPERUSER=1 composer dump-env prod`, exactly — no `--empty` either, which would keep
+  `APP_ENV` alone and drop every default of `.env` —, and `.env` must never reference one of those three.
+  **Only `backend/.env` feeds it**: `dump-env prod` also reads `.env.local`, `.env.prod` and
+  `.env.prod.local`, all three excluded by `.dockerignore`, like a workstation's `.env.local.php` (no
+  `.env.<env>` is versioned, see `.claude/CLAUDE.md`). Keep `.env` in the image: when the pod's `APP_ENV`
+  differs from the compiled one, Dotenv falls back to parsing it. `ProductionImageCompilesDotenvTest` pins
+  the command, its place, that no other instruction touches the file, the references of `.env` and the
+  exclusions (the dev container mounts `.dockerignore` read-only for it: `up -d --force-recreate backend`
+  after editing it); `CompiledDotenvNeverMasksPodVariablesTest` runs that very command, read from the
+  Dockerfile, on a throwaway project holding the real `.env` with a trap value in the "build" environment,
+  then boots the real `vendor/autoload_runtime.php` on the result in a child process whose environment is a
+  pod's — needs `composer` on the `PATH`, as in the dev container and CI.
 - **`preprod`** — built **`FROM production`** (not a parallel build) so its application layers are byte-identical
   to prod; only adds Xdebug (**inert in the image**, see `.claude/rules/deploiement.md`) and verbose logs.
   Pipeline order is dev → preprod → prod regardless of declaration order in the Dockerfile.

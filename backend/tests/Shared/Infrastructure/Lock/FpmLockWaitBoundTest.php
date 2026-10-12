@@ -20,8 +20,9 @@ use PHPUnit\Framework\TestCase;
  *
  * Le DSN ne permet pas de poser `lock_timeout` sur la seule connexion du verrou
  * (DBAL ne transmet pas `options` à pdo_pgsql, vérifié) : `PGOPTIONS`, lu par
- * libpq, le pose sur toutes les connexions des workers FPM — la console
- * (migrations, worker Messenger, CronJobs) n'est pas concernée.
+ * libpq, le pose sur toutes les connexions des workers FPM. La console
+ * (migrations, worker Messenger, CronJobs) ne lit pas ce pool : elle reçoit la
+ * même valeur par l'`env:` de ses pods (issue #525, ConsoleLockWaitBoundTest).
  * `request_terminate_timeout` borne le reste : un worker tué ferme ses
  * connexions, et PostgreSQL annule son attente.
  */

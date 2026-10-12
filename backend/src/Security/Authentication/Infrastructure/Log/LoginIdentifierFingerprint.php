@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Security\Authentication\Infrastructure\Log;
 
 use App\Shared\Infrastructure\Security\EmptyApplicationSecretException;
-use App\Shared\Infrastructure\Security\SecretKeyDerivation;
+use App\Shared\Infrastructure\Security\KeyedMac;
+use App\Shared\Infrastructure\Security\MacEncoding;
 use SensitiveParameter;
+use SensitiveParameterValue;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
@@ -30,7 +32,8 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  *   déjà la signature des jetons CSRF et les clés des compteurs de
  *   `login_throttling` (HMAC de `identifiant-IP`, 48 bits, en base dans
  *   `cache_items`) : sa fuite est un incident en soi. La clé est dérivée pour
- *   ce seul usage (issue #455, {@see \App\Shared\Infrastructure\Security\SecretKeyDerivation}) :
+ *   ce seul usage (issue #455, {@see \App\Shared\Infrastructure\Security\SecretKeyDerivation},
+ *   HMAC calculé par {@see KeyedMac} depuis #487) :
  *   aucune empreinte ne vaut HMAC d'un autre usage du secret, ni l'inverse.
  *   Elle a remplacé un préfixe de contexte dans le message, qui ne séparait
  *   pas les usages de façon absolue. Changer de clé change toutes les
@@ -67,11 +70,21 @@ final readonly class LoginIdentifierFingerprint
     /** 24 bits en hexadécimal : voir « Courte exprès » ci-dessus. */
     private const int LENGTH = 6;
 
+    /**
+     * Gardé pour dériver la clé plus tard ({@see self::of()}), dans un
+     * {@see SensitiveParameterValue} : aucun dump du service ne l'affiche
+     * (issue #493).
+     *
+     * @var SensitiveParameterValue<string>
+     */
+    private SensitiveParameterValue $secret;
+
     public function __construct(
         #[SensitiveParameter]
         #[Autowire('%kernel.secret%')]
-        private string $secret,
+        string $secret,
     ) {
+        $this->secret = new SensitiveParameterValue($secret);
     }
 
     /**
@@ -85,7 +98,7 @@ final readonly class LoginIdentifierFingerprint
      * @param string $identifier l'identifiant tel que saisi — possiblement un
      *                           mot de passe, d'où l'attribut
      *
-     * @throws EmptyApplicationSecretException si `kernel.secret` est vide (SecretKeyDerivation)
+     * @throws EmptyApplicationSecretException si `kernel.secret` est vide (KeyedMac::fromSecret())
      */
     public function of(#[SensitiveParameter] string $identifier): string
     {
@@ -93,6 +106,8 @@ final readonly class LoginIdentifierFingerprint
         // Symfony\Component\Security\Http\RateLimiter\DefaultLoginRateLimiter::getLimiters().
         $folded = 1 === preg_match('//u', $identifier) ? mb_strtolower($identifier, 'UTF-8') : strtolower($identifier);
 
-        return substr(hash_hmac('sha256', $folded, SecretKeyDerivation::derive($this->secret, self::KEY_CONTEXT)), 0, self::LENGTH);
+        $mac = KeyedMac::fromSecret($this->secret->getValue(), self::KEY_CONTEXT, MacEncoding::Hex);
+
+        return substr($mac->sign($folded), 0, self::LENGTH);
     }
 }

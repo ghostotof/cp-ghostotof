@@ -17,6 +17,9 @@ final readonly class ContactMessageSender implements ContactMessageSenderInterfa
 
     public function send(ContactMessage $message): void
     {
+        // Une file qui ne prend pas le message lève l'exception qu'il nomme
+        // (App\Contact\Domain\Exception\ContactMessageQueueUnavailableException,
+        // issues #485 et #491).
         $this->messageBus->dispatch(new SendContactMessageMessage(
             senderName: $message->senderName,
             senderEmail: $message->senderEmail,

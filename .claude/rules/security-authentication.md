@@ -105,18 +105,30 @@ paths:
     with `superAdmin` like `role-changed`, `actor: console` — a person at a terminal the log cannot name, never
     `system` nor `anonymous`) — the two events whose actor is not read from the token storage; `record()` takes an
     explicit actor for CLI callers). Every record carries
-    `event` (the stable kebab-case key to filter on), `actor` (identifier from the token storage, or
-    `anonymous`), `ip`, `path` (canonical), plus `user` and — for an existing account — `userId` (RFC 4122).
-    **Never a password, a token (JWT, XSRF, invitation), an e-mail, a request body or a serialized
-    exception** in any context: an invited account is named by `username` + `userId`, not by its e-mail.
+    `event` (the stable kebab-case key to filter on), `actor`, `ip`, `path` (canonical), plus the subject.
+    **An account is designated by its `userId` (RFC 4122) only, as subject and as `actor`, never by its
+    login identifier** (issue #363): an invited account's username is derived from the local part of its
+    address (`UsernameGenerator`, ADR 0001 D2), usually a first and last name. `actor` is the UUID of the
+    authenticated account, the base tier's random `guest-…` marker, `anonymous`, `system`, `console`, or
+    `unidentified` for any other `UserInterface` (none exists). `user` now only ever carries that
+    `guest-…` marker (`base-access-issued`, a guest's `logged-out`). Both go through
+    `App\Shared\Domain\Security\AccountReference` (`CpgUser::accountId()`), the interface `Ai` reads too,
+    so no context depends on `Security`. To name an account during an incident:
+    `SELECT username, email FROM cpg_user WHERE id = '<userId>'` — once deleted, its lines designate no one,
+    which is the point (minimisation, RGPD register §6; not Goal #9, which is about what the API exposes).
+    It runs through a human's read-only `kubectl exec` on the `postgres` pod (`k8s/README.md`, « Journal de
+    sécurité »), **never a Job**: a Job would print the name and address into its pod's logs, readable by
+    the CI token's `pods/log` — the exception and its bounds are in `.claude/rules/deploiement.md` (issue #520).
+    **Never a password, a token (JWT, XSRF, invitation), an e-mail, a login identifier, a request body or a
+    serialized exception** in any context.
     **The identifier tried at login is never written as typed** (issue #418): a password typed in the
     username field would otherwise reach the production log. `login-failed` and `login-throttled` carry
     `userFingerprint` instead — `Infrastructure/Log/LoginIdentifierFingerprint`, an HMAC-SHA256 keyed by a
     key derived from `kernel.secret` for this use alone (issue #455, see `.claude/rules/backend-architecture.md`), case-folded like `login_throttling`'s counter (`mb_strtolower`), **6 hex chars
     (24 bits) on purpose**, an empty key refused (with the key, a longer fingerprint would confirm
     offline, at SHA-256 speed, a password typed as identifier; the class docblock has the numbers) — and
-    name the account (`user` + `userId`, from the loaded `CpgUser`, never from the input) **only when the
-    authentication already loaded it**: `user` is `null` for an unknown identifier and always for
+    designate the account (`userId`, from the loaded `CpgUser`, never from the input) **only when the
+    authentication already loaded it**: no `userId` for an unknown identifier and never for
     `login-throttled`, which refuses before the account is loaded (loading it there would cost a query on
     the path an attacker hammers). The fingerprint is the link between a `login-throttled` and the
     failures that caused it — when the per-(IP, identifier) counter refused; a refusal by the per-IP
@@ -128,8 +140,16 @@ paths:
     exception — closed at the source by the `cpg_users` loader (see `.claude/rules/security-user.md`) on
     the `login` firewall, the only one that receives a typed identifier. On the `api` firewall the
     `app_users` chain still quotes the identifier in its own `UserNotFoundException` (`There is no user
-    with identifier "…"`, a JWT for a deleted account, `GuestUserProvider` too): that value comes from a
-    signed JWT, a real username, never from a form field — accepted, not a #418 leak;
+    with identifier "…"`, a JWT for a deleted account): not a #418 leak (a signed JWT, never a form
+    field), but a #363 one, closed by **`Infrastructure/Log/SecurityChannelAccountRedactor`**, a Monolog
+    processor on the `security` channel only. It also rewrites the token of `Authenticator successful!`,
+    written at `info` on **every authenticated request** of the `api` firewall, which `JsonFormatter`
+    rendered by its `__toString()` (`JWTPostAuthenticationToken(user="jean.dupont", roles="…")`):
+    now `Class(userId="…", roles="…")` (`user="guest-…"` for the base tier, roles only otherwise). Any
+    exception whose chain holds a `UserNotFoundException` becomes its normalised form (class, message,
+    code, `file:line`, `previous`, no trace), that link's message replaced by `WITHHELD`. Both lines stay:
+    `Authenticator failed.` is the trace of a forged or expired JWT — raising the handler to `notice` was
+    rejected for that reason. `SecurityChannelAccountRedactorTest` pins the rewriting; the guard below the wiring;
     `SecurityAuditLogTest::testAPasswordTypedAsTheIdentifierReachesNoLog` formats every channel's records
     with Monolog's `JsonFormatter`, the production one, on an unknown identifier and on the throttling
     refusal, and skips only `doctrine`'s `debug` records (SQL parameters, logged under `kernel.debug` only,
@@ -176,7 +196,15 @@ paths:
     failed on a `RfcComplianceException` quoting it, logged on every retry. Don't override `mode:` on an
     `Assert\Email` whose value ends up in an e-mail.
     `SecurityAuditLoggerTest::testNoContextValueEverCarriesAPasswordATokenOrAnEmail` pins that with
-    sentinel values run through every method; extend it when adding one. Who calls what:
+    sentinel values run through every method (login identifiers of the actor and the subject included);
+    extend it when adding one. **`tests/Security/AccountIdentifierReachesNoLogTest.php` is the guard on
+    every channel** (issue #363): an account invited from `prenom.sentinelle@…` goes through invitation,
+    activation, replay, failed and successful login, authenticated requests, a backoffice 403, both
+    per-account AI quotas, logout, the three reachable backoffice 409s, role and password changes,
+    deletion, its JWT replayed after deletion, and the purge (one purged, one `ROLE_SUPER` skipped); no
+    record of any channel at any level (`doctrine`'s `debug` aside, as above) may contain `sentinelle` —
+    an e-mail address would fail it too — and the records it expects must have been seen. A new site that
+    writes a login identifier belongs in that scenario. Who calls what:
     `Infrastructure/Log/SecurityEventsSubscriber` for `LoginSuccessEvent`/`LoginFailureEvent` (**`login`
     firewall only** — the `api` firewall re-authenticates the JWT on every request and dispatches the
     same events), `LogoutEvent`, and the backoffice 403 on `kernel.exception` at priority 0 (after the
@@ -199,8 +227,8 @@ paths:
     (issue #356, before it they only had the kernel's generic `Uncaught PHP Exception` line, with no IP
     nor path): `PasswordSetupService` logs `password-setup-token-rejected` (unknown token, no subject) and
     `password-setup-token-replayed` (a link **already used** comes back — possible leak of the link — with
-    the account it activated; journal side only, the response keeps the 410 merged with « expired », and
-    a merely expired link is no event) right before throwing; `Infrastructure/Log/ThrottledRequestAuditListener`
+    the account it activated; journal side only, the response is that of every unusable link, an unknown one
+    included — one 404, issue #362 —, and a merely expired link is no event) right before throwing; `Infrastructure/Log/ThrottledRequestAuditListener`
     (`kernel.exception`, priority 0, above API Platform's -96 and `ApiProblemResponseListener`'s -98, which
     stop propagation) maps the three anonymous per-IP quota exceptions to `password-setup-throttled`,
     `contact-throttled`, `base-access-throttled`, no subject (the limiter's key is the IP). A listener rather
@@ -230,13 +258,13 @@ paths:
     pass. The guard calls the listener directly: it proves the sort, not that the
     exception reaches priority 0 unwrapped — `SecurityAuditLogTest` covers the real wiring, extend it too. **Replay and expiry must cost the same**: `findOneByTokenHash` loads the
     account by explicit join, so the `replayed` path, which logs it, pays no extra query behind the
-    shared 410 — keep the join. **Consumption is atomic**: `PasswordSetupService::complete()` hashes, then
+    shared 404 — keep the join. **Consumption is atomic**: `PasswordSetupService::complete()` hashes, then
     `PasswordSetupTokenRepository::claim()` (`UPDATE … WHERE used_at IS NULL AND expires_at > :usedAt`, one
     row or none), and only the winner writes the account; the loser of a concurrent submission is a
     `replayed` (only when the token is `AlreadyUsed`: `claim()` returns a `TokenClaim`, a token gone meanwhile
-    is a `rejected` 404, issue #458). **So is expiry** (issue #447): the claim instant is read **after** the hash, which takes
+    is a `rejected`, issue #458). **So is expiry** (issue #447): the claim instant is read **after** the hash, which takes
     time, and the same `UPDATE` refuses a token expired by then (strict bound, like `isUsable()`); that
-    loser is not a replay — no event, a merely expired link never is one —, the 410 is unchanged. Never go back to
+    loser is not a replay — no event, a merely expired link never is one —, the 404 is unchanged. Never go back to
     deciding on `isUsable()` alone, which reads the loaded state. Functional tests read the records through
     `tests/Support/ReadsSecurityAuditLog.php` (a
     Monolog `test` handler on the channel, `when@test`, found among `monolog.logger.security_audit`'s

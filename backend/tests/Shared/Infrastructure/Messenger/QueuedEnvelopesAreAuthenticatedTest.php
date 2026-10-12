@@ -7,7 +7,8 @@ namespace App\Tests\Shared\Infrastructure\Messenger;
 use App\Contact\Application\Message\SendContactMessageMessage;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Shared\Infrastructure\Messenger\AuthenticatedEnvelopeSerializer;
-use App\Tests\Shared\Infrastructure\Messenger\Fixtures\Probe\UnserializationProbe;
+use App\Shared\Infrastructure\Messenger\EnvelopeTooLargeException;
+use App\Tests\Support\UnserializationProbe;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use stdClass;
@@ -97,6 +98,35 @@ final class QueuedEnvelopesAreAuthenticatedTest extends KernelTestCase
             $received = [...$transport->get()];
             self::assertCount(1, $received);
             self::assertEquals($message, $received[0]->getMessage());
+        } finally {
+            $connection->executeStatement("DELETE FROM messenger_messages WHERE queue_name = 'failed'");
+        }
+    }
+
+    /**
+     * Issue #469, par le transport Doctrine du `failure_transport` : un corps
+     * démesuré, même signé, revient refusé, et ce refus remis dans `failed`
+     * — ce que fait le worker — n'y recopie pas le corps.
+     */
+    public function testAnOversizedEnvelopeIsNotCopiedIntoTheFailureTransport(): void
+    {
+        $transport = self::getContainer()->get('messenger.transport.failed');
+        $connection = self::getContainer()->get('doctrine.dbal.default_connection');
+        $message = new SendContactMessageMessage('Jane', 'jane@example.com', str_repeat('x', AuthenticatedEnvelopeSerializer::MAX_ENVELOPE_BYTES));
+
+        try {
+            $transport->send(new Envelope($message));
+            $received = [...$transport->get()];
+            self::assertCount(1, $received);
+            self::assertInstanceOf(EnvelopeTooLargeException::class, $received[0]->getMessage());
+            $connection->executeStatement("DELETE FROM messenger_messages WHERE queue_name = 'failed'");
+
+            $transport->send($received[0]);
+
+            $body = $connection->fetchOne("SELECT body FROM messenger_messages WHERE queue_name = 'failed' ORDER BY id DESC LIMIT 1");
+            self::assertIsString($body);
+            self::assertLessThan(64 * 1024, \strlen($body));
+            self::assertStringNotContainsString(str_repeat('x', 1024), $body);
         } finally {
             $connection->executeStatement("DELETE FROM messenger_messages WHERE queue_name = 'failed'");
         }

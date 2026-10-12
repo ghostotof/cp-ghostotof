@@ -6,6 +6,7 @@ namespace App\Security\User\Domain\Entity;
 
 use App\Security\User\Domain\Exception\InvalidUsernameException;
 use App\Security\User\Infrastructure\Doctrine\CpgUserRepository;
+use App\Shared\Domain\Security\AccountReference;
 use DateTimeImmutable;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
@@ -32,10 +33,20 @@ use Symfony\Component\Validator\Constraints as Assert;
  */
 #[ORM\Entity(repositoryClass: CpgUserRepository::class)]
 #[ORM\Table(name: 'cpg_user')]
-#[ORM\UniqueConstraint(name: 'uniq_cpg_user_username', columns: ['username'])]
-#[ORM\UniqueConstraint(name: 'uniq_cpg_user_email', columns: ['email'])]
-class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
+#[ORM\UniqueConstraint(name: self::USERNAME_UNIQUE_INDEX, columns: ['username'])]
+#[ORM\UniqueConstraint(name: self::EMAIL_UNIQUE_INDEX, columns: ['email'])]
+class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, AccountReference
 {
+    /**
+     * Noms des index uniques, tels que PostgreSQL les cite dans le message
+     * d'une violation : CpgUserRepository::add() s'en sert pour dire laquelle
+     * des deux unicités a refusé l'enregistrement (issue #364). Ils nomment aussi le
+     * mapping ci-dessus, et ne peuvent donc pas s'en écarter.
+     */
+    public const string USERNAME_UNIQUE_INDEX = 'uniq_cpg_user_username';
+
+    public const string EMAIL_UNIQUE_INDEX = 'uniq_cpg_user_email';
+
     /** Rôle réservé à l'administration du backoffice (gestion de contenu, gestion des utilisateurs). */
     public const string ROLE_SUPER = 'ROLE_SUPER';
 
@@ -145,6 +156,16 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
     public function getId(): Uuid
     {
         return $this->id;
+    }
+
+    /**
+     * L'UUID, seule désignation du compte dans un journal ou une clé de quota
+     * (issue #363) : l'identifiant de connexion d'un invité est dérivé de son
+     * adresse.
+     */
+    public function accountId(): string
+    {
+        return $this->id->toRfc4122();
     }
 
     public function getUsername(): string

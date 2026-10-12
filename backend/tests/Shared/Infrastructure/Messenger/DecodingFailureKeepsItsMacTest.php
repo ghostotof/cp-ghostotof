@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Messenger;
 
 use App\Shared\Infrastructure\Messenger\AuthenticatedEnvelopeSerializer;
+use App\Shared\Infrastructure\Messenger\EnvelopeTooLargeException;
 use App\Tests\Support\SignedEnvelope;
 use PHPUnit\Framework\Attributes\DataProvider;
 use stdClass;
@@ -152,6 +153,29 @@ final class DecodingFailureKeepsItsMacTest extends KernelTestCase
         self::getContainer()->get('messenger.retry.send_failed_message_for_retry_listener')->onMessageFailed($event);
 
         self::assertSame($retried, $event->willRetry());
+    }
+
+    /**
+     * Issue #469, par le middleware et le listener de réessai du conteneur :
+     * une enveloppe démesurée garde sa cause au redécodage du marqueur, et
+     * part dans `failed` sans réessai — relue du broker trois fois de plus,
+     * elle coûterait trois fois sa taille.
+     */
+    public function testAnOversizedEnvelopeKeepsItsCauseAndSkipsTheRetries(): void
+    {
+        $serializer = $this->serializer();
+        $encoded = $this->signed(addslashes(serialize(str_repeat('x', AuthenticatedEnvelopeSerializer::MAX_ENVELOPE_BYTES))));
+        $received = $serializer->decode($encoded)->with(new ReceivedStamp('async'));
+        self::assertInstanceOf(EnvelopeTooLargeException::class, $received->getMessage());
+
+        $failure = $this->failureRaisedByTheMiddleware($serializer, $received);
+        self::assertInstanceOf(EnvelopeTooLargeException::class, $failure);
+        self::assertSame($received->getMessage()->getMessage(), $failure->getMessage());
+
+        $event = new WorkerMessageFailedEvent($received, 'async', $failure);
+        self::getContainer()->get('messenger.retry.send_failed_message_for_retry_listener')->onMessageFailed($event);
+
+        self::assertFalse($event->willRetry());
     }
 
     private function assertTheMiddlewareRaises(string $cause, SerializerInterface $serializer, Envelope $received): void

@@ -13,12 +13,9 @@ use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler;
 use App\Tests\Support\ChildPhpProcess;
-use App\Tests\Support\OpensProbeConnection;
-use Closure;
-use Doctrine\DBAL\Connection;
+use App\Tests\Support\FlushInterleaving;
+use App\Tests\Support\ProcessBarrier;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Event\PostFlushEventArgs;
-use Doctrine\ORM\Events;
 use Psr\Log\NullLogger;
 use Symfony\Bridge\Twig\Mime\TemplatedEmail;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -49,7 +46,6 @@ use Symfony\Component\Process\Process;
 final class SendAccountInvitationConcurrencyTest extends KernelTestCase
 {
     use MailerAssertionsTrait;
-    use OpensProbeConnection;
 
     private const int TIMEOUT_SECONDS = 30;
 
@@ -150,118 +146,17 @@ final class SendAccountInvitationConcurrencyTest extends KernelTestCase
     }
 
     /**
-     * Démarre B, attend qu'il soit prêt, et arme un `postFlush` à usage unique
-     * qui le lâche puis attend qu'il ait fini ou soit bloqué.
+     * Démarre B et le relâche au prochain `postFlush` ({@see FlushInterleaving}) :
+     * le jeton de A est inséré, pas encore validé.
      */
     private function interleaveAfterNextFlush(string $userId, int $generation): Process
     {
-        $barrierPath = tempnam(sys_get_temp_dir(), 'invitation-barrier-');
-        self::assertIsString($barrierPath);
-        $barrier = fopen($barrierPath, 'r');
-        self::assertNotFalse($barrier);
-        self::assertTrue(flock($barrier, \LOCK_EX));
-
-        $concurrent = new Process(
-            ChildPhpProcess::command(self::HANDLER_SCRIPT, $barrierPath, $userId, (string) $generation),
-            env: $this->childEnvironment(),
-            timeout: self::TIMEOUT_SECONDS,
-        );
+        $barrier = ProcessBarrier::hold('invitation-barrier-');
+        $concurrent = ChildPhpProcess::inTestEnvironment(self::TIMEOUT_SECONDS, self::HANDLER_SCRIPT, $barrier->path(), $userId, (string) $generation);
         $concurrent->start();
-        $concurrentPid = $this->waitUntilReady($concurrent);
-
-        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
-        $probe = self::openProbeBeside($entityManager->getConnection());
-
-        $listener = new class($barrier, $barrierPath, $concurrent, $concurrentPid, $probe, $this->waitUntilDoneOrBlocked(...)) {
-            public bool $fired = false;
-
-            /**
-             * @param resource                                $barrier
-             * @param Closure(Process, int, Connection): void $waitUntilDoneOrBlocked
-             */
-            public function __construct(
-                private $barrier,
-                private readonly string $barrierPath,
-                private readonly Process $concurrent,
-                private readonly int $concurrentPid,
-                private readonly Connection $probe,
-                private readonly Closure $waitUntilDoneOrBlocked,
-            ) {
-            }
-
-            public function postFlush(PostFlushEventArgs $args): void
-            {
-                if ($this->fired) {
-                    return;
-                }
-                $this->fired = true;
-
-                flock($this->barrier, \LOCK_UN);
-                fclose($this->barrier);
-                unlink($this->barrierPath);
-                ($this->waitUntilDoneOrBlocked)($this->concurrent, $this->concurrentPid, $this->probe);
-                $this->probe->close();
-            }
-        };
-        $entityManager->getEventManager()->addEventListener([Events::postFlush], $listener);
+        FlushInterleaving::releaseAfterNextFlush(self::getContainer()->get(EntityManagerInterface::class), $barrier, $concurrent, self::TIMEOUT_SECONDS);
 
         return $concurrent;
-    }
-
-    /**
-     * Rend la main dès que B a terminé ou que **sa** session attend un verrou
-     * PostgreSQL, lu depuis une connexion à part, hors transaction.
-     */
-    private function waitUntilDoneOrBlocked(Process $concurrent, int $concurrentPid, Connection $probe): void
-    {
-        $deadline = microtime(true) + self::TIMEOUT_SECONDS;
-
-        while ($concurrent->isRunning()) {
-            $blocked = $probe->fetchOne(
-                "SELECT wait_event_type IS NOT DISTINCT FROM 'Lock' FROM pg_stat_activity WHERE pid = ?",
-                [$concurrentPid],
-            );
-            if (true === $blocked) {
-                return;
-            }
-            if (microtime(true) > $deadline) {
-                self::fail('Le consommateur concurrent ni fini ni bloqué après '.self::TIMEOUT_SECONDS.' s.');
-            }
-            usleep(10_000);
-        }
-    }
-
-    private function waitUntilReady(Process $concurrent): int
-    {
-        $deadline = microtime(true) + self::TIMEOUT_SECONDS;
-
-        while (true) {
-            if (1 === preg_match('/^ready (\d+)$/m', $concurrent->getOutput(), $matches)) {
-                return (int) $matches[1];
-            }
-            if (!$concurrent->isRunning()) {
-                self::fail(\sprintf("Le consommateur concurrent s'est arrêté avant la barrière :\n%s", $concurrent->getErrorOutput()));
-            }
-            if (microtime(true) > $deadline) {
-                self::fail("Le consommateur concurrent n'est pas prêt après ".self::TIMEOUT_SECONDS.' s.');
-            }
-            usleep(10_000);
-        }
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function childEnvironment(): array
-    {
-        $environment = [];
-        foreach ($_SERVER as $name => $value) {
-            if (\is_string($name) && \is_string($value)) {
-                $environment[$name] = $value;
-            }
-        }
-
-        return $environment;
     }
 
     private function tokenCountOf(string $userId): int

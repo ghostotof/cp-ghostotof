@@ -35,7 +35,7 @@ final class MisqualifiedNativeCalls
 {
     /**
      * L'ensemble `@compiler_optimized` de php-cs-fixer, à la version
-     * {@see PhpCsFixer::VERSION} (`NativeFunctionInvocationFixer::getAllCompilerOptimizedFunctionsNormalized()`),
+     * `PHP_CS_FIXER_VERSION` du `.env` racine (`NativeFunctionInvocationFixer::getAllCompilerOptimizedFunctionsNormalized()`),
      * recopié parce que php-cs-fixer n'est pas une dépendance. Les fonctions
      * viennent de `zend_try_compile_special_func()` (`Zend/zend_compile.c`), puis
      * de l'optimiseur d'OPcache (`Zend/Optimizer/`). La liste suit PHP :
@@ -63,15 +63,15 @@ final class MisqualifiedNativeCalls
     public const array ABSENT_FROM_PHP = ['is_real'];
 
     /**
-     * Le message d'échec de la garde : la commande qui corrige tous les appels signalés.
+     * Le message d'échec de la garde : la cible qui corrige tous les appels
+     * signalés (issue #398). Elle applique `native_function_invocation` en
+     * `strict`, qui retire aussi un `\` superflu.
      */
     public static function fix(): string
     {
         return "Fonctions natives mal qualifiées. Correction ponctuelle, depuis la racine du dépôt :\n"
-            .PhpCsFixer::command(
-                '{"native_function_invocation":{"include":["@compiler_optimized"],"scope":"all","strict":true}}',
-                risky: true,
-            );
+            ."make back-style-fix\n"
+            .'(php-cs-fixer épinglé et vérifié par docker/php/php-cs-fixer.sh ; trie aussi les `use`)';
     }
 
     /**

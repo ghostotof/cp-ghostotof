@@ -14,10 +14,10 @@ use Symfony\Component\RateLimiter\RateLimiterFactory;
 /**
  * Adosse TranslationRateLimiterInterface au limiteur "translation_assistant"
  * de config/packages/rate_limiter.yaml (fenêtre glissante, 30 appels/heure),
- * clé = identifiant du compte.
+ * clé = UUID du compte (issue #363, comme SymfonyAssistantRateLimiter).
  *
  * Un refus est tracé sur `ai_usage` (niveau fixe, voir monolog.yaml) avec le
- * compte et l'échéance, comme celui de l'assistant de parcours (issue #356) :
+ * compte (`userId`) et l'échéance, comme celui de l'assistant de parcours (issue #356) :
  * le 429 que le noyau journalise en `info` sur le canal applicatif ne sort
  * jamais d'un pod de production, et un compte ROLE_SUPER compromis qui
  * boucle sur son plafond passerait inaperçu. Ici plutôt que dans le
@@ -34,14 +34,14 @@ final readonly class SymfonyTranslationRateLimiter implements TranslationRateLim
     ) {
     }
 
-    public function consume(string $accountIdentifier): void
+    public function consume(string $accountId): void
     {
-        $limit = $this->rateLimiterFactory->create($accountIdentifier)->consume();
+        $limit = $this->rateLimiterFactory->create($accountId)->consume();
 
         if (!$limit->isAccepted()) {
             $this->logger->info('Assistant de traduction : quota atteint.', [
                 'outcome' => 'rate-limited',
-                'account' => $accountIdentifier,
+                'userId' => $accountId,
                 'retryAfter' => $limit->getRetryAfter()->format(\DATE_ATOM),
             ]);
 

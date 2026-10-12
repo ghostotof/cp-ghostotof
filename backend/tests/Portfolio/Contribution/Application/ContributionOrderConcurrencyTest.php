@@ -7,12 +7,9 @@ namespace App\Tests\Portfolio\Contribution\Application;
 use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Support\ChildPhpProcess;
-use App\Tests\Support\OpensProbeConnection;
-use Closure;
-use Doctrine\DBAL\Connection;
+use App\Tests\Support\FlushInterleaving;
+use App\Tests\Support\ProcessBarrier;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Event\PreFlushEventArgs;
-use Doctrine\ORM\Events;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Process\Process;
 
@@ -23,8 +20,7 @@ use Symfony\Component\Process\Process;
  * (Fixtures/create-contribution.php) : l'une tiendrait sinon le verrou que
  * l'autre attend. L'entrelacement est explicite, pas laissé au hasard :
  *
- *  1. B démarre le kernel puis attend la barrière (fichier verrouillé en
- *     exclusif par le test) ;
+ *  1. B démarre le kernel puis attend la barrière (ProcessBarrier) ;
  *  2. A lit le périmètre et calcule ses positions ; au `preFlush` de son
  *     écriture — le dernier instant avant qu'elle n'atteigne la base —, le
  *     test relâche la barrière ;
@@ -39,8 +35,6 @@ use Symfony\Component\Process\Process;
  */
 final class ContributionOrderConcurrencyTest extends KernelTestCase
 {
-    use OpensProbeConnection;
-
     /** Borne de chaque attente : un verrou jamais relâché fait échouer le test au lieu de le suspendre. */
     private const int TIMEOUT_SECONDS = 30;
 
@@ -104,114 +98,21 @@ final class ContributionOrderConcurrencyTest extends KernelTestCase
     }
 
     /**
-     * Démarre B, attend qu'il soit prêt, et arme un `preFlush` à usage unique
-     * qui le lâche puis attend qu'il ait fini ou soit bloqué.
+     * Démarre B et le relâche au prochain `preFlush` ({@see FlushInterleaving}).
      */
     private function interleaveBeforeNextFlush(Locale $locale, ?string $group): Process
     {
-        $barrierPath = tempnam(sys_get_temp_dir(), 'order-barrier-');
-        self::assertIsString($barrierPath);
-        $barrier = fopen($barrierPath, 'r');
-        self::assertNotFalse($barrier);
-        self::assertTrue(flock($barrier, \LOCK_EX));
-
-        $command = ChildPhpProcess::command(self::WRITER_SCRIPT, $barrierPath, $locale->value);
+        $barrier = ProcessBarrier::hold('order-barrier-');
+        $arguments = [self::WRITER_SCRIPT, $barrier->path(), $locale->value];
         if (null !== $group) {
-            $command[] = $group;
+            $arguments[] = $group;
         }
 
-        $writer = new Process(
-            $command,
-            env: $this->childEnvironment(),
-            timeout: self::TIMEOUT_SECONDS,
-        );
+        $writer = ChildPhpProcess::inTestEnvironment(self::TIMEOUT_SECONDS, ...$arguments);
         $writer->start();
-        $writerPid = $this->waitUntilReady($writer);
-
-        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
-        $probe = self::openProbeBeside($entityManager->getConnection());
-        $eventManager = $entityManager->getEventManager();
-
-        $listener = new class($barrier, $barrierPath, $writer, $writerPid, $probe, $this->waitUntilDoneOrBlocked(...)) {
-            /**
-             * @param resource                                $barrier
-             * @param Closure(Process, int, Connection): void $waitUntilDoneOrBlocked
-             */
-            public function __construct(
-                private $barrier,
-                private readonly string $barrierPath,
-                private readonly Process $writer,
-                private readonly int $writerPid,
-                private readonly Connection $probe,
-                private readonly Closure $waitUntilDoneOrBlocked,
-            ) {
-            }
-
-            public bool $fired = false;
-
-            public function preFlush(PreFlushEventArgs $args): void
-            {
-                if ($this->fired) {
-                    return;
-                }
-                $this->fired = true;
-
-                flock($this->barrier, \LOCK_UN);
-                fclose($this->barrier);
-                unlink($this->barrierPath);
-                ($this->waitUntilDoneOrBlocked)($this->writer, $this->writerPid, $this->probe);
-                $this->probe->close();
-            }
-        };
-        $eventManager->addEventListener([Events::preFlush], $listener);
+        FlushInterleaving::releaseBeforeNextFlush(self::getContainer()->get(EntityManagerInterface::class), $barrier, $writer, self::TIMEOUT_SECONDS);
 
         return $writer;
-    }
-
-    /**
-     * Rend la main dès que B a terminé ou que **sa** session attend un verrou
-     * PostgreSQL : une autre session en attente ne doit pas passer pour lui.
-     * Interrogé depuis une connexion à part, hors de toute transaction :
-     * pg_stat_activity est figé pour la durée d'une transaction.
-     */
-    private function waitUntilDoneOrBlocked(Process $writer, int $writerPid, Connection $probe): void
-    {
-        $deadline = microtime(true) + self::TIMEOUT_SECONDS;
-
-        while ($writer->isRunning()) {
-            $blocked = $probe->fetchOne(
-                "SELECT wait_event_type IS NOT DISTINCT FROM 'Lock' FROM pg_stat_activity WHERE pid = ?",
-                [$writerPid],
-            );
-            if (true === $blocked) {
-                return;
-            }
-            if (microtime(true) > $deadline) {
-                self::fail('Le processus concurrent ni fini ni bloqué après '.self::TIMEOUT_SECONDS.' s.');
-            }
-            usleep(10_000);
-        }
-    }
-
-    /**
-     * Attend le « ready <pid> » de B et rend le pid de sa session PostgreSQL.
-     */
-    private function waitUntilReady(Process $writer): int
-    {
-        $deadline = microtime(true) + self::TIMEOUT_SECONDS;
-
-        while (true) {
-            if (1 === preg_match('/^ready (\d+)$/m', $writer->getOutput(), $matches)) {
-                return (int) $matches[1];
-            }
-            if (!$writer->isRunning()) {
-                self::fail(\sprintf("Le processus concurrent s'est arrêté avant la barrière :\n%s", $writer->getErrorOutput()));
-            }
-            if (microtime(true) > $deadline) {
-                self::fail("Le processus concurrent n'est pas prêt après ".self::TIMEOUT_SECONDS.' s.');
-            }
-            usleep(10_000);
-        }
     }
 
     private function awaitSuccess(Process $writer): void
@@ -222,24 +123,6 @@ final class ContributionOrderConcurrencyTest extends KernelTestCase
             $writer->getExitCode(),
             \sprintf("Le processus concurrent a échoué :\n%s%s", $writer->getOutput(), $writer->getErrorOutput()),
         );
-    }
-
-    /**
-     * Même transmission que RateLimiterConcurrencyTest : les variables que
-     * phpunit.dist.xml force ne vivent que dans $_SERVER.
-     *
-     * @return array<string, string>
-     */
-    private function childEnvironment(): array
-    {
-        $environment = [];
-        foreach ($_SERVER as $name => $value) {
-            if (\is_string($name) && \is_string($value)) {
-                $environment[$name] = $value;
-            }
-        }
-
-        return $environment;
     }
 
     /**

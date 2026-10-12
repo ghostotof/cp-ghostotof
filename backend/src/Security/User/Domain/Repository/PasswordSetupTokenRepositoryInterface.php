@@ -46,8 +46,9 @@ interface PasswordSetupTokenRepositoryInterface
     /**
      * Supprime les jetons encore utilisables du compte, à son activation
      * (issue #458) : un compte activé n'en garde aucun. Le jeton consommé
-     * reste, pour qu'un lien déjà utilisé qui revient soit reconnu comme un
-     * rejeu (410), pas comme un lien inconnu (404).
+     * reste, pour qu'un lien déjà utilisé qui revient soit journalisé comme
+     * un rejeu (`replayed`), pas comme un lien inconnu (`rejected`) — la
+     * réponse, elle, est la même (issue #362).
      */
     public function deleteUnusedForUser(CpgUser $user): void;
 }

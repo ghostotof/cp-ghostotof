@@ -11,7 +11,6 @@ use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use SimpleXMLElement;
 use Symfony\Component\ErrorHandler\Exception\FlattenException;
-use Symfony\Component\Process\Process;
 
 /**
  * Sous PHPUnit, les traces d'exception ne portent pas les arguments des appels
@@ -81,7 +80,7 @@ final class ExceptionArgumentsHiddenInTestsTest extends TestCase
         $value = (string) \ini_get(ChildPhpProcess::DIRECTIVE);
         self::assertSame(['-d', ChildPhpProcess::DIRECTIVE.'='.$value, 'script.php'], \array_slice(ChildPhpProcess::command('script.php'), 1), 'La directive passe avant le script.');
 
-        $child = new Process(ChildPhpProcess::command('-r', 'echo ini_get("'.ChildPhpProcess::DIRECTIVE.'");'));
+        $child = ChildPhpProcess::inTestEnvironment(20, '-r', 'echo ini_get("'.ChildPhpProcess::DIRECTIVE.'");');
         $child->mustRun();
 
         // `-d …=On` est relu `1` par l'enfant : on compare l'état, pas l'écriture.

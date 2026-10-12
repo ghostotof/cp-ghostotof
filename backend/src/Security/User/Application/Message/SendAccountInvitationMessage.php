@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Security\User\Application\Message;
 
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Security\User\Domain\Exception\InvitationQueueUnavailableException;
+use App\Shared\Application\Message\QueuedMessageInterface;
 use Symfony\Component\Uid\Uuid;
+use Throwable;
 
 /**
  * Commande Messenger : demande d'envoi de l'e-mail d'invitation à définir son
@@ -31,7 +34,7 @@ use Symfony\Component\Uid\Uuid;
  * failure_transport) est écarté par le handler au lieu de purger le jeton
  * d'une relance déjà remise. Ce numéro n'est pas un secret.
  */
-final readonly class SendAccountInvitationMessage
+final readonly class SendAccountInvitationMessage implements QueuedMessageInterface
 {
     /**
      * La génération de la première invitation d'un compte
@@ -44,6 +47,16 @@ final readonly class SendAccountInvitationMessage
         public string $locale,
         public int $invitationGeneration,
     ) {
+    }
+
+    /**
+     * Issue #485 : {@see \App\Security\User\Application\CpgUserInviter} retire
+     * alors le compte tout juste créé, ou laisse la génération avancée d'une
+     * relance (limite écrite).
+     */
+    public function queueUnavailableException(Throwable $cause): InvitationQueueUnavailableException
+    {
+        return new InvitationQueueUnavailableException($cause);
     }
 
     /**

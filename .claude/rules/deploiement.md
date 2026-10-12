@@ -69,7 +69,35 @@ paths:
   `env[PGOPTIONS] = "-c lock_timeout=5s"` (the DSN cannot carry it: DBAL doesn't forward `options`
   to pdo_pgsql, so it bounds every PostgreSQL lock wait of an FPM worker, ORM included, never the
   console) and `request_terminate_timeout = 65s` (total wall time — keep it above any legitimate
-  request), pinned by `FpmLockWaitBoundTest`; `docker/php` is mounted read-only in the dev
+  request), pinned by `FpmLockWaitBoundTest`. **The console gets the same bound from its pods**
+  (issue #525): every container of `k8s/base` running the backend image carries
+  `PGOPTIONS: '-c lock_timeout=5s'` in its own `env:` — worker, CronJobs, every Job, the migration
+  included —, exactly www.prod.conf's value. `env:` per manifest rather than a `backend-config` line
+  (written twice, one per overlay) or a DBAL middleware (it would not reach the connection
+  `symfony/lock` opens itself through `DriverManager`, and could not tell a migration apart).
+  `ConsoleLockWaitBoundTest` finds the manifests **by the image**, so a new one without the bound
+  turns it red; its only exemption is `backend-deployment.yaml`'s `php-fpm` (the pool sets it).
+  Without it a console session has `lock_timeout = 0` (measured). An operator's read-only `exec`
+  (below) repeats `-c lock_timeout=5s` in its own `PGOPTIONS`, which replaces the variable whole.
+  For the worker, a handler waiting past 5 s raises `55P03` and Messenger retries it. **The
+  application's own PostgreSQL locks keep a fallback bound, now a safety net** (issue #512, kept on
+  2026-10-12, #525) for sessions with none — the dev container's console, CI: the order-scope lock, the account lock and the username
+  allocation lock share one skeleton, `Shared/Infrastructure/Lock/PostgresLockedTransaction`
+  (an *Execute Around*: hand-made transaction, wait bounded, `55P03` — defined there only, as
+  `LOCK_NOT_AVAILABLE` — renamed per lock, a refused COMMIT never masked, nor the cause by a
+  ROLLBACK the database refuses after it, issue #526: that failure is logged `error` with classes and
+  SQLSTATE only, the session is closed — never reused, PostgreSQL rolls it back, DBAL reopens one —, and
+  the cause is rethrown as is; a programming error of the ROLLBACK, `NoActiveTransaction`, still
+  surfaces; **never inside a transaction already open**, issues #526, #532: `run()` refuses before
+  opening anything, under the name each adapter gives its required `onNested` —
+  `OrderScopeLockInsideTransactionException`, `AccountLockInsideTransactionException`,
+  `UsernameAllocationLockInsideTransactionException`, `LogicException`s, unmapped `critical` 500s —, since
+  nested its COMMIT would only be a `RELEASE SAVEPOINT` and what each lock promises « after the commit »
+  would not hold; the check lives in the skeleton, required, so a new lock cannot forget it, and DBAL's
+  count is the judge — a raw `executeStatement('BEGIN')` is not seen), which gives the
+  transaction `FALLBACK_LOCK_TIMEOUT` (`5s`, the FPM value) through `set_config('lock_timeout', …, true)`
+  **only when the session has none** (`0`): a bound already chosen (`PGOPTIONS`, a test) is kept,
+  neither lengthened nor shortened. A new PostgreSQL lock goes through it. `docker/php` is mounted read-only in the dev
   container for that test. **Never consume a limiter inside `wrapInTransaction`**: the lock and
   the `cache_items` row live on two connections PostgreSQL does not relate, which both deadlocks
   (until `lock_timeout`) and republishes the window after the lock is released. The Monolog
@@ -82,7 +110,23 @@ paths:
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
   it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would
-  resolve to `docker.io/library/backend`). The deployer `Role` no longer has `pods/exec: create`, so the
+  resolve to `docker.io/library/backend`). **Every Job outside kustomize runs through
+  `tools/run-job.sh <ns> <manifest> <image> <timeout> [NAME=value…]`** (issue #488) — migration and seed
+  in `pipeline.yml`, the messenger probe, the manual `create-user` procedure, the three `failed`
+  maintenance Jobs (issue #521). **Before the cluster is
+  touched** (exit 2): bash ≥ 4, jq and envsubst present (otherwise `wait-rollout.sh` failed *after* the
+  apply, on a Job still running); one object, `kind: Job`, its `metadata.name` (end-of-line comment
+  stripped) a DNS-1123 name — never an option, `delete job/NAME`; each `NAME=value` a `${NAME}` of the
+  manifest other than `BACKEND_IMAGE`, its value non-empty within `[A-Za-z0-9._@:/+-]` (it is pasted into
+  the YAML as is) and never quoted in a refusal; `envsubst` with that explicit list, then any `${…}` left
+  refused — so a shell variable in a manifest is written `$VAR`, comments included. Then delete + apply
+  (refused by the cluster: exit 3), `tools/wait-rollout.sh` (Job failed: exit 1), and every container's
+  last 200 log lines (`--all-containers --prefix`, init containers included) — on stdout after a success,
+  on stderr after an `::error::` otherwise; on that failure path, a Job neither `Complete` nor `Failed`
+  is then **stopped** (`delete --cascade=foreground --wait=true --timeout=90s`, issue #535, see the
+  deadline bullet below). The probe blames the worker on exit 1 only. Never re-inline
+  that sequence — `run-job.test.sh` greps `pipeline.yml` for it: a fix made in one copy is a fix missing
+  in the others. Offline test: `tools/tests/run-job.test.sh`. The deployer `Role` no longer has `pods/exec: create`, so the
   CI identity cannot open an interactive shell in a pod — but **that is not a secret boundary** (3rd audit,
   A3/D4): `jobs create` + `pods/log` + `externalsecrets create/update` read every Secret of the namespace
   by construction (a Job that prints its environment is enough). The Role is a full deployer of its
@@ -92,6 +136,42 @@ paths:
   it replaced. If a console command must run at deploy time, declare another Job — never bring `pods/exec`
   back. The RBAC is a **manual bootstrap the pipeline never replays**: after changing it, re-run the loop in
   `k8s/README.md` §4 *before* the next deploy, or the job fails on `cannot create resource "jobs"`.
+- **What « never `kubectl exec` » covers, exactly** (issue #520). Three cases, three answers:
+  - **the CI identity never gets `pods/exec`** (nor `pods/attach`, `pods/portforward`) — audit C8 above;
+  - **a command with a side effect, or one that writes an audit line, runs as a Job** (`tools/run-job.sh`),
+    never through `exec`: its stderr would be the operator's terminal and `kubectl logs` would never see
+    the line (issue #386, `app:user:create`, see `.claude/rules/security-user.md`);
+  - **a human holding an admin kubeconfig may `exec` for read-only diagnosis whose output stays on their
+    terminal**, from a separate terminal, never behind a `!` in an assistant session: `nginx -T` on the
+    sidecar (below), the Xdebug checks and `kubectl cp` of the profiles, and naming an account from its
+    `userId` (`k8s/README.md`, « Journal de sécurité »). That last one is an exec *on purpose*: a Job
+    would write the name and address into its pod's logs, readable until the pod is deleted, by the CI
+    token too (`pods/log`) — the very thing issue #363 removed from the logs. The query goes on stdin
+    (nothing in the exec's argv, so nothing in the API server's request URL — the UUID does stay in the
+    operator's shell history, a pseudonymous identifier), the UUID as a quoted psql variable cast to
+    `uuid` (no injection from a pasted log value), inside a `default_transaction_read_only` session — a
+    guard rather than a boundary, a `SET` lifts it — and `NS` has no default.
+  Two guards, two scopes: `OperatorExecBoundaryTest` reads the repo (the deployer's Role, ClusterRole and
+  both bindings, wildcards such as `*/exec` included, plus the shape of the account lookup);
+  `tools/rotate-deployer-token.sh` checks the token actually issued against the cluster
+  (`auth can-i create pods/exec` → `no`) — the only one that sees a binding added by hand. Keep both. A
+  new manual `exec` in the runbook must fit the third case; if its output carries a secret or personal
+  data, it stays on the terminal, and if it writes anything, it is a Job. **Messenger's `failed`
+  transport follows that split** (issue #521, `k8s/README.md` « File d'échec Messenger »):
+  `messenger:failed:show` is the third case — read-only, and at `-vv` it dumps the message itself (a
+  visitor's name, address and text, an invitation's `userId`, the raw body of an undecodable
+  envelope; measured: none of it without `-vv`) — so an `exec` on `deploy/backend -c php-fpm` under
+  `env PGOPTIONS='-c default_transaction_read_only=on -c lock_timeout=5s'` (libpq reads it, so the whole session is
+  read-only: a `failed:remove` there fails with SQLSTATE 25006, measured); `failed:retry <id>`,
+  `failed:remove <id>` and `stop-workers` have side effects, so `messenger-failed-{retry,remove}-job.yaml`
+  and `messenger-stop-workers-job.yaml` (running `app:messenger:stop-workers`, which reads the signal back,
+  issue #528 — never Symfony's, which is green on a refused write), never with `-v` (and `SHELL_VERBOSITY=0` in their `env`, which
+  beats a `backend-config` value), one at a time (`run-job.sh` deletes a running namesake), the id through `FAILED_MESSAGE_ID` and refused
+  in 64 unless all digits (`run-job.sh` admits `-`, and `--all` read as an option empties the table).
+  `MessengerMaintenanceJobsManifestTest` pins the Jobs, `OperatorExecBoundaryTest` the read block and
+  that a runbook `exec` runs no console command but `messenger:failed:show` (an allow-list, so an
+  abbreviation such as `m:f:rem` fails it). The read-only session is measured in dev only, to confirm in
+  preprod (#521).
 - **The standard deploy runs the migration *before* the rollout, with the old pods still serving**
   (issue #175, expand/contract). Doctrine selects every mapped column on each hydration, so with the
   old order (rollout, then Job) any release that adds a field made the new pods `SELECT` a column the
@@ -106,7 +186,56 @@ paths:
   (`tools/wait-rollout.sh`, see below). **Fail-closed**: a failed Job exits before the
   `apply`, so the previous release keeps serving on the old schema, which is exactly the safe state
   (PostgreSQL DDL is transactional and Doctrine wraps each migration in its own transaction) — fix the
-  migration, cut a new tag. The discipline that makes this order safe, to respect in every migration:
+  migration by a new commit on the `release/*` branch (a `fix/*` PR targeting it; every push redeploys
+  preprod) — a new migration if an earlier one of the release already ran —, or by a hotfix release once
+  `main` has moved; never a tag by hand, the pipeline tags.
+  **A migration's lock waits are bounded at 5 s, and there the bound stops the deploy, it refuses
+  no request** (issue #525, decided 2026-10-12). A DDL waiting for an exclusive lock queues every
+  API request on its table behind it (each one then failing on FPM's own 5 s); bounded, the
+  migration fails with `55P03`, the Job retries once (`backoffLimit: 1`, the remaining migrations
+  only — each runs in its own transaction), then fails, `apply -k` never runs and the previous
+  release keeps serving. A transient blocker therefore means **re-running the deploy job** — say
+  so in the release notes. A migration that must wait longer says so itself, `SET LOCAL
+  lock_timeout = '…'` at the top of its `up()` (`Version20261011120000` sets `5s` that way, now
+  redundant and left as is: migrations are frozen); a non-transactional one
+  (`isTransactional(): false`, `CREATE INDEX CONCURRENTLY`) has no transaction for `SET LOCAL` to
+  apply to — a no-op with a warning — and sets `SET lock_timeout = '…'` on the session instead.
+  **One rule for every Job's deadline: `wait + 35 < activeDeadlineSeconds ≤ wait + 120`**
+  (issues #525, #535), whoever waits — the pipeline, the probe, or an operator following the
+  runbook. `run-job.sh` deletes a Job only before applying it, so without a deadline a stuck Job (a
+  long DDL holding its exclusive lock in front of the API, a hung connection) ran on indefinitely
+  after the `::error::`: hence the upper bound, the Job dies shortly after the wait. And **after**
+  it, never before: at the deadline the Job controller deletes the pods, their logs with them,
+  while past the wait (plus `wait-rollout.sh`'s ~35 s overrun) the pod still runs and `run-job.sh`
+  prints its logs — the diagnosis of exactly the hang the deadline is for. A deadline under the
+  wait (the probe and the four manual Jobs had 240 under 300 until #535) gave an `::error::` with
+  no logs, only `DeadlineExceeded` — and on Kubernetes ≥ 1.31 `Failed` is set once the pods are
+  gone, 240 + 30 s of grace, a narrow margin under 300. Today: waited 300 s, deadline 360 —
+  `migrate-job.yaml`, `messenger-probe-job.yaml`, `messenger-stop-workers-job.yaml`,
+  `messenger-failed-{retry,remove}-job.yaml`, `create-user-job.yaml`; `seed-job.yaml` waited 180,
+  deadline 240. Counted from the Job's creation, `Always` pulls and retry included; `sh`/`php` as
+  PID 1 ignore SIGTERM, so the pod dies 30 s after the deadline (grace period). **An `::error::`
+  means « stopped »** (decided 2026-10-12, #535): with the deadline above the wait, a Job whose wait
+  expired — or that `wait-rollout.sh` failed early, a pod that never started — is still active and
+  could complete after the `::error::` (a mail sent, an account created, a migration applied, a
+  probe started during `rollback-preprod`), and a chained relaunch would delete it mid-flight. So
+  after printing its logs, `run-job.sh` reads its conditions and, unless `Complete` or `Failed`
+  (a refused read counts as active), deletes it in the foreground, waiting for its pods (≤ 90 s:
+  the 30 s grace period); a `Failed` Job is kept, its logs readable until `ttlSecondsAfterFinished`.
+  A refused stop is a second `::error::`, still exit 1: only then does the runbook's « wait for
+  `Complete`/`Failed` before relaunching » apply. `delete jobs` is already in the deployer Role.
+  The waits are unchanged (#285); the failure path gains up to 90 s, counted in the
+  `timeout-minutes` of `deploy-preprod`, `smoke-test-preprod` and `deploy-prod`. The guard is `tools/tests/run-job.test.sh`, the only one of that
+  relation (the PHPUnit manifest tests pin values, not the relation): it reads every `run-job.sh`
+  call of `pipeline.yml`, `tools/smoke-messenger-probe.sh` and `k8s/README.md` (continuation lines
+  joined, a minimum count per file so a reworded call cannot empty the check), fails on a deadline
+  missing or outside the interval, and on a `kind: Job` manifest of `k8s/base` that no call
+  launches — a new Job needs its call written, with its wait, in one of those files; a commented
+  line is not a call. Out of its reach, on purpose: overlays (these Jobs are outside kustomize, no
+  overlay can patch them — a Job added under `k8s/overlays/` would need the guard extended) and the
+  CronJobs (`messenger-purge`, `watch-refresh`: no `run-job.sh`, no wait to outlive, their deadline
+  only bounds a run).
+  The discipline that makes this order safe, to respect in every migration:
   a column added `NOT NULL` has a default or is filled by the migration itself
   (`Version20260914170000` is the model); **never drop or rename a column in the release that stops
   reading it**, only in the next one; a Messenger message in flight at deploy time must stay readable
@@ -137,6 +266,27 @@ paths:
   failure skipped the rest): the worker reads what the API queues under the same envelope MAC key, so
   undoing one without the other sends every message to `failed` (issue #450). A manual rollback in
   prod follows the same rule, see `k8s/README.md`, « Retour arrière applicatif ».
+- **`smoke-test-preprod` proves a message travels from the API to the worker** (issue #470), not only that
+  the worker is `Ready`: a MAC key mismatch between `backend` and `worker` (a `KEY_CONTEXT` badly deployed,
+  a worker left on the previous release) used to leave preprod green with every message in `failed`.
+  `tools/smoke-messenger-probe.sh preprod <image>` applies `k8s/base/messenger-probe-job.yaml` (outside
+  kustomize, `${BACKEND_IMAGE}` only, through `tools/run-job.sh`), which runs `app:messenger:probe
+  --timeout=90` with the release image and **the backend's Secrets**, so it signs under the API's key: it
+  queues a `MessengerProbeMessage` (a random id, no mail, no business data) and waits for the mark the
+  worker's `MessengerProbeHandler` leaves in `cache.app`, read back **by value** (`getItem()->isHit()`, never
+  `hasItem()`, a bare `SELECT 1` that skips the #468 MAC). No mark in 90 s → exit 1 → the Job fails
+  (`backoffLimit: 0`, waited 300 s by `tools/wait-rollout.sh` — the probe's budget, counted from the apply,
+  two `Always` pulls included, ~210 s left to them; `activeDeadlineSeconds: 360`, above it like every Job,
+  see the migration bullet, #535) → the smoke fails → `rollback-preprod`. A probe pod still pulling when the
+  wait expires is stopped by `run-job.sh` before the smoke fails, so it cannot start during the rollback. A mark the worker could not
+  save raises `ProbeMarkNotSavedException` (Messenger retries) instead of acknowledging silently. **The Job
+  proves the path from the release image, not from the running pods**: the script first requires
+  `deployment/backend` and `deployment/worker` to run that very image, or a fresh worker behind a stale API
+  would pass. The pipeline reads no Secret (the variables stay in the pod). A refused probe stays in `failed`
+  (no purge covers it: read it with the Job's logs, then `messenger:failed:remove`); a probe left unconsumed
+  is handled later, harmlessly — except by a worker rolled back past #470, which does not know the class
+  (one more `failed` row). Offline test: `tools/tests/smoke-messenger-probe.test.sh`. Preprod only — prod has
+  no rollback to trigger.
 - **Every deploy wait fails early on a container that will not start** (issue #353). The `Deploy`
   steps never call `kubectl rollout status` or `kubectl wait --for=condition=complete` directly:
   `tools/wait-rollout.sh <ns> deployment/NAME|job/NAME --timeout N` cuts kubectl's own wait into
@@ -187,13 +337,13 @@ paths:
   database, then let `kubectl apply -k .` restore the manifests' replica counts and the existing
   rollout waits (`tools/wait-rollout.sh`) wait for the new pods. The frontend keeps serving; only the API returns 503 through
   the ingress for the window's duration. It is opt-in specifically so an ordinary release stays
-  zero-downtime — **set it before pushing the release tag and unset it right after the production
-  deploy**: a forgotten `true` turns every subsequent deploy into a downtime deploy for no reason.
+  zero-downtime — **set it before the first push of the `release/*` branch (every push deploys
+  preprod) and unset it right after the production deploy**: a forgotten `true` turns every subsequent deploy into a downtime deploy for no reason.
   **Fail-closed on a migration failure**: the script exits before reaching `kubectl apply -k .`, so
   `backend`/`worker` stay at 0 replicas until someone intervenes — deliberate, never serve traffic
   against a half-migrated schema. To recover: if the migration wrote nothing, `kubectl apply -k .` on
   that overlay redeploys the previous image against the still-old schema; otherwise fix the migration
-  and cut a new tag.
+  through the release branch (or a hotfix release), as above — the pipeline tags, never by hand.
 - **`watch-refresh-cronjob.yaml` *is* in `kustomization.yaml`'s `resources:`** — the opposite of
   `migrate-job.yaml` above, and deliberately: it wants kustomize's image transformer, since it must run the
   same image as the Deployment. It used to be **the only object in the cluster that makes outbound calls
@@ -305,7 +455,7 @@ paths:
   trigger travels in a **cookie** — Xdebug 3.5 does not read HTTP headers, and nginx logs the query string.
   Production receives none of this. Procedure in `k8s/README.md`.
 - **No pod mounts a ServiceAccount token, and both namespaces carry Pod Security Admission labels**
-  (audit A17). `automountServiceAccountToken: false` on all ten pod specs, the Jobs outside kustomize
+  (audit A17). `automountServiceAccountToken: false` on all fifteen pod specs, the seven Jobs outside kustomize
   included — none of them talks to the Kubernetes API (RabbitMQ does no peer discovery here, ESO runs in
   its own namespace), so the default `default`-SA token was pure standing credential. The `preprod` and
   `prod` `Namespace` objects set `enforce: baseline` with `audit`/`warn: restricted`: RabbitMQ declares no
@@ -327,6 +477,48 @@ paths:
   change to those two workloads needs a real preprod rollout with `rollout status` + logs before promotion.
   `seccompProfile: RuntimeDefault` (audit I6) is a syscall filter and touches neither uid nor file modes, but
   the rule stands.
+  **RabbitMQ's own settings live in `k8s/base/rabbitmq.conf`** (issue #477), mounted by `subPath` as
+  `/etc/rabbitmq/conf.d/20-cp-ghostotof.conf` beside the image's `10-defaults.conf` — through the
+  `rabbitmq-conf` `configMapGenerator` (hashed, so a change rolls the broker out, like `backend-nginx-conf`),
+  and bind-mounted from the same file by `docker-compose.yml`. It sets `max_message_size = 1048576`: the
+  default 16 MiB let anyone who can publish make the worker load a message whole before
+  `AuthenticatedEnvelopeSerializer` refuses it (#469); headers are bounded by `frame_max` (128 KiB).
+  `RabbitMqMessageSizeCapTest` pins the cap at exactly four times `MAX_ENVELOPE_BYTES`, a single
+  `max_message_size` line, the generator (no `disableNameSuffixHash`, global or per overlay) and the k8s
+  mount. **That file can stop the broker from booting** (an unknown key is refused), and `rollback-preprod`
+  does not undo `rabbitmq`: `tools/check-rabbitmq-conf.sh` (`make rabbitmq-conf`, CI job `rabbitmq-conf`,
+  needed by `release-version`) boots the pinned image with the file, reads the value the node kept, and
+  checks the `docker-compose.yml` mount — the one thing the PHPUnit test cannot see. Its CLI calls run as
+  the `rabbitmq` user: run as root before the server, the CLI creates `.erlang.cookie` owned by root and
+  the node dies on `eacces`. It does not prove a boot on an initialised PVC — only preprod does; recover a
+  broken preprod broker with `kubectl -n preprod rollout undo deployment/rabbitmq`. In dev the file is read
+  at boot: `docker compose up -d rabbitmq` after changing it (and after any git operation that replaced
+  it). **Any change to that file restarts the broker** (`Recreate`): a short outage of `POST /api/contact`
+  and invitations, in the release notes, validated in preprod like any change here. **Publications wait for
+  the broker's confirmation** (issue #479, `confirm_timeout: 5` on the `async` transport's options in
+  `messenger.yaml`, never in the DSN Secret): a broker refusal is asynchronous, so without it a publish
+  over the cap — or into a broker going down — returned fine, the request answered 2xx and the message
+  was lost; with it, `dispatch` throws a `TransportException` (a 500 for `POST /api/contact`, a visible
+  failure for a worker retry; the channel is recreated for the next publish). Measured ≈ +0.13 ms per
+  publish on a reused connection, plus one `confirm.select` round trip per FPM request. The waits before it
+  are bounded too — `connect_timeout`, `read_timeout`, `write_timeout`, `rpc_timeout` at 5 s, ext-amqp
+  leaving them unlimited: a broker accepting TCP without answering held a request until the 65 s
+  `request_terminate_timeout`. The worker polls by `basic.get`, so nothing waits while it idles (checked).
+  Accepted limits: a connection lost after the broker stored a message but before its ack makes Symfony
+  republish it (a duplicate contact e-mail, or an invitation token regenerated once more); after a confirm
+  timeout the long-lived worker channel may take a late ack for the next publish; while RabbitMQ restarts
+  (`Recreate`, a release) publications fail loudly instead of vanishing — and since #485 that failure is a
+  named **503** (`MessageQueueUnavailableException`, see `.claude/rules/backend-architecture.md`) logged
+  `warning`, never a `critical` 500, and a first invitation that could not be queued removes the account
+  it had just created. The contact quota stays consumed **before** the send, on purpose (decided
+  2026-10-11, review of #485): consuming it after the send let a concurrent burst through (×6 to ×12),
+  could fail after a message had left (a duplicate on retry) and bounded nothing during an outage; the
+  price kept is that a visitor retrying during a broker restart burns their quota. `AmqpPublisherConfirmsTest` bounds the five
+  options in every declared environment; `AmqpPublisherConfirmsIntegrationTest` publishes against a real
+  broker carrying `rabbitmq.conf` (`RABBITMQ_INTEGRATION_DSN`: Compose's broker in dev, the `rabbitmq-conf`
+  boot kept running by `RABBITMQ_CONF_KEEP=1` in the `test-backend` job — not a `services:`, which cannot
+  mount a repository file; missing in CI, the test fails rather than skips): 100 KB read back from the
+  queue, 2 MiB refused with the broker's own `larger than configured max size`.
   **RabbitMQ's probes are `tcpSocket` on 5672, never `rabbitmq-diagnostics`** (issue #295): the CLI
   starts an Erlang node per call, which overran its 10 s timeout under CPU load — during a boot,
   precisely — and the kubelet killed a broker that had been up for 35 s (nine restarts in eight
