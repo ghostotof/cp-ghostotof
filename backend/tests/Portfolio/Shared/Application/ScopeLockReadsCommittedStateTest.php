@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace App\Tests\Portfolio\Shared\Application;
 
+use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
 use App\Portfolio\Contribution\Domain\Entity\Contribution;
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Portfolio\Watch\Application\WatchedProductAdministratorInterface;
+use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
+use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use App\Tests\Support\OpensProbeConnection;
 use Closure;
 use Doctrine\ORM\EntityManagerInterface;
-use DomainException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
@@ -120,12 +123,8 @@ final class ScopeLockReadsCommittedStateTest extends KernelTestCase
 
         $this->deleteFromAnotherSession($entityClass, $entry);
 
-        try {
-            $operations['update']($entry, $entry->getTranslationGroup());
-            self::fail("La mise à jour d'une entrée supprimée a réussi : le 200 décrit une entrée que la base ne porte plus.");
-        } catch (DomainException $exception) {
-            self::assertStringEndsWith('NotFoundException', $exception::class);
-        }
+        $this->expectException($operations['notFound']);
+        $operations['update']($entry, $entry->getTranslationGroup());
     }
 
     /**
@@ -151,6 +150,53 @@ final class ScopeLockReadsCommittedStateTest extends KernelTestCase
 
         [, $storedPosition] = $this->storedPlacementOf($entityClass, $created);
         self::assertSame($movedTo, $storedPosition, 'La version créée a hérité de la position que son groupe quittait : le groupe porte deux positions (#402, #389).');
+    }
+
+    /**
+     * Le catalogue de veille partage le verrou (#389) : un produit créé après
+     * un réordonnancement validé entre-temps va après le dernier **en base**,
+     * pas après celui que l'EntityManager avait chargé.
+     */
+    public function testCreatingAProductAfterAConcurrentReorderGoesAfterTheCurrentLast(): void
+    {
+        self::bootKernel();
+        $this->table = self::getContainer()->get(EntityManagerInterface::class)->getClassMetadata(WatchedProduct::class)->getTableName();
+        $administrator = self::getContainer()->get(WatchedProductAdministratorInterface::class);
+        $moved = $administrator->create('deplace', 'Produit', VersionSource::MANUAL, '1.0');
+        $administrator->create('reste', 'Produit', VersionSource::MANUAL, '1.0');
+        $movedTo = $moved->getPosition() + 10;
+
+        $this->writeFromAnotherSession(
+            \sprintf('UPDATE %s SET position = ? WHERE id = ?', $this->table),
+            [$movedTo, $moved->getId()->toRfc4122()],
+        );
+        $created = $administrator->create('nouveau', 'Produit', VersionSource::MANUAL, '1.0');
+
+        $stored = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->fetchOne(\sprintf('SELECT position FROM %s WHERE id = ?', $this->table), [$created->getId()->toRfc4122()]);
+        self::assertSame($movedTo + 1, $stored, "Le produit créé s'est rangé après une position que le catalogue ne porte plus : deux produits sur une position (#402, #389).");
+    }
+
+    /**
+     * Relire ce qui a été chargé avant le verrou ne doit pas défaire ce qui
+     * n'a pas encore été écrit : une entrée persistée — dans la carte
+     * d'identité dès `persist()`, son UUID venant du constructeur — mais pas
+     * encore en base est écrite par le `flush()` de l'opération suivante.
+     */
+    public function testAnEntryPersistedButNotYetWrittenIsWrittenByTheNextOperation(): void
+    {
+        self::bootKernel();
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $this->table = $entityManager->getClassMetadata(Contribution::class)->getTableName();
+        $pending = new Contribution(Locale::FR, 'En attente', 'P', 'R', 'https://example.com/a', 'S', 'B', 7);
+        $entityManager->persist($pending);
+
+        self::getContainer()->get(ContributionAdministratorInterface::class)
+            ->create(Locale::FR, 'Créée', 'P', 'R', 'https://example.com/b', 'S', 'B');
+
+        $stored = $entityManager->getConnection()
+            ->fetchOne(\sprintf('SELECT COUNT(*) FROM %s WHERE id = ?', $this->table), [$pending->getId()->toRfc4122()]);
+        self::assertSame(1, $stored, "L'entrée persistée avant le verrou n'a pas été écrite : la relecture a annulé son INSERT en silence (#402).");
     }
 
     /**

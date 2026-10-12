@@ -71,11 +71,16 @@ paths:
     nothing and keeps the instance) and costs a query each. Not detaching the whole scope either: an instance
     held from before and saved afterwards collides with the one the operation reloaded
     (`EntityIdentityCollisionException`, measured on four resource tests). Consequence for a caller: an unwritten
-    change to such an instance is overwritten. It relies on READ COMMITTED (PostgreSQL's default, set nowhere):
+    change to such an instance is overwritten. An instance scheduled for insertion or removal is neither re-read
+    nor detached (detaching it silently cancelled the pending `INSERT`). Not covered: a deletion committed
+    *during* the operation — `delete()` takes no lock, so if it commits between the re-read and a `PUT`'s
+    flush, the `UPDATE` touches no row and the `PUT` still answers 200; only a deletion committed before the
+    lock is reported not found. A command chaining N operations on one EntityManager re-reads O(N²) rows,
+    negligible for ten-entry seeds. It relies on READ COMMITTED (PostgreSQL's default, set nowhere):
     under REPEATABLE READ the snapshot would be taken by the lock's own `SELECT`, before the wait. Last writer
     wins, like every other field; no `#[ORM\Version]`. `ScopeLockReadsCommittedStateTest` pins both (the four
     stale-state cases over the same `ProvidesLocalizedAdministrators` list as `OrderScopeLockCoverageTest`, so a
-    new localized context goes there once, and the isolation level).
+    new localized context goes there once, the watch catalogue's end, the pending insert, and the isolation level).
     In an FPM worker the wait is bounded by `PGOPTIONS` `lock_timeout=5s`; past it the adapter throws
     `OrderScopeLockTimeoutException` (named, unmapped: a `critical` 500 — 5 s for a millisecond write is an
     anomaly, not a conflict to retry), and only for its own lock statement: a timeout inside the operation

@@ -53,7 +53,18 @@ use Doctrine\ORM\Query;
  * instance tenue d'avant l'opération, sauvée ensuite, entrerait en collision
  * avec celle que l'opération aurait rechargée. Ce qui en découle pour
  * l'appelant : une modification non écrite d'une de ces instances est
- * écrasée — d'où le corps entier de chaque opération dans `withLock()`.
+ * écrasée — d'où le corps entier de chaque opération dans `withLock()`. Une
+ * entrée persistée mais pas encore écrite, ou à supprimer, n'est ni relue ni
+ * détachée : son écriture en attente part avec le `flush()` de l'opération.
+ *
+ * Ce que la relecture ne couvre pas : une suppression validée **pendant**
+ * l'opération. `delete()` ne prend pas le verrou (il ne place rien, #389) ;
+ * s'il valide entre la relecture et le `flush()` d'un `PUT`, l'`UPDATE` ne
+ * touche aucune ligne et le `PUT` répond 200. Seule une suppression validée
+ * avant le verrou est dite introuvable. Coût : dans une commande qui enchaîne
+ * N opérations sur un même EntityManager, chacune relit ce que les
+ * précédentes ont chargé — O(N²) lignes, négligeable pour des seeds d'une
+ * dizaine d'entrées (même ordre que `ContentPlacement::atEndOf()`).
  *
  * Cela suppose READ COMMITTED, le niveau par défaut de PostgreSQL, que rien ne
  * change ici : chaque instruction y voit ce qui a été validé avant elle, donc
@@ -128,7 +139,15 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
         }
 
         $metadata = $this->entityManager->getClassMetadata($scope);
-        $loaded = $this->entityManager->getUnitOfWork()->getIdentityMap()[$metadata->rootEntityName] ?? [];
+        $unitOfWork = $this->entityManager->getUnitOfWork();
+        // Seules les instances lues en base se relisent. Une entrée à insérer
+        // n'y est pas encore (son UUID, donné par le constructeur, la met dans
+        // la carte d'identité dès persist()) et une entrée à supprimer n'est
+        // plus à relire : les détacher annulerait l'écriture en attente.
+        $loaded = array_values(array_filter(
+            $unitOfWork->getIdentityMap()[$metadata->rootEntityName] ?? [],
+            static fn (object $entry): bool => !$unitOfWork->isScheduledForInsert($entry) && !$unitOfWork->isScheduledForDelete($entry),
+        ));
         if ([] === $loaded) {
             return;
         }
@@ -138,9 +157,11 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
         $connection = $this->entityManager->getConnection();
         $ids = array_map(
             static fn (object $entry): mixed => $connection->convertToDatabaseValue($metadata->getIdentifierValues($entry)[$identifier], $identifierType),
-            array_values($loaded),
+            $loaded,
         );
 
+        // Liée en chaînes : sur PostgreSQL, l'identifiant converti est le
+        // texte de l'uuid natif, que la base compare à la colonne uuid.
         /** @var list<object> $reread la requête rend les instances déjà gérées, rafraîchies */
         $reread = $this->entityManager->createQueryBuilder()
             ->select('entry')
@@ -151,9 +172,9 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
             ->setHint(Query::HINT_REFRESH, true)
             ->getResult();
 
-        $stillStored = array_map(spl_object_id(...), $reread);
+        $stillStored = array_flip(array_map(spl_object_id(...), $reread));
         foreach ($loaded as $entry) {
-            if (!\in_array(spl_object_id($entry), $stillStored, true)) {
+            if (!isset($stillStored[spl_object_id($entry)])) {
                 $this->entityManager->detach($entry);
             }
         }
