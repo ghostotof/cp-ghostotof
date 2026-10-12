@@ -25,7 +25,7 @@ final class VanishedEntitySavedAgainException extends LogicException
      *
      * @param class-string $class
      */
-    public static function forEntity(string $class, string $id): self
+    public static function vanishedUnderLock(string $class, string $id): self
     {
         return new self(\sprintf("L'entité %s %s a été supprimée entre son chargement et le verrou qui l'a constaté, puis détachée : la sauver de nouveau la réinsérerait. Relire l'entité sous le verrou plutôt que de sauver une instance tenue d'avant.", $class, $id));
     }

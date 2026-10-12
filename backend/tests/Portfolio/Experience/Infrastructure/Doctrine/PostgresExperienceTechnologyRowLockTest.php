@@ -109,16 +109,9 @@ final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
             self::fail("L'opération a tourné sur une technologie supprimée.");
         } catch (ExperienceTechnologyNotFoundException) {
         }
-        $refusal = null;
+        $refusal = $this->saveAgain($technology);
 
-        try {
-            $this->em->persist($technology);
-            $this->em->flush();
-        } catch (Throwable $exception) {
-            $refusal = $exception;
-        }
-
-        self::assertSame(0, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM experience_technology WHERE id = :id', ['id' => $id]), 'La technologie supprimée, détachée par le verrou puis re-sauvée, a été réinsérée (#548).');
+        self::assertSame(0, $this->storedCount($id), 'La technologie supprimée, détachée par le verrou puis re-sauvée, a été réinsérée (#548).');
         self::assertInstanceOf(VanishedEntitySavedAgainException::class, $refusal, \sprintf('La re-sauvegarde aurait dû être refusée sous son nom : %s.', get_debug_type($refusal)));
     }
 
@@ -133,16 +126,9 @@ final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
         $technology = $this->storedTechnology();
         $id = $technology->getId()->toRfc4122();
         self::getContainer()->get(ExperienceTechnologyAdministratorInterface::class)->delete($technology->getId());
-        $refusal = null;
+        $refusal = $this->saveAgain($technology);
 
-        try {
-            $this->em->persist($technology);
-            $this->em->flush();
-        } catch (Throwable $exception) {
-            $refusal = $exception;
-        }
-
-        self::assertSame(0, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM experience_technology WHERE id = :id', ['id' => $id]), 'La technologie supprimée par son Administrator, re-sauvée, a été réinsérée (#557).');
+        self::assertSame(0, $this->storedCount($id), 'La technologie supprimée par son Administrator, re-sauvée, a été réinsérée (#557).');
         self::assertInstanceOf(VanishedEntitySavedAgainException::class, $refusal, \sprintf('La re-sauvegarde aurait dû être refusée sous son nom : %s.', get_debug_type($refusal)));
     }
 
@@ -338,6 +324,30 @@ final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
     private function lock(): ExperienceTechnologyLockInterface
     {
         return self::getContainer()->get(ExperienceTechnologyLockInterface::class);
+    }
+
+    /**
+     * Re-sauve l'instance comme le `save()` du dépôt — `persist()` puis
+     * `flush()` — et rend ce que cela a levé.
+     */
+    private function saveAgain(ExperienceTechnology $technology): ?Throwable
+    {
+        try {
+            $this->em->persist($technology);
+            $this->em->flush();
+        } catch (Throwable $refusal) {
+            return $refusal;
+        }
+
+        return null;
+    }
+
+    private function storedCount(string $id): int
+    {
+        $count = $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM experience_technology WHERE id = :id', ['id' => $id]);
+        self::assertIsInt($count);
+
+        return $count;
     }
 
     private function storedTechnology(): ExperienceTechnology

@@ -82,10 +82,10 @@ use WeakMap;
  * #549) ferme alors l'EntityManager quand il voit ce ROLLBACK : exception de
  * l'opération après une écriture, COMMIT refusé par la base. Restent ouverts
  * un COMMIT refusé par DBAL lui-même (`CommitFailedRollbackOnly`, après un
- * `setRollbackOnly()`) et une transaction ouverte et annulée à la main : le
- * `persist()` de l'instance y heurterait de toute façon la clé primaire
- * existante, et le refus le dit sous un message qui la croit encore
- * supprimée. Une entité à identifiant **généré** serait refusée à tort —
+ * `setRollbackOnly()`) et une transaction ouverte et annulée à la main : sans
+ * la garde, le `persist()` de l'instance y heurterait au `flush()` la clé
+ * primaire existante ; elle le refuse avant, sous un message qui croit la
+ * ligne encore supprimée. Une entité à identifiant **généré** serait refusée à tort —
  * `executeDeletions()` remet son identifiant à null, son `persist()` serait
  * un `INSERT` neuf — : aucune n'en a (UUID v7 assignés au constructeur), à
  * revoir le jour où l'une en aura. Une suppression
@@ -146,7 +146,7 @@ final readonly class VanishedEntities
         $id = $this->identifierOf($event, $entity);
 
         throw match ($cause) {
-            VanishedEntityCause::VanishedUnderLock => VanishedEntitySavedAgainException::forEntity($entity::class, $id),
+            VanishedEntityCause::VanishedUnderLock => VanishedEntitySavedAgainException::vanishedUnderLock($entity::class, $id),
             VanishedEntityCause::RemovedByThisManager => VanishedEntitySavedAgainException::removedByThisManager($entity::class, $id),
         };
     }

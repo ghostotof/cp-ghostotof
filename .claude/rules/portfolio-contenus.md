@@ -262,7 +262,7 @@ paths:
     watch catalogue and the technologies, through each `Administrator::delete()`). A second listener on
     `postRemove` — emitted at the end of the flush's deletions, before the COMMIT — remembers the instance in the
     same `WeakMap`, which keeps the **cause** (`VanishedEntityCause`: vanished under a lock / removed by this
-    manager) so the refusal names it (`VanishedEntitySavedAgainException::forEntity()` /
+    manager) so the refusal names it (`VanishedEntitySavedAgainException::vanishedUnderLock()` /
     `removedByThisManager()`); every class, like `prePersist`. `remove()` then `persist()` **before** the flush is
     untouched: the removal is cancelled (`STATE_REMOVED` becomes managed again, no `prePersist`, no `postRemove`).
     Rejected: an `onFlush` check (it would need the same registry, and refuses only once the `INSERT` is
@@ -271,8 +271,8 @@ paths:
     creates a new entity; a ROLLBACK after the deleting flush leaves the instance remembered while the row is
     back — the lock skeleton closes the manager when it sees that ROLLBACK (the operation threw after writing, or
     the database refused the COMMIT, #547/#549), but not on a COMMIT DBAL itself refuses (`CommitFailedRollbackOnly`)
-    nor in a transaction opened and rolled back by hand: there the `INSERT` would hit the primary key anyway, and
-    the refusal says so under a message that still thinks the row deleted; an entity with a **generated** id would
+    nor in a transaction opened and rolled back by hand: there, without the guard, the `INSERT` would hit the
+    primary key at the flush; the guard refuses it first, under a message that still thinks the row deleted; an entity with a **generated** id would
     be refused wrongly (`executeDeletions()` nulls its id, its re-persist is a new `INSERT`) — none has one, revisit
     the day one does; a DQL or SQL deletion emits no `postRemove`, its in-memory instance is not remembered (still
     managed, it never reaches `prePersist`; no such path re-saves it).

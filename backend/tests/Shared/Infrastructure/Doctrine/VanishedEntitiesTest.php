@@ -92,7 +92,7 @@ final class VanishedEntitiesTest extends KernelTestCase
         $this->entityManager->persist($other);
         $this->entityManager->flush();
 
-        self::assertSame(1, $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM experience_technology WHERE id = ?', [$other->getId()->toRfc4122()]), "Une entité jamais détachée comme disparue n'a pas été écrite.");
+        self::assertSame(1, $this->storedCount($other->getId()->toRfc4122()), "Une entité jamais détachée comme disparue n'a pas été écrite.");
     }
 
     /**
@@ -129,13 +129,15 @@ final class VanishedEntitiesTest extends KernelTestCase
 
         try {
             $this->entityManager->persist($technology);
-            $this->entityManager->flush();
         } catch (VanishedEntitySavedAgainException $exception) {
             $refusal = $exception;
         }
+        $scheduled = $this->entityManager->getUnitOfWork()->isScheduledForInsert($technology);
+        $this->entityManager->flush();
 
         self::assertSame(0, $this->storedCount($id), 'La technologie supprimée par cet EntityManager, re-sauvée, a été réinsérée (#557).');
         self::assertNotNull($refusal, "Le persist() d'une entité supprimée par cet EntityManager n'a pas été refusé (#557).");
+        self::assertFalse($scheduled, 'Le refus a laissé une insertion planifiée.');
         self::assertStringContainsString(ExperienceTechnology::class, $refusal->getMessage());
         self::assertStringContainsString($id, $refusal->getMessage());
         self::assertSame(
@@ -144,7 +146,7 @@ final class VanishedEntitiesTest extends KernelTestCase
             'Le refus ne nomme pas la bonne cause : la suppression par cet EntityManager.',
         );
         self::assertNotSame(
-            VanishedEntitySavedAgainException::forEntity(ExperienceTechnology::class, $id)->getMessage(),
+            VanishedEntitySavedAgainException::vanishedUnderLock(ExperienceTechnology::class, $id)->getMessage(),
             $refusal->getMessage(),
             'Les deux causes portent le même message : le journal ne les distingue pas.',
         );
