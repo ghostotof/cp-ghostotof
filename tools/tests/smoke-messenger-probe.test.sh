@@ -7,7 +7,8 @@
 # qu'on lui applique ; un faux tools/wait-rollout.sh (SMOKE_PROBE_WAIT) réussit
 # ou échoue selon FAKE_WAIT_EXIT.
 #
-# Ce qui est pincé : le Job précédent est supprimé avant l'apply ; le
+# Ce qui est pincé : la séquence passe par tools/run-job.sh (issue #488),
+# avec les mêmes substituts ; le Job précédent est supprimé avant l'apply ; le
 # manifeste appliqué porte l'image demandée et plus aucun placeholder ;
 # l'attente vise le Job, avec un délai au-dessus de son activeDeadlineSeconds ;
 # un Job en échec fait sortir en 1 en imprimant ses journaux ; aucun Secret
@@ -106,10 +107,14 @@ if FAKE_WAIT_EXIT=1 run "$ko"; then
 else
   pass "un Job en échec sort en 1"
 fi
-if grep -q "n'a pas consommé le message témoin" "$ko/out" && grep -q 'logs job/backend-messenger-probe' "$ko/args"; then
-  pass "l'échec imprime les journaux du Job"
+# La séquence du Job est celle de tools/run-job.sh (issue #488) : son
+# `::error::` et ses 200 lignes de journaux, puis le diagnostic du témoin.
+if grep -q "n'a pas consommé le message témoin" "$ko/out" \
+    && grep -q '::error::Le Job backend-messenger-probe' "$ko/out" \
+    && grep -qx -- '-n preprod logs job/backend-messenger-probe --tail=200' "$ko/args"; then
+  pass "l'échec passe par run-job.sh et imprime les journaux du Job"
 else
-  fail "l'échec imprime les journaux du Job" "$(cat "$ko/out")"
+  fail "l'échec passe par run-job.sh et imprime les journaux du Job" "$(cat "$ko/out" "$ko/args")"
 fi
 
 if grep -qi 'secret' "$ok/args" "$ko/args"; then
