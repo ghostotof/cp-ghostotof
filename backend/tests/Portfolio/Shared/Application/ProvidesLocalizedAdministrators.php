@@ -37,9 +37,10 @@ use Symfony\Component\Uid\Uuid;
 use Throwable;
 
 /**
- * Les huit administrateurs de contenus localisés, réduits aux trois
- * opérations qui placent une entrée : `create()`, `update()` et `reorder()`,
- * plus l'exception qu'ils lèvent sur une entrée introuvable.
+ * Les huit administrateurs de contenus localisés, réduits aux quatre
+ * opérations qui écrivent dans le périmètre d'ordre : `create()`, `update()`,
+ * `delete()` et `reorder()`, plus l'exception qu'ils lèvent sur une entrée
+ * introuvable.
  *
  * Partagé par OrderScopeLockCoverageTest (#389) et
  * ScopeLockReadsCommittedStateTest (#402) : un contexte ajouté ici est
@@ -50,6 +51,7 @@ use Throwable;
  * @phpstan-type LocalizedContext array{
  *     create: Closure(Locale, ?Uuid): TranslatableContent,
  *     update: Closure(TranslatableContent, ?Uuid): TranslatableContent,
+ *     delete: Closure(TranslatableContent): void,
  *     reorder: Closure(list<string>): mixed,
  *     notFound: class-string<Throwable>,
  * }
@@ -71,6 +73,9 @@ trait ProvidesLocalizedAdministrators
             return [
                 'create' => static fn (Locale $l, ?Uuid $g): Contribution => $a->create($l, 'T', 'P', 'R', 'https://example.com', 'S', 'B', $g),
                 'update' => static fn (TranslatableContent $e, ?Uuid $g): Contribution => $a->update(self::as(Contribution::class, $e)->getId(), 'T', 'P', 'R', 'https://example.com', 'S', 'B', $g),
+                'delete' => static function (TranslatableContent $e) use ($a): void {
+                    $a->delete(self::as(Contribution::class, $e)->getId());
+                },
                 'reorder' => $a->reorder(...),
                 'notFound' => ContributionNotFoundException::class,
             ];
@@ -82,6 +87,9 @@ trait ProvidesLocalizedAdministrators
             return [
                 'create' => static fn (Locale $l, ?Uuid $g): Incident => $a->create($l, 'T', '1.0.0', $at, 'I', 'C', 'R', 'V', $g),
                 'update' => static fn (TranslatableContent $e, ?Uuid $g): Incident => $a->update(self::as(Incident::class, $e)->getId(), 'T', '1.0.0', $at, 'I', 'C', 'R', 'V', $g),
+                'delete' => static function (TranslatableContent $e) use ($a): void {
+                    $a->delete(self::as(Incident::class, $e)->getId());
+                },
                 'reorder' => $a->reorder(...),
                 'notFound' => IncidentNotFoundException::class,
             ];
@@ -92,6 +100,9 @@ trait ProvidesLocalizedAdministrators
             return [
                 'create' => static fn (Locale $l, ?Uuid $g): QualityPrinciple => $a->create($l, 'T', 'D', 'shield', $g),
                 'update' => static fn (TranslatableContent $e, ?Uuid $g): QualityPrinciple => $a->update(self::as(QualityPrinciple::class, $e)->getId(), 'T', 'D', 'shield', $g),
+                'delete' => static function (TranslatableContent $e) use ($a): void {
+                    $a->delete(self::as(QualityPrinciple::class, $e)->getId());
+                },
                 'reorder' => $a->reorder(...),
                 'notFound' => QualityPrincipleNotFoundException::class,
             ];
@@ -102,6 +113,9 @@ trait ProvidesLocalizedAdministrators
             return [
                 'create' => static fn (Locale $l, ?Uuid $g): QualityTrait => $a->create($l, 'L', $g),
                 'update' => static fn (TranslatableContent $e, ?Uuid $g): QualityTrait => $a->update(self::as(QualityTrait::class, $e)->getId(), 'L', $g),
+                'delete' => static function (TranslatableContent $e) use ($a): void {
+                    $a->delete(self::as(QualityTrait::class, $e)->getId());
+                },
                 'reorder' => $a->reorder(...),
                 'notFound' => QualityTraitNotFoundException::class,
             ];
@@ -112,6 +126,9 @@ trait ProvidesLocalizedAdministrators
             return [
                 'create' => static fn (Locale $l, ?Uuid $g): AboutSiteCard => $a->create($l, 'T', 'D', null, $g),
                 'update' => static fn (TranslatableContent $e, ?Uuid $g): AboutSiteCard => $a->update(self::as(AboutSiteCard::class, $e)->getId(), 'T', 'D', null, $g),
+                'delete' => static function (TranslatableContent $e) use ($a): void {
+                    $a->delete(self::as(AboutSiteCard::class, $e)->getId());
+                },
                 'reorder' => $a->reorder(...),
                 'notFound' => AboutSiteCardNotFoundException::class,
             ];
@@ -122,6 +139,9 @@ trait ProvidesLocalizedAdministrators
             return [
                 'create' => static fn (Locale $l, ?Uuid $g): AboutMeCard => $a->create($l, AboutMeCardCategory::HOBBY, 'T', 'D', null, $g),
                 'update' => static fn (TranslatableContent $e, ?Uuid $g): AboutMeCard => $a->update(self::as(AboutMeCard::class, $e)->getId(), 'T', 'D', null, $g),
+                'delete' => static function (TranslatableContent $e) use ($a): void {
+                    $a->delete(self::as(AboutMeCard::class, $e)->getId());
+                },
                 'reorder' => static function (array $keys) use ($a): void {
                     /** @var list<string> $keys clés de groupe, comme pour les autres contextes */
                     $a->reorder(AboutMeCardCategory::HOBBY, $keys);
@@ -135,6 +155,9 @@ trait ProvidesLocalizedAdministrators
             return [
                 'create' => static fn (Locale $l, ?Uuid $g): AnonymousCvSection => $a->create($l, 'T', 'S', 5, 'A', $g),
                 'update' => static fn (TranslatableContent $e, ?Uuid $g): AnonymousCvSection => $a->update(self::as(AnonymousCvSection::class, $e)->getId(), 'T', 'S', 5, 'A', $g),
+                'delete' => static function (TranslatableContent $e) use ($a): void {
+                    $a->delete(self::as(AnonymousCvSection::class, $e)->getId());
+                },
                 'reorder' => $a->reorder(...),
                 'notFound' => AnonymousCvSectionNotFoundException::class,
             ];
@@ -145,6 +168,9 @@ trait ProvidesLocalizedAdministrators
             return [
                 'create' => static fn (Locale $l, ?Uuid $g): CaseStudy => $a->create($l, 'T', 'P', 'S', 'C', 'M', $g),
                 'update' => static fn (TranslatableContent $e, ?Uuid $g): CaseStudy => $a->update(self::as(CaseStudy::class, $e)->getId(), 'T', 'P', 'S', 'C', 'M', $g),
+                'delete' => static function (TranslatableContent $e) use ($a): void {
+                    $a->delete(self::as(CaseStudy::class, $e)->getId());
+                },
                 'reorder' => $a->reorder(...),
                 'notFound' => CaseStudyNotFoundException::class,
             ];

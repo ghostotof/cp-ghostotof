@@ -18,15 +18,22 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
- * Toute écriture qui place une entrée prend le verrou de son périmètre
- * (issue #389).
+ * Toute écriture d'un administrateur de contenu ordonné prend le verrou de
+ * son périmètre : celles qui placent une entrée (issue #389), et celles qui
+ * en retirent ou en modifient une sans la placer (issue #499).
  *
  * ContributionOrderConcurrencyTest prouve, en concurrence réelle, que le
  * verrou défait la course. Ce test-ci prouve que **chaque** administrateur le
- * prend, à chaque opération qui calcule une position : `create()` (fin de
- * périmètre, ou position du groupe), `update()` (détacher, rattacher) et
- * `reorder()`. Une opération ajoutée ou réécrite sans `withLock()` le fait
- * passer au rouge.
+ * prend, à chaque écriture : `create()` (fin de périmètre, ou position du
+ * groupe), `update()` (détacher, rattacher ; pour la veille, qui ne place
+ * rien), `delete()` et `reorder()`. Une opération ajoutée ou réécrite sans
+ * `withLock()` le fait passer au rouge.
+ *
+ * Pourquoi aussi `delete()` (#499) : hors du verrou, une suppression validée
+ * entre la relecture sous verrou (#402) et le `flush()` d'un `PUT` laissait
+ * l'`UPDATE` ne toucher aucune ligne, et le `PUT` répondre 200 sur une entrée
+ * disparue. Sous le verrou, elle passe entièrement avant l'écriture (le `PUT`
+ * la dit introuvable) ou entièrement après.
  *
  * Méthode : une session témoin tient le verrou du périmètre, la connexion de
  * l'ORM reçoit un `lock_timeout` court, et l'opération doit **attendre** puis
@@ -61,14 +68,16 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
     /**
      * @return iterable<string, array{0: class-string, 1: Closure(): (Closure(): mixed)}>
      */
-    public static function provideOperationsThatPlaceAnEntry(): iterable
+    public static function provideOperationsThatWriteTheScope(): iterable
     {
         foreach (self::localizedAdministrators() as [$entityClass, $context]) {
             yield from self::localizedOperations($entityClass, $context);
         }
 
-        // WatchedProduct n'est pas localisé : pas de groupe, et update() ne
-        // touche pas à la position. Restent la fin de catalogue et le reorder.
+        // WatchedProduct n'est pas localisé : pas de groupe. update() ne
+        // touche pas à la position, mais écrit l'entrée comme delete() la
+        // retire : sous le verrou, une suppression ne valide pas pendant une
+        // mise à jour (#499).
         yield 'WatchedProduct create' => [WatchedProduct::class, static function (): Closure {
             $a = self::getContainer()->get(WatchedProductAdministratorInterface::class);
             $a->create('existant', 'Produit', VersionSource::MANUAL, '1.0');
@@ -82,13 +91,27 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
 
             return static fn () => $a->reorder([$second->orderingKey(), $first->orderingKey()]);
         }];
+        yield 'WatchedProduct update' => [WatchedProduct::class, static function (): Closure {
+            $a = self::getContainer()->get(WatchedProductAdministratorInterface::class);
+            $product = $a->create('existant', 'Produit', VersionSource::MANUAL, '1.0');
+
+            return static fn (): object => $a->update($product->getId(), 'existant', 'Renommé', VersionSource::MANUAL, '2.0');
+        }];
+        yield 'WatchedProduct delete' => [WatchedProduct::class, static function (): Closure {
+            $a = self::getContainer()->get(WatchedProductAdministratorInterface::class);
+            $product = $a->create('existant', 'Produit', VersionSource::MANUAL, '1.0');
+
+            return static function () use ($a, $product): void {
+                $a->delete($product->getId());
+            };
+        }];
     }
 
     /**
      * @param class-string                  $entityClass l'entité qui porte les positions, donc le périmètre verrouillé
      * @param Closure(): (Closure(): mixed) $prepare     écrit les données de départ, rend l'opération à observer
      */
-    #[DataProvider('provideOperationsThatPlaceAnEntry')]
+    #[DataProvider('provideOperationsThatWriteTheScope')]
     public function testTheOperationWaitsForTheScopeLock(string $entityClass, Closure $prepare): void
     {
         self::bootKernel();
@@ -113,12 +136,13 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
             $probe->close();
         }
 
-        self::assertTrue($waited, \sprintf("L'opération a écrit sans attendre le verrou du périmètre « %s » (#389).", $entityClass));
+        self::assertTrue($waited, \sprintf("L'opération a écrit sans attendre le verrou du périmètre « %s » (#389, #499).", $entityClass));
         self::assertSame($before, $this->snapshot($table), "L'opération a écrit avant d'avoir le verrou.");
     }
 
     /**
-     * Les cinq opérations d'un contenu localisé qui calculent une position.
+     * Les six écritures d'un contenu localisé : les cinq qui calculent une
+     * position, et la suppression.
      *
      * @param class-string<TranslatableContent> $entityClass
      * @param Closure(): LocalizedContext        $context
@@ -165,6 +189,16 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
             $second = $operations['create'](Locale::FR, null);
 
             return static fn (): mixed => $operations['reorder']([$second->orderingKey(), $first->orderingKey()]);
+        }];
+        // Retirer une entrée ne place rien, mais ne doit pas valider pendant
+        // l'écriture d'une autre (#499).
+        yield $label.' delete' => [$entityClass, static function () use ($context): Closure {
+            $operations = $context();
+            $entry = $operations['create'](Locale::FR, null);
+
+            return static function () use ($operations, $entry): void {
+                $operations['delete']($entry);
+            };
         }];
     }
 

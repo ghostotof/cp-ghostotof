@@ -79,14 +79,18 @@ use Psr\Log\LoggerInterface;
  * entrée persistée mais pas encore écrite, ou à supprimer, n'est ni relue ni
  * détachée : son écriture en attente part avec le `flush()` de l'opération.
  *
- * Ce que la relecture ne couvre pas : une suppression validée **pendant**
- * l'opération. `delete()` ne prend pas le verrou (il ne place rien, #389) ;
- * s'il valide entre la relecture et le `flush()` d'un `PUT`, l'`UPDATE` ne
- * touche aucune ligne et le `PUT` répond 200. Seule une suppression validée
- * avant le verrou est dite introuvable. Coût : dans une commande qui enchaîne
- * N opérations sur un même EntityManager, chacune relit ce que les
- * précédentes ont chargé — O(N²) lignes, négligeable pour des seeds d'une
- * dizaine d'entrées (même ordre que `ContentPlacement::atEndOf()`).
+ * Une suppression validée **pendant** l'opération lui échapperait : l'`UPDATE`
+ * d'un `PUT` ne toucherait aucune ligne, et le `PUT` répondrait 200 sur une
+ * entrée disparue. C'est pourquoi `delete()` prend aussi le verrou (#499) : une
+ * suppression passe entièrement avant l'opération, qui la dit introuvable, ou
+ * entièrement après, et le perdant de deux `DELETE` simultanés est en 404.
+ * Restent hors de cette garantie les suppressions qui contournent les
+ * `Administrator`s : la purge `--force` des `app:*:seed`, et le SQL.
+ *
+ * Coût : dans une commande qui enchaîne N opérations sur un même
+ * EntityManager, chacune relit ce que les précédentes ont chargé — O(N²)
+ * lignes, négligeable pour des seeds d'une dizaine d'entrées (même ordre que
+ * `ContentPlacement::atEndOf()`).
  *
  * Cela suppose READ COMMITTED, le niveau par défaut de PostgreSQL, que rien ne
  * change ici : chaque instruction y voit ce qui a été validé avant elle, donc
