@@ -36,19 +36,18 @@ final class ContactMessageSenderTest extends TestCase
 
     /**
      * Issue #485 : une panne de la file (broker arrêté, refus confirmé par le
-     * broker) rend un 503 nommé, plus un 500 générique.
+     * broker) rend un 503 nommé. Depuis #491, c'est le bus qui la convertit
+     * (QueueUnavailableMiddleware, couvert par AsyncPublishFailureTest) : le
+     * service la laisse remonter telle quelle jusqu'au processor.
      */
-    public function testABrokerFailureBecomesAContactQueueUnavailableError(): void
+    public function testAQueueFailureRaisedByTheBusReachesTheCaller(): void
     {
-        $cause = new TransportException('Server channel error: 406, PRECONDITION_FAILED');
+        $unavailable = new ContactMessageQueueUnavailableException(new TransportException('Server channel error: 406, PRECONDITION_FAILED'));
         $messageBus = self::createStub(MessageBusInterface::class);
-        $messageBus->method('dispatch')->willThrowException($cause);
+        $messageBus->method('dispatch')->willThrowException($unavailable);
 
-        try {
-            new ContactMessageSender($messageBus)->send(new ContactMessage(senderName: 'Jane Doe', senderEmail: 'jane@example.com', body: 'Bonjour, ceci est un message.'));
-            self::fail('La panne du broker doit remonter.');
-        } catch (ContactMessageQueueUnavailableException $unavailable) {
-            self::assertSame($cause, $unavailable->getPrevious());
-        }
+        $this->expectExceptionObject($unavailable);
+
+        new ContactMessageSender($messageBus)->send(new ContactMessage(senderName: 'Jane Doe', senderEmail: 'jane@example.com', body: 'Bonjour, ceci est un message.'));
     }
 }

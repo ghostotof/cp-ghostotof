@@ -15,7 +15,6 @@ use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Service\UsernameGenerator;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Psr\Clock\ClockInterface;
-use Symfony\Component\Messenger\Exception\TransportException;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
@@ -119,15 +118,12 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
     {
         // L'identité est posée par le constructeur de l'entité (spec 0003 D1) :
         // elle existe avant même le save(), et voyage en chaîne RFC 4122 (D7).
-        try {
-            $this->messageBus->dispatch(
-                new SendAccountInvitationMessage($user->getId()->toRfc4122(), $locale->value, $user->getInvitationGeneration()),
-            );
-        } catch (TransportException $failure) {
-            // Broker arrêté, refus ou accusé manquant (#479) : un 503 nommé
-            // (issue #485), sans audit — l'invitation n'est pas partie. Une
-            // relance garde sa génération avancée en base (limite écrite).
-            throw new InvitationQueueUnavailableException($failure);
-        }
+        // Broker arrêté, refus ou accusé manquant (#479) : le bus lève
+        // l'exception que nomme le message, InvitationQueueUnavailableException
+        // (issues #485 et #491), sans audit — l'invitation n'est pas partie.
+        // Une relance garde sa génération avancée en base (limite écrite).
+        $this->messageBus->dispatch(
+            new SendAccountInvitationMessage($user->getId()->toRfc4122(), $locale->value, $user->getInvitationGeneration()),
+        );
     }
 }

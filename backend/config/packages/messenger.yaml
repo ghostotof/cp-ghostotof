@@ -11,6 +11,14 @@ framework:
         serializer:
             default_serializer: App\Shared\Infrastructure\Messenger\AuthenticatedEnvelopeSerializer
 
+        buses:
+            messenger.bus.default:
+                middleware:
+                    # Issue #491 : la panne de la file devient le 503 que nomme
+                    # le message (AsyncMessageInterface), écrit une fois. Symfony
+                    # le place avant send_message, qu'il entoure.
+                    - App\Shared\Infrastructure\Messenger\QueueUnavailableMiddleware
+
         transports:
             # https://symfony.com/doc/current/messenger.html#transport-configuration
             # RabbitMQ. Consommé par `make consume` en dev, et par le Deployment
