@@ -269,8 +269,12 @@ paths:
     scheduled), a guard in each repository's `save()`, a list of classes, documenting only. **Accepted limits**:
     restoring an entity by re-persisting the removed instance is refused with no escape hatch — a restoration
     creates a new entity; a ROLLBACK after the deleting flush leaves the instance remembered while the row is
-    back (the lock skeleton closes the manager then, #547/#549, and elsewhere the `INSERT` would hit the primary
-    key anyway); a DQL or SQL deletion emits no `postRemove`, its in-memory instance is not remembered (still
+    back — the lock skeleton closes the manager when it sees that ROLLBACK (the operation threw after writing, or
+    the database refused the COMMIT, #547/#549), but not on a COMMIT DBAL itself refuses (`CommitFailedRollbackOnly`)
+    nor in a transaction opened and rolled back by hand: there the `INSERT` would hit the primary key anyway, and
+    the refusal says so under a message that still thinks the row deleted; an entity with a **generated** id would
+    be refused wrongly (`executeDeletions()` nulls its id, its re-persist is a new `INSERT`) — none has one, revisit
+    the day one does; a DQL or SQL deletion emits no `postRemove`, its in-memory instance is not remembered (still
     managed, it never reaches `prePersist`; no such path re-saves it).
     Before, `find()` handed back the identity-map instance and a query did not rehydrate a managed one: a
     concurrent write committed in between was silently undone (`reattach()` saw a no-op, `detach()` looked in the

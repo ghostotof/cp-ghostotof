@@ -18,9 +18,13 @@ use WeakReference;
  * {@see VanishedEntities} a détachée comme disparue, ou que ce même
  * EntityManager a supprimée, ne repasse pas par `persist()` ; une autre si,
  * et `remove()` puis `persist()` avant le `flush()` annule toujours la
- * suppression. Que les verrous qui détachent et les `Administrator`s qui
- * suppriment passent par elle est couvert par ScopeLockReadsCommittedStateTest,
- * PostgresExperienceTechnologyRowLockTest et PostgresAccountAdministrationLockTest.
+ * suppression. Que les verrous qui détachent passent par elle est couvert par
+ * ScopeLockReadsCommittedStateTest, PostgresExperienceTechnologyRowLockTest et
+ * PostgresAccountAdministrationLockTest ; que la re-sauvegarde après le
+ * `delete()` d'un `Administrator` soit refusée, par les deux premiers
+ * (contenus localisés, catalogue de veille, technologies). La suppression
+ * d'un compte passe par le même `postRemove`, qui vaut pour toutes les
+ * classes : elle n'a pas de test propre.
  */
 final class VanishedEntitiesTest extends KernelTestCase
 {
@@ -155,14 +159,24 @@ final class VanishedEntitiesTest extends KernelTestCase
     public function testPersistingBeforeTheFlushStillCancelsTheRemoval(): void
     {
         $technology = $this->storedTechnology();
+        $id = $technology->getId()->toRfc4122();
 
         $this->entityManager->remove($technology);
         $this->entityManager->persist($technology);
         $this->entityManager->flush();
+
+        self::assertSame(1, $this->storedCount($id), 'La suppression annulée avant le flush a quand même supprimé la ligne.');
+
+        // « Rien n'est retenu » ne se lit que sur un chemin qui repasse par
+        // `prePersist` : une instance gérée ne l'émet pas. Détachée par un
+        // `detach()` ordinaire, sa ligne ôtée en SQL, elle est neuve aux yeux
+        // de Doctrine : son `persist()` doit l'écrire, pas être refusé.
+        $this->entityManager->detach($technology);
+        $this->entityManager->getConnection()->executeStatement('DELETE FROM experience_technology WHERE id = ?', [$id]);
         $this->entityManager->persist($technology);
         $this->entityManager->flush();
 
-        self::assertSame(1, $this->storedCount($technology->getId()->toRfc4122()), "La suppression annulée avant le flush a quand même supprimé la ligne, ou la garde l'a refusée.");
+        self::assertSame(1, $this->storedCount($id), "La garde a retenu une instance dont la suppression avait été annulée avant le flush (#557).");
     }
 
     /**
