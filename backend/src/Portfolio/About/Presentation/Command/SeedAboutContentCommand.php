@@ -121,6 +121,11 @@ final class SeedAboutContentCommand extends Command
     {
         $existing = $this->aboutSettingsRepository->findByLocale($locale);
 
+        // Double lecture voulue (#562) : update() relit la ligne par
+        // findByLocale() au lieu de recevoir $existing, et c'est cette
+        // relecture qui fait tenir l'absence de verrou d'AboutSettings (#553).
+        // Ne pas « optimiser » en lui passant l'entité lue ici : un SELECT
+        // indexé de plus par locale, au peuplement seulement.
         if (null !== $existing) {
             $this->aboutSettingsAdministrator->update(
                 $locale,
