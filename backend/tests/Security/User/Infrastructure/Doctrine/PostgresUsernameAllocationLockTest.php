@@ -71,9 +71,11 @@ final class PostgresUsernameAllocationLockTest extends KernelTestCase
 
     /**
      * Un refus levé par l'opération remonte tel quel, annule la transaction
-     * et rend le verrou, sans fermer l'EntityManager.
+     * et rend le verrou. Levé après une écriture, il ferme l'EntityManager
+     * (issue #549) : l'UnitOfWork tenait pour inséré le compte que le ROLLBACK
+     * venait d'annuler.
      */
-    public function testARefusalInsideTheOperationRollsBackAndReleasesTheLock(): void
+    public function testARefusalAfterAWriteRollsBackReleasesTheLockAndClosesTheEntityManager(): void
     {
         $probe = self::openProbeBeside($this->em->getConnection());
 
@@ -95,12 +97,32 @@ final class PostgresUsernameAllocationLockTest extends KernelTestCase
             }
 
             self::assertSame(0, $this->em->getConnection()->fetchOne("SELECT COUNT(*) FROM cpg_user WHERE username = 'refused'"), 'L\'écriture de l\'opération refusée a été validée.');
-            self::assertTrue($this->em->isOpen());
+            self::assertFalse($this->em->isOpen(), 'Un refus levé après une écriture a laissé l\'EntityManager ouvert sur le compte que le ROLLBACK a annulé (issue #549).');
             self::assertFalse($this->em->getConnection()->isTransactionActive());
             self::assertTrue($this->probeCanTakeTheLock($probe), 'Le verrou a survécu au refus.');
         } finally {
             $probe->close();
         }
+    }
+
+    /**
+     * Un refus levé avant toute écriture (l'adresse ou l'identifiant déjà
+     * pris) est une issue ordinaire : rien n'est périmé, l'EntityManager
+     * reste ouvert.
+     */
+    public function testARefusalBeforeAnyWriteLeavesTheEntityManagerOpen(): void
+    {
+        $caught = null;
+
+        try {
+            $this->lock()->whileAllocating(static fn (): never => throw new LogicException('refus'));
+        } catch (LogicException $exception) {
+            $caught = $exception;
+        }
+
+        self::assertSame('refus', $caught->getMessage(), 'L\'exception de l\'opération aurait dû remonter telle quelle.');
+        self::assertTrue($this->em->isOpen(), 'Un refus levé avant toute écriture a fermé l\'EntityManager.');
+        self::assertFalse($this->em->getConnection()->isTransactionActive());
     }
 
     /**

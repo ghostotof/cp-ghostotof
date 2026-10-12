@@ -73,9 +73,11 @@ use Psr\Log\LoggerInterface;
  * un `UPDATE` DQL passe encore — aucun dépôt du Portfolio n'écrit ainsi. Une
  * session perdue au COMMIT (`ConnectionLost`, une `DriverException` aussi)
  * laisse son issue inconnue : fermer reste la réponse sûre. Un refus métier
- * (409, 404) est levé par l'opération et laisse l'EntityManager ouvert, ce
- * qui ne tient que parce que chaque `Administrator` le lève **avant** toute
- * écriture : levé après un `flush()`, il laisserait le même état périmé. Un worker Messenger le retrouve neuf au message
+ * (409, 404) est levé par l'opération et laisse l'EntityManager ouvert, parce
+ * que chaque `Administrator` le lève **avant** toute écriture ; levé après un
+ * `flush()` qui a écrit, il le ferme, comme toute exception de l'opération
+ * (issue #549, le squelette encore) : le ROLLBACK aurait laissé le même état
+ * périmé. Un worker Messenger le retrouve neuf au message
  * suivant ({@see \Doctrine\Bundle\DoctrineBundle\Registry::reset()}
  * réinitialise un EntityManager fermé) ; une commande s'arrête sur
  * l'exception. Un COMMIT que DBAL refuse lui-même avant d'écrire

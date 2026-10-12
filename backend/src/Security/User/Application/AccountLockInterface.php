@@ -34,6 +34,13 @@ interface AccountLockInterface
      * reçu. Sur ces tables sans contrainte différée, seule une session perdue
      * à ce moment-là peut le provoquer.
      *
+     * Une exception de l'opération levée après une écriture (un `flush()` qui
+     * avait quelque chose à écrire, issue #549) la clôt de même : une erreur
+     * de la base sur le `DELETE` DQL qui suit les `save()` de l'activation ou
+     * du changement de mot de passe, une session perdue. Levée avant toute
+     * écriture (compte disparu, déjà activé), elle la laisse ouverte, et
+     * l'appelant qui l'écarte continue.
+     *
      * **Jamais dans une transaction déjà ouverte** (issue #532), ni sous un
      * autre verrou du compte ou de l'application : le verrou ouvre et valide
      * la sienne, et ce que fait l'appelant à son retour (le handler envoie le

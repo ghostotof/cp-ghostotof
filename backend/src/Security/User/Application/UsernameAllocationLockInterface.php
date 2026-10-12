@@ -43,7 +43,10 @@ interface UsernameAllocationLockInterface
      * durée : ce qu'elle lit après l'acquisition tient compte de toute
      * invitation validée avant, et ce qu'elle écrit n'est visible des autres
      * qu'à la libération. Une exception de `$operation` annule la transaction
-     * et remonte telle quelle.
+     * et remonte telle quelle. Levée après une écriture (un `flush()` qui
+     * avait quelque chose à écrire, issue #549), elle clôt aussi l'unité de
+     * travail de l'appelant, comme un COMMIT refusé ci-dessous ; levée avant
+     * (adresse ou identifiant déjà pris), elle la laisse ouverte.
      *
      * Un COMMIT que la base refuse (issue #547, comme #502 pour le verrou
      * d'ordre) annule ce que l'opération a écrit, et **clôt l'unité de travail

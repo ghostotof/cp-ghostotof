@@ -9,6 +9,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\ConnectionLost;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Events;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
@@ -69,10 +70,8 @@ use Throwable;
  * seul verrou d'ordre) : le squelette reçoit l'EntityManager, un nouveau verrou
  * ne peut donc pas l'oublier, comme `$onNested`. La fermeture précède
  * `$onCommitRefused`, qui ne fait plus que nommer le refus qu'il reconnaît.
- * Un refus métier, levé par l'opération, laisse l'EntityManager ouvert : il
- * n'y a rien de périmé tant qu'il est levé **avant** toute écriture. Un COMMIT
- * que DBAL refuse lui-même avant d'écrire (`CommitFailedRollbackOnly`, après un
- * `setRollbackOnly()` qu'aucun appelant ne fait) n'est pas une
+ * Un COMMIT que DBAL refuse lui-même avant d'écrire (`CommitFailedRollbackOnly`,
+ * après un `setRollbackOnly()` qu'aucun appelant ne fait) n'est pas une
  * `DriverException` et le laisse ouvert (portée de #502 gardée).
  * Rejetés : un crochet `$onCommitRefused` obligatoire, que chaque adaptateur
  * aurait rempli de son propre `close()` — un verrou aurait pu passer un
@@ -83,9 +82,31 @@ use Throwable;
  * `Shared` dépend de l'ORM. `close()` n'est pas protégé : il vide la carte
  * d'identité et ne lève que si un écouteur `onClear` lève, et l'application
  * n'en a aucun (Doctrine ne le protège pas non plus dans son propre
- * `UnitOfWork::commit()`). Une exception levée par l'opération elle-même,
- * après un `flush()` réussi, laisse encore l'EntityManager ouvert : c'est
- * #549.
+ * `UnitOfWork::commit()`).
+ *
+ * **Une exception de l'opération levée après une écriture ferme aussi
+ * l'EntityManager** (issue #549) : le même état périmé, par l'autre chemin. Un
+ * `flush()` de l'opération a réussi au point de sauvegarde, puis l'opération
+ * lève — un refus métier qui viendrait après le `save()`, une erreur de la base
+ * sur une instruction suivante (le `DELETE` DQL qui suit les `save()` de
+ * l'activation d'un compte), une session perdue — et le ROLLBACK annule ce que
+ * l'UnitOfWork tient pour écrit. Une {@see WrittenFlushWatch}, branchée sur
+ * `onFlush` le temps de la seule transaction et débranchée quoi qu'il arrive,
+ * note qu'un flush avait quelque chose à écrire ; l'EntityManager est alors
+ * fermé **après** le ROLLBACK (dans la branche `ConnectionLost` aussi, où
+ * PostgreSQL a abandonné la transaction). L'exception remonte telle quelle.
+ * Un refus levé **avant** toute écriture — l'usage de chaque `Administrator`
+ * et de chaque cas d'usage des comptes — le laisse ouvert : rien n'est périmé,
+ * et un appelant qui l'écarte (le handler d'invitation, la purge) continue sur
+ * le même EntityManager. Un flush qui n'avait rien à écrire ne compte pas, ni
+ * une écriture DQL ou DBAL brute, qui ne passe pas par l'UnitOfWork et n'y
+ * laisse rien de périmé. Avant #549, la règle « lever avant d'écrire » n'était
+ * qu'écrite, et rien ne la faisait respecter. Rejetés : fermer sur toute
+ * exception (le défaut de `wrapInTransaction()`, qui casserait les appelants
+ * qui écartent un refus pour continuer) ; une garde de test qui vérifie que
+ * chaque refus attendu précède l'écriture (elle ne voit que les scénarios
+ * écrits, et ni les erreurs de la base ni les verrous de compte) ; `postFlush`,
+ * émis même par un flush vide.
  *
  * **L'attente est bornée quand rien ne la borne — un filet** : si la session
  * n'a aucun `lock_timeout` (`0`), la transaction reçoit celui de l'adaptateur,
@@ -177,7 +198,8 @@ final readonly class PostgresLockedTransaction
     /**
      * @param EntityManagerInterface $entityManager       celui dont l'opération écrit : le
      *                                                    squelette prend sa connexion, et le
-     *                                                    ferme sur un COMMIT refusé
+     *                                                    ferme sur un COMMIT refusé ou sur
+     *                                                    une exception levée après une écriture
      * @param LoggerInterface        $logger              reçoit le seul échec d'un ROLLBACK, que
      *                                                    rien d'autre ne verrait : la cause est
      *                                                    relancée à sa place
@@ -220,18 +242,30 @@ final readonly class PostgresLockedTransaction
 
         $this->connection->beginTransaction();
 
+        // Issue #549 : une écriture de l'opération, que l'exception suivante
+        // annule, ferme l'EntityManager. Une montre par transaction, débranchée
+        // quoi qu'il arrive.
+        $writes = new WrittenFlushWatch();
+        $eventManager = $this->entityManager->getEventManager();
+
         try {
+            $eventManager->addEventListener(Events::onFlush, $writes);
             $this->boundTheWait();
             $this->acquire($acquire, $onTimeout);
             $result = $operation();
         } catch (ConnectionLost $exception) {
             // Plus de session à annuler : PostgreSQL a déjà abandonné la
             // transaction (même choix que Connection::transactional()).
+            $this->closeIfItWrote($writes);
+
             throw $exception;
         } catch (Throwable $exception) {
             $this->rollBackAfter($exception);
+            $this->closeIfItWrote($writes);
 
             throw $exception;
+        } finally {
+            $eventManager->removeEventListener(Events::onFlush, $writes);
         }
 
         try {
@@ -256,6 +290,20 @@ final readonly class PostgresLockedTransaction
         }
 
         return $result;
+    }
+
+    /**
+     * Ferme l'EntityManager si un `flush()` de l'opération a écrit avant
+     * l'exception (issue #549) : le ROLLBACK, ou la session perdue, a annulé ce
+     * que l'UnitOfWork tient pour écrit. Appelé **après** le ROLLBACK, pour que
+     * rien ne puisse l'empêcher. Un refus levé avant toute écriture le laisse
+     * ouvert : rien n'est périmé.
+     */
+    private function closeIfItWrote(WrittenFlushWatch $writes): void
+    {
+        if ($writes->sawAWrite()) {
+            $this->entityManager->close();
+        }
     }
 
     /**
