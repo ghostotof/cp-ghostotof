@@ -164,7 +164,8 @@ paths:
     when it moved the stray member, under the misleading name of the positions. Migration
     `Version20261012160000` keeps **one function and one trigger name**: the function reads its table's
     scope column from `TG_ARGV[0]` (none for the seven single-scope tables, untouched), one query returns
-    `MIN`/`MAX` of the positions and the number of distinct scopes, and the scope check runs **before**
+    `MIN`/`MAX` of the positions and the number of distinct scopes (the list of scopes, for the message, is
+    read only on a refusal), and the scope check runs **before**
     the position check — a group both spread and on two positions is refused for the cause, not its
     consequence — raising SQLSTATE **`23T91`**, which `PostgresAdvisoryOrderScopeLock` names
     `TranslationGroupAcrossSeveralScopesException` (`Domain/Exception`, a `LogicException`, `refusedAtCommit()`,

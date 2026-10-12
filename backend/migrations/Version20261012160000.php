@@ -108,7 +108,7 @@ final class Version20261012160000 extends AbstractMigration
                         scope_column, TG_TABLE_SCHEMA, TG_TABLE_NAME)
                         INTO scopes
                         USING NEW.translation_group;
-                    RAISE EXCEPTION 'Groupe de traduction % de la table % rangé dans plusieurs % (%) : toutes ses entrées doivent partager son périmètre d''ordre (issue #501).',
+                    RAISE EXCEPTION 'Groupe de traduction % de la table % réparti sur plusieurs valeurs de % (%) : toutes ses entrées doivent partager son périmètre d''ordre (issue #501).',
                         NEW.translation_group, TG_TABLE_NAME, TG_ARGV[0], scopes
                         USING ERRCODE = '23T91', CONSTRAINT = TG_NAME, TABLE = TG_TABLE_NAME, COLUMN = TG_ARGV[0];
                 END IF;
@@ -154,7 +154,7 @@ final class Version20261012160000 extends AbstractMigration
 
         foreach ($rows as $row) {
             $this->warnIf(true, \sprintf(
-                'Table %s, groupe de traduction %s rangé dans plusieurs %s (%s) : non corrigé, toute écriture qui le touche est désormais refusée (23T91) ; au backoffice, supprimer l\'entrée égarée puis recréer sa version dans la bonne catégorie (#501).',
+                'Table %s, groupe de traduction %s réparti sur plusieurs valeurs de %s (%s) : non corrigé, toute écriture qui le touche est désormais refusée (23T91) ; au backoffice, supprimer l\'entrée égarée puis recréer sa version dans la bonne catégorie (#501).',
                 self::TABLE,
                 $row['translation_group'],
                 self::SCOPE_COLUMN,

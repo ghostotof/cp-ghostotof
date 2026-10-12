@@ -94,8 +94,8 @@ final class Version20261012160000Test extends KernelTestCase
 
     /**
      * `down()` rend le trigger de #390 — sans argument, sourd à `category` — et
-     * sa fonction, qui ne compare que les positions : une version insérée dans
-     * une autre catégorie, à la même position, repasse.
+     * sa fonction, qui ne compare que les positions : un membre passé seul dans
+     * une autre catégorie repasse.
      */
     public function testDownRestoresTheGuardOfPositionsAlone(): void
     {
