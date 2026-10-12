@@ -278,18 +278,67 @@ final readonly class KubernetesManifests
      */
     public static function containers(array $podSpec, string $list = 'containers'): array
     {
-        $containers = $podSpec[$list] ?? [];
-        Assert::assertIsArray($containers, \sprintf('%s : une liste est attendue.', $list));
+        return self::entries($podSpec, $list);
+    }
+
+    /**
+     * Les éléments d'une liste YAML de ce nœud (`volumes`, `volumeMounts`,
+     * `env`…), dans l'ordre ; une liste absente est vide. Une valeur qui n'est
+     * pas une liste, ou un élément qui n'est pas une table, est refusé : écarté,
+     * il ferait passer une entrée mal écrite pour absente.
+     *
+     * @param array<mixed> $node
+     *
+     * @return list<array<mixed>>
+     */
+    public static function entries(array $node, string $list): array
+    {
+        $entries = $node[$list] ?? [];
+        Assert::assertIsArray($entries, \sprintf('%s : une liste est attendue.', $list));
 
         $tables = [];
-        foreach (array_values($containers) as $index => $container) {
-            if (!\is_array($container)) {
-                Assert::fail(\sprintf('%s : l\'élément %d n\'est pas une table YAML, %s lu.', $list, $index + 1, get_debug_type($container)));
+        foreach (array_values($entries) as $index => $entry) {
+            if (!\is_array($entry)) {
+                Assert::fail(\sprintf('%s : l\'élément %d n\'est pas une table YAML, %s lu.', $list, $index + 1, get_debug_type($entry)));
             }
-            $tables[] = $container;
+            $tables[] = $entry;
         }
 
         return $tables;
+    }
+
+    /**
+     * Le premier élément d'une liste du nœud dont `$key` vaut `$value`, ou
+     * null : le volume `cache-system` d'un pod spec, le montage d'un chemin
+     * dans un conteneur, une variable de son `env`.
+     *
+     * @param array<mixed> $node
+     *
+     * @return array<mixed>|null
+     */
+    public static function firstWith(array $node, string $list, string $key, string $value): ?array
+    {
+        foreach (self::entries($node, $list) as $entry) {
+            if ($value === ($entry[$key] ?? null)) {
+                return $entry;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Une valeur YAML rendue lisible : chaîne telle quelle, liste jointe par
+     * des espaces (une commande `['sh', '-c', '…']`, ses éléments non textuels
+     * écartés), rien sinon.
+     */
+    public static function text(mixed $value): string
+    {
+        if (\is_string($value)) {
+            return $value;
+        }
+
+        return \is_array($value) ? implode(' ', array_filter($value, \is_string(...))) : '';
     }
 
     /**

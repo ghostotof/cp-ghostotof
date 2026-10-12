@@ -379,6 +379,55 @@ final class KubernetesManifestsTest extends TestCase
         );
     }
 
+    public function testTheFirstEntryOfAListWithAGivenValueIsFound(): void
+    {
+        $container = ['volumeMounts' => [
+            ['name' => 'logs', 'mountPath' => '/var/log'],
+            ['name' => 'cache', 'mountPath' => '/cache', 'readOnly' => false],
+            ['name' => 'cache-copy', 'mountPath' => '/cache'],
+        ]];
+
+        self::assertSame(['name' => 'cache', 'mountPath' => '/cache', 'readOnly' => false], KubernetesManifests::firstWith($container, 'volumeMounts', 'mountPath', '/cache'));
+        self::assertNull(KubernetesManifests::firstWith($container, 'volumeMounts', 'name', 'absent'));
+        self::assertNull(KubernetesManifests::firstWith($container, 'env', 'name', 'PGOPTIONS'));
+    }
+
+    /**
+     * Écarté, un élément qui n'est pas une table laissait passer un
+     * `assertNull()` : une variable `env` mal indentée devenait « absente ».
+     */
+    public function testAnEntryThatIsNoMappingIsRefused(): void
+    {
+        $this->expectException(AssertionFailedError::class);
+        $this->expectExceptionMessage('env : l\'élément 2 n\'est pas une table YAML, string lu.');
+        KubernetesManifests::firstWith(['env' => [['name' => 'A'], 'PGOPTIONS=-c lock_timeout=5s']], 'env', 'name', 'PGOPTIONS');
+    }
+
+    public function testAListThatIsNoListIsRefused(): void
+    {
+        $this->expectException(AssertionFailedError::class);
+        $this->expectExceptionMessage('volumes : une liste est attendue.');
+        KubernetesManifests::firstWith(['volumes' => 'cache-system'], 'volumes', 'name', 'cache-system');
+    }
+
+    /**
+     * @return iterable<string, array{mixed, string}>
+     */
+    public static function texts(): iterable
+    {
+        yield 'chaîne' => ['php bin/console', 'php bin/console'];
+        yield 'commande en liste' => [['sh', '-c', 'cp -a /src/. /dst'], 'sh -c cp -a /src/. /dst'];
+        yield 'éléments non textuels écartés' => [['sh', 3, null, '-c'], 'sh -c'];
+        yield 'absente' => [null, ''];
+        yield 'nombre' => [42, ''];
+    }
+
+    #[DataProvider('texts')]
+    public function testAValueIsReadAsText(mixed $value, string $expected): void
+    {
+        self::assertSame($expected, KubernetesManifests::text($value));
+    }
+
     private function manifests(): KubernetesManifests
     {
         return KubernetesManifests::in($this->directory);

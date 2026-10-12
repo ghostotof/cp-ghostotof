@@ -101,7 +101,7 @@ final class ConsoleLockWaitBoundTest extends TestCase
         self::assertNotSame([], $containers, \sprintf('%s : aucun conteneur de l\'image backend.', $manifest));
 
         foreach ($containers as $container) {
-            $name = $this->text($container['name'] ?? null);
+            $name = KubernetesManifests::text($container['name'] ?? null);
             if (isset(self::EXEMPT[$manifest][$name])) {
                 continue;
             }
@@ -131,8 +131,8 @@ final class ConsoleLockWaitBoundTest extends TestCase
         foreach ($this->backendContainers($manifest, 'initContainers') as $container) {
             self::assertStringNotContainsString(
                 'bin/console',
-                $this->text($container['command'] ?? null).' '.$this->text($container['args'] ?? null),
-                \sprintf('%s, initContainer %s : il lance la console sans être couvert par ce test.', $manifest, $this->text($container['name'] ?? null)),
+                KubernetesManifests::text($container['command'] ?? null).' '.KubernetesManifests::text($container['args'] ?? null),
+                \sprintf('%s, initContainer %s : il lance la console sans être couvert par ce test.', $manifest, KubernetesManifests::text($container['name'] ?? null)),
             );
         }
     }
@@ -178,15 +178,13 @@ final class ConsoleLockWaitBoundTest extends TestCase
      */
     private function pgOptions(array $container): ?string
     {
-        foreach ($this->items($container['env'] ?? null) as $variable) {
-            if ('PGOPTIONS' === ($variable['name'] ?? null)) {
-                $value = $variable['value'] ?? null;
-
-                return \is_string($value) ? $value : '(valeur non littérale)';
-            }
+        $variable = KubernetesManifests::firstWith($container, 'env', 'name', 'PGOPTIONS');
+        if (null === $variable) {
+            return null;
         }
+        $value = $variable['value'] ?? null;
 
-        return null;
+        return \is_string($value) ? $value : '(valeur non littérale)';
     }
 
     /**
@@ -207,28 +205,5 @@ final class ConsoleLockWaitBoundTest extends TestCase
         }
 
         return $containers;
-    }
-
-    /**
-     * Les éléments d'une liste YAML qui sont eux-mêmes des tables.
-     *
-     * @return list<array<mixed>>
-     */
-    private function items(mixed $list): array
-    {
-        return \is_array($list) ? array_values(array_filter($list, \is_array(...))) : [];
-    }
-
-    /**
-     * Une valeur YAML rendue lisible : chaîne telle quelle, liste jointe par
-     * des espaces (une commande `['sh', '-c', '…']`), rien sinon.
-     */
-    private function text(mixed $value): string
-    {
-        if (\is_string($value)) {
-            return $value;
-        }
-
-        return \is_array($value) ? implode(' ', array_filter($value, \is_string(...))) : '';
     }
 }
