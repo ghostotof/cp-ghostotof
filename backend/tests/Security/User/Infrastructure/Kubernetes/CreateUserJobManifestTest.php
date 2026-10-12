@@ -45,13 +45,13 @@ final class CreateUserJobManifestTest extends TestCase
     public function testTheSecretIsMountedReadOnlyAndReadableByTheGroupOnly(): void
     {
         $spec = $this->podSpec();
-        $volume = $this->firstWith($spec['volumes'] ?? null, 'name', 'create-user-password');
+        $volume = KubernetesManifests::firstWith($spec, 'volumes', 'name', 'create-user-password');
         self::assertNotNull($volume);
         self::assertSame(self::SECRET_NAME, $volume['secret']['secretName'] ?? null);
         // 0440 : le groupe du fsGroup lit, personne n'écrit.
         self::assertSame(0o440, $volume['secret']['defaultMode'] ?? null);
 
-        $mount = $this->firstWith($this->container()['volumeMounts'] ?? null, 'name', 'create-user-password');
+        $mount = KubernetesManifests::firstWith($this->container(), 'volumeMounts', 'name', 'create-user-password');
         self::assertNotNull($mount);
         self::assertSame(self::SECRET_MOUNT, $mount['mountPath'] ?? null);
         self::assertTrue($mount['readOnly'] ?? false);
@@ -120,7 +120,7 @@ final class CreateUserJobManifestTest extends TestCase
         self::assertStringContainsString('--username="$NEW_ACCOUNT_USERNAME"', $command);
         self::assertStringNotContainsString('CPG_USERNAME', $command);
 
-        $variable = $this->firstWith($this->container()['env'] ?? null, 'name', 'NEW_ACCOUNT_USERNAME');
+        $variable = KubernetesManifests::firstWith($this->container(), 'env', 'name', 'NEW_ACCOUNT_USERNAME');
         self::assertNotNull($variable);
         self::assertSame('${CPG_USERNAME}', $variable['value'] ?? null);
     }
@@ -136,7 +136,7 @@ final class CreateUserJobManifestTest extends TestCase
         $command = $this->container()['command'] ?? null;
         self::assertIsArray($command);
 
-        return implode(' ', array_map(static fn (mixed $part): string => \is_string($part) ? $part : '', $command));
+        return KubernetesManifests::text($command);
     }
 
     /**
@@ -166,19 +166,5 @@ final class CreateUserJobManifestTest extends TestCase
     private function source(): string
     {
         return KubernetesManifests::base()->source(self::MANIFEST);
-    }
-
-    /**
-     * @return array<mixed>|null
-     */
-    private function firstWith(mixed $list, string $key, string $value): ?array
-    {
-        foreach (\is_array($list) ? $list : [] as $item) {
-            if (\is_array($item) && $value === ($item[$key] ?? null)) {
-                return $item;
-            }
-        }
-
-        return null;
     }
 }

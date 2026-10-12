@@ -36,8 +36,9 @@ final class SystemCachePodVolumeTest extends TestCase
     public const string MOUNT_PATH = '/var/www/backend/var/cache/prod/pools/system';
 
     /**
-     * Les huit manifestes qui exécutent l'image backend. La liste est vérifiée
-     * dans l'autre sens par testNoOtherManifestRunsTheBackendImage().
+     * Les manifestes qui exécutent l'image backend. La liste est vérifiée dans
+     * l'autre sens par testNoOtherManifestRunsTheBackendImage(), sur le
+     * recensement de KubernetesManifests.
      */
     private const array MANIFESTS = [
         'backend-deployment.yaml',
@@ -67,7 +68,7 @@ final class SystemCachePodVolumeTest extends TestCase
     public function testThePodDeclaresABoundedEmptyDirForTheSystemCache(string $manifest): void
     {
         foreach ($this->podSpecs($manifest) as $where => $podSpec) {
-            $volume = $this->firstWith($podSpec['volumes'] ?? null, 'name', self::VOLUME);
+            $volume = KubernetesManifests::firstWith($podSpec, 'volumes', 'name', self::VOLUME);
 
             self::assertNotNull($volume, \sprintf('%s : volume « %s » absent.', $where, self::VOLUME));
             $emptyDir = $volume['emptyDir'] ?? null;
@@ -81,12 +82,12 @@ final class SystemCachePodVolumeTest extends TestCase
     public function testEveryBackendContainerMountsTheSystemCacheWritable(string $manifest): void
     {
         foreach ($this->podSpecs($manifest) as $where => $podSpec) {
-            $containers = $this->backendContainers($podSpec, 'containers');
+            $containers = KubernetesManifests::backendContainers($podSpec);
             self::assertNotSame([], $containers, \sprintf('%s : aucun conteneur de l\'image backend.', $where));
 
             foreach ($containers as $container) {
-                $mount = $this->firstWith($container['volumeMounts'] ?? null, 'mountPath', self::MOUNT_PATH);
-                self::assertNotNull($mount, \sprintf('%s, conteneur %s : %s non monté.', $where, $this->text($container['name'] ?? null), self::MOUNT_PATH));
+                $mount = KubernetesManifests::firstWith($container, 'volumeMounts', 'mountPath', self::MOUNT_PATH);
+                self::assertNotNull($mount, \sprintf('%s, conteneur %s : %s non monté.', $where, KubernetesManifests::text($container['name'] ?? null), self::MOUNT_PATH));
                 self::assertSame(self::VOLUME, $mount['name'] ?? null);
                 self::assertNotTrue($mount['readOnly'] ?? false, 'Le cache doit rester inscriptible.');
             }
@@ -102,9 +103,9 @@ final class SystemCachePodVolumeTest extends TestCase
     {
         foreach ($this->podSpecs($manifest) as $where => $podSpec) {
             $seeders = array_filter(
-                $this->backendContainers($podSpec, 'initContainers'),
-                fn (array $container): bool => null !== $this->firstWith($container['volumeMounts'] ?? null, 'name', self::VOLUME)
-                    && str_contains($this->text($container['command'] ?? null), self::MOUNT_PATH.'/.'),
+                KubernetesManifests::backendContainers($podSpec, 'initContainers'),
+                static fn (array $container): bool => null !== KubernetesManifests::firstWith($container, 'volumeMounts', 'name', self::VOLUME)
+                    && str_contains(KubernetesManifests::text($container['command'] ?? null), self::MOUNT_PATH.'/.'),
             );
 
             self::assertCount(1, $seeders, \sprintf('%s : il faut exactement un initContainer qui copie %s/. dans le volume.', $where, self::MOUNT_PATH));
@@ -113,16 +114,7 @@ final class SystemCachePodVolumeTest extends TestCase
 
     public function testNoOtherManifestRunsTheBackendImage(): void
     {
-        $paths = glob(KubernetesManifests::base()->directory().'/*.yaml');
-        self::assertIsArray($paths);
-
-        $found = [];
-        foreach ($paths as $path) {
-            if (1 === preg_match('/^\s+image:\s*(backend|\$\{BACKEND_IMAGE\})\s*$/m', (string) file_get_contents($path))) {
-                $found[] = basename($path);
-            }
-        }
-        sort($found);
+        $found = KubernetesManifests::base()->manifestsRunningTheBackendImage();
         $expected = self::MANIFESTS;
         sort($expected);
 
@@ -146,56 +138,5 @@ final class SystemCachePodVolumeTest extends TestCase
         }
 
         return $named;
-    }
-
-    /**
-     * Les éléments d'une liste YAML qui sont eux-mêmes des tables.
-     *
-     * @return list<array<mixed>>
-     */
-    private function items(mixed $list): array
-    {
-        return \is_array($list) ? array_values(array_filter($list, \is_array(...))) : [];
-    }
-
-    /**
-     * @return array<mixed>|null
-     */
-    private function firstWith(mixed $list, string $key, string $value): ?array
-    {
-        foreach ($this->items($list) as $item) {
-            if ($value === ($item[$key] ?? null)) {
-                return $item;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * @param array<mixed>                  $podSpec
-     * @param 'containers'|'initContainers' $list
-     *
-     * @return list<array<mixed>>
-     */
-    private function backendContainers(array $podSpec, string $list): array
-    {
-        return array_values(array_filter(
-            KubernetesManifests::containers($podSpec, $list),
-            static fn (array $container): bool => \in_array($container['image'] ?? null, ['backend', '${BACKEND_IMAGE}'], true),
-        ));
-    }
-
-    /**
-     * Une valeur YAML rendue lisible : chaîne telle quelle, liste jointe par
-     * des espaces (une commande `['sh', '-c', '…']`), rien sinon.
-     */
-    private function text(mixed $value): string
-    {
-        if (\is_string($value)) {
-            return $value;
-        }
-
-        return \is_array($value) ? implode(' ', array_filter($value, \is_string(...))) : '';
     }
 }

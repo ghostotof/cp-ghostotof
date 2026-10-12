@@ -72,6 +72,6 @@ final class WorkerWaitsForRabbitMqTest extends TestCase
         $command = $container['command'] ?? null;
         self::assertIsArray($command);
 
-        return implode(' ', array_filter($command, \is_string(...)));
+        return KubernetesManifests::text($command);
     }
 }
