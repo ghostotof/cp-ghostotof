@@ -34,6 +34,11 @@ final class OperatorExecBoundaryTest extends TestCase
 
     private const string LOOKUP_SECTION = 'Pour nommer un compte pendant un incident';
 
+    private const string FAILED_READ_SECTION = 'Pour lire `failed`';
+
+    /** Les commandes Messenger à effet de bord : un Job, jamais un exec (issue #521). */
+    private const string MESSENGER_SIDE_EFFECT = '/messenger:(failed:(retry|remove)|stop-workers|consume)\b/';
+
     /**
      * Toutes les règles qui atteignent le ServiceAccount du déployeur : le Role
      * du namespace et le ClusterRole, chacun par sa liaison. Une liaison qui
@@ -125,17 +130,96 @@ final class OperatorExecBoundaryTest extends TestCase
     }
 
     /**
+     * Issue #521 : rejouer, supprimer un message de `failed` ou relancer le
+     * signal d'arrêt des workers a un effet de bord, donc passe par un Job
+     * (`k8s/base/messenger-*-job.yaml`). Aucune commande `kubectl exec` du
+     * runbook ne les lance, sous quelque forme que ce soit.
+     */
+    public function testNoRunbookExecRunsAMessengerCommandWithASideEffect(): void
+    {
+        $offending = array_values(array_filter(
+            $this->runbookExecLines(),
+            static fn (string $line): bool => 1 === preg_match(self::MESSENGER_SIDE_EFFECT, $line),
+        ));
+
+        self::assertSame([], $offending);
+    }
+
+    /**
+     * La lecture de `failed` reste un exec humain : en `-vv`, la sortie porte
+     * le message lui-même (nom, adresse, texte d'un visiteur), qu'un Job
+     * écrirait dans les journaux de son pod. Chaque appel ne fait que lire —
+     * `messenger:failed:show`, dans une session PostgreSQL en lecture seule,
+     * qu'une écriture par erreur ferait échouer (mesuré pour #521 : un
+     * `failed:remove` y sort en SQLSTATE 25006) — et vise le namespace donné.
+     */
+    public function testTheFailedTransportIsReadOnlyThroughAReadOnlySession(): void
+    {
+        $block = $this->bashBlockAfter(self::FAILED_READ_SECTION);
+        self::assertMatchesRegularExpression('/^NS= /m', $block);
+
+        $calls = array_values(array_filter(
+            $this->execLines($block),
+            static fn (string $line): bool => str_contains($line, 'bin/console'),
+        ));
+        self::assertNotEmpty($calls, 'La section « lire failed » n\'a plus de commande.');
+
+        foreach ($calls as $call) {
+            self::assertMatchesRegularExpression('/kubectl -n "\$\{NS:\?[^}]+\}" exec deploy\/backend -c php-fpm --/', $call);
+            self::assertStringContainsString("env PGOPTIONS='-c default_transaction_read_only=on' php bin/console messenger:failed:show ", $call);
+            self::assertDoesNotMatchRegularExpression('/-n (preprod|prod)\b/', $call);
+        }
+    }
+
+    /**
      * Le bloc `bash` qui suit la phrase d'introduction de la section.
      */
     private function lookupCommand(): string
     {
-        $readme = (string) file_get_contents($this->k8sDir().'/README.md');
-        $start = strpos($readme, self::LOOKUP_SECTION);
-        self::assertIsInt($start, 'La section « nommer un compte » a disparu du runbook.');
+        return $this->bashBlockAfter(self::LOOKUP_SECTION);
+    }
+
+    private function bashBlockAfter(string $section): string
+    {
+        $readme = $this->readme();
+        $start = strpos($readme, $section);
+        self::assertIsInt($start, \sprintf('La section « %s » a disparu du runbook.', $section));
 
         self::assertSame(1, preg_match('/```bash\n(.*?)```/s', substr($readme, $start), $block));
 
         return $block[1];
+    }
+
+    /**
+     * Les commandes `kubectl … exec` de tout le runbook.
+     *
+     * @return list<string>
+     */
+    private function runbookExecLines(): array
+    {
+        return $this->execLines($this->readme());
+    }
+
+    /**
+     * Les lignes d'un texte qui ouvrent un `kubectl exec`, continuations
+     * (`\` en fin de ligne) rejointes.
+     *
+     * @return list<string>
+     */
+    private function execLines(string $text): array
+    {
+        $joined = preg_replace('/\\\\\n\s*/', ' ', $text);
+        self::assertIsString($joined);
+
+        return array_values(array_filter(
+            explode("\n", $joined),
+            static fn (string $line): bool => 1 === preg_match('/\bkubectl\b.*\bexec\b/', $line),
+        ));
+    }
+
+    private function readme(): string
+    {
+        return (string) file_get_contents($this->k8sDir().'/README.md');
     }
 
     /**
