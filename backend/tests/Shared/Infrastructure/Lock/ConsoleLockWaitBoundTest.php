@@ -191,7 +191,8 @@ final class ConsoleLockWaitBoundTest extends TestCase
 
     /**
      * Les manifestes de k8s/base qui exécutent l'image backend, sous son nom
-     * kustomize (`backend`) ou sous le placeholder des Jobs hors kustomize.
+     * kustomize (`backend`) ou sous le placeholder des Jobs hors kustomize,
+     * entre guillemets ou non, commentaire de fin de ligne permis.
      *
      * @return list<string>
      */
@@ -202,7 +203,7 @@ final class ConsoleLockWaitBoundTest extends TestCase
 
         $found = [];
         foreach ($paths as $path) {
-            if (1 === preg_match('/^\s+image:\s*(backend|\$\{BACKEND_IMAGE\})\s*$/m', (string) file_get_contents($path))) {
+            if (1 === preg_match('/^\s+image:\s*(["\']?)(backend|\$\{BACKEND_IMAGE\})\1\s*(#.*)?$/m', (string) file_get_contents($path))) {
                 $found[] = basename($path);
             }
         }

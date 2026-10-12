@@ -184,14 +184,21 @@ paths:
   release keeps serving. A transient blocker therefore means **re-running the deploy job** — say
   so in the release notes. A migration that must wait longer says so itself, `SET LOCAL
   lock_timeout = '…'` at the top of its `up()` (`Version20261011120000` sets `5s` that way, now
-  redundant and left as is: migrations are frozen). **No pipeline Job outlives the pipeline's
-  wait**: `run-job.sh` deletes a Job only before applying it, so `migrate-job.yaml`
-  (`activeDeadlineSeconds: 270`, waited 300 s) and `seed-job.yaml` (150, waited 180) die first and
-  the pipeline reads their failure, named, instead of its own timeout — the convention of
-  `messenger-probe-job.yaml` (240 under 300). Counted from the Job's creation, `Always` pull and
-  retry included; it moves no `timeout-minutes` (the waits are unchanged, #285).
-  `tools/tests/run-job.test.sh` reads every `run-job.sh` call of `pipeline.yml` and fails on a
-  Job whose deadline is missing or not strictly below its wait.
+  redundant and left as is: migrations are frozen); a non-transactional one
+  (`isTransactional(): false`, `CREATE INDEX CONCURRENTLY`) has no transaction for `SET LOCAL` to
+  apply to — a no-op with a warning — and sets `SET lock_timeout = '…'` on the session instead.
+  **No pipeline Job outlives the pipeline's wait for long**: `run-job.sh` deletes a Job only before
+  applying it, so a stuck migration (a long DDL holding its exclusive lock in front of the API, a
+  hung connection) used to run on indefinitely after the `::error::`. `migrate-job.yaml`
+  (`activeDeadlineSeconds: 360`, waited 300 s) and `seed-job.yaml` (240, waited 180) die shortly
+  **after** the wait, not before: at the deadline the Job controller deletes the pods, their logs
+  with them, while past the wait (plus `wait-rollout.sh`'s ~35 s overrun) the pod still runs and
+  `run-job.sh` prints its logs — the diagnosis of exactly the hang the deadline is for. That is
+  the opposite of `messenger-probe-job.yaml` (240 under 300), whose own failure is an exit 1 with
+  its logs. Counted from the Job's creation, `Always` pull and retry included; `sh`/`php` as PID 1
+  ignore SIGTERM, so the pod dies 30 s later (grace period). No `timeout-minutes` moves (the waits
+  are unchanged, #285). `tools/tests/run-job.test.sh` reads every `run-job.sh` call of
+  `pipeline.yml` and fails on a deadline missing or outside `]wait + 35, wait + 120]`.
   The discipline that makes this order safe, to respect in every migration:
   a column added `NOT NULL` has a default or is filled by the migration itself
   (`Version20260914170000` is the model); **never drop or rename a column in the release that stops

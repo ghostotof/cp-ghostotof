@@ -26,8 +26,9 @@
 #     après un `::error::` en cas d'échec ;
 #   - pipeline.yml ne réécrit pas la séquence en ligne ;
 #   - chaque Job que pipeline.yml lance par ce script porte un
-#     activeDeadlineSeconds strictement sous le délai d'attente qu'il reçoit
-#     (issue #525) : il ne survit jamais au `::error::` de l'attente.
+#     activeDeadlineSeconds au-dessus de son attente (dépassement compris :
+#     ses journaux restent lisibles) et au plus deux minutes au-delà
+#     (issue #525) : il ne survit pas longtemps au `::error::` de l'attente.
 #
 # Usage :  tools/tests/run-job.test.sh
 # ---------------------------------------------------------------------------
@@ -357,13 +358,20 @@ else
   fail "pipeline.yml ne réécrit pas la séquence en ligne" "$inline"
 fi
 
-# --- Aucun Job du pipeline ne survit à son attente (issue #525) -------------
-# run-job.sh ne supprime un Job qu'avant de l'appliquer : un Job qui tourne
-# encore quand l'attente expire continue après le `::error::` (une migration
-# bloquée garde sa demande de verrou en file devant l'API). Chaque Job que
-# pipeline.yml lance porte donc un activeDeadlineSeconds strictement sous le
-# délai qu'il reçoit, comme messenger-probe-job.yaml sous l'attente du témoin.
-# Les lignes de continuation sont jointes avant la lecture des appels.
+# --- Les Jobs du pipeline ne survivent pas à son attente (issue #525) -------
+# run-job.sh ne supprime un Job qu'avant de l'appliquer : sans délai, un Job
+# qui tourne encore quand l'attente expire continuait indéfiniment après le
+# `::error::` (une migration bloquée tenant son verrou exclusif devant l'API).
+# Chaque Job que pipeline.yml lance par ce script porte donc un
+# activeDeadlineSeconds encadré : AU-DESSUS de l'attente augmentée du
+# dépassement possible de wait-rollout.sh (~35 s), pour que le pod tourne
+# encore quand run-job.sh lit ses journaux (à l'échéance, le contrôleur de Job
+# supprime les pods, journaux compris) ; au plus deux minutes au-delà de
+# l'attente, pour qu'il meure peu après l'échec. Les Jobs lancés à la main
+# (runbook) et le témoin (smoke-messenger-probe.sh, son propre test) ne sont
+# pas lus ici. Les lignes de continuation sont jointes avant la lecture.
+WAIT_OVERRUN=35
+MAX_SURVIVAL=120
 calls="$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$PIPELINE" \
   | grep -oE 'run-job\.sh" [a-z]+ "\$GITHUB_WORKSPACE/k8s/base/[a-z-]+\.yaml"[[:space:]]+"[^"]+"[[:space:]]+[0-9]+' || true)"
 count="$(printf '%s\n' "$calls" | grep -c 'run-job' || true)"
@@ -379,10 +387,11 @@ while IFS= read -r call; do
   job="$(printf '%s' "$call" | sed -E 's|.*k8s/base/([a-z-]+\.yaml)".*|\1|')"
   wait_s="$(printf '%s' "$call" | sed -E 's|.*[[:space:]]([0-9]+)$|\1|')"
   deadline="$(sed -n 's/^  activeDeadlineSeconds: \([0-9]*\)$/\1/p' "$TOOLS/../k8s/base/$job")"
-  if [ -n "$deadline" ] && [ "$deadline" -lt "$wait_s" ]; then
-    pass "$job : activeDeadlineSeconds ($deadline) sous l'attente du pipeline ($wait_s)"
+  if [ -n "$deadline" ] && [ "$deadline" -gt $((wait_s + WAIT_OVERRUN)) ] \
+      && [ "$deadline" -le $((wait_s + MAX_SURVIVAL)) ]; then
+    pass "$job : activeDeadlineSeconds ($deadline) encadre l'attente du pipeline ($wait_s)"
   else
-    fail "$job : activeDeadlineSeconds sous l'attente du pipeline ($wait_s)" "lu : « $deadline »"
+    fail "$job : activeDeadlineSeconds dans ]$((wait_s + WAIT_OVERRUN)), $((wait_s + MAX_SURVIVAL))] (attente $wait_s)" "lu : « $deadline »"
   fi
 done <<< "$calls"
 

@@ -46,11 +46,13 @@ use Throwable;
  * **L'attente est bornée quand rien ne la borne — un filet** : si la session
  * n'a aucun `lock_timeout` (`0`), la transaction reçoit celui de l'adaptateur,
  * par `set_config(…, true)`, l'équivalent de `SET LOCAL` : il s'éteint avec
- * elle. Depuis #525, les sessions déployées ont toutes leur borne — FPM par le
- * `PGOPTIONS` de www.prod.conf, chaque conteneur console de `k8s/base` par le
- * sien (épinglé par ConsoleLockWaitBoundTest) —, et ce filet ne sert plus
- * qu'aux sessions qui n'en ont pas : la console du conteneur de dev, la CI, un
- * futur pod qui l'oublierait. Gardé (décision du 2026-10-12) : il coûte une
+ * elle. Depuis #525, les processus que les manifestes lancent ont leur borne —
+ * FPM par le `PGOPTIONS` de www.prod.conf, chaque conteneur console de
+ * `k8s/base` par le sien (épinglé par ConsoleLockWaitBoundTest) —, et ce filet
+ * sert aux sessions qui n'en ont pas : la console du conteneur de dev, la CI,
+ * une commande lancée par `kubectl exec` (l'environnement du conteneur
+ * `php-fpm` n'a pas PGOPTIONS, seul son pool l'a), un futur pod qui
+ * l'oublierait. Gardé (décision du 2026-10-12) : il coûte une
  * requête par transaction verrouillée, et ces trois verrous sont ceux dont
  * l'attente compte le plus. Un délai que la session a déjà choisi (`PGOPTIONS`,
  * un test) est gardé tel quel, ni rallongé ni raccourci. Il

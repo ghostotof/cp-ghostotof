@@ -24,15 +24,19 @@ spec:
   # Une seule reprise : une migration qui échoue deux fois demande un diagnostic
   # humain, pas un retry en boucle sur un schéma peut-être à moitié appliqué.
   backoffLimit: 1
-  # Issue #525 : le Job ne survit jamais à l'attente du pipeline. Sans délai,
-  # un pod de migration bloqué continuait après le `::error::` de
-  # `tools/run-job.sh` (qui ne supprime un Job qu'avant de l'appliquer), sa
-  # demande de verrou toujours en file devant l'API. Compté depuis la création
-  # du Job (pull `Always` et reprise compris), et SOUS les 300 s d'attente de
-  # `pipeline.yml` : le pipeline voit alors l'échec du Job (DeadlineExceeded),
-  # nommé, plutôt que l'expiration de sa propre attente — même convention que
-  # messenger-probe-job.yaml. `tools/tests/run-job.test.sh` vérifie l'ordre.
-  activeDeadlineSeconds: 270
+  # Issue #525 : le Job ne survit pas longtemps à l'attente du pipeline. Sans
+  # délai, un pod de migration bloqué (un DDL long qui tient son verrou
+  # exclusif devant l'API, une connexion pendue) continuait indéfiniment après
+  # le `::error::` de `tools/run-job.sh`, qui ne supprime un Job qu'avant de
+  # l'appliquer. Compté depuis la création du Job (pull `Always` et reprise
+  # compris), et AU-DESSUS des 300 s d'attente de `pipeline.yml` augmentées des
+  # ~35 s de dépassement de `tools/wait-rollout.sh` : à l'expiration de
+  # l'attente, le pod tourne encore et `run-job.sh` imprime ses journaux — à
+  # l'échéance du délai, le contrôleur de Job supprime ses pods, et leurs
+  # journaux avec eux. Puis le pod meurt (SIGTERM, SIGKILL après 30 s), sa
+  # transaction est annulée et son verrou rendu. `tools/tests/run-job.test.sh`
+  # vérifie l'encadrement (attente + 35 s < délai ≤ attente + 120 s).
+  activeDeadlineSeconds: 360
   # Le Job disparaît de lui-même 10 min après sa fin ; le pipeline a déjà
   # récupéré les logs en cas d'échec.
   ttlSecondsAfterFinished: 600
@@ -80,9 +84,8 @@ spec:
           imagePullPolicy: Always
           command: ['php', 'bin/console', 'doctrine:migrations:migrate', '--no-interaction']
           env:
-            # Issue #525 : toute attente de verrou PostgreSQL de la console est
-            # bornée comme sous FPM (valeur de www.prod.conf, épinglée par
-            # ConsoleLockWaitBoundTest) ; libpq la lit pour chaque connexion.
+            # Issue #525 : attentes de verrou PostgreSQL bornées comme sous FPM (valeur
+            # de www.prod.conf ; ConsoleLockWaitBoundTest, .claude/rules/deploiement.md).
             # Ici, la borne a un sens propre : elle ARRÊTE LE DÉPLOIEMENT, elle
             # ne refuse pas une requête. Un DDL qui attend un verrou exclusif
             # met en file derrière lui chaque requête de l'API sur sa table
@@ -93,7 +96,10 @@ spec:
             # suffit contre un bloqueur passager ; sinon, relancer le job de
             # déploiement. Une migration qui doit attendre plus longtemps
             # l'annonce elle-même : `SET LOCAL lock_timeout = '…'` en tête de
-            # son `up()` (portée de sa transaction).
+            # son `up()` (portée de sa transaction) ; une migration non
+            # transactionnelle (`isTransactional(): false`, pour un
+            # `CREATE INDEX CONCURRENTLY`) n'a pas de transaction où SET LOCAL
+            # vaille : elle pose `SET lock_timeout = '…'` sur la session.
             - name: PGOPTIONS
               value: '-c lock_timeout=5s'
           envFrom:

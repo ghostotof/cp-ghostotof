@@ -104,9 +104,8 @@ spec:
             - --no-interaction
             - -v
           env:
-            # Issue #525 : toute attente de verrou PostgreSQL de la console est
-            # bornée comme sous FPM (valeur de www.prod.conf, épinglée par
-            # ConsoleLockWaitBoundTest) ; libpq la lit pour chaque connexion.
+            # Issue #525 : attentes de verrou PostgreSQL bornées comme sous FPM (valeur
+            # de www.prod.conf ; ConsoleLockWaitBoundTest, .claude/rules/deploiement.md).
             # Pour le worker : un handler qui attend un verrou plus de 5 s lève
             # SQLSTATE 55P03 et Messenger le réessaie (puis `failed`), au lieu
             # d'immobiliser la consommation. La boucle elle-même n'attend aucun
