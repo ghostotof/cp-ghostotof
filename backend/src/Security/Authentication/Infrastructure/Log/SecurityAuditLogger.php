@@ -6,7 +6,6 @@ namespace App\Security\Authentication\Infrastructure\Log;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
-use App\Security\User\Domain\ValueObject\GuestUser;
 use App\Shared\Domain\Security\AccountReference;
 use App\Shared\Infrastructure\Http\CanonicalPath;
 use Monolog\Attribute\WithMonologChannel;
@@ -205,32 +204,28 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
     }
 
     /**
-     * Le sujet d'un utilisateur authentifié : un compte par son UUID, le
-     * sujet du palier de base par son marqueur `guest-…` (aléatoire, il ne
-     * désigne personne), rien d'autre.
+     * Le sujet d'un utilisateur authentifié, tel que {@see PrincipalDesignation}
+     * le désigne : `userId` pour un compte, `user` pour le marqueur `guest-…`,
+     * rien d'autre.
      *
-     * @return array{userId?: string, user?: string}
+     * @return array<string, string>
      */
     private function principal(?UserInterface $user): array
     {
-        return match (true) {
-            $user instanceof AccountReference => $this->account($user),
-            $user instanceof GuestUser => ['user' => $user->getUserIdentifier()],
-            default => [],
-        };
+        $designation = null !== $user ? PrincipalDesignation::of($user) : null;
+
+        return null !== $designation ? [$designation->key => $designation->value] : [];
     }
 
     /** L'auteur de la requête courante, désigné comme un sujet ({@see self::principal()}). */
     private function currentActor(): string
     {
         $user = $this->tokenStorage->getToken()?->getUser();
+        if (null === $user) {
+            return self::ANONYMOUS;
+        }
 
-        return match (true) {
-            null === $user => self::ANONYMOUS,
-            $user instanceof AccountReference => $user->accountId(),
-            $user instanceof GuestUser => $user->getUserIdentifier(),
-            default => self::UNIDENTIFIED,
-        };
+        return PrincipalDesignation::of($user)->value ?? self::UNIDENTIFIED;
     }
 
     /**

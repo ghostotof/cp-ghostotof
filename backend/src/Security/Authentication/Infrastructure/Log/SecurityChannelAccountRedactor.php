@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Log;
 
-use App\Security\User\Domain\ValueObject\GuestUser;
-use App\Shared\Domain\Security\AccountReference;
 use Monolog\Attribute\AsMonologProcessor;
 use Monolog\LogRecord;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
@@ -88,14 +86,12 @@ final class SecurityChannelAccountRedactor
         return \sprintf('%s(%sroles="%s")', $this->shortName($user), $this->subjectOf($user), implode(', ', $user->getRoles()));
     }
 
-    /** `userId="…", ` pour un compte, `user="guest-…", ` pour le palier de base, rien sinon. */
+    /** `userId="…", ` pour un compte, `user="guest-…", ` pour le palier de base, rien sinon ({@see PrincipalDesignation}). */
     private function subjectOf(UserInterface $user): string
     {
-        return match (true) {
-            $user instanceof AccountReference => \sprintf('userId="%s", ', $user->accountId()),
-            $user instanceof GuestUser => \sprintf('user="%s", ', $user->getUserIdentifier()),
-            default => '',
-        };
+        $designation = PrincipalDesignation::of($user);
+
+        return null !== $designation ? \sprintf('%s="%s", ', $designation->key, $designation->value) : '';
     }
 
     private function quotesAnIdentifier(Throwable $exception): bool
