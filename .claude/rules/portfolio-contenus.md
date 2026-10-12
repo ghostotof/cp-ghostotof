@@ -131,14 +131,17 @@ paths:
     **Trap for future migrations**: a deferred trigger leaves pending events until the COMMIT, and
     PostgreSQL refuses an `ALTER TABLE` on a table that has some (55006, "pending trigger events") — a
     migration that writes into one of the eight tables and then alters it starts with `SET CONSTRAINTS
-    trg_translation_group_single_position IMMEDIATE`. That migration reported every divergent group as
+    trg_translation_group_single_position IMMEDIATE`. Since #501 that includes a write of `category`
+    alone in `about_me_card`, which the trigger now listens to. And a migration that drops and recreates
+    the trigger writes no data: dropping it while writes of the same transaction await their deferred
+    check cancels those checks silently (measured for #505). That migration reported every divergent group as
     a `warning` with its original positions per locale in the migration Job's output, then **renumbered
     its perimeter** `0…n-1` by lowest position, the group breaking ties — aligning on the lowest
     position alone left two groups tied, which the repositories break by each row's own id, so FR and
     EN in two orders; a table with no divergent group was left untouched. Me-cards are renumbered per
     category; a group spread across two categories (which the application forbids) is left out of the
     renumbering — each category would give it its own rank, creating the divergence being repaired — and
-    reported: reordering either category is refused until it is corrected in the backoffice. Rejected: an `EXCLUDE USING gist
+    reported (for its fate since #501, see the next paragraph). Rejected: an `EXCLUDE USING gist
     (translation_group WITH =, position WITH <>)` (`btree_gist`), safe under concurrency, but DBAL
     introspects its index, which no mapping declares, so every `doctrine:migrations:diff` would propose
     a `DROP INDEX` — DBAL reads neither triggers nor functions; a `CHECK`, which cannot read other rows;
@@ -150,6 +153,39 @@ paths:
     `reorder()`); `tests/Migrations/Version20261012120000Test` pins the alignment and its warnings. A test
     that must write a divergent group does it in a transaction it rolls back: a deferred trigger never
     fires there.
+    **Nor a me-card group across two categories** (issue #501). Me-cards are ordered per category, and the
+    members of a group share theirs: the application guarantees it (no category setter on `AboutMeCard`,
+    `AboutMeCardAdministrator::membersOf()` reads a group within the category, the seed groups per
+    category), the database did not — the #390 trigger compared positions across categories and did not
+    listen to `category`, so an EN version inserted in SQL into another category at the same position, or
+    an `UPDATE` of `category` alone, went through. Such a group got two ranks, one per category (FR and EN
+    ranked differently on the public page); « Détacher » saw only the entry and did nothing (`detach()` is
+    a no-op on an entry alone in its category); and a `reorder()` of either category was refused only
+    when it moved the stray member, under the misleading name of the positions. Migration
+    `Version20261012160000` keeps **one function and one trigger name**: the function reads its table's
+    scope column from `TG_ARGV[0]` (none for the seven single-scope tables, untouched), one query returns
+    `MIN`/`MAX` of the positions and the number of distinct scopes, and the scope check runs **before**
+    the position check — a group both spread and on two positions is refused for the cause, not its
+    consequence — raising SQLSTATE **`23T91`**, which `PostgresAdvisoryOrderScopeLock` names
+    `TranslationGroupAcrossSeveralScopesException` (`Domain/Exception`, a `LogicException`, `refusedAtCommit()`,
+    unmapped: a `critical` 500, a pipeline defect, like the positions' one; both SQLSTATEs map in one
+    `match` of its `onCommitRefused`). On `about_me_card` the trigger is recreated `AFTER INSERT OR UPDATE OF
+    position, translation_group, category … EXECUTE FUNCTION portfolio_translation_group_single_position('category')`.
+    Moving a whole group to another category in one transaction stays accepted (deferred). Rejected: a
+    second function or trigger (two reads of the group per row at COMMIT, two names for `SET CONSTRAINTS`);
+    a check in `reorder()` alone (sees only what goes through it, late, SQL writes still unseen); doing
+    nothing (the misleading 500 and the two ranks stayed). **Groups already spread are not corrected** (no
+    category is surely the right one): the migration reports each again as a `warning` with its categories,
+    and any write that touches one (insertion, a member's position, group or category) is now refused —
+    a `DELETE` does not wake the trigger. The fix is in the backoffice: **delete the stray entry, then
+    recreate its version in the right category** — « Détacher » does not see the member in the other
+    category. Open there, follow-up #561: « Créer la version EN » offered in the category where EN is
+    missing hits the unique `(translation_group, locale)` index, a raw 500. `TranslationGroupSinglePositionTest`
+    pins the insertion and the move of one member (refused in `23T91`), a group spread and on two
+    positions (`23T91`, not `23T90`), the whole group moved (accepted), and, for every table, the scope
+    argument and the watched columns (`SCOPE_COLUMNS`: a new per-scope table goes there and in its
+    migration); `PostgresAdvisoryOrderScopeLockTest` the name on the application path;
+    `tests/Migrations/Version20261012160000Test` the warning, the untouched group and `down()`.
     **Every write of an ordered content's `Administrator` runs under its scope's lock** (issues #389, #499):
     `create()`, `update()`, `delete()` and `reorder()` of the eight localized `Administrator`s and of
     `WatchedProductAdministrator` wrap their **whole body** in
