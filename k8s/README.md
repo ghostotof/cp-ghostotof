@@ -809,7 +809,8 @@ elle reste refusée et part avec la purge des 30 jours). Ordre, en période calm
 
 1. Vider les files : la file `async` est consommée par le worker ; lire `failed`
    (`messenger:failed:show`, depuis un Job sur le modèle de `create-user-job.yaml`, jamais
-   `kubectl exec`) et rejouer ou purger ce qui doit l'être.
+   `kubectl exec`) et rejouer ou purger ce qui doit l'être. Ce Job n'a pas encore de manifeste,
+   et sa sortie en `-vv` contiendrait des données personnelles : issue #521.
 2. Publier la nouvelle version dans Secret Manager, puis
    `kubectl annotate externalsecret backend-secrets -n $NS force-sync=$(date +%s) --overwrite`.
 3. Redémarrer ensemble : `kubectl rollout restart deployment/backend deployment/worker -n $NS`.
@@ -1203,23 +1204,41 @@ session d'assistant —, avec un **kubeconfig d'administrateur humain**. Le jeto
 échoue ici, et c'est voulu : son `Role` n'a plus `pods/exec` (audit C8).
 
 ```bash
-NS=preprod   # ou prod
-echo "SELECT username, email FROM cpg_user WHERE id = '<userId>';" \
-  | kubectl -n "$NS" exec -i deploy/postgres -c postgres -- \
-    sh -c 'PGOPTIONS="-c default_transaction_read_only=on" psql -X -At -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
+printf '%s\n' '\set id <userId>' "SELECT username, email FROM cpg_user WHERE id = :'id'::uuid;" \
+  | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
+    sh -c 'PGOPTIONS="-c default_transaction_read_only=on" psql -X -A -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+# attendu : l'en-tête username|email, une ligne nom|adresse et « (1 row) » ;
+# « (0 rows) » : aucun compte de cet UUID dans CE namespace — relire $NS avant de conclure.
 ```
 
 C'est l'**exception assumée** à « jamais `kubectl exec` » (issue #520, règle dans
 `.claude/rules/deploiement.md`) : une lecture humaine dont la sortie reste sur le terminal. Un Job
 aurait écrit le nom et l'adresse dans les journaux de son pod, lisibles jusqu'à sa suppression,
-y compris par le jeton CI (`pods/log`), ce que #363 cherche justement à éviter. La requête arrive
-par l'entrée standard : ni le SQL ni l'UUID ne figurent dans l'argv de l'`exec`, donc dans l'URL
-de la requête à l'API server. `default_transaction_read_only` met la session en lecture seule
-(une écriture par erreur est refusée) ; c'est un garde-fou, pas une frontière, puisque la même
-identité peut tout faire. `psql -X` ignore un `~/.psqlrc`, `-At` rend une ligne brute
-`nom|adresse`, et rien sans compte. La connexion passe par le socket local du conteneur, sans mot de
-passe (méthode `trust` que l'image officielle pose sur les connexions locales — à confirmer à la
-première exécution en préprod, #520) : rien de secret ne sort du pod. Pincé par `OperatorExecBoundaryTest`.
+y compris par le jeton CI (`pods/log`), ce que #363 cherche justement à éviter. Ce que fait chaque
+morceau, essayé sur l'image `postgres:18.6-alpine` en local (pas encore sur le cluster) :
+
+- **Rien dans l'argv.** La requête arrive par l'entrée standard : ni le SQL ni l'UUID ne figurent
+  dans l'argv de l'`exec`, donc dans l'URL de la requête à l'API server. L'UUID reste en revanche
+  dans l'historique du shell de l'opérateur — un identifiant pseudonyme, pas un secret.
+- **Pas d'injection.** L'UUID passe par une variable psql (`\set`), citée par `:'id'` et convertie
+  en `uuid` : une valeur collée depuis un journal qui contiendrait une apostrophe ou du SQL ne
+  devient qu'une erreur « invalid input syntax for type uuid ».
+- **Lecture seule.** `default_transaction_read_only` fait refuser une écriture par erreur
+  (« cannot execute UPDATE in a read-only transaction ») ; c'est un garde-fou, pas une frontière :
+  un `SET default_transaction_read_only = off` dans la session le lève, et la même identité peut
+  de toute façon tout faire.
+- **Un résultat lisible.** `-X` ignore un `~/.psqlrc` ; `-A` rend `nom|adresse` sans alignement mais
+  garde l'en-tête et le compte de lignes, pour qu'un namespace erroné (« (0 rows) ») ne se confonde
+  pas avec une sortie vide ; `ON_ERROR_STOP=1` fait sortir en code 3 sur une erreur au lieu de 0.
+  `${NS:?…}` refuse un namespace vide : un bloc copié tel quel ne vise ni la préprod ni la prod par
+  défaut.
+- **Aucun secret ne sort du pod.** La connexion passe par le socket local du conteneur, sans mot de
+  passe : l'image officielle y pose la méthode `trust` à l'initialisation (`local all all trust`),
+  et `postgres.yaml` ne fixe ni `POSTGRES_HOST_AUTH_METHOD` ni `POSTGRES_INITDB_ARGS` — à confirmer
+  sur le volume réel à la première exécution en préprod (#520).
+
+Pincé par `OperatorExecBoundaryTest`.
 
 Alternative graphique : Adminer (§ ci-dessus), allumé le temps de la recherche puis éteint, avec le
 mot de passe PostgreSQL à saisir à la main.
