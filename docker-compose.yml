@@ -54,8 +54,9 @@ services:
       # Lecture seule, pour que PHPUnit fige la configuration PHP-FPM de
       # production (FpmLockWaitBoundTest, issue #272) comme il le fait en CI,
       # où le dépôt entier est extrait. `make back-lsp` y exécute aussi
-      # install-symfony-language-tools.sh (issue #343) : ne pas retirer ce
-      # montage sans déplacer ces deux usages.
+      # install-symfony-language-tools.sh (issue #343), et `make back-style-fix`
+      # php-cs-fixer.sh (issue #398) : ne pas retirer ce montage sans déplacer
+      # ces trois usages.
       - ./docker/php:/var/www/docker/php:ro
       # Lecture seule, pour que PHPUnit vérifie que les fichiers .env propres au
       # poste n'entrent pas dans le contexte de build de l'image, d'où

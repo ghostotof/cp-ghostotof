@@ -10,7 +10,7 @@ NGINX_SIDECAR_TAG := $(shell sed -n 's/.*image: nginx:\([^[:space:]]*\).*/\1/p' 
 # le manifeste change de forme : tools/check-rabbitmq-conf.sh refuse alors `rabbitmq:`.
 RABBITMQ_MANIFEST_TAG := $(shell sed -n 's/.*image: rabbitmq:\([^[:space:]]*\).*/\1/p' k8s/base/rabbitmq.yaml | head -1)
 
-.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality back-lsp build-front-prod build-front-preprod front-image-headers back-nginx-rate-limits rabbitmq-conf dev-secrets get-secret
+.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality back-lsp back-style-fix build-front-prod build-front-preprod front-image-headers back-nginx-rate-limits rabbitmq-conf dev-secrets get-secret
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -136,6 +136,17 @@ back-lsp: ## Lance symfony lsp:check (diagnostics Symfony) dans le conteneur
 	$(DC) exec -u dev backend /var/www/docker/php/install-symfony-language-tools.sh
 	$(DC) exec -u dev backend symfony lsp:check --fail-on=$(LSP_FAIL_ON)
 	$(DC) exec -u dev backend /var/www/docker/php/install-symfony-language-tools.sh --verify
+
+# Correction ponctuelle du style que gardent ImportsStaySortedTest et
+# NativeCallsQualificationTest (issue #398) : tri des `use`, puis qualification
+# des fonctions natives optimisées par le compilateur, sur src/ et tests/. À
+# lancer après un `composer rector:fix` qui ajoute un import. php-cs-fixer n'est
+# pas une dépendance (#391) : le script pose son phar sous backend/var/, à la
+# version PHP_CS_FIXER_VERSION (.env), et ne l'exécute qu'après avoir vérifié
+# PHP_CS_FIXER_SHA256. Pas de mode « vérification seule » : les deux gardes
+# PHPUnit le sont déjà, et plus strictes (elles refusent `use function`).
+back-style-fix: ## Trie les `use` et qualifie les fonctions natives optimisées (php-cs-fixer épinglé) dans le conteneur
+	$(DC) exec -u dev backend /var/www/docker/php/php-cs-fixer.sh
 
 front-init: ## Crée le projet Vite en mode INTERACTIF (à lancer une seule fois)
 	$(DC) run --rm frontend npm create vite@$(shell grep '^CREATE_VITE_VERSION=' .env | cut -d= -f2) .
