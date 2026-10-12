@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Portfolio\About\Presentation\Command;
 
+use App\Portfolio\About\Application\AboutSettingsAdministratorInterface;
 use App\Portfolio\About\Domain\Entity\AboutMeCard;
 use App\Portfolio\About\Domain\Entity\AboutSiteCard;
 use App\Portfolio\About\Domain\Repository\AboutMeCardRepositoryInterface;
@@ -104,6 +105,46 @@ final class SeedAboutContentCommandTest extends KernelTestCase
     }
 
     /**
+     * `--force` (issue #562) : les cartes sont purgées **toutes locales
+     * confondues** puis recréées, les réglages sont **mis à jour, jamais
+     * purgés**. Une carte EN et une carte « moi » FR manquent, un réglage FR a
+     * été édité au backoffice : tout revient au contenu de référence, sans
+     * doublon de carte, et chaque locale garde sa ligne de réglages d'origine
+     * (même identifiant).
+     */
+    public function testForceRebuildsCardsAndUpdatesSettingsInPlace(): void
+    {
+        $this->commandTester()->execute([]);
+
+        $siteCardRepository = self::getContainer()->get(AboutSiteCardRepositoryInterface::class);
+        $meCardRepository = self::getContainer()->get(AboutMeCardRepositoryInterface::class);
+        $settingsRepository = self::getContainer()->get(AboutSettingsRepositoryInterface::class);
+
+        $siteCardRepository->remove($siteCardRepository->findByLocale(Locale::EN)[0]);
+        $meCardRepository->remove($meCardRepository->findByLocaleAndCategory(Locale::FR, AboutMeCardCategory::PERSONAL)[0]);
+        self::getContainer()->get(AboutSettingsAdministratorInterface::class)->update(
+            Locale::FR,
+            'Édité au backoffice',
+            'Édité',
+            'Édité',
+            'Édité',
+            'Édité',
+        );
+
+        $settingsIdsBefore = $this->settingsIdsByLocale();
+
+        self::assertSame(0, $this->commandTester()->execute(['--force' => true]));
+
+        foreach (Locale::cases() as $locale) {
+            self::assertCount(4, $siteCardRepository->findByLocale($locale), $locale->value);
+            self::assertCount(11, $meCardRepository->findByLocale($locale), $locale->value);
+        }
+
+        self::assertSame('À propos de ce site', $settingsRepository->findByLocale(Locale::FR)?->getSiteEyebrow());
+        self::assertSame($settingsIdsBefore, $this->settingsIdsByLocale());
+    }
+
+    /**
      * Spec 0004 D1 : ce que le peuplement doit garantir et que rien d'autre ne
      * dit — l'entrée FR et l'entrée EN de même index sont **le même contenu**,
      * elles portent donc le même groupe de traduction. C'est ce lien que la
@@ -177,6 +218,27 @@ final class SeedAboutContentCommandTest extends KernelTestCase
                 \sprintf('[%s] Les cartes de position %d ne partagent pas leur groupe.', $label, $index),
             );
         }
+    }
+
+    /**
+     * Lu en SQL, pas par le dépôt : un doublon de réglages pour une locale
+     * apparaîtrait ici, là où `findByLocale()` n'en rendrait qu'un.
+     *
+     * @return array<string, list<string>>
+     */
+    private function settingsIdsByLocale(): array
+    {
+        $rows = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->fetchAllAssociative('SELECT locale, id FROM about_settings ORDER BY locale, id');
+
+        $ids = [];
+
+        foreach ($rows as $row) {
+            \assert(\is_string($row['locale']) && \is_string($row['id']));
+            $ids[$row['locale']][] = $row['id'];
+        }
+
+        return $ids;
     }
 
     private function commandTester(): CommandTester
