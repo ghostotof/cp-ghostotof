@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Kubernetes;
 
+use App\Tests\Support\KubernetesManifests;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Issue #521 : les commandes Messenger à effet de bord passent par un Job
@@ -207,7 +207,7 @@ final class MessengerMaintenanceJobsManifestTest extends TestCase
     #[DataProvider('jobs')]
     public function testTheJobIsNotPartOfTheKustomization(string $manifest): void
     {
-        self::assertStringNotContainsString($manifest, (string) file_get_contents($this->k8sBase().'/kustomization.yaml'));
+        self::assertStringNotContainsString($manifest, KubernetesManifests::base()->source('kustomization.yaml'));
     }
 
     /**
@@ -313,13 +313,10 @@ final class MessengerMaintenanceJobsManifestTest extends TestCase
      */
     private function container(string $manifest): array
     {
-        $containers = $this->podSpec($manifest)['containers'] ?? null;
-        self::assertIsArray($containers);
+        $containers = KubernetesManifests::containers($this->podSpec($manifest));
         self::assertCount(1, $containers);
-        $container = $containers[0];
-        self::assertIsArray($container);
 
-        return $container;
+        return $containers[0];
     }
 
     /**
@@ -327,10 +324,7 @@ final class MessengerMaintenanceJobsManifestTest extends TestCase
      */
     private function podSpec(string $manifest): array
     {
-        $spec = $this->job($manifest)['spec']['template']['spec'] ?? null;
-        self::assertIsArray($spec);
-
-        return $spec;
+        return KubernetesManifests::base()->podSpec($manifest, 'Job');
     }
 
     /**
@@ -338,23 +332,11 @@ final class MessengerMaintenanceJobsManifestTest extends TestCase
      */
     private function job(string $manifest): array
     {
-        $job = Yaml::parse($this->source($manifest));
-        self::assertIsArray($job);
-        self::assertSame('Job', $job['kind'] ?? null);
-
-        return $job;
+        return KubernetesManifests::base()->resource($manifest, 'Job');
     }
 
     private function source(string $manifest): string
     {
-        $path = $this->k8sBase().'/'.$manifest;
-        self::assertFileIsReadable($path);
-
-        return (string) file_get_contents($path);
-    }
-
-    private function k8sBase(): string
-    {
-        return \dirname(__DIR__, 5).'/k8s/base';
+        return KubernetesManifests::base()->source($manifest);
     }
 }

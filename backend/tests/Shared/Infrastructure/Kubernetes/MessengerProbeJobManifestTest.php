@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Kubernetes;
 
+use App\Tests\Support\KubernetesManifests;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Le Job du message témoin (issue #470), lancé par tools/smoke-messenger-probe.sh
@@ -77,7 +77,7 @@ final class MessengerProbeJobManifestTest extends TestCase
     /** Hors de `kustomization.yaml` : un `apply -k` ne lance aucun smoke. */
     public function testTheJobIsNotPartOfTheKustomization(): void
     {
-        self::assertStringNotContainsString(self::MANIFEST, (string) file_get_contents($this->k8sBase().'/kustomization.yaml'));
+        self::assertStringNotContainsString(self::MANIFEST, KubernetesManifests::base()->source('kustomization.yaml'));
     }
 
     /**
@@ -85,13 +85,10 @@ final class MessengerProbeJobManifestTest extends TestCase
      */
     private function container(): array
     {
-        $containers = $this->podSpec()['containers'] ?? null;
-        self::assertIsArray($containers);
+        $containers = KubernetesManifests::containers($this->podSpec());
         self::assertCount(1, $containers);
-        $container = $containers[0];
-        self::assertIsArray($container);
 
-        return $container;
+        return $containers[0];
     }
 
     /**
@@ -99,10 +96,7 @@ final class MessengerProbeJobManifestTest extends TestCase
      */
     private function podSpec(): array
     {
-        $spec = $this->job()['spec']['template']['spec'] ?? null;
-        self::assertIsArray($spec);
-
-        return $spec;
+        return KubernetesManifests::base()->podSpec(self::MANIFEST, 'Job');
     }
 
     /**
@@ -110,23 +104,11 @@ final class MessengerProbeJobManifestTest extends TestCase
      */
     private function job(): array
     {
-        $job = Yaml::parse($this->source());
-        self::assertIsArray($job);
-        self::assertSame('Job', $job['kind'] ?? null);
-
-        return $job;
+        return KubernetesManifests::base()->resource(self::MANIFEST, 'Job');
     }
 
     private function source(): string
     {
-        $path = $this->k8sBase().'/'.self::MANIFEST;
-        self::assertFileIsReadable($path);
-
-        return (string) file_get_contents($path);
-    }
-
-    private function k8sBase(): string
-    {
-        return \dirname(__DIR__, 5).'/k8s/base';
+        return KubernetesManifests::base()->source(self::MANIFEST);
     }
 }

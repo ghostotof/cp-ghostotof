@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Kubernetes;
 
+use App\Tests\Support\KubernetesManifests;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Issue #520 : où passe la frontière du `kubectl exec`.
@@ -51,8 +51,8 @@ final class OperatorExecBoundaryTest extends TestCase
      */
     public function testTheDeployerOpensNeitherAShellNorATunnel(): void
     {
-        self::assertSame(['kind' => 'Role', 'name' => 'github-actions-deployer'], $this->roleRef('rolebinding.yaml'));
-        self::assertSame(['kind' => 'ClusterRole', 'name' => 'github-actions-deployer'], $this->roleRef('clusterrolebinding.yaml'));
+        self::assertSame(['kind' => 'Role', 'name' => 'github-actions-deployer'], $this->roleRef('rolebinding.yaml', 'RoleBinding'));
+        self::assertSame(['kind' => 'ClusterRole', 'name' => 'github-actions-deployer'], $this->roleRef('clusterrolebinding.yaml', 'ClusterRoleBinding'));
 
         $granted = [];
         foreach (['role.yaml' => 'Role', 'clusterrole.yaml' => 'ClusterRole'] as $manifest => $kind) {
@@ -231,9 +231,12 @@ final class OperatorExecBoundaryTest extends TestCase
         ));
     }
 
+    /**
+     * Le runbook, à côté de la base.
+     */
     private function readme(): string
     {
-        return (string) file_get_contents($this->k8sDir().'/README.md');
+        return (string) file_get_contents(\dirname(KubernetesManifests::base()->directory()).'/README.md');
     }
 
     /**
@@ -241,8 +244,7 @@ final class OperatorExecBoundaryTest extends TestCase
      */
     private function rules(string $manifest, string $kind): array
     {
-        $role = $this->rbac($manifest);
-        self::assertSame($kind, $role['kind'] ?? null);
+        $role = $this->rbac($manifest, $kind);
 
         $rules = $role['rules'] ?? null;
         self::assertIsArray($rules);
@@ -258,9 +260,9 @@ final class OperatorExecBoundaryTest extends TestCase
     /**
      * @return array{kind: mixed, name: mixed}
      */
-    private function roleRef(string $manifest): array
+    private function roleRef(string $manifest, string $kind): array
     {
-        $ref = $this->rbac($manifest)['roleRef'] ?? null;
+        $ref = $this->rbac($manifest, $kind)['roleRef'] ?? null;
         self::assertIsArray($ref);
 
         return ['kind' => $ref['kind'] ?? null, 'name' => $ref['name'] ?? null];
@@ -269,18 +271,8 @@ final class OperatorExecBoundaryTest extends TestCase
     /**
      * @return array<mixed>
      */
-    private function rbac(string $manifest): array
+    private function rbac(string $manifest, string $kind): array
     {
-        $path = $this->k8sDir().'/base/github-actions-rbac/'.$manifest;
-        self::assertFileIsReadable($path);
-        $object = Yaml::parse((string) file_get_contents($path));
-        self::assertIsArray($object);
-
-        return $object;
-    }
-
-    private function k8sDir(): string
-    {
-        return \dirname(__DIR__, 5).'/k8s';
+        return KubernetesManifests::base()->resource('github-actions-rbac/'.$manifest, $kind);
     }
 }

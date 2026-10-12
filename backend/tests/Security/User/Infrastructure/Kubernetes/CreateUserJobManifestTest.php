@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\User\Infrastructure\Kubernetes;
 
+use App\Tests\Support\KubernetesManifests;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Revue de #386 : l'événement `user-created` part sur le stderr du processus
@@ -128,7 +128,7 @@ final class CreateUserJobManifestTest extends TestCase
     /** Hors de `kustomization.yaml` : un `apply -k` ne doit jamais créer de compte. */
     public function testTheJobIsNotPartOfTheKustomization(): void
     {
-        self::assertStringNotContainsString(self::MANIFEST, (string) file_get_contents($this->k8sBase().'/kustomization.yaml'));
+        self::assertStringNotContainsString(self::MANIFEST, KubernetesManifests::base()->source('kustomization.yaml'));
     }
 
     private function commandLine(): string
@@ -144,10 +144,7 @@ final class CreateUserJobManifestTest extends TestCase
      */
     private function container(): array
     {
-        $container = $this->firstWith($this->podSpec()['containers'] ?? null, 'name', 'create-user');
-        self::assertNotNull($container, 'Conteneur « create-user » absent.');
-
-        return $container;
+        return KubernetesManifests::base()->container(self::MANIFEST, 'Job', 'create-user');
     }
 
     /**
@@ -155,10 +152,7 @@ final class CreateUserJobManifestTest extends TestCase
      */
     private function podSpec(): array
     {
-        $spec = $this->job()['spec']['template']['spec'] ?? null;
-        self::assertIsArray($spec);
-
-        return $spec;
+        return KubernetesManifests::base()->podSpec(self::MANIFEST, 'Job');
     }
 
     /**
@@ -166,19 +160,12 @@ final class CreateUserJobManifestTest extends TestCase
      */
     private function job(): array
     {
-        $job = Yaml::parse($this->source());
-        self::assertIsArray($job);
-        self::assertSame('Job', $job['kind'] ?? null);
-
-        return $job;
+        return KubernetesManifests::base()->resource(self::MANIFEST, 'Job');
     }
 
     private function source(): string
     {
-        $path = $this->k8sBase().'/'.self::MANIFEST;
-        self::assertFileIsReadable($path);
-
-        return (string) file_get_contents($path);
+        return KubernetesManifests::base()->source(self::MANIFEST);
     }
 
     /**
@@ -193,10 +180,5 @@ final class CreateUserJobManifestTest extends TestCase
         }
 
         return null;
-    }
-
-    private function k8sBase(): string
-    {
-        return \dirname(__DIR__, 6).'/k8s/base';
     }
 }

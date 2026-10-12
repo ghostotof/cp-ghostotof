@@ -17,6 +17,20 @@ paths:
 
 > Moved verbatim from `.claude/CLAUDE.md` (#346), section « Architecture › Deployment invariants ». The index of every rule is at the top of `.claude/CLAUDE.md`.
 
+- **A PHPUnit test reads a manifest through `tests/Support/KubernetesManifests`, never by hand**
+  (issue #541). `KubernetesManifests::base()` (`k8s/base`) or `::overlay('prod')` (the overlay's
+  own files, never the `kustomize build` render — an overlay patch on the base stays invisible to
+  every test below). It splits a file into documents (`---` alone or followed by a comment, CRLF
+  included), descends to the pod spec (`Deployment`, `StatefulSet`, `Job`, `CronJob`) and finds a
+  container or initContainer by name; the business assertions stay in each test. It **refuses**
+  rather than skips: an unparsable document or one that is not a mapping (named by its first
+  line), a workload of another kind carrying a pod template (a `DaemonSet` must be taught to it
+  first), a container entry that is not a mapping, a name found zero or twice. Its own test,
+  `tests/Shared/KubernetesManifestsTest.php`, proves each case on manifests it writes. **Proving
+  a manifest guard still fails** takes a mutation the dev container actually sees: `k8s/` is a
+  bind mount that Docker Desktop loses track of when a file is replaced by a new inode (`sed -i`,
+  `perl -i`, an editor's atomic save) — write in place (`cat new > file`), compare `sha1sum` on
+  the host and in `backend`, and restore the same way; `docker compose restart backend` resyncs.
 - **No application state on the pod's filesystem** (ADR 0005, audit of 2026-09-16, constat A1,
   hotfix v0.14.1). Pods run `readOnlyRootFilesystem: true` with only `var/log` mounted, and
   Symfony's default `cache.app` was a `FilesystemAdapter` under `var/cache/prod/pools`: its

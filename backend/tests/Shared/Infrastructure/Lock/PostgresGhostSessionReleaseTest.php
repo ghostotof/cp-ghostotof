@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Lock;
 
+use App\Tests\Support\KubernetesManifests;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Une session dont le client a disparu sans fermer son socket libère ses
@@ -97,32 +97,10 @@ final class PostgresGhostSessionReleaseTest extends TestCase
      */
     private function postgresContainerArgs(): array
     {
-        $path = \dirname(__DIR__, 5).'/k8s/base/postgres.yaml';
-        self::assertFileIsReadable($path);
-        $documents = preg_split('/^---\s*$/m', (string) file_get_contents($path));
-        self::assertIsArray($documents);
+        $container = KubernetesManifests::base()->container('postgres.yaml', 'Deployment', 'postgres');
+        self::assertArrayNotHasKey('command', $container, 'Un `command` remplacerait l\'entrypoint de l\'image, qui initialise la base.');
 
-        foreach ($documents as $document) {
-            $resource = Yaml::parse($document);
-            if (!\is_array($resource) || 'Deployment' !== ($resource['kind'] ?? null)) {
-                continue;
-            }
-            $spec = $resource['spec'] ?? null;
-            $template = \is_array($spec) ? ($spec['template'] ?? null) : null;
-            $podSpec = \is_array($template) ? ($template['spec'] ?? null) : null;
-            $containers = \is_array($podSpec) ? ($podSpec['containers'] ?? null) : null;
-            self::assertIsArray($containers);
-
-            foreach ($containers as $container) {
-                if (\is_array($container) && 'postgres' === ($container['name'] ?? null)) {
-                    self::assertArrayNotHasKey('command', $container, 'Un `command` remplacerait l\'entrypoint de l\'image, qui initialise la base.');
-
-                    return $this->stringList($container['args'] ?? null, 'k8s/base/postgres.yaml, args du conteneur postgres');
-                }
-            }
-        }
-
-        self::fail('Conteneur postgres introuvable dans k8s/base/postgres.yaml.');
+        return $this->stringList($container['args'] ?? null, 'k8s/base/postgres.yaml, args du conteneur postgres');
     }
 
     /**
