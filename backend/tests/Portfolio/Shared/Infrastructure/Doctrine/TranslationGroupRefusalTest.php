@@ -24,7 +24,7 @@ final class TranslationGroupRefusalTest extends TestCase
 
     public function testAGroupOnSeveralPositionsIsNamedAfterItsInvariant(): void
     {
-        $refusal = self::refusal(TranslationGroupRefusal::ON_SEVERAL_POSITIONS);
+        $refusal = $this->refusal(TranslationGroupRefusal::ON_SEVERAL_POSITIONS);
 
         $named = TranslationGroupRefusal::nameOf($refusal);
 
@@ -35,7 +35,7 @@ final class TranslationGroupRefusalTest extends TestCase
 
     public function testAGroupAcrossSeveralScopesIsNamedAfterItsInvariant(): void
     {
-        $refusal = self::refusal(TranslationGroupRefusal::ACROSS_SEVERAL_SCOPES);
+        $refusal = $this->refusal(TranslationGroupRefusal::ACROSS_SEVERAL_SCOPES);
 
         $named = TranslationGroupRefusal::nameOf($refusal);
 
@@ -51,11 +51,11 @@ final class TranslationGroupRefusalTest extends TestCase
      */
     public function testAnyOtherRefusalIsNotNamed(): void
     {
-        self::assertNull(TranslationGroupRefusal::nameOf(self::refusal('23505')));
-        self::assertNull(TranslationGroupRefusal::nameOf(self::refusal(null)));
+        self::assertNull(TranslationGroupRefusal::nameOf($this->refusal('23505')));
+        self::assertNull(TranslationGroupRefusal::nameOf($this->refusal(null)));
     }
 
-    private static function refusal(?string $sqlState): DriverException
+    private function refusal(?string $sqlState): DriverException
     {
         $driverException = new class(self::DATABASE_MESSAGE, $sqlState) extends AbstractException {
         };
