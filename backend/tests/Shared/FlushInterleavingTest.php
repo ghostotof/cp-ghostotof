@@ -41,10 +41,11 @@ final class FlushInterleavingTest extends KernelTestCase
     {
         $entityManager = $this->entityManager();
         $connection = $entityManager->getConnection();
-        $connection->executeQuery('SELECT pg_advisory_lock(?)', [self::LOCK_KEY]);
-        [$barrier, $child] = $this->startChild('lock', (string) self::LOCK_KEY);
 
+        // Dans le try : un échec du démarrage ne laisse pas la clé tenue.
         try {
+            $connection->executeQuery('SELECT pg_advisory_lock(?)', [self::LOCK_KEY]);
+            [$barrier, $child] = $this->startChild('lock', (string) self::LOCK_KEY);
             FlushInterleaving::releaseBeforeNextFlush($entityManager, $barrier, $child, self::TIMEOUT_SECONDS);
             $entityManager->flush();
 
@@ -62,9 +63,10 @@ final class FlushInterleavingTest extends KernelTestCase
 
     /**
      * Le cas d'une course sans correctif : le fils termine pendant la pause,
-     * et le flush ne reprend qu'après lui. L'écouteur ne sert qu'une fois.
+     * et le flush ne reprend qu'après lui. L'écouteur se retire : il n'est
+     * plus armé sur aucun des deux événements.
      */
-    public function testTheFlushResumesOnceTheChildIsDoneAndOnlyOnce(): void
+    public function testTheFlushResumesOnceTheChildIsDoneAndTheListenerIsDisarmed(): void
     {
         $entityManager = $this->entityManager();
         [$barrier, $child] = $this->startChild('finish');
@@ -75,6 +77,7 @@ final class FlushInterleavingTest extends KernelTestCase
         self::assertFalse($child->isRunning(), 'Le flush a repris avant que le fils ait fini.');
         self::assertSame(0, $child->getExitCode(), $child->getErrorOutput());
         self::assertSame([], $this->interleavingListeners($entityManager, Events::postFlush), "L'écouteur reste armé après son flush.");
+        self::assertSame([], $this->interleavingListeners($entityManager, Events::preFlush), "L'écouteur s'est armé sur l'autre événement.");
     }
 
     /**
@@ -130,8 +133,11 @@ final class FlushInterleavingTest extends KernelTestCase
      */
     private function interleavingListeners(EntityManagerInterface $entityManager, string $event): array
     {
+        // getAllListeners() plutôt que getListeners($event) : celle du
+        // ContainerAwareEventManager de Symfony lève une TypeError sur un
+        // événement qui n'a jamais eu d'écouteur.
         return array_values(array_filter(
-            $entityManager->getEventManager()->getListeners($event),
+            $entityManager->getEventManager()->getAllListeners()[$event] ?? [],
             static fn (object|string $listener): bool => $listener instanceof FlushInterleaving,
         ));
     }

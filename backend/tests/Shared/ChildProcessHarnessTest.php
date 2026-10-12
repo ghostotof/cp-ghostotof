@@ -48,7 +48,10 @@ final class ChildProcessHarnessTest extends TestCase
     private const string PG_STAT_ACTIVITY = 'pg_stat_activity';
 
     /** Un écouteur de flush : celui d'entrelacement s'arme par FlushInterleaving. */
-    private const string FLUSH_EVENT = 'Events::preFlush|postFlush';
+    private const string FLUSH_EVENT = '::preFlush|onFlush|postFlush';
+
+    /** Les événements du flush de Doctrine, tels que les nomment les constantes de Doctrine\ORM\Events. */
+    private const array FLUSH_EVENTS = ['preFlush', 'onFlush', 'postFlush'];
 
     /** Une variable que phpunit.dist.xml force à une valeur factice, et que le .env laisse vide. */
     private const string FORCED_VARIABLE = 'ANTHROPIC_API_KEY';
@@ -260,17 +263,20 @@ final class ChildProcessHarnessTest extends TestCase
     /**
      * Ni `flock()` hors de ProcessBarrier, ni copie de `$_SERVER` hors de
      * ChildPhpProcess, ni `new Process(ChildPhpProcess::command(…` qui
-     * oublierait l'environnement, ni écouteur `preFlush`/`postFlush` ou
-     * requête sur `pg_stat_activity` hors de FlushInterleaving (issue #510) :
-     * un nouveau test de concurrence passe par eux. Par jetons, comme les
-     * autres recenseurs ({@see PhpSources}) : un appel est un nom suivi de
-     * `(`, une copie un `foreach ($_SERVER`, un écouteur la constante
-     * `Events::preFlush` ou `Events::postFlush` (courte ou qualifiée), une
-     * requête un littéral qui nomme la vue, commentaires exclus. Ne voit pas
-     * une copie écrite autrement (`array_filter($_SERVER, …)`), un
-     * `proc_open()`, une barrière qui ne serait pas un verrou de fichier, un
-     * écouteur armé sur le nom de l'événement en clair (`'preFlush'`) ou par
-     * attribut, ni une vue nommée par concaténation.
+     * oublierait l'environnement, ni écouteur de flush ou requête sur
+     * `pg_stat_activity` hors de FlushInterleaving (issue #510) : un nouveau
+     * test de concurrence passe par eux. Par jetons, comme les autres
+     * recenseurs ({@see PhpSources}) : un appel est un nom suivi de `(`, une
+     * copie un `foreach ($_SERVER`, un écouteur une constante `preFlush`,
+     * `onFlush` ou `postFlush` lue sur une classe, quel que soit son nom
+     * (`Events::`, un alias, un attribut qui la cite), une requête un
+     * littéral qui nomme la vue, commentaires exclus. Large à dessein : un
+     * test qui en aurait un autre usage rejoint la liste de son motif, avec
+     * sa raison. Ne voit pas une copie écrite autrement
+     * (`array_filter($_SERVER, …)`), un `proc_open()`, une barrière qui ne
+     * serait pas un verrou de fichier, un écouteur armé sur le nom de
+     * l'événement en clair (`'preFlush'`), ni une vue nommée par
+     * concaténation.
      */
     public function testNoTestRewritesTheHarness(): void
     {
@@ -325,7 +331,7 @@ final class ChildProcessHarnessTest extends TestCase
         return match (true) {
             !$isMember && 'flock' === ltrim($token->text, '\\') && '(' === $next?->text => self::FLOCK,
             $token->is([\T_CONSTANT_ENCAPSED_STRING, \T_ENCAPSED_AND_WHITESPACE]) && false !== stripos($token->text, self::PG_STAT_ACTIVITY) => self::PG_STAT_ACTIVITY,
-            $this->isFlushEvent($token, $next, $tokens[$index + 2] ?? null) => self::FLUSH_EVENT,
+            '::' === $token->text && $this->isFlushEventConstant($next, $tokens[$index + 2] ?? null) => self::FLUSH_EVENT,
             $token->is(\T_FOREACH) && '(' === $next?->text && '$_SERVER' === ($tokens[$index + 2] ?? null)?->text => self::SERVER_COPY,
             $token->is(\T_NEW) && $this->buildsAProcessOnCommand(\array_slice($tokens, $index + 1, 6)) => self::PROCESS_ON_COMMAND,
             default => null,
@@ -333,14 +339,12 @@ final class ChildProcessHarnessTest extends TestCase
     }
 
     /**
-     * `Events::preFlush` ou `Events::postFlush`, la classe `Events` écrite
-     * courte ou qualifiée.
+     * Après `::`, une constante qui nomme un événement du flush — pas une
+     * méthode statique homonyme, suivie de `(`.
      */
-    private function isFlushEvent(PhpToken $token, ?PhpToken $next, ?PhpToken $constant): bool
+    private function isFlushEventConstant(?PhpToken $name, ?PhpToken $following): bool
     {
-        return 'Events' === array_last(explode('\\', $token->text))
-            && '::' === $next?->text
-            && \in_array($constant?->text, ['preFlush', 'postFlush'], true);
+        return \in_array($name?->text, self::FLUSH_EVENTS, true) && '(' !== $following?->text;
     }
 
     /**

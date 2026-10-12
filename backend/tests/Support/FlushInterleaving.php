@@ -126,7 +126,14 @@ final readonly class FlushInterleaving
     /**
      * Rend la main dès que le fils a terminé ou que sa session attend un
      * verrou ; fait échouer le test au-delà du délai, plutôt que de le
-     * suspendre sur un verrou jamais relâché.
+     * suspendre sur un verrou jamais relâché, en citant ce que le fils a
+     * écrit.
+     *
+     * Terminé, quel que soit son code de sortie : un refus peut être l'issue
+     * que le test attend ou dénonce (#364 : « l'invitation concurrente a été
+     * refusée »), et c'est à lui de la nommer — chaque appelant vérifie le
+     * code de sortie du fils. Un fils qui n'a pas pu se mettre en place ne
+     * va pas jusqu'ici : la barrière l'a déjà signalé.
      */
     private function waitUntilDoneOrBlocked(): void
     {
@@ -138,9 +145,11 @@ final readonly class FlushInterleaving
             }
             if (microtime(true) > $deadline) {
                 Assert::fail(\sprintf(
-                    "Le processus fils n'a ni fini ni attendu un verrou après %d s :\n%s",
+                    "Le processus fils n'a ni fini ni attendu un verrou après %d s :\n%s\n%s%s",
                     $this->timeoutSeconds,
                     $this->child->getCommandLine(),
+                    $this->child->getOutput(),
+                    $this->child->getErrorOutput(),
                 ));
             }
             usleep(self::POLL_MICROSECONDS);

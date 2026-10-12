@@ -173,9 +173,13 @@ given the EntityManager, the barrier, the started child and the timeout. It wait
 returns as soon as the child has **finished** or **its** session waits on any `Lock` in `pg_stat_activity`
 (read from a separate probe connection, outside any transaction), and fails the test past the timeout.
 `tests/Shared/FlushInterleavingTest.php` exercises it on a real child (blocked on an advisory lock the test
-holds, finished, neither); `ChildProcessHarnessTest` also refuses, in `tests/`, any `Events::preFlush` /
-`Events::postFlush` and any string literal naming `pg_stat_activity` outside it (plus that test, and the
-guard naming the view). Not seen: a listener armed on the event's name as a string or by attribute.
+holds, finished, neither); `ChildProcessHarnessTest` also refuses, in `tests/`, any class constant
+`::preFlush` / `::onFlush` / `::postFlush` (whatever the class is called: `Events`, an alias, inside an
+attribute) and any string literal naming `pg_stat_activity` outside it (plus that test, and the guard
+naming the view) — broad on purpose: a test with another use joins its pattern's owners with its reason.
+Not seen: a listener armed on the event's name written as a string (`'preFlush'`), a view name built by
+concatenation. The wait returns once the child has finished **whatever its exit code**: each caller checks
+it, and names the refusal it expects or denounces.
 **Proving a concurrency test still fails without its fix** takes the right mutation, measured in #510
 before and after the extraction: remove the **lock and keep its transaction** — `FOR UPDATE` out of
 `PostgresAccountRowLock` (#435 and #458 red on their token counts), the `pg_advisory_xact_lock` call out
