@@ -164,9 +164,11 @@ paths:
   Platform's defaults instead of extending them, so two of the three it ships with sit explicitly at the
   **end** of the list (`Serializer\ExceptionInterface: 500`, `ApiPlatform\Metadata\Exception\InvalidArgumentException: 500`),
   both **deliberately not** at API Platform's 400; the third, `Doctrine\ORM\OptimisticLockException: 409`,
-  was **removed** by issue #373 (no entity is versioned, and its only possible throw today, `notVersioned()`,
-  is a programming error — a `critical` 500, what no entry gives; map the conflict back to a 409 with a
-  `log_level` the day an `#[ORM\Version]` appears). The API Platform `InvalidArgumentException` (subclass
+  was **removed** by issue #373 (no entity is versioned, and its possible throws today are server defects —
+  `notVersioned()`, a programming error, and « Commit failed », Doctrine's wrapping of any COMMIT the database
+  refuses on a `flush()` outside a transaction, the translation-group trigger's included, #506 — a `critical`
+  500, what no entry gives; the day an `#[ORM\Version]` appears, map the version conflict back to a 409 with
+  a `log_level`, but not the whole class, or a refused COMMIT becomes a client 409). The API Platform `InvalidArgumentException` (subclass
   `ItemNotFoundException`; `OperationNotFoundException` is **not** one, it extends PHP's) was reachable by a
   client: an `id` in the body of any PUT — a "standard" PUT populates no object in API Platform 4, so the key
   went to IRI resolution and came out 400 + `critical`. `defaults.denormalization_context.api_allow_update:

@@ -199,11 +199,15 @@ api_platform:
         ApiPlatform\Metadata\Exception\InvalidArgumentException: 500
         # Troisième défaut d'API Platform, `Doctrine\ORM\OptimisticLockException: 409`,
         # **retiré** (issue #373) : aucune entité n'est versionnée (pas de
-        # #[ORM\Version] dans src/), et la seule levée possible aujourd'hui,
-        # OptimisticLockException::notVersioned(), est une erreur de
-        # programmation — un 500 `critical`, ce que donne l'absence d'entrée.
-        # Le jour où une entité sera versionnée, le conflit concurrent est un
-        # 409 du client : lui donner alors une entrée et un `log_level`.
+        # #[ORM\Version] dans src/), et ses levées possibles aujourd'hui sont
+        # des défauts du serveur — OptimisticLockException::notVersioned(),
+        # une erreur de programmation, et « Commit failed », l'enveloppe que
+        # Doctrine met sur tout COMMIT refusé par la base lors d'un flush()
+        # hors transaction, refus du trigger des groupes de traduction compris
+        # (#506) : un 500 `critical`, ce que donne l'absence d'entrée. Le jour
+        # où une entité sera versionnée, le conflit concurrent est un 409 du
+        # client : lui donner alors un nom à lui et un `log_level`, pas la
+        # classe entière, qui rendrait un COMMIT refusé en 409.
     defaults:
         stateless: true
         cache_headers:
