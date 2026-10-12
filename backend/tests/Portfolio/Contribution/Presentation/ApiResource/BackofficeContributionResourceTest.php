@@ -107,7 +107,7 @@ final class BackofficeContributionResourceTest extends WebTestCase
             'Corps.',
         );
 
-        $client->request('GET', sprintf('/api/backoffice/contributions/%s', $contribution->getId()->toRfc4122()));
+        $client->request('GET', \sprintf('/api/backoffice/contributions/%s', $contribution->getId()->toRfc4122()));
         self::assertResponseIsSuccessful();
         $item = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame($contribution->getId()->toRfc4122(), $item['id']);
@@ -171,7 +171,7 @@ final class BackofficeContributionResourceTest extends WebTestCase
         $id = $created['id'];
 
         // Put
-        $client->request('PUT', sprintf('/api/backoffice/contributions/%s', $id), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/contributions/%s', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody([
@@ -209,7 +209,7 @@ final class BackofficeContributionResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
 
         // Delete
-        $client->request('DELETE', sprintf('/api/backoffice/contributions/%s', $id), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
+        $client->request('DELETE', \sprintf('/api/backoffice/contributions/%s', $id), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
         self::assertResponseStatusCodeSame(204);
 
         self::assertSame([], self::getContainer()->get(ContributionRepositoryInterface::class)->findAll());
@@ -452,7 +452,7 @@ final class BackofficeContributionResourceTest extends WebTestCase
      */
     private function put(KernelBrowser $client, string $csrfToken, string $id, array $overrides): mixed
     {
-        $client->request('PUT', sprintf('/api/backoffice/contributions/%s', $id), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/contributions/%s', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody($overrides + $this->payload()));

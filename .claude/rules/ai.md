@@ -38,16 +38,19 @@ paths:
   window at the same odd count, or its first message is an answer and every full-window send is a 422), plus
   **16 000 characters for the whole conversation** (audit F2 — the bill is in tokens over everything sent);
   `AnswerRequest` caps `messages` at 50 in a `Sequentially` *before* `All` (validating ~4 000 tiny messages
-  cost 113 ms), wide on purpose so a merely too-long conversation keeps the VO's typed 422; quota `career_assistant` (30/h, key `username`) consumed by
+  cost 113 ms), wide on purpose so a merely too-long conversation keeps the VO's typed 422; quota `career_assistant` (30/h, keyed on the account's **UUID**, never its username — issue #363, read through `App\Shared\Domain\Security\AccountReference`, so `Ai` depends on no other context; a user that is not an `AccountReference` is a wiring defect, `UnauthenticatedAssistantCallException`) consumed by
   `QuotaGuardedCareerAssistant`, an `#[AsDecorator]` of `CareerAssistantInterface` — which is why
   `services.yaml` aliases the interface explicitly: with two implementations the automatic single-impl alias
   disappears and the decorator has nothing to decorate — so a 422 never costs quota, 429
-  `/errors/rate-limited` + `Retry-After`, the refusal logged on `ai_usage` with the account. **`#[WithMonologChannel]`
+  `/errors/rate-limited` + `Retry-After`, the refusal logged on `ai_usage` with the account's `userId`. **`#[WithMonologChannel]`
   is lost on an `#[AsDecorator]` service** (decoration rewrites its tags, the record silently went to the app
   channel): inject `monolog.logger.<channel>` by id there. The quota takes the shared PostgreSQL advisory lock like
   every limiter (#272, v0.18.2, ADR 0005 D8–D10 — see the ADR 0005 invariant in `.claude/rules/deploiement.md`), so a burst of synchronised
-  calls counts one unit each; never consume it inside a Doctrine transaction; body over 128 KiB (the longest valid conversation in 4-byte characters is ~104 kB — 64 KiB, the spec's
-  first figure, refused it) → 413 `/errors/request-too-large`, judged by
+  calls counts one unit each; never consume it inside a Doctrine transaction; body over 128 KiB (the longest valid conversation, 16 000 characters in all, is ~64 kB in 4-byte
+  characters; 64 KiB, the spec's first figure, predates that total and refused the 104 kB the per-message
+  bounds alone then allowed. 128 KiB also lets through a conversation whose every message respects its own
+  bound but not the total — 6 × 1 000 + 5 × 5 000 since #406, 124 372 bytes measured — so it gets the VO's
+  typed 422, not a 413: an assistant bound above 5 335, measured, would break that) → 413 `/errors/request-too-large`, judged by
   `AssistantRequestSizeListener` at priority 4, *after* the firewall, so an anonymous or base-tier caller only
   ever learns it is refused); task 6 (#265) done: the `/(fr|en)/assistant` page
   (`ROLE_TRUSTED`/`ROLE_SUPER`), see "API-backed content" in `.claude/rules/frontend.md`; task 4 (#263) done: the **nominative CV opens
@@ -83,13 +86,22 @@ paths:
   `{reason}` — and a provider failure **before the first fragment** is a 503 problem+json
   (`/errors/assistant-unavailable`, rendered by the shared `ApiProblemResponseListener`, the route not being an
   API Platform operation), the call being primed before the 200 is sent; `ReplayRefusingHttpClient` stops the
-  bridge's `EventSourceHttpClient` from replaying a cut stream (a second, billed generation). Two rules from
+  bridge's `EventSourceHttpClient` from replaying a cut stream (a second, billed generation). Its refusal is a
+  `TransportException` whose trace keeps, below it, the vendor frame `AsyncContext::replaceRequest($method,
+  $url, $options)` — the Scaleway key and the nominative CV as arguments in dev, where
+  `zend.exception_ignore_args` is Off and `#[SensitiveParameter]` cannot reach the vendor. **Left as is, on
+  purpose (issue #428, pt 1)**: the trace is rendered nowhere, because that exception never leaves
+  `SymfonyAiCareerAssistant` — neither thrown nor as a `previous` (`AssistantUnavailableException` takes none)
+  — and only its class is logged. `SymfonyAiCareerAssistantTest::testARefusedReplayNeverLeavesTheServiceNorReachesTheLogs`
+  pins it at both stages; a change that let it out would need the trace stripped first. Two rules from
   the task's security review: **`AssistantUnavailableException` never chains the bridge's exception** — the
   kernel's `ErrorListener` logs the whole `previous` chain, and the bridge copies the provider's response
   body into its message (issue #269 tracks the same defect on the translator); and every assistant exception
   a client can cause implements `ProblemExceptionInterface`, since `exception_to_status` has no effect on
   this route — with a **literal** message only, since the listener returns it as `detail`
-  (`ProblemDetailStaysStaticTest` parses every `ProblemExceptionInterface` of `src/` by tokens; a
+  (`ProblemDetailStaysStaticTest` parses every `ProblemExceptionInterface` of `src/` by tokens, with the
+  traits and parents it gets its methods from, whose `getDetail()` must be `return $this->getMessage();`,
+  #507, #514; a
   dynamic message elsewhere needs a justified entry in its allow-list), and a `log_level` in
   `framework.exceptions` — never `#[WithLogLevel]`, which would make the domain depend on HttpKernel —
   or the kernel logs it `critical`. The corpus's `<documents>` neutralisation is **linear by
@@ -126,7 +138,7 @@ paths:
   timeout; **only backoffice-authored content meant for publication may be sent** to a provider, never
   `cpg_user`, a token, the nominative CV or a contact message; **a suggestion is never persisted** without a
   human action (the endpoint reads and writes nothing, the frontend fills a *new* form); **cost is bounded by
-  construction** (per-account quota `translation_assistant`, 30/h keyed on the `username`, `max_tokens`,
+  construction** (per-account quota `translation_assistant`, 30/h keyed on the account's UUID — issue #363, like the assistant's —, `max_tokens`,
   timeout); **no test goes on the wire** (unit tests: a `FakeAgent`; functional tests: the concrete client
   behind the scoped one, `ai.http_client.scoping.inner`, replaced by a `MockHttpClient` answering in the
   Messages API format — **with `$client->disableReboot()`**, otherwise `KernelBrowser` rebuilds the kernel
@@ -135,7 +147,7 @@ paths:
   An anonymous `POST` there answers **403, not 401**: the CSRF subscriber runs before the firewall. Token
   usage and duration are logged, the content never is — **on `ai_usage`** since issue #356, like the
   career assistant (as an `info` of the app channel the line never left a production pod), each line
-  with an `outcome` (`done`, `error`); the quota refusal (`rate-limited`, `account`, `retryAfter`) is
+  with an `outcome` (`done`, `error`); the quota refusal (`rate-limited`, `userId`, `retryAfter`) is
   written by `SymfonyTranslationRateLimiter`, the one place that knows both the key and the deadline, so
   `TranslationRateLimitExceededException` is `info` like the assistant's. Functional tests read the
   channel through `tests/Support/ReadsAiUsageLog`. Two side effects, accepted: the translator's `error`

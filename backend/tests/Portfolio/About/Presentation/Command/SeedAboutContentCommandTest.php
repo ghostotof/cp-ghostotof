@@ -174,7 +174,7 @@ final class SeedAboutContentCommandTest extends KernelTestCase
         foreach ($french as $index => $card) {
             self::assertTrue(
                 $card->getTranslationGroup()->equals($english[$index]->getTranslationGroup()),
-                sprintf('[%s] Les cartes de position %d ne partagent pas leur groupe.', $label, $index),
+                \sprintf('[%s] Les cartes de position %d ne partagent pas leur groupe.', $label, $index),
             );
         }
     }

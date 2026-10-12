@@ -7,6 +7,7 @@ namespace App\Portfolio\Quality\Application;
 use App\Portfolio\Quality\Domain\Entity\QualityTrait as QualityTraitEntity;
 use App\Portfolio\Quality\Domain\Exception\QualityTraitNotFoundException;
 use App\Portfolio\Quality\Domain\Repository\QualityTraitRepositoryInterface;
+use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -14,10 +15,17 @@ use Symfony\Component\Uid\Uuid;
 
 final readonly class QualityTraitAdministrator implements QualityTraitAdministratorInterface
 {
+    /**
+     * Périmètre d'ordre, verrouillé par toute écriture qui place une entrée
+     * (issue #389) : la table entière, toutes langues confondues.
+     */
+    private const string ORDER_SCOPE = QualityTraitEntity::class;
+
     public function __construct(
         private QualityTraitRepositoryInterface $qualityTraitRepository,
         private ContentPlacement $contentPlacement,
         private OrderAssigner $orderAssigner,
+        private OrderScopeLockInterface $orderScopeLock,
     ) {
     }
 
@@ -26,40 +34,44 @@ final readonly class QualityTraitAdministrator implements QualityTraitAdministra
         string $label,
         ?Uuid $translationGroup = null,
     ): QualityTraitEntity {
-        $trait = new QualityTraitEntity($locale, $label, $this->positionFor($locale, $translationGroup), $translationGroup);
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($locale, $label, $translationGroup): QualityTraitEntity {
+            $trait = new QualityTraitEntity($locale, $label, $this->positionFor($locale, $translationGroup), $translationGroup);
 
-        $this->qualityTraitRepository->save($trait);
+            $this->qualityTraitRepository->save($trait);
 
-        return $trait;
+            return $trait;
+        });
     }
 
     public function update(Uuid $id, string $label, ?Uuid $translationGroup): QualityTraitEntity
     {
-        $trait = $this->qualityTraitRepository->findOneById($id);
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $label, $translationGroup): QualityTraitEntity {
+            $trait = $this->qualityTraitRepository->findOneById($id);
 
-        if (null === $trait) {
-            throw QualityTraitNotFoundException::forId($id);
-        }
+            if (null === $trait) {
+                throw QualityTraitNotFoundException::forId($id);
+            }
 
-        if (null === $translationGroup) {
-            // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
-            // le chargement du périmètre — le même qu'à la création sans groupe.
-            $this->contentPlacement->detach(
-                $trait,
-                $this->qualityTraitRepository->findByTranslationGroup($trait->getTranslationGroup()),
-                $this->qualityTraitRepository->findAll(),
-            );
-        } else {
-            $this->contentPlacement->reattach(
-                $trait,
-                $translationGroup,
-                $this->qualityTraitRepository->findByTranslationGroup($translationGroup),
-            );
-        }
-        $trait->update($label);
-        $this->qualityTraitRepository->save($trait);
+            if (null === $translationGroup) {
+                // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
+                // le chargement du périmètre — le même qu'à la création sans groupe.
+                $this->contentPlacement->detach(
+                    $trait,
+                    $this->qualityTraitRepository->findByTranslationGroup($trait->getTranslationGroup()),
+                    $this->qualityTraitRepository->findAll(),
+                );
+            } else {
+                $this->contentPlacement->reattach(
+                    $trait,
+                    $translationGroup,
+                    $this->qualityTraitRepository->findByTranslationGroup($translationGroup),
+                );
+            }
+            $trait->update($label);
+            $this->qualityTraitRepository->save($trait);
 
-        return $trait;
+            return $trait;
+        });
     }
 
     public function delete(Uuid $id): void
@@ -75,11 +87,13 @@ final readonly class QualityTraitAdministrator implements QualityTraitAdministra
 
     public function reorder(array $keys): void
     {
-        $scope = $this->qualityTraitRepository->findAll();
+        $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($keys): void {
+            $scope = $this->qualityTraitRepository->findAll();
 
-        $this->orderAssigner->assign($scope, $keys);
+            $this->orderAssigner->assign($scope, $keys);
 
-        $this->qualityTraitRepository->saveAll($scope);
+            $this->qualityTraitRepository->saveAll($scope);
+        });
     }
 
     /**

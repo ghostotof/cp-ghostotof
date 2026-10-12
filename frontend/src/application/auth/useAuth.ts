@@ -189,8 +189,16 @@ export function useAuth(): UseAuthResult {
   }
 
   const logout = async (): Promise<void> => {
-    await repository.logout()
-    applySession(ANONYMOUS_SESSION)
+    try {
+      await repository.logout()
+    } finally {
+      // Même si le serveur refuse (un XSRF-TOKEN signé sous une clé qui a
+      // changé répond 403, issue #455) : rester « connecté » fermerait la page
+      // de login, seule sortie — un nouveau login remplace les deux cookies.
+      // L'erreur remonte, pour que l'appelant y mène plutôt qu'à l'accueil ;
+      // un rechargement relit le palier réel sur /api/me.
+      applySession(ANONYMOUS_SESSION)
+    }
   }
 
   const checkAuth = async (): Promise<void> => {

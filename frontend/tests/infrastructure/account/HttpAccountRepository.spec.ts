@@ -52,22 +52,22 @@ describe('HttpAccountRepository', () => {
       expect(singleCall(fetchMock).url).not.toContain(TOKEN)
     })
 
-    it('lève "invalid" sur 404', async () => {
+    it('lève "unusable" sur 404 : tout lien inutilisable, quel qu\'en soit le motif (#362)', async () => {
       stubStatus(404)
 
-      expect(await reasonOf(new HttpAccountRepository(API_BASE_URL).validateSetupToken(TOKEN))).toBe('invalid')
+      expect(await reasonOf(new HttpAccountRepository(API_BASE_URL).validateSetupToken(TOKEN))).toBe('unusable')
     })
 
-    it('lève "expired" sur 410', async () => {
+    it('lève "unusable" sur 410 aussi : un backend d\'avant #362 (rollback) reste compris', async () => {
       stubStatus(410)
 
-      expect(await reasonOf(new HttpAccountRepository(API_BASE_URL).validateSetupToken(TOKEN))).toBe('expired')
+      expect(await reasonOf(new HttpAccountRepository(API_BASE_URL).validateSetupToken(TOKEN))).toBe('unusable')
     })
 
-    it('lève "invalid" sur 422 : ici seul le jeton est validé (vide, trop long), c\'est donc un lien corrompu', async () => {
+    it('lève "incomplete" sur 422 : ici seul le jeton est validé (vide, trop long), c\'est donc un lien abîmé', async () => {
       stubStatus(422)
 
-      expect(await reasonOf(new HttpAccountRepository(API_BASE_URL).validateSetupToken(TOKEN))).toBe('invalid')
+      expect(await reasonOf(new HttpAccountRepository(API_BASE_URL).validateSetupToken(TOKEN))).toBe('incomplete')
     })
 
     it('lève "rate-limited" sur 429', async () => {
@@ -106,16 +106,16 @@ describe('HttpAccountRepository', () => {
       expect(singleCall(fetchMock).url).not.toContain(TOKEN)
     })
 
-    it('lève "invalid" sur 404', async () => {
+    it('lève "unusable" sur 404 (lien consommé entre-temps, ou tout autre motif, #362)', async () => {
       stubStatus(404)
 
-      expect(await reasonOf(new HttpAccountRepository(API_BASE_URL).completePasswordSetup(TOKEN, 'NewSecurePass1'))).toBe('invalid')
+      expect(await reasonOf(new HttpAccountRepository(API_BASE_URL).completePasswordSetup(TOKEN, 'NewSecurePass1'))).toBe('unusable')
     })
 
-    it('lève "expired" sur 410 (jeton déjà consommé)', async () => {
+    it('lève "unusable" sur 410 aussi : un backend d\'avant #362 (rollback) reste compris', async () => {
       stubStatus(410)
 
-      expect(await reasonOf(new HttpAccountRepository(API_BASE_URL).completePasswordSetup(TOKEN, 'NewSecurePass1'))).toBe('expired')
+      expect(await reasonOf(new HttpAccountRepository(API_BASE_URL).completePasswordSetup(TOKEN, 'NewSecurePass1'))).toBe('unusable')
     })
 
     it('lève "weak-password" sur 422 : le jeton a déjà passé validate, reste le mot de passe', async () => {

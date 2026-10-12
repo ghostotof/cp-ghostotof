@@ -8,6 +8,7 @@ use App\Portfolio\Watch\Domain\Service\PackageManifestBuilderInterface;
 use App\Portfolio\Watch\Domain\ValueObject\PackageCoordinates;
 use App\Portfolio\Watch\Domain\ValueObject\PackageManifest;
 use App\Portfolio\Watch\Presentation\Command\BuildPackageManifestCommand;
+use DateTimeImmutable;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Command\Command;
@@ -36,7 +37,7 @@ final class BuildPackageManifestCommandTest extends TestCase
     private function givenManifest(array $packages): void
     {
         $this->builder->method('build')->willReturn(
-            new PackageManifest(new \DateTimeImmutable('2026-09-07 12:00:00'), $packages),
+            new PackageManifest(new DateTimeImmutable('2026-09-07 12:00:00'), $packages),
         );
     }
 

@@ -7,8 +7,10 @@
   l'encadré « Amendement du 2026-09-15 » sous D7) ; **phase 2 livrée** le 2026-10-04 (spec
   `.claude/specs/archive/2026-10-04-spec-0005-assistant-parcours/0005-career-assistant.md`, release v0.19.0
   en production ; vérifications restantes de la release dans l'issue #324) ; **D1 amendée le 2026-10-04**
-  (issue #308 : `Ai/Shared/Infrastructure/SymfonyAi/ProviderFailure`, voir l'encadré sous D1)
-- Date : 2026-09-14, amendée le 2026-09-15 et le 2026-10-04
+  (issue #308 : `Ai/Shared/Infrastructure/SymfonyAi/ProviderFailure`, voir l'encadré sous D1) ;
+  **D5 amendée le 2026-10-10** (issue #406 : 5 000 caractères par message de l'assistant renvoyé,
+  voir l'encadré sous D5)
+- Date : 2026-09-14, amendée le 2026-09-15, le 2026-10-04 et le 2026-10-10
 - Portée : `src/Ai/` (nouveau contexte borné), `config/packages/ai.yaml`, `config/ai/prompts/`,
   `config/packages/framework.yaml` (clients HTTP `ai.http_client` et, en phase 2, un second client
   dédié à Scaleway), `config/packages/rate_limiter.yaml`, `k8s/overlays/*/external-secrets.yaml`
@@ -152,7 +154,7 @@ est accepté et nommé ici.
 
 Trois bornes indépendantes, toutes présentes avant le premier déploiement :
 
-- un **quota par compte** (fenêtre glissante, 30 appels par heure, clé = `username`) — un bug de
+- un **quota par compte** (fenêtre glissante, 30 appels par heure, clé = `username` — l'UUID du compte depuis le 2026-10-12, issue #363) — un bug de
   boucle côté UI ou un compte compromis ne peut pas dépenser sans limite ;
 - un **plafond de jetons de sortie** (`max_tokens: 4096`, nom Anthropic) ;
 - un **timeout client HTTP** (40 s, sous les 60 s de nginx et de l'ingress) sur un client dédié
@@ -163,7 +165,7 @@ contenu**. `claude-sonnet-5` est le modèle des deux environnements : preprod do
 y compris la qualité de la sortie structurée.
 
 **Amendement du 2026-09-15.** L'assistant (D7) reçoit les mêmes trois bornes, avec un quota
-distinct (`career_assistant`, même fenêtre glissante, clé = `username`), un plafond de sortie plus
+distinct (`career_assistant`, même fenêtre glissante, clé = `username` — l'UUID du compte depuis le 2026-10-12, issue #363), un plafond de sortie plus
 bas (une réponse de conversation, pas une traduction de cinq champs) et **une quatrième borne qui
 n'existait pas en phase 1 : l'entrée**. La conversation est renvoyée entière à chaque tour, donc
 sa taille est plafonnée (nombre de tours et longueur des messages, valeurs fixées par la spec) —
@@ -171,6 +173,16 @@ sans quoi le coût d'une question croîtrait avec la patience de l'utilisateur. 
 au tarif public de Scaleway : une question coûte un millième d'euro ; le pire cas théorique de
 trois comptes saturant leur quota en continu, moins d'une centaine d'euros par mois — c'est
 précisément la borne, et une alerte de budget côté hébergeur la rend visible bien avant.
+
+**Amendement du 2026-10-10 (issue #406) — un message de l'assistant renvoyé passe de 4 000 à
+5 000 caractères.** La spec 0005, archivée et figée, avait fixé 4 000 sans mesure. La mesure faite
+en préprod pour #324 donne 3,82 caractères par jeton en français et 4,13 en anglais. Une réponse
+anglaise pleine (`max_tokens` 1 024) atteint donc ~4 230 caractères, et le frontend en coupait la
+fin avant de la renvoyer au tour suivant. 5 000 laisse ~18 % de marge sur ce ratio, mesuré sur un
+seul échantillon par langue. La borne de coût n'en dépend pas : les 16 000 caractères de la
+conversation entière bornent toujours l'entrée, et les autres valeurs ne changent pas
+(`ConversationMessage::MAX_ASSISTANT_LENGTH` et `MAX_ANSWER_LENGTH` côté frontend, recopiés à
+l'identique).
 
 ### D6 — Aucun test ne sort sur le réseau
 

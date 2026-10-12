@@ -11,6 +11,7 @@ use App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException;
 use App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException;
 use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use DateTimeImmutable;
 use Symfony\Component\Uid\Uuid;
 
 interface IncidentAdministratorInterface
@@ -30,7 +31,7 @@ interface IncidentAdministratorInterface
         Locale $locale,
         string $title,
         string $version,
-        \DateTimeImmutable $occurredAt,
+        DateTimeImmutable $occurredAt,
         string $impact,
         string $rootCause,
         string $resolution,
@@ -52,7 +53,7 @@ interface IncidentAdministratorInterface
         Uuid $id,
         string $title,
         string $version,
-        \DateTimeImmutable $occurredAt,
+        DateTimeImmutable $occurredAt,
         string $impact,
         string $rootCause,
         string $resolution,

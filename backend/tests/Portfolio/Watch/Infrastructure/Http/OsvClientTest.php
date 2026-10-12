@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Portfolio\Watch\Infrastructure\Http;
 
-use App\Portfolio\Watch\Domain\ValueObject\KnownVulnerability;
 use App\Portfolio\Watch\Domain\Exception\VulnerabilitySourceUnavailableException;
+use App\Portfolio\Watch\Domain\ValueObject\KnownVulnerability;
 use App\Portfolio\Watch\Domain\ValueObject\PackageCoordinates;
 use App\Portfolio\Watch\Infrastructure\Http\OsvClient;
 use PHPUnit\Framework\TestCase;

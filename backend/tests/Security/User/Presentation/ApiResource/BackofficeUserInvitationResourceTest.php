@@ -12,6 +12,7 @@ use App\Tests\Support\HttpJson;
 use App\Tests\Support\InvitesUsers;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use RuntimeException;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
@@ -78,7 +79,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $id = $this->findInviteeId($client);
 
-        $client->request('POST', sprintf('/api/backoffice/users/%s/invitation', $id), server: [
+        $client->request('POST', \sprintf('/api/backoffice/users/%s/invitation', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['locale' => 'en']));
@@ -147,7 +148,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $id = $this->findInviteeId($client);
 
-        $client->request('POST', sprintf('/api/backoffice/users/%s/invitation', $id), server: [
+        $client->request('POST', \sprintf('/api/backoffice/users/%s/invitation', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['locale' => 'fr']));
@@ -163,7 +164,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $id = $this->findInviteeId($client);
 
-        $client->request('POST', sprintf('/api/backoffice/users/%s/invitation', $id), server: [
+        $client->request('POST', \sprintf('/api/backoffice/users/%s/invitation', $id), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody([]));
@@ -201,7 +202,7 @@ final class BackofficeUserInvitationResourceTest extends WebTestCase
             }
         }
 
-        throw new \RuntimeException('Invited user not found.');
+        throw new RuntimeException('Invited user not found.');
     }
 
     private function asyncTransport(): InMemoryTransport

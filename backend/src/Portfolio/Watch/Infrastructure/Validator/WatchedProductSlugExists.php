@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Infrastructure\Validator;
 
+use Attribute;
 use Symfony\Component\Validator\Constraint;
 
 /**
@@ -20,7 +21,7 @@ use Symfony\Component\Validator\Constraint;
  * `WatchedProductAdministrator` ferait sortir sur le réseau la commande de
  * seed — et son test avec elle.
  */
-#[\Attribute(\Attribute::TARGET_PROPERTY)]
+#[Attribute(Attribute::TARGET_PROPERTY)]
 final class WatchedProductSlugExists extends Constraint
 {
     public string $message = 'Le produit « {{ slug }} » est inconnu du catalogue endoflife.date.';

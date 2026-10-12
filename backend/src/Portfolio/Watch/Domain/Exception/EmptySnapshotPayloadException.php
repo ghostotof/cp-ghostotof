@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Portfolio\Watch\Domain\Exception;
 
 use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
+use DomainException;
 
 /**
  * Exception métier levée quand on tente d'écrire un snapshot vide.
@@ -15,11 +16,11 @@ use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
  * n'a rien rapporté n'est pas un rafraîchissement, c'est une panne — et une
  * panne ne doit pas effacer ce que l'on savait déjà.
  */
-final class EmptySnapshotPayloadException extends \DomainException
+final class EmptySnapshotPayloadException extends DomainException
 {
     public static function forType(WatchSnapshotType $type): self
     {
-        return new self(sprintf(
+        return new self(\sprintf(
             'Refus d\'écrire un snapshot "%s" vide : la donnée précédente reste en place.',
             $type->value,
         ));

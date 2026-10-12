@@ -70,7 +70,7 @@ final class RouterScopeTest extends KernelTestCase
             self::assertArrayHasKey(
                 $path,
                 $nonApiPaths,
-                sprintf(
+                \sprintf(
                     'La route "%s" (%s) est hors de /api : elle échappe au firewall "api" (ancré ^/api, '
                     .'cf. AccessControlAnchoringTest) donc à tout access_control, et hors du périmètre '
                     .'d\'ApiRouteExposureTest (qui n\'énumère que /api) — elle serait servie à n\'importe '
@@ -111,7 +111,7 @@ final class RouterScopeTest extends KernelTestCase
         self::assertSame(
             [],
             array_values($staleEntries),
-            sprintf(
+            \sprintf(
                 'NON_API_PATHS déclare une ou plusieurs exemptions mortes, qui n\'existent plus dans le '
                 .'routeur : %s. Retire l\'entrée devenue obsolète.',
                 implode(', ', $staleEntries),

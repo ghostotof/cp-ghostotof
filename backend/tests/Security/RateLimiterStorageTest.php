@@ -6,6 +6,7 @@ namespace App\Tests\Security;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Cache\CacheItemPoolInterface;
+use ReflectionProperty;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Cache\Adapter\DoctrineDbalAdapter;
 use Symfony\Component\Cache\Adapter\FilesystemAdapter;
@@ -48,7 +49,8 @@ use Symfony\Component\RateLimiter\Storage\CacheStorage;
  * décomptaient qu'une seule unité (reproduit en dev, 3 passages sur 3). Le
  * verrou doit être un advisory lock PostgreSQL — jamais `flock` ni
  * `semaphore`, locaux au pod, qui répareraient un poste de dev et laisseraient
- * la production ouverte dès deux réplicas.
+ * la production ouverte dès deux réplicas. Ce test-ci pince le câblage ;
+ * RateLimiterConcurrencyTest en vérifie l'effet (issue #277).
  */
 final class RateLimiterStorageTest extends KernelTestCase
 {
@@ -106,7 +108,7 @@ final class RateLimiterStorageTest extends KernelTestCase
         $storage = self::getContainer()->get('limiter.storage.'.$limiterName);
         self::assertInstanceOf(CacheStorage::class, $storage);
 
-        $pool = (new \ReflectionProperty(CacheStorage::class, 'pool'))->getValue($storage);
+        $pool = (new ReflectionProperty(CacheStorage::class, 'pool'))->getValue($storage);
         self::assertInstanceOf(CacheItemPoolInterface::class, $pool);
 
         $this->assertPoolIsDatabaseBacked($pool, 'limiter.storage.'.$limiterName);
@@ -120,14 +122,14 @@ final class RateLimiterStorageTest extends KernelTestCase
         $factory = self::getContainer()->get('limiter.'.$limiterName);
         self::assertInstanceOf(RateLimiterFactory::class, $factory);
 
-        $lockFactory = (new \ReflectionProperty(RateLimiterFactory::class, 'lockFactory'))->getValue($factory);
+        $lockFactory = (new ReflectionProperty(RateLimiterFactory::class, 'lockFactory'))->getValue($factory);
         self::assertInstanceOf(
             LockFactory::class,
             $lockFactory,
             \sprintf('limiter.%s n\'a pas de verrou : des consume() simultanés se partagent une seule unité de quota (#272).', $limiterName),
         );
 
-        $store = (new \ReflectionProperty(LockFactory::class, 'store'))->getValue($lockFactory);
+        $store = (new ReflectionProperty(LockFactory::class, 'store'))->getValue($lockFactory);
         self::assertInstanceOf(PersistingStoreInterface::class, $store);
         self::assertInstanceOf(
             DoctrineDbalPostgreSqlStore::class,

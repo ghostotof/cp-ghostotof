@@ -12,6 +12,7 @@ use App\Ai\Assistant\Domain\ValueObject\Conversation;
 use App\Ai\Assistant\Domain\ValueObject\Role;
 use App\Ai\Shared\Infrastructure\SymfonyAi\ProviderFailure;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Generator;
 use Monolog\Attribute\WithMonologChannel;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\AgentInterface;
@@ -21,6 +22,7 @@ use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Throwable;
 
 /**
  * Seule classe de l'assistant à importer Symfony\AI (ADR 0004 D1).
@@ -67,7 +69,7 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
     ) {
     }
 
-    public function answer(Conversation $conversation, Locale $locale): \Generator
+    public function answer(Conversation $conversation, Locale $locale): Generator
     {
         $startedAt = hrtime(true);
         $messages = $this->messageBag($conversation, $locale);
@@ -79,7 +81,7 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
             // partirait qu'une fois le statut 200 envoyé, et un fournisseur
             // injoignable ne pourrait plus devenir un 503.
             $fragments->current();
-        } catch (\Throwable $exception) {
+        } catch (Throwable $exception) {
             throw $this->unavailable($exception, $conversation, 'before-first-fragment', $startedAt);
         }
 
@@ -100,9 +102,9 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
     }
 
     /**
-     * @return \Generator<int, string, mixed, void>
+     * @return Generator<int, string, mixed, void>
      */
-    private function textFragments(Execution $execution): \Generator
+    private function textFragments(Execution $execution): Generator
     {
         foreach ($execution->asStream() as $delta) {
             if ($delta instanceof TextDelta && '' !== $delta->getText()) {
@@ -112,18 +114,18 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
     }
 
     /**
-     * @param \Generator<int, string, mixed, void> $fragments déjà amorcé
+     * @param Generator<int, string, mixed, void> $fragments déjà amorcé
      *
-     * @return \Generator<int, string, mixed, AnswerUsage>
+     * @return Generator<int, string, mixed, AnswerUsage>
      */
-    private function relay(\Generator $fragments, Execution $execution, Conversation $conversation, int $startedAt): \Generator
+    private function relay(Generator $fragments, Execution $execution, Conversation $conversation, int $startedAt): Generator
     {
         try {
             while ($fragments->valid()) {
                 yield $fragments->current();
                 $fragments->next();
             }
-        } catch (\Throwable $exception) {
+        } catch (Throwable $exception) {
             throw $this->unavailable($exception, $conversation, 'during-stream', $startedAt);
         }
 
@@ -148,7 +150,7 @@ final readonly class SymfonyAiCareerAssistant implements CareerAssistantInterfac
     /**
      * @param int $startedAt hrtime(true) au début de answer()
      */
-    private function unavailable(\Throwable $exception, Conversation $conversation, string $stage, int $startedAt): AssistantUnavailableException
+    private function unavailable(Throwable $exception, Conversation $conversation, string $stage, int $startedAt): AssistantUnavailableException
     {
         $this->logger->error('Assistant de parcours : le fournisseur a échoué.', [
             'outcome' => 'error',

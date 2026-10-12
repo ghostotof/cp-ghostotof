@@ -9,6 +9,7 @@ use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Tests\Support\ReadsSecurityAuditLog;
+use DateTimeImmutable;
 use Doctrine\DBAL\Connection;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -57,12 +58,12 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
     {
         $stale = new CpgUser('stale-invitee', '');
         $stale->setEmail('stale@example.com');
-        $stale->markInvited(new \DateTimeImmutable('-40 days'));
+        $stale->markInvited(new DateTimeImmutable('-40 days'));
         $this->userRepository->save($stale);
         $this->tokenRepository->save(new PasswordSetupToken(
             $stale,
             hash('sha256', 'clear-token-stale-invitee'),
-            new \DateTimeImmutable('+48 hours'),
+            new DateTimeImmutable('+48 hours'),
         ));
 
         $exitCode = $this->commandTester()->execute(['--older-than' => '30 days']);
@@ -74,7 +75,7 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
         $event = self::singleSecurityAuditEvent('user-purged');
         self::assertSame('system', $event['actor']);
         self::assertSame('invitation-expired', $event['reason']);
-        self::assertSame('stale-invitee', $event['user']);
+        self::assertArrayNotHasKey('user', $event);
         self::assertSame($stale->getId()->toRfc4122(), $event['userId']);
 
         foreach (self::securityAuditRecords() as $record) {
@@ -86,7 +87,7 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
     public function testRecentAccountIsKept(): void
     {
         $recent = new CpgUser('recent-invitee', '');
-        $recent->markInvited(new \DateTimeImmutable('-10 days'));
+        $recent->markInvited(new DateTimeImmutable('-10 days'));
         $this->userRepository->save($recent);
 
         $exitCode = $this->commandTester()->execute(['--older-than' => '30 days']);
@@ -99,8 +100,8 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
     public function testActivatedAccountIsKept(): void
     {
         $activated = new CpgUser('activated-invitee', '');
-        $activated->markInvited(new \DateTimeImmutable('-40 days'));
-        $activated->markActivated(new \DateTimeImmutable('-5 days'));
+        $activated->markInvited(new DateTimeImmutable('-40 days'));
+        $activated->markActivated(new DateTimeImmutable('-5 days'));
         $this->userRepository->save($activated);
 
         $exitCode = $this->commandTester()->execute(['--older-than' => '30 days']);
@@ -113,7 +114,7 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
     public function testDryRunRemovesNothingAndListsTheAccountUnderASimulationTitle(): void
     {
         $stale = new CpgUser('dry-run-invitee', '');
-        $stale->markInvited(new \DateTimeImmutable('-40 days'));
+        $stale->markInvited(new DateTimeImmutable('-40 days'));
         $this->userRepository->save($stale);
 
         $tester = $this->commandTester();
@@ -121,7 +122,10 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
 
         self::assertSame(0, $exitCode);
         self::assertNotNull($this->userRepository->findOneByUsername('dry-run-invitee'));
-        self::assertStringContainsString('dry-run-invitee', $tester->getDisplay());
+        // Par UUID, jamais par identifiant (issue #363) : la sortie est le
+        // journal du pod du CronJob.
+        self::assertStringContainsString($stale->accountId(), $tester->getDisplay());
+        self::assertStringNotContainsString('dry-run-invitee', $tester->getDisplay());
         self::assertStringContainsStringIgnoringCase('simulation', $tester->getDisplay());
         self::assertSame([], self::securityAuditEvents('user-purged'));
     }
@@ -130,7 +134,7 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
     {
         $superInvitee = new CpgUser('super-invitee', '');
         $superInvitee->setRoles([CpgUser::ROLE_SUPER]);
-        $superInvitee->markInvited(new \DateTimeImmutable('-40 days'));
+        $superInvitee->markInvited(new DateTimeImmutable('-40 days'));
         $this->userRepository->save($superInvitee);
 
         $tester = $this->commandTester();
@@ -142,10 +146,11 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
         // titre de la section "ignorés", jamais sous "Comptes purgés".
         $display = $tester->getDisplay();
         $ignoredSectionPosition = strpos($display, 'ignoré');
-        $usernamePosition = strpos($display, 'super-invitee');
+        $accountPosition = strpos($display, $superInvitee->accountId());
         self::assertNotFalse($ignoredSectionPosition, 'La section des comptes ignorés doit être affichée.');
-        self::assertNotFalse($usernamePosition, 'Le compte doit être nommé dans la sortie.');
-        self::assertGreaterThan($ignoredSectionPosition, $usernamePosition, 'Le compte doit être listé après le titre de la section "ignorés".');
+        self::assertNotFalse($accountPosition, 'Le compte doit être désigné, par son UUID, dans la sortie.');
+        self::assertGreaterThan($ignoredSectionPosition, $accountPosition, 'Le compte doit être listé après le titre de la section "ignorés".');
+        self::assertStringNotContainsString('super-invitee', $display, 'Jamais par son identifiant (issue #363).');
         self::assertStringNotContainsString('Comptes purgés', $display);
         self::assertSame([], self::securityAuditEvents('user-purged'));
     }
@@ -180,8 +185,8 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
 
     /**
      * Constat de la revue : "--older-than=-30 days" traverse la garde
-     * syntaxique (new \DateTimeImmutable('--30 days') est acceptée par PHP)
-     * mais \DateInterval::createFromDateString('-30 days') produit un
+     * syntaxique (new DateTimeImmutable('--30 days') est acceptée par PHP)
+     * mais DateInterval::createFromDateString('-30 days') produit un
      * intervalle qui, une fois soustrait à "maintenant", avance l'horloge —
      * le seuil se retrouve dans le futur et purgerait tous les comptes en
      * attente (hors ROLE_SUPER). Doit être refusé avant toute suppression.
@@ -189,7 +194,7 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
     public function testNegativeOlderThanIsRejectedAndPurgesNothing(): void
     {
         $recentInvitee = new CpgUser('recent-guard-invitee', '');
-        $recentInvitee->markInvited(new \DateTimeImmutable('-1 day'));
+        $recentInvitee->markInvited(new DateTimeImmutable('-1 day'));
         $this->userRepository->save($recentInvitee);
 
         $tester = $this->commandTester();
@@ -207,7 +212,7 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
     public function testZeroOlderThanIsRejectedAndPurgesNothing(): void
     {
         $recentInvitee = new CpgUser('zero-guard-invitee', '');
-        $recentInvitee->markInvited(new \DateTimeImmutable('-1 day'));
+        $recentInvitee->markInvited(new DateTimeImmutable('-1 day'));
         $this->userRepository->save($recentInvitee);
 
         $tester = $this->commandTester();

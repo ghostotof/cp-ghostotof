@@ -48,7 +48,12 @@ return RectorConfig::configure()
         ArrowFunctionDelegatingCallToFirstClassCallableRector::class,
     ])
     ->withCache(__DIR__.'/var/cache/rector')
-    ->withImportNames(importShortClasses: false, removeUnusedImports: true)
+    // Toute classe est importee par `use`, natives comprises (`use Throwable;`,
+    // jamais `\Throwable`) : issue #391, regle dans .claude/rules/backend-architecture.md.
+    // Les fonctions et constantes natives gardent leur antislash (`\sprintf`) :
+    // importShortClasses ne les touche pas, et l'antislash conserve les opcodes
+    // dedies d'OPcache.
+    ->withImportNames(importShortClasses: true, removeUnusedImports: true)
     ->withPhpSets()
     ->withPreparedSets(
         deadCode: true,

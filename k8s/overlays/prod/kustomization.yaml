@@ -51,11 +51,14 @@ replicas:
   - name: frontend
     count: 2
   # Point d'audit B2 : Adminer (UI d'admin BDD, sans authentification propre
-  # au-delà des creds Postgres) est défini dans base/ pour la préprod, mais
-  # ne doit pas tourner en prod — surface d'attaque inutile même sans route
-  # Ingress. On le met à zéro replica ici (Deployment/Service conservés, aucun
-  # pod). Accès ponctuel prod : `kubectl scale deploy/adminer --replicas=1 -n
-  # prod` puis remise à 0.
+  # au-delà des creds Postgres) est défini dans base/, mais ne tourne pas en
+  # permanence — surface d'attaque inutile même sans route Ingress. On le met
+  # à zéro replica ici (Deployment/Service conservés, aucun pod), comme
+  # l'overlay préprod depuis le 3e audit (Q5). Accès ponctuel : `kubectl patch
+  # deploy/adminer -n prod --type=merge -p '{"spec":{"replicas":1}}'`, puis
+  # retour à 0 de la même façon (k8s/README.md, « Administration de la base » :
+  # `patch` plutôt que `scale`, le Role du déployeur n'a pas
+  # `deployments/scale`). Le prochain `apply -k` le remet à 0 de toute façon.
   - name: adminer
     count: 0
 

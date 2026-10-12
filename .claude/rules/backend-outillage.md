@@ -20,7 +20,8 @@ reordered by drag-and-drop with an explicit FR/EN link in the database (spec 000
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
 over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
 recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
-`tests/`, mirrors the `src/` bounded-context tree) and runnable via `php bin/phpunit` inside `make sh`.
+`tests/`, mirrors the `src/` bounded-context tree) and runnable via `php bin/phpunit` inside `make sh`;
+its traces carry no call arguments (see the last section, issue #420).
 **PHPStan** is configured (`backend/phpstan.dist.neon`, level `max` + `phpstan-strict-rules` +
 `phpstan-symfony`/`-doctrine`/`-phpunit`/`-deprecation-rules` via `extension-installer`): run it with
 `composer phpstan` inside `make sh` (warms the dev container first), CI job `phpstan-backend` (blocking,
@@ -78,7 +79,10 @@ Kubernetes only collects a container's stdout/stderr — `kubectl logs … | jq`
 their own handler at a hard-coded `info`, never `fingers_crossed`: a run of failed logins with no error
 after it is exactly the trace worth keeping, and buffering would discard it. Everything else goes to
 the `main` handler at `%env(default:app.log_level:LOG_LEVEL)%` (`LOG_LEVEL=warning` in `backend/.env`,
-`debug` in the preprod image), which excludes those two channels so an event is emitted **once**. A
+`debug` in the preprod image), which excludes those two channels so an event is emitted **once**. No
+channel names an account by its login identifier (issue #363): the `security` channel goes through
+`SecurityChannelAccountRedactor` (see `.claude/rules/security-authentication.md`), and
+`AccountIdentifierReachesNoLogTest` reads every channel at every level, preprod's `debug` included. A
 third channel follows the same rule, `ai_usage` (spec 0005): the career assistant's and, since issue
 #356, the translator's token usage, duration and quota refusals, never any content, on its own `info`
 handler — as an `info` of the default channel it never
@@ -93,3 +97,108 @@ Vitest configured with `npm test`. A `ROLE_SUPER`-gated backoffice (`/admin` on 
 on the backend) lets an authenticated super-admin manage all of the above content plus user accounts — see
 `.claude/rules/backoffice-api.md` and `.claude/rules/frontend-backoffice.md`.
 
+## Target PHP version (issue #429)
+
+`composer.json` requires **`"php": ">=8.5"`**, the runtime of every image, of CI (`setup-php`
+`php-version: '8.5'`) and of the dev container — decided on 2026-10-11, rather than keeping `>=8.4` and
+forbidding 8.5 functions through the analysers. The lower bound used to allow an install nobody tested or
+deployed, and let an 8.5 function (`array_first`, during #419) through on a transitive polyfill alone,
+since PHPStan, Rector (`withPhpSets()` without argument) and Psalm all read their target version from
+that constraint — none sets its own, keep it that way so the one constraint drives all three. The
+polyfill of the runtime's version is listed in `replace` like the older ones (`symfony/polyfill-php85`,
+removed from the lock); `polyfill-php86` stays, its functions are not native yet. Moving to 8.5 let
+Rector's `ArrayFirstLastRector` rewrite four `$a[array_key_last($a)]` / `array_values($a)[0]` into
+`array_last()` / `array_first()`. No `config.platform.php`: Composer only ever runs in the container.
+`tests/Shared/PhpConstraintMatchesRuntimeTest.php` fails when the constraint is not exactly
+`>=<runtime major.minor>` or that version's polyfill is not replaced — so a runtime bump turns it red
+until both move in the same change.
+
+## Exception traces under PHPUnit (issue #420)
+
+`phpunit.dist.xml` sets `<ini name="zend.exception_ignore_args" value="1"/>`, as `php.prod.ini` does in
+the deployed images: a trace carries no call arguments. `#[SensitiveParameter]` (#411, #414, see
+`.claude/rules/backend-architecture.md`) only covers `src/`; the vendor keeps its arguments
+(`Cookie::create($value)`, `JWTManager::parse($token)`, `LcobucciJWTEncoder::decode($token)`…), and the
+risk is a test trace pasted in a ticket or an assistant session. Facts measured before deciding
+(2026-10-10): **CI already ran with it On** — `setup-php` loads `php.ini-production` by default
+(`ini-file: production`) — while no ini file of the dev container sets it (no `php.ini`, `php.dev.ini`
+as `conf.d/zz-app.ini` is silent: PHP's built-in Off); the directive is `PHP_INI_ALL`, so PHPUnit's
+`ini_set()` applies it. **PHPUnit's report loses nothing**: it prints a trace as `file:line`, and its
+exporter skips an exception's `trace`. What loses the arguments is a trace rendered by a test or by
+Symfony (`getTraceAsString()`, a `FlattenException` in Messenger's `ErrorDetailsStamp` or in the debug
+`ProblemNormalizer` body of a non-API-Platform route — API Platform's own debug body already drops them).
+No test asserted on trace arguments, and the #411/#414 guards read the attribute by reflection, never
+a trace, so none became vacuous. **A `php` process a test starts** does not get PHPUnit's `<ini>`: it is
+built by `tests/Support/ChildPhpProcess::command()`, which passes the parent's value with `-d` (its
+stderr, trace included, ends up in the failure message) — the concurrency tests, through
+`ChildPhpProcess::inTestEnvironment()` (see the next section), and `CreateCpgUserCommandTest`'s
+pseudo-terminal run. **To debug with arguments**, write a local
+`phpunit.xml` (gitignored, read instead of the dist file) that sets it **explicitly** to 0 —
+`bin/phpunit -d …=0` does not work, the XML `<ini>` is applied after the CLI one. The two runtime
+tests then **skip**, naming the cause, rather than fail; a local `phpunit.xml` that merely omits it (an
+old copy of the dist) fails them. `ExceptionArgumentsHiddenInTestsTest` pins the dist entry and the
+shape of the child's command (the runtime checks alone would stay green in CI), the effect on
+`getTrace()`, on a `FlattenException` and in a child, and that no test names `PHP_BINARY` outside the
+helper. **Not covered**: `debug_backtrace()` (the directive only acts on exceptions — measured), the
+frame of a `require`, which keeps the included path, a child started otherwise (a literal `'php'`,
+`PhpExecutableFinder`, `bin/console` by its shebang — a token heuristic cannot tell a literal `'php'`
+command from test data, so the guard does not try), and dev over HTTP (`APP_DEBUG` error bodies, Off
+there) — which is why the #411/#414 guards stay. Setting it in `php.dev.ini` would cover every child at
+once, at the cost of dev CLI traces: not done, an open question of #420.
+
+## Concurrency tests with child processes (issue #403)
+
+A test that puts real processes in a race (`RateLimiterConcurrencyTest`, `ContributionOrderConcurrencyTest`,
+`SendAccountInvitationConcurrencyTest`, `PasswordSetupActivationConcurrencyTest`, `ReinviteConcurrencyTest`,
+`InviteUsernameConcurrencyTest`)
+goes through **one harness, written once**. `tests/Support/ChildPhpProcess::inTestEnvironment()` builds the
+child's `Process`: its command line (above) and a copy of the test's `$_SERVER`, where `phpunit.dist.xml`'s
+`<server force="true">` values live (a real `ANTHROPIC_API_KEY` exported in the shell must not reach the
+child) — a variable not to pass on is excluded there, for every child at once. Process also inherits `$_ENV`
+on its own, which holds the forced values too under PHPUnit (measured 2026-10-12): the copy is what does not
+depend on that. `ChildPhpProcess::SETUP_FAILED` (2) is the exit code of a child that could not set itself up.
+`tests/Support/ProcessBarrier` is the file barrier, both sides: the test `hold()`s it (exclusive `flock`),
+the child calls `awaitInChild($path, ?$sessionPid)` once everything slow is done (writes `ready [<pid>]`,
+then blocks on a shared lock), the test waits with `waitUntilReady()` — which then sleeps
+`SETTLE_MICROSECONDS` so that every child has reached its `flock()` — or `sessionPidOf()` (the PostgreSQL
+session it then watches in `pg_stat_activity`), and `release()`s; an unreferenced barrier releases itself.
+Children reach private services through `tests/Support/TestServiceLocator` (`limiter.<name>` included; it
+replaced `RateLimiterFactoryLocator`). `tests/Shared/ChildProcessHarnessTest.php` exercises the protocol on
+real processes and fails, in `tests/`, on any `flock()` outside `ProcessBarrier`, any `foreach ($_SERVER`
+outside `ChildPhpProcess`, and any `new Process(ChildPhpProcess::command(` outside its `OWN_ENVIRONMENT`
+allow-list (the Dotenv test that isolates a pod's environment on purpose). Not seen: `proc_open()`
+(`CreateCpgUserCommandTest`'s pseudo-terminal child gets the inherited environment only).
+**The interleaving point is written once too** (issue #510): `tests/Support/FlushInterleaving`,
+`releaseBeforeNextFlush()` (`preFlush`: everything read, nothing written — #364, #389, #458) or
+`releaseAfterNextFlush()` (`postFlush`: written inside the operation's transaction, not committed — #435),
+given the EntityManager, the barrier, the started child and the timeout. It waits for the child's
+`ready <pid>`, arms a one-shot listener that removes itself on the first flush, releases the child, then
+returns as soon as the child has **finished** or **its** session waits on any `Lock` in `pg_stat_activity`
+(read from a separate probe connection, outside any transaction), and fails the test past the timeout.
+`tests/Shared/FlushInterleavingTest.php` exercises it on a real child (blocked on an advisory lock the test
+holds, finished, neither); `ChildProcessHarnessTest` also refuses, in `tests/`, any class constant
+`::preFlush` / `::onFlush` / `::postFlush` (whatever the class is called: `Events`, an alias, inside an
+attribute) and any string literal naming `pg_stat_activity` outside it (plus that test, and the guard
+naming the view) — broad on purpose: a test with another use joins its pattern's owners with its reason.
+Not seen: a listener armed on the event's name written as a string (`'preFlush'`), a view name built by
+concatenation. The wait returns once the child has finished **whatever its exit code**: each caller checks
+it, and names the refusal it expects or denounces.
+**Proving a concurrency test still fails without its fix** takes the right mutation, measured in #510
+before and after the extraction: remove the **lock and keep its transaction** — `FOR UPDATE` out of
+`PostgresAccountRowLock` (#435 and #458 red on their token counts), the `pg_advisory_xact_lock` call out
+of `PostgresUsernameAllocationLock` (#364: the parent's invitation fails on the username taken meanwhile)
+or `PostgresAdvisoryOrderScopeLock` (#389) — since #512, the statement inside the adapter's `acquire`
+closure, the transaction being `PostgresLockedTransaction`'s (measured again after the extraction). Every
+test that waits on a held lock to prove the bound carries a `statement_timeout = '3s'` safety net, so
+that a mutation removing the bound (`boundTheWait()`) fails it in `57014` instead of hanging the suite. Removing `whileLocked()` from the invitation handler entirely
+proves nothing for #435: its flush then commits on its own before the `postFlush`, the child purges a
+committed token and the count is right. Removing the purge of unused tokens from the activation leaves
+#458's test green: with the lock, the handler waits and drops the message (« constaté sous verrou »); the
+purge is pinned sequentially, on the real `_test` database, by
+`AccountPasswordSetupResourceTest::testActivationPurgesTheOtherUsableLinksOfTheAccount` (issue #519: a
+second usable token saved through the repository, activation by the first; measured, only the table count turns
+red: the leftover link is refused anyway by the « account already active » guard), and by
+`PasswordSetupServiceTest`'s mock. Removing it from `CpgUserAdministrator::changePassword()` (#460) turns
+`testEveryUnusableLinkGetsTheSameResponse` red on its « révoqué par le backoffice » link (204 instead of
+the common 404 — the account is still pending, nothing else refuses the link), measured in #519. No
+concurrency harness for either: the purge is no race.

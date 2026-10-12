@@ -242,7 +242,7 @@
         "cannot-modify-own-roles": "Vous ne pouvez pas modifier vos propres rôles.",
         "cannot-demote-last-super": "Impossible : c'est le dernier compte administrateur.",
         "already-activated": "Ce compte a déjà défini son mot de passe.",
-        "validation": "Le mot de passe doit contenir au moins 8 caractères.",
+        "validation": "Ce mot de passe a été refusé : il doit compter au moins {min} caractères et {max} octets au plus, et ne figurer dans aucune fuite connue.",
         "unknown": "Une erreur est survenue. Réessayez plus tard."
       }
     },
@@ -463,6 +463,8 @@
     "passwordLabel": "Mot de passe",
     "submit": "Se connecter",
     "invalidCredentials": "Nom d'utilisateur ou mot de passe incorrect.",
+    "rateLimited": "Trop de tentatives de connexion. Réessayez dans quelques minutes.",
+    "rateLimitedIn": "Trop de tentatives de connexion. Réessayez dans {minutes} minute. | Trop de tentatives de connexion. Réessayez dans {minutes} minutes.",
     "genericError": "Une erreur est survenue, veuillez réessayer."
   },
   "contact": {
@@ -513,10 +515,13 @@
       "successHeading": "Mot de passe défini",
       "successBody": "Votre compte est prêt. Vous pouvez maintenant vous connecter.",
       "toLogin": "Aller à la connexion",
-      "invalid": "Ce lien de définition de mot de passe n'est pas valide. Ouvrez-le à nouveau depuis l'e-mail d'invitation.",
-      "expired": "Ce lien a expiré ou a déjà été utilisé. Contactez la personne qui vous a invité pour en recevoir un nouveau.",
+      "incomplete": "Ce lien est incomplet. Ouvrez-le à nouveau depuis l'e-mail d'invitation, sans le modifier.",
+      "unusable": "Ce lien n'est pas ou plus valide : il est peut-être incomplet, expiré ou déjà utilisé. Rouvrez-le depuis l'e-mail d'invitation ; s'il ne fonctionne toujours pas, demandez un nouveau lien à la personne qui vous a invité.",
+      "alreadySet": "Vous avez déjà défini votre mot de passe ?",
+      "logIn": "Se connecter",
       "errors": {
         "tooShort": "Le mot de passe doit contenir au moins {min} caractères.",
+        "tooLong": "Le mot de passe est trop long : {max} octets au plus (un caractère accenté ou un emoji en occupe plusieurs).",
         "mismatch": "Les deux mots de passe ne correspondent pas.",
         "weak-password": "Ce mot de passe a été refusé (trop courant ou présent dans une fuite connue). Choisissez-en un autre.",
         "rate-limited": "Trop de tentatives. Réessayez dans quelques minutes.",

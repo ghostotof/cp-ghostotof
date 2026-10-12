@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Domain\ValueObject;
 
+use DateTimeImmutable;
+
 /**
  * Une ligne de version d'un produit (« PHP 8.5 »), avec ses échéances.
  *
@@ -21,10 +23,10 @@ final readonly class ReleaseCycle
         public bool $isMaintained,
         /** Le support actif est terminé : correctifs de sécurité seulement. */
         public bool $isEndOfActiveSupport,
-        public ?\DateTimeImmutable $endOfActiveSupportFrom,
+        public ?DateTimeImmutable $endOfActiveSupportFrom,
         /** Plus aucun correctif, pas même de sécurité. */
         public bool $isEol,
-        public ?\DateTimeImmutable $eolFrom,
+        public ?DateTimeImmutable $eolFrom,
         /** Dernier correctif publié sur ce cycle, ex. « 8.5.10 ». */
         public ?string $latestVersion,
     ) {

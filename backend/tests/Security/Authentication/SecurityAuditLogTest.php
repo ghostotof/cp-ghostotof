@@ -10,9 +10,14 @@ use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\InvitesUsers;
+use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\Formatter\JsonFormatter;
+use Monolog\Level;
+use Monolog\LogRecord;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
@@ -30,6 +35,7 @@ final class SecurityAuditLogTest extends WebTestCase
 {
     use HttpJson;
     use InvitesUsers;
+    use ReadsAllChannelsLog;
     use ReadsSecurityAuditLog;
 
     private const string SUPER_USERNAME = 'super';
@@ -48,20 +54,30 @@ final class SecurityAuditLogTest extends WebTestCase
         parent::tearDown();
     }
 
+    /**
+     * Un compte existant est désigné par son `userId` (issues #418, #363) :
+     * celui du compte chargé, jamais la saisie ni l'identifiant. L'empreinte
+     * est là aussi, c'est elle qui relie la ligne au `login-throttled` qui suivra.
+     */
     public function testAFailedLoginIsRecorded(): void
     {
-        $client = $this->clientWithPlainUser();
+        $client = self::createClient();
+        $jane = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
 
         $this->attemptLogin($client, self::PLAIN_USERNAME, 'wrong-password');
 
         self::assertResponseStatusCodeSame(401);
+        $event = self::singleSecurityAuditEvent('login-failed');
+        self::assertIsString($event['userFingerprint']);
+        self::assertMatchesRegularExpression('/^[0-9a-f]{6}\z/', $event['userFingerprint']);
         self::assertSame([
             'event' => 'login-failed',
-            'user' => self::PLAIN_USERNAME,
+            'userId' => $jane->getId()->toRfc4122(),
+            'userFingerprint' => $event['userFingerprint'],
             'actor' => 'anonymous',
             'ip' => '127.0.0.1',
             'path' => '/api/login_check',
-        ], self::singleSecurityAuditEvent('login-failed'));
+        ], $event);
         self::assertSame([], self::securityAuditEvents('login-succeeded'));
     }
 
@@ -74,18 +90,182 @@ final class SecurityAuditLogTest extends WebTestCase
     {
         $username = 'throttle-'.bin2hex(random_bytes(6));
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register($username, TestCredentials::plainPassword());
+        $account = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register($username, TestCredentials::plainPassword());
+
+        $fingerprints = [];
 
         for ($attempt = 1; $attempt <= 5; ++$attempt) {
             $this->attemptLogin($client, $username, 'wrong-password');
-            self::assertSame($username, self::singleSecurityAuditEvent('login-failed')['user']);
+            $failed = self::singleSecurityAuditEvent('login-failed');
+            self::assertSame($account->accountId(), $failed['userId']);
+            $fingerprints[] = $failed['userFingerprint'];
         }
 
         $this->attemptLogin($client, $username, 'wrong-password');
 
-        self::assertResponseStatusCodeSame(401);
-        self::assertSame($username, self::singleSecurityAuditEvent('login-throttled')['user']);
+        // Le 429 de l'issue #399 est levé après l'écriture du journal
+        // (LoginThrottlingRefusalListener, priorité -200) : l'événement est
+        // toujours là, une seule fois — ThrottledRequestAuditListener ne le
+        // réécrit pas (ThrottledRequestAuditCoverageTest, TRACED_UPSTREAM).
+        self::assertResponseStatusCodeSame(429);
+        // Issue #418 : le throttling refuse avant de charger le compte, la
+        // ligne ne le nomme donc pas ; l'empreinte la relie aux cinq échecs.
+        $throttled = self::singleSecurityAuditEvent('login-throttled');
+        self::assertArrayNotHasKey('user', $throttled);
+        self::assertArrayNotHasKey('userId', $throttled);
+        self::assertSame(array_fill(0, 5, $throttled['userFingerprint']), $fingerprints, 'Le lien login-throttled ↔ identifiant passe par l\'empreinte.');
         self::assertSame([], self::securityAuditEvents('login-failed'), 'Une tentative bloquée par le throttling n\'est pas un login raté : le mot de passe n\'a même pas été vérifié.');
+    }
+
+    /**
+     * Issue #418 : `login_throttling` compte l'identifiant en minuscules
+     * ({@see \Symfony\Component\Security\Http\RateLimiter\DefaultLoginRateLimiter}) ;
+     * l'empreinte suit le même repli. Cinq essais
+     * sous des casses différentes déclenchent le refus, et les six lignes
+     * portent la même empreinte. Si Symfony changeait son repli, ce test
+     * tomberait — avant que la corrélation ne se perde en silence.
+     */
+    public function testCaseVariantsShareOneCounterAndOneFingerprint(): void
+    {
+        // Non ASCII exprès : le repli doit être celui de mb_strtolower.
+        $identifier = 'élodie-'.bin2hex(random_bytes(6));
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $fingerprints = [];
+
+        foreach ([$identifier, mb_strtoupper($identifier), 'É'.mb_substr($identifier, 1), $identifier, mb_strtoupper($identifier)] as $variant) {
+            $this->attemptLogin($client, $variant, 'wrong-password');
+            self::assertResponseStatusCodeSame(401);
+            $fingerprints[] = self::singleSecurityAuditEvent('login-failed')['userFingerprint'];
+        }
+
+        $this->attemptLogin($client, 'É'.mb_substr($identifier, 1), 'wrong-password');
+
+        self::assertResponseStatusCodeSame(429);
+        self::assertSame(array_fill(0, 5, self::singleSecurityAuditEvent('login-throttled')['userFingerprint']), $fingerprints);
+    }
+
+    /**
+     * Issue #418 : un mot de passe tapé dans le champ identifiant (erreur
+     * classique, ou identifiant et mot de passe collés) ne doit pas sortir
+     * dans la ligne `login-failed`. Elle ne nomme aucun compte et porte
+     * l'empreinte de la saisie, pas la saisie.
+     *
+     * La valeur respecte exprès `CpgUser::USERNAME_PATTERN` : c'est la forme
+     * d'un mot de passe généré par un trousseau (lettres, chiffres, tirets),
+     * que le filtrage par motif envisagé dans l'issue laisserait passer.
+     */
+    public function testAPasswordTypedAsTheIdentifierIsNotInTheLoginFailedRecord(): void
+    {
+        $client = $this->clientWithPlainUser();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+
+        // Le cas que le filtrage par motif laisserait passer : la valeur
+        // respecte CpgUser::USERNAME_PATTERN.
+        self::assertMatchesRegularExpression(CpgUser::USERNAME_PATTERN, $this->typedAsIdentifier());
+        $this->attemptLogin($client, $this->typedAsIdentifier(), 'wrong-password');
+
+        self::assertResponseStatusCodeSame(401);
+        $event = self::singleSecurityAuditEvent('login-failed');
+        self::assertArrayNotHasKey('user', $event);
+        self::assertArrayNotHasKey('userId', $event);
+        self::assertIsString($event['userFingerprint']);
+        self::assertStringNotContainsStringIgnoringCase($this->typedAsIdentifier(), json_encode($event, \JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Issue #418, l'autre moitié : le même mot de passe ne doit sortir par
+     * **aucun** journal. Le canal `security` de Symfony journalise en `info`
+     * — donc en production, où son handler est à `info` en dur — l'exception
+     * du fournisseur d'utilisateurs ; celle du fournisseur `entity` recopiait
+     * l'identifiant dans son message (`User "…" not found.`).
+     *
+     * Chaque enregistrement est formaté par le JsonFormatter de Monolog, celui
+     * de `monolog.formatter.json` en production : c'est lui qui recopie le
+     * message d'une exception placée dans le contexte, ce qu'un `json_encode`
+     * du contexte (objet sans propriété publique → `{}`) ne montrerait pas.
+     *
+     * Deux chemins : l'échec d'un identifiant inconnu, et le refus du
+     * throttling au sixième essai (autre exception, autre ligne d'audit). La
+     * sonde ne garde que la dernière requête : chaque essai est relu.
+     */
+    #[DataProvider('attemptsUntilTheCheckedRefusal')]
+    public function testAPasswordTypedAsTheIdentifierReachesNoLog(int $attempts, int $lastStatus): void
+    {
+        $client = $this->clientWithPlainUser();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+
+        for ($attempt = 1; $attempt <= $attempts; ++$attempt) {
+            $this->attemptLogin($client, $this->typedAsIdentifier(), 'wrong-password');
+            $this->assertNoLogQuotesThePasswordTypedAsTheIdentifier();
+        }
+
+        self::assertResponseStatusCodeSame($lastStatus);
+    }
+
+    /** @return iterable<string, array{int, int}> */
+    public static function attemptsUntilTheCheckedRefusal(): iterable
+    {
+        yield 'identifiant inconnu' => [1, 401];
+        yield 'refus du throttling' => [6, 429];
+    }
+
+    private function assertNoLogQuotesThePasswordTypedAsTheIdentifier(): void
+    {
+        $formatter = new JsonFormatter();
+
+        foreach (self::allChannelsLogRecords() as $record) {
+            // Les requêtes SQL et leurs paramètres (`doctrine`, debug) ne sont
+            // journalisées que sous `kernel.debug` (`dbal.logging` vaut
+            // `%kernel.debug%` par défaut) : jamais en préprod ni en prod,
+            // toutes deux à APP_DEBUG=0 (docker/php/Dockerfile). Seulement
+            // elles : un enregistrement `doctrine` d'un autre niveau reste lu.
+            if ('doctrine' === $record->channel && Level::Debug === $record->level) {
+                continue;
+            }
+
+            self::assertStringNotContainsStringIgnoringCase(
+                $this->typedAsIdentifier(),
+                $formatter->format($record),
+                \sprintf('Canal %s : « %s » recopie l\'identifiant tenté.', $record->channel, $record->message),
+            );
+        }
+    }
+
+    /**
+     * Nommer le compte d'un login raté ne coûte aucune requête (issue #418) :
+     * {@see \Symfony\Component\Security\Http\EventListener\CheckCredentialsListener}
+     * l'a déjà chargé,
+     * {@see \Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge}
+     * le mémorise, et
+     * {@see \App\Security\Authentication\Infrastructure\Log\SecurityEventsSubscriber}
+     * ne fait que le relire. Une seule lecture de
+     * `cpg_user` pour toute la requête.
+     */
+    public function testNamingTheAccountOfAFailedLoginCostsNoExtraQuery(): void
+    {
+        $client = $this->clientWithPlainUser();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+
+        // Lu avant la requête : les lectures comptées ci-dessous commencent à
+        // la première ligne du firewall.
+        $janeId = $this->idOf(self::PLAIN_USERNAME);
+
+        $this->attemptLogin($client, self::PLAIN_USERNAME, 'wrong-password');
+
+        self::assertResponseStatusCodeSame(401);
+        self::assertSame($janeId, self::singleSecurityAuditEvent('login-failed')['userId']);
+
+        // La sonde garde aussi la création du compte, faite dans le même
+        // kernel avant la requête (vérification d'unicité) : on ne compte
+        // qu'à partir de la première ligne du firewall.
+        $records = self::allChannelsLogRecords();
+        $firstSecurityRecord = array_search('security', array_map(static fn (LogRecord $record): string => $record->channel, $records), true);
+        self::assertIsInt($firstSecurityRecord);
+        self::assertCount(1, array_filter(
+            \array_slice($records, $firstSecurityRecord),
+            static fn (LogRecord $record): bool => 'doctrine' === $record->channel && str_contains($record->message, 'FROM cpg_user'),
+        ), 'Une seule lecture du compte pendant le login : celle de CheckCredentialsListener.');
     }
 
     public function testASuccessfulLoginThenALogoutAreRecorded(): void
@@ -96,8 +276,8 @@ final class SecurityAuditLogTest extends WebTestCase
 
         self::assertSame([
             'event' => 'login-succeeded',
-            'user' => self::PLAIN_USERNAME,
-            'actor' => self::PLAIN_USERNAME,
+            'userId' => $this->idOf(self::PLAIN_USERNAME),
+            'actor' => $this->idOf(self::PLAIN_USERNAME),
             'ip' => '127.0.0.1',
             'path' => '/api/login_check',
         ], self::singleSecurityAuditEvent('login-succeeded'));
@@ -107,8 +287,8 @@ final class SecurityAuditLogTest extends WebTestCase
         self::assertResponseStatusCodeSame(204);
         self::assertSame([
             'event' => 'logged-out',
-            'user' => self::PLAIN_USERNAME,
-            'actor' => self::PLAIN_USERNAME,
+            'userId' => $this->idOf(self::PLAIN_USERNAME),
+            'actor' => $this->idOf(self::PLAIN_USERNAME),
             'ip' => '127.0.0.1',
             'path' => '/api/logout',
         ], self::singleSecurityAuditEvent('logged-out'));
@@ -208,7 +388,7 @@ final class SecurityAuditLogTest extends WebTestCase
         $client->request('GET', '/api/backoffice/users');
 
         self::assertResponseStatusCodeSame(403);
-        self::assertSame(self::PLAIN_USERNAME, self::singleSecurityAuditEvent('backoffice-access-denied')['actor']);
+        self::assertSame($this->idOf(self::PLAIN_USERNAME), self::singleSecurityAuditEvent('backoffice-access-denied')['actor']);
     }
 
     /**
@@ -257,9 +437,8 @@ final class SecurityAuditLogTest extends WebTestCase
 
         self::assertSame([
             'event' => 'user-invited',
-            'user' => 'jean.dupont',
             'userId' => $body['id'],
-            'actor' => self::SUPER_USERNAME,
+            'actor' => $this->idOf(self::SUPER_USERNAME),
             'ip' => '127.0.0.1',
             'path' => '/api/backoffice/users',
         ], self::singleSecurityAuditEvent('user-invited'));
@@ -271,16 +450,16 @@ final class SecurityAuditLogTest extends WebTestCase
         $invited = self::getContainer()->get(CpgUserInviterInterface::class)->invite('jean.dupont@example.com', Locale::FR);
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->request('POST', sprintf('/api/backoffice/users/%s/invitation', $invited->getId()->toRfc4122()), server: [
+        $client->request('POST', \sprintf('/api/backoffice/users/%s/invitation', $invited->getId()->toRfc4122()), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['locale' => 'en']));
 
         self::assertResponseStatusCodeSame(202);
         $event = self::singleSecurityAuditEvent('user-reinvited');
-        self::assertSame('jean.dupont', $event['user']);
+        self::assertArrayNotHasKey('user', $event);
         self::assertSame($invited->getId()->toRfc4122(), $event['userId']);
-        self::assertSame(self::SUPER_USERNAME, $event['actor']);
+        self::assertSame($this->idOf(self::SUPER_USERNAME), $event['actor']);
     }
 
     public function testGrantingSuperAdminIsRecordedWithTheDirection(): void
@@ -289,7 +468,7 @@ final class SecurityAuditLogTest extends WebTestCase
         $jane = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->request('PUT', sprintf('/api/backoffice/users/%s/roles', $jane->getId()->toRfc4122()), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/users/%s/roles', $jane->getId()->toRfc4122()), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['superAdmin' => true]));
@@ -297,12 +476,11 @@ final class SecurityAuditLogTest extends WebTestCase
         self::assertResponseStatusCodeSame(204);
         self::assertSame([
             'event' => 'role-changed',
-            'user' => self::PLAIN_USERNAME,
             'userId' => $jane->getId()->toRfc4122(),
             'superAdmin' => true,
-            'actor' => self::SUPER_USERNAME,
+            'actor' => $this->idOf(self::SUPER_USERNAME),
             'ip' => '127.0.0.1',
-            'path' => sprintf('/api/backoffice/users/%s/roles', $jane->getId()->toRfc4122()),
+            'path' => \sprintf('/api/backoffice/users/%s/roles', $jane->getId()->toRfc4122()),
         ], self::singleSecurityAuditEvent('role-changed'));
     }
 
@@ -312,16 +490,16 @@ final class SecurityAuditLogTest extends WebTestCase
         $jane = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->request('PUT', sprintf('/api/backoffice/users/%s/password', $jane->getId()->toRfc4122()), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/users/%s/password', $jane->getId()->toRfc4122()), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['password' => TestCredentials::variant('new')]));
 
         self::assertResponseStatusCodeSame(204);
         $event = self::singleSecurityAuditEvent('password-changed');
-        self::assertSame(self::PLAIN_USERNAME, $event['user']);
+        self::assertArrayNotHasKey('user', $event);
         self::assertSame($jane->getId()->toRfc4122(), $event['userId']);
-        self::assertSame(self::SUPER_USERNAME, $event['actor']);
+        self::assertSame($this->idOf(self::SUPER_USERNAME), $event['actor']);
         self::assertStringNotContainsString(TestCredentials::variant('new'), json_encode(self::securityAuditRecords(), \JSON_THROW_ON_ERROR));
     }
 
@@ -331,13 +509,13 @@ final class SecurityAuditLogTest extends WebTestCase
         $jane = $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
 
-        $client->request('DELETE', sprintf('/api/backoffice/users/%s', $jane->getId()->toRfc4122()), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
+        $client->request('DELETE', \sprintf('/api/backoffice/users/%s', $jane->getId()->toRfc4122()), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
 
         self::assertResponseStatusCodeSame(204);
         $event = self::singleSecurityAuditEvent('user-deleted');
-        self::assertSame(self::PLAIN_USERNAME, $event['user']);
+        self::assertArrayNotHasKey('user', $event);
         self::assertSame($jane->getId()->toRfc4122(), $event['userId']);
-        self::assertSame(self::SUPER_USERNAME, $event['actor']);
+        self::assertSame($this->idOf(self::SUPER_USERNAME), $event['actor']);
     }
 
     /**
@@ -355,7 +533,8 @@ final class SecurityAuditLogTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(204);
         $event = self::singleSecurityAuditEvent('account-activated');
-        self::assertSame('newcomer', $event['user']);
+        self::assertSame($this->idOf('newcomer'), $event['userId']);
+        self::assertArrayNotHasKey('user', $event);
         self::assertSame('anonymous', $event['actor']);
         self::assertSame('/api/account/password-setup', $event['path']);
         $this->assertTokenAppearsInNoSecurityAuditRecord($token);
@@ -390,8 +569,8 @@ final class SecurityAuditLogTest extends WebTestCase
 
     /**
      * Issue #356 : un lien déjà consommé qui revient est tracé comme rejoué,
-     * avec le compte qu'il activait. La réponse, elle, reste le 410 fusionné
-     * avec « expiré ».
+     * avec le compte qu'il activait. La réponse, elle, est celle de tout lien
+     * inutilisable (404, issue #362) : seul le journal dit qu'il a servi.
      */
     public function testAReplayedPasswordSetupLinkIsRecordedWithItsAccount(): void
     {
@@ -406,10 +585,9 @@ final class SecurityAuditLogTest extends WebTestCase
 
         $client->request('POST', '/api/account/password-setup/validate', server: $server, content: self::jsonBody(['token' => $token]));
 
-        self::assertResponseStatusCodeSame(410);
+        self::assertResponseStatusCodeSame(404);
         self::assertSame([
             'event' => 'password-setup-token-replayed',
-            'user' => 'newcomer',
             'userId' => $userId,
             'actor' => 'anonymous',
             'ip' => '127.0.0.1',
@@ -540,6 +718,16 @@ final class SecurityAuditLogTest extends WebTestCase
         self::assertStringNotContainsString($token, json_encode(self::securityAuditRecords(), \JSON_THROW_ON_ERROR));
     }
 
+    /** L'UUID d'un compte, tel que le journal le désigne (issue #363). */
+    private function idOf(string $username): string
+    {
+        $id = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->fetchOne('SELECT id FROM cpg_user WHERE username = :username', ['username' => $username]);
+        self::assertIsString($id, \sprintf('Aucun compte « %s ».', $username));
+
+        return $id;
+    }
+
     private function clientWithPlainUser(): KernelBrowser
     {
         $client = self::createClient();
@@ -588,5 +776,17 @@ final class SecurityAuditLogTest extends WebTestCase
         self::assertIsString($guest);
 
         return $guest;
+    }
+
+    /**
+     * Un mot de passe tapé dans le champ identifiant (issue #418) :
+     * alphanumérique, comme la plupart des mots de passe, donc valide au regard
+     * de CpgUser::USERNAME_PATTERN. Généré, jamais écrit en dur : un littéral
+     * rangé sous un nom de mot de passe déclenche les détecteurs génériques de
+     * secrets (cf. {@see TestCredentials}).
+     */
+    private function typedAsIdentifier(): string
+    {
+        return TestCredentials::variant('typed-as-identifier');
     }
 }

@@ -116,7 +116,7 @@ when@prod:
                 channels: ["!security", "!security_audit", "!ai_usage", "!deprecation", "!lock"]
             # Verrou des limiteurs de débit (issue #272). Le composant Lock trace
             # chaque pose et chaque levée en `debug`, avec la ressource —
-            # `contact_form-<ip>`, `translation_assistant-<username>`. Sous
+            # `contact_form-<ip>`, `translation_assistant-<uuid du compte>`. Sous
             # `main`, la préprod (LOG_LEVEL=debug) écrirait une IP ou un
             # identifiant par requête limitée, hors de SecurityAuditLogger et de
             # sa politique de contenu. Les échecs aussi portent la ressource
@@ -142,6 +142,11 @@ when@prod:
             #    d'erreur est le cas courant, et c'est justement la série
             #    d'événements sans erreur (dix logins ratés d'affilée) qu'on veut
             #    pouvoir relire. Bufferiser reviendrait à jeter la trace.
+            #
+            # Le canal `security` du framework écrit un jeton à chaque requête
+            # authentifiée (« Authenticator successful! ») : il passe par
+            # SecurityChannelAccountRedactor, qui n'en garde que l'UUID du
+            # compte et les rôles (issue #363).
             security:
                 type: stream
                 path: php://stderr

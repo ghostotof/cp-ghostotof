@@ -141,7 +141,7 @@ final class SeedIncidentsContentCommandTest extends KernelTestCase
         foreach ($french as $index => $entry) {
             self::assertTrue(
                 $entry->getTranslationGroup()->equals($english[$index]->getTranslationGroup()),
-                sprintf('Les entrées de position %d ne partagent pas leur groupe de traduction.', $index),
+                \sprintf('Les entrées de position %d ne partagent pas leur groupe de traduction.', $index),
             );
 
             $groups[] = $entry->getTranslationGroup()->toRfc4122();

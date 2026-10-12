@@ -6,17 +6,20 @@ namespace App\Tests\Security\Authentication\Infrastructure\Http;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\Authentication\Infrastructure\Http\RateLimiterLockFailureListener;
+use LogicException;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Lock\Exception\LockAcquiringException;
 use Symfony\Component\Lock\Exception\LockConflictedException;
 use Symfony\Component\Lock\Exception\LockReleasingException;
+use Throwable;
 
 /**
  * Test unitaire de la portée du listener (issue #276). Le rendu de bout en
@@ -57,14 +60,14 @@ final class RateLimiterLockFailureListenerTest extends TestCase
      */
     public function testTheIncidentIsLoggedAsAnErrorWithoutTheLockResource(): void
     {
-        $event = $this->event(Request::create('/api/contact', 'POST'), new \LogicException('wrapper', 0, $this->acquiringFailure()));
+        $event = $this->event(Request::create('/api/contact', 'POST'), new LogicException('wrapper', 0, $this->acquiringFailure()));
 
         $this->listener()->__invoke($event);
 
         $records = $this->logHandler->getRecords();
         self::assertCount(1, $records);
         self::assertSame(Level::Error, $records[0]->level);
-        self::assertSame([\LogicException::class, LockAcquiringException::class], $records[0]->context['exceptionClasses']);
+        self::assertSame([LogicException::class, LockAcquiringException::class], $records[0]->context['exceptionClasses']);
         self::assertSame('/api/contact', $records[0]->context['path']);
         self::assertStringNotContainsString(
             self::LOCK_RESOURCE,
@@ -79,7 +82,7 @@ final class RateLimiterLockFailureListenerTest extends TestCase
      * reste une panne du verrou.
      */
     #[DataProvider('lockFailures')]
-    public function testEveryWayTheLockCanFailIsRecognised(\Throwable $failure): void
+    public function testEveryWayTheLockCanFailIsRecognised(Throwable $failure): void
     {
         $event = $this->event(Request::create('/api/login_check', 'POST'), $failure);
 
@@ -89,14 +92,14 @@ final class RateLimiterLockFailureListenerTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{\Throwable}>
+     * @return iterable<string, array{Throwable}>
      */
     public static function lockFailures(): iterable
     {
         yield 'prise' => [new LockAcquiringException('Failed to acquire the "'.self::LOCK_RESOURCE.'" lock.')];
         yield 'libération' => [new LockReleasingException('Failed to release the "'.self::LOCK_RESOURCE.'" lock.')];
         yield 'conflit' => [new LockConflictedException()];
-        yield 'enveloppée' => [new \LogicException('wrapper', 0, new LockReleasingException('Failed to release.'))];
+        yield 'enveloppée' => [new LogicException('wrapper', 0, new LockReleasingException('Failed to release.'))];
     }
 
     /**
@@ -117,7 +120,7 @@ final class RateLimiterLockFailureListenerTest extends TestCase
      * Un audit émis à tort fausserait le filtre `rate-limiter-unavailable`.
      */
     #[DataProvider('outOfScopeEvents')]
-    public function testOutOfScopeEventsAreLeftAlone(string $path, \Throwable $throwable, int $requestType): void
+    public function testOutOfScopeEventsAreLeftAlone(string $path, Throwable $throwable, int $requestType): void
     {
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
         $auditLogger->expects(self::never())->method('rateLimiterUnavailable');
@@ -130,13 +133,13 @@ final class RateLimiterLockFailureListenerTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{string, \Throwable, int}>
+     * @return iterable<string, array{string, Throwable, int}>
      */
     public static function outOfScopeEvents(): iterable
     {
         $lockFailure = new LockAcquiringException('Failed to acquire the "'.self::LOCK_RESOURCE.'" lock.');
 
-        yield 'autre exception' => ['/api/contact', new \RuntimeException('autre panne'), HttpKernelInterface::MAIN_REQUEST];
+        yield 'autre exception' => ['/api/contact', new RuntimeException('autre panne'), HttpKernelInterface::MAIN_REQUEST];
         yield 'voisin de /api' => ['/apix/contact', $lockFailure, HttpKernelInterface::MAIN_REQUEST];
         yield 'sous-requête' => ['/api/contact', $lockFailure, HttpKernelInterface::SUB_REQUEST];
     }
@@ -154,7 +157,7 @@ final class RateLimiterLockFailureListenerTest extends TestCase
         return new LockAcquiringException('Failed to acquire the "'.self::LOCK_RESOURCE.'" lock.');
     }
 
-    private function event(Request $request, \Throwable $throwable, int $requestType = HttpKernelInterface::MAIN_REQUEST): ExceptionEvent
+    private function event(Request $request, Throwable $throwable, int $requestType = HttpKernelInterface::MAIN_REQUEST): ExceptionEvent
     {
         return new ExceptionEvent(self::createStub(HttpKernelInterface::class), $request, $requestType, $throwable);
     }

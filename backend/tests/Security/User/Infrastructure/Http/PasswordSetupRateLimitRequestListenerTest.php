@@ -7,6 +7,7 @@ namespace App\Tests\Security\User\Infrastructure\Http;
 use App\Security\User\Application\PasswordSetupRateLimiterInterface;
 use App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException;
 use App\Security\User\Infrastructure\Http\PasswordSetupRateLimitRequestListener;
+use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -135,7 +136,7 @@ final class PasswordSetupRateLimitRequestListenerTest extends TestCase
 
     public function testExceededQuotaPropagatesTheDomainException(): void
     {
-        $retryAfter = new \DateTimeImmutable('+30 minutes');
+        $retryAfter = new DateTimeImmutable('+30 minutes');
         $limiter = new SpyPasswordSetupRateLimiter(throwOn: 1, retryAfter: $retryAfter);
         $listener = new PasswordSetupRateLimitRequestListener($limiter);
 
@@ -196,7 +197,7 @@ final class SpyPasswordSetupRateLimiter implements PasswordSetupRateLimiterInter
 
     public function __construct(
         private readonly ?int $throwOn = null,
-        private readonly ?\DateTimeImmutable $retryAfter = null,
+        private readonly ?DateTimeImmutable $retryAfter = null,
     ) {
     }
 
@@ -206,7 +207,7 @@ final class SpyPasswordSetupRateLimiter implements PasswordSetupRateLimiterInter
         $this->consumedIdentifiers[] = $clientIdentifier;
 
         if (null !== $this->throwOn && $this->calls >= $this->throwOn) {
-            throw new PasswordSetupRateLimitExceededException($this->retryAfter ?? new \DateTimeImmutable('+1 hour'));
+            throw new PasswordSetupRateLimitExceededException($this->retryAfter ?? new DateTimeImmutable('+1 hour'));
         }
     }
 }

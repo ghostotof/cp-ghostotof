@@ -11,6 +11,8 @@ use App\Ai\Assistant\Domain\ValueObject\Conversation;
 use App\Ai\Assistant\Presentation\Controller\AnswerController;
 use App\Ai\Assistant\Presentation\Dto\AnswerRequest;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Closure;
+use Generator;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -30,7 +32,7 @@ final class AnswerControllerStreamEndTest extends TestCase
 {
     public function testAnAssistantUnavailableExceptionAfterADeltaEndsWithAnErrorEvent(): void
     {
-        $output = $this->send(static function (): \Generator {
+        $output = $this->send(static function (): Generator {
             yield 'Il a ';
 
             throw new AssistantUnavailableException();
@@ -50,7 +52,7 @@ final class AnswerControllerStreamEndTest extends TestCase
      */
     public function testAFragmentInInvalidUtf8IsSubstitutedAndTheStreamEndsWithDone(): void
     {
-        $output = $this->send(static function (): \Generator {
+        $output = $this->send(static function (): Generator {
             yield "Il a \xB1";
 
             return new AnswerUsage(7, 2, 5);
@@ -64,17 +66,17 @@ final class AnswerControllerStreamEndTest extends TestCase
     }
 
     /**
-     * @param \Closure(): \Generator<int, string, mixed, AnswerUsage> $stream
+     * @param Closure():Generator<int, string, mixed, AnswerUsage> $stream
      */
-    private function send(\Closure $stream): string
+    private function send(Closure $stream): string
     {
         $assistant = new readonly class($stream) implements CareerAssistantInterface {
-            /** @param \Closure(): \Generator<int, string, mixed, AnswerUsage> $stream */
-            public function __construct(private \Closure $stream)
+            /** @param Closure():Generator<int, string, mixed, AnswerUsage> $stream */
+            public function __construct(private Closure $stream)
             {
             }
 
-            public function answer(Conversation $conversation, Locale $locale): \Generator
+            public function answer(Conversation $conversation, Locale $locale): Generator
             {
                 return ($this->stream)();
             }

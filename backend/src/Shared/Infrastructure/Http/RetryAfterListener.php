@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Shared\Infrastructure\Http;
 
 use App\Shared\Domain\Exception\RetryAfterAware;
+use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpFoundation\Response;
@@ -66,7 +67,7 @@ final readonly class RetryAfterListener
     {
         $retryAfter = $event->getRequest()->attributes->get(self::REQUEST_ATTRIBUTE);
         $response = $event->getResponse();
-        if (!$retryAfter instanceof \DateTimeImmutable || Response::HTTP_TOO_MANY_REQUESTS !== $response->getStatusCode()) {
+        if (!$retryAfter instanceof DateTimeImmutable || Response::HTTP_TOO_MANY_REQUESTS !== $response->getStatusCode()) {
             return;
         }
 

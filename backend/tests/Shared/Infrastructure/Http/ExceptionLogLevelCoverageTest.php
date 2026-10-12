@@ -8,8 +8,6 @@ use ApiPlatform\Metadata\Exception\InvalidArgumentException as ApiPlatformInvali
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use App\Contact\Presentation\ApiResource\ContactMessageResource;
 use App\Shared\Domain\Exception\HasProblemType;
-use App\Tests\Support\CompiledExceptionConfig;
-use App\Tests\Support\DeclaredClasses;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\ExceptionToStatusFixtureResource;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\AbstractAttributedFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\AttributeLoggedFixtureException;
@@ -19,11 +17,19 @@ use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\AttributedFixt
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\InheritingFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\LoggedFixtureProblemException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\UnloggedFixtureProblemException;
+use App\Tests\Support\CompiledExceptionConfig;
+use App\Tests\Support\DeclaredClasses;
+use DomainException;
+use OverflowException;
 use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionClass;
+use RuntimeException;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpKernel\EventListener\ErrorListener;
 use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
+use Throwable;
+use UnderflowException;
 
 /**
  * Toute exception que l'API rend avec un statut a son `log_level` dans
@@ -217,7 +223,7 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
 
     /**
      * L'inverse du test précédent : chaque entrée vise une exception recensée.
-     * Une entrée large (`\DomainException`, une interface…) couvrirait tout en
+     * Une entrée large ({@see DomainException}, une interface…) couvrirait tout en
      * apparence, abaisserait aussi de vrais défauts serveur, et masquerait les
      * entrées précises placées après elle — le noyau retient la première qui
      * correspond. Interdites, donc, sauf justification.
@@ -248,7 +254,7 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
      */
     public static function detectorCases(): iterable
     {
-        $unlogged = (new class('Vide.') extends \DomainException implements ProblemExceptionInterface {
+        $unlogged = (new class('Vide.') extends DomainException implements ProblemExceptionInterface {
             use HasProblemType;
 
             protected function problemType(): string
@@ -263,10 +269,10 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
         })::class;
 
         // RuntimeException, pas LogicException : DomainException en hérite.
-        yield 'exception de test sans entrée' => [$unlogged, [\RuntimeException::class], false];
+        yield 'exception de test sans entrée' => [$unlogged, [RuntimeException::class], false];
         yield 'aucune entrée du tout' => [$unlogged, [], false];
         yield 'entrée sur la classe elle-même' => [$unlogged, [$unlogged], true];
-        yield 'entrée sur une classe parente' => [$unlogged, [\DomainException::class], true];
+        yield 'entrée sur une classe parente' => [$unlogged, [DomainException::class], true];
         yield 'entrée sur une interface' => [$unlogged, [ProblemExceptionInterface::class], true];
     }
 
@@ -311,12 +317,12 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
             [],
         );
         $statuses = [];
-        foreach ([\OverflowException::class, \UnderflowException::class] as $class) {
+        foreach ([OverflowException::class, UnderflowException::class] as $class) {
             $statuses[$class] = CompiledExceptionConfig::statusesFor($mappings, $class);
         }
 
-        self::assertSame([\OverflowException::class => [422], \UnderflowException::class => [409]], $statuses);
-        self::assertSame([\OverflowException::class, \UnderflowException::class], $this->uncovered(array_keys($statuses), $this->logLevelKeys()));
+        self::assertSame([OverflowException::class => [422], UnderflowException::class => [409]], $statuses);
+        self::assertSame([OverflowException::class, UnderflowException::class], $this->uncovered(array_keys($statuses), $this->logLevelKeys()));
     }
 
     /**
@@ -366,18 +372,21 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
      */
     public function testTheLevelOfAParentEntryIsHeldToThePolicy(): void
     {
-        $levels = $this->kernelLevels(CompiledExceptionConfig::listenerWith([\RuntimeException::class => ['log_level' => 'critical']]), [\OverflowException::class]);
+        $levels = $this->kernelLevels(CompiledExceptionConfig::listenerWith([RuntimeException::class => ['log_level' => 'critical']]), [OverflowException::class]);
 
-        self::assertSame([\OverflowException::class => '404 : critical'], $this->levelViolations([\OverflowException::class => [404]], $levels));
+        self::assertSame([OverflowException::class => '404 : critical'], $this->levelViolations([OverflowException::class => [404]], $levels));
     }
 
     /**
-     * @return iterable<string, array{class-string<\Throwable>, array<class-string, array{log_level?: string}>, ?string}>
+     * @return iterable<string, array{class-string<Throwable>, array<class-string, array{log_level?: string}>, ?string}>
      */
     public static function nonInstantiableKeyCases(): iterable
     {
         yield 'interface sans entrée' => [SerializerExceptionInterface::class, [], '400 : critical'];
-        yield 'classe abstraite sans entrée' => [AbstractAttributedFixtureException::class, [], '400 : critical'];
+        // Son #[WithHttpStatus(404)] fait convertir une implémentation par le
+        // noyau, qui en lit le niveau par défaut sur la conversion depuis
+        // Symfony 8.1.8 : `error`, toujours hors politique pour un 4xx.
+        yield 'classe abstraite sans entrée' => [AbstractAttributedFixtureException::class, [], '400 : error'];
         yield 'interface couverte par son entrée' => [SerializerExceptionInterface::class, [SerializerExceptionInterface::class => ['log_level' => 'info']], null];
         yield 'classe abstraite couverte par son entrée' => [AbstractAttributedFixtureException::class, [AbstractAttributedFixtureException::class => ['log_level' => 'info']], null];
     }
@@ -390,8 +399,8 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
      * que d'une classe instanciable (issue #373). Son niveau est celui d'une
      * implémentation qu'aucune entrée plus précise ne vise.
      *
-     * @param class-string<\Throwable>                           $class
-     * @param array<class-string, array{log_level?: string}>     $entries
+     * @param class-string<Throwable>                        $class
+     * @param array<class-string, array{log_level?: string}> $entries
      */
     #[DataProvider('nonInstantiableKeyCases')]
     public function testANonInstantiableKeyIsHeldToThePolicy(string $class, array $entries, ?string $violation): void
@@ -419,7 +428,7 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     {
         return array_map(
             static fn (int $status): array => [$status],
-            CompiledExceptionConfig::kernelHttpStatus($this->errorListener(), DeclaredClasses::all($directory)),
+            CompiledExceptionConfig::kernelHttpStatus($this->errorListener(), DeclaredClasses::classes($directory)),
         );
     }
 
@@ -444,7 +453,7 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
     {
         $levels = [];
         foreach ($classes as $class) {
-            if (!is_subclass_of($class, \Throwable::class)) {
+            if (!is_subclass_of($class, Throwable::class)) {
                 continue;
             }
             // kernelLogLevel() ne répond pas pour une classe non instanciable.
@@ -524,16 +533,16 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
         );
         $problems = array_values(array_filter(
             DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class),
-            static fn (string $class): bool => !(new \ReflectionClass($class))->isAbstract(),
+            static fn (string $class): bool => !(new ReflectionClass($class))->isAbstract(),
         ));
-        $converted = CompiledExceptionConfig::kernelHttpStatus($listener, [...DeclaredClasses::all(self::SOURCES), ...$this->statusCodeKeys()]);
+        $converted = CompiledExceptionConfig::kernelHttpStatus($listener, [...DeclaredClasses::classes(self::SOURCES), ...$this->statusCodeKeys()]);
 
         $classes = array_unique([...array_merge(...array_map(array_keys(...), $mappings)), ...$problems, ...array_keys($converted)]);
         $statuses = [];
         foreach ($classes as $class) {
             $classStatuses = CompiledExceptionConfig::statusesFor($mappings, $class);
             if (\in_array($class, $problems, true)) {
-                $classStatuses[] = (new \ReflectionClass($class))->newInstanceWithoutConstructor()->getStatus() ?? 500;
+                $classStatuses[] = (new ReflectionClass($class))->newInstanceWithoutConstructor()->getStatus() ?? 500;
             }
             if (isset($converted[$class])) {
                 $classStatuses[] = $converted[$class];

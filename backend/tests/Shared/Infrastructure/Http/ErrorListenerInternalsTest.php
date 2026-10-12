@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Http;
 
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
+use ReflectionParameter;
+use ReflectionProperty;
 use Symfony\Component\HttpKernel\EventListener\ErrorListener;
 
 /**
@@ -23,7 +26,7 @@ final class ErrorListenerInternalsTest extends TestCase
 {
     public function testTheCompiledMappingIsAnArrayProperty(): void
     {
-        $property = new \ReflectionProperty(ErrorListener::class, 'exceptionsMapping');
+        $property = new ReflectionProperty(ErrorListener::class, 'exceptionsMapping');
 
         self::assertSame('array', (string) $property->getType());
         self::assertFalse($property->isStatic());
@@ -31,29 +34,33 @@ final class ErrorListenerInternalsTest extends TestCase
 
     public function testTheInheritedAttributeResolverTakesAClassAndAnAttribute(): void
     {
-        $method = new \ReflectionMethod(ErrorListener::class, 'getInheritedAttribute');
+        $method = new ReflectionMethod(ErrorListener::class, 'getInheritedAttribute');
 
         self::assertFalse($method->isStatic());
         self::assertSame(
             ['class' => 'string', 'attribute' => 'string'],
             array_combine(
-                array_map(static fn (\ReflectionParameter $parameter): string => $parameter->getName(), $method->getParameters()),
-                array_map(static fn (\ReflectionParameter $parameter): string => (string) $parameter->getType(), $method->getParameters()),
+                array_map(static fn (ReflectionParameter $parameter): string => $parameter->getName(), $method->getParameters()),
+                array_map(static fn (ReflectionParameter $parameter): string => (string) $parameter->getType(), $method->getParameters()),
             ),
         );
         self::assertSame('?object', (string) $method->getReturnType());
     }
 
-    public function testTheLogLevelResolverTakesAThrowableAndReturnsALevel(): void
+    /**
+     * Le second paramètre, l'exception convertie par le noyau, est apparu avec
+     * Symfony 8.1.8 : CompiledExceptionConfig::kernelLogLevelOf() le fournit.
+     */
+    public function testTheLogLevelResolverTakesAThrowableAndItsConversionAndReturnsALevel(): void
     {
-        $method = new \ReflectionMethod(ErrorListener::class, 'resolveLogLevel');
+        $method = new ReflectionMethod(ErrorListener::class, 'resolveLogLevel');
 
         self::assertFalse($method->isStatic());
         self::assertSame(
-            ['throwable' => 'Throwable'],
+            ['throwable' => 'Throwable', 'convertedThrowable' => '?Throwable'],
             array_combine(
-                array_map(static fn (\ReflectionParameter $parameter): string => $parameter->getName(), $method->getParameters()),
-                array_map(static fn (\ReflectionParameter $parameter): string => (string) $parameter->getType(), $method->getParameters()),
+                array_map(static fn (ReflectionParameter $parameter): string => $parameter->getName(), $method->getParameters()),
+                array_map(static fn (ReflectionParameter $parameter): string => (string) $parameter->getType(), $method->getParameters()),
             ),
         );
         self::assertSame('string', (string) $method->getReturnType());

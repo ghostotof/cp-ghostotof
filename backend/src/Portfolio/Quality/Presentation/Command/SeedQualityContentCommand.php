@@ -93,7 +93,7 @@ final class SeedQualityContentCommand extends Command
                 $translationGroups->remember('trait', $index, $created->getTranslationGroup());
             }
 
-            $io->success(sprintf(
+            $io->success(\sprintf(
                 '[%s] %d principe(s), %d trait(s).',
                 $localeValue,
                 \count($content['principles']),

@@ -6,6 +6,8 @@ namespace App\Tests\Portfolio\Watch\Infrastructure\Manifest;
 
 use App\Portfolio\Watch\Domain\ValueObject\PackageCoordinates;
 use App\Portfolio\Watch\Infrastructure\Manifest\LockFilePackageManifestBuilder;
+use App\Portfolio\Watch\Infrastructure\Manifest\ManifestWriteException;
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 
 final class LockFilePackageManifestBuilderTest extends TestCase
@@ -89,7 +91,7 @@ final class LockFilePackageManifestBuilderTest extends TestCase
      */
     private function ecosystemsByName(LockFilePackageManifestBuilder $builder): array
     {
-        $manifest = $builder->build(new \DateTimeImmutable('2026-09-07 12:00:00'));
+        $manifest = $builder->build(new DateTimeImmutable('2026-09-07 12:00:00'));
 
         $byName = [];
         foreach ($manifest->packages as $package) {
@@ -124,7 +126,7 @@ final class LockFilePackageManifestBuilderTest extends TestCase
 
     public function testItNormalizesComposerVersionTags(): void
     {
-        $manifest = $this->builder($this->composerLock(), null)->build(new \DateTimeImmutable());
+        $manifest = $this->builder($this->composerLock(), null)->build(new DateTimeImmutable());
 
         $versions = [];
         foreach ($manifest->packages as $package) {
@@ -158,7 +160,7 @@ final class LockFilePackageManifestBuilderTest extends TestCase
 
     public function testItWritesTheManifestWhereItWillBeRead(): void
     {
-        $this->builder($this->composerLock(), $this->npmLock())->build(new \DateTimeImmutable());
+        $this->builder($this->composerLock(), $this->npmLock())->build(new DateTimeImmutable());
 
         self::assertFileExists($this->path('package-manifest.json'));
 
@@ -176,9 +178,61 @@ final class LockFilePackageManifestBuilderTest extends TestCase
      */
     public function testWithoutAnyLockTheManifestIsEmptyButReal(): void
     {
-        $manifest = $this->builder(null, null)->build(new \DateTimeImmutable());
+        $manifest = $this->builder(null, null)->build(new DateTimeImmutable());
 
         self::assertSame([], $manifest->packages);
         self::assertFileExists($this->path('package-manifest.json'));
+    }
+
+    /**
+     * Le manifeste s'écrit au `docker build` : un répertoire de sortie
+     * impossible à créer doit arrêter la construction sous un nom dédié
+     * (issue #338). Un fichier ordinaire à la place du répertoire attendu
+     * suffit à faire échouer `mkdir`, même en root.
+     */
+    public function testAManifestDirectoryThatCannotBeCreatedStopsTheBuild(): void
+    {
+        $blocker = $this->path('blocker');
+        touch($blocker);
+        $builder = new LockFilePackageManifestBuilder($this->composerLock(), $this->npmLock(), $blocker.'/sub/package-manifest.json');
+
+        // `mkdir()` émet un E_WARNING avant que la garde ne lève : il est
+        // attendu ici, et `failOnWarning` en ferait un échec du test.
+        set_error_handler(static fn (): bool => true, \E_WARNING);
+
+        try {
+            $builder->build(new DateTimeImmutable('2026-09-07 12:00:00'));
+            self::fail('Un répertoire de sortie impossible à créer doit arrêter la construction.');
+        } catch (ManifestWriteException $exception) {
+            self::assertStringContainsString($blocker.'/sub', $exception->getMessage());
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    /**
+     * Le répertoire existe, mais le fichier ne peut pas s'écrire (disque
+     * plein, droits) : la construction s'arrête aussi (revue de #338), au
+     * lieu de laisser partir une image sans manifeste. Un répertoire à la
+     * place du fichier fait échouer l'écriture, même en root.
+     */
+    public function testAManifestFileThatCannotBeWrittenStopsTheBuild(): void
+    {
+        $occupied = $this->path('occupied');
+        mkdir($occupied);
+        $builder = new LockFilePackageManifestBuilder($this->composerLock(), $this->npmLock(), $occupied);
+
+        // `file_put_contents()` émet un E_WARNING avant que la garde ne lève.
+        set_error_handler(static fn (): bool => true, \E_WARNING);
+
+        try {
+            $builder->build(new DateTimeImmutable('2026-09-07 12:00:00'));
+            self::fail('Un fichier de sortie impossible à écrire doit arrêter la construction.');
+        } catch (ManifestWriteException $exception) {
+            self::assertStringContainsString($occupied, $exception->getMessage());
+        } finally {
+            restore_error_handler();
+            rmdir($occupied);
+        }
     }
 }

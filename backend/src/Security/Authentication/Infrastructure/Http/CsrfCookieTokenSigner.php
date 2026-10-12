@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Http;
 
+use App\Shared\Infrastructure\Security\KeyedMac;
+use App\Shared\Infrastructure\Security\MacEncoding;
+use SensitiveParameter;
+use SensitiveParameterValue;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
@@ -17,7 +21,12 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * qu'il connaît, puis la recopier dans l'en-tête `X-XSRF-TOKEN` : le
  * double-submit seul (cookie == header) était satisfait.
  *
- * La valeur devient `<random>.<hmac>` où `hmac = HMAC-SHA256(random, APP_SECRET)`.
+ * La valeur devient `<random>.<hmac>` où `hmac = HMAC-SHA256(random, clé)`, la
+ * clé étant dérivée d'`APP_SECRET` pour ce seul usage (issue #455,
+ * {@see \App\Shared\Infrastructure\Security\SecretKeyDerivation}) ; le HMAC
+ * est calculé et vérifié en temps constant par {@see KeyedMac} (issue #487).
+ * Changer de clé invalide les cookies déjà émis : une écriture répond 403 jusqu'à la
+ * reconnexion suivante (au plus la durée de vie du JWT).
  * Sans `APP_SECRET`, l'attaquant ne peut plus produire de couple valide : un
  * cookie forgé est rejeté à la vérification de signature, avant même la
  * comparaison cookie/header. Le secret ne quitte jamais le serveur.
@@ -34,14 +43,27 @@ final readonly class CsrfCookieTokenSigner
 {
     private const string SEPARATOR = '.';
 
+    /** Contexte de la clé dérivée d'`APP_SECRET` (issue #455). */
+    private const string KEY_CONTEXT = 'cp-ghostotof/csrf-cookie/v1';
+
     /** Entropie de la partie aléatoire, en octets (64 caractères hexadécimaux). */
     private const int RANDOM_BYTES = 32;
 
+    /**
+     * Gardé pour dériver la clé plus tard ({@see self::mac()}), dans un
+     * {@see SensitiveParameterValue} : aucun dump du service ne l'affiche
+     * (issue #493).
+     *
+     * @var SensitiveParameterValue<string>
+     */
+    private SensitiveParameterValue $secret;
+
     public function __construct(
-        #[\SensitiveParameter]
+        #[SensitiveParameter]
         #[Autowire('%kernel.secret%')]
-        private string $secret,
+        string $secret,
     ) {
+        $this->secret = new SensitiveParameterValue($secret);
     }
 
     /**
@@ -51,7 +73,7 @@ final readonly class CsrfCookieTokenSigner
     {
         $random = bin2hex(random_bytes(self::RANDOM_BYTES));
 
-        return $random.self::SEPARATOR.$this->signature($random);
+        return $random.self::SEPARATOR.$this->mac()->sign($random);
     }
 
     /**
@@ -59,7 +81,7 @@ final readonly class CsrfCookieTokenSigner
      * correspond à ce serveur. Ne compare pas au cookie/header : c'est le
      * rôle (préalable) de CsrfCookieRequestSubscriber.
      */
-    public function isValid(string $token): bool
+    public function isValid(#[SensitiveParameter] string $token): bool
     {
         $parts = explode(self::SEPARATOR, $token);
 
@@ -73,11 +95,13 @@ final readonly class CsrfCookieTokenSigner
             return false;
         }
 
-        return hash_equals($this->signature($random), $providedSignature);
+        return $this->mac()->verifies($providedSignature, $random);
     }
 
-    private function signature(string $random): string
+    private function mac(): KeyedMac
     {
-        return hash_hmac('sha256', $random, $this->secret);
+        // Dérivée à chaque appel (quelques microsecondes) : une clé vide lève
+        // au premier usage plutôt qu'à la construction de chaque requête.
+        return KeyedMac::fromSecret($this->secret->getValue(), self::KEY_CONTEXT, MacEncoding::Hex);
     }
 }

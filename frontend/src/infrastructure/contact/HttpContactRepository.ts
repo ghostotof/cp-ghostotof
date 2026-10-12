@@ -9,13 +9,14 @@ const VALIDATION_STATUS = 422
 /**
  * 429 : limitation de débit, rien à corriger dans la saisie.
  *
- * Limite connue et acceptée : seul le 429 du limiteur **applicatif** Symfony
- * (`contact_form`, 5/h par IP) arrive jusqu'ici. Celui de la zone nginx
- * `contact` est émis par nginx sans passer par PHP, donc sans en-têtes CORS ;
- * en production le front est servi depuis une autre origine que l'API, le
- * navigateur rejette la réponse et `fetch` lève un `TypeError` — ce cas
- * retombe donc sur ContactSubmissionFailedError. Le limiteur applicatif étant
- * bien plus bas que la zone nginx, il tombe le premier de toute façon.
+ * Deux émetteurs possibles, même traitement : le limiteur **applicatif**
+ * Symfony (`contact_form`, 5/h par IP), qui tombe le premier, et la zone nginx
+ * `contact`, émise sans passer par PHP donc sans en-têtes CORS. En préprod et
+ * en prod, le front et l'API partagent une origine (un seul hôte, `/api` routé
+ * vers le backend par l'ingress) : le navigateur n'applique pas CORS et ce 429
+ * arrive ici comme l'autre — vérifié dans un navigateur en préprod (#368).
+ * Seul le dev, où Vite et nginx écoutent sur deux ports, le voit refusé :
+ * `fetch` y lève un `TypeError`, qui retombe sur ContactSubmissionFailedError.
  */
 const RATE_LIMITED_STATUS = 429
 

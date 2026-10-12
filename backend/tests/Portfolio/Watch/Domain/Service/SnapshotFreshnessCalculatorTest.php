@@ -6,6 +6,10 @@ namespace App\Tests\Portfolio\Watch\Domain\Service;
 
 use App\Portfolio\Watch\Domain\Service\SnapshotFreshnessCalculator;
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotFreshness;
+use DateInterval;
+use DateTimeImmutable;
+use DateTimeZone;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class SnapshotFreshnessCalculatorTest extends TestCase
@@ -21,7 +25,7 @@ final class SnapshotFreshnessCalculatorTest extends TestCase
 
     private function freshnessAfter(string $modifier): SnapshotFreshness
     {
-        $now = new \DateTimeImmutable(self::NOW);
+        $now = new DateTimeImmutable(self::NOW);
 
         return $this->calculator->freshnessFor($now->modify($modifier), $now);
     }
@@ -30,7 +34,7 @@ final class SnapshotFreshnessCalculatorTest extends TestCase
     {
         self::assertSame(
             SnapshotFreshness::NEVER_REFRESHED,
-            $this->calculator->freshnessFor(null, new \DateTimeImmutable(self::NOW)),
+            $this->calculator->freshnessFor(null, new DateTimeImmutable(self::NOW)),
         );
     }
 
@@ -57,6 +61,30 @@ final class SnapshotFreshnessCalculatorTest extends TestCase
     {
         self::assertSame(SnapshotFreshness::FRESH, $this->freshnessAfter('-35 hours -59 minutes'));
         self::assertSame(SnapshotFreshness::STALE, $this->freshnessAfter('-36 hours'));
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function eveOfAClockChange(): iterable
+    {
+        yield 'veille du passage à l\'heure d\'hiver' => ['2026-10-24 12:00:00'];
+        yield 'veille du passage à l\'heure d\'été' => ['2026-03-28 12:00:00'];
+    }
+
+    /**
+     * Issue #445 : le seuil compte des heures écoulées, même quand une heure
+     * murale disparaît ou se répète entre le rafraîchissement et la lecture
+     * (`modify('+36 hours')` donnait 37 h ou 35 h à Paris).
+     */
+    #[DataProvider('eveOfAClockChange')]
+    public function testTheThresholdCountsElapsedHoursAcrossAClockChange(string $refreshedAt): void
+    {
+        $refreshed = new DateTimeImmutable($refreshedAt, new DateTimeZone('Europe/Paris'));
+        $threshold = new DateInterval(\sprintf('PT%dH', SnapshotFreshnessCalculator::STALE_AFTER_HOURS));
+
+        self::assertSame(SnapshotFreshness::FRESH, $this->calculator->freshnessFor($refreshed, $refreshed->add($threshold)->modify('-1 second')));
+        self::assertSame(SnapshotFreshness::STALE, $this->calculator->freshnessFor($refreshed, $refreshed->add($threshold)));
     }
 
     public function testAnOldSnapshotIsStale(): void

@@ -14,7 +14,10 @@ use App\Ai\Assistant\Domain\Exception\AssistantRateLimitExceededException;
 interface AssistantRateLimiterInterface
 {
     /**
+     * @param string $accountId UUID du compte ({@see \App\Shared\Domain\Security\AccountReference}),
+     *                          jamais son identifiant de connexion (issue #363)
+     *
      * @throws AssistantRateLimitExceededException
      */
-    public function consume(string $accountIdentifier): void;
+    public function consume(string $accountId): void;
 }

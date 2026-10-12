@@ -29,7 +29,13 @@ paths:
   `Backoffice{About}{Settings,SiteCard,MeCard}Resource`, `BackofficeUserResource`,
   `BackofficeUserPasswordResource`): a flat DTO (never the Doctrine entity itself) under
   `Presentation/ApiResource/`, backed by a `Provider` (`GetCollection`/`Get`) and a `Processor`
-  (`Post`/`Put`/`Delete`) under `Infrastructure/ApiPlatform/`. Collection reads use a `?locale=` query filter
+  (`Post`/`Put`/`Delete`) under `Infrastructure/ApiPlatform/`. A CRUD Processor **uses the
+  `Shared/Infrastructure/ApiPlatform/DispatchesWriteOperations` trait** (issue #338,
+  `@use DispatchesWriteOperations<TheResource>`) and declares only `create()`, `update(Uuid $id, …)` and
+  `delete(Uuid $id)`. The trait picks one by operation, and refuses any other with
+  `UnsupportedOperationException` before any action — never re-write the `instanceof` cascade.
+  `DispatchesWriteOperationsTest` pins that choice. Each resource's functional test pins the wiring.
+  Collection reads use a `?locale=` query filter
   (unlike the public `{locale}` path param — collections aren't per-locale routes). **`Put`/`Delete` operations
   need an explicit `provider:` set, not just `processor:`** — otherwise API Platform's default provider tries to
   resolve the DTO via Doctrine directly and 404s before ever reaching the processor. Since `v0.12.0` the
@@ -81,7 +87,8 @@ paths:
   `exceptionToStatus` carried by an `#[ApiResource]` or one of its operations (merged by the vendor at
   render time, `ErrorListener::getOperationExceptionToStatus`), every exception the kernel converts
   itself — a `framework.exceptions` entry with a `status_code`, which wins, else a `#[WithHttpStatus]`
-  of `src/`; either way the level is resolved on the original exception — and every concrete
+  of `src/`; either way the entries and `#[WithLogLevel]` are matched on the original exception, the
+  default level (`critical`, or `error` for a 4xx) on the conversion since Symfony 8.1.8 — and every concrete
   `ProblemExceptionInterface` of `src/` (found by token parsing
   through `tests/Support/DeclaredClasses`, shared with `ProblemDetailStaysStaticTest`, never inferred from
   file paths); a level that matches **every** status the exception can be rendered with (4xx:
@@ -115,7 +122,9 @@ paths:
   everywhere but resolves per environment, and the same test refuses it. The level checked is the one
   the kernel resolves, read from `ErrorListener::resolveLogLevel` itself: the first matching entry by
   `instanceof`, else an inherited `#[WithLogLevel]` — honoured, though the project keeps levels in
-  `framework.exceptions` so the domain does not depend on HttpKernel. Three vendor internals are read by
+  `framework.exceptions` so the domain does not depend on HttpKernel, else the default, read on the
+  `HttpException` the kernel substituted (`CompiledExceptionConfig::kernelConversion()` hands it the same
+  one — Symfony 8.1.8 added that second parameter, PR #441). Three vendor internals are read by
   reflection rather than reimplemented (the compiled mapping, `getInheritedAttribute`,
   `resolveLogLevel`); `ErrorListenerInternalsTest` pins their signature, so a Symfony upgrade that
   changes them fails there first. GraphQL operations are not covered:
@@ -222,5 +231,34 @@ paths:
   priority 64** and sets the header at `kernel.response` — **on a 429 only** (a failed render that ends in a 500 must not carry it) — with an injected `ClockInterface`. 64 is not
   arbitrary: it must sit above every listener that *builds* the 429 and so stops propagation — API
   Platform (-96) and, on a controller, `ApiProblemResponseListener` (-98). A new quota exception implements the interface; never write a fifth
-  per-context copy. `RateLimiterLockFailureListener` stays apart on purpose (fixed delay, priority 16).
+  per-context copy. It must also be traced: `ThrottledRequestAuditCoverageTest` (issue #361) wants every
+  `RetryAfterAware` either sorted by `ThrottledRequestAuditListener` or justified, as a per-account quota
+  (`PER_ACCOUNT`) or as one traced before it is thrown (`TRACED_UPSTREAM`, the login refusal, issue #399)
+  (see `.claude/rules/security-authentication.md`). `RateLimiterLockFailureListener` stays apart on purpose (fixed delay, priority 16).
+  **And every quota 429 carries `type: /errors/rate-limited`** (issue #369), the `type` of the nginx zones
+  (`@rate_limited`): one cause, one value for a client to recognise. A quota exception therefore declares
+  `implements ProblemExceptionInterface, RetryAfterAware` and `use IsRateLimitedProblem`
+  (`Shared/Domain/Exception`, `rate-limited` + 429 over `HasProblemType`) — never its own
+  `problemType()`. Without it, on an API Platform operation, the `type` falls back to `/errors/429`,
+  derived from the status alone, which is what the contact, set-password and translation quotas answered
+  until #369. `QuotaExceptionsContractTest` (formerly `QuotaExceptionsAreRetryAfterAwareTest`) walks every
+  `RetryAfterAware` of `src/` (`DeclaredClasses`) and enforces both the deadline and the problem type;
+  each route's functional 429 test reads the `type`. **No `exception_to_status` entry for a quota**: on an
+  API Platform operation `getStatus()` already gives the 429, and an entry is a second source that can
+  only diverge — `ErrorListener::getStatusCode` reads the map *first* for the HTTP status, while
+  `Error::createFromException` fills the body's `status` from `getStatus()`, so an entry at 503 would answer
+  HTTP 503 with `"status": 429` and no `Retry-After`. `ProblemStatusMatchesExceptionToStatusTest` (#369)
+  turns red when any entry, global or on a resource or operation, contradicts the `getStatus()` of a
+  `ProblemExceptionInterface` of `src/` — the 409s that keep both (`CannotModifyOwnRolesException`…) included.
+  **`login_throttling` is one of them since issue #399**: `Security/Authentication/Infrastructure/Security/LoginThrottlingRefusalListener`
+  (`LoginFailureEvent`, `login` firewall, priority **-200**, after the counter, the `login-throttled` audit
+  and `FailedLoginTimingEqualizer`) throws `LoginRateLimitExceededException` on a
+  `TooManyLoginAttemptsAuthenticationException`, and the shared path above renders it — never build that
+  429 in a failure handler. Its deadline is the exception's `%minutes%` (Symfony's ceiling of the limiter's
+  deadline, an upper bound off by at most 59 s, falling back to one minute): no second read of the
+  limiter's storage on the path an attacker hammers. Every other login failure keeps Lexik's 401, byte for
+  byte (audit A10). Three consumers read that 429: `LoginThrottlingTest`, the login page
+  (`LoginRateLimitedError`) and the preprod smoke test (`tools/smoke-login-throttling.sh`), which tells it
+  from the nginx `login` zone's 429 by its `Retry-After` and its literal `detail` — nginx sends the same
+  `type`, without the header and with its own `detail`.
 

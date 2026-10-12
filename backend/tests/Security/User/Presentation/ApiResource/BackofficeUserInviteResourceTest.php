@@ -7,9 +7,11 @@ namespace App\Tests\Security\User\Presentation\ApiResource;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\TestCredentials;
+use App\Tests\Support\UnavailableTransport;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Formatter\JsonFormatter;
 use Monolog\LogRecord;
@@ -97,7 +99,7 @@ final class BackofficeUserInviteResourceTest extends WebTestCase
         self::assertContains(CpgUser::ROLE_TRUSTED, $body['roles']);
         self::assertArrayNotHasKey('password', $body);
 
-        // Le message ne porte plus que { userId, locale } (audit C2 / D3) :
+        // Le message ne porte que { userId, locale, invitationGeneration } (audit C2 / D3, #434) :
         // aucun secret, et le jeton est créé côté handler.
         $sent = $this->asyncTransport()->getSent();
         self::assertCount(1, $sent);
@@ -108,6 +110,37 @@ final class BackofficeUserInviteResourceTest extends WebTestCase
         self::assertTrue(Uuid::isValid($body['id']));
         self::assertSame($body['id'], $message->userId);
         self::assertSame('fr', $message->locale);
+    }
+
+    /**
+     * Issue #485, par la vraie chaîne : la file ne prend pas l'invitation.
+     * L'administrateur reçoit un 503 problem+json, le compte tout juste créé
+     * est retiré — une seconde tentative, la file revenue, aboutit au lieu de
+     * buter sur « adresse déjà utilisée ».
+     */
+    public function testAnInvitationTheQueueRefusesIsUndoneAndCanBeRetried(): void
+    {
+        $client = self::createClient();
+        $client->disableReboot();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+        $server = ['CONTENT_TYPE' => 'application/json', 'HTTP_X_XSRF_TOKEN' => $csrfToken];
+        $payload = self::jsonBody(['email' => 'jean.dupont@example.com', 'locale' => 'fr']);
+
+        self::getContainer()->set('messenger.transport.async', new UnavailableTransport());
+        $client->request('POST', '/api/backoffice/users', server: $server, content: $payload);
+
+        self::assertResponseStatusCodeSame(503);
+        $problem = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($problem);
+        self::assertSame('/errors/message-queue-unavailable', $problem['type'] ?? null);
+        self::assertNull(self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByEmail('jean.dupont@example.com'));
+
+        // La file revenue : un noyau neuf, son transport en mémoire d'origine.
+        $client->enableReboot();
+        $client->request('POST', '/api/backoffice/users', server: $server, content: $payload);
+
+        self::assertResponseStatusCodeSame(201);
     }
 
     public function testInviteWithAnAlreadyUsedEmailReturns409(): void

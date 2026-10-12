@@ -6,6 +6,7 @@ namespace App\Tests\Ai\Translation\Infrastructure\RateLimiter;
 
 use App\Ai\Translation\Domain\Exception\TranslationRateLimitExceededException;
 use App\Ai\Translation\Infrastructure\RateLimiter\SymfonyTranslationRateLimiter;
+use DateTimeImmutable;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
@@ -55,7 +56,7 @@ final class SymfonyTranslationRateLimiterTest extends TestCase
             $rateLimiter->consume('super');
             self::fail('Une exception était attendue.');
         } catch (TranslationRateLimitExceededException $exception) {
-            self::assertGreaterThan(new \DateTimeImmutable(), $exception->retryAfter);
+            self::assertGreaterThan(new DateTimeImmutable(), $exception->retryAfter);
         }
     }
 
@@ -89,7 +90,7 @@ final class SymfonyTranslationRateLimiterTest extends TestCase
             self::assertSame(Level::Info, $records[0]->level);
             self::assertSame([
                 'outcome' => 'rate-limited',
-                'account' => 'super',
+                'userId' => 'super',
                 'retryAfter' => $exception->retryAfter->format(\DATE_ATOM),
             ], $records[0]->context);
         }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes;
 
+use DomainException;
 use Symfony\Component\HttpKernel\Attribute\WithHttpStatus;
 
 /**
@@ -12,6 +13,6 @@ use Symfony\Component\HttpKernel\Attribute\WithHttpStatus;
  * pas une exception rendue : seules ses sous-classes concrètes le sont.
  */
 #[WithHttpStatus(404)]
-abstract class AbstractAttributedFixtureException extends \DomainException
+abstract class AbstractAttributedFixtureException extends DomainException
 {
 }

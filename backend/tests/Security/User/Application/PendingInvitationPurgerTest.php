@@ -5,10 +5,17 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Application;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
+use App\Security\User\Application\AccountLockInterface;
 use App\Security\User\Application\PendingInvitationPurger;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Exception\InvalidPurgeRetentionException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use Closure;
+use DateInterval;
+use DateTimeImmutable;
+use DateTimeZone;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\MockClock;
@@ -32,7 +39,7 @@ final class PendingInvitationPurgerTest extends TestCase
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
         $repository->expects(self::once())
             ->method('findAwaitingPasswordSetupInvitedBefore')
-            ->with(new \DateTimeImmutable('2026-08-23 10:00:00', new \DateTimeZone('UTC')))
+            ->with(new DateTimeImmutable('2026-08-23 10:00:00', new DateTimeZone('UTC')))
             ->willReturn([$first, $second]);
         $repository->expects(self::exactly(2))->method('remove')
             ->with(self::logicalOr($first, $second));
@@ -44,13 +51,14 @@ final class PendingInvitationPurgerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects(self::never())->method('warning');
 
-        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
+        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger, $this->passthroughAccountLock());
 
-        $result = $purger->purge(new \DateInterval('P30D'));
+        $result = $purger->purge(new DateInterval('P30D'));
 
-        self::assertSame(['first-invitee', 'second-invitee'], $result->purged);
+        // Par UUID, jamais par identifiant (issue #363).
+        self::assertSame([$first->accountId(), $second->accountId()], $result->purged);
         self::assertSame([], $result->skipped);
-        self::assertEquals(new \DateTimeImmutable('2026-08-23 10:00:00', new \DateTimeZone('UTC')), $result->threshold);
+        self::assertEquals(new DateTimeImmutable('2026-08-23 10:00:00', new DateTimeZone('UTC')), $result->threshold);
     }
 
     public function testDryRunNeitherRemovesNorLogsButStillReportsWhatWouldBePurged(): void
@@ -68,11 +76,11 @@ final class PendingInvitationPurgerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects(self::never())->method('warning');
 
-        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
+        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger, $this->passthroughAccountLock());
 
-        $result = $purger->purge(new \DateInterval('P30D'), dryRun: true);
+        $result = $purger->purge(new DateInterval('P30D'), dryRun: true);
 
-        self::assertSame(['stale-invitee'], $result->purged);
+        self::assertSame([$stale->accountId()], $result->purged);
         self::assertSame([], $result->skipped);
     }
 
@@ -92,14 +100,14 @@ final class PendingInvitationPurgerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects(self::once())->method('warning')->with(
             self::anything(),
-            self::callback(static fn (array $context): bool => 'super-invitee' === ($context['username'] ?? null)),
+            self::callback(static fn (array $context): bool => ['userId' => $superInvitee->accountId()] === $context),
         );
 
-        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
+        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger, $this->passthroughAccountLock());
 
-        $result = $purger->purge(new \DateInterval('P30D'));
+        $result = $purger->purge(new DateInterval('P30D'));
 
-        self::assertSame(['super-invitee'], $result->skipped);
+        self::assertSame([$superInvitee->accountId()], $result->skipped);
         self::assertSame([], $result->purged);
     }
 
@@ -117,9 +125,9 @@ final class PendingInvitationPurgerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects(self::never())->method('warning');
 
-        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
+        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger, $this->passthroughAccountLock());
 
-        $result = $purger->purge(new \DateInterval('P30D'));
+        $result = $purger->purge(new DateInterval('P30D'));
 
         self::assertSame([], $result->purged);
         self::assertSame([], $result->skipped);
@@ -137,11 +145,11 @@ final class PendingInvitationPurgerTest extends TestCase
         $clock = new MockClock(self::NOW);
 
         $passwordAlreadySet = new CpgUser('password-already-set', 'a-real-hash');
-        $passwordAlreadySet->markInvited(new \DateTimeImmutable('-40 days'));
+        $passwordAlreadySet->markInvited(new DateTimeImmutable('-40 days'));
 
         $alreadyActivated = new CpgUser('already-activated', 'a-real-hash');
-        $alreadyActivated->markInvited(new \DateTimeImmutable('-40 days'));
-        $alreadyActivated->markActivated(new \DateTimeImmutable('-5 days'));
+        $alreadyActivated->markInvited(new DateTimeImmutable('-40 days'));
+        $alreadyActivated->markActivated(new DateTimeImmutable('-5 days'));
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
         $repository->method('findAwaitingPasswordSetupInvitedBefore')
@@ -154,9 +162,9 @@ final class PendingInvitationPurgerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects(self::never())->method('warning');
 
-        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
+        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger, $this->passthroughAccountLock());
 
-        $result = $purger->purge(new \DateInterval('P30D'));
+        $result = $purger->purge(new DateInterval('P30D'));
 
         self::assertSame([], $result->purged);
         self::assertSame([], $result->skipped);
@@ -177,9 +185,9 @@ final class PendingInvitationPurgerTest extends TestCase
         $auditLogger = self::createStub(SecurityAuditLoggerInterface::class);
         $logger = self::createStub(LoggerInterface::class);
 
-        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
+        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger, $this->passthroughAccountLock());
 
-        $result = $purger->purge(new \DateInterval('P1D'));
+        $result = $purger->purge(new DateInterval('P1D'));
 
         self::assertSame([], $result->purged);
     }
@@ -203,11 +211,11 @@ final class PendingInvitationPurgerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects(self::never())->method('warning');
 
-        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
+        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger, $this->passthroughAccountLock());
 
         $this->expectException(InvalidPurgeRetentionException::class);
 
-        $purger->purge(new \DateInterval('PT1H'));
+        $purger->purge(new DateInterval('PT1H'));
     }
 
     public function testANegativeIntervalIsRejectedBeforeAnyRepositoryAccess(): void
@@ -224,15 +232,15 @@ final class PendingInvitationPurgerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects(self::never())->method('warning');
 
-        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
+        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger, $this->passthroughAccountLock());
 
         // Double négation possible côté appelant ("--older-than=-30 days") :
-        // \DateInterval::createFromDateString('-30 days') produit un
-        // intervalle dont \DateTimeImmutable::sub() avance l'horloge au lieu
+        // DateInterval::createFromDateString('-30 days') produit un
+        // intervalle dont DateTimeImmutable::sub() avance l'horloge au lieu
         // de la reculer — le seuil se retrouve dans le futur.
         $this->expectException(InvalidPurgeRetentionException::class);
 
-        $purger->purge(\DateInterval::createFromDateString('-30 days'));
+        $purger->purge(DateInterval::createFromDateString('-30 days'));
     }
 
     public function testAZeroLengthIntervalIsRejectedBeforeAnyRepositoryAccess(): void
@@ -249,20 +257,97 @@ final class PendingInvitationPurgerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects(self::never())->method('warning');
 
-        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger);
+        $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger, $this->passthroughAccountLock());
 
         // Un intervalle nul place le seuil exactement sur "maintenant" :
         // rejeté au même titre qu'un intervalle négatif.
         $this->expectException(InvalidPurgeRetentionException::class);
 
-        $purger->purge(new \DateInterval('PT0S'));
+        $purger->purge(new DateInterval('PT0S'));
     }
 
     private function pendingUser(string $username): CpgUser
     {
         $user = new CpgUser($username, '');
-        $user->markInvited(new \DateTimeImmutable('-40 days'));
+        // Relatif à l'horloge figée du test, pas à la date du jour : la purge
+        // revérifie l'âge de l'invitation sous le verrou (issue #459).
+        $user->markInvited((new DateTimeImmutable(self::NOW, new DateTimeZone('UTC')))->modify('-40 days'));
 
         return $user;
+    }
+
+    /**
+     * @return iterable<string, array{Closure(CpgUser): void}>
+     */
+    public static function changesCommittedBeforeTheDeletion(): iterable
+    {
+        yield 'relancé' => [static fn (CpgUser $user): null => $user->markReinvited(new DateTimeImmutable('2026-09-22 09:59:00'), 2)];
+        yield 'activé' => [static fn (CpgUser $user): null => $user->markActivated(new DateTimeImmutable('2026-09-22 09:59:00'))];
+        yield 'mot de passe posé depuis le backoffice' => [static fn (CpgUser $user): null => $user->setPassword('hashed-by-the-admin')];
+    }
+
+    /**
+     * Issue #459 : la purge revérifie le compte sous son verrou, relu. Une
+     * relance, une activation ou un mot de passe posé par l'admin entre la
+     * lecture de la liste et la suppression épargnent le compte.
+     *
+     * @param Closure(CpgUser): void $commitMeanwhile
+     */
+    #[DataProvider('changesCommittedBeforeTheDeletion')]
+    public function testAnAccountChangedBeforeItsDeletionIsSpared(Closure $commitMeanwhile): void
+    {
+        $user = $this->pendingUser('changed-invitee');
+        $repository = $this->createMock(CpgUserRepositoryInterface::class);
+        $repository->method('findAwaitingPasswordSetupInvitedBefore')->willReturn([$user]);
+        $repository->expects(self::never())->method('remove');
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('userPurged');
+
+        $purger = new PendingInvitationPurger($repository, new MockClock(self::NOW), $auditLogger, self::createStub(LoggerInterface::class), $this->passthroughAccountLock($commitMeanwhile));
+
+        self::assertSame([], $purger->purge(new DateInterval('P30D'))->purged);
+    }
+
+    /**
+     * Un compte supprimé entre la lecture et le verrou (par l'admin) n'est
+     * plus à purger : ignoré, sans erreur ni journal.
+     */
+    public function testAnAccountAlreadyGoneIsIgnored(): void
+    {
+        $user = $this->pendingUser('gone-invitee');
+        $repository = $this->createMock(CpgUserRepositoryInterface::class);
+        $repository->method('findAwaitingPasswordSetupInvitedBefore')->willReturn([$user]);
+        $repository->expects(self::never())->method('remove');
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('userPurged');
+        $accountLock = self::createStub(AccountLockInterface::class);
+        $accountLock->method('whileLocked')->willThrowException(CpgUserNotFoundException::forId($user->getId()));
+
+        $purger = new PendingInvitationPurger($repository, new MockClock(self::NOW), $auditLogger, self::createStub(LoggerInterface::class), $accountLock);
+
+        self::assertSame([], $purger->purge(new DateInterval('P30D'))->purged);
+    }
+
+    /**
+     * Verrou du compte qui exécute l'opération telle quelle ;
+     * `$commitMeanwhile` simule ce que le verrou relit (une écriture
+     * concurrente déjà commitée).
+     *
+     * @param (Closure(CpgUser): void)|null $commitMeanwhile
+     */
+    private function passthroughAccountLock(?Closure $commitMeanwhile = null): AccountLockInterface
+    {
+        $accountLock = self::createStub(AccountLockInterface::class);
+        $accountLock->method('whileLocked')->willReturnCallback(
+            static function (CpgUser $user, Closure $operation) use ($commitMeanwhile): mixed {
+                if (null !== $commitMeanwhile) {
+                    $commitMeanwhile($user);
+                }
+
+                return $operation($user);
+            },
+        );
+
+        return $accountLock;
     }
 }

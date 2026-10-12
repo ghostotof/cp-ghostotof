@@ -6,6 +6,7 @@ namespace App\Ai\Assistant\Infrastructure\Http;
 
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use App\Shared\Domain\Exception\HasProblemType;
+use RuntimeException;
 
 /**
  * Le corps d'une requête à l'assistant dépasse la borne applicative (spec 0005
@@ -15,7 +16,7 @@ use App\Shared\Domain\Exception\HasProblemType;
  *
  * Journalisée en `info` par le noyau : voir `framework.exceptions`.
  */
-final class RequestBodyTooLargeException extends \RuntimeException implements ProblemExceptionInterface
+final class RequestBodyTooLargeException extends RuntimeException implements ProblemExceptionInterface
 {
     use HasProblemType;
 

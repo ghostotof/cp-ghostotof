@@ -81,7 +81,7 @@ final class SeedContributionsContentCommand extends Command
                 $translationGroups->remember('contribution', $index, $created->getTranslationGroup());
             }
 
-            $io->success(sprintf('[%s] %d contribution(s).', $localeValue, \count($contributions)));
+            $io->success(\sprintf('[%s] %d contribution(s).', $localeValue, \count($contributions)));
         }
 
         return Command::SUCCESS;

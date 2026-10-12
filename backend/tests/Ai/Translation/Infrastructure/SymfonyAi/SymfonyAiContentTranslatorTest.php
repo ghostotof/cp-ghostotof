@@ -20,6 +20,7 @@ use Symfony\AI\Platform\Result\ObjectResult;
 use Symfony\AI\Platform\Result\ResultInterface;
 use Symfony\AI\Platform\Result\TextResult;
 use Symfony\AI\Platform\TokenUsage\TokenUsage;
+use Throwable;
 
 /**
  * Aucun de ces tests ne sort sur le réseau : l'agent est un double en mémoire.
@@ -36,7 +37,7 @@ final class SymfonyAiContentTranslatorTest extends TestCase
         return new TranslationRequest(Locale::FR, Locale::EN, ['title' => self::TITLE_FR, 'impact' => self::IMPACT_FR]);
     }
 
-    private function translator(ResultInterface|\Throwable $outcome, ?InMemoryLogger $logger = null): SymfonyAiContentTranslator
+    private function translator(ResultInterface|Throwable $outcome, ?InMemoryLogger $logger = null): SymfonyAiContentTranslator
     {
         return new SymfonyAiContentTranslator(new FakeAgent($outcome), $logger ?? new InMemoryLogger());
     }
@@ -148,7 +149,7 @@ final class SymfonyAiContentTranslatorTest extends TestCase
      * lecture du type ; la cause se journalise par sa classe, son statut et
      * son type d'erreur, jamais par ce message.
      *
-     * @return iterable<string, array{\Throwable, ?int, ?string, string}>
+     * @return iterable<string, array{Throwable, ?int, ?string, string}>
      */
     public static function bridgeFailures(): iterable
     {
@@ -162,7 +163,7 @@ final class SymfonyAiContentTranslatorTest extends TestCase
     }
 
     #[DataProvider('bridgeFailures')]
-    public function testLogsTheProviderFailureByClassStatusAndTypeNeverByItsMessage(\Throwable $failure, ?int $status, ?string $errorType, string $reason): void
+    public function testLogsTheProviderFailureByClassStatusAndTypeNeverByItsMessage(Throwable $failure, ?int $status, ?string $errorType, string $reason): void
     {
         $logger = new InMemoryLogger();
         $translator = $this->translator($failure, $logger);

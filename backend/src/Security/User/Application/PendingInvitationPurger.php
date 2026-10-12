@@ -6,8 +6,11 @@ namespace App\Security\User\Application;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Exception\InvalidPurgeRetentionException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use DateInterval;
+use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 
@@ -18,10 +21,11 @@ final readonly class PendingInvitationPurger implements PendingInvitationPurgerI
         private ClockInterface $clock,
         private SecurityAuditLoggerInterface $auditLogger,
         private LoggerInterface $logger,
+        private AccountLockInterface $accountLock,
     ) {
     }
 
-    public function purge(\DateInterval $maxAge, bool $dryRun = false): PendingInvitationPurgeResult
+    public function purge(DateInterval $maxAge, bool $dryRun = false): PendingInvitationPurgeResult
     {
         $now = $this->clock->now();
         $threshold = $now->sub($maxAge);
@@ -32,7 +36,7 @@ final readonly class PendingInvitationPurger implements PendingInvitationPurgerI
         // ne vient que d'un appel humain direct. Un seuil devenu >= now
         // (intervalle négatif ou nul) reste un cas particulier de cette même
         // garde : le futur est encore plus proche que "maintenant − 1 jour".
-        $minimumThreshold = $now->sub(new \DateInterval('P1D'));
+        $minimumThreshold = $now->sub(new DateInterval('P1D'));
 
         // Garde métier, avant toute lecture du dépôt : protège tout appelant,
         // pas seulement la commande CLI qui, elle, ne fait qu'attraper
@@ -57,25 +61,55 @@ final readonly class PendingInvitationPurger implements PendingInvitationPurgerI
             // compte ROLE_SUPER en attente d'activation reste une décision
             // humaine, jamais une suppression automatique.
             if (\in_array(CpgUser::ROLE_SUPER, $user->getRoles(), true)) {
-                $skipped[] = $user->getUsername();
+                // Par l'UUID, jamais l'identifiant (issue #363) : celui d'un
+                // invité est dérivé de son adresse.
+                $skipped[] = $user->accountId();
                 $this->logger->warning(
                     'Invitation en attente ignorée par la purge automatique : le compte porte ROLE_SUPER.',
-                    ['username' => $user->getUsername()],
+                    ['userId' => $user->accountId()],
                 );
 
                 continue;
             }
 
             if (!$dryRun) {
-                $this->cpgUserRepository->remove($user);
+                if (!$this->removeIfStillPurgeable($user, $threshold)) {
+                    continue;
+                }
                 // Journal de sécurité : après la suppression effective,
                 // jamais en dry-run (rien ne s'est réellement passé).
                 $this->auditLogger->userPurged($user);
             }
 
-            $purged[] = $user->getUsername();
+            $purged[] = $user->accountId();
         }
 
         return new PendingInvitationPurgeResult($purged, $skipped, $threshold);
+    }
+
+    /**
+     * Sous le verrou du compte (issue #459), celui de l'invitation et de
+     * l'activation : la liste a été lue hors verrou, et une relance, une
+     * activation ou un mot de passe posé depuis le backoffice a pu être
+     * commité depuis. Les critères de la lecture sont refaits sur le compte
+     * relu ; un compte déjà supprimé (par l'admin) n'est plus à purger.
+     */
+    private function removeIfStillPurgeable(CpgUser $user, DateTimeImmutable $threshold): bool
+    {
+        try {
+            return $this->accountLock->whileLocked($user, function (CpgUser $locked) use ($threshold): bool {
+                $invitedAt = $locked->getInvitedAt();
+                if (!$locked->isAwaitingPasswordSetup() || null === $invitedAt || $invitedAt >= $threshold
+                    || \in_array(CpgUser::ROLE_SUPER, $locked->getRoles(), true)) {
+                    return false;
+                }
+
+                $this->cpgUserRepository->remove($locked);
+
+                return true;
+            });
+        } catch (CpgUserNotFoundException) {
+            return false;
+        }
     }
 }

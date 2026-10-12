@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Security\User\Domain\Entity;
 
 use App\Security\User\Infrastructure\Doctrine\PasswordSetupTokenRepository;
+use DateTimeImmutable;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
@@ -15,8 +17,11 @@ use Symfony\Component\Uid\Uuid;
  *
  * Seul le SHA-256 du jeton est stocké (`tokenHash`) : la valeur en clair ne
  * vit que le temps de construire le lien envoyé par e-mail, elle n'est jamais
- * persistée ni journalisée. Un compte ne conserve qu'un jeton actif à la fois
- * (cf. PasswordSetupTokenRepositoryInterface::deleteForUser).
+ * persistée ni journalisée. Un compte en attente ne conserve qu'un jeton
+ * actif à la fois (chaque envoi purge les précédents, cf.
+ * PasswordSetupTokenRepositoryInterface::deleteForUser) ; activé, ou doté d'un
+ * mot de passe depuis le backoffice, il n'en garde aucun utilisable — seul le
+ * jeton consommé reste, pour journaliser un rejeu (cf. deleteUnusedForUser).
  */
 #[ORM\Entity(repositoryClass: PasswordSetupTokenRepository::class)]
 #[ORM\Table(name: 'password_setup_token')]
@@ -36,13 +41,13 @@ class PasswordSetupToken
     #[ORM\Column(length: 64, unique: true)]
     private string $tokenHash;
 
-    #[ORM\Column]
-    private \DateTimeImmutable $expiresAt;
+    #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE)]
+    private DateTimeImmutable $expiresAt;
 
-    #[ORM\Column(nullable: true)]
-    private ?\DateTimeImmutable $usedAt = null;
+    #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
+    private ?DateTimeImmutable $usedAt = null;
 
-    public function __construct(CpgUser $user, string $tokenHash, \DateTimeImmutable $expiresAt)
+    public function __construct(CpgUser $user, string $tokenHash, DateTimeImmutable $expiresAt)
     {
         $this->id = Uuid::v7();
         $this->user = $user;
@@ -65,18 +70,18 @@ class PasswordSetupToken
         return $this->tokenHash;
     }
 
-    public function getExpiresAt(): \DateTimeImmutable
+    public function getExpiresAt(): DateTimeImmutable
     {
         return $this->expiresAt;
     }
 
-    public function getUsedAt(): ?\DateTimeImmutable
+    public function getUsedAt(): ?DateTimeImmutable
     {
         return $this->usedAt;
     }
 
     /** Ni déjà utilisé, ni expiré à l'instant `$now`. */
-    public function isUsable(\DateTimeImmutable $now): bool
+    public function isUsable(DateTimeImmutable $now): bool
     {
         return !$this->wasUsed() && $now < $this->expiresAt;
     }
@@ -90,7 +95,7 @@ class PasswordSetupToken
         return null !== $this->usedAt;
     }
 
-    public function markUsed(\DateTimeImmutable $usedAt): void
+    public function markUsed(DateTimeImmutable $usedAt): void
     {
         $this->usedAt = $usedAt;
     }

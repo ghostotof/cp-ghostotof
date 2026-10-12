@@ -4,15 +4,11 @@ declare(strict_types=1);
 
 namespace App\Portfolio\AnonymousCv\Infrastructure\ApiPlatform;
 
-use ApiPlatform\Metadata\Delete;
-use ApiPlatform\Metadata\Operation;
-use ApiPlatform\Metadata\Post;
-use ApiPlatform\Metadata\Put;
 use ApiPlatform\State\ProcessorInterface;
 use App\Portfolio\AnonymousCv\Application\AnonymousCvSectionAdministratorInterface;
 use App\Portfolio\AnonymousCv\Presentation\ApiResource\BackofficeAnonymousCvSectionResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
-use App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables;
+use App\Shared\Infrastructure\ApiPlatform\DispatchesWriteOperations;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -20,48 +16,55 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class BackofficeAnonymousCvSectionProcessor implements ProcessorInterface
 {
-    use ResolvesUriVariables;
+    /** @use DispatchesWriteOperations<BackofficeAnonymousCvSectionResource> */
+    use DispatchesWriteOperations;
 
     public function __construct(
         private AnonymousCvSectionAdministratorInterface $sectionAdministrator,
     ) {
     }
 
-    public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ?BackofficeAnonymousCvSectionResource
+    /**
+     * @param BackofficeAnonymousCvSectionResource $data
+     */
+    private function create(mixed $data): BackofficeAnonymousCvSectionResource
     {
-        if ($operation instanceof Delete) {
-            $this->sectionAdministrator->delete($this->uriVariableUuid($uriVariables));
-
-            return null;
-        }
-
-        if ($operation instanceof Put) {
-            $section = $this->sectionAdministrator->update(
-                $this->uriVariableUuid($uriVariables),
-                $data->title,
-                $data->skills,
-                $data->yearsOfExperience,
-                $data->achievements,
-                $this->translationGroup($data),
-            );
-        } elseif ($operation instanceof Post) {
-            // Locale::from (et non fromString) : la valeur est déjà bornée en
-            // amont par #[Assert\Choice] sur le DTO. Un ValueError ici serait
-            // un vrai défaut, et doit remonter en 500 plutôt que d'être
-            // déguisé en 404.
-            $section = $this->sectionAdministrator->create(
-                Locale::from((string) $data->locale),
-                $data->title,
-                $data->skills,
-                $data->yearsOfExperience,
-                $data->achievements,
-                $this->translationGroup($data),
-            );
-        } else {
-            throw new \LogicException(sprintf('Opération non gérée : %s.', $operation::class));
-        }
+        // Locale::from (et non fromString) : la valeur est déjà bornée en
+        // amont par #[Assert\Choice] sur le DTO. Un ValueError ici serait
+        // un vrai défaut, et doit remonter en 500 plutôt que d'être
+        // déguisé en 404.
+        $section = $this->sectionAdministrator->create(
+            Locale::from((string) $data->locale),
+            $data->title,
+            $data->skills,
+            $data->yearsOfExperience,
+            $data->achievements,
+            $this->translationGroup($data),
+        );
 
         return BackofficeAnonymousCvSectionResource::fromEntity($section);
+    }
+
+    /**
+     * @param BackofficeAnonymousCvSectionResource $data
+     */
+    private function update(Uuid $id, mixed $data): BackofficeAnonymousCvSectionResource
+    {
+        $section = $this->sectionAdministrator->update(
+            $id,
+            $data->title,
+            $data->skills,
+            $data->yearsOfExperience,
+            $data->achievements,
+            $this->translationGroup($data),
+        );
+
+        return BackofficeAnonymousCvSectionResource::fromEntity($section);
+    }
+
+    private function delete(Uuid $id): void
+    {
+        $this->sectionAdministrator->delete($id);
     }
 
     /**

@@ -7,6 +7,6 @@ declare(strict_types=1);
 
 return [
     'framework' => [
-        'exceptions' => [\UnexpectedValueException::class => ['log_level' => 'info']],
+        'exceptions' => [UnexpectedValueException::class => ['log_level' => 'info']],
     ],
 ];

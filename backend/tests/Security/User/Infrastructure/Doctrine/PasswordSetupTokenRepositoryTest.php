@@ -7,6 +7,8 @@ namespace App\Tests\Security\User\Infrastructure\Doctrine;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
+use App\Security\User\Domain\ValueObject\TokenClaim;
+use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -56,7 +58,7 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
         $user = $this->persistUser('jane');
         $hash = hash('sha256', 'clear-token-jane');
 
-        $this->repository->save(new PasswordSetupToken($user, $hash, new \DateTimeImmutable('+48 hours')));
+        $this->repository->save(new PasswordSetupToken($user, $hash, new DateTimeImmutable('+48 hours')));
         $this->em->clear();
 
         $found = $this->repository->findOneByTokenHash($hash);
@@ -71,14 +73,14 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
      * Issue #356 (audit) : le compte arrive chargé avec le jeton, par
      * jointure. En proxy paresseux, le seul chemin « lien déjà consommé »
      * — qui journalise le compte — payait une requête de plus que le chemin
-     * « expiré », et la différence de temps disait à l'appelant ce que le 410
-     * fusionné doit taire.
+     * « expiré », et la différence de temps disait à l'appelant ce que le
+     * refus fusionné doit taire.
      */
     public function testFindOneByTokenHashLoadsTheAccountWithTheToken(): void
     {
         $user = $this->persistUser('jane');
         $hash = hash('sha256', 'clear-jane');
-        $this->repository->save(new PasswordSetupToken($user, $hash, new \DateTimeImmutable('+48 hours')));
+        $this->repository->save(new PasswordSetupToken($user, $hash, new DateTimeImmutable('+48 hours')));
         $this->em->clear();
 
         $found = $this->repository->findOneByTokenHash($hash);
@@ -94,8 +96,8 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
         $janeHash = hash('sha256', 'clear-jane');
         $johnHash = hash('sha256', 'clear-john');
 
-        $this->repository->save(new PasswordSetupToken($jane, $janeHash, new \DateTimeImmutable('+48 hours')));
-        $this->repository->save(new PasswordSetupToken($john, $johnHash, new \DateTimeImmutable('+48 hours')));
+        $this->repository->save(new PasswordSetupToken($jane, $janeHash, new DateTimeImmutable('+48 hours')));
+        $this->repository->save(new PasswordSetupToken($john, $johnHash, new DateTimeImmutable('+48 hours')));
         $this->em->clear();
 
         self::assertSame('john', $this->repository->findOneByTokenHash($johnHash)?->getUser()->getUsername());
@@ -108,8 +110,8 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
         $janeHash = hash('sha256', 'clear-jane');
         $johnHash = hash('sha256', 'clear-john');
 
-        $this->repository->save(new PasswordSetupToken($jane, $janeHash, new \DateTimeImmutable('+48 hours')));
-        $this->repository->save(new PasswordSetupToken($john, $johnHash, new \DateTimeImmutable('+48 hours')));
+        $this->repository->save(new PasswordSetupToken($jane, $janeHash, new DateTimeImmutable('+48 hours')));
+        $this->repository->save(new PasswordSetupToken($john, $johnHash, new DateTimeImmutable('+48 hours')));
 
         $this->repository->deleteForUser($jane);
         $this->em->clear();
@@ -122,7 +124,7 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
     {
         $user = $this->persistUser('jane');
         $hash = hash('sha256', 'clear-jane');
-        $this->repository->save(new PasswordSetupToken($user, $hash, new \DateTimeImmutable('+48 hours')));
+        $this->repository->save(new PasswordSetupToken($user, $hash, new DateTimeImmutable('+48 hours')));
         $this->em->clear();
 
         $managedUser = $this->em->getRepository(CpgUser::class)->findOneBy(['username' => 'jane']);
@@ -138,16 +140,16 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
     {
         $user = $this->persistUser('jane');
         $hash = hash('sha256', 'clear-jane');
-        $token = new PasswordSetupToken($user, $hash, new \DateTimeImmutable('+48 hours'));
+        $token = new PasswordSetupToken($user, $hash, new DateTimeImmutable('+48 hours'));
         $this->repository->save($token);
 
-        $token->markUsed(new \DateTimeImmutable());
+        $token->markUsed(new DateTimeImmutable());
         $this->repository->save($token);
         $this->em->clear();
 
         $reloaded = $this->repository->findOneByTokenHash($hash);
         self::assertInstanceOf(PasswordSetupToken::class, $reloaded);
-        self::assertFalse($reloaded->isUsable(new \DateTimeImmutable()));
+        self::assertFalse($reloaded->isUsable(new DateTimeImmutable()));
     }
 
     /**
@@ -158,15 +160,90 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
     {
         $user = $this->persistUser('jane');
         $hash = hash('sha256', 'clear-jane');
-        $token = new PasswordSetupToken($user, $hash, new \DateTimeImmutable('+48 hours'));
+        $token = new PasswordSetupToken($user, $hash, new DateTimeImmutable('+48 hours'));
         $this->repository->save($token);
 
-        self::assertTrue($this->repository->claim($token, new \DateTimeImmutable('2026-10-05 12:00:00')));
-        self::assertFalse($this->repository->claim($token, new \DateTimeImmutable('2026-10-05 12:00:01')));
+        self::assertSame(TokenClaim::Claimed, $this->repository->claim($token, new DateTimeImmutable('2026-10-05 12:00:00')));
+        self::assertSame(TokenClaim::AlreadyUsed, $this->repository->claim($token, new DateTimeImmutable('2026-10-05 12:00:01')));
 
         $this->em->clear();
         $reloaded = $this->repository->findOneByTokenHash($hash);
-        self::assertSame('2026-10-05 12:00:00', $reloaded?->getUsedAt()?->format('Y-m-d H:i:s'));
+        // L'instant, pas l'heure murale : la colonne est avec fuseau (#434) et
+        // PostgreSQL le rend dans le fuseau de sa session.
+        self::assertSame((new DateTimeImmutable('2026-10-05 12:00:00'))->getTimestamp(), $reloaded?->getUsedAt()?->getTimestamp());
+    }
+
+    /**
+     * Issue #447 : l'expiration est atomique comme la consommation. Un jeton
+     * expiré à l'instant de la réclamation n'est pas consommé — à l'échéance
+     * pile non plus, comme `isUsable()`.
+     */
+    public function testClaimRefusesATokenExpiredAtTheClaimInstant(): void
+    {
+        $user = $this->persistUser('jane');
+        $expiresAt = new DateTimeImmutable('2026-10-05 12:00:00');
+        $token = new PasswordSetupToken($user, hash('sha256', 'clear-jane'), $expiresAt);
+        $this->repository->save($token);
+
+        self::assertSame(TokenClaim::Expired, $this->repository->claim($token, $expiresAt));
+
+        self::assertNull($this->em->getConnection()->fetchOne(
+            'SELECT used_at FROM password_setup_token WHERE id = :id',
+            ['id' => $token->getId()->toRfc4122()],
+        ), 'Un jeton expiré a été consommé.');
+    }
+
+    /**
+     * Issue #458 : à l'activation, les jetons encore utilisables du compte
+     * disparaissent ; le jeton consommé reste, pour qu'un rejeu soit reconnu.
+     */
+    public function testDeleteUnusedForUserKeepsOnlyTheConsumedToken(): void
+    {
+        $user = $this->persistUser('jane');
+        $consumed = new PasswordSetupToken($user, hash('sha256', 'consumed-jane'), new DateTimeImmutable('+48 hours'));
+        $this->repository->save($consumed);
+        $this->repository->save(new PasswordSetupToken($user, hash('sha256', 'pending-jane'), new DateTimeImmutable('+48 hours')));
+        self::assertSame(TokenClaim::Claimed, $this->repository->claim($consumed, new DateTimeImmutable()));
+
+        $this->repository->deleteUnusedForUser($user);
+
+        self::assertSame([hash('sha256', 'consumed-jane')], $this->em->getConnection()->fetchFirstColumn(
+            'SELECT token_hash FROM password_setup_token WHERE user_id = :user',
+            ['user' => $user->getId()->toRfc4122()],
+        ));
+    }
+
+    /**
+     * Seconde passe d'audit de #458 : un jeton supprimé entre-temps (une
+     * relance l'a remplacé pendant le hachage du mot de passe) n'est pas un
+     * jeton déjà utilisé — le journal ne doit pas y voir un rejeu.
+     */
+    public function testClaimTellsAGoneTokenFromAUsedOne(): void
+    {
+        $user = $this->persistUser('jane');
+        $token = new PasswordSetupToken($user, hash('sha256', 'clear-jane'), new DateTimeImmutable('+48 hours'));
+        $this->repository->save($token);
+        $this->em->getConnection()->executeStatement('DELETE FROM password_setup_token WHERE id = :id', ['id' => $token->getId()->toRfc4122()]);
+
+        self::assertSame(TokenClaim::Gone, $this->repository->claim($token, new DateTimeImmutable()));
+    }
+
+    /**
+     * Le retrait d'un jeton dont l'e-mail n'est pas parti (#425) n'emporte
+     * jamais un jeton déjà consommé : l'e-mail a pu partir malgré l'erreur, et
+     * la personne activer son compte entre-temps (seconde passe d'audit de
+     * #458). Le rejeu du lien doit rester journalisé « replayed ».
+     */
+    public function testRemoveSparesAConsumedToken(): void
+    {
+        $user = $this->persistUser('jane');
+        $token = new PasswordSetupToken($user, hash('sha256', 'clear-jane'), new DateTimeImmutable('+48 hours'));
+        $this->repository->save($token);
+        self::assertSame(TokenClaim::Claimed, $this->repository->claim($token, new DateTimeImmutable()));
+
+        $this->repository->remove($token);
+
+        self::assertSame(1, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM password_setup_token WHERE id = :id', ['id' => $token->getId()->toRfc4122()]));
     }
 
     /**
@@ -177,7 +254,7 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
     public function testClaimLosesTheRaceAgainstAConcurrentConsumption(): void
     {
         $user = $this->persistUser('jane');
-        $token = new PasswordSetupToken($user, hash('sha256', 'clear-jane'), new \DateTimeImmutable('+48 hours'));
+        $token = new PasswordSetupToken($user, hash('sha256', 'clear-jane'), new DateTimeImmutable('+48 hours'));
         $this->repository->save($token);
 
         $this->em->getConnection()->executeStatement(
@@ -186,15 +263,15 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
         );
 
         self::assertNull($token->getUsedAt(), 'Prémisse : l\'entité en mémoire ignore la consommation concurrente.');
-        self::assertFalse($this->repository->claim($token, new \DateTimeImmutable('2026-10-05 12:00:00')));
+        self::assertSame(TokenClaim::AlreadyUsed, $this->repository->claim($token, new DateTimeImmutable('2026-10-05 12:00:00')));
     }
 
     public function testIsUsableRejectsExpiredTokens(): void
     {
         $user = new CpgUser('jane', 'hashed-password');
-        $token = new PasswordSetupToken($user, hash('sha256', 'x'), new \DateTimeImmutable('2026-09-03 12:00:00'));
+        $token = new PasswordSetupToken($user, hash('sha256', 'x'), new DateTimeImmutable('2026-09-03 12:00:00'));
 
-        self::assertTrue($token->isUsable(new \DateTimeImmutable('2026-09-03 11:59:59')));
-        self::assertFalse($token->isUsable(new \DateTimeImmutable('2026-09-03 12:00:01')));
+        self::assertTrue($token->isUsable(new DateTimeImmutable('2026-09-03 11:59:59')));
+        self::assertFalse($token->isUsable(new DateTimeImmutable('2026-09-03 12:00:01')));
     }
 }

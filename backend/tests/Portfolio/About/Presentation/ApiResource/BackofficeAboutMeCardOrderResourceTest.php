@@ -9,9 +9,11 @@ use App\Portfolio\About\Domain\Entity\AboutSettings;
 use App\Portfolio\About\Domain\Repository\AboutMeCardRepositoryInterface;
 use App\Portfolio\About\Domain\Repository\AboutSettingsRepositoryInterface;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
+use App\Portfolio\About\Presentation\ApiResource\BackofficeAboutMeCardOrderResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Shared\Presentation\ApiResource\InputContradictsValidationException;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
@@ -49,6 +51,19 @@ final class BackofficeAboutMeCardOrderResourceTest extends WebTestCase
         $connection->executeStatement('DELETE FROM about_settings');
         $connection->executeStatement('DELETE FROM cpg_user');
         parent::tearDown();
+    }
+
+    /**
+     * `validatedCategory()` rend la catégorie telle que `NotNull` la garantit.
+     * Absente à ce stade, c'est un défaut du pipeline de validation (issue
+     * #338) : refusée sous un nom dédié, jamais remplacée par une catégorie
+     * par défaut. Le DTO est construit sans passer par le validateur.
+     */
+    public function testAnAbsentCategoryContradictsTheValidation(): void
+    {
+        $this->expectException(InputContradictsValidationException::class);
+
+        new BackofficeAboutMeCardOrderResource(groups: ['019968a0-0000-7000-8000-000000000001'])->validatedCategory();
     }
 
     public function testReorderingIsReflectedOnTheBackofficeCollectionAndBothPublicEndpoints(): void

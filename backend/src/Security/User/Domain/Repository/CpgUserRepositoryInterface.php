@@ -5,6 +5,12 @@ declare(strict_types=1);
 namespace App\Security\User\Domain\Repository;
 
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
+use App\Security\User\Domain\Exception\CpgUserNotFoundException;
+use App\Security\User\Domain\Exception\EmailAlreadyUsedException;
+use App\Security\User\Domain\Exception\UsernameAlreadyUsedException;
+use DateTimeImmutable;
+use SensitiveParameter;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -14,7 +20,11 @@ use Symfony\Component\Uid\Uuid;
  */
 interface CpgUserRepositoryInterface
 {
-    public function findOneByUsername(string $username): ?CpgUser;
+    /**
+     * @param string $username au login, l'identifiant tenté — possiblement un
+     *                         mot de passe tapé dans le mauvais champ (#418)
+     */
+    public function findOneByUsername(#[SensitiveParameter] string $username): ?CpgUser;
 
     public function findOneByEmail(string $email): ?CpgUser;
 
@@ -38,7 +48,7 @@ interface CpgUserRepositoryInterface
      *
      * @return list<CpgUser>
      */
-    public function findAwaitingPasswordSetupInvitedBefore(\DateTimeImmutable $threshold): array;
+    public function findAwaitingPasswordSetupInvitedBefore(DateTimeImmutable $threshold): array;
 
     /**
      * Nombre d'utilisateurs possédant le rôle donné (rôles implicites inclus,
@@ -49,5 +59,36 @@ interface CpgUserRepositoryInterface
 
     public function save(CpgUser $user): void;
 
+    /**
+     * Enregistre un compte **nouveau**, et nomme l'unicité qu'une écriture
+     * concurrente lui aurait prise entre sa vérification et l'enregistrement
+     * (issue #364) — `cpg_user` en porte deux. Comme tout `flush()` refusé,
+     * le refus ferme l'EntityManager.
+     *
+     * @throws EmailAlreadyUsedException    si l'adresse a été prise entre-temps
+     * @throws UsernameAlreadyUsedException si l'identifiant a été pris entre-temps
+     */
+    public function add(CpgUser $user): void;
+
+    /**
+     * Avance la génération d'invitation du compte et pose `invited_at`, en une
+     * seule écriture atomique (issue #435) : deux relances concurrentes
+     * reçoivent deux générations distinctes, quel que soit l'état que chacune
+     * avait chargé, et seulement si le compte est toujours en attente
+     * d'activation. Rend la génération ainsi posée.
+     *
+     * @throws CpgUserNotFoundException              si le compte a disparu entre-temps
+     * @throws AccountNotAwaitingActivationException si le compte a été activé entre-temps
+     */
+    public function advanceInvitationGeneration(CpgUser $user, DateTimeImmutable $invitedAt): int;
+
     public function remove(CpgUser $user): void;
+
+    /**
+     * Défait une invitation que la file n'a pas prise (issue #485) : supprime
+     * le compte par son identifiant, jamais s'il a été activé entre-temps.
+     * Chemin d'échec : ne dépend ni de l'unité de travail ni d'un `flush()`
+     * global. Un compte déjà supprimé n'est pas une erreur.
+     */
+    public function removePendingInvitation(CpgUser $user): void;
 }

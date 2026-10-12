@@ -85,7 +85,7 @@ final class SeedAnonymousCvContentCommand extends Command
                 $translationGroups->remember('anonymous-cv-section', $index, $created->getTranslationGroup());
             }
 
-            $io->success(sprintf('[%s] %d section(s) de CV sans identité.', $localeValue, \count($sections)));
+            $io->success(\sprintf('[%s] %d section(s) de CV sans identité.', $localeValue, \count($sections)));
         }
 
         return Command::SUCCESS;

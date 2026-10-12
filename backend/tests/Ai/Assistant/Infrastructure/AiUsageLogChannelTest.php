@@ -31,7 +31,7 @@ final class AiUsageLogChannelTest extends TestCase
         );
 
         self::assertCount(1, $dedicated, 'Un et un seul handler doit porter le canal ai_usage en production.');
-        self::assertSame('info', array_values($dedicated)[0]['level'] ?? null);
+        self::assertSame('info', array_first($dedicated)['level'] ?? null);
     }
 
     public function testTheMainHandlerExcludesIt(): void

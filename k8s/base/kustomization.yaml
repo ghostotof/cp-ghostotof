@@ -50,6 +50,11 @@ configMapGenerator:
   - name: backend-nginx-conf
     files:
       - default.conf=backend-nginx.conf
+  # Issue #477 : même raison que ci-dessus, le fichier est monté par subPath ;
+  # le hachage du nom fait redémarrer RabbitMQ quand il change.
+  - name: rabbitmq-conf
+    files:
+      - rabbitmq.conf
 
 # Placeholders remplacés par chaque overlay via `kustomize edit set image`
 # (fait par le job de déploiement CI, jamais commité en dur : le registre et

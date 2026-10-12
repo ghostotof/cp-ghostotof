@@ -279,20 +279,28 @@ describe('AdminUsersPage', () => {
     expect(wrapper.text()).toContain('Mot de passe mis à jour.')
   })
 
-  it("affiche un message traduit si le changement de mot de passe échoue (auto-suppression n'est pas le cas ici, mais validation)", async () => {
+  it('un 422 au changement de mot de passe nomme les trois causes possibles, pas seulement la longueur minimale (#410)', async () => {
+    // Le backend répond 422 pour un mot de passe trop court (points de code),
+    // trop long (octets UTF-8) ou présent dans une fuite connue
+    // (NotCompromisedPassword) : le message n'en annonçait que la première,
+    // faux pour un mot de passe compromis.
     await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
     const repository = createStubRepository({
-      changePassword: vi.fn(async () => Promise.reject(new AdminUserError('validation', 'Le mot de passe doit contenir au moins 8 caractères.'))),
+      changePassword: vi.fn(async () => Promise.reject(new AdminUserError('validation', 'This password has been leaked in a data breach.'))),
     })
     const wrapper = await mountPage(repository)
 
     await openRowMenu(wrapper, 'super')
     await rowButton(wrapper, 'super', 'mot de passe')?.trigger('click')
 
-    await wrapper.get('input[type="password"]').setValue('short')
+    await wrapper.get('input[type="password"]').setValue('password123')
     await wrapper.get('form.admin-user-password-form').trigger('submit.prevent')
     await flushPromises()
 
-    expect(wrapper.get('[role="alert"]').text()).toBe('Le mot de passe doit contenir au moins 8 caractères.')
+    const alert = wrapper.get('[role="alert"]').text()
+    expect(alert).toContain('refusé')
+    expect(alert).toContain('au moins 8 caractères')
+    expect(alert).toContain('4096 octets')
+    expect(alert).toContain('fuite connue')
   })
 })

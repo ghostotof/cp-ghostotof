@@ -6,6 +6,7 @@ namespace App\Ai\Assistant\Domain\Exception;
 
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use App\Shared\Domain\Exception\HasProblemType;
+use DomainException;
 
 /**
  * La conversation reçue ne respecte pas ses invariants : 422 avec un `type`
@@ -15,7 +16,7 @@ use App\Shared\Domain\Exception\HasProblemType;
  *
  * Journalisée en `info` par le noyau : voir `framework.exceptions`.
  */
-final class InvalidConversationException extends \DomainException implements ProblemExceptionInterface
+final class InvalidConversationException extends DomainException implements ProblemExceptionInterface
 {
     use HasProblemType;
 

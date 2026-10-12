@@ -70,7 +70,7 @@ final class ExperienceTechnologyYearsConstraintTest extends KernelTestCase
     {
         try {
             $this->insertTechnologyWithYears($yearsLiteral);
-            self::fail(sprintf('La base aurait dû refuser years = %s.', $yearsLiteral));
+            self::fail(\sprintf('La base aurait dû refuser years = %s.', $yearsLiteral));
         } catch (DriverException $exception) {
             self::assertSame(self::CHECK_VIOLATION, $exception->getSQLState(), $exception->getMessage());
         }
@@ -86,7 +86,7 @@ final class ExperienceTechnologyYearsConstraintTest extends KernelTestCase
 
     private function insertTechnologyWithYears(string $yearsLiteral): void
     {
-        $this->connection->executeStatement(sprintf(
+        $this->connection->executeStatement(\sprintf(
             "INSERT INTO experience_technology (id, name, years) VALUES (uuidv7(), 'T-' || gen_random_uuid(), %s)",
             $yearsLiteral,
         ));

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Tests\Contact\Presentation\Command;
 
 use App\Contact\Application\Message\SendContactMessageMessage;
+use DateTimeImmutable;
+use DateTimeZone;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\TableNotFoundException;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -48,7 +50,7 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
         // On vieillit artificiellement le premier au-delà de la fenêtre.
         $this->connection->executeStatement(
             "UPDATE messenger_messages SET created_at = :old WHERE body LIKE '%old@example.com%'",
-            ['old' => (new \DateTimeImmutable('-40 days'))->format('Y-m-d H:i:s')],
+            ['old' => (new DateTimeImmutable('-40 days'))->format('Y-m-d H:i:s')],
         );
 
         $exitCode = $this->commandTester()->execute(['--older-than' => '30 days']);
@@ -56,6 +58,39 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
         self::assertSame(0, $exitCode);
         self::assertSame(0, $this->countByRecipient('old@example.com'));
         self::assertSame(1, $this->countByRecipient('recent@example.com'));
+    }
+
+    /**
+     * Issue #446 : le transport Doctrine de Messenger écrit `created_at` en
+     * heure murale UTC (`new DateTimeImmutable('UTC')`, colonne sans fuseau).
+     * Le seuil doit l'être aussi : formaté en heure de Paris, en avance d'une
+     * ou deux heures, il purgeait un message encore dans sa fenêtre. Les
+     * 30 minutes de marge tiennent dans les deux saisons.
+     */
+    public function testTheRetentionWindowIsCountedInTheTransportsUtcClock(): void
+    {
+        $this->failedTransport->send(new Envelope($this->message('inside@example.com')));
+        $this->failedTransport->send(new Envelope($this->message('outside@example.com')));
+        $nowUtc = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+        $this->setCreatedAt('inside@example.com', $nowUtc->modify('-30 days +30 minutes'));
+        $this->setCreatedAt('outside@example.com', $nowUtc->modify('-30 days -30 minutes'));
+
+        $exitCode = $this->commandTester()->execute(['--older-than' => '30 days']);
+
+        self::assertSame(0, $exitCode);
+        self::assertSame(1, $this->countByRecipient('inside@example.com'), 'Un message encore dans sa fenêtre de rétention a été purgé.');
+        self::assertSame(0, $this->countByRecipient('outside@example.com'));
+    }
+
+    /**
+     * Comme l'écrit le transport : heure murale UTC, sans décalage.
+     */
+    private function setCreatedAt(string $senderEmail, DateTimeImmutable $createdAtUtc): void
+    {
+        $this->connection->executeStatement(
+            'UPDATE messenger_messages SET created_at = :createdAt WHERE body LIKE :needle',
+            ['createdAt' => $createdAtUtc->format('Y-m-d H:i:s'), 'needle' => '%'.$senderEmail.'%'],
+        );
     }
 
     public function testFailsOnInvalidInterval(): void
@@ -69,7 +104,7 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
     }
 
     /**
-     * Issue #248 : `new \DateTimeImmutable('-'.$olderThan)` acceptait la
+     * Issue #248 : `new DateTimeImmutable('-'.$olderThan)` acceptait la
      * double négation "--30 days" (interprétée "+30 days") et purgeait tout,
      * y compris un message en échec récent. `RetentionPeriod` doit refuser
      * cette expression avant que la moindre suppression ait lieu.

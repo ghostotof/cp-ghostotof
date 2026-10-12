@@ -5,10 +5,19 @@ declare(strict_types=1);
 namespace App\Tests\Support;
 
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
+use Closure;
+use LogicException;
+use ReflectionClass;
+use ReflectionException;
+use ReflectionMethod;
+use ReflectionProperty;
+use Reflector;
 use Symfony\Component\HttpKernel\Attribute\WithHttpStatus;
 use Symfony\Component\HttpKernel\Attribute\WithLogLevel;
-use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\EventListener\ErrorListener;
+use Symfony\Component\HttpKernel\Exception\HttpException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+use Throwable;
 
 /**
  * Ce que le conteneur compilé fait des exceptions, plutôt que ce qu'en dit un
@@ -36,7 +45,7 @@ final class CompiledExceptionConfig
     public static function exceptionsMapping(ErrorListener $listener): array
     {
         /** @var array<class-string, array{log_level: ?string, status_code: int<100, 599>|null, log_channel: ?string}> */
-        return self::vendorMember(static fn (): \ReflectionProperty => new \ReflectionProperty(ErrorListener::class, 'exceptionsMapping'))->getValue($listener);
+        return self::vendorMember(static fn (): ReflectionProperty => new ReflectionProperty(ErrorListener::class, 'exceptionsMapping'))->getValue($listener);
     }
 
     /**
@@ -59,8 +68,9 @@ final class CompiledExceptionConfig
      * lui-même (ErrorListener::logKernelException), dans son ordre : la
      * première entrée de `framework.exceptions` qui correspond par
      * `instanceof` et fixe un `status_code`, à défaut un #[WithHttpStatus]
-     * hérité — que le noyau ne lit pas sur une HttpExceptionInterface. Le niveau
-     * reste résolu sur l'exception d'origine : sans entrée, `critical`.
+     * hérité — que le noyau ne lit pas sur une HttpExceptionInterface. Les
+     * entrées et #[WithLogLevel] sont lus sur l'exception d'origine ; le niveau
+     * par défaut, sur la conversion (Symfony ≥ 8.1.8, voir kernelConversion()).
      *
      * Une classe abstraite ou une interface n'est jamais levée telle quelle :
      * ses sous-classes concrètes le sont, et sont recensées pour elles-mêmes.
@@ -74,7 +84,7 @@ final class CompiledExceptionConfig
         $mapping = self::exceptionsMapping($listener);
         $statuses = [];
         foreach ($classes as $class) {
-            if (!is_subclass_of($class, \Throwable::class) || self::neverThrown($class)) {
+            if (!is_subclass_of($class, Throwable::class) || self::neverThrown($class)) {
                 continue;
             }
             $status = array_find($mapping, static fn (array $options, string $key): bool => null !== $options['status_code'] && is_a($class, $key, true))['status_code'] ?? null;
@@ -170,7 +180,7 @@ final class CompiledExceptionConfig
         if (!class_exists($class) && !interface_exists($class)) {
             return false;
         }
-        $reflection = new \ReflectionClass($class);
+        $reflection = new ReflectionClass($class);
 
         return $reflection->isAbstract() || $reflection->isInterface();
     }
@@ -188,7 +198,7 @@ final class CompiledExceptionConfig
     {
         $levels = [];
         foreach ($classes as $class) {
-            $attribute = is_subclass_of($class, \Throwable::class) ? self::inheritedAttribute($listener, $class, WithLogLevel::class) : null;
+            $attribute = is_subclass_of($class, Throwable::class) ? self::inheritedAttribute($listener, $class, WithLogLevel::class) : null;
             if ($attribute instanceof WithLogLevel) {
                 $levels[$class] = $attribute->level;
             }
@@ -202,7 +212,8 @@ final class CompiledExceptionConfig
      * propre résolution (ErrorListener::resolveLogLevel) — première entrée de
      * `framework.exceptions` qui correspond par `instanceof` et fixe un niveau,
      * à défaut #[WithLogLevel] hérité, à défaut `critical` (ou `error` pour une
-     * HttpException 4xx) —, appelée plutôt que réécrite, pour ne jamais en
+     * HttpException 4xx, lue sur l'exception que le noyau a convertie :
+     * kernelConversion()) —, appelée plutôt que réécrite, pour ne jamais en
      * diverger.
      *
      * L'exception est construite sans son constructeur — la résolution ne lit
@@ -211,11 +222,11 @@ final class CompiledExceptionConfig
      * n'est jamais levée telle quelle : null — kernelLogLevelOf() en résout
      * une implémentation.
      *
-     * @param class-string<\Throwable> $class
+     * @param class-string<Throwable> $class
      */
     public static function kernelLogLevel(ErrorListener $listener, string $class): ?string
     {
-        $reflection = new \ReflectionClass($class);
+        $reflection = new ReflectionClass($class);
         if ($reflection->isAbstract() || $reflection->isInterface()) {
             return null;
         }
@@ -230,12 +241,28 @@ final class CompiledExceptionConfig
      * son niveau est celui d'une implémentation qu'aucune entrée plus précise
      * ne vise.
      */
-    public static function kernelLogLevelOf(ErrorListener $listener, \Throwable $throwable): ?string
+    public static function kernelLogLevelOf(ErrorListener $listener, Throwable $throwable): ?string
     {
-        $resolve = self::vendorMember(static fn (): \ReflectionMethod => new \ReflectionMethod(ErrorListener::class, 'resolveLogLevel'));
-        $level = $resolve->invoke($listener, $throwable);
+        $resolve = self::vendorMember(static fn (): ReflectionMethod => new ReflectionMethod(ErrorListener::class, 'resolveLogLevel'));
+        $level = $resolve->invoke($listener, $throwable, self::kernelConversion($listener, $throwable));
 
         return \is_string($level) ? $level : null;
+    }
+
+    /**
+     * L'HttpException que ErrorListener::logKernelException substitue à
+     * l'exception avant d'en résoudre le niveau, ou null s'il la garde telle
+     * quelle. Depuis Symfony 8.1.8, resolveLogLevel() lit le niveau par défaut
+     * (sans entrée ni #[WithLogLevel]) sur cette conversion : `error` pour un
+     * 4xx, `critical` pour un 5xx. Le statut vient de kernelHttpStatus(), qui
+     * suit le même ordre que le noyau ; le message et les en-têtes, que la
+     * résolution ne lit pas, ne sont pas reproduits.
+     */
+    private static function kernelConversion(ErrorListener $listener, Throwable $throwable): ?HttpException
+    {
+        $status = self::kernelHttpStatus($listener, [$throwable::class])[$throwable::class] ?? null;
+
+        return null === $status ? null : HttpException::fromStatusCode($status, '', $throwable);
     }
 
     /**
@@ -244,7 +271,7 @@ final class CompiledExceptionConfig
      */
     private static function inheritedAttribute(ErrorListener $listener, string $class, string $attribute): ?object
     {
-        $resolve = self::vendorMember(static fn (): \ReflectionMethod => new \ReflectionMethod(ErrorListener::class, 'getInheritedAttribute'));
+        $resolve = self::vendorMember(static fn (): ReflectionMethod => new ReflectionMethod(ErrorListener::class, 'getInheritedAttribute'));
         $found = $resolve->invoke($listener, $class, $attribute);
 
         return \is_object($found) ? $found : null;
@@ -255,18 +282,18 @@ final class CompiledExceptionConfig
      * montée de version : l'échec nomme le test de contrat à consulter plutôt
      * qu'une ReflectionException sans contexte.
      *
-     * @template T of \Reflector
+     * @template T of Reflector
      *
-     * @param \Closure(): T $reflect
+     * @param Closure():T $reflect
      *
      * @return T
      */
-    private static function vendorMember(\Closure $reflect): \Reflector
+    private static function vendorMember(Closure $reflect): Reflector
     {
         try {
             return $reflect();
-        } catch (\ReflectionException $exception) {
-            throw new \LogicException('Interne de l\'ErrorListener introuvable, Symfony l\'a sans doute changé : voir ErrorListenerInternalsTest, puis adapter CompiledExceptionConfig.', 0, $exception);
+        } catch (ReflectionException $exception) {
+            throw new LogicException('Interne de l\'ErrorListener introuvable, Symfony l\'a sans doute changé : voir ErrorListenerInternalsTest, puis adapter CompiledExceptionConfig.', 0, $exception);
         }
     }
 }

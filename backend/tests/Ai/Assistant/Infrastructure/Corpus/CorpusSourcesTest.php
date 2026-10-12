@@ -8,6 +8,8 @@ use App\Ai\Assistant\Infrastructure\Corpus\CorpusRenderer;
 use App\Ai\Assistant\Infrastructure\Pdf\PopplerPdfTextExtractor;
 use App\Portfolio\AnonymousCv\Infrastructure\ApiPlatform\AnonymousCvProvider;
 use App\Portfolio\CaseStudy\Infrastructure\ApiPlatform\CaseStudyProvider;
+use ReflectionClass;
+use ReflectionObject;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
@@ -37,7 +39,7 @@ final class CorpusSourcesTest extends KernelTestCase
     public function testNoSourceIsARepositoryOrABackofficeClass(): void
     {
         foreach ($this->injectedSources() as $source) {
-            $shortName = (new \ReflectionClass($source))->getShortName();
+            $shortName = (new ReflectionClass($source))->getShortName();
             self::assertStringNotContainsString('Backoffice', $shortName, $source);
             self::assertStringEndsNotWith('Repository', $shortName, $source);
         }
@@ -52,7 +54,7 @@ final class CorpusSourcesTest extends KernelTestCase
         $renderer = self::getContainer()->get(CorpusRenderer::class);
 
         $sources = [];
-        foreach ((new \ReflectionObject($renderer))->getProperties() as $property) {
+        foreach ((new ReflectionObject($renderer))->getProperties() as $property) {
             $value = $property->getValue($renderer);
             if (\is_object($value)) {
                 $sources[] = $value::class;

@@ -11,6 +11,7 @@ use App\Portfolio\Quality\Domain\Repository\QualityTraitRepositoryInterface;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Tests\Portfolio\Shared\Support\ImmediateOrderScopeLock;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
 
@@ -21,7 +22,7 @@ final class QualityTraitAdministratorTest extends TestCase
         $repository = $this->createMock(QualityTraitRepositoryInterface::class);
         $repository->expects(self::once())->method('save')->with(self::isInstanceOf(QualityTraitEntity::class));
 
-        $administrator = new QualityTraitAdministrator($repository, new ContentPlacement(), new OrderAssigner());
+        $administrator = new QualityTraitAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
         $trait = $administrator->create(Locale::FR, 'Architecture propre');
 
@@ -36,7 +37,7 @@ final class QualityTraitAdministratorTest extends TestCase
         $repository->expects(self::once())->method('findOneById')->with($trait->getId())->willReturn($trait);
         $repository->expects(self::once())->method('save')->with($trait);
 
-        $administrator = new QualityTraitAdministrator($repository, new ContentPlacement(), new OrderAssigner());
+        $administrator = new QualityTraitAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
         $updated = $administrator->update($trait->getId(), 'Maintenabilité', null);
 
@@ -52,7 +53,7 @@ final class QualityTraitAdministratorTest extends TestCase
         $repository = self::createStub(QualityTraitRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
-        $administrator = new QualityTraitAdministrator($repository, new ContentPlacement(), new OrderAssigner());
+        $administrator = new QualityTraitAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
         $this->expectException(QualityTraitNotFoundException::class);
 
@@ -67,7 +68,7 @@ final class QualityTraitAdministratorTest extends TestCase
         $repository->expects(self::once())->method('findOneById')->with($trait->getId())->willReturn($trait);
         $repository->expects(self::once())->method('remove')->with($trait);
 
-        $administrator = new QualityTraitAdministrator($repository, new ContentPlacement(), new OrderAssigner());
+        $administrator = new QualityTraitAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
         $administrator->delete($trait->getId());
     }
@@ -77,7 +78,7 @@ final class QualityTraitAdministratorTest extends TestCase
         $repository = self::createStub(QualityTraitRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
-        $administrator = new QualityTraitAdministrator($repository, new ContentPlacement(), new OrderAssigner());
+        $administrator = new QualityTraitAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
         $this->expectException(QualityTraitNotFoundException::class);
 

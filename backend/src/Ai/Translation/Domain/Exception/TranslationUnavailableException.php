@@ -6,6 +6,7 @@ namespace App\Ai\Translation\Domain\Exception;
 
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use App\Shared\Domain\Exception\HasProblemType;
+use RuntimeException;
 
 /**
  * La traduction n'a pas pu être produite : fournisseur injoignable, délai
@@ -18,7 +19,7 @@ use App\Shared\Domain\Exception\HasProblemType;
  * `type` stable (`/errors/translation-unavailable`) sur lequel le frontend
  * s'appuie pour choisir son message.
  */
-final class TranslationUnavailableException extends \RuntimeException implements ProblemExceptionInterface
+final class TranslationUnavailableException extends RuntimeException implements ProblemExceptionInterface
 {
     use HasProblemType;
 

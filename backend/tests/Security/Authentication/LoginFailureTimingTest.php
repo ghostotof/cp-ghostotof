@@ -11,8 +11,10 @@ use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use SensitiveParameter;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\PasswordHasher\Hasher\PasswordHasherAwareInterface;
 use Symfony\Component\PasswordHasher\Hasher\PasswordHasherFactoryInterface;
@@ -36,6 +38,7 @@ use Symfony\Component\Security\Http\Event\LoginFailureEvent;
  */
 final class LoginFailureTimingTest extends WebTestCase
 {
+    use ClockSensitiveTrait;
     use HttpJson;
 
     /** Ce qui varie légitimement d'une réponse à l'autre, à retirer avant comparaison. */
@@ -75,7 +78,7 @@ final class LoginFailureTimingTest extends WebTestCase
         $wrongPassword = $this->attemptLogin($client, $active, 'wrong-password');
 
         foreach (['inconnu' => $unknown, 'en attente' => $awaitingActivation, 'mauvais mot de passe' => $wrongPassword] as $case => $response) {
-            self::assertSame(401, $response->getStatusCode(), sprintf('Le cas « %s » n\'a pas répondu 401.', $case));
+            self::assertSame(401, $response->getStatusCode(), \sprintf('Le cas « %s » n\'a pas répondu 401.', $case));
         }
 
         self::assertSame($unknown->getContent(), $awaitingActivation->getContent(), 'Un compte en attente d\'activation se distingue d\'un identifiant inconnu par le corps de la réponse.');
@@ -87,6 +90,54 @@ final class LoginFailureTimingTest extends WebTestCase
         // Le corps est bien celui de Lexik, pas une page d'erreur : sans cette
         // ancre, trois 500 identiques passeraient les assertions ci-dessus.
         self::assertStringContainsStringIgnoringCase('invalid credentials', (string) $unknown->getContent());
+    }
+
+    /**
+     * Le refus de débit (issue #399) quitte le 401 commun : il doit à son tour
+     * être le même pour les trois cas, corps, en-têtes et `Retry-After`
+     * compris. Par construction, `login_throttling` décide avant tout
+     * chargement du compte et le `detail` est littéral ; ce test fige ce qui
+     * n'était garanti que par là.
+     *
+     * L'horloge est figée : l'échéance de l'écouteur et le `Retry-After` de
+     * RetryAfterListener la lisent tous deux, une seconde franchie entre les
+     * deux ferait diverger les en-têtes sans rien révéler. Les minutes viennent
+     * de `time()` (LoginThrottlingListener), 15 pour chaque compte dans la
+     * minute que dure le test. 3 × 6 échecs restent sous le plafond de 25 par IP.
+     */
+    public function testTheThreeThrottledCasesAnswerTheExactSameRefusal(): void
+    {
+        $client = $this->client();
+        self::mockTime('2026-10-10 12:00:00');
+        $suffix = bin2hex(random_bytes(6));
+
+        $active = 'active-'.$suffix;
+        self::getContainer()->get(CpgUserRegistrarInterface::class)->register($active, TestCredentials::plainPassword());
+
+        $pending = self::getContainer()->get(CpgUserInviterInterface::class)
+            ->invite('pending.'.$suffix.'@example.test', Locale::FR)
+            ->getUsername();
+        self::getContainer()->get(EntityManagerInterface::class)->clear();
+
+        $refusals = [];
+        foreach (['inconnu' => 'ghost-'.$suffix, 'en attente' => $pending, 'mauvais mot de passe' => $active] as $case => $username) {
+            for ($attempt = 1; $attempt <= 5; ++$attempt) {
+                self::assertSame(401, $this->attemptLogin($client, $username, 'wrong-password')->getStatusCode());
+            }
+            $refusals[$case] = $this->attemptLogin($client, $username, 'wrong-password');
+            self::assertSame(429, $refusals[$case]->getStatusCode(), \sprintf('Le cas « %s » n\'a pas répondu 429.', $case));
+        }
+
+        ['inconnu' => $unknown, 'en attente' => $awaitingActivation, 'mauvais mot de passe' => $wrongPassword] = $refusals;
+
+        self::assertSame($unknown->getContent(), $awaitingActivation->getContent(), 'Le refus d\'un compte en attente d\'activation se distingue par son corps.');
+        self::assertSame($unknown->getContent(), $wrongPassword->getContent(), 'Le refus d\'un identifiant inconnu se distingue par son corps.');
+
+        self::assertSame($this->comparableHeaders($unknown), $this->comparableHeaders($awaitingActivation), 'Le refus d\'un compte en attente d\'activation se distingue par ses en-têtes.');
+        self::assertSame($this->comparableHeaders($unknown), $this->comparableHeaders($wrongPassword), 'Le refus d\'un identifiant inconnu se distingue par ses en-têtes.');
+
+        // Ancre : trois 500 identiques passeraient les assertions ci-dessus.
+        self::assertSame('900', $unknown->headers->get('Retry-After'));
     }
 
     /**
@@ -166,13 +217,17 @@ final class LoginFailureTimingTest extends WebTestCase
 
         for ($attempt = 1; $attempt <= 5; ++$attempt) {
             $response = $this->attemptLogin($client, $unknown, 'wrong-password');
-            self::assertSame(401, $response->getStatusCode(), sprintf('La tentative n°%d aurait dû répondre 401.', $attempt));
+            self::assertSame(401, $response->getStatusCode(), \sprintf('La tentative n°%d aurait dû répondre 401.', $attempt));
             self::assertStringNotContainsStringIgnoringCase('too many', (string) $response->getContent());
         }
 
+        // Le refus de débit (issue #399), le même que pour un identifiant connu
+        // (LoginThrottlingTest) : il ne dit rien de l'existence du compte.
         $response = $this->attemptLogin($client, $unknown, 'wrong-password');
-        self::assertSame(401, $response->getStatusCode());
-        self::assertStringContainsStringIgnoringCase('too many failed login attempts', (string) $response->getContent());
+        self::assertSame(429, $response->getStatusCode());
+        $problem = json_decode((string) $response->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($problem);
+        self::assertSame('/errors/rate-limited', $problem['type'] ?? null);
     }
 
     /**
@@ -224,14 +279,14 @@ final class LoginFailureTimingTest extends WebTestCase
         $hasher = new class implements PasswordHasherInterface {
             public int $calls = 0;
 
-            public function hash(#[\SensitiveParameter] string $plainPassword): string
+            public function hash(#[SensitiveParameter] string $plainPassword): string
             {
                 ++$this->calls;
 
                 return 'hashed';
             }
 
-            public function verify(string $hashedPassword, #[\SensitiveParameter] string $plainPassword): bool
+            public function verify(string $hashedPassword, #[SensitiveParameter] string $plainPassword): bool
             {
                 return false;
             }

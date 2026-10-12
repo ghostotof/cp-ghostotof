@@ -25,7 +25,7 @@ trait LiftsExperienceYearsConstraint
     private static function liftExperienceYearsConstraint(Connection $connection): void
     {
         $connection->beginTransaction();
-        $connection->executeStatement(sprintf(
+        $connection->executeStatement(\sprintf(
             'ALTER TABLE experience_technology DROP CONSTRAINT IF EXISTS %s',
             ExperienceTechnologyRepository::YEARS_CHECK_CONSTRAINT,
         ));

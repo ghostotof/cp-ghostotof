@@ -17,6 +17,7 @@ use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
+use stdClass;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpClient\Exception\TransportException;
@@ -394,9 +395,9 @@ final class AnswerControllerTest extends WebTestCase
 
         yield '13 messages' => [$alternating(13)];
         yield 'message utilisateur de 1 001 caractères' => [[['role' => 'user', 'content' => str_repeat('a', 1001)]]];
-        yield "message de l'assistant de 4 001 caractères" => [[
+        yield "message de l'assistant de 5 001 caractères" => [[
             ['role' => 'user', 'content' => 'Question ?'],
-            ['role' => 'assistant', 'content' => str_repeat('a', 4001)],
+            ['role' => 'assistant', 'content' => str_repeat('a', 5001)],
             ['role' => 'user', 'content' => 'Question ?'],
         ]];
         // Chaque message sous sa propre borne, le total au-dessus :
@@ -464,7 +465,12 @@ final class AnswerControllerTest extends WebTestCase
         // Le refus est tracé sur le canal qui sort des pods de production.
         $refusals = self::aiUsageRecordsWithOutcome('rate-limited');
         self::assertCount(1, $refusals);
-        self::assertSame(self::TRUSTED_USERNAME, $refusals[0]->context['account'] ?? null);
+        // Le compte par son UUID, jamais son identifiant (issue #363).
+        $accountId = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->fetchOne('SELECT id FROM cpg_user WHERE username = :username', ['username' => self::TRUSTED_USERNAME]);
+        self::assertIsString($accountId);
+        self::assertSame($accountId, $refusals[0]->context['userId'] ?? null);
+        self::assertArrayNotHasKey('account', $refusals[0]->context);
     }
 
     public function testTheQuotaIsKeptPerAccount(): void
@@ -742,7 +748,7 @@ final class AnswerControllerTest extends WebTestCase
             $delta = 0 === $index ? ['role' => 'assistant', 'content' => $fragment] : ['content' => $fragment];
             $body .= $this->chunk(['choices' => [['index' => 0, 'delta' => $delta, 'finish_reason' => null]]]);
         }
-        $body .= $this->chunk(['choices' => [['index' => 0, 'delta' => new \stdClass(), 'finish_reason' => 'stop']]]);
+        $body .= $this->chunk(['choices' => [['index' => 0, 'delta' => new stdClass(), 'finish_reason' => 'stop']]]);
         $body .= $this->chunk(['choices' => [], 'usage' => ['prompt_tokens' => 812, 'completion_tokens' => 9, 'total_tokens' => 821]]);
 
         return $body."data: [DONE]\n\n";

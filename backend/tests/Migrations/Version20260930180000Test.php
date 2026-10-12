@@ -57,7 +57,7 @@ final class Version20260930180000Test extends KernelTestCase
             self::assertSame(
                 ['version_source' => 'deployed', 'version' => null],
                 $this->row($slug),
-                sprintf('%s doit être relevé au build, plus saisi.', $slug),
+                \sprintf('%s doit être relevé au build, plus saisi.', $slug),
             );
         }
     }

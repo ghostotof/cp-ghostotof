@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Security\User\Domain\Exception;
 
+use DomainException;
+
 /**
  * Exception métier levée lorsqu'on tente d'inviter un utilisateur avec une
  * adresse e-mail déjà rattachée à un compte existant.
@@ -14,7 +16,7 @@ namespace App\Security\User\Domain\Exception;
  * traduit (`email-taken`) à partir du statut 409, et connaît l'adresse
  * qu'il vient de saisir.
  */
-final class EmailAlreadyUsedException extends \DomainException
+final class EmailAlreadyUsedException extends DomainException
 {
     public static function alreadyLinkedToAnAccount(): self
     {

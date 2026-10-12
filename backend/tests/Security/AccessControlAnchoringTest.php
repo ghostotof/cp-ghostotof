@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionProperty;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Bundle\SecurityBundle\Security\FirewallMap;
 use Symfony\Component\HttpFoundation\ChainRequestMatcher;
@@ -123,8 +124,8 @@ final class AccessControlAnchoringTest extends KernelTestCase
             $expectedRoles,
             $attributes,
             null === $expectedRoles
-                ? sprintf('%s est capturé par une règle access_control alors qu\'il ne fait que prolonger un préfixe : la regex manque une ancre de fin.', $path)
-                : sprintf('%s devrait relever de la règle %s.', $path, implode(',', $expectedRoles)),
+                ? \sprintf('%s est capturé par une règle access_control alors qu\'il ne fait que prolonger un préfixe : la regex manque une ancre de fin.', $path)
+                : \sprintf('%s devrait relever de la règle %s.', $path, implode(',', $expectedRoles)),
         );
     }
 
@@ -147,19 +148,19 @@ final class AccessControlAnchoringTest extends KernelTestCase
             self::assertNotSame(
                 [],
                 $regexps,
-                sprintf('Le firewall "%s" n\'a aucun pattern de chemin : il capture tout. S\'il s\'agit d\'un attrape-tout voulu, inscrivez-le dans UNBOUNDED_FIREWALL_ALLOW_LIST avec sa justification.', $firewall),
+                \sprintf('Le firewall "%s" n\'a aucun pattern de chemin : il capture tout. S\'il s\'agit d\'un attrape-tout voulu, inscrivez-le dans UNBOUNDED_FIREWALL_ALLOW_LIST avec sa justification.', $firewall),
             );
 
             foreach ($regexps as $regexp) {
                 self::assertStringStartsWith(
                     '^',
                     $regexp,
-                    sprintf('Le pattern "%s" du firewall "%s" n\'est pas ancré au début : il capturerait n\'importe quel chemin le contenant.', $regexp, $firewall),
+                    \sprintf('Le pattern "%s" du firewall "%s" n\'est pas ancré au début : il capturerait n\'importe quel chemin le contenant.', $regexp, $firewall),
                 );
 
                 self::assertTrue(
                     $this->isBounded($regexp),
-                    sprintf(
+                    \sprintf(
                         'Le pattern "%s" du firewall "%s" n\'est borné par aucune de ces terminaisons : %s. Sans borne, il capture ses voisins par préfixe (« %sx ») et leur applique des authentificateurs qui ne les concernent pas.',
                         $regexp,
                         $firewall,
@@ -240,7 +241,7 @@ final class AccessControlAnchoringTest extends KernelTestCase
         self::assertSame(
             $expectedFirewall,
             $map->getFirewallConfig(Request::create($path))?->getName(),
-            sprintf('%s ne relève pas du firewall attendu.', $path),
+            \sprintf('%s ne relève pas du firewall attendu.', $path),
         );
     }
 
@@ -264,7 +265,7 @@ final class AccessControlAnchoringTest extends KernelTestCase
     {
         $map = self::getContainer()->get('security.firewall.map');
 
-        $contexts = (new \ReflectionProperty(FirewallMap::class, 'map'))->getValue($map);
+        $contexts = (new ReflectionProperty(FirewallMap::class, 'map'))->getValue($map);
         self::assertIsIterable($contexts, 'FirewallMap::$map n\'est plus itérable : structure interne changée, adapter ce test.');
 
         $patterns = [];
@@ -290,9 +291,9 @@ final class AccessControlAnchoringTest extends KernelTestCase
             return [];
         }
 
-        self::assertInstanceOf(ChainRequestMatcher::class, $requestMatcher, sprintf('Firewall "%s" : matcher inattendu, adapter ce test.', $firewall));
+        self::assertInstanceOf(ChainRequestMatcher::class, $requestMatcher, \sprintf('Firewall "%s" : matcher inattendu, adapter ce test.', $firewall));
 
-        $matchers = (new \ReflectionProperty(ChainRequestMatcher::class, 'matchers'))->getValue($requestMatcher);
+        $matchers = (new ReflectionProperty(ChainRequestMatcher::class, 'matchers'))->getValue($requestMatcher);
         self::assertIsIterable($matchers, 'ChainRequestMatcher::$matchers n\'est plus itérable : structure interne changée, adapter ce test.');
 
         $regexps = [];
@@ -304,7 +305,7 @@ final class AccessControlAnchoringTest extends KernelTestCase
                 continue;
             }
 
-            $regexp = (new \ReflectionProperty(PathRequestMatcher::class, 'regexp'))->getValue($matcher);
+            $regexp = (new ReflectionProperty(PathRequestMatcher::class, 'regexp'))->getValue($matcher);
             self::assertIsString($regexp, 'PathRequestMatcher::$regexp n\'est plus une chaîne : structure interne changée, adapter ce test.');
 
             $regexps[] = $regexp;

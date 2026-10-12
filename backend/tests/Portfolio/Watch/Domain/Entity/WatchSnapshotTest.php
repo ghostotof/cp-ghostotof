@@ -8,6 +8,7 @@ use App\Portfolio\Watch\Domain\Entity\WatchSnapshot;
 use App\Portfolio\Watch\Domain\Exception\EmptySnapshotPayloadException;
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotSourceStatus;
 use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\UuidV7;
 
@@ -21,7 +22,7 @@ final class WatchSnapshotTest extends TestCase
         return new WatchSnapshot(
             WatchSnapshotType::RELEASE_CYCLES,
             $payload,
-            new \DateTimeImmutable('2026-09-07 04:41:00'),
+            new DateTimeImmutable('2026-09-07 04:41:00'),
             SnapshotSourceStatus::OK,
         );
     }
@@ -43,7 +44,7 @@ final class WatchSnapshotTest extends TestCase
 
         $snapshot->refresh(
             ['products' => [['slug' => 'symfony']]],
-            new \DateTimeImmutable('2026-09-08 04:41:00'),
+            new DateTimeImmutable('2026-09-08 04:41:00'),
             SnapshotSourceStatus::PARTIAL,
         );
 
@@ -68,7 +69,7 @@ final class WatchSnapshotTest extends TestCase
         $snapshot = $this->snapshot();
 
         try {
-            $snapshot->refresh([], new \DateTimeImmutable('2026-09-08 04:41:00'), SnapshotSourceStatus::OK);
+            $snapshot->refresh([], new DateTimeImmutable('2026-09-08 04:41:00'), SnapshotSourceStatus::OK);
             self::fail('Un payload vide aurait dû être refusé.');
         } catch (EmptySnapshotPayloadException) {
             // Et surtout : l'état précédent est intact.

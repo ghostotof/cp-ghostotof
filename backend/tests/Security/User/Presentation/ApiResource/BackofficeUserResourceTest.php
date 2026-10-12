@@ -9,6 +9,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use RuntimeException;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Uid\Uuid;
@@ -76,7 +77,7 @@ final class BackofficeUserResourceTest extends WebTestCase
         $users = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         $superId = $this->findIdByUsername($users, self::SUPER_USERNAME);
 
-        $client->request('GET', sprintf('/api/backoffice/users/%s', $superId));
+        $client->request('GET', \sprintf('/api/backoffice/users/%s', $superId));
 
         self::assertResponseIsSuccessful();
         $user = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
@@ -92,7 +93,7 @@ final class BackofficeUserResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
 
         // La route générée par défaut a disparu du routeur.
-        $client->request('GET', sprintf('/api/backoffice_users/%s', $superId));
+        $client->request('GET', \sprintf('/api/backoffice_users/%s', $superId));
         self::assertResponseStatusCodeSame(404);
     }
 
@@ -153,7 +154,7 @@ final class BackofficeUserResourceTest extends WebTestCase
         $janeId = $this->findIdByUsername($users, self::PLAIN_USERNAME);
 
         // Auto-suppression => 409
-        $client->request('DELETE', sprintf('/api/backoffice/users/%s', $superId), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
+        $client->request('DELETE', \sprintf('/api/backoffice/users/%s', $superId), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
         self::assertResponseStatusCodeSame(409);
 
         // Id inconnu => 404
@@ -161,7 +162,7 @@ final class BackofficeUserResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
 
         // Suppression d'un autre utilisateur => 204
-        $client->request('DELETE', sprintf('/api/backoffice/users/%s', $janeId), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
+        $client->request('DELETE', \sprintf('/api/backoffice/users/%s', $janeId), server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
         self::assertResponseStatusCodeSame(204);
 
         // La liste ne contient plus que le compte super
@@ -181,7 +182,7 @@ final class BackofficeUserResourceTest extends WebTestCase
             }
         }
 
-        throw new \RuntimeException(sprintf('User "%s" not found in collection.', $username));
+        throw new RuntimeException(\sprintf('User "%s" not found in collection.', $username));
     }
 
     private function loginAs(KernelBrowser $client, string $username, string $password): string

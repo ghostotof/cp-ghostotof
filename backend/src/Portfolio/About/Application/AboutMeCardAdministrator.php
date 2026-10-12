@@ -8,6 +8,7 @@ use App\Portfolio\About\Domain\Entity\AboutMeCard;
 use App\Portfolio\About\Domain\Exception\AboutMeCardNotFoundException;
 use App\Portfolio\About\Domain\Repository\AboutMeCardRepositoryInterface;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
+use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -15,10 +16,18 @@ use Symfony\Component\Uid\Uuid;
 
 final readonly class AboutMeCardAdministrator implements AboutMeCardAdministratorInterface
 {
+    /**
+     * Verrou d'ordre, pris par toute écriture qui place une entrée (issue #389) :
+     * la table entière, plus large que le périmètre d'ordre (une catégorie). Un
+     * verrou par catégorie n'aurait rien à gagner avec un seul administrateur.
+     */
+    private const string ORDER_SCOPE = AboutMeCard::class;
+
     public function __construct(
         private AboutMeCardRepositoryInterface $aboutMeCardRepository,
         private ContentPlacement $contentPlacement,
         private OrderAssigner $orderAssigner,
+        private OrderScopeLockInterface $orderScopeLock,
     ) {
     }
 
@@ -30,40 +39,44 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
         ?string $iconKey,
         ?Uuid $translationGroup = null,
     ): AboutMeCard {
-        $card = new AboutMeCard($locale, $category, $title, $description, $iconKey, $this->positionFor($locale, $category, $translationGroup), $translationGroup);
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($locale, $category, $title, $description, $iconKey, $translationGroup): AboutMeCard {
+            $card = new AboutMeCard($locale, $category, $title, $description, $iconKey, $this->positionFor($locale, $category, $translationGroup), $translationGroup);
 
-        $this->aboutMeCardRepository->save($card);
+            $this->aboutMeCardRepository->save($card);
 
-        return $card;
+            return $card;
+        });
     }
 
     public function update(Uuid $id, string $title, string $description, ?string $iconKey, ?Uuid $translationGroup): AboutMeCard
     {
-        $card = $this->aboutMeCardRepository->findOneById($id);
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $title, $description, $iconKey, $translationGroup): AboutMeCard {
+            $card = $this->aboutMeCardRepository->findOneById($id);
 
-        if (null === $card) {
-            throw AboutMeCardNotFoundException::forId($id);
-        }
+            if (null === $card) {
+                throw AboutMeCardNotFoundException::forId($id);
+            }
 
-        if (null === $translationGroup) {
-            // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
-            // le chargement du périmètre — le même qu'à la création sans groupe.
-            $this->contentPlacement->detach(
-                $card,
-                $this->membersOf($card->getTranslationGroup(), $card->getCategory()),
-                $this->aboutMeCardRepository->findByCategory($card->getCategory()),
-            );
-        } else {
-            $this->contentPlacement->reattach(
-                $card,
-                $translationGroup,
-                $this->membersOf($translationGroup, $card->getCategory()),
-            );
-        }
-        $card->update($title, $description, $iconKey);
-        $this->aboutMeCardRepository->save($card);
+            if (null === $translationGroup) {
+                // Issue #169 : détacher envoie l'entrée en fin de périmètre, d'où
+                // le chargement du périmètre — le même qu'à la création sans groupe.
+                $this->contentPlacement->detach(
+                    $card,
+                    $this->membersOf($card->getTranslationGroup(), $card->getCategory()),
+                    $this->aboutMeCardRepository->findByCategory($card->getCategory()),
+                );
+            } else {
+                $this->contentPlacement->reattach(
+                    $card,
+                    $translationGroup,
+                    $this->membersOf($translationGroup, $card->getCategory()),
+                );
+            }
+            $card->update($title, $description, $iconKey);
+            $this->aboutMeCardRepository->save($card);
 
-        return $card;
+            return $card;
+        });
     }
 
     public function delete(Uuid $id): void
@@ -84,11 +97,13 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
      */
     public function reorder(AboutMeCardCategory $category, array $keys): void
     {
-        $scope = $this->aboutMeCardRepository->findByCategory($category);
+        $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($category, $keys): void {
+            $scope = $this->aboutMeCardRepository->findByCategory($category);
 
-        $this->orderAssigner->assign($scope, $keys);
+            $this->orderAssigner->assign($scope, $keys);
 
-        $this->aboutMeCardRepository->saveAll($scope);
+            $this->aboutMeCardRepository->saveAll($scope);
+        });
     }
 
     /**

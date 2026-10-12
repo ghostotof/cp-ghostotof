@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Http;
 
+use SensitiveParameter;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Cookie;
 
@@ -48,7 +49,7 @@ final readonly class AuthCookieFactory
     /**
      * @param int|null $expiresAt timestamp Unix, ou null pour un cookie de session
      */
-    public function bearer(string $jwt, ?int $expiresAt = null): Cookie
+    public function bearer(#[SensitiveParameter] string $jwt, ?int $expiresAt = null): Cookie
     {
         return $this->create(self::BEARER, $jwt, $expiresAt);
     }
@@ -56,7 +57,7 @@ final readonly class AuthCookieFactory
     /**
      * @param int|null $expiresAt timestamp Unix, ou null pour un cookie de session
      */
-    public function xsrf(string $token, ?int $expiresAt = null): Cookie
+    public function xsrf(#[SensitiveParameter] string $token, ?int $expiresAt = null): Cookie
     {
         return $this->create(self::XSRF_TOKEN, $token, $expiresAt);
     }
@@ -70,20 +71,27 @@ final readonly class AuthCookieFactory
      * Reçoit un `string` et non l'union des deux constantes : la garde est
      * volontairement à l'exécution, pour qu'un appel construit dynamiquement
      * échoue net plutôt que d'expirer un cookie qui n'est pas le sien.
+     *
+     * @throws UnknownAuthCookieException
      */
     public function expired(string $name): Cookie
     {
         if (self::BEARER !== $name && self::XSRF_TOKEN !== $name) {
-            throw new \InvalidArgumentException(sprintf('"%s" n\'est pas un cookie d\'authentification (attendu : %s ou %s).', $name, self::BEARER, self::XSRF_TOKEN));
+            throw UnknownAuthCookieException::forName($name);
         }
 
         return $this->create($name, null, 1);
     }
 
     /**
+     * `$value` porte le JWT ou le jeton CSRF : caché des traces comme dans
+     * bearer() et xsrf(), bien que son nom échappe au recensement de
+     * {@see \App\Tests\Security\SecretParametersTest}, qui l'épingle
+     * (issue #414).
+     *
      * @param self::BEARER|self::XSRF_TOKEN $name
      */
-    private function create(string $name, ?string $value, ?int $expiresAt): Cookie
+    private function create(string $name, #[SensitiveParameter] ?string $value, ?int $expiresAt): Cookie
     {
         return Cookie::create($name, $value)
             ->withExpires($expiresAt ?? 0)

@@ -242,7 +242,7 @@
         "cannot-modify-own-roles": "You cannot change your own roles.",
         "cannot-demote-last-super": "Not allowed: this is the last administrator account.",
         "already-activated": "This account has already set its password.",
-        "validation": "The password must be at least 8 characters long.",
+        "validation": "This password was rejected: it must be at least {min} characters long and at most {max} bytes, and must not appear in any known breach.",
         "unknown": "Something went wrong. Please try again later."
       }
     },
@@ -463,6 +463,8 @@
     "passwordLabel": "Password",
     "submit": "Log in",
     "invalidCredentials": "Incorrect username or password.",
+    "rateLimited": "Too many login attempts. Please try again in a few minutes.",
+    "rateLimitedIn": "Too many login attempts. Please try again in {minutes} minute. | Too many login attempts. Please try again in {minutes} minutes.",
     "genericError": "Something went wrong, please try again."
   },
   "contact": {
@@ -513,10 +515,13 @@
       "successHeading": "Password set",
       "successBody": "Your account is ready. You can now log in.",
       "toLogin": "Go to login",
-      "invalid": "This password setup link is not valid. Open it again from the invitation email.",
-      "expired": "This link has expired or has already been used. Ask the person who invited you for a new one.",
+      "incomplete": "This link is incomplete. Open it again from the invitation email, without changing it.",
+      "unusable": "This link is not or no longer valid: it may be incomplete, expired or already used. Open it again from the invitation email; if it still does not work, ask the person who invited you for a new link.",
+      "alreadySet": "Already set your password?",
+      "logIn": "Log in",
       "errors": {
         "tooShort": "The password must be at least {min} characters long.",
+        "tooLong": "The password is too long: {max} bytes at most (an accented character or an emoji takes up several).",
         "mismatch": "The two passwords do not match.",
         "weak-password": "This password was rejected (too common or found in a known breach). Please choose another one.",
         "rate-limited": "Too many attempts. Please try again in a few minutes.",

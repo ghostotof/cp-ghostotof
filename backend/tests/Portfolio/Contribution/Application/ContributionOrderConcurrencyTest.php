@@ -1,0 +1,159 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Tests\Portfolio\Contribution\Application;
+
+use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Tests\Support\ChildPhpProcess;
+use App\Tests\Support\FlushInterleaving;
+use App\Tests\Support\ProcessBarrier;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Process\Process;
+
+/**
+ * Une écriture du périmètre d'ordre ne peut pas en défaire une autre (issue #389).
+ *
+ * Deux écritures concurrentes, A dans ce processus, B dans un processus fils
+ * (Fixtures/create-contribution.php) : l'une tiendrait sinon le verrou que
+ * l'autre attend. L'entrelacement est explicite, pas laissé au hasard :
+ *
+ *  1. B démarre le kernel puis attend la barrière (ProcessBarrier) ;
+ *  2. A lit le périmètre et calcule ses positions ; au `preFlush` de son
+ *     écriture — le dernier instant avant qu'elle n'atteigne la base —, le
+ *     test relâche la barrière ;
+ *  3. le test attend que B ait **fini** ou que sa session (pid annoncé avec
+ *     son « ready ») soit **bloquée sur un verrou** PostgreSQL, puis laisse A
+ *     écrire ;
+ *  4. une fois B terminé, le test relit la table.
+ *
+ * Sans verrou de périmètre, B lit l'état antérieur à A et termine pendant la
+ * pause : le résultat est celui de la course. Avec, B attend A et relit après
+ * lui. Dans les deux cas le verdict est le même à chaque passage.
+ */
+final class ContributionOrderConcurrencyTest extends KernelTestCase
+{
+    /** Borne de chaque attente : un verrou jamais relâché fait échouer le test au lieu de le suspendre. */
+    private const int TIMEOUT_SECONDS = 30;
+
+    private const string WRITER_SCRIPT = __DIR__.'/../Fixtures/create-contribution.php';
+
+    protected function tearDown(): void
+    {
+        self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement('DELETE FROM contribution');
+        parent::tearDown();
+    }
+
+    /**
+     * Le scénario de l'issue : « Créer la version EN » de G pendant un
+     * `reorder()` qui déplace G. La version EN doit hériter de la position
+     * que le réordonnancement donne à G, pas de celle qu'il quitte.
+     */
+    public function testACreationInAGroupDuringAReorderInheritsTheGroupsNewPosition(): void
+    {
+        self::bootKernel();
+        $administrator = $this->administrator();
+        $moved = $administrator->create(Locale::FR, 'Déplacée', 'P', 'R', 'https://example.com/a', 'S', 'B');
+        $other = $administrator->create(Locale::FR, 'Autre', 'P', 'R', 'https://example.com/b', 'S', 'B');
+        $group = $moved->getTranslationGroup();
+
+        $writer = $this->interleaveBeforeNextFlush(Locale::EN, $group->toRfc4122());
+        $administrator->reorder([$other->getTranslationGroup()->toRfc4122(), $group->toRfc4122()]);
+        $this->awaitSuccess($writer);
+
+        self::assertSame(
+            [1, 1],
+            $this->positionsOf($group->toRfc4122()),
+            'Le groupe déplacé porte deux positions : la version créée pendant le réordonnancement a hérité de la position que le groupe quittait (#389).',
+        );
+    }
+
+    /**
+     * La course voisine que l'issue demandait de confirmer : deux créations
+     * sans groupe lisent le même `max`, et `atEndOf()` leur donne la même
+     * position — deux clés sur une position.
+     */
+    public function testTwoSimultaneousCreationsWithoutAGroupGetDistinctPositions(): void
+    {
+        self::bootKernel();
+        $administrator = $this->administrator();
+        $administrator->create(Locale::FR, 'Existante', 'P', 'R', 'https://example.com/a', 'S', 'B');
+
+        $writer = $this->interleaveBeforeNextFlush(Locale::FR, null);
+        $administrator->create(Locale::FR, 'Créée par A', 'P', 'R', 'https://example.com/c', 'S', 'B');
+        $this->awaitSuccess($writer);
+
+        self::assertSame(
+            [0, 1, 2],
+            $this->allPositions(),
+            'Deux créations simultanées sans groupe ont reçu la même position de fin de périmètre (#389).',
+        );
+    }
+
+    private function administrator(): ContributionAdministratorInterface
+    {
+        return self::getContainer()->get(ContributionAdministratorInterface::class);
+    }
+
+    /**
+     * Démarre B et le relâche au prochain `preFlush` ({@see FlushInterleaving}).
+     */
+    private function interleaveBeforeNextFlush(Locale $locale, ?string $group): Process
+    {
+        $barrier = ProcessBarrier::hold('order-barrier-');
+        $arguments = [self::WRITER_SCRIPT, $barrier->path(), $locale->value];
+        if (null !== $group) {
+            $arguments[] = $group;
+        }
+
+        $writer = ChildPhpProcess::inTestEnvironment(self::TIMEOUT_SECONDS, ...$arguments);
+        $writer->start();
+        FlushInterleaving::releaseBeforeNextFlush(self::getContainer()->get(EntityManagerInterface::class), $barrier, $writer, self::TIMEOUT_SECONDS);
+
+        return $writer;
+    }
+
+    private function awaitSuccess(Process $writer): void
+    {
+        $writer->wait();
+        self::assertSame(
+            0,
+            $writer->getExitCode(),
+            \sprintf("Le processus concurrent a échoué :\n%s%s", $writer->getOutput(), $writer->getErrorOutput()),
+        );
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function positionsOf(string $group): array
+    {
+        return $this->positions('SELECT position FROM contribution WHERE translation_group = ? ORDER BY locale', [$group]);
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function allPositions(): array
+    {
+        return $this->positions('SELECT position FROM contribution ORDER BY position');
+    }
+
+    /**
+     * @param list<string> $parameters
+     *
+     * @return list<int>
+     */
+    private function positions(string $sql, array $parameters = []): array
+    {
+        $positions = [];
+        foreach (self::getContainer()->get(EntityManagerInterface::class)->getConnection()->fetchFirstColumn($sql, $parameters) as $position) {
+            self::assertIsInt($position);
+            $positions[] = $position;
+        }
+
+        return $positions;
+    }
+}

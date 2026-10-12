@@ -14,6 +14,7 @@ use Symfony\AI\Platform\Exception\RateLimitExceededException;
 use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\Contracts\HttpClient\Exception\HttpExceptionInterface;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
+use Throwable;
 
 /**
  * Description journalisable d'un échec du fournisseur de modèle, partagée par
@@ -66,7 +67,7 @@ final readonly class ProviderFailure
     ];
 
     private function __construct(
-        /** @var class-string<\Throwable> */
+        /** @var class-string<Throwable> */
         public string $exceptionClass,
         public ?int $status,
         public ?string $errorType,
@@ -76,7 +77,7 @@ final readonly class ProviderFailure
     ) {
     }
 
-    public static function from(\Throwable $exception): self
+    public static function from(Throwable $exception): self
     {
         $status = self::status($exception);
         $errorType = self::errorType($exception->getMessage());
@@ -94,7 +95,7 @@ final readonly class ProviderFailure
      * Les clés sont celles des deux journaux (canal par défaut pour le
      * traducteur, `ai_usage` pour l'assistant) : une même requête jq les lit.
      *
-     * @return array{exception: class-string<\Throwable>, providerStatus: ?int, providerErrorType: ?string, providerFailure: string, origin: string}
+     * @return array{exception: class-string<Throwable>, providerStatus: ?int, providerErrorType: ?string, providerFailure: string, origin: string}
      */
     public function toLogContext(): array
     {
@@ -107,7 +108,7 @@ final readonly class ProviderFailure
         ];
     }
 
-    private static function status(\Throwable $exception): ?int
+    private static function status(Throwable $exception): ?int
     {
         if ($exception instanceof ServerException) {
             return $exception->getStatusCode();
@@ -136,7 +137,7 @@ final readonly class ProviderFailure
     }
 
     /** La classe est l'indice le plus sûr : le bridge l'a choisie d'après le statut et le corps. */
-    private static function reasonFromClass(\Throwable $exception): ?ProviderFailureReason
+    private static function reasonFromClass(Throwable $exception): ?ProviderFailureReason
     {
         return match (true) {
             $exception instanceof AuthenticationException => ProviderFailureReason::Authentication,

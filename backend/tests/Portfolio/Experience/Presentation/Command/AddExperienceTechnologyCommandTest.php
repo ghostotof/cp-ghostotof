@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Portfolio\Experience\Presentation\Command;
 
 use App\Portfolio\Experience\Domain\Repository\ExperienceTechnologyRepositoryInterface;
+use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -70,6 +71,45 @@ final class AddExperienceTechnologyCommandTest extends KernelTestCase
 
         self::assertSame(1, $exitCode);
         self::assertStringContainsString('existe déjà', $tester->getDisplay());
+    }
+
+    /**
+     * Issue #386 : `validateName()` contrôlait `trim($name)` mais rendait la
+     * valeur brute. `--name=' PHP '` échappait au contrôle d'unicité et
+     * publiait un doublon sur la page Expériences.
+     */
+    public function testANameSurroundedBySpacesCollidesWithTheTrimmedOne(): void
+    {
+        $tester = $this->commandTester();
+        $tester->execute(['--name' => 'PHP', '--years' => '13.5']);
+
+        $exitCode = $tester->execute(['--name' => ' PHP ', '--years' => '1']);
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('existe déjà', $tester->getDisplay());
+        self::assertSame(1, $this->countTechnologies());
+    }
+
+    public function testANameIsStoredTrimmed(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute(['--name' => " Go\t", '--years' => '2']);
+
+        self::assertSame(0, $exitCode);
+        self::assertNotNull(self::getContainer()->get(ExperienceTechnologyRepositoryInterface::class)->findOneByName('Go'));
+    }
+
+    /** Le nom a la longueur de sa colonne : au-delà, l'INSERT échouait en exception DBAL. */
+    public function testANameLongerThanItsColumnIsRefusedBeforeAnyWrite(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute(['--name' => str_repeat('a', TechnologyName::MAX_LENGTH + 1), '--years' => '1']);
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString((string) TechnologyName::MAX_LENGTH, $tester->getDisplay());
+        self::assertSame(0, $this->countTechnologies());
     }
 
     public function testFailsOnNonNumericYears(): void
@@ -143,10 +183,72 @@ final class AddExperienceTechnologyCommandTest extends KernelTestCase
         self::assertSame(13.5, $technology->getYears());
     }
 
+    /**
+     * Issue #383 : sans --name, `ask()` rend en non interactif la valeur par
+     * défaut (null) sans passer par le validateur ; la commande doit refuser
+     * en nommant l'option à passer, pas tomber sur un `assert()`.
+     */
+    public function testANonInteractiveRunWithoutNameFailsAndNamesTheOption(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute(['--years' => '13.5'], ['interactive' => false]);
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('--name', $tester->getDisplay());
+    }
+
+    public function testTheInteractivePromptAsksAgainWhenTheNameIsBlank(): void
+    {
+        $tester = $this->commandTester();
+        $tester->setInputs(['   ', 'PHP']);
+
+        $exitCode = $tester->execute(['--years' => '13.5'], ['interactive' => true]);
+
+        self::assertSame(0, $exitCode);
+        self::assertStringContainsString('ne peut pas être vide', $this->normalizedDisplay($tester));
+        self::assertNotNull(self::getContainer()->get(ExperienceTechnologyRepositoryInterface::class)->findOneByName('PHP'));
+    }
+
+    /**
+     * Revue de #383 : sur une fin d'entrée, le QuestionHelper relance la
+     * dernière erreur du validateur ; elle doit finir en message, pas quitter
+     * la commande.
+     */
+    public function testABlankNameFollowedByTheEndOfInputFailsWithAMessage(): void
+    {
+        $tester = $this->commandTester();
+        $tester->setInputs(['   ']);
+
+        $exitCode = $tester->execute(['--years' => '13.5'], ['interactive' => true]);
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('ne peut pas être vide', $this->normalizedDisplay($tester));
+    }
+
+    public function testANonInteractiveRunWithoutYearsFailsAndNamesTheOption(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute(['--name' => 'PHP'], ['interactive' => false]);
+
+        self::assertSame(1, $exitCode);
+        self::assertStringContainsString('--years', $tester->getDisplay());
+        self::assertNull(self::getContainer()->get(ExperienceTechnologyRepositoryInterface::class)->findOneByName('PHP'));
+    }
+
     /** SymfonyStyle replie les blocs d'erreur à la largeur du terminal. */
     private function normalizedDisplay(CommandTester $tester): string
     {
         return (string) preg_replace('/\s+/', ' ', $tester->getDisplay());
+    }
+
+    private function countTechnologies(): int
+    {
+        $count = $this->getEntityManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM experience_technology');
+        self::assertIsInt($count);
+
+        return $count;
     }
 
     private function commandTester(): CommandTester

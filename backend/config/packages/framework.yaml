@@ -53,6 +53,12 @@ framework:
         # entrée il sortirait en `critical` (ni HttpException, ni 4xx connu).
         App\Security\User\Domain\Exception\BaseAccessRateLimitExceededException:
             log_level: info
+        # Refus de `login_throttling` (issue #399) : la défense anti-brute-force
+        # qui fait son office. Déjà tracé par `login-throttled` (security_audit,
+        # avec l'empreinte de l'identifiant tenté, issue #418) ; sans cette entrée, chaque refus serait une
+        # ligne `critical` qu'un anonyme produirait à volonté.
+        App\Security\Authentication\Domain\Exception\LoginRateLimitExceededException:
+            log_level: info
 
         # --- Exceptions rendues par API Platform (`exception_to_status`) ---
         # logKernelException (priorité 0) les voit aussi, avant API Platform
@@ -75,6 +81,14 @@ framework:
         App\Contact\Domain\Exception\ContactRateLimitExceededException:
             log_level: info
         App\Contact\Domain\Exception\ContactMessageDeliveryException:
+            log_level: warning
+        # File de messages indisponible (issue #485) : le redémarrage `Recreate`
+        # de RabbitMQ à chaque release, un refus ou un accusé manquant (#479).
+        # Panne d'un tiers, temporaire : 503 `warning`, une entrée par classe
+        # concrète de MessageQueueUnavailableException (jamais sur l'abstraite).
+        App\Contact\Domain\Exception\ContactMessageQueueUnavailableException:
+            log_level: warning
+        App\Security\User\Domain\Exception\InvitationQueueUnavailableException:
             log_level: warning
         # Assistant de traduction (ADR 0004) : panne du fournisseur, quota.
         App\Ai\Translation\Domain\Exception\TranslationUnavailableException:
@@ -153,16 +167,14 @@ framework:
         # aucune des deux entrées ne la reconnaîtrait.
         App\Security\User\Domain\Exception\AccountInvitationDeliveryException:
             log_level: warning
-        # Parcours public de définition de mot de passe. Un jeton inconnu est
-        # tracé sur `security_audit` (`password-setup-token-rejected`, avec IP
-        # et chemin, issue #356) : ce journal n'est plus sa seule trace, il
-        # rentre dans la règle des 4xx. Un lien expiré est le cas ordinaire
-        # d'une invitation ouverte trop tard ; un lien déjà consommé, fusionné
-        # avec lui dans la réponse, a son propre événement
-        # (`password-setup-token-replayed`).
-        App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException:
-            log_level: info
-        App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException:
+        # Parcours public de définition de mot de passe : un seul refus pour
+        # tout lien inutilisable (issue #362). Un jeton inconnu est tracé sur
+        # `security_audit` (`password-setup-token-rejected`, avec IP et chemin,
+        # issue #356) : ce journal n'est plus sa seule trace, il rentre dans la
+        # règle des 4xx. Un lien expiré est le cas ordinaire d'une invitation
+        # ouverte trop tard ; un lien déjà consommé, fusionné avec les autres
+        # dans la réponse, a son propre événement (`password-setup-token-replayed`).
+        App\Security\User\Domain\Exception\UnusablePasswordSetupLinkException:
             log_level: info
         # Quota par IP : tracé sur `security_audit` (`password-setup-throttled`,
         # issue #356), comme ceux du contact et de base-access.

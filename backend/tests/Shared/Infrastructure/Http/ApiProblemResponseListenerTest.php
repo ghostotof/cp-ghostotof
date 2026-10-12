@@ -9,11 +9,15 @@ use App\Ai\Assistant\Domain\Exception\AssistantUnavailableException;
 use App\Ai\Assistant\Domain\Exception\InvalidConversationException;
 use App\Security\User\Domain\Exception\BaseAccessRateLimitExceededException;
 use App\Shared\Infrastructure\Http\ApiProblemResponseListener;
+use DateTimeImmutable;
+use LogicException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
+use Throwable;
 
 /**
  * Issue #322 : sous `/api`, une route qui n'est pas une opération API Platform
@@ -59,7 +63,7 @@ final class ApiProblemResponseListenerTest extends TestCase
     /** Le cas qui manquait : un autre contrôleur que celui de l'assistant. */
     public function testAnyControllerUnderTheApiIsCovered(): void
     {
-        $event = $this->event('/api/account/base-access', new BaseAccessRateLimitExceededException(new \DateTimeImmutable('+1 hour')));
+        $event = $this->event('/api/account/base-access', new BaseAccessRateLimitExceededException(new DateTimeImmutable('+1 hour')));
 
         (new ApiProblemResponseListener())($event);
 
@@ -85,7 +89,7 @@ final class ApiProblemResponseListenerTest extends TestCase
      */
     public function testAProblemWithoutAStatusIsAServerError(): void
     {
-        $event = $this->event('/api/assistant/answers', new class extends \RuntimeException implements ProblemExceptionInterface {
+        $event = $this->event('/api/assistant/answers', new class extends RuntimeException implements ProblemExceptionInterface {
             public function getType(): string
             {
                 return '/errors/sans-statut';
@@ -141,7 +145,7 @@ final class ApiProblemResponseListenerTest extends TestCase
 
     public function testAnExceptionWithoutAProblemTypeIsLeftAlone(): void
     {
-        $event = $this->event('/api/assistant/answers', new \LogicException('bogue'));
+        $event = $this->event('/api/assistant/answers', new LogicException('bogue'));
 
         (new ApiProblemResponseListener())($event);
 
@@ -177,7 +181,7 @@ final class ApiProblemResponseListenerTest extends TestCase
         self::assertNull($event->getResponse());
     }
 
-    private function event(string $path, \Throwable $exception, int $requestType = HttpKernelInterface::MAIN_REQUEST, bool $isKernelTerminating = false): ExceptionEvent
+    private function event(string $path, Throwable $exception, int $requestType = HttpKernelInterface::MAIN_REQUEST, bool $isKernelTerminating = false): ExceptionEvent
     {
         return new ExceptionEvent(
             self::createStub(HttpKernelInterface::class),

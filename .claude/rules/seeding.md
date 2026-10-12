@@ -31,7 +31,7 @@ answer in nearly every execution, not an error. `SeedWatchedProductsCommandTest`
 
 `k8s/base/seed-job.yaml` runs the seven on **every preprod deploy** (`case-studies` was missing from it
 until 2026-09-13 — adding a seed command means adding its line there, the Job's comment says so). Like `migrate-job.yaml` it sits
-outside `kustomization.yaml`, hence `${BACKEND_IMAGE}` + `envsubst`. It never passes `--force`, so it
+outside `kustomization.yaml`, hence `${BACKEND_IMAGE}` + `envsubst` (`tools/run-job.sh`, issue #488). It never passes `--force`, so it
 cannot repair a divergence: if the reference content changes in code, preprod keeps the old one until
 someone forces it by hand. That is the price of harmlessness, and it is the right trade — a Job that
 can destroy nothing beats a Job that syncs and one day picks the wrong namespace.

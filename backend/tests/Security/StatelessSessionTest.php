@@ -111,7 +111,7 @@ final class StatelessSessionTest extends WebTestCase
         foreach (self::FORBIDDEN_SESSION_SERVICE_IDS as $serviceId) {
             self::assertFalse(
                 $container->has($serviceId),
-                sprintf('Le service "%s" est de retour dans le conteneur : framework.session a été réactivée.', $serviceId),
+                \sprintf('Le service "%s" est de retour dans le conteneur : framework.session a été réactivée.', $serviceId),
             );
         }
     }
@@ -154,7 +154,7 @@ final class StatelessSessionTest extends WebTestCase
         );
 
         foreach (self::SESSION_COOKIE_NAMES as $sessionCookie) {
-            self::assertNotContains($sessionCookie, $names, sprintf('%s %s pose un cookie de session %s.', $method, $path, $sessionCookie));
+            self::assertNotContains($sessionCookie, $names, \sprintf('%s %s pose un cookie de session %s.', $method, $path, $sessionCookie));
         }
 
         // Et, en amont du cookie : aucune session n'a même été attachée à la
@@ -162,7 +162,7 @@ final class StatelessSessionTest extends WebTestCase
         // une fabrique paresseuse et cette assertion échouait.
         self::assertFalse(
             $client->getRequest()->hasSession(),
-            sprintf('%s %s : une session a été attachée à la requête.', $method, $path),
+            \sprintf('%s %s : une session a été attachée à la requête.', $method, $path),
         );
     }
 

@@ -9,6 +9,7 @@ use App\Ai\Translation\Application\ContentTranslatorInterface;
 use App\Ai\Translation\Domain\Exception\TranslationUnavailableException;
 use App\Ai\Translation\Domain\ValueObject\TranslatedFields;
 use App\Ai\Translation\Domain\ValueObject\TranslationRequest;
+use JsonException;
 use Monolog\Attribute\WithMonologChannel;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\AgentInterface;
@@ -142,7 +143,7 @@ final readonly class SymfonyAiContentTranslator implements ContentTranslatorInte
         if (\is_string($content)) {
             try {
                 $content = json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
-            } catch (\JsonException) {
+            } catch (JsonException) {
                 throw $this->rejected('JSON malformé');
             }
         }

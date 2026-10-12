@@ -6,6 +6,7 @@ namespace App\Portfolio\Shared\Domain\Exception;
 
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use App\Shared\Domain\Exception\HasProblemType;
+use DomainException;
 
 /**
  * Spec 0004 D4 : `PUT …/order` exige l'ensemble exact des clés du périmètre.
@@ -15,7 +16,7 @@ use App\Shared\Domain\Exception\HasProblemType;
  * contrôle de concurrence optimiste sans version ni horodatage — le serveur
  * refuse (422), le frontend recharge la liste et le dit.
  */
-final class IncompleteOrderException extends \DomainException implements ProblemExceptionInterface
+final class IncompleteOrderException extends DomainException implements ProblemExceptionInterface
 {
     use HasProblemType;
 
@@ -24,7 +25,7 @@ final class IncompleteOrderException extends \DomainException implements Problem
      */
     public static function forKeys(array $missingKeys): self
     {
-        return new self(sprintf(
+        return new self(\sprintf(
             'Il manque %d entrée(s) du périmètre dans la liste envoyée : %s.',
             \count($missingKeys),
             implode(', ', $missingKeys),

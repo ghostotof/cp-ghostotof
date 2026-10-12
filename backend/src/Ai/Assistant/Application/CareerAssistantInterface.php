@@ -9,6 +9,7 @@ use App\Ai\Assistant\Domain\Exception\AssistantUnavailableException;
 use App\Ai\Assistant\Domain\ValueObject\AnswerUsage;
 use App\Ai\Assistant\Domain\ValueObject\Conversation;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Generator;
 
 interface CareerAssistantInterface
 {
@@ -25,11 +26,11 @@ interface CareerAssistantInterface
      * (#318). Sa valeur de retour, lue après consommation, porte les jetons et
      * la durée.
      *
-     * @return \Generator<int, string, mixed, AnswerUsage>
+     * @return Generator<int, string, mixed, AnswerUsage>
      *
      * @throws AssistantUnavailableException
      * @throws AssistantRateLimitExceededException quota du compte atteint (D6),
      *                                             levée avant tout appel au fournisseur
      */
-    public function answer(Conversation $conversation, Locale $locale): \Generator;
+    public function answer(Conversation $conversation, Locale $locale): Generator;
 }

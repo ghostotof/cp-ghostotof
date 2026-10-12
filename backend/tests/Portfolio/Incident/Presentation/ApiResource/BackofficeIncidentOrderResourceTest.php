@@ -10,6 +10,7 @@ use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
+use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -227,10 +228,10 @@ final class BackofficeIncidentOrderResourceTest extends WebTestCase
     {
         $administrator = $client->getContainer()->get(IncidentAdministratorInterface::class);
 
-        $first = $administrator->create(Locale::FR, 'Premier', 'v0.1.0', new \DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv');
-        $second = $administrator->create(Locale::FR, 'Second', 'v0.2.0', new \DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv');
-        $administrator->create(Locale::EN, 'First', 'v0.1.0', new \DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv', $first->getTranslationGroup());
-        $administrator->create(Locale::EN, 'Second, in English', 'v0.2.0', new \DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv', $second->getTranslationGroup());
+        $first = $administrator->create(Locale::FR, 'Premier', 'v0.1.0', new DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv');
+        $second = $administrator->create(Locale::FR, 'Second', 'v0.2.0', new DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv');
+        $administrator->create(Locale::EN, 'First', 'v0.1.0', new DateTimeImmutable('2026-01-01'), 'i', 'c', 'r', 'inv', $first->getTranslationGroup());
+        $administrator->create(Locale::EN, 'Second, in English', 'v0.2.0', new DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv', $second->getTranslationGroup());
 
         self::assertSame(0, $first->getPosition());
         self::assertSame(1, $second->getPosition());

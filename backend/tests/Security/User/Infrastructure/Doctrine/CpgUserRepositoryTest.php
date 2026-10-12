@@ -6,8 +6,15 @@ namespace App\Tests\Security\User\Infrastructure\Doctrine;
 
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Security\User\Infrastructure\Doctrine\CpgUserRepository;
+use App\Tests\Support\ReadsAllChannelsLog;
+use App\Tests\Support\TestCredentials;
+use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\LogRecord;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Security\Core\Exception\UserNotFoundException;
 
 /**
  * Test d'intégration Doctrine (base `_test`) de
@@ -22,6 +29,8 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  */
 final class CpgUserRepositoryTest extends KernelTestCase
 {
+    use ReadsAllChannelsLog;
+
     private EntityManagerInterface $em;
     private CpgUserRepositoryInterface $repository;
 
@@ -47,6 +56,51 @@ final class CpgUserRepositoryTest extends KernelTestCase
     }
 
     /**
+     * Issue #434 : la colonne garde l'instant, pas l'heure murale. Le 25
+     * octobre, 02:30 existe deux fois à Paris ; sans fuseau en base, la
+     * première occurrence (CEST) revenait comme la seconde (CET), une heure
+     * plus tard.
+     */
+    public function testTheInvitationInstantSurvivesTheRepeatedHourOfTheAutumnClockChange(): void
+    {
+        $invitedAt = new DateTimeImmutable('2026-10-25T02:30:00+02:00');
+        $activatedAt = new DateTimeImmutable('2026-10-25T02:45:00+02:00');
+        $user = new CpgUser('autumn-invitee', '');
+        $user->setEmail('autumn@example.com');
+        $user->markInvited($invitedAt);
+        $user->markActivated($activatedAt);
+        $this->em->persist($user);
+        $this->em->flush();
+        $this->em->clear();
+
+        $reloaded = $this->repository->findOneById($user->getId());
+
+        self::assertNotNull($reloaded);
+        self::assertSame($invitedAt->getTimestamp(), $reloaded->getInvitedAt()?->getTimestamp());
+        self::assertSame($activatedAt->getTimestamp(), $reloaded->getActivatedAt()?->getTimestamp());
+    }
+
+    /**
+     * Le seuil de la purge est comparé en instant, quel que soit le fuseau
+     * de l'objet qui le porte — ici UTC, celui d'une valeur relue. Écrit en
+     * heure murale sans décalage, 07:30 UTC serait lu 07:30 dans le fuseau de
+     * la session (Paris), soit 05:30 UTC, et le compte invité à 07:00 UTC ne
+     * passerait plus pour plus ancien que le seuil.
+     */
+    public function testThePurgeThresholdIsComparedAsAnInstant(): void
+    {
+        $user = new CpgUser('threshold-invitee', '');
+        $user->setEmail('threshold@example.com');
+        $user->markInvited(new DateTimeImmutable('2026-10-11T07:00:00+00:00'));
+        $this->em->persist($user);
+        $this->em->flush();
+        $this->em->clear();
+
+        self::assertSame([], $this->repository->findAwaitingPasswordSetupInvitedBefore(new DateTimeImmutable('2026-10-11T06:30:00+00:00')));
+        self::assertCount(1, $this->repository->findAwaitingPasswordSetupInvitedBefore(new DateTimeImmutable('2026-10-11T07:30:00+00:00')));
+    }
+
+    /**
      * Trois comptes : invité il y a 40 jours (encore en attente), invité il y
      * a 10 jours (encore en attente, trop récent) et invité il y a 40 jours
      * puis activé (donc plus en attente). Avec un seuil à -30 jours, seul le
@@ -56,24 +110,24 @@ final class CpgUserRepositoryTest extends KernelTestCase
     {
         $stale = new CpgUser('stale-invitee', '');
         $stale->setEmail('stale@example.com');
-        $stale->markInvited(new \DateTimeImmutable('-40 days'));
+        $stale->markInvited(new DateTimeImmutable('-40 days'));
         $this->em->persist($stale);
 
         $recent = new CpgUser('recent-invitee', '');
         $recent->setEmail('recent@example.com');
-        $recent->markInvited(new \DateTimeImmutable('-10 days'));
+        $recent->markInvited(new DateTimeImmutable('-10 days'));
         $this->em->persist($recent);
 
         $activated = new CpgUser('activated-invitee', '');
         $activated->setEmail('activated@example.com');
-        $activated->markInvited(new \DateTimeImmutable('-40 days'));
-        $activated->markActivated(new \DateTimeImmutable('-5 days'));
+        $activated->markInvited(new DateTimeImmutable('-40 days'));
+        $activated->markActivated(new DateTimeImmutable('-5 days'));
         $this->em->persist($activated);
 
         $this->em->flush();
         $this->em->clear();
 
-        $found = $this->repository->findAwaitingPasswordSetupInvitedBefore(new \DateTimeImmutable('-30 days'));
+        $found = $this->repository->findAwaitingPasswordSetupInvitedBefore(new DateTimeImmutable('-30 days'));
 
         self::assertCount(1, $found);
         self::assertSame('stale-invitee', $found[0]->getUsername());
@@ -83,12 +137,12 @@ final class CpgUserRepositoryTest extends KernelTestCase
     {
         $recent = new CpgUser('recent-invitee', '');
         $recent->setEmail('recent@example.com');
-        $recent->markInvited(new \DateTimeImmutable('-10 days'));
+        $recent->markInvited(new DateTimeImmutable('-10 days'));
         $this->em->persist($recent);
         $this->em->flush();
         $this->em->clear();
 
-        self::assertSame([], $this->repository->findAwaitingPasswordSetupInvitedBefore(new \DateTimeImmutable('-30 days')));
+        self::assertSame([], $this->repository->findAwaitingPasswordSetupInvitedBefore(new DateTimeImmutable('-30 days')));
     }
 
     /**
@@ -101,12 +155,12 @@ final class CpgUserRepositoryTest extends KernelTestCase
     {
         $passwordSet = new CpgUser('password-set-invitee', 'a-real-hash-set-from-the-backoffice');
         $passwordSet->setEmail('password-set@example.com');
-        $passwordSet->markInvited(new \DateTimeImmutable('-40 days'));
+        $passwordSet->markInvited(new DateTimeImmutable('-40 days'));
         $this->em->persist($passwordSet);
         $this->em->flush();
         $this->em->clear();
 
-        self::assertSame([], $this->repository->findAwaitingPasswordSetupInvitedBefore(new \DateTimeImmutable('-30 days')));
+        self::assertSame([], $this->repository->findAwaitingPasswordSetupInvitedBefore(new DateTimeImmutable('-30 days')));
     }
 
     /**
@@ -123,7 +177,7 @@ final class CpgUserRepositoryTest extends KernelTestCase
         $this->em->flush();
         $this->em->clear();
 
-        self::assertSame([], $this->repository->findAwaitingPasswordSetupInvitedBefore(new \DateTimeImmutable('+1 day')));
+        self::assertSame([], $this->repository->findAwaitingPasswordSetupInvitedBefore(new DateTimeImmutable('+1 day')));
     }
 
     /**
@@ -134,21 +188,139 @@ final class CpgUserRepositoryTest extends KernelTestCase
     {
         $newer = new CpgUser('older-of-the-stale-two', '');
         $newer->setEmail('newer-stale@example.com');
-        $newer->markInvited(new \DateTimeImmutable('-35 days'));
+        $newer->markInvited(new DateTimeImmutable('-35 days'));
         $this->em->persist($newer);
 
         $older = new CpgUser('newer-of-the-stale-two', '');
         $older->setEmail('older-stale@example.com');
-        $older->markInvited(new \DateTimeImmutable('-50 days'));
+        $older->markInvited(new DateTimeImmutable('-50 days'));
         $this->em->persist($older);
 
         $this->em->flush();
         $this->em->clear();
 
-        $found = $this->repository->findAwaitingPasswordSetupInvitedBefore(new \DateTimeImmutable('-30 days'));
+        $found = $this->repository->findAwaitingPasswordSetupInvitedBefore(new DateTimeImmutable('-30 days'));
 
         self::assertCount(2, $found);
         self::assertSame('newer-of-the-stale-two', $found[0]->getUsername());
         self::assertSame('older-of-the-stale-two', $found[1]->getUsername());
+    }
+
+    /**
+     * Issue #418 : le chargeur du fournisseur `cpg_users` (security.yaml).
+     * Un compte existant est rendu tel quel.
+     */
+    /**
+     * Issue #485 : l'invitation que la file a refusée est défaite par un
+     * DELETE ciblé, sans flush() global — l'appelant est un chemin d'échec,
+     * comme PasswordSetupTokenRepository::remove() (#425).
+     */
+    public function testRemovePendingInvitationDeletesTheAccountByItsIdentifier(): void
+    {
+        $user = new CpgUser('undispatched', '');
+        $user->setEmail('undispatched@example.com');
+        $user->markInvited(new DateTimeImmutable('2026-10-11T18:00:00+02:00'));
+        $this->repository->save($user);
+        $this->em->clear();
+
+        $this->repository->removePendingInvitation($user);
+
+        self::assertSame(0, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM cpg_user'));
+    }
+
+    /**
+     * Jamais un compte activé entre-temps : l'e-mail a pu partir malgré
+     * l'erreur (accusé du broker perdu, #479) et la personne définir son mot
+     * de passe ; le supprimer effacerait un compte vivant.
+     */
+    public function testRemovePendingInvitationSparesAnActivatedAccount(): void
+    {
+        $user = new CpgUser('activated-meanwhile', 'hashed-password');
+        $user->setEmail('activated@example.com');
+        $user->markInvited(new DateTimeImmutable('2026-10-11T18:00:00+02:00'));
+        $user->markActivated(new DateTimeImmutable('2026-10-11T18:01:00+02:00'));
+        $this->repository->save($user);
+
+        $this->repository->removePendingInvitation($user);
+
+        self::assertSame(1, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM cpg_user'));
+    }
+
+    public function testLoadUserByIdentifierReturnsTheAccount(): void
+    {
+        $this->em->persist(new CpgUser('jane', 'hashed-password'));
+        $this->em->flush();
+        $this->em->clear();
+
+        self::assertSame('jane', self::getContainer()->get(CpgUserRepository::class)->loadUserByIdentifier('jane')->getUsername());
+    }
+
+    /**
+     * Issue #418 : un identifiant inconnu — souvent un mot de passe tapé dans
+     * le mauvais champ — n'est pas recopié dans le message de l'exception.
+     * Le canal `security` de Symfony journalise ce message en `info`, donc en
+     * production ; celui du fournisseur `entity` de Doctrine était
+     * `User "<identifiant>" not found.`. L'identifiant reste porté par
+     * l'exception (`getUserIdentifier()`), que le formateur JSON n'écrit pas.
+     */
+    public function testAnUnknownIdentifierIsRefusedWithoutQuotingItInTheMessage(): void
+    {
+        try {
+            self::getContainer()->get(CpgUserRepository::class)->loadUserByIdentifier(TestCredentials::variant('typed-as-identifier'));
+            self::fail('Un identifiant inconnu doit lever UserNotFoundException.');
+        } catch (UserNotFoundException $exception) {
+            self::assertStringNotContainsStringIgnoringCase(TestCredentials::variant('typed-as-identifier'), $exception->getMessage());
+            self::assertSame(TestCredentials::variant('typed-as-identifier'), $exception->getUserIdentifier());
+        }
+    }
+
+    /**
+     * Relecture de #418 : un identifiant qui ne respecte pas
+     * CpgUser::USERNAME_PATTERN ne peut désigner aucun compte (le
+     * constructeur l'impose) ; il n'est donc pas cherché. Sans ce refus, un
+     * octet NUL coupait le paramètre côté PostgreSQL et `jane\0…` chargeait
+     * `jane` ; un octet hors UTF-8 faisait échouer la requête (500).
+     */
+    #[DataProvider('identifiersNoAccountCanHave')]
+    public function testAnIdentifierNoAccountCanHaveIsRefusedWithoutQuery(string $identifier): void
+    {
+        $this->em->persist(new CpgUser('jane', 'hashed-password'));
+        $this->em->flush();
+        $this->em->clear();
+
+        // Témoin positif : un identifiant valide est bien cherché, donc compté
+        // — sans lui, une journalisation SQL absente rendrait l'assertion
+        // finale vraie à vide.
+        $queriesBefore = $this->cpgUserQueries();
+        self::getContainer()->get(CpgUserRepository::class)->loadUserByIdentifier('jane');
+        self::assertSame($queriesBefore + 1, $this->cpgUserQueries(), 'La requête d\'un identifiant valide doit être vue.');
+        $queriesBefore = $this->cpgUserQueries();
+
+        try {
+            self::getContainer()->get(CpgUserRepository::class)->loadUserByIdentifier($identifier);
+            self::fail('Un identifiant hors motif doit lever UserNotFoundException.');
+        } catch (UserNotFoundException) {
+            self::assertSame($queriesBefore, $this->cpgUserQueries(), 'Refusé sans requête.');
+        }
+    }
+
+    /**
+     * Requêtes sur `cpg_user` journalisées jusqu'ici (canal `doctrine`,
+     * `debug`, sous `kernel.debug` comme en test).
+     */
+    private function cpgUserQueries(): int
+    {
+        return \count(array_filter(
+            self::allChannelsLogRecords(),
+            static fn (LogRecord $record): bool => 'doctrine' === $record->channel && str_contains($record->message, 'FROM cpg_user'),
+        ));
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function identifiersNoAccountCanHave(): iterable
+    {
+        yield 'coupé par un octet NUL' => ["jane\0suffix"];
+        yield 'octet hors UTF-8' => ["jane\xFF"];
+        yield 'fin de ligne' => ["jane\n"];
     }
 }

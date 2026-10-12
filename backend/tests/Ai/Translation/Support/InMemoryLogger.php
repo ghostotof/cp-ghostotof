@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Ai\Translation\Support;
 
 use Psr\Log\AbstractLogger;
+use Stringable;
 
 /**
  * Logger de test : conserve niveau, message et contexte de chaque entrée, pour
@@ -19,7 +20,7 @@ final class InMemoryLogger extends AbstractLogger
     /**
      * @param array<mixed> $context
      */
-    public function log($level, string|\Stringable $message, array $context = []): void
+    public function log($level, string|Stringable $message, array $context = []): void
     {
         $stringKeyed = [];
         foreach ($context as $key => $value) {

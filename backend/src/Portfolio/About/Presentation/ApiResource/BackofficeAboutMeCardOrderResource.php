@@ -9,6 +9,7 @@ use ApiPlatform\Metadata\Put;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\About\Infrastructure\ApiPlatform\BackofficeAboutMeCardOrderProcessor;
 use App\Portfolio\Shared\Presentation\ApiResource\CarriesOrderedKeys;
+use App\Shared\Presentation\ApiResource\InputContradictsValidationException;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -66,12 +67,12 @@ final readonly class BackofficeAboutMeCardOrderResource
     /**
      * La catégorie telle que la validation la garantit. `from()` et non
      * `fromString()` : la valeur est bornée en amont par `Assert\Choice`, une
-     * `\ValueError` ici serait un vrai défaut, pas une saisie (règle d'audit I3).
+     * {@see \ValueError} ici serait un vrai défaut, pas une saisie (règle d'audit I3).
      */
     public function validatedCategory(): AboutMeCardCategory
     {
         if (null === $this->category) {
-            throw new \LogicException('Une catégorie absente aurait dû être refusée par la validation.');
+            throw InputContradictsValidationException::missingCategory();
         }
 
         return AboutMeCardCategory::from($this->category);

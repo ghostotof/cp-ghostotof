@@ -7,6 +7,7 @@ namespace App\Shared\Infrastructure\ApiPlatform;
 use Symfony\Component\Serializer\Exception\ExtraAttributesException;
 use Symfony\Component\Serializer\Exception\MissingConstructorArgumentsException;
 use Symfony\Component\Serializer\Exception\UnexpectedValueException;
+use UnexpectedValueException as NativeUnexpectedValueException;
 
 /**
  * Le corps d'une requête adressée à une opération API Platform n'a pas pu être
@@ -20,14 +21,16 @@ use Symfony\Component\Serializer\Exception\UnexpectedValueException;
  * qui est un défaut du serveur. Une classe précise, elle, reçoit son propre
  * `log_level` (framework.yaml) sans rien entraîner d'autre.
  *
- * `\UnexpectedValueException` plutôt qu'`\InvalidArgumentException` : la SPL
+ * {@see NativeUnexpectedValueException} plutôt qu'{@see \InvalidArgumentException} : la SPL
  * range la seconde parmi les erreurs de programmation, alors qu'il s'agit ici
- * d'une donnée reçue à l'exécution.
+ * d'une donnée reçue à l'exécution. La classe native passe par l'alias
+ * NativeUnexpectedValueException parce que le nom court UnexpectedValueException
+ * est déjà celui du Serializer, que fromSerializerFailure() reçoit.
  *
  * Le message est fixe : celui du Serializer cite parfois la classe de la
  * ressource visée. La cause reste chaînée (getPrevious()) pour le journal.
  */
-final class MalformedRequestBodyException extends \UnexpectedValueException
+final class MalformedRequestBodyException extends NativeUnexpectedValueException
 {
     public static function fromSerializerFailure(UnexpectedValueException|ExtraAttributesException|MissingConstructorArgumentsException $failure): self
     {

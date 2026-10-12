@@ -1,0 +1,27 @@
+# Fixture de SendEmailMessageStaysSynchronousTest (issue #426) : chaque forme
+# de routage qui rendrait l'e-mail asynchrone, dans l'environnement où elle
+# se cache, à côté d'un routage commun qui ne le touche pas.
+framework:
+    messenger:
+        routing:
+            'App\Contact\Application\Message\SendContactMessageMessage': async
+
+when@dev:
+    framework:
+        messenger:
+            routing:
+                # Joker d'espace de noms.
+                'Symfony\Component\Mailer\*': async
+
+when@prod:
+    framework:
+        messenger:
+            routing:
+                'Symfony\Component\Mailer\Messenger\SendEmailMessage': async
+
+when@test:
+    framework:
+        messenger:
+            routing:
+                # Joker universel.
+                '*': async

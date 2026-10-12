@@ -4,17 +4,22 @@ declare(strict_types=1);
 
 namespace App\Tests\Ai\Translation\Presentation\ApiResource;
 
-use PHPUnit\Framework\Attributes\DataProvider;
+use App\Ai\Translation\Presentation\ApiResource\BackofficeTranslationResource;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Shared\Presentation\ApiResource\InputContradictsValidationException;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\ReadsAiUsageLog;
 use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\TestCredentials;
+use ArrayObject;
+use Closure;
 use Doctrine\ORM\EntityManagerInterface;
+use LogicException;
 use Monolog\Formatter\JsonFormatter;
 use Monolog\Level;
 use Monolog\LogRecord;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -52,6 +57,20 @@ final class BackofficeTranslationResourceTest extends WebTestCase
     {
         self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement('DELETE FROM cpg_user');
         parent::tearDown();
+    }
+
+    /**
+     * `validatedFields()` rend le dictionnaire tel que la validation le
+     * garantit. Une valeur non textuelle à ce stade est un défaut du pipeline
+     * (issue #338) : refusée sous un nom dédié, qui nomme le champ, plutôt que
+     * filtrée en silence. Le DTO est construit sans passer par le validateur.
+     */
+    public function testANonTextualFieldContradictsTheValidationAndIsNamed(): void
+    {
+        $this->expectException(InputContradictsValidationException::class);
+        $this->expectExceptionMessage('"summary"');
+
+        new BackofficeTranslationResource(sourceLocale: 'fr', targetLocale: 'en', fields: ['title' => 'Bonjour', 'summary' => ['imbriqué']])->validatedFields();
     }
 
     public function testAnonymousRequestIsRejected(): void
@@ -180,6 +199,8 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         yield 'nom de champ invalide' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['root-cause' => 'x']]];
         yield 'nom de champ commençant par un chiffre' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['1title' => 'x']]];
         yield 'nom de champ trop long' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => [str_repeat('a', 41) => 'x']]];
+        // Régression #409 : un `$` final acceptait la position avant un `\n` final.
+        yield 'nom de champ terminé par un saut de ligne' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ["title\n" => 'x']]];
         yield 'valeur vide' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['title' => '   ']]];
         // Issue #159 : jamais un 500, quelle que soit la forme de la valeur.
         yield 'valeur non textuelle : liste' => [['sourceLocale' => 'fr', 'targetLocale' => 'en', 'fields' => ['title' => ['x']]]];
@@ -200,7 +221,7 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         $client = $this->superClient();
         $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
         $client->getContainer()->set(self::AI_HTTP_CLIENT_INNER, new MockHttpClient(
-            static fn (): never => throw new \LogicException('Aucun appel au fournisseur ne doit partir sur une requête invalide.'),
+            static fn (): never => throw new LogicException('Aucun appel au fournisseur ne doit partir sur une requête invalide.'),
         ));
 
         $this->post($client, $csrfToken, $payload);
@@ -329,12 +350,22 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(429);
         self::assertResponseHasHeader('Retry-After');
         self::assertGreaterThan(0, (int) $client->getResponse()->headers->get('Retry-After'));
+        // Issue #369 : le `type` de tout refus de débit, nginx compris — pas
+        // le `/errors/429` qu'API Platform déduirait du seul statut.
+        $problem = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($problem);
+        self::assertSame('/errors/rate-limited', $problem['type'] ?? null);
         // Issue #356 : le refus est tracé sur le canal qui sort des pods de
         // production, avec le compte — la boucle d'un compte ROLE_SUPER
         // compromis se voit.
         $refusals = self::aiUsageRecordsWithOutcome('rate-limited');
         self::assertCount(1, $refusals);
-        self::assertSame(self::SUPER_USERNAME, $refusals[0]->context['account'] ?? null);
+        // Le compte par son UUID, jamais son identifiant (issue #363).
+        $accountId = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->fetchOne('SELECT id FROM cpg_user WHERE username = :username', ['username' => self::SUPER_USERNAME]);
+        self::assertIsString($accountId);
+        self::assertSame($accountId, $refusals[0]->context['userId'] ?? null);
+        self::assertArrayNotHasKey('account', $refusals[0]->context);
         self::assertIsString($refusals[0]->context['retryAfter'] ?? null);
     }
 
@@ -446,12 +477,12 @@ final class BackofficeTranslationResourceTest extends WebTestCase
      * Remplace le client HTTP du bridge et capture la requête sortante
      * (corps décodé, clé d'API) pour l'inspecter après coup.
      *
-     * @return \ArrayObject<string, mixed>
+     * @return ArrayObject<string, mixed>
      */
-    private function stubAnthropic(KernelBrowser $client, MockResponse $response): \ArrayObject
+    private function stubAnthropic(KernelBrowser $client, MockResponse $response): ArrayObject
     {
-        /** @var \ArrayObject<string, mixed> $captured */
-        $captured = new \ArrayObject();
+        /** @var ArrayObject<string, mixed> $captured */
+        $captured = new ArrayObject();
         $client->getContainer()->set(self::AI_HTTP_CLIENT_INNER, new MockHttpClient(
             static function (string $method, string $url, array $options) use ($captured, $response): MockResponse {
                 $captured['method'] = $method;
@@ -475,9 +506,9 @@ final class BackofficeTranslationResourceTest extends WebTestCase
      * Comme stubAnthropic(), mais rend une réponse neuve à chaque appel — un
      * MockResponse ne se consomme qu'une fois.
      *
-     * @param \Closure(): MockResponse $factory
+     * @param Closure():MockResponse $factory
      */
-    private function stubAnthropicRepeatedly(KernelBrowser $client, \Closure $factory): void
+    private function stubAnthropicRepeatedly(KernelBrowser $client, Closure $factory): void
     {
         $client->getContainer()->set(self::AI_HTTP_CLIENT_INNER, new MockHttpClient(
             static fn (): MockResponse => $factory(),

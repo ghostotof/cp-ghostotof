@@ -79,7 +79,7 @@ final class ItemRouteRequirementTest extends KernelTestCase
             self::assertSame(
                 Requirement::UUID,
                 $route->getRequirement('id'),
-                sprintf(
+                \sprintf(
                     'La route "%s" (%s) porte un paramètre {id} sans requirements UUID : un id malformé '
                     .'atteindrait Uuid::fromString() (500) au lieu d\'être un 404 du routeur. Ajoute '
                     ."requirements: ['id' => Requirement::UUID] à cette opération, ou inscris ce chemin "
@@ -105,7 +105,7 @@ final class ItemRouteRequirementTest extends KernelTestCase
             self::assertStringStartsNotWith(
                 '/api/backoffice',
                 $path,
-                sprintf('"%s" est une route de backoffice : elle ne peut jamais être exemptée du requirement UUID.', $path),
+                \sprintf('"%s" est une route de backoffice : elle ne peut jamais être exemptée du requirement UUID.', $path),
             );
         }
     }
@@ -128,7 +128,7 @@ final class ItemRouteRequirementTest extends KernelTestCase
             self::assertArrayHasKey(
                 $path,
                 $declaredPaths,
-                sprintf('NO_UUID_REQUIREMENT_PATHS déclare "%s", qui n\'existe plus dans le routeur.', $path),
+                \sprintf('NO_UUID_REQUIREMENT_PATHS déclare "%s", qui n\'existe plus dans le routeur.', $path),
             );
         }
     }

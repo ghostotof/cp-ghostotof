@@ -6,9 +6,10 @@ namespace App\Tests\Portfolio\Watch\Presentation\Command;
 
 use App\Portfolio\Watch\Application\ReleaseCyclesRefreshReport;
 use App\Portfolio\Watch\Application\VulnerabilityRefreshReport;
-use App\Portfolio\Watch\Application\WatchRefreshReport;
 use App\Portfolio\Watch\Application\WatchRefresherInterface;
+use App\Portfolio\Watch\Application\WatchRefreshReport;
 use App\Portfolio\Watch\Presentation\Command\RefreshWatchCommand;
+use DateTimeImmutable;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Command\Command;
@@ -120,7 +121,7 @@ final class RefreshWatchCommandTest extends TestCase
     {
         $seenDryRun = null;
         $this->refresher->method('refresh')->willReturnCallback(
-            function (\DateTimeImmutable $now, bool $dryRun) use (&$seenDryRun): WatchRefreshReport {
+            function (DateTimeImmutable $now, bool $dryRun) use (&$seenDryRun): WatchRefreshReport {
                 $seenDryRun = $dryRun;
 
                 return new WatchRefreshReport(

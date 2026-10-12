@@ -10,12 +10,16 @@ use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\Authentication\Infrastructure\Log\ThrottledRequestAuditListener;
 use App\Security\User\Domain\Exception\BaseAccessRateLimitExceededException;
 use App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException;
+use DateTimeImmutable;
+use DomainException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use ReflectionClass;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
+use Throwable;
 
 /**
  * Issue #356 : l'écouteur ne fait que trier — quelle exception de quota
@@ -26,11 +30,11 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
 final class ThrottledRequestAuditListenerTest extends TestCase
 {
     /**
-     * @return iterable<string, array{\Throwable, string}>
+     * @return iterable<string, array{Throwable, string}>
      */
     public static function anonymousQuotaRefusals(): iterable
     {
-        $retryAfter = new \DateTimeImmutable('+1 hour');
+        $retryAfter = new DateTimeImmutable('+1 hour');
 
         yield 'définition de mot de passe' => [new PasswordSetupRateLimitExceededException($retryAfter), 'passwordSetupThrottled'];
         yield 'formulaire de contact' => [new ContactRateLimitExceededException($retryAfter), 'contactThrottled'];
@@ -38,7 +42,7 @@ final class ThrottledRequestAuditListenerTest extends TestCase
     }
 
     #[DataProvider('anonymousQuotaRefusals')]
-    public function testEachAnonymousQuotaRefusalHasItsOwnEvent(\Throwable $refusal, string $expectedMethod): void
+    public function testEachAnonymousQuotaRefusalHasItsOwnEvent(Throwable $refusal, string $expectedMethod): void
     {
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
         foreach (['passwordSetupThrottled', 'contactThrottled', 'baseAccessThrottled'] as $method) {
@@ -57,7 +61,7 @@ final class ThrottledRequestAuditListenerTest extends TestCase
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
         $auditLogger->expects(self::never())->method(self::anything());
 
-        (new ThrottledRequestAuditListener($auditLogger))($this->exceptionEvent(new TranslationRateLimitExceededException(new \DateTimeImmutable('+1 hour'))));
+        (new ThrottledRequestAuditListener($auditLogger))($this->exceptionEvent(new TranslationRateLimitExceededException(new DateTimeImmutable('+1 hour'))));
     }
 
     public function testAnyOtherExceptionIsIgnored(): void
@@ -65,7 +69,7 @@ final class ThrottledRequestAuditListenerTest extends TestCase
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
         $auditLogger->expects(self::never())->method(self::anything());
 
-        (new ThrottledRequestAuditListener($auditLogger))($this->exceptionEvent(new \DomainException('Autre chose.')));
+        (new ThrottledRequestAuditListener($auditLogger))($this->exceptionEvent(new DomainException('Autre chose.')));
     }
 
     public function testASubRequestIsIgnored(): void
@@ -74,7 +78,7 @@ final class ThrottledRequestAuditListenerTest extends TestCase
         $auditLogger->expects(self::never())->method(self::anything());
 
         (new ThrottledRequestAuditListener($auditLogger))($this->exceptionEvent(
-            new ContactRateLimitExceededException(new \DateTimeImmutable('+1 hour')),
+            new ContactRateLimitExceededException(new DateTimeImmutable('+1 hour')),
             HttpKernelInterface::SUB_REQUEST,
         ));
     }
@@ -86,7 +90,7 @@ final class ThrottledRequestAuditListenerTest extends TestCase
      */
     public function testItListensToKernelExceptionAbovePropagationStoppers(): void
     {
-        $attributes = new \ReflectionClass(ThrottledRequestAuditListener::class)->getAttributes(AsEventListener::class);
+        $attributes = new ReflectionClass(ThrottledRequestAuditListener::class)->getAttributes(AsEventListener::class);
 
         self::assertCount(1, $attributes);
         $listener = $attributes[0]->newInstance();
@@ -94,7 +98,7 @@ final class ThrottledRequestAuditListenerTest extends TestCase
         self::assertSame(0, $listener->priority);
     }
 
-    private function exceptionEvent(\Throwable $throwable, int $requestType = HttpKernelInterface::MAIN_REQUEST): ExceptionEvent
+    private function exceptionEvent(Throwable $throwable, int $requestType = HttpKernelInterface::MAIN_REQUEST): ExceptionEvent
     {
         return new ExceptionEvent(
             self::createStub(HttpKernelInterface::class),

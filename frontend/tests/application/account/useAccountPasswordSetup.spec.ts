@@ -57,35 +57,35 @@ describe('useAccountPasswordSetup', () => {
     expect(composable.errorReason.value).toBeNull()
   })
 
-  it('validate() : 404 -> invalid', async () => {
+  it('validate() : lien inutilisable (404) -> unusable', async () => {
     const composable = mountWithComposable(
-      createStubRepository({ validateSetupToken: vi.fn(async () => Promise.reject(new PasswordSetupLinkError('invalid', 'x'))) }),
+      createStubRepository({ validateSetupToken: vi.fn(async () => Promise.reject(new PasswordSetupLinkError('unusable', 'x'))) }),
     )
 
     await composable.validate('token')
 
-    expect(composable.state.value).toBe('invalid')
+    expect(composable.state.value).toBe('unusable')
   })
 
-  it("validate() : jeton vide -> invalid, sans aucun appel au backend (rien à vérifier, et le quota par IP n'est pas entamé)", async () => {
+  it("validate() : jeton vide -> incomplete, sans aucun appel au backend (rien à vérifier, et le quota par IP n'est pas entamé)", async () => {
     const repository = createStubRepository()
     const composable = mountWithComposable(repository)
 
     await composable.validate('')
 
-    expect(composable.state.value).toBe('invalid')
-    expect(composable.errorReason.value).toBe('invalid')
+    expect(composable.state.value).toBe('incomplete')
+    expect(composable.errorReason.value).toBe('incomplete')
     expect(repository.validateSetupToken).not.toHaveBeenCalled()
   })
 
-  it('validate() : 410 -> expired', async () => {
+  it('validate() : jeton refusé à la vérification de forme (422) -> incomplete', async () => {
     const composable = mountWithComposable(
-      createStubRepository({ validateSetupToken: vi.fn(async () => Promise.reject(new PasswordSetupLinkError('expired', 'x'))) }),
+      createStubRepository({ validateSetupToken: vi.fn(async () => Promise.reject(new PasswordSetupLinkError('incomplete', 'x'))) }),
     )
 
     await composable.validate('token')
 
-    expect(composable.state.value).toBe('expired')
+    expect(composable.state.value).toBe('incomplete')
   })
 
   it('validate() : rate-limited -> error avec errorReason', async () => {
@@ -120,14 +120,14 @@ describe('useAccountPasswordSetup', () => {
     expect(composable.errorReason.value).toBe('weak-password')
   })
 
-  it('submit() : jeton consommé entre-temps (410) -> expired', async () => {
+  it('submit() : lien devenu inutilisable entre-temps (404) -> unusable', async () => {
     const composable = mountWithComposable(
-      createStubRepository({ completePasswordSetup: vi.fn(async () => Promise.reject(new PasswordSetupLinkError('expired', 'x'))) }),
+      createStubRepository({ completePasswordSetup: vi.fn(async () => Promise.reject(new PasswordSetupLinkError('unusable', 'x'))) }),
     )
     await composable.validate('token')
 
     await composable.submit('token', 'NewSecurePass1')
 
-    expect(composable.state.value).toBe('expired')
+    expect(composable.state.value).toBe('unusable')
   })
 })

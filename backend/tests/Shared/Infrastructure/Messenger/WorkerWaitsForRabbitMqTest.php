@@ -78,7 +78,7 @@ final class WorkerWaitsForRabbitMqTest extends TestCase
             }
         }
 
-        self::fail(sprintf('initContainer « %s » absent du worker.', self::INIT_CONTAINER));
+        self::fail(\sprintf('initContainer « %s » absent du worker.', self::INIT_CONTAINER));
     }
 
     /**

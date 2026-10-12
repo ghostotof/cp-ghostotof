@@ -5,13 +5,18 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Application;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
+use App\Security\User\Application\AccountLockInterface;
 use App\Security\User\Application\CpgUserAdministrator;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CannotDeleteOwnAccountException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Tests\Support\TestCredentials;
+use Closure;
+use DateTimeImmutable;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
@@ -34,7 +39,7 @@ final class CpgUserAdministratorTest extends TestCase
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
         $auditLogger->expects(self::once())->method('userDeleted')->with($targetUser);
 
-        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class), $auditLogger);
+        $administrator = $this->administrator($repository, self::createStub(UserPasswordHasherInterface::class), $auditLogger);
 
         $administrator->delete($targetUser->getId(), $actingUser);
     }
@@ -49,7 +54,7 @@ final class CpgUserAdministratorTest extends TestCase
         $repository->expects(self::once())->method('countByRole')->with(CpgUser::ROLE_SUPER)->willReturn(1);
         $repository->expects(self::never())->method('remove');
 
-        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class), $this->auditLoggerExpectingNothing());
+        $administrator = $this->administrator($repository, self::createStub(UserPasswordHasherInterface::class), $this->auditLoggerExpectingNothing());
 
         $this->expectException(CannotDeleteLastSuperAdminException::class);
 
@@ -69,7 +74,7 @@ final class CpgUserAdministratorTest extends TestCase
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
         $auditLogger->expects(self::once())->method('userDeleted')->with($targetUser);
 
-        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class), $auditLogger);
+        $administrator = $this->administrator($repository, self::createStub(UserPasswordHasherInterface::class), $auditLogger);
 
         $administrator->delete($targetUser->getId(), $actingUser);
     }
@@ -90,7 +95,7 @@ final class CpgUserAdministratorTest extends TestCase
         $repository->expects(self::never())->method('findOneById');
         $repository->expects(self::never())->method('remove');
 
-        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class), $this->auditLoggerExpectingNothing());
+        $administrator = $this->administrator($repository, self::createStub(UserPasswordHasherInterface::class), $this->auditLoggerExpectingNothing());
 
         $this->expectException(CannotDeleteOwnAccountException::class);
 
@@ -104,7 +109,7 @@ final class CpgUserAdministratorTest extends TestCase
         $repository = self::createStub(CpgUserRepositoryInterface::class);
         $repository->method('findOneById')->willReturn(null);
 
-        $administrator = new CpgUserAdministrator($repository, self::createStub(UserPasswordHasherInterface::class), $this->auditLoggerExpectingNothing());
+        $administrator = $this->administrator($repository, self::createStub(UserPasswordHasherInterface::class), $this->auditLoggerExpectingNothing());
 
         $this->expectException(CpgUserNotFoundException::class);
 
@@ -128,7 +133,7 @@ final class CpgUserAdministratorTest extends TestCase
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
         $auditLogger->expects(self::once())->method('passwordChanged')->with($user);
 
-        $administrator = new CpgUserAdministrator($repository, $hasher, $auditLogger);
+        $administrator = $this->administrator($repository, $hasher, $auditLogger);
 
         $administrator->changePassword($user->getId(), TestCredentials::variant('new'));
 
@@ -142,11 +147,85 @@ final class CpgUserAdministratorTest extends TestCase
 
         $hasher = self::createStub(UserPasswordHasherInterface::class);
 
-        $administrator = new CpgUserAdministrator($repository, $hasher, $this->auditLoggerExpectingNothing());
+        $administrator = $this->administrator($repository, $hasher, $this->auditLoggerExpectingNothing());
 
         $this->expectException(CpgUserNotFoundException::class);
 
         $administrator->changePassword(Uuid::v7(), TestCredentials::variant('new'));
+    }
+
+    /**
+     * Issue #460 (décision du 2026-10-11) : un mot de passe posé par l'admin
+     * sur un compte encore en attente d'activation fait foi, le lien
+     * d'invitation en circulation meurt — c'est le cas utile quand le lien est
+     * douteux (e-mail transféré, boîte compromise).
+     */
+    public function testAPasswordSetOnAPendingAccountRevokesItsInvitationLinks(): void
+    {
+        $user = new CpgUser('newcomer', '');
+        $user->markInvited(new DateTimeImmutable('2026-10-01 10:00:00'));
+        $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->expects(self::once())->method('deleteUnusedForUser')->with($user);
+
+        $this->administrator($this->repositoryFinding($user), $this->hasher(), self::createStub(SecurityAuditLoggerInterface::class), $tokenRepository)
+            ->changePassword($user->getId(), TestCredentials::variant('new'));
+    }
+
+    /**
+     * @return iterable<string, array{CpgUser}>
+     */
+    public static function accountsWithoutPendingInvitation(): iterable
+    {
+        $active = new CpgUser('active', 'hashed-password');
+        $active->markInvited(new DateTimeImmutable('2026-10-01 10:00:00'));
+        $active->markActivated(new DateTimeImmutable('2026-10-02 10:00:00'));
+
+        yield 'compte activé' => [$active];
+        yield 'compte créé en ligne de commande' => [new CpgUser('console', 'hashed-password')];
+    }
+
+    #[DataProvider('accountsWithoutPendingInvitation')]
+    public function testAPasswordSetOnAnAccountWithoutPendingInvitationRevokesNothing(CpgUser $user): void
+    {
+        $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->expects(self::never())->method('deleteUnusedForUser');
+
+        $this->administrator($this->repositoryFinding($user), $this->hasher(), self::createStub(SecurityAuditLoggerInterface::class), $tokenRepository)
+            ->changePassword($user->getId(), TestCredentials::variant('new'));
+    }
+
+    private function repositoryFinding(CpgUser $user): CpgUserRepositoryInterface
+    {
+        $repository = self::createStub(CpgUserRepositoryInterface::class);
+        $repository->method('findOneById')->willReturn($user);
+
+        return $repository;
+    }
+
+    private function hasher(): UserPasswordHasherInterface
+    {
+        $hasher = self::createStub(UserPasswordHasherInterface::class);
+        $hasher->method('hashPassword')->willReturn('new-hashed-password');
+
+        return $hasher;
+    }
+
+    /**
+     * Le verrou du compte exécute l'opération telle quelle ; le verrou réel
+     * est couvert par PostgresAccountRowLockTest et les tests de concurrence.
+     */
+    private function administrator(
+        CpgUserRepositoryInterface $repository,
+        UserPasswordHasherInterface $hasher,
+        SecurityAuditLoggerInterface $auditLogger,
+        ?PasswordSetupTokenRepositoryInterface $tokenRepository = null,
+    ): CpgUserAdministrator {
+        $accountLock = self::createStub(AccountLockInterface::class);
+        $accountLock->method('whileLocked')->willReturnCallback(
+            static fn (CpgUser $user, Closure $operation): mixed => $operation($user),
+        );
+
+        return new CpgUserAdministrator($repository, $hasher, $auditLogger, $tokenRepository ?? self::createStub(PasswordSetupTokenRepositoryInterface::class), $accountLock);
     }
 
     /**

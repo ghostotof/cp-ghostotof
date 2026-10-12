@@ -26,6 +26,8 @@ use App\Portfolio\Watch\Domain\ValueObject\ReleaseCycle;
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotSourceStatus;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
+use DateTimeImmutable;
+use LogicException;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
@@ -75,9 +77,9 @@ final class WatchRefresherTest extends TestCase
         );
     }
 
-    private function now(): \DateTimeImmutable
+    private function now(): DateTimeImmutable
     {
-        return new \DateTimeImmutable(self::NOW);
+        return new DateTimeImmutable(self::NOW);
     }
 
     private function phpCycles(): ProductReleaseCycles
@@ -87,9 +89,9 @@ final class WatchRefresherTest extends TestCase
                 '8.5',
                 true,
                 false,
-                new \DateTimeImmutable('2027-12-31'),
+                new DateTimeImmutable('2027-12-31'),
                 false,
-                new \DateTimeImmutable('2029-12-31'),
+                new DateTimeImmutable('2029-12-31'),
                 '8.5.10',
             ),
         ]);
@@ -109,7 +111,7 @@ final class WatchRefresherTest extends TestCase
     private function givenManifest(array $packages): void
     {
         $this->packageManifestReader->method('read')->willReturn(
-            new PackageManifest(new \DateTimeImmutable('2026-09-01 00:00:00'), $packages),
+            new PackageManifest(new DateTimeImmutable('2026-09-01 00:00:00'), $packages),
         );
     }
 
@@ -170,7 +172,7 @@ final class WatchRefresherTest extends TestCase
             fn (string $slug): ProductReleaseCycles => 'php' === $slug
                 ? $this->phpCycles()
                 : new ProductReleaseCycles('postgresql', 'PostgreSQL', null, [
-                    new ReleaseCycle('18', true, false, null, false, new \DateTimeImmutable('2030-11-14'), '18.5'),
+                    new ReleaseCycle('18', true, false, null, false, new DateTimeImmutable('2030-11-14'), '18.5'),
                 ]),
         );
 
@@ -340,7 +342,7 @@ final class WatchRefresherTest extends TestCase
         $existing = new WatchSnapshot(
             WatchSnapshotType::RELEASE_CYCLES,
             ['products' => [['slug' => 'obsolete']]],
-            new \DateTimeImmutable('2026-09-01 00:00:00'),
+            new DateTimeImmutable('2026-09-01 00:00:00'),
             SnapshotSourceStatus::OK,
         );
 
@@ -375,7 +377,7 @@ final class WatchRefresherTest extends TestCase
         $this->givenProducts([]);
         $this->packageManifestReader->method('read')->willReturn(null);
         $this->vulnerabilitySource->method('findVulnerabilities')->willReturnCallback(
-            static fn (): never => throw new \LogicException('La base ne doit pas être interrogée sans périmètre.'),
+            static fn (): never => throw new LogicException('La base ne doit pas être interrogée sans périmètre.'),
         );
 
         // Rien à écrire d'aucun côté : ni cycles de vie (aucun produit suivi),

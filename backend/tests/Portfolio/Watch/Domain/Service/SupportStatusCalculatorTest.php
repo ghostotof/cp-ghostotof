@@ -7,6 +7,7 @@ namespace App\Tests\Portfolio\Watch\Domain\Service;
 use App\Portfolio\Watch\Domain\Service\SupportStatusCalculator;
 use App\Portfolio\Watch\Domain\ValueObject\ReleaseCycle;
 use App\Portfolio\Watch\Domain\ValueObject\SupportStatus;
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 
 final class SupportStatusCalculatorTest extends TestCase
@@ -31,16 +32,16 @@ final class SupportStatusCalculatorTest extends TestCase
             '8.5',
             $isMaintained,
             $isEndOfActiveSupport,
-            null !== $endOfActiveSupportFrom ? new \DateTimeImmutable($endOfActiveSupportFrom) : null,
+            null !== $endOfActiveSupportFrom ? new DateTimeImmutable($endOfActiveSupportFrom) : null,
             $isEol,
-            null !== $eolFrom ? new \DateTimeImmutable($eolFrom) : null,
+            null !== $eolFrom ? new DateTimeImmutable($eolFrom) : null,
             '8.5.10',
         );
     }
 
     private function statusOf(?ReleaseCycle $cycle): SupportStatus
     {
-        return $this->calculator->statusFor($cycle, new \DateTimeImmutable(self::TODAY));
+        return $this->calculator->statusFor($cycle, new DateTimeImmutable(self::TODAY));
     }
 
     /**

@@ -24,7 +24,7 @@ final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministrato
     {
         // equals() et non === : cf. CpgUserAdministrator::delete().
         if ($id->equals($actingUser->getId())) {
-            throw CannotModifyOwnRolesException::forUsername($actingUser->getUsername());
+            throw CannotModifyOwnRolesException::forActingAccount();
         }
 
         $user = $this->cpgUserRepository->findOneById($id);
@@ -44,7 +44,7 @@ final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministrato
         // Garde anti-lockout (pendant de CpgUserAdministrator::delete) : `<= 1`
         // par prudence, jamais 0 ici puisque $user en fait partie.
         if (!$grant && $this->cpgUserRepository->countByRole(CpgUser::ROLE_SUPER) <= 1) {
-            throw CannotDemoteLastSuperAdminException::forUsername($user->getUsername());
+            throw CannotDemoteLastSuperAdminException::lastOne();
         }
 
         $user->setRoles($grant ? [CpgUser::ROLE_SUPER] : $this->rolesAfterDemotion($user));

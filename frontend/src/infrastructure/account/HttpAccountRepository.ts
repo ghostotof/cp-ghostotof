@@ -24,8 +24,8 @@ export class HttpAccountRepository implements AccountRepository {
 
     if (!response.ok) {
       // Ici le backend ne valide que le jeton (absent, vide, trop long) : un
-      // 422 désigne donc un lien corrompu, pas un mot de passe refusé.
-      throw this.toError(response.status, 'invalid')
+      // 422 désigne donc un lien abîmé, pas un mot de passe refusé.
+      throw this.toError(response.status, 'incomplete')
     }
   }
 
@@ -50,17 +50,17 @@ export class HttpAccountRepository implements AccountRepository {
   /**
    * @param unprocessableReason sens d'un 422, qui dépend de l'endpoint appelé
    */
-  private toError(status: number, unprocessableReason: 'invalid' | 'weak-password'): PasswordSetupLinkError {
-    if (404 === status) {
-      return new PasswordSetupLinkError('invalid', 'Invalid password setup link')
-    }
-    if (410 === status) {
-      return new PasswordSetupLinkError('expired', 'Password setup link expired or already used')
+  private toError(status: number, unprocessableReason: 'incomplete' | 'weak-password'): PasswordSetupLinkError {
+    // Un seul refus pour tout lien inutilisable (issue #362). Le 410 reste lu
+    // de même : c'est ce que répond un backend d'avant #362, le temps d'un
+    // déploiement ou après un rollback.
+    if (404 === status || 410 === status) {
+      return new PasswordSetupLinkError('unusable', 'Password setup link is not or no longer valid')
     }
     if (422 === status) {
       return new PasswordSetupLinkError(
         unprocessableReason,
-        'invalid' === unprocessableReason ? 'Malformed password setup link' : 'The password was rejected',
+        'incomplete' === unprocessableReason ? 'Malformed password setup link' : 'The password was rejected',
       )
     }
     if (429 === status) {

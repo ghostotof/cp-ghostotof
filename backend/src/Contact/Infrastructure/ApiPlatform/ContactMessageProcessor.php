@@ -16,7 +16,7 @@ use Symfony\Component\HttpFoundation\Request;
  * Relie ContactMessageResource (Presentation) à l'Application : seule cette
  * classe Infrastructure a le droit de connaître à la fois la ressource API
  * Platform et le use case applicatif, sur le même modèle que
- * App\Portfolio\Experience\Infrastructure\ApiPlatform\ExperienceTechnologyProvider.
+ * {@see \App\Portfolio\Experience\Infrastructure\ApiPlatform\ExperienceTechnologyProvider}.
  *
  * @implements ProcessorInterface<ContactMessageResource, ContactMessageResource>
  */

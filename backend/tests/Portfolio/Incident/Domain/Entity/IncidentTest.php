@@ -6,6 +6,7 @@ namespace App\Tests\Portfolio\Incident\Domain\Entity;
 
 use App\Portfolio\Incident\Domain\Entity\Incident;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
@@ -18,7 +19,7 @@ final class IncidentTest extends TestCase
             Locale::FR,
             'RabbitMQ en CrashLoopBackOff',
             'v0.5.0',
-            new \DateTimeImmutable('2026-09-03'),
+            new DateTimeImmutable('2026-09-03'),
             'Formulaire de contact en 500 pendant quinze minutes.',
             'Le cookie Erlang est devenu accessible au groupe.',
             'Correction du mode du fichier, hotfix v0.5.1.',
@@ -82,7 +83,7 @@ final class IncidentTest extends TestCase
         $incident->update(
             'Nouveau titre',
             'v0.6.0',
-            new \DateTimeImmutable('2026-09-10'),
+            new DateTimeImmutable('2026-09-10'),
             'Nouvel impact.',
             'Nouvelle cause.',
             'Nouvelle résolution.',
@@ -131,7 +132,7 @@ final class IncidentTest extends TestCase
             Locale::EN,
             'RabbitMQ in CrashLoopBackOff',
             'v0.5.0',
-            new \DateTimeImmutable('2026-09-03'),
+            new DateTimeImmutable('2026-09-03'),
             'Contact form returning 500 for fifteen minutes.',
             'The Erlang cookie became group-readable.',
             'File mode fixed, hotfix v0.5.1.',

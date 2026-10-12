@@ -61,7 +61,7 @@ jobs:
   # ---------------------------------------------------------------------------
   test-backend:
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # habituel ~80 s
+    timeout-minutes: 15 # habituel ~2 min, démarrage de RabbitMQ compris (#479)
     services:
       database:
         image: postgres:18.4-alpine
@@ -84,6 +84,12 @@ jobs:
           php-version: '8.5'
           extensions: intl, pdo_pgsql, zip, sockets, amqp-2.2.0
           coverage: none
+          # Le fuseau des images (docker/php/php.*.ini) : setup-php tourne
+          # sinon en UTC, et la base, réglée sur Europe/Paris par la
+          # migration Version20261011120000, ne lirait plus les heures sans
+          # décalage dans le fuseau de PHP (issue #434,
+          # TimestampColumnsCarryTheirOffsetTest).
+          ini-values: date.timezone=Europe/Paris
       - name: pdftotext (extraction du CV nominatif, spec 0005 D7)
         # L'image l'installe dans son étape `base` (poppler-utils) ; le test de
         # l'extracteur appelle le vrai binaire sur un PDF de fixture. Borne
@@ -125,8 +131,18 @@ jobs:
         run: |
           php bin/console doctrine:database:create --if-not-exists
           php bin/console doctrine:migrations:migrate --no-interaction
+      # Issue #479 : AmqpPublisherConfirmsIntegrationTest publie contre un vrai
+      # RabbitMQ, avec k8s/base/rabbitmq.conf (max_message_size, #477). Pas un
+      # `services:` : il ne peut pas monter un fichier du dépôt, absent avant le
+      # checkout. Le démarrage est celui du job `rabbitmq-conf`, broker gardé.
+      - name: Démarre RabbitMQ (intégration des confirmations, #479)
+        timeout-minutes: 5
+        run: RABBITMQ_CONF_KEEP=1 make rabbitmq-conf
       - name: PHPUnit
         working-directory: backend
+        env:
+          # `guest` est admis hors loopback par le 10-defaults.conf de l'image.
+          RABBITMQ_INTEGRATION_DSN: 'amqp://guest:guest@localhost:5672/%2f'
         run: php bin/phpunit --log-junit "$RUNNER_TEMP/junit.xml"
       # Carte de synthèse sur la page du run, dans l'esprit de celle que Vitest
       # écrit lui-même (reporter github-actions intégré) : PHPUnit n'en produit
@@ -380,17 +396,22 @@ jobs:
           tools/tests/smoke-login-throttling.test.sh
           tools/tests/rotate-deployer-token.test.sh
           tools/tests/wait-external-secrets.test.sh
+          tools/tests/wait-rollout.test.sh
+          tools/tests/run-job.test.sh
+          tools/tests/smoke-messenger-probe.test.sh
           tools/tests/security-headers.test.sh
           tools/tests/check-workflow-timeouts.test.sh
           tools/tests/git-config-isolation.test.sh
           tools/tests/install-symfony-language-tools.test.sh
+          tools/tests/php-cs-fixer.test.sh
+          tools/tests/dev-env-secrets.test.sh
           tools/tests/summary-language-tools.test.sh
           tools/tests/check-claude-rules.test.sh
       # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.
       - name: shellcheck (préinstallé sur le runner)
-        run: shellcheck -x --severity=warning tools/*.sh tools/lib/*.sh tools/tests/*.sh tools/tests/lib/*.sh docker/php/install-symfony-language-tools.sh .github/scripts/summary-language-tools.sh
+        run: shellcheck -x --severity=warning tools/*.sh tools/lib/*.sh tools/tests/*.sh tools/tests/lib/*.sh docker/php/install-symfony-language-tools.sh docker/php/dev-env-secrets.sh docker/php/php-cs-fixer.sh .github/scripts/summary-language-tools.sh
       # Image officielle, figée sur le digest de son index multi-arch (v1.7.12).
       # Elle embarque shellcheck et pyflakes, donc les `run:` de ce fichier sont
       # analysés aussi.
@@ -436,6 +457,17 @@ jobs:
       - name: 429 problem+json sur chaque zone nginx, deux confs
         run: make back-nginx-rate-limits
 
+  # Issue #477 : rabbitmq.conf peut empêcher le broker de démarrer, et rien ne
+  # ramène `rabbitmq` en cas d'échec en préprod. L'image épinglée démarre ici
+  # avec le fichier, avant toute release.
+  rabbitmq-conf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10 # habituel ~40 s, pull de l'image rabbitmq compris
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: RabbitMQ démarre avec rabbitmq.conf et applique son plafond
+        run: make rabbitmq-conf
+
   # ---------------------------------------------------------------------------
   # Phase 2 — sur `release/**` seulement (spec 0006, D2/D3/D6)
   # ---------------------------------------------------------------------------
@@ -446,7 +478,7 @@ jobs:
   # qui nomme les trois valeurs — on renomme la branche, on ne « corrige » pas
   # la CI. Ses sorties nomment les images de tout le reste de la phase.
   release-version:
-    needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests, frontend-image-headers, backend-nginx-rate-limits]
+    needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests, frontend-image-headers, backend-nginx-rate-limits, rabbitmq-conf]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
     timeout-minutes: 5 # habituel ~6 s
@@ -596,7 +628,7 @@ jobs:
     needs: [release-version, build-images]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
-    timeout-minutes: 45 # attentes kubectl cumulées ≤ 33 min (secrets ESO, fenêtre de maintenance, migration, rollouts, seed)
+    timeout-minutes: 45 # attentes kubectl cumulées ≤ 37 min (secrets ESO, fenêtre de maintenance, migration, rollouts, seed ; chaque wait-rollout.sh peut dépasser son délai de ~35 s ; un Job en échec encore actif est arrêté par run-job.sh, + 90 s au plus, une fois : le job s'arrête là, #535)
     environment:
       name: preprod
       url: https://preprod.cp-ghostotof.com
@@ -695,7 +727,11 @@ jobs:
           #    donc substituée ici. Timeout 300s : une base au repos (fenêtre)
           #    ou sous trafic (standard), et parfois plusieurs migrations d'un
           #    bloc — le simple « Already at the latest version » tient en
-          #    quelques secondes.
+          #    quelques secondes. Le Job meurt peu après ce délai
+          #    (activeDeadlineSeconds, issue #525), et chaque attente de verrou
+          #    de la migration est bornée à 5 s (PGOPTIONS) : un échec en
+          #    SQLSTATE 55P03 est un bloqueur passager, relancer le job suffit
+          #    en général.
           #
           #    Échec du Job : fail-closed, le script sort avant `kubectl apply -k .`.
           #    En mode standard, la release précédente reste en service sur
@@ -707,16 +743,19 @@ jobs:
           #    jusqu'à intervention manuelle (voulu : jamais de trafic sur un
           #    schéma à moitié migré) ; si la migration n'a rien écrit,
           #    `kubectl apply -k .` sur cet overlay relance l'ancienne image.
-          kubectl -n preprod delete job backend-migrate --ignore-not-found
-          BACKEND_IMAGE=$IMAGE_BACKEND:$TAG-preprod \
-            envsubst < ../../base/migrate-job.yaml | kubectl -n preprod apply -f -
-          kubectl -n preprod wait --for=condition=complete --timeout=300s job/backend-migrate \
-            || { kubectl -n preprod logs job/backend-migrate --tail=200; exit 1; }
+          #
+          #    La séquence (delete, rendu, apply, attente, journaux) et ses
+          #    codes de sortie : en-tête de tools/run-job.sh (issue #488).
+          "$GITHUB_WORKSPACE/tools/run-job.sh" preprod "$GITHUB_WORKSPACE/k8s/base/migrate-job.yaml" \
+            "$IMAGE_BACKEND:$TAG-preprod" 300
           # 4. Rollout sur un schéma prêt. `apply -k` restaure aussi les replicas
           #    des manifestes après une fenêtre de maintenance.
           kubectl apply -k .
-          kubectl -n preprod rollout status deployment/backend --timeout=180s
-          kubectl -n preprod rollout status deployment/frontend --timeout=180s
+          #    Même script pour les Deployments (issue #353) : seuls les pods de
+          #    la révision en cours sont jugés, jamais ceux d'un rollout
+          #    précédent resté bloqué.
+          "$GITHUB_WORKSPACE/tools/wait-rollout.sh" preprod deployment/backend --timeout 180
+          "$GITHUB_WORKSPACE/tools/wait-rollout.sh" preprod deployment/frontend --timeout 180
           # Les workloads à état aussi (3e audit, T5.6). Ils sont en `Recreate` :
           # quand leur pod template change, l'ancien pod s'arrête AVANT que le
           # nouveau démarre (PVC ReadWriteOnce), et backend/frontend peuvent être
@@ -725,9 +764,9 @@ jobs:
           # refusée, et en production un RabbitMQ qui ne remonte pas laisserait le
           # déploiement vert — le scénario de l'incident v0.5.0. Instantané quand
           # rien n'a changé.
-          kubectl -n preprod rollout status deployment/postgres --timeout=300s
-          kubectl -n preprod rollout status deployment/rabbitmq --timeout=300s
-          kubectl -n preprod rollout status deployment/worker --timeout=180s
+          "$GITHUB_WORKSPACE/tools/wait-rollout.sh" preprod deployment/postgres --timeout 300
+          "$GITHUB_WORKSPACE/tools/wait-rollout.sh" preprod deployment/rabbitmq --timeout 300
+          "$GITHUB_WORKSPACE/tools/wait-rollout.sh" preprod deployment/worker --timeout 180
           # Peuplement du contenu de référence, préprod UNIQUEMENT. La
           # production n'est JAMAIS peuplée automatiquement — décision arrêtée
           # le 2026-09-09 (issue #17), pas un provisoire : son contenu est rédigé
@@ -740,11 +779,8 @@ jobs:
           # refusent d'écraser du contenu déjà présent et sortent en code 0
           # (cf. GuardsExistingContent et l'en-tête de seed-job.yaml). `--force`
           # n'est jamais passé : une réinitialisation reste un geste manuel.
-          kubectl -n preprod delete job backend-seed --ignore-not-found
-          BACKEND_IMAGE=$IMAGE_BACKEND:$TAG-preprod \
-            envsubst < ../../base/seed-job.yaml | kubectl -n preprod apply -f -
-          kubectl -n preprod wait --for=condition=complete --timeout=180s job/backend-seed \
-            || { kubectl -n preprod logs job/backend-seed --tail=200; exit 1; }
+          "$GITHUB_WORKSPACE/tools/run-job.sh" preprod "$GITHUB_WORKSPACE/k8s/base/seed-job.yaml" \
+            "$IMAGE_BACKEND:$TAG-preprod" 180
 
   # ---------------------------------------------------------------------------
   # test-preprod — smoke tests + audit boîte noire. Le run de release s'arrête
@@ -752,10 +788,11 @@ jobs:
   # stop humain (spec 0006, D6/D7) — plus d'approbation d'environnement.
   # ---------------------------------------------------------------------------
   smoke-test-preprod:
-    needs: [deploy-preprod]
+    # release-version : pour le tag de l'image que tourne le Job témoin (#470).
+    needs: [release-version, deploy-preprod]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
-    timeout-minutes: 10 # habituel ~30 s ; rollouts bornés à 60 s, curl à 15 s
+    timeout-minutes: 15 # habituel ~1 min 30 ; rollouts bornés à 60 s, curl à 15 s, Job témoin attendu 300 s (+ ~35 s de wait-rollout.sh, + 90 s au plus pour l'arrêter s'il tourne encore à l'échec, #535)
     # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
     # l'environnement, et sa politique de branche borne d'où ils sont lisibles
     # (audit 2026-09-16, A4).
@@ -801,6 +838,16 @@ jobs:
           kubectl -n preprod rollout status deployment/postgres --timeout=60s
           kubectl -n preprod rollout status deployment/rabbitmq --timeout=60s
           kubectl -n preprod rollout status deployment/worker --timeout=60s
+      # Issue #470 : un worker `Ready` ne prouve pas qu'il décode ce que l'API
+      # signe. Un écart de clé de MAC (KEY_CONTEXT mal déployé, worker resté sur
+      # l'ancienne release) laissait la préprod verte, chaque message dans
+      # `failed`. Un Job tourne l'image de la release avec les Secrets du
+      # backend, met en file un message témoin sans effet de bord, et échoue si
+      # le worker ne l'a pas traité en 90 s — donc rollback-preprod.
+      - name: Un message témoin passe de l'API au worker
+        env:
+          TAG: ${{ needs.release-version.outputs.image_tag }}
+        run: tools/smoke-messenger-probe.sh preprod "$IMAGE_BACKEND:$TAG-preprod"
 
   # Gate bloquant : une régression de sécurité en préprod laisse la PR vers
   # `main` rouge (check requis du ruleset), donc pas de merge, donc pas de prod.
@@ -841,7 +888,7 @@ jobs:
     needs: [deploy-preprod, smoke-test-preprod, audit-preprod]
     if: failure() && startsWith(github.ref, 'refs/heads/release/') && needs.deploy-preprod.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 10 # deux `rollout undo`, sans attente
+    timeout-minutes: 10 # trois `rollout undo`, sans attente
     # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
     # l'environnement, et sa politique de branche borne d'où ils sont lisibles
     # (audit 2026-09-16, A4).
@@ -853,10 +900,20 @@ jobs:
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBE_CONFIG_PREPROD }}" > ~/.kube/config
+      # Le worker revient avec l'API (issue #450) : il lit ce qu'elle met en
+      # file, sous la même clé de MAC. Laissé sur la release refusée, il
+      # exigerait une signature que l'API ramenée ne produit pas (clé
+      # `messenger-envelope/v2` contre `v1`, ou MAC absent avant #444) et
+      # enverrait chaque message dans `failed`.
+      # Chaque `undo` est tenté même si un autre échoue (`bash -e` s'arrêterait
+      # au premier, laissant la préprod à moitié ramenée) ; le job reste rouge.
       - name: Rollback
         run: |
-          kubectl -n preprod rollout undo deployment/backend
-          kubectl -n preprod rollout undo deployment/frontend
+          status=0
+          for workload in backend worker frontend; do
+            kubectl -n preprod rollout undo "deployment/$workload" || status=1
+          done
+          exit "$status"
 
   # ---------------------------------------------------------------------------
   # Phase 3 — sur `main` seulement (spec 0006, D7/D8)
@@ -882,7 +939,7 @@ jobs:
     needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests, frontend-image-headers, backend-nginx-rate-limits]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 45 # attentes kubectl cumulées ≤ 30 min (secrets ESO, fenêtre de maintenance, migration, rollouts)
+    timeout-minutes: 45 # attentes kubectl cumulées ≤ 34 min (secrets ESO, fenêtre de maintenance, migration, rollouts ; chaque wait-rollout.sh peut dépasser son délai de ~35 s ; un Job en échec encore actif est arrêté par run-job.sh, + 90 s au plus, une fois : le job s'arrête là, #535)
     permissions:
       contents: read
       actions: read
@@ -1022,7 +1079,11 @@ jobs:
           #    donc substituée ici. Timeout 300s : une base au repos (fenêtre)
           #    ou sous trafic (standard), et parfois plusieurs migrations d'un
           #    bloc — le simple « Already at the latest version » tient en
-          #    quelques secondes.
+          #    quelques secondes. Le Job meurt peu après ce délai
+          #    (activeDeadlineSeconds, issue #525), et chaque attente de verrou
+          #    de la migration est bornée à 5 s (PGOPTIONS) : un échec en
+          #    SQLSTATE 55P03 est un bloqueur passager, relancer le job suffit
+          #    en général.
           #
           #    Échec du Job : fail-closed, le script sort avant `kubectl apply -k .`.
           #    En mode standard, la release précédente reste en service sur
@@ -1034,16 +1095,19 @@ jobs:
           #    jusqu'à intervention manuelle (voulu : jamais de trafic sur un
           #    schéma à moitié migré) ; si la migration n'a rien écrit,
           #    `kubectl apply -k .` sur cet overlay relance l'ancienne image.
-          kubectl -n prod delete job backend-migrate --ignore-not-found
-          BACKEND_IMAGE=$IMAGE_BACKEND:$TAG \
-            envsubst < ../../base/migrate-job.yaml | kubectl -n prod apply -f -
-          kubectl -n prod wait --for=condition=complete --timeout=300s job/backend-migrate \
-            || { kubectl -n prod logs job/backend-migrate --tail=200; exit 1; }
+          #
+          #    La séquence (delete, rendu, apply, attente, journaux) et ses
+          #    codes de sortie : en-tête de tools/run-job.sh (issue #488).
+          "$GITHUB_WORKSPACE/tools/run-job.sh" prod "$GITHUB_WORKSPACE/k8s/base/migrate-job.yaml" \
+            "$IMAGE_BACKEND:$TAG" 300
           # 4. Rollout sur un schéma prêt. `apply -k` restaure aussi les replicas
           #    des manifestes après une fenêtre de maintenance.
           kubectl apply -k .
-          kubectl -n prod rollout status deployment/backend --timeout=180s
-          kubectl -n prod rollout status deployment/frontend --timeout=180s
+          #    Même script pour les Deployments (issue #353) : seuls les pods de
+          #    la révision en cours sont jugés, jamais ceux d'un rollout
+          #    précédent resté bloqué.
+          "$GITHUB_WORKSPACE/tools/wait-rollout.sh" prod deployment/backend --timeout 180
+          "$GITHUB_WORKSPACE/tools/wait-rollout.sh" prod deployment/frontend --timeout 180
           # Les workloads à état aussi (3e audit, T5.6). Ils sont en `Recreate` :
           # quand leur pod template change, l'ancien pod s'arrête AVANT que le
           # nouveau démarre (PVC ReadWriteOnce), et backend/frontend peuvent être
@@ -1052,9 +1116,9 @@ jobs:
           # refusée, et en production un RabbitMQ qui ne remonte pas laisserait le
           # déploiement vert — le scénario de l'incident v0.5.0. Instantané quand
           # rien n'a changé.
-          kubectl -n prod rollout status deployment/postgres --timeout=300s
-          kubectl -n prod rollout status deployment/rabbitmq --timeout=300s
-          kubectl -n prod rollout status deployment/worker --timeout=180s
+          "$GITHUB_WORKSPACE/tools/wait-rollout.sh" prod deployment/postgres --timeout 300
+          "$GITHUB_WORKSPACE/tools/wait-rollout.sh" prod deployment/rabbitmq --timeout 300
+          "$GITHUB_WORKSPACE/tools/wait-rollout.sh" prod deployment/worker --timeout 180
 
   # ---------------------------------------------------------------------------
   # create-release — publie la release GitHub une fois la prod effectivement

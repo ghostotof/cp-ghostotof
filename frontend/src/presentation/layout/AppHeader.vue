@@ -126,7 +126,16 @@ const { isGranting, errorReason: baseAccessErrorReason, grant: grantBaseAccess }
  * connexion au sens propre, donc pas de « déconnexion » à afficher.
  */
 async function handleLogout(): Promise<void> {
-  await logout()
+  try {
+    await logout()
+  } catch {
+    // Déconnexion refusée par le serveur (issue #455) : le cookie reste
+    // valide, la session locale est déjà anonyme. Un nouveau login le
+    // remplace, puis la déconnexion aboutit.
+    await router.push(`${homeLink.value}/login`)
+
+    return
+  }
   await router.push(homeLink.value)
 }
 

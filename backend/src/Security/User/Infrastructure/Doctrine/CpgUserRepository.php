@@ -5,11 +5,19 @@ declare(strict_types=1);
 namespace App\Security\User\Infrastructure\Doctrine;
 
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
+use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\Persistence\ManagerRegistry;
+use SensitiveParameter;
+use Symfony\Bridge\Doctrine\Security\User\UserLoaderInterface;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Security\Core\Exception\UnsupportedUserException;
+use Symfony\Component\Security\Core\Exception\UserNotFoundException;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\PasswordUpgraderInterface;
 use Symfony\Component\Uid\Uuid;
@@ -17,16 +25,54 @@ use Symfony\Component\Uid\Uuid;
 /**
  * @extends ServiceEntityRepository<CpgUser>
  */
-class CpgUserRepository extends ServiceEntityRepository implements CpgUserRepositoryInterface, PasswordUpgraderInterface
+class CpgUserRepository extends ServiceEntityRepository implements CpgUserRepositoryInterface, PasswordUpgraderInterface, UserLoaderInterface
 {
     public function __construct(ManagerRegistry $registry)
     {
         parent::__construct($registry, CpgUser::class);
     }
 
-    public function findOneByUsername(string $username): ?CpgUser
+    public function findOneByUsername(#[SensitiveParameter] string $username): ?CpgUser
     {
         return $this->findOneBy(['username' => $username]);
+    }
+
+    /**
+     * Chargeur du fournisseur `cpg_users` (security.yaml), à la place de son
+     * option `property: username` (issue #418).
+     *
+     * Le fournisseur `entity` de Doctrine, quand il cherche lui-même par
+     * propriété, lève `UserNotFoundException('User "<identifiant>" not
+     * found.')` ;
+     * {@see \Symfony\Component\Security\Http\Authentication\AuthenticatorManager}
+     * journalise cette exception en `info` sur le canal `security`, que la
+     * production écrit (monolog.yaml). Or
+     * l'identifiant tenté est souvent un mot de passe tapé dans le mauvais
+     * champ. Ici l'exception est levée avant que le fournisseur ne construise
+     * la sienne, avec un message qui ne cite rien ; l'identifiant reste porté
+     * par `setUserIdentifier()`, que le formateur JSON de Monolog n'écrit pas
+     * (il ne sérialise d'une exception que sa classe, son message, son code
+     * et son fichier).
+     *
+     * Un identifiant hors de `CpgUser::USERNAME_PATTERN` ne peut désigner
+     * aucun compte — le constructeur l'impose — et n'est donc pas cherché
+     * (relecture de #418). Sans ce refus, PostgreSQL, qui reçoit les
+     * paramètres texte comme des chaînes C, coupait `jane\0…` au NUL et
+     * chargeait `jane`, pendant que `login_throttling` comptait chaque
+     * suffixe à part ; un octet hors UTF-8 faisait échouer la requête.
+     */
+    public function loadUserByIdentifier(#[SensitiveParameter] string $identifier): CpgUser
+    {
+        $user = 1 === preg_match(CpgUser::USERNAME_PATTERN, $identifier) ? $this->findOneByUsername($identifier) : null;
+
+        if (null === $user) {
+            $exception = new UserNotFoundException('Unknown user identifier.');
+            $exception->setUserIdentifier($identifier);
+
+            throw $exception;
+        }
+
+        return $user;
     }
 
     public function findOneByEmail(string $email): ?CpgUser
@@ -44,7 +90,7 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
         return $this->findBy([], ['username' => 'ASC']);
     }
 
-    public function findAwaitingPasswordSetupInvitedBefore(\DateTimeImmutable $threshold): array
+    public function findAwaitingPasswordSetupInvitedBefore(DateTimeImmutable $threshold): array
     {
         return $this->createQueryBuilder('u')
             ->andWhere('u.invitedAt IS NOT NULL')
@@ -56,7 +102,7 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
             // activatedAt) — le compte se connecte déjà et ne doit plus
             // ressortir ici, même s'il reste isPendingActivation() vrai.
             ->andWhere("u.password = ''")
-            ->setParameter('threshold', $threshold, Types::DATETIME_IMMUTABLE)
+            ->setParameter('threshold', $threshold, Types::DATETIMETZ_IMMUTABLE)
             ->orderBy('u.invitedAt', 'ASC')
             ->getQuery()
             ->getResult();
@@ -83,10 +129,83 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
         $this->getEntityManager()->flush();
     }
 
+    /**
+     * La traduction vit ici, seul endroit qui connaisse la base : ni les
+     * noms d'index ni le format des messages de PostgreSQL ne remontent dans
+     * la couche Application (issue #364).
+     */
+    public function add(CpgUser $user): void
+    {
+        try {
+            $this->save($user);
+        } catch (UniqueConstraintViolationException $violation) {
+            throw CpgUserUniqueViolation::refusalFor($violation);
+        }
+    }
+
+    /**
+     * Un `UPDATE … RETURNING` : PostgreSQL verrouille la ligne le temps de
+     * l'écriture, donc deux relances concurrentes s'enchaînent et lisent
+     * chacune la génération que l'autre vient de poser — là où avancer le
+     * compteur en mémoire puis l'écrire en valeur absolue perdait l'une des
+     * deux (issue #435). La condition « en attente d'activation »
+     * (CpgUser::isPendingActivation()) est portée par l'écriture elle-même :
+     * un compte activé entre son chargement et la relance n'est pas relancé.
+     *
+     * L'unité de travail reçoit les valeurs écrites pour état d'origine : sans
+     * quoi elle garderait l'ancienne génération, et un `flush()` ultérieur
+     * réécrirait celle de l'entité en valeur absolue, par-dessus une relance
+     * concurrente.
+     */
+    public function advanceInvitationGeneration(CpgUser $user, DateTimeImmutable $invitedAt): int
+    {
+        $connection = $this->getEntityManager()->getConnection();
+        $generation = $connection->fetchOne(
+            'UPDATE cpg_user SET invitation_generation = invitation_generation + 1, invited_at = :invitedAt'
+            .' WHERE id = :id AND invited_at IS NOT NULL AND activated_at IS NULL RETURNING invitation_generation',
+            ['invitedAt' => $invitedAt, 'id' => $user->getId()],
+            ['invitedAt' => Types::DATETIMETZ_IMMUTABLE, 'id' => UuidType::NAME],
+        );
+
+        if (!\is_int($generation)) {
+            $exists = false !== $connection->fetchOne('SELECT 1 FROM cpg_user WHERE id = :id', ['id' => $user->getId()], ['id' => UuidType::NAME]);
+
+            throw $exists ? AccountNotAwaitingActivationException::alreadyActivated() : CpgUserNotFoundException::forId($user->getId());
+        }
+
+        $unitOfWork = $this->getEntityManager()->getUnitOfWork();
+        if ($unitOfWork->isInIdentityMap($user)) {
+            $unitOfWork->setOriginalEntityProperty(spl_object_id($user), 'invitationGeneration', $generation);
+            $unitOfWork->setOriginalEntityProperty(spl_object_id($user), 'invitedAt', $invitedAt);
+        }
+
+        return $generation;
+    }
+
     public function remove(CpgUser $user): void
     {
         $this->getEntityManager()->remove($user);
         $this->getEntityManager()->flush();
+    }
+
+    /**
+     * En DQL par identifiant, comme PasswordSetupTokenRepository::remove()
+     * (#425) : un `flush()` global écrirait au passage d'autres changements en
+     * attente, et un `clear()` survenu entre-temps ferait lever
+     * `EntityManager::remove()`. Jamais un compte activé : l'e-mail a pu partir
+     * malgré l'erreur (accusé du broker perdu, #479) et la personne définir son
+     * mot de passe. Un jeton émis entre-temps par le handler part avec le
+     * compte (`ON DELETE CASCADE`).
+     */
+    public function removePendingInvitation(CpgUser $user): void
+    {
+        $this->createQueryBuilder('user')
+            ->delete()
+            ->where('user.id = :id')
+            ->andWhere('user.activatedAt IS NULL')
+            ->setParameter('id', $user->getId(), UuidType::NAME)
+            ->getQuery()
+            ->execute();
     }
 
     /**
@@ -95,7 +214,7 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
     public function upgradePassword(PasswordAuthenticatedUserInterface $user, string $newHashedPassword): void
     {
         if (!$user instanceof CpgUser) {
-            throw new UnsupportedUserException(sprintf('Instances of "%s" are not supported.', $user::class));
+            throw new UnsupportedUserException(\sprintf('Instances of "%s" are not supported.', $user::class));
         }
 
         $user->setPassword($newHashedPassword);

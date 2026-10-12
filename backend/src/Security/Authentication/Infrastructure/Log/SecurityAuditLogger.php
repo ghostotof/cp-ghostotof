@@ -6,11 +6,14 @@ namespace App\Security\Authentication\Infrastructure\Log;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Shared\Domain\Security\AccountReference;
 use App\Shared\Infrastructure\Http\CanonicalPath;
 use Monolog\Attribute\WithMonologChannel;
 use Psr\Log\LoggerInterface;
+use SensitiveParameter;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
+use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
  * Implémentation Monolog du journal de sécurité (D5), sur le canal
@@ -29,6 +32,12 @@ use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInt
  * avant le firewall (rejet CSRF, priorité 20 contre 8) a donc pour auteur
  * `anonymous` même si un cookie BEARER accompagnait la requête — ce qui est
  * exact, la requête a été refusée avant toute authentification.
+ *
+ * Un compte n'y est jamais nommé par son identifiant de connexion, ni comme
+ * sujet ni comme auteur (issue #363) : pour un invité, cet identifiant est
+ * dérivé de son adresse (ADR 0001 D2), souvent un prénom et un nom. Un compte
+ * se désigne par son `userId` ; le marqueur `guest-…` du palier de base,
+ * aléatoire, est le seul identifiant écrit tel quel (`user`).
  */
 #[WithMonologChannel('security_audit')]
 final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
@@ -38,31 +47,42 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
     /** Acteur d'un événement déclenché par une commande CLI planifiée, jamais par une personne. */
     private const string SYSTEM = 'system';
 
+    /** Acteur d'un événement déclenché à la main en ligne de commande, par une personne que rien n'identifie. */
+    private const string CONSOLE = 'console';
+
+    /**
+     * Acteur authentifié qui n'est ni un compte ni le sujet du palier de base :
+     * aucun fournisseur n'en produit aujourd'hui. Son identifiant n'est pas
+     * écrit, faute de savoir ce qu'il contient.
+     */
+    private const string UNIDENTIFIED = 'unidentified';
+
     public function __construct(
         private LoggerInterface $logger,
         private RequestStack $requestStack,
         private TokenStorageInterface $tokenStorage,
+        private LoginIdentifierFingerprint $fingerprint,
     ) {
     }
 
-    public function loginSucceeded(string $username): void
+    public function loginSucceeded(UserInterface $user): void
     {
-        $this->record('login-succeeded', 'Login succeeded.', ['user' => $username]);
+        $this->record('login-succeeded', 'Login succeeded.', $this->principal($user));
     }
 
-    public function loginFailed(?string $username): void
+    public function loginFailed(#[SensitiveParameter] ?string $triedIdentifier, ?CpgUser $account): void
     {
-        $this->record('login-failed', 'Login failed.', ['user' => $username]);
+        $this->record('login-failed', 'Login failed.', $this->attemptSubject($triedIdentifier, $account));
     }
 
-    public function loginThrottled(?string $username): void
+    public function loginThrottled(#[SensitiveParameter] ?string $triedIdentifier): void
     {
-        $this->record('login-throttled', 'Login refused by throttling.', ['user' => $username]);
+        $this->record('login-throttled', 'Login refused by throttling.', $this->attemptSubject($triedIdentifier, null));
     }
 
-    public function loggedOut(?string $username): void
+    public function loggedOut(?UserInterface $user): void
     {
-        $this->record('logged-out', 'Logged out.', ['user' => $username]);
+        $this->record('logged-out', 'Logged out.', $this->principal($user));
     }
 
     public function baseAccessIssued(string $guestIdentifier): void
@@ -154,22 +174,87 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         );
     }
 
-    /**
-     * Un compte se nomme par son identifiant de connexion et son id : jamais
-     * par son e-mail, donnée personnelle qui n'a rien à faire dans un journal
-     * (Goal #9 : rien d'identifiant en dehors du palier nominatif).
-     *
-     * @return array{user: string, userId: string}
-     */
-    private function account(CpgUser $user): array
+    public function userCreated(CpgUser $user): void
     {
-        return ['user' => $user->getUsername(), 'userId' => $user->getId()->toRfc4122()];
+        // Acteur forcé à `console` : hors requête, le jeton de sécurité
+        // n'existe pas, et `anonymous` suggérerait un appelant HTTP.
+        $this->record(
+            'user-created',
+            'User created from the command line.',
+            [...$this->account($user), 'superAdmin' => \in_array(CpgUser::ROLE_SUPER, $user->getRoles(), true)],
+            self::CONSOLE,
+        );
+    }
+
+    /**
+     * Un compte se désigne par son UUID seul (issue #363) : ni son adresse
+     * e-mail, ni son identifiant de connexion, qui pour un invité en est
+     * dérivé (`jean.dupont@…` → `jean.dupont`, ADR 0001 D2). C'est une
+     * minimisation (RGPD art. 5-1-c), pas l'objectif n°9, qui porte sur ce que
+     * l'API expose. Seule la base relie l'UUID à une personne, tant que le
+     * compte existe : une fois supprimé, ses lignes ne désignent plus personne
+     * (registre RGPD, §6). Pour nommer un compte pendant un incident :
+     * `SELECT username, email FROM cpg_user WHERE id = '<userId>'`.
+     *
+     * @return array{userId: string}
+     */
+    private function account(AccountReference $user): array
+    {
+        return ['userId' => $user->accountId()];
+    }
+
+    /**
+     * Le sujet d'un utilisateur authentifié, tel que {@see PrincipalDesignation}
+     * le désigne : `userId` pour un compte, `user` pour le marqueur `guest-…`,
+     * rien d'autre.
+     *
+     * @return array<string, string>
+     */
+    private function principal(?UserInterface $user): array
+    {
+        $designation = null !== $user ? PrincipalDesignation::of($user) : null;
+
+        return null !== $designation ? [$designation->key => $designation->value] : [];
+    }
+
+    /** L'auteur de la requête courante, désigné comme un sujet ({@see self::principal()}). */
+    private function currentActor(): string
+    {
+        $user = $this->tokenStorage->getToken()?->getUser();
+        if (null === $user) {
+            return self::ANONYMOUS;
+        }
+
+        return PrincipalDesignation::of($user)->value ?? self::UNIDENTIFIED;
+    }
+
+    /**
+     * Le sujet d'une tentative de login (issue #418). L'identifiant saisi ne
+     * sort jamais : un mot de passe tapé dans le champ identifiant partirait
+     * sinon en clair dans les journaux de production. Il est remplacé par son
+     * empreinte, qui suffit à corréler les tentatives — entre elles et avec le
+     * compteur de `login_throttling`. Le compte, quand l'authentification l'a
+     * chargé, est désigné par son UUID (issue #363), jamais par la saisie ni
+     * par son identifiant.
+     *
+     * @return array{userId?: string, userFingerprint: string|null}
+     */
+    private function attemptSubject(#[SensitiveParameter] ?string $triedIdentifier, ?CpgUser $account): array
+    {
+        $fingerprint = null !== $triedIdentifier ? $this->fingerprint->of($triedIdentifier) : null;
+
+        if (null === $account) {
+            return ['userFingerprint' => $fingerprint];
+        }
+
+        return [...$this->account($account), 'userFingerprint' => $fingerprint];
     }
 
     /**
      * @param array<string, bool|string|null> $subject ce que l'événement vise, clés choisies par l'appelant
-     * @param string|null                     $actor   acteur imposé par l'appelant (ex. `system` pour une
-     *                                                 commande CLI) ; sinon lu dans le jeton de sécurité de
+     * @param string|null                     $actor   acteur imposé par l'appelant (`system` pour une
+     *                                                 commande planifiée, `console` pour une commande
+     *                                                 lancée à la main) ; sinon lu dans le jeton de sécurité de
      *                                                 la requête courante, `anonymous` à défaut de jeton
      */
     private function record(string $event, string $message, array $subject = [], ?string $actor = null): void
@@ -179,7 +264,7 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         $this->logger->info($message, [
             'event' => $event,
             ...$subject,
-            'actor' => $actor ?? $this->tokenStorage->getToken()?->getUserIdentifier() ?? self::ANONYMOUS,
+            'actor' => $actor ?? $this->currentActor(),
             'ip' => $request?->getClientIp(),
             // Décodé (issue #77) : la forme que le routeur et le firewall ont vue.
             // Jamais réécrit : aucune route ne porte de secret dans son chemin

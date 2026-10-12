@@ -22,7 +22,7 @@ use Symfony\Component\Routing\Requirement\Requirement;
  * CLI app:user:create. Le POST ici *invite* : il prend une adresse e-mail,
  * dérive un identifiant, crée un compte en attente d'activation et envoie un
  * lien de définition de mot de passe (cf. BackofficeUserInviteInput /
- * App\Security\User\Application\CpgUserInviter).
+ * {@see \App\Security\User\Application\CpgUserInviter}).
  */
 #[ApiResource(
     shortName: 'BackofficeUser',

@@ -5,10 +5,15 @@ security:
 
     # https://symfony.com/doc/current/security.html#loading-the-user-the-user-provider
     providers:
+        # Sans `property` : le fournisseur passe alors par
+        # CpgUserRepository::loadUserByIdentifier() (issue #418). Avec
+        # `property: username`, il levait lui-même `User "<identifiant>" not
+        # found.`, message que le canal `security` journalise en production —
+        # et l'identifiant tenté est parfois un mot de passe tapé dans le
+        # mauvais champ. Ne pas remettre l'option.
         cpg_users:
             entity:
                 class: App\Security\User\Domain\Entity\CpgUser
-                property: username
 
         # ADR 0003 D6 : reconnaît un jeton du palier de base (marqueur "guest"
         # dans le payload JWT signé) sans jamais interroger Doctrine — voir
@@ -51,10 +56,12 @@ security:
             stateless: true
             provider: cpg_users
             # Anti-brute-force : au-delà de 5 tentatives infructueuses en 15 min,
-            # les suivantes sont rejetées en 401 (« Too many failed login attempts »,
-            # c'est le failure handler de Lexik qui façonne la réponse : pas un
-            # 429, cf. LoginThrottlingTest) sans même vérifier le mot de
-            # passe. Symfony limite par IP *et* par couple (IP, identifiant),
+            # les suivantes sont rejetées sans même vérifier le mot de passe,
+            # en 429 `/errors/rate-limited` avec Retry-After comme tout refus de
+            # débit (issue #399 : LoginThrottlingRefusalListener remplace le 401
+            # « Too many failed login attempts » du failure handler de Lexik,
+            # cf. LoginThrottlingTest). Les autres échecs gardent le 401 de
+            # Lexik. Symfony limite par IP *et* par couple (IP, identifiant),
             # via le composant rate-limiter (stockage cache, compatible avec ce
             # firewall stateless). Complémentaire du rate limiter "contact_form".
             login_throttling:

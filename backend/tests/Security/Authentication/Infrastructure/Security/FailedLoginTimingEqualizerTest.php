@@ -6,17 +6,18 @@ namespace App\Tests\Security\Authentication\Infrastructure\Security;
 
 use App\Security\Authentication\Infrastructure\Security\FailedLoginTimingEqualizer;
 use App\Security\User\Domain\Entity\CpgUser;
+use DateTimeImmutable;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\PasswordHasher\Hasher\PasswordHasherFactoryInterface;
 use Symfony\Component\PasswordHasher\PasswordHasherInterface;
-use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\Exception\AuthenticationException;
 use Symfony\Component\Security\Core\Exception\AuthenticationServiceException;
 use Symfony\Component\Security\Core\Exception\BadCredentialsException;
 use Symfony\Component\Security\Core\Exception\TooManyLoginAttemptsAuthenticationException;
 use Symfony\Component\Security\Core\Exception\UserNotFoundException;
+use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Security\Http\Authenticator\AuthenticatorInterface;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
@@ -269,7 +270,7 @@ final class FailedLoginTimingEqualizerTest extends TestCase
     private function pendingUser(): CpgUser
     {
         $user = new CpgUser('invited', '');
-        $user->markInvited(new \DateTimeImmutable());
+        $user->markInvited(new DateTimeImmutable());
 
         return $user;
     }

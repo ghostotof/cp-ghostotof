@@ -1,73 +1,90 @@
-# v0.21.0 — Refus attribuables, 429 nginx en problem+json et livraison plus sûre
+# v0.24.0 — Files, verrous et journaux durcis
 
-Release de consolidation, sans nouvelle fonctionnalité visible. Elle rend attribuables dans le
-journal de sécurité les refus qui ne l'étaient pas, retire les adresses e-mail des exceptions
-journalisées, fixe le niveau de journalisation de chaque erreur de l'API, met en problem+json les
-429 émis par nginx et fait échouer le déploiement tôt si un secret n'est pas synchronisé. Aucune
-migration, aucun secret nouveau. Un seul manifeste Kubernetes change : l'annotation qui rend
-facultatif le secret Xdebug de préprod.
+Release de durcissement, suite de v0.23.1. Elle authentifie le cache en base, borne la taille des messages
+Messenger jusqu'au broker, rend visibles les pannes de RabbitMQ, regroupe les verrous PostgreSQL sous un
+squelette commun, borne les attentes de verrou de toute la console et retire l'identifiant de connexion des
+journaux. **Deux migrations**, déploiement standard **sans fenêtre de maintenance**. **Aucun secret
+nouveau**, aucun droit RBAC nouveau. **RabbitMQ redémarre une fois** (nouvelle configuration).
 
-## Journal de sécurité et données personnelles (#356)
+## Comportements qui changent
 
-- **Cinq refus deviennent attribuables** dans le canal `security_audit` (IP, chemin canonique,
-  jamais le jeton) : `password-setup-token-rejected` (lien inconnu), `password-setup-token-replayed`
-  (lien déjà utilisé, avec le compte qu'il activait), `password-setup-throttled`,
-  `contact-throttled` et `base-access-throttled`. La réponse ne change pas : rejoué et expiré
-  restent le même 410.
-- **Consommation atomique du lien de définition de mot de passe.** Deux soumissions simultanées
-  du même lien passaient toutes les deux ; la seconde est maintenant refusée et journalisée.
-- **Aucune adresse e-mail dans un message d'exception journalisé.** La chaîne d'erreur du
-  transport SMTP n'est plus conservée (seules sa classe et un code numérique restent), et
-  l'exception « adresse déjà utilisée » ne cite plus l'adresse.
-- **Validation stricte des adresses** (`email_validation_mode: strict`) : une adresse que l'envoi
-  aurait refusée (`a..b@example.com`) est rejetée en 422 à la saisie, au lieu d'échouer en boucle
-  dans le worker.
-- **Le traducteur journalise son usage sur `ai_usage`**, comme l'assistant : jetons, durée et
-  refus de quota, jamais le contenu.
+| Cas | Avant | Après | Issue |
+|---|---|---|---|
+| Lien de définition de mot de passe inutilisable (inconnu, expiré, déjà utilisé, révoqué, compte purgé) | 404 ou 410 selon le cas | **toujours 404**, corps et en-têtes identiques. Changement de contrat de l'API publique | #362 |
+| Page set-password | deux écrans « invalide » / « expiré » | un écran commun avec un lien « Se connecter », plus un écran « lien incomplet » pour un lien tronqué | #362 |
+| Deux invitations simultanées dont l'adresse a la même partie locale | la seconde : 409 « adresse déjà utilisée », à tort | la seconde reçoit un identifiant libre (`jean2`) | #364 |
+| `detail` des 409 du backoffice (comptes) | citait l'identifiant | message constant ; statut et `type` inchangés | #363 |
+| Contact ou invitation pendant un redémarrage de RabbitMQ | message perdu en silence, réponse 2xx | **503** `/errors/message-queue-unavailable` (`warning`), une invitation non partie ne laisse aucun compte en attente | #479, #485, #491 |
+| Message de plus de 1 Mio publié dans le broker | accepté jusqu'à 16 Mio | refusé par RabbitMQ (`max_message_size`) ; une enveloppe de plus de 256 Kio refusée avant son MAC | #469, #477 |
+| Valeur de `cache_items` (limiteurs, signal d'arrêt du worker) | désérialisée sans contrôle | HMAC vérifié avant toute désérialisation ; une valeur refusée vaut un cache manquant (`warning`) | #468 |
+| `PUT` d'un contenu ordonné supprimé avant la prise du verrou | 200 sur une ligne disparue | 404 | #402 |
+| Groupe de traduction sur deux positions | invisible, réparé sans trace au réordonnancement suivant | refusé par la base au COMMIT (trigger différé, SQLSTATE `23T90`), sous le nom `TranslationGroupHasSeveralPositionsException` | #390 |
+| Attente d'un verrou PostgreSQL en console (Jobs, CronJobs, worker, **migrations**) | illimitée | **5 s** (`PGOPTIONS`), comme FPM | #512, #525 |
+| Handler Messenger qui attend un verrou plus de 5 s | bloquait le worker | `55P03`, réessayé puis `failed` | #525 |
+| Job lancé par `run-job.sh` en échec mais encore actif | continuait à tourner | arrêté avant que le script rende la main (jusqu'à 90 s de plus) | #535 |
+| `activeDeadlineSeconds` des Jobs | 240 s (sous l'attente de 300 s : journaux perdus à l'échéance) | 360 s, au-dessus de l'attente, partout | #525, #535 |
+| Arrêt des workers (rotation d'`APP_SECRET`) | `messenger:stop-workers`, `[OK]` même sans écriture | `app:messenger:stop-workers`, qui relit le signal et sort en 1 s'il n'est pas écrit | #528 |
 
-## Niveaux de journalisation (#348, #355, #357)
+## Journaux (#363)
 
-- **Chaque exception rendue par l'API a un niveau explicite**, vérifié sur la configuration
-  compilée et identique entre environnements. Les refus attendus (quotas, liens inconnus) passent
-  en `info`.
-- **Un corps de requête illisible** (JSON mal formé, type inattendu) sort en 400 `info`, et non
-  plus en `critical`.
+- `security_audit` : un compte n'est plus désigné que par son **UUID**. `.context.user` disparaît pour les
+  comptes (il ne porte plus que le marqueur `guest-…` du palier de base) et `actor` vaut l'UUID. Les filtres
+  `jq` sur `.context.user` passent à `.context.userId` (runbook à jour).
+- `ai_usage` : `account` devient `userId`.
+- Canal `security` de Symfony : le jeton s'écrit `…(userId="…", roles="…")` (`SecurityChannelAccountRedactor`).
+- Nouvelle ligne possible : `error` « ROLLBACK refusé après un échec sous verrou PostgreSQL » (classes et
+  SQLSTATE seulement), si la base coupe pendant une écriture sous verrou (#526).
 
-## 429 de nginx en problem+json (#347)
+## Migrations
 
-- **Toutes les zones de débit nginx** (contact, définition de mot de passe, accès instantané,
-  connexion, filet général de l'API et assistant) refusent en `application/problem+json`, type
-  `/errors/rate-limited`, au lieu de la page HTML de nginx. Les 429 rendus par Symfony passent
-  inchangés, `Retry-After` compris.
-- **Limite connue**, suivie dans #368 : ces 429 ne portent pas d'en-têtes CORS, donc un
-  navigateur sur une autre origine ne peut pas les lire.
-- **Nouveau garde CI `backend-nginx-rate-limits`**, requis avant la release et la prod : il lance
-  le nginx du sidecar sur les deux confs, sature chaque zone et vérifie le corps, le type et les
-  7 en-têtes de sécurité.
+- `Version20261011140000` (#468) : vide `cache_items` une fois. **Les compteurs des limiteurs repartent de
+  zéro**, `login_throttling` compris, puis à chaque alternance d'ancien et de nouveau pod pendant le rollout.
+  Des `warning` « Failed to fetch » du canal `cache` sont attendus **pendant le rollout seulement**.
+- `Version20261012120000` (#390) : trigger différé sur les huit tables de contenus localisés. Les groupes
+  déjà divergents sont signalés en `warning` puis renumérotés ; un groupe à cheval sur deux catégories est
+  laissé et signalé, à corriger au backoffice. **Lire les `warning` du Job de migration.**
+- Les migrations sont désormais bornées à 5 s d'attente de verrou : **un déploiement peut échouer sur un
+  bloqueur passager** (55P03). L'ancienne release continue de servir : relancer le job de déploiement.
 
-## Livraison (#325)
+## RabbitMQ (#477, #479)
 
-- **Le déploiement attend que chaque `ExternalSecret` soit synchronisé** avant la migration et le
-  rollout, et échoue en nommant le secret et ses clés distantes. Avant, une clé absente de Secret
-  Manager ne se voyait qu'après l'expiration du rollout, en `CreateContainerConfigError`.
-- Le secret Xdebug de préprod est annoté facultatif : son absence donne un avertissement, pas un
-  échec.
-- `rollback-preprod` ne se déclenche plus quand le déploiement s'est arrêté avant son rollout.
-- **Première exécution réelle sur cette release.**
+- Nouvelle configuration `rabbitmq.conf` (`max_message_size = 1048576`) : **le broker redémarre une fois**
+  (`Recreate`), courte coupure du contact et des invitations, qui répondent 503 pendant ce temps.
+- Publications confirmées par le broker (`confirm_timeout: 5`) et attentes AMQP bornées à 5 s.
 
-## Outillage et dépendances
+## Exploitation et documentation
 
-- `CLAUDE.md` découpé en règles par zone du dépôt sous `.claude/rules/`, avec un garde CI (#346).
-- `source-map-js` et `postcss-selector-parser` montés de version, ce qui lève un avis npm de
-  niveau élevé dans l'outillage du frontend (#367).
+- Quotas IA (traduction, assistant de parcours) indexés par UUID : **remis à zéro une fois** (#363).
+- `smoke-test-preprod` envoie un message témoin de l'API au worker (#470), environ une minute de plus.
+- Nouveaux Jobs hors kustomize : `messenger-failed-retry`, `messenger-failed-remove`,
+  `messenger-stop-workers` (#521) ; `messenger:failed:show` se lit par un `exec` humain en lecture seule.
+- `k8s/README.md` : « nommer un compte » par un `exec` durci en lecture seule (#520), section « File d'échec
+  Messenger » (#521), portée exacte de « jamais `kubectl exec` ».
+- `run-job.sh` commun à tous les Jobs (#488) : journaux imprimés aussi après un succès.
+- `composer dump-env prod` dans l'image (#489), sous `env -i`.
+- `make back-style-fix` en dev (#398).
 
 ## À vérifier en préprod
 
-- Smoke tests et audit verts.
-- `deploy-preprod` : l'étape d'attente des `ExternalSecret` passe, et `backend-xdebug-trigger`
-  n'y est qu'un avertissement s'il n'est pas synchronisé.
-- `kubectl exec … -c nginx -- nginx -T | grep -E 'error_page|_status'` sur le sidecar :
-  `error_page 429 = @rate_limited`, `limit_req_status 429` et `limit_conn_status 429` au niveau
-  server (critère 2 de #347).
-- `POST /api/account/base-access` rejoué au-delà de la zone nginx : 429 en
-  `application/problem+json`, type `/errors/rate-limited`.
+- Smoke tests (dont le message témoin) et audit verts.
+- `kubectl -n preprod rollout status deployment/rabbitmq` puis journaux (« Server startup complete ») ;
+  `rabbitmqctl eval "application:get_env(rabbit, max_message_size)."` → `{ok,1048576}` (#477).
+- Journaux du Job de migration : `warning` de `Version20261012120000` lus.
+- `LOG_LEVEL=debug` toujours actif en préprod (#489).
+- Validations des issues #520, #521, #525 et #535 (commandes en commentaire de chaque issue).
+
+## À vérifier en prod
+
+- `rollout status` de `rabbitmq`, `worker` et `backend`, puis journaux du broker.
+- Journaux du Job de migration : `warning` de `Version20261012120000`.
+- Les `warning` « Failed to fetch » du canal `cache` cessent après le rollout.
+- Un message de contact passe : reçu, aucune ligne `failed`.
+
+## Retour arrière
+
+- **`backend` et `worker` ensemble**, toujours.
+- Un rollback juste après cette release : l'ancien worker ne connaît pas `MessengerProbeMessage`, un témoin
+  non consommé finit dans `failed`, à retirer par le Job `messenger-failed-remove` (#470).
+- Broker cassé par la nouvelle configuration : `kubectl -n <ns> rollout undo deployment/rabbitmq`.
+- Le Job d'arrêt des workers lance `app:messenger:stop-workers`, absente des images antérieures : lancer
+  son manifeste depuis un checkout de la release qui tourne (#528).

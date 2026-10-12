@@ -33,6 +33,8 @@ paths:
     name. Any new auth cookie goes through the factory, never `Cookie::create()` or `clearCookie()`
     inline. `__Host-` prefixing is a separate, preprod-tested step (it renames what Lexik and the frontend
     read by name).
+  - **Tokens, JWTs and CSRF values are hidden from stack traces** (`#[SensitiveParameter]`, issue #414): the
+    guard covers all of `src/`, so its rule lives in `.claude/rules/backend-architecture.md`.
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
     listener at priority 20 (must run *above* the Security firewall's priority 8 — see the class docblock).
   - `Infrastructure/Http/LoginCsrfRequestListener.php` — **login-CSRF guard** (issue #76) on the two anonymous
@@ -88,9 +90,10 @@ paths:
     changes. The submitted password is never read. The response is untouched — the three 401s must stay
     byte-identical, which is the other half of non-enumeration.
     `FailedLoginTimingEqualizerTest` + `tests/Security/Authentication/LoginFailureTimingTest.php` pin it.
-    Related fact worth knowing: `login_throttling` answers **401** with `Too many failed login attempts`,
-    not 429 — it is Lexik's failure handler that shapes the response (`LoginThrottlingTest`,
-    `tools/smoke-login-throttling.sh`).
+    Related fact worth knowing: `login_throttling` answers a **429** `/errors/rate-limited` with
+    `Retry-After` since issue #399, the only failure that leaves Lexik's 401 — it says nothing about the
+    account. `LoginThrottlingRefusalListener` throws it at priority -200, below this listener; see "Every
+    quota 429" in `.claude/rules/backoffice-api.md`.
   - **`Infrastructure/Log/SecurityAuditLogger.php` is the single entry point of the security audit log**
     (3rd audit, A5/D5, Monolog channel `security_audit`, `info`, JSON on stderr in prod — see
     `monolog.yaml`). Implements `Application/SecurityAuditLoggerInterface`, one method per event:
@@ -98,12 +101,59 @@ paths:
     `csrf-rejected`, `backoffice-access-denied`, `rate-limiter-unavailable`, `user-invited`, `user-reinvited`, `role-changed`
     (`superAdmin` bool), `password-changed`, `user-deleted`, `account-activated`, `password-setup-token-rejected`,
     `password-setup-token-replayed`, `password-setup-throttled`, `contact-throttled`, `base-access-throttled`, `user-purged`
-    (`actor: system` — the one event whose actor is not read from the token storage; `record()` takes an
+    (`actor: system`, a scheduled command), `user-created` (issue #386, `app:user:create` through `CpgUserRegistrar`,
+    with `superAdmin` like `role-changed`, `actor: console` — a person at a terminal the log cannot name, never
+    `system` nor `anonymous`) — the two events whose actor is not read from the token storage; `record()` takes an
     explicit actor for CLI callers). Every record carries
-    `event` (the stable kebab-case key to filter on), `actor` (identifier from the token storage, or
-    `anonymous`), `ip`, `path` (canonical), plus `user` and — for an existing account — `userId` (RFC 4122).
-    **Never a password, a token (JWT, XSRF, invitation), an e-mail, a request body or a serialized
-    exception** in any context: an invited account is named by `username` + `userId`, not by its e-mail.
+    `event` (the stable kebab-case key to filter on), `actor`, `ip`, `path` (canonical), plus the subject.
+    **An account is designated by its `userId` (RFC 4122) only, as subject and as `actor`, never by its
+    login identifier** (issue #363): an invited account's username is derived from the local part of its
+    address (`UsernameGenerator`, ADR 0001 D2), usually a first and last name. `actor` is the UUID of the
+    authenticated account, the base tier's random `guest-…` marker, `anonymous`, `system`, `console`, or
+    `unidentified` for any other `UserInterface` (none exists). `user` now only ever carries that
+    `guest-…` marker (`base-access-issued`, a guest's `logged-out`). Both go through
+    `App\Shared\Domain\Security\AccountReference` (`CpgUser::accountId()`), the interface `Ai` reads too,
+    so no context depends on `Security`. To name an account during an incident:
+    `SELECT username, email FROM cpg_user WHERE id = '<userId>'` — once deleted, its lines designate no one,
+    which is the point (minimisation, RGPD register §6; not Goal #9, which is about what the API exposes).
+    It runs through a human's read-only `kubectl exec` on the `postgres` pod (`k8s/README.md`, « Journal de
+    sécurité »), **never a Job**: a Job would print the name and address into its pod's logs, readable by
+    the CI token's `pods/log` — the exception and its bounds are in `.claude/rules/deploiement.md` (issue #520).
+    **Never a password, a token (JWT, XSRF, invitation), an e-mail, a login identifier, a request body or a
+    serialized exception** in any context.
+    **The identifier tried at login is never written as typed** (issue #418): a password typed in the
+    username field would otherwise reach the production log. `login-failed` and `login-throttled` carry
+    `userFingerprint` instead — `Infrastructure/Log/LoginIdentifierFingerprint`, an HMAC-SHA256 keyed by a
+    key derived from `kernel.secret` for this use alone (issue #455, see `.claude/rules/backend-architecture.md`), case-folded like `login_throttling`'s counter (`mb_strtolower`), **6 hex chars
+    (24 bits) on purpose**, an empty key refused (with the key, a longer fingerprint would confirm
+    offline, at SHA-256 speed, a password typed as identifier; the class docblock has the numbers) — and
+    designate the account (`userId`, from the loaded `CpgUser`, never from the input) **only when the
+    authentication already loaded it**: no `userId` for an unknown identifier and never for
+    `login-throttled`, which refuses before the account is loaded (loading it there would cost a query on
+    the path an attacker hammers). The fingerprint is the link between a `login-throttled` and the
+    failures that caused it — when the per-(IP, identifier) counter refused; a refusal by the per-IP
+    counter (25 / 15 min) may carry a fingerprint no earlier failure has, read it by `ip` then. Filtering
+    the **log** on `CpgUser::USERNAME_PATTERN` was rejected: a keychain-generated or plain alphanumeric
+    password matches it (the `cpg_users` loader does filter on it, for another reason, see
+    `.claude/rules/security-user.md`). Price: rotating `APP_SECRET` changes every fingerprint.
+    Symfony's own `security` channel had the same leak — `Authenticator failed.` logs the user provider's
+    exception — closed at the source by the `cpg_users` loader (see `.claude/rules/security-user.md`) on
+    the `login` firewall, the only one that receives a typed identifier. On the `api` firewall the
+    `app_users` chain still quotes the identifier in its own `UserNotFoundException` (`There is no user
+    with identifier "…"`, a JWT for a deleted account): not a #418 leak (a signed JWT, never a form
+    field), but a #363 one, closed by **`Infrastructure/Log/SecurityChannelAccountRedactor`**, a Monolog
+    processor on the `security` channel only. It also rewrites the token of `Authenticator successful!`,
+    written at `info` on **every authenticated request** of the `api` firewall, which `JsonFormatter`
+    rendered by its `__toString()` (`JWTPostAuthenticationToken(user="jean.dupont", roles="…")`):
+    now `Class(userId="…", roles="…")` (`user="guest-…"` for the base tier, roles only otherwise). Any
+    exception whose chain holds a `UserNotFoundException` becomes its normalised form (class, message,
+    code, `file:line`, `previous`, no trace), that link's message replaced by `WITHHELD`. Both lines stay:
+    `Authenticator failed.` is the trace of a forged or expired JWT — raising the handler to `notice` was
+    rejected for that reason. `SecurityChannelAccountRedactorTest` pins the rewriting; the guard below the wiring;
+    `SecurityAuditLogTest::testAPasswordTypedAsTheIdentifierReachesNoLog` formats every channel's records
+    with Monolog's `JsonFormatter`, the production one, on an unknown identifier and on the throttling
+    refusal, and skips only `doctrine`'s `debug` records (SQL parameters, logged under `kernel.debug` only,
+    never with `APP_DEBUG=0`).
     The same rule now holds for the **messages** of the exceptions the kernel logs (issue #356):
     `EmailAlreadyUsedException` no longer quotes the address (`alreadyLinkedToAnAccount()`, the backoffice
     reads the 409 status, never the `detail`), and the two delivery exceptions
@@ -112,15 +162,49 @@ paths:
     can quote the sender or the recipient, and the worker logs the whole `previous` chain.
     `Shared/Infrastructure/Mailer/MailerTransportFailure` keeps its class and a numeric code (HTTP status
     for the API transport, SMTP reply code otherwise), the e-mail counterpart of `ProviderFailure`; each
-    context keeps its own delivery exception, whose factory is identical on purpose (`Domain/` never
-    imports `Shared/Infrastructure`). The price: the SMTP enhanced status (`5.1.1`) and Scaleway's error
-    text are gone from the logs. **An address that `Mime\Address` would refuse never gets past
+    context keeps its own delivery exception, whose transport factory is identical on purpose (`Domain/`
+    never imports `Shared/Infrastructure`). The invitation one has a second factory since issue #419,
+    `becauseSendingFailed()`, for any other failure of `send()` (template rendering, after the token is
+    valid — see `.claude/rules/security-user.md`); the contact one too since issue #427
+    (`ContactMessageDeliveryException::becauseSendingFailed()`): a template error or an `Address` Mime
+    refuses quotes what the visitor typed (address, name, text), on every retry and up to the
+    `failure_transport`. Both handlers build the e-mail **inside** the `try`, catch any `Throwable` and
+    describe it through `Shared/Infrastructure/Mailer/MailerSendingFailure::describe()` (type plus
+    `<template>:<line>`, or `<file basename>:<line>`, from the innermost exception under every Messenger
+    wrapper — `MailerSendingFailure::innermost()`, which is also where a transport failure is recognised, so a
+    wrapped one keeps its class and code), the one place that description is written; the contact handler
+    names a refused `Address` by its **role** (`from`, `to`, `replyTo` — visitor input or the site's own
+    configuration, e.g. a secret left empty), never by its value (`becauseAddressRefused()`); `tests/Support/DrivesTheMailerChain` is the real mailer
+    chain their tests fail the rendering through. A test checking that a value never reaches a verbose
+    trace passes the value's **name** to its data provider, never the value: the test method's own
+    arguments are in the trace. The price: the SMTP enhanced status (`5.1.1`) and Scaleway's error
+    text are gone from the logs. **Nor does a database error quote a value** (issue #428):
+    PostgreSQL copies it into its message — `DETAIL: Key (email)=(…) already exists`, `DETAIL: Failing row
+    contains (…)` (the password hash included), `invalid input syntax for type uuid: "…"`, a bound parameter
+    in `CONTEXT:` — and the kernel and the worker log the message and the whole `previous` chain.
+    `Shared/Infrastructure/Doctrine/DriverErrorRedactionMiddleware` (`#[AsMiddleware]`, every connection)
+    wraps the driver's exception converter: each driver exception is handed to PostgreSQL's converter as a
+    `RedactedDriverException` — `DETAIL`/`CONTEXT` lines dropped, a value quoted after a colon at the end
+    of a line or in `value "…" is out of range` masked, chain cut —, so the DBAL class and the SQLSTATE
+    that callers read (`CpgUserInviter`'s unique violation, the order lock's `55P03`) are unchanged, and
+    the constraint, column and table names stay. `DriverErrorRedactionMiddlewareTest` checks the real
+    server's messages, `RedactedDriverExceptionTest` the other forms. Not covered: a value PostgreSQL would
+    quote in a form neither pattern knows — add it to `RedactedDriverException::redact()` with its test.
+    **An address that `Mime\Address` would refuse never gets past
     validation**: `framework.validation.email_validation_mode: strict` (`validator.yaml`), egulias'
     grammar, the one Mime uses — the default `html5` mode accepted `a..b@example.com`, and the worker then
     failed on a `RfcComplianceException` quoting it, logged on every retry. Don't override `mode:` on an
     `Assert\Email` whose value ends up in an e-mail.
     `SecurityAuditLoggerTest::testNoContextValueEverCarriesAPasswordATokenOrAnEmail` pins that with
-    sentinel values run through every method; extend it when adding one. Who calls what:
+    sentinel values run through every method (login identifiers of the actor and the subject included);
+    extend it when adding one. **`tests/Security/AccountIdentifierReachesNoLogTest.php` is the guard on
+    every channel** (issue #363): an account invited from `prenom.sentinelle@…` goes through invitation,
+    activation, replay, failed and successful login, authenticated requests, a backoffice 403, both
+    per-account AI quotas, logout, the three reachable backoffice 409s, role and password changes,
+    deletion, its JWT replayed after deletion, and the purge (one purged, one `ROLE_SUPER` skipped); no
+    record of any channel at any level (`doctrine`'s `debug` aside, as above) may contain `sentinelle` —
+    an e-mail address would fail it too — and the records it expects must have been seen. A new site that
+    writes a login identifier belongs in that scenario. Who calls what:
     `Infrastructure/Log/SecurityEventsSubscriber` for `LoginSuccessEvent`/`LoginFailureEvent` (**`login`
     firewall only** — the `api` firewall re-authenticates the JWT on every request and dispatches the
     same events), `LogoutEvent`, and the backoffice 403 on `kernel.exception` at priority 0 (after the
@@ -143,15 +227,15 @@ paths:
     (issue #356, before it they only had the kernel's generic `Uncaught PHP Exception` line, with no IP
     nor path): `PasswordSetupService` logs `password-setup-token-rejected` (unknown token, no subject) and
     `password-setup-token-replayed` (a link **already used** comes back — possible leak of the link — with
-    the account it activated; journal side only, the response keeps the 410 merged with « expired », and
-    a merely expired link is no event) right before throwing; `Infrastructure/Log/ThrottledRequestAuditListener`
+    the account it activated; journal side only, the response is that of every unusable link, an unknown one
+    included — one 404, issue #362 —, and a merely expired link is no event) right before throwing; `Infrastructure/Log/ThrottledRequestAuditListener`
     (`kernel.exception`, priority 0, above API Platform's -96 and `ApiProblemResponseListener`'s -98, which
     stop propagation) maps the three anonymous per-IP quota exceptions to `password-setup-throttled`,
     `contact-throttled`, `base-access-throttled`, no subject (the limiter's key is the IP). A listener rather
     than a call at the three throw sites on purpose: `Contact` would otherwise be the first context to
     depend on `Security` — the price is that this listener imports `Contact`'s quota exception. The
-    translator's quota is **not** there: it is a `ROLE_SUPER` account, traced on `ai_usage` (see
-    `.claude/rules/ai.md`). Since these events exist, the matching exceptions are back to `info` in
+    per-account quotas are **not** there — the translator's (`ROLE_SUPER`) and the career assistant's
+    (`ROLE_TRUSTED`), both traced with the account on `ai_usage` (see `.claude/rules/ai.md`). Since these events exist, the matching exceptions are back to `info` in
     `framework.exceptions`. Accepted limits, settled in the review of #356 — don't "fix" them without
     revisiting the trade-off: **`replayed` and `rejected` have legitimate sources** — the set-password page
     calls `validate` on every load, so a person reopening their own link after activation writes
@@ -161,11 +245,26 @@ paths:
     nginx zones (10/min/IP contact, 20/min/IP base-access), well below what `csrf-rejected` already allows.
     **Blind spots of the listener**: a 429 answered by nginx's `limit_req` never reaches PHP (the access log
     is its trace), and a quota exception wrapped in another one would go unseen (`instanceof` on the
-    top-level throwable only). **Replay and expiry must cost the same**: `findOneByTokenHash` loads the
+    top-level throwable only). **The sort is a closed list, so a guard holds it open** (issue #361):
+    `ThrottledRequestAuditCoverageTest` walks every `RetryAfterAware` of `src/` (through `DeclaredClasses`),
+    hands each one to the real listener, and turns red unless it yields exactly one event of its own — a
+    `…Throttled` method, never `loginThrottled` nor an unrelated one such as `rateLimiterUnavailable` — or
+    sits in a justified list: `PER_ACCOUNT` (the translator and the assistant, both on `ai_usage`, pinned by
+    their own tests) or `TRACED_UPSTREAM` (issue #399: `LoginRateLimitExceededException`, whose
+    `login-throttled` — with the tried identifier's fingerprint (#418) — `SecurityEventsSubscriber` writes on `LoginFailureEvent`
+    before the exception exists; sorting it again would log the refusal twice). The guard checks that the
+    listener ignores every justified entry. A new anonymous quota therefore gets its `…Throttled` interface
+    method, its `match` arm and its event in the same change — never a justified entry to make the suite
+    pass. The guard calls the listener directly: it proves the sort, not that the
+    exception reaches priority 0 unwrapped — `SecurityAuditLogTest` covers the real wiring, extend it too. **Replay and expiry must cost the same**: `findOneByTokenHash` loads the
     account by explicit join, so the `replayed` path, which logs it, pays no extra query behind the
-    shared 410 — keep the join. **Consumption is atomic**: `PasswordSetupService::complete()` hashes, then
-    `PasswordSetupTokenRepository::claim()` (`UPDATE … WHERE used_at IS NULL`, one row or none), and only
-    the winner writes the account; the loser of a concurrent submission is a `replayed`. Never go back to
+    shared 404 — keep the join. **Consumption is atomic**: `PasswordSetupService::complete()` hashes, then
+    `PasswordSetupTokenRepository::claim()` (`UPDATE … WHERE used_at IS NULL AND expires_at > :usedAt`, one
+    row or none), and only the winner writes the account; the loser of a concurrent submission is a
+    `replayed` (only when the token is `AlreadyUsed`: `claim()` returns a `TokenClaim`, a token gone meanwhile
+    is a `rejected`, issue #458). **So is expiry** (issue #447): the claim instant is read **after** the hash, which takes
+    time, and the same `UPDATE` refuses a token expired by then (strict bound, like `isUsable()`); that
+    loser is not a replay — no event, a merely expired link never is one —, the 404 is unchanged. Never go back to
     deciding on `isUsable()` alone, which reads the loaded state. Functional tests read the records through
     `tests/Support/ReadsSecurityAuditLog.php` (a
     Monolog `test` handler on the channel, `when@test`, found among `monolog.logger.security_audit`'s

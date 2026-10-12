@@ -8,7 +8,10 @@ use App\Portfolio\Watch\Domain\Entity\WatchSnapshot;
 use App\Portfolio\Watch\Domain\Repository\WatchSnapshotRepositoryInterface;
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotSourceStatus;
 use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
+use DateTimeImmutable;
+use DateTimeZone;
 use Doctrine\ORM\EntityManagerInterface;
+use LogicException;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -50,7 +53,7 @@ final class WatchResourceTest extends WebTestCase
                 'hasNewerPatch' => true,
                 'documentationUrl' => 'https://endoflife.date/php',
             ]]],
-            new \DateTimeImmutable('2026-09-07 04:41:00', new \DateTimeZone('UTC')),
+            new DateTimeImmutable('2026-09-07 04:41:00', new DateTimeZone('UTC')),
             SnapshotSourceStatus::OK,
         ));
     }
@@ -76,7 +79,7 @@ final class WatchResourceTest extends WebTestCase
                     'fixedIn' => '4.4.50',
                 ]],
             ],
-            new \DateTimeImmutable('2026-09-07 04:41:00', new \DateTimeZone('UTC')),
+            new DateTimeImmutable('2026-09-07 04:41:00', new DateTimeZone('UTC')),
             SnapshotSourceStatus::OK,
         ));
     }
@@ -218,7 +221,7 @@ final class WatchResourceTest extends WebTestCase
         $body = (string) $client->getResponse()->getContent();
 
         foreach (['GHSA-h7vf-5wrv-9fhv', 'CVE-2026-0001', 'symfony/http-kernel', '4.4.50', 'Une faille'] as $secret) {
-            self::assertStringNotContainsString($secret, $body, sprintf(
+            self::assertStringNotContainsString($secret, $body, \sprintf(
                 'La réponse publique expose « %s », qui relève du seul backoffice (décision D4).',
                 $secret,
             ));
@@ -233,7 +236,7 @@ final class WatchResourceTest extends WebTestCase
         self::assertSame(84, $vulnerabilities['packagesScanned']);
 
         foreach (['id', 'aliases', 'summary', 'severity', 'package', 'fixedIn', 'vulnerabilities'] as $forbidden) {
-            self::assertArrayNotHasKey($forbidden, $vulnerabilities, sprintf(
+            self::assertArrayNotHasKey($forbidden, $vulnerabilities, \sprintf(
                 'Le champ « %s » n\'a rien à faire dans la réponse publique (décision D4).',
                 $forbidden,
             ));
@@ -271,7 +274,7 @@ final class WatchResourceTest extends WebTestCase
     {
         $client = self::createClient();
         $client->getContainer()->set('http_client', new MockHttpClient(
-            static fn (): never => throw new \LogicException(
+            static fn (): never => throw new LogicException(
                 'Aucun appel sortant ne doit être émis pendant une requête de visiteur.',
             ),
         ));

@@ -28,10 +28,14 @@ use Symfony\Component\Yaml\Yaml;
 final class SystemCachePodVolumeTest extends TestCase
 {
     private const string VOLUME = 'cache-system';
-    private const string MOUNT_PATH = '/var/www/backend/var/cache/prod/pools/system';
+    /**
+     * Le répertoire du cache système dans l'image ; ProductionImageWarmUpTest
+     * vérifie que le build contrôle ce même répertoire.
+     */
+    public const string MOUNT_PATH = '/var/www/backend/var/cache/prod/pools/system';
 
     /**
-     * Les six manifestes qui exécutent l'image backend. La liste est vérifiée
+     * Les huit manifestes qui exécutent l'image backend. La liste est vérifiée
      * dans l'autre sens par testNoOtherManifestRunsTheBackendImage().
      */
     private const array MANIFESTS = [
@@ -41,6 +45,11 @@ final class SystemCachePodVolumeTest extends TestCase
         'messenger-purge-cronjob.yaml',
         'migrate-job.yaml',
         'seed-job.yaml',
+        'create-user-job.yaml',
+        'messenger-probe-job.yaml',
+        'messenger-stop-workers-job.yaml',
+        'messenger-failed-retry-job.yaml',
+        'messenger-failed-remove-job.yaml',
     ];
 
     /**
@@ -58,22 +67,22 @@ final class SystemCachePodVolumeTest extends TestCase
     {
         $volume = $this->firstWith($this->podSpec($manifest)['volumes'] ?? null, 'name', self::VOLUME);
 
-        self::assertNotNull($volume, sprintf('%s : volume « %s » absent.', $manifest, self::VOLUME));
+        self::assertNotNull($volume, \sprintf('%s : volume « %s » absent.', $manifest, self::VOLUME));
         $emptyDir = $volume['emptyDir'] ?? null;
-        self::assertIsArray($emptyDir, sprintf('%s : « %s » doit être un emptyDir.', $manifest, self::VOLUME));
+        self::assertIsArray($emptyDir, \sprintf('%s : « %s » doit être un emptyDir.', $manifest, self::VOLUME));
         // Borné : un cache qui grossirait sans fin remplirait le disque du nœud.
-        self::assertArrayHasKey('sizeLimit', $emptyDir, sprintf('%s : emptyDir sans sizeLimit.', $manifest));
+        self::assertArrayHasKey('sizeLimit', $emptyDir, \sprintf('%s : emptyDir sans sizeLimit.', $manifest));
     }
 
     #[DataProvider('manifests')]
     public function testEveryBackendContainerMountsTheSystemCacheWritable(string $manifest): void
     {
         $containers = $this->backendContainers($this->podSpec($manifest)['containers'] ?? null);
-        self::assertNotSame([], $containers, sprintf('%s : aucun conteneur de l\'image backend.', $manifest));
+        self::assertNotSame([], $containers, \sprintf('%s : aucun conteneur de l\'image backend.', $manifest));
 
         foreach ($containers as $container) {
             $mount = $this->firstWith($container['volumeMounts'] ?? null, 'mountPath', self::MOUNT_PATH);
-            self::assertNotNull($mount, sprintf('%s, conteneur %s : %s non monté.', $manifest, $this->text($container['name'] ?? null), self::MOUNT_PATH));
+            self::assertNotNull($mount, \sprintf('%s, conteneur %s : %s non monté.', $manifest, $this->text($container['name'] ?? null), self::MOUNT_PATH));
             self::assertSame(self::VOLUME, $mount['name'] ?? null);
             self::assertNotTrue($mount['readOnly'] ?? false, 'Le cache doit rester inscriptible.');
         }
@@ -92,7 +101,7 @@ final class SystemCachePodVolumeTest extends TestCase
                 && str_contains($this->text($container['command'] ?? null), self::MOUNT_PATH.'/.'),
         );
 
-        self::assertCount(1, $seeders, sprintf('%s : il faut exactement un initContainer qui copie %s/. dans le volume.', $manifest, self::MOUNT_PATH));
+        self::assertCount(1, $seeders, \sprintf('%s : il faut exactement un initContainer qui copie %s/. dans le volume.', $manifest, self::MOUNT_PATH));
     }
 
     public function testNoOtherManifestRunsTheBackendImage(): void
@@ -138,7 +147,7 @@ final class SystemCachePodVolumeTest extends TestCase
             }
         }
 
-        self::fail(sprintf('%s : aucun pod spec trouvé.', $manifest));
+        self::fail(\sprintf('%s : aucun pod spec trouvé.', $manifest));
     }
 
     /**

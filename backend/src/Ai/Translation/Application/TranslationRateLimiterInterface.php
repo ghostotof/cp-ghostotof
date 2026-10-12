@@ -15,7 +15,10 @@ use App\Ai\Translation\Domain\Exception\TranslationRateLimitExceededException;
 interface TranslationRateLimiterInterface
 {
     /**
+     * @param string $accountId UUID du compte ({@see \App\Shared\Domain\Security\AccountReference}),
+     *                          jamais son identifiant de connexion (issue #363)
+     *
      * @throws TranslationRateLimitExceededException
      */
-    public function consume(string $accountIdentifier): void;
+    public function consume(string $accountId): void;
 }
