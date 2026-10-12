@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Cache;
 
+use App\Tests\Support\KubernetesManifests;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * `cache.system` doit rester inscriptible dans chaque pod qui exécute l'image
@@ -77,7 +77,7 @@ final class SystemCachePodVolumeTest extends TestCase
     #[DataProvider('manifests')]
     public function testEveryBackendContainerMountsTheSystemCacheWritable(string $manifest): void
     {
-        $containers = $this->backendContainers($this->podSpec($manifest)['containers'] ?? null);
+        $containers = $this->backendContainers($this->podSpec($manifest), 'containers');
         self::assertNotSame([], $containers, \sprintf('%s : aucun conteneur de l\'image backend.', $manifest));
 
         foreach ($containers as $container) {
@@ -96,7 +96,7 @@ final class SystemCachePodVolumeTest extends TestCase
     public function testAnInitContainerSeedsTheVolumeFromThePrewarmedCache(string $manifest): void
     {
         $seeders = array_filter(
-            $this->backendContainers($this->podSpec($manifest)['initContainers'] ?? null),
+            $this->backendContainers($this->podSpec($manifest), 'initContainers'),
             fn (array $container): bool => null !== $this->firstWith($container['volumeMounts'] ?? null, 'name', self::VOLUME)
                 && str_contains($this->text($container['command'] ?? null), self::MOUNT_PATH.'/.'),
         );
@@ -106,7 +106,7 @@ final class SystemCachePodVolumeTest extends TestCase
 
     public function testNoOtherManifestRunsTheBackendImage(): void
     {
-        $paths = glob($this->k8sBase().'/*.yaml');
+        $paths = glob(KubernetesManifests::base()->directory().'/*.yaml');
         self::assertIsArray($paths);
 
         $found = [];
@@ -127,45 +127,10 @@ final class SystemCachePodVolumeTest extends TestCase
      */
     private function podSpec(string $manifest): array
     {
-        $path = $this->k8sBase().'/'.$manifest;
-        self::assertFileIsReadable($path);
-        $documents = preg_split('/^---\s*$/m', (string) file_get_contents($path));
-        self::assertIsArray($documents);
+        $podSpecs = KubernetesManifests::base()->podSpecs($manifest);
+        self::assertNotSame([], $podSpecs, \sprintf('%s : aucun pod spec trouvé.', $manifest));
 
-        foreach ($documents as $document) {
-            $resource = Yaml::parse($document);
-            if (!\is_array($resource)) {
-                continue;
-            }
-            $spec = match ($resource['kind'] ?? null) {
-                'Deployment', 'Job' => $this->at($resource, 'spec', 'template', 'spec'),
-                'CronJob' => $this->at($resource, 'spec', 'jobTemplate', 'spec', 'template', 'spec'),
-                default => null,
-            };
-            if (null !== $spec) {
-                return $spec;
-            }
-        }
-
-        self::fail(\sprintf('%s : aucun pod spec trouvé.', $manifest));
-    }
-
-    /**
-     * @param array<mixed> $node
-     *
-     * @return array<mixed>|null
-     */
-    private function at(array $node, string ...$keys): ?array
-    {
-        foreach ($keys as $key) {
-            $child = $node[$key] ?? null;
-            if (!\is_array($child)) {
-                return null;
-            }
-            $node = $child;
-        }
-
-        return $node;
+        return $podSpecs[0];
     }
 
     /**
@@ -193,12 +158,15 @@ final class SystemCachePodVolumeTest extends TestCase
     }
 
     /**
+     * @param array<mixed>                  $podSpec
+     * @param 'containers'|'initContainers' $list
+     *
      * @return list<array<mixed>>
      */
-    private function backendContainers(mixed $containers): array
+    private function backendContainers(array $podSpec, string $list): array
     {
         return array_values(array_filter(
-            $this->items($containers),
+            KubernetesManifests::containers($podSpec, $list),
             static fn (array $container): bool => \in_array($container['image'] ?? null, ['backend', '${BACKEND_IMAGE}'], true),
         ));
     }
@@ -214,10 +182,5 @@ final class SystemCachePodVolumeTest extends TestCase
         }
 
         return \is_array($value) ? implode(' ', array_filter($value, \is_string(...))) : '';
-    }
-
-    private function k8sBase(): string
-    {
-        return \dirname(__DIR__, 5).'/k8s/base';
     }
 }

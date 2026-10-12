@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Lock;
 
 use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
+use App\Tests\Support\KubernetesManifests;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Aucune commande console des pods n'attend un verrou PostgreSQL indéfiniment
@@ -198,7 +198,7 @@ final class ConsoleLockWaitBoundTest extends TestCase
      */
     private static function manifestsRunningTheBackendImage(): array
     {
-        $paths = glob(self::k8sBase().'/*.yaml');
+        $paths = glob(KubernetesManifests::base()->directory().'/*.yaml');
         self::assertIsArray($paths);
 
         $found = [];
@@ -216,27 +216,15 @@ final class ConsoleLockWaitBoundTest extends TestCase
      * Les conteneurs de l'image backend d'une liste du pod spec
      * (`containers` ou `initContainers`), tous documents du fichier confondus.
      *
+     * @param 'containers'|'initContainers' $list
+     *
      * @return list<array<mixed>>
      */
     private function backendContainers(string $manifest, string $list): array
     {
-        $path = self::k8sBase().'/'.$manifest;
-        self::assertFileIsReadable($path);
-        $documents = preg_split('/^---\s*$/m', (string) file_get_contents($path));
-        self::assertIsArray($documents);
-
         $containers = [];
-        foreach ($documents as $document) {
-            $resource = Yaml::parse($document);
-            if (!\is_array($resource)) {
-                continue;
-            }
-            $spec = match ($resource['kind'] ?? null) {
-                'Deployment', 'Job' => $this->at($resource, 'spec', 'template', 'spec'),
-                'CronJob' => $this->at($resource, 'spec', 'jobTemplate', 'spec', 'template', 'spec'),
-                default => null,
-            };
-            foreach ($this->items($spec[$list] ?? null) as $container) {
+        foreach (KubernetesManifests::base()->podSpecs($manifest) as $podSpec) {
+            foreach (KubernetesManifests::containers($podSpec, $list) as $container) {
                 if (\in_array($container['image'] ?? null, ['backend', '${BACKEND_IMAGE}'], true)) {
                     $containers[] = $container;
                 }
@@ -244,24 +232,6 @@ final class ConsoleLockWaitBoundTest extends TestCase
         }
 
         return $containers;
-    }
-
-    /**
-     * @param array<mixed> $node
-     *
-     * @return array<mixed>|null
-     */
-    private function at(array $node, string ...$keys): ?array
-    {
-        foreach ($keys as $key) {
-            $child = $node[$key] ?? null;
-            if (!\is_array($child)) {
-                return null;
-            }
-            $node = $child;
-        }
-
-        return $node;
     }
 
     /**
@@ -285,10 +255,5 @@ final class ConsoleLockWaitBoundTest extends TestCase
         }
 
         return \is_array($value) ? implode(' ', array_filter($value, \is_string(...))) : '';
-    }
-
-    private static function k8sBase(): string
-    {
-        return \dirname(__DIR__, 5).'/k8s/base';
     }
 }
