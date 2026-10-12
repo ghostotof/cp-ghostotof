@@ -37,6 +37,20 @@ prod run the identical PHP engine:
   runs it (comments dropped, continuations joined): `set -e`, no `||` after the script, the check on
   `SystemCachePodVolumeTest::MOUNT_PATH` after it. Proven both ways with a real `make build-prod` (the #468
   defect now fails the `RUN`).
+  **The image loads a compiled `.env.local.php`, never a parsed `.env`** (issue #489): the same `RUN` runs
+  `composer dump-env prod` after the warm-up, while Composer is still there (≈ 45 µs saved per request and
+  per command, measured, the `.env` parse against an `include` served by OPcache). Three facts make it safe,
+  each proven on the built image, FPM request included. **A pod variable still wins**, empty or not:
+  `Dotenv::populate()` never replaces a variable already set, exactly as it did over `.env` — never set the
+  runtime's `dotenv_overload`. **A `${VAR}` of `.env` stays resolved at runtime**: Flex compiles it into
+  `($_ENV['VAR'] ?? $_SERVER['VAR'] ?? '')` (`MESSENGER_TRANSPORT_DSN`), and the build's own environment does
+  not leak into the file. **Only `backend/.env` feeds it**: `dump-env prod` also reads `.env.local`,
+  `.env.prod` and `.env.prod.local`, all three excluded by `.dockerignore`, like a workstation's
+  `.env.local.php`. Keep `.env` in the image: when the pod's `APP_ENV` differs from the compiled one, Dotenv
+  falls back to parsing it. `ProductionImageCompilesDotenvTest` pins the `RUN` and the exclusions (the dev
+  container mounts `.dockerignore` read-only for it: `up -d --force-recreate backend` after editing it);
+  `CompiledDotenvNeverMasksPodVariablesTest` replays the real `vendor/autoload_runtime.php` on a throwaway
+  project, in a child process with a controlled environment.
 - **`preprod`** — built **`FROM production`** (not a parallel build) so its application layers are byte-identical
   to prod; only adds Xdebug (**inert in the image**, see `.claude/rules/deploiement.md`) and verbose logs.
   Pipeline order is dev → preprod → prod regardless of declaration order in the Dockerfile.

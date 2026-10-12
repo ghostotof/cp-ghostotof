@@ -57,6 +57,14 @@ services:
       # install-symfony-language-tools.sh (issue #343) : ne pas retirer ce
       # montage sans déplacer ces deux usages.
       - ./docker/php:/var/www/docker/php:ro
+      # Lecture seule, pour que PHPUnit vérifie que les fichiers .env propres au
+      # poste n'entrent pas dans le contexte de build de l'image, d'où
+      # `composer dump-env prod` les compilerait (ProductionImageCompilesDotenvTest,
+      # issue #489). Un montage de fichier suit son inode : après une
+      # modification par remplacement (éditeur, git), ni `restart` ni la
+      # resynchronisation ne suffisent, `docker compose up -d --force-recreate
+      # backend` le recharge.
+      - ./.dockerignore:/var/www/.dockerignore:ro
     depends_on:
       database:
         condition: service_healthy

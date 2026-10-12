@@ -35,6 +35,13 @@ backend/.env.*.local
 # une image déployée. Il n'est pas versionné (backend/.gitignore), donc il
 # n'existe que sur un poste — raison de plus pour ne pas le laisser entrer.
 backend/.env.test
+# `composer dump-env prod` (stage `production`, issue #489) compile `.env`,
+# `.env.local`, `.env.prod` et `.env.prod.local` : seul le premier, versionné,
+# doit l'alimenter. `.env.prod` n'est pas versionné, il ne viendrait que d'un
+# poste. Un `.env.local.php` compilé sur un poste n'a rien à faire dans
+# l'image non plus : le build produit le sien.
+backend/.env.prod
+backend/.env.local.php
 backend/public/assets/
 backend/public/bundles/
 

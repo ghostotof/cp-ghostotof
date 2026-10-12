@@ -198,6 +198,13 @@ RUN set -eux; \
     composer run-script --no-dev post-install-cmd; \
     find var/cache/prod/pools/system -type f | grep -q . \
         || { echo 'Cache système non préchauffé : seed-cache-system échouerait (issue #474).' >&2; exit 1; }; \
+    # Compilation de l'environnement (issue #489) : `.env.local.php`, un
+    # tableau PHP qu'OPcache garde en mémoire, remplace l'analyse de `.env`
+    # par Dotenv à chaque requête et à chaque commande. Une variable posée par
+    # le pod prime toujours sur la valeur compilée, vide ou non, comme elle
+    # primait sur `.env`. Seul `.env`, sans valeur réelle, alimente le
+    # fichier : .dockerignore écarte les `.env.*` propres au poste.
+    composer dump-env prod; \
     # Compilation des assets : uniquement en mode full-stack (AssetMapper).
     # En mode API, il n'y a aucun asset à compiler.
     if [ "${BACKEND_FLAVOR}" = "full" ]; then \
