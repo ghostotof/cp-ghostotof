@@ -175,8 +175,11 @@ paths:
     writes it — redeploying such an image, or a consumer still running it. Its refusal has its own
     factory, `withoutGeneration()`, whose message tells the two cases apart in `failed` (a resend to
     do, not a tampered queue to investigate) and quotes no value. **What to do with one**: read
-    `messenger:failed:show <id>` for its `userId`, resend the invitation from the backoffice, then
-    `messenger:failed:remove <id>`. Never `messenger:failed:retry` it: it fails to decode again, every
+    `messenger:failed:show <id> -vv` for its `userId` — only `-vv` shows it (in the raw body), measured
+    for #521, hence a human `kubectl exec` whose output stays on the terminal, never a Job —, resend the
+    invitation from the backoffice, then `messenger:failed:remove <id>` through
+    `k8s/base/messenger-failed-remove-job.yaml` (`k8s/README.md` « File d'échec Messenger »). Never
+    `messenger:failed:retry` it: it fails to decode again, every
     time — at best it comes back to `failed` after the retries, at worst the entry is dropped and the
     `userId` to resend with it (not measured: `SendFailedMessageToFailureTransportListener` declines
     to send a message back to the failure transport it came from, in some cases).
@@ -236,7 +239,7 @@ paths:
     cannot decode a message carrying the generation (`Cannot create dynamic property`) — during a rollout,
     a new API pod can publish before the `Recreate` worker is replaced, and after a rollback every new
     message is concerned —: it goes to `failed` with its raw body and replays once the new code runs, so
-    read `messenger:failed:show` after a release or a rollback.
+    read `messenger:failed:show` after a release or a rollback (`k8s/README.md` « File d'échec Messenger »).
   - `Infrastructure/` — `Doctrine/{CpgUser,PasswordSetupToken}Repository.php` (sole impls;
     `CpgUserRepository` is also the **loader of the `cpg_users` provider**, `UserLoaderInterface`, issue #418:
     the `entity` provider has no `property` option on purpose — with it, Doctrine's provider threw

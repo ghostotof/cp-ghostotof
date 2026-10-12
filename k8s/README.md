@@ -807,14 +807,14 @@ secret. Une rotation invalide les `XSRF-TOKEN` déjà émis : une écriture, dé
 le nouveau (échec de décodage définitif, droit dans `failed` sans réessai depuis l'issue #450, où
 elle reste refusée et part avec la purge des 30 jours). Ordre, en période calme :
 
-1. Vider les files : la file `async` est consommée par le worker ; lire `failed`
-   (`messenger:failed:show`, depuis un Job sur le modèle de `create-user-job.yaml`, jamais
-   `kubectl exec`) et rejouer ou purger ce qui doit l'être. Ce Job n'a pas encore de manifeste,
-   et sa sortie en `-vv` contiendrait des données personnelles : issue #521.
+1. Vider les files : la file `async` est consommée par le worker ; lire `failed` et rejouer ou
+   purger ce qui doit l'être (§ « File d'échec Messenger » ci-dessous : lecture par `kubectl exec`,
+   rejeu et suppression par Job).
 2. Publier la nouvelle version dans Secret Manager, puis
    `kubectl annotate externalsecret backend-secrets -n $NS force-sync=$(date +%s) --overwrite`.
 3. Redémarrer ensemble : `kubectl rollout restart deployment/backend deployment/worker -n $NS`.
-4. Relancer `messenger:stop-workers` depuis un Job (même modèle) : le cache en base (`cache_items`)
+4. Relancer `messenger:stop-workers` par son Job, `k8s/base/messenger-stop-workers-job.yaml`
+   (§ « File d'échec Messenger » ci-dessous) : le cache en base (`cache_items`)
    est signé sous une clé dérivée du secret (issue #468), et la ligne du signal de redémarrage,
    sans expiration, serait sinon refusée à chaque tour du worker, un `warning` par tour. La
    commande la réécrit sous la nouvelle clé. Le reste du cache se perd et se reconstruit : les
@@ -847,6 +847,89 @@ conséquence. Avant le merge de la release :
    fenêtre : l'API répond 503 le temps du basculement, le frontend reste servi. Retirer la variable
    juste après le déploiement en prod.
 
+## File d'échec Messenger (`failed`)
+
+Un message dont les réessais sont épuisés, ou qui ne se décode pas (MAC refusé, invitation sans
+génération), reste dans la table `messenger_messages` (`queue_name = failed`) jusqu'à son rejeu,
+sa suppression ou la purge des 30 jours (messages de contact, `messenger-purge-cronjob.yaml`).
+Quatre opérations, deux voies (issue #521, règle de #520 dans `.claude/rules/deploiement.md`) :
+
+| Opération | Effet de bord | Ligne d'audit | Ce que la sortie expose | Voie |
+|---|---|---|---|---|
+| `messenger:failed:show` (liste, `--stats`, un Id) | aucun | aucune | classe, Id, dates, message d'erreur (expurgé, #356) | `kubectl exec` humain |
+| `messenger:failed:show <id> -vv` | aucun | aucune | **le message lui-même** : nom, adresse et texte d'un visiteur ; `userId` d'une invitation ; corps brut d'une enveloppe non décodée | `kubectl exec` humain, terminal seulement |
+| `messenger:failed:retry <id>` | le handler s'exécute (un e-mail part) | aucune (journaux du handler) | comme `show` sans `-vv` | Job |
+| `messenger:failed:remove <id>` | suppression définitive | aucune | comme `show` sans `-vv` | Job |
+| `messenger:stop-workers` | réécrit le signal de redémarrage en cache | aucune | rien | Job |
+
+Mesuré en dev (base de test, données fictives) : sans `-vv`, ni le nom, ni l'adresse, ni le texte
+d'un message de contact, ni le `userId` d'une invitation n'apparaissent ; avec `-vv`, Messenger
+vide le message par VarDumper, plus la trace de l'exception. Un Job écrirait cette sortie dans les
+journaux de son pod, lisibles jusqu'à sa suppression, y compris par le jeton CI (`pods/log`) :
+c'est pourquoi la lecture est un `exec`, et pourquoi les Jobs ne passent jamais `-v`.
+
+Pour lire `failed`, depuis un **terminal séparé** (jamais derrière un `!` dans une session
+d'assistant : en `-vv`, la réponse est une donnée personnelle), avec un **kubeconfig
+d'administrateur humain** — le jeton CI n'a pas `pods/exec` (audit C8) :
+
+```bash
+NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
+# La liste : Id, classe, date d'échec, erreur. Aucun contenu de message. 50 lignes au plus par
+# défaut : si l'en-tête « There are N messages » dépasse 50, relancer avec --max=N.
+kubectl -n "${NS:?preprod ou prod}" exec deploy/backend -c php-fpm -- \
+  env PGOPTIONS='-c default_transaction_read_only=on' php bin/console messenger:failed:show --no-interaction
+# Le compte par classe.
+kubectl -n "${NS:?preprod ou prod}" exec deploy/backend -c php-fpm -- \
+  env PGOPTIONS='-c default_transaction_read_only=on' php bin/console messenger:failed:show --stats --no-interaction
+# Un message en détail, Id pris dans la liste. -vv affiche le message lui-même : à garder sur ce
+# terminal, jamais collé dans une issue, un ticket ou une session d'assistant.
+kubectl -n "${NS:?preprod ou prod}" exec deploy/backend -c php-fpm -- \
+  env PGOPTIONS='-c default_transaction_read_only=on' php bin/console messenger:failed:show <id> -vv --no-interaction
+```
+
+- **Lecture seule, vérifiée.** `PGOPTIONS` est lu par libpq, donc par `pdo_pgsql` : toute la
+  session PostgreSQL de la commande est en `default_transaction_read_only`. Mesuré en dev :
+  `failed:show` (liste, `--stats`, `-vv`) y passe, un `failed:remove` y échoue en SQLSTATE 25006
+  (« cannot execute DELETE in a read-only transaction »). Un garde-fou, pas une frontière, comme
+  pour « nommer un compte » (§ Journal de sécurité) : la même identité peut tout faire. Mesuré en
+  dev seulement : à confirmer à la première exécution en préprod (#521) — si la lecture y échoue en
+  SQLSTATE 25006, une écriture annexe (un cache sur DBAL) s'est glissée dans la session, le signaler
+  avant de retirer le garde-fou.
+- **Le `userId` d'une invitation n'apparaît qu'en `-vv`** (dans le corps brut, pour une invitation
+  sans génération qui ne se décode pas) : c'est la seule raison de passer `-vv` dans la procédure
+  de `.claude/rules/security-user.md`.
+- `deploy/backend -c php-fpm` : le conteneur a l'image, les Secrets et le cache système de la
+  release qui sert ; la commande y tourne à côté de php-fpm, sans rien écrire en base.
+
+Pour rejouer, supprimer ou relancer le signal d'arrêt, un Job, par `tools/run-job.sh` (bash ≥ 4,
+jq, envsubst), depuis la racine du dépôt. L'Id est celui de la liste **du même namespace** — chaque
+base a sa propre séquence, l'Id 42 de la préprod n'est pas celui de la prod —, **un seul par Job**,
+et le Job refuse en 64 tout ce qui n'est pas un entier (`--all` lu comme une option viderait la
+table) :
+
+```bash
+NS=        # preprod ou prod, à renseigner, le même que pour la lecture de l'Id
+: "${NS:?preprod ou prod}"
+IMAGE="$(kubectl -n "$NS" get deploy backend -o jsonpath='{.spec.template.spec.containers[?(@.name=="php-fpm")].image}')"
+# Rejouer : le handler s'exécute dans le pod du Job (un e-mail part) ; un nouvel échec revient dans
+# `failed` sous un nouvel Id.
+tools/run-job.sh "$NS" k8s/base/messenger-failed-retry-job.yaml "$IMAGE" 300 FAILED_MESSAGE_ID=<id>
+# Supprimer définitivement.
+tools/run-job.sh "$NS" k8s/base/messenger-failed-remove-job.yaml "$IMAGE" 300 FAILED_MESSAGE_ID=<id>
+# Arrêter les workers (Kubernetes les relance), étape 4 de la rotation d'APP_SECRET.
+tools/run-job.sh "$NS" k8s/base/messenger-stop-workers-job.yaml "$IMAGE" 300
+```
+
+**Jamais `failed:retry`** pour une enveloppe au MAC refusé ni une invitation sans génération :
+elles échouent au décodage à chaque fois (lire le `userId`, renvoyer l'invitation depuis le
+backoffice, puis supprimer la ligne). Chaque Job garde ses journaux une heure
+(`ttlSecondsAfterFinished`), ne se rejoue pas (`backoffLimit: 0`) et échoue 240 s après sa
+création quoi qu'il fasse (`activeDeadlineSeconds`, démarrage et commande compris). **Un Job à la
+fois** : `run-job.sh` supprime le Job précédent du même nom sans attendre sa fin — lancé depuis un
+second terminal, il couperait un rejeu en plein envoi, et l'e-mail repartirait au rejeu suivant.
+Pour plusieurs Ids, les enchaîner dans un même terminal ; les journaux d'un Job remplacé sont
+perdus, sauf les 200 dernières lignes que `run-job.sh` a imprimées.
+
 ## Retour arrière applicatif
 
 Il n'y a pas de retour arrière automatique en prod (`rollback-preprod` n'existe qu'en préprod) :
@@ -857,7 +940,7 @@ main :
   `kubectl -n $NS rollout undo deployment/backend`, puis `deployment/worker`, puis
   `deployment/frontend`. Le worker lit ce que l'API met en file, sous la même clé de MAC : défaire
   l'un sans l'autre (une clé `messenger-envelope/v2` face à `v1`) envoie chaque message dans
-  `failed`, sans rattrapage. Lire `failed` ensuite (`messenger:failed:show` depuis un Job).
+  `failed`, sans rattrapage. Lire `failed` ensuite (§ « File d'échec Messenger » ci-dessus).
 - **Jamais vers une version antérieure à #450 (v0.23.0 et avant)** sans l'avoir décidé : ces images
   acceptent encore une enveloppe **sans** MAC (mode transition de #444) et rouvrent l'injection
   d'objet par la file tant qu'elles tournent. Au redéploiement suivant, ce qu'elles ont mis en file
@@ -1359,12 +1442,13 @@ Aucun pod de ce dépôt n'en a l'usage — vérifié plutôt que supposé :
 
 Le champ est posé au niveau du **pod spec** (`spec.template.spec`, et
 `spec.jobTemplate.spec.template.spec` pour les CronJob), pas sur le
-ServiceAccount `default` que ce dépôt ne gère pas. Les douze objets concernés :
+ServiceAccount `default` que ce dépôt ne gère pas. Les quinze objets concernés :
 `backend`, `worker`, `frontend`, `postgres`, `rabbitmq`, `adminer`, les
-CronJob `watch-refresh` et `contact-failed-messages-purge`, **et les quatre Jobs
+CronJob `watch-refresh` et `contact-failed-messages-purge`, **et les sept Jobs
 hors kustomize** `migrate-job.yaml`, `seed-job.yaml`, `create-user-job.yaml`
-(issue #386) et `messenger-probe-job.yaml` (issue #470) — ces derniers ne
-passent par aucun transformateur, ils portent donc le champ directement.
+(issue #386), `messenger-probe-job.yaml` (issue #470) et les trois Jobs de
+`failed` (issue #521) — ces derniers ne passent par aucun transformateur, ils
+portent donc le champ directement.
 
 ### Labels Pod Security Admission sur les deux namespaces
 
@@ -1433,12 +1517,14 @@ coupées : quelques requêtes peuvent répondre 500 pendant la reprise.
 Dans l'ordre, avec un kubeconfig **d'administrateur**, sur la préprod, **avant**
 de fusionner la release :
 
-1. **Hors ligne.** Le rendu doit passer et les douze pod specs porter le champ :
+1. **Hors ligne.** Le rendu doit passer et les quinze pod specs porter le champ :
    ```bash
    kubectl kustomize k8s/overlays/preprod >/dev/null && echo rendu-ok
    kubectl kustomize k8s/overlays/preprod | grep -c 'automountServiceAccountToken: false'   # 8 attendu
    grep -c 'automountServiceAccountToken: false' k8s/base/migrate-job.yaml k8s/base/seed-job.yaml \
-     k8s/base/create-user-job.yaml k8s/base/messenger-probe-job.yaml
+     k8s/base/create-user-job.yaml k8s/base/messenger-probe-job.yaml \
+     k8s/base/messenger-stop-workers-job.yaml k8s/base/messenger-failed-retry-job.yaml \
+     k8s/base/messenger-failed-remove-job.yaml
    ```
 2. **Lire les avertissements sans rien bloquer.** Poser d'abord `audit` et
    `warn` seuls. Au moment où un label PSA est posé ou modifié, l'API évalue

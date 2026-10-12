@@ -34,6 +34,15 @@ final class OperatorExecBoundaryTest extends TestCase
 
     private const string LOOKUP_SECTION = 'Pour nommer un compte pendant un incident';
 
+    private const string FAILED_READ_SECTION = 'Pour lire `failed`';
+
+    /**
+     * La seule commande console qu'un `exec` du runbook peut lancer : une
+     * lecture (issue #521). Tout le reste — rejeu, suppression, signal
+     * d'arrêt, purge, abréviations comprises (`m:f:rem`) — est un Job.
+     */
+    private const string READ_ONLY_CONSOLE_COMMAND = 'messenger:failed:show';
+
     /**
      * Toutes les règles qui atteignent le ServiceAccount du déployeur : le Role
      * du namespace et le ClusterRole, chacun par sa liaison. Une liaison qui
@@ -125,17 +134,106 @@ final class OperatorExecBoundaryTest extends TestCase
     }
 
     /**
+     * Issue #521 : rejouer, supprimer un message de `failed` ou relancer le
+     * signal d'arrêt des workers a un effet de bord, donc passe par un Job
+     * (`k8s/base/messenger-*-job.yaml`). Un `kubectl exec` du runbook qui lance
+     * la console n'y lance que la lecture de `failed` — une liste blanche : une
+     * abréviation que Symfony accepte (`m:f:rem`) ou une autre commande qui
+     * écrit (`cache:pool:clear`) ne passe pas.
+     */
+    public function testNoRunbookExecRunsAConsoleCommandOtherThanTheFailedRead(): void
+    {
+        $offending = [];
+        foreach ($this->runbookExecLines() as $line) {
+            preg_match_all('#bin/console\s+(\S+)#', $line, $commands);
+            foreach ($commands[1] as $command) {
+                if (self::READ_ONLY_CONSOLE_COMMAND !== $command) {
+                    $offending[] = $line;
+                }
+            }
+            if (str_contains($line, 'console') && 0 === \count($commands[1])) {
+                $offending[] = $line;
+            }
+        }
+
+        self::assertSame([], $offending);
+    }
+
+    /**
+     * La lecture de `failed` reste un exec humain : en `-vv`, la sortie porte
+     * le message lui-même (nom, adresse, texte d'un visiteur), qu'un Job
+     * écrirait dans les journaux de son pod. Chaque appel ne fait que lire —
+     * `messenger:failed:show`, dans une session PostgreSQL en lecture seule,
+     * qu'une écriture par erreur ferait échouer (mesuré pour #521 : un
+     * `failed:remove` y sort en SQLSTATE 25006) — et vise le namespace donné.
+     */
+    public function testTheFailedTransportIsReadOnlyThroughAReadOnlySession(): void
+    {
+        $block = $this->bashBlockAfter(self::FAILED_READ_SECTION);
+        self::assertMatchesRegularExpression('/^NS= /m', $block);
+
+        $calls = array_values(array_filter(
+            $this->execLines($block),
+            static fn (string $line): bool => str_contains($line, 'bin/console'),
+        ));
+        self::assertNotEmpty($calls, 'La section « lire failed » n\'a plus de commande.');
+
+        foreach ($calls as $call) {
+            self::assertMatchesRegularExpression('/kubectl -n "\$\{NS:\?[^}]+\}" exec deploy\/backend -c php-fpm --/', $call);
+            self::assertStringContainsString("env PGOPTIONS='-c default_transaction_read_only=on' php bin/console messenger:failed:show ", $call);
+            self::assertDoesNotMatchRegularExpression('/-n (preprod|prod)\b/', $call);
+        }
+    }
+
+    /**
      * Le bloc `bash` qui suit la phrase d'introduction de la section.
      */
     private function lookupCommand(): string
     {
-        $readme = (string) file_get_contents($this->k8sDir().'/README.md');
-        $start = strpos($readme, self::LOOKUP_SECTION);
-        self::assertIsInt($start, 'La section « nommer un compte » a disparu du runbook.');
+        return $this->bashBlockAfter(self::LOOKUP_SECTION);
+    }
+
+    private function bashBlockAfter(string $section): string
+    {
+        $readme = $this->readme();
+        $start = strpos($readme, $section);
+        self::assertIsInt($start, \sprintf('La section « %s » a disparu du runbook.', $section));
 
         self::assertSame(1, preg_match('/```bash\n(.*?)```/s', substr($readme, $start), $block));
 
         return $block[1];
+    }
+
+    /**
+     * Les commandes `kubectl … exec` de tout le runbook.
+     *
+     * @return list<string>
+     */
+    private function runbookExecLines(): array
+    {
+        return $this->execLines($this->readme());
+    }
+
+    /**
+     * Les lignes d'un texte qui ouvrent un `kubectl exec`, continuations
+     * (`\` en fin de ligne) rejointes.
+     *
+     * @return list<string>
+     */
+    private function execLines(string $text): array
+    {
+        $joined = preg_replace('/\\\\\n\s*/', ' ', $text);
+        self::assertIsString($joined);
+
+        return array_values(array_filter(
+            explode("\n", $joined),
+            static fn (string $line): bool => 1 === preg_match('/\bkubectl\b.*\bexec\b/', $line),
+        ));
+    }
+
+    private function readme(): string
+    {
+        return (string) file_get_contents($this->k8sDir().'/README.md');
     }
 
     /**
