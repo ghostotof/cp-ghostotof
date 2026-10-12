@@ -16,9 +16,9 @@ use App\Tests\Support\HttpJson;
 use App\Tests\Support\InvitesUsers;
 use App\Tests\Support\TestCredentials;
 use DateInterval;
-use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Psr\Clock\ClockInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
@@ -165,6 +165,10 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         $token = $this->inviteAndCollectToken();
         $otherToken = $this->issueAnotherUsableToken(self::EMAIL);
         self::assertSame(['unused' => 2, 'total' => 2], $this->tokenCountsOf(self::EMAIL));
+        // Le second lien fonctionne avant l'activation : sans quoi la
+        // comparaison à un lien inconnu, plus bas, ne prouverait rien.
+        $this->postValidate($client, ['token' => $otherToken]);
+        self::assertResponseStatusCodeSame(204);
 
         $this->postSetup($client, ['token' => $token, 'password' => TestCredentials::variant('new')]);
         self::assertResponseStatusCodeSame(204);
@@ -186,8 +190,17 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
             }
 
             self::assertSame(404, $responses['inconnu']['status'], $route);
+            self::assertIsArray($responses['inconnu']['body'], $route);
             self::assertSame($responses['inconnu'], $responses['autre lien du compte'], \sprintf('Route %s : le lien purgé se distingue d\'un lien inconnu.', $route));
         }
+
+        // Le mot de passe de l'activation tient : le second lien n'a rien
+        // écrasé.
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
+            'username' => self::DERIVED_USERNAME,
+            'password' => TestCredentials::variant('new'),
+        ]));
+        self::assertResponseIsSuccessful();
     }
 
     public function testSetupReturns404ForAnUnknownToken(): void
@@ -444,6 +457,9 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         }
 
         self::assertSame(404, $responses['inconnu']['status']);
+        // Un corps vide n'est plus une erreur de décodage : le refus de
+        // référence doit en porter un.
+        self::assertIsArray($responses['inconnu']['body']);
         foreach ($responses as $case => $response) {
             self::assertSame($responses['inconnu'], $response, \sprintf('Le lien « %s » se distingue d\'un lien inconnu.', $case));
         }
@@ -607,7 +623,8 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
 
         $clearToken = bin2hex(random_bytes(32));
         self::getContainer()->get(PasswordSetupTokenRepositoryInterface::class)->save(
-            new PasswordSetupToken($user, hash('sha256', $clearToken), new DateTimeImmutable('+48 hours')),
+            // L'horloge du service, qui juge l'échéance, pas l'heure murale.
+            new PasswordSetupToken($user, hash('sha256', $clearToken), self::getContainer()->get(ClockInterface::class)->now()->add(new DateInterval('PT48H'))),
         );
         self::getContainer()->get(EntityManagerInterface::class)->clear();
 
@@ -615,8 +632,8 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
     }
 
     /**
-     * Jetons du compte de l'adresse, lus dans la table : encore utilisables
-     * (non consommés, échéance comprise ou non) et au total.
+     * Jetons du compte de l'adresse, lus dans la table : non consommés
+     * (`used_at IS NULL`, expirés compris) et au total.
      *
      * @return array{unused: int, total: int}
      */
