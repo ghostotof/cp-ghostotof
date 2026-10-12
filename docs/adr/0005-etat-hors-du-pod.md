@@ -366,7 +366,9 @@ Conséquences :
   tour du worker, un `warning` par tour. La migration `Version20261011140000` vide donc
   `cache_items` au déploiement de #468. À une rotation d'`APP_SECRET`, relancer
   `messenger:stop-workers` depuis un Job réécrit la ligne sous la nouvelle clé (`k8s/README.md`,
-  cas d'`APP_SECRET`).
+  cas d'`APP_SECRET`). Depuis #528, le Job lance `app:messenger:stop-workers`, qui écrit le même
+  signal puis le relit par sa valeur : celle de Symfony ignore le retour de `save()`, et une
+  écriture refusée — le `false` sans exception du constat de cet ADR — y répondait `[OK]`.
 - Dans une lecture par lot (`getItems()`), un refus interrompt le lot : les clés suivantes
   reviennent absentes, comme avec tout échec de `DefaultMarshaller`. Les lecteurs actuels lisent
   clé par clé.

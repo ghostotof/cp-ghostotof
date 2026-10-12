@@ -157,7 +157,8 @@ paths:
   `env PGOPTIONS='-c default_transaction_read_only=on -c lock_timeout=5s'` (libpq reads it, so the whole session is
   read-only: a `failed:remove` there fails with SQLSTATE 25006, measured); `failed:retry <id>`,
   `failed:remove <id>` and `stop-workers` have side effects, so `messenger-failed-{retry,remove}-job.yaml`
-  and `messenger-stop-workers-job.yaml`, never with `-v` (and `SHELL_VERBOSITY=0` in their `env`, which
+  and `messenger-stop-workers-job.yaml` (running `app:messenger:stop-workers`, which reads the signal back,
+  issue #528 — never Symfony's, which is green on a refused write), never with `-v` (and `SHELL_VERBOSITY=0` in their `env`, which
   beats a `backend-config` value), one at a time (`run-job.sh` deletes a running namesake), the id through `FAILED_MESSAGE_ID` and refused
   in 64 unless all digits (`run-job.sh` admits `-`, and `--all` read as an option empties the table).
   `MessengerMaintenanceJobsManifestTest` pins the Jobs, `OperatorExecBoundaryTest` the read block and
