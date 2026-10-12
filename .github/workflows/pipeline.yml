@@ -397,6 +397,7 @@ jobs:
           tools/tests/rotate-deployer-token.test.sh
           tools/tests/wait-external-secrets.test.sh
           tools/tests/wait-rollout.test.sh
+          tools/tests/run-job.test.sh
           tools/tests/smoke-messenger-probe.test.sh
           tools/tests/security-headers.test.sh
           tools/tests/check-workflow-timeouts.test.sh
@@ -737,17 +738,11 @@ jobs:
           #    jusqu'à intervention manuelle (voulu : jamais de trafic sur un
           #    schéma à moitié migré) ; si la migration n'a rien écrit,
           #    `kubectl apply -k .` sur cet overlay relance l'ancienne image.
-          kubectl -n preprod delete job backend-migrate --ignore-not-found
-          BACKEND_IMAGE=$IMAGE_BACKEND:$TAG-preprod \
-            envsubst < ../../base/migrate-job.yaml | kubectl -n preprod apply -f -
-          #    Attente par tools/wait-rollout.sh (issue #353), pas `kubectl wait` :
-          #    même sémantique « terminé », mais un conteneur qui ne démarrera
-          #    pas (CreateContainerConfigError, échec de pull) ou un Job en
-          #    `Failed` font échouer en quelques secondes, en nommant le pod, le
-          #    conteneur et la raison, au lieu d'attendre les 300 s. `|| true`
-          #    sur les logs : un conteneur jamais démarré n'en a pas.
-          "$GITHUB_WORKSPACE/tools/wait-rollout.sh" preprod job/backend-migrate --timeout 300 \
-            || { kubectl -n preprod logs job/backend-migrate --tail=200 || true; exit 1; }
+          #
+          #    La séquence (delete, rendu, apply, attente, journaux) et ses
+          #    codes de sortie : en-tête de tools/run-job.sh (issue #488).
+          "$GITHUB_WORKSPACE/tools/run-job.sh" preprod "$GITHUB_WORKSPACE/k8s/base/migrate-job.yaml" \
+            "$IMAGE_BACKEND:$TAG-preprod" 300
           # 4. Rollout sur un schéma prêt. `apply -k` restaure aussi les replicas
           #    des manifestes après une fenêtre de maintenance.
           kubectl apply -k .
@@ -779,11 +774,8 @@ jobs:
           # refusent d'écraser du contenu déjà présent et sortent en code 0
           # (cf. GuardsExistingContent et l'en-tête de seed-job.yaml). `--force`
           # n'est jamais passé : une réinitialisation reste un geste manuel.
-          kubectl -n preprod delete job backend-seed --ignore-not-found
-          BACKEND_IMAGE=$IMAGE_BACKEND:$TAG-preprod \
-            envsubst < ../../base/seed-job.yaml | kubectl -n preprod apply -f -
-          "$GITHUB_WORKSPACE/tools/wait-rollout.sh" preprod job/backend-seed --timeout 180 \
-            || { kubectl -n preprod logs job/backend-seed --tail=200 || true; exit 1; }
+          "$GITHUB_WORKSPACE/tools/run-job.sh" preprod "$GITHUB_WORKSPACE/k8s/base/seed-job.yaml" \
+            "$IMAGE_BACKEND:$TAG-preprod" 180
 
   # ---------------------------------------------------------------------------
   # test-preprod — smoke tests + audit boîte noire. Le run de release s'arrête
@@ -1094,17 +1086,11 @@ jobs:
           #    jusqu'à intervention manuelle (voulu : jamais de trafic sur un
           #    schéma à moitié migré) ; si la migration n'a rien écrit,
           #    `kubectl apply -k .` sur cet overlay relance l'ancienne image.
-          kubectl -n prod delete job backend-migrate --ignore-not-found
-          BACKEND_IMAGE=$IMAGE_BACKEND:$TAG \
-            envsubst < ../../base/migrate-job.yaml | kubectl -n prod apply -f -
-          #    Attente par tools/wait-rollout.sh (issue #353), pas `kubectl wait` :
-          #    même sémantique « terminé », mais un conteneur qui ne démarrera
-          #    pas (CreateContainerConfigError, échec de pull) ou un Job en
-          #    `Failed` font échouer en quelques secondes, en nommant le pod, le
-          #    conteneur et la raison, au lieu d'attendre les 300 s. `|| true`
-          #    sur les logs : un conteneur jamais démarré n'en a pas.
-          "$GITHUB_WORKSPACE/tools/wait-rollout.sh" prod job/backend-migrate --timeout 300 \
-            || { kubectl -n prod logs job/backend-migrate --tail=200 || true; exit 1; }
+          #
+          #    La séquence (delete, rendu, apply, attente, journaux) et ses
+          #    codes de sortie : en-tête de tools/run-job.sh (issue #488).
+          "$GITHUB_WORKSPACE/tools/run-job.sh" prod "$GITHUB_WORKSPACE/k8s/base/migrate-job.yaml" \
+            "$IMAGE_BACKEND:$TAG" 300
           # 4. Rollout sur un schéma prêt. `apply -k` restaure aussi les replicas
           #    des manifestes après une fenêtre de maintenance.
           kubectl apply -k .

@@ -1248,19 +1248,26 @@ rm -rf "$dir"
 
 # L'image qui tourne, pour que le Job exécute exactement le code déployé.
 IMAGE="$(kubectl -n "$NS" get deploy backend -o jsonpath='{.spec.template.spec.containers[?(@.name=="php-fpm")].image}')"
-kubectl -n "$NS" delete job backend-create-user --ignore-not-found
-# Liste explicite : sans elle, envsubst effacerait toute autre `$VARIABLE` du manifeste.
-BACKEND_IMAGE="$IMAGE" CPG_USERNAME='<nom-du-compte>' \
-  envsubst '${BACKEND_IMAGE} ${CPG_USERNAME}' < k8s/base/create-user-job.yaml \
-  | kubectl -n "$NS" apply -f -
-# Sur un refus, le Job échoue aussitôt mais `wait` épuise son délai : lire les logs sans attendre.
-kubectl -n "$NS" wait --for=condition=complete --timeout=180s job/backend-create-user
-kubectl -n "$NS" logs job/backend-create-user   # succès ou refus, et la ligne `user-created`
+# Depuis la racine du dépôt (issue #488) : suppression du Job précédent, envsubst à liste
+# explicite, apply, attente par tools/wait-rollout.sh — un refus échoue aussitôt au lieu
+# d'épuiser le délai —, puis les journaux du Job, la ligne `user-created` comprise, après un
+# succès comme après un échec. 300 s : au-delà des 240 s d'activeDeadlineSeconds du Job.
+tools/run-job.sh "$NS" k8s/base/create-user-job.yaml "$IMAGE" 300 CPG_USERNAME='<nom-du-compte>'
+# Dans tous les cas, succès ou échec :
 kubectl -n "$NS" delete secret backend-create-user-password
 ```
 
+`tools/run-job.sh` demande **bash ≥ 4, jq et envsubst** (gettext) sur le poste : il le vérifie
+avant de toucher au cluster, et refuse un nom de compte vide ou hors `[A-Za-z0-9._@:/+-]` —
+inséré tel quel dans le YAML, un guillemet ou une fin de ligne y ajouteraient des clés. Le nom
+n'est pas un secret, mais il passe en argument, lisible dans `ps` et l'historique du shell le
+temps de la commande : la moitié d'un identifiant (Goal #9), jamais écrite dans le dépôt. Un
+refus avant le cluster sort en 2, un refus du cluster en 3, un Job en échec en 1.
+
 Le Job ne se rejoue pas (`backoffLimit: 0`) : un nom pris ou un mot de passe refusé (trop court,
-compromis, fin de ligne) s'y lisent dans les logs, et l'on recommence depuis le début. Il
+compromis, fin de ligne) s'y lisent dans les logs, et l'on recommence depuis le début. Un pod
+qui ne démarre pas (Secret supprimé trop tôt, image introuvable) fait échouer le Job au bout de
+240 s (`activeDeadlineSeconds`). Il
 disparaît de lui-même au bout d'un jour (`ttlSecondsAfterFinished`), et ses logs avec lui :
 l'acteur `console` de l'événement ne nomme personne, l'attribution de l'`apply` reste celle du
 kubeconfig qui l'a fait.

@@ -3,15 +3,17 @@
 # smoke-messenger-probe.test.sh
 # ---------------------------------------------------------------------------
 # Test hors ligne de tools/smoke-messenger-probe.sh (issue #470) : un faux
-# `kubectl` (SMOKE_PROBE_KUBECTL) note chacun de ses appels et le manifeste
-# qu'on lui applique ; un faux tools/wait-rollout.sh (SMOKE_PROBE_WAIT) réussit
-# ou échoue selon FAKE_WAIT_EXIT.
+# `kubectl` (SMOKE_PROBE_KUBECTL) note chacun de ses appels ; un faux
+# tools/wait-rollout.sh (SMOKE_PROBE_WAIT) réussit ou échoue selon
+# FAKE_WAIT_EXIT. Le script les transmet à tools/run-job.sh, qui tourne pour
+# de vrai : la séquence du Job (delete, rendu, apply, attente, journaux) est
+# pincée par tools/tests/run-job.test.sh, pas ici (issue #488).
 #
-# Ce qui est pincé : le Job précédent est supprimé avant l'apply ; le
-# manifeste appliqué porte l'image demandée et plus aucun placeholder ;
-# l'attente vise le Job, avec un délai au-dessus de son activeDeadlineSeconds ;
-# un Job en échec fait sortir en 1 en imprimant ses journaux ; aucun Secret
-# n'est lu.
+# Ce qui est pincé ici : le Job lancé est celui du témoin, attendu au-delà de
+# son activeDeadlineSeconds ; `backend` et `worker` doivent tourner l'image de
+# la release, sinon échec avant tout Job ; un Job en échec fait sortir en 1
+# avec le diagnostic du témoin ; un échec qui n'est PAS celui du Job (le
+# cluster refuse l'apply) ne l'impute pas au worker ; aucun Secret n'est lu.
 #
 # Usage :  tools/tests/smoke-messenger-probe.test.sh
 # ---------------------------------------------------------------------------
@@ -30,7 +32,7 @@ cat > "$TMP/kubectl" <<'FAKE'
 set -euo pipefail
 printf '%s\n' "$*" >> "$FAKE_DIR/args"
 case " $* " in
-  *" apply -f - "*) cat > "$FAKE_DIR/applied.yaml" ;;
+  *" apply -f - "*) cat > /dev/null; exit "${FAKE_APPLY_EXIT:-0}" ;;
   *" get deployment/backend "*) echo "${FAKE_BACKEND_IMAGES:-ghcr.io/example/backend:1.2.3-abcdef0-preprod nginx:1.29}" ;;
   *" get deployment/worker "*) echo "${FAKE_WORKER_IMAGES:-ghcr.io/example/backend:1.2.3-abcdef0-preprod}" ;;
   *" logs "*) echo "[ERROR] Le worker n'a pas consommé le message témoin en 90 s." ;;
@@ -43,37 +45,28 @@ exit "${FAKE_WAIT_EXIT:-0}"
 FAKE
 chmod +x "$TMP/kubectl" "$TMP/wait"
 
+# run <dossier> — les variables préfixées à l'appel (FAKE_…) traversent
+# jusqu'aux faux binaires ; le code de sortie est rangé dans <dossier>/status.
 run() {
-  local dir="$1"; shift
+  local dir="$1" status=0
   mkdir -p "$dir"
+  : > "$dir/args"; : > "$dir/wait-args"
   FAKE_DIR="$dir" SMOKE_PROBE_KUBECTL="$TMP/kubectl" SMOKE_PROBE_WAIT="$TMP/wait" \
-    "$SCRIPT" preprod ghcr.io/example/backend:1.2.3-abcdef0-preprod > "$dir/out" 2>&1
+    "$SCRIPT" preprod ghcr.io/example/backend:1.2.3-abcdef0-preprod > "$dir/out" 2>&1 || status=$?
+  echo "$status" > "$dir/status"
 }
 
 echo "smoke-messenger-probe.sh"
 
 # --- Le témoin est consommé -------------------------------------------------
 ok="$TMP/ok"
-if run "$ok"; then pass "un Job réussi sort en 0"; else fail "un Job réussi sort en 0" "$(cat "$ok/out")"; fi
-
-delete_line=$(grep -n 'delete job backend-messenger-probe --ignore-not-found' "$ok/args" | cut -d: -f1 || true)
-apply_line=$(grep -n 'apply -f -' "$ok/args" | cut -d: -f1 || true)
-if [ -n "$delete_line" ] && [ -n "$apply_line" ] && [ "$delete_line" -lt "$apply_line" ]; then
-  pass "le Job précédent est supprimé avant l'apply"
-else
-  fail "le Job précédent est supprimé avant l'apply" "$(cat "$ok/args")"
-fi
-
-if grep -q 'image: ghcr.io/example/backend:1.2.3-abcdef0-preprod' "$ok/applied.yaml" && ! grep -q '\${' "$ok/applied.yaml"; then
-  pass "le manifeste appliqué porte l'image et plus aucun placeholder"
-else
-  fail "le manifeste appliqué porte l'image et plus aucun placeholder" "$(grep -n 'image:\|\${' "$ok/applied.yaml")"
-fi
+run "$ok"
+if [ "$(cat "$ok/status")" = 0 ]; then pass "un Job réussi sort en 0"; else fail "un Job réussi sort en 0" "$(cat "$ok/out")"; fi
 
 if grep -qx 'preprod job/backend-messenger-probe --timeout 300' "$ok/wait-args"; then
-  pass "l'attente vise le Job, au-delà de son activeDeadlineSeconds"
+  pass "le Job du témoin est lancé, attendu 300 s"
 else
-  fail "l'attente vise le Job, au-delà de son activeDeadlineSeconds" "$(cat "$ok/wait-args")"
+  fail "le Job du témoin est lancé, attendu 300 s" "$(cat "$ok/wait-args")"
 fi
 
 deadline=$(sed -n 's/^  activeDeadlineSeconds: \([0-9]*\)$/\1/p' "$(dirname "$SCRIPT")/../k8s/base/messenger-probe-job.yaml")
@@ -86,13 +79,12 @@ fi
 # --- Un Deployment ne tourne pas l'image de la release ---------------------
 # Le Job prouve le trajet depuis l'image de la release ; il ne prouve rien des
 # pods réels si `backend` ou `worker` en tournent une autre (relecture de #470).
+stale_images='ghcr.io/example/backend:1.2.2-0000000-preprod nginx:1.29'
+FAKE_BACKEND_IMAGES="$stale_images" run "$TMP/stale-backend"
+FAKE_WORKER_IMAGES="$stale_images" run "$TMP/stale-worker"
 for d in backend worker; do
   stale="$TMP/stale-$d"
-  upper=$(printf '%s' "$d" | tr '[:lower:]' '[:upper:]')
-  if env "FAKE_${upper}_IMAGES=ghcr.io/example/backend:1.2.2-0000000-preprod nginx:1.29" FAKE_DIR="$stale" SMOKE_PROBE_KUBECTL="$TMP/kubectl" SMOKE_PROBE_WAIT="$TMP/wait" \
-      bash -c 'mkdir -p "$FAKE_DIR"; "$0" preprod ghcr.io/example/backend:1.2.3-abcdef0-preprod > "$FAKE_DIR/out" 2>&1' "$SCRIPT"; then
-    fail "$d sur une autre image fait échouer le smoke" "sorti en 0"
-  elif grep -q "deployment/$d" "$stale/out" && ! grep -q 'apply -f -' "$stale/args"; then
+  if [ "$(cat "$stale/status")" != 0 ] && grep -q "deployment/$d" "$stale/out" && ! grep -q 'apply -f -' "$stale/args"; then
     pass "$d sur une autre image fait échouer le smoke, avant tout Job"
   else
     fail "$d sur une autre image fait échouer le smoke, avant tout Job" "$(cat "$stale/out")"
@@ -101,15 +93,22 @@ done
 
 # --- Le témoin n'est pas consommé ------------------------------------------
 ko="$TMP/ko"
-if FAKE_WAIT_EXIT=1 run "$ko"; then
-  fail "un Job en échec sort en 1" "sorti en 0"
+FAKE_WAIT_EXIT=1 run "$ko"
+if [ "$(cat "$ko/status")" = 1 ] && grep -q "n'a pas consommé le message témoin (issue #470)" "$ko/out"; then
+  pass "un Job en échec sort en 1, avec le diagnostic du témoin"
 else
-  pass "un Job en échec sort en 1"
+  fail "un Job en échec sort en 1, avec le diagnostic du témoin" "sortie $(cat "$ko/status") ; $(cat "$ko/out")"
 fi
-if grep -q "n'a pas consommé le message témoin" "$ko/out" && grep -q 'logs job/backend-messenger-probe' "$ko/args"; then
-  pass "l'échec imprime les journaux du Job"
+
+# --- L'échec n'est pas celui du Job ----------------------------------------
+# Un apply refusé (RBAC, webhook d'admission) n'a rien à voir avec le worker :
+# l'y imputer enverrait vers une rotation de clé inutile (relecture de #488).
+refused="$TMP/refused"
+FAKE_APPLY_EXIT=1 run "$refused"
+if [ "$(cat "$refused/status")" != 0 ] && ! grep -q 'clé de MAC' "$refused/out" && grep -q 'apply' "$refused/out"; then
+  pass "un apply refusé fait échouer sans accuser le worker"
 else
-  fail "l'échec imprime les journaux du Job" "$(cat "$ko/out")"
+  fail "un apply refusé fait échouer sans accuser le worker" "sortie $(cat "$refused/status") ; $(cat "$refused/out")"
 fi
 
 if grep -qi 'secret' "$ok/args" "$ko/args"; then

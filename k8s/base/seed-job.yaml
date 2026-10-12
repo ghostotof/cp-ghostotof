@@ -37,10 +37,11 @@
 # « sûr » n'est pas « automatique », et c'est là toute la décision.
 #
 # DÉLIBÉRÉMENT ABSENT de kustomization.yaml `resources:`, pour les mêmes raisons
-# que migrate-job.yaml : il est appliqué à la demande par le pipeline, donc le
-# transformateur d'images de kustomize ne le voit pas — d'où le placeholder
-# ${BACKEND_IMAGE} substitué par envsubst. Ne pas le remplacer par
-# `image: backend`, qui serait résolu en `docker.io/library/backend`.
+# que migrate-job.yaml : il est appliqué à la demande par le pipeline
+# (tools/run-job.sh), donc le transformateur d'images de kustomize ne le voit
+# pas — d'où le placeholder ${BACKEND_IMAGE} substitué par envsubst. Ne pas le
+# remplacer par `image: backend`, qui serait résolu en
+# `docker.io/library/backend`.
 apiVersion: batch/v1
 kind: Job
 metadata:
