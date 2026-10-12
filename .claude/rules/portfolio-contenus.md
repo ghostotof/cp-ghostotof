@@ -223,7 +223,10 @@ paths:
     anything, so the cards to be corrected stay editable; and « Détacher » (`translationGroup: null`) reads
     the card's group across categories, so on a spread member it **really detaches** (a new group, the end of
     its category, #169) — the trigger checks only the new group, alone, and the old one keeps its other
-    member: a second fix, where it used to be a silent no-op. **Order of the guards** on an ordered write,
+    member: a second fix, where it used to be a silent no-op. Either fix repairs the **group**, not the
+    other category's numbering: the member left there keeps the position it was given in the first one,
+    which may already be another key's (it was before the fix too); a reorder of that category, accepted
+    again once no spread group remains, renumbers it. **Order of the guards** on an ordered write,
     each before any write: a group across categories (`AboutMeCardAdministrator`, me-cards only, the only
     per-scope table — kept out of the Shared services, which only see their scope), then a group on
     several positions (`ContentPlacement::inGroup()` on a placement; on a `reorder()`, only the trigger
@@ -232,9 +235,10 @@ paths:
     consequence, as in the trigger, and a pipeline defect before a client error, as in #384.
     `AboutMeCardAdministratorTest` pins each path with mocks (no `save()`, nothing changed in memory before
     the refusal, the text edit that reads nothing, the real detachment, the reorder refused before an
-    unknown key's 422); `AboutMeCardGroupSpreadOverTwoCategoriesTest` on the real database (creation and
-    reorder refused under the name with no `previous` and the manager open — red before with the unique
-    violation and the COMMIT refusal —, detachment accepted at the COMMIT) and `AboutMeCardRepositoryTest` the
+    unknown key's 422); `AboutMeCardGroupSpreadOverTwoCategoriesTest` on the real database (creation,
+    attachment and a reorder moving the stray member refused under the name with no `previous` and the
+    manager open — red before with the unique violation and the COMMIT refusal —, a reorder leaving it in
+    place refused too — accepted before —, detachment accepted at the COMMIT) and `AboutMeCardRepositoryTest` the
     strays query. Both commit the spread group through `tests/Portfolio/About/Support/CommitsSpreadMeCardGroup`:
     the administrator refuses an open transaction (#526), so a rolled-back one is not an option; it disables
     the trigger, inserts and re-enables it **in one committed transaction** (PostgreSQL's DDL is

@@ -191,9 +191,13 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
             return;
         }
 
-        $stray = $strays[0];
+        // Le premier groupe réparti suffit à refuser ; ses membres égarés
+        // donnent ses autres catégories. Un second groupe réparti sera nommé
+        // par le réordonnancement suivant, une fois le premier corrigé.
+        $group = $strays[0]->getTranslationGroup();
+        $categories = $this->categoriesOf(array_values(array_filter($strays, static fn (AboutMeCard $stray): bool => $stray->getTranslationGroup()->equals($group))));
 
-        throw TranslationGroupAcrossSeveralScopesException::forGroup($stray->getTranslationGroup(), [$category->value, $stray->getCategory()->value]);
+        throw TranslationGroupAcrossSeveralScopesException::forGroup($group, $this->sortedUnique([$category->value, ...$categories]));
     }
 
     /**
@@ -203,9 +207,22 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
      */
     private function categoriesOf(array $cards): array
     {
-        $categories = array_values(array_unique(array_map(static fn (AboutMeCard $card): string => $card->getCategory()->value, $cards)));
-        sort($categories);
+        return $this->sortedUnique(array_map(static fn (AboutMeCard $card): string => $card->getCategory()->value, $cards));
+    }
 
-        return $categories;
+    /**
+     * Les catégories citées par le refus, une fois chacune et dans un ordre
+     * stable, quel que soit le chemin qui le lève.
+     *
+     * @param list<string> $values
+     *
+     * @return list<string>
+     */
+    private function sortedUnique(array $values): array
+    {
+        $values = array_values(array_unique($values));
+        sort($values);
+
+        return $values;
     }
 }

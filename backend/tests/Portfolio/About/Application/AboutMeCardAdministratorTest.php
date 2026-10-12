@@ -148,7 +148,7 @@ final class AboutMeCardAdministratorTest extends TestCase
 
         $repository = $this->createMock(AboutMeCardRepositoryInterface::class);
         $repository->method('findOneById')->willReturn($card);
-        $repository->method('findByTranslationGroup')->willReturn([$english, $french]);
+        $repository->expects(self::atLeastOnce())->method('findByTranslationGroup')->with($french->getTranslationGroup())->willReturn([$english, $french]);
         $repository->expects(self::never())->method('save');
 
         $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());

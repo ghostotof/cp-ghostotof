@@ -79,6 +79,56 @@ final class AboutMeCardGroupSpreadOverTwoCategoriesTest extends KernelTestCase
         self::assertSame(0, $this->connection()->fetchOne('SELECT position FROM about_me_card WHERE id = ?', [$french->getId()->toRfc4122()]));
     }
 
+    /**
+     * Le sélecteur « Version de » ne liste que la catégorie du formulaire : il
+     * propose le FR du groupe réparti à une carte EN de `HOBBY`, dont le
+     * rattachement heurtait l'index unique, l'EN du groupe vivant dans
+     * `TECHNICAL`.
+     */
+    public function testAttachingACardToTheSpreadGroupIsRefusedByNameWithoutWriting(): void
+    {
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        [$french] = self::commitSpreadGroup($entityManager);
+        $card = self::getContainer()->get(AboutMeCardAdministratorInterface::class)
+            ->create(Locale::EN, AboutMeCardCategory::HOBBY, 'Reading', 'Description.', 'book');
+
+        $refusal = $this->refusalOf(static fn (AboutMeCardAdministratorInterface $administrator): AboutMeCard => $administrator->update(
+            $card->getId(),
+            'Reading',
+            'Description.',
+            'book',
+            $french->getTranslationGroup(),
+        ));
+
+        self::assertInstanceOf(TranslationGroupAcrossSeveralScopesException::class, $refusal, \sprintf('Refus attendu sous son nom, reçu %s.', $refusal::class));
+        self::assertNull($refusal->getPrevious(), "Le refus vient de la base : l'écriture a été tentée.");
+        self::assertTrue($entityManager->isOpen(), "L'EntityManager a été fermé : le refus n'est pas tombé avant l'écriture.");
+        self::assertSame($card->getTranslationGroup()->toRfc4122(), $this->connection()->fetchOne('SELECT translation_group FROM about_me_card WHERE id = ?', [$card->getId()->toRfc4122()]));
+    }
+
+    /**
+     * Décision de #561 : le refus ne dépend que de l'état. Un ordre qui laisse
+     * le membre égaré à sa place — accepté avant, aucune ligne du groupe
+     * n'étant écrite — est refusé lui aussi : le groupe se répare d'abord.
+     */
+    public function testReorderLeavingTheStrayMemberInPlaceIsRefusedAsWell(): void
+    {
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        [$french] = self::commitSpreadGroup($entityManager);
+        $other = self::getContainer()->get(AboutMeCardAdministratorInterface::class)
+            ->create(Locale::FR, AboutMeCardCategory::HOBBY, 'Lecture', 'Description.', 'book');
+
+        $refusal = $this->refusalOf(static function (AboutMeCardAdministratorInterface $administrator) use ($french, $other): void {
+            $administrator->reorder(AboutMeCardCategory::HOBBY, [
+                $french->getTranslationGroup()->toRfc4122(),
+                $other->getTranslationGroup()->toRfc4122(),
+            ]);
+        });
+
+        self::assertInstanceOf(TranslationGroupAcrossSeveralScopesException::class, $refusal, \sprintf('Refus attendu sous son nom, reçu %s.', $refusal::class));
+        self::assertTrue($entityManager->isOpen());
+    }
+
     public function testDetachingTheStrayMemberRepairsTheGroup(): void
     {
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);

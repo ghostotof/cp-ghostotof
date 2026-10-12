@@ -35,8 +35,10 @@ final class TranslationGroupAcrossSeveralScopesException extends LogicException
     /**
      * L'application a trouvé, avant d'écrire, un groupe déjà réparti sur
      * plusieurs périmètres (issue #561). Le message donne le groupe et ses
-     * périmètres, ce qu'il faut retrouver en base, et la correction ; il ne
-     * contient rien que le client ait saisi — le groupe est relu en base.
+     * périmètres, ce qu'il faut retrouver en base, et la correction. Rien de
+     * libre que le client ait saisi : le groupe est un UUID (celui d'une
+     * requête de création ou de rattachement, dont la base porte des membres),
+     * les périmètres sont lus en base.
      *
      * @param list<string> $scopes les périmètres où vivent ses membres
      */

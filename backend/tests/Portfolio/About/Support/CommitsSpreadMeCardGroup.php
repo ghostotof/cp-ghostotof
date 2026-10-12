@@ -8,6 +8,7 @@ use App\Portfolio\About\Domain\Entity\AboutMeCard;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\ORM\EntityManagerInterface;
+use Throwable;
 
 /**
  * Valide en base un groupe de cartes « moi » réparti sur deux catégories (FR
@@ -37,12 +38,25 @@ trait CommitsSpreadMeCardGroup
 
         $connection = $entityManager->getConnection();
         $connection->beginTransaction();
-        $connection->executeStatement(\sprintf('ALTER TABLE about_me_card DISABLE TRIGGER %s', self::SPREAD_GROUP_TRIGGER));
-        $entityManager->persist($french);
-        $entityManager->persist($english);
-        $entityManager->flush();
-        $connection->executeStatement(\sprintf('ALTER TABLE about_me_card ENABLE TRIGGER %s', self::SPREAD_GROUP_TRIGGER));
-        $connection->commit();
+
+        try {
+            // L'ALTER prend un verrou ACCESS EXCLUSIVE : borné, il échoue vite
+            // et nommé derrière une session oubliée, au lieu de figer la suite.
+            $connection->executeStatement("SET LOCAL lock_timeout = '3s'");
+            $connection->executeStatement(\sprintf('ALTER TABLE about_me_card DISABLE TRIGGER %s', self::SPREAD_GROUP_TRIGGER));
+            $entityManager->persist($french);
+            $entityManager->persist($english);
+            $entityManager->flush();
+            $connection->executeStatement(\sprintf('ALTER TABLE about_me_card ENABLE TRIGGER %s', self::SPREAD_GROUP_TRIGGER));
+            $connection->commit();
+        } catch (Throwable $failure) {
+            // Ne pas laisser une transaction ouverte sur la connexion partagée :
+            // les tests suivants la prendraient pour la leur. Le trigger, lui,
+            // revient avec le ROLLBACK (DDL transactionnel).
+            $connection->rollBack();
+
+            throw $failure;
+        }
         // Ce que l'opération décide, elle doit le lire en base, pas dans la
         // carte d'identité remplie par cette préparation.
         $entityManager->clear();
