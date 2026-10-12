@@ -24,7 +24,10 @@
 #     le Job avec le délai demandé ; ses 200 dernières lignes de journaux, de
 #     tous ses conteneurs, sortent sur stdout en cas de succès, sur stderr
 #     après un `::error::` en cas d'échec ;
-#   - pipeline.yml ne réécrit pas la séquence en ligne.
+#   - pipeline.yml ne réécrit pas la séquence en ligne ;
+#   - chaque Job que pipeline.yml lance par ce script porte un
+#     activeDeadlineSeconds strictement sous le délai d'attente qu'il reçoit
+#     (issue #525) : il ne survit jamais au `::error::` de l'attente.
 #
 # Usage :  tools/tests/run-job.test.sh
 # ---------------------------------------------------------------------------
@@ -353,6 +356,35 @@ if [ -z "$inline" ]; then
 else
   fail "pipeline.yml ne réécrit pas la séquence en ligne" "$inline"
 fi
+
+# --- Aucun Job du pipeline ne survit à son attente (issue #525) -------------
+# run-job.sh ne supprime un Job qu'avant de l'appliquer : un Job qui tourne
+# encore quand l'attente expire continue après le `::error::` (une migration
+# bloquée garde sa demande de verrou en file devant l'API). Chaque Job que
+# pipeline.yml lance porte donc un activeDeadlineSeconds strictement sous le
+# délai qu'il reçoit, comme messenger-probe-job.yaml sous l'attente du témoin.
+# Les lignes de continuation sont jointes avant la lecture des appels.
+calls="$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$PIPELINE" \
+  | grep -oE 'run-job\.sh" [a-z]+ "\$GITHUB_WORKSPACE/k8s/base/[a-z-]+\.yaml"[[:space:]]+"[^"]+"[[:space:]]+[0-9]+' || true)"
+count="$(printf '%s\n' "$calls" | grep -c 'run-job' || true)"
+# Migration (préprod, prod) et seed (préprod) : trois appels au moins, sinon
+# l'expression ne lit plus le pipeline et la vérification serait vide.
+if [ "$count" -ge 3 ]; then
+  pass "les appels de run-job.sh du pipeline sont lus ($count)"
+else
+  fail "les appels de run-job.sh du pipeline sont lus" "$count appel(s) trouvé(s)"
+fi
+while IFS= read -r call; do
+  [ -n "$call" ] || continue
+  job="$(printf '%s' "$call" | sed -E 's|.*k8s/base/([a-z-]+\.yaml)".*|\1|')"
+  wait_s="$(printf '%s' "$call" | sed -E 's|.*[[:space:]]([0-9]+)$|\1|')"
+  deadline="$(sed -n 's/^  activeDeadlineSeconds: \([0-9]*\)$/\1/p' "$TOOLS/../k8s/base/$job")"
+  if [ -n "$deadline" ] && [ "$deadline" -lt "$wait_s" ]; then
+    pass "$job : activeDeadlineSeconds ($deadline) sous l'attente du pipeline ($wait_s)"
+  else
+    fail "$job : activeDeadlineSeconds sous l'attente du pipeline ($wait_s)" "lu : « $deadline »"
+  fi
+done <<< "$calls"
 
 if [ "$failures" -ne 0 ]; then
   echo "$failures échec(s)."

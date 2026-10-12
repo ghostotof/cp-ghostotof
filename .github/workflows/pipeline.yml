@@ -727,7 +727,10 @@ jobs:
           #    donc substituée ici. Timeout 300s : une base au repos (fenêtre)
           #    ou sous trafic (standard), et parfois plusieurs migrations d'un
           #    bloc — le simple « Already at the latest version » tient en
-          #    quelques secondes.
+          #    quelques secondes. Le Job se borne lui-même sous ce délai
+          #    (activeDeadlineSeconds, issue #525), et chaque attente de verrou
+          #    de la migration à 5 s (PGOPTIONS) : un échec en SQLSTATE 55P03
+          #    est un bloqueur passager, relancer le job suffit en général.
           #
           #    Échec du Job : fail-closed, le script sort avant `kubectl apply -k .`.
           #    En mode standard, la release précédente reste en service sur
@@ -1075,7 +1078,10 @@ jobs:
           #    donc substituée ici. Timeout 300s : une base au repos (fenêtre)
           #    ou sous trafic (standard), et parfois plusieurs migrations d'un
           #    bloc — le simple « Already at the latest version » tient en
-          #    quelques secondes.
+          #    quelques secondes. Le Job se borne lui-même sous ce délai
+          #    (activeDeadlineSeconds, issue #525), et chaque attente de verrou
+          #    de la migration à 5 s (PGOPTIONS) : un échec en SQLSTATE 55P03
+          #    est un bloqueur passager, relancer le job suffit en général.
           #
           #    Échec du Job : fail-closed, le script sort avant `kubectl apply -k .`.
           #    En mode standard, la release précédente reste en service sur
