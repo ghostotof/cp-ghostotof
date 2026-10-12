@@ -69,9 +69,7 @@ final class CacheWorkerRestartSignalTest extends TestCase
     /** Le cas de l'issue : la base refuse l'écriture, `save()` rend false. */
     public function testAWriteTheCacheRefusesRaisesANamedFailure(): void
     {
-        $pool = self::createStub(CacheItemPoolInterface::class);
-        $pool->method('getItem')->willReturnCallback(static fn (string $key): CacheItemInterface => new ArrayAdapter()->getItem($key));
-        $pool->method('save')->willReturn(false);
+        $pool = $this->poolWhoseSaveAnswers(false, new ArrayAdapter());
 
         $this->expectException(WorkerRestartSignalNotSavedException::class);
         $this->expectExceptionMessage('refusé');
@@ -86,9 +84,7 @@ final class CacheWorkerRestartSignalTest extends TestCase
      */
     public function testASignalThatCannotBeReadBackRaisesANamedFailure(): void
     {
-        $pool = self::createStub(CacheItemPoolInterface::class);
-        $pool->method('getItem')->willReturnCallback(static fn (string $key): CacheItemInterface => new ArrayAdapter()->getItem($key));
-        $pool->method('save')->willReturn(true);
+        $pool = $this->poolWhoseSaveAnswers(true, new ArrayAdapter());
 
         $this->expectException(WorkerRestartSignalNotSavedException::class);
         $this->expectExceptionMessage('relu');
@@ -107,13 +103,24 @@ final class CacheWorkerRestartSignalTest extends TestCase
         $earlierItem->set((float) $this->clock->now()->format('U.u') - 3600.0);
         $earlier->save($earlierItem);
 
-        $pool = self::createStub(CacheItemPoolInterface::class);
-        $pool->method('getItem')->willReturnCallback(static fn (string $key): CacheItemInterface => $earlier->getItem($key));
-        $pool->method('save')->willReturn(true);
+        $pool = $this->poolWhoseSaveAnswers(true, $earlier);
 
         $this->expectException(WorkerRestartSignalNotSavedException::class);
         $this->expectExceptionMessage('relu');
 
         new CacheWorkerRestartSignal($pool, $this->clock)->send();
+    }
+
+    /**
+     * Un pool dont `save()` répond ce qu'on veut sans rien écrire : les lectures
+     * viennent de `$reads`, tel qu'il était avant l'appel.
+     */
+    private function poolWhoseSaveAnswers(bool $saved, ArrayAdapter $reads): CacheItemPoolInterface
+    {
+        $pool = self::createStub(CacheItemPoolInterface::class);
+        $pool->method('getItem')->willReturnCallback(static fn (string $key): CacheItemInterface => $reads->getItem($key));
+        $pool->method('save')->willReturn($saved);
+
+        return $pool;
     }
 }

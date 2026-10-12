@@ -35,7 +35,7 @@ final class StopMessengerWorkersCommandTest extends TestCase
     public function testItFailsWithTheCauseWhenTheSignalIsNotSaved(): void
     {
         $tester = new CommandTester(new StopMessengerWorkersCommand(
-            new RecordingRestartSignal(WorkerRestartSignalNotSavedException::refusedByTheCache()),
+            new RecordingRestartSignal(WorkerRestartSignalNotSavedException::refusedByTheStorage()),
         ));
 
         self::assertSame(Command::FAILURE, $tester->execute([]));

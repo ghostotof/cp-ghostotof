@@ -820,8 +820,11 @@ elle reste refusée et part avec la purge des 30 jours). Ordre, en période calm
    commande, `app:messenger:stop-workers`, la réécrit sous la nouvelle clé **et la relit** : le Job
    échoue si la valeur écrite ne se relit pas (issue #528 ; celle de Symfony,
    `messenger:stop-workers`, répondait `[OK]` même quand PostgreSQL refusait l'écriture). Un Job
-   en échec ici : lire ses journaux (canal `cache`, base joignable en écriture depuis le pod ?),
-   corriger, relancer — tant qu'il n'est pas vert, les workers ne se sont pas arrêtés. Le reste du cache se perd et se reconstruit : les
+   en échec ici : lire ses journaux (canal `cache`, « Failed to save key » ; base joignable en
+   écriture depuis le pod ?), corriger, relancer — sans danger. Tant qu'il n'est pas vert, rien ne
+   prouve que les workers s'arrêteront. Vert, il prouve l'écriture sous la clé du Job (les Secrets
+   de l'étape 2) ; l'arrêt lui-même se voit au compteur `RESTARTS` du pod `worker`
+   (`kubectl -n $NS get pods -l app.kubernetes.io/name=worker`), qui augmente d'un. Le reste du cache se perd et se reconstruit : les
    compteurs des limiteurs repartent de zéro, y compris à chaque alternance d'anciens et de
    nouveaux pods pendant le redémarrage.
 
@@ -907,7 +910,10 @@ kubectl -n "${NS:?preprod ou prod}" exec deploy/backend -c php-fpm -- \
   release qui sert ; la commande y tourne à côté de php-fpm, sans rien écrire en base.
 
 Pour rejouer, supprimer ou relancer le signal d'arrêt, un Job, par `tools/run-job.sh` (bash ≥ 4,
-jq, envsubst), depuis la racine du dépôt. L'Id est celui de la liste **du même namespace** — chaque
+jq, envsubst), depuis la racine du dépôt — **un checkout de la release qui tourne**
+(`git switch --detach vX.Y.Z`, la version de l'image ci-dessous) : le manifeste lance une commande
+de cette image, et `app:messenger:stop-workers` (#528) n'existe pas dans une image plus ancienne
+(« Command "app:messenger:stop-workers" is not defined », exit 1). L'Id est celui de la liste **du même namespace** — chaque
 base a sa propre séquence, l'Id 42 de la préprod n'est pas celui de la prod —, **un seul par Job**,
 et le Job refuse en 64 tout ce qui n'est pas un entier (`--all` lu comme une option viderait la
 table) :

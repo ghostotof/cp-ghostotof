@@ -1,7 +1,9 @@
 # Issue #521 — arrêt des workers Messenger, depuis la release de l'image qui tourne.
 #
-# La commande réécrit en cache (`cache.app`, table `cache_items`) le signal de
-# redémarrage que chaque worker relit entre deux messages : il s'arrête, et
+# La commande réécrit dans le cache en base (pool
+# `cache.messenger.restart_workers_signal`, adossé à `cache.app` sous son propre
+# espace de noms, table `cache_items`) le signal de redémarrage que chaque
+# worker relit entre deux messages : il s'arrête, et
 # Kubernetes le relance. Elle sert surtout après une rotation d'`APP_SECRET`
 # (étape 4) : la ligne du signal, sans expiration, signée sous l'ancienne clé
 # (issue #468), serait refusée à chaque tour du worker, un `warning` par tour.
@@ -10,7 +12,9 @@
 # Symfony. Les deux écrivent le même signal (même pool, même clé, même format),
 # mais celle de Symfony ignore le retour de `save()` : une écriture refusée par
 # PostgreSQL y donnait `[OK]` et un Job vert pour rien. La nôtre relit la
-# valeur écrite et sort en 1 si elle ne se relit pas : le Job échoue.
+# valeur écrite et sort en 1 si elle ne se relit pas : le Job échoue. Elle
+# n'existe que dans les images qui contiennent #528 : ce manifeste se lance
+# depuis un checkout de la release qui tourne (k8s/README.md).
 #
 # Règle de #520 (`.claude/rules/deploiement.md`, « What never kubectl exec
 # covers ») : une commande à effet de bord passe par un Job, jamais par

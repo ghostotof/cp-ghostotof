@@ -44,13 +44,18 @@ final readonly class CacheWorkerRestartSignal implements WorkerRestartSignalInte
         // secondes à la microseconde, en flottant, comme `microtime(true)`.
         $requestedAt = (float) $this->clock->now()->format('U.u');
 
+        // Comme la commande de Symfony : `getItem()` lit d'abord l'ancienne
+        // ligne. Après une rotation d'`APP_SECRET`, son MAC est refusé, d'où un
+        // `warning` « Failed to fetch » attendu du canal `cache`, sans effet.
         $item = $this->restartSignalPool->getItem(StopWorkerOnRestartSignalListener::RESTART_REQUESTED_TIMESTAMP_KEY);
         $item->set($requestedAt);
         if (!$this->restartSignalPool->save($item)) {
-            throw WorkerRestartSignalNotSavedException::refusedByTheCache();
+            throw WorkerRestartSignalNotSavedException::refusedByTheStorage();
         }
 
         // `getItem()` relit la base : aucun cache mémoire devant l'adaptateur.
+        // Une relecture en échec passager se lit comme une absence (l'adaptateur
+        // rattrape l'erreur) : `notReadBack()` le dit sans affirmer l'échec.
         $readBack = $this->restartSignalPool->getItem(StopWorkerOnRestartSignalListener::RESTART_REQUESTED_TIMESTAMP_KEY);
         if (!$readBack->isHit() || $requestedAt !== $readBack->get()) {
             throw WorkerRestartSignalNotSavedException::notReadBack();

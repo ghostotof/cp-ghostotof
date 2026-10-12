@@ -42,15 +42,21 @@ final class StopMessengerWorkersCommand extends Command
         try {
             $this->restartSignal->send();
         } catch (WorkerRestartSignalNotSavedException $failure) {
+            // Le stockage n'est nommé qu'ici, pour l'opérateur : le cache en base.
             $io->error([
                 $failure->getMessage(),
-                'Aucun worker ne s\'arrêtera. Vérifier que la base est joignable en écriture depuis ce pod (journaux du canal `cache`), puis relancer le Job.',
+                'Rien ne prouve que les workers s\'arrêteront. Le signal vit dans le cache en base (table cache_items) : vérifier que la base est joignable '
+                .'en écriture depuis ce pod (journaux du canal `cache`, « Failed to save key » ; un « Failed to fetch key » juste avant est attendu '
+                .'après une rotation d\'APP_SECRET), puis relancer le Job, sans danger.',
             ]);
 
             return Command::FAILURE;
         }
 
-        $io->success('Signal d\'arrêt écrit et relu : chaque worker s\'arrêtera après son message en cours, et Kubernetes le relancera.');
+        // Relu sous la clé de MAC de ce pod : les workers qui ont les mêmes
+        // Secrets le liront de même. Leur redémarrage, lui, se voit au compteur
+        // RESTARTS de leur pod (k8s/README.md).
+        $io->success('Signal d\'arrêt écrit et relu : chaque worker démarré avant lui s\'arrêtera après son message en cours, et Kubernetes le relancera.');
 
         return Command::SUCCESS;
     }
