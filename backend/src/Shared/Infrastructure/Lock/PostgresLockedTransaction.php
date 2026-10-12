@@ -100,8 +100,14 @@ use Throwable;
  * et un appelant qui l'écarte (le handler d'invitation, la purge) continue sur
  * le même EntityManager. Un flush qui n'avait rien à écrire ne compte pas, ni
  * une écriture DQL ou DBAL brute, qui ne passe pas par l'UnitOfWork (limite
- * dans {@see WrittenFlushWatch}). Fermé même si le ROLLBACK lève une erreur de
- * programmation que `rollBackAfter()` laisse remonter. Avant #549, la règle
+ * dans {@see WrittenFlushWatch}). Fermé aussi quand le ROLLBACK lève une erreur
+ * de programmation que `rollBackAfter()` laisse remonter (l'opération a validé
+ * elle-même la transaction) : l'écriture est alors validée, mais l'état n'est
+ * plus sûr, et fermer reste prudent. Seul un `flush()` compte : une entité
+ * modifiée en mémoire puis un refus levé avant le `flush()` laisse ces
+ * modifications en attente dans l'EntityManager resté ouvert, comme partout
+ * avec Doctrine — un refus se lève donc avant toute modification aussi, ce que
+ * font `ContentPlacement` et `OrderAssigner`. Avant #549, la règle
  * « lever avant d'écrire » n'était qu'écrite, et rien ne la faisait respecter.
  * Rejetés : ne rien faire (la règle, seule, ne protège pas du prochain refus
  * placé après un `save()`) ; fermer sur toute exception (le défaut de
@@ -256,18 +262,18 @@ final readonly class PostgresLockedTransaction
             $this->boundTheWait();
             $this->acquire($acquire, $onTimeout);
             $result = $operation();
-        } catch (ConnectionLost $exception) {
-            // Plus de session à annuler : PostgreSQL a déjà abandonné la
-            // transaction (même choix que Connection::transactional()).
-            $this->closeIfItWrote($writes);
-
-            throw $exception;
         } catch (Throwable $exception) {
             try {
-                $this->rollBackAfter($exception);
+                // Une session perdue n'a plus rien à annuler : PostgreSQL a
+                // déjà abandonné la transaction (même choix que
+                // Connection::transactional()).
+                if (!$exception instanceof ConnectionLost) {
+                    $this->rollBackAfter($exception);
+                }
             } finally {
-                // Même si le ROLLBACK lève une erreur de programmation, que
-                // rollBackAfter() laisse remonter : l'écriture reste à oublier.
+                // Un seul point de fermeture, atteint même si le ROLLBACK lève
+                // une erreur de programmation que rollBackAfter() laisse
+                // remonter : l'état de l'EntityManager n'est alors plus sûr.
                 $this->closeIfItWrote($writes);
             }
 

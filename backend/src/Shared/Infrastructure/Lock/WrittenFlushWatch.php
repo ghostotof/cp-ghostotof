@@ -21,9 +21,13 @@ use Doctrine\ORM\Event\OnFlushEventArgs;
  * le flush écrit, ou échoue et ferme l'EntityManager de lui-même
  * ({@see \Doctrine\ORM\UnitOfWork::commit()}). Une écriture DQL
  * (`UPDATE`/`DELETE`) ou DBAL brute ne passe pas par l'UnitOfWork et n'est
- * pas notée : elle ne change rien en mémoire. Limite acceptée, sans appelant :
- * une entité chargée ou rafraîchie **après** une telle écriture, puis
- * l'exception, garderait la valeur que le ROLLBACK annule.
+ * pas notée. Limite acceptée, sans appelant sous un verrou du squelette : ce
+ * que le code reporte lui-même en mémoire après une telle écriture — une
+ * entité chargée ou rafraîchie ensuite, ou des données d'origine synchronisées
+ * à la main comme le fait `CpgUserRepository::advanceInvitationGeneration()`
+ * (appelé par la relance, hors verrou) — garde, après l'exception, la valeur
+ * que le ROLLBACK annule. Un tel motif placé un jour sous un verrou doit
+ * passer par `flush()`, ou fermer lui-même.
  */
 final class WrittenFlushWatch
 {

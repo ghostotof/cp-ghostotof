@@ -56,8 +56,10 @@ use Symfony\Component\Uid\Uuid;
  * quelle, un 500, et le squelette ferme l'EntityManager, dont l'UnitOfWork
  * tenait pour écrit ce que le refus venait d'annuler (issue #547, comme pour
  * les autres verrous du squelette). Une exception levée par l'opération après
- * une écriture le ferme de même (issue #549) ; le 409 d'un nom déjà pris, levé
- * avant le `save()`, le laisse ouvert.
+ * une écriture le ferme de même (issue #549). Le 409 d'un nom déjà pris le
+ * laisse ouvert quand il vient de la vérification, avant le `save()` ; venu de
+ * l'index unique (la course de deux `PUT`), c'est le `flush()` raté qui l'a
+ * déjà fermé.
  */
 final readonly class PostgresExperienceTechnologyRowLock implements ExperienceTechnologyLockInterface
 {

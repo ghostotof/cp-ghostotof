@@ -202,6 +202,36 @@ final class PostgresAccountRowLockTest extends KernelTestCase
     }
 
     /**
+     * Issue #549 : le chemin de l'activation et de `changePassword()` — des
+     * `save()` puis une instruction suivante que la base refuse (ici une
+     * division par zéro, à la place du `DELETE` DQL des jetons). Le ROLLBACK
+     * annule l'écriture flushée : l'EntityManager est fermé, et une lecture
+     * relit l'adresse que la base porte.
+     */
+    public function testADatabaseErrorAfterAWriteClosesTheEntityManager(): void
+    {
+        $user = $this->pendingUser();
+        $connection = $this->em->getConnection();
+        $caught = null;
+
+        try {
+            $this->lock()->whileLocked($user, function (CpgUser $locked) use ($connection): null {
+                $locked->setEmail('rolledback@example.com');
+                $this->em->flush();
+                $connection->executeStatement('SELECT 1 / 0');
+
+                return null;
+            });
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(DriverException::class, $caught, \sprintf("L'erreur de la base est remontée sous un autre nom : %s.", get_debug_type($caught)));
+        self::assertFalse($this->em->isOpen(), "Une erreur de la base après une écriture a laissé l'EntityManager ouvert sur l'adresse annulée.");
+        self::assertSame('newcomer@example.com', $this->em->find(CpgUser::class, $user->getId())?->getEmail(), 'Une lecture après le ROLLBACK rend l\'adresse que la base a annulée.');
+    }
+
+    /**
      * Issue #532 : dans une transaction déjà ouverte, le COMMIT du verrou ne
      * serait qu'un `RELEASE SAVEPOINT` : le `FOR UPDATE` du compte tiendrait
      * jusqu'au COMMIT de l'appelant, et le handler d'invitation enverrait son
