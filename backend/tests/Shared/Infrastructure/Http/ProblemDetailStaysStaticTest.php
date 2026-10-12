@@ -84,17 +84,22 @@ use ReflectionClass;
  *    (un appel, une propriété, une variable locale, une constante composée
  *    avec un paramètre) : la classe qui l'appelle est refusée, quoi qu'elle
  *    lui passe — prudence assumée ;
- *  - une constante n'est un littéral que seule, et de valeur littérale
- *    (issue #523) : composée (`self::A.' x'`), faite d'une autre constante,
- *    concaténée au site, héritée d'une interface (le modèle ne lit pas
- *    `implements`), déclarée hors des sources, ou un cas d'enum
- *    (`Kind::Cas->value`), elle est refusée — prudence assumée, aucun cas
- *    dans src/. Une constante globale nue (`MESSAGE`) aussi : `define()` lui
- *    donne sa valeur à l'exécution, et le modèle ne lit pas les `const`
- *    d'espace de noms. Écrits dans un trait, `self::` et `static::` se lisent
- *    sur le trait, pas sur la classe qui l'utilise : refusés si seule cette
- *    classe déclare la constante, et `static::` n'y voit pas les
- *    sous-classes de cette classe, qui pourraient la redéfinir composée ;
+ *  - une constante n'est un littéral que seule, de valeur littérale et
+ *    lisible d'où elle s'écrit (une privée ne s'hérite pas, issue #523) :
+ *    composée (`self::A.' x'`), faite d'une autre constante, concaténée au
+ *    site, héritée par `implements` (le modèle ne lit pas cette clause ;
+ *    `Interface::M`, écrit par son nom, est lu), déclarée hors des sources,
+ *    ou un cas d'enum (`Kind::Cas->value`), elle est refusée — prudence
+ *    assumée, aucun cas dans src/. Une constante globale nue (`MESSAGE`)
+ *    aussi : `define()` lui donne sa valeur à l'exécution, et le modèle ne
+ *    lit pas les `const` d'espace de noms. Au site d'un `new` écrit dans un
+ *    trait, `self::` se lit sur le trait (refusé si seule la classe qui
+ *    l'utilise déclare la constante) et `parent::` est refusé ; `static::`
+ *    y voit les classes qui utilisent le trait et leurs sous-classes. Au
+ *    constructeur, venu d'un trait ou non, tous se lisent depuis la classe
+ *    qui le détient (son `context`). Un `new` écrit dans une classe anonyme
+ *    — interdite dans src/ (issue #432) — lirait ses constantes sur la
+ *    classe qui l'entoure ;
  *  - `Ancêtre::__construct(…)`, appelé par son nom, est lu comme le
  *    constructeur du parent ;
  *  - une collision que PHP refuse (deux traits sans `insteadof`, un alias
@@ -115,10 +120,11 @@ use ReflectionClass;
  * elle porte aussi son `context`, la déclaration de la lignée qui la détient
  * (elle-même ou par un trait) : celle dont `parent` désigne le parent. Un
  * Construction est un `new` : sa sorte (BY_NAME ou RELATIVE_NAMES), la
- * classe nommée ou la déclaration où il s'écrit, ses arguments, sa ligne,
- * et la déclaration où il s'écrit (null hors de toute), d'où se lisent les
- * constantes `self::`, `parent::` et `static::` de ses arguments. Une
- * Declaration porte ses constantes : nom => valeur littérale ou non.
+ * classe nommée (null pour une sorte relative), ses arguments, sa ligne, et
+ * la déclaration où il s'écrit (null hors de toute) — celle à laquelle se
+ * rapporte une sorte relative, et d'où se lisent les constantes `self::`,
+ * `parent::` et `static::` de ses arguments. Une Declaration porte ses
+ * constantes : nom => valeur littérale ou non, privée ou non.
  * Un MessageSource dit de quoi dépend le message d'un constructeur : par
  * paramètre, composé ou transmis tel quel ; aucun s'il le fixe ; false s'il
  * dépend d'autre chose ({@see self::messageSource()}).
@@ -140,9 +146,10 @@ use ReflectionClass;
  *     aliases: list<array{?string, string, string}>,
  *     methods: array<string, Method>,
  *     assignsMessage: bool,
- *     constants: array<string, bool>,
+ *     constants: array<string, Constant>,
  * }
- * @phpstan-type Construction array{string, string, list<list<PhpToken>>, int, ?string}
+ * @phpstan-type Constant array{literal: bool, private: bool}
+ * @phpstan-type Construction array{string, ?string, list<list<PhpToken>>, int, ?string}
  * @phpstan-type MessageSource false|array<string, bool>
  */
 final class ProblemDetailStaysStaticTest extends TestCase
@@ -385,30 +392,44 @@ final class ProblemDetailStaysStaticTest extends TestCase
         $messages = $namespace."final class Messages {\n    public const string EMPTY = 'Vide.';\n    public static function EMPTY(): string { return ''; }\n}\n";
         $siteIn = static fn (string $body, string $argument): string => "final class Thrower {\n{$body}    public function f(string \$c, string \$x): never { throw new Problem({$argument}); }\n}\n";
         $constant = "    private const string M = 'Vide.';\n";
+        // Héritée, une constante n'est visible que protégée ou publique.
+        $inherited = "    protected const string M = 'Vide.';\n";
         yield 'site, self::' => [$namespace.$siteIn($constant, 'self::M'), 0];
         yield 'site, constante d\'une classe importée' => ["<?php\nnamespace App\\Z;\nfinal class Messages {\n    public const string EMPTY = 'Vide.';\n}\n"
             ."namespace App\\X;\nuse App\\Y\\Problem;\nuse App\\Z\\Messages;\nthrow new Problem(Messages::EMPTY);", 0];
         yield 'site, constante d\'une classe importée par alias' => ["<?php\nnamespace App\\Z;\nfinal class Messages {\n    public const string EMPTY = 'Vide.';\n}\n"
             ."namespace App\\X;\nuse App\\Y\\Problem;\nuse App\\Z\\Messages as Texts;\nthrow new Problem(message: Texts::EMPTY);", 0];
         yield 'site, nom complet de la classe' => [$messages."throw new Problem(\\App\\Y\\Messages::EMPTY);", 0];
-        yield 'site, constante héritée par self::' => [$namespace."abstract class Texts {\n".$constant."}\n"
+        yield 'site, constante héritée par self::' => [$namespace."abstract class Texts {\n".$inherited."}\n"
             ."final class Thrower extends Texts {\n    public function f(): never { throw new Problem(self::M); }\n}\n", 0];
-        yield 'site, parent::' => [$namespace."abstract class Texts {\n".$constant."}\n"
+        yield 'site, parent::' => [$namespace."abstract class Texts {\n".$inherited."}\n"
             ."final class Thrower extends Texts {\n    public function f(): never { throw new Problem(parent::M); }\n}\n", 0];
         yield 'site, static::' => [$namespace.$siteIn($constant, 'static::M'), 0];
         yield 'site, constante d\'un trait' => [$namespace."trait Texts {\n".$constant."}\n"
             ."final class Thrower {\n    use Texts;\n    public function f(): never { throw new Problem(self::M); }\n}\n", 0];
+        yield 'site, static:: dans un trait' => [$namespace."trait Builds {\n".$inherited."    public static function f(): never { throw new Problem(static::M); }\n}\n"
+            ."class Thrower {\n    use Builds;\n}\nfinal class Sub extends Thrower {}\n", 0];
+        yield 'site, constante nommée CONST dans une liste' => [$namespace.$siteIn("    private const string CONST = 'Vide.';\n    const X = [self::CONST], M = 'Plein.';\n", 'self::M'), 0];
         yield 'site, constantes en liste' => [$namespace.$siteIn("    const A = 'Vide.', M = 'Plein.';\n", 'self::M'), 0];
         yield 'constructeur, self::' => [$namespace."final class Problem extends \\DomainException {\n".$constant
             ."    public function __construct(?\\Throwable \$p = null) { parent::__construct(self::M, 0, \$p); }\n}\n", 0];
-        yield 'constructeur, constante héritée' => [$base.$constant."}\n"
+        yield 'constructeur, constante héritée' => [$base.$inherited."}\n"
             ."final class Problem extends Base {\n    public function __construct() { parent::__construct(self::M); }\n}\n", 0];
         yield 'constructeur, constante d\'une autre classe' => [$messages."final class Problem extends \\DomainException {\n"
             ."    public function __construct() { parent::__construct(Messages::EMPTY); }\n}\n", 0];
-        yield 'constructeur, static:: sans redéfinition' => [$namespace."class Problem extends \\DomainException {\n".$constant
+        yield 'constructeur, static:: sans redéfinition' => [$namespace."class Problem extends \\DomainException {\n".$inherited
             ."    public function __construct() { parent::__construct(static::M); }\n}\nfinal class Child extends Problem {}\n", 0];
 
         // Ce qui n'est pas une constante au littéral reste refusé (issue #523).
+        yield 'site, constante privée du parent par self::' => [$namespace."abstract class Texts {\n".$constant."}\n"
+            ."final class Thrower extends Texts {\n    public function f(): never { throw new Problem(self::M); }\n}\n", 1];
+        yield 'site, constante privée du parent par parent::' => [$namespace."abstract class Texts {\n".$constant."}\n"
+            ."final class Thrower extends Texts {\n    public function f(): never { throw new Problem(parent::M); }\n}\n", 1];
+        yield 'site, constante privée d\'une autre classe' => [$namespace."final class Messages {\n".$constant."}\nthrow new Problem(Messages::M);", 1];
+        yield 'constructeur, static:: privée avec une sous-classe' => [$namespace."class Problem extends \\DomainException {\n".$constant
+            ."    public function __construct() { parent::__construct(static::M); }\n}\nfinal class Child extends Problem {}\n", 1];
+        yield 'site, static:: dans un trait, redéfinie composée par une sous-classe' => [$namespace."trait Builds {\n".$inherited."    public static function f(): never { throw new Problem(static::M); }\n}\n"
+            ."class Thrower {\n    use Builds;\n}\nfinal class Sub extends Thrower {\n    protected const string M = 'x'.\\PHP_EOL;\n}\n", 1];
         yield 'constructeur, static:: redéfinie composée' => [$namespace."class Problem extends \\DomainException {\n".$constant
             ."    public function __construct() { parent::__construct(static::M); }\n}\nfinal class Child extends Problem {\n    protected const string M = 'x'.\\PHP_EOL;\n}\n", 1];
         yield 'site, constante composée' => [$namespace.$siteIn("    private const string A = 'Vide.';\n    private const string M = self::A.' Plein.';\n", 'self::M'), 1];
@@ -638,11 +659,11 @@ final class ProblemDetailStaysStaticTest extends TestCase
     {
         $violations = [];
         foreach ($parsed as $path => $file) {
-            foreach ($file['constructions'] as [$kind, $writtenIn, $arguments, $line, $scope]) {
+            foreach ($file['constructions'] as [$kind, $named, $arguments, $line, $scope]) {
                 // Un nom désigne la classe jugée même déclarée hors des sources lues.
-                $targets = self::BY_NAME === $kind
-                    ? (isset($declaredNames[$writtenIn]) ? [$writtenIn] : [])
-                    : array_keys(array_filter($builtFrom, static fn (array $sourcesByKind): bool => \in_array($writtenIn, $sourcesByKind[$kind] ?? [], true)));
+                $targets = null !== $named
+                    ? (isset($declaredNames[$named]) ? [$named] : [])
+                    : array_keys(array_filter($builtFrom, static fn (array $sourcesByKind): bool => \in_array($scope, $sourcesByKind[$kind] ?? [], true)));
                 foreach ($targets as $target) {
                     if (!$this->argumentsAreLiteral($arguments, $messageParameters[$target] ?? self::NATIVE_MESSAGE, $scope, $byName)) {
                         $violations[] = $path.':'.$line.' : new '.$declaredNames[$target].' avec un message non littéral';
@@ -818,14 +839,28 @@ final class ProblemDetailStaysStaticTest extends TestCase
      */
     private function assignsMessage(array $declaration, array $byName): bool
     {
-        foreach ($this->ancestry($declaration, $byName) as $ancestor) {
-            $traits = array_map(static fn (string $trait): array => $byName[$trait], $this->traitsOf($ancestor, $byName));
-            if (array_any([$ancestor, ...$traits], static fn (array $declared): bool => $declared['assignsMessage'])) {
-                return true;
-            }
-        }
+        return array_any(
+            array_merge(...$this->lineage($declaration, $byName)),
+            static fn (array $declared): bool => $declared['assignsMessage'],
+        );
+    }
 
-        return false;
+    /**
+     * Les niveaux de la lignée ({@see self::ancestry()}), chacun fait de sa
+     * déclaration suivie de ses traits ({@see self::traitsOf()}) : ce qu'une
+     * classe tient d'elle-même au niveau 0, de ses parents ensuite.
+     *
+     * @param Declaration                $declaration
+     * @param array<string, Declaration> $byName
+     *
+     * @return list<non-empty-list<Declaration>>
+     */
+    private function lineage(array $declaration, array $byName): array
+    {
+        return array_map(
+            fn (array $level): array => [$level, ...array_map(static fn (string $trait): array => $byName[$trait], $this->traitsOf($level, $byName))],
+            $this->ancestry($declaration, $byName),
+        );
     }
 
     /**
@@ -1022,10 +1057,11 @@ final class ProblemDetailStaysStaticTest extends TestCase
                 if (null !== $method) {
                     $methods[$current][$this->functionName($tokens, $index)] = $method;
                 }
-            } elseif ($token->is(\T_CONST) && null !== $current && $depth === $bodyDepth) {
+            } elseif ($token->is(\T_CONST) && null !== $current && $depth === $bodyDepth && !$this->tokenAt($tokens, $index - 1, \T_DOUBLE_COLON)) {
+                // `Foo::CONST` est lexé T_CONST : une constante nommée CONST, pas une déclaration.
                 $constants[$current] = [...$constants[$current] ?? [], ...$this->constantsAt($tokens, $index)];
             } elseif ($token->is(\T_NEW) && $this->tokenAt($tokens, $index + 1, self::NAME_TOKENS) && $this->tokenAt($tokens, $index + 2, '(')) {
-                [$kind, $class] = $this->instantiated($tokens[$index + 1], $namespace, $imports, $current);
+                [$kind, $class] = $this->instantiated($tokens[$index + 1], $namespace, $imports);
                 $constructions[] = [$kind, $class, $this->arguments($tokens, $index + 2, $namespace, $imports), $token->line, $current];
             } elseif (null !== $current && $this->assignsTheMessageAt($tokens, $index)) {
                 $assignsMessage[$current] = true;
@@ -1213,21 +1249,21 @@ final class ProblemDetailStaysStaticTest extends TestCase
     }
 
     /**
-     * La sorte de `new` et ce qu'il désigne, en minuscules : `self`, `static`
-     * et `parent` (casse indifférente) se rapportent à la déclaration où ils
-     * s'écrivent (aucune hors d'une déclaration), que
+     * La sorte de `new` et la classe qu'il nomme, en minuscules : `self`,
+     * `static` et `parent` (casse indifférente) n'en nomment aucune, ils se
+     * rapportent à la déclaration où ils s'écrivent, que
      * {@see self::constructionSources()} relie aux classes construites ; tout
      * autre nom se résout par {@see ClassNameResolver}.
      *
      * @param array<string, string> $imports
      *
-     * @return array{string, string}
+     * @return array{string, ?string}
      */
-    private function instantiated(PhpToken $name, string $namespace, array $imports, ?string $current): array
+    private function instantiated(PhpToken $name, string $namespace, array $imports): array
     {
         $relative = strtolower($name->text);
         if (\in_array($relative, self::RELATIVE_NAMES, true)) {
-            return [$relative, (string) $current];
+            return [$relative, null];
         }
 
         return [self::BY_NAME, ClassNameResolver::resolve($name, $namespace, $imports)];
@@ -1350,9 +1386,11 @@ final class ProblemDetailStaysStaticTest extends TestCase
      * Ces jetons sont-ils exactement `Classe::CONSTANTE`, `self::`,
      * `parent::` ou `static::CONSTANTE`, dont la valeur est une chaîne
      * littérale ({@see self::constantIsLiteral()}) ? `self` et `parent` se
-     * rapportent à la déclaration $scope ; `static`, à elle et à chacune de
-     * ses sous-classes, puisque la liaison statique tardive lit la constante
-     * de la classe appelée : il faut qu'aucune ne la redéfinisse autrement.
+     * rapportent à la déclaration $scope ; `static`, à elle et à chaque
+     * déclaration qui l'a dans sa lignée — sous-classes, classes qui
+     * utilisent le trait $scope et leurs sous-classes —, puisque la liaison
+     * statique tardive lit la constante de la classe appelée : il faut
+     * qu'aucune ne la redéfinisse autrement.
      * Un nom de classe arrive résolu ({@see self::arguments()}). Ni un appel
      * (`Classe::m()`, trois jetons de plus), ni une propriété (`Classe::$p`,
      * une variable), ni `$x::class`, ni `Enum::Cas->value` n'ont cette forme.
@@ -1367,7 +1405,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
         }
         [$class, , $constant] = $tokens;
         if ($class->is(\T_NAME_FULLY_QUALIFIED)) {
-            return $this->constantIsLiteral(ltrim(strtolower($class->text), '\\'), $constant->text, $byName);
+            return $this->constantIsLiteral(ltrim(strtolower($class->text), '\\'), $constant->text, $scope, $byName);
         }
         $declaration = null !== $scope ? $byName[$scope] ?? null : null;
         if (null === $declaration) {
@@ -1375,11 +1413,14 @@ final class ProblemDetailStaysStaticTest extends TestCase
         }
 
         return match (strtolower($class->text)) {
-            'self' => $this->constantIsLiteral($declaration['name'], $constant->text, $byName),
-            'parent' => null !== $declaration['parent'] && $this->constantIsLiteral($declaration['parent'], $constant->text, $byName),
+            'self' => $this->constantIsLiteral($declaration['name'], $constant->text, $scope, $byName),
+            'parent' => null !== $declaration['parent'] && $this->constantIsLiteral($declaration['parent'], $constant->text, $scope, $byName),
             'static' => array_all(
-                array_filter($byName, fn (array $called): bool => \in_array($declaration['name'], array_column($this->ancestry($called, $byName), 'name'), true)),
-                fn (array $called): bool => $this->constantIsLiteral($called['name'], $constant->text, $byName),
+                array_filter($byName, fn (array $called): bool => array_any(
+                    $this->lineage($called, $byName),
+                    static fn (array $level): bool => \in_array($declaration['name'], array_column($level, 'name'), true),
+                )),
+                fn (array $called): bool => $this->constantIsLiteral($called['name'], $constant->text, $scope, $byName),
             ),
             default => false,
         };
@@ -1400,21 +1441,26 @@ final class ProblemDetailStaysStaticTest extends TestCase
     /**
      * La constante de ce nom (casse comprise, comme PHP), telle que la
      * classe la tient — d'elle-même ou de ses traits, sinon de ses parents
-     * et de leurs traits —, a-t-elle pour valeur une chaîne littérale ? Une
-     * classe ou une constante absente des sources lues ne l'a pas.
+     * et de leurs traits ({@see self::lineage()}) —, et lue depuis la
+     * déclaration $scope, a-t-elle pour valeur une chaîne littérale ? Une
+     * constante privée ne s'hérite pas, et ne se lit que de sa classe (ou
+     * d'un trait de celle-ci) : trouvée chez un parent, ou lue d'ailleurs,
+     * elle ne l'a pas — PHP refuserait de la lire. Une classe ou une
+     * constante absente des sources lues ne l'a pas non plus.
      *
      * @param array<string, Declaration> $byName
      */
-    private function constantIsLiteral(string $class, string $constant, array $byName): bool
+    private function constantIsLiteral(string $class, string $constant, ?string $scope, array $byName): bool
     {
         if (!isset($byName[$class])) {
             return false;
         }
-        foreach ($this->ancestry($byName[$class], $byName) as $level) {
-            $traits = array_map(static fn (string $trait): array => $byName[$trait], $this->traitsOf($level, $byName));
-            foreach ([$level, ...$traits] as $declared) {
-                if (isset($declared['constants'][$constant])) {
-                    return $declared['constants'][$constant];
+        foreach ($this->lineage($byName[$class], $byName) as $depth => $level) {
+            foreach ($level as $declared) {
+                $found = $declared['constants'][$constant] ?? null;
+                if (null !== $found) {
+                    return $found['literal']
+                        && (!$found['private'] || (0 === $depth && \in_array($scope, array_column($level, 'name'), true)));
                 }
             }
         }
@@ -1425,15 +1471,21 @@ final class ProblemDetailStaysStaticTest extends TestCase
     /**
      * Les constantes du `const` en $const (`const A = …, B = …;`, typées
      * ou non) : nom tel qu'écrit => sa valeur est-elle une chaîne littérale
-     * ({@see self::isStringLiteral()}) ? Une valeur composée, ou faite d'une
-     * autre constante, ne l'est pas : refusée par prudence plutôt que suivie.
+     * ({@see self::isStringLiteral()}), est-elle privée (un `private` parmi
+     * les modificateurs qui précèdent) ? Une valeur composée, ou faite d'une
+     * autre constante, n'est pas littérale : refusée par prudence plutôt que
+     * suivie.
      *
      * @param list<PhpToken> $tokens
      *
-     * @return array<string, bool>
+     * @return array<string, Constant>
      */
     private function constantsAt(array $tokens, int $const): array
     {
+        $private = false;
+        for ($modifier = $const - 1; $this->tokenAt($tokens, $modifier, [\T_PUBLIC, \T_PROTECTED, \T_PRIVATE, \T_FINAL]); --$modifier) {
+            $private = $private || $tokens[$modifier]->is(\T_PRIVATE);
+        }
         $constants = [];
         $name = null;
         $value = [];
@@ -1442,7 +1494,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
             $token = $tokens[$index];
             if (0 === $level && $token->is([',', ';'])) {
                 if (null !== $name) {
-                    $constants[$name] = $this->isStringLiteral($value);
+                    $constants[$name] = ['literal' => $this->isStringLiteral($value), 'private' => $private];
                 }
                 if ($token->is(';')) {
                     break;
