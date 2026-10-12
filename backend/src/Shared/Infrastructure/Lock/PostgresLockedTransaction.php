@@ -43,12 +43,17 @@ use Throwable;
  * transaction (point de sauvegarde) ; un `flush()` qui échoue ferme
  * l'EntityManager de lui-même, comme hors de tout verrou.
  *
- * **L'attente est bornée quand rien ne la borne** : si la session n'a aucun
- * `lock_timeout` (`0`, le cas de la console — worker Messenger, `app:*:seed`
- * —, qui n'a pas le `PGOPTIONS` de FPM), la transaction reçoit celui de
- * l'adaptateur, par `set_config(…, true)`, l'équivalent de `SET LOCAL` : il
- * s'éteint avec elle. Un délai que la session a déjà choisi (`PGOPTIONS` de
- * www.prod.conf, un test) est gardé tel quel, ni rallongé ni raccourci. Il
+ * **L'attente est bornée quand rien ne la borne — un filet** : si la session
+ * n'a aucun `lock_timeout` (`0`), la transaction reçoit celui de l'adaptateur,
+ * par `set_config(…, true)`, l'équivalent de `SET LOCAL` : il s'éteint avec
+ * elle. Depuis #525, les sessions déployées ont toutes leur borne — FPM par le
+ * `PGOPTIONS` de www.prod.conf, chaque conteneur console de `k8s/base` par le
+ * sien (épinglé par ConsoleLockWaitBoundTest) —, et ce filet ne sert plus
+ * qu'aux sessions qui n'en ont pas : la console du conteneur de dev, la CI, un
+ * futur pod qui l'oublierait. Gardé (décision du 2026-10-12) : il coûte une
+ * requête par transaction verrouillée, et ces trois verrous sont ceux dont
+ * l'attente compte le plus. Un délai que la session a déjà choisi (`PGOPTIONS`,
+ * un test) est gardé tel quel, ni rallongé ni raccourci. Il
  * vaut pour toute la transaction, donc aussi pour les attentes de l'opération
  * elle-même, comme sous FPM. Imbriqué dans une transaction déjà ouverte, il
  * vaut jusqu'à la fin de celle-ci (portée de `SET LOCAL`), comme le
@@ -68,9 +73,10 @@ final readonly class PostgresLockedTransaction
     public const string LOCK_NOT_AVAILABLE = '55P03';
 
     /**
-     * Le délai donné à une session qui n'en a aucun : celui de FPM
-     * (`PGOPTIONS` de www.prod.conf, épinglé par FpmLockWaitBoundTest), pour
-     * qu'une attente se borne de même sous la console et sous FPM.
+     * Le délai donné à une session qui n'en a aucun : celui de FPM et des pods
+     * console (`PGOPTIONS` de www.prod.conf et de `k8s/base`, épinglés par
+     * FpmLockWaitBoundTest et ConsoleLockWaitBoundTest), pour qu'une attente
+     * se borne de même partout.
      */
     public const string FALLBACK_LOCK_TIMEOUT = '5s';
 

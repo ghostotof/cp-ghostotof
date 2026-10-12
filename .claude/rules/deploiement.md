@@ -69,8 +69,19 @@ paths:
   `env[PGOPTIONS] = "-c lock_timeout=5s"` (the DSN cannot carry it: DBAL doesn't forward `options`
   to pdo_pgsql, so it bounds every PostgreSQL lock wait of an FPM worker, ORM included, never the
   console) and `request_terminate_timeout = 65s` (total wall time — keep it above any legitimate
-  request), pinned by `FpmLockWaitBoundTest`. **The console gets its bound from the application's
-  own PostgreSQL locks** (issue #512): the order-scope lock, the account lock and the username
+  request), pinned by `FpmLockWaitBoundTest`. **The console gets the same bound from its pods**
+  (issue #525): every container of `k8s/base` running the backend image carries
+  `PGOPTIONS: '-c lock_timeout=5s'` in its own `env:` — worker, CronJobs, every Job, the migration
+  included —, exactly www.prod.conf's value. `env:` per manifest rather than a `backend-config` line
+  (written twice, one per overlay) or a DBAL middleware (it would not reach the connection
+  `symfony/lock` opens itself through `DriverManager`, and could not tell a migration apart).
+  `ConsoleLockWaitBoundTest` finds the manifests **by the image**, so a new one without the bound
+  turns it red; its only exemption is `backend-deployment.yaml`'s `php-fpm` (the pool sets it).
+  Without it a console session has `lock_timeout = 0` (measured). An operator's read-only `exec`
+  (below) repeats `-c lock_timeout=5s` in its own `PGOPTIONS`, which replaces the variable whole.
+  For the worker, a handler waiting past 5 s raises `55P03` and Messenger retries it. **The
+  application's own PostgreSQL locks keep a fallback bound, now a safety net** (issue #512, kept on
+  2026-10-12, #525) for sessions with none — the dev container's console, CI: the order-scope lock, the account lock and the username
   allocation lock share one skeleton, `Shared/Infrastructure/Lock/PostgresLockedTransaction`
   (an *Execute Around*: hand-made transaction, wait bounded, `55P03` — defined there only, as
   `LOCK_NOT_AVAILABLE` — renamed per lock, a refused COMMIT never masked), which gives the
@@ -138,7 +149,7 @@ paths:
   `messenger:failed:show` is the third case — read-only, and at `-vv` it dumps the message itself (a
   visitor's name, address and text, an invitation's `userId`, the raw body of an undecodable
   envelope; measured: none of it without `-vv`) — so an `exec` on `deploy/backend -c php-fpm` under
-  `env PGOPTIONS='-c default_transaction_read_only=on'` (libpq reads it, so the whole session is
+  `env PGOPTIONS='-c default_transaction_read_only=on -c lock_timeout=5s'` (libpq reads it, so the whole session is
   read-only: a `failed:remove` there fails with SQLSTATE 25006, measured); `failed:retry <id>`,
   `failed:remove <id>` and `stop-workers` have side effects, so `messenger-failed-{retry,remove}-job.yaml`
   and `messenger-stop-workers-job.yaml`, never with `-v` (and `SHELL_VERBOSITY=0` in their `env`, which
@@ -165,6 +176,22 @@ paths:
   migration by a new commit on the `release/*` branch (a `fix/*` PR targeting it; every push redeploys
   preprod) — a new migration if an earlier one of the release already ran —, or by a hotfix release once
   `main` has moved; never a tag by hand, the pipeline tags.
+  **A migration's lock waits are bounded at 5 s, and there the bound stops the deploy, it refuses
+  no request** (issue #525, decided 2026-10-12). A DDL waiting for an exclusive lock queues every
+  API request on its table behind it (each one then failing on FPM's own 5 s); bounded, the
+  migration fails with `55P03`, the Job retries once (`backoffLimit: 1`, the remaining migrations
+  only — each runs in its own transaction), then fails, `apply -k` never runs and the previous
+  release keeps serving. A transient blocker therefore means **re-running the deploy job** — say
+  so in the release notes. A migration that must wait longer says so itself, `SET LOCAL
+  lock_timeout = '…'` at the top of its `up()` (`Version20261011120000` sets `5s` that way, now
+  redundant and left as is: migrations are frozen). **No pipeline Job outlives the pipeline's
+  wait**: `run-job.sh` deletes a Job only before applying it, so `migrate-job.yaml`
+  (`activeDeadlineSeconds: 270`, waited 300 s) and `seed-job.yaml` (150, waited 180) die first and
+  the pipeline reads their failure, named, instead of its own timeout — the convention of
+  `messenger-probe-job.yaml` (240 under 300). Counted from the Job's creation, `Always` pull and
+  retry included; it moves no `timeout-minutes` (the waits are unchanged, #285).
+  `tools/tests/run-job.test.sh` reads every `run-job.sh` call of `pipeline.yml` and fails on a
+  Job whose deadline is missing or not strictly below its wait.
   The discipline that makes this order safe, to respect in every migration:
   a column added `NOT NULL` has a default or is filled by the migration itself
   (`Version20260914170000` is the model); **never drop or rename a column in the release that stops
