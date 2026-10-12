@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Migrations;
 
-use App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock;
+use App\Portfolio\Shared\Infrastructure\Doctrine\TranslationGroupRefusal;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -89,7 +89,7 @@ final class Version20261012160000Test extends KernelTestCase
         $refusal = $this->refusalOfAnImmediateCategoryMove($group);
 
         self::assertInstanceOf(DriverException::class, $refusal, 'Le trigger posé par up() a laissé passer un groupe réparti.');
-        self::assertSame(PostgresAdvisoryOrderScopeLock::TRANSLATION_GROUP_ACROSS_SEVERAL_SCOPES, $refusal->getSQLState(), $refusal->getMessage());
+        self::assertSame(TranslationGroupRefusal::ACROSS_SEVERAL_SCOPES, $refusal->getSQLState(), $refusal->getMessage());
     }
 
     /**

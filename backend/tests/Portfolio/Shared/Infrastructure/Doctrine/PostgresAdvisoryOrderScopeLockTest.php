@@ -17,6 +17,7 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Portfolio\Shared\Infrastructure\Doctrine\OrderScopeLockInsideTransactionException;
 use App\Portfolio\Shared\Infrastructure\Doctrine\OrderScopeLockTimeoutException;
 use App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock;
+use App\Portfolio\Shared\Infrastructure\Doctrine\TranslationGroupRefusal;
 use App\Shared\Infrastructure\Doctrine\VanishedEntities;
 use App\Tests\Portfolio\Shared\Support\FakeOrderable;
 use App\Tests\Portfolio\Shared\Support\FakeTranslatableContent;
@@ -27,6 +28,7 @@ use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Exception\EntityManagerClosed;
+use Doctrine\ORM\OptimisticLockException;
 use DomainException;
 use Psr\Log\NullLogger;
 use stdClass;
@@ -278,6 +280,46 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
         self::assertStringContainsString('hobby, technical', $caught->getMessage(), 'Le message ne nomme pas les catégories.');
         self::assertInstanceOf(DriverException::class, $caught->getPrevious());
         self::assertTrue($this->probeCanLock(AboutMeCard::class), 'Le verrou survit au COMMIT refusé.');
+        self::assertFalse($connection->isTransactionActive());
+    }
+
+    /**
+     * Issue #506 : le nom de l'invariant n'est donné que par ce verrou, qui
+     * possède le COMMIT. Une écriture qui le contourne — ici un `flush()` sur
+     * l'EntityManager de l'application, celui que traverse la rédaction des
+     * erreurs du pilote — reçoit le refus brut du trigger, que Doctrine
+     * enveloppe : un COMMIT refusé sort de `UnitOfWork::commit()` en
+     * `OptimisticLockException` « Commit failed », dont la cause est la
+     * `DriverException` `23T90`, au message qui nomme encore le groupe et la
+     * table (en SQL ou dans une migration, c'est cette `DriverException`
+     * elle-même, épinglée par `TranslationGroupSinglePositionTest`). Limite
+     * acceptée : aucune écriture applicative capable de réveiller le trigger
+     * ne se fait hors verrou (#389, `OrderScopeLockCoverageTest`) ; restent les
+     * migrations et le SQL. Doctrine ferme l'EntityManager sur ce COMMIT
+     * refusé, comme le squelette le ferme sous verrou (#502).
+     */
+    public function testAWriteOutsideTheLockSurfacesAsDoctrinesCommitFailureWrappingTheRawRefusal(): void
+    {
+        $entityManager = $this->entityManager();
+        $connection = $entityManager->getConnection();
+
+        try {
+            [$french, $english] = $this->contributionPair();
+            $english->moveToPosition($english->getPosition() + self::OUT_OF_ITS_GROUP);
+            $caught = $this->failureOf($entityManager->flush(...));
+            $closed = !$entityManager->isOpen();
+        } finally {
+            self::getContainer()->get('doctrine')->resetManager();
+            $connection->executeStatement('DELETE FROM contribution');
+        }
+
+        self::assertInstanceOf(OptimisticLockException::class, $caught, \sprintf('Le COMMIT refusé hors verrou n\'est pas remonté comme Doctrine le rapporte : %s.', get_debug_type($caught)));
+        $refusal = $caught->getPrevious();
+        self::assertInstanceOf(DriverException::class, $refusal, \sprintf('Le refus de la base n\'est plus la cause : %s.', get_debug_type($refusal)));
+        self::assertSame(TranslationGroupRefusal::ON_SEVERAL_POSITIONS, $refusal->getSQLState(), $refusal->getMessage());
+        self::assertStringContainsString($french->getTranslationGroup()->toRfc4122(), $refusal->getMessage(), 'Le message ne nomme plus le groupe.');
+        self::assertStringContainsString('contribution', $refusal->getMessage(), 'Le message ne nomme plus la table.');
+        self::assertTrue($closed, 'Le COMMIT refusé hors verrou a laissé l\'EntityManager ouvert.');
         self::assertFalse($connection->isTransactionActive());
     }
 
