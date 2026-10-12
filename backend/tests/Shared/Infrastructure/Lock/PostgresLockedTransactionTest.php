@@ -196,6 +196,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
     public function testARefusalRaisedByTheAcquisitionRollsBack(): void
     {
         $refusal = new LogicException('acquisition refusée');
+        $listeners = $this->listenerCount();
 
         try {
             $this->transaction()->run(
@@ -210,6 +211,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
         }
 
         self::assertFalse($this->connection->isTransactionActive());
+        self::assertSame($listeners, $this->listenerCount(), "Un écouteur est resté branché après une acquisition refusée (issue #549).");
     }
 
     public function testAFailingOperationRollsBackAndReleasesTheLock(): void
@@ -295,6 +297,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
      */
     public function testASessionLostAfterAWrittenFlushAlsoClosesTheEntityManager(): void
     {
+        $listeners = $this->listenerCount();
         $caught = $this->failureOfARun(function (): void {
             $this->entityManager->persist(new CpgUser('lostsession', ''));
             $this->entityManager->flush();
@@ -304,6 +307,34 @@ final class PostgresLockedTransactionTest extends KernelTestCase
 
         self::assertInstanceOf(ConnectionLost::class, $caught, \sprintf('La session coupée est remontée sous un autre nom : %s.', get_debug_type($caught)));
         self::assertFalse($this->entityManager->isOpen(), "Une session perdue après une écriture a laissé l'EntityManager ouvert.");
+        self::assertSame($listeners, $this->listenerCount(), 'Un écouteur est resté branché après une session perdue.');
+    }
+
+    /**
+     * Un flush qui ne fait que supprimer est une écriture comme une autre : le
+     * ROLLBACK rend la ligne, mais l'UnitOfWork ne la gère plus. L'EntityManager
+     * est fermé, et une lecture la retrouve.
+     */
+    public function testAnExceptionAfterAFlushThatOnlyDeletesClosesTheEntityManager(): void
+    {
+        $stored = new CpgUser('deletedthenrestored', '');
+        $this->entityManager->persist($stored);
+        $this->entityManager->flush();
+
+        try {
+            $caught = $this->failureOfARun(function () use ($stored): never {
+                $this->entityManager->remove($stored);
+                $this->entityManager->flush();
+
+                throw new DomainException('refus après une suppression');
+            });
+
+            self::assertInstanceOf(DomainException::class, $caught);
+            self::assertFalse($this->entityManager->isOpen(), "Une exception levée après une suppression a laissé l'EntityManager ouvert.");
+            self::assertNotNull($this->entityManager->find(CpgUser::class, $stored->getId()), 'Une lecture après le ROLLBACK ne retrouve pas la ligne que la suppression annulée a laissée.');
+        } finally {
+            $this->connection->executeStatement('DELETE FROM cpg_user WHERE id = ?', [$stored->getId()->toRfc4122()]);
+        }
     }
 
     /**
@@ -318,15 +349,10 @@ final class PostgresLockedTransactionTest extends KernelTestCase
         $user = new CpgUser('committed', '');
 
         try {
-            $this->transaction()->run(
-                acquire: static fn (): null => null,
-                onTimeout: $this->unexpectedTimeout(...),
-                onNested: $this->unexpectedNesting(...),
-                operation: function () use ($user): void {
-                    $this->entityManager->persist($user);
-                    $this->entityManager->flush();
-                },
-            );
+            self::assertNull($this->failureOfARun(function () use ($user): void {
+                $this->entityManager->persist($user);
+                $this->entityManager->flush();
+            }), 'La transaction qui écrit aurait dû valider.');
             self::assertSame($listeners, $this->listenerCount(), 'Un écouteur est resté branché après une transaction validée.');
 
             $caught = $this->failureOfARun(static fn (): never => throw new DomainException('refus sans écriture'));
@@ -562,6 +588,31 @@ final class PostgresLockedTransactionTest extends KernelTestCase
 
         self::assertInstanceOf(NoActiveTransaction::class, $caught, \sprintf("L'erreur de programmation a été masquée : %s.", get_debug_type($caught)));
         self::assertSame([], $this->logs->getRecords());
+    }
+
+    /**
+     * Issue #549 : après une écriture, l'EntityManager est fermé même quand le
+     * ROLLBACK lève l'erreur de programmation ci-dessus. Ce qu'il tient n'est
+     * plus sûr ; le fermer reste la réponse prudente.
+     */
+    public function testAWriteIsForgottenEvenWhenTheRollbackRaisesAProgrammingError(): void
+    {
+        $user = new CpgUser('handcommitted', '');
+
+        try {
+            $caught = $this->failureOfARun(function () use ($user): never {
+                $this->entityManager->persist($user);
+                $this->entityManager->flush();
+                $this->connection->commit();
+
+                throw new DomainException('refus après un COMMIT indu');
+            });
+
+            self::assertInstanceOf(NoActiveTransaction::class, $caught, \sprintf("L'erreur de programmation a été masquée : %s.", get_debug_type($caught)));
+            self::assertFalse($this->entityManager->isOpen(), "L'erreur du ROLLBACK a empêché de fermer l'EntityManager après une écriture.");
+        } finally {
+            $this->connection->executeStatement('DELETE FROM cpg_user WHERE id = ?', [$user->getId()->toRfc4122()]);
+        }
     }
 
     /**

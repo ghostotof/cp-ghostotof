@@ -8,7 +8,7 @@ use Doctrine\ORM\Event\OnFlushEventArgs;
 
 /**
  * Note qu'un `flush()` a eu quelque chose à écrire pendant une opération de
- * {@see PostgresLockedTransaction} (issue #549).
+ * {@see \App\Shared\Infrastructure\Lock\PostgresLockedTransaction} (issue #549).
  *
  * Branché par le squelette sur l'événement `onFlush` de l'EntityManager le
  * temps d'une seule transaction, puis débranché : un objet par transaction,
@@ -20,8 +20,10 @@ use Doctrine\ORM\Event\OnFlushEventArgs;
  * de périmé. À `onFlush`, les changements planifiés sont connus ; s'il y en a,
  * le flush écrit, ou échoue et ferme l'EntityManager de lui-même
  * ({@see \Doctrine\ORM\UnitOfWork::commit()}). Une écriture DQL
- * (`UPDATE`/`DELETE`) ou DBAL brute ne passe pas par l'UnitOfWork : elle ne
- * met rien en mémoire de périmé, et n'est pas notée.
+ * (`UPDATE`/`DELETE`) ou DBAL brute ne passe pas par l'UnitOfWork et n'est
+ * pas notée : elle ne change rien en mémoire. Limite acceptée, sans appelant :
+ * une entité chargée ou rafraîchie **après** une telle écriture, puis
+ * l'exception, garderait la valeur que le ROLLBACK annule.
  */
 final class WrittenFlushWatch
 {

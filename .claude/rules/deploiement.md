@@ -123,7 +123,10 @@ paths:
   allocation lock and the technology row lock (#545) share one skeleton, `Shared/Infrastructure/Lock/PostgresLockedTransaction`
   (an *Execute Around*: hand-made transaction, wait bounded, `55P03` — defined there only, as
   `LOCK_NOT_AVAILABLE` — renamed per lock, a refused COMMIT closing the EntityManager the skeleton
-  receives, issue #547, a refused COMMIT never masked, nor the cause by a
+  receives, issue #547, and so does an exception the operation throws after a `flush()` that had
+  something to write, issue #549 — `WrittenFlushWatch` on `onFlush`, one per transaction, unhooked
+  whatever happens, closing after the ROLLBACK; a refusal before any write leaves it open, see
+  `.claude/rules/portfolio-contenus.md` —, a refused COMMIT never masked, nor the cause by a
   ROLLBACK the database refuses after it, issue #526: that failure is logged `error` with classes and
   SQLSTATE only, the session is closed — never reused, PostgreSQL rolls it back, DBAL reopens one —, and
   the cause is rethrown as is; a programming error of the ROLLBACK, `NoActiveTransaction`, still

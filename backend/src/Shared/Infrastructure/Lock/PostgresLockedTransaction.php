@@ -99,14 +99,16 @@ use Throwable;
  * et de chaque cas d'usage des comptes — le laisse ouvert : rien n'est périmé,
  * et un appelant qui l'écarte (le handler d'invitation, la purge) continue sur
  * le même EntityManager. Un flush qui n'avait rien à écrire ne compte pas, ni
- * une écriture DQL ou DBAL brute, qui ne passe pas par l'UnitOfWork et n'y
- * laisse rien de périmé. Avant #549, la règle « lever avant d'écrire » n'était
- * qu'écrite, et rien ne la faisait respecter. Rejetés : fermer sur toute
- * exception (le défaut de `wrapInTransaction()`, qui casserait les appelants
- * qui écartent un refus pour continuer) ; une garde de test qui vérifie que
- * chaque refus attendu précède l'écriture (elle ne voit que les scénarios
- * écrits, et ni les erreurs de la base ni les verrous de compte) ; `postFlush`,
- * émis même par un flush vide.
+ * une écriture DQL ou DBAL brute, qui ne passe pas par l'UnitOfWork (limite
+ * dans {@see WrittenFlushWatch}). Fermé même si le ROLLBACK lève une erreur de
+ * programmation que `rollBackAfter()` laisse remonter. Avant #549, la règle
+ * « lever avant d'écrire » n'était qu'écrite, et rien ne la faisait respecter.
+ * Rejetés : ne rien faire (la règle, seule, ne protège pas du prochain refus
+ * placé après un `save()`) ; fermer sur toute exception (le défaut de
+ * `wrapInTransaction()`, qui casserait les appelants qui écartent un refus pour
+ * continuer) ; une garde de test qui vérifie que chaque refus attendu précède
+ * l'écriture (elle ne voit que les scénarios écrits, et ni les erreurs de la
+ * base ni les verrous de compte) ; `postFlush`, émis même par un flush vide.
  *
  * **L'attente est bornée quand rien ne la borne — un filet** : si la session
  * n'a aucun `lock_timeout` (`0`), la transaction reçoit celui de l'adaptateur,
@@ -240,13 +242,14 @@ final readonly class PostgresLockedTransaction
             throw $onNested();
         }
 
-        $this->connection->beginTransaction();
-
         // Issue #549 : une écriture de l'opération, que l'exception suivante
         // annule, ferme l'EntityManager. Une montre par transaction, débranchée
-        // quoi qu'il arrive.
+        // quoi qu'il arrive. Prise avant d'ouvrir : rien ne doit pouvoir lever
+        // entre l'ouverture et le `try` qui annule.
         $writes = new WrittenFlushWatch();
         $eventManager = $this->entityManager->getEventManager();
+
+        $this->connection->beginTransaction();
 
         try {
             $eventManager->addEventListener(Events::onFlush, $writes);
@@ -260,8 +263,13 @@ final readonly class PostgresLockedTransaction
 
             throw $exception;
         } catch (Throwable $exception) {
-            $this->rollBackAfter($exception);
-            $this->closeIfItWrote($writes);
+            try {
+                $this->rollBackAfter($exception);
+            } finally {
+                // Même si le ROLLBACK lève une erreur de programmation, que
+                // rollBackAfter() laisse remonter : l'écriture reste à oublier.
+                $this->closeIfItWrote($writes);
+            }
 
             throw $exception;
         } finally {

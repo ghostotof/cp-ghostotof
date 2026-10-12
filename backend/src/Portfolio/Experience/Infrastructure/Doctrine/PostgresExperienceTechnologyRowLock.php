@@ -55,7 +55,9 @@ use Symfony\Component\Uid\Uuid;
  * que d'une session perdue à ce moment-là. La `DriverException` remonte telle
  * quelle, un 500, et le squelette ferme l'EntityManager, dont l'UnitOfWork
  * tenait pour écrit ce que le refus venait d'annuler (issue #547, comme pour
- * les autres verrous du squelette).
+ * les autres verrous du squelette). Une exception levée par l'opération après
+ * une écriture le ferme de même (issue #549) ; le 409 d'un nom déjà pris, levé
+ * avant le `save()`, le laisse ouvert.
  */
 final readonly class PostgresExperienceTechnologyRowLock implements ExperienceTechnologyLockInterface
 {

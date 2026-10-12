@@ -103,13 +103,16 @@ paths:
     branch too) and rethrows the exception unchanged. A business refusal (409, 404) thrown **before** any
     write — every `Administrator` throws it there, keep it so: no wasted write, and the manager stays open
     for a caller that carries on — leaves it open; so do a flush with nothing to write and a DQL or raw
-    DBAL write, which leave nothing stale in the UnitOfWork. Before #549 « throw before writing » was only
-    written down. Rejected: closing on any exception (`wrapInTransaction()`'s default, which breaks callers
+    DBAL write, which bypass the UnitOfWork (accepted limit, no caller: an entity loaded or refreshed
+    *after* such a write, then the exception, would keep the rolled-back value). Before #549 « throw before
+    writing » was only written down. Rejected: doing nothing (the rule alone does not stop the next refusal
+    placed after a `save()`); closing on any exception (`wrapInTransaction()`'s default, which breaks callers
     that set a refusal aside and continue — the invitation handler, the purge); a test guard checking that
     each expected refusal precedes the write (it sees only the scenarios written, neither database errors
     nor the account locks); `postFlush`, emitted by an empty flush too. `PostgresLockedTransactionTest`
-    pins it (a written flush then an exception, an empty flush, a lost session, no listener left behind,
-    no write held against the next transaction), with `PostgresAdvisoryOrderScopeLockTest` (a read after
+    pins it (a written flush then an exception, a deletion alone, an empty flush, a lost session, no
+    listener left behind — commit, refusal, failed acquisition, lost session —, no write held against the
+    next transaction), with `PostgresAdvisoryOrderScopeLockTest` (a read after
     the refusal sees the database, the next write fails with `EntityManagerClosed`) and
     `PostgresUsernameAllocationLockTest`. A Messenger worker gets a fresh one at the next message (DoctrineBundle's `Registry::reset()`
     resets a closed manager); a command stops on the exception. Rejected: re-reading the scope on the
@@ -290,7 +293,9 @@ paths:
   the table has no deferred constraint (the unique name and the `years` `CHECK` are immediate and refuse at
   the `flush()`), so only a session lost at that moment can refuse it; the `DriverException` surfaces as is
   and the skeleton **closes the EntityManager** (issue #547, as for every lock of the skeleton, see the
-  ordering section above): its UnitOfWork held as written what the refusal had just rolled back. Cost per
+  ordering section above): its UnitOfWork held as written what the refusal had just rolled back; an exception
+  the operation throws after a write closes it too (issue #549, same section), the 409 of a name already
+  taken, thrown before the `save()`, leaves it open. Cost per
   `PUT`/`DELETE`, all under the lock: `BEGIN`, the lock-bound `set_config`, the locked read, the `flush()`'s
   `SAVEPOINT`, write and `RELEASE SAVEPOINT`, `COMMIT` — sub-millisecond round trips each. Guards: `ExperienceTechnologyWritesUnderRowLockTest` (a technology loaded as the
   provider does, then deleted in SQL: `update()` and `delete()` say not found; a probe session holds the row,
