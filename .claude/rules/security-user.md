@@ -68,7 +68,8 @@ paths:
     then **only** dispatches `SendAccountInvitationMessage`). **Every account creation runs under one lock**
     (issue #364), `Application/UsernameAllocationLockInterface` — adapter
     `Infrastructure/Doctrine/PostgresUsernameAllocationLock`, one transaction-scoped advisory lock for all, its
-    wait bounded by `SET LOCAL lock_timeout` → `UsernameAllocationLockTimeoutException` (500 `critical`):
+    wait bounded by the shared skeleton (`Shared/Infrastructure/Lock/PostgresLockedTransaction`, issue #512,
+    see `.claude/rules/deploiement.md`) → `UsernameAllocationLockTimeoutException` (500 `critical`):
     `invite()` checks the address, derives the username and saves under it, and dispatches only after its
     commit; `register()` refuses a taken username fast, hashes **outside** (slow), then re-checks and saves under
     it. Two simultaneous invitations of the same local part get `jean` and `jean2` — the second used to fail on
@@ -190,9 +191,12 @@ paths:
     the repository gives the unit of work the written values as original state — otherwise a later
     `flush()` rewrote the entity's generation as an absolute value over a concurrent resend. **One account
     lock for the handler and the activation** (issues #435, #458): `Application/AccountLockInterface::whileLocked()`,
-    adapter `Infrastructure/Doctrine/PostgresAccountRowLock` — `Connection::transactional()` (a refusal
-    inside must not close the EntityManager), `SET LOCAL lock_timeout = '5s'` (the console has no FPM
-    `PGOPTIONS`), a `SELECT 1 … FOR UPDATE` that says whether the row still exists (`refresh()` on a
+    adapter `Infrastructure/Doctrine/PostgresAccountRowLock` — on the skeleton of the three PostgreSQL locks,
+    `Shared/Infrastructure/Lock/PostgresLockedTransaction` (issue #512: a hand-made transaction, so that a
+    refusal inside does not close the EntityManager and a refused COMMIT surfaces as the database's error —
+    `Connection::transactional()`, used until #512, masked it behind « There is no active transaction »; a
+    `lock_timeout` of 5 s when the session has none, the console having no FPM `PGOPTIONS`), a
+    `SELECT 1 … FOR UPDATE` that says whether the row still exists (`refresh()` on a
     deleted row raises nothing, and the token insert then failed on the foreign key) →
     `CpgUserNotFoundException`, then `refresh()` of the account. Order for every operation: **the account,
     then its tokens**, or the two deadlock. The handler re-checks activation and generation under it before

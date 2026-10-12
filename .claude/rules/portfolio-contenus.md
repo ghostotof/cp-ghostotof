@@ -60,8 +60,10 @@ paths:
     net — it answers before any write, under a domain name —; the trigger only catches at COMMIT what
     bypasses it. **On the application path the refusal comes out as `TranslationGroupHasSeveralPositionsException`**
     (`refusedAtCommit()`, the database's message in its own, previous = the `DriverException`), a
-    `critical` 500: `PostgresAdvisoryOrderScopeLock` opens and closes its transaction by hand and
-    translates `23T90` at `commit()`. **Never go back to `Connection::transactional()`** there: when
+    `critical` 500: `PostgresAdvisoryOrderScopeLock` opens and closes its transaction by hand — through
+    the skeleton it shares with the two account locks since #512, `Shared/Infrastructure/Lock/PostgresLockedTransaction`,
+    which also bounds the wait of a session without `lock_timeout` (the console, `app:*:seed`, waited
+    forever before) — and translates `23T90` at `commit()` (its `onCommitRefused`). **Never go back to `Connection::transactional()`** there: when
     `commit()` fails, DBAL has already brought its nesting level to 0, and `transactional()`'s fallback
     `rollBack()` throws "There is no active transaction" over the real error, for any SQLSTATE outside
     its short list (unique, foreign key, deadlock…) — measured, `PostgresAdvisoryOrderScopeLockTest`

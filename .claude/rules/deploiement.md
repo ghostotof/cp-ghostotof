@@ -69,7 +69,14 @@ paths:
   `env[PGOPTIONS] = "-c lock_timeout=5s"` (the DSN cannot carry it: DBAL doesn't forward `options`
   to pdo_pgsql, so it bounds every PostgreSQL lock wait of an FPM worker, ORM included, never the
   console) and `request_terminate_timeout = 65s` (total wall time — keep it above any legitimate
-  request), pinned by `FpmLockWaitBoundTest`; `docker/php` is mounted read-only in the dev
+  request), pinned by `FpmLockWaitBoundTest`. **The console gets its bound from the application's
+  own PostgreSQL locks** (issue #512): the order-scope lock, the account lock and the username
+  allocation lock share one skeleton, `Shared/Infrastructure/Lock/PostgresLockedTransaction`
+  (an *Execute Around*: hand-made transaction, wait bounded, `55P03` — defined there only, as
+  `LOCK_NOT_AVAILABLE` — renamed per lock, a refused COMMIT never masked), which gives the
+  transaction `DEFAULT_LOCK_TIMEOUT` (`5s`, the FPM value) through `set_config('lock_timeout', …, true)`
+  **only when the session has none** (`0`): a bound already chosen (`PGOPTIONS`, a test) is kept,
+  neither lengthened nor shortened. A new PostgreSQL lock goes through it. `docker/php` is mounted read-only in the dev
   container for that test. **Never consume a limiter inside `wrapInTransaction`**: the lock and
   the `cache_items` row live on two connections PostgreSQL does not relate, which both deadlocks
   (until `lock_timeout`) and republishes the window after the lock is released. The Monolog
