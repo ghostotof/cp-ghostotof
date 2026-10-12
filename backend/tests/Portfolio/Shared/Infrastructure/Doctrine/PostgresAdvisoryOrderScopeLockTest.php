@@ -172,7 +172,7 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
         $caught = null;
 
         try {
-            (new PostgresAdvisoryOrderScopeLock($this->entityManager(), new NullLogger(), new VanishedEntities(), '100ms'))->withLock(self::SCOPE, static fn (): null => null);
+            (new PostgresAdvisoryOrderScopeLock($this->entityManager(), new NullLogger(), self::getContainer()->get(VanishedEntities::class), '100ms'))->withLock(self::SCOPE, static fn (): null => null);
         } catch (Throwable $exception) {
             $caught = $exception;
         } finally {
@@ -508,7 +508,7 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
      */
     private function lock(): OrderScopeLockInterface
     {
-        return new PostgresAdvisoryOrderScopeLock($this->entityManager(), new NullLogger(), new VanishedEntities());
+        return new PostgresAdvisoryOrderScopeLock($this->entityManager(), new NullLogger(), self::getContainer()->get(VanishedEntities::class));
     }
 
     private function entityManager(): EntityManagerInterface

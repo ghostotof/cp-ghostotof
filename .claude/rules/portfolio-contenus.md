@@ -177,22 +177,26 @@ paths:
     and an instance the query no longer returns (deleted meanwhile) is detached, so `find()` reports it not found.
     **That detached instance is never saved again** (issue #548): `UnitOfWork::doPersist()` takes an instance it
     does not manage for **new** — it assumes `STATE_NEW` and reads nothing — so a caller still holding it and
-    calling `<Repository>::save()` re-inserted the deleted entry, no error, no trace (measured before the fix on the eight
-    localized contexts, the watch catalogue and the technologies). The adapter detaches through `Shared/Infrastructure/Doctrine/VanishedEntities::forget()`,
-    which remembers the instance in a `WeakMap` (nothing kept in memory, survives the `reset()` of a closed
-    manager); its `prePersist` listener — emitted only for an instance Doctrine takes for new, exactly the
-    re-insertion path — refuses it with `VanishedEntitySavedAgainException` (a `LogicException`, unmapped, a
-    `critical` 500: a caller's defect), before anything is scheduled. No false positive: an entity's id comes from
-    its constructor, so a new entity is never one it remembers. No caller did it (the `Administrator`s re-find
-    their entry under the lock and only receive ids, processors call no repository, seeds re-save nothing): the
-    guard makes the rule hold by construction, as #526 did, instead of relying on the next caller. Every lock that
-    detaches a vanished row goes through `forget()`, never `detach()` — the technology row lock too (#545, below).
-    Rejected: a check in each repository's `save()` (the UnitOfWork cannot tell a detached entity from a new one
-    with a natural id and no row; it would need the same registry, nine times); removing instead of detaching (a
-    phantom `DELETE` at the flush, then the instance is new again); `markReadOnly` (`find()` would still return
-    it, reopening #402). **Not covered, accepted**: an instance detached otherwise — `close()` (#502, #547,
-    #549) or `clear()` — is not remembered; on the same closed manager its `persist()` already fails with
-    `EntityManagerClosed`, only a reset manager would take it, and no worker writes an entity a lock detaches.
+    calling `<Repository>::save()` re-inserted the deleted entry, no error, no trace (measured before the fix on
+    the eight localized contexts, the watch catalogue and the technologies). The adapter detaches through
+    `Shared/Infrastructure/Doctrine/VanishedEntities::detachVanished()`, which remembers the instance in a
+    `WeakMap` (nothing kept in memory); its `prePersist` listener — emitted only for an instance Doctrine takes
+    for new, exactly the re-insertion path — refuses it with `VanishedEntitySavedAgainException` (a
+    `LogicException`, unmapped, a `critical` 500: a caller's defect), before anything is scheduled. No false
+    positive: the map holds objects, not ids nor classes, and only an object passed to `detachVanished()` is in
+    it. No caller did it (the `Administrator`s re-find their entry under the lock and only receive ids, processors
+    call no repository, seeds re-save nothing): the guard makes the rule hold by construction, as #526 did,
+    instead of relying on the next caller. Every lock that detaches a vanished row goes through
+    `detachVanished()`, never `detach()` — the technology row lock too (#545, below); only the container's
+    instance listens (a hand-built one refuses nothing, so tests take it from the container). Rejected: a check in
+    each repository's `save()` (the UnitOfWork cannot tell a detached entity from a new one with a natural id and
+    no row; it would need the same registry in every repository); removing instead of detaching (a phantom
+    `DELETE` at the flush, then the instance is new again); `markReadOnly` (`find()` would still return it,
+    reopening #402). **Not covered, accepted**: an instance detached otherwise — `close()` (#502, #547, #549) or
+    `clear()` — is not remembered; on the same closed manager its `persist()` already fails with
+    `EntityManagerClosed`, only a reset manager would take it, and no worker writes an entity a lock detaches; nor an
+    instance this same manager removed and flushed, which Doctrine also takes for new (no caller re-saves what it
+    deleted, follow-up #557).
     Before, `find()` handed back the identity-map instance and a query did not rehydrate a managed one: a
     concurrent write committed in between was silently undone (`reattach()` saw a no-op, `detach()` looked in the
     group the entry had left, a version created in a group took the position the group was leaving, a deleted
@@ -301,10 +305,10 @@ paths:
   (`Shared/Infrastructure/Lock/PostgresLockedTransaction`, like the order scope lock and the two account
   locks): **one** DQL `SELECT … FOR UPDATE` (`LockMode::PESSIMISTIC_WRITE`) with `Query::HINT_REFRESH` locks the
   row, says whether it still exists (`null`) and refreshes the managed instance in place, handed to the
-  operation. Row gone: the stale instance is detached through `VanishedEntities::forget()`, so a caller still
-  holding it cannot save it again (it would be re-inserted, issue #548, see the ordering section) — unless it is
-  scheduled for insertion or removal,
-  whose pending write detaching would cancel, the #402 filter — and the technology is not found (**404**, mapping
+  operation. Row gone: the stale instance is detached — unless it is scheduled for insertion or removal,
+  whose pending write detaching would cancel, the #402 filter — through `VanishedEntities::detachVanished()`,
+  so a caller still holding it cannot save it again (issue #548, see the ordering section), and the
+  technology is not found (**404**, mapping
   unchanged; the admin frontend already reads it as `not-found`). So a deletion runs wholly before the write or
   wholly after it. Not `find($id, LockMode::PESSIMISTIC_WRITE)`: on an instance already managed it is a
   `refresh()` with `FOR UPDATE`, which hydrates nothing when the row has gone and returns the stale instance —

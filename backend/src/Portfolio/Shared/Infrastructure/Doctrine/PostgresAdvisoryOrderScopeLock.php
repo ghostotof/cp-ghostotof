@@ -251,7 +251,7 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
         foreach ($loaded as $entry) {
             if (!isset($stillStored[spl_object_id($entry)])) {
                 // Détachée et retenue : re-sauvée, elle serait réinsérée (#548).
-                $this->vanishedEntities->forget($this->entityManager, $entry);
+                $this->vanishedEntities->detachVanished($this->entityManager, $entry);
             }
         }
     }

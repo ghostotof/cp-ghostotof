@@ -135,7 +135,7 @@ final readonly class PostgresExperienceTechnologyRowLock implements ExperienceTe
 
         if (false !== $stale && !$unitOfWork->isScheduledForInsert($stale) && !$unitOfWork->isScheduledForDelete($stale)) {
             // Détachée et retenue : re-sauvée, elle serait réinsérée (#548).
-            $this->vanishedEntities->forget($this->entityManager, $stale);
+            $this->vanishedEntities->detachVanished($this->entityManager, $stale);
         }
     }
 }

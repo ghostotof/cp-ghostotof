@@ -29,20 +29,29 @@ use WeakMap;
  * des identifiants) ; la garde fait tenir la règle par construction, au lieu
  * de la mémoire du prochain appelant.
  *
- * Les verrous détachent par {@see self::forget()}, qui retient l'instance ;
- * l'écouteur `prePersist` refuse ensuite son `persist()` par
+ * Les verrous détachent par {@see self::detachVanished()}, qui retient
+ * l'instance ; l'écouteur `prePersist` refuse ensuite son `persist()` par
  * {@see VanishedEntitySavedAgainException}, avant que rien ne soit planifié.
  * `prePersist` n'est émis que pour une instance que Doctrine tient pour neuve,
  * précisément le chemin de la réinsertion : une instance gérée ne le
- * déclenche pas. Aucun faux positif possible : l'identifiant d'une entité lui
- * est donné par son constructeur, une entité neuve n'est donc jamais une
- * instance retenue ici.
+ * déclenche pas. Aucun faux positif possible : la `WeakMap` retient des
+ * objets, pas des identifiants ni des classes, et seul un objet passé par
+ * `detachVanished()` y figure — jamais une entité neuve, ni une autre
+ * instance de la même ligne.
  *
  * Une `WeakMap` : elle ne retient aucune instance en mémoire (un worker, une
- * commande qui enchaîne), et survit au `reset()` d'un EntityManager fermé, le
- * service restant le même. Hors de sa portée, accepté : une instance détachée
+ * commande qui enchaîne). L'écouteur vaut pour toutes les classes : un appel
+ * par `persist()` d'une entité neuve, négligeable devant l'`INSERT` qu'il
+ * précède, et aucune classe à déclarer quand un verrou de plus détachera.
+ * Seule l'instance du conteneur écoute — celle que DoctrineBundle branche sur
+ * l'EntityManager — : une instance construite à la main ne refuserait rien,
+ * d'où les tests qui la prennent dans le conteneur.
+ *
+ * Hors de sa portée, accepté. Les entités que ces verrous détachent n'ont pas
+ * d'association : un `detach()` en cascade toucherait des enfants que la garde
+ * ne retient pas, à revoir le jour où l'une en porte. Une instance détachée
  * autrement — par `close()` (#502, #547, #549) ou `clear()` — n'est pas
- * retenue. Sur le même EntityManager fermé, son `persist()` échoue déjà en
+ * retenue : sur le même EntityManager fermé, son `persist()` échoue déjà en
  * {@see \Doctrine\ORM\Exception\EntityManagerClosed} ; seul un EntityManager
  * réinitialisé l'accepterait, et aucun worker n'écrit d'entité qu'un verrou
  * détache.
@@ -51,29 +60,24 @@ use WeakMap;
 final readonly class VanishedEntities
 {
     /**
-     * L'entité détachée, et sa désignation (classe et identifiant) relevée
-     * pendant qu'elle était encore gérée.
+     * Les entités détachées comme disparues, retenues par leur identité
+     * d'objet.
      *
-     * @var WeakMap<object, string>
+     * @var WeakMap<object, true>
      */
-    private WeakMap $forgotten;
+    private WeakMap $vanished;
 
     public function __construct()
     {
-        $this->forgotten = new WeakMap();
+        $this->vanished = new WeakMap();
     }
 
     /**
      * Détache l'entité dont la ligne a disparu, et refusera sa re-sauvegarde.
      */
-    public function forget(EntityManagerInterface $entityManager, object $entity): void
+    public function detachVanished(EntityManagerInterface $entityManager, object $entity): void
     {
-        $identifier = array_map(
-            static fn (mixed $value): string => \is_scalar($value) || $value instanceof Stringable ? (string) $value : get_debug_type($value),
-            $entityManager->getClassMetadata($entity::class)->getIdentifierValues($entity),
-        );
-        $this->forgotten[$entity] = implode(', ', $identifier);
-
+        $this->vanished[$entity] = true;
         $entityManager->detach($entity);
     }
 
@@ -85,8 +89,20 @@ final readonly class VanishedEntities
     {
         $entity = $event->getObject();
 
-        if (isset($this->forgotten[$entity])) {
-            throw VanishedEntitySavedAgainException::forEntity($entity::class, $this->forgotten[$entity]);
+        if (isset($this->vanished[$entity])) {
+            throw VanishedEntitySavedAgainException::forEntity($entity::class, $this->identifierOf($event, $entity));
         }
+    }
+
+    /**
+     * L'identifiant de l'entité, en texte pour le message : ses métadonnées
+     * le lisent aussi sur une instance détachée.
+     */
+    private function identifierOf(PrePersistEventArgs $event, object $entity): string
+    {
+        return implode(', ', array_map(
+            static fn (mixed $value): string => \is_scalar($value) || $value instanceof Stringable ? (string) $value : get_debug_type($value),
+            $event->getObjectManager()->getClassMetadata($entity::class)->getIdentifierValues($entity),
+        ));
     }
 }

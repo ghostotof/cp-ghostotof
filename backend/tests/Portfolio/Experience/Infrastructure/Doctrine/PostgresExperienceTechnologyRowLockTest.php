@@ -262,7 +262,7 @@ final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
         $caught = null;
 
         try {
-            (new PostgresExperienceTechnologyRowLock($this->em, new NullLogger(), new VanishedEntities(), '50ms'))->whileLocked($technology->getId(), static fn (ExperienceTechnology $locked): null => null);
+            (new PostgresExperienceTechnologyRowLock($this->em, new NullLogger(), self::getContainer()->get(VanishedEntities::class), '50ms'))->whileLocked($technology->getId(), static fn (ExperienceTechnology $locked): null => null);
         } catch (Throwable $exception) {
             $caught = $exception;
         } finally {
