@@ -283,6 +283,7 @@ make front-build       # vue-tsc -b + vite build, in the container
 make back-test         # phpunit, in the container
 make back-quality      # phpstan + rector + psalm + lsp:check, in the container
 make back-lsp          # symfony lsp:check alone (Symfony Language Tools)
+make back-style-fix    # sort `use` + qualify compiler-optimized natives (pinned php-cs-fixer, #398)
 ```
 
 `make init` and `make front-init` (re)run the Symfony/Vite project scaffolding — both are already applied in

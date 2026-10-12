@@ -449,14 +449,24 @@ name clash gets an alias (`use UnexpectedValueException as NativeUnexpectedValue
 of PhpStorm's "Optimize imports" and php-cs-fixer's `ordered_imports` (`alpha`). `rector:fix` inserts a
 new import at the top of the block, so re-sort after it: `tests/Shared/ImportsStaySortedTest.php`
 (`tests/Support/UnsortedImports`, issue #394) fails on any top-level import of `src/` or `tests/` out of
-that order, naming the file, the line and the pair, and its failure message carries the one-off sort
-command. It reproduces php-cs-fixer's key (the import as written, alias included, `\` read as a space,
+that order, naming the file, the line and the pair, and its failure message names the one-off fix,
+**`make back-style-fix`** (issue #398) — run it after any `rector:fix` that adds an import. It reproduces php-cs-fixer's key (the import as written, alias included, `\` read as a space,
 `strcasecmp`), block by block, and **refuses** `use function`, `use const` and grouped imports
 (`use Foo\{A, B};`) instead of sorting them, and its message says those are rewritten by hand.
-php-cs-fixer is deliberately not a dependency (#391): the command, built by `tests/Support/PhpCsFixer`,
-puts its phar under `var/` at a pinned version (`PhpCsFixer::VERSION`) and runs nothing unless the phar
-matches `PhpCsFixer::SHA256` — the release publishes no checksum, only a GPG signature, verified once
-when the sum was pinned. That phar is how #391 sorted the existing code. Out of scope, **by decision** (2026-10-10): native **functions and constants** are
+php-cs-fixer is deliberately not a dependency (#391): the target runs `docker/php/php-cs-fixer.sh` in the
+container, which puts the phar under `var/php-cs-fixer-<version>.phar` at the version `PHP_CS_FIXER_VERSION`
+of the root `.env` and runs nothing unless it matches `PHP_CS_FIXER_SHA256` (exit 3, the phar is never
+executed) — the release publishes no checksum, only a GPG signature, verified once when the sum was
+pinned (provenance in the `.env` comment). Both values have **one source**, `.env`; `versions.lock`
+copies them and `tools/tests/php-cs-fixer.test.sh` (offline, `tools-tests` job) fails when the two
+disagree. The version is in the phar's name so that a version bump whose sum was not updated fails
+(exit 3) instead of silently reusing the old, valid phar; the name must keep `php-cs-fixer`, which the
+fixer's parallel runner looks for in `argv[0]` to find itself (`Cannot determine Fixer executable`
+otherwise). One target applies both rules in one pass per directory, `src/` then `tests/` (php-cs-fixer
+takes several paths only with a config file). No check-only mode: the two PHPUnit guards are that, and
+stricter (they refuse `use function`). That phar is how #391 sorted the existing code. Verified on
+2026-10-12 under PHP 8.5.11: a misordered `use`, a qualified `\array_map(` and an unqualified `count(`
+in `src/` and `tests/` → the script → empty `git diff`. Out of scope, **by decision** (2026-10-10): native **functions and constants** are
 never imported — no `use function` / `use const`, `importShortClasses` does not touch them; namespaces
 cited in prose (`App\Shared`). **A native function is qualified exactly when the compiler optimizes it**
 (settled on 2026-10-10, review of #391): a function of php-cs-fixer's `@compiler_optimized` set (`\count`,
@@ -468,15 +478,16 @@ lookup and a function call. A first-class callable (`is_string(...)`) is not a c
 rule `native_function_invocation` (`include: ['@compiler_optimized']`, `strict: false`).
 `tests/Shared/NativeCallsQualificationTest.php` (`tests/Support/MisqualifiedNativeCalls`, issue #394)
 keeps it: an unqualified call to a function of the set fails, and so does a qualified call to any other
-single-segment global function, with the file, the line and the expected form. Its message gives the fix,
-the same rule with `strict: true`, which also removes a superfluous `\`. Methods, declarations, `new`,
+single-segment global function, with the file, the line and the expected form. Its message names the same
+`make back-style-fix`, which applies the rule with `strict: true`, also removing a superfluous `\`. Methods, declarations, `new`,
 attribute classes and first-class callables are not calls, and, as in php-cs-fixer, an unqualified call
 is left alone when the file declares a function of that name outside any class (a namespaced double of
 the native, which `\count()` would bypass). The set is **copied** into
-`MisqualifiedNativeCalls::COMPILER_OPTIMIZED` from php-cs-fixer at `PhpCsFixer::VERSION`, and a drift
+`MisqualifiedNativeCalls::COMPILER_OPTIMIZED` from php-cs-fixer at `PHP_CS_FIXER_VERSION`, and a drift
 test requires each name to be an internal function of the running PHP unless it is listed in
 `ABSENT_FROM_PHP` (`is_real`, removed in PHP 8.0). It cannot see the other direction — a function PHP
-starts compiling, as `sprintf` with PHP 8.4 —: on a php-cs-fixer bump (a new `VERSION` and `SHA256`),
+starts compiling, as `sprintf` with PHP 8.4 —: on a php-cs-fixer bump (a new `PHP_CS_FIXER_VERSION` and
+`PHP_CS_FIXER_SHA256` in `.env` and `versions.lock`),
 copy the new list over and re-read both guards against the fixers they mirror.
 Constants were not migrated: a leading backslash already there stays.
 **The line is performance, and it was measured** (2026-10-10, PHP 8.5, OPcache dump after the optimizer): the
