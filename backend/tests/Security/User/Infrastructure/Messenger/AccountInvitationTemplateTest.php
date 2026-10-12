@@ -8,7 +8,8 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Twig\Environment;
 
 /**
- * Rendu des templates de l'e-mail d'invitation (cf. tasks/plan.md, tâche 2.4) :
+ * Rendu des templates de l'e-mail d'invitation (cf. tâche 2.4 du plan archivé
+ * `.claude/specs/archive/2026-09-03-adr-0001-provisionnement-utilisateurs/plan.md`) :
  * héritage du layout de marque, présence du bouton CTA et du lien de définition
  * de mot de passe, échappement du nom d'utilisateur.
  */

@@ -9,9 +9,11 @@ use Twig\Environment;
 
 /**
  * Rendu des templates de l'e-mail de notification du formulaire de contact
- * (cf. tasks/plan.md, tâche 1.3). Vérifie que l'identité de l'expéditeur (nom
- * ET e-mail) figure dans le corps — HTML comme texte — en plus du message, et
- * que le message est échappé côté HTML (pas d'injection via le formulaire).
+ * (cf. tâche 1.3 du plan archivé
+ * `.claude/specs/archive/2026-09-03-adr-0001-provisionnement-utilisateurs/plan.md`).
+ * Vérifie que l'identité de l'expéditeur (nom ET e-mail) figure dans le
+ * corps — HTML comme texte — en plus du message, et que le message est échappé
+ * côté HTML (pas d'injection via le formulaire).
  */
 final class ContactNotificationTemplateTest extends KernelTestCase
 {
