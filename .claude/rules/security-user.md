@@ -228,7 +228,13 @@ paths:
     `CpgUserInviter` and `CpgUserRegistrar` catch nothing from the lock —, a worker gets a fresh manager at the
     next message, a command stops. In the skeleton rather than per adapter, so that no lock can forget it (like
     `onNested`, #532); a `CommitFailedRollbackOnly`, which no caller can cause, leaves it open (the scope of
-    #502); `PostgresAccountRowLockTest` and `PostgresUsernameAllocationLockTest` pin it; a
+    #502); `PostgresAccountRowLockTest` and `PostgresUsernameAllocationLockTest` pin it; **an exception the
+    operation throws after a written `flush()` closes it as well** (issue #549, the skeleton again): the
+    activation and `changePassword()` run a DQL `DELETE` after their `save()`s, and a database error there
+    left the manager holding an account « activated » that the ROLLBACK had undone — a refusal thrown
+    before any write (`CpgUserNotFoundException` at the acquisition, « already activated ») still leaves it
+    open, which is what lets the handler and the purge carry on (`PostgresUsernameAllocationLockTest` pins both
+    sides); a
     `lock_timeout` of 5 s when the session has none, the console having no FPM `PGOPTIONS`), a
     `SELECT 1 … FOR UPDATE` that says whether the row still exists (`refresh()` on a
     deleted row raises nothing, and the token insert then failed on the foreign key) →
