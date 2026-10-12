@@ -19,6 +19,11 @@ use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
  * - en cas de collision avec un compte existant, un suffixe numérique croissant
  *   (2, 3, 4, ...) est ajouté, la base étant tronquée si besoin pour ne jamais
  *   dépasser 60 caractères.
+ *
+ * « Libre » au moment de la lecture seulement : rien ici n'empêche une autre
+ * écriture de prendre l'identifiant avant l'enregistrement. CpgUserInviter
+ * appelle donc ce service sous le verrou d'attribution des identifiants
+ * (UsernameAllocationLockInterface, issue #364).
  */
 final readonly class UsernameGenerator
 {

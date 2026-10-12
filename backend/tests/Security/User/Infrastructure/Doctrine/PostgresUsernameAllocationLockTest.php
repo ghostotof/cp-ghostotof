@@ -1,0 +1,150 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Tests\Security\User\Infrastructure\Doctrine;
+
+use App\Security\User\Application\UsernameAllocationLockInterface;
+use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Infrastructure\Doctrine\PostgresUsernameAllocationLock;
+use App\Security\User\Infrastructure\Doctrine\UsernameAllocationLockTimeoutException;
+use App\Tests\Support\OpensProbeConnection;
+use Doctrine\DBAL\Connection;
+use Doctrine\ORM\EntityManagerInterface;
+use LogicException;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+
+/**
+ * Le verrou d'attribution des identifiants sur la base réelle (issue #364).
+ * Sa raison d'être, la sérialisation de deux invitations, est couverte par
+ * InviteUsernameConcurrencyTest.
+ */
+final class PostgresUsernameAllocationLockTest extends KernelTestCase
+{
+    use OpensProbeConnection;
+
+    private EntityManagerInterface $em;
+
+    protected function setUp(): void
+    {
+        self::bootKernel();
+        $this->em = self::getContainer()->get(EntityManagerInterface::class);
+    }
+
+    protected function tearDown(): void
+    {
+        $this->em->getConnection()->executeStatement("DELETE FROM cpg_user WHERE username = 'refused'");
+        parent::tearDown();
+    }
+
+    /**
+     * Pris pendant l'opération, vu d'une autre session ; rendu à sa fin, avec
+     * la transaction qui le portait.
+     */
+    public function testTheLockIsHeldDuringTheOperationAndReleasedWithItsTransaction(): void
+    {
+        $probe = self::openProbeBeside($this->em->getConnection());
+
+        try {
+            $heldDuring = $this->lock()->whileAllocating(fn (): bool => !$this->probeCanTakeTheLock($probe));
+
+            self::assertTrue($heldDuring, 'Une autre session a pu prendre le verrou pendant l\'opération.');
+            self::assertTrue($this->probeCanTakeTheLock($probe), 'Le verrou a survécu à l\'opération.');
+            self::assertFalse($this->em->getConnection()->isTransactionActive());
+        } finally {
+            $probe->close();
+        }
+    }
+
+    public function testTheOperationRunsInsideATransactionAndItsResultIsReturned(): void
+    {
+        $result = $this->lock()->whileAllocating(fn (): string => $this->em->getConnection()->isTransactionActive() ? 'en transaction' : 'hors transaction');
+
+        self::assertSame('en transaction', $result);
+    }
+
+    /**
+     * Un refus levé par l'opération remonte tel quel, annule la transaction
+     * et rend le verrou, sans fermer l'EntityManager.
+     */
+    public function testARefusalInsideTheOperationRollsBackAndReleasesTheLock(): void
+    {
+        $probe = self::openProbeBeside($this->em->getConnection());
+
+        try {
+            try {
+                // Une écriture, puis le refus.
+                $this->lock()->whileAllocating(function (): bool {
+                    $this->em->persist(new CpgUser('refused', ''));
+                    $this->em->flush();
+                    if ($this->em->getConnection()->isTransactionActive()) {
+                        throw new LogicException('refus');
+                    }
+
+                    return false;
+                });
+                self::fail('L\'exception de l\'opération aurait dû remonter.');
+            } catch (LogicException $exception) {
+                self::assertSame('refus', $exception->getMessage());
+            }
+
+            self::assertSame(0, $this->em->getConnection()->fetchOne("SELECT COUNT(*) FROM cpg_user WHERE username = 'refused'"), 'L\'écriture de l\'opération refusée a été validée.');
+            self::assertTrue($this->em->isOpen());
+            self::assertFalse($this->em->getConnection()->isTransactionActive());
+            self::assertTrue($this->probeCanTakeTheLock($probe), 'Le verrou a survécu au refus.');
+        } finally {
+            $probe->close();
+        }
+    }
+
+    /**
+     * L'attente est bornée dans la transaction elle-même : la console n'a pas
+     * le `lock_timeout` que FPM reçoit de `PGOPTIONS`.
+     */
+    public function testTheWaitIsBoundedInsideTheTransaction(): void
+    {
+        $timeout = $this->lock()->whileAllocating(fn (): mixed => $this->em->getConnection()->fetchOne('SHOW lock_timeout'));
+
+        self::assertSame('5s', $timeout);
+    }
+
+    /**
+     * Au-delà du délai, une exception nommée — pas la `DriverException`
+     * anonyme de PostgreSQL —, comme les verrous du compte et d'ordre.
+     */
+    public function testALockHeldBeyondTheTimeoutRaisesANamedException(): void
+    {
+        $holder = self::openProbeBeside($this->em->getConnection());
+        $holder->beginTransaction();
+        $holder->executeQuery(
+            'SELECT pg_advisory_xact_lock(?, ?)',
+            [PostgresUsernameAllocationLock::ADVISORY_NAMESPACE, PostgresUsernameAllocationLock::ADVISORY_KEY],
+        );
+
+        try {
+            $this->expectException(UsernameAllocationLockTimeoutException::class);
+            (new PostgresUsernameAllocationLock($this->em, '50ms'))->whileAllocating(static fn (): null => null);
+        } finally {
+            $holder->rollBack();
+            $holder->close();
+        }
+    }
+
+    private function lock(): UsernameAllocationLockInterface
+    {
+        return self::getContainer()->get(UsernameAllocationLockInterface::class);
+    }
+
+    /**
+     * Tente le verrou depuis une autre session, et le rend aussitôt s'il l'a
+     * eu : `pg_try_advisory_xact_lock` hors transaction explicite ne le garde
+     * que le temps de l'instruction.
+     */
+    private function probeCanTakeTheLock(Connection $probe): bool
+    {
+        return true === $probe->fetchOne(
+            'SELECT pg_try_advisory_xact_lock(?, ?)',
+            [PostgresUsernameAllocationLock::ADVISORY_NAMESPACE, PostgresUsernameAllocationLock::ADVISORY_KEY],
+        );
+    }
+}

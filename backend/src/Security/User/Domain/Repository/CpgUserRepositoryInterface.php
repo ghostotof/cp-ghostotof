@@ -7,6 +7,8 @@ namespace App\Security\User\Domain\Repository;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
+use App\Security\User\Domain\Exception\EmailAlreadyUsedException;
+use App\Security\User\Domain\Exception\UsernameAlreadyUsedException;
 use DateTimeImmutable;
 use SensitiveParameter;
 use Symfony\Component\Uid\Uuid;
@@ -56,6 +58,17 @@ interface CpgUserRepositoryInterface
     public function countByRole(string $role): int;
 
     public function save(CpgUser $user): void;
+
+    /**
+     * Enregistre un compte **nouveau**, et nomme l'unicité qu'une écriture
+     * concurrente lui aurait prise entre sa vérification et l'enregistrement
+     * (issue #364) — `cpg_user` en porte deux. Comme tout `flush()` refusé,
+     * le refus ferme l'EntityManager.
+     *
+     * @throws EmailAlreadyUsedException    si l'adresse a été prise entre-temps
+     * @throws UsernameAlreadyUsedException si l'identifiant a été pris entre-temps
+     */
+    public function add(CpgUser $user): void;
 
     /**
      * Avance la génération d'invitation du compte et pose `invited_at`, en une

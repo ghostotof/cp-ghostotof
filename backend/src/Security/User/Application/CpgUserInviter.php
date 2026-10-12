@@ -11,9 +11,9 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
 use App\Security\User\Domain\Exception\EmailAlreadyUsedException;
 use App\Security\User\Domain\Exception\InvitationQueueUnavailableException;
+use App\Security\User\Domain\Exception\UsernameAlreadyUsedException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Service\UsernameGenerator;
-use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -32,35 +32,17 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
         private MessageBusInterface $messageBus,
         private ClockInterface $clock,
         private SecurityAuditLoggerInterface $auditLogger,
+        private UsernameAllocationLockInterface $usernameAllocationLock,
     ) {
     }
 
     public function invite(string $email, Locale $locale): CpgUser
     {
-        if (null !== $this->cpgUserRepository->findOneByEmail($email)) {
-            throw EmailAlreadyUsedException::alreadyLinkedToAnAccount();
-        }
-
-        // Mot de passe vide : le compte n'est utilisable qu'une fois le mot de
-        // passe défini via le lien d'invitation (cf. PasswordSetupService).
-        $user = new CpgUser($this->usernameGenerator->generateFromEmail($email), '');
-        $user->setEmail($email);
-        // ADR 0003 D1 : inviter depuis le backoffice *est* l'octroi nominatif
-        // de ROLE_TRUSTED par un ROLE_SUPER — ce n'est jamais un compte au
-        // seul palier de base.
-        $user->setRoles([CpgUser::ROLE_TRUSTED]);
-        $user->markInvited($this->clock->now());
-
-        try {
-            $this->cpgUserRepository->save($user);
-        } catch (UniqueConstraintViolationException) {
-            // findOneByEmail() ci-dessus n'est pas atomique avec le save() : sur
-            // deux invitations concurrentes de la même adresse (ou deux parties
-            // locales identiques), la contrainte unique en base reste le dernier
-            // rempart — même parti pris que CpgUserRegistrar::register(). Le
-            // message n'est publié qu'après un save() réussi : sur échec, rien.
-            throw EmailAlreadyUsedException::alreadyLinkedToAnAccount();
-        }
+        // Issue #364 : vérifications et enregistrement sous un même verrou.
+        // Le message n'est publié qu'après la validation de la transaction —
+        // publié avant, le handler pourrait chercher un compte encore
+        // invisible. Sur un refus, rien n'est publié.
+        $user = $this->usernameAllocationLock->whileAllocating(fn (): CpgUser => $this->createPendingAccount($email));
 
         try {
             $this->dispatchInvitation($user, $locale);
@@ -104,6 +86,39 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
 
         $this->dispatchInvitation($user, $locale);
         $this->auditLogger->userReinvited($user);
+    }
+
+    /**
+     * Crée et enregistre le compte en attente d'activation. Appelée sous le
+     * verrou d'attribution : les deux lectures d'unicité voient toute
+     * invitation validée avant elle (issue #364).
+     *
+     * @throws EmailAlreadyUsedException    si l'adresse est déjà rattachée à un compte
+     * @throws UsernameAlreadyUsedException si l'identifiant dérivé a été pris hors du verrou
+     */
+    private function createPendingAccount(string $email): CpgUser
+    {
+        if (null !== $this->cpgUserRepository->findOneByEmail($email)) {
+            throw EmailAlreadyUsedException::alreadyLinkedToAnAccount();
+        }
+
+        // Mot de passe vide : le compte n'est utilisable qu'une fois le mot de
+        // passe défini via le lien d'invitation (cf. PasswordSetupService).
+        $user = new CpgUser($this->usernameGenerator->generateFromEmail($email), '');
+        $user->setEmail($email);
+        // ADR 0003 D1 : inviter depuis le backoffice *est* l'octroi nominatif
+        // de ROLE_TRUSTED par un ROLE_SUPER — ce n'est jamais un compte au
+        // seul palier de base.
+        $user->setRoles([CpgUser::ROLE_TRUSTED]);
+        $user->markInvited($this->clock->now());
+
+        // Sous le verrou, deux invitations ne se croisent plus. Reste une
+        // écriture qui ne le prend pas (saisie à la main en base) : la
+        // contrainte unique est alors le dernier rempart, et add() nomme
+        // celle qui a refusé (issue #364).
+        $this->cpgUserRepository->add($user);
+
+        return $user;
     }
 
     /**

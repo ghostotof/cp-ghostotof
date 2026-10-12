@@ -32,10 +32,20 @@ use Symfony\Component\Validator\Constraints as Assert;
  */
 #[ORM\Entity(repositoryClass: CpgUserRepository::class)]
 #[ORM\Table(name: 'cpg_user')]
-#[ORM\UniqueConstraint(name: 'uniq_cpg_user_username', columns: ['username'])]
-#[ORM\UniqueConstraint(name: 'uniq_cpg_user_email', columns: ['email'])]
+#[ORM\UniqueConstraint(name: self::USERNAME_UNIQUE_INDEX, columns: ['username'])]
+#[ORM\UniqueConstraint(name: self::EMAIL_UNIQUE_INDEX, columns: ['email'])]
 class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
 {
+    /**
+     * Noms des index uniques, tels que PostgreSQL les cite dans le message
+     * d'une violation : CpgUserRepository::add() s'en sert pour dire laquelle
+     * des deux unicités a refusé l'enregistrement (issue #364). Ils nomment aussi le
+     * mapping ci-dessus, et ne peuvent donc pas s'en écarter.
+     */
+    public const string USERNAME_UNIQUE_INDEX = 'uniq_cpg_user_username';
+
+    public const string EMAIL_UNIQUE_INDEX = 'uniq_cpg_user_email';
+
     /** Rôle réservé à l'administration du backoffice (gestion de contenu, gestion des utilisateurs). */
     public const string ROLE_SUPER = 'ROLE_SUPER';
 

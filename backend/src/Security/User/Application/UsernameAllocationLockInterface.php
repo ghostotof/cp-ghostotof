@@ -1,0 +1,55 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Security\User\Application;
+
+use Closure;
+
+/**
+ * Sérialise les invitations, du choix de l'identifiant à son enregistrement
+ * (issue #364).
+ *
+ * `UsernameGenerator` choisit un identifiant libre en le cherchant en base :
+ * un lire-calculer-écrire. Sans verrou, deux invitations simultanées de même
+ * partie locale (`jean@a.example`, `jean@b.example`) voyaient toutes deux
+ * `jean` libre, et la seconde échouait sur la contrainte unique. Sous le
+ * verrou, la seconde attend que la première ait validé, puis voit `jean` pris
+ * et prend `jean2` — le résultat de deux invitations successives. La même
+ * attente règle la course de deux invitations de la même adresse : la seconde
+ * trouve le compte de la première et répond « adresse déjà utilisée ».
+ *
+ * Verrou de **périmètre**, pas de ligne : la ligne en conflit n'existe pas
+ * encore quand la seconde invitation lit, et un `SELECT … FOR UPDATE` ne
+ * verrouille rien qu'il ne trouve.
+ *
+ * Le prennent tous les cas d'usage qui créent un compte : l'invitation
+ * (`CpgUserInviter`) et la création CLI (`CpgUserRegistrar`), qui reçoit son
+ * identifiant mais doit aussi le voir pris par une invitation, et le faire
+ * voir. Une écriture qui ne le prend pas (saisie à la main en base) n'est
+ * arrêtée que par la contrainte unique, que
+ * {@see \App\Security\User\Domain\Repository\CpgUserRepositoryInterface::add()}
+ * nomme pour ce qu'elle est.
+ *
+ * Une seule clé pour tous : une invitation lente (une écriture qui attend
+ * elle-même un verrou) fait attendre toutes les autres, jusqu'au délai de
+ * l'adaptateur, au-delà duquel celui-ci lève une exception nommée (500). Au
+ * volume des invitations, le plafond est accepté.
+ */
+interface UsernameAllocationLockInterface
+{
+    /**
+     * Exécute `$operation` dans une transaction, verrou pris pour toute sa
+     * durée : ce qu'elle lit après l'acquisition tient compte de toute
+     * invitation validée avant, et ce qu'elle écrit n'est visible des autres
+     * qu'à la libération. Une exception de `$operation` annule la transaction
+     * et remonte telle quelle.
+     *
+     * @template T
+     *
+     * @param Closure(): T $operation
+     *
+     * @return T
+     */
+    public function whileAllocating(Closure $operation): mixed;
+}

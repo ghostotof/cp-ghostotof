@@ -10,6 +10,7 @@ use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\Persistence\ManagerRegistry;
 use SensitiveParameter;
@@ -126,6 +127,20 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
     {
         $this->getEntityManager()->persist($user);
         $this->getEntityManager()->flush();
+    }
+
+    /**
+     * La traduction vit ici, seul endroit qui connaisse la base : ni les
+     * noms d'index ni le format des messages de PostgreSQL ne remontent dans
+     * la couche Application (issue #364).
+     */
+    public function add(CpgUser $user): void
+    {
+        try {
+            $this->save($user);
+        } catch (UniqueConstraintViolationException $violation) {
+            throw CpgUserUniqueViolation::refusalFor($violation);
+        }
     }
 
     /**
