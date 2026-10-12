@@ -69,7 +69,17 @@ paths:
   `env[PGOPTIONS] = "-c lock_timeout=5s"` (the DSN cannot carry it: DBAL doesn't forward `options`
   to pdo_pgsql, so it bounds every PostgreSQL lock wait of an FPM worker, ORM included, never the
   console) and `request_terminate_timeout = 65s` (total wall time — keep it above any legitimate
-  request), pinned by `FpmLockWaitBoundTest`. **The console gets the same bound from its pods**
+  request), pinned by `FpmLockWaitBoundTest`. That bounds the *wait*, not the lock's life: **a
+  session whose client vanished without a FIN** (node lost, network partition) kept the lock until
+  Linux's default keepalive, 2 h, every request on the key failing in 5 s meanwhile. Hence the
+  server-side keepalives in `k8s/base/postgres.yaml` (issue #279), `args` `-c tcp_keepalives_idle=60
+  -c tcp_keepalives_interval=10 -c tcp_keepalives_count=3`: such a session dies in 90 s (measured
+  96 s, still held after 202 s without), `PostgresGhostSessionReleaseTest` caps
+  `idle + interval × count` at 120 s. `args`, never `command` (the image's entrypoint initialises
+  the database). On a Unix socket PostgreSQL ignores them and `SHOW` reads `0`: check them over TCP
+  (`k8s/README.md`, « Sessions fantômes PostgreSQL », which also says why `idle_session_timeout`,
+  `client_connection_check_interval` and `tcp_user_timeout` are not set). Not in dev: a killed
+  container closes its sockets. **The console gets the same bound from its pods**
   (issue #525): every container of `k8s/base` running the backend image carries
   `PGOPTIONS: '-c lock_timeout=5s'` in its own `env:` — worker, CronJobs, every Job, the migration
   included —, exactly www.prod.conf's value. `env:` per manifest rather than a `backend-config` line

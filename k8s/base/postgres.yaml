@@ -45,6 +45,21 @@ spec:
       containers:
         - name: postgres
           image: postgres:18.6-alpine # garder synchronisé avec POSTGRES_TAG dans ../.env
+          # Issue #279 : keepalives TCP côté serveur. Un client disparu sans FIN
+          # (nœud perdu, partition réseau) gardait sa session — et l'advisory
+          # lock de session des limiteurs (#272) — jusqu'au keepalive Linux par
+          # défaut, 2 h ; ici 60 + 10 × 3 = 90 s (mesuré : 96 s). `args`, pas
+          # `command` : l'entrypoint de l'image reste celui qui initialise la
+          # base. Ignorés sur un socket Unix, où `SHOW` les lit à 0 : les
+          # vérifier par TCP (k8s/README.md). PostgresGhostSessionReleaseTest.
+          args:
+            - postgres
+            - -c
+            - tcp_keepalives_idle=60
+            - -c
+            - tcp_keepalives_interval=10
+            - -c
+            - tcp_keepalives_count=3
           ports:
             - containerPort: 5432
           envFrom:
