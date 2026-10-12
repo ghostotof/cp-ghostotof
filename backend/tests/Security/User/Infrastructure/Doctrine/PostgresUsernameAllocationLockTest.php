@@ -14,6 +14,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 use LogicException;
+use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Throwable;
 
@@ -138,7 +139,7 @@ final class PostgresUsernameAllocationLockTest extends KernelTestCase
 
         try {
             $this->expectException(UsernameAllocationLockTimeoutException::class);
-            (new PostgresUsernameAllocationLock($this->em, '50ms'))->whileAllocating(static fn (): null => null);
+            (new PostgresUsernameAllocationLock($this->em, new NullLogger(), '50ms'))->whileAllocating(static fn (): null => null);
         } finally {
             $holder->rollBack();
             $holder->close();

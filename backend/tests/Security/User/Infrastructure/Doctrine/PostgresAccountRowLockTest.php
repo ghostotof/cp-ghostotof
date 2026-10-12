@@ -15,6 +15,7 @@ use DateTimeImmutable;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 use LogicException;
+use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Throwable;
 
@@ -129,7 +130,7 @@ final class PostgresAccountRowLockTest extends KernelTestCase
 
         try {
             $this->expectException(AccountLockTimeoutException::class);
-            (new PostgresAccountRowLock($this->em, '50ms'))->whileLocked($user, static fn (CpgUser $locked): null => null);
+            (new PostgresAccountRowLock($this->em, new NullLogger(), '50ms'))->whileLocked($user, static fn (CpgUser $locked): null => null);
         } finally {
             $holder->rollBack();
             $holder->close();

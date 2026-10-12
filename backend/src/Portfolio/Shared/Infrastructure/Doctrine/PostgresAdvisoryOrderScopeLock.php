@@ -13,6 +13,7 @@ use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Query;
+use Psr\Log\LoggerInterface;
 
 /**
  * Verrou de périmètre d'ordre sur un advisory lock PostgreSQL **de
@@ -101,6 +102,7 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
 
     public function __construct(
         private EntityManagerInterface $entityManager,
+        private LoggerInterface $logger,
         private string $fallbackLockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT,
     ) {
     }
@@ -109,7 +111,7 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
     {
         $connection = $this->entityManager->getConnection();
 
-        return new PostgresLockedTransaction($connection, $this->fallbackLockTimeout)->run(
+        return new PostgresLockedTransaction($connection, $this->logger, $this->fallbackLockTimeout)->run(
             // Bloquant : attend la fin de la transaction qui tient ce périmètre.
             acquire: static fn (): mixed => $connection->executeQuery(
                 'SELECT pg_advisory_xact_lock(?, hashtext(?))',

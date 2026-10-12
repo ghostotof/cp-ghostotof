@@ -8,6 +8,7 @@ use App\Security\User\Application\UsernameAllocationLockInterface;
 use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
 use Closure;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 
 /**
  * Le verrou d'attribution des identifiants (issue #364) : un advisory lock
@@ -45,6 +46,7 @@ final readonly class PostgresUsernameAllocationLock implements UsernameAllocatio
 
     public function __construct(
         private EntityManagerInterface $entityManager,
+        private LoggerInterface $logger,
         private string $fallbackLockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT,
     ) {
     }
@@ -53,7 +55,7 @@ final readonly class PostgresUsernameAllocationLock implements UsernameAllocatio
     {
         $connection = $this->entityManager->getConnection();
 
-        return new PostgresLockedTransaction($connection, $this->fallbackLockTimeout)->run(
+        return new PostgresLockedTransaction($connection, $this->logger, $this->fallbackLockTimeout)->run(
             acquire: static fn (): mixed => $connection->executeQuery(
                 'SELECT pg_advisory_xact_lock(?, ?)',
                 [self::ADVISORY_NAMESPACE, self::ADVISORY_KEY],

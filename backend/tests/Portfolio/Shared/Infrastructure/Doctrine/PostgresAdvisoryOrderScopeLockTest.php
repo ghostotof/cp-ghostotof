@@ -18,6 +18,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 use DomainException;
+use Psr\Log\NullLogger;
 use stdClass;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Throwable;
@@ -162,7 +163,7 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
         $caught = null;
 
         try {
-            (new PostgresAdvisoryOrderScopeLock($this->entityManager(), '100ms'))->withLock(self::SCOPE, static fn (): null => null);
+            (new PostgresAdvisoryOrderScopeLock($this->entityManager(), new NullLogger(), '100ms'))->withLock(self::SCOPE, static fn (): null => null);
         } catch (Throwable $exception) {
             $caught = $exception;
         } finally {
@@ -264,7 +265,7 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
      */
     private function lock(): OrderScopeLockInterface
     {
-        return new PostgresAdvisoryOrderScopeLock($this->entityManager());
+        return new PostgresAdvisoryOrderScopeLock($this->entityManager(), new NullLogger());
     }
 
     private function entityManager(): EntityManagerInterface

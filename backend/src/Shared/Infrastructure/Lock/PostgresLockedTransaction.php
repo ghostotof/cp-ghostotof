@@ -8,6 +8,7 @@ use Closure;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\ConnectionLost;
 use Doctrine\DBAL\Exception\DriverException;
+use Psr\Log\LoggerInterface;
 use Throwable;
 
 /**
@@ -53,10 +54,20 @@ use Throwable;
  * elle-même, comme sous FPM. Imbriqué dans une transaction déjà ouverte, il
  * vaut jusqu'à la fin de celle-ci (portée de `SET LOCAL`), comme le
  * `SET LOCAL` des verrous d'avant #512. Paramètre lié plutôt qu'interpolé :
- * le délai n'entre jamais dans le texte SQL.
+ * le délai n'entre jamais dans le texte SQL. Le verrou d'ordre refuse d'être
+ * imbriqué (#526,
+ * {@see \App\Portfolio\Shared\Infrastructure\Doctrine\OrderScopeLockInsideTransactionException}) :
+ * son COMMIT
+ * n'y serait qu'un point de sauvegarde, et le refus qu'il sait nommer
+ * tomberait au COMMIT de l'appelant. Les deux verrous du compte l'admettent ;
+ * aucun appelant ne s'en sert.
  *
  * Seule l'attente de l'acquisition est renommée : un `55P03` levé par
  * l'opération (un verrou de ligne pris plus loin) remonte tel quel.
+ *
+ * **Un ROLLBACK qui échoue ne masque jamais la cause** (issue #526) : il est
+ * journalisé en `error` (classes et SQLSTATE, jamais un message), et c'est
+ * l'échec de l'opération ou le refus du COMMIT qui remonte, tel quel.
  */
 final readonly class PostgresLockedTransaction
 {
@@ -75,6 +86,9 @@ final readonly class PostgresLockedTransaction
     public const string FALLBACK_LOCK_TIMEOUT = '5s';
 
     /**
+     * @param LoggerInterface $logger reçoit le seul échec d'un ROLLBACK, que
+     *                                rien d'autre ne verrait : la cause est
+     *                                relancée à sa place
      * @param string $fallbackLockTimeout une durée PostgreSQL (`5s`, `100ms`),
      *                                    donnée à la seule session qui n'a
      *                                    aucun `lock_timeout` — sous FPM, elle
@@ -84,6 +98,7 @@ final readonly class PostgresLockedTransaction
      */
     public function __construct(
         private Connection $connection,
+        private LoggerInterface $logger,
         private string $fallbackLockTimeout = self::FALLBACK_LOCK_TIMEOUT,
     ) {
     }
@@ -114,7 +129,7 @@ final readonly class PostgresLockedTransaction
             // transaction (même choix que Connection::transactional()).
             throw $exception;
         } catch (Throwable $exception) {
-            $this->connection->rollBack();
+            $this->rollBackAfter($exception);
 
             throw $exception;
         }
@@ -122,7 +137,7 @@ final readonly class PostgresLockedTransaction
         try {
             $this->connection->commit();
         } catch (Throwable $refusal) {
-            $this->rollBackIfStillOpen($ownLevel);
+            $this->rollBackIfStillOpen($ownLevel, $refusal);
 
             if ($refusal instanceof DriverException && null !== $onCommitRefused) {
                 throw $onCommitRefused($refusal) ?? $refusal;
@@ -143,10 +158,48 @@ final readonly class PostgresLockedTransaction
      * après un `setRollbackOnly()`), il laisse la transaction ouverte, et le
      * verrou pris : elle est annulée, comme le faisait `transactional()`.
      */
-    private function rollBackIfStillOpen(int $ownLevel): void
+    private function rollBackIfStillOpen(int $ownLevel, Throwable $refusal): void
     {
         if ($this->connection->getTransactionNestingLevel() === $ownLevel) {
+            $this->rollBackAfter($refusal);
+        }
+    }
+
+    /**
+     * Annule la transaction après `$cause`, sans jamais la masquer (issue
+     * #526) : un ROLLBACK qui échoue à son tour — la session coupée sous un
+     * SQLSTATE que DBAL ne range pas en `ConnectionLost`, `57P01
+     * admin_shutdown` d'un redémarrage de PostgreSQL — est journalisé, puis
+     * l'appelant relance `$cause` telle quelle. C'est elle qui dit ce qui
+     * s'est passé, et elle que les appelants reconnaissent : un refus métier
+     * (409), le compte disparu que le handler d'invitation écarte, un `55P03`
+     * renommé.
+     *
+     * Rien n'est perdu à ne pas relancer l'échec du ROLLBACK : PostgreSQL
+     * annule de lui-même la transaction d'une session qui disparaît, verrous
+     * compris, et la cause, refus de l'opération ou du COMMIT, dit déjà que
+     * rien n'a été validé.
+     *
+     * Rejeté : chaîner les deux dans une exception nommée. Elle remplacerait
+     * la cause, et changerait ce que voit chaque appelant — un 409 devenu
+     * 500, un `CpgUserNotFoundException` que le handler ne reconnaîtrait plus,
+     * relancé par Messenger au lieu d'être écarté.
+     *
+     * Le journal ne nomme que des classes et le SQLSTATE : le message d'une
+     * `DriverException` peut citer les paramètres de la requête (une adresse,
+     * un identifiant), celui d'un refus métier une donnée reçue. La cause,
+     * relancée, est journalisée par qui la rattrape, au niveau qui est le sien.
+     */
+    private function rollBackAfter(Throwable $cause): void
+    {
+        try {
             $this->connection->rollBack();
+        } catch (Throwable $rollbackFailure) {
+            $this->logger->error('ROLLBACK en échec après un échec sous verrou PostgreSQL : la cause est relancée telle quelle.', [
+                'cause' => $cause::class,
+                'rollbackFailure' => $rollbackFailure::class,
+                'rollbackSqlState' => $rollbackFailure instanceof DriverException ? $rollbackFailure->getSQLState() : null,
+            ]);
         }
     }
 
