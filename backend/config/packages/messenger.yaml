@@ -15,7 +15,7 @@ framework:
             messenger.bus.default:
                 middleware:
                     # Issue #491 : la panne de la file devient le 503 que nomme
-                    # le message (AsyncMessageInterface), écrit une fois. Symfony
+                    # le message (QueuedMessageInterface), écrit une fois. Symfony
                     # le place avant send_message, qu'il entoure.
                     - App\Shared\Infrastructure\Messenger\QueueUnavailableMiddleware
 

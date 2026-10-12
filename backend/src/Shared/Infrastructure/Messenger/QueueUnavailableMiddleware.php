@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Shared\Infrastructure\Messenger;
 
-use App\Shared\Application\Message\AsyncMessageInterface;
+use App\Shared\Application\Message\QueuedMessageInterface;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\TransportException;
 use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
@@ -24,7 +24,7 @@ use Symfony\Component\Messenger\Stamp\ReceivedStamp;
  * Ne touche jamais au worker : un message reçu (ReceivedStamp) n'est pas
  * republié par `send_message`, et les réessais comme le `failure_transport`
  * appellent leur sender directement, sans repasser par le bus. Un message qui
- * n'implémente pas {@see AsyncMessageInterface} — la sonde de #470, dont la
+ * n'implémente pas {@see QueuedMessageInterface} — la sonde de #470, dont la
  * commande cite la panne — garde la TransportException telle quelle.
  */
 final readonly class QueueUnavailableMiddleware implements MiddlewareInterface
@@ -35,11 +35,11 @@ final readonly class QueueUnavailableMiddleware implements MiddlewareInterface
             return $stack->next()->handle($envelope, $stack);
         } catch (TransportException $failure) {
             $message = $envelope->getMessage();
-            if (!$message instanceof AsyncMessageInterface || null !== $envelope->last(ReceivedStamp::class)) {
+            if (!$message instanceof QueuedMessageInterface || null !== $envelope->last(ReceivedStamp::class)) {
                 throw $failure;
             }
 
-            throw $message->queueUnavailable($failure);
+            throw $message->queueUnavailableException($failure);
         }
     }
 }

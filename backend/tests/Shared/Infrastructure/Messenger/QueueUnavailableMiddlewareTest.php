@@ -37,7 +37,7 @@ final class QueueUnavailableMiddlewareTest extends TestCase
     }
 
     /**
-     * La sonde de #470 n'implémente pas AsyncMessageInterface : sa commande
+     * La sonde de #470 n'implémente pas QueuedMessageInterface : sa commande
      * rattrape elle-même la TransportException pour la citer.
      */
     public function testAMessageThatNamesNoExceptionKeepsTheTransportFailure(): void

@@ -1,4 +1,4 @@
-# Fixture de AsyncMessagesNameTheirQueueFailureTest (issue #491) : chaque forme
+# Fixture de QueuedMessagesNameTheirQueueFailureTest (issue #491) : chaque forme
 # de routage qui publierait un message sans conversion de la panne de la file,
 # dans l'environnement où elle se cache, à côté de deux routages admis.
 framework:
@@ -8,7 +8,7 @@ framework:
             failed: 'doctrine://default?queue_name=failed'
             sync: 'sync://'
         routing:
-            # Admis : le message nomme son exception (AsyncMessageInterface).
+            # Admis : le message nomme son exception (QueuedMessageInterface).
             'App\Contact\Application\Message\SendContactMessageMessage': async
             # Admis : synchrone, rien n'est publié.
             'App\Tests\Shared\Infrastructure\Messenger\Fixtures\UnconvertedMessage': sync

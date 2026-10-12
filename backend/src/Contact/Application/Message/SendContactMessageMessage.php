@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Contact\Application\Message;
 
 use App\Contact\Domain\Exception\ContactMessageQueueUnavailableException;
-use App\Shared\Application\Message\AsyncMessageInterface;
+use App\Shared\Application\Message\QueuedMessageInterface;
 use Throwable;
 
 /**
@@ -16,7 +16,7 @@ use Throwable;
  * Volontairement distincte de la VO Domain ContactMessage : celle-ci décrit
  * un concept métier, celle-là un contrat de transport Messenger.
  */
-final readonly class SendContactMessageMessage implements AsyncMessageInterface
+final readonly class SendContactMessageMessage implements QueuedMessageInterface
 {
     public function __construct(
         public string $senderName,
@@ -29,7 +29,7 @@ final readonly class SendContactMessageMessage implements AsyncMessageInterface
      * Issue #485 : le quota du visiteur n'est alors pas consommé
      * (ContactMessageProcessor).
      */
-    public function queueUnavailable(Throwable $cause): ContactMessageQueueUnavailableException
+    public function queueUnavailableException(Throwable $cause): ContactMessageQueueUnavailableException
     {
         return new ContactMessageQueueUnavailableException($cause);
     }

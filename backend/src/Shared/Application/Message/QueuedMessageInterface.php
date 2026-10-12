@@ -17,13 +17,13 @@ use Throwable;
  * La conversion est écrite une fois, dans le bus ; chaque contexte ne fournit
  * que sa classe, et `Shared` n'en connaît aucun (règle de #485). Tout message
  * routé `async` l'implémente, sauf exception justifiée :
- * AsyncMessagesNameTheirQueueFailureTest y veille, dans chaque environnement.
+ * QueuedMessagesNameTheirQueueFailureTest y veille, dans chaque environnement.
  */
-interface AsyncMessageInterface
+interface QueuedMessageInterface
 {
     /**
      * @param Throwable $cause la panne du transport, à garder en `previous`,
      *                         jamais citée dans le message (le `detail` du client)
      */
-    public function queueUnavailable(Throwable $cause): MessageQueueUnavailableException;
+    public function queueUnavailableException(Throwable $cause): MessageQueueUnavailableException;
 }

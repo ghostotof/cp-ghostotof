@@ -6,7 +6,7 @@ namespace App\Security\User\Application\Message;
 
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Domain\Exception\InvitationQueueUnavailableException;
-use App\Shared\Application\Message\AsyncMessageInterface;
+use App\Shared\Application\Message\QueuedMessageInterface;
 use Symfony\Component\Uid\Uuid;
 use Throwable;
 
@@ -34,7 +34,7 @@ use Throwable;
  * failure_transport) est écarté par le handler au lieu de purger le jeton
  * d'une relance déjà remise. Ce numéro n'est pas un secret.
  */
-final readonly class SendAccountInvitationMessage implements AsyncMessageInterface
+final readonly class SendAccountInvitationMessage implements QueuedMessageInterface
 {
     /**
      * La génération de la première invitation d'un compte
@@ -53,7 +53,7 @@ final readonly class SendAccountInvitationMessage implements AsyncMessageInterfa
      * Issue #485 : CpgUserInviter retire alors le compte tout juste créé, ou
      * laisse la génération avancée d'une relance (limite écrite).
      */
-    public function queueUnavailable(Throwable $cause): InvitationQueueUnavailableException
+    public function queueUnavailableException(Throwable $cause): InvitationQueueUnavailableException
     {
         return new InvitationQueueUnavailableException($cause);
     }

@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Messenger;
 
 use App\Kernel;
-use App\Shared\Application\Message\AsyncMessageInterface;
 use App\Shared\Application\Message\MessengerProbeMessage;
+use App\Shared\Application\Message\QueuedMessageInterface;
 use App\Tests\Support\EnvironmentConfigKernel;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 
 /**
  * Tout message que le bus publie dans une file nomme l'exception de son
- * contexte (issue #491) : il implémente {@see AsyncMessageInterface}, que
+ * contexte (issue #491) : il implémente {@see QueuedMessageInterface}, que
  * {@see \App\Shared\Infrastructure\Messenger\QueueUnavailableMiddleware}
  * lève quand la file ne le prend pas. Sans elle, un nouveau producteur
  * renverrait le 500 `critical` générique de la TransportException, que #485
@@ -22,7 +22,7 @@ use ReflectionMethod;
  * La garde porte sur le routage, pas sur la forme du code des producteurs :
  * chaque clé de `framework.messenger.routing` qui envoie vers un transport
  * publiant (tout DSN autre que `sync://`, `async` comme `failed`) doit être
- * une classe ou une interface sous-type d'AsyncMessageInterface. Un joker,
+ * une classe ou une interface sous-type d'QueuedMessageInterface. Un joker,
  * d'espace de noms ou universel (`*`), est refusé : les messages qu'il atteint
  * ne se listent pas. Seule issue, une entrée justifiée de NO_CONVERSION.
  *
@@ -30,7 +30,7 @@ use ReflectionMethod;
  * noyau admet ({@see EnvironmentConfigKernel}, sans compiler), comme
  * SendEmailMessageStaysSynchronousTest : préprod et prod tournent en `prod`.
  */
-final class AsyncMessagesNameTheirQueueFailureTest extends TestCase
+final class QueuedMessagesNameTheirQueueFailureTest extends TestCase
 {
     private const string FIXTURE_PROJECT = __DIR__.'/Fixtures/AsyncRoutingProject';
 
@@ -43,7 +43,7 @@ final class AsyncMessagesNameTheirQueueFailureTest extends TestCase
 
     public function testEveryPublishedMessageOfTheApplicationNamesItsQueueFailure(): void
     {
-        self::assertSame([], $this->unconvertedRoutings(null), 'Un message routé vers une file doit implémenter AsyncMessageInterface (issue #491), sinon une panne du broker redevient un 500 critical.');
+        self::assertSame([], $this->unconvertedRoutings(null), 'Un message routé vers une file doit implémenter QueuedMessageInterface (issue #491), sinon une panne du broker redevient un 500 critical.');
     }
 
     /**
@@ -69,7 +69,7 @@ final class AsyncMessagesNameTheirQueueFailureTest extends TestCase
         foreach (array_keys(self::NO_CONVERSION) as $message) {
             // class_implements() plutôt que is_a() : PHPStan juge ce dernier d'avance
             // sur une clé littérale, alors que le test doit lire la classe telle qu'elle est.
-            self::assertNotContains(AsyncMessageInterface::class, class_implements($message), \sprintf('%s nomme son exception : le retirer de NO_CONVERSION.', $message));
+            self::assertNotContains(QueuedMessageInterface::class, class_implements($message), \sprintf('%s nomme son exception : le retirer de NO_CONVERSION.', $message));
             self::assertContains($message, $this->publishedKeys(), \sprintf('%s n\'est plus publié dans une file : le retirer de NO_CONVERSION.', $message));
         }
     }
@@ -82,7 +82,7 @@ final class AsyncMessagesNameTheirQueueFailureTest extends TestCase
         $found = [];
         foreach ($this->environments() as $environment) {
             foreach ($this->publishingRoutes($environment, $projectDirectory) as [$key, $transport]) {
-                if (!is_a($key, AsyncMessageInterface::class, true) && !\array_key_exists($key, self::NO_CONVERSION)) {
+                if (!is_a($key, QueuedMessageInterface::class, true) && !\array_key_exists($key, self::NO_CONVERSION)) {
                     $found[] = \sprintf('%s : %s → %s', $environment, $key, $transport);
                 }
             }
