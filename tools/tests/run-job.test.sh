@@ -25,10 +25,12 @@
 #     tous ses conteneurs, sortent sur stdout en cas de succès, sur stderr
 #     après un `::error::` en cas d'échec ;
 #   - pipeline.yml ne réécrit pas la séquence en ligne ;
-#   - chaque Job que pipeline.yml lance par ce script porte un
-#     activeDeadlineSeconds au-dessus de son attente (dépassement compris :
-#     ses journaux restent lisibles) et au plus deux minutes au-delà
-#     (issue #525) : il ne survit pas longtemps au `::error::` de l'attente.
+#   - chaque appel de ce script — pipeline.yml, smoke-messenger-probe.sh,
+#     runbook de k8s/README.md — vise un Job dont l'activeDeadlineSeconds est
+#     au-dessus de l'attente (dépassement compris : ses journaux restent
+#     lisibles) et au plus deux minutes au-delà (issues #525, #535) : il ne
+#     survit pas longtemps au `::error::` de l'attente ; chaque Job de
+#     k8s/base a au moins un tel appel.
 #
 # Usage :  tools/tests/run-job.test.sh
 # ---------------------------------------------------------------------------
@@ -358,42 +360,112 @@ else
   fail "pipeline.yml ne réécrit pas la séquence en ligne" "$inline"
 fi
 
-# --- Les Jobs du pipeline ne survivent pas à son attente (issue #525) -------
-# run-job.sh ne supprime un Job qu'avant de l'appliquer : sans délai, un Job
-# qui tourne encore quand l'attente expire continuait indéfiniment après le
-# `::error::` (une migration bloquée tenant son verrou exclusif devant l'API).
-# Chaque Job que pipeline.yml lance par ce script porte donc un
-# activeDeadlineSeconds encadré : AU-DESSUS de l'attente augmentée du
-# dépassement possible de wait-rollout.sh (~35 s), pour que le pod tourne
-# encore quand run-job.sh lit ses journaux (à l'échéance, le contrôleur de Job
-# supprime les pods, journaux compris) ; au plus deux minutes au-delà de
-# l'attente, pour qu'il meure peu après l'échec. Les Jobs lancés à la main
-# (runbook) et le témoin (smoke-messenger-probe.sh, son propre test) ne sont
-# pas lus ici. Les lignes de continuation sont jointes avant la lecture.
+# --- Aucun Job ne meurt avant que son attente ait lu ses journaux -----------
+# Une seule convention pour le délai d'un Job face à son attente (issues #525,
+# #535), quel que soit l'appelant : le pipeline, le témoin
+# (smoke-messenger-probe.sh) ou le runbook (k8s/README.md, Jobs lancés à la
+# main). Le activeDeadlineSeconds du Job est encadré :
+#   - AU-DESSUS de l'attente augmentée du dépassement possible de
+#     wait-rollout.sh (~35 s) : à l'échéance du délai, le contrôleur de Job
+#     supprime les pods, journaux compris. Un délai sous l'attente faisait
+#     disparaître le pod bloqué avant que run-job.sh lise ses journaux :
+#     l'`::error::` arrivait sans eux, seule la condition DeadlineExceeded
+#     restait ;
+#   - au plus deux minutes au-delà de l'attente : run-job.sh ne supprime un
+#     Job qu'avant de l'appliquer, sans délai un Job bloqué continuerait
+#     indéfiniment après l'`::error::` (une migration tenant son verrou
+#     exclusif devant l'API).
+# Les lignes de continuation sont jointes avant la lecture.
 WAIT_OVERRUN=35
 MAX_SURVIVAL=120
-calls="$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$PIPELINE" \
-  | grep -oE 'run-job\.sh" [a-z]+ "\$GITHUB_WORKSPACE/k8s/base/[a-z-]+\.yaml"[[:space:]]+"[^"]+"[[:space:]]+[0-9]+' || true)"
-count="$(printf '%s\n' "$calls" | grep -c 'run-job' || true)"
-# Migration (préprod, prod) et seed (préprod) : trois appels au moins, sinon
-# l'expression ne lit plus le pipeline et la vérification serait vide.
-if [ "$count" -ge 3 ]; then
-  pass "les appels de run-job.sh du pipeline sont lus ($count)"
-else
-  fail "les appels de run-job.sh du pipeline sont lus" "$count appel(s) trouvé(s)"
-fi
-while IFS= read -r call; do
-  [ -n "$call" ] || continue
-  job="$(printf '%s' "$call" | sed -E 's|.*k8s/base/([a-z-]+\.yaml)".*|\1|')"
-  wait_s="$(printf '%s' "$call" | sed -E 's|.*[[:space:]]([0-9]+)$|\1|')"
-  deadline="$(sed -n 's/^  activeDeadlineSeconds: \([0-9]*\)$/\1/p' "$TOOLS/../k8s/base/$job")"
-  if [ -n "$deadline" ] && [ "$deadline" -gt $((wait_s + WAIT_OVERRUN)) ] \
-      && [ "$deadline" -le $((wait_s + MAX_SURVIVAL)) ]; then
-    pass "$job : activeDeadlineSeconds ($deadline) encadre l'attente du pipeline ($wait_s)"
+
+# deadline_verdict <manifeste> <attente s> — « ok », ou ce qui ne va pas.
+deadline_verdict() {
+  local deadline
+  deadline="$(sed -n 's/^  activeDeadlineSeconds: \([0-9]*\)$/\1/p' "$1")"
+  if [ -z "$deadline" ]; then
+    echo "aucun activeDeadlineSeconds de premier niveau"
+  elif [ "$deadline" -le $(($2 + WAIT_OVERRUN)) ]; then
+    echo "délai $deadline ≤ attente $2 + $WAIT_OVERRUN : le pod meurt avant que ses journaux soient lus"
+  elif [ "$deadline" -gt $(($2 + MAX_SURVIVAL)) ]; then
+    echo "délai $deadline > attente $2 + $MAX_SURVIVAL : le Job survit trop longtemps à l'échec"
   else
-    fail "$job : activeDeadlineSeconds dans ]$((wait_s + WAIT_OVERRUN)), $((wait_s + MAX_SURVIVAL))] (attente $wait_s)" "lu : « $deadline »"
+    echo ok
   fi
-done <<< "$calls"
+}
+
+# La vérification elle-même, sur des manifestes de cas limite : les deux
+# bornes, le délai d'avant #535 (240 s attendu 300 s), un délai absent.
+for pair in 335:refusé 336:accepté 420:accepté 421:refusé 240:refusé absent:refusé; do
+  value="${pair%%:*}"; expected="${pair#*:}"
+  if [ "$value" = absent ]; then
+    fixture="$(manifest "deadline-$value.yaml" 'kind: Job
+metadata:
+  name: demo-job
+spec:
+  template:
+    spec:
+      activeDeadlineSeconds: 360')"
+  else
+    fixture="$(manifest "deadline-$value.yaml" "kind: Job
+metadata:
+  name: demo-job
+spec:
+  activeDeadlineSeconds: $value")"
+  fi
+  verdict="$(deadline_verdict "$fixture" 300)"
+  if { [ "$expected" = accepté ] && [ "$verdict" = ok ]; } \
+      || { [ "$expected" = refusé ] && [ "$verdict" != ok ]; }; then
+    pass "un délai $value pour une attente de 300 s est $expected"
+  else
+    fail "un délai $value pour une attente de 300 s est $expected" "verdict : $verdict"
+  fi
+done
+
+# Chaque appel de run-job.sh, d'où qu'il vienne : `run-job.sh <ns> <…/k8s/base/X.yaml> <image> <attente>`.
+CALL_PATTERN='run-job\.sh"?[[:space:]]+[^[:space:]]+[[:space:]]+"?[^[:space:]"]*k8s/base/[a-z-]+\.yaml"?[[:space:]]+[^[:space:]]+[[:space:]]+[0-9]+'
+# <fichier>:<nombre minimal d'appels> — en deçà, l'expression ne lit plus le
+# fichier et la vérification serait vide. Pipeline : migration (préprod,
+# prod) et seed ; le témoin ; runbook : rejeu, suppression, arrêt des
+# workers, création de compte.
+SOURCES=".github/workflows/pipeline.yml:3 tools/smoke-messenger-probe.sh:1 k8s/README.md:4"
+REPO="$TOOLS/.."
+all_calls=""
+for source in $SOURCES; do
+  file="${source%%:*}"; minimum="${source#*:}"
+  calls="$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$REPO/$file" | grep -oE "$CALL_PATTERN" || true)"
+  count="$(printf '%s\n' "$calls" | grep -c 'run-job' || true)"
+  if [ "$count" -ge "$minimum" ]; then
+    pass "$file : les appels de run-job.sh sont lus ($count)"
+  else
+    fail "$file : les appels de run-job.sh sont lus (au moins $minimum)" "$count appel(s) trouvé(s)"
+  fi
+  while IFS= read -r call; do
+    [ -n "$call" ] || continue
+    job="$(printf '%s' "$call" | sed -E 's|.*k8s/base/([a-z-]+\.yaml).*|\1|')"
+    wait_s="$(printf '%s' "$call" | sed -E 's|.*[[:space:]]([0-9]+)$|\1|')"
+    all_calls+=" $job"
+    verdict="$(deadline_verdict "$REPO/k8s/base/$job" "$wait_s")"
+    if [ "$verdict" = ok ]; then
+      pass "$file, $job attendu $wait_s s : activeDeadlineSeconds dans ]$((wait_s + WAIT_OVERRUN)), $((wait_s + MAX_SURVIVAL))]"
+    else
+      fail "$file, $job attendu $wait_s s : activeDeadlineSeconds dans ]$((wait_s + WAIT_OVERRUN)), $((wait_s + MAX_SURVIVAL))]" "$verdict"
+    fi
+  done <<< "$calls"
+done
+
+# Chaque Job de k8s/base est lancé par run-job.sh quelque part dans ces
+# sources, donc vérifié : un Job ajouté sans appel écrit (pipeline, script ou
+# runbook) n'a pas d'attente connue, et échapperait à la convention.
+for job_manifest in "$REPO"/k8s/base/*.yaml; do
+  grep -qE '^kind:[[:space:]]*Job[[:space:]]*$' "$job_manifest" || continue
+  name="$(basename "$job_manifest")"
+  if [[ "$all_calls " == *" $name "* ]]; then
+    pass "$name : au moins un appel de run-job.sh, vérifié"
+  else
+    fail "$name : au moins un appel de run-job.sh, vérifié" "aucun appel dans $SOURCES"
+  fi
+done
 
 if [ "$failures" -ne 0 ]; then
   echo "$failures échec(s)."

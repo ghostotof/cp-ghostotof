@@ -145,8 +145,9 @@ final class MessengerMaintenanceJobsManifestTest extends TestCase
         self::assertIsArray($spec);
 
         self::assertSame(0, $spec['backoffLimit'] ?? null);
-        // Deux tirages `Always` compris, sous les 300 s qu'attend la procédure.
-        self::assertSame(240, $spec['activeDeadlineSeconds'] ?? null);
+        // Deux tirages `Always` compris, au-dessus des 300 s qu'attend la
+        // procédure (issue #535) : la relation, tools/tests/run-job.test.sh.
+        self::assertSame(360, $spec['activeDeadlineSeconds'] ?? null);
         self::assertSame(3600, $spec['ttlSecondsAfterFinished'] ?? null);
     }
 

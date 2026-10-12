@@ -9,10 +9,12 @@
 # de vrai : la séquence du Job (delete, rendu, apply, attente, journaux) est
 # pincée par tools/tests/run-job.test.sh, pas ici (issue #488).
 #
-# Ce qui est pincé ici : le Job lancé est celui du témoin, attendu au-delà de
-# son activeDeadlineSeconds ; `backend` et `worker` doivent tourner l'image de
-# la release, sinon échec avant tout Job ; un Job en échec fait sortir en 1
-# avec le diagnostic du témoin ; un échec qui n'est PAS celui du Job (le
+# Ce qui est pincé ici : le Job lancé est celui du témoin, attendu 300 s (son
+# activeDeadlineSeconds face à cette attente : tools/tests/run-job.test.sh,
+# qui lit cet appel comme ceux du pipeline et du runbook, issue #535) ;
+# `backend` et `worker` doivent tourner l'image de la release, sinon échec
+# avant tout Job ; un Job en échec fait sortir en 1 avec le diagnostic du
+# témoin ; un échec qui n'est PAS celui du Job (le
 # cluster refuse l'apply) ne l'impute pas au worker ; aucun Secret n'est lu.
 #
 # Usage :  tools/tests/smoke-messenger-probe.test.sh
@@ -67,13 +69,6 @@ if grep -qx 'preprod job/backend-messenger-probe --timeout 300' "$ok/wait-args";
   pass "le Job du témoin est lancé, attendu 300 s"
 else
   fail "le Job du témoin est lancé, attendu 300 s" "$(cat "$ok/wait-args")"
-fi
-
-deadline=$(sed -n 's/^  activeDeadlineSeconds: \([0-9]*\)$/\1/p' "$(dirname "$SCRIPT")/../k8s/base/messenger-probe-job.yaml")
-if [ -n "$deadline" ] && [ "$deadline" -lt 300 ]; then
-  pass "activeDeadlineSeconds ($deadline) reste sous l'attente du script"
-else
-  fail "activeDeadlineSeconds reste sous l'attente du script" "lu : « $deadline »"
 fi
 
 # --- Un Deployment ne tourne pas l'image de la release ---------------------

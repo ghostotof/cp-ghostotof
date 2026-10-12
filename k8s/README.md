@@ -935,8 +935,14 @@ tools/run-job.sh "$NS" k8s/base/messenger-stop-workers-job.yaml "$IMAGE" 300
 **Jamais `failed:retry`** pour une enveloppe au MAC refusé ni une invitation sans génération :
 elles échouent au décodage à chaque fois (lire le `userId`, renvoyer l'invitation depuis le
 backoffice, puis supprimer la ligne). Chaque Job garde ses journaux une heure
-(`ttlSecondsAfterFinished`), ne se rejoue pas (`backoffLimit: 0`) et échoue 240 s après sa
-création quoi qu'il fasse (`activeDeadlineSeconds`, démarrage et commande compris). **Un Job à la
+(`ttlSecondsAfterFinished`), ne se rejoue pas (`backoffLimit: 0`) et échoue 360 s après sa
+création quoi qu'il fasse (`activeDeadlineSeconds`, démarrage et commande compris) — **au-dessus**
+des 300 s d'attente, exprès (#535) : un pod bloqué tourne encore quand `run-job.sh` abandonne, et
+ses journaux s'impriment avec l'`::error::` ; à l'échéance, le contrôleur de Job supprime le pod,
+journaux compris. Corollaire : après un `::error::` de l'attente expirée, **le Job peut encore
+aboutir** jusqu'à 360 s après sa création (un e-mail parti, une ligne supprimée). Avant de le
+relancer, attendre qu'il soit fini — `kubectl -n "$NS" get job/<nom du Job>` dit `Complete` ou
+`Failed` — et relire ses journaux. **Un Job à la
 fois** : `run-job.sh` supprime le Job précédent du même nom sans attendre sa fin — lancé depuis un
 second terminal, il couperait un rejeu en plein envoi, et l'e-mail repartirait au rejeu suivant.
 Pour plusieurs Ids, les enchaîner dans un même terminal ; les journaux d'un Job remplacé sont
@@ -1399,7 +1405,8 @@ IMAGE="$(kubectl -n "$NS" get deploy backend -o jsonpath='{.spec.template.spec.c
 # Depuis la racine du dépôt (issue #488) : suppression du Job précédent, envsubst à liste
 # explicite, apply, attente par tools/wait-rollout.sh — un refus échoue aussitôt au lieu
 # d'épuiser le délai —, puis les journaux du Job, la ligne `user-created` comprise, après un
-# succès comme après un échec. 300 s : au-delà des 240 s d'activeDeadlineSeconds du Job.
+# succès comme après un échec. 300 s : sous les 360 s d'activeDeadlineSeconds du Job, exprès
+# (#535) — un pod bloqué tourne encore à l'expiration, et ses journaux s'impriment.
 tools/run-job.sh "$NS" k8s/base/create-user-job.yaml "$IMAGE" 300 CPG_USERNAME='<nom-du-compte>'
 # Dans tous les cas, succès ou échec :
 kubectl -n "$NS" delete secret backend-create-user-password
@@ -1415,7 +1422,10 @@ refus avant le cluster sort en 2, un refus du cluster en 3, un Job en échec en 
 Le Job ne se rejoue pas (`backoffLimit: 0`) : un nom pris ou un mot de passe refusé (trop court,
 compromis, fin de ligne) s'y lisent dans les logs, et l'on recommence depuis le début. Un pod
 qui ne démarre pas (Secret supprimé trop tôt, image introuvable) fait échouer le Job au bout de
-240 s (`activeDeadlineSeconds`). Il
+360 s (`activeDeadlineSeconds`). Après un `::error::` de l'attente expirée (300 s), le Job peut
+encore aboutir jusqu'à cette échéance et créer le compte : avant de recommencer, attendre
+`Complete` ou `Failed` dans `kubectl -n "$NS" get job/backend-create-user` et relire ses journaux
+(`user-created`, ou un nom déjà pris au second essai). Il
 disparaît de lui-même au bout d'un jour (`ttlSecondsAfterFinished`), et ses logs avec lui :
 l'acteur `console` de l'événement ne nomme personne, l'attribution de l'`apply` reste celle du
 kubeconfig qui l'a fait.
