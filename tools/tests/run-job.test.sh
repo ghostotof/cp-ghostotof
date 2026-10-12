@@ -177,6 +177,32 @@ for pair in migrate-job.yaml:backend-migrate seed-job.yaml:backend-seed \
   fi
 done
 
+# Issue #521 : les Jobs de maintenance de Messenger, l'Id de `failed` en paramètre.
+stop="$TMP/real-stop-workers"
+run "$stop" prod "$K8S_BASE/messenger-stop-workers-job.yaml" "$IMAGE" 300
+if [ "$(cat "$stop/status")" = 0 ] \
+    && grep -qx -- '-n prod delete job/backend-messenger-stop-workers --ignore-not-found' "$stop/args" \
+    && ! grep -q '\${' "$stop/applied.yaml"; then
+  pass "messenger-stop-workers-job.yaml : Job backend-messenger-stop-workers, plus aucun placeholder"
+else
+  fail "messenger-stop-workers-job.yaml : Job backend-messenger-stop-workers, plus aucun placeholder" "$(cat "$stop/err" "$stop/args")"
+fi
+
+for action in retry remove; do
+  failed="$TMP/real-failed-$action"
+  run "$failed" preprod "$K8S_BASE/messenger-failed-$action-job.yaml" "$IMAGE" 300 FAILED_MESSAGE_ID=42
+  if [ "$(cat "$failed/status")" = 0 ] \
+      && grep -qx -- "-n preprod delete job/backend-messenger-failed-$action --ignore-not-found" "$failed/args" \
+      && grep -qx "              value: '42'" "$failed/applied.yaml" \
+      && ! grep -q '\${' "$failed/applied.yaml"; then
+    pass "messenger-failed-$action-job.yaml : l'Id substitué, plus aucun placeholder"
+  else
+    fail "messenger-failed-$action-job.yaml : l'Id substitué, plus aucun placeholder" "$(cat "$failed/err" "$failed/args")"
+  fi
+  run "$TMP/missing-$action" preprod "$K8S_BASE/messenger-failed-$action-job.yaml" "$IMAGE" 300
+  refused "messenger-failed-$action-job.yaml sans Id" "$TMP/missing-$action" 'FAILED_MESSAGE_ID'
+done
+
 user="$TMP/real-create-user"
 run "$user" preprod "$K8S_BASE/create-user-job.yaml" "$IMAGE" 180 CPG_USERNAME=compte-de-test
 if [ "$(cat "$user/status")" = 0 ] \
