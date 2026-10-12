@@ -17,8 +17,10 @@ use DomainException;
  * n'est écrit, rien n'est journalisé par le cas d'usage (un refus n'est pas
  * une action).
  *
- * Message constant, qui ne cite aucun compte (issue #363). Deux fabriques
- * pour le lecteur du code ; la réponse ne les distingue pas.
+ * Deux fabriques, deux messages constants, qui ne citent aucun compte
+ * (issue #363) : le journal du noyau dit ainsi lequel des deux cas a refusé ;
+ * la réponse porte le même statut et le même `type`, le frontend ne lit pas
+ * le `detail`.
  */
 final class ActingAccountNoLongerSuperAdminException extends DomainException implements ProblemExceptionInterface
 {

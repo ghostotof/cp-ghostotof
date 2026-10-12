@@ -145,7 +145,7 @@ paths:
     the purge side, which catches `CpgUserNotFoundException` under its own lock. **The actor is re-read too**
     (decided on 2026-10-12): deleted or no longer `ROLE_SUPER` when the lock is taken →
     `ActingAccountNoLongerSuperAdminException` (403 `/errors/acting-account-no-longer-super`, `log_level: info`,
-    constant message), nothing written, nothing logged by the use case — the next request would get the
+    two constant messages, `deletedMeanwhile()` / `demotedMeanwhile()`, quoting nothing — same status and `type`, the kernel log tells the two cases apart), nothing written, nothing logged by the use case — the next request would get the
     firewall's 403 anyway, since the `api` firewall reloads the account on every request; this closes the
     authorization TOCTOU (a request in flight while its actor is demoted) **for these two operations only**:
     every other backoffice endpoint keeps the window of one request in flight, an accepted limit. The

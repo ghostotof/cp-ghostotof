@@ -8,6 +8,8 @@ use App\Security\User\Application\CpgUserAdministratorInterface;
 use App\Security\User\Application\CpgUserRoleAdministratorInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\ActingAccountNoLongerSuperAdminException;
+use App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException;
+use App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Tests\Support\ReadsSecurityAuditLog;
@@ -134,11 +136,44 @@ final class AccountAdministrationStaleStateTest extends KernelTestCase
     }
 
     /**
+     * Issue #551 : la garde compte, en base, les autres ROLE_SUPER **capables de
+     * se connecter**. Un ROLE_SUPER encore en attente d'activation (mot de
+     * passe vide) ne garde pas le backoffice ouvert : seul autre ROLE_SUPER,
+     * il ne sauve pas la cible de la garde. Ici l'acteur lui-même est ce
+     * compte en attente — le seul acteur qu'un pare-feu laisse passer est un
+     * ROLE_SUPER connecté, donc par HTTP la cible a toujours au moins lui ;
+     * le cas d'usage, appelé d'ailleurs, refuse quand même.
+     */
+    public function testTheLastSuperAdminAbleToSignInCannotBeDeletedWhenTheOnlyOtherOneIsPendingActivation(): void
+    {
+        $actor = $this->loaded('alpha', [CpgUser::ROLE_SUPER], hashedPassword: '');
+        $target = $this->loadedSuperAdmin('beta');
+
+        $refusal = $this->refusalOf(fn () => self::getContainer()->get(CpgUserAdministratorInterface::class)->delete($target->getId(), $actor));
+
+        self::assertInstanceOf(CannotDeleteLastSuperAdminException::class, $refusal, \sprintf('Refus attendu, obtenu : %s.', get_debug_type($refusal)));
+        self::assertSame(['alpha', 'beta'], $this->storedSuperAdminUsernames());
+        self::assertSame([], self::securityAuditEvents('user-deleted'));
+    }
+
+    public function testTheLastSuperAdminAbleToSignInCannotBeDemotedWhenTheOnlyOtherOneIsPendingActivation(): void
+    {
+        $actor = $this->loaded('alpha', [CpgUser::ROLE_SUPER], hashedPassword: '');
+        $target = $this->loadedSuperAdmin('beta');
+
+        $refusal = $this->refusalOf(fn () => self::getContainer()->get(CpgUserRoleAdministratorInterface::class)->setSuperAdmin($target->getId(), false, $actor));
+
+        self::assertInstanceOf(CannotDemoteLastSuperAdminException::class, $refusal, \sprintf('Refus attendu, obtenu : %s.', get_debug_type($refusal)));
+        self::assertSame(['alpha', 'beta'], $this->storedSuperAdminUsernames());
+        self::assertSame([], self::securityAuditEvents('role-changed'));
+    }
+
+    /**
      * @param list<string> $roles
      */
-    private function loaded(string $username, array $roles): CpgUser
+    private function loaded(string $username, array $roles, string $hashedPassword = 'hashed-password'): CpgUser
     {
-        $user = new CpgUser($username, 'hashed-password');
+        $user = new CpgUser($username, $hashedPassword);
         $user->setRoles($roles);
         $this->repository->save($user);
         // Comme pour une requête : l'instance en carte d'identité est celle que
