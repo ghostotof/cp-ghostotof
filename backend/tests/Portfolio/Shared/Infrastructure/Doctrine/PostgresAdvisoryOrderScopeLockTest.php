@@ -300,6 +300,49 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     }
 
     /**
+     * Issue #549 : un refus levé par l'opération **après** son `flush()`
+     * ferme l'EntityManager comme un COMMIT refusé (#502). Le ROLLBACK annule
+     * ce que le flush avait écrit au point de sauvegarde ; ouvert, l'EntityManager
+     * rendait la position annulée, une entrée jamais validée, et repartait de là.
+     * Le refus remonte tel quel.
+     */
+    public function testARefusalRaisedAfterAWriteClosesTheEntityManager(): void
+    {
+        $entityManager = $this->entityManager();
+        $refusal = new DomainException('refus métier après une écriture');
+        $neverCommitted = new Contribution(Locale::FR, 'Jamais validée', 'P', 'R', 'https://example.com', 'S', 'B', 0);
+
+        try {
+            [$french, $english] = $this->contributionPair();
+            $storedPositions = [$french->getPosition(), $english->getPosition()];
+
+            $caught = $this->failureOfALockedRun(static function () use ($entityManager, $french, $english, $neverCommitted, $refusal): never {
+                $french->moveToPosition($french->getPosition() + self::OUT_OF_ITS_GROUP);
+                $english->moveToPosition($english->getPosition() + self::OUT_OF_ITS_GROUP);
+                $entityManager->persist($neverCommitted);
+                $entityManager->flush();
+
+                throw $refusal;
+            });
+
+            self::assertSame($refusal, $caught, \sprintf('Le refus de l\'opération n\'est pas remonté tel quel : %s.', get_debug_type($caught)));
+            self::assertFalse($entityManager->isOpen(), 'Un refus levé après une écriture a laissé l\'EntityManager ouvert sur ce que le ROLLBACK a annulé.');
+            self::assertSame($storedPositions, [
+                $entityManager->find(Contribution::class, $french->getId())?->getPosition(),
+                $entityManager->find(Contribution::class, $english->getId())?->getPosition(),
+            ], 'Une lecture après le refus rend les positions que le ROLLBACK a annulées.');
+            self::assertNull($entityManager->find(Contribution::class, $neverCommitted->getId()), 'Une lecture après le refus rend une entrée que la base n\'a jamais validée.');
+
+            $nextWrite = $this->failureOf(static fn () => self::getContainer()->get(ContributionRepositoryInterface::class)->save(
+                new Contribution(Locale::FR, 'Après le refus', 'P', 'R', 'https://example.com', 'S', 'B', 0),
+            ));
+            self::assertInstanceOf(EntityManagerClosed::class, $nextWrite, \sprintf('Une écriture suivant le refus n\'a pas été refusée : %s.', get_debug_type($nextWrite)));
+        } finally {
+            $entityManager->getConnection()->executeStatement('DELETE FROM contribution');
+        }
+    }
+
+    /**
      * Issue #502 : tout COMMIT que la base refuse annule ce que les `flush()`
      * avaient écrit, quel qu'en soit le SQLSTATE. L'EntityManager est fermé de
      * même, et le refus remonte sans être renommé. Une contrainte d'unicité

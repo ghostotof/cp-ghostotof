@@ -38,7 +38,11 @@ interface OrderScopeLockInterface
      * la fin de la transaction, puis lit ce qu'elle a écrit.
      *
      * Une exception de `$operation` annule la transaction, relâche le verrou
-     * et remonte telle quelle.
+     * et remonte telle quelle. Levée après une écriture (un `flush()` qui
+     * avait quelque chose à écrire, issue #549), elle clôt aussi l'unité de
+     * travail de l'appelant, comme un COMMIT refusé ci-dessous ; un refus levé
+     * avant toute écriture la laisse ouverte — d'où les refus d'un
+     * `Administrator` placés avant son `save()`.
      *
      * Un COMMIT que la base refuse (issues #502, #547) annule ce que
      * l'opération a écrit, et **clôt l'unité de travail de l'appelant** : une

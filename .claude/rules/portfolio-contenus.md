@@ -93,10 +93,33 @@ paths:
     What the caller already holds keeps the refused values (detached), and a raw DBAL statement or a DQL
     `UPDATE`/`DELETE` still goes through the closed manager (no repository of `Portfolio` writes that way).
     A session lost at the COMMIT (`ConnectionLost`, a `DriverException` too) leaves its outcome unknown:
-    closing is the safe answer there as well. A business refusal (409, 404) is thrown by the operation and
-    leaves the manager open — which holds because every `Administrator` throws it **before** any write: an
-    operation that threw after its own `flush()` would leave the same stale state (the savepoint rolled
-    back, the manager open); keep it so. A Messenger worker gets a fresh one at the next message (DoctrineBundle's `Registry::reset()`
+    closing is the safe answer there as well. **An exception the operation throws after a write closes it
+    too** (issue #549, in the skeleton, for every lock): a `flush()` that had something to write succeeded
+    at the savepoint, the operation then threw — a business refusal placed after a `save()`, a database
+    error on a later statement, a lost session — and the ROLLBACK undid what the UnitOfWork held as
+    written, the same stale state by the other path. `Shared/Infrastructure/Lock/WrittenFlushWatch`,
+    hooked on `onFlush` for that transaction only and unhooked whatever happens, notes a flush with
+    scheduled changes; the skeleton closes the manager **after** the ROLLBACK (in the `ConnectionLost`
+    branch too) and rethrows the exception unchanged. A business refusal (409, 404) thrown **before** any
+    write — every `Administrator` throws it there, keep it so: no wasted write, and the manager stays open
+    for a caller that carries on — leaves it open; so do a flush with nothing to write and a DQL or raw
+    DBAL write, which bypass the UnitOfWork (accepted limit, no caller under a lock of the skeleton: what
+    the code itself carries into memory after such a write — an entity loaded or refreshed afterwards, or
+    original data synced by hand as `CpgUserRepository::advanceInvitationGeneration()` does, outside any
+    lock today — keeps the rolled-back value; such a pattern placed under a lock goes through `flush()` or
+    closes the manager itself). Only a `flush()` counts: an entity changed in memory then a refusal before
+    the `flush()` leaves those pending changes in the open manager, as anywhere with Doctrine — so a
+    refusal also comes before any change (`ContentPlacement`, `OrderAssigner` do). Before #549 « throw before
+    writing » was only written down. Rejected: doing nothing (the rule alone does not stop the next refusal
+    placed after a `save()`); closing on any exception (`wrapInTransaction()`'s default, which breaks callers
+    that set a refusal aside and continue — the invitation handler, the purge); a test guard checking that
+    each expected refusal precedes the write (it sees only the scenarios written, neither database errors
+    nor the account locks); `postFlush`, emitted by an empty flush too. `PostgresLockedTransactionTest`
+    pins it (a written flush then an exception, a deletion alone, an empty flush, a lost session, no
+    listener left behind — commit, refusal, failed acquisition, lost session —, no write held against the
+    next transaction), with `PostgresAdvisoryOrderScopeLockTest` (a read after
+    the refusal sees the database, the next write fails with `EntityManagerClosed`) and
+    `PostgresUsernameAllocationLockTest`. A Messenger worker gets a fresh one at the next message (DoctrineBundle's `Registry::reset()`
     resets a closed manager); a command stops on the exception. Rejected: re-reading the scope on the
     refusal (one more query on the failure path, to guard so it never masks the refusal, the scope's class
     only, and writes that carry on after a broken invariant); `clear()` alone (it leaves the manager writing
@@ -275,7 +298,10 @@ paths:
   the table has no deferred constraint (the unique name and the `years` `CHECK` are immediate and refuse at
   the `flush()`), so only a session lost at that moment can refuse it; the `DriverException` surfaces as is
   and the skeleton **closes the EntityManager** (issue #547, as for every lock of the skeleton, see the
-  ordering section above): its UnitOfWork held as written what the refusal had just rolled back. Cost per
+  ordering section above): its UnitOfWork held as written what the refusal had just rolled back; an exception
+  the operation throws after a write closes it too (issue #549, same section); the 409 of a name already
+  taken leaves it open when it comes from the check before the `save()`, while the unique index's 409 (two
+  racing `PUT`s) comes after a failed `flush()`, which has already closed it. Cost per
   `PUT`/`DELETE`, all under the lock: `BEGIN`, the lock-bound `set_config`, the locked read, the `flush()`'s
   `SAVEPOINT`, write and `RELEASE SAVEPOINT`, `COMMIT` — sub-millisecond round trips each. Guards: `ExperienceTechnologyWritesUnderRowLockTest` (a technology loaded as the
   provider does, then deleted in SQL: `update()` and `delete()` say not found; a probe session holds the row,
