@@ -4,13 +4,19 @@ declare(strict_types=1);
 
 namespace App\Tests\Portfolio\About\Application;
 
+use ApiPlatform\Metadata\ApiResource;
+use ApiPlatform\Metadata\Get;
+use ApiPlatform\Metadata\Put;
 use App\Portfolio\About\Application\AboutSettingsAdministratorInterface;
 use App\Portfolio\About\Domain\Entity\AboutSettings;
 use App\Portfolio\About\Domain\Exception\AboutSettingsNotFoundException;
 use App\Portfolio\About\Domain\Repository\AboutSettingsRepositoryInterface;
+use App\Portfolio\About\Presentation\ApiResource\BackofficeAboutSettingsResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
+use ReflectionClass;
+use ReflectionMethod;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
 
@@ -32,7 +38,8 @@ use Symfony\Component\Uid\Uuid;
  * aucune ligne, sans rien lever : il faudrait alors le verrou de ligne de #545.
  *
  * La suppression passe par SQL : aucun chemin applicatif ne supprime les
- * réglages (pas de `DELETE` au backoffice, upsert au seed).
+ * réglages (pas de `DELETE` au backoffice, upsert au seed), ce que le
+ * troisième cas garde.
  */
 final class AboutSettingsUpdateReadsCommittedRowTest extends KernelTestCase
 {
@@ -85,6 +92,29 @@ final class AboutSettingsUpdateReadsCommittedRowTest extends KernelTestCase
             [['id' => $recreatedId->toRfc4122(), 'site_eyebrow' => 'Nouveau site', 'hobbies_subtitle' => 'Nouveaux loisirs']],
             $this->connection()->fetchAllAssociative('SELECT id, site_eyebrow, hobbies_subtitle FROM about_settings WHERE locale = :locale', ['locale' => Locale::FR->value]),
         );
+    }
+
+    /**
+     * Le déclencheur de la règle, rendu exécutable : l'absence de verrou ne
+     * tient que tant qu'aucun chemin applicatif ne supprime les réglages. Un
+     * `remove()` au dépôt (une purge du seed, par exemple) ou une opération
+     * `Delete` au backoffice fait rougir ce test : il faut alors d'abord le
+     * verrou de ligne de #545, puis mettre ce test à jour.
+     */
+    public function testNothingInTheApplicationCanDeleteTheSettings(): void
+    {
+        $repositoryMethods = array_map(
+            static fn (ReflectionMethod $method): string => $method->getName(),
+            new ReflectionClass(AboutSettingsRepositoryInterface::class)->getMethods(),
+        );
+        sort($repositoryMethods);
+        self::assertSame(['findByLocale', 'save'], $repositoryMethods, 'AboutSettings ne se supprime plus seulement en SQL : verrou de ligne d\'abord (#553).');
+
+        $operations = [];
+        foreach (new ReflectionClass(BackofficeAboutSettingsResource::class)->getAttributes(ApiResource::class)[0]->newInstance()->getOperations() ?? [] as $operation) {
+            $operations[] = $operation::class;
+        }
+        self::assertSame([Get::class, Put::class], $operations, 'Le backoffice expose une autre écriture que Put sur AboutSettings : verrou de ligne d\'abord (#553).');
     }
 
     /**
