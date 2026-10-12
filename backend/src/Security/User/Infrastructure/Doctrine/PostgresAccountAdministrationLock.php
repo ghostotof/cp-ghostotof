@@ -33,6 +33,15 @@ use Symfony\Component\Uid\Uuid;
  *   verrou d'attribution des identifiants (« USER »), seconde clé distincte
  *   (« ADMN » contre « NAME ») ; le périmètre d'ordre a sa propre première
  *   clé. Les administrations sont rares, les sérialiser toutes ne coûte rien.
+ * - **Puis l'acteur, relu sans verrouiller sa ligne** : une requête DQL avec
+ *   `HINT_REFRESH`, sans `FOR UPDATE`. Cohérent malgré tout : toute
+ *   rétrogradation ou suppression par l'application passe par ce même
+ *   advisory lock, donc est validée avant cette lecture ou attend après
+ *   elle ; seul un SQL manuel y échappe (limite acceptée, comme pour la
+ *   garde elle-même). Disparu ou sans ROLE_SUPER : refusé (403), l'instance
+ *   disparue détachée. Relu **avant** la cible (relecture de #551) : un
+ *   acteur révoqué reçoit le même 403 que sa cible existe ou non — relu
+ *   après, il aurait reçu un 404 sur un identifiant absent, un 403 sinon.
  * - **Puis la ligne du compte administré**, `FOR UPDATE` : une seule requête
  *   DQL verrouille, dit si la ligne existe et relit sur place l'instance que
  *   le provider a chargée (`HINT_REFRESH`), comme le verrou de ligne d'une
@@ -41,13 +50,6 @@ use Symfony\Component\Uid\Uuid;
  *   (re-sauvée, Doctrine la réinsérerait, issue #548), puis le compte est dit
  *   introuvable — le 404 du perdant de deux `DELETE`, ou d'un `PUT` des rôles
  *   sur un compte que la purge vient d'emporter (#552), sans ligne d'audit.
- * - **Puis l'acteur, relu sans verrouiller sa ligne** : une requête DQL avec
- *   `HINT_REFRESH`, sans `FOR UPDATE`. Cohérent malgré tout : toute
- *   rétrogradation ou suppression par l'application passe par ce même
- *   advisory lock, donc est validée avant cette lecture ou attend après
- *   elle ; seul un SQL manuel y échappe (limite acceptée, comme pour la
- *   garde elle-même). Disparu ou sans ROLE_SUPER : refusé (403), l'instance
- *   disparue détachée.
  *
  * **Ordre d'acquisition, sans interblocage** : l'advisory lock d'abord, la
  * ligne ensuite. Aucun autre chemin ne prend cet advisory lock, et les
@@ -57,11 +59,16 @@ use Symfony\Component\Uid\Uuid;
  * l'advisory lock : un cycle demanderait qu'un détenteur de ligne attende
  * l'advisory, ce que personne ne fait. Deux administrations sont sérialisées
  * par l'advisory avant de toucher une ligne. La lecture de l'acteur, sans
- * verrou, n'attend rien.
+ * verrou, n'attend rien. **Prix accepté** : une administration qui attend une
+ * ligne tenue par le handler d'invitation, la purge ou un changement de mot
+ * de passe (quelques millisecondes) tient l'advisory lock pendant ce temps,
+ * et toute autre administration attend derrière elle ; les deux attentes sont
+ * bornées par `lock_timeout`, et chacune a son nom.
  *
  * Le squelette — transaction à la main, attente bornée si la session ne la
  * borne pas, `55P03` renommé en {@see AccountAdministrationLockTimeoutException}
- * (l'advisory lock comme la ligne), COMMIT refusé remonté sous l'erreur de la
+ * (l'advisory lock et la ligne, chacun sous sa fabrique : le journal dit
+ * laquelle des deux attentes a dépassé), COMMIT refusé remonté sous l'erreur de la
  * base et l'EntityManager fermé (#547), fermé aussi sur une exception levée
  * après une écriture (#549), refus de s'imbriquer sous
  * {@see AccountAdministrationLockInsideTransactionException} (#532) — est celui
@@ -95,18 +102,21 @@ final readonly class PostgresAccountAdministrationLock implements AccountAdminis
         $actingUserId = $actingUser->getId();
 
         return new PostgresLockedTransaction($this->entityManager, $this->logger, $this->fallbackLockTimeout)->run(
-            // L'acquisition entière — l'advisory lock, la ligne, l'acteur —
-            // est ce que le squelette borne et renomme ; ses refus (404, 403)
-            // précèdent toute écriture.
+            // L'acquisition entière — l'advisory lock, l'acteur, la ligne —
+            // est ce que le squelette borne et renomme ; ses refus (403, 404)
+            // précèdent toute écriture. L'attente de la ligne est nommée par
+            // lockAndRereadTarget() elle-même ; celle que le squelette renomme
+            // est donc celle de l'advisory lock (la lecture de l'acteur
+            // n'attend aucun verrou).
             acquire: function () use ($targetId, $actingUserId): void {
                 $this->entityManager->getConnection()->executeQuery(
                     'SELECT pg_advisory_xact_lock(?, ?)',
                     [self::ADVISORY_NAMESPACE, self::ADVISORY_KEY],
                 );
-                $this->lockAndRereadTarget($targetId);
                 $this->rereadActingUser($actingUserId);
+                $this->lockAndRereadTarget($targetId);
             },
-            onTimeout: static fn (DriverException $timeout): AccountAdministrationLockTimeoutException => AccountAdministrationLockTimeoutException::forAccount($targetId->toRfc4122(), $timeout),
+            onTimeout: static fn (DriverException $timeout): AccountAdministrationLockTimeoutException => AccountAdministrationLockTimeoutException::advisoryLockHeld($targetId->toRfc4122(), $timeout),
             onNested: static fn (): AccountAdministrationLockInsideTransactionException => AccountAdministrationLockInsideTransactionException::forAccount($targetId->toRfc4122()),
             operation: fn (): mixed => $operation($this->lockedInstance($targetId)),
         );
@@ -130,7 +140,20 @@ final readonly class PostgresAccountAdministrationLock implements AccountAdminis
      */
     private function lockAndRereadTarget(Uuid $targetId): void
     {
-        if (null === $this->reread($targetId, forUpdate: true)) {
+        try {
+            $target = $this->reread($targetId, forUpdate: true);
+        } catch (DriverException $exception) {
+            // Son attente dépassée sous son propre nom, pour que le journal
+            // la distingue de celle de l'advisory lock ; tout autre refus
+            // de la base remonte tel quel.
+            if (PostgresLockedTransaction::LOCK_NOT_AVAILABLE === $exception->getSQLState()) {
+                throw AccountAdministrationLockTimeoutException::rowHeld($targetId->toRfc4122(), $exception);
+            }
+
+            throw $exception;
+        }
+
+        if (null === $target) {
             $this->forgetStaleInstance($targetId);
 
             throw CpgUserNotFoundException::forId($targetId);

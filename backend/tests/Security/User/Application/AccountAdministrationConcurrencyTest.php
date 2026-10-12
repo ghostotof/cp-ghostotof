@@ -64,6 +64,9 @@ final class AccountAdministrationConcurrencyTest extends KernelTestCase
         self::getContainer()->get(CpgUserRoleAdministratorInterface::class)->setSuperAdmin($beta->getId(), false, $alpha);
         $concurrent->wait();
 
+        // Le sort du fils d'abord : un fils qui n'a pas pu se mettre en place
+        // doit montrer sa sortie d'erreur, pas accuser le verrou.
+        self::assertNotSame(ChildPhpProcess::SETUP_FAILED, $concurrent->getExitCode(), $concurrent->getErrorOutput());
         self::assertSame(['alpha'], $this->storedSuperAdminUsernames(), 'Les deux rétrogradations ont validé : plus aucun ROLE_SUPER (#551).');
         self::assertSame(1, $concurrent->getExitCode(), 'La rétrogradation concurrente aurait dû être refusée : '.$concurrent->getOutput().$concurrent->getErrorOutput());
         self::assertStringContainsString('refused '.ActingAccountNoLongerSuperAdminException::class, $concurrent->getOutput());
@@ -77,6 +80,9 @@ final class AccountAdministrationConcurrencyTest extends KernelTestCase
         self::getContainer()->get(CpgUserAdministratorInterface::class)->delete($beta->getId(), $alpha);
         $concurrent->wait();
 
+        // Le sort du fils d'abord : un fils qui n'a pas pu se mettre en place
+        // doit montrer sa sortie d'erreur, pas accuser le verrou.
+        self::assertNotSame(ChildPhpProcess::SETUP_FAILED, $concurrent->getExitCode(), $concurrent->getErrorOutput());
         self::assertSame(['alpha'], $this->storedSuperAdminUsernames(), 'Les deux suppressions ont validé : plus aucun ROLE_SUPER (#551).');
         self::assertSame(1, $concurrent->getExitCode(), 'La suppression concurrente aurait dû être refusée : '.$concurrent->getOutput().$concurrent->getErrorOutput());
         self::assertStringContainsString('refused '.ActingAccountNoLongerSuperAdminException::class, $concurrent->getOutput());

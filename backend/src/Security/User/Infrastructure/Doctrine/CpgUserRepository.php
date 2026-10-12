@@ -125,11 +125,12 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
             ['id' => UuidType::NAME],
         );
 
-        // Un COUNT(*) est un entier pour pdo_pgsql ; l'assertion l'explicite
-        // pour l'analyse statique.
-        \assert(\is_int($count));
+        // Un COUNT(*) est un entier pour pdo_pgsql, une chaîne pour un pilote
+        // qui textualise ; la conversion ne dépend pas du pilote, et
+        // l'assertion ne sert qu'à l'analyse statique.
+        \assert(is_numeric($count));
 
-        return $count;
+        return (int) $count;
     }
 
     public function save(CpgUser $user): void

@@ -13,6 +13,7 @@ use App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Tests\Support\ReadsSecurityAuditLog;
+use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
@@ -146,7 +147,7 @@ final class AccountAdministrationStaleStateTest extends KernelTestCase
      */
     public function testTheLastSuperAdminAbleToSignInCannotBeDeletedWhenTheOnlyOtherOneIsPendingActivation(): void
     {
-        $actor = $this->loaded('alpha', [CpgUser::ROLE_SUPER], hashedPassword: '');
+        $actor = $this->loadedPendingSuperAdmin('alpha');
         $target = $this->loadedSuperAdmin('beta');
 
         $refusal = $this->refusalOf(fn () => self::getContainer()->get(CpgUserAdministratorInterface::class)->delete($target->getId(), $actor));
@@ -158,7 +159,7 @@ final class AccountAdministrationStaleStateTest extends KernelTestCase
 
     public function testTheLastSuperAdminAbleToSignInCannotBeDemotedWhenTheOnlyOtherOneIsPendingActivation(): void
     {
-        $actor = $this->loaded('alpha', [CpgUser::ROLE_SUPER], hashedPassword: '');
+        $actor = $this->loadedPendingSuperAdmin('alpha');
         $target = $this->loadedSuperAdmin('beta');
 
         $refusal = $this->refusalOf(fn () => self::getContainer()->get(CpgUserRoleAdministratorInterface::class)->setSuperAdmin($target->getId(), false, $actor));
@@ -169,11 +170,26 @@ final class AccountAdministrationStaleStateTest extends KernelTestCase
     }
 
     /**
+     * Un ROLE_SUPER invité, jamais activé : la seule forme qu'un mot de passe
+     * vide prend en production (`CpgUser::isAwaitingPasswordSetup()`).
+     */
+    private function loadedPendingSuperAdmin(string $username): CpgUser
+    {
+        $user = new CpgUser($username, '');
+        $user->setEmail($username.'@example.test');
+        $user->setRoles([CpgUser::ROLE_SUPER]);
+        $user->markInvited(new DateTimeImmutable('-1 hour'));
+        $this->repository->save($user);
+
+        return $user;
+    }
+
+    /**
      * @param list<string> $roles
      */
-    private function loaded(string $username, array $roles, string $hashedPassword = 'hashed-password'): CpgUser
+    private function loaded(string $username, array $roles): CpgUser
     {
-        $user = new CpgUser($username, $hashedPassword);
+        $user = new CpgUser($username, 'hashed-password');
         $user->setRoles($roles);
         $this->repository->save($user);
         // Comme pour une requête : l'instance en carte d'identité est celle que

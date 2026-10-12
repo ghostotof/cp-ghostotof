@@ -153,6 +153,23 @@ final class PostgresAccountAdministrationLockTest extends KernelTestCase
         self::assertFalse($this->em->getConnection()->isTransactionActive());
     }
 
+    /**
+     * L'acteur est relu avant la cible : révoqué, il reçoit le même refus que
+     * sa cible existe ou non — relu après, un identifiant absent lui aurait
+     * valu un 404, un présent un 403.
+     */
+    public function testAnActorDemotedMeanwhileIsRefusedEvenWhenTheTargetIsGone(): void
+    {
+        $actor = $this->superAdmin('alpha');
+        $target = $this->superAdmin('beta');
+        $this->em->getConnection()->executeStatement("UPDATE cpg_user SET roles = '[]' WHERE id = :id", ['id' => $actor->getId()->toRfc4122()]);
+        $this->em->getConnection()->executeStatement('DELETE FROM cpg_user WHERE id = :id', ['id' => $target->getId()->toRfc4122()]);
+
+        $this->expectException(ActingAccountNoLongerSuperAdminException::class);
+
+        $this->lock()->whileAdministering($target, $actor, static fn (CpgUser $locked): null => null);
+    }
+
     public function testAnActorDeletedMeanwhileIsRefusedBeforeTheOperation(): void
     {
         $actor = $this->superAdmin('alpha');
@@ -244,7 +261,7 @@ final class PostgresAccountAdministrationLockTest extends KernelTestCase
         );
 
         try {
-            $this->expectTimeout($target, $actor);
+            $this->expectTimeout($target, $actor, '/verrou global/');
         } finally {
             $holder->rollBack();
             $holder->close();
@@ -255,7 +272,8 @@ final class PostgresAccountAdministrationLockTest extends KernelTestCase
 
     /**
      * … ou la ligne du compte administré, tenue par un verrou de compte
-     * (`PostgresAccountRowLock`, le handler d'invitation ou la purge).
+     * (`PostgresAccountRowLock`, le handler d'invitation ou la purge). Chaque
+     * attente sous son message : l'exploitant lit laquelle a dépassé.
      */
     public function testTheTargetRowHeldBeyondTheTimeoutRaisesANamedException(): void
     {
@@ -266,7 +284,7 @@ final class PostgresAccountAdministrationLockTest extends KernelTestCase
         $holder->fetchOne('SELECT 1 FROM cpg_user WHERE id = :id FOR UPDATE', ['id' => $target->getId()->toRfc4122()]);
 
         try {
-            $this->expectTimeout($target, $actor);
+            $this->expectTimeout($target, $actor, '/ligne du compte/');
         } finally {
             $holder->rollBack();
             $holder->close();
@@ -374,12 +392,13 @@ final class PostgresAccountAdministrationLockTest extends KernelTestCase
      * borne venait à manquer, l'attente échouerait en 57014 après 3 s au lieu
      * de pendre. C'est le délai de l'adaptateur qui doit s'appliquer.
      */
-    private function expectTimeout(CpgUser $target, CpgUser $actor): void
+    private function expectTimeout(CpgUser $target, CpgUser $actor, string $messagePattern): void
     {
         $this->em->getConnection()->executeStatement('SET lock_timeout = 0');
         $this->em->getConnection()->executeStatement("SET statement_timeout = '3s'");
 
         $this->expectException(AccountAdministrationLockTimeoutException::class);
+        $this->expectExceptionMessageMatches($messagePattern);
         (new PostgresAccountAdministrationLock($this->em, new NullLogger(), self::getContainer()->get(VanishedEntities::class), '50ms'))
             ->whileAdministering($target, $actor, static fn (CpgUser $locked): null => null);
     }

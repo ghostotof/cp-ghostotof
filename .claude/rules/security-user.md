@@ -123,14 +123,18 @@ paths:
     lock without an SQL count would have fixed nothing. **Acquisition order, deadlock-free**:
     `pg_advisory_xact_lock(0x55534552 'USER', 0x41444D4E 'ADMN')` — global, since the guard counts every
     account and the two requests of the race touch two different rows; same first key as the username
-    allocation lock, its own second key — **then** the target row `FOR UPDATE` (one DQL query with
-    `HINT_REFRESH`, which refreshes the provider's instance in place and answers `null` when the row is gone,
-    the pattern of the technology row lock, #545) **then** the actor, re-read by the same query **without**
-    `FOR UPDATE`. No other path takes that advisory key, and the holders of an account row lock
+    allocation lock, its own second key — **then** the actor, re-read by one DQL query with `HINT_REFRESH`
+    **without** `FOR UPDATE` (before the target, so a revoked actor gets the same 403 whether its target
+    exists or not) **then** the target row `FOR UPDATE` (the same query, which refreshes the provider's
+    instance in place and answers `null` when the row is gone, the pattern of the technology row lock,
+    #545). No other path takes that advisory key, and the holders of an account row lock
     (`PostgresAccountRowLock`: handler, activation, purge, `changePassword`; `advanceInvitationGeneration()`
     for one `UPDATE`) never wait for it, so no cycle exists; the actor's plain read waits for nothing, and
     is consistent because every demotion or deletion the application does goes through this same advisory
-    lock. Under the lock, on the **re-read** target: the idempotent exit of `setSuperAdmin`, then the guard,
+    lock. Accepted price of that order: an administration waiting for a row the handler, the purge or a
+    password change holds (milliseconds) holds the advisory lock meanwhile, and every other administration
+    queues behind it; both waits are bounded by `lock_timeout` and each has its own factory of the timeout
+    exception (`advisoryLockHeld()` / `rowHeld()`), so the log says which one. Under the lock, on the **re-read** target: the idempotent exit of `setSuperAdmin`, then the guard,
     `CpgUserRepositoryInterface::countOtherSuperAdminsAbleToSignIn(target)` — **in SQL**
     (`id <> target AND CAST(roles AS jsonb) @> '["ROLE_SUPER"]' AND password <> ''`, the role bound as a
     parameter), never `findAll()` in the identity map; a `ROLE_SUPER` still pending activation (empty
