@@ -61,7 +61,7 @@ paths:
     bypasses it. **On the application path the refusal comes out as `TranslationGroupHasSeveralPositionsException`**
     (`refusedAtCommit()`, the database's message in its own, previous = the `DriverException`), a
     `critical` 500: `PostgresAdvisoryOrderScopeLock` opens and closes its transaction by hand — through
-    the skeleton it shares with the two account locks since #512 (and the technology row lock since #545), `Shared/Infrastructure/Lock/PostgresLockedTransaction`,
+    the skeleton it shares with the three account locks since #512 (the administration one since #551) and the technology row lock since #545, `Shared/Infrastructure/Lock/PostgresLockedTransaction`,
     which also bounds the wait of a session without `lock_timeout` (the console, `app:*:seed`, waited
     forever before) — and translates `23T90` at `commit()` (its `onCommitRefused`).
     **It refuses to run inside a transaction already open** (issue #526), another `withLock()` included: there
@@ -187,7 +187,8 @@ paths:
     it. No caller did it (the `Administrator`s re-find their entry under the lock and only receive ids, processors
     call no repository, seeds re-save nothing): the guard makes the rule hold by construction, as #526 did,
     instead of relying on the next caller. Every lock that detaches a vanished row goes through
-    `detachVanished()`, never `detach()` — the technology row lock too (#545, below); only the container's
+    `detachVanished()`, never `detach()` — the technology row lock too (#545, below), and the account
+    administration lock (#551, `.claude/rules/security-user.md`); only the container's
     instance listens (a hand-built one refuses nothing, so tests take it from the container). Rejected: a check in
     each repository's `save()` (the UnitOfWork cannot tell a detached entity from a new one with a natural id and
     no row; it would need the same registry in every repository); removing instead of detaching (a phantom

@@ -84,17 +84,19 @@ paths:
     the index only). None quotes a value or keeps the violation as `previous` (#356). Pinned by
     `InviteUsernameConcurrencyTest` (real processes, interleaved at the `preFlush`), `InviteUniqueViolationTest`
     (the real PostgreSQL message), `CpgUserUniqueViolationTest` and `PostgresUsernameAllocationLockTest`).
-    **Neither account lock runs inside a transaction already open** (issue #532, the rule #526 set for the
+    **No account lock runs inside a transaction already open** (issue #532, the rule #526 set for the
     order-scope lock): nested, `whileAllocating()`'s return would only be a `RELEASE SAVEPOINT`, so `invite()`
     would dispatch before the account is visible — the handler finds none and drops the message without retry,
     an invitation lost silently — and the lock would hold every invitation until the caller's COMMIT;
-    `whileLocked()` would keep the row's `FOR UPDATE` and send the link before its token is committed. The
-    skeleton refuses before taking anything, `UsernameAllocationLockInsideTransactionException` /
-    `AccountLockInsideTransactionException` (`LogicException`, unmapped `critical` 500; in the worker, Messenger's
-    retries then `failed`; the account one quotes the UUID only). No caller nests (use cases, handler, the two
+    `whileLocked()` would keep the row's `FOR UPDATE` and send the link before its token is committed;
+    `whileAdministering()` (#551) would log `user-deleted` or `role-changed` for a write the caller's COMMIT
+    can still undo. The skeleton refuses before taking anything, `UsernameAllocationLockInsideTransactionException` /
+    `AccountLockInsideTransactionException` / `AccountAdministrationLockInsideTransactionException` (`LogicException`,
+    unmapped `critical` 500; in the worker, Messenger's
+    retries then `failed`; the account ones quote the UUID only). No caller nests (use cases, handler, the two
     commands, processors — API Platform opens no transaction —, no `doctrine_transaction` middleware, the doctrine
-    transport commits before handing over the envelope, the whole suite): pinned by both adapter tests and
-    `InviteInsideTransactionTest`. A future use case needing both locks takes them one after the other, never
+    transport commits before handing over the envelope, the whole suite): pinned by the three adapter tests and
+    `InviteInsideTransactionTest`. A future use case needing two of these locks takes them one after the other, never
     one inside the other. **Accepted limits**, no caller reaches them (review of #532): a transaction some code
     leaves open on a long-lived connection (the worker) makes every later lock refuse until the process restarts,
     and since the `failure_transport` (`doctrine://default`) writes through that same connection, inside that
@@ -111,7 +113,58 @@ paths:
     2026-10-11, issue #460; a new invitation remains possible) · `CpgUserRoleAdministrator`
     (`setSuperAdmin`, idempotent, anti-lockout guards; on demotion `ROLE_TRUSTED` is kept **only if the account
     has an `email`** — nominative grant, ADR 0003 D1, issue #78 pt 3 — a CLI account falls back to the base
-    tier) · `PendingInvitationPurger` (deletes accounts whose password hash is still empty — the literal
+    tier). **Both administer under one lock** (issues #551, #552): `Application/AccountAdministrationLockInterface::whileAdministering(target, actingUser, Closure(CpgUser): T)`,
+    adapter `Infrastructure/Doctrine/PostgresAccountAdministrationLock` on the shared skeleton (see the
+    account lock below), the fifth PostgreSQL lock. The anti-lockout guard « never the last `ROLE_SUPER` »
+    used to count then act, with no lock nor transaction: two `ROLE_SUPER` deleting or demoting each other
+    each counted two, both writes committed, and none was left — the whole backoffice locked out. Worse, the
+    count was `findAll()` filtered in PHP, i.e. the identity map, where the actor (loaded by the `cpg_users`
+    provider) and the target (loaded by the API Platform provider) are as the request found them, so a
+    lock without an SQL count would have fixed nothing. **Acquisition order, deadlock-free**:
+    `pg_advisory_xact_lock(0x55534552 'USER', 0x41444D4E 'ADMN')` — global, since the guard counts every
+    account and the two requests of the race touch two different rows; same first key as the username
+    allocation lock, its own second key — **then** the target row `FOR UPDATE` (one DQL query with
+    `HINT_REFRESH`, which refreshes the provider's instance in place and answers `null` when the row is gone,
+    the pattern of the technology row lock, #545) **then** the actor, re-read by the same query **without**
+    `FOR UPDATE`. No other path takes that advisory key, and the holders of an account row lock
+    (`PostgresAccountRowLock`: handler, activation, purge, `changePassword`; `advanceInvitationGeneration()`
+    for one `UPDATE`) never wait for it, so no cycle exists; the actor's plain read waits for nothing, and
+    is consistent because every demotion or deletion the application does goes through this same advisory
+    lock. Under the lock, on the **re-read** target: the idempotent exit of `setSuperAdmin`, then the guard,
+    `CpgUserRepositoryInterface::countOtherSuperAdminsAbleToSignIn(target)` — **in SQL**
+    (`id <> target AND CAST(roles AS jsonb) @> '["ROLE_SUPER"]' AND password <> ''`, the role bound as a
+    parameter), never `findAll()` in the identity map; a `ROLE_SUPER` still pending activation (empty
+    password) does not count, it cannot sign in and keeps no door open; `countByRole()` is gone —, then
+    `remove()` / `save()`; the audit line (`user-deleted`, `role-changed`) is written **after** the lock
+    returned, after the COMMIT: a logged action is a committed action. **A target whose row vanished between
+    the provider and the lock is a 404** (`CpgUserNotFoundException`, already mapped), its stale instance
+    detached through `VanishedEntities::detachVanished()` (#548), and no audit line: that is the loser of two
+    `DELETE` of the same account, or a `PUT …/roles` on an account the purge just took (#552 — Doctrine never
+    reads the row count of its `DELETE`/`UPDATE`, so both answered 204 and wrote a line for a row already gone).
+    Purge against admin deletion: the loser gets the 404 on the admin side, « already deleted » (skipped) on
+    the purge side, which catches `CpgUserNotFoundException` under its own lock. **The actor is re-read too**
+    (decided on 2026-10-12): deleted or no longer `ROLE_SUPER` when the lock is taken →
+    `ActingAccountNoLongerSuperAdminException` (403 `/errors/acting-account-no-longer-super`, `log_level: info`,
+    constant message), nothing written, nothing logged by the use case — the next request would get the
+    firewall's 403 anyway, since the `api` firewall reloads the account on every request; this closes the
+    authorization TOCTOU (a request in flight while its actor is demoted) **for these two operations only**:
+    every other backoffice endpoint keeps the window of one request in flight, an accepted limit. The
+    frontend reads that 403 as a generic error on the users page (`HttpAdminUserRepository` maps 404/409/422
+    only). Consequence: through HTTP the 409 « last super admin » is unreachable by construction (the actor
+    is a signed-in `ROLE_SUPER` other than the target, so at least one remains), as the resource test already
+    noted; the guard stays for any other caller. Timeout on the advisory lock or the row →
+    `AccountAdministrationLockTimeoutException` (named, unmapped `critical` 500, the UUID only), nested →
+    `AccountAdministrationLockInsideTransactionException`. **Accepted limits**: a writer outside the lock
+    (hand-written SQL, a future use case that forgets it) is not serialized nor counted consistently — the
+    guard is a net, not a constraint; no database trigger refuses a COMMIT leaving zero `ROLE_SUPER` (roles are
+    JSON, rejected as too costly for the gain). **Recovery when no `ROLE_SUPER` is left**: `app:user:create
+    --role ROLE_SUPER` through the Job `k8s/base/create-user-job.yaml` and `tools/run-job.sh` (`k8s/README.md`
+    « Créer un compte super-administrateur »), **never `kubectl exec`** (the `user-created` audit line would be
+    lost — see `Presentation/Command` below). Pinned by `AccountAdministrationConcurrencyTest` (real processes
+    interleaved at the `preFlush`, child `Fixtures/administer-account.php`: cross demotion, cross deletion),
+    `AccountAdministrationStaleStateTest` (the 404 without audit line, the actor demoted or deleted in SQL),
+    `PostgresAccountAdministrationLockTest` (both timeouts, nesting, vanished target and actor, refused COMMIT)
+    and `CpgUserRepositoryTest` (the count reads the database, not the identity map) · `PendingInvitationPurger` (deletes accounts whose password hash is still empty — the literal
     definition of "never activated", issue #238, so a password set for the person from the backoffice
     exempts the account — invited more than N days ago, 30 by default, never a `ROLE_SUPER` one;
     `app:user:purge-pending-invitations`, daily in the housekeeping CronJob, `--dry-run` for a hand run;
@@ -214,7 +267,7 @@ paths:
     the repository gives the unit of work the written values as original state — otherwise a later
     `flush()` rewrote the entity's generation as an absolute value over a concurrent resend. **One account
     lock for the handler and the activation** (issues #435, #458): `Application/AccountLockInterface::whileLocked()`,
-    adapter `Infrastructure/Doctrine/PostgresAccountRowLock` — on the skeleton of the four PostgreSQL locks,
+    adapter `Infrastructure/Doctrine/PostgresAccountRowLock` — on the skeleton of the five PostgreSQL locks,
     `Shared/Infrastructure/Lock/PostgresLockedTransaction` (issue #512: a hand-made transaction, so that a
     refusal inside does not close the EntityManager and a refused COMMIT surfaces as the database's error —
     `Connection::transactional()`, used until #512, masked it behind « There is no active transaction »;
