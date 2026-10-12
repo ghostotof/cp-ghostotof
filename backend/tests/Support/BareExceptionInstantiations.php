@@ -33,8 +33,6 @@ final class BareExceptionInstantiations
     /** Noms en minuscules, sans `\` initial : PHP résout les classes sans tenir compte de la casse. */
     private const array FORBIDDEN = ['exception', 'logicexception', 'runtimeexception', 'invalidargumentexception'];
 
-    private const array NAMES = [\T_STRING, \T_NAME_QUALIFIED, \T_NAME_FULLY_QUALIFIED];
-
     /**
      * @return list<string> `chemin:ligne` de chaque instanciation, triés pour un diagnostic stable
      */
@@ -64,6 +62,7 @@ final class BareExceptionInstantiations
         foreach ($tokens as $index => $token) {
             if ($token->is(\T_NAMESPACE)) {
                 $namespace = ClassNameResolver::namespaceDeclaredAt($tokens, $index);
+                $imports = [];
             } elseif ($token->is(\T_USE)) {
                 $imports = array_merge($imports, ClassNameResolver::imports($tokens, $index + 1));
             } elseif ($token->is(\T_NEW)) {
@@ -88,7 +87,7 @@ final class BareExceptionInstantiations
     {
         $next = $tokens[$index] ?? null;
         if (null === $next || !$next->is(\T_CLASS)) {
-            return null !== $next && $next->is(self::NAMES) ? $next : null;
+            return null !== $next && $next->is(ClassNameResolver::NAMES) ? $next : null;
         }
 
         // Classe anonyme : son parent se lit avant l'accolade du corps.
@@ -96,7 +95,7 @@ final class BareExceptionInstantiations
             if ($token->is(\T_EXTENDS)) {
                 $parent = $tokens[$cursor + 1] ?? null;
 
-                return null !== $parent && $parent->is(self::NAMES) ? $parent : null;
+                return null !== $parent && $parent->is(ClassNameResolver::NAMES) ? $parent : null;
             }
         }
 

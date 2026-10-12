@@ -25,6 +25,9 @@ use PhpToken;
  */
 final class ClassNameResolver
 {
+    /** Les jetons d'un nom de classe écrit dans le code, que {@see self::resolve()} sait lire. */
+    public const array NAMES = [\T_STRING, \T_NAME_QUALIFIED, \T_NAME_FULLY_QUALIFIED, \T_NAME_RELATIVE];
+
     /** Les jetons d'un nom de classe qu'un `use` importe. */
     private const array IMPORTED_NAMES = [\T_STRING, \T_NAME_QUALIFIED, \T_NAME_FULLY_QUALIFIED];
 
@@ -33,7 +36,9 @@ final class ClassNameResolver
 
     /**
      * L'espace de noms que déclare le `namespace` en $index, en minuscules ;
-     * vide pour l'espace de noms global à accolades (`namespace { … }`).
+     * vide pour l'espace de noms global à accolades (`namespace { … }`). Les
+     * imports d'un espace de noms ne valent pas dans le suivant : l'appelant
+     * les remet à zéro ici.
      *
      * @param list<PhpToken> $tokens
      */
