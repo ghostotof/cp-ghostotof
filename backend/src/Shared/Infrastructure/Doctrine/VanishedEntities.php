@@ -15,11 +15,13 @@ use WeakMap;
  * Les entités dont la ligne a disparu, qu'un verrou a détachées : elles ne
  * reviennent pas en base (issue #548).
  *
- * Deux verrous détachent l'instance qu'ils trouvent périmée, ligne supprimée
+ * Trois verrous détachent l'instance qu'ils trouvent périmée, ligne supprimée
  * entre son chargement et le verrou : la relecture du verrou d'ordre (#402,
- * {@see \App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock})
- * et le verrou de ligne d'une technologie (#545,
- * {@see \App\Portfolio\Experience\Infrastructure\Doctrine\PostgresExperienceTechnologyRowLock}).
+ * {@see \App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock}),
+ * le verrou de ligne d'une technologie (#545,
+ * {@see \App\Portfolio\Experience\Infrastructure\Doctrine\PostgresExperienceTechnologyRowLock})
+ * et le verrou d'administration des comptes (#551, #552,
+ * {@see \App\Security\User\Infrastructure\Doctrine\PostgresAccountAdministrationLock}).
  * Détachée, `find()` la dit introuvable — c'est le but. Mais un appelant qui
  * la tient encore et la sauve (`<Repository>::save()`, `persist()` puis
  * `flush()`) la faisait **réinsérer** : `UnitOfWork::doPersist()` tient pour

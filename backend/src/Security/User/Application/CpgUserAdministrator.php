@@ -23,6 +23,7 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
         private SecurityAuditLoggerInterface $auditLogger,
         private PasswordSetupTokenRepositoryInterface $passwordSetupTokenRepository,
         private AccountLockInterface $accountLock,
+        private AccountAdministrationLockInterface $administrationLock,
     ) {
     }
 
@@ -40,18 +41,24 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
             throw CpgUserNotFoundException::forId($id);
         }
 
-        // Garde anti-lockout (B9) : ne jamais laisser supprimer le dernier
-        // ROLE_SUPER. `<= 1` plutôt que `=== 1` par prudence (jamais 0 ici,
-        // puisque $user en fait partie).
-        if (\in_array(CpgUser::ROLE_SUPER, $user->getRoles(), true)
-            && $this->cpgUserRepository->countByRole(CpgUser::ROLE_SUPER) <= 1
-        ) {
-            throw CannotDeleteLastSuperAdminException::lastOne();
-        }
+        // Sous le verrou d'administration (issues #551, #552) : la cible relue
+        // et verrouillée — disparue entre-temps, c'est un 404, pas un 204 et
+        // une ligne d'audit pour rien —, l'acteur relu, la garde comptée en
+        // base, puis l'écriture, validée au retour du verrou.
+        $this->administrationLock->whileAdministering($user, $actingUser, function (CpgUser $target): void {
+            // Garde anti-lockout (B9) : ne jamais laisser supprimer le dernier
+            // ROLE_SUPER capable de se connecter. La cible est exclue du
+            // décompte : c'est elle qui part.
+            if (\in_array(CpgUser::ROLE_SUPER, $target->getRoles(), true)
+                && 0 === $this->cpgUserRepository->countOtherSuperAdminsAbleToSignIn($target)
+            ) {
+                throw CannotDeleteLastSuperAdminException::lastOne();
+            }
 
-        $this->cpgUserRepository->remove($user);
-        // Journal de sécurité (D5) : l'entité est encore en main après le
-        // remove(), c'est elle qui nomme le compte supprimé.
+            $this->cpgUserRepository->remove($target);
+        });
+        // Journal de sécurité (D5), après le COMMIT : l'entité est encore en
+        // main après le remove(), c'est elle qui nomme le compte supprimé.
         $this->auditLogger->userDeleted($user);
     }
 

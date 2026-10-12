@@ -50,7 +50,8 @@ mid-migration.
 never `EntityManager::detach()`** (issue #548). Doctrine takes an instance it does not manage for new (`persist()` assumes `STATE_NEW` and reads nothing): a caller re-saving
 the detached instance re-inserted the deleted row, silently. The service remembers the instance in a
 `WeakMap` and its `prePersist` listener refuses it (`VanishedEntitySavedAgainException`, unmapped, a
-`critical` 500). Used today by the order scope lock's re-read and the technology row lock; the details, the
+`critical` 500). Used today by the order scope lock's re-read, the technology row lock and the account
+administration lock (#551, `.claude/rules/security-user.md`); the details, the
 rejected options and the accepted limits live in `.claude/rules/portfolio-contenus.md` (ordering section).
 
 **Every entity timestamp is stored with its offset** (issue #434): `#[ORM\Column(type:

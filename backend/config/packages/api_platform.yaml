@@ -130,6 +130,10 @@ api_platform:
         App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException: 409
         App\Security\User\Domain\Exception\CannotModifyOwnRolesException: 409
         App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException: 409
+        # L'acteur relu sous le verrou d'administration n'est plus ROLE_SUPER,
+        # ou n'existe plus (issue #551) : l'autorisation n'existe plus, comme
+        # le pare-feu le dira à sa requête suivante — un 403, pas un 409.
+        App\Security\User\Domain\Exception\ActingAccountNoLongerSuperAdminException: 403
         App\Security\User\Domain\Exception\EmailAlreadyUsedException: 409
         App\Security\User\Domain\Exception\AccountNotAwaitingActivationException: 409
         # Levée par SendAccountInvitationHandler (worker Messenger async) ;

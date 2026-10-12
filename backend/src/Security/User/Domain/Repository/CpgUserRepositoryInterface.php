@@ -51,11 +51,17 @@ interface CpgUserRepositoryInterface
     public function findAwaitingPasswordSetupInvitedBefore(DateTimeImmutable $threshold): array;
 
     /**
-     * Nombre d'utilisateurs possédant le rôle donné (rôles implicites inclus,
-     * cf. CpgUser::getRoles()). Utilisé par la garde anti-lockout du dernier
-     * ROLE_SUPER (cf. CpgUserAdministrator::delete).
+     * Nombre de comptes ROLE_SUPER **capables de se connecter** (mot de passe
+     * défini), `$except` exclu : la garde anti-lockout du dernier ROLE_SUPER
+     * (CpgUserAdministrator::delete(), CpgUserRoleAdministrator::setSuperAdmin()),
+     * appelée sous le verrou d'administration (issue #551). Compté **en
+     * base**, jamais sur un `findAll()` filtré en PHP : la carte d'identité
+     * tient l'acteur et la cible tels que la requête les a chargés, avant
+     * l'écriture concurrente que le verrou vient d'attendre. Un ROLE_SUPER
+     * encore en attente d'activation (mot de passe vide) ne compte pas : il ne
+     * peut pas se connecter, il ne garde pas le backoffice ouvert.
      */
-    public function countByRole(string $role): int;
+    public function countOtherSuperAdminsAbleToSignIn(CpgUser $except): int;
 
     public function save(CpgUser $user): void;
 

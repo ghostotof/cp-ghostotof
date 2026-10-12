@@ -19,7 +19,8 @@ use Throwable;
  * `55P03` renommé, puis l'opération. Trois adaptateurs le partageaient à sa
  * création — le périmètre d'ordre (#389), la ligne du compte (#435, #458) et
  * l'attribution des identifiants (#364) — qui en avaient chacun leur copie,
- * déjà divergente ; la ligne d'une technologie (#545) s'y est ajoutée.
+ * déjà divergente ; la ligne d'une technologie (#545) et l'administration des
+ * comptes (#551) s'y sont ajoutées.
  *
  * Patron **Execute Around** (la méthode qui encadre une opération reçue) : le
  * squelette est écrit une fois, et chaque adaptateur lui passe ce qui varie

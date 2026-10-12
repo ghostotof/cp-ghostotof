@@ -17,6 +17,7 @@ final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministrato
     public function __construct(
         private CpgUserRepositoryInterface $cpgUserRepository,
         private SecurityAuditLoggerInterface $auditLogger,
+        private AccountAdministrationLockInterface $administrationLock,
     ) {
     }
 
@@ -33,25 +34,38 @@ final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministrato
             throw CpgUserNotFoundException::forId($id);
         }
 
-        $isSuper = \in_array(CpgUser::ROLE_SUPER, $user->getRoles(), true);
+        // Sous le verrou d'administration (issues #551, #552) : la cible relue
+        // et verrouillée — disparue entre-temps, c'est un 404, pas un 204 et
+        // un `role-changed` pour rien —, l'acteur relu, l'état « déjà
+        // atteint » et la garde lus sur le compte relu, puis l'écriture,
+        // validée au retour du verrou.
+        $changed = $this->administrationLock->whileAdministering($user, $actingUser, function (CpgUser $target) use ($grant): bool {
+            $isSuper = \in_array(CpgUser::ROLE_SUPER, $target->getRoles(), true);
 
-        if ($grant === $isSuper) {
-            // Déjà dans l'état demandé : rien à faire (et la garde du dernier
-            // super-admin ne doit pas être consultée pour une cible non-super).
-            return;
+            if ($grant === $isSuper) {
+                // Déjà dans l'état demandé : rien à faire (et la garde du dernier
+                // super-admin ne doit pas être consultée pour une cible non-super).
+                return false;
+            }
+
+            // Garde anti-lockout (pendant de CpgUserAdministrator::delete) :
+            // jamais le dernier ROLE_SUPER capable de se connecter, la cible
+            // exclue du décompte puisque c'est elle qui perd le rôle.
+            if (!$grant && 0 === $this->cpgUserRepository->countOtherSuperAdminsAbleToSignIn($target)) {
+                throw CannotDemoteLastSuperAdminException::lastOne();
+            }
+
+            $target->setRoles($grant ? [CpgUser::ROLE_SUPER] : $this->rolesAfterDemotion($target));
+            $this->cpgUserRepository->save($target);
+
+            return true;
+        });
+
+        // Journal de sécurité (D5), après le COMMIT : seulement sur un
+        // changement effectif — l'état déjà atteint est sorti sans rien écrire.
+        if ($changed) {
+            $this->auditLogger->roleChanged($user, $grant);
         }
-
-        // Garde anti-lockout (pendant de CpgUserAdministrator::delete) : `<= 1`
-        // par prudence, jamais 0 ici puisque $user en fait partie.
-        if (!$grant && $this->cpgUserRepository->countByRole(CpgUser::ROLE_SUPER) <= 1) {
-            throw CannotDemoteLastSuperAdminException::lastOne();
-        }
-
-        $user->setRoles($grant ? [CpgUser::ROLE_SUPER] : $this->rolesAfterDemotion($user));
-        $this->cpgUserRepository->save($user);
-        // Journal de sécurité (D5) : seulement sur un changement effectif —
-        // l'état déjà atteint est sorti plus haut sans rien écrire.
-        $this->auditLogger->roleChanged($user, $grant);
     }
 
     /**

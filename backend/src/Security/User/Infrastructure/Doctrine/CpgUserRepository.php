@@ -109,18 +109,28 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
     }
 
     /**
-     * `roles` est une colonne JSON : plutôt qu'un `WHERE` portable
-     * hasardeux sur du JSON, on filtre en PHP. La table `cpg_user` n'est
-     * alimentée que par la commande CLI (aucune inscription publique), son
-     * volume reste négligeable — le coût du chargement complet est ici sans
-     * enjeu de performance.
+     * En SQL, sur la colonne `roles` (JSON, lue en `jsonb` pour l'opérateur de
+     * contenance `@>`) : jusqu'à #551, un `findAll()` filtré en PHP rendait les
+     * instances de la carte d'identité, donc l'acteur et la cible tels que la
+     * requête les avait chargés — un comptage périmé sous le verrou même. Le
+     * rôle est lié en paramètre JSON, jamais interpolé. Un mot de passe vide
+     * est celui d'un compte invité jamais activé (CpgUser::isAwaitingPasswordSetup()).
      */
-    public function countByRole(string $role): int
+    public function countOtherSuperAdminsAbleToSignIn(CpgUser $except): int
     {
-        return \count(array_filter(
-            $this->findAll(),
-            static fn (CpgUser $user): bool => \in_array($role, $user->getRoles(), true),
-        ));
+        $count = $this->getEntityManager()->getConnection()->fetchOne(
+            'SELECT COUNT(*) FROM cpg_user'
+            ." WHERE id <> :id AND CAST(roles AS jsonb) @> CAST(:role AS jsonb) AND password <> ''",
+            ['id' => $except->getId(), 'role' => json_encode([CpgUser::ROLE_SUPER], \JSON_THROW_ON_ERROR)],
+            ['id' => UuidType::NAME],
+        );
+
+        // Un COUNT(*) est un entier pour pdo_pgsql, une chaîne pour un pilote
+        // qui textualise ; la conversion ne dépend pas du pilote, et
+        // l'assertion ne sert qu'à l'analyse statique.
+        \assert(is_numeric($count));
+
+        return (int) $count;
     }
 
     public function save(CpgUser $user): void
