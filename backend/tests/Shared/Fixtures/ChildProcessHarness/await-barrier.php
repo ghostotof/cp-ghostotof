@@ -12,6 +12,7 @@ declare(strict_types=1);
  * protocole de la barrière.
  */
 
+use App\Tests\Support\ChildPhpProcess;
 use App\Tests\Support\ProcessBarrier;
 
 require \dirname(__DIR__, 4).'/vendor/autoload.php';
@@ -20,7 +21,7 @@ $arguments = \is_array($_SERVER['argv'] ?? null) ? array_values($_SERVER['argv']
 [, $barrierPath, $sessionPid] = $arguments + [null, null, null];
 if (!\is_string($barrierPath)) {
     fwrite(\STDERR, "Usage : php await-barrier.php <fichier-barrière> [<pid de session annoncé>]\n");
-    exit(2);
+    exit(ChildPhpProcess::SETUP_FAILED);
 }
 
 ProcessBarrier::awaitInChild($barrierPath, \is_string($sessionPid) ? (int) $sessionPid : null);

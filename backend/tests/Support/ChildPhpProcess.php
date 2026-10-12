@@ -24,6 +24,14 @@ final class ChildPhpProcess
     public const string DIRECTIVE = 'zend.exception_ignore_args';
 
     /**
+     * Code de sortie d'un fils qui n'a pas pu se mettre en place (arguments,
+     * services, barrière) : rien n'a été fait. Les fixtures des tests de
+     * concurrence le rendent toutes, le test le distingue ainsi d'un échec de
+     * l'opération elle-même.
+     */
+    public const int SETUP_FAILED = 2;
+
+    /**
      * @return non-empty-list<string> `php -d zend.exception_ignore_args=<valeur du parent>` suivi des arguments
      */
     public static function command(string ...$arguments): array
@@ -46,14 +54,18 @@ final class ChildPhpProcess
     }
 
     /**
-     * Les variables que phpunit.dist.xml force par `<server force="true">`
-     * (APP_ENV, clés d'API factices…) ne vivent que dans `$_SERVER` : un
-     * processus fils ne les hérite pas. Sans elles, Dotenv chargerait le .env
-     * de dev, et une vraie ANTHROPIC_API_KEY exportée dans le shell
-     * parviendrait au fils à la place de la valeur factice, ce qui
-     * contournerait le filet de phpunit.dist.xml. Les transmettre
-     * explicitement donne au fils l'environnement exact du test ; Process les
-     * ajoute à celles qu'il hérite déjà, et elles l'emportent.
+     * L'environnement du test, tel que `$_SERVER` le porte : les variables
+     * que phpunit.dist.xml force par `<server force="true">` (APP_ENV, clés
+     * d'API factices…) et celles que Dotenv a chargées. Une vraie
+     * ANTHROPIC_API_KEY exportée dans le shell ne doit pas parvenir au fils à
+     * la place de la valeur factice : Process ajoute ces variables à celles
+     * qu'il hérite déjà, et elles l'emportent.
+     *
+     * Process hérite aussi, de lui-même, de `$_ENV`, où les valeurs forcées
+     * figurent également sous PHPUnit (mesuré le 2026-10-12) : la copie de
+     * `$_SERVER` est ce qui ne dépend pas de ce détail, et c'est elle qui fait
+     * passer une valeur que le test ne pose que dans `$_SERVER`, ou qui y
+     * diffère de `$_ENV`.
      *
      * Écrit ici seul (issue #403) : une variable à ne pas transmettre, par
      * exemple, s'exclurait ici pour tous les fils à la fois.

@@ -148,15 +148,21 @@ once, at the cost of dev CLI traces: not done, an open question of #420.
 A test that puts real processes in a race (`RateLimiterConcurrencyTest`, `ContributionOrderConcurrencyTest`,
 `SendAccountInvitationConcurrencyTest`, `PasswordSetupActivationConcurrencyTest`, `ReinviteConcurrencyTest`)
 goes through **one harness, written once**. `tests/Support/ChildPhpProcess::inTestEnvironment()` builds the
-child's `Process`: its command line (above) and the test's `$_SERVER`, where `phpunit.dist.xml`'s
-`<server force="true">` values live (a real `ANTHROPIC_API_KEY` exported in the shell would otherwise reach
-the child) — a variable not to pass on is excluded there, for every child at once.
+child's `Process`: its command line (above) and a copy of the test's `$_SERVER`, where `phpunit.dist.xml`'s
+`<server force="true">` values live (a real `ANTHROPIC_API_KEY` exported in the shell must not reach the
+child) — a variable not to pass on is excluded there, for every child at once. Process also inherits `$_ENV`
+on its own, which holds the forced values too under PHPUnit (measured 2026-10-12): the copy is what does not
+depend on that. `ChildPhpProcess::SETUP_FAILED` (2) is the exit code of a child that could not set itself up.
 `tests/Support/ProcessBarrier` is the file barrier, both sides: the test `hold()`s it (exclusive `flock`),
 the child calls `awaitInChild($path, ?$sessionPid)` once everything slow is done (writes `ready [<pid>]`,
-then blocks on a shared lock), the test waits with `waitUntilReady()` or `sessionPidOf()` (the PostgreSQL
-session it then watches in `pg_stat_activity`) and `release()`s. Children reach private services through
-`tests/Support/TestServiceLocator` (`limiter.<name>` included; it replaced `RateLimiterFactoryLocator`).
-`tests/Shared/ChildProcessHarnessTest.php` exercises the protocol on real processes and fails on any
-`flock()` outside `ProcessBarrier` or `foreach ($_SERVER` outside `ChildPhpProcess` in `tests/`. Not shared
-yet: the one-shot `preFlush`/`postFlush` listener that releases the child and waits until it is done or
-blocked on a lock, copied in three tests.
+then blocks on a shared lock), the test waits with `waitUntilReady()` — which then sleeps
+`SETTLE_MICROSECONDS` so that every child has reached its `flock()` — or `sessionPidOf()` (the PostgreSQL
+session it then watches in `pg_stat_activity`), and `release()`s; an unreferenced barrier releases itself.
+Children reach private services through `tests/Support/TestServiceLocator` (`limiter.<name>` included; it
+replaced `RateLimiterFactoryLocator`). `tests/Shared/ChildProcessHarnessTest.php` exercises the protocol on
+real processes and fails, in `tests/`, on any `flock()` outside `ProcessBarrier`, any `foreach ($_SERVER`
+outside `ChildPhpProcess`, and any `new Process(ChildPhpProcess::command(` outside its `OWN_ENVIRONMENT`
+allow-list (the Dotenv test that isolates a pod's environment on purpose). Not seen: `proc_open()`
+(`CreateCpgUserCommandTest`'s pseudo-terminal child gets the inherited environment only). Not shared yet:
+the one-shot `preFlush`/`postFlush` listener that releases the child and waits until it is done or blocked
+on a lock, copied in three tests (issue #510).

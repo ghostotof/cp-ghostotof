@@ -26,17 +26,26 @@ use Symfony\Component\Process\Process;
  * le test peut ainsi le supprimer dès qu'il relâche, le descripteur du fils
  * reste valable.
  *
- * Reste un intervalle que la barrière ne ferme pas : entre son « ready » et
- * son `flock()`, un fils n'attend pas encore. Un test qui libère plusieurs fils
- * à la fois le couvre par un court délai avant {@see self::release()}.
+ * Reste un intervalle que le fichier seul ne ferme pas : entre son « ready »
+ * et son `flock()`, un fils n'attend pas encore. {@see self::waitUntilReady()}
+ * le couvre par un court délai une fois tous les fils annoncés
+ * ({@see self::SETTLE_MICROSECONDS}) : sans lui, des fils lâchés « ensemble »
+ * pourraient passer l'un après l'autre, et un test de course resterait vert
+ * sans rien prouver. Le seul effet d'un délai trop court est un test moins
+ * sensible, jamais un faux rouge.
+ *
+ * Une barrière que plus rien ne référence se relâche d'elle-même
+ * ({@see self::__destruct()}) : un test qui échoue avant son point
+ * d'entrelacement ne laisse ni fils bloqué jusqu'à son délai, ni fichier dans
+ * le répertoire temporaire.
  */
 final class ProcessBarrier
 {
     /** Ce que le fils écrit sur sa sortie quand il est prêt, avant de bloquer. */
     public const string READY = 'ready';
 
-    /** Code de sortie d'un fils qui n'a pas pu se mettre en place : rien n'a été fait. */
-    public const int CHILD_SETUP_FAILED = 2;
+    /** Laisse à chaque fils, après son « ready », le temps d'atteindre son `flock()`. */
+    public const int SETTLE_MICROSECONDS = 100_000;
 
     /** Intervalle entre deux lectures de la sortie d'un fils. */
     private const int POLL_MICROSECONDS = 10_000;
@@ -46,8 +55,13 @@ final class ProcessBarrier
      */
     private function __construct(
         private readonly string $path,
-        private $handle,
+        private mixed $handle,
     ) {
+    }
+
+    public function __destruct()
+    {
+        $this->release();
     }
 
     /**
@@ -59,10 +73,19 @@ final class ProcessBarrier
         $path = tempnam(sys_get_temp_dir(), $prefix);
         Assert::assertIsString($path, 'Fichier-barrière impossible à créer.');
         $handle = fopen($path, 'r');
-        Assert::assertNotFalse($handle, 'Fichier-barrière illisible : '.$path);
-        Assert::assertTrue(flock($handle, \LOCK_EX), "Impossible de tenir la barrière : flock(LOCK_EX) a échoué sur {$path}");
+        if (false === $handle) {
+            unlink($path);
+            Assert::fail('Fichier-barrière illisible : '.$path);
+        }
+        // Remis au destructeur dès maintenant : un flock() refusé ne laisse
+        // ni descripteur ouvert ni fichier.
+        $barrier = new self($path, $handle);
+        if (!flock($handle, \LOCK_EX)) {
+            $barrier->release();
+            Assert::fail("Impossible de tenir la barrière : flock(LOCK_EX) a échoué sur {$path}");
+        }
 
-        return new self($path, $handle);
+        return $barrier;
     }
 
     /** Le chemin à passer au fils, qui le donnera à {@see self::awaitInChild()}. */
@@ -72,7 +95,9 @@ final class ProcessBarrier
     }
 
     /**
-     * Attend que chaque fils ait annoncé « ready ». Un fils arrêté avant fait
+     * Attend que chaque fils ait annoncé « ready », puis laisse à chacun le
+     * temps d'atteindre son `flock()` ({@see self::SETTLE_MICROSECONDS}) : au
+     * retour, les relâcher les fait partir ensemble. Un fils arrêté avant fait
      * échouer le test aussitôt, avec sa sortie d'erreur ; le délai est commun
      * à tous les fils.
      */
@@ -83,6 +108,7 @@ final class ProcessBarrier
         foreach ($children as $child) {
             $this->announcementOf($child, $deadline, $timeoutSeconds);
         }
+        usleep(self::SETTLE_MICROSECONDS);
     }
 
     /**
@@ -124,7 +150,7 @@ final class ProcessBarrier
      * Côté fils : annonce « ready » (avec le pid de sa session PostgreSQL s'il
      * est donné) et bloque jusqu'à ce que le test relâche la barrière.
      *
-     * Un échec arrête le fils avec {@see self::CHILD_SETUP_FAILED} : un fils
+     * Un échec arrête le fils avec {@see ChildPhpProcess::SETUP_FAILED} : un fils
      * qui passerait sans synchronisation (système de fichiers sans `flock`)
      * pourrait rendre le test vert sans avoir rien mis en concurrence.
      */
@@ -171,6 +197,6 @@ final class ProcessBarrier
     {
         fwrite(\STDERR, $reason."\n");
 
-        exit(self::CHILD_SETUP_FAILED);
+        exit(ChildPhpProcess::SETUP_FAILED);
     }
 }

@@ -15,12 +15,13 @@ declare(strict_types=1);
  *  2. attend la barrière (ProcessBarrier::awaitInChild()) en annonçant le pid
  *     de cette connexion ;
  *  3. exécute le handler sur le message ;
- *  4. code de sortie 0 si le handler a abouti, 2 si le fils n'a pas pu se
+ *  4. code de sortie 0 si le handler a abouti, ChildPhpProcess::SETUP_FAILED si le fils n'a pas pu se
  *     mettre en place.
  */
 
 use App\Security\User\Application\Message\SendAccountInvitationMessage;
 use App\Security\User\Infrastructure\Messenger\SendAccountInvitationHandler;
+use App\Tests\Support\ChildPhpProcess;
 use App\Tests\Support\ProcessBarrier;
 use App\Tests\Support\TestServiceLocator;
 use Doctrine\ORM\EntityManagerInterface;
@@ -31,20 +32,20 @@ $arguments = \is_array($_SERVER['argv'] ?? null) ? array_values($_SERVER['argv']
 [, $barrierPath, $userId, $generation] = $arguments + [null, null, null, null];
 if (!\is_string($barrierPath) || !\is_string($userId) || !\is_string($generation) || !ctype_digit($generation)) {
     fwrite(\STDERR, "Usage : php run-invitation-handler.php <fichier-barrière> <identifiant du compte> <génération>\n");
-    exit(2);
+    exit(ChildPhpProcess::SETUP_FAILED);
 }
 
 $handler = TestServiceLocator::locate(SendAccountInvitationHandler::class);
 $entityManager = TestServiceLocator::locate(EntityManagerInterface::class);
 if (!$handler instanceof SendAccountInvitationHandler || !$entityManager instanceof EntityManagerInterface) {
     fwrite(\STDERR, "Services introuvables dans le conteneur de test.\n");
-    exit(2);
+    exit(ChildPhpProcess::SETUP_FAILED);
 }
 
 $pid = $entityManager->getConnection()->fetchOne('SELECT pg_backend_pid()');
 if (!\is_int($pid)) {
     fwrite(\STDERR, "pg_backend_pid() n'a pas rendu d'entier.\n");
-    exit(2);
+    exit(ChildPhpProcess::SETUP_FAILED);
 }
 
 ProcessBarrier::awaitInChild($barrierPath, $pid);

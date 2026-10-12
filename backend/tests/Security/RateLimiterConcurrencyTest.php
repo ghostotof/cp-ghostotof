@@ -28,16 +28,12 @@ use Throwable;
  * consommateurs attendent. Il lance donc SIMULTANEOUS_CONSUMERS processus
  * (Fixtures/consume-rate-limiter.php), qui démarrent chacun le kernel, puis
  * se bloquent sur la barrière que le test tient (ProcessBarrier, dont le
- * docblock dit pourquoi un fichier plutôt qu'une horloge). Une fois tous
- * prêts, le test relâche la barrière : ils consomment au même instant. Pour
- * la même raison, chaque fils ouvre ses connexions PostgreSQL avant la
- * barrière.
- *
- * Ce qui peut encore affaiblir la course : un fils écrit « ready » juste avant
- * de se bloquer sur la barrière, et pourrait l'atteindre après sa libération.
- * RELEASE_DELAY_MICROSECONDS couvre cet intervalle. Le seul effet possible est
- * un test moins sensible, jamais un faux rouge : avec le verrou, l'ordre
- * d'arrivée ne change pas le décompte.
+ * docblock dit pourquoi un fichier plutôt qu'une horloge, et comment elle
+ * couvre l'intervalle entre le « ready » d'un fils et son blocage). Une fois
+ * tous prêts, le test relâche la barrière : ils consomment au même instant.
+ * Chaque fils ouvre ses connexions PostgreSQL avant la barrière : leur durée,
+ * variable d'un fils à l'autre, étalerait sinon les consommations. Avec le
+ * verrou, l'ordre d'arrivée ne change pas le décompte.
  *
  * Rouge vérifié le 2026-10-10 avec `lock_factory: null` sur chaque limiteur
  * exercé : le décompte perd des unités à chaque passage. Revérifié le
@@ -54,9 +50,6 @@ final class RateLimiterConcurrencyTest extends KernelTestCase
 
     /** Borne de chaque attente : un verrou jamais relâché fait échouer le test au lieu de le suspendre. */
     private const int TIMEOUT_SECONDS = 60;
-
-    /** Laisse à chaque fils, après son « ready », le temps d'atteindre son flock(). */
-    private const int RELEASE_DELAY_MICROSECONDS = 100_000;
 
     private const string CONSUMER_SCRIPT = __DIR__.'/Fixtures/consume-rate-limiter.php';
 
@@ -100,7 +93,6 @@ final class RateLimiterConcurrencyTest extends KernelTestCase
                 $consumers[] = $this->startConsumer($limiterName, $key, $barrier->path());
             }
             $barrier->waitUntilReady(self::TIMEOUT_SECONDS, ...$consumers);
-            usleep(self::RELEASE_DELAY_MICROSECONDS);
             $barrier->release();
 
             $remainingSeen = $this->collectRemainingTokensSeen($consumers);

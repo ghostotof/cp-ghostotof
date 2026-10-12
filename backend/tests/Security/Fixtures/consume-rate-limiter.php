@@ -20,13 +20,14 @@ declare(strict_types=1);
  *     instant ;
  *  3. consume(1) et écrit le nombre d'unités restantes ;
  *  4. code de sortie 0 si l'unité a été accordée, 1 si elle a été refusée,
- *     2 si le fils n'a pas pu se mettre en place (rien n'a été consommé).
+ *     ChildPhpProcess::SETUP_FAILED si le fils n'a pas pu se mettre en place (rien n'a été consommé).
  *
  * Un processus séparé par consommateur est indispensable : un test qui
  * tiendrait lui-même le verrou du limiteur attendrait sans fin ses propres
  * fils (attente bloquante sur l'advisory lock).
  */
 
+use App\Tests\Support\ChildPhpProcess;
 use App\Tests\Support\ProcessBarrier;
 use App\Tests\Support\TestServiceLocator;
 use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
@@ -40,13 +41,13 @@ $arguments = \is_array($_SERVER['argv'] ?? null) ? array_values($_SERVER['argv']
 [, $limiterName, $key, $barrierPath] = $arguments + [null, null, null, null];
 if (!\is_string($limiterName) || !\is_string($key) || !\is_string($barrierPath)) {
     fwrite(\STDERR, "Usage : php consume-rate-limiter.php <limiteur> <clé> <fichier-barrière>\n");
-    exit(2);
+    exit(ChildPhpProcess::SETUP_FAILED);
 }
 
 $factory = TestServiceLocator::locate('limiter.'.$limiterName);
 if (!$factory instanceof RateLimiterFactoryInterface) {
     fwrite(\STDERR, \sprintf("limiter.%s n'est pas une fabrique de limiteur.\n", $limiterName));
-    exit(2);
+    exit(ChildPhpProcess::SETUP_FAILED);
 }
 $limiter = $factory->create($key);
 

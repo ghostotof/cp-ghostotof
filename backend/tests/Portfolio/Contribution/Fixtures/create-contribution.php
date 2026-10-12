@@ -17,12 +17,13 @@ declare(strict_types=1);
  *     relâche au point d'entrelacement voulu ;
  *  3. crée la contribution (dans le groupe s'il est donné, en fin de
  *     périmètre sinon) et écrit sa position ;
- *  4. code de sortie 0 si la création a réussi, 2 si le fils n'a pas pu se
+ *  4. code de sortie 0 si la création a réussi, ChildPhpProcess::SETUP_FAILED si le fils n'a pas pu se
  *     mettre en place.
  */
 
 use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Tests\Support\ChildPhpProcess;
 use App\Tests\Support\ProcessBarrier;
 use App\Tests\Support\TestServiceLocator;
 use Doctrine\ORM\EntityManagerInterface;
@@ -34,14 +35,14 @@ $arguments = \is_array($_SERVER['argv'] ?? null) ? array_values($_SERVER['argv']
 [, $barrierPath, $locale, $group] = $arguments + [null, null, null, null];
 if (!\is_string($barrierPath) || !\is_string($locale)) {
     fwrite(\STDERR, "Usage : php create-contribution.php <fichier-barrière> <locale> [<groupe>]\n");
-    exit(2);
+    exit(ChildPhpProcess::SETUP_FAILED);
 }
 
 $administrator = TestServiceLocator::locate(ContributionAdministratorInterface::class);
 $entityManager = TestServiceLocator::locate(EntityManagerInterface::class);
 if (!$administrator instanceof ContributionAdministratorInterface || !$entityManager instanceof EntityManagerInterface) {
     fwrite(\STDERR, "Services introuvables dans le conteneur de test.\n");
-    exit(2);
+    exit(ChildPhpProcess::SETUP_FAILED);
 }
 
 // Ouvre la connexion avant la barrière : la poignée de main ne doit pas
@@ -50,7 +51,7 @@ if (!$administrator instanceof ContributionAdministratorInterface || !$entityMan
 $pid = $entityManager->getConnection()->fetchOne('SELECT pg_backend_pid()');
 if (!\is_int($pid)) {
     fwrite(\STDERR, "pg_backend_pid() n'a pas rendu d'entier.\n");
-    exit(2);
+    exit(ChildPhpProcess::SETUP_FAILED);
 }
 
 ProcessBarrier::awaitInChild($barrierPath, $pid);
