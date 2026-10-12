@@ -177,7 +177,15 @@ refused**: the deployment of #468, an `APP_SECRET` rotation or a new context dro
 during the rollout old and new pods keep refusing and overwriting each other's values, so limiter counters
 restart at each alternation. Say so in the release notes. A refused row is never deleted:
 `Version20261011140000` empties `cache_items` once, and after an `APP_SECRET` rotation
-`messenger:stop-workers` (its Job, `k8s/base/messenger-stop-workers-job.yaml`) rewrites the restart signal, which never expires. Accepted limit: the
+`app:messenger:stop-workers` (its Job, `k8s/base/messenger-stop-workers-job.yaml`) rewrites the restart signal, which never expires,
+**and reads it back by value** (issue #528): Symfony's `messenger:stop-workers` ignores `save()`'s result and answered `[OK]`, exit 0,
+when PostgreSQL refused the write. Ours (`Shared/Infrastructure/Messenger/CacheWorkerRestartSignal`, behind
+`Shared/Application/WorkerRestartSignalInterface`) writes the same signal — pool `cache.messenger.restart_workers_signal`, key
+`StopWorkerOnRestartSignalListener::RESTART_REQUESTED_TIMESTAMP_KEY`, a float timestamp — and throws
+`WorkerRestartSignalNotSavedException` (exit 1) when `save()` is false or the value read back is not the one written (an earlier
+signal satisfies `isHit()`). Symfony's command stays registered; the Job and the runbook use ours. `WorkerRestartSignalReachesTheWorkerTest`
+runs a real `Worker` with the container's listener on what ours writes (red when it writes to `cache.app`, measured), and pins Symfony's
+`[OK]` under a read-only session: if that one turns red, Symfony fixed it. Accepted limit: the
 MAC covers neither the row's key nor its pool, so a signed value can be copied across keys and pools or
 replayed: a limiter counter rolled back, or an array on the restart-signal row that stops the worker on
 every loop. That is a denial of service by someone who can already rewrite every row, never code

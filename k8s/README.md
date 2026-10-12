@@ -813,11 +813,18 @@ elle reste refusée et part avec la purge des 30 jours). Ordre, en période calm
 2. Publier la nouvelle version dans Secret Manager, puis
    `kubectl annotate externalsecret backend-secrets -n $NS force-sync=$(date +%s) --overwrite`.
 3. Redémarrer ensemble : `kubectl rollout restart deployment/backend deployment/worker -n $NS`.
-4. Relancer `messenger:stop-workers` par son Job, `k8s/base/messenger-stop-workers-job.yaml`
+4. Relancer l'arrêt des workers par son Job, `k8s/base/messenger-stop-workers-job.yaml`
    (§ « File d'échec Messenger » ci-dessous) : le cache en base (`cache_items`)
    est signé sous une clé dérivée du secret (issue #468), et la ligne du signal de redémarrage,
    sans expiration, serait sinon refusée à chaque tour du worker, un `warning` par tour. La
-   commande la réécrit sous la nouvelle clé. Le reste du cache se perd et se reconstruit : les
+   commande, `app:messenger:stop-workers`, la réécrit sous la nouvelle clé **et la relit** : le Job
+   échoue si la valeur écrite ne se relit pas (issue #528 ; celle de Symfony,
+   `messenger:stop-workers`, répondait `[OK]` même quand PostgreSQL refusait l'écriture). Un Job
+   en échec ici : lire ses journaux (canal `cache`, « Failed to save key » ; base joignable en
+   écriture depuis le pod ?), corriger, relancer — sans danger. Tant qu'il n'est pas vert, rien ne
+   prouve que les workers s'arrêteront. Vert, il prouve l'écriture sous la clé du Job (les Secrets
+   de l'étape 2) ; l'arrêt lui-même se voit au compteur `RESTARTS` du pod `worker`
+   (`kubectl -n $NS get pods -l app.kubernetes.io/name=worker`), qui augmente d'un. Le reste du cache se perd et se reconstruit : les
    compteurs des limiteurs repartent de zéro, y compris à chaque alternance d'anciens et de
    nouveaux pods pendant le redémarrage.
 
@@ -860,7 +867,7 @@ Quatre opérations, deux voies (issue #521, règle de #520 dans `.claude/rules/d
 | `messenger:failed:show <id> -vv` | aucun | aucune | **le message lui-même** : nom, adresse et texte d'un visiteur ; `userId` d'une invitation ; corps brut d'une enveloppe non décodée | `kubectl exec` humain, terminal seulement |
 | `messenger:failed:retry <id>` | le handler s'exécute (un e-mail part) | aucune (journaux du handler) | comme `show` sans `-vv` | Job |
 | `messenger:failed:remove <id>` | suppression définitive | aucune | comme `show` sans `-vv` | Job |
-| `messenger:stop-workers` | réécrit le signal de redémarrage en cache | aucune | rien | Job |
+| `app:messenger:stop-workers` (#528, à la place de `messenger:stop-workers`) | réécrit le signal de redémarrage en cache, puis le relit (échec si la valeur écrite ne se relit pas) | aucune | rien | Job |
 
 Mesuré en dev (base de test, données fictives) : sans `-vv`, ni le nom, ni l'adresse, ni le texte
 d'un message de contact, ni le `userId` d'une invitation n'apparaissent ; avec `-vv`, Messenger
@@ -903,7 +910,10 @@ kubectl -n "${NS:?preprod ou prod}" exec deploy/backend -c php-fpm -- \
   release qui sert ; la commande y tourne à côté de php-fpm, sans rien écrire en base.
 
 Pour rejouer, supprimer ou relancer le signal d'arrêt, un Job, par `tools/run-job.sh` (bash ≥ 4,
-jq, envsubst), depuis la racine du dépôt. L'Id est celui de la liste **du même namespace** — chaque
+jq, envsubst), depuis la racine du dépôt — **un checkout de la release qui tourne**
+(`git switch --detach vX.Y.Z`, la version de l'image ci-dessous) : le manifeste lance une commande
+de cette image, et `app:messenger:stop-workers` (#528) n'existe pas dans une image plus ancienne
+(« Command "app:messenger:stop-workers" is not defined », exit 1). L'Id est celui de la liste **du même namespace** — chaque
 base a sa propre séquence, l'Id 42 de la préprod n'est pas celui de la prod —, **un seul par Job**,
 et le Job refuse en 64 tout ce qui n'est pas un entier (`--all` lu comme une option viderait la
 table) :
@@ -917,7 +927,8 @@ IMAGE="$(kubectl -n "$NS" get deploy backend -o jsonpath='{.spec.template.spec.c
 tools/run-job.sh "$NS" k8s/base/messenger-failed-retry-job.yaml "$IMAGE" 300 FAILED_MESSAGE_ID=<id>
 # Supprimer définitivement.
 tools/run-job.sh "$NS" k8s/base/messenger-failed-remove-job.yaml "$IMAGE" 300 FAILED_MESSAGE_ID=<id>
-# Arrêter les workers (Kubernetes les relance), étape 4 de la rotation d'APP_SECRET.
+# Arrêter les workers (Kubernetes les relance), étape 4 de la rotation d'APP_SECRET. Le Job lance
+# app:messenger:stop-workers, qui relit le signal écrit : vert, il est enregistré (#528).
 tools/run-job.sh "$NS" k8s/base/messenger-stop-workers-job.yaml "$IMAGE" 300
 ```
 

@@ -15,8 +15,9 @@ use Symfony\Component\Yaml\Yaml;
  * déclaré, lancé par tools/run-job.sh (règle de #520,
  * `.claude/rules/deploiement.md`) :
  *
- *  - `messenger:stop-workers` réécrit le signal de redémarrage en cache, sous
- *    la clé du secret courant (étape 4 de la rotation d'`APP_SECRET`) ;
+ *  - `app:messenger:stop-workers` réécrit le signal de redémarrage en cache,
+ *    sous la clé du secret courant (étape 4 de la rotation d'`APP_SECRET`), et
+ *    vérifie qu'il se relit (issue #528) ;
  *  - `messenger:failed:retry <id>` rejoue un message, donc envoie un e-mail ;
  *  - `messenger:failed:remove <id>` le supprime de la table.
  *
@@ -208,10 +209,16 @@ final class MessengerMaintenanceJobsManifestTest extends TestCase
         self::assertStringNotContainsString($manifest, (string) file_get_contents($this->k8sBase().'/kustomization.yaml'));
     }
 
-    public function testStopWorkersRewritesTheRestartSignal(): void
+    /**
+     * La nôtre, pas `messenger:stop-workers` de Symfony (issue #528) : celle-ci
+     * sort en 0 même quand la base refuse l'écriture, et le Job serait vert
+     * pour rien. WorkerRestartSignalReachesTheWorkerTest prouve que le worker
+     * s'arrête sur ce que la nôtre écrit.
+     */
+    public function testStopWorkersRewritesTheRestartSignalAndChecksIt(): void
     {
         self::assertSame(
-            ['php', 'bin/console', 'messenger:stop-workers', '--no-interaction'],
+            ['php', 'bin/console', 'app:messenger:stop-workers', '--no-interaction'],
             $this->command(self::STOP_WORKERS),
         );
     }
