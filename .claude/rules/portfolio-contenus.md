@@ -61,7 +61,7 @@ paths:
     bypasses it. **On the application path the refusal comes out as `TranslationGroupHasSeveralPositionsException`**
     (`refusedAtCommit()`, the database's message in its own, previous = the `DriverException`), a
     `critical` 500: `PostgresAdvisoryOrderScopeLock` opens and closes its transaction by hand — through
-    the skeleton it shares with the two account locks since #512, `Shared/Infrastructure/Lock/PostgresLockedTransaction`,
+    the skeleton it shares with the two account locks since #512 (and the technology row lock since #545), `Shared/Infrastructure/Lock/PostgresLockedTransaction`,
     which also bounds the wait of a session without `lock_timeout` (the console, `app:*:seed`, waited
     forever before) — and translates `23T90` at `commit()` (its `onCommitRefused`).
     **It refuses to run inside a transaction already open** (issue #526), another `withLock()` included: there
@@ -70,7 +70,7 @@ paths:
     `critical` 500), comes before any write; no caller nests today (the `Administrator`s, the seeds, the
     migrations, which write in SQL, the whole suite), so the rule holds by construction instead of relying on
     the next caller's memory. Since #532 the check lives in the shared skeleton (`run()`'s required
-    `onNested`), common to the two account locks, each naming its own refusal. A future operation spanning
+    `onNested`), common to every lock of the skeleton, each naming its own refusal. A future operation spanning
     two scopes takes one lock, or an adapter that owns the outer COMMIT — never a nested `withLock()`. DBAL's count is the judge: a transaction opened in raw
     SQL (`executeStatement('BEGIN')`) is not seen, and none may be opened that way around an `Administrator`. **Never go back to `Connection::transactional()`** there: when
     `commit()` fails, DBAL has already brought its nesting level to 0, and `transactional()`'s fallback
@@ -244,6 +244,41 @@ paths:
   `Length`, which is how the NUL and the non-breaking space got through; `InvalidTechnologyNameException` is
   unmapped on purpose, like `InvalidExperienceYearsException`. No `CHECK` in the database, unlike `years`: an untrimmed name is a
   duplicate on the public page, not a 500, and no write path reaches SQL without the Value Object. `relatedTechnologyName` is a free label, not trimmed.
+
+  **A technology's `PUT` and `DELETE` run under its row lock** (issue #545). The defect was the one #402 and
+  #499 fixed for ordered content: the provider loads the technology before the processor, `find()` hands back
+  that identity-map instance, and a deletion committed in between left the `UPDATE` or `DELETE` touching no
+  row — Doctrine counts affected rows only for a versioned entity —, so the `PUT` answered **200** on a
+  vanished technology and the loser of two simultaneous `DELETE`s **204**. `ExperienceTechnologyAdministrator`'s
+  `update()` and `delete()` now wrap their **whole body** in `Application/ExperienceTechnologyLockInterface::whileLocked($id, …)`;
+  the adapter, `Infrastructure/Doctrine/PostgresExperienceTechnologyRowLock`, runs it on the shared skeleton
+  (`Shared/Infrastructure/Lock/PostgresLockedTransaction`, like the order scope lock and the two account
+  locks): `SELECT 1 … FOR UPDATE` on the row, then `refresh()` of the managed instance, handed to the
+  operation. Row gone: the stale instance is detached and the technology is not found (**404**, mapping
+  unchanged; the admin frontend already reads it as `not-found`). So a deletion runs wholly before the write or
+  wholly after it. Not `find($id, LockMode::PESSIMISTIC_WRITE)`: on an instance already managed it is a
+  `refresh()` with `FOR UPDATE`, which hydrates nothing when the row has gone and returns the stale instance —
+  existence must be read explicitly. A **row** lock, not the order scope lock: nothing is placed (no position,
+  no translation group), only the written row is held — two technologies never wait for each other — and,
+  unlike an advisory lock, PostgreSQL enforces it on every `UPDATE`/`DELETE` of the row, so a deletion in SQL
+  waits too. `create()` (`ExperienceTechnologyRegistrar`) stays outside: nothing can vanish under it, and its
+  race is the unique index on `name`. The name check of `update()` runs under the lock but only holds that row:
+  the unique index stays the last net, its violation still converted to 409 (the failed `flush()` closes the
+  EntityManager, as before). Its wait is bounded like the other locks of the skeleton (`lock_timeout=5s` under
+  FPM, the skeleton's fallback elsewhere); past it, `ExperienceTechnologyLockTimeoutException` (unmapped, a
+  `critical` 500); inside a transaction already open, `ExperienceTechnologyLockInsideTransactionException`
+  before anything is locked. **A refused COMMIT**: no `onCommitRefused` is passed — the table has no deferred
+  constraint (the unique name and the `years` `CHECK` are immediate and refuse at the `flush()`), so only a
+  session lost at that moment can refuse it; the `DriverException` surfaces as is and the EntityManager stays
+  open, as under the account locks (generalising the close to every lock of the skeleton is #547). Cost per
+  `PUT`/`DELETE`: the transaction, the lock-bound `set_config`, the `FOR UPDATE` and the `refresh()`, a few
+  sub-millisecond round trips. Guards: `ExperienceTechnologyWritesUnderRowLockTest` (a technology loaded as the
+  provider does, then deleted in SQL: `update()` and `delete()` say not found; a probe session holds the row,
+  and each write must fail on the lock's named timeout — without the lock, the `flush()` waited on the row too
+  but failed as a bare `DriverException`, having decided on the provider's instance) and
+  `PostgresExperienceTechnologyRowLockTest` (re-read, not found and detached, wait bound, named timeout,
+  nesting refused). No two-process test (decided for #545): the probe already proves the write waits for the
+  row before reading it.
 
   `Contribution` is the odd one out and deliberately so: it carries a long `body` (the argument, not
   just a link to it) alongside `title`/`project`/`reference`/`url`/`summary`. That text is **plain

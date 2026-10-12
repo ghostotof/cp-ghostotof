@@ -21,10 +21,10 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Throwable;
 
 /**
- * Le squelette commun aux trois verrous PostgreSQL (issue #512), sur la base
+ * Le squelette commun aux verrous PostgreSQL (issue #512), sur la base
  * réelle. Ce que chaque verrou garantit en plus — la sérialisation de deux
  * processus — reste couvert par ses propres tests et par les tests de
- * concurrence (#364, #389, #435, #458).
+ * concurrence (#364, #389, #435, #458 ; #545 par une sonde).
  *
  * Le verrou pris ici est un advisory lock de transaction quelconque : seule
  * compte la forme du squelette autour de lui.
@@ -356,7 +356,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
 
     /**
      * Issue #532 : le squelette refuse de s'ouvrir dans une transaction déjà
-     * ouverte, pour les trois verrous à la fois. Imbriqué, son COMMIT ne
+     * ouverte, pour tous ses verrous à la fois. Imbriqué, son COMMIT ne
      * serait qu'un `RELEASE SAVEPOINT` : le verrou tiendrait jusqu'au COMMIT
      * de l'appelant, et ce que l'adaptateur fait « après la validation »
      * (publier une invitation, envoyer un lien) partirait avant elle. Le

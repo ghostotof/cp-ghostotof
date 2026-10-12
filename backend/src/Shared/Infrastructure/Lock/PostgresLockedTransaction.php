@@ -14,9 +14,10 @@ use Throwable;
 /**
  * Le squelette commun des verrous PostgreSQL de l'application (issue #512) :
  * une transaction ouverte et close à la main, l'attente du verrou bornée, son
- * `55P03` renommé, puis l'opération. Trois adaptateurs le partagent — le
- * périmètre d'ordre (#389), la ligne du compte (#435, #458) et l'attribution
- * des identifiants (#364) — qui en avaient chacun leur copie, déjà divergente.
+ * `55P03` renommé, puis l'opération. Trois adaptateurs le partageaient à sa
+ * création — le périmètre d'ordre (#389), la ligne du compte (#435, #458) et
+ * l'attribution des identifiants (#364) — qui en avaient chacun leur copie,
+ * déjà divergente ; la ligne d'une technologie (#545) s'y est ajoutée.
  *
  * Patron **Execute Around** (la méthode qui encadre une opération reçue) : le
  * squelette est écrit une fois, et chaque adaptateur lui passe ce qui varie
@@ -55,7 +56,7 @@ use Throwable;
  * une commande lancée par `kubectl exec` (l'environnement du conteneur
  * `php-fpm` n'a pas PGOPTIONS, seul son pool l'a), un futur pod qui
  * l'oublierait. Gardé (décision du 2026-10-12) : il coûte une
- * requête par transaction verrouillée, et ces trois verrous sont ceux dont
+ * requête par transaction verrouillée, et ces verrous sont ceux dont
  * l'attente compte le plus. Un délai que la session a déjà choisi (`PGOPTIONS`,
  * un test) est gardé tel quel, ni rallongé ni raccourci. Il
  * vaut pour toute la transaction, donc aussi pour les attentes de l'opération
@@ -66,7 +67,7 @@ use Throwable;
  * #532), celle d'un autre verrou ou la sienne comprise, avant de rien prendre
  * ni lancer : `run()` lève l'exception que l'adaptateur donne à `$onNested`,
  * et la transaction de l'appelant reste intacte. Imbriqué, son COMMIT ne
- * serait qu'un `RELEASE SAVEPOINT`, et ce que chacun des trois verrous promet
+ * serait qu'un `RELEASE SAVEPOINT`, et ce que chacun des verrous promet
  * « après la validation » ne tiendrait plus : le verrou tiendrait jusqu'au
  * COMMIT de l'appelant, un refus différé (le trigger des groupes de
  * traduction, #390) tomberait à ce COMMIT-là hors de portée de

@@ -18,7 +18,7 @@ use Symfony\Bridge\Doctrine\Types\UuidType;
  * Le verrou de ligne du compte (`SELECT … FOR UPDATE`), dans une transaction
  * de la connexion (issues #435, #458).
  *
- * - Le squelette des trois verrous PostgreSQL, {@see PostgresLockedTransaction}
+ * - Le squelette des verrous PostgreSQL, {@see PostgresLockedTransaction}
  *   (issue #512) : une transaction à la main — un refus levé par l'opération
  *   (un lien déjà utilisé, 404) est une issue ordinaire, qui ne doit pas
  *   fermer l'EntityManager, et un COMMIT refusé remonte sous l'erreur de la
