@@ -15,6 +15,7 @@ use Reflector;
 use Symfony\Component\HttpKernel\Attribute\WithHttpStatus;
 use Symfony\Component\HttpKernel\Attribute\WithLogLevel;
 use Symfony\Component\HttpKernel\EventListener\ErrorListener;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
 
@@ -67,8 +68,9 @@ final class CompiledExceptionConfig
      * lui-même (ErrorListener::logKernelException), dans son ordre : la
      * première entrée de `framework.exceptions` qui correspond par
      * `instanceof` et fixe un `status_code`, à défaut un #[WithHttpStatus]
-     * hérité — que le noyau ne lit pas sur une HttpExceptionInterface. Le niveau
-     * reste résolu sur l'exception d'origine : sans entrée, `critical`.
+     * hérité — que le noyau ne lit pas sur une HttpExceptionInterface. Les
+     * entrées et #[WithLogLevel] sont lus sur l'exception d'origine ; le niveau
+     * par défaut, sur la conversion (Symfony ≥ 8.1.8, voir kernelConversion()).
      *
      * Une classe abstraite ou une interface n'est jamais levée telle quelle :
      * ses sous-classes concrètes le sont, et sont recensées pour elles-mêmes.
@@ -210,7 +212,8 @@ final class CompiledExceptionConfig
      * propre résolution (ErrorListener::resolveLogLevel) — première entrée de
      * `framework.exceptions` qui correspond par `instanceof` et fixe un niveau,
      * à défaut #[WithLogLevel] hérité, à défaut `critical` (ou `error` pour une
-     * HttpException 4xx) —, appelée plutôt que réécrite, pour ne jamais en
+     * HttpException 4xx, lue sur l'exception que le noyau a convertie :
+     * kernelConversion()) —, appelée plutôt que réécrite, pour ne jamais en
      * diverger.
      *
      * L'exception est construite sans son constructeur — la résolution ne lit
@@ -241,9 +244,25 @@ final class CompiledExceptionConfig
     public static function kernelLogLevelOf(ErrorListener $listener, Throwable $throwable): ?string
     {
         $resolve = self::vendorMember(static fn (): ReflectionMethod => new ReflectionMethod(ErrorListener::class, 'resolveLogLevel'));
-        $level = $resolve->invoke($listener, $throwable);
+        $level = $resolve->invoke($listener, $throwable, self::kernelConversion($listener, $throwable));
 
         return \is_string($level) ? $level : null;
+    }
+
+    /**
+     * L'HttpException que ErrorListener::logKernelException substitue à
+     * l'exception avant d'en résoudre le niveau, ou null s'il la garde telle
+     * quelle. Depuis Symfony 8.1.8, resolveLogLevel() lit le niveau par défaut
+     * (sans entrée ni #[WithLogLevel]) sur cette conversion : `error` pour un
+     * 4xx, `critical` pour un 5xx. Le statut vient de kernelHttpStatus(), qui
+     * suit le même ordre que le noyau ; le message et les en-têtes, que la
+     * résolution ne lit pas, ne sont pas reproduits.
+     */
+    private static function kernelConversion(ErrorListener $listener, Throwable $throwable): ?HttpException
+    {
+        $status = self::kernelHttpStatus($listener, [$throwable::class])[$throwable::class] ?? null;
+
+        return null === $status ? null : HttpException::fromStatusCode($status, '', $throwable);
     }
 
     /**
