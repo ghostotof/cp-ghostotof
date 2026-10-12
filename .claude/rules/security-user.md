@@ -83,7 +83,21 @@ paths:
     of the invite route as `email-taken`), any other → `UnrecognisedCpgUserUniqueViolationException` (500, names
     the index only). None quotes a value or keeps the violation as `previous` (#356). Pinned by
     `InviteUsernameConcurrencyTest` (real processes, interleaved at the `preFlush`), `InviteUniqueViolationTest`
-    (the real PostgreSQL message), `CpgUserUniqueViolationTest` and `PostgresUsernameAllocationLockTest`)
+    (the real PostgreSQL message), `CpgUserUniqueViolationTest` and `PostgresUsernameAllocationLockTest`).
+    **Neither account lock runs inside a transaction already open** (issue #532, the rule #526 set for the
+    order-scope lock): nested, `whileAllocating()`'s return would only be a `RELEASE SAVEPOINT`, so `invite()`
+    would dispatch before the account is visible — the handler finds none and drops the message without retry,
+    an invitation lost silently — and the lock would hold every invitation until the caller's COMMIT;
+    `whileLocked()` would keep the row's `FOR UPDATE` and send the link before its token is committed. The
+    skeleton refuses before taking anything, `UsernameAllocationLockInsideTransactionException` /
+    `AccountLockInsideTransactionException` (`LogicException`, unmapped `critical` 500; in the worker, Messenger's
+    retries then `failed`; the account one quotes the UUID only). No caller nests (use cases, handler, the two
+    commands, processors — API Platform opens no transaction —, no `doctrine_transaction` middleware, the doctrine
+    transport commits before handing over the envelope, the whole suite): pinned by both adapter tests and
+    `InviteInsideTransactionTest`. A future use case needing both locks takes them one after the other, never
+    one inside the other. **Accepted limit**: a transaction some code leaves open on a long-lived connection (the
+    worker) makes every later lock refuse until the process restarts — loud on purpose, nested silently nothing
+    would ever have been committed; a transaction opened in raw SQL is not seen (DBAL's count is the judge)
     · `PasswordSetupService` (`validate` / `complete`
     the public flow) · `CpgUserAdministrator` (delete / change-password; a password set from the backoffice on an account still
     pending activation **revokes its unused invitation tokens**, under the account lock — the admin's password
