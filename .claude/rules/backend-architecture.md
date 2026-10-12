@@ -459,7 +459,10 @@ of the root `.env` and runs nothing unless it matches `PHP_CS_FIXER_SHA256` (exi
 executed) — the release publishes no checksum, only a GPG signature, verified once when the sum was
 pinned (provenance in the `.env` comment). Both values have **one source**, `.env`; `versions.lock`
 copies them and `tools/tests/php-cs-fixer.test.sh` (offline, `tools-tests` job) fails when the two
-disagree. The version is in the phar's name so that a version bump whose sum was not updated fails
+disagree. The Makefile reads them from the **host's** `.env` and passes them with `exec -e`: the
+container's `/var/www/.env` is a file mount, which keeps the old content after a `git pull` replaces the
+file, and the old phar would then pass the old sum unnoticed; the mounted file is only the fallback of a
+script run by hand. The version is in the phar's name so that a version bump whose sum was not updated fails
 (exit 3) instead of silently reusing the old, valid phar; the name must keep `php-cs-fixer`, which the
 fixer's parallel runner looks for in `argv[0]` to find itself (`Cannot determine Fixer executable`
 otherwise). One target applies both rules in one pass per directory, `src/` then `tests/` (php-cs-fixer

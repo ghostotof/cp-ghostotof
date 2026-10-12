@@ -33,7 +33,9 @@
 #     superflu. Changer de version, c'est relire les deux recenseurs et
 #     recopier `MisqualifiedNativeCalls::COMPILER_OPTIMIZED`.
 # Un `fix` par dossier : php-cs-fixer n'accepte plusieurs chemins qu'avec un
-# fichier de configuration.
+# fichier de configuration. Le projet n'en versionne aucun, à dessein : un
+# `.php-cs-fixer(.dist).php` ajouté dans backend/ serait chargé (`--rules`
+# remplace ses règles, pas son Finder ni ses autres réglages).
 #
 # Pourquoi ce fichier est sous docker/php/ et pas sous tools/ : c'est le seul
 # des deux dossiers monté dans le conteneur dev (`/var/www/docker/php`, voir
@@ -44,13 +46,18 @@
 #
 # Codes de sortie :
 #   0  correction appliquée (ou rien à corriger)
-#   1  configuration (version ou somme absente ou mal formée)
+#   1  configuration (version ou somme absente ou mal formée, var/ non
+#      accessible en écriture)
 #   2  téléchargement impossible — incident réseau, à relancer
 #   3  intégrité refusée (somme) — le phar n'a pas été exécuté ; ne pas
 #      relancer à l'aveugle
 #   4  php-cs-fixer a échoué
 #
-# Variables (surcharges destinées aux tests, tools/tests/php-cs-fixer.test.sh) :
+# Variables :
+#   PHP_CS_FIXER_VERSION, PHP_CS_FIXER_SHA256  passées par `make back-style-fix`
+#                             depuis le `.env` de l'hôte ; à défaut de l'une des
+#                             deux, les deux sont lues dans PHP_CS_FIXER_ENV_FILE
+# Surcharges destinées aux tests (tools/tests/php-cs-fixer.test.sh) :
 #   PHP_CS_FIXER_ENV_FILE     défaut : `.env` à la racine du dépôt
 #   PHP_CS_FIXER_PROJECT_DIR  défaut : `backend/` à la racine du dépôt
 #   PHP_CS_FIXER_BASE_URL     défaut : URL des releases GitHub
@@ -76,13 +83,26 @@ env_file="${PHP_CS_FIXER_ENV_FILE:-$root/.env}"
 project="${PHP_CS_FIXER_PROJECT_DIR:-$root/backend}"
 
 # --- Configuration -----------------------------------------------------------
-[ -f "$env_file" ] || fail "$EXIT_CONFIG" "$env_file introuvable : il porte PHP_CS_FIXER_VERSION et PHP_CS_FIXER_SHA256"
-version=$(sed -n 's/^PHP_CS_FIXER_VERSION=//p' "$env_file")
-sum=$(sed -n 's/^PHP_CS_FIXER_SHA256=//p' "$env_file")
+# `make back-style-fix` passe les deux valeurs lues dans le `.env` de l'hôte :
+# celui du conteneur est monté seul, et un montage de fichier suit son inode.
+# Après un `git pull` qui le remplace, le conteneur verrait l'ancien contenu, et
+# une montée de version passerait inaperçue (l'ancien phar concorde avec
+# l'ancienne somme). Le `.env` monté ne sert qu'en repli, script lancé à la main.
+version="${PHP_CS_FIXER_VERSION:-}"
+sum="${PHP_CS_FIXER_SHA256:-}"
+origin="l'environnement"
+if [ -z "$version" ] || [ -z "$sum" ]; then
+  [ -f "$env_file" ] || fail "$EXIT_CONFIG" "$env_file introuvable : il porte PHP_CS_FIXER_VERSION et PHP_CS_FIXER_SHA256"
+  version=$(sed -n 's/^PHP_CS_FIXER_VERSION=//p' "$env_file")
+  sum=$(sed -n 's/^PHP_CS_FIXER_SHA256=//p' "$env_file")
+  origin="$env_file"
+  [ -n "$version" ] && [ -n "$sum" ] \
+    || fail "$EXIT_CONFIG" "PHP_CS_FIXER_VERSION ou PHP_CS_FIXER_SHA256 absente de $env_file. Si le .env du dépôt les porte, le conteneur en voit une copie périmée : passer par make back-style-fix, ou docker compose up -d --force-recreate backend"
+fi
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
-  || fail "$EXIT_CONFIG" "PHP_CS_FIXER_VERSION invalide dans $env_file : « $version » (attendu : X.Y.Z)"
+  || fail "$EXIT_CONFIG" "PHP_CS_FIXER_VERSION invalide (lue dans $origin) : « $version » (attendu : X.Y.Z)"
 [[ "$sum" =~ ^[0-9a-f]{64}$ ]] \
-  || fail "$EXIT_CONFIG" "PHP_CS_FIXER_SHA256 invalide dans $env_file : « $sum » (attendu : 64 caractères hexadécimaux minuscules)"
+  || fail "$EXIT_CONFIG" "PHP_CS_FIXER_SHA256 invalide (lue dans $origin) : « $sum » (attendu : 64 caractères hexadécimaux minuscules)"
 
 phar="$project/var/php-cs-fixer-$version.phar"
 
@@ -97,10 +117,11 @@ else
   # Un phar présent mais qui ne concorde pas n'est jamais exécuté : il est
   # remplacé par un téléchargement vérifié, jamais réparé.
   base_url="${PHP_CS_FIXER_BASE_URL:-https://github.com/PHP-CS-Fixer/PHP-CS-Fixer/releases/download}"
-  mkdir -p "$project/var"
   # Fichier temporaire dans le même dossier, pour un renommage atomique : le
-  # chemin final ne désigne jamais un phar non vérifié.
-  work=$(mktemp "$project/var/.php-cs-fixer-XXXXXX")
+  # chemin final ne désigne jamais un phar non vérifié. Un var/ qui appartient
+  # à root (une commande lancée sans `-u dev`) échoue ici, nommé.
+  mkdir -p "$project/var" && work=$(mktemp "$project/var/.php-cs-fixer-XXXXXX") \
+    || fail "$EXIT_CONFIG" "$project/var/ n'est pas accessible en écriture (propriétaire root ? chown -R dev dans le conteneur)"
   trap 'rm -f "$work"' EXIT
 
   echo "Téléchargement de php-cs-fixer $version…"
@@ -116,7 +137,7 @@ else
 fi
 
 # --- Correction ----------------------------------------------------------------
-cd "$project"
+cd "$project" || fail "$EXIT_CONFIG" "$project introuvable"
 for directory in src tests; do
   "${PHP_CS_FIXER_PHP:-php}" "$phar" fix --using-cache=no --allow-risky=yes "--rules=$RULES" "$directory" \
     || fail "$EXIT_FIXER" "php-cs-fixer a échoué sur $directory/ (voir sa sortie ci-dessus)"

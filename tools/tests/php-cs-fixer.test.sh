@@ -15,8 +15,9 @@
 #   - les deux règles, telles que les gardes PHPUnit les reproduisent, sont
 #     appliquées à `src/` puis à `tests/`, depuis le dossier du backend ;
 #   - un échec du fixeur sur `src/` arrête tout (code 4) ;
+#   - les valeurs passées par l'environnement l'emportent sur le `.env` ;
 #   - la version et la somme de `.env` sont celles que recopie `versions.lock`,
-#     et la cible `back-style-fix` du Makefile lance bien ce script.
+#     et la cible `back-style-fix` du Makefile lance bien ce script avec elles.
 #
 # Codes de sortie attendus du script : 1 configuration, 2 téléchargement
 # impossible, 3 intégrité refusée, 4 échec du fixeur.
@@ -72,11 +73,16 @@ new_project() {
 
 # run <backend> <base des releases> : lance le script sur ce backend, avec le
 # `.env` qui est à côté ; sortie dans $TMP/out, code de sortie dans $status.
+# Les deux valeurs passées par l'environnement, vides par défaut : le script
+# lit alors le `.env`. Un cas les pose pour vérifier qu'elles l'emportent.
 status=0
+ENV_VERSION="" ENV_SUM=""
 run() {
   local project="$1" base="$2"
   status=0
   : > "$CALLS"
+  PHP_CS_FIXER_VERSION="$ENV_VERSION" \
+  PHP_CS_FIXER_SHA256="$ENV_SUM" \
   PHP_CS_FIXER_PROJECT_DIR="$project" \
   PHP_CS_FIXER_ENV_FILE="$(dirname "$project")/.env" \
   PHP_CS_FIXER_BASE_URL="file://$base" \
@@ -192,16 +198,42 @@ for case in "absente||$GOOD_SUM" "mal formée|v3.95|$GOOD_SUM" "somme absente|$V
   fi
 done
 
-# 9. La cible du Makefile lance ce script dans le conteneur, en `dev`.
-if grep -A2 '^back-style-fix:' "$ROOT/Makefile" | grep -q 'exec -u dev backend /var/www/docker/php/php-cs-fixer.sh'; then
-  pass "make back-style-fix lance le script dans le conteneur"
+# 9. Les valeurs de l'environnement l'emportent sur le `.env` : c'est ce qui
+#    protège `make back-style-fix` d'un `.env` monté périmé dans le conteneur
+#    (ici, un `.env` resté à une ancienne version dont la somme ne concorde
+#    pas : il ferait échouer le cas en code 3).
+project=$(new_project env-wins 1.0.0 "$BAD_SUM")
+ENV_VERSION="$VERSION" ENV_SUM="$GOOD_SUM" run "$project" "$releases"
+if [ "$status" -eq 0 ] && [ -f "$(phar "$project")" ]; then
+  pass "les valeurs de l'environnement l'emportent sur un .env périmé"
 else
-  fail "make back-style-fix lance le script dans le conteneur" "cible absente ou différente dans le Makefile"
+  fail "les valeurs de l'environnement l'emportent sur un .env périmé" "code $status : $(output)"
 fi
 
-# 10. versions.lock recopie la version et la somme de `.env` : une montée qui
-#     n'en touche qu'un des deux fichiers fait échouer ce test.
+# 10. Une seule des deux valeurs dans l'environnement : les deux sont lues
+#     dans le `.env`, jamais mélangées. Celui-ci annonce 1.0.0, une version
+#     sans release : le téléchargement échoue (code 2) en la nommant.
+ENV_VERSION="$VERSION" ENV_SUM="" run "$project" "$releases"
+if [ "$status" -eq 2 ] && grep -q 'php-cs-fixer 1.0.0' "$TMP/out"; then
+  pass "une seule valeur dans l'environnement : les deux viennent du .env"
+else
+  fail "une seule valeur dans l'environnement : les deux viennent du .env" "code $status : $(output)"
+fi
+
+# 11. La cible du Makefile lance ce script dans le conteneur, en `dev`, avec
+#     la version et la somme du `.env` de l'hôte. `make -n` affiche la recette
+#     sans l'exécuter : le test ne dépend pas de la mise en page du Makefile.
 env_value()  { sed -n "s/^$1=//p" "$ROOT/.env"; }
+recipe=$(make -s -n -C "$ROOT" back-style-fix 2>&1 || true)
+expected_recipe="docker compose exec -u dev -e PHP_CS_FIXER_VERSION=$(env_value PHP_CS_FIXER_VERSION) -e PHP_CS_FIXER_SHA256=$(env_value PHP_CS_FIXER_SHA256) backend /var/www/docker/php/php-cs-fixer.sh"
+if [ "$recipe" = "$expected_recipe" ]; then
+  pass "make back-style-fix lance le script dans le conteneur avec les valeurs du .env"
+else
+  fail "make back-style-fix lance le script dans le conteneur avec les valeurs du .env" "recette : $recipe"
+fi
+
+# 12. versions.lock recopie la version et la somme de `.env` : une montée qui
+#     n'en touche qu'un des deux fichiers fait échouer ce test.
 lock_value() { sed -n "s/^$1=//p" "$ROOT/versions.lock"; }
 if [ -n "$(env_value PHP_CS_FIXER_VERSION)" ] \
   && [ "$(env_value PHP_CS_FIXER_VERSION)" = "$(lock_value php-cs-fixer)" ] \

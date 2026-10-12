@@ -145,8 +145,15 @@ back-lsp: ## Lance symfony lsp:check (diagnostics Symfony) dans le conteneur
 # version PHP_CS_FIXER_VERSION (.env), et ne l'exécute qu'après avoir vérifié
 # PHP_CS_FIXER_SHA256. Pas de mode « vérification seule » : les deux gardes
 # PHPUnit le sont déjà, et plus strictes (elles refusent `use function`).
+#
+# La version et la somme sont lues ici, dans le .env de l'hôte, et passées au
+# conteneur : son /var/www/.env est un montage de fichier, qui garde l'ancien
+# contenu après un `git pull` qui le remplace.
+PHP_CS_FIXER_VERSION := $(shell sed -n 's/^PHP_CS_FIXER_VERSION=//p' .env)
+PHP_CS_FIXER_SHA256 := $(shell sed -n 's/^PHP_CS_FIXER_SHA256=//p' .env)
+
 back-style-fix: ## Trie les `use` et qualifie les fonctions natives optimisées (php-cs-fixer épinglé) dans le conteneur
-	$(DC) exec -u dev backend /var/www/docker/php/php-cs-fixer.sh
+	$(DC) exec -u dev -e PHP_CS_FIXER_VERSION=$(PHP_CS_FIXER_VERSION) -e PHP_CS_FIXER_SHA256=$(PHP_CS_FIXER_SHA256) backend /var/www/docker/php/php-cs-fixer.sh
 
 front-init: ## Crée le projet Vite en mode INTERACTIF (à lancer une seule fois)
 	$(DC) run --rm frontend npm create vite@$(shell grep '^CREATE_VITE_VERSION=' .env | cut -d= -f2) .
