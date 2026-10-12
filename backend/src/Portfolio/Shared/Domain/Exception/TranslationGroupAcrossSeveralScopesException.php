@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Portfolio\Shared\Domain\Exception;
 
 use LogicException;
+use Symfony\Component\Uid\Uuid;
 use Throwable;
 
 /**
@@ -22,9 +23,34 @@ use Throwable;
  * pipeline, jamais une saisie : 500 `critical`, ni
  * `ProblemExceptionInterface` ni entrée `exception_to_status`, et
  * {@see LogicException} plutôt que {@see \DomainException}.
+ *
+ * Deux origines, comme pour la position : l'application la lève **avant
+ * toute écriture** quand une opération du backoffice toucherait un groupe déjà
+ * réparti (`forGroup()`, issue #561 — un tel groupe peut rester d'avant la
+ * garde de #501), la base au COMMIT pour ce qui contourne l'application
+ * (`refusedAtCommit()`).
  */
 final class TranslationGroupAcrossSeveralScopesException extends LogicException
 {
+    /**
+     * L'application a trouvé, avant d'écrire, un groupe déjà réparti sur
+     * plusieurs périmètres (issue #561). Le message donne le groupe et ses
+     * périmètres, ce qu'il faut retrouver en base, et la correction. Rien de
+     * libre que le client ait saisi : le groupe est un UUID (celui d'une
+     * requête de création ou de rattachement, dont la base porte des membres),
+     * les périmètres sont lus en base.
+     *
+     * @param list<string> $scopes les périmètres où vivent ses membres
+     */
+    public static function forGroup(Uuid $translationGroup, array $scopes): self
+    {
+        return new self(\sprintf(
+            'Le groupe de traduction %s est réparti sur plusieurs périmètres (%s) : supprimer l\'entrée égarée puis recréer sa version dans le bon périmètre, ou la détacher.',
+            $translationGroup->toRfc4122(),
+            implode(', ', $scopes),
+        ));
+    }
+
     /**
      * La base a refusé au COMMIT une transaction qui laissait un groupe dans
      * plusieurs périmètres. Son message, repris tel quel, nomme la table, le

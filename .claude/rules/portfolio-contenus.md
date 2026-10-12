@@ -173,7 +173,7 @@ paths:
     fires there.
     **Nor a me-card group across two categories** (issue #501). Me-cards are ordered per category, and the
     members of a group share theirs: the application guarantees it (no category setter on `AboutMeCard`,
-    `AboutMeCardAdministrator::membersOf()` reads a group within the category, the seed groups per
+    `AboutMeCardAdministrator::membersInCategory()` reads a group within the category, the seed groups per
     category), the database did not — the #390 trigger compared positions across categories and did not
     listen to `category`, so an EN version inserted in SQL into another category at the same position, or
     an `UPDATE` of `category` alone, went through. Such a group got two ranks, one per category (FR and EN
@@ -202,9 +202,48 @@ paths:
     category is surely the right one): the migration reports each again as a `warning` with its categories,
     and any write that touches one (insertion, a member's position, group or category) is now refused —
     a `DELETE` does not wake the trigger. The fix is in the backoffice: **delete the stray entry, then
-    recreate its version in the right category** — « Détacher » does not see the member in the other
-    category. Open there, follow-up #561: « Créer la version EN » offered in the category where EN is
-    missing hits the unique `(translation_group, locale)` index, a raw 500. `TranslationGroupSinglePositionTest`
+    recreate its version in the right category**, or **« Détacher » it** (issue #561, below).
+    **The application refuses such a group by name, before any write** (issue #561). The backoffice
+    still offered to write into it: « Créer la version EN » in the category where EN was missing, and the
+    « Version de » selector (which lists the form's category only) on a `PUT`, both saw the group filtered by
+    category, let `inGroup()` accept a locale the group already carried elsewhere, and ended on the unique
+    `(translation_group, locale)` index — a raw 500 that closed the EntityManager; a `reorder()` wrote, then
+    was refused at the COMMIT (`23T91`), and only when it moved the stray member. Now
+    `AboutMeCardAdministrator` throws `TranslationGroupAcrossSeveralScopesException::forGroup()` (same
+    `critical` 500, the group, its categories and the fix in the message, nothing written, the manager left
+    open): on a creation or an attachment, `membersInCategory()` reads the group across categories (the
+    same query as before, no extra cost) and refuses a group with members both in the category and outside
+    it — a group wholly in another category stays the 422 `unknown-translation-group`; on a `reorder()`,
+    `refuseGroupsSpreadOutsideOf()` refuses **any** reorder of a category holding such a group, whatever the
+    order asked (it depends on the state only), through `findInOtherCategoriesSharingAGroupWith()` — one
+    query under the lock, empty on a sound database — so a reorder that would have left the stray member in
+    place, accepted before, is refused too: the group must be repaired first. Two writes are **not**
+    refused, on purpose: a `PUT` sending the card's **own** group (what the frontend sends on a text edit of
+    a member, `hasSibling()` looking across categories) is a no-op the administrator tests before reading
+    anything, so the cards to be corrected stay editable; and « Détacher » (`translationGroup: null`) reads
+    the card's group across categories, so on a spread member it **really detaches** (a new group, the end of
+    its category, #169) — the trigger checks only the new group, alone, and the old one keeps its other
+    member: a second fix, where it used to be a silent no-op. Either fix repairs the **group**, not the
+    other category's numbering: the member left there keeps the position it was given in the first one,
+    which may already be another key's (it was before the fix too); a reorder of that category, accepted
+    again once no spread group remains, renumbers it. **Order of the guards** on an ordered write,
+    each before any write: a group across categories (`AboutMeCardAdministrator`, me-cards only, the only
+    per-scope table — kept out of the Shared services, which only see their scope), then a group on
+    several positions (`ContentPlacement::inGroup()` on a placement; on a `reorder()`, only the trigger
+    so far — #503), then the client's errors (the 409 `translation-already-exists`, `OrderAssigner`'s 422s of
+    the exact-set rule), then the trigger at COMMIT for what bypasses the application — the cause before its
+    consequence, as in the trigger, and a pipeline defect before a client error, as in #384.
+    `AboutMeCardAdministratorTest` pins each path with mocks (no `save()`, nothing changed in memory before
+    the refusal, the text edit that reads nothing, the real detachment, the reorder refused before an
+    unknown key's 422); `AboutMeCardGroupSpreadOverTwoCategoriesTest` on the real database (creation,
+    attachment and a reorder moving the stray member refused under the name with no `previous` and the
+    manager open — red before with the unique violation and the COMMIT refusal —, a reorder leaving it in
+    place refused too — accepted before —, detachment accepted at the COMMIT) and `AboutMeCardRepositoryTest` the
+    strays query. Both commit the spread group through `tests/Portfolio/About/Support/CommitsSpreadMeCardGroup`:
+    the administrator refuses an open transaction (#526), so a rolled-back one is not an option; it disables
+    the trigger, inserts and re-enables it **in one committed transaction** (PostgreSQL's DDL is
+    transactional, no other session sees the table without its trigger, and the inserts leave no pending
+    event, hence no 55006), and the test's `tearDown` deletes the rows. `TranslationGroupSinglePositionTest`
     pins the insertion and the move of one member (refused in `23T91`), a group spread and on two
     positions (`23T91`, not `23T90`), the whole group moved (accepted), and, for every table, the scope
     argument and the watched columns (`SCOPE_COLUMNS`: a new per-scope table goes there and in its

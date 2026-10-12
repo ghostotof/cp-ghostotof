@@ -50,6 +50,17 @@ interface AboutMeCardRepositoryInterface
      */
     public function findByTranslationGroup(Uuid $translationGroup): array;
 
+    /**
+     * Issue #561 : les cartes d'une **autre** catégorie dont le groupe de
+     * traduction a aussi un membre dans `$category` — les membres égarés des
+     * groupes répartis sur deux catégories, que l'application ne produit pas
+     * mais qu'une écriture SQL antérieure à #501 a pu laisser. Vide sur une
+     * base saine. Une seule requête : `reorder()` la lit sous le verrou d'ordre.
+     *
+     * @return list<AboutMeCard> triées par groupe puis locale ASC
+     */
+    public function findInOtherCategoriesSharingAGroupWith(AboutMeCardCategory $category): array;
+
     public function save(AboutMeCard $card): void;
 
     /**
