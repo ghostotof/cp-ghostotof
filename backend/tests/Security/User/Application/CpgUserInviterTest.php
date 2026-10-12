@@ -18,8 +18,6 @@ use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Service\UsernameGenerator;
 use Closure;
 use DateTimeImmutable;
-use Doctrine\DBAL\Driver\AbstractException;
-use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
@@ -48,7 +46,7 @@ final class CpgUserInviterTest extends TestCase
         // Plus rien à simuler au save() : depuis la spec 0003 l'identité est
         // posée par le constructeur de l'entité, donc connue avant la
         // persistance — c'est précisément ce que ce style rend possible.
-        $cpgUserRepository->expects(self::once())->method('save');
+        $cpgUserRepository->expects(self::once())->method('add');
 
         $dispatched = null;
         $messageBus = $this->createMock(MessageBusInterface::class);
@@ -103,7 +101,7 @@ final class CpgUserInviterTest extends TestCase
     {
         $cpgUserRepository = $this->createMock(CpgUserRepositoryInterface::class);
         $cpgUserRepository->method('findOneByEmail')->willReturn(new CpgUser('existing', 'hashed-password'));
-        $cpgUserRepository->expects(self::never())->method('save');
+        $cpgUserRepository->expects(self::never())->method('add');
 
         $messageBus = $this->createMock(MessageBusInterface::class);
         $messageBus->expects(self::never())->method('dispatch');
@@ -123,21 +121,20 @@ final class CpgUserInviterTest extends TestCase
     }
 
     /**
-     * La pré-vérification passe, mais une écriture concurrente a déjà inséré
-     * la ligne : la contrainte unique lève, et le refus doit nommer
-     * l'unicité violée (issue #364) — un identifiant pris n'est pas une
-     * adresse prise. Rien ne doit être dispatché ni journalisé.
+     * La pré-vérification passe, mais une écriture hors verrou a déjà pris
+     * l'adresse ou l'identifiant : add() nomme l'unicité violée (issue #364,
+     * traduction couverte par CpgUserUniqueViolationTest), et le refus remonte
+     * tel quel. Rien ne doit être dispatché ni journalisé.
      *
      * @param class-string<Throwable> $expected
      */
-    #[DataProvider('uniqueViolations')]
-    public function testInviteNamesTheUniquenessThatRefusedTheSave(string $violatedIndex, string $expected): void
+    #[DataProvider('refusalsOfAdd')]
+    public function testInvitePassesOnTheRefusalOfAddWithoutDispatching(Throwable $refusal, string $expected): void
     {
         $cpgUserRepository = self::createStub(CpgUserRepositoryInterface::class);
         $cpgUserRepository->method('findOneByEmail')->willReturn(null);
         $cpgUserRepository->method('findOneByUsername')->willReturn(null);
-        $violation = $this->uniqueViolationOf($violatedIndex);
-        $cpgUserRepository->method('save')->willThrowException($violation);
+        $cpgUserRepository->method('add')->willThrowException($refusal);
 
         $messageBus = $this->createMock(MessageBusInterface::class);
         $messageBus->expects(self::never())->method('dispatch');
@@ -151,30 +148,18 @@ final class CpgUserInviterTest extends TestCase
             $this->lockRunningTheOperation(),
         );
 
-        try {
-            $inviter->invite('race@example.com', Locale::FR);
-            self::fail($expected.' attendue.');
-        } catch (Throwable $refusal) {
-            self::assertInstanceOf($expected, $refusal);
-            // Le détail de PostgreSQL cite la valeur en conflit (#356) : un
-            // refus converti ne le garde pas. Seule la violation non reconnue
-            // remonte telle quelle.
-            if ($refusal !== $violation) {
-                self::assertNull($refusal->getPrevious());
-                self::assertStringNotContainsString('race@example.com', $refusal->getMessage());
-            }
-        }
+        $this->expectException($expected);
+
+        $inviter->invite('race@example.com', Locale::FR);
     }
 
     /**
-     * @return iterable<string, array{string, class-string<Throwable>}>
+     * @return iterable<string, array{Throwable, class-string<Throwable>}>
      */
-    public static function uniqueViolations(): iterable
+    public static function refusalsOfAdd(): iterable
     {
-        yield 'adresse' => [CpgUser::EMAIL_UNIQUE_INDEX, EmailAlreadyUsedException::class];
-        yield 'identifiant' => [CpgUser::USERNAME_UNIQUE_INDEX, UsernameAlreadyUsedException::class];
-        // Un index que ce code ne connaît pas : aucune cause n'est affirmée.
-        yield 'index inconnu' => ['uniq_cpg_user_other', UniqueConstraintViolationException::class];
+        yield 'adresse' => [EmailAlreadyUsedException::alreadyLinkedToAnAccount(), EmailAlreadyUsedException::class];
+        yield 'identifiant' => [UsernameAlreadyUsedException::takenMeanwhile(), UsernameAlreadyUsedException::class];
     }
 
     /**
@@ -220,8 +205,8 @@ final class CpgUserInviterTest extends TestCase
 
             return null;
         });
-        $cpgUserRepository->method('save')->willReturnCallback(static function () use ($trace): void {
-            $trace->record('save');
+        $cpgUserRepository->method('add')->willReturnCallback(static function () use ($trace): void {
+            $trace->record('add');
         });
 
         $messageBus = self::createStub(MessageBusInterface::class);
@@ -241,7 +226,7 @@ final class CpgUserInviterTest extends TestCase
         )->invite('jean@example.com', Locale::FR);
 
         self::assertSame(
-            ['findOneByEmail (verrou)', 'findOneByUsername (verrou)', 'save (verrou)', 'unlock', 'dispatch'],
+            ['findOneByEmail (verrou)', 'findOneByUsername (verrou)', 'add (verrou)', 'unlock', 'dispatch'],
             $trace->events,
         );
     }
@@ -264,7 +249,7 @@ final class CpgUserInviterTest extends TestCase
 
         $written = false;
         $cpgUserRepository = $this->createMock(CpgUserRepositoryInterface::class);
-        $cpgUserRepository->expects(self::never())->method('save');
+        $cpgUserRepository->expects(self::never())->method('add');
         // 5 et non 2 : une relance concurrente a déjà avancé la base.
         $cpgUserRepository->expects(self::once())->method('advanceInvitationGeneration')
             ->with($user, $clock->now())
@@ -345,7 +330,7 @@ final class CpgUserInviterTest extends TestCase
         $cpgUserRepository = $this->createMock(CpgUserRepositoryInterface::class);
         $cpgUserRepository->method('findOneByEmail')->willReturn(null);
         $cpgUserRepository->method('findOneByUsername')->willReturn(null);
-        $cpgUserRepository->expects(self::once())->method('save')->willReturnCallback(static function (CpgUser $user) use (&$saved): void {
+        $cpgUserRepository->expects(self::once())->method('add')->willReturnCallback(static function (CpgUser $user) use (&$saved): void {
             $saved = $user;
         });
         $cpgUserRepository->expects(self::once())->method('removePendingInvitation')->willReturnCallback(static function (CpgUser $user) use (&$saved): void {
@@ -417,18 +402,6 @@ final class CpgUserInviterTest extends TestCase
                 return $operation();
             }
         };
-    }
-
-    /**
-     * Une violation d'unicité dont le message cite l'index, comme PostgreSQL
-     * le fait (la forme réelle est épinglée par InviteUniqueViolationTest).
-     */
-    private function uniqueViolationOf(string $index): UniqueConstraintViolationException
-    {
-        $driverException = new class(\sprintf('SQLSTATE[23505]: Unique violation: 7 ERROR:  duplicate key value violates unique constraint "%s"', $index), '23505') extends AbstractException {
-        };
-
-        return new UniqueConstraintViolationException($driverException, null);
     }
 
     /**

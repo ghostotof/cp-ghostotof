@@ -58,19 +58,24 @@ paths:
   - `Application/` use cases (each with an interface, autowired single-impl):
     `CpgUserRegistrar` (CLI creation, password provided up front) · `CpgUserInviter`
     (`invite(email, Locale)` / `reinvite(user, Locale)`: derives username, creates/marks the pending account,
-    then **only** dispatches `SendAccountInvitationMessage`; `invite()` checks the address, derives the username
-    and saves **under one lock**, `Application/UsernameAllocationLockInterface` — adapter
-    `Infrastructure/Doctrine/PostgresUsernameAllocationLock`, a transaction-scoped advisory lock shared by every
-    invitation —, and dispatches only after its commit, issue #364: two simultaneous invitations of the same local
-    part get `jean` and `jean2`, the second used to fail on the username index and be reported as « adresse déjà
-    utilisée ». A unique violation still raised (a writer outside the lock: the CLI, which takes its username
-    instead of deriving it — accepted limit) is named after the index PostgreSQL quotes,
+    then **only** dispatches `SendAccountInvitationMessage`). **Every account creation runs under one lock**
+    (issue #364), `Application/UsernameAllocationLockInterface` — adapter
+    `Infrastructure/Doctrine/PostgresUsernameAllocationLock`, one transaction-scoped advisory lock for all, its
+    wait bounded by `SET LOCAL lock_timeout` → `UsernameAllocationLockTimeoutException` (500 `critical`):
+    `invite()` checks the address, derives the username and saves under it, and dispatches only after its
+    commit; `register()` refuses a taken username fast, hashes **outside** (slow), then re-checks and saves under
+    it. Two simultaneous invitations of the same local part get `jean` and `jean2` — the second used to fail on
+    the username index and be reported as « adresse déjà utilisée ». A new account is saved with
+    `CpgUserRepositoryInterface::add()`, never `save()`: a unique violation that still gets through (a writer
+    outside the lock, hand-written SQL) is named there by `Infrastructure/Doctrine/CpgUserUniqueViolation`, from
+    the **first quoted identifier** of PostgreSQL's message (`"…"`, or `« … »` under a French `lc_messages`) —
+    never a search of the whole message, whose `DETAIL` quotes the value — against
     `CpgUser::{EMAIL,USERNAME}_UNIQUE_INDEX`: email → `EmailAlreadyUsedException` (409), username →
-    `UsernameAlreadyUsedException`, **unmapped on purpose** (500 — the frontend reads any 409 of that route as
-    `email-taken`), any other index rethrown; neither keeps the violation as `previous` (its detail quotes the
-    value, #356). A wait past `lock_timeout` raises `UsernameAllocationLockTimeoutException` (500 `critical`).
-    Pinned by `InviteUsernameConcurrencyTest` (real processes, interleaved at the `preFlush`),
-    `InviteUniqueViolationTest` (the real PostgreSQL message) and `PostgresUsernameAllocationLockTest`)
+    `UsernameAlreadyUsedException::takenMeanwhile()`, **unmapped on purpose** (500 — the frontend reads any 409
+    of the invite route as `email-taken`), any other → `UnrecognisedCpgUserUniqueViolationException` (500, names
+    the index only). None quotes a value or keeps the violation as `previous` (#356). Pinned by
+    `InviteUsernameConcurrencyTest` (real processes, interleaved at the `preFlush`), `InviteUniqueViolationTest`
+    (the real PostgreSQL message), `CpgUserUniqueViolationTest` and `PostgresUsernameAllocationLockTest`)
     · `PasswordSetupService` (`validate` / `complete`
     the public flow) · `CpgUserAdministrator` (delete / change-password; a password set from the backoffice on an account still
     pending activation **revokes its unused invitation tokens**, under the account lock — the admin's password

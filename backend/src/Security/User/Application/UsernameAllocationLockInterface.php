@@ -23,12 +23,18 @@ use Closure;
  * encore quand la seconde invitation lit, et un `SELECT … FOR UPDATE` ne
  * verrouille rien qu'il ne trouve.
  *
- * Ce qui ne le prend pas : la création CLI (`app:user:create`), qui reçoit son
- * identifiant au lieu de le chercher, et ne sert qu'à l'amorçage. Une création
- * CLI validée pendant une invitation qui dérive le même identifiant fait
- * encore échouer celle-ci sur la contrainte, nommée alors pour ce qu'elle est
- * ({@see \App\Security\User\Domain\Exception\UsernameAlreadyUsedException}),
- * jamais pour une adresse prise. Limite acceptée.
+ * Le prennent tous les cas d'usage qui créent un compte : l'invitation
+ * (`CpgUserInviter`) et la création CLI (`CpgUserRegistrar`), qui reçoit son
+ * identifiant mais doit aussi le voir pris par une invitation, et le faire
+ * voir. Une écriture qui ne le prend pas (saisie à la main en base) n'est
+ * arrêtée que par la contrainte unique, que
+ * {@see \App\Security\User\Domain\Repository\CpgUserRepositoryInterface::add()}
+ * nomme pour ce qu'elle est.
+ *
+ * Une seule clé pour tous : une invitation lente (une écriture qui attend
+ * elle-même un verrou) fait attendre toutes les autres, jusqu'au délai de
+ * l'adaptateur, au-delà duquel celui-ci lève une exception nommée (500). Au
+ * volume des invitations, le plafond est accepté.
  */
 interface UsernameAllocationLockInterface
 {

@@ -129,6 +129,11 @@ final class InviteUniqueViolationTest extends KernelTestCase
                 $this->real->save($user);
             }
 
+            public function add(CpgUser $user): void
+            {
+                $this->real->add($user);
+            }
+
             public function advanceInvitationGeneration(CpgUser $user, DateTimeImmutable $invitedAt): int
             {
                 return $this->real->advanceInvitationGeneration($user, $invitedAt);

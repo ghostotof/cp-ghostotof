@@ -21,12 +21,16 @@ use App\Security\User\Domain\Exception\UsernameAlreadyUsedException;
 interface CpgUserInviterInterface
 {
     /**
+     * Une attente du verrou d'attribution au-delà de son délai lève l'exception
+     * nommée de son adaptateur (500), comme les autres verrous du contexte.
+     *
      * @param Locale $locale langue de l'e-mail d'invitation et du lien envoyé
      *
      * @throws EmailAlreadyUsedException           si l'adresse est déjà rattachée à un compte
      * @throws UsernameAlreadyUsedException        si l'identifiant dérivé a été pris par une écriture
-     *                                             qui ne passe pas par l'invitation (issue #364) ;
-     *                                             deux invitations, elles, ne se le disputent jamais
+     *                                             hors du verrou d'attribution (issue #364) ; deux
+     *                                             créations de compte, elles, ne se le disputent jamais.
+     *                                             Non mappée (500) : un 409 serait lu « adresse prise »
      * @throws InvitationQueueUnavailableException si la file n'a pas pris l'invitation ;
      *                                             le compte créé est alors retiré (issue #485)
      */

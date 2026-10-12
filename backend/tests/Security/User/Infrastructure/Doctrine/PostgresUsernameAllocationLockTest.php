@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Infrastructure\Doctrine;
 
 use App\Security\User\Application\UsernameAllocationLockInterface;
+use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Infrastructure\Doctrine\PostgresUsernameAllocationLock;
 use App\Security\User\Infrastructure\Doctrine\UsernameAllocationLockTimeoutException;
 use App\Tests\Support\OpensProbeConnection;
@@ -72,13 +73,11 @@ final class PostgresUsernameAllocationLockTest extends KernelTestCase
 
         try {
             try {
-                // Une écriture, puis le refus (levé seulement si l'écriture a
-                // eu lieu, comme un refus métier qui suit une lecture).
+                // Une écriture, puis le refus.
                 $this->lock()->whileAllocating(function (): bool {
-                    $written = $this->em->getConnection()->executeStatement(
-                        "INSERT INTO cpg_user (id, username, roles, password, invitation_generation) VALUES (gen_random_uuid(), 'refused', '[]', '', 0)",
-                    );
-                    if (1 === $written) {
+                    $this->em->persist(new CpgUser('refused', ''));
+                    $this->em->flush();
+                    if ($this->em->getConnection()->isTransactionActive()) {
                         throw new LogicException('refus');
                     }
 
