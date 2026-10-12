@@ -271,8 +271,8 @@ paths:
   gone is `null` (**404**, `AboutSettingsNotFoundException`) and a row recreated under another id is the one
   written — unlike `find($id)`, which hands back the identity-map instance without a query (#545). Its fields
   are not refreshed, but `AboutSettings::update()` overwrites all five editable ones, and `id`/`locale` never
-  change. **Keep that search by criteria**: a `find($id)`, a second-level cache or a memoizing decorator without a
-  lock reopens the 200 on a vanished row. **Accepted**: a deletion in SQL — or a deletion and re-creation under
+  change. **Keep that search by criteria**: a `find($id)`, a second-level or result cache, or a memoizing decorator
+  without a lock reopens the 200 on a vanished row. **Accepted**: a deletion in SQL — or a deletion and re-creation under
   another id — committed between that `SELECT` and the `flush()`'s `UPDATE` still answers 200, the `UPDATE` on the
   old id touching no row (the write is lost; milliseconds, SQL only, very low severity); two simultaneous `PUT`s of one locale, last
   writer wins, like every field (no `#[ORM\Version]`); two concurrent creations (two seeds) meet the unique index
@@ -283,7 +283,8 @@ paths:
   found; deleted then re-inserted under a new id → the new row is written (both red with a read from the identity
   map, measured); and the trigger itself — the repository interface exposes exactly `findByLocale()`/`save()`, the
   backoffice resource exactly `Get`/`Put` (red with a `remove()` or a `Delete` added, measured). Turning it red
-  means adding the lock first, then updating the test.
+  means adding the lock first, then updating the test. That guard is partial: an `EntityManager::remove()`, a DQL
+  or DBAL `DELETE` written elsewhere (a command, another processor) does not trip it — review is the net there.
 
   **`ExperienceTechnology.years` is a finite number in `[0, 100]`, checked at three layers** (issue #372).
   A single non-encodable row (`Infinity`, `NaN`) is enough to put the public `GET /api/experience/technologies`

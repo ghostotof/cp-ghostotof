@@ -110,9 +110,13 @@ final class AboutSettingsUpdateReadsCommittedRowTest extends KernelTestCase
         sort($repositoryMethods);
         self::assertSame(['findByLocale', 'save'], $repositoryMethods, 'AboutSettings ne se supprime plus seulement en SQL : verrou de ligne d\'abord (#553).');
 
+        // Tous les `#[ApiResource]` de la classe : un second attribut porterait
+        // ses propres opérations.
         $operations = [];
-        foreach (new ReflectionClass(BackofficeAboutSettingsResource::class)->getAttributes(ApiResource::class)[0]->newInstance()->getOperations() ?? [] as $operation) {
-            $operations[] = $operation::class;
+        foreach (new ReflectionClass(BackofficeAboutSettingsResource::class)->getAttributes(ApiResource::class) as $attribute) {
+            foreach ($attribute->newInstance()->getOperations() ?? [] as $operation) {
+                $operations[] = $operation::class;
+            }
         }
         self::assertSame([Get::class, Put::class], $operations, 'Le backoffice expose une autre écriture que Put sur AboutSettings : verrou de ligne d\'abord (#553).');
     }

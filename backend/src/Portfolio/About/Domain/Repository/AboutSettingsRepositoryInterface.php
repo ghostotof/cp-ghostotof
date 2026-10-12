@@ -19,17 +19,11 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
 interface AboutSettingsRepositoryInterface
 {
     /**
-     * Exécute son SELECT à chaque appel, jamais une simple lecture de la carte
-     * d'identité de l'EntityManager (issue #553) : AboutSettingsAdministrator::update()
-     * n'a pas de verrou parce que cette requête voit une ligne disparue (null,
-     * donc 404) ou recréée sous un autre id depuis le chargement du provider.
-     * Elle dit quelle ligne existe, pas ce qu'elle contient : les champs d'une
-     * instance déjà chargée ne sont pas rafraîchis (Doctrine garde l'objet de
-     * la carte d'identité). Une implémentation qui rendrait l'instance déjà
-     * chargée sans requête (un find($id), un cache de second niveau, un
-     * décorateur qui mémorise) ferait répondre 200 à un PUT sur une ligne
-     * disparue : il faudrait alors le verrou de ligne de #545. Voir
-     * `.claude/rules/portfolio-contenus.md`, section About.
+     * Interroge la base à chaque appel, jamais une instance seulement gardée en
+     * mémoire : c'est ce qui dispense AboutSettingsAdministrator::update() de
+     * verrou (issue #553). Elle dit quelle ligne existe, pas que les champs
+     * d'une instance déjà chargée sont rafraîchis. Pourquoi, et ce qui imposerait
+     * le verrou : `.claude/rules/portfolio-contenus.md`, section About.
      */
     public function findByLocale(Locale $locale): ?AboutSettings;
 
