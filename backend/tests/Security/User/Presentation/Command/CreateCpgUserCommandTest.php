@@ -65,7 +65,11 @@ final class CreateCpgUserCommandTest extends KernelTestCase
         $this->executeWithPasswordOnStdin($tester, ['--username' => 'super', '--role' => ['ROLE_SUPER']], TestCredentials::plainPassword());
 
         $event = self::singleSecurityAuditEvent('user-created');
-        self::assertSame('super', $event['user']);
+        $created = self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername('super');
+        self::assertNotNull($created);
+        // Par son UUID, jamais son identifiant (issue #363).
+        self::assertSame($created->accountId(), $event['userId']);
+        self::assertArrayNotHasKey('user', $event);
         self::assertTrue($event['superAdmin']);
         self::assertSame('console', $event['actor']);
     }

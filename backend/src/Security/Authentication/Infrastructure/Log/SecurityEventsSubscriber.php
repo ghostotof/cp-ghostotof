@@ -33,8 +33,9 @@ use Throwable;
  *    a son propre événement : le mot de passe n'a pas été vérifié, ce n'est
  *    pas une mauvaise tentative de plus mais le déclenchement de la défense ;
  *  - un échec transmet l'identifiant tenté ET le compte déjà chargé, s'il y
- *    en a un : le journal n'écrit que l'empreinte du premier, et ne nomme
- *    que le second (issue #418, un mot de passe tapé comme identifiant) ;
+ *    en a un : le journal n'écrit que l'empreinte du premier, et ne désigne
+ *    que le second, par son UUID (issue #418, un mot de passe tapé comme
+ *    identifiant ; issue #363, un identifiant dérivé d'une adresse) ;
  *  - le 403 backoffice se reconnaît sur kernel.exception à la priorité 0,
  *    c'est-à-dire APRÈS le Firewall\ExceptionListener (priorité 1) qui
  *    enveloppe l'AccessDeniedException du voter dans une
@@ -73,7 +74,7 @@ final readonly class SecurityEventsSubscriber implements EventSubscriberInterfac
             return;
         }
 
-        $this->auditLogger->loginSucceeded($event->getUser()->getUserIdentifier());
+        $this->auditLogger->loginSucceeded($event->getUser());
     }
 
     public function onLoginFailure(LoginFailureEvent $event): void
@@ -143,7 +144,7 @@ final readonly class SecurityEventsSubscriber implements EventSubscriberInterfac
 
     public function onLogout(LogoutEvent $event): void
     {
-        $this->auditLogger->loggedOut($event->getToken()?->getUserIdentifier());
+        $this->auditLogger->loggedOut($event->getToken()?->getUser());
     }
 
     public function onKernelException(ExceptionEvent $event): void

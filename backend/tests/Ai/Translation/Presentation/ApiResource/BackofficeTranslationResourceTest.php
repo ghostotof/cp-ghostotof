@@ -360,7 +360,12 @@ final class BackofficeTranslationResourceTest extends WebTestCase
         // compromis se voit.
         $refusals = self::aiUsageRecordsWithOutcome('rate-limited');
         self::assertCount(1, $refusals);
-        self::assertSame(self::SUPER_USERNAME, $refusals[0]->context['account'] ?? null);
+        // Le compte par son UUID, jamais son identifiant (issue #363).
+        $accountId = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->fetchOne('SELECT id FROM cpg_user WHERE username = :username', ['username' => self::SUPER_USERNAME]);
+        self::assertIsString($accountId);
+        self::assertSame($accountId, $refusals[0]->context['userId'] ?? null);
+        self::assertArrayNotHasKey('account', $refusals[0]->context);
         self::assertIsString($refusals[0]->context['retryAfter'] ?? null);
     }
 

@@ -103,12 +103,14 @@ final class PurgePendingInvitationsCommand extends Command
         if ([] === $result->purged) {
             $io->text('Rien à purger.');
         } else {
-            $io->section($dryRun ? 'Comptes qui seraient purgés' : 'Comptes purgés');
+            // Par UUID (issue #363) : cette sortie est le journal du pod du
+            // CronJob, et l'identifiant d'un invité est dérivé de son adresse.
+            $io->section($dryRun ? 'Comptes qui seraient purgés (UUID)' : 'Comptes purgés (UUID)');
             $io->listing($result->purged);
         }
 
         if ([] !== $result->skipped) {
-            $io->section('Comptes ignorés (ROLE_SUPER en attente d\'activation)');
+            $io->section('Comptes ignorés, UUID (ROLE_SUPER en attente d\'activation)');
             $io->listing($result->skipped);
             $io->note('Un compte ROLE_SUPER en attente n\'est jamais purgé automatiquement : décision manuelle (comme le dernier super-administrateur à la suppression).');
         }

@@ -6,6 +6,7 @@ namespace App\Security\Authentication\Application;
 
 use App\Security\User\Domain\Entity\CpgUser;
 use SensitiveParameter;
+use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
  * Journal de sécurité (D5, constat A5 du 3e audit) : l'unique point d'entrée
@@ -32,14 +33,17 @@ use SensitiveParameter;
  *    CpgUserRegistrar, après l'enregistrement.
  *
  * Ce qui sort, et rien d'autre : `event` (kebab-case, stable — c'est la clé
- * sur laquelle on filtre), l'identifiant visé (`user`, plus `userId` quand un
- * compte existe ; pour un login raté ou refusé, l'empreinte de l'identifiant
- * tenté, `userFingerprint`, issue #418), l'auteur (`actor`, identifiant de l'utilisateur
- * authentifié ou `anonymous`), l'IP et le chemin. Jamais un mot de passe, un
- * jeton (JWT, XSRF, invitation), un e-mail, un corps de requête ni une
- * exception sérialisée — un journal de sécurité qui contient un secret est
- * lui-même une fuite. SecurityAuditLoggerTest pince cette règle avec des
- * valeurs sentinelles.
+ * sur laquelle on filtre), le sujet (`userId`, l'UUID d'un compte ; `user`,
+ * le seul marqueur `guest-…` du palier de base ; pour un login raté ou
+ * refusé, l'empreinte de l'identifiant tenté, `userFingerprint`, issue
+ * #418), l'auteur (`actor` : l'UUID du compte authentifié, le marqueur
+ * `guest-…`, `anonymous`, `system` ou `console`), l'IP et le chemin. Jamais un
+ * mot de passe, un jeton (JWT, XSRF, invitation), un e-mail, l'identifiant
+ * de connexion d'un compte (issue #363 : pour un invité, il est dérivé de son
+ * adresse), un corps de requête ni une exception sérialisée — un journal de
+ * sécurité qui contient un secret est lui-même une fuite.
+ * SecurityAuditLoggerTest pince cette règle avec des valeurs sentinelles,
+ * AccountIdentifierReachesNoLogTest sur tous les canaux.
  *
  * L'auteur n'est pas un paramètre : c'est l'implémentation qui le lit dans le
  * jeton de sécurité de la requête courante. Un cas d'usage n'a ainsi rien à
@@ -47,13 +51,14 @@ use SensitiveParameter;
  */
 interface SecurityAuditLoggerInterface
 {
-    public function loginSucceeded(string $username): void;
+    /** Login réussi sur le firewall `login` : le compte par son UUID. */
+    public function loginSucceeded(UserInterface $user): void;
 
     /**
      * Échec de login. L'identifiant tenté n'est **jamais** écrit tel quel
      * (issue #418) : ce peut être un mot de passe tapé dans le mauvais champ.
-     * La ligne porte son empreinte (`userFingerprint`), et nomme le compte
-     * (`user` + `userId`) seulement quand l'identifiant en désigne un.
+     * La ligne porte son empreinte (`userFingerprint`), et désigne le compte
+     * (`userId`) seulement quand l'identifiant en désigne un.
      *
      * @param string|null  $triedIdentifier identifiant saisi, s'il a pu être lu
      * @param CpgUser|null $account         le compte qu'il désigne, déjà chargé par l'authentification ;
@@ -65,7 +70,7 @@ interface SecurityAuditLoggerInterface
      * Refus par login_throttling : le mot de passe n'a pas été vérifié, ni le
      * compte chargé — et il ne doit pas l'être, ce serait une requête SQL sur
      * le chemin que l'attaquant martèle. D'où l'absence de compte dans la
-     * signature : la ligne porte `user: null` et l'empreinte seule, calculée
+     * signature : la ligne porte l'empreinte seule, calculée
      * comme la clé du compteur, qui relie le refus aux échecs qui l'ont causé
      * quand c'est le compteur par (IP, identifiant) qui a refusé. Le compteur
      * par IP seule (25 essais en 15 min) peut refuser une saisie jamais vue :
@@ -75,7 +80,8 @@ interface SecurityAuditLoggerInterface
      */
     public function loginThrottled(#[SensitiveParameter] ?string $triedIdentifier): void;
 
-    public function loggedOut(?string $username): void;
+    /** Déconnexion : un compte par son UUID, le palier de base par son marqueur `guest-…`. */
+    public function loggedOut(?UserInterface $user): void;
 
     /** ADR 0003 D6 : jeton ROLE_USER émis sans compte, identifié par son marqueur `guest-…`. */
     public function baseAccessIssued(string $guestIdentifier): void;
@@ -121,7 +127,7 @@ interface SecurityAuditLoggerInterface
      * Lien déjà consommé présenté de nouveau (issue #356) : signe possible
      * d'une fuite du lien. Côté journal seulement — la réponse est celle de
      * tout lien inutilisable (404, issue #362), qui ne dit pas à l'appelant
-     * que le lien a servi. Nomme le compte que le lien activait, jamais le jeton.
+     * que le lien a servi. Désigne le compte que le lien activait, jamais le jeton.
      */
     public function passwordSetupTokenReplayed(CpgUser $user): void;
 

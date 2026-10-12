@@ -20,14 +20,17 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorage;
 use Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken;
+use Symfony\Component\Security\Core\User\InMemoryUser;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
  * D5 (audit 2026-09-16, constat A5) : un seul point d'entrée pour le journal
  * de sécurité. Chaque méthode produit exactement un enregistrement `info`
- * portant un `event` stable en kebab-case, l'identifiant visé, l'auteur, l'IP
- * et le chemin — et rien d'autre. Le test « valeurs sentinelles » pince la
- * règle « jamais un secret ni un e-mail dans un contexte ».
+ * portant un `event` stable en kebab-case, le sujet, l'auteur, l'IP et le
+ * chemin — et rien d'autre. Un compte, sujet ou auteur, se désigne par son
+ * UUID, jamais par son identifiant de connexion (issue #363). Le test
+ * « valeurs sentinelles » pince la règle « jamais un secret, un e-mail ni
+ * l'identifiant d'un compte dans un contexte ».
  *
  * Le `TestLogger` de psr/log n'existe plus dans psr/log 3 (déplacé dans
  * fig/log-test, non installé) : le TestHandler de Monolog joue le même rôle,
@@ -57,17 +60,18 @@ final class SecurityAuditLoggerTest extends TestCase
         );
     }
 
-    public function testLoginSucceededNamesTheUserAsBothSubjectAndActor(): void
+    public function testLoginSucceededNamesTheAccountByItsIdAsBothSubjectAndActor(): void
     {
         $this->pushRequest('/api/login_check', 'POST');
-        $this->authenticate(new CpgUser('jane', 'hashed-password'));
+        $jane = new CpgUser('jane', 'hashed-password');
+        $this->authenticate($jane);
 
-        $this->auditLogger->loginSucceeded('jane');
+        $this->auditLogger->loginSucceeded($jane);
 
         self::assertSame([
             'event' => 'login-succeeded',
-            'user' => 'jane',
-            'actor' => 'jane',
+            'userId' => $jane->accountId(),
+            'actor' => $jane->accountId(),
             'ip' => self::IP,
             'path' => '/api/login_check',
         ], $this->singleRecord()->context);
@@ -86,7 +90,6 @@ final class SecurityAuditLoggerTest extends TestCase
 
         self::assertSame([
             'event' => 'login-failed',
-            'user' => null,
             'userFingerprint' => $this->fingerprint->of(TestCredentials::variant('typed-as-identifier')),
             'actor' => 'anonymous',
             'ip' => self::IP,
@@ -95,12 +98,10 @@ final class SecurityAuditLoggerTest extends TestCase
     }
 
     /**
-     * Un compte existant reste lisible en clair, comme dans les autres
-     * événements (`user` + `userId`) : c'est le nom que l'exploitant cherche
-     * quand un compte est visé. Le nom vient du compte chargé, pas de la
-     * saisie.
+     * Un compte existant est désigné, comme dans les autres événements, par
+     * son UUID (issue #363) — celui du compte chargé, pas la saisie.
      */
-    public function testLoginFailedOnAnExistingAccountNamesItAndKeepsTheFingerprint(): void
+    public function testLoginFailedOnAnExistingAccountNamesItByItsIdAndKeepsTheFingerprint(): void
     {
         $this->pushRequest('/api/login_check', 'POST');
         $jane = new CpgUser('jane', 'hashed-password');
@@ -109,7 +110,6 @@ final class SecurityAuditLoggerTest extends TestCase
 
         self::assertSame([
             'event' => 'login-failed',
-            'user' => 'jane',
             'userId' => $jane->getId()->toRfc4122(),
             'userFingerprint' => $this->fingerprint->of('jane'),
             'actor' => 'anonymous',
@@ -126,7 +126,7 @@ final class SecurityAuditLoggerTest extends TestCase
 
         $context = $this->singleRecord()->context;
         self::assertSame('login-failed', $context['event']);
-        self::assertNull($context['user']);
+        self::assertArrayNotHasKey('user', $context);
         self::assertNull($context['userFingerprint']);
         self::assertArrayNotHasKey('userId', $context);
     }
@@ -145,21 +145,76 @@ final class SecurityAuditLoggerTest extends TestCase
 
         [$failed, $throttled] = $this->handler->getRecords();
         self::assertSame('login-throttled', $throttled->context['event']);
-        self::assertNull($throttled->context['user']);
+        self::assertArrayNotHasKey('user', $throttled->context);
+        self::assertArrayNotHasKey('userId', $throttled->context);
         self::assertSame($failed->context['userFingerprint'], $throttled->context['userFingerprint'], 'Même compteur login_throttling (insensible à la casse), même empreinte.');
     }
 
-    public function testLoggedOutNamesTheDepartingUser(): void
+    public function testLoggedOutNamesTheDepartingAccountByItsId(): void
     {
         $this->pushRequest('/api/logout', 'POST');
-        $this->authenticate(new CpgUser('jane', 'hashed-password'));
+        $jane = new CpgUser('jane', 'hashed-password');
+        $this->authenticate($jane);
 
-        $this->auditLogger->loggedOut('jane');
+        $this->auditLogger->loggedOut($jane);
 
         self::assertSame([
             'event' => 'logged-out',
-            'user' => 'jane',
-            'actor' => 'jane',
+            'userId' => $jane->accountId(),
+            'actor' => $jane->accountId(),
+            'ip' => self::IP,
+            'path' => '/api/logout',
+        ], $this->singleRecord()->context);
+    }
+
+    /** « Terminer cet accès » (issue #65) : le marqueur `guest-…`, aléatoire, ne désigne personne. */
+    public function testLoggedOutNamesADepartingBaseTierGuestByItsMarker(): void
+    {
+        $this->pushRequest('/api/logout', 'POST');
+        $guest = new GuestUser('guest-0123');
+        $this->authenticate($guest);
+
+        $this->auditLogger->loggedOut($guest);
+
+        self::assertSame([
+            'event' => 'logged-out',
+            'user' => 'guest-0123',
+            'actor' => 'guest-0123',
+            'ip' => self::IP,
+            'path' => '/api/logout',
+        ], $this->singleRecord()->context);
+    }
+
+    public function testALogoutWithoutTokenHasNoSubject(): void
+    {
+        $this->pushRequest('/api/logout', 'POST');
+
+        $this->auditLogger->loggedOut(null);
+
+        self::assertSame([
+            'event' => 'logged-out',
+            'actor' => 'anonymous',
+            'ip' => self::IP,
+            'path' => '/api/logout',
+        ], $this->singleRecord()->context);
+    }
+
+    /**
+     * Un utilisateur qui n'est ni un compte ni le palier de base (aucun
+     * fournisseur n'en produit aujourd'hui) : son identifiant, dont on ne sait
+     * rien, n'est écrit ni comme sujet ni comme auteur.
+     */
+    public function testAnyOtherUserIsNeverNamedByItsIdentifier(): void
+    {
+        $this->pushRequest('/api/logout', 'POST');
+        $other = new InMemoryUser('jean.dupont', null, ['ROLE_USER']);
+        $this->authenticate($other);
+
+        $this->auditLogger->loggedOut($other);
+
+        self::assertSame([
+            'event' => 'logged-out',
+            'actor' => 'unidentified',
             'ip' => self::IP,
             'path' => '/api/logout',
         ], $this->singleRecord()->context);
@@ -183,13 +238,13 @@ final class SecurityAuditLoggerTest extends TestCase
     public function testCsrfRejectedCarriesNoSubjectOnlyTheActorAndThePath(): void
     {
         $this->pushRequest('/api/backoffice/users', 'POST');
-        $this->authenticate(new CpgUser('super', 'hashed-password'));
+        $super = $this->authenticatedSuper();
 
         $this->auditLogger->csrfRejected();
 
         self::assertSame([
             'event' => 'csrf-rejected',
-            'actor' => 'super',
+            'actor' => $super->accountId(),
             'ip' => self::IP,
             'path' => '/api/backoffice/users',
         ], $this->singleRecord()->context);
@@ -241,10 +296,10 @@ final class SecurityAuditLoggerTest extends TestCase
         self::assertSame('/api/backoffice/users', $this->singleRecord()->context['path']);
     }
 
-    public function testUserInvitedNamesTheAccountByUsernameAndIdAndTheActingAdmin(): void
+    public function testUserInvitedNamesTheAccountAndTheActingAdminByTheirIds(): void
     {
         $this->pushRequest('/api/backoffice/users', 'POST');
-        $this->authenticate(new CpgUser('super', 'hashed-password'));
+        $super = $this->authenticatedSuper();
         $invited = new CpgUser('jean.dupont', '');
         $invited->setEmail('jean.dupont@example.com');
 
@@ -252,9 +307,8 @@ final class SecurityAuditLoggerTest extends TestCase
 
         self::assertSame([
             'event' => 'user-invited',
-            'user' => 'jean.dupont',
             'userId' => $invited->getId()->toRfc4122(),
-            'actor' => 'super',
+            'actor' => $super->accountId(),
             'ip' => self::IP,
             'path' => '/api/backoffice/users',
         ], $this->singleRecord()->context);
@@ -263,29 +317,30 @@ final class SecurityAuditLoggerTest extends TestCase
     public function testUserReinvitedIsItsOwnEvent(): void
     {
         $this->pushRequest('/api/backoffice/users/x/invitation', 'POST');
-        $this->authenticate(new CpgUser('super', 'hashed-password'));
+        $this->authenticatedSuper();
+        $invited = new CpgUser('jean.dupont', '');
 
-        $this->auditLogger->userReinvited(new CpgUser('jean.dupont', ''));
+        $this->auditLogger->userReinvited($invited);
 
         self::assertSame('user-reinvited', $this->singleRecord()->context['event']);
-        self::assertSame('jean.dupont', $this->singleRecord()->context['user']);
+        self::assertSame($invited->accountId(), $this->singleRecord()->context['userId']);
+        self::assertArrayNotHasKey('user', $this->singleRecord()->context);
     }
 
     #[DataProvider('roleChanges')]
     public function testRoleChangedSaysWhetherSuperAdminWasGrantedOrRevoked(bool $superAdmin): void
     {
         $this->pushRequest('/api/backoffice/users/x/roles', 'PUT');
-        $this->authenticate(new CpgUser('super', 'hashed-password'));
+        $super = $this->authenticatedSuper();
         $target = new CpgUser('jane', 'hashed-password');
 
         $this->auditLogger->roleChanged($target, $superAdmin);
 
         self::assertSame([
             'event' => 'role-changed',
-            'user' => 'jane',
             'userId' => $target->getId()->toRfc4122(),
             'superAdmin' => $superAdmin,
-            'actor' => 'super',
+            'actor' => $super->accountId(),
             'ip' => self::IP,
             'path' => '/api/backoffice/users/x/roles',
         ], $this->singleRecord()->context);
@@ -303,16 +358,15 @@ final class SecurityAuditLoggerTest extends TestCase
     public function testPasswordChangedNeverSeesThePassword(): void
     {
         $this->pushRequest('/api/backoffice/users/x/password', 'PUT');
-        $this->authenticate(new CpgUser('super', 'hashed-password'));
+        $super = $this->authenticatedSuper();
         $target = new CpgUser('jane', 'hashed-password');
 
         $this->auditLogger->passwordChanged($target);
 
         self::assertSame([
             'event' => 'password-changed',
-            'user' => 'jane',
             'userId' => $target->getId()->toRfc4122(),
-            'actor' => 'super',
+            'actor' => $super->accountId(),
             'ip' => self::IP,
             'path' => '/api/backoffice/users/x/password',
         ], $this->singleRecord()->context);
@@ -321,16 +375,15 @@ final class SecurityAuditLoggerTest extends TestCase
     public function testUserDeletedNamesTheRemovedAccount(): void
     {
         $this->pushRequest('/api/backoffice/users/x', 'DELETE');
-        $this->authenticate(new CpgUser('super', 'hashed-password'));
+        $super = $this->authenticatedSuper();
         $target = new CpgUser('jane', 'hashed-password');
 
         $this->auditLogger->userDeleted($target);
 
         self::assertSame([
             'event' => 'user-deleted',
-            'user' => 'jane',
             'userId' => $target->getId()->toRfc4122(),
-            'actor' => 'super',
+            'actor' => $super->accountId(),
             'ip' => self::IP,
             'path' => '/api/backoffice/users/x',
         ], $this->singleRecord()->context);
@@ -349,7 +402,6 @@ final class SecurityAuditLoggerTest extends TestCase
 
         self::assertSame([
             'event' => 'account-activated',
-            'user' => 'jane',
             'userId' => $target->getId()->toRfc4122(),
             'actor' => 'anonymous',
             'ip' => self::IP,
@@ -391,7 +443,6 @@ final class SecurityAuditLoggerTest extends TestCase
 
         self::assertSame([
             'event' => 'password-setup-token-replayed',
-            'user' => 'jane',
             'userId' => $target->getId()->toRfc4122(),
             'actor' => 'anonymous',
             'ip' => self::IP,
@@ -459,7 +510,6 @@ final class SecurityAuditLoggerTest extends TestCase
 
         self::assertSame([
             'event' => 'user-purged',
-            'user' => 'stale-invitee',
             'userId' => $target->getId()->toRfc4122(),
             'reason' => 'invitation-expired',
             'actor' => 'system',
@@ -486,7 +536,6 @@ final class SecurityAuditLoggerTest extends TestCase
 
         self::assertSame([
             'event' => 'user-created',
-            'user' => 'bootstrap',
             'userId' => $created->getId()->toRfc4122(),
             'superAdmin' => $superAdmin,
             'actor' => 'console',
@@ -548,6 +597,10 @@ final class SecurityAuditLoggerTest extends TestCase
             'email' => 'sentinel.person@example.com',
             // Issue #418 : un mot de passe tapé dans le champ identifiant.
             'password typed as identifier' => 'SENTINEL-TYPED-AS-USERNAME-3e6f',
+            // Issue #363 : l'identifiant de connexion d'un compte, dérivé de
+            // son adresse pour un invité — auteur comme sujet.
+            'actor login identifier' => 'sentinel-admin-ident-6a1f',
+            'subject login identifier' => 'sentinel-invitee-ident-1c8d',
         ];
 
         // Le jeton d'invitation voyage dans le corps (A7, D6), comme le mot de
@@ -568,11 +621,11 @@ final class SecurityAuditLoggerTest extends TestCase
         $request->cookies->set('XSRF-TOKEN', $sentinels['XSRF cookie']);
         $this->requestStack->push($request);
 
-        $actor = new CpgUser('super', $sentinels['hashed password']);
+        $actor = new CpgUser($sentinels['actor login identifier'], $sentinels['hashed password']);
         $actor->setEmail('super.'.$sentinels['email']);
         $this->authenticate($actor);
 
-        $invited = new CpgUser('jean.dupont', $sentinels['hashed password']);
+        $invited = new CpgUser($sentinels['subject login identifier'], $sentinels['hashed password']);
         $invited->setEmail($sentinels['email']);
 
         // Un login raté, un rejet CSRF, une invitation — plus le reste de
@@ -580,8 +633,8 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->loginFailed($sentinels['password typed as identifier'], null);
         $this->auditLogger->loginThrottled($sentinels['password typed as identifier']);
         $this->auditLogger->loginFailed('jane', $invited);
-        $this->auditLogger->loginSucceeded('jane');
-        $this->auditLogger->loggedOut('jane');
+        $this->auditLogger->loginSucceeded($invited);
+        $this->auditLogger->loggedOut($invited);
         $this->auditLogger->baseAccessIssued('guest-0123');
         $this->auditLogger->csrfRejected();
         $this->auditLogger->backofficeAccessDenied();
@@ -619,6 +672,15 @@ final class SecurityAuditLoggerTest extends TestCase
     private function pushRequest(string $uri, string $method): void
     {
         $this->requestStack->push(Request::create($uri, $method, server: ['REMOTE_ADDR' => self::IP]));
+    }
+
+    private function authenticatedSuper(): CpgUser
+    {
+        $super = new CpgUser('super', 'hashed-password');
+        $super->setRoles([CpgUser::ROLE_SUPER]);
+        $this->authenticate($super);
+
+        return $super;
     }
 
     private function authenticate(UserInterface $user): void

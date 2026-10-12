@@ -154,7 +154,7 @@ est accepté et nommé ici.
 
 Trois bornes indépendantes, toutes présentes avant le premier déploiement :
 
-- un **quota par compte** (fenêtre glissante, 30 appels par heure, clé = `username`) — un bug de
+- un **quota par compte** (fenêtre glissante, 30 appels par heure, clé = `username` — l'UUID du compte depuis le 2026-10-12, issue #363) — un bug de
   boucle côté UI ou un compte compromis ne peut pas dépenser sans limite ;
 - un **plafond de jetons de sortie** (`max_tokens: 4096`, nom Anthropic) ;
 - un **timeout client HTTP** (40 s, sous les 60 s de nginx et de l'ingress) sur un client dédié
@@ -165,7 +165,7 @@ contenu**. `claude-sonnet-5` est le modèle des deux environnements : preprod do
 y compris la qualité de la sortie structurée.
 
 **Amendement du 2026-09-15.** L'assistant (D7) reçoit les mêmes trois bornes, avec un quota
-distinct (`career_assistant`, même fenêtre glissante, clé = `username`), un plafond de sortie plus
+distinct (`career_assistant`, même fenêtre glissante, clé = `username` — l'UUID du compte depuis le 2026-10-12, issue #363), un plafond de sortie plus
 bas (une réponse de conversation, pas une traduction de cinq champs) et **une quatrième borne qui
 n'existait pas en phase 1 : l'entrée**. La conversation est renvoyée entière à chaque tour, donc
 sa taille est plafonnée (nombre de tours et longueur des messages, valeurs fixées par la spec) —

@@ -9,12 +9,17 @@ use DomainException;
 /**
  * Exception métier levée lorsqu'on tente de créer un CpgUser avec un nom
  * d'utilisateur déjà utilisé par un autre compte.
+ *
+ * Message constant, qui ne cite aucun compte (issue #363) : le noyau et API
+ * Platform le journalisent, et l'identifiant d'un invité est dérivé de son
+ * adresse. `app:user:create` rappelle lui-même à l'opérateur l'identifiant
+ * qu'il vient de saisir.
  */
 final class UsernameAlreadyUsedException extends DomainException
 {
-    public static function forUsername(string $username): self
+    public static function alreadyTaken(): self
     {
-        return new self(\sprintf('Un utilisateur existe déjà avec le nom d\'utilisateur "%s".', $username));
+        return new self('Un utilisateur existe déjà avec ce nom d\'utilisateur.');
     }
 
     /**

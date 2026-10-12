@@ -55,7 +55,7 @@ final readonly class CpgUserRegistrar implements CpgUserRegistrarInterface
     private function refuseIfTaken(string $username): void
     {
         if (null !== $this->cpgUserRepository->findOneByUsername($username)) {
-            throw UsernameAlreadyUsedException::forUsername($username);
+            throw UsernameAlreadyUsedException::alreadyTaken();
         }
     }
 }

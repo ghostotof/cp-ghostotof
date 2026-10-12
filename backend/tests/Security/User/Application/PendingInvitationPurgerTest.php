@@ -55,7 +55,8 @@ final class PendingInvitationPurgerTest extends TestCase
 
         $result = $purger->purge(new DateInterval('P30D'));
 
-        self::assertSame(['first-invitee', 'second-invitee'], $result->purged);
+        // Par UUID, jamais par identifiant (issue #363).
+        self::assertSame([$first->accountId(), $second->accountId()], $result->purged);
         self::assertSame([], $result->skipped);
         self::assertEquals(new DateTimeImmutable('2026-08-23 10:00:00', new DateTimeZone('UTC')), $result->threshold);
     }
@@ -79,7 +80,7 @@ final class PendingInvitationPurgerTest extends TestCase
 
         $result = $purger->purge(new DateInterval('P30D'), dryRun: true);
 
-        self::assertSame(['stale-invitee'], $result->purged);
+        self::assertSame([$stale->accountId()], $result->purged);
         self::assertSame([], $result->skipped);
     }
 
@@ -99,14 +100,14 @@ final class PendingInvitationPurgerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects(self::once())->method('warning')->with(
             self::anything(),
-            self::callback(static fn (array $context): bool => 'super-invitee' === ($context['username'] ?? null)),
+            self::callback(static fn (array $context): bool => ['userId' => $superInvitee->accountId()] === $context),
         );
 
         $purger = new PendingInvitationPurger($repository, $clock, $auditLogger, $logger, $this->passthroughAccountLock());
 
         $result = $purger->purge(new DateInterval('P30D'));
 
-        self::assertSame(['super-invitee'], $result->skipped);
+        self::assertSame([$superInvitee->accountId()], $result->skipped);
         self::assertSame([], $result->purged);
     }
 

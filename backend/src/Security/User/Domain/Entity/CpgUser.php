@@ -6,6 +6,7 @@ namespace App\Security\User\Domain\Entity;
 
 use App\Security\User\Domain\Exception\InvalidUsernameException;
 use App\Security\User\Infrastructure\Doctrine\CpgUserRepository;
+use App\Shared\Domain\Security\AccountReference;
 use DateTimeImmutable;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
@@ -34,7 +35,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Table(name: 'cpg_user')]
 #[ORM\UniqueConstraint(name: self::USERNAME_UNIQUE_INDEX, columns: ['username'])]
 #[ORM\UniqueConstraint(name: self::EMAIL_UNIQUE_INDEX, columns: ['email'])]
-class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
+class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, AccountReference
 {
     /**
      * Noms des index uniques, tels que PostgreSQL les cite dans le message
@@ -155,6 +156,16 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface
     public function getId(): Uuid
     {
         return $this->id;
+    }
+
+    /**
+     * L'UUID, seule désignation du compte dans un journal ou une clé de quota
+     * (issue #363) : l'identifiant de connexion d'un invité est dérivé de son
+     * adresse.
+     */
+    public function accountId(): string
+    {
+        return $this->id->toRfc4122();
     }
 
     public function getUsername(): string

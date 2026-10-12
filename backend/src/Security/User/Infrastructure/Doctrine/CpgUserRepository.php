@@ -170,7 +170,7 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
         if (!\is_int($generation)) {
             $exists = false !== $connection->fetchOne('SELECT 1 FROM cpg_user WHERE id = :id', ['id' => $user->getId()], ['id' => UuidType::NAME]);
 
-            throw $exists ? AccountNotAwaitingActivationException::forUsername($user->getUsername()) : CpgUserNotFoundException::forId($user->getId());
+            throw $exists ? AccountNotAwaitingActivationException::alreadyActivated() : CpgUserNotFoundException::forId($user->getId());
         }
 
         $unitOfWork = $this->getEntityManager()->getUnitOfWork();

@@ -52,7 +52,14 @@ paths:
     `UnusablePasswordSetupLinkException` (→404, **every** unusable link — see the set-password bullet
     below, issue #362), `CannotModifyOwnRolesException` / `CannotDemoteLastSuperAdminException` (→409),
     `AccountNotAwaitingActivationException` (→409), `AccountInvitationDeliveryException` (→503),
-    `PasswordSetupRateLimitExceededException` (→429).
+    `PasswordSetupRateLimitExceededException` (→429). **No message quotes a username** (issue #363,
+    `CannotDeleteOwnAccount`, `CannotDeleteLastSuperAdmin`, `CannotModifyOwnRoles`,
+    `CannotDemoteLastSuperAdmin`, `AccountNotAwaitingActivation`, `UsernameAlreadyUsed`): the kernel and API
+    Platform log them (`info`, emitted by preprod's `debug`), and an invitee's username is derived from
+    its address. The backoffice frontend reads the status and the `type`, never the `detail`;
+    `app:user:create` repeats the username it was given in its own output. The purge reports and prints
+    accounts by **UUID** (`PendingInvitationPurgeResult`, the CronJob's output is a pod log), and its
+    `ROLE_SUPER` warning carries `userId`.
   - `Domain/Service/UsernameGenerator.php` — derives a free username from the email local part
     (filter to `[a-z0-9_.-]`, cap 60, pad with `user` if < 3, numeric suffix on collision).
   - `Application/` use cases (each with an interface, autowired single-impl):

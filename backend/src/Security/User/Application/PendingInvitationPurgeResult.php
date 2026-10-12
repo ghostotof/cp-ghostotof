@@ -14,8 +14,11 @@ use DateTimeImmutable;
 final readonly class PendingInvitationPurgeResult
 {
     /**
-     * @param list<string> $purged  usernames supprimés (ou qui le seraient, en dry-run)
-     * @param list<string> $skipped usernames ignorés parce que le compte porte ROLE_SUPER
+     * Les comptes par leur UUID, jamais par leur identifiant (issue #363) :
+     * la commande les affiche, et la sortie d'un CronJob est un journal de pod.
+     *
+     * @param list<string> $purged  UUID des comptes supprimés (ou qui le seraient, en dry-run)
+     * @param list<string> $skipped UUID des comptes ignorés parce qu'ils portent ROLE_SUPER
      */
     public function __construct(
         public array $purged,

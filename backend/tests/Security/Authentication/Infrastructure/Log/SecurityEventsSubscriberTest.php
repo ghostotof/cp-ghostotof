@@ -65,9 +65,11 @@ final class SecurityEventsSubscriberTest extends TestCase
 
     public function testASuccessfulLoginOnTheLoginFirewallIsLogged(): void
     {
-        $this->auditLogger()->expects(self::once())->method('loginSucceeded')->with('jane');
+        $event = $this->loginSuccess('login', 'jane');
+        // Le compte lui-même, que le journal désigne par son UUID (issue #363).
+        $this->auditLogger()->expects(self::once())->method('loginSucceeded')->with(self::identicalTo($event->getUser()));
 
-        $this->subscriber()->onLoginSuccess($this->loginSuccess('login', 'jane'));
+        $this->subscriber()->onLoginSuccess($event);
     }
 
     /**
@@ -173,7 +175,7 @@ final class SecurityEventsSubscriberTest extends TestCase
     public function testALogoutIsLoggedWithTheDepartingUser(): void
     {
         $user = new CpgUser('jane', 'hashed-password');
-        $this->auditLogger()->expects(self::once())->method('loggedOut')->with('jane');
+        $this->auditLogger()->expects(self::once())->method('loggedOut')->with(self::identicalTo($user));
 
         $this->subscriber()->onLogout(new LogoutEvent(Request::create('/api/logout', 'POST'), new UsernamePasswordToken($user, 'api', $user->getRoles())));
     }
