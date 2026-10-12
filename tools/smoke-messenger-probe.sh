@@ -53,7 +53,8 @@ done
 # témoin non consommé fait sortir la commande en 1 au bout de 90 s, Job
 # `Failed=True` que tools/wait-rollout.sh voit aussitôt ; un pod bloqué, lui,
 # tourne encore à l'expiration de l'attente — l'activeDeadlineSeconds du Job
-# est au-dessus (issue #535) —, et run-job.sh imprime ses journaux.
+# est au-dessus (issue #535) —, run-job.sh imprime ses journaux puis l'arrête :
+# il ne peut pas démarrer pendant rollback-preprod.
 status=0
 RUN_JOB_KUBECTL="$KUBECTL" RUN_JOB_WAIT="$WAIT" \
   "$ROOT/tools/run-job.sh" "$NAMESPACE" "$ROOT/k8s/base/messenger-probe-job.yaml" "$IMAGE" 300 || status=$?
