@@ -46,6 +46,13 @@ survives `cache:clear` after a DTO's `id` type changes — `rm -rf var/cache/<en
 bind-mount desync (`docker compose restart backend`) can make a container run a stale Provider/Processor
 mid-migration.
 
+**A lock that finds a row gone detaches its instance through `Shared/Infrastructure/Doctrine/VanishedEntities::detachVanished()`,
+never `EntityManager::detach()`** (issue #548). Doctrine takes an instance it does not manage for new (`persist()` assumes `STATE_NEW` and reads nothing): a caller re-saving
+the detached instance re-inserted the deleted row, silently. The service remembers the instance in a
+`WeakMap` and its `prePersist` listener refuses it (`VanishedEntitySavedAgainException`, unmapped, a
+`critical` 500). Used today by the order scope lock's re-read and the technology row lock; the details, the
+rejected options and the accepted limits live in `.claude/rules/portfolio-contenus.md` (ordering section).
+
 **Every entity timestamp is stored with its offset** (issue #434): `#[ORM\Column(type:
 Types::DATETIMETZ_IMMUTABLE)]` (`datetimetz` for a mutable object), PostgreSQL `TIMESTAMP(0) WITH TIME
 ZONE` — never `datetime` nor `datetime_immutable`, the type Doctrine infers from a bare

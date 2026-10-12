@@ -12,6 +12,8 @@ use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
 use App\Portfolio\Experience\Infrastructure\Doctrine\ExperienceTechnologyLockInsideTransactionException;
 use App\Portfolio\Experience\Infrastructure\Doctrine\ExperienceTechnologyLockTimeoutException;
 use App\Portfolio\Experience\Infrastructure\Doctrine\PostgresExperienceTechnologyRowLock;
+use App\Shared\Infrastructure\Doctrine\VanishedEntities;
+use App\Shared\Infrastructure\Doctrine\VanishedEntitySavedAgainException;
 use App\Tests\Support\CommitRefusal;
 use App\Tests\Support\OpensProbeConnection;
 use Doctrine\DBAL\Connection;
@@ -88,6 +90,35 @@ final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
         self::assertFalse($ran, "L'opération a tourné sur une technologie supprimée.");
         self::assertFalse($this->em->contains($technology), "L'instance périmée est restée gérée.");
         self::assertFalse($this->em->getConnection()->isTransactionActive());
+    }
+
+    /**
+     * L'instance périmée que le verrou a détachée, re-sauvée par l'appelant qui
+     * la tient (une commande qui continue), ne revient pas en base (issue
+     * #548) : Doctrine la tiendrait pour neuve, et le `save()` du dépôt
+     * réinsérait la technologie supprimée, sans erreur ni trace.
+     */
+    public function testATechnologyDetachedByTheLockIsRefusedInsteadOfReinsertedWhenSavedAgain(): void
+    {
+        $technology = $this->storedTechnology();
+        $id = $technology->getId()->toRfc4122();
+        $this->em->getConnection()->executeStatement('DELETE FROM experience_technology WHERE id = :id', ['id' => $id]);
+        try {
+            $this->lock()->whileLocked($technology->getId(), static fn (ExperienceTechnology $locked): null => null);
+            self::fail("L'opération a tourné sur une technologie supprimée.");
+        } catch (ExperienceTechnologyNotFoundException) {
+        }
+        $refusal = null;
+
+        try {
+            $this->em->persist($technology);
+            $this->em->flush();
+        } catch (Throwable $exception) {
+            $refusal = $exception;
+        }
+
+        self::assertSame(0, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM experience_technology WHERE id = :id', ['id' => $id]), 'La technologie supprimée, détachée par le verrou puis re-sauvée, a été réinsérée (#548).');
+        self::assertInstanceOf(VanishedEntitySavedAgainException::class, $refusal, \sprintf('La re-sauvegarde aurait dû être refusée sous son nom : %s.', get_debug_type($refusal)));
     }
 
     public function testAnUnknownTechnologyIsANotFound(): void
@@ -231,7 +262,7 @@ final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
         $caught = null;
 
         try {
-            (new PostgresExperienceTechnologyRowLock($this->em, new NullLogger(), '50ms'))->whileLocked($technology->getId(), static fn (ExperienceTechnology $locked): null => null);
+            (new PostgresExperienceTechnologyRowLock($this->em, new NullLogger(), self::getContainer()->get(VanishedEntities::class), '50ms'))->whileLocked($technology->getId(), static fn (ExperienceTechnology $locked): null => null);
         } catch (Throwable $exception) {
             $caught = $exception;
         } finally {
