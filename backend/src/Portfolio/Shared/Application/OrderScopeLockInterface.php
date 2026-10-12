@@ -7,7 +7,9 @@ namespace App\Portfolio\Shared\Application;
 use Closure;
 
 /**
- * Sérialise les écritures qui **calculent** une position (issue #389).
+ * Sérialise les écritures d'un périmètre d'ordre : celles qui **calculent**
+ * une position (issue #389), et celles qui retirent ou modifient une entrée
+ * sans la placer (issue #499).
  *
  * Placer une entrée (`ContentPlacement::atEndOf()`, `inGroup()`, `detach()`)
  * ou renuméroter un périmètre (`OrderAssigner::assign()`) est un
@@ -20,9 +22,13 @@ use Closure;
  * pas les lignes insérées par la transaction qu'il attendait (lecture
  * fantôme), et ne verrouille rien sur une table vide.
  *
- * Chaque `Administrator` enveloppe dans `withLock()` le corps entier de ses
- * `create()`, `update()` et `reorder()` : toute lecture servant à placer
- * doit avoir lieu **après** l'acquisition, et l'écriture avant sa libération.
+ * Chaque `Administrator` de contenu ordonné enveloppe dans `withLock()` le
+ * corps entier de ses `create()`, `update()`, `delete()` et `reorder()` :
+ * toute lecture servant à placer doit avoir lieu **après** l'acquisition, et
+ * l'écriture avant sa libération. Une suppression sous verrou ne peut pas
+ * valider entre la relecture d'une autre opération et son écriture (#499) :
+ * sans quoi l'`UPDATE` d'un `PUT` ne touchait aucune ligne, et le `PUT`
+ * répondait 200 sur une entrée disparue.
  */
 interface OrderScopeLockInterface
 {

@@ -105,15 +105,18 @@ paths:
     `reorder()`); `tests/Migrations/Version20261012120000Test` pins the alignment and its warnings. A test
     that must write a divergent group does it in a transaction it rolls back: a deferred trigger never
     fires there.
-    **Every write that computes a position runs under its scope's lock** (issue #389): `create()`, `update()`
-    and `reorder()` of the eight localized `Administrator`s, `create()` and `reorder()` of
-    `WatchedProductAdministrator` (its `update()` never touches the position), wrap their **whole body** in
+    **Every write of an ordered content's `Administrator` runs under its scope's lock** (issues #389, #499):
+    `create()`, `update()`, `delete()` and `reorder()` of the eight localized `Administrator`s and of
+    `WatchedProductAdministrator` wrap their **whole body** in
     `Shared/Application/OrderScopeLockInterface::withLock(ORDER_SCOPE, …)`, `ORDER_SCOPE` being the entity
     class (`<Entity>::class`, never a table name, which the Application layer has no business knowing; the
     whole table for `AboutMeCard` too, wider than its per-category ordering scope, on purpose). Without it a "Create
     the XX version" landing between a `reorder()`'s read and its save kept the old position (a group on two
     positions, invisible to the exact-set rule), and two simultaneous creations without a group got the same
-    `atEndOf()`. The adapter, `Shared/Infrastructure/Doctrine/PostgresAdvisoryOrderScopeLock`, runs the body
+    `atEndOf()`. `delete()` and the watch catalogue's `update()` place nothing, and are locked since #499 for
+    another reason: outside the lock, a deletion committed between an operation's re-read (below) and its
+    `flush()` left a `PUT`'s `UPDATE` touching no row, answered with a 200 on a vanished entry — and the
+    watch `update()`, with neither lock nor re-read, "updated" a product deleted since its loading. The adapter, `Shared/Infrastructure/Doctrine/PostgresAdvisoryOrderScopeLock`, runs the body
     in a transaction it opens and closes by hand (not `Connection::transactional()`, since issue #390, see
     above) whose first statement is `pg_advisory_xact_lock(ORDR, hashtext(scope))`,
     released by the COMMIT/ROLLBACK itself. Three choices not to undo: a **scope** lock, never `SELECT … FOR
@@ -134,25 +137,31 @@ paths:
     held from before and saved afterwards collides with the one the operation reloaded
     (`EntityIdentityCollisionException`, measured on four resource tests). Consequence for a caller: an unwritten
     change to such an instance is overwritten. An instance scheduled for insertion or removal is neither re-read
-    nor detached (detaching it silently cancelled the pending `INSERT`). Not covered: a deletion committed
-    *during* the operation — `delete()` takes no lock, so if it commits between the re-read and a `PUT`'s
-    flush, the `UPDATE` touches no row and the `PUT` still answers 200; only a deletion committed before the
-    lock is reported not found. A command chaining N operations on one EntityManager re-reads O(N²) rows,
+    nor detached (detaching it silently cancelled the pending `INSERT`). Since `delete()` takes the lock
+    (#499), an application deletion runs wholly before an operation of its scope — which then reports the
+    entry not found — or wholly after it, never in between: the loser of two simultaneous `DELETE`s of one
+    entry answers **404** (it answered 204, its `DELETE` touching no row), like a `DELETE` arriving later.
+    **Not covered, accepted**: a deletion that skips the `Administrator`s — the `--force` purge of the
+    `app:*:seed` commands (`<Repository>::remove()`, no lock: an operator's deliberate overwrite, refused
+    without `--force`) and SQL — can still commit during an operation, whose `PUT` then answers 200 on a row
+    gone. A command chaining N operations on one EntityManager re-reads O(N²) rows,
     negligible for ten-entry seeds. It relies on READ COMMITTED (PostgreSQL's default, set nowhere):
     under REPEATABLE READ the snapshot would be taken by the lock's own `SELECT`, before the wait. Last writer
     wins, like every other field; no `#[ORM\Version]`. `ScopeLockReadsCommittedStateTest` pins both (the four
     stale-state cases over the same `ProvidesLocalizedAdministrators` list as `OrderScopeLockCoverageTest`, so a
-    new localized context goes there once, the watch catalogue's end, the pending insert, and the isolation level).
+    new localized context goes there once, the second `DELETE` of an entry deleted meanwhile, the watch
+    catalogue's end, its `PUT` and `DELETE` of a product deleted meanwhile, the pending insert, and the isolation level).
     In an FPM worker the wait is bounded by `PGOPTIONS` `lock_timeout=5s`; past it the adapter throws
     `OrderScopeLockTimeoutException` (named, unmapped: a `critical` 500 — 5 s for a millisecond write is an
     anomaly, not a conflict to retry), and only for its own lock statement: a timeout inside the operation
     stays the DBAL exception. **The console waits without a bound**: the `app:*:seed` commands go through the
     `Administrator`s, so the deploy's seed Job takes the same lock, which `www.prod.conf` does not reach —
     harmless while every holder keeps it for milliseconds, revisit before holding it any longer. Guards:
-    `OrderScopeLockCoverageTest` (a probe session holds each scope, every placing operation of every
+    `OrderScopeLockCoverageTest` (a probe session holds each scope, every write of every
     `Administrator` must wait — a new one written without `withLock()` turns it red) and
-    `ContributionOrderConcurrencyTest` (two real processes, interleaved at the `preFlush`, both races).
-    `delete()` takes no lock: it leaves a gap, never a collision. The **only client-driven
+    `ContributionOrderConcurrencyTest` (two real processes, interleaved at the `preFlush`: both races of #389,
+    and a `DELETE` during a `PUT`, #499 — the child reports the title it deleted, the one the `PUT` wrote
+    once it waits). A deletion leaves a gap, never a collision. The **only client-driven
     writer of `position` is `PUT /api/backoffice/<x>/order`** (`ContentPlacement` derives it server-side,
     no request body ever chooses it) (`Backoffice<X>OrderResource`, `read: false`,
     `output: false`, 204, one per context, `{groups: [uuid…]}` — `{ids: […]}` for Watch, plus
