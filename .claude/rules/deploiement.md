@@ -91,7 +91,8 @@ paths:
   it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would
   resolve to `docker.io/library/backend`). **Every Job outside kustomize runs through
   `tools/run-job.sh <ns> <manifest> <image> <timeout> [NAME=value…]`** (issue #488) — migration and seed
-  in `pipeline.yml`, the messenger probe, the manual `create-user` procedure. **Before the cluster is
+  in `pipeline.yml`, the messenger probe, the manual `create-user` procedure, the three `failed`
+  maintenance Jobs (issue #521). **Before the cluster is
   touched** (exit 2): bash ≥ 4, jq and envsubst present (otherwise `wait-rollout.sh` failed *after* the
   apply, on a Job still running); one object, `kind: Job`, its `metadata.name` (end-of-line comment
   stripped) a DNS-1123 name — never an option, `delete job/NAME`; each `NAME=value` a `${NAME}` of the
@@ -132,8 +133,18 @@ paths:
   `tools/rotate-deployer-token.sh` checks the token actually issued against the cluster
   (`auth can-i create pods/exec` → `no`) — the only one that sees a binding added by hand. Keep both. A
   new manual `exec` in the runbook must fit the third case; if its output carries a secret or personal
-  data, it stays on the terminal, and if it writes anything, it is a Job. Reading Messenger's `failed`
-  transport is still described as a Job without a manifest: issue #521.
+  data, it stays on the terminal, and if it writes anything, it is a Job. **Messenger's `failed`
+  transport follows that split** (issue #521, `k8s/README.md` « File d'échec Messenger »):
+  `messenger:failed:show` is the third case — read-only, and at `-vv` it dumps the message itself (a
+  visitor's name, address and text, an invitation's `userId`, the raw body of an undecodable
+  envelope; measured: none of it without `-vv`) — so an `exec` on `deploy/backend -c php-fpm` under
+  `env PGOPTIONS='-c default_transaction_read_only=on'` (libpq reads it, so the whole session is
+  read-only: a `failed:remove` there fails with SQLSTATE 25006, measured); `failed:retry <id>`,
+  `failed:remove <id>` and `stop-workers` have side effects, so `messenger-failed-{retry,remove}-job.yaml`
+  and `messenger-stop-workers-job.yaml`, never with `-v`, the id through `FAILED_MESSAGE_ID` and refused
+  in 64 unless all digits (`run-job.sh` admits `-`, and `--all` read as an option empties the table).
+  `MessengerMaintenanceJobsManifestTest` pins the Jobs, `OperatorExecBoundaryTest` the read block and
+  that no runbook `exec` runs a Messenger command with a side effect.
 - **The standard deploy runs the migration *before* the rollout, with the old pods still serving**
   (issue #175, expand/contract). Doctrine selects every mapped column on each hydration, so with the
   old order (rollout, then Job) any release that adds a field made the new pods `SELECT` a column the
@@ -369,7 +380,7 @@ paths:
   trigger travels in a **cookie** — Xdebug 3.5 does not read HTTP headers, and nginx logs the query string.
   Production receives none of this. Procedure in `k8s/README.md`.
 - **No pod mounts a ServiceAccount token, and both namespaces carry Pod Security Admission labels**
-  (audit A17). `automountServiceAccountToken: false` on all twelve pod specs, the four Jobs outside kustomize
+  (audit A17). `automountServiceAccountToken: false` on all fifteen pod specs, the seven Jobs outside kustomize
   included — none of them talks to the Kubernetes API (RabbitMQ does no peer discovery here, ESO runs in
   its own namespace), so the default `default`-SA token was pure standing credential. The `preprod` and
   `prod` `Namespace` objects set `enforce: baseline` with `audit`/`warn: restricted`: RabbitMQ declares no

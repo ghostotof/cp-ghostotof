@@ -118,7 +118,8 @@ defers the real class to the first decoding after signature) — no inspection o
 from a legitimate message, a new key invalidates every signature of that era. The cost, at each change
 of the context, **every** envelope signed under the old key becomes unreadable — `async`, its delay
 queues and `failed` alike. Before merging such a release: drain `async`, **read `failed` and replay or
-purge it** (`messenger:failed:show` from a Job), and deploy with `DEPLOY_MAINTENANCE_WINDOW=true`
+purge it** (`messenger:failed:show` by a human `kubectl exec`, replay and removal by Job, issue #521,
+`k8s/README.md` « File d'échec Messenger »), and deploy with `DEPLOY_MAINTENANCE_WINDOW=true`
 (`.claude/rules/deploiement.md`): otherwise an old API pod (`RollingUpdate`) still signs under the old key
 while the worker (`Recreate`) already demands the new one, and a contact message sent then is lost — it
 exists only in the queue. Say so in the release notes. A rollback past #444 followed by a redeploy
@@ -176,7 +177,7 @@ refused**: the deployment of #468, an `APP_SECRET` rotation or a new context dro
 during the rollout old and new pods keep refusing and overwriting each other's values, so limiter counters
 restart at each alternation. Say so in the release notes. A refused row is never deleted:
 `Version20261011140000` empties `cache_items` once, and after an `APP_SECRET` rotation
-`messenger:stop-workers` (from a Job) rewrites the restart signal, which never expires. Accepted limit: the
+`messenger:stop-workers` (its Job, `k8s/base/messenger-stop-workers-job.yaml`) rewrites the restart signal, which never expires. Accepted limit: the
 MAC covers neither the row's key nor its pool, so a signed value can be copied across keys and pools or
 replayed: a limiter counter rolled back, or an array on the restart-signal row that stops the worker on
 every loop. That is a denial of service by someone who can already rewrite every row, never code
