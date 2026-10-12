@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Security\User\Infrastructure\Doctrine;
 
 use App\Security\User\Application\UsernameAllocationLockInterface;
+use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
 use Closure;
-use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -24,12 +24,12 @@ use Doctrine\ORM\EntityManagerInterface;
  *   toutes ne coûte rien.
  * - Forme à deux clés `int4`, espace distinct des verrous à une clé `bigint`
  *   de `symfony/lock` ; première clé distincte de celle du périmètre d'ordre.
- * - `Connection::transactional()` plutôt que `wrapInTransaction()`, comme le
- *   verrou du compte (#435) : un refus levé par l'opération ne ferme pas, à
- *   lui seul, l'EntityManager. Celui que lève un `flush()` le ferme, comme
- *   avant ce verrou.
- * - Attente bornée par `SET LOCAL lock_timeout` : FPM l'a déjà par
- *   `PGOPTIONS`, la console non. `SET LOCAL` s'éteint avec la transaction.
+ * - Le squelette — transaction à la main, attente bornée si la session ne
+ *   la borne pas (la console), `55P03` renommé, COMMIT refusé remonté sous
+ *   l'erreur de la base — est celui des trois verrous PostgreSQL,
+ *   {@see PostgresLockedTransaction} (issue #512). Un refus levé par
+ *   l'opération ne ferme pas, à lui seul, l'EntityManager ; celui que lève
+ *   un `flush()` le ferme, comme avant ce verrou.
  *
  * Suppose READ COMMITTED, le niveau par défaut que rien ne change ici : la
  * première lecture après le verrou voit ce que son détenteur précédent a
@@ -43,37 +43,23 @@ final readonly class PostgresUsernameAllocationLock implements UsernameAllocatio
     /** Seconde clé : « NAME » en ASCII. */
     public const int ADVISORY_KEY = 0x4E414D45;
 
-    /** SQLSTATE `lock_not_available`, levé à l'expiration de `lock_timeout`. */
-    private const string LOCK_NOT_AVAILABLE = '55P03';
-
     public function __construct(
         private EntityManagerInterface $entityManager,
-        private string $lockTimeout = '5s',
+        private string $fallbackLockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT,
     ) {
     }
 
     public function whileAllocating(Closure $operation): mixed
     {
-        return $this->entityManager->getConnection()->transactional(function () use ($operation): mixed {
-            $connection = $this->entityManager->getConnection();
-            $connection->executeStatement(\sprintf("SET LOCAL lock_timeout = '%s'", $this->lockTimeout));
-            try {
-                $connection->executeQuery(
-                    'SELECT pg_advisory_xact_lock(?, ?)',
-                    [self::ADVISORY_NAMESPACE, self::ADVISORY_KEY],
-                );
-            } catch (DriverException $exception) {
-                // Le convertisseur de DBAL n'en fait pas une
-                // LockWaitTimeoutException, seulement une DriverException.
-                // Seule l'attente de ce verrou-ci est renommée.
-                if (self::LOCK_NOT_AVAILABLE === $exception->getSQLState()) {
-                    throw UsernameAllocationLockTimeoutException::afterWaiting($exception);
-                }
+        $connection = $this->entityManager->getConnection();
 
-                throw $exception;
-            }
-
-            return $operation();
-        });
+        return new PostgresLockedTransaction($connection, $this->fallbackLockTimeout)->run(
+            acquire: static fn (): mixed => $connection->executeQuery(
+                'SELECT pg_advisory_xact_lock(?, ?)',
+                [self::ADVISORY_NAMESPACE, self::ADVISORY_KEY],
+            ),
+            onTimeout: UsernameAllocationLockTimeoutException::afterWaiting(...),
+            operation: $operation,
+        );
     }
 }

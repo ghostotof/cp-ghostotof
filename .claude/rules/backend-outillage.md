@@ -187,7 +187,10 @@ it, and names the refusal it expects or denounces.
 before and after the extraction: remove the **lock and keep its transaction** — `FOR UPDATE` out of
 `PostgresAccountRowLock` (#435 and #458 red on their token counts), the `pg_advisory_xact_lock` call out
 of `PostgresUsernameAllocationLock` (#364: the parent's invitation fails on the username taken meanwhile)
-or `PostgresAdvisoryOrderScopeLock` (#389). Removing `whileLocked()` from the invitation handler entirely
+or `PostgresAdvisoryOrderScopeLock` (#389) — since #512, the statement inside the adapter's `acquire`
+closure, the transaction being `PostgresLockedTransaction`'s (measured again after the extraction). Every
+test that waits on a held lock to prove the bound carries a `statement_timeout = '3s'` safety net, so
+that a mutation removing the bound (`boundTheWait()`) fails it in `57014` instead of hanging the suite. Removing `whileLocked()` from the invitation handler entirely
 proves nothing for #435: its flush then commits on its own before the `postFlush`, the child purges a
 committed token and the count is right. Removing the purge of unused tokens from the activation leaves
 #458's test green: with the lock, the handler waits and drops the message (« constaté sous verrou »); the
