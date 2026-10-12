@@ -11,6 +11,7 @@ use App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException;
 use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
 use App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CannotModifyOwnRolesException;
+use App\Tests\Support\ClassNameResolver;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Support\PhpSources;
 use PhpToken;
@@ -25,13 +26,24 @@ use PHPUnit\Framework\TestCase;
  * message trop long, par exemple) le renverrait tel quel. Garde-fou statique,
  * sur toutes les ProblemExceptionInterface de src/ :
  *
- *  - aucune ne surcharge getDetail() ;
- *  - une classe qui déclare un constructeur passe un message littéral à
- *    `parent::__construct` — elle fixe alors son message, et ses sites de
+ *  - son getDetail(), s'il en a un, rend son message et rien d'autre
+ *    (`return $this->getMessage();`, celui de HasProblemType) ;
+ *  - elle n'affecte jamais `$this->message` (`=`, `.=`, `??=`), ce qui
+ *    contournerait le constructeur ;
+ *  - une classe qui a un constructeur passe un message littéral à chacun de
+ *    ses `parent::__construct` — elle fixe alors son message, et ses sites de
  *    construction importent peu (une cause en `previous`, par exemple) ;
  *  - pour les autres, chaque `new` (y compris `new self`/`new static`, alias
  *    `use … as` résolus, dans n'importe quel contexte syntaxique) ne reçoit
  *    comme message qu'une chaîne littérale, un heredoc sans variable ou rien.
+ *
+ * Une méthode d'un trait est celle de la classe qui l'utilise, directement ou
+ * par un autre trait, à moins que la classe ne déclare la sienne ; un
+ * `new self`/`new static` écrit dans un trait construit chacune de ces
+ * classes ; une méthode abstraite ne compte pas. Les noms se résolvent comme
+ * PHP le fait — casse indifférente, listes `use A, B;`, `namespace\X`,
+ * imports propres à chaque espace de noms — par {@see ClassNameResolver},
+ * partagé avec NoBareGenericExceptionTest (issue #507).
  *
  * Une exception au message dynamique légitime ailleurs (rendue par API
  * Platform sur une autre route) s'inscrit dans DYNAMIC_DETAIL_ALLOWED, avec sa
@@ -41,9 +53,24 @@ use PHPUnit\Framework\TestCase;
  * `;` dans une chaîne et arguments nommés ne le trompent pas. Les fichiers lus
  * et les jetons écartés (espaces, commentaires) sont ceux de {@see PhpSources},
  * comme pour les autres recenseurs (issue #395) : une évolution de l'un atteint
- * ce garde-fou aussi. Ce qu'il ne voit pas, et c'est assumé : une classe
- * instanciée dynamiquement (`new $classe`, Reflection). Le garde-fou vise
- * l'oubli, pas la malveillance.
+ * ce garde-fou aussi. Ce qu'il ne voit pas, et c'est assumé — il vise l'oubli,
+ * pas la malveillance :
+ *  - une classe instanciée dynamiquement (`new $classe`, Reflection) ;
+ *  - `new parent(…)`, et ce qu'une classe hérite d'un parent qui n'est pas
+ *    lui-même une ProblemExceptionInterface (son getDetail(), son
+ *    constructeur) : seuls la classe et ses traits sont lus (suivi #514) ;
+ *  - les adaptations de trait (`use A, B { A::getDetail insteadof B; x as
+ *    getDetail; }`) : entre deux traits, le premier nommé l'emporte, et un
+ *    alias n'est pas lu. Aucun trait de src/ n'en a besoin ; les lire par
+ *    jetons demanderait de rejouer la résolution des conflits de PHP, la
+ *    réflexion la donne toute faite (piste de #514) ;
+ *  - `$this->message` modifié autrement que par affectation directe
+ *    (référence, Reflection, `Closure::bind`) ;
+ *  - l'import groupé (`use Foo\{A, B};`) : ImportsStaySortedTest le refuse
+ *    déjà dans src/ et tests/ ;
+ *  - une classe déclarée dans le corps d'une méthode ou d'une fonction : les
+ *    fonctions hors classe sont interdites dans src/ (issue #432), et une
+ *    déclaration conditionnelle n'y existe pas.
  */
 final class ProblemDetailStaysStaticTest extends TestCase
 {
@@ -64,8 +91,14 @@ final class ProblemDetailStaysStaticTest extends TestCase
         UnknownOrderEntryException::class => 'PUT /api/backoffice/<x>/order : cite la clé inconnue.',
     ];
 
-    private const array NAME_TOKENS = [\T_STRING, \T_NAME_QUALIFIED, \T_NAME_FULLY_QUALIFIED, \T_STATIC];
+    private const array NAME_TOKENS = [...ClassNameResolver::NAMES, \T_STATIC];
+
+    /** Ce qui, écrit après `$this->message`, lui affecte une valeur. */
+    private const array ASSIGNMENTS = ['=', \T_CONCAT_EQUAL, \T_COALESCE_EQUAL];
     private const array LITERAL_HEREDOC_TOKENS = [\T_START_HEREDOC, \T_ENCAPSED_AND_WHITESPACE, \T_END_HEREDOC];
+
+    /** Le corps de `getDetail()` qui rend le message, jetons en minuscules après l'accolade ouvrante. */
+    private const array RETURNS_THE_MESSAGE = ['return', '$this', '->', 'getmessage', '(', ')', ';', '}'];
 
     public function testEveryProblemDetailInSourcesIsALiteral(): void
     {
@@ -105,6 +138,16 @@ final class ProblemDetailStaysStaticTest extends TestCase
         yield 'dans une fermeture' => [$header."\$f = fn () => new Problem('x'.\$c);", 1];
         yield 'autre classe ignorée' => [$header."throw new \\RuntimeException('x'.\$c);", 0];
 
+        // Résolution des noms (issue #507) : listes à virgules, casse, `namespace\`.
+        yield 'importée dans une liste à virgules' => ["<?php\nnamespace App\\X;\nuse App\\X\\Foo, App\\Y\\Problem;\nthrow new Problem('x'.\$c);", 1];
+        yield 'liste à virgules avec alias' => ["<?php\nnamespace App\\X;\nuse App\\X\\Foo, App\\Y\\Problem as Boom;\nthrow new Boom('x'.\$c);", 1];
+        yield 'nom complet en casse différente' => [$header."throw new \\App\\Y\\problem('x'.\$c);", 1];
+        yield 'importée en casse différente' => ["<?php\nnamespace App\\X;\nuse app\\y\\PROBLEM;\nthrow new problem('x'.\$c);", 1];
+        yield 'nom relatif à l\'espace de noms' => ["<?php\nnamespace App\\Y;\nthrow new namespace\\Problem('x'.\$c);", 1];
+        yield 'namespace\\ ailleurs' => [$header."throw new namespace\\Problem('x'.\$c);", 0];
+        yield 'imports remis à zéro au namespace suivant' => [$header."namespace App\\Q;\nthrow new Problem('x'.\$c);", 0];
+        yield 'espace de noms à accolades' => ["<?php\nnamespace App\\X {\nuse App\\Y\\Problem;\nthrow new Problem('x'.\$c);\n}", 1];
+
         $class = "<?php\nnamespace App\\Y;\nfinal class Problem extends \\DomainException {\n";
         yield 'fabrique new self' => [$class."    public static function tooLong(string \$c): self { return new self('Trop long : '.\$c); }\n}", 1];
         yield 'fabrique new static' => [$class."    public static function tooLong(string \$c): static { return new static(\$c); }\n}", 1];
@@ -112,6 +155,73 @@ final class ProblemDetailStaysStaticTest extends TestCase
         yield 'constructeur qui formate' => [$class."    public function __construct(string \$c) { parent::__construct('Trop long : '.\$c); }\n}", 1];
         yield 'constructeur au message fixe' => [$class."    public function __construct(?\\Throwable \$p = null) { parent::__construct('Vide.', 0, \$p); }\n}\n"
             ."function f(\\Throwable \$e) { throw new Problem(\$e); }", 0];
+        yield 'second parent::__construct composé' => [$class."    public function __construct(string \$c) { if ('' === \$c) { parent::__construct('Vide.'); } else { parent::__construct('Trop long : '.\$c); } }\n}", 1];
+        yield 'getDetail par référence' => [$class."    public function &getDetail(): ?string { return \$this->c; }\n}", 1];
+        yield 'affecte $this->message' => [$class."    public function __construct(string \$c) { \$this->message = \$c; }\n}", 1];
+        yield 'affecte $this->message après le parent' => [$class."    public function __construct(string \$c) { parent::__construct('x'); \$this->message .= \$c; }\n}", 1];
+        yield 'lit $this->message' => [$class."    public function f(): string { return \$this->message; }\n}", 0];
+        yield 'constructeur qui interpole ${x}' => [$class."    public function __construct(string \$c) { \$m = \"a \${c}\"; parent::__construct(\$m); }\n}", 1];
+
+        // Fin de la classe (issue #507) : ce qui suit ne lui appartient plus.
+        yield 'fonction après la classe' => [$class."}\nfunction getDetail(): string { return ''; }", 0];
+        yield 'new self après la classe' => [$class."}\nfunction f(string \$c): void { new self('x'.\$c); }", 0];
+        yield 'interface après la classe' => [$class."}\ninterface Other { public function getDetail(): string; }", 0];
+        // `class:` et `trait:` en argument nommé sont lexés comme mots-clés : ils n'ouvrent rien.
+        foreach (['class', 'trait'] as $keyword) {
+            yield 'argument nommé '.$keyword.':' => [$class."    public function f(): void { g({$keyword}: 1); }\n    public function getDetail(): string { return \$this->c; }\n}", 1];
+        }
+
+        // Traits (issue #507) : leurs méthodes sont celles de la classe qui les utilise.
+        $namespace = "<?php\nnamespace App\\Y;\n";
+        $user = "final class Problem extends \\DomainException {\n    use Formats;\n}\n";
+        yield 'constructeur qui formate, par un trait' => [$namespace."trait Formats {\n    public function __construct(string \$c) { parent::__construct('Trop long : '.\$c); }\n}\n".$user, 1];
+        yield 'getDetail surchargé, par un trait' => [$namespace."trait Formats {\n    public function getDetail(): string { return \$this->c; }\n}\n".$user, 1];
+        yield 'getDetail surchargé, par le trait d\'un trait' => [$namespace."trait Details {\n    public function getDetail(): string { return \$this->c; }\n}\ntrait Formats {\n    use Details;\n}\n".$user, 1];
+        yield 'trait au message fixe' => [$namespace."trait Formats {\n    public function __construct(?\\Throwable \$p = null) { parent::__construct('Vide.', 0, \$p); }\n}\n".$user
+            ."final class Thrower { public function f(\\Throwable \$e): never { throw new Problem(\$e); } }", 0];
+        yield 'constructeur de la classe, prioritaire sur celui du trait' => [$namespace."trait Formats {\n    public function __construct(string \$c) { parent::__construct('Trop long : '.\$c); }\n}\n"
+            ."final class Problem extends \\DomainException {\n    use Formats;\n    public function __construct() { parent::__construct('Vide.'); }\n}\n", 0];
+
+        // getDetail() qui rend le message : celui de HasProblemType, que toutes
+        // les ProblemExceptionInterface de src/ utilisent (issue #507).
+        $message = "    public function getDetail(): ?string { return \$this->getMessage(); }\n";
+        yield 'getDetail qui rend le message' => [$class.$message.'}', 0];
+        yield 'getDetail qui rend le message, par un trait' => [$namespace."trait Formats {\n".$message."}\n".$user, 0];
+        yield 'getDetail abstrait d\'un trait' => [$namespace."trait Formats {\n    abstract public function getDetail(): ?string;\n}\n".$user, 0];
+        yield 'getDetail de la classe, prioritaire sur celui du trait' => [$namespace."trait Formats {\n".$message."}\n"
+            ."final class Problem extends \\DomainException {\n    use Formats;\n    public function getDetail(): string { return \$this->c; }\n}\n", 1];
+        yield 'getDetail du trait, remplacé par celui de la classe' => [$namespace."trait Formats {\n    public function getDetail(): string { return \$this->c; }\n}\n"
+            ."final class Problem extends \\DomainException {\n    use Formats;\n".$message."}\n", 0];
+        yield 'constructeur abstrait' => [$namespace."abstract class Problem extends \\DomainException {\n    abstract public function __construct(string \$c);\n"
+            ."    public static function tooLong(string \$c): static { return new static('Trop long : '.\$c); }\n}", 1];
+        yield 'trait déclaré après la classe' => [$class."}\ntrait Other {\n    public function getDetail(): string { return \$this->c; }\n}", 0];
+        yield 'new static dans un trait' => [$namespace."trait Formats {\n    public static function tooLong(string \$c): static { return new static('x'.\$c); }\n}\n".$user, 1];
+        yield 'new self d\'un trait, utilisé ailleurs' => [$namespace."trait Formats {\n    public static function tooLong(string \$c): self { return new self('x'.\$c); }\n}\nfinal class Other { use Formats; }", 0];
+        yield 'affecte $this->message, par un trait' => [$namespace."trait Formats {\n    public function rename(string \$c): void { \$this->message = \$c; }\n}\n".$user, 1];
+        yield 'use d\'une fermeture dans une méthode' => [$class."    public static function f(string \$c): \\Closure { return function () use (\$c): string { return \$c; }; }\n}", 0];
+    }
+
+    /** Un trait déclaré dans un autre fichier que la classe qui l'utilise compte aussi (issue #507). */
+    public function testATraitDeclaredInAnotherFileCounts(): void
+    {
+        $sources = [
+            'Formats.php' => "<?php\nnamespace App\\Z;\ntrait Formats {\n    public function getDetail(): string { return \$this->c; }\n}\n",
+            'Problem.php' => "<?php\nnamespace App\\Y;\nuse App\\Z\\Formats;\nfinal class Problem extends \\DomainException {\n    use Formats;\n}\n",
+        ];
+
+        self::assertSame(['Problem.php : le getDetail() de App\Y\Problem ne rend pas son message'], $this->violations($sources, ['App\Y\Problem']));
+    }
+
+    /** Deux déclarations du même nom (une seule se chargerait) sont lues chacune (issue #507). */
+    public function testEveryDeclarationOfAClassIsChecked(): void
+    {
+        $class = "<?php\nnamespace App\\Y;\nfinal class Problem extends \\DomainException {\n";
+        $sources = [
+            'a.php' => $class."    public function getDetail(): string { return \$this->c; }\n}\n",
+            'b.php' => $class."}\n",
+        ];
+
+        self::assertSame(['a.php : le getDetail() de App\Y\Problem ne rend pas son message'], $this->violations($sources, ['App\Y\Problem']));
     }
 
     /** Le détecteur lui-même : sans cette preuve, il pourrait être vert pour de mauvaises raisons. */
@@ -142,20 +252,38 @@ final class ProblemDetailStaysStaticTest extends TestCase
      */
     private function violations(array $sources, array $problems): array
     {
+        // Les noms se comparent en minuscules (PHP résout les classes sans
+        // tenir compte de la casse) et se rapportent sous leur nom déclaré.
+        $declaredNames = array_combine(array_map(strtolower(...), $problems), $problems);
         $parsed = array_map($this->parse(...), $sources);
 
+        // Les traits se cherchent par leur nom, d'un fichier à l'autre ; les
+        // classes se jugent chacune dans son fichier, une déclaration en
+        // double n'en masquant aucune.
+        $byName = [];
+        foreach ($parsed as $file) {
+            $byName = array_merge($byName, $file['declarations']);
+        }
+
         $fixesItsMessage = [];
+        // trait => les classes jugées qui l'utilisent, pour ses `new self`/`new static`
+        $usersOf = [];
         $violations = [];
         foreach ($parsed as $path => $file) {
-            foreach ($file['declarations'] as $class => $declaration) {
-                if (!\in_array($class, $problems, true)) {
-                    continue;
+            foreach (array_intersect_key($file['declarations'], $declaredNames) as $name => $declaration) {
+                $class = $declaredNames[$name];
+                $declaration = $this->withTraits($declaration, $byName);
+                foreach ($declaration['traits'] as $trait) {
+                    $usersOf[$trait][] = $name;
                 }
-                if ($declaration['overridesDetail']) {
-                    $violations[] = $path.' : '.$class.' surcharge getDetail()';
+                if (false === $declaration['detailIsMessage']) {
+                    $violations[] = $path.' : le getDetail() de '.$class.' ne rend pas son message';
+                }
+                if ($declaration['assignsMessage']) {
+                    $violations[] = $path.' : '.$class.' affecte $this->message';
                 }
                 if (null !== $declaration['constructorMessageIsLiteral']) {
-                    $fixesItsMessage[$class] = $declaration['constructorMessageIsLiteral'];
+                    $fixesItsMessage[$name] = true;
                     if (!$declaration['constructorMessageIsLiteral']) {
                         $violations[] = $path.' : le constructeur de '.$class.' compose son message';
                     }
@@ -164,9 +292,12 @@ final class ProblemDetailStaysStaticTest extends TestCase
         }
 
         foreach ($parsed as $path => $file) {
-            foreach ($file['constructions'] as [$class, $literal, $line]) {
-                if (\in_array($class, $problems, true) && !isset($fixesItsMessage[$class]) && !$literal) {
-                    $violations[] = $path.':'.$line.' : new '.$class.' avec un message non littéral';
+            foreach ($file['constructions'] as [$name, $selfReference, $literal, $line]) {
+                $targets = isset($declaredNames[$name]) ? [$name] : ($selfReference ? $usersOf[$name] ?? [] : []);
+                foreach ($targets as $target) {
+                    if (!isset($fixesItsMessage[$target]) && !$literal) {
+                        $violations[] = $path.':'.$line.' : new '.$declaredNames[$target].' avec un message non littéral';
+                    }
                 }
             }
         }
@@ -175,9 +306,45 @@ final class ProblemDetailStaysStaticTest extends TestCase
     }
 
     /**
+     * La déclaration complétée de ce qu'elle tient des traits qu'elle utilise,
+     * directement ou par un autre trait, et la liste de ces traits : une
+     * méthode d'un trait est celle de la classe, sauf si la classe déclare la
+     * sienne, qui l'emporte ; une affectation de `$this->message` écrite dans
+     * un trait compte pour la classe. Entre deux traits qui déclarent la même
+     * méthode, PHP exige un `insteadof` que ce garde-fou ne lit pas : le
+     * premier nommé est retenu.
+     *
+     * @param array{detailIsMessage: ?bool, constructorMessageIsLiteral: ?bool, assignsMessage: bool, traits: list<string>} $declaration
+     * @param array<string, array{detailIsMessage: ?bool, constructorMessageIsLiteral: ?bool, assignsMessage: bool, traits: list<string>}> $byName
+     * @param list<string> $seen traits déjà lus, contre un cycle
+     *
+     * @return array{detailIsMessage: ?bool, constructorMessageIsLiteral: ?bool, assignsMessage: bool, traits: list<string>}
+     */
+    private function withTraits(array $declaration, array $byName, array $seen = []): array
+    {
+        $traits = [];
+        foreach ($declaration['traits'] as $trait) {
+            if (!isset($byName[$trait]) || \in_array($trait, [...$seen, ...$traits], true)) {
+                continue;
+            }
+            $inherited = $this->withTraits($byName[$trait], $byName, [...$seen, ...$traits, $trait]);
+            $declaration['detailIsMessage'] ??= $inherited['detailIsMessage'];
+            $declaration['constructorMessageIsLiteral'] ??= $inherited['constructorMessageIsLiteral'];
+            $declaration['assignsMessage'] = $declaration['assignsMessage'] || $inherited['assignsMessage'];
+            $traits = [...$traits, $trait, ...$inherited['traits']];
+        }
+        $declaration['traits'] = array_values(array_unique($traits));
+
+        return $declaration;
+    }
+
+    /**
+     * Les déclarations (classes, interfaces, traits, enums) et les `new` d'un
+     * fichier, noms résolus en minuscules par {@see ClassNameResolver}.
+     *
      * @return array{
-     *     declarations: array<string, array{overridesDetail: bool, constructorMessageIsLiteral: ?bool}>,
-     *     constructions: list<array{string, bool, int}>,
+     *     declarations: array<string, array{detailIsMessage: ?bool, constructorMessageIsLiteral: ?bool, assignsMessage: bool, traits: list<string>}>,
+     *     constructions: list<array{string, bool, bool, int}>,
      * }
      */
     private function parse(string $code): array
@@ -185,44 +352,64 @@ final class ProblemDetailStaysStaticTest extends TestCase
         $tokens = PhpSources::significantTokens($code);
 
         $namespace = '';
-        $aliases = [];
-        $currentClass = null;
+        $imports = [];
+        // La déclaration en cours et la profondeur de son corps : ce qui
+        // s'écrit après sa `}` fermante ne lui appartient plus.
+        $current = null;
+        $bodyDepth = 0;
         $depth = 0;
-        $classes = [];
-        $overridesDetail = [];
+        $declared = [];
+        $detailIsMessage = [];
         $constructorMessageIsLiteral = [];
+        $assignsMessage = [];
+        $traits = [];
+        // [classe, écrite `self`/`static`, message littéral, ligne]
         $constructions = [];
 
         foreach ($tokens as $index => $token) {
             if (PhpSources::opensBrace($token)) {
                 ++$depth;
             } elseif ($token->is('}')) {
-                --$depth;
+                if (--$depth < $bodyDepth) {
+                    $current = null;
+                }
             } elseif ($token->is(\T_NAMESPACE)) {
-                $namespace = $tokens[$index + 1]->text ?? '';
-            } elseif ($token->is(\T_USE) && 0 === $depth) {
-                $this->collectAlias($tokens, $index, $aliases);
-            } elseif ($token->is(\T_CLASS) && !$this->tokenAt($tokens, $index - 1, [\T_NEW, \T_DOUBLE_COLON])) {
-                $currentClass = ltrim($namespace.'\\'.($tokens[$index + 1]->text ?? ''), '\\');
-                $classes[] = $currentClass;
-            } elseif ($token->is(\T_FUNCTION) && null !== $currentClass) {
-                $name = strtolower($tokens[$index + 1]->text ?? '');
-                if ('getdetail' === $name) {
-                    $overridesDetail[$currentClass] = true;
-                } elseif ('__construct' === $name) {
-                    $constructorMessageIsLiteral[$currentClass] = $this->parentMessageIsLiteral($tokens, $index);
+                $namespace = ClassNameResolver::namespaceDeclaredAt($tokens, $index);
+                $imports = [];
+            } elseif ($token->is(\T_USE) && null === $current) {
+                // Un import, au premier niveau ou dans un `namespace { … }`.
+                $imports = array_merge($imports, ClassNameResolver::imports($tokens, $index + 1));
+            } elseif ($token->is(\T_USE) && null !== $current && $depth === $bodyDepth) {
+                $traits[$current] = [...$traits[$current] ?? [], ...$this->usedTraits($tokens, $index + 1, $namespace, $imports)];
+            } elseif ($this->declaresAt($tokens, $index)) {
+                $current = ltrim($namespace.'\\'.strtolower($tokens[$index + 1]->text), '\\');
+                $bodyDepth = $depth + 1;
+                $declared[] = $current;
+            } elseif ($token->is(\T_FUNCTION) && null !== $current && $depth === $bodyDepth) {
+                // Une méthode abstraite n'a pas de corps : elle ne déclare rien ici.
+                $function = $this->functionName($tokens, $index);
+                $body = $this->bodyOf($tokens, $index);
+                if (null !== $body && 'getdetail' === $function) {
+                    $detailIsMessage[$current] = $this->returnsTheMessage($tokens, $body);
+                } elseif (null !== $body && '__construct' === $function) {
+                    $constructorMessageIsLiteral[$current] = $this->parentMessageIsLiteral($tokens, $body);
                 }
             } elseif ($token->is(\T_NEW) && $this->tokenAt($tokens, $index + 1, self::NAME_TOKENS) && $this->tokenAt($tokens, $index + 2, '(')) {
-                $class = $this->resolve($tokens[$index + 1]->text, $namespace, $aliases, $currentClass);
-                $constructions[] = [$class, $this->messageIsLiteral($this->arguments($tokens, $index + 2)), $token->line];
+                $class = $this->instantiated($tokens[$index + 1], $namespace, $imports, $current);
+                $selfReference = \in_array(strtolower($tokens[$index + 1]->text), ['self', 'static'], true);
+                $constructions[] = [$class, $selfReference, $this->messageIsLiteral($this->arguments($tokens, $index + 2)), $token->line];
+            } elseif (null !== $current && $this->assignsTheMessageAt($tokens, $index)) {
+                $assignsMessage[$current] = true;
             }
         }
 
         $declarations = [];
-        foreach ($classes as $class) {
-            $declarations[$class] = [
-                'overridesDetail' => $overridesDetail[$class] ?? false,
-                'constructorMessageIsLiteral' => $constructorMessageIsLiteral[$class] ?? null,
+        foreach ($declared as $name) {
+            $declarations[$name] = [
+                'detailIsMessage' => $detailIsMessage[$name] ?? null,
+                'constructorMessageIsLiteral' => $constructorMessageIsLiteral[$name] ?? null,
+                'assignsMessage' => $assignsMessage[$name] ?? false,
+                'traits' => $traits[$name] ?? [],
             ];
         }
 
@@ -239,55 +426,91 @@ final class ProblemDetailStaysStaticTest extends TestCase
     }
 
     /**
-     * Retient l'alias du `use` en $index : le premier nom seulement, un
-     * `use A, B;` laisse B non résolu (angle mort connu, issue #507).
+     * Le nom, en minuscules, de la fonction déclarée en $function : celui qui
+     * suit `function`, ou `&` pour une fonction qui rend une référence
+     * (`function &getDetail()`).
      *
-     * @param list<PhpToken>        $tokens
-     * @param array<string, string> $aliases
+     * @param list<PhpToken> $tokens
      */
-    private function collectAlias(array $tokens, int $index, array &$aliases): void
+    private function functionName(array $tokens, int $function): string
     {
-        $name = $tokens[$index + 1] ?? null;
-        if (null === $name || !$name->is([\T_NAME_QUALIFIED, \T_STRING, \T_NAME_FULLY_QUALIFIED])) {
-            return;
+        $name = $tokens[$function + 1] ?? null;
+        if (null !== $name && '&' === $name->text) {
+            $name = $tokens[$function + 2] ?? null;
         }
 
-        $fqcn = ltrim($name->text, '\\');
-        $alias = $this->tokenAt($tokens, $index + 2, \T_AS) ? ($tokens[$index + 3]->text ?? '') : substr((string) strrchr('\\'.$fqcn, '\\'), 1);
-        $aliases[strtolower($alias)] = $fqcn;
+        return strtolower($name->text ?? '');
     }
 
     /**
-     * La classe que désigne le nom écrit après `new`, avec la casse des
-     * sources : `self`/`static` donnent la classe en cours, un alias de `use`
-     * sa cible, un nom relatif l'espace de noms courant.
+     * Le jeton en $index commence-t-il `$this->message =` (ou `.=`, `??=`) ?
+     * Affecter la propriété de {@see \Exception} contourne le constructeur :
+     * le getDetail() de HasProblemType la rendrait telle quelle. Le nom de
+     * propriété tient compte de la casse, comme PHP.
      *
-     * Écrite ici plutôt que partagée, après vérification (issue #395) :
-     * {@see DeclaredClasses} ne résout aucun nom — il lit des déclarations,
-     * l'espace de noms puis le nom qui suit `class` —, et la résolution de
-     * {@see \App\Tests\Support\BareExceptionInstantiations} répond à une autre
-     * question : elle met tout en minuscules, rend null pour un nom relatif à
-     * l'espace de noms (elle ne vise que des classes globales), ignore
-     * `self`/`static` et lit les listes `use A, B;`. Ce n'est pas la même
-     * chose ; les rapprocher changerait le comportement de l'un ou de l'autre.
-     *
-     * @param array<string, string> $aliases
+     * @param list<PhpToken> $tokens
      */
-    private function resolve(string $name, string $namespace, array $aliases, ?string $currentClass): string
+    private function assignsTheMessageAt(array $tokens, int $index): bool
     {
-        if (\in_array(strtolower($name), ['self', 'static'], true)) {
-            return (string) $currentClass;
-        }
-        if (str_starts_with($name, '\\')) {
-            return ltrim($name, '\\');
+        return $tokens[$index]->is(\T_VARIABLE) && '$this' === $tokens[$index]->text
+            && $this->tokenAt($tokens, $index + 1, \T_OBJECT_OPERATOR)
+            && $this->tokenAt($tokens, $index + 2, \T_STRING) && 'message' === $tokens[$index + 2]->text
+            && $this->tokenAt($tokens, $index + 3, self::ASSIGNMENTS);
+    }
+
+    /**
+     * Le jeton en $index ouvre-t-il une déclaration nommée ? Un mot-clé de
+     * {@see PhpSources::CLASS_LIKE} suivi de son nom : ni `new class`, ni
+     * `Foo::class`, ni `class:`/`trait:` en argument nommé, que le lexeur rend
+     * aussi en mots-clés.
+     *
+     * @param list<PhpToken> $tokens
+     */
+    private function declaresAt(array $tokens, int $index): bool
+    {
+        return $tokens[$index]->is(PhpSources::CLASS_LIKE)
+            && !$this->tokenAt($tokens, $index - 1, [\T_NEW, \T_DOUBLE_COLON])
+            && $this->tokenAt($tokens, $index + 1, \T_STRING);
+    }
+
+    /**
+     * Les traits d'un `use A, B;` (ou `use A, B { … }`) écrit dans le corps
+     * d'une déclaration, le premier nom en $index : des noms de classe, que
+     * l'espace de noms et les imports résolvent.
+     *
+     * @param list<PhpToken>        $tokens
+     * @param array<string, string> $imports
+     *
+     * @return list<string>
+     */
+    private function usedTraits(array $tokens, int $index, string $namespace, array $imports): array
+    {
+        $traits = [];
+        while ($this->tokenAt($tokens, $index, ClassNameResolver::NAMES)) {
+            $traits[] = ClassNameResolver::resolve($tokens[$index], $namespace, $imports);
+            if (!$this->tokenAt($tokens, $index + 1, ',')) {
+                break;
+            }
+            $index += 2;
         }
 
-        $first = strtolower(explode('\\', $name)[0]);
-        if (isset($aliases[$first])) {
-            return $aliases[$first].substr($name, \strlen($first));
+        return $traits;
+    }
+
+    /**
+     * La classe, en minuscules, que désigne le nom écrit après `new` :
+     * `self`/`static` donnent la déclaration en cours (aucune hors d'une
+     * déclaration), tout autre nom se résout par {@see ClassNameResolver}.
+     *
+     * @param array<string, string> $imports
+     */
+    private function instantiated(PhpToken $name, string $namespace, array $imports, ?string $current): string
+    {
+        if (\in_array(strtolower($name->text), ['self', 'static'], true)) {
+            return (string) $current;
         }
 
-        return ltrim($namespace.'\\'.$name, '\\');
+        return ClassNameResolver::resolve($name, $namespace, $imports);
     }
 
     /**
@@ -356,29 +579,70 @@ final class ProblemDetailStaysStaticTest extends TestCase
     }
 
     /**
-     * Dans le constructeur qui commence en $function : le message passé à
-     * `parent::__construct` est-il littéral ? Sans appel au parent, le message
-     * reste celui par défaut (vide) : littéral. Seule `{` (donc aussi `{$x}`)
-     * ouvre ici une accolade, pas `${` : angle mort connu, issue #507.
+     * L'accolade ouvrante du corps de la méthode déclarée en $function ; null
+     * pour une méthode abstraite (`;` après la signature). Les parenthèses
+     * sont comptées : un paramètre promu à crochets de propriété
+     * (`public string $x { get => … }`) n'ouvre pas le corps.
      *
      * @param list<PhpToken> $tokens
      */
-    private function parentMessageIsLiteral(array $tokens, int $function): bool
+    private function bodyOf(array $tokens, int $function): ?int
     {
-        $depth = 0;
-        for ($index = $function, $count = \count($tokens); $index < $count; ++$index) {
+        $parentheses = 0;
+        for ($index = $function + 1, $count = \count($tokens); $index < $count; ++$index) {
             $token = $tokens[$index];
-            if ($token->is('{')) {
-                ++$depth;
-            } elseif ($token->is('}') && 0 === --$depth) {
-                return true;
-            } elseif ($depth > 0 && $token->is(\T_STRING) && 'parent' === strtolower($token->text)
-                && $this->tokenAt($tokens, $index + 1, \T_DOUBLE_COLON)
-                && '__construct' === strtolower($tokens[$index + 2]->text ?? '')) {
-                return $this->messageIsLiteral($this->arguments($tokens, $index + 3));
+            if ($token->is('(')) {
+                ++$parentheses;
+            } elseif ($token->is(')')) {
+                --$parentheses;
+            } elseif (0 === $parentheses && $token->is([';', '{'])) {
+                return $token->is('{') ? $index : null;
             }
         }
 
-        return true;
+        return null;
+    }
+
+    /**
+     * Le corps qui s'ouvre en $body est-il exactement
+     * `{ return $this->getMessage(); }` — le `detail` de HasProblemType, que le
+     * constructeur et les sites de construction gardent littéral ?
+     *
+     * @param list<PhpToken> $tokens
+     */
+    private function returnsTheMessage(array $tokens, int $body): bool
+    {
+        $texts = array_map(static fn (PhpToken $token): string => strtolower($token->text), \array_slice($tokens, $body + 1, \count(self::RETURNS_THE_MESSAGE)));
+
+        return self::RETURNS_THE_MESSAGE === $texts;
+    }
+
+    /**
+     * Dans le constructeur dont le corps s'ouvre en $body : le message passé à
+     * `parent::__construct` est-il littéral, à chacun de ses appels (un par
+     * branche, par exemple) ? Sans appel au parent, le message reste celui par
+     * défaut (vide) : littéral. `{$x}` et `${x}` ouvrent une
+     * accolade comme `{` ({@see PhpSources::opensBrace()}, issue #507).
+     *
+     * @param list<PhpToken> $tokens
+     */
+    private function parentMessageIsLiteral(array $tokens, int $body): bool
+    {
+        $literal = true;
+        $depth = 0;
+        for ($index = $body, $count = \count($tokens); $index < $count; ++$index) {
+            $token = $tokens[$index];
+            if (PhpSources::opensBrace($token)) {
+                ++$depth;
+            } elseif ($token->is('}') && 0 === --$depth) {
+                break;
+            } elseif ($depth > 0 && $token->is(\T_STRING) && 'parent' === strtolower($token->text)
+                && $this->tokenAt($tokens, $index + 1, \T_DOUBLE_COLON)
+                && '__construct' === strtolower($tokens[$index + 2]->text ?? '')) {
+                $literal = $literal && $this->messageIsLiteral($this->arguments($tokens, $index + 3));
+            }
+        }
+
+        return $literal;
     }
 }

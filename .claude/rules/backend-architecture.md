@@ -263,7 +263,8 @@ name that can be targeted in `framework.exceptions` and recognised in the logs. 
 that throws it, with a named factory (`forOperation()`, `forGroup()`, `forDirectory()`…), and never put a
 client-supplied value in its message without bounding it (`InputContradictsValidationException::nonTextualField()`).
 `tests/Shared/NoBareGenericExceptionTest.php` enforces it. It counts tokens through
-`tests/Support/BareExceptionInstantiations`, which shares its file walk with `DeclaredClasses` via `PhpSources`, so
+`tests/Support/BareExceptionInstantiations`, which shares its file walk with `DeclaredClasses` via `PhpSources`, and
+its name resolution with `ProblemDetailStaysStaticTest` via `tests/Support/ClassNameResolver` (#507), so
 an import, an alias, a comma list or an anonymous subclass is seen too. It has **no exemption list**, and
 that is deliberate: a site that seems to need one gets a class, shared if several sites throw the same
 failure. **A console question's validator follows the same rule** (#383): the `QuestionHelper` catches
