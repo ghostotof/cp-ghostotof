@@ -4,23 +4,6 @@ declare(strict_types=1);
 
 namespace App\Tests\Portfolio\Shared\Application;
 
-use App\Portfolio\About\Application\AboutMeCardAdministratorInterface;
-use App\Portfolio\About\Application\AboutSiteCardAdministratorInterface;
-use App\Portfolio\About\Domain\Entity\AboutMeCard;
-use App\Portfolio\About\Domain\Entity\AboutSiteCard;
-use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
-use App\Portfolio\AnonymousCv\Application\AnonymousCvSectionAdministratorInterface;
-use App\Portfolio\AnonymousCv\Domain\Entity\AnonymousCvSection;
-use App\Portfolio\CaseStudy\Application\CaseStudyAdministratorInterface;
-use App\Portfolio\CaseStudy\Domain\Entity\CaseStudy;
-use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
-use App\Portfolio\Contribution\Domain\Entity\Contribution;
-use App\Portfolio\Incident\Application\IncidentAdministratorInterface;
-use App\Portfolio\Incident\Domain\Entity\Incident;
-use App\Portfolio\Quality\Application\QualityPrincipleAdministratorInterface;
-use App\Portfolio\Quality\Application\QualityTraitAdministratorInterface;
-use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
-use App\Portfolio\Quality\Domain\Entity\QualityTrait;
 use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Portfolio\Shared\Infrastructure\Doctrine\OrderScopeLockTimeoutException;
@@ -30,11 +13,9 @@ use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use App\Tests\Support\OpensProbeConnection;
 use Closure;
-use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
-use Symfony\Component\Uid\Uuid;
 
 /**
  * Toute écriture qui place une entrée prend le verrou de son périmètre
@@ -57,15 +38,12 @@ use Symfony\Component\Uid\Uuid;
  * corps entier de chaque opération est enveloppé pour cette raison, et la
  * revue en reste juge.
  *
- * @phpstan-type LocalizedContext array{
- *     create: Closure(Locale, ?Uuid): TranslatableContent,
- *     update: Closure(TranslatableContent, ?Uuid): mixed,
- *     reorder: Closure(list<string>): mixed,
- * }
+ * @phpstan-import-type LocalizedContext from ProvidesLocalizedAdministrators
  */
 final class OrderScopeLockCoverageTest extends KernelTestCase
 {
     use OpensProbeConnection;
+    use ProvidesLocalizedAdministrators;
 
     /** Assez pour qu'une opération non verrouillée termine bien avant, assez peu pour un test rapide. */
     private const string LOCK_TIMEOUT = '300ms';
@@ -85,82 +63,9 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
      */
     public static function provideOperationsThatPlaceAnEntry(): iterable
     {
-        yield from self::localizedOperations(Contribution::class, static function (): array {
-            $a = self::getContainer()->get(ContributionAdministratorInterface::class);
-
-            return [
-                'create' => static fn (Locale $l, ?Uuid $g): Contribution => $a->create($l, 'T', 'P', 'R', 'https://example.com', 'S', 'B', $g),
-                'update' => static fn (TranslatableContent $e, ?Uuid $g): Contribution => $a->update(self::as(Contribution::class, $e)->getId(), 'T', 'P', 'R', 'https://example.com', 'S', 'B', $g),
-                'reorder' => $a->reorder(...),
-            ];
-        });
-        yield from self::localizedOperations(Incident::class, static function (): array {
-            $a = self::getContainer()->get(IncidentAdministratorInterface::class);
-            $at = new DateTimeImmutable('2026-10-10');
-
-            return [
-                'create' => static fn (Locale $l, ?Uuid $g): Incident => $a->create($l, 'T', '1.0.0', $at, 'I', 'C', 'R', 'V', $g),
-                'update' => static fn (TranslatableContent $e, ?Uuid $g): Incident => $a->update(self::as(Incident::class, $e)->getId(), 'T', '1.0.0', $at, 'I', 'C', 'R', 'V', $g),
-                'reorder' => $a->reorder(...),
-            ];
-        });
-        yield from self::localizedOperations(QualityPrinciple::class, static function (): array {
-            $a = self::getContainer()->get(QualityPrincipleAdministratorInterface::class);
-
-            return [
-                'create' => static fn (Locale $l, ?Uuid $g): QualityPrinciple => $a->create($l, 'T', 'D', 'shield', $g),
-                'update' => static fn (TranslatableContent $e, ?Uuid $g): QualityPrinciple => $a->update(self::as(QualityPrinciple::class, $e)->getId(), 'T', 'D', 'shield', $g),
-                'reorder' => $a->reorder(...),
-            ];
-        });
-        yield from self::localizedOperations(QualityTrait::class, static function (): array {
-            $a = self::getContainer()->get(QualityTraitAdministratorInterface::class);
-
-            return [
-                'create' => static fn (Locale $l, ?Uuid $g): QualityTrait => $a->create($l, 'L', $g),
-                'update' => static fn (TranslatableContent $e, ?Uuid $g): QualityTrait => $a->update(self::as(QualityTrait::class, $e)->getId(), 'L', $g),
-                'reorder' => $a->reorder(...),
-            ];
-        });
-        yield from self::localizedOperations(AboutSiteCard::class, static function (): array {
-            $a = self::getContainer()->get(AboutSiteCardAdministratorInterface::class);
-
-            return [
-                'create' => static fn (Locale $l, ?Uuid $g): AboutSiteCard => $a->create($l, 'T', 'D', null, $g),
-                'update' => static fn (TranslatableContent $e, ?Uuid $g): AboutSiteCard => $a->update(self::as(AboutSiteCard::class, $e)->getId(), 'T', 'D', null, $g),
-                'reorder' => $a->reorder(...),
-            ];
-        });
-        yield from self::localizedOperations(AboutMeCard::class, static function (): array {
-            $a = self::getContainer()->get(AboutMeCardAdministratorInterface::class);
-
-            return [
-                'create' => static fn (Locale $l, ?Uuid $g): AboutMeCard => $a->create($l, AboutMeCardCategory::HOBBY, 'T', 'D', null, $g),
-                'update' => static fn (TranslatableContent $e, ?Uuid $g): AboutMeCard => $a->update(self::as(AboutMeCard::class, $e)->getId(), 'T', 'D', null, $g),
-                'reorder' => static function (array $keys) use ($a): void {
-                    /** @var list<string> $keys appelée par localizedOperations(), qui passe des clés de groupe */
-                    $a->reorder(AboutMeCardCategory::HOBBY, $keys);
-                },
-            ];
-        });
-        yield from self::localizedOperations(AnonymousCvSection::class, static function (): array {
-            $a = self::getContainer()->get(AnonymousCvSectionAdministratorInterface::class);
-
-            return [
-                'create' => static fn (Locale $l, ?Uuid $g): AnonymousCvSection => $a->create($l, 'T', 'S', 5, 'A', $g),
-                'update' => static fn (TranslatableContent $e, ?Uuid $g): AnonymousCvSection => $a->update(self::as(AnonymousCvSection::class, $e)->getId(), 'T', 'S', 5, 'A', $g),
-                'reorder' => $a->reorder(...),
-            ];
-        });
-        yield from self::localizedOperations(CaseStudy::class, static function (): array {
-            $a = self::getContainer()->get(CaseStudyAdministratorInterface::class);
-
-            return [
-                'create' => static fn (Locale $l, ?Uuid $g): CaseStudy => $a->create($l, 'T', 'P', 'S', 'C', 'M', $g),
-                'update' => static fn (TranslatableContent $e, ?Uuid $g): CaseStudy => $a->update(self::as(CaseStudy::class, $e)->getId(), 'T', 'P', 'S', 'C', 'M', $g),
-                'reorder' => $a->reorder(...),
-            ];
-        });
+        foreach (self::localizedAdministrators() as [$entityClass, $context]) {
+            yield from self::localizedOperations($entityClass, $context);
+        }
 
         // WatchedProduct n'est pas localisé : pas de groupe, et update() ne
         // touche pas à la position. Restent la fin de catalogue et le reorder.
@@ -261,20 +166,6 @@ final class OrderScopeLockCoverageTest extends KernelTestCase
 
             return static fn (): mixed => $operations['reorder']([$second->orderingKey(), $first->orderingKey()]);
         }];
-    }
-
-    /**
-     * @template T of TranslatableContent
-     *
-     * @param class-string<T> $class
-     *
-     * @return T
-     */
-    private static function as(string $class, TranslatableContent $entry): TranslatableContent
-    {
-        \assert($entry instanceof $class);
-
-        return $entry;
     }
 
     /**
