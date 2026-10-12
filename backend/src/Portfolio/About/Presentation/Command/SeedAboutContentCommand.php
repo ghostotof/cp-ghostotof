@@ -25,9 +25,13 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * Peuple/réinitialise le contenu de la page À propos (fr/en) avec son contenu
  * de référence (repris de l'ancien contenu statique frontend
  * infrastructure/portfolio/content/{fr,en}.ts, aujourd'hui servi depuis la
- * base via GET /api/about/{locale}). Idempotente : chaque exécution purge et
- * recrée les cartes, et upsert les réglages (AboutSettings est un singleton
- * par locale, jamais supprimé).
+ * base via GET /api/about/{locale}). Même garde-fou que les autres commandes
+ * app:*:seed (GuardsExistingContent) : si des cartes sont déjà en place, elle
+ * décline (code de sortie 0). Avec --force, elle purge toutes les cartes,
+ * toutes locales confondues, puis les recrée, ce qui écrase les éditions
+ * faites au backoffice. Les réglages (AboutSettings, un singleton par locale)
+ * sont mis à jour sur place à chaque peuplement effectif, jamais purgés, et
+ * n'entrent pas dans le décompte.
  */
 #[AsCommand(
     name: 'app:about:seed',

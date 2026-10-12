@@ -18,17 +18,19 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 /**
  * Peuple/réinitialise les études de cas techniques du palier de base (ADR
  * 0003 D5), servies depuis la base via GET /api/case-studies/{locale}
- * (ROLE_USER). Idempotente, même garde-fou que les cinq autres commandes
- * app:*:seed (GuardsExistingContent) : une base déjà peuplée est laissée
- * intacte sans --force.
+ * (ROLE_USER). Même garde-fou que les autres commandes app:*:seed
+ * (GuardsExistingContent) : une base déjà peuplée est laissée intacte sans
+ * --force ; avec --force, toute la table est purgée, toutes locales
+ * confondues, puis recréée.
  *
  * **Le contenu ci-dessous est un placeholder explicite** (titre préfixé
  * « [Exemple] »), pas du contenu de référence réel : le texte des études de
  * cas est la matière éditoriale de Christophe (études de cas techniques
  * réelles, jamais de nom de client), à saisir depuis le backoffice — même
- * caveat que la rubrique Contributions (cf. tasks/plan.md). Ce préfixe
- * empêche toute confusion si cette commande était un jour lancée en
- * production sans que le vrai contenu n'ait encore été fourni.
+ * caveat que la rubrique Contributions (cf. le plan archivé,
+ * `.claude/specs/archive/2026-09-13-adr-0003-paliers-d-acces/plan.md`).
+ * Ce préfixe empêche toute confusion si cette commande était un jour lancée
+ * en production sans que le vrai contenu n'ait encore été fourni.
  */
 #[AsCommand(
     name: 'app:case-studies:seed',

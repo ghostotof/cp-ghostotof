@@ -20,8 +20,10 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 /**
  * Peuple/réinitialise les principes et traits de qualité affichés sur la
  * landing page (fr/en), servis depuis la base via GET /api/quality/{locale}.
- * Idempotente : chaque exécution purge et recrée l'intégralité du contenu par
- * locale.
+ * Même garde-fou que les autres commandes app:*:seed (GuardsExistingContent) :
+ * si du contenu est déjà en place, elle décline (code de sortie 0). Avec
+ * --force, elle purge les deux tables, toutes locales confondues, puis recrée
+ * le contenu de référence, ce qui écrase les éditions faites au backoffice.
  */
 #[AsCommand(
     name: 'app:quality:seed',

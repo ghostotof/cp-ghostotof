@@ -18,11 +18,14 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
  * Peuple/réinitialise les incidents affichés sur /incidents (fr/en), servis
- * depuis la base via GET /api/incidents/{locale}.
+ * depuis la base via GET /api/incidents/{locale}. Même garde-fou que les
+ * autres commandes app:*:seed (GuardsExistingContent) : si du contenu est déjà
+ * en place, elle décline (code de sortie 0).
  *
- * Attention : purge par locale avant de recréer. Rejouer cette commande écrase
- * les incidents ajoutés depuis le backoffice — elle sert à poser le contenu de
- * référence sur un environnement neuf, pas à synchroniser une base éditée.
+ * Attention : avec --force, elle purge toute la table, toutes locales
+ * confondues, avant de recréer, ce qui écrase les incidents ajoutés depuis le
+ * backoffice — elle sert à poser le contenu de référence sur un environnement
+ * neuf, pas à synchroniser une base éditée.
  *
  * Les quatre entrées ci-dessous sont des pannes réelles de ce projet, datées
  * d'après les tags Git correspondants. Le retrait du verbe RBAC `pods/exec`
