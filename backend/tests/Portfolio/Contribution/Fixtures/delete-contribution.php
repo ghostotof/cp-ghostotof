@@ -15,7 +15,8 @@ declare(strict_types=1);
  *  2. attend la barrière (ProcessBarrier::awaitInChild()) en annonçant le pid
  *     de cette connexion — celle qui attendra le verrou —, que le test
  *     relâche au point d'entrelacement voulu ;
- *  3. supprime l'entrée, puis écrit le titre que portait l'instance supprimée.
+ *  3. supprime l'entrée, puis écrit « titre-supprimé: <titre> », le titre que
+ *     portait l'instance supprimée.
  *     Sous le verrou, elle a été relue (#402) : c'est le titre que la base
  *     portait au moment de la suppression. Hors du verrou, c'est celui du
  *     chargement ;
@@ -66,6 +67,6 @@ ProcessBarrier::awaitInChild($barrierPath, $pid);
 
 $administrator->delete($contribution->getId());
 
-echo $contribution->getTitle()."\n";
+echo 'titre-supprimé: '.$contribution->getTitle()."\n";
 
 exit(0);

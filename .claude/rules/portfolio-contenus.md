@@ -155,9 +155,13 @@ paths:
     In an FPM worker the wait is bounded by `PGOPTIONS` `lock_timeout=5s`; past it the adapter throws
     `OrderScopeLockTimeoutException` (named, unmapped: a `critical` 500 — 5 s for a millisecond write is an
     anomaly, not a conflict to retry), and only for its own lock statement: a timeout inside the operation
-    stays the DBAL exception. **The console waits without a bound**: the `app:*:seed` commands go through the
-    `Administrator`s, so the deploy's seed Job takes the same lock, which `www.prod.conf` does not reach —
-    harmless while every holder keeps it for milliseconds, revisit before holding it any longer. Guards:
+    stays the DBAL exception. Since #499 that covers a backoffice `DELETE` and a watch `PUT` too, which never
+    waited before: each now costs the lock, a transaction and the re-read of its entry, and comes out as that
+    500 behind a writer holding the scope past 5 s. **The console is bounded too** (#512, #525): the
+    `app:*:seed` commands go through the `Administrator`s, so the deploy's seed Job takes the same lock, which
+    `www.prod.conf` does not reach — its pod's own `PGOPTIONS` gives it `lock_timeout=5s`, and a session with
+    none (dev, CI) gets `PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT`. Every holder keeps the lock for
+    milliseconds; revisit before holding it any longer. Guards:
     `OrderScopeLockCoverageTest` (a probe session holds each scope, every write of every
     `Administrator` must wait — a new one written without `withLock()` turns it red) and
     `ContributionOrderConcurrencyTest` (two real processes, interleaved at the `preFlush`: both races of #389,

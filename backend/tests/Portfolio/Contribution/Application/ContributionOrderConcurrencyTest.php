@@ -122,7 +122,7 @@ final class ContributionOrderConcurrencyTest extends KernelTestCase
 
         self::assertSame(
             'Écrit par le PUT',
-            $this->lastLineOf($deleter),
+            $this->deletedTitleReportedBy($deleter),
             "Le DELETE a validé pendant le PUT, qui a répondu 200 sur une entrée disparue : il n'a pas attendu le verrou du périmètre (#499).",
         );
         self::assertSame([], $this->allPositions(), "L'entrée n'a pas été supprimée.");
@@ -159,14 +159,13 @@ final class ContributionOrderConcurrencyTest extends KernelTestCase
     }
 
     /**
-     * La dernière ligne écrite par le fils : la première est le « ready » de
-     * la barrière.
+     * Le titre que le fils annonce avoir supprimé, sur sa ligne
+     * « titre-supprimé: … » : ni le « ready » de la barrière ni une sortie
+     * parasite (un avertissement à l'arrêt du kernel) ne le faussent.
      */
-    private function lastLineOf(Process $child): string
+    private function deletedTitleReportedBy(Process $child): ?string
     {
-        $lines = preg_split('/\R/', trim($child->getOutput()));
-
-        return false === $lines ? '' : (string) array_last($lines);
+        return 1 === preg_match('/^titre-supprimé: (.*)$/mu', $child->getOutput(), $match) ? $match[1] : null;
     }
 
     /**
