@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Cache;
 
+use App\Tests\Support\PhpImageBuild;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -19,14 +20,12 @@ use PHPUnit\Framework\TestCase;
  * sans cache système, construite sans erreur. On ne l'aurait vu qu'au
  * déploiement en préprod.
  *
- * Le test lit l'instruction `RUN` telle que Docker l'exécute : lignes de
- * commentaire retirées, lignes de continuation jointes. Un `|| true` renvoyé à
- * la ligne suivante ne lui échappe donc pas.
+ * Le test lit l'instruction `RUN` telle que Docker l'exécute
+ * ({@see PhpImageBuild}) : un `|| true` renvoyé à la ligne suivante ne
+ * lui échappe donc pas.
  */
 final class ProductionImageWarmUpTest extends TestCase
 {
-    private const string WORKDIR = '/var/www/backend';
-
     /**
      * Sans `set -e`, une suite de commandes séparées par `;` ne rend que le
      * statut de la dernière : un `cache:clear` en échec passerait sans bruit,
@@ -55,9 +54,9 @@ final class ProductionImageWarmUpTest extends TestCase
      */
     public function testTheBuildChecksTheSystemCacheHoldsFiles(): void
     {
-        self::assertStringContainsString("\nWORKDIR ".self::WORKDIR."\n", $this->dockerfile());
-        self::assertStringStartsWith(self::WORKDIR.'/', SystemCachePodVolumeTest::MOUNT_PATH);
-        $directory = substr(SystemCachePodVolumeTest::MOUNT_PATH, \strlen(self::WORKDIR) + 1);
+        self::assertStringContainsString("\nWORKDIR ".PhpImageBuild::WORKDIR."\n", PhpImageBuild::dockerfile());
+        self::assertStringStartsWith(PhpImageBuild::WORKDIR.'/', SystemCachePodVolumeTest::MOUNT_PATH);
+        $directory = substr(SystemCachePodVolumeTest::MOUNT_PATH, \strlen(PhpImageBuild::WORKDIR) + 1);
 
         $instruction = $this->postInstallInstruction();
         $check = strpos($instruction, \sprintf('find %s -type f | grep -q .', $directory));
@@ -66,32 +65,8 @@ final class ProductionImageWarmUpTest extends TestCase
         self::assertGreaterThan(strpos($instruction, 'post-install-cmd'), $check, 'Le contrôle suit le préchauffage.');
     }
 
-    /**
-     * L'instruction `RUN` qui rejoue `post-install-cmd`, sur une ligne, comme
-     * Docker la passe au shell.
-     */
     private function postInstallInstruction(): string
     {
-        $lines = array_filter(
-            explode("\n", $this->dockerfile()),
-            static fn (string $line): bool => !str_starts_with(ltrim($line), '#'),
-        );
-        $instructions = explode("\n", (string) preg_replace('/\\\\\n\s*/', ' ', implode("\n", $lines)));
-
-        $matching = array_values(array_filter(
-            $instructions,
-            static fn (string $instruction): bool => str_contains($instruction, 'post-install-cmd'),
-        ));
-        self::assertCount(1, $matching, 'Une seule instruction du Dockerfile doit rejouer post-install-cmd.');
-
-        return $matching[0];
-    }
-
-    private function dockerfile(): string
-    {
-        $path = \dirname(__DIR__, 5).'/docker/php/Dockerfile';
-        self::assertFileIsReadable($path);
-
-        return (string) file_get_contents($path);
+        return PhpImageBuild::instructionContaining('post-install-cmd');
     }
 }
