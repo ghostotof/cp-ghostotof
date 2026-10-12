@@ -16,8 +16,10 @@ use Symfony\Component\Uid\Uuid;
 final readonly class AnonymousCvSectionAdministrator implements AnonymousCvSectionAdministratorInterface
 {
     /**
-     * Périmètre d'ordre, verrouillé par toute écriture qui place une entrée
-     * (issue #389) : la table entière, toutes langues confondues.
+     * Périmètre d'ordre, verrouillé par toute écriture : celles qui placent
+     * une entrée (issue #389), et delete(), pour qu'une suppression ne valide
+     * pas sous une autre écriture (issue #499). La table entière, toutes
+     * langues confondues.
      */
     private const string ORDER_SCOPE = AnonymousCvSection::class;
 
@@ -85,13 +87,15 @@ final readonly class AnonymousCvSectionAdministrator implements AnonymousCvSecti
 
     public function delete(Uuid $id): void
     {
-        $section = $this->sectionRepository->findOneById($id);
+        $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id): void {
+            $section = $this->sectionRepository->findOneById($id);
 
-        if (null === $section) {
-            throw AnonymousCvSectionNotFoundException::forId($id);
-        }
+            if (null === $section) {
+                throw AnonymousCvSectionNotFoundException::forId($id);
+            }
 
-        $this->sectionRepository->remove($section);
+            $this->sectionRepository->remove($section);
+        });
     }
 
     public function reorder(array $keys): void

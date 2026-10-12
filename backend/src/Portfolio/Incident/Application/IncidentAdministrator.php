@@ -17,8 +17,10 @@ use Symfony\Component\Uid\Uuid;
 final readonly class IncidentAdministrator implements IncidentAdministratorInterface
 {
     /**
-     * Périmètre d'ordre, verrouillé par toute écriture qui place une entrée
-     * (issue #389) : la table entière, toutes langues confondues.
+     * Périmètre d'ordre, verrouillé par toute écriture : celles qui placent
+     * une entrée (issue #389), et delete(), pour qu'une suppression ne valide
+     * pas sous une autre écriture (issue #499). La table entière, toutes
+     * langues confondues.
      */
     private const string ORDER_SCOPE = Incident::class;
 
@@ -92,13 +94,15 @@ final readonly class IncidentAdministrator implements IncidentAdministratorInter
 
     public function delete(Uuid $id): void
     {
-        $incident = $this->incidentRepository->findOneById($id);
+        $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id): void {
+            $incident = $this->incidentRepository->findOneById($id);
 
-        if (null === $incident) {
-            throw IncidentNotFoundException::forId($id);
-        }
+            if (null === $incident) {
+                throw IncidentNotFoundException::forId($id);
+            }
 
-        $this->incidentRepository->remove($incident);
+            $this->incidentRepository->remove($incident);
+        });
     }
 
     public function reorder(array $keys): void

@@ -11,6 +11,7 @@ use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Portfolio\Watch\Application\WatchedProductAdministratorInterface;
 use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
+use App\Portfolio\Watch\Domain\Exception\WatchedProductNotFoundException;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use App\Tests\Support\OpensProbeConnection;
 use Closure;
@@ -128,6 +129,26 @@ final class ScopeLockReadsCommittedStateTest extends KernelTestCase
     }
 
     /**
+     * Le perdant de deux `DELETE` simultanés (#499) : l'entrée, chargée par
+     * son provider, a été supprimée par l'autre `DELETE` avant le verrou. Elle
+     * est introuvable (404), comme pour un `DELETE` qui arrive après. Hors du
+     * verrou, le second `DELETE` ne touchait aucune ligne et répondait 204.
+     *
+     * @param class-string<TranslatableContent> $entityClass
+     * @param Closure(): LocalizedContext       $context
+     */
+    #[DataProvider('provideLocalizedContexts')]
+    public function testDeletingAnEntryDeletedConcurrentlyReportsItAsNotFound(string $entityClass, Closure $context): void
+    {
+        [$operations, $entry] = $this->prepare($entityClass, $context);
+
+        $this->deleteFromAnotherSession($entityClass, $entry);
+
+        $this->expectException($operations['notFound']);
+        $operations['delete']($entry);
+    }
+
+    /**
      * « Créer la version EN » de G, dont le membre FR — déjà chargé — a été
      * déplacé par un réordonnancement validé entre-temps : la version EN doit
      * hériter de la position que G porte en base, pas de celle qu'il quittait.
@@ -175,6 +196,32 @@ final class ScopeLockReadsCommittedStateTest extends KernelTestCase
         $stored = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
             ->fetchOne(\sprintf('SELECT position FROM %s WHERE id = ?', $this->table), [$created->getId()->toRfc4122()]);
         self::assertSame($movedTo + 1, $stored, "Le produit créé s'est rangé après une position que le catalogue ne porte plus : deux produits sur une position (#402, #389).");
+    }
+
+    /**
+     * Le `PUT` d'un produit de veille passe sous le verrou depuis #499 : un
+     * produit supprimé par une autre session après son chargement est
+     * introuvable, au lieu d'être « mis à jour » en 200.
+     */
+    public function testUpdatingAProductDeletedConcurrentlyReportsItAsNotFound(): void
+    {
+        $product = $this->loadProductThenDeleteItFromAnotherSession();
+
+        $this->expectException(WatchedProductNotFoundException::class);
+        self::getContainer()->get(WatchedProductAdministratorInterface::class)
+            ->update($product->getId(), $product->getSlug(), 'Renommé', VersionSource::MANUAL, '2.0');
+    }
+
+    /**
+     * Le perdant de deux `DELETE` simultanés d'un produit est introuvable
+     * (#499), comme pour les contenus localisés.
+     */
+    public function testDeletingAProductDeletedConcurrentlyReportsItAsNotFound(): void
+    {
+        $product = $this->loadProductThenDeleteItFromAnotherSession();
+
+        $this->expectException(WatchedProductNotFoundException::class);
+        self::getContainer()->get(WatchedProductAdministratorInterface::class)->delete($product->getId());
     }
 
     /**
@@ -238,6 +285,25 @@ final class ScopeLockReadsCommittedStateTest extends KernelTestCase
         $other = $operations['create'](Locale::EN, null);
 
         return [$operations, $entry, $translation, $other];
+    }
+
+    /**
+     * Un produit chargé dans l'EntityManager — par sa création, comme le
+     * provider dans une requête —, puis supprimé par une autre session.
+     */
+    private function loadProductThenDeleteItFromAnotherSession(): WatchedProduct
+    {
+        self::bootKernel();
+        $this->table = self::getContainer()->get(EntityManagerInterface::class)->getClassMetadata(WatchedProduct::class)->getTableName();
+        $product = self::getContainer()->get(WatchedProductAdministratorInterface::class)
+            ->create('supprime', 'Produit', VersionSource::MANUAL, '1.0');
+
+        $this->writeFromAnotherSession(
+            \sprintf('DELETE FROM %s WHERE id = ?', $this->table),
+            [$product->getId()->toRfc4122()],
+        );
+
+        return $product;
     }
 
     /**

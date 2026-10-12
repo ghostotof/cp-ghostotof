@@ -16,8 +16,10 @@ use Symfony\Component\Uid\Uuid;
 final readonly class QualityPrincipleAdministrator implements QualityPrincipleAdministratorInterface
 {
     /**
-     * Périmètre d'ordre, verrouillé par toute écriture qui place une entrée
-     * (issue #389) : la table entière, toutes langues confondues.
+     * Périmètre d'ordre, verrouillé par toute écriture : celles qui placent
+     * une entrée (issue #389), et delete(), pour qu'une suppression ne valide
+     * pas sous une autre écriture (issue #499). La table entière, toutes
+     * langues confondues.
      */
     private const string ORDER_SCOPE = QualityPrinciple::class;
 
@@ -78,13 +80,15 @@ final readonly class QualityPrincipleAdministrator implements QualityPrincipleAd
 
     public function delete(Uuid $id): void
     {
-        $principle = $this->qualityPrincipleRepository->findOneById($id);
+        $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id): void {
+            $principle = $this->qualityPrincipleRepository->findOneById($id);
 
-        if (null === $principle) {
-            throw QualityPrincipleNotFoundException::forId($id);
-        }
+            if (null === $principle) {
+                throw QualityPrincipleNotFoundException::forId($id);
+            }
 
-        $this->qualityPrincipleRepository->remove($principle);
+            $this->qualityPrincipleRepository->remove($principle);
+        });
     }
 
     public function reorder(array $keys): void

@@ -17,8 +17,9 @@ use Symfony\Component\Uid\Uuid;
 final readonly class AboutMeCardAdministrator implements AboutMeCardAdministratorInterface
 {
     /**
-     * Verrou d'ordre, pris par toute écriture qui place une entrée (issue #389) :
-     * la table entière, plus large que le périmètre d'ordre (une catégorie). Un
+     * Verrou d'ordre, pris par toute écriture : celles qui placent une entrée
+     * (issue #389), et delete(), pour qu'une suppression ne valide pas sous une
+     * autre écriture (issue #499). La table entière, plus large que le périmètre d'ordre (une catégorie). Un
      * verrou par catégorie n'aurait rien à gagner avec un seul administrateur.
      */
     private const string ORDER_SCOPE = AboutMeCard::class;
@@ -81,13 +82,15 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
 
     public function delete(Uuid $id): void
     {
-        $card = $this->aboutMeCardRepository->findOneById($id);
+        $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id): void {
+            $card = $this->aboutMeCardRepository->findOneById($id);
 
-        if (null === $card) {
-            throw AboutMeCardNotFoundException::forId($id);
-        }
+            if (null === $card) {
+                throw AboutMeCardNotFoundException::forId($id);
+            }
 
-        $this->aboutMeCardRepository->remove($card);
+            $this->aboutMeCardRepository->remove($card);
+        });
     }
 
     /**
