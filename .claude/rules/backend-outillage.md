@@ -127,8 +127,9 @@ Symfony (`getTraceAsString()`, a `FlattenException` in Messenger's `ErrorDetails
 No test asserted on trace arguments, and the #411/#414 guards read the attribute by reflection, never
 a trace, so none became vacuous. **A `php` process a test starts** does not get PHPUnit's `<ini>`: it is
 built by `tests/Support/ChildPhpProcess::command()`, which passes the parent's value with `-d` (its
-stderr, trace included, ends up in the failure message) — the two concurrency tests and
-`CreateCpgUserCommandTest`'s pseudo-terminal run. **To debug with arguments**, write a local
+stderr, trace included, ends up in the failure message) — the concurrency tests, through
+`ChildPhpProcess::inTestEnvironment()` (see the next section), and `CreateCpgUserCommandTest`'s
+pseudo-terminal run. **To debug with arguments**, write a local
 `phpunit.xml` (gitignored, read instead of the dist file) that sets it **explicitly** to 0 —
 `bin/phpunit -d …=0` does not work, the XML `<ini>` is applied after the CLI one. The two runtime
 tests then **skip**, naming the cause, rather than fail; a local `phpunit.xml` that merely omits it (an
@@ -141,3 +142,28 @@ frame of a `require`, which keeps the included path, a child started otherwise (
 command from test data, so the guard does not try), and dev over HTTP (`APP_DEBUG` error bodies, Off
 there) — which is why the #411/#414 guards stay. Setting it in `php.dev.ini` would cover every child at
 once, at the cost of dev CLI traces: not done, an open question of #420.
+
+## Concurrency tests with child processes (issue #403)
+
+A test that puts real processes in a race (`RateLimiterConcurrencyTest`, `ContributionOrderConcurrencyTest`,
+`SendAccountInvitationConcurrencyTest`, `PasswordSetupActivationConcurrencyTest`, `ReinviteConcurrencyTest`,
+`InviteUsernameConcurrencyTest`)
+goes through **one harness, written once**. `tests/Support/ChildPhpProcess::inTestEnvironment()` builds the
+child's `Process`: its command line (above) and a copy of the test's `$_SERVER`, where `phpunit.dist.xml`'s
+`<server force="true">` values live (a real `ANTHROPIC_API_KEY` exported in the shell must not reach the
+child) — a variable not to pass on is excluded there, for every child at once. Process also inherits `$_ENV`
+on its own, which holds the forced values too under PHPUnit (measured 2026-10-12): the copy is what does not
+depend on that. `ChildPhpProcess::SETUP_FAILED` (2) is the exit code of a child that could not set itself up.
+`tests/Support/ProcessBarrier` is the file barrier, both sides: the test `hold()`s it (exclusive `flock`),
+the child calls `awaitInChild($path, ?$sessionPid)` once everything slow is done (writes `ready [<pid>]`,
+then blocks on a shared lock), the test waits with `waitUntilReady()` — which then sleeps
+`SETTLE_MICROSECONDS` so that every child has reached its `flock()` — or `sessionPidOf()` (the PostgreSQL
+session it then watches in `pg_stat_activity`), and `release()`s; an unreferenced barrier releases itself.
+Children reach private services through `tests/Support/TestServiceLocator` (`limiter.<name>` included; it
+replaced `RateLimiterFactoryLocator`). `tests/Shared/ChildProcessHarnessTest.php` exercises the protocol on
+real processes and fails, in `tests/`, on any `flock()` outside `ProcessBarrier`, any `foreach ($_SERVER`
+outside `ChildPhpProcess`, and any `new Process(ChildPhpProcess::command(` outside its `OWN_ENVIRONMENT`
+allow-list (the Dotenv test that isolates a pod's environment on purpose). Not seen: `proc_open()`
+(`CreateCpgUserCommandTest`'s pseudo-terminal child gets the inherited environment only). Not shared yet:
+the one-shot `preFlush`/`postFlush` listener that releases the child and waits until it is done or blocked
+on a lock, copied in four tests (issue #510).
