@@ -234,9 +234,23 @@ paths:
     `DELETE` at the flush, then the instance is new again); `markReadOnly` (`find()` would still return it,
     reopening #402). **Not covered, accepted**: an instance detached otherwise — `close()` (#502, #547, #549) or
     `clear()` — is not remembered; on the same closed manager its `persist()` already fails with
-    `EntityManagerClosed`, only a reset manager would take it, and no worker writes an entity a lock detaches; nor an
-    instance this same manager removed and flushed, which Doctrine also takes for new (no caller re-saves what it
-    deleted, follow-up #557).
+    `EntityManagerClosed`, only a reset manager would take it, and no worker writes an entity a lock detaches.
+    **An instance this same manager removed and flushed is covered since #557**: `UnitOfWork::executeDeletions()`
+    wipes its state after the `DELETE` but leaves the UUID the constructor assigned, so Doctrine took it for new too
+    and a re-save re-inserted the row at the same id (measured before the fix on the eight localized contexts, the
+    watch catalogue and the technologies, through each `Administrator::delete()`). A second listener on
+    `postRemove` — emitted at the end of the flush's deletions, before the COMMIT — remembers the instance in the
+    same `WeakMap`, which keeps the **cause** (`VanishedEntityCause`: vanished under a lock / removed by this
+    manager) so the refusal names it (`VanishedEntitySavedAgainException::forEntity()` /
+    `removedByThisManager()`); every class, like `prePersist`. `remove()` then `persist()` **before** the flush is
+    untouched: the removal is cancelled (`STATE_REMOVED` becomes managed again, no `prePersist`, no `postRemove`).
+    Rejected: an `onFlush` check (it would need the same registry, and refuses only once the `INSERT` is
+    scheduled), a guard in each repository's `save()`, a list of classes, documenting only. **Accepted limits**:
+    restoring an entity by re-persisting the removed instance is refused with no escape hatch — a restoration
+    creates a new entity; a ROLLBACK after the deleting flush leaves the instance remembered while the row is
+    back (the lock skeleton closes the manager then, #547/#549, and elsewhere the `INSERT` would hit the primary
+    key anyway); a DQL or SQL deletion emits no `postRemove`, its in-memory instance is not remembered (still
+    managed, it never reaches `prePersist`; no such path re-saves it).
     Before, `find()` handed back the identity-map instance and a query did not rehydrate a managed one: a
     concurrent write committed in between was silently undone (`reattach()` saw a no-op, `detach()` looked in the
     group the entry had left, a version created in a group took the position the group was leaving, a deleted
@@ -261,7 +275,11 @@ paths:
     catalogue's end, its `PUT` and `DELETE` of a product deleted meanwhile, the pending insert, the re-save of an
     entry or a product detached by the re-read, refused instead of re-inserted (#548), and the isolation level);
     `VanishedEntitiesTest` pins the listener's wiring, its refusal before scheduling, no false positive and the
-    `WeakMap` (red with an `SplObjectStorage`, measured).
+    `WeakMap` (red with an `SplObjectStorage`, measured); since #557 also the refusal of an instance this manager
+    removed, under its own message, the removal cancelled before the flush, and no memory kept on the
+    `postRemove` path. The re-save after each `Administrator::delete()` is pinned by
+    `ScopeLockReadsCommittedStateTest` (localized contexts, watch catalogue) and
+    `PostgresExperienceTechnologyRowLockTest`.
     In an FPM worker the wait is bounded by `PGOPTIONS` `lock_timeout=5s`; past it the adapter throws
     `OrderScopeLockTimeoutException` (named, unmapped: a `critical` 500 — 5 s for a millisecond write is an
     anomaly, not a conflict to retry), and only for its own lock statement: a timeout inside the operation

@@ -140,7 +140,10 @@ paths:
     parameter), never `findAll()` in the identity map; a `ROLE_SUPER` still pending activation (empty
     password) does not count, it cannot sign in and keeps no door open; `countByRole()` is gone —, then
     `remove()` / `save()`; the audit line (`user-deleted`, `role-changed`) is written **after** the lock
-    returned, after the COMMIT: a logged action is a committed action. **A target whose row vanished between
+    returned, after the COMMIT: a logged action is a committed action. The deleted account's instance the
+    `user-deleted` line reads (and the purge's `user-purged`) is remembered by `VanishedEntities`' `postRemove`
+    listener (#557): reading it is harmless, re-saving it would be refused, and nothing re-persists it.
+    **A target whose row vanished between
     the provider and the lock is a 404** (`CpgUserNotFoundException`, already mapped), its stale instance
     detached through `VanishedEntities::detachVanished()` (#548), and no audit line: that is the loser of two
     `DELETE` of the same account, or a `PUT …/roles` on an account the purge just took (#552 — Doctrine never

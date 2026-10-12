@@ -51,7 +51,9 @@ never `EntityManager::detach()`** (issue #548). Doctrine takes an instance it do
 the detached instance re-inserted the deleted row, silently. The service remembers the instance in a
 `WeakMap` and its `prePersist` listener refuses it (`VanishedEntitySavedAgainException`, unmapped, a
 `critical` 500). Used today by the order scope lock's re-read, the technology row lock and the account
-administration lock (#551, `.claude/rules/security-user.md`); the details, the
+administration lock (#551, `.claude/rules/security-user.md`). Since #557 its `postRemove` listener also
+remembers every instance the same manager removed and flushed — Doctrine took it for new as well, its UUID
+kept — so re-saving a deleted entity is refused too (a restoration creates a new entity); the details, the
 rejected options and the accepted limits live in `.claude/rules/portfolio-contenus.md` (ordering section).
 
 **Every entity timestamp is stored with its offset** (issue #434): `#[ORM\Column(type:
