@@ -266,8 +266,10 @@ paths:
     delay meant « this account was activated » — the e-mail also carries the username. What tells the
     cases apart is the audit log (`rejected` / `replayed`), never the response. **Never** give one of them
     its own status, exception or message again; `testEveryUnusableLinkGetsTheSameResponse` (status,
-    `Content-Type`, body minus the debug `trace`, five fates of a link, both routes) and
-    `UnusablePasswordSetupLinkExceptionTest` pin it. The frontend reads 404 — and 410, for a backend from
+    every header but `Date` and the profiler's, body minus the debug `trace`, seven fates of a link, both
+    routes) and `UnusablePasswordSetupLinkExceptionTest` pin it. Accepted limit: the paths do not do quite
+    the same work — an unknown or replayed link writes an audit line, a merely expired one none (#356) —,
+    a Monolog write under network jitter, with no SQL round trip between them (keep the join below). The frontend reads 404 — and 410, for a backend from
     before #362 during a rollout or after a rollback — as `unusable`; see `.claude/rules/frontend-backoffice.md`.
     They replace `GET|POST /api/account/password-setup/{token}`, removed along with
     `AccountPasswordSetupStatusResource` and `AccountPasswordSetupProvider`; a `GET` cannot carry a secret

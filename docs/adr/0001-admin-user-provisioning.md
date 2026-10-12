@@ -154,9 +154,20 @@ l'exploitation, le journal de sécurité (`password-setup-token-rejected` /
   la fuite) ; garder l'empreinte des jetons supprimés pour leur répondre 410
   (une table et une rétention de plus, et la fuite revient à leur terme).
 - **Garde-fous** : `AccountPasswordSetupResourceTest::testEveryUnusableLinkGetsTheSameResponse`
-  compare statut, `Content-Type` et corps des cinq devenirs d'un lien, sur
-  les deux routes ; `UnusablePasswordSetupLinkExceptionTest` épingle le message
+  compare statut, en-têtes et corps des sept devenirs d'un lien, sur les deux
+  routes ; `UnusablePasswordSetupLinkExceptionTest` épingle le message
   constant. Ne jamais rétablir de statut ni de message propre à l'un des cas.
+- **Limite acceptée, le temps de réponse** : les chemins ne font pas tout à
+  fait le même travail — un lien inconnu ou rejoué écrit une ligne au journal
+  de sécurité, un lien simplement expiré n'en écrit aucune (ce n'est pas un
+  événement, choix de #356). Aucun aller-retour SQL ne les sépare (le compte
+  est chargé par jointure avec le jeton) : l'écart est celui d'une écriture
+  Monolog, sous la gigue du réseau, avec 10 essais par heure et par IP. Ne pas
+  l'« égaliser » en journalisant les liens expirés sans revoir ce choix.
+- **Fenêtre de déploiement** : un ancien bundle du frontend encore chargé dans
+  un navigateur lit le nouveau 404 d'un lien expiré comme « lien invalide,
+  rouvrez-le depuis l'e-mail », sans l'inviter à demander un nouveau lien. La
+  fenêtre est transitoire, la page rechargée la referme.
 
 ## Alternatives écartées
 

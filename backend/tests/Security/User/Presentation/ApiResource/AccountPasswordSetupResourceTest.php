@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Presentation\ApiResource;
 
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Security\User\Application\CpgUserAdministratorInterface;
 use App\Security\User\Application\CpgUserInviterInterface;
 use App\Security\User\Application\PendingInvitationPurgerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
@@ -380,8 +381,9 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
     {
         $client = $this->freshClient();
         $links = $this->unusableLinks($client);
-        // Chaque route a son lot de six appels : le quota (10/h, partagé par
-        // les deux routes) repart de zéro, il n'est pas l'objet de ce test.
+        // Chaque route a son lot d'appels, un par lien : le quota (10/h,
+        // partagé par les deux routes) repart de zéro, il n'est pas l'objet de
+        // ce test — au-delà de dix liens, scinder le lot.
         self::getContainer()->get('cache.rate_limiter')->clear();
 
         $responses = [];
@@ -436,6 +438,20 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         self::getContainer()->get(CpgUserInviterInterface::class)->reinvite($resent, Locale::FR);
         $this->runInvitationHandlerAndCollectSetupToken();
 
+        // Révoqué : un ROLE_SUPER a défini le mot de passe depuis le
+        // backoffice, ce qui tue le lien en circulation (#460).
+        $links['révoqué par le backoffice'] = $this->inviteAndCollectSetupToken('revoked@example.com', Locale::FR);
+        $revoked = self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByEmail('revoked@example.com');
+        self::assertNotNull($revoked);
+        self::getContainer()->get(CpgUserAdministratorInterface::class)->changePassword($revoked->getId(), TestCredentials::variant('admin'));
+        self::getContainer()->get(EntityManagerInterface::class)->clear();
+
+        // Compte déjà actif, jeton encore utilisable : un reste d'avant #458,
+        // que validate() comme complete() refusent.
+        $links['compte déjà actif'] = $this->inviteAndCollectSetupToken('active@example.com', Locale::FR);
+        self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->executeStatement("UPDATE cpg_user SET activated_at = now() WHERE email = 'active@example.com'");
+
         // Purgé : invitation jamais activée au-delà de la rétention, le compte
         // et son jeton supprimés par la purge quotidienne.
         $links['purgé'] = $this->inviteAndCollectSetupToken('purged@example.com', Locale::FR);
@@ -449,11 +465,13 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
     }
 
     /**
-     * Ce qu'un appelant voit d'un refus : statut, type de contenu et corps,
-     * hors `trace` — présente parce que le noyau de test tourne en debug, elle
-     * nomme les lignes qui lèvent et n'existe pas en production.
+     * Ce qu'un appelant voit d'un refus : statut, tous les en-têtes et corps.
+     * Seuls sont écartés ce qui varie d'une requête à l'autre sans rien dire
+     * du lien (`Date`) et ce que le seul noyau de test, en debug, ajoute : la
+     * `trace` du corps, qui nomme les lignes qui lèvent, et les en-têtes du
+     * profileur — absents en production.
      *
-     * @return array{status: int, contentType: string|null, body: mixed}
+     * @return array{status: int, headers: array<string, list<string|null>>, body: mixed}
      */
     private function observableResponse(KernelBrowser $client): array
     {
@@ -462,10 +480,12 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         if (\is_array($body)) {
             unset($body['trace']);
         }
+        $headers = array_diff_key($response->headers->all(), array_flip(['date', 'x-debug-token', 'x-debug-token-link']));
+        ksort($headers);
 
         return [
             'status' => $response->getStatusCode(),
-            'contentType' => $response->headers->get('Content-Type'),
+            'headers' => $headers,
             'body' => $body,
         ];
     }
@@ -526,6 +546,6 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
     private function expireAllTokens(): void
     {
         self::getContainer()->get(EntityManagerInterface::class)->getConnection()
-            ->executeStatement("UPDATE password_setup_token SET expires_at = '2000-01-01 00:00:00'");
+            ->executeStatement("UPDATE password_setup_token SET expires_at = '2000-01-01 00:00:00+00'");
     }
 }
