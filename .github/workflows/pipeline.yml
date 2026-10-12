@@ -739,12 +739,8 @@ jobs:
           #    schéma à moitié migré) ; si la migration n'a rien écrit,
           #    `kubectl apply -k .` sur cet overlay relance l'ancienne image.
           #
-          #    tools/run-job.sh (issue #488) : suppression du Job précédent,
-          #    envsubst de ${BACKEND_IMAGE} seul, apply, attente par
-          #    tools/wait-rollout.sh (issue #353, pas `kubectl wait` : un
-          #    conteneur qui ne démarrera pas ou un Job `Failed` font échouer en
-          #    quelques secondes, en nommant le pod, le conteneur et la raison),
-          #    et sur échec les 200 dernières lignes de journaux, sortie en 1.
+          #    La séquence (delete, rendu, apply, attente, journaux) et ses
+          #    codes de sortie : en-tête de tools/run-job.sh (issue #488).
           "$GITHUB_WORKSPACE/tools/run-job.sh" preprod "$GITHUB_WORKSPACE/k8s/base/migrate-job.yaml" \
             "$IMAGE_BACKEND:$TAG-preprod" 300
           # 4. Rollout sur un schéma prêt. `apply -k` restaure aussi les replicas
@@ -1091,12 +1087,8 @@ jobs:
           #    schéma à moitié migré) ; si la migration n'a rien écrit,
           #    `kubectl apply -k .` sur cet overlay relance l'ancienne image.
           #
-          #    tools/run-job.sh (issue #488) : suppression du Job précédent,
-          #    envsubst de ${BACKEND_IMAGE} seul, apply, attente par
-          #    tools/wait-rollout.sh (issue #353, pas `kubectl wait` : un
-          #    conteneur qui ne démarrera pas ou un Job `Failed` font échouer en
-          #    quelques secondes, en nommant le pod, le conteneur et la raison),
-          #    et sur échec les 200 dernières lignes de journaux, sortie en 1.
+          #    La séquence (delete, rendu, apply, attente, journaux) et ses
+          #    codes de sortie : en-tête de tools/run-job.sh (issue #488).
           "$GITHUB_WORKSPACE/tools/run-job.sh" prod "$GITHUB_WORKSPACE/k8s/base/migrate-job.yaml" \
             "$IMAGE_BACKEND:$TAG" 300
           # 4. Rollout sur un schéma prêt. `apply -k` restaure aussi les replicas

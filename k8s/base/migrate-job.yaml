@@ -10,9 +10,9 @@
 #
 # DÉLIBÉRÉMENT ABSENT de kustomization.yaml `resources:` — il n'a pas à être
 # recréé à chaque `apply -k`, mais appliqué à la demande par le pipeline
-# (tools/run-job.sh : delete + apply + wait). Corollaire : le transformateur d'images de kustomize
-# ne le voit pas, d'où le placeholder ${BACKEND_IMAGE} substitué par envsubst au
-# moment de l'apply. Ne pas le remplacer par `image: backend` : hors kustomize,
+# (tools/run-job.sh : delete + apply + wait). Corollaire : le transformateur
+# d'images de kustomize ne le voit pas, d'où le placeholder ${BACKEND_IMAGE}
+# substitué par envsubst au moment de l'apply. Ne pas le remplacer par `image: backend` : hors kustomize,
 # ce nom serait résolu en `docker.io/library/backend`.
 apiVersion: batch/v1
 kind: Job

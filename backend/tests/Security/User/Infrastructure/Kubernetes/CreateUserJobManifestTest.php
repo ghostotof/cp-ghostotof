@@ -63,6 +63,24 @@ final class CreateUserJobManifestTest extends TestCase
         self::assertSame(0, $this->job()['spec']['backoffLimit'] ?? null);
     }
 
+    /**
+     * Revue de #488 : un pod qui ne démarre jamais (Secret supprimé avant son
+     * montage, image introuvable) laissait le Job actif sans fin — et
+     * `ttlSecondsAfterFinished` ne compte qu'à partir de la fin, si bien que
+     * le nom du compte restait dans sa spec. Le délai du Job tient sous
+     * l'attente de la procédure (`tools/run-job.sh … <délai>`, k8s/README.md),
+     * qui voit donc son échec (`Failed=True`) plutôt que d'abandonner avant.
+     */
+    public function testTheJobEndsWithinTheProcedureWait(): void
+    {
+        $deadline = $this->job()['spec']['activeDeadlineSeconds'] ?? null;
+        self::assertIsInt($deadline);
+
+        $readme = (string) file_get_contents($this->k8sBase().'/../README.md');
+        self::assertSame(1, preg_match('#tools/run-job\.sh "\$NS" k8s/base/'.self::MANIFEST.' "\$IMAGE" (\d+) #', $readme, $wait));
+        self::assertLessThan((int) $wait[1], $deadline);
+    }
+
     public function testThePodIsHardenedLikeTheMigrationJob(): void
     {
         $spec = $this->podSpec();

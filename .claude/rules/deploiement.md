@@ -84,12 +84,18 @@ paths:
   it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would
   resolve to `docker.io/library/backend`). **Every Job outside kustomize runs through
   `tools/run-job.sh <ns> <manifest> <image> <timeout> [NAME=value…]`** (issue #488) — migration and seed
-  in `pipeline.yml`, the messenger probe, the manual `create-user` procedure: name read from
-  `metadata.name`, `envsubst` with an explicit list (`${BACKEND_IMAGE}` + the named variables), refusal of
-  any `${…}` left unfilled before the cluster is touched, previous Job deleted, apply,
-  `tools/wait-rollout.sh`, and on failure an `::error::` plus the Job's last 200 log lines, exit 1.
-  Never re-inline that sequence: a fix made in one copy is a fix missing in the others. Offline test:
-  `tools/tests/run-job.test.sh`. The deployer `Role` no longer has `pods/exec: create`, so the
+  in `pipeline.yml`, the messenger probe, the manual `create-user` procedure. **Before the cluster is
+  touched** (exit 2): bash ≥ 4, jq and envsubst present (otherwise `wait-rollout.sh` failed *after* the
+  apply, on a Job still running); one object, `kind: Job`, its `metadata.name` (end-of-line comment
+  stripped) a DNS-1123 name — never an option, `delete job/NAME`; each `NAME=value` a `${NAME}` of the
+  manifest other than `BACKEND_IMAGE`, its value non-empty within `[A-Za-z0-9._@:/+-]` (it is pasted into
+  the YAML as is) and never quoted in a refusal; `envsubst` with that explicit list, then any `${…}` left
+  refused — so a shell variable in a manifest is written `$VAR`, comments included. Then delete + apply
+  (refused by the cluster: exit 3), `tools/wait-rollout.sh` (Job failed: exit 1), and every container's
+  last 200 log lines (`--all-containers --prefix`, init containers included) — on stdout after a success,
+  on stderr after an `::error::` otherwise. The probe blames the worker on exit 1 only. Never re-inline
+  that sequence — `run-job.test.sh` greps `pipeline.yml` for it: a fix made in one copy is a fix missing
+  in the others. Offline test: `tools/tests/run-job.test.sh`. The deployer `Role` no longer has `pods/exec: create`, so the
   CI identity cannot open an interactive shell in a pod — but **that is not a secret boundary** (3rd audit,
   A3/D4): `jobs create` + `pods/log` + `externalsecrets create/update` read every Secret of the namespace
   by construction (a Job that prints its environment is enough). The Role is a full deployer of its
