@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Presentation\ApiResource;
 
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Security\User\Application\CpgUserInviterInterface;
+use App\Security\User\Application\PendingInvitationPurgerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\InvitesUsers;
 use App\Tests\Support\TestCredentials;
+use DateInterval;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -79,7 +83,7 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
     }
 
-    public function testValidateReturns410ForAnExpiredToken(): void
+    public function testValidateReturns404ForAnExpiredToken(): void
     {
         $client = $this->freshClient();
         $token = $this->inviteAndCollectToken();
@@ -87,10 +91,10 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
 
         $this->postValidate($client, ['token' => $token]);
 
-        self::assertResponseStatusCodeSame(410);
+        self::assertResponseStatusCodeSame(404);
     }
 
-    public function testValidateReturns410ForAnAlreadyUsedToken(): void
+    public function testValidateReturns404ForAnAlreadyUsedToken(): void
     {
         $client = $this->freshClient();
         $token = $this->inviteAndCollectToken();
@@ -100,7 +104,7 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
 
         $this->postValidate($client, ['token' => $token]);
 
-        self::assertResponseStatusCodeSame(410);
+        self::assertResponseStatusCodeSame(404);
     }
 
     /**
@@ -132,9 +136,10 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         ]));
         self::assertResponseIsSuccessful();
 
-        // Le jeton est consommé : rejouer le POST échoue en 410.
+        // Le jeton est consommé : rejouer le POST échoue comme tout lien
+        // inutilisable (issue #362).
         $this->postSetup($client, ['token' => $token, 'password' => TestCredentials::variant('new')]);
-        self::assertResponseStatusCodeSame(410);
+        self::assertResponseStatusCodeSame(404);
     }
 
     public function testSetupReturns404ForAnUnknownToken(): void
@@ -146,7 +151,7 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
     }
 
-    public function testSetupReturns410ForAnExpiredToken(): void
+    public function testSetupReturns404ForAnExpiredToken(): void
     {
         $client = $this->freshClient();
         $token = $this->inviteAndCollectToken();
@@ -154,7 +159,7 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
 
         $this->postSetup($client, ['token' => $token, 'password' => TestCredentials::variant('new')]);
 
-        self::assertResponseStatusCodeSame(410);
+        self::assertResponseStatusCodeSame(404);
     }
 
     /**
@@ -358,6 +363,111 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
 
         $client->request('POST', '/api/account/password%2Dsetup/valid%61te', server: $server, content: self::jsonBody(['token' => $unknown]));
         self::assertResponseStatusCodeSame(429);
+    }
+
+    /**
+     * Régression issue #362 : la réponse à un lien inutilisable ne doit rien
+     * dire de ce qu'il est devenu. 404 (inconnu, ou supprimé par une relance
+     * ou la purge) et 410 (expiré ou déjà utilisé) se distinguaient, et un
+     * jeton consommé étant conservé indéfiniment, passé le délai de purge un
+     * 410 voulait dire « ce compte a été activé ». Statut, type, title et
+     * detail sont désormais identiques, sur les deux routes.
+     *
+     * @param 'validate'|'setup' $route
+     */
+    #[DataProvider('bothRoutes')]
+    public function testEveryUnusableLinkGetsTheSameResponse(string $route): void
+    {
+        $client = $this->freshClient();
+        $links = $this->unusableLinks($client);
+        // Chaque route a son lot de six appels : le quota (10/h, partagé par
+        // les deux routes) repart de zéro, il n'est pas l'objet de ce test.
+        self::getContainer()->get('cache.rate_limiter')->clear();
+
+        $responses = [];
+        foreach ($links as $case => $token) {
+            if ('validate' === $route) {
+                $this->postValidate($client, ['token' => $token]);
+            } else {
+                $this->postSetup($client, ['token' => $token, 'password' => TestCredentials::variant('new')]);
+            }
+            $responses[$case] = $this->observableResponse($client);
+        }
+
+        self::assertSame(404, $responses['inconnu']['status']);
+        foreach ($responses as $case => $response) {
+            self::assertSame($responses['inconnu'], $response, \sprintf('Le lien « %s » se distingue d\'un lien inconnu.', $case));
+        }
+    }
+
+    /**
+     * @return iterable<string, array{'validate'|'setup'}>
+     */
+    public static function bothRoutes(): iterable
+    {
+        yield 'vérification' => ['validate'];
+        yield 'définition' => ['setup'];
+    }
+
+    /**
+     * Un lien de chaque devenir possible, état réel de la base, par les cas
+     * d'usage du dépôt (purge et relance comprises) plutôt que par du SQL.
+     *
+     * @return array<string, string>
+     */
+    private function unusableLinks(KernelBrowser $client): array
+    {
+        $links = ['inconnu' => bin2hex(random_bytes(32))];
+
+        // Expiré : 48 h passées, compte toujours en attente.
+        $links['expiré'] = $this->inviteAndCollectSetupToken('expired@example.com', Locale::FR);
+        self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->executeStatement("UPDATE password_setup_token SET expires_at = '2000-01-01 00:00:00+00' WHERE user_id = (SELECT id FROM cpg_user WHERE email = 'expired@example.com')");
+
+        // Déjà utilisé : le compte a été activé par ce lien, jeton conservé.
+        $links['déjà utilisé'] = $this->inviteAndCollectSetupToken('activated@example.com', Locale::FR);
+        $this->postSetup($client, ['token' => $links['déjà utilisé'], 'password' => TestCredentials::variant('new')]);
+        self::assertResponseStatusCodeSame(204);
+
+        // Remplacé : une relance a émis un nouveau lien.
+        $links['remplacé par une relance'] = $this->inviteAndCollectSetupToken('resent@example.com', Locale::FR);
+        $resent = self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByEmail('resent@example.com');
+        self::assertNotNull($resent);
+        self::getContainer()->get(CpgUserInviterInterface::class)->reinvite($resent, Locale::FR);
+        $this->runInvitationHandlerAndCollectSetupToken();
+
+        // Purgé : invitation jamais activée au-delà de la rétention, le compte
+        // et son jeton supprimés par la purge quotidienne.
+        $links['purgé'] = $this->inviteAndCollectSetupToken('purged@example.com', Locale::FR);
+        self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->executeStatement("UPDATE cpg_user SET invited_at = now() - interval '40 days' WHERE email = 'purged@example.com'");
+        $purge = self::getContainer()->get(PendingInvitationPurgerInterface::class)->purge(new DateInterval('P30D'));
+        self::assertCount(1, $purge->purged);
+        self::getContainer()->get(EntityManagerInterface::class)->clear();
+
+        return $links;
+    }
+
+    /**
+     * Ce qu'un appelant voit d'un refus : statut, type de contenu et corps,
+     * hors `trace` — présente parce que le noyau de test tourne en debug, elle
+     * nomme les lignes qui lèvent et n'existe pas en production.
+     *
+     * @return array{status: int, contentType: string|null, body: mixed}
+     */
+    private function observableResponse(KernelBrowser $client): array
+    {
+        $response = $client->getResponse();
+        $body = json_decode((string) $response->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        if (\is_array($body)) {
+            unset($body['trace']);
+        }
+
+        return [
+            'status' => $response->getStatusCode(),
+            'contentType' => $response->headers->get('Content-Type'),
+            'body' => $body,
+        ];
     }
 
     /**

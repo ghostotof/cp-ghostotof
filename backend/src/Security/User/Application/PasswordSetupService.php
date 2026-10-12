@@ -8,8 +8,7 @@ use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
-use App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException;
-use App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException;
+use App\Security\User\Domain\Exception\UnusablePasswordSetupLinkException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Domain\ValueObject\TokenClaim;
@@ -56,7 +55,7 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
             // et journal d'un lien inconnu.
             $this->auditLogger->passwordSetupTokenRejected();
 
-            throw InvalidPasswordSetupTokenException::unknownToken();
+            throw UnusablePasswordSetupLinkException::unknown();
         }
 
         // Journal de sécurité (D5) : le compte activé, jamais le jeton ni le
@@ -79,7 +78,7 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         if (!$user->isPendingActivation()) {
             $this->auditLogger->passwordSetupTokenReplayed($user);
 
-            throw PasswordSetupTokenExpiredException::expiredOrAlreadyUsed();
+            throw UnusablePasswordSetupLinkException::expiredOrAlreadyUsed();
         }
 
         // Puis la réclamation atomique (issue #356) : `isUsable()` n'a lu que
@@ -94,13 +93,13 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         if (TokenClaim::Gone === $claim) {
             $this->auditLogger->passwordSetupTokenRejected();
 
-            throw InvalidPasswordSetupTokenException::unknownToken();
+            throw UnusablePasswordSetupLinkException::unknown();
         }
         if (TokenClaim::AlreadyUsed === $claim) {
             $this->auditLogger->passwordSetupTokenReplayed($user);
         }
         if (TokenClaim::Claimed !== $claim) {
-            throw PasswordSetupTokenExpiredException::expiredOrAlreadyUsed();
+            throw UnusablePasswordSetupLinkException::expiredOrAlreadyUsed();
         }
 
         $user->setPassword($hashedPassword);
@@ -123,18 +122,19 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         if (null === $token) {
             $this->auditLogger->passwordSetupTokenRejected();
 
-            throw InvalidPasswordSetupTokenException::unknownToken();
+            throw UnusablePasswordSetupLinkException::unknown();
         }
 
         if (!$token->isUsable($this->clock->now())) {
             // Un lien déjà consommé qui revient se distingue ici, côté journal
-            // seulement : la réponse reste le 410 fusionné avec « expiré ». Un
-            // lien simplement expiré n'est pas un événement de sécurité.
+            // seulement : la réponse est celle de tout lien inutilisable, un
+            // lien inconnu compris (issue #362). Un lien simplement expiré
+            // n'est pas un événement de sécurité.
             if ($token->wasUsed()) {
                 $this->auditLogger->passwordSetupTokenReplayed($token->getUser());
             }
 
-            throw PasswordSetupTokenExpiredException::expiredOrAlreadyUsed();
+            throw UnusablePasswordSetupLinkException::expiredOrAlreadyUsed();
         }
 
         // Un lien encore utilisable d'un compte déjà actif (un jeton resté
@@ -143,7 +143,7 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         if (!$token->getUser()->isPendingActivation()) {
             $this->auditLogger->passwordSetupTokenReplayed($token->getUser());
 
-            throw PasswordSetupTokenExpiredException::expiredOrAlreadyUsed();
+            throw UnusablePasswordSetupLinkException::expiredOrAlreadyUsed();
         }
 
         return $token;

@@ -17,7 +17,7 @@ use Symfony\Bridge\Doctrine\Types\UuidType;
  * de la connexion (issues #435, #458).
  *
  * - `Connection::transactional()` plutôt que `wrapInTransaction()` : un refus
- *   levé par l'opération (un lien déjà utilisé, 410) est une issue ordinaire,
+ *   levé par l'opération (un lien déjà utilisé, 404) est une issue ordinaire,
  *   qui ne doit pas fermer l'EntityManager (même raisonnement que le verrou de
  *   périmètre d'ordre, #389).
  * - Attente bornée par `SET LOCAL lock_timeout` : FPM l'a déjà par

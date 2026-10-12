@@ -61,7 +61,7 @@ final class PostgresAccountRowLockTest extends KernelTestCase
     }
 
     /**
-     * Un refus levé par l'opération (un lien déjà utilisé, 410) est une issue
+     * Un refus levé par l'opération (un lien déjà utilisé, 404) est une issue
      * ordinaire : il annule la transaction sans fermer l'EntityManager.
      */
     public function testARefusalInsideTheOperationLeavesTheEntityManagerOpen(): void

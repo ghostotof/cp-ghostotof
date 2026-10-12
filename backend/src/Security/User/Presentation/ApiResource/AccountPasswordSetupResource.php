@@ -23,8 +23,9 @@ use Symfony\Component\Validator\Constraints as Assert;
  * l'ingress, un corps non. Ne pas réintroduire de `{token}` dans un
  * `uriTemplate`.
  *
- * Jeton absent ou vide -> 422, inconnu -> 404, expiré / déjà utilisé -> 410,
- * quota IP dépassé -> 429 (avant toute validation, cf.
+ * Jeton absent ou vide -> 422 ; lien inutilisable — inconnu, remplacé,
+ * purgé, expiré ou déjà utilisé — -> 404, réponse identique quel qu'en soit
+ * le motif (issue #362) ; quota IP dépassé -> 429 (avant toute validation, cf.
  * PasswordSetupRateLimitRequestListener).
  */
 #[ApiResource(
