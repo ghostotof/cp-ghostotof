@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Messenger;
 
-use App\Kernel;
 use App\Shared\Application\Message\MessengerProbeMessage;
 use App\Shared\Application\Message\QueuedMessageInterface;
 use App\Tests\Support\DeclaredClasses;
@@ -14,7 +13,6 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionAttribute;
 use ReflectionClass;
-use ReflectionMethod;
 use Symfony\Component\Messenger\Attribute\AsMessage;
 
 /**
@@ -93,7 +91,7 @@ final class QueuedMessagesNameTheirQueueFailureTest extends TestCase
     public function testEveryJustifiedExceptionIsStillNeeded(): void
     {
         $published = [];
-        foreach ($this->environments() as $environment) {
+        foreach (EnvironmentConfigKernel::allowedEnvironments() as $environment) {
             foreach ($this->publishingRoutes($environment, null, self::SOURCES) as [$message]) {
                 $published[] = $message;
             }
@@ -146,7 +144,7 @@ final class QueuedMessagesNameTheirQueueFailureTest extends TestCase
     private function unconvertedRoutings(?string $projectDirectory, string $classesDirectory): array
     {
         $found = [];
-        foreach ($this->environments() as $environment) {
+        foreach (EnvironmentConfigKernel::allowedEnvironments() as $environment) {
             foreach ($this->publishingRoutes($environment, $projectDirectory, $classesDirectory) as [$message, $route, $transport]) {
                 if (!is_a($message, QueuedMessageInterface::class, true) && !\array_key_exists($message, self::NO_CONVERSION)) {
                     $found[] = \sprintf('%s : %s → %s', $environment, $route, $transport);
@@ -240,20 +238,5 @@ final class QueuedMessagesNameTheirQueueFailureTest extends TestCase
         }
 
         return $found;
-    }
-
-    /**
-     * Lus dans {@see Kernel::getAllowedEnvs()} plutôt que recopiés, pour qu'un
-     * environnement ajouté soit vérifié sans qu'on y pense.
-     *
-     * @return list<string>
-     */
-    private function environments(): array
-    {
-        /** @var list<string> $allowed */
-        $allowed = new ReflectionMethod(Kernel::class, 'getAllowedEnvs')->invoke(new Kernel('test', false));
-        self::assertContains('prod', $allowed, 'Le noyau n\'admet plus `prod` : revoir ce test.');
-
-        return $allowed;
     }
 }

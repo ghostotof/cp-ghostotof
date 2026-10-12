@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Messenger;
 
-use App\Kernel;
 use App\Tests\Support\EnvironmentConfigKernel;
-use ReflectionMethod;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Mailer\Messenger\SendEmailMessage;
 use Symfony\Component\Messenger\Envelope;
@@ -73,7 +71,7 @@ final class SendEmailMessageStaysSynchronousTest extends KernelTestCase
         $types = HandlersLocator::listTypes($this->envelope());
 
         $found = [];
-        foreach ($this->environments() as $environment) {
+        foreach (EnvironmentConfigKernel::allowedEnvironments() as $environment) {
             $messenger = new EnvironmentConfigKernel($environment, $projectDirectory)->declaredMapping('framework', 'messenger');
             $routing = $messenger['routing'] ?? [];
             self::assertIsArray($routing);
@@ -87,20 +85,6 @@ final class SendEmailMessageStaysSynchronousTest extends KernelTestCase
         return $found;
     }
 
-    /**
-     * Lus dans {@see Kernel::getAllowedEnvs()} plutôt que recopiés, pour qu'un
-     * environnement ajouté soit vérifié sans qu'on y pense.
-     *
-     * @return list<string>
-     */
-    private function environments(): array
-    {
-        /** @var list<string> $allowed */
-        $allowed = new ReflectionMethod(Kernel::class, 'getAllowedEnvs')->invoke(new Kernel('test', false));
-        self::assertContains('prod', $allowed, 'Le noyau n\'admet plus `prod` : revoir ce test.');
-
-        return $allowed;
-    }
 
     private function envelope(): Envelope
     {

@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Messenger;
 
-use App\Kernel;
 use App\Tests\Support\EnvironmentConfigKernel;
 use PHPUnit\Framework\TestCase;
-use ReflectionMethod;
 
 /**
  * Le transport `async` publie avec confirmation du broker (issue #479).
@@ -38,7 +36,7 @@ final class AmqpPublisherConfirmsTest extends TestCase
     public function testTheAsyncTransportWaitsForTheBrokerConfirmationInEveryAmqpEnvironment(): void
     {
         $checked = 0;
-        foreach ($this->environments() as $environment) {
+        foreach (EnvironmentConfigKernel::allowedEnvironments() as $environment) {
             $async = new EnvironmentConfigKernel($environment)->declaredMapping('framework', 'messenger')['transports']['async'] ?? null;
             self::assertIsArray($async, $environment);
             $dsn = $async['dsn'] ?? null;
@@ -57,17 +55,5 @@ final class AmqpPublisherConfirmsTest extends TestCase
         }
 
         self::assertGreaterThan(0, $checked, 'Aucun environnement AMQP vérifié.');
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function environments(): array
-    {
-        /** @var list<string> $allowed */
-        $allowed = new ReflectionMethod(Kernel::class, 'getAllowedEnvs')->invoke(new Kernel('test', false));
-        self::assertContains('prod', $allowed);
-
-        return $allowed;
     }
 }

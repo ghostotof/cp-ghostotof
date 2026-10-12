@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Http;
 
-use App\Kernel;
 use App\Tests\Support\EnvironmentConfigKernel;
 use PHPUnit\Framework\TestCase;
-use ReflectionMethod;
 
 /**
  * Les garde-fous de log_level lisent `framework.exceptions` et
@@ -146,19 +144,14 @@ final class ExceptionMappingEnvironmentParityTest extends TestCase
     }
 
     /**
-     * Les environnements que le noyau admet, hors `test` : lus dans
-     * {@see Kernel::getAllowedEnvs()} plutôt que recopiés, pour qu'un
-     * environnement ajouté soit comparé sans qu'on y pense.
+     * Les environnements que le noyau admet, hors `test`
+     * ({@see EnvironmentConfigKernel::allowedEnvironments()}).
      *
      * @return list<string>
      */
     private function environments(): array
     {
-        /** @var list<string> $allowed */
-        $allowed = (new ReflectionMethod(Kernel::class, 'getAllowedEnvs'))->invoke(new Kernel('test', false));
-        self::assertContains('prod', $allowed, 'Le noyau n\'admet plus `prod` : revoir ce test.');
-
-        return array_values(array_diff($allowed, ['test']));
+        return array_values(array_diff(EnvironmentConfigKernel::allowedEnvironments(), ['test']));
     }
 
     /**
