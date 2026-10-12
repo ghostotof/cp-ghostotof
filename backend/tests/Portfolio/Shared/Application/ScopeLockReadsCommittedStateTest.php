@@ -180,6 +180,29 @@ final class ScopeLockReadsCommittedStateTest extends KernelTestCase
     }
 
     /**
+     * L'instance qu'un `delete()` de l'`Administrator` vient de supprimer — la
+     * même que celle que l'appelant tient, relue en place sous le verrou — ne
+     * revient pas en base s'il la sauve ensuite (issue #557) : après le
+     * `flush()` du `DELETE`, Doctrine a effacé son état et lui a laissé son
+     * UUID, et `persist()` la tenait pour neuve.
+     *
+     * @param class-string<TranslatableContent> $entityClass
+     * @param Closure(): LocalizedContext       $context
+     */
+    #[DataProvider('provideLocalizedContexts')]
+    public function testSavingAnEntryThisManagerDeletedIsRefusedInsteadOfReinserted(string $entityClass, Closure $context): void
+    {
+        [$operations, $entry] = $this->prepare($entityClass, $context);
+        $id = $this->idOf($entityClass, $entry);
+        $operations['delete']($entry);
+
+        $refusal = $this->saveAgain($entry);
+
+        self::assertSame(0, $this->storedCount($entityClass, $id), "L'entrée supprimée par le delete() de son Administrator, re-sauvée, a été réinsérée (#557).");
+        self::assertInstanceOf(VanishedEntitySavedAgainException::class, $refusal, \sprintf('La re-sauvegarde aurait dû être refusée sous son nom : %s.', get_debug_type($refusal)));
+    }
+
+    /**
      * « Créer la version EN » de G, dont le membre FR — déjà chargé — a été
      * déplacé par un réordonnancement validé entre-temps : la version EN doit
      * hériter de la position que G porte en base, pas de celle qu'il quittait.
@@ -271,6 +294,24 @@ final class ScopeLockReadsCommittedStateTest extends KernelTestCase
         $refusal = $this->saveAgain($product);
 
         self::assertSame(0, $this->storedCount(WatchedProduct::class, $product->getId()->toRfc4122()), 'Le produit supprimé, détaché par la relecture puis re-sauvé, a été réinséré (#548).');
+        self::assertInstanceOf(VanishedEntitySavedAgainException::class, $refusal, \sprintf('La re-sauvegarde aurait dû être refusée sous son nom : %s.', get_debug_type($refusal)));
+    }
+
+    /**
+     * Le produit de veille, supprimé par le `delete()` de son `Administrator`
+     * puis re-sauvé par l'appelant qui le tient, ne revient pas (#557).
+     */
+    public function testSavingAProductThisManagerDeletedIsRefusedInsteadOfReinserted(): void
+    {
+        self::bootKernel();
+        $this->table = self::getContainer()->get(EntityManagerInterface::class)->getClassMetadata(WatchedProduct::class)->getTableName();
+        $administrator = self::getContainer()->get(WatchedProductAdministratorInterface::class);
+        $product = $administrator->create('supprime-ici', 'Produit', VersionSource::MANUAL, '1.0');
+        $administrator->delete($product->getId());
+
+        $refusal = $this->saveAgain($product);
+
+        self::assertSame(0, $this->storedCount(WatchedProduct::class, $product->getId()->toRfc4122()), 'Le produit supprimé par le delete() de son Administrator, re-sauvé, a été réinséré (#557).');
         self::assertInstanceOf(VanishedEntitySavedAgainException::class, $refusal, \sprintf('La re-sauvegarde aurait dû être refusée sous son nom : %s.', get_debug_type($refusal)));
     }
 

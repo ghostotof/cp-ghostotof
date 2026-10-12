@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Portfolio\Experience\Infrastructure\Doctrine;
 
+use App\Portfolio\Experience\Application\ExperienceTechnologyAdministratorInterface;
 use App\Portfolio\Experience\Application\ExperienceTechnologyLockInterface;
 use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException;
@@ -118,6 +119,30 @@ final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
         }
 
         self::assertSame(0, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM experience_technology WHERE id = :id', ['id' => $id]), 'La technologie supprimée, détachée par le verrou puis re-sauvée, a été réinsérée (#548).');
+        self::assertInstanceOf(VanishedEntitySavedAgainException::class, $refusal, \sprintf('La re-sauvegarde aurait dû être refusée sous son nom : %s.', get_debug_type($refusal)));
+    }
+
+    /**
+     * La technologie supprimée par `ExperienceTechnologyAdministrator::delete()`
+     * — l'instance que l'appelant tient, relue en place sous le verrou —, puis
+     * re-sauvée, ne revient pas (issue #557) : après le `flush()` du `DELETE`,
+     * Doctrine la tenait pour neuve et la réinsérait au même UUID.
+     */
+    public function testATechnologyThisManagerDeletedIsRefusedInsteadOfReinsertedWhenSavedAgain(): void
+    {
+        $technology = $this->storedTechnology();
+        $id = $technology->getId()->toRfc4122();
+        self::getContainer()->get(ExperienceTechnologyAdministratorInterface::class)->delete($technology->getId());
+        $refusal = null;
+
+        try {
+            $this->em->persist($technology);
+            $this->em->flush();
+        } catch (Throwable $exception) {
+            $refusal = $exception;
+        }
+
+        self::assertSame(0, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM experience_technology WHERE id = :id', ['id' => $id]), 'La technologie supprimée par son Administrator, re-sauvée, a été réinsérée (#557).');
         self::assertInstanceOf(VanishedEntitySavedAgainException::class, $refusal, \sprintf('La re-sauvegarde aurait dû être refusée sous son nom : %s.', get_debug_type($refusal)));
     }
 
