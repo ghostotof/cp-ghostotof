@@ -35,7 +35,6 @@ IMAGE="${2:?usage : $0 <namespace> <image backend>}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KUBECTL="${SMOKE_PROBE_KUBECTL:-kubectl}"
 WAIT="${SMOKE_PROBE_WAIT:-$ROOT/tools/wait-rollout.sh}"
-JOB=backend-messenger-probe
 
 for deployment in backend worker; do
   images="$("$KUBECTL" -n "$NAMESPACE" get "deployment/$deployment" -o jsonpath='{.spec.template.spec.containers[*].image}')"
@@ -48,14 +47,17 @@ for deployment in backend worker; do
   esac
 done
 
-# Suppression du Job précédent, apply, attente et journaux sur échec :
-# tools/run-job.sh (issue #488), avec les mêmes substituts que ce script.
-# 300 s : au-delà des 240 s d'activeDeadlineSeconds du Job, que
-# tools/wait-rollout.sh voit échouer aussitôt (Failed=True).
-if ! RUN_JOB_KUBECTL="$KUBECTL" RUN_JOB_WAIT="$WAIT" \
-    "$ROOT/tools/run-job.sh" "$NAMESPACE" "$ROOT/k8s/base/messenger-probe-job.yaml" "$IMAGE" 300; then
+# Suppression du Job précédent, apply, attente et journaux (après un succès
+# comme après un échec) : tools/run-job.sh (issue #488), avec les mêmes
+# substituts que ce script. 300 s : au-delà des 240 s d'activeDeadlineSeconds
+# du Job, que tools/wait-rollout.sh voit échouer aussitôt (Failed=True).
+status=0
+RUN_JOB_KUBECTL="$KUBECTL" RUN_JOB_WAIT="$WAIT" \
+  "$ROOT/tools/run-job.sh" "$NAMESPACE" "$ROOT/k8s/base/messenger-probe-job.yaml" "$IMAGE" 300 || status=$?
+# Seul le code 1 dit que le Job a tourné sans aboutir : le diagnostic du
+# témoin ne vaut que pour lui. Un refus avant le cluster (2) ou du cluster (3)
+# n'a rien à voir avec le worker, et run-job.sh l'a déjà nommé.
+if [ "$status" -eq 1 ]; then
   echo "::error::Le worker n'a pas consommé le message témoin (issue #470) : écart de clé de MAC entre backend et worker, worker incapable de décoder, ou worker arrêté. Les journaux du Job sont ci-dessus." >&2
-  exit 1
 fi
-
-"$KUBECTL" -n "$NAMESPACE" logs "job/$JOB" --tail=20 || true
+exit "$status"
