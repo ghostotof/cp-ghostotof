@@ -1187,21 +1187,36 @@ sécurité en JSON sur stderr, à partir du niveau `info`, sur deux canaux : `se
 Symfony : « Authenticator failed », etc.) et `security_audit` (le nôtre, `SecurityAuditLogger` :
 `login-failed`, `login-throttled`, `csrf-rejected`, `backoffice-access-denied`, `user-invited`,
 `role-changed`, `user-deleted`, `account-activated`…). Le reste suit `LOG_LEVEL` (`warning` par
-défaut, `debug` dans l'image préprod). Chaque ligne `security_audit` porte `event`, l'identifiant
-visé (`user`, `userId`), l'auteur (`actor`), `ip` et `path` — jamais un mot de passe, un jeton ni
-un e-mail (un test le pince).
+défaut, `debug` dans l'image préprod). Chaque ligne `security_audit` porte `event`, le compte
+visé (`userId`), l'auteur (`actor`), `ip` et `path` — jamais un mot de passe, un jeton, un e-mail
+ni l'**identifiant de connexion** d'un compte (issue #363 : celui d'un invité est dérivé de son
+adresse). Un compte, sujet ou auteur, est désigné par son **UUID** ; `user` ne porte plus que le
+marqueur aléatoire `guest-…` du palier de base, et `actor` vaut l'UUID du compte, ce marqueur,
+`anonymous`, `system` ou `console`. Le canal `security` de Symfony suit la même règle
+(`SecurityChannelAccountRedactor`) : « Authenticator successful! » écrit
+`JWTPostAuthenticationToken(userId="…", roles="…")`. Des tests le pincent.
+
+Pour nommer un compte pendant un incident, tant qu'il existe (une fois supprimé, ses lignes ne
+désignent plus personne, et c'est voulu), par Adminer (§ ci-dessus) ou `psql` dans le pod, depuis
+un **terminal séparé** — la réponse est un nom et une adresse, qui n'ont rien à faire dans le
+transcript d'une session d'assistant :
+
+```bash
+echo "SELECT username, email FROM cpg_user WHERE id = '<userId>';" \
+  | kubectl -n preprod exec -i deployment/postgres -- sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
 
 L'identifiant **tenté** au login n'est jamais écrit tel quel (issue #418) : ce peut être un mot de
 passe tapé dans le mauvais champ. `login-failed` et `login-throttled` portent son empreinte,
 `userFingerprint` (HMAC sous une clé dérivée d'`APP_SECRET`, insensible à la casse comme le compteur de
-`login_throttling`), et ne nomment le compte (`user`, `userId`) que s'il existe et a été chargé :
-`user` vaut donc `null` pour un identifiant inconnu, et **toujours** pour `login-throttled` (refusé
+`login_throttling`), et ne désignent le compte (`userId`) que s'il existe et a été chargé :
+pas de `userId` pour un identifiant inconnu, ni **jamais** pour `login-throttled` (refusé
 avant tout chargement). Pour relier un refus aux échecs qui l'ont causé, filtrer sur l'empreinte :
 
 ```bash
 kubectl -n preprod logs deploy/backend -c php-fpm --tail=2000 \
   | grep '"channel":"security_audit"' \
-  | jq -r 'select(.context.userFingerprint == "<empreinte>") | [.datetime, .context.event, .context.user // "-", .context.ip] | @tsv'
+  | jq -r 'select(.context.userFingerprint == "<empreinte>") | [.datetime, .context.event, .context.userId // "-", .context.ip] | @tsv'
 ```
 
 Une rotation d'`APP_SECRET` (procédure : § Rotation / mise à jour d'un Secret, cas
@@ -1216,7 +1231,7 @@ Lecture sur un pod, canal d'audit seulement, une ligne lisible par événement :
 ```bash
 kubectl -n preprod logs deploy/backend -c php-fpm --tail=500 \
   | grep '"channel":"security_audit"' \
-  | jq -r '[.datetime, .context.event, .context.user // "-", .context.userFingerprint // "-", .context.actor, .context.ip, .context.path] | @tsv'
+  | jq -r '[.datetime, .context.event, .context.userId // .context.user // "-", .context.userFingerprint // "-", .context.actor, .context.ip, .context.path] | @tsv'
 ```
 
 Vérification après un déploiement (checkpoint 3 du plan) : un `POST /api/login_check` erroné

@@ -79,7 +79,10 @@ Kubernetes only collects a container's stdout/stderr — `kubectl logs … | jq`
 their own handler at a hard-coded `info`, never `fingers_crossed`: a run of failed logins with no error
 after it is exactly the trace worth keeping, and buffering would discard it. Everything else goes to
 the `main` handler at `%env(default:app.log_level:LOG_LEVEL)%` (`LOG_LEVEL=warning` in `backend/.env`,
-`debug` in the preprod image), which excludes those two channels so an event is emitted **once**. A
+`debug` in the preprod image), which excludes those two channels so an event is emitted **once**. No
+channel names an account by its login identifier (issue #363): the `security` channel goes through
+`SecurityChannelAccountRedactor` (see `.claude/rules/security-authentication.md`), and
+`AccountIdentifierReachesNoLogTest` reads every channel at every level, preprod's `debug` included. A
 third channel follows the same rule, `ai_usage` (spec 0005): the career assistant's and, since issue
 #356, the translator's token usage, duration and quota refusals, never any content, on its own `info`
 handler — as an `info` of the default channel it never
