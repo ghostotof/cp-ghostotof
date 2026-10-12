@@ -16,7 +16,9 @@ use LogicException;
  * lien — partirait avant que le jeton soit validé : un clic rapide tomberait
  * sur un lien inconnu. D'où un refus avant de verrouiller la ligne, sans
  * mapping HTTP : un 500 `critical` qui porte un nom ; côté worker, le message
- * suit les réessais de Messenger puis le `failure_transport`. Le message ne
+ * suit les réessais de Messenger puis le `failure_transport` (voir les
+ * limites de PostgresLockedTransaction pour une transaction laissée ouverte
+ * sur la connexion du worker). Le message ne
  * cite que l'UUID du compte, jamais son identifiant (issue #363).
  */
 final class AccountLockInsideTransactionException extends LogicException

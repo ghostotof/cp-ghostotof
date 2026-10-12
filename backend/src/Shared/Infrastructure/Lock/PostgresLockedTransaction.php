@@ -22,14 +22,14 @@ use Throwable;
  * squelette est écrit une fois, et chaque adaptateur lui passe ce qui varie
  * réellement entre eux — l'instruction qui prend le verrou, l'exception qui
  * nomme son attente dépassée, celle qui nomme son imbrication refusée, et,
- * pour le seul verrou d'ordre, le refus du COMMIT qu'il sait nommer. Rejetés :
- * une classe abstraite (Template Method),
- * qui lierait par héritage deux contextes (Portfolio, Security) et forcerait
- * à faire transiter par des crochets ce que chaque appel reçoit (le périmètre,
- * le compte) ; un service injecté, sans implémentation alternative à offrir,
- * qui aurait changé le câblage et les constructeurs pour rien. C'est un objet
- * immuable, pas un service : chaque adaptateur le construit sur la connexion
- * de son EntityManager, avec son délai.
+ * pour le seul verrou d'ordre, le refus du COMMIT qu'il sait nommer.
+ * Rejetés : une classe abstraite (Template Method), qui lierait par héritage
+ * deux contextes (Portfolio, Security) et forcerait à faire transiter par des
+ * crochets ce que chaque appel reçoit (le périmètre, le compte) ; un service
+ * injecté, sans implémentation alternative à offrir, qui aurait changé le
+ * câblage et les constructeurs pour rien. C'est un objet immuable, pas un
+ * service : chaque adaptateur le construit sur la connexion de son
+ * EntityManager, avec son délai.
  *
  * Une transaction à la main, ni `EntityManager::wrapInTransaction()` ni
  * `Connection::transactional()`. Le premier **ferme l'EntityManager** sur
@@ -89,10 +89,22 @@ use Throwable;
  * émettra : une transaction ouverte en SQL brut (`executeStatement('BEGIN')`)
  * ne se voit pas, et aucune ne doit l'être autour d'un verrou. Une session
  * perdue (`ConnectionLost`) remet son compteur à zéro (`close()`) : le refus
- * ne survit pas à la transaction qu'elle a emportée. Une transaction qu'un code
- * aurait laissée ouverte sur une connexion qui dure (un worker) ferait refuser
- * chaque verrou suivant, en 500 ou en réessais Messenger, jusqu'au redémarrage :
- * c'est voulu, imbriqué en silence rien n'aurait jamais été validé.
+ * ne survit pas à la transaction qu'elle a emportée.
+ *
+ * Limites acceptées, sans appelant qui les atteigne (relecture de #532) :
+ * - Une transaction qu'un code aurait laissée ouverte sur une connexion qui
+ *   dure (le worker) fait refuser chaque verrou suivant jusqu'au redémarrage
+ *   du processus. Imbriqué en silence, rien n'aurait davantage été validé ;
+ *   mais le `failure_transport` (`doctrine://default`) écrit par la même
+ *   connexion, donc dans cette transaction : les messages « envoyés en
+ *   failed » disparaissent avec elle au redémarrage. Le signal qui reste est
+ *   le journal du worker (chaque réessai, puis le rejet, nomment l'exception).
+ * - Seule l'entrée est gardée. Une opération qui ouvrirait sa propre
+ *   transaction sans la clore ferait du COMMIT ci-dessous un simple
+ *   `RELEASE SAVEPOINT`, et `run()` rendrait la main transaction ouverte.
+ * - Une opération qui rattraperait un `ConnectionLost` pour lever autre chose
+ *   verrait sa cause masquée par le `NoActiveTransaction` du ROLLBACK (DBAL a
+ *   déjà fermé la session). Aucune opération ne rattrape d'erreur de la base.
  *
  * Seule l'attente de l'acquisition est renommée : un `55P03` levé par
  * l'opération (un verrou de ligne pris plus loin) remonte tel quel.

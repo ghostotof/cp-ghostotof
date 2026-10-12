@@ -52,7 +52,8 @@ interface UsernameAllocationLockInterface
      * sauvegarde : le worker chercherait un compte encore invisible et
      * abandonnerait le message sans réessai, le verrou tenant toutes les
      * invitations jusqu'au COMMIT de l'appelant. Un appel imbriqué est refusé
-     * avant de prendre le verrou, en 500 nommé.
+     * avant de prendre le verrou, sous une exception nommée (un 500 depuis
+     * l'API, une erreur de la commande en CLI).
      *
      * @template T
      *

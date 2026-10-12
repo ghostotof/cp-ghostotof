@@ -31,8 +31,9 @@ interface AccountLockInterface
      * lien d'invitation) suppose ce COMMIT. Imbriqué, il ne serait qu'un point
      * de sauvegarde : la ligne resterait verrouillée jusqu'au COMMIT de
      * l'appelant, et le lien partirait avant que son jeton soit validé. Un
-     * appel imbriqué est refusé avant de verrouiller quoi que ce soit, en 500
-     * nommé.
+     * appel imbriqué est refusé avant de verrouiller quoi que ce soit, sous une
+     * exception nommée : un 500 sous FPM, des réessais Messenger puis
+     * `failed` dans le worker.
      *
      * @template T
      *

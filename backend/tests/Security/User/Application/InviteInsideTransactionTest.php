@@ -46,18 +46,25 @@ final class InviteInsideTransactionTest extends KernelTestCase
     {
         $this->connection->beginTransaction();
         $caught = null;
+        $written = null;
 
         try {
-            self::getContainer()->get(CpgUserInviterInterface::class)->invite(self::EMAIL, Locale::FR);
-        } catch (Throwable $exception) {
-            $caught = $exception;
+            try {
+                self::getContainer()->get(CpgUserInviterInterface::class)->invite(self::EMAIL, Locale::FR);
+            } catch (Throwable $exception) {
+                $caught = $exception;
+            }
+
+            // Compté dans la transaction de l'appelant, avant son ROLLBACK :
+            // la session voit ce qu'elle a écrit sans l'avoir validé.
+            $written = $this->connection->fetchOne('SELECT COUNT(*) FROM cpg_user WHERE email = ?', [self::EMAIL]);
         } finally {
             $this->connection->rollBack();
         }
 
         self::assertInstanceOf(UsernameAllocationLockInsideTransactionException::class, $caught, \sprintf("L'invitation imbriquée n'a pas été refusée sous son nom : %s.", get_debug_type($caught)));
         self::assertSame([], $this->asyncTransport()->getSent(), "L'invitation a été publiée avant la validation du compte.");
-        self::assertSame(0, $this->connection->fetchOne('SELECT COUNT(*) FROM cpg_user WHERE email = ?', [self::EMAIL]));
+        self::assertSame(0, $written, 'Le compte a été écrit dans la transaction de l\'appelant.');
     }
 
     private function asyncTransport(): InMemoryTransport
