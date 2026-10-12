@@ -137,11 +137,12 @@ api_platform:
         # message de contact ci-dessus (HandlerFailedException).
         App\Security\User\Domain\Exception\AccountInvitationDeliveryException: 503
         # Parcours public de définition de mot de passe (/api/account/password-setup) :
-        # jeton inconnu -> 404, expiré ou déjà consommé -> 410 (cas fusionnés
-        # pour ne pas révéler qu'un lien a servi). Le 429 du quota IP vient de
+        # tout lien inutilisable -> 404, même `type`, `title` et `detail`, qu'il
+        # soit inconnu, remplacé, purgé, expiré ou déjà utilisé (issue #362 : un
+        # 410 distinct disait, passé le délai de purge, qu'un compte avait été
+        # activé). Ne pas rétablir de 410. Le 429 du quota IP vient de
         # PasswordSetupRateLimitExceededException::getStatus() (issue #369).
-        App\Security\User\Domain\Exception\InvalidPasswordSetupTokenException: 404
-        App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException: 410
+        App\Security\User\Domain\Exception\UnusablePasswordSetupLinkException: 404
         # Corps de requête que le Serializer refuse (JSON illisible, racine qui
         # n'est pas un objet), requalifié à la seule frontière de la
         # désérialisation par MalformedRequestBodyProvider (issue #355) : une

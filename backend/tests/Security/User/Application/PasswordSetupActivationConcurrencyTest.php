@@ -7,12 +7,13 @@ namespace App\Tests\Security\User\Application;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Application\PasswordSetupServiceInterface;
 use App\Security\User\Domain\Entity\CpgUser;
-use App\Security\User\Domain\Exception\PasswordSetupTokenExpiredException;
+use App\Security\User\Domain\Exception\UnusablePasswordSetupLinkException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Tests\Support\ChildPhpProcess;
 use App\Tests\Support\InvitesUsers;
 use App\Tests\Support\OpensProbeConnection;
 use App\Tests\Support\ProcessBarrier;
+use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestCredentials;
 use Closure;
 use Doctrine\DBAL\Connection;
@@ -41,13 +42,15 @@ use Symfony\Component\Process\Process;
  *
  * La purge des jetons non utilisés à l'activation suffit à n'en laisser
  * aucun. Le verrou garantit en plus que le handler attend au lieu de supprimer
- * le jeton déjà réclamé : sans lui, le rejeu du lien répondait 404 au lieu de
- * 410, et le journal perdait l'événement `replayed`.
+ * le jeton déjà réclamé : sans lui, le rejeu du lien passait pour un lien
+ * inconnu, et le journal perdait l'événement `replayed`. La réponse, elle,
+ * est la même dans les deux cas (issue #362) : seul le journal les distingue.
  */
 final class PasswordSetupActivationConcurrencyTest extends KernelTestCase
 {
     use InvitesUsers;
     use OpensProbeConnection;
+    use ReadsSecurityAuditLog;
 
     private const int TIMEOUT_SECONDS = 30;
 
@@ -84,11 +87,16 @@ final class PasswordSetupActivationConcurrencyTest extends KernelTestCase
 
         // Ce que seul le verrou garantit : le handler a attendu l'activation
         // au lieu de supprimer le jeton déjà réclamé. Le lien consommé reste
-        // connu, et son rejeu est reconnu comme tel (410, `replayed`), pas pris
-        // pour un lien inconnu (404).
+        // connu, et son rejeu est journalisé comme tel (`replayed`), pas pris
+        // pour un lien inconnu (`rejected`).
         self::getContainer()->get(EntityManagerInterface::class)->clear();
-        $this->expectException(PasswordSetupTokenExpiredException::class);
-        self::getContainer()->get(PasswordSetupServiceInterface::class)->complete($clearToken, TestCredentials::variant('rejeu'));
+        try {
+            self::getContainer()->get(PasswordSetupServiceInterface::class)->complete($clearToken, TestCredentials::variant('rejeu'));
+            self::fail('UnusablePasswordSetupLinkException attendue au rejeu du lien.');
+        } catch (UnusablePasswordSetupLinkException) {
+            self::assertCount(1, self::securityAuditEvents('password-setup-token-replayed'));
+            self::assertSame([], self::securityAuditEvents('password-setup-token-rejected'));
+        }
     }
 
     private function interleaveBeforeNextFlush(string $userId, int $generation): Process

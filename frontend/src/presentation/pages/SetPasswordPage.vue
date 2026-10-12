@@ -76,12 +76,12 @@ const loginPath = computed(() => `/${currentLocale()}/login`)
 const showForm = computed(() => 'ready' === state.value || 'submitting' === state.value)
 
 /**
- * Message d'erreur venu du backend. `invalid` / `expired` sont portés par
+ * Message d'erreur venu du backend. `incomplete` / `unusable` sont portés par
  * `state` (écran dédié), pas affichés ici.
  */
 const apiErrorText = computed(() => {
   const reason = errorReason.value
-  if (null === reason || 'invalid' === reason || 'expired' === reason) {
+  if (null === reason || 'incomplete' === reason || 'unusable' === reason) {
     return null
   }
   return t(`account.setPassword.errors.${reason}`)
@@ -106,7 +106,7 @@ function retry(): void {
 
 onMounted(async () => {
   setupToken = await takeTokenFromUrl()
-  // Jeton vide -> `invalid` sans appel réseau (cf. useAccountPasswordSetup).
+  // Jeton vide -> `incomplete` sans appel réseau (cf. useAccountPasswordSetup).
   await validate(setupToken)
 })
 
@@ -148,20 +148,33 @@ async function handleSubmit(): Promise<void> {
       </p>
 
       <p
-        v-else-if="'invalid' === state"
+        v-else-if="'incomplete' === state"
         class="text-danger mb-0"
         role="alert"
       >
-        {{ t('account.setPassword.invalid') }}
+        {{ t('account.setPassword.incomplete') }}
       </p>
 
-      <p
-        v-else-if="'expired' === state"
-        class="text-danger mb-0"
-        role="alert"
-      >
-        {{ t('account.setPassword.expired') }}
-      </p>
+      <!--
+        Un seul écran pour tout lien inutilisable (issue #362) : le backend ne
+        dit pas pourquoi, le message recouvre chaque motif. Le lien de
+        connexion reste hors de la région `alert`, qui s'annonce seule : il
+        sert la personne qui rouvre son e-mail après avoir activé son compte.
+      -->
+      <div v-else-if="'unusable' === state">
+        <p
+          class="text-danger"
+          role="alert"
+        >
+          {{ t('account.setPassword.unusable') }}
+        </p>
+        <p class="text-body-secondary mb-0">
+          {{ t('account.setPassword.alreadySet') }}
+          <RouterLink :to="loginPath">
+            {{ t('account.setPassword.logIn') }}
+          </RouterLink>
+        </p>
+      </div>
 
       <div v-else-if="'error' === state">
         <p

@@ -119,9 +119,9 @@ interface SecurityAuditLoggerInterface
 
     /**
      * Lien déjà consommé présenté de nouveau (issue #356) : signe possible
-     * d'une fuite du lien. Côté journal seulement — la réponse garde le 410
-     * fusionné avec « expiré », qui ne dit pas à l'appelant que le lien a
-     * servi. Nomme le compte que le lien activait, jamais le jeton.
+     * d'une fuite du lien. Côté journal seulement — la réponse est celle de
+     * tout lien inutilisable (404, issue #362), qui ne dit pas à l'appelant
+     * que le lien a servi. Nomme le compte que le lien activait, jamais le jeton.
      */
     public function passwordSetupTokenReplayed(CpgUser $user): void;
 

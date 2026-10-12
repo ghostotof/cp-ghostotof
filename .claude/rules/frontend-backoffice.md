@@ -25,9 +25,15 @@ direct username+password creation stays CLI-only). `AdminUsersPage.vue` disables
 the current user's own row (compared by `username` via `useAuth()`); the `email` column shows the linked address
 or a dash. The `domain/account` + `application/account/useAccountPasswordSetup` + `presentation/pages/SetPasswordPage.vue`
 slice is the **public** counterpart: route `/(fr|en)/set-password` (`meta.noindex`, no `requiresAuth`),
-`useAccountPasswordSetup` state machine (`checking|ready|submitting|done|invalid|expired|error`), talking to the
-two public `POST /api/account/password-setup(/validate)` endpoints — a 422 on `validate` means "invalid link",
-a 422 on the completion means "password refused", and they must keep being told apart.
+`useAccountPasswordSetup` state machine (`checking|ready|submitting|done|incomplete|unusable|error`), talking to the
+two public `POST /api/account/password-setup(/validate)` endpoints — a 422 on `validate` means "incomplete link",
+a 422 on the completion means "password refused", and they must keep being told apart. **`unusable` is one
+screen for every dead link** (issue #362): the backend answers the same 404 whether the link is unknown,
+replaced, purged, expired or already used, so the page never tries to tell them apart — its message covers
+each case (reopen the link from the e-mail, else ask for a new one) and, outside the `role="alert"` region,
+offers « Vous avez déjà défini votre mot de passe ? Se connecter ». A 410 is read as `unusable` too: that is
+what a backend from before #362 answers, during a rollout or after a rollback. `incomplete` keeps its own
+message, for what the URL alone reveals (no fragment, a 422 on `validate`).
 
 **The invitation token reaches the page in the URL *fragment*, and leaves the URL immediately** (audit A7,
 T4.2). The emailed link is `…/{locale}/set-password#<token>`: a fragment is never sent to the server, so it
@@ -44,7 +50,7 @@ API path. Three things follow, none of them optional:
   (the `meta.canonicalPath` override that protected the old segment went away with it — a route that ever
   carried a secret in its path would be the bug, not a reason to bring it back). The router's scroll/anchor
   handling skips the `set-password` hash — it is a token, not an anchor.
-No token at all ⇒ `invalid` with **no network call**. `SetPasswordPage.spec.ts`, `router/seo.spec.ts` and
+No token at all ⇒ `incomplete` with **no network call**. `SetPasswordPage.spec.ts`, `router/seo.spec.ts` and
 `router/adminGuard.spec.ts` (the 404 on an old segment link) pin all of it.
 
 **Ordering and translation groups** (spec 0004, `v0.12.0`): every ordered admin page (Incidents,

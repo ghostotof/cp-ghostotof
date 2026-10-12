@@ -566,8 +566,8 @@ final class SecurityAuditLogTest extends WebTestCase
 
     /**
      * Issue #356 : un lien déjà consommé qui revient est tracé comme rejoué,
-     * avec le compte qu'il activait. La réponse, elle, reste le 410 fusionné
-     * avec « expiré ».
+     * avec le compte qu'il activait. La réponse, elle, est celle de tout lien
+     * inutilisable (404, issue #362) : seul le journal dit qu'il a servi.
      */
     public function testAReplayedPasswordSetupLinkIsRecordedWithItsAccount(): void
     {
@@ -582,7 +582,7 @@ final class SecurityAuditLogTest extends WebTestCase
 
         $client->request('POST', '/api/account/password-setup/validate', server: $server, content: self::jsonBody(['token' => $token]));
 
-        self::assertResponseStatusCodeSame(410);
+        self::assertResponseStatusCodeSame(404);
         self::assertSame([
             'event' => 'password-setup-token-replayed',
             'user' => 'newcomer',

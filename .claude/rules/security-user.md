@@ -49,8 +49,8 @@ paths:
     order —, would write the rule a second time, and its other gain, keeping the value out of stack traces,
     is what `#[SensitiveParameter]` gives. Revisit the day the hashing use cases multiply.
     Domain exceptions: `UsernameAlreadyUsedException`, `EmailAlreadyUsedException`,
-    `InvalidPasswordSetupTokenException` (→404), `PasswordSetupTokenExpiredException` (→410, covers "already
-    used"), `CannotModifyOwnRolesException` / `CannotDemoteLastSuperAdminException` (→409),
+    `UnusablePasswordSetupLinkException` (→404, **every** unusable link — see the set-password bullet
+    below, issue #362), `CannotModifyOwnRolesException` / `CannotDemoteLastSuperAdminException` (→409),
     `AccountNotAwaitingActivationException` (→409), `AccountInvitationDeliveryException` (→503),
     `PasswordSetupRateLimitExceededException` (→429).
   - `Domain/Service/UsernameGenerator.php` — derives a free username from the email local part
@@ -192,15 +192,15 @@ paths:
     `deleteForUser()` — in `READ COMMITTED` a second consumer's purge did not see the first one's
     uncommitted token, and two tokens stayed usable —; a deleted, activated or resent account drops the
     message (`warning` "constaté sous verrou"). `PasswordSetupService::complete()` hashes **outside** the
-    lock (slow), then under it refuses an account already activated (410, `replayed`), claims the token,
+    lock (slow), then under it refuses an account already activated (`replayed`), claims the token,
     activates, and **purges the account's unused tokens** (`deleteUnusedForUser()`; the consumed one stays,
-    so a replay is still a 410 `replayed`, not a 404). The purge alone guarantees no usable token on an
+    so a replay is still logged `replayed`, not `rejected` — the response is the same either way, #362). The purge alone guarantees no usable token on an
     activated account; the lock adds that a concurrent handler waits instead of deleting the claimed token —
-    without it, the link's replay answered 404 and the audit lost `replayed`. `claim()` says why it failed
+    without it, the link's replay passed for an unknown link and the audit lost `replayed`. `claim()` says why it failed
     (`Domain/ValueObject/TokenClaim`: `Claimed`, `AlreadyUsed`, `Expired`, `Gone`, read back on the table):
     only `AlreadyUsed` is a `replayed`; `Expired` is no event; `Gone` — a resend replaced the token while
-    the password was being hashed, or the account was deleted — is an unknown link (404, `rejected`), never
-    a replay. `validate()` refuses a still-usable link of an account already active (410, `replayed`, a token
+    the password was being hashed, or the account was deleted — is an unknown link (`rejected`), never
+    a replay. `validate()` refuses a still-usable link of an account already active (`replayed`, a token
     left over from before #458), as `complete()` does under the lock. The removal of an undelivered token
     (#425, `remove()`) never takes a consumed one (`used_at IS NULL`): the e-mail may have left despite the
     error and the person activated meanwhile. A lock held past `lock_timeout` raises
@@ -255,8 +255,22 @@ paths:
   - **A secret never travels in a URL path** (audit A7, T4.1/T4.2). `AccountPasswordSetupValidationResource`
     (`POST /api/account/password-setup/validate` `{token}`) and `AccountPasswordSetupResource`
     (`POST /api/account/password-setup` `{token, password}`) both carry the token **in the body**, both
-    answer 204, and both answer identically on failure — missing/blank/over-255 token 422, unknown 404,
-    expired *or already used* 410 (merged on purpose: a distinct status would say a link had served).
+    answer 204, and both answer identically on failure — missing/blank/over-255 token 422, and **one 404
+    for every unusable link** (issue #362, ADR 0001 amended 2026-10-12): unknown, replaced by a resend,
+    purged or deleted with its account, expired, already used, or aimed at an account already active all
+    get the same status, `type`, `title` and `detail`. One domain exception,
+    `UnusablePasswordSetupLinkException`, with a **constant** message (its named constructors `unknown()` /
+    `expiredOrAlreadyUsed()` are for the reader only): the `detail` is that message, the `type` derives
+    from the status. Until #362, 404 (unknown) and 410 (expired or used) were apart, and since a consumed
+    token is kept while a never-activated account is purged at 30 days with its tokens, a 410 past that
+    delay meant « this account was activated » — the e-mail also carries the username. What tells the
+    cases apart is the audit log (`rejected` / `replayed`), never the response. **Never** give one of them
+    its own status, exception or message again; `testEveryUnusableLinkGetsTheSameResponse` (status,
+    every header but `Date` and the profiler's, body minus the debug `trace`, seven fates of a link, both
+    routes) and `UnusablePasswordSetupLinkExceptionTest` pin it. Accepted limit: the paths do not do quite
+    the same work — an unknown or replayed link writes an audit line, a merely expired one none (#356) —,
+    a Monolog write under network jitter, with no SQL round trip between them (keep the join below). The frontend reads 404 — and 410, for a backend from
+    before #362 during a rollout or after a rollback — as `unusable`; see `.claude/rules/frontend-backoffice.md`.
     They replace `GET|POST /api/account/password-setup/{token}`, removed along with
     `AccountPasswordSetupStatusResource` and `AccountPasswordSetupProvider`; a `GET` cannot carry a secret
     anywhere but its URL, and a URL is written to the nginx sidecar's and the ingress's access logs, a body

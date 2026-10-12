@@ -199,8 +199,8 @@ paths:
     (issue #356, before it they only had the kernel's generic `Uncaught PHP Exception` line, with no IP
     nor path): `PasswordSetupService` logs `password-setup-token-rejected` (unknown token, no subject) and
     `password-setup-token-replayed` (a link **already used** comes back — possible leak of the link — with
-    the account it activated; journal side only, the response keeps the 410 merged with « expired », and
-    a merely expired link is no event) right before throwing; `Infrastructure/Log/ThrottledRequestAuditListener`
+    the account it activated; journal side only, the response is that of every unusable link, an unknown one
+    included — one 404, issue #362 —, and a merely expired link is no event) right before throwing; `Infrastructure/Log/ThrottledRequestAuditListener`
     (`kernel.exception`, priority 0, above API Platform's -96 and `ApiProblemResponseListener`'s -98, which
     stop propagation) maps the three anonymous per-IP quota exceptions to `password-setup-throttled`,
     `contact-throttled`, `base-access-throttled`, no subject (the limiter's key is the IP). A listener rather
@@ -230,13 +230,13 @@ paths:
     pass. The guard calls the listener directly: it proves the sort, not that the
     exception reaches priority 0 unwrapped — `SecurityAuditLogTest` covers the real wiring, extend it too. **Replay and expiry must cost the same**: `findOneByTokenHash` loads the
     account by explicit join, so the `replayed` path, which logs it, pays no extra query behind the
-    shared 410 — keep the join. **Consumption is atomic**: `PasswordSetupService::complete()` hashes, then
+    shared 404 — keep the join. **Consumption is atomic**: `PasswordSetupService::complete()` hashes, then
     `PasswordSetupTokenRepository::claim()` (`UPDATE … WHERE used_at IS NULL AND expires_at > :usedAt`, one
     row or none), and only the winner writes the account; the loser of a concurrent submission is a
     `replayed` (only when the token is `AlreadyUsed`: `claim()` returns a `TokenClaim`, a token gone meanwhile
-    is a `rejected` 404, issue #458). **So is expiry** (issue #447): the claim instant is read **after** the hash, which takes
+    is a `rejected`, issue #458). **So is expiry** (issue #447): the claim instant is read **after** the hash, which takes
     time, and the same `UPDATE` refuses a token expired by then (strict bound, like `isUsable()`); that
-    loser is not a replay — no event, a merely expired link never is one —, the 410 is unchanged. Never go back to
+    loser is not a replay — no event, a merely expired link never is one —, the 404 is unchanged. Never go back to
     deciding on `isUsable()` alone, which reads the loaded state. Functional tests read the records through
     `tests/Support/ReadsSecurityAuditLog.php` (a
     Monolog `test` handler on the channel, `when@test`, found among `monolog.logger.security_audit`'s
