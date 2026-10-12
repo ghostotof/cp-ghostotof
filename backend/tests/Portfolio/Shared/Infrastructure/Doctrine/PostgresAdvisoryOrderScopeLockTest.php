@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace App\Tests\Portfolio\Shared\Infrastructure\Doctrine;
 
+use App\Portfolio\About\Application\AboutMeCardAdministratorInterface;
+use App\Portfolio\About\Domain\Entity\AboutMeCard;
+use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
 use App\Portfolio\Contribution\Domain\Entity\Contribution;
 use App\Portfolio\Contribution\Domain\Repository\ContributionRepositoryInterface;
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
+use App\Portfolio\Shared\Domain\Exception\TranslationGroupAcrossSeveralScopesException;
 use App\Portfolio\Shared\Domain\Exception\TranslationGroupHasSeveralPositionsException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Portfolio\Shared\Infrastructure\Doctrine\OrderScopeLockInsideTransactionException;
@@ -244,6 +248,40 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     }
 
     /**
+     * Issue #501 : le même trigger refuse un groupe de cartes « moi » rangé
+     * dans deux catégories, sous un SQLSTATE voisin (`23T91`). Sur le chemin
+     * applicatif, ce refus sort lui aussi sous le nom de son invariant, jamais
+     * en `DriverException` brute ni sous celui des positions, que le groupe
+     * respecte ici.
+     */
+    public function testACommitRefusedForAGroupAcrossCategoriesFailsUnderItsOwnName(): void
+    {
+        $connection = $this->entityManager()->getConnection();
+        $meCards = self::getContainer()->get(AboutMeCardAdministratorInterface::class);
+        $french = $meCards->create(Locale::FR, AboutMeCardCategory::HOBBY, 'T', 'D', null);
+
+        try {
+            $english = $meCards->create(Locale::EN, AboutMeCardCategory::HOBBY, 'T', 'D', null, $french->getTranslationGroup());
+            $caught = $this->failureOfALockedRun(static function () use ($connection, $english): void {
+                $connection->executeStatement(
+                    'UPDATE about_me_card SET category = ? WHERE id = ?',
+                    [AboutMeCardCategory::TECHNICAL->value, $english->getId()->toRfc4122()],
+                );
+            }, AboutMeCard::class);
+        } finally {
+            $connection->executeStatement('DELETE FROM about_me_card');
+        }
+
+        self::assertInstanceOf(TranslationGroupAcrossSeveralScopesException::class, $caught, \sprintf('Le refus du trigger est remonté sous un autre nom : %s.', get_debug_type($caught)));
+        self::assertStringContainsString($french->getTranslationGroup()->toRfc4122(), $caught->getMessage(), 'Le message ne nomme pas le groupe.');
+        self::assertStringContainsString('about_me_card', $caught->getMessage(), 'Le message ne nomme pas la table.');
+        self::assertStringContainsString('hobby, technical', $caught->getMessage(), 'Le message ne nomme pas les catégories.');
+        self::assertInstanceOf(DriverException::class, $caught->getPrevious());
+        self::assertTrue($this->probeCanLock(AboutMeCard::class), 'Le verrou survit au COMMIT refusé.');
+        self::assertFalse($connection->isTransactionActive());
+    }
+
+    /**
      * Issue #502 : les `flush()` de l'opération ont réussi au point de
      * sauvegarde, puis la base a refusé le COMMIT. L'UnitOfWork tenait pour
      * écrit ce qu'elle venait d'annuler : une lecture sur le même EntityManager
@@ -474,15 +512,17 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     }
 
     /**
-     * Lance `$operation` sous le verrou des contributions et rend ce que
-     * `withLock()` a levé — l'opération ou le COMMIT —, `null` s'il a validé.
+     * Lance `$operation` sous le verrou de `$scope` (les contributions, par
+     * défaut) et rend ce que `withLock()` a levé — l'opération ou le COMMIT —,
+     * `null` s'il a validé.
      *
      * @param Closure(): void $operation
+     * @param class-string    $scope
      */
-    private function failureOfALockedRun(Closure $operation): ?Throwable
+    private function failureOfALockedRun(Closure $operation, string $scope = Contribution::class): ?Throwable
     {
-        return $this->failureOf(function () use ($operation): void {
-            $this->lock()->withLock(Contribution::class, $operation);
+        return $this->failureOf(function () use ($operation, $scope): void {
+            $this->lock()->withLock($scope, $operation);
         });
     }
 
