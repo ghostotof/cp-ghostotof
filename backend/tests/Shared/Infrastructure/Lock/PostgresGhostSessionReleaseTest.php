@@ -20,13 +20,20 @@ use Symfony\Component\Yaml\Yaml;
  * (#272, #525), pas la vie du verrou : la clé répondait 500 pendant deux heures.
  *
  * Les keepalives côté serveur ferment la session au bout de
- * `idle + interval × count` secondes sans réponse du client. Mesuré sur
- * l'image du dépôt, client coupé du réseau sans FIN : verrou encore tenu au
- * bout de 202 s sans ces paramètres, libéré en 96 s avec eux (90 s attendues,
- * relevé toutes les 5 s).
+ * `idle + interval × count` secondes sans réponse du client. Mais Linux
+ * n'envoie aucune sonde tant que des données attendent leur accusé de
+ * réception : un client disparu pendant que le serveur lui écrit relève des
+ * retransmissions (`tcp_retries2`, ~15 min). `tcp_user_timeout` borne ce cas.
+ * Mesuré sur l'image du dépôt, client coupé du réseau sans FIN (relevé toutes
+ * les 5 s) :
+ *  - session inactive : verrou encore tenu au bout de 202 s sans réglage,
+ *    libéré en 96 s avec les keepalives, avec ou sans `tcp_user_timeout` ;
+ *  - réponse en cours d'envoi à la coupure : encore tenu au bout de 303 s avec
+ *    les seuls keepalives, libéré en 106 s (15 s de requête + 90) avec
+ *    `tcp_user_timeout`.
  *
  * Les paramètres sont passés en ligne de commande au serveur, `-c clé=valeur` :
- * pas de fichier de configuration à monter pour trois réglages. Le dev n'en a
+ * pas de fichier de configuration à monter pour quatre réglages. Le dev n'en a
  * pas besoin : un conteneur tué ferme ses sockets, le serveur reçoit le FIN.
  */
 final class PostgresGhostSessionReleaseTest extends TestCase
@@ -37,34 +44,49 @@ final class PostgresGhostSessionReleaseTest extends TestCase
     /**
      * @return iterable<string, array{string}>
      */
-    public static function keepaliveSettings(): iterable
+    public static function deadClientSettings(): iterable
     {
         yield 'tcp_keepalives_idle' => ['tcp_keepalives_idle'];
         yield 'tcp_keepalives_interval' => ['tcp_keepalives_interval'];
         yield 'tcp_keepalives_count' => ['tcp_keepalives_count'];
+        yield 'tcp_user_timeout' => ['tcp_user_timeout'];
     }
 
     /**
-     * Zéro veut dire « valeur du système », c'est-à-dire les deux heures que ce
-     * test écarte : chaque réglage est un entier strictement positif.
+     * Zéro veut dire « valeur du système », c'est-à-dire les durées que ce test
+     * écarte : chaque réglage est un entier strictement positif, écrit sans
+     * unité pour que le calcul des bornes lise la valeur du serveur.
      */
-    #[DataProvider('keepaliveSettings')]
-    public function testTheClusterServerSetsEveryKeepalive(string $setting): void
+    #[DataProvider('deadClientSettings')]
+    public function testThePostgresContainerSetsEveryDeadClientBound(string $setting): void
     {
-        $settings = $this->settings($this->clusterServerArgs());
+        $settings = $this->settings($this->postgresContainerArgs());
 
         self::assertArrayHasKey($setting, $settings, \sprintf('k8s/base/postgres.yaml : « -c %s=… » manque aux args du serveur (issue #279).', $setting));
-        self::assertMatchesRegularExpression('/^[1-9]\d*\z/', $settings[$setting], \sprintf('%s doit être un nombre de secondes (ou de sondes) strictement positif.', $setting));
+        self::assertMatchesRegularExpression('/^[1-9]\d*\z/', $settings[$setting], \sprintf('%s : un entier strictement positif, sans unité (secondes ; sondes pour le count ; millisecondes pour tcp_user_timeout).', $setting));
     }
 
     public function testAGhostSessionIsDeclaredDeadInTime(): void
     {
-        $settings = $this->settings($this->clusterServerArgs());
-        $release = (int) ($settings['tcp_keepalives_idle'] ?? 0)
+        $settings = $this->settings($this->postgresContainerArgs());
+        $releaseSeconds = (int) ($settings['tcp_keepalives_idle'] ?? 0)
             + (int) ($settings['tcp_keepalives_interval'] ?? 0) * (int) ($settings['tcp_keepalives_count'] ?? 0);
 
-        self::assertGreaterThan(0, $release);
-        self::assertLessThanOrEqual(self::MAX_RELEASE_SECONDS, $release, \sprintf('Une session fantôme garderait ses verrous %d s.', $release));
+        self::assertGreaterThan(0, $releaseSeconds);
+        self::assertLessThanOrEqual(self::MAX_RELEASE_SECONDS, $releaseSeconds, \sprintf('Une session fantôme garderait ses verrous %d s.', $releaseSeconds));
+    }
+
+    /**
+     * Le cas que les keepalives ne couvrent pas : une réponse envoyée que le
+     * client disparu n'acquittera jamais. Le réglage est en millisecondes.
+     */
+    public function testDataLeftUnacknowledgedIsBoundedToo(): void
+    {
+        $settings = $this->settings($this->postgresContainerArgs());
+        $userTimeoutMilliseconds = (int) ($settings['tcp_user_timeout'] ?? 0);
+
+        self::assertGreaterThan(0, $userTimeoutMilliseconds);
+        self::assertLessThanOrEqual(self::MAX_RELEASE_SECONDS * 1000, $userTimeoutMilliseconds, \sprintf('Une session fantôme à données en vol garderait ses verrous %d ms.', $userTimeoutMilliseconds));
     }
 
     /**
@@ -73,7 +95,7 @@ final class PostgresGhostSessionReleaseTest extends TestCase
      *
      * @return list<string>
      */
-    private function clusterServerArgs(): array
+    private function postgresContainerArgs(): array
     {
         $path = \dirname(__DIR__, 5).'/k8s/base/postgres.yaml';
         self::assertFileIsReadable($path);
@@ -119,7 +141,7 @@ final class PostgresGhostSessionReleaseTest extends TestCase
         $options = \array_slice($args, 1);
         self::assertSame(0, \count($options) % 2, 'Chaque option du serveur est une paire « -c », « clé=valeur ».');
         foreach (array_chunk($options, 2) as [$flag, $pair]) {
-            self::assertSame('-c', $flag);
+            self::assertSame('-c', $flag, \sprintf('Option « %s » : seules les paires « -c clé=valeur » sont lues.', $flag));
             self::assertSame(1, preg_match('/^([a-z_]+)=(\S+)\z/', $pair, $matches), \sprintf('Option illisible : « %s ».', $pair));
             $settings[$matches[1]] = $matches[2];
         }

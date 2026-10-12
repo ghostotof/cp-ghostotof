@@ -1098,9 +1098,22 @@ défaut : deux heures pendant lesquelles chaque requête sur la clé répondait 
 au bout de `lock_timeout` (5 s). `k8s/base/postgres.yaml` passe au serveur
 `tcp_keepalives_idle=60`, `tcp_keepalives_interval=10` et
 `tcp_keepalives_count=3` : une session muette est fermée, et ses verrous
-libérés, en 60 + 10 × 3 = 90 s. Mesuré sur `postgres:18.6-alpine`, client coupé
-du réseau sans FIN : libéré en 96 s, encore tenu au bout de 202 s sans ces
-réglages.
+libérés, en 60 + 10 × 3 = 90 s. Linux n'envoie toutefois aucune sonde tant que
+des données attendent leur accusé de réception : si le client disparaît pendant
+que le serveur lui répond (fenêtre étroite, mais réelle), ce sont les
+retransmissions qui décident, une quinzaine de minutes. `tcp_user_timeout=90000`
+(millisecondes) borne ce cas aussi.
+
+Mesuré sur `postgres:18.6-alpine`, client coupé du réseau sans FIN
+(`docker network disconnect`, relevé toutes les 5 s) :
+
+| Coupure | Sans réglage | Keepalives seuls | Keepalives + `tcp_user_timeout` |
+|---|---|---|---|
+| session inactive | tenu après 202 s | libéré en 96 s | libéré en 96 s |
+| réponse en cours d'envoi | — | tenu après 303 s | libéré en 106 s (15 s de requête + 90) |
+
+Un pod supprimé, même en force, n'est pas une session fantôme : le kubelet tue
+le conteneur, le noyau ferme le socket et le serveur reçoit le FIN.
 
 Changer ces réglages redémarre Postgres (`Recreate`) : une coupure courte de
 l'API, à annoncer dans les notes de release et à valider en préprod
@@ -1113,14 +1126,17 @@ kubeconfig d'administrateur (lecture seule, la sortie reste sur le terminal) :
 
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
-kubectl -n "${NS:?preprod ou prod}" exec deploy/postgres -c postgres -- \
-  sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -t -v ON_ERROR_STOP=1 -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SHOW tcp_keepalives_idle" -c "SHOW tcp_keepalives_interval" -c "SHOW tcp_keepalives_count"'
-# attendu : 60, 10, 3 sur trois lignes ; 0 : connexion par socket (-h manquant)
-# ou serveur démarré sans les args.
+printf '%s\n' 'SHOW tcp_keepalives_idle;' 'SHOW tcp_keepalives_interval;' 'SHOW tcp_keepalives_count;' 'SHOW tcp_user_timeout;' \
+  | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
+    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -t -v ON_ERROR_STOP=1 -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+# attendu : 60, 10, 3 et 90000 sur quatre lignes ; 0 : connexion par socket
+# (-h manquant) ou serveur démarré sans les args.
 ```
 
-Le mot de passe ne quitte pas le pod : `$POSTGRES_PASSWORD` est développé par le
-`sh` du conteneur, jamais par le shell de l'opérateur ni dans l'argv de l'`exec`.
+Comme pour la recherche d'un compte (§ « Journal de sécurité »), la requête arrive
+par l'entrée standard, rien dans l'argv de l'`exec`. Aucun mot de passe : le
+`pg_hba.conf` de l'image fait confiance (`trust`) aux connexions TCP de
+127.0.0.1, c'est-à-dire de l'intérieur du pod.
 
 Ce qui n'est pas posé, volontairement :
 
@@ -1130,9 +1146,13 @@ Ce qui n'est pas posé, volontairement :
 - **`client_connection_check_interval`** ne surveille le client que pendant
   qu'une requête s'exécute. Une session fantôme qui tient un verrou est
   inactive, et ses attentes sont déjà bornées à 5 s.
-- **`tcp_user_timeout`** borne les données envoyées sans accusé de réception.
-  Le client qui tient un verrou a déjà reçu la réponse à `pg_advisory_lock` :
-  le serveur n'a plus rien en vol, et c'est le keepalive qui s'applique.
+
+Limite acceptée : après une partition réseau qui guérit, le client peut croire
+tenir encore un verrou que le serveur a libéré, et un autre pod peut l'avoir
+pris entre-temps. Le client l'apprend à sa requête suivante sur cette
+connexion, qui échoue (le serveur a fermé la session). Pour un limiteur,
+l'effet se borne à un décompte non atomique pendant cet intervalle, jamais à un
+blocage.
 
 ## Profilage Xdebug en préprod (3e audit, constat A12)
 

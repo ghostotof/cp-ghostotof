@@ -71,15 +71,18 @@ paths:
   console) and `request_terminate_timeout = 65s` (total wall time — keep it above any legitimate
   request), pinned by `FpmLockWaitBoundTest`. That bounds the *wait*, not the lock's life: **a
   session whose client vanished without a FIN** (node lost, network partition) kept the lock until
-  Linux's default keepalive, 2 h, every request on the key failing in 5 s meanwhile. Hence the
-  server-side keepalives in `k8s/base/postgres.yaml` (issue #279), `args` `-c tcp_keepalives_idle=60
+  Linux's default keepalive, 2 h, every request on the key failing in 5 s meanwhile. Hence, in
+  `k8s/base/postgres.yaml` (issue #279), `args` `-c tcp_keepalives_idle=60
   -c tcp_keepalives_interval=10 -c tcp_keepalives_count=3`: such a session dies in 90 s (measured
-  96 s, still held after 202 s without), `PostgresGhostSessionReleaseTest` caps
-  `idle + interval × count` at 120 s. `args`, never `command` (the image's entrypoint initialises
-  the database). On a Unix socket PostgreSQL ignores them and `SHOW` reads `0`: check them over TCP
-  (`k8s/README.md`, « Sessions fantômes PostgreSQL », which also says why `idle_session_timeout`,
-  `client_connection_check_interval` and `tcp_user_timeout` are not set). Not in dev: a killed
-  container closes its sockets. **The console gets the same bound from its pods**
+  96 s, still held after 202 s without) — **plus `-c tcp_user_timeout=90000`** (ms), because Linux sends no keepalive probe while data waits for its ACK: a client gone while the
+  server was answering it was left to retransmissions, ~15 min (measured: held after 303 s with
+  keepalives alone, released in 106 s with it). `PostgresGhostSessionReleaseTest` caps both at 120 s,
+  values written without units. `args`, never `command` (the image's entrypoint initialises the
+  database). On a Unix socket PostgreSQL ignores them and `SHOW` reads `0`: check them over TCP
+  (`k8s/README.md`, « Sessions fantômes PostgreSQL », which also says why `idle_session_timeout` and
+  `client_connection_check_interval` are not set). A pod deleted, even with `--force`, is no ghost: the
+  kubelet kills the container and the server gets the FIN — nor is anything in dev, hence no `command`
+  in `docker-compose.yml`. **The console gets the same bound from its pods**
   (issue #525): every container of `k8s/base` running the backend image carries
   `PGOPTIONS: '-c lock_timeout=5s'` in its own `env:` — worker, CronJobs, every Job, the migration
   included —, exactly www.prod.conf's value. `env:` per manifest rather than a `backend-config` line
@@ -153,8 +156,8 @@ paths:
     the line (issue #386, `app:user:create`, see `.claude/rules/security-user.md`);
   - **a human holding an admin kubeconfig may `exec` for read-only diagnosis whose output stays on their
     terminal**, from a separate terminal, never behind a `!` in an assistant session: `nginx -T` on the
-    sidecar (below), the Xdebug checks and `kubectl cp` of the profiles, and naming an account from its
-    `userId` (`k8s/README.md`, « Journal de sécurité »). That last one is an exec *on purpose*: a Job
+    sidecar (below), the Xdebug checks and `kubectl cp` of the profiles, the `SHOW` of the PostgreSQL
+    keepalives over TCP (`k8s/README.md`, « Sessions fantômes PostgreSQL », issue #279), and naming an account from its `userId` (`k8s/README.md`, « Journal de sécurité »). That last one is an exec *on purpose*: a Job
     would write the name and address into its pod's logs, readable until the pod is deleted, by the CI
     token too (`pods/log`) — the very thing issue #363 removed from the logs. The query goes on stdin
     (nothing in the exec's argv, so nothing in the API server's request URL — the UUID does stay in the

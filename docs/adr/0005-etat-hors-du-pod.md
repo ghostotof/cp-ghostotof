@@ -179,7 +179,10 @@ premier, puisqu'un compte peut y envoyer des salves synchronisées.
   la console (migrations, worker Messenger, CronJobs) — et `request_terminate_timeout = 65s`,
   juste au-dessus du `fastcgi_read_timeout`. Démontré en dev : un `consume()` attend tant que le
   verrou est tenu, et échoue en 3,0 s sur `LockAcquiringException` avec un `lock_timeout` de 3 s.
-  `FpmLockWaitBoundTest` fige les deux directives.
+  `FpmLockWaitBoundTest` fige les deux directives. *Complété le 2026-10-12 (issue #279)* : D10
+  borne l'attente, pas la vie du verrou. Le serveur déclare désormais morte une session dont le
+  client a disparu en 90 s, et non plus au bout des deux heures du keepalive Linux par défaut
+  (keepalives TCP et `tcp_user_timeout` dans `k8s/base/postgres.yaml`, `PostgresGhostSessionReleaseTest`).
 
 Alternatives écartées :
 
