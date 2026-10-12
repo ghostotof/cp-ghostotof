@@ -150,6 +150,10 @@ final class ProblemDetailStaysStaticTest extends TestCase
         yield 'fonction après la classe' => [$class."}\nfunction getDetail(): string { return ''; }", 0];
         yield 'new self après la classe' => [$class."}\nfunction f(string \$c): void { new self('x'.\$c); }", 0];
         yield 'interface après la classe' => [$class."}\ninterface Other { public function getDetail(): string; }", 0];
+        // `class:` et `trait:` en argument nommé sont lexés comme mots-clés : ils n'ouvrent rien.
+        foreach (['class', 'trait'] as $keyword) {
+            yield 'argument nommé '.$keyword.':' => [$class."    public function f(): void { g({$keyword}: 1); }\n    public function getDetail(): string { return \$this->c; }\n}", 1];
+        }
 
         // Traits (issue #507) : leurs méthodes sont celles de la classe qui les utilise.
         $namespace = "<?php\nnamespace App\\Y;\n";
@@ -325,8 +329,8 @@ final class ProblemDetailStaysStaticTest extends TestCase
                 $imports = array_merge($imports, ClassNameResolver::imports($tokens, $index + 1));
             } elseif ($token->is(\T_USE) && null !== $current && $depth === $bodyDepth) {
                 $traits[$current] = [...$traits[$current] ?? [], ...$this->usedTraits($tokens, $index + 1, $namespace, $imports)];
-            } elseif ($token->is(PhpSources::CLASS_LIKE) && !$this->tokenAt($tokens, $index - 1, [\T_NEW, \T_DOUBLE_COLON])) {
-                $current = ltrim($namespace.'\\'.strtolower($tokens[$index + 1]->text ?? ''), '\\');
+            } elseif ($this->declaresAt($tokens, $index)) {
+                $current = ltrim($namespace.'\\'.strtolower($tokens[$index + 1]->text), '\\');
                 $bodyDepth = $depth + 1;
                 $declared[] = $current;
             } elseif ($token->is(\T_FUNCTION) && null !== $current && $depth === $bodyDepth) {
@@ -363,6 +367,21 @@ final class ProblemDetailStaysStaticTest extends TestCase
     private function tokenAt(array $tokens, int $index, int|string|array $kind): bool
     {
         return isset($tokens[$index]) && $tokens[$index]->is($kind);
+    }
+
+    /**
+     * Le jeton en $index ouvre-t-il une déclaration nommée ? Un mot-clé de
+     * {@see PhpSources::CLASS_LIKE} suivi de son nom : ni `new class`, ni
+     * `Foo::class`, ni `class:`/`trait:` en argument nommé, que le lexeur rend
+     * aussi en mots-clés.
+     *
+     * @param list<PhpToken> $tokens
+     */
+    private function declaresAt(array $tokens, int $index): bool
+    {
+        return $tokens[$index]->is(PhpSources::CLASS_LIKE)
+            && !$this->tokenAt($tokens, $index - 1, [\T_NEW, \T_DOUBLE_COLON])
+            && $this->tokenAt($tokens, $index + 1, \T_STRING);
     }
 
     /**
