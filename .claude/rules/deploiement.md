@@ -116,11 +116,17 @@ paths:
     `userId` (`k8s/README.md`, « Journal de sécurité »). That last one is an exec *on purpose*: a Job
     would write the name and address into its pod's logs, readable until the pod is deleted, by the CI
     token too (`pods/log`) — the very thing issue #363 removed from the logs. The query goes on stdin
-    (nothing in the exec's argv, so nothing in the API server's request URL) inside a
-    `default_transaction_read_only` session, a guard rather than a boundary.
-  `OperatorExecBoundaryTest` pins the Role half and the shape of the account lookup. A new manual `exec`
-  in the runbook must fit the third case; if its output carries a secret or personal data, it stays on
-  the terminal, and if it writes anything, it is a Job.
+    (nothing in the exec's argv, so nothing in the API server's request URL — the UUID does stay in the
+    operator's shell history, a pseudonymous identifier), the UUID as a quoted psql variable cast to
+    `uuid` (no injection from a pasted log value), inside a `default_transaction_read_only` session — a
+    guard rather than a boundary, a `SET` lifts it — and `NS` has no default.
+  Two guards, two scopes: `OperatorExecBoundaryTest` reads the repo (the deployer's Role, ClusterRole and
+  both bindings, wildcards such as `*/exec` included, plus the shape of the account lookup);
+  `tools/rotate-deployer-token.sh` checks the token actually issued against the cluster
+  (`auth can-i create pods/exec` → `no`) — the only one that sees a binding added by hand. Keep both. A
+  new manual `exec` in the runbook must fit the third case; if its output carries a secret or personal
+  data, it stays on the terminal, and if it writes anything, it is a Job. Reading Messenger's `failed`
+  transport is still described as a Job without a manifest: issue #521.
 - **The standard deploy runs the migration *before* the rollout, with the old pods still serving**
   (issue #175, expand/contract). Doctrine selects every mapped column on each hydration, so with the
   old order (rollout, then Job) any release that adds a field made the new pods `SELECT` a column the
