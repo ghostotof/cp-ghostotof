@@ -217,7 +217,15 @@ paths:
     adapter `Infrastructure/Doctrine/PostgresAccountRowLock` — on the skeleton of the three PostgreSQL locks,
     `Shared/Infrastructure/Lock/PostgresLockedTransaction` (issue #512: a hand-made transaction, so that a
     refusal inside does not close the EntityManager and a refused COMMIT surfaces as the database's error —
-    `Connection::transactional()`, used until #512, masked it behind « There is no active transaction »; a
+    `Connection::transactional()`, used until #512, masked it behind « There is no active transaction »;
+    **a COMMIT the database refuses closes the EntityManager**, issue #547, as the order-scope lock did since
+    #502 — the skeleton does it for both account locks: an operation's `flush()` had succeeded at the
+    savepoint, so the UnitOfWork held as written an account, an e-mail or a token the refusal had just rolled
+    back; a new read re-reads the database, an ORM write fails with `EntityManagerClosed`; these tables have no
+    deferred constraint, so only a session lost at the COMMIT gets there; no caller catches it — the handler,
+    the purge and the activation catch `CpgUserNotFoundException` only, thrown before any write —, a worker
+    gets a fresh manager at the next message, a command stops; `PostgresAccountRowLockTest` and
+    `PostgresUsernameAllocationLockTest` pin it; a
     `lock_timeout` of 5 s when the session has none, the console having no FPM `PGOPTIONS`), a
     `SELECT 1 … FOR UPDATE` that says whether the row still exists (`refresh()` on a
     deleted row raises nothing, and the token insert then failed on the foreign key) →

@@ -79,9 +79,11 @@ paths:
     pins it. No `rollBack()` after a failed `commit()`: PostgreSQL already rolled the transaction back,
     and the lock with it. The check runs before the COMMIT, hence still under the scope lock for the
     application's writes. **A COMMIT the database refuses closes the EntityManager** (issue #502): any
-    `DriverException` the COMMIT raises, whatever its SQLSTATE — the only family the skeleton hands to
-    `onCommitRefused` (`forgetWritesRefusedAtCommit()`; a `CommitFailedRollbackOnly`, which nothing here
-    can cause, leaves it open); the hook stays the place for it, wherever the SQLSTATE knowledge moves. The operation's
+    `DriverException` the COMMIT raises, whatever its SQLSTATE (a `CommitFailedRollbackOnly`, which nothing
+    here can cause, leaves it open). Since #547 the **skeleton** closes it, for every lock built on it
+    (it receives the EntityManager, not the bare connection), **before** calling `onCommitRefused`, which only
+    names the refusal it recognises (`nameTheGroupRefusal()`, the `23T90`) — wherever the SQLSTATE knowledge
+    moves (#506), the closing stays in the skeleton, and a new lock cannot forget it. The operation's
     `flush()`es had succeeded at the savepoint, so the UnitOfWork held as written what the refusal had just
     rolled back — a read on the same EntityManager returned the refused position, `find()` an entry never
     committed, and a write outside the lock started from there (a following locked operation of the same
@@ -269,10 +271,11 @@ paths:
   EntityManager, as before). Its wait is bounded like the other locks of the skeleton (`lock_timeout=5s` under
   FPM, the skeleton's fallback elsewhere); past it, `ExperienceTechnologyLockTimeoutException` (unmapped, a
   `critical` 500); inside a transaction already open, `ExperienceTechnologyLockInsideTransactionException`
-  before anything is locked. **A refused COMMIT**: no `onCommitRefused` is passed — the table has no deferred
-  constraint (the unique name and the `years` `CHECK` are immediate and refuse at the `flush()`), so only a
-  session lost at that moment can refuse it; the `DriverException` surfaces as is and the EntityManager stays
-  open, as under the account locks (generalising the close to every lock of the skeleton is #547). Cost per
+  before anything is locked. **A refused COMMIT**: no `onCommitRefused` is passed, there is nothing to name —
+  the table has no deferred constraint (the unique name and the `years` `CHECK` are immediate and refuse at
+  the `flush()`), so only a session lost at that moment can refuse it; the `DriverException` surfaces as is
+  and the skeleton **closes the EntityManager** (issue #547, as for every lock of the skeleton, see the
+  ordering section above): its UnitOfWork held as written what the refusal had just rolled back. Cost per
   `PUT`/`DELETE`, all under the lock: `BEGIN`, the lock-bound `set_config`, the locked read, the `flush()`'s
   `SAVEPOINT`, write and `RELEASE SAVEPOINT`, `COMMIT` — sub-millisecond round trips each. Guards: `ExperienceTechnologyWritesUnderRowLockTest` (a technology loaded as the
   provider does, then deleted in SQL: `update()` and `delete()` say not found; a probe session holds the row,
