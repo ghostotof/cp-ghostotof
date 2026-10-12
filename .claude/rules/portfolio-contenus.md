@@ -63,23 +63,25 @@ paths:
     `critical` 500: `PostgresAdvisoryOrderScopeLock` opens and closes its transaction by hand — through
     the skeleton it shares with the two account locks since #512 (and the technology row lock since #545), `Shared/Infrastructure/Lock/PostgresLockedTransaction`,
     which also bounds the wait of a session without `lock_timeout` (the console, `app:*:seed`, waited
-    forever before) — and translates `23T90` at `commit()` (its `onCommitRefused`).
+    forever before) — and names the trigger's refusals at `commit()` (its `onCommitRefused`, see below).
     **Who names the refusal, and who knows the codes** (issue #506): the lock **triggers** the translation
     because it owns the COMMIT where a deferred refusal falls — nothing else on the application path sees it.
-    The **knowledge** of the SQLSTATEs (`23T90`, `23T91`) and of the exception each one names lives apart,
-    in `Portfolio/Shared/Infrastructure/Doctrine/TranslationGroupRefusal` (`nameOf(DriverException)`, `null`
-    for any other SQLSTATE), passed as the hook itself: a new invariant of the trigger adds a constant and
-    an arm there, never touches the lock. Tests that need a code read it there (`TranslationGroupRefusalTest`
-    pins the mapping, `previous` and message kept). Every application write able to wake the trigger is a
-    write that places, hence under `withLock()` (#389, `OrderScopeLockCoverageTest`). A write that bypasses
-    the lock gets the **raw** refusal, which still names the table and the group despite the driver-error
-    redaction — accepted limit: in SQL or a migration a `DriverException` `23T90`/`23T91`; through an ORM
-    `flush()` outside any transaction, Doctrine wraps it in `OptimisticLockException` « Commit failed » (its
-    `previous`, `UnitOfWork::commit()`, measured) and closes the manager (unmapped, a `critical` 500 —
-    `PostgresAdvisoryOrderScopeLockTest::testAWriteOutsideTheLockSurfacesAsTheBareDatabaseRefusal` pins it).
-    Rejected: a DBAL middleware naming the refusal everywhere — `ExceptionConverter::convert()` must return
-    a `DriverException`, which the invariant's name is not, so it would either break that contract or give
-    one refusal two names, and it would make the COMMIT hook useless.
+    The **knowledge** of the SQLSTATEs (`23T90`, `23T91`) and of the exception each one names lives apart, in
+    `Portfolio/Shared/Infrastructure/Doctrine/TranslationGroupRefusal` (`nameOf(DriverException)`, `null` for
+    any other SQLSTATE), passed as the hook itself: a new invariant of the trigger adds a constant and an arm
+    there, never touches the lock. Tests that need a code read it there (`TranslationGroupRefusalTest` pins
+    the mapping, `previous` and message kept). Every application write able to wake the trigger is a write
+    that places, hence under `withLock()` (#389, `OrderScopeLockCoverageTest`). A write that bypasses the lock
+    gets the **raw** refusal, which still names the table and the group despite the driver-error redaction —
+    accepted limit: in SQL, a migration, or a `flush()` inside a transaction the caller opened
+    (`wrapInTransaction()`, which also closes the manager), a `DriverException` `23T90`/`23T91` at that
+    COMMIT; through an ORM `flush()` outside any transaction, Doctrine wraps it in `OptimisticLockException`
+    « Commit failed » (its `previous`, `UnitOfWork::commit()`, measured) and closes the manager (unmapped, a
+    `critical` 500;
+    `PostgresAdvisoryOrderScopeLockTest::testAWriteOutsideTheLockSurfacesAsDoctrinesCommitFailureWrappingTheRawRefusal`
+    pins it). Rejected: a DBAL middleware naming the refusal everywhere — `ExceptionConverter::convert()` must
+    return a `DriverException`, which the invariant's name is not, so it would either break that contract or
+    give one refusal two names, and it would make the COMMIT hook useless.
     **It refuses to run inside a transaction already open** (issue #526), another `withLock()` included: there
     its `commit()` would only be a `RELEASE SAVEPOINT`, and the trigger would refuse at the caller's COMMIT as
     a bare `23T90`. The refusal, `OrderScopeLockInsideTransactionException` (a `LogicException`, unmapped, a
@@ -183,12 +185,13 @@ paths:
     `MIN`/`MAX` of the positions and the number of distinct scopes (the list of scopes, for the message, is
     read only on a refusal), and the scope check runs **before**
     the position check — a group both spread and on two positions is refused for the cause, not its
-    consequence — raising SQLSTATE **`23T91`**, which `PostgresAdvisoryOrderScopeLock` names
-    `TranslationGroupAcrossSeveralScopesException` (`Domain/Exception`, a `LogicException`, `refusedAtCommit()`,
-    unmapped: a `critical` 500, a pipeline defect, like the positions' one; both SQLSTATEs map in one
-    `match` of `TranslationGroupRefusal::nameOf()`, its `onCommitRefused` since #506). No common parent to
-    the two exceptions (#506): nothing catches them together, the positions' one also comes from
-    `ContentPlacement::inGroup()` before any write, and the shared one-line factory is not worth a type. On `about_me_card` the trigger is recreated `AFTER INSERT OR UPDATE OF
+    consequence — raising SQLSTATE **`23T91`**, which `TranslationGroupRefusal` names
+    `TranslationGroupAcrossSeveralScopesException` when the scope lock's COMMIT gets it (`Domain/Exception`, a
+    `LogicException`, `refusedAtCommit()`, unmapped: a `critical` 500, a pipeline defect, like the
+    positions' one; both SQLSTATEs map in one `match` of `TranslationGroupRefusal::nameOf()`, the lock's
+    `onCommitRefused` since #506). No common parent to the two exceptions (#506): nothing catches them
+    together, the positions' one also comes from `ContentPlacement::inGroup()` before any write, and the
+    shared one-line factory is not worth a type. On `about_me_card` the trigger is recreated `AFTER INSERT OR UPDATE OF
     position, translation_group, category … EXECUTE FUNCTION portfolio_translation_group_single_position('category')`.
     Moving a whole group to another category in one transaction stays accepted (deferred). Same accepted
     limit as the positions: two concurrent SQL transactions that skip the scope lock can each add a member

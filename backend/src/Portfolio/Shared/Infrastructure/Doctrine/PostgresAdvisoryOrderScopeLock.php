@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Portfolio\Shared\Infrastructure\Doctrine;
 
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
-use App\Portfolio\Shared\Domain\Exception\TranslationGroupAcrossSeveralScopesException;
-use App\Portfolio\Shared\Domain\Exception\TranslationGroupHasSeveralPositionsException;
 use App\Shared\Infrastructure\Doctrine\VanishedEntities;
 use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
 use Closure;
@@ -41,16 +39,14 @@ use Psr\Log\LoggerInterface;
  * « There is no active transaction » (#390) —, l'attente bornée si la session
  * ne la borne pas, son `55P03` renommé en {@see OrderScopeLockTimeoutException}.
  * Ce verrou-ci y ajoute le nom des refus que le trigger différé des groupes de
- * traduction oppose au COMMIT : {@see TranslationGroupHasSeveralPositionsException}
- * pour un groupe sur plusieurs positions, {@see TranslationGroupAcrossSeveralScopesException}
- * pour un groupe de cartes « moi » réparti sur plusieurs catégories (#501),
- * avec le message de la base, qui nomme la table et le groupe. Il en
- * **déclenche** la traduction parce qu'il possède le COMMIT où tombe un refus
- * différé ; la correspondance SQLSTATE → invariant, elle, vit dans
- * {@see TranslationGroupRefusal} (#506), pour qu'un nouvel invariant du
- * trigger ne touche plus au verrou. Une écriture hors verrou — migration,
- * SQL — reçoit le refus brut ; aucune écriture applicative capable de
- * réveiller le trigger n'en est une (#389, `OrderScopeLockCoverageTest`). Sous FPM, le
+ * traduction oppose au COMMIT, sous l'invariant que chacun dit, avec le
+ * message de la base, qui nomme la table et le groupe. Il en **déclenche** la
+ * traduction parce qu'il possède le COMMIT où tombe un refus différé ; la
+ * correspondance SQLSTATE → invariant, ce que reçoit une écriture qui le
+ * contourne et le middleware DBAL écarté sont décrits par
+ * {@see TranslationGroupRefusal} (#506) — un nouvel invariant du trigger ne
+ * touche plus ce verrou. Aucune écriture applicative capable de réveiller le
+ * trigger ne se fait hors verrou (#389, `OrderScopeLockCoverageTest`). Sous FPM, le
  * délai reste le `lock_timeout` de 5 s de www.prod.conf (#272), et dans les
  * pods console (`app:*:seed`) celui de leur `PGOPTIONS` (#525) ; une console
  * qui n'en a aucun (dev, CI) reçoit celui du squelette, qui attendait sans
@@ -70,8 +66,8 @@ use Psr\Log\LoggerInterface;
  * **Un COMMIT refusé par la base ferme l'EntityManager** (issue #502) : toute
  * `DriverException` levée par le COMMIT, quel que soit son SQLSTATE. C'est le
  * squelette qui le ferme depuis #547, pour tous ses verrous, avant
- * d'appeler `onCommitRefused`, qui ne fait plus ici que nommer le `23T90` et
- * le `23T91` ({@see TranslationGroupRefusal::nameOf()}).
+ * d'appeler `onCommitRefused`, qui ne fait plus ici que nommer les refus du
+ * trigger des groupes ({@see TranslationGroupRefusal::nameOf()}).
  * Les `flush()` de l'opération ont réussi au point de sauvegarde ; le refus annule ce qu'ils
  * ont écrit, mais l'UnitOfWork le tient pour écrit : une lecture sur le même
  * EntityManager rendait la position refusée, `find()` une entrée jamais
@@ -183,9 +179,7 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
 
                 return $operation();
             },
-            // Ce verrou déclenche la traduction des refus du trigger des
-            // groupes parce qu'il possède le COMMIT où tombe un refus différé ;
-            // la correspondance SQLSTATE → invariant vit à part (#506).
+            // Le nom des refus du trigger des groupes (#506, voir plus haut).
             onCommitRefused: TranslationGroupRefusal::nameOf(...),
         );
     }

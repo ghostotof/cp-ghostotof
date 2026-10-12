@@ -206,8 +206,11 @@ api_platform:
         # hors transaction, refus du trigger des groupes de traduction compris
         # (#506) : un 500 `critical`, ce que donne l'absence d'entrée. Le jour
         # où une entité sera versionnée, le conflit concurrent est un 409 du
-        # client : lui donner alors un nom à lui et un `log_level`, pas la
-        # classe entière, qui rendrait un COMMIT refusé en 409.
+        # client, mais Doctrine le lève dans la même classe
+        # (lockFailedVersionMismatch()) : l'attraper là où il naît et le
+        # relancer sous une exception du projet, mappée en 409 avec un
+        # `log_level`, jamais mapper la classe entière, qui rendrait un COMMIT
+        # refusé en 409.
     defaults:
         stateless: true
         cache_headers:

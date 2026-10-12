@@ -298,7 +298,7 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
      * migrations et le SQL. Doctrine ferme l'EntityManager sur ce COMMIT
      * refusé, comme le squelette le ferme sous verrou (#502).
      */
-    public function testAWriteOutsideTheLockSurfacesAsTheBareDatabaseRefusal(): void
+    public function testAWriteOutsideTheLockSurfacesAsDoctrinesCommitFailureWrappingTheRawRefusal(): void
     {
         $entityManager = $this->entityManager();
         $connection = $entityManager->getConnection();
