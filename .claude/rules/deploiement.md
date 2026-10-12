@@ -122,7 +122,9 @@ paths:
   refused — so a shell variable in a manifest is written `$VAR`, comments included. Then delete + apply
   (refused by the cluster: exit 3), `tools/wait-rollout.sh` (Job failed: exit 1), and every container's
   last 200 log lines (`--all-containers --prefix`, init containers included) — on stdout after a success,
-  on stderr after an `::error::` otherwise. The probe blames the worker on exit 1 only. Never re-inline
+  on stderr after an `::error::` otherwise; on that failure path, a Job neither `Complete` nor `Failed`
+  is then **stopped** (`delete --cascade=foreground --wait=true --timeout=90s`, issue #535, see the
+  deadline bullet below). The probe blames the worker on exit 1 only. Never re-inline
   that sequence — `run-job.test.sh` greps `pipeline.yml` for it: a fix made in one copy is a fix missing
   in the others. Offline test: `tools/tests/run-job.test.sh`. The deployer `Role` no longer has `pods/exec: create`, so the
   CI identity cannot open an interactive shell in a pod — but **that is not a secret boundary** (3rd audit,
@@ -198,18 +200,41 @@ paths:
   redundant and left as is: migrations are frozen); a non-transactional one
   (`isTransactional(): false`, `CREATE INDEX CONCURRENTLY`) has no transaction for `SET LOCAL` to
   apply to — a no-op with a warning — and sets `SET lock_timeout = '…'` on the session instead.
-  **No pipeline Job outlives the pipeline's wait for long**: `run-job.sh` deletes a Job only before
-  applying it, so a stuck migration (a long DDL holding its exclusive lock in front of the API, a
-  hung connection) used to run on indefinitely after the `::error::`. `migrate-job.yaml`
-  (`activeDeadlineSeconds: 360`, waited 300 s) and `seed-job.yaml` (240, waited 180) die shortly
-  **after** the wait, not before: at the deadline the Job controller deletes the pods, their logs
-  with them, while past the wait (plus `wait-rollout.sh`'s ~35 s overrun) the pod still runs and
-  `run-job.sh` prints its logs — the diagnosis of exactly the hang the deadline is for. That is
-  the opposite of `messenger-probe-job.yaml` (240 under 300), whose own failure is an exit 1 with
-  its logs. Counted from the Job's creation, `Always` pull and retry included; `sh`/`php` as PID 1
-  ignore SIGTERM, so the pod dies 30 s later (grace period). No `timeout-minutes` moves (the waits
-  are unchanged, #285). `tools/tests/run-job.test.sh` reads every `run-job.sh` call of
-  `pipeline.yml` and fails on a deadline missing or outside `]wait + 35, wait + 120]`.
+  **One rule for every Job's deadline: `wait + 35 < activeDeadlineSeconds ≤ wait + 120`**
+  (issues #525, #535), whoever waits — the pipeline, the probe, or an operator following the
+  runbook. `run-job.sh` deletes a Job only before applying it, so without a deadline a stuck Job (a
+  long DDL holding its exclusive lock in front of the API, a hung connection) ran on indefinitely
+  after the `::error::`: hence the upper bound, the Job dies shortly after the wait. And **after**
+  it, never before: at the deadline the Job controller deletes the pods, their logs with them,
+  while past the wait (plus `wait-rollout.sh`'s ~35 s overrun) the pod still runs and `run-job.sh`
+  prints its logs — the diagnosis of exactly the hang the deadline is for. A deadline under the
+  wait (the probe and the four manual Jobs had 240 under 300 until #535) gave an `::error::` with
+  no logs, only `DeadlineExceeded` — and on Kubernetes ≥ 1.31 `Failed` is set once the pods are
+  gone, 240 + 30 s of grace, a narrow margin under 300. Today: waited 300 s, deadline 360 —
+  `migrate-job.yaml`, `messenger-probe-job.yaml`, `messenger-stop-workers-job.yaml`,
+  `messenger-failed-{retry,remove}-job.yaml`, `create-user-job.yaml`; `seed-job.yaml` waited 180,
+  deadline 240. Counted from the Job's creation, `Always` pulls and retry included; `sh`/`php` as
+  PID 1 ignore SIGTERM, so the pod dies 30 s after the deadline (grace period). **An `::error::`
+  means « stopped »** (decided 2026-10-12, #535): with the deadline above the wait, a Job whose wait
+  expired — or that `wait-rollout.sh` failed early, a pod that never started — is still active and
+  could complete after the `::error::` (a mail sent, an account created, a migration applied, a
+  probe started during `rollback-preprod`), and a chained relaunch would delete it mid-flight. So
+  after printing its logs, `run-job.sh` reads its conditions and, unless `Complete` or `Failed`
+  (a refused read counts as active), deletes it in the foreground, waiting for its pods (≤ 90 s:
+  the 30 s grace period); a `Failed` Job is kept, its logs readable until `ttlSecondsAfterFinished`.
+  A refused stop is a second `::error::`, still exit 1: only then does the runbook's « wait for
+  `Complete`/`Failed` before relaunching » apply. `delete jobs` is already in the deployer Role.
+  The waits are unchanged (#285); the failure path gains up to 90 s, counted in the
+  `timeout-minutes` of `deploy-preprod`, `smoke-test-preprod` and `deploy-prod`. The guard is `tools/tests/run-job.test.sh`, the only one of that
+  relation (the PHPUnit manifest tests pin values, not the relation): it reads every `run-job.sh`
+  call of `pipeline.yml`, `tools/smoke-messenger-probe.sh` and `k8s/README.md` (continuation lines
+  joined, a minimum count per file so a reworded call cannot empty the check), fails on a deadline
+  missing or outside the interval, and on a `kind: Job` manifest of `k8s/base` that no call
+  launches — a new Job needs its call written, with its wait, in one of those files; a commented
+  line is not a call. Out of its reach, on purpose: overlays (these Jobs are outside kustomize, no
+  overlay can patch them — a Job added under `k8s/overlays/` would need the guard extended) and the
+  CronJobs (`messenger-purge`, `watch-refresh`: no `run-job.sh`, no wait to outlive, their deadline
+  only bounds a run).
   The discipline that makes this order safe, to respect in every migration:
   a column added `NOT NULL` has a default or is filled by the migration itself
   (`Version20260914170000` is the model); **never drop or rename a column in the release that stops
@@ -250,8 +275,10 @@ paths:
   queues a `MessengerProbeMessage` (a random id, no mail, no business data) and waits for the mark the
   worker's `MessengerProbeHandler` leaves in `cache.app`, read back **by value** (`getItem()->isHit()`, never
   `hasItem()`, a bare `SELECT 1` that skips the #468 MAC). No mark in 90 s → exit 1 → the Job fails
-  (`backoffLimit: 0`, `activeDeadlineSeconds: 240` — counted from creation, two `Always` pulls included —,
-  waited 300 s by `tools/wait-rollout.sh`) → the smoke fails → `rollback-preprod`. A mark the worker could not
+  (`backoffLimit: 0`, waited 300 s by `tools/wait-rollout.sh` — the probe's budget, counted from the apply,
+  two `Always` pulls included, ~210 s left to them; `activeDeadlineSeconds: 360`, above it like every Job,
+  see the migration bullet, #535) → the smoke fails → `rollback-preprod`. A probe pod still pulling when the
+  wait expires is stopped by `run-job.sh` before the smoke fails, so it cannot start during the rollback. A mark the worker could not
   save raises `ProbeMarkNotSavedException` (Messenger retries) instead of acknowledging silently. **The Job
   proves the path from the release image, not from the running pods**: the script first requires
   `deployment/backend` and `deployment/worker` to run that very image, or a fresh worker behind a stale API

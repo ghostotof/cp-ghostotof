@@ -67,18 +67,15 @@ final class CreateUserJobManifestTest extends TestCase
      * Revue de #488 : un pod qui ne démarre jamais (Secret supprimé avant son
      * montage, image introuvable) laissait le Job actif sans fin — et
      * `ttlSecondsAfterFinished` ne compte qu'à partir de la fin, si bien que
-     * le nom du compte restait dans sa spec. Le délai du Job tient sous
-     * l'attente de la procédure (`tools/run-job.sh … <délai>`, k8s/README.md),
-     * qui voit donc son échec (`Failed=True`) plutôt que d'abandonner avant.
+     * le nom du compte restait dans sa spec. Le Job porte donc un délai, 360 s.
+     * Sa place face à l'attente de la procédure (`tools/run-job.sh … 300`,
+     * k8s/README.md) suit la convention de tous les Jobs (issue #535) : au-dessus,
+     * pour que les journaux d'un pod bloqué soient lus avant sa suppression ;
+     * `tools/tests/run-job.test.sh` la vérifie, seul garde de cette relation.
      */
-    public function testTheJobEndsWithinTheProcedureWait(): void
+    public function testTheJobIsBounded(): void
     {
-        $deadline = $this->job()['spec']['activeDeadlineSeconds'] ?? null;
-        self::assertIsInt($deadline);
-
-        $readme = (string) file_get_contents($this->k8sBase().'/../README.md');
-        self::assertSame(1, preg_match('#tools/run-job\.sh "\$NS" k8s/base/'.self::MANIFEST.' "\$IMAGE" (\d+) #', $readme, $wait));
-        self::assertLessThan((int) $wait[1], $deadline);
+        self::assertSame(360, $this->job()['spec']['activeDeadlineSeconds'] ?? null);
     }
 
     public function testThePodIsHardenedLikeTheMigrationJob(): void

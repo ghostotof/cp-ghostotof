@@ -26,9 +26,12 @@ spec:
   # Compté dès la création du Job : ordonnancement, deux pulls de l'image
   # (initContainer et conteneur, `Always`), démarrage, puis les 90 s de la
   # sonde. 150 s laissaient ~55 s aux pulls, une release saine aurait été
-  # annulée sur un GHCR lent (relecture de #470). Sous les 300 s que le
-  # pipeline attend (tools/smoke-messenger-probe.sh).
-  activeDeadlineSeconds: 240
+  # annulée sur un GHCR lent (relecture de #470). Le budget de la sonde est
+  # l'attente de tools/smoke-messenger-probe.sh (300 s, ~210 s aux pulls).
+  # Délai : convention de tous les Jobs, attente + 35 s < délai ≤ attente + 120 s
+  # (issues #525, #535 ; .claude/rules/deploiement.md, « One rule for every Job's
+  # deadline » ; vérifiée par tools/tests/run-job.test.sh).
+  activeDeadlineSeconds: 360
   # Une heure pour relire `kubectl logs job/backend-messenger-probe`.
   ttlSecondsAfterFinished: 3600
   template:

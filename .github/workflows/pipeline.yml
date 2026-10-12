@@ -628,7 +628,7 @@ jobs:
     needs: [release-version, build-images]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
-    timeout-minutes: 45 # attentes kubectl cumulées ≤ 37 min (secrets ESO, fenêtre de maintenance, migration, rollouts, seed ; chaque wait-rollout.sh peut dépasser son délai de ~35 s)
+    timeout-minutes: 45 # attentes kubectl cumulées ≤ 37 min (secrets ESO, fenêtre de maintenance, migration, rollouts, seed ; chaque wait-rollout.sh peut dépasser son délai de ~35 s ; un Job en échec encore actif est arrêté par run-job.sh, + 90 s au plus, une fois : le job s'arrête là, #535)
     environment:
       name: preprod
       url: https://preprod.cp-ghostotof.com
@@ -792,7 +792,7 @@ jobs:
     needs: [release-version, deploy-preprod]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # habituel ~1 min 30 ; rollouts bornés à 60 s, curl à 15 s, Job témoin attendu 300 s (+ ~35 s de wait-rollout.sh)
+    timeout-minutes: 15 # habituel ~1 min 30 ; rollouts bornés à 60 s, curl à 15 s, Job témoin attendu 300 s (+ ~35 s de wait-rollout.sh, + 90 s au plus pour l'arrêter s'il tourne encore à l'échec, #535)
     # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
     # l'environnement, et sa politique de branche borne d'où ils sont lisibles
     # (audit 2026-09-16, A4).
@@ -939,7 +939,7 @@ jobs:
     needs: [test-backend, test-frontend, sast-backend, phpstan-backend, rector-backend, tools-tests, frontend-image-headers, backend-nginx-rate-limits]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 45 # attentes kubectl cumulées ≤ 34 min (secrets ESO, fenêtre de maintenance, migration, rollouts ; chaque wait-rollout.sh peut dépasser son délai de ~35 s)
+    timeout-minutes: 45 # attentes kubectl cumulées ≤ 34 min (secrets ESO, fenêtre de maintenance, migration, rollouts ; chaque wait-rollout.sh peut dépasser son délai de ~35 s ; un Job en échec encore actif est arrêté par run-job.sh, + 90 s au plus, une fois : le job s'arrête là, #535)
     permissions:
       contents: read
       actions: read

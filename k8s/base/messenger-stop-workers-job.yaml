@@ -38,9 +38,12 @@ spec:
   # Relancer à la main après lecture de l'échec, jamais de reprise automatique.
   backoffLimit: 0
   # Compté dès la création : ordonnancement, deux tirages `Always` de l'image
-  # (initContainer et conteneur), puis la commande. Sous les 300 s qu'attend
-  # la procédure (tools/run-job.sh … 300), qui voit donc l'échec.
-  activeDeadlineSeconds: 240
+  # (initContainer et conteneur), puis la commande, attendus 300 s par la
+  # procédure (tools/run-job.sh … 300).
+  # Délai : convention de tous les Jobs, attente + 35 s < délai ≤ attente + 120 s
+  # (issues #525, #535 ; .claude/rules/deploiement.md, « One rule for every Job's
+  # deadline » ; vérifiée par tools/tests/run-job.test.sh).
+  activeDeadlineSeconds: 360
   # Une heure pour relire `kubectl logs job/backend-messenger-stop-workers`.
   ttlSecondsAfterFinished: 3600
   template:

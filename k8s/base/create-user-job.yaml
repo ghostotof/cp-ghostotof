@@ -34,10 +34,12 @@ spec:
   # Revue de #488 : un pod qui ne démarre jamais (Secret supprimé avant son
   # montage, image introuvable) ne laisse pas le Job actif sans fin — le
   # `ttlSecondsAfterFinished` ne compte qu'à partir de la fin, et le nom du
-  # compte resterait dans la spec. 240 s, comme le Job témoin : deux tirages
-  # `Always` compris, et sous les 300 s qu'attend la procédure (k8s/README.md),
-  # qui voit donc l'échec (`Failed=True`) au lieu d'abandonner avant.
-  activeDeadlineSeconds: 240
+  # compte resterait dans la spec. Deux tirages `Always` compris, attendu 300 s
+  # par la procédure (k8s/README.md).
+  # Délai : convention de tous les Jobs, attente + 35 s < délai ≤ attente + 120 s
+  # (issues #525, #535 ; .claude/rules/deploiement.md, « One rule for every Job's
+  # deadline » ; vérifiée par tools/tests/run-job.test.sh).
+  activeDeadlineSeconds: 360
   # Une journée pour relire `kubectl logs job/backend-create-user` ; le Secret,
   # lui, est supprimé dès la fin du Job (cf. la procédure).
   ttlSecondsAfterFinished: 86400

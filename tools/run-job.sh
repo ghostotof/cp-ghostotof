@@ -29,7 +29,10 @@
 #   4. les 200 dernières lignes de journaux de chaque conteneur du Job
 #      (initContainer compris, `--prefix` les nomme) : sur stdout après un
 #      succès, sur stderr après un `::error::` en cas d'échec (`|| true` : un
-#      conteneur jamais démarré n'en a pas).
+#      conteneur jamais démarré n'en a pas) ;
+#   5. en cas d'échec, un Job ni `Complete` ni `Failed` — l'attente a expiré
+#      sous son activeDeadlineSeconds, ou wait-rollout.sh a échoué tôt — est
+#      arrêté, ses pods attendus (issue #535) : un échec veut dire « arrêté ».
 #
 # Trois codes d'échec, que l'appelant peut distinguer : 2 = refusé avant le
 # cluster, 3 = le cluster a refusé le delete ou l'apply, 1 = le Job n'a pas
@@ -143,6 +146,23 @@ fi
 if ! "$WAIT" "$NAMESPACE" "job/$JOB" --timeout "$TIMEOUT"; then
   echo "::error::Le Job $JOB n'a pas abouti (namespace $NAMESPACE, délai $TIMEOUT s). Ses 200 dernières lignes de journaux, par conteneur :" >&2
   "$KUBECTL" -n "$NAMESPACE" logs "job/$JOB" --all-containers --prefix --tail=200 >&2 || true
+  # Issue #535 : le délai du Job (activeDeadlineSeconds) dépasse l'attente, donc un Job
+  # dont l'attente a expiré peut encore tourner, et aboutir. On l'arrête ici pour qu'un
+  # échec veuille toujours dire « arrêté ». Un Job déjà Failed est gardé : ses journaux
+  # restent lisibles pendant ttlSecondsAfterFinished. Une lecture refusée compte comme actif.
+  conditions="$("$KUBECTL" -n "$NAMESPACE" get "job/$JOB" \
+    -o 'jsonpath={.status.conditions[?(@.status=="True")].type}' 2>/dev/null || true)"
+  case " $conditions " in
+    *" Complete "*|*" Failed "*) ;;
+    *)
+      if "$KUBECTL" -n "$NAMESPACE" delete "job/$JOB" --ignore-not-found \
+          --cascade=foreground --wait=true --timeout=90s >&2; then
+        echo "::error::run-job.sh : le Job $JOB, encore actif, est arrêté et ses pods sont terminés. Le relancer ne double rien." >&2
+      else
+        echo "::error::run-job.sh : l'arrêt du Job $JOB a échoué ; il peut encore aboutir jusqu'à son activeDeadlineSeconds. Vérifier avec kubectl -n $NAMESPACE get job/$JOB avant de le relancer." >&2
+      fi
+      ;;
+  esac
   exit 1
 fi
 
