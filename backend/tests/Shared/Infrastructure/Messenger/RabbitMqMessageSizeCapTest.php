@@ -50,10 +50,10 @@ final class RabbitMqMessageSizeCapTest extends TestCase
     public function testTheConfigurationIsGeneratedWithAContentHash(): void
     {
         $kustomization = KubernetesManifests::base()->resource('kustomization.yaml', 'Kustomization');
-        $generators = $kustomization['configMapGenerator'] ?? null;
-        self::assertIsArray($generators);
-
-        $found = array_filter($generators, static fn (mixed $generator): bool => \is_array($generator) && self::CONFIG_MAP === ($generator['name'] ?? null));
+        $found = array_filter(
+            KubernetesManifests::entries($kustomization, 'configMapGenerator'),
+            static fn (array $generator): bool => self::CONFIG_MAP === ($generator['name'] ?? null),
+        );
         self::assertCount(1, $found, 'configMapGenerator '.self::CONFIG_MAP.' absent.');
         $generator = array_first($found);
 
@@ -83,8 +83,8 @@ final class RabbitMqMessageSizeCapTest extends TestCase
         // Un fichier dans conf.d, par subPath : le dossier garde le
         // 10-defaults.conf de l'image.
         $mounts = array_filter(
-            \is_array($container['volumeMounts'] ?? null) ? $container['volumeMounts'] : [],
-            static fn (mixed $m): bool => \is_array($m) && self::MOUNT_PATH === ($m['mountPath'] ?? null),
+            KubernetesManifests::entries($container, 'volumeMounts'),
+            static fn (array $m): bool => self::MOUNT_PATH === ($m['mountPath'] ?? null),
         );
         self::assertCount(1, $mounts, self::MOUNT_PATH.' non monté.');
         $mount = array_first($mounts);
@@ -92,8 +92,8 @@ final class RabbitMqMessageSizeCapTest extends TestCase
         self::assertTrue($mount['readOnly'] ?? false);
 
         $volumes = array_filter(
-            \is_array($podSpec['volumes'] ?? null) ? $podSpec['volumes'] : [],
-            static fn (mixed $v): bool => \is_array($v) && ($v['name'] ?? null) === $mount['name'],
+            KubernetesManifests::entries($podSpec, 'volumes'),
+            static fn (array $v): bool => ($v['name'] ?? null) === $mount['name'],
         );
         $volume = array_first($volumes);
         self::assertIsArray($volume);
