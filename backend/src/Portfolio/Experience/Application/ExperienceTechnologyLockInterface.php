@@ -38,6 +38,13 @@ interface ExperienceTechnologyLockInterface
      * Une exception de `$operation` annule la transaction, relâche la ligne et
      * remonte telle quelle.
      *
+     * Un COMMIT que la base refuse (issue #547, comme #502 pour le verrou
+     * d'ordre) annule ce que l'opération a écrit, et **clôt l'unité de travail
+     * de l'appelant** : une lecture suivante relit la base, une écriture
+     * suivante échoue. Le refus est terminal pour l'unité de travail qui l'a
+     * reçu. Sur cette table sans contrainte différée, seule une session perdue
+     * à ce moment-là peut le provoquer.
+     *
      * **Jamais dans une transaction déjà ouverte** : le verrou ouvre et valide
      * la sienne ; imbriqué, son COMMIT ne serait qu'un point de sauvegarde, et
      * la ligne resterait tenue jusqu'au COMMIT de l'appelant. Un appel imbriqué

@@ -173,12 +173,41 @@ final class PostgresUsernameAllocationLockTest extends KernelTestCase
 
             self::assertInstanceOf(DriverException::class, $caught, \sprintf('Le COMMIT refusé est remonté sous un autre nom : %s.', get_debug_type($caught)));
             self::assertSame(CommitRefusal::SQLSTATE, $caught->getSQLState());
-            self::assertTrue($this->em->isOpen());
+            self::assertFalse($this->em->isOpen(), 'Un COMMIT refusé a laissé l\'EntityManager ouvert (issue #547).');
             self::assertFalse($connection->isTransactionActive());
             self::assertTrue($this->probeCanTakeTheLock($probe), 'Le verrou a survécu au COMMIT refusé.');
         } finally {
             $probe->close();
         }
+    }
+
+    /**
+     * Issue #547 : le compte inséré par l'opération a réussi au point de
+     * sauvegarde, puis la base a refusé le COMMIT. L'UnitOfWork le tenait pour
+     * écrit : le squelette ferme donc l'EntityManager, et une nouvelle lecture
+     * ne trouve pas ce compte, jamais validé.
+     */
+    public function testACommitRefusedByTheDatabaseClosesTheEntityManagerOnItsRefusedWrites(): void
+    {
+        $connection = $this->em->getConnection();
+        $neverCommitted = new CpgUser('refused', '');
+        $caught = null;
+
+        try {
+            $this->lock()->whileAllocating(function () use ($connection, $neverCommitted): null {
+                $this->em->persist($neverCommitted);
+                $this->em->flush();
+                CommitRefusal::scheduleIn($connection);
+
+                return null;
+            });
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(DriverException::class, $caught, \sprintf('Le COMMIT refusé est remonté sous un autre nom : %s.', get_debug_type($caught)));
+        self::assertFalse($this->em->isOpen(), 'Un COMMIT refusé a laissé l\'EntityManager ouvert sur une écriture annulée.');
+        self::assertNull($this->em->find(CpgUser::class, $neverCommitted->getId()), 'Une lecture après le refus rend un compte que la base n\'a jamais validé.');
     }
 
     /**

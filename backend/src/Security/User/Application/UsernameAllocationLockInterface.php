@@ -45,6 +45,13 @@ interface UsernameAllocationLockInterface
      * qu'à la libération. Une exception de `$operation` annule la transaction
      * et remonte telle quelle.
      *
+     * Un COMMIT que la base refuse (issue #547, comme #502 pour le verrou
+     * d'ordre) annule ce que l'opération a écrit, et **clôt l'unité de travail
+     * de l'appelant** : une lecture suivante relit la base, une écriture
+     * suivante échoue. Le refus est terminal pour l'unité de travail qui l'a
+     * reçu. Sur ces tables sans contrainte différée, seule une session perdue
+     * à ce moment-là peut le provoquer.
+     *
      * **Jamais dans une transaction déjà ouverte** (issue #532), ni sous un
      * autre verrou de l'application : le retour de cette méthode *est* le
      * COMMIT, et l'appelant s'y fie (`CpgUserInviter::invite()` ne publie

@@ -48,13 +48,14 @@ use Symfony\Component\Uid\Uuid;
  * hors de l'application. Et il ne tient que la ligne écrite : deux
  * technologies différentes ne s'attendent jamais.
  *
- * **COMMIT refusé** : aucun `onCommitRefused` n'est passé. `experience_technology`
- * n'a aucune contrainte différée (l'unicité du nom et le `CHECK` des années
- * sont immédiates, et refusent au `flush()`, qui ferme alors l'EntityManager
- * de lui-même) : un COMMIT refusé ne peut venir que d'une session perdue à ce
- * moment-là. La `DriverException` remonte telle quelle, un 500, et
- * l'EntityManager reste ouvert, comme sous les deux verrous du compte (sa
- * fermeture sur ce cas relève de #547).
+ * **COMMIT refusé** : aucun `onCommitRefused` n'est passé, il n'y a rien à
+ * nommer. `experience_technology` n'a aucune contrainte différée (l'unicité du
+ * nom et le `CHECK` des années sont immédiates, et refusent au `flush()`, qui
+ * ferme alors l'EntityManager de lui-même) : un COMMIT refusé ne peut venir
+ * que d'une session perdue à ce moment-là. La `DriverException` remonte telle
+ * quelle, un 500, et le squelette ferme l'EntityManager, dont l'UnitOfWork
+ * tenait pour écrit ce que le refus venait d'annuler (issue #547, comme pour
+ * les autres verrous du squelette).
  */
 final readonly class PostgresExperienceTechnologyRowLock implements ExperienceTechnologyLockInterface
 {
@@ -67,7 +68,7 @@ final readonly class PostgresExperienceTechnologyRowLock implements ExperienceTe
 
     public function whileLocked(Uuid $id, Closure $operation): mixed
     {
-        return new PostgresLockedTransaction($this->entityManager->getConnection(), $this->logger, $this->fallbackLockTimeout)->run(
+        return new PostgresLockedTransaction($this->entityManager, $this->logger, $this->fallbackLockTimeout)->run(
             // La lecture verrouillée est l'acquisition : c'est son attente que
             // le squelette borne et renomme.
             acquire: fn (): ExperienceTechnology => $this->lockAndReread($id),
