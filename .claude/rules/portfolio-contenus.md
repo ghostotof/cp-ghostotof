@@ -78,10 +78,23 @@ paths:
     its short list (unique, foreign key, deadlock…) — measured, `PostgresAdvisoryOrderScopeLockTest`
     pins it. No `rollBack()` after a failed `commit()`: PostgreSQL already rolled the transaction back,
     and the lock with it. The check runs before the COMMIT, hence still under the scope lock for the
-    application's writes. **Accepted limits**: two concurrent SQL transactions that skip that lock can
-    each re-read the group without the other's uncommitted write and both commit; after a refused
-    COMMIT, the EntityManager stays open and its managed entities keep the refused positions and
-    groups (the request ends in a 500; a command chaining operations stops on it); the check costs one
+    application's writes. **A COMMIT the database refuses closes the EntityManager** (issue #502), whatever
+    the SQLSTATE (`forgetWritesRefusedAtCommit()`, the adapter's `onCommitRefused`): the operation's
+    `flush()`es had succeeded at the savepoint, so the UnitOfWork held as written what the refusal had just
+    rolled back — a read on the same EntityManager returned the refused position, `find()` an entry never
+    committed, and a write outside the lock started from there (a following locked operation of the same
+    scope was already repaired by the #402 re-read below, measured). Closed, it behaves as after Doctrine's
+    own failed COMMIT (`UnitOfWork::commit()` closes it too): identity map emptied, a read re-reads the
+    database, a write fails with `EntityManagerClosed` — the refusal is terminal for the unit of work that
+    got it. Never a business refusal: those are thrown by the operation before the COMMIT and leave it
+    open. A Messenger worker gets a fresh one at the next message (DoctrineBundle's `Registry::reset()`
+    resets a closed manager); a command stops on the exception. Rejected: re-reading the scope on the
+    refusal (one more query on the failure path, to guard so it never masks the refusal, the scope's class
+    only, and writes that carry on after a broken invariant); `clear()` (detaches what the caller holds of
+    other contexts and leaves the manager writing). `PostgresAdvisoryOrderScopeLockTest` pins a read, a
+    following write and a refusal under another SQLSTATE (a deferred unique constraint on a temporary
+    table). **Accepted limits**: two concurrent SQL transactions that skip that lock can
+    each re-read the group without the other's uncommitted write and both commit; the check costs one
     indexed query per row written at COMMIT, 2N for a reorder of N FR/EN pairs, under the lock.
     **Trap for future migrations**: a deferred trigger leaves pending events until the COMMIT, and
     PostgreSQL refuses an `ALTER TABLE` on a table that has some (55006, "pending trigger events") — a
