@@ -987,7 +987,7 @@ pouvoirs les remplacent :
 |---|---|---|---|
 | `cpg_app` | `SELECT, INSERT, UPDATE, DELETE` sur chaque table, `USAGE` sur chaque séquence ; ni `TRUNCATE`, ni DDL, ni propriété ; pas la table des migrations | FPM, worker, CronJobs, Jobs applicatifs (seed, création de compte, témoin, `failed`, arrêt des workers) | `backend-secrets.DATABASE_URL` ← `<env>-backend-database-url` |
 | `cpg_migrator` | propriétaire de la base, du schéma `public` et de chaque objet ; les privilèges par défaut de ce qu'il crée vont à `cpg_app` | le seul Job de migration (`migrate-job.yaml`, `env` `DATABASE_URL`) | `backend-migration-secrets.DATABASE_URL` ← `<env>-backend-migration-database-url` |
-| `cpg_reader` | `pg_read_all_data`, aucun mot de passe : joignable depuis l'intérieur du pod seulement (socket local et `127.0.0.1`, en `trust` dans l'image), de nulle part par le réseau | les `psql` humains de ce runbook | — |
+| `cpg_reader` | `pg_read_all_data`, aucun mot de passe : joignable depuis l'intérieur du pod seulement (socket local et `127.0.0.1`, en `trust`), refusé par le réseau (`pg_hba.conf` du dépôt, #593) | les `psql` humains de ce runbook | — |
 
 Le SQL est versionné, `k8s/base/postgres-roles/{roles,privileges,verify}.sql`,
 et joué en une seule transaction, rejouable, par un `kubectl exec` dans le pod
@@ -1218,17 +1218,29 @@ aucune occurrence d'`adminer` dans `.github/workflows/pipeline.yml` ni dans
 
 Une fois le `port-forward` établi, ouvrir `http://localhost:8081` — champ
 "Serveur" pré-rempli (`database`, via `ADMINER_DEFAULT_SERVER`, variable
-toujours honorée par l'image 5.x), identifiants à saisir à la main
-(`kubectl get secret postgres-credentials -n
-<preprod|prod> -o jsonpath='{.data.POSTGRES_USER}' | base64 -d`, idem pour
-`POSTGRES_PASSWORD`). L'accès est donc conditionné à la possession d'un
-kubeconfig valide sur le cluster (même niveau de confiance qu'un `kubectl
-exec`), pas d'un simple mot de passe web. Ce sont les identifiants du
-**superutilisateur** de l'image, que l'application n'utilise plus depuis
-l'issue #575 (§ « Rôles PostgreSQL ») : tout ce qu'Adminer fait sous eux
-contourne les gardes de la base — un `DISABLE TRIGGER` y passe. Pour une
-simple lecture, préférer le `psql` sous `cpg_reader` du § « Journal de
-sécurité ».
+toujours honorée par l'image 5.x), identifiants à saisir à la main. Adminer
+est un pod comme un autre : le `pg_hba.conf` du dépôt (issue #593) n'y admet
+que **`cpg_app`** (données, DML seulement) et **`cpg_migrator`**
+(propriétaire : DDL), jamais le superutilisateur de l'image, refusé par le
+réseau. Le nom de rôle et le mot de passe sont ceux de l'URL de
+`backend-secrets` (`cpg_app`) ou de `backend-migration-secrets`
+(`cpg_migrator`), clé `DATABASE_URL`, de la forme
+`postgresql://<rôle>:<mot de passe>@database:5432/…` ; la lire dans un
+fichier privé, pas à l'écran, et la supprimer après la session :
+
+```bash
+umask 077
+kubectl get secret backend-secrets -n <preprod|prod> -o jsonpath='{.data.DATABASE_URL}' | base64 -d > "$HOME/.adminer-url"
+# … copier le mot de passe depuis ce fichier dans le formulaire, puis :
+rm -f "$HOME/.adminer-url"
+```
+
+L'accès reste conditionné à la possession d'un kubeconfig valide sur le
+cluster (même niveau de confiance qu'un `kubectl exec`), pas d'un simple mot
+de passe web. Sous `cpg_migrator`, tout ce qu'Adminer fait touche le schéma
+(un `DROP`, un `DISABLE TRIGGER` y passent) : préférer `cpg_app` pour une
+correction de données, et, pour une simple lecture, le `psql` sous
+`cpg_reader` du § « Journal de sécurité ».
 
 ### Version de l'image et `readOnlyRootFilesystem`
 
@@ -1346,8 +1358,9 @@ printf '%s\n' 'SHOW tcp_keepalives_idle;' 'SHOW tcp_keepalives_interval;' 'SHOW 
 Comme pour la recherche d'un compte (§ « Journal de sécurité »), la requête arrive
 par l'entrée standard, rien dans l'argv de l'`exec`, sous le rôle lecteur
 `cpg_reader` (§ « Rôles PostgreSQL », issue #575). Aucun mot de passe : le
-`pg_hba.conf` de l'image fait confiance (`trust`) aux connexions TCP de
-127.0.0.1, c'est-à-dire de l'intérieur du pod.
+`pg_hba.conf` du dépôt (`k8s/base/postgres-pg_hba.conf`, issue #593) fait
+confiance (`trust`) aux connexions TCP de 127.0.0.1, c'est-à-dire de
+l'intérieur du pod, comme celui de l'image.
 
 Ce qui n'est pas posé, volontairement :
 
@@ -1608,7 +1621,7 @@ morceau, essayé sur l'image `postgres:18.6-alpine` en local (pas encore sur le 
   `pg_read_all_data` (§ « Rôles PostgreSQL »), jamais le superutilisateur de l'image — une
   erreur d'opérateur n'écrit rien. Pas une frontière contre qui détient l'`exec` : dans le pod,
   `trust` donne aussi `-U "$POSTGRES_USER"`, et `pg_read_all_data` lit `pg_authid` (jamais de
-  `SELECT *` dessus dans un terminal). Tant que le Job des rôles n'a pas été joué dans ce
+  `SELECT *` dessus dans un terminal). Tant que la procédure des rôles n'a pas été jouée dans ce
   namespace, le rôle n'existe pas et la commande échoue en le disant. `lock_timeout=5s` borne ses attentes de verrou comme celles de FPM et
   des Jobs (#525) : `PGOPTIONS` remplace la variable entière, la borne doit donc y être répétée.
 - **Un résultat lisible.** `-X` ignore un `~/.psqlrc` ; `-A` rend `nom|adresse` sans alignement mais
@@ -1617,11 +1630,11 @@ morceau, essayé sur l'image `postgres:18.6-alpine` en local (pas encore sur le 
   `${NS:?…}` refuse un namespace vide : un bloc copié tel quel ne vise ni la préprod ni la prod par
   défaut.
 - **Aucun secret ne sort du pod.** La connexion passe par le socket local du conteneur, sans mot de
-  passe : l'image officielle y pose la méthode `trust` à l'initialisation (`local all all trust`),
-  et `postgres.yaml` ne fixe ni `POSTGRES_HOST_AUTH_METHOD` ni `POSTGRES_INITDB_ARGS` — à confirmer
-  sur le volume réel à la première exécution en préprod (#520). `cpg_reader` n'a d'ailleurs aucun
-  mot de passe : depuis un autre pod (`scram-sha-256`), il n'est joignable de nulle part ; seuls le
-  socket local et `127.0.0.1` du pod, en `trust`, le prennent.
+  passe : le `pg_hba.conf` du dépôt (`k8s/base/postgres-pg_hba.conf`, lu par `-c hba_file`, issue
+  #593) y pose `local all all trust`, comme l'image le faisait. `cpg_reader` n'a d'ailleurs aucun
+  mot de passe, et ce fichier le refuse depuis un autre pod (`reject`, comme tout rôle autre que
+  `cpg_app` et `cpg_migrator`) ; seuls le socket local et `127.0.0.1` du pod, en `trust`, le
+  prennent. `tools/check-postgres-hba.sh` (CI `postgres-hba`) le mesure à chaque push.
 
 Pincé par `OperatorExecBoundaryTest`.
 
@@ -1972,11 +1985,14 @@ de fusionner la release :
 
 - Postgres et RabbitMQ tournent en pod (1 réplique, PVC) plutôt que sur des
   services managés Scaleway : pas de sauvegarde automatique.
-- Le superutilisateur PostgreSQL de l'image reste joignable par TCP depuis
-  tout pod du namespace, avec le mot de passe de `postgres-credentials`
-  (issue #593) : l'application ne l'utilise plus (#575, § « Rôles
-  PostgreSQL »), mais une fuite de ce mot de passe rendrait ce que #575
-  retire. Le restreindre au socket local demande un `pg_hba.conf` propre.
+- Le superutilisateur PostgreSQL de l'image n'est plus joignable que de
+  l'intérieur du pod `postgres` (issue #593, `pg_hba.conf` du dépôt) : son
+  mot de passe, toujours dans `postgres-credentials` et Secret Manager (l'image
+  en a besoin à l'initialisation), ne sert plus à rien depuis un autre pod. Qui
+  détient `pods/exec` sur le namespace l'a encore, sans mot de passe (`trust`
+  sur le socket local) : c'est une frontière de kubeconfig, pas de base. La
+  procédure des rôles en dépend, unique `exec` du runbook qui écrit
+  (§ « Rôles PostgreSQL »).
 - Pod Security Admission est posé (cf. « Durcissement des pods » ci-dessus)
   mais `enforce` est à `baseline`, pas à `restricted` : **RabbitMQ** est le
   seul workload qui reste en deçà (aucun `securityContext` de conteneur —
