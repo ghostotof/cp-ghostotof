@@ -193,7 +193,16 @@ paths:
   TABLE`, a temp table, a new schema) is added to the guard first, then to `privileges.sql`. Accepted
   blind spot: CI migrates as the superuser, so a migration that needs more than ownership (`CREATE
   EXTENSION`, `SECURITY DEFINER`, `session_replication_role`) passes CI and fails first in preprod,
-  fail-closed, under `cpg_migrator` — none does today; write one and preprod says so. Kept, as
+  fail-closed, under `cpg_migrator` — none does today; write one and preprod says so; and
+  `roles.sql`/`verify.sql` (psql meta-commands) run nowhere before preprod, the Job there is their
+  proof. **Accepted limits** (security review of #575): any role may `ALTER ROLE` itself (password,
+  `SET` defaults) — an injection could cut the application durably; the Job resets the three roles'
+  attributes and `RESET ALL` at every pass, and `verify.sql` refuses a stray attribute; the new
+  passwords cross the cluster network in clear once, inside `ALTER ROLE … PASSWORD`, between the
+  Job's pod and `database` (computing SCRAM verifiers client-side was weighed and left for later);
+  `cpg_reader` is a second net against an operator's mistake, not a boundary against whoever holds
+  `exec` or `port-forward` (`trust` inside the pod gives the superuser too). `verify.sql` **fails
+  the Job** on any expectation betrayed, so a false state never commits. Kept, as
   #593: the bootstrap superuser stays reachable over TCP with `postgres-credentials` (entrypoint,
   probes, Adminer, this Job).
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is

@@ -254,7 +254,10 @@ final class ApplicationRolePrivilegesTest extends KernelTestCase
 
     /**
      * Les instructions du fichier, les variables psql remplacées par les rôles
-     * jetables : du SQL pur, que psql et ce test lisent de la même façon.
+     * jetables : du SQL pur, que psql et ce test lisent de la même façon — une
+     * instruction par `;`, un bloc `DO $$ … $$` (dont les `;` sont internes)
+     * comptant pour une. Les commentaires sont sur leur propre ligne : un `--`
+     * en fin de ligne de code est refusé, le découpage ne le verrait pas.
      *
      * @return list<string>
      */
@@ -262,18 +265,41 @@ final class ApplicationRolePrivilegesTest extends KernelTestCase
     {
         $source = KubernetesManifests::base()->source(self::PRIVILEGES_SQL);
         self::assertDoesNotMatchRegularExpression('/^\\\\/m', $source, 'privileges.sql est du SQL pur : une méta-commande psql ne se rejoue pas ici.');
+        self::assertDoesNotMatchRegularExpression('/\S.*--/m', $source, 'privileges.sql : un commentaire tient sur sa propre ligne.');
 
         $sql = strtr($source, [
             ':"app_role"' => $this->identifier($this->app),
+            ":'app_role'" => $this->probe->quote($this->app),
             ':"migrator_role"' => $this->identifier($this->migrator),
             ':"reader_role"' => $this->identifier($this->reader),
         ]);
         $sql = preg_replace('/^\s*--.*$/m', '', $sql);
         self::assertIsString($sql);
-        self::assertStringNotContainsString(':"', $sql, 'privileges.sql n\'utilise que :"app_role", :"migrator_role" et :"reader_role".');
+        self::assertDoesNotMatchRegularExpression('/:["\']/', $sql, 'privileges.sql n\'utilise que :"app_role", :\'app_role\', :"migrator_role" et :"reader_role".');
 
-        $statements = array_values(array_filter(array_map(trim(...), explode(';', $sql)), static fn (string $statement): bool => '' !== $statement));
-        self::assertNotEmpty($statements);
+        $pieces = preg_split('/(\$\$|;)/', $sql, -1, \PREG_SPLIT_DELIM_CAPTURE);
+        self::assertIsArray($pieces);
+        $statements = [];
+        $current = '';
+        $inDollarQuote = false;
+        foreach ($pieces as $piece) {
+            if ('$$' === $piece) {
+                $inDollarQuote = !$inDollarQuote;
+                $current .= $piece;
+
+                continue;
+            }
+            if (';' === $piece && !$inDollarQuote) {
+                $statements[] = trim($current);
+                $current = '';
+
+                continue;
+            }
+            $current .= $piece;
+        }
+        self::assertSame('', trim($current), 'privileges.sql : la dernière instruction se termine par un `;`.');
+        $statements = array_values(array_filter($statements, static fn (string $statement): bool => '' !== $statement));
+        self::assertGreaterThan(5, \count($statements));
 
         return $statements;
     }

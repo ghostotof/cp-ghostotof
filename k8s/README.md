@@ -1026,14 +1026,20 @@ openssl rand -hex 24 | tr -d '\n' > "$TMP/migrator-password"
 DB="$(kubectl -n "$NS" get secret postgres-credentials -o jsonpath='{.data.POSTGRES_DB}' | base64 -d)"
 { printf 'postgresql://cpg_app:'; cat "$TMP/app-password"; printf '@database:5432/%s?serverVersion=18&charset=utf8' "$DB"; } > "$TMP/app-url"
 { printf 'postgresql://cpg_migrator:'; cat "$TMP/migrator-password"; printf '@database:5432/%s?serverVersion=18&charset=utf8' "$DB"; } > "$TMP/migrator-url"
-# 2. Les deux objets temporaires que le Job monte : le SQL du dépôt, les mots de passe.
+# 2. Les deux objets temporaires que le Job monte : le SQL du dépôt (celui de HEAD, relu :
+#    `git diff --quiet HEAD -- k8s/base/postgres-roles` doit être muet), les mots de passe.
+#    Supprimés d'abord : un essai interrompu les aurait laissés (AlreadyExists).
+kubectl -n "$NS" delete configmap postgres-roles-sql --ignore-not-found
+kubectl -n "$NS" delete secret postgres-roles-passwords --ignore-not-found
 kubectl -n "$NS" create configmap postgres-roles-sql --from-file=k8s/base/postgres-roles/
 kubectl -n "$NS" create secret generic postgres-roles-passwords \
   --from-file=app-password="$TMP/app-password" --from-file=migrator-password="$TMP/migrator-password"
+#    Rotation seulement : la clé `rotate` en plus (vide, sa présence suffit) —
+#    `--from-file=rotate=/dev/null` ajouté à la commande ci-dessus.
 # 3. Le Job (issue #488 : suppression du précédent, apply, attente, journaux). L'image est celle
-#    du manifeste, tenue avec postgres.yaml par un test ; l'argument est requis par run-job.sh.
-IMAGE="$(sed -n 's/.*image: \(postgres:[^ ]*\).*/\1/p' k8s/base/postgres.yaml)"
-tools/run-job.sh "$NS" k8s/base/postgres-roles-job.yaml "$IMAGE" 120
+#    du manifeste, tenue avec postgres.yaml par un test : l'argument image, requis par run-job.sh,
+#    est sans effet ici.
+tools/run-job.sh "$NS" k8s/base/postgres-roles-job.yaml unused 120
 # 4. Dans tous les cas, succès ou échec :
 kubectl -n "$NS" delete secret postgres-roles-passwords
 kubectl -n "$NS" delete configmap postgres-roles-sql
@@ -1042,17 +1048,28 @@ kubectl -n "$NS" delete configmap postgres-roles-sql
 Chaque `ALTER … OWNER TO` prend un verrou `ACCESS EXCLUSIVE` tenu jusqu'au
 COMMIT de la transaction unique (quelques secondes, `verify.sql` compris) :
 les requêtes de l'API sur ces tables attendent ce temps-là, et un
-interblocage avec le trafic (`40P01`) annule tout proprement. Une heure
-calme, donc. Lire la sortie de `verify.sql` dans les journaux du Job : trois rôles,
-`rolsuper` `f` partout, le lecteur sans mot de passe, le rôle de migration
-propriétaire de la base et du schéma, `0` objet de `public` hors de lui, `0`
-table sans DML pour `cpg_app`, `f | f | f`, `2` privilèges par défaut,
-`t | f` pour le lecteur. Une valeur hors attente : ne pas publier les URL,
-lire. Le Job échoue en une seule transaction (`--single-transaction`,
-`ON_ERROR_STOP`) : rien n'est à défaire, corriger puis relancer depuis
+interblocage avec le trafic (`40P01`) annule l'une des deux transactions —
+le Job, à relancer, ou une écriture du backoffice, un 500 pour son auteur.
+Une heure calme, donc. Lire la sortie de `verify.sql` dans les journaux du
+Job : trois rôles, `rolsuper` `f` partout, le lecteur sans mot de passe, le
+rôle de migration propriétaire de la base et du schéma, `0` objet de
+`public` hors de lui, `0` table sans DML pour `cpg_app`, `f | f | f`, `2`
+privilèges par défaut, `t | f` pour le lecteur, puis `conforme`. **Un écart
+fait échouer le Job** : `verify.sql` se termine par un bloc qui lève une
+erreur sur chaque attente trahie, psql sort en 3 et `--single-transaction`
+annule tout — rien n'est à défaire, lire la cause, corriger, relancer depuis
 l'étape 2 (`run-job.sh` supprime le Job précédent). Un `55P03` dans ses
 journaux est un `ALTER … OWNER TO` bloqué par une transaction longue (une
-migration, un seed) : relancer hors déploiement.
+migration, un seed) : relancer hors déploiement. Des mots de passe absents ou
+trop courts (fichier mal nommé) sont refusés avant toute écriture.
+
+**Environnement neuf** (nouveau namespace, PVC perdu) : ce Job passe **avant
+la première migration**, sur la base encore vide que l'image a créée —
+`privileges.sql` et `verify.sql` ne supposent aucune table —, puis la
+`DATABASE_URL` de migration est publiée, et le déploiement migre sous
+`cpg_migrator`. Rejouer ensuite le Job (mode `refresh` du wizard) pour
+retirer à `cpg_app` la table des migrations, que les privilèges par défaut
+lui avaient ouverte.
 
 Le même contrôle, plus tard, sans le Job, sous le lecteur (lecture seule,
 sortie sur le terminal, requête sur l'entrée standard) :
@@ -1105,13 +1122,19 @@ tests sous `cpg_app`. Aucun signal d'arrêt des workers à relancer : le
 worker est redémarré, et le cache signé est intact (même `APP_SECRET`).
 
 **Retour arrière** (à tout moment, le rôle bootstrap existe toujours) :
-republier l'URL précédente comme **nouvelle** version de
-`<env>-backend-database-url` — la relire dans Secret Manager vers un fichier,
-jamais à l'écran : `scw secret version access <secret-id> revision=<n-1>
-region=fr-par > "$TMP/previous-url"`, puis `scw secret version create
-<secret-id> data=@"$TMP/previous-url" region=fr-par` —, `force-sync`,
-`rollout restart` des deux. Les rôles et la propriété transférée ne gênent en
-rien le superutilisateur ; les laisser.
+republier l'URL du superutilisateur comme **nouvelle** version de
+`<env>-backend-database-url` — c'est la **dernière version d'avant #575**,
+pas forcément la précédente (après une rotation, la précédente porte un mot
+de passe de `cpg_app` devenu faux) ; la relire dans Secret Manager vers un
+fichier, jamais à l'écran : `scw secret version access <secret-id>
+revision=<n> region=fr-par > "$TMP/previous-url"` (vérifier la forme de
+sortie avec `--help`, elle évolue : brute, ou `-o json` à décoder par `jq -r
+.data | base64 -d`), puis `scw secret version create <secret-id>
+data=@"$TMP/previous-url" region=fr-par` —, `force-sync`, `rollout restart`
+des deux. Les rôles et la propriété transférée ne gênent en rien le
+superutilisateur ; les laisser. Une fois la bascule validée en prod, désactiver
+les versions qui portent l'URL du superutilisateur **sauf la plus récente**,
+gardée pour ce retour arrière (`scw secret version disable`, §2bis étape 5).
 
 **Le Job ne réécrit jamais un mot de passe existant par défaut** : rejoué
 tel quel, il laisse l'application connectée. **Un objet créé à la main** sous
@@ -1566,10 +1589,12 @@ morceau, essayé sur l'image `postgres:18.6-alpine` en local (pas encore sur le 
   devient qu'une erreur « invalid input syntax for type uuid ».
 - **Lecture seule, deux fois.** `default_transaction_read_only` fait refuser une écriture par
   erreur (« cannot execute UPDATE in a read-only transaction ») ; un `SET` dans la session le lève,
-  c'est un garde-fou. La frontière, depuis l'issue #575, est le rôle : `cpg_reader` n'a que
-  `pg_read_all_data` (§ « Rôles PostgreSQL »), jamais le superutilisateur de l'image — tant que
-  le Job des rôles n'a pas été joué dans ce namespace, le rôle n'existe pas et la commande échoue
-  en le disant. `lock_timeout=5s` borne ses attentes de verrou comme celles de FPM et
+  c'est un garde-fou. Le rôle, depuis l'issue #575, en est un second : `cpg_reader` n'a que
+  `pg_read_all_data` (§ « Rôles PostgreSQL »), jamais le superutilisateur de l'image — une
+  erreur d'opérateur n'écrit rien. Pas une frontière contre qui détient l'`exec` : dans le pod,
+  `trust` donne aussi `-U "$POSTGRES_USER"`, et `pg_read_all_data` lit `pg_authid` (jamais de
+  `SELECT *` dessus dans un terminal). Tant que le Job des rôles n'a pas été joué dans ce
+  namespace, le rôle n'existe pas et la commande échoue en le disant. `lock_timeout=5s` borne ses attentes de verrou comme celles de FPM et
   des Jobs (#525) : `PGOPTIONS` remplace la variable entière, la borne doit donc y être répétée.
 - **Un résultat lisible.** `-X` ignore un `~/.psqlrc` ; `-A` rend `nom|adresse` sans alignement mais
   garde l'en-tête et le compte de lignes, pour qu'un namespace erroné (« (0 rows) ») ne se confonde

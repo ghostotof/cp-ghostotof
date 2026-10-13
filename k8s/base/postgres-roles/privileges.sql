@@ -10,9 +10,13 @@
 --     rôle applicatif, qu'une table créée ensuite par le rôle de migration
 --     l'est aussi, et que le rôle applicatif ne peut ni désactiver le trigger
 --     différé ni altérer le schéma.
--- D'où la forme : du SQL pur, une instruction par `;`, aucune méta-commande
--- psql, et seulement les variables :"app_role", :"migrator_role" et
--- :"reader_role". Rejouable : chaque GRANT/REVOKE est idempotent.
+-- D'où la forme : du SQL pur, une instruction par `;` (un bloc `DO $$ … $$`
+-- compte pour une), aucune méta-commande psql, et seulement les variables
+-- :"app_role" (identifiant), :'app_role' (littéral), :"migrator_role" et
+-- :"reader_role". Rejouable : chaque GRANT/REVOKE est idempotent. Jouable sur
+-- une base encore vide (environnement neuf : ce Job passe AVANT la première
+-- migration, qui tourne sous le rôle de migration) : rien ici ne suppose une
+-- table.
 
 -- Défaut de PostgreSQL ≥ 15 (la base a été créée sur la 18) : écrit pour
 -- qu'un schéma plus ancien ne laisse pas l'application créer une table.
@@ -27,8 +31,19 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO :"app_rol
 -- Les colonnes d'identité n'en ont pas besoin (nextval interne, sans
 -- contrôle) ; une séquence nommée ou une colonne SERIAL future, si.
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO :"app_role";
--- L'application ne lit jamais l'historique des migrations.
-REVOKE ALL PRIVILEGES ON TABLE public.doctrine_migration_versions FROM :"app_role";
+
+-- L'application ne lit jamais l'historique des migrations. REVOKE n'a pas
+-- de IF EXISTS, et la table n'existe pas sur une base neuve : le bloc lit le
+-- nom du rôle dans un réglage de session, puisque psql n'interpole pas ses
+-- variables entre $$.
+SELECT set_config('cpg.app_role', :'app_role', true);
+DO $$
+BEGIN
+    IF to_regclass('public.doctrine_migration_versions') IS NOT NULL THEN
+        EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE public.doctrine_migration_versions FROM %I', current_setting('cpg.app_role'));
+    END IF;
+END
+$$;
 
 -- Les tables et séquences de demain : les migrations tournent sous le rôle de
 -- migration (migrate-job.yaml, Secret backend-migration-secrets), et les

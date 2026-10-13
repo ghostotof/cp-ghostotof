@@ -10,8 +10,8 @@
 #   - cpg_app       : l'application (FPM, worker, CronJobs, Jobs applicatifs),
 #                     DML seulement — DATABASE_URL de backend-secrets ;
 #   - cpg_migrator  : propriétaire de la base et de chaque objet, les seules
-#                     migrations — DATABASE_URL de backend-migration-secrets,
-#                     lu par le seul migrate-job.yaml ;
+#                     migrations — DATABASE_URL du Secret de migration, lu par
+#                     le seul migrate-job.yaml (MigrationRoleSecretsTest) ;
 #   - cpg_reader    : lecture seule, sans mot de passe, pour les psql humains
 #                     du runbook par le socket local du pod postgres.
 # Le SQL est celui du dépôt, k8s/base/postgres-roles/{roles,privileges,verify}.sql,
@@ -84,17 +84,25 @@ spec:
             # file derrière lui. Relancer hors déploiement.
             - name: PGOPTIONS
               value: '-c lock_timeout=5s'
-            # Le mot de passe du rôle bootstrap, par référence : psql le lit
-            # dans PGPASSWORD, jamais dans l'argv.
+            # Les trois valeurs de postgres-credentials, chacune par référence :
+            # pas d'envFrom, qui recopierait POSTGRES_PASSWORD en plus de
+            # PGPASSWORD. psql lit le mot de passe dans PGPASSWORD, jamais dans
+            # l'argv.
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
                   name: postgres-credentials
                   key: POSTGRES_PASSWORD
-          envFrom:
-            # POSTGRES_USER et POSTGRES_DB, ceux de l'image.
-            - secretRef:
-                name: postgres-credentials
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_DB
           volumeMounts:
             - name: postgres-roles-sql
               mountPath: /sql

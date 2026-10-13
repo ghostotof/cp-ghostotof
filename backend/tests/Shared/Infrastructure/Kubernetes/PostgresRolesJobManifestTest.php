@@ -87,12 +87,32 @@ final class PostgresRolesJobManifestTest extends TestCase
         self::assertMatchesRegularExpression("/ALTER ROLE %I PASSWORD %L[^\\n]*WHERE :'rotate' = '1' OR NOT :'app_existed'::boolean/", $roles);
 
         self::assertStringNotContainsString('password', strtolower($this->commandLine()));
+        self::assertArrayNotHasKey('envFrom', $this->container(), 'Aucun Secret recopié en bloc dans l\'environnement : chaque valeur par référence.');
         foreach (KubernetesManifests::entries($this->container(), 'env') as $variable) {
             $name = $variable['name'] ?? '';
             self::assertIsString($name);
             if (str_contains(strtolower($name), 'password')) {
+                self::assertSame('PGPASSWORD', $name, 'Le seul mot de passe de l\'environnement est celui du rôle bootstrap, pour psql.');
                 self::assertSame(['name' => 'postgres-credentials', 'key' => 'POSTGRES_PASSWORD'], $variable['valueFrom']['secretKeyRef'] ?? null, $name);
             }
+        }
+    }
+
+    /**
+     * Audit de #575 : un seul écho suffirait à mettre un mot de passe dans des
+     * journaux lisibles par le jeton CI. Ni sur la ligne de commande
+     * (`-a`, `-e`, `--echo-*`, `-v ECHO…`), ni dans les fichiers (`\set ECHO`,
+     * `\echo :variable`, `VERBOSITY`).
+     */
+    public function testNeitherTheCommandNorTheFilesEchoAnything(): void
+    {
+        $command = $this->commandLine();
+        self::assertDoesNotMatchRegularExpression('/--echo|\bECHO\b|VERBOSITY/', $command);
+
+        foreach (['roles.sql', 'privileges.sql', 'verify.sql'] as $file) {
+            $source = KubernetesManifests::base()->source(self::SQL_DIRECTORY.'/'.$file);
+            self::assertDoesNotMatchRegularExpression('/\\\\set\s+(ECHO|ECHO_HIDDEN|VERBOSITY)\b/i', $source, $file);
+            self::assertDoesNotMatchRegularExpression('/\\\\echo\s[^\n]*:[\'"]?\w+/', $source, $file.' : un \\echo ne cite jamais une variable.');
         }
     }
 
@@ -118,7 +138,7 @@ final class PostgresRolesJobManifestTest extends TestCase
     {
         $verify = KubernetesManifests::base()->source(self::SQL_DIRECTORY.'/verify.sql');
 
-        self::assertDoesNotMatchRegularExpression('/\brolpassword\b(?!\s+IS\s+NOT\s+NULL)/', $verify);
+        self::assertDoesNotMatchRegularExpression('/\brolpassword\b(?!\s+IS\s+(NOT\s+)?NULL)/', $verify);
         self::assertStringNotContainsString('\\set', $verify);
     }
 

@@ -16,15 +16,18 @@ use PHPUnit\Framework\TestCase;
  * que le seul Job de migration lit — par `env`, qui prime sur `envFrom`, pour
  * que `backend-secrets` reste monté (APP_SECRET et le reste du noyau).
  *
- * Ce test pince le câblage : le Job lit l'URL de migration, aucun autre pod
- * de l'image backend ne voit ce Secret, et chaque overlay déclare
- * l'ExternalSecret avec sa clé Scaleway, à côté de celui de l'application.
+ * Ce test pince le câblage : le Job lit l'URL de migration, aucun autre
+ * manifeste — de la base, quelle que soit l'image, ni d'un overlay hors de la
+ * déclaration de l'ExternalSecret — ne nomme ce Secret, et chaque overlay le
+ * déclare avec sa clé Scaleway, à côté de celui de l'application.
  */
 final class MigrationRoleSecretsTest extends TestCase
 {
     private const string MIGRATE_JOB = 'migrate-job.yaml';
     private const string MIGRATION_SECRET = 'backend-migration-secrets';
     private const string APPLICATION_SECRET = 'backend-secrets';
+    private const string EXTERNAL_SECRETS = 'external-secrets.yaml';
+    private const array OVERLAYS = ['preprod', 'prod'];
 
     public function testTheMigrationJobReadsItsDatabaseUrlFromTheMigrationSecret(): void
     {
@@ -38,19 +41,31 @@ final class MigrationRoleSecretsTest extends TestCase
         self::assertContains(['secretRef' => ['name' => self::APPLICATION_SECRET]], KubernetesManifests::entries($container, 'envFrom'), 'Le reste des secrets du noyau vient toujours de backend-secrets.');
     }
 
-    /** L'URL du propriétaire n'atteint que la migration : ni FPM, ni le worker, ni un CronJob, ni un autre Job. */
-    public function testNoOtherBackendWorkloadSeesTheMigrationSecret(): void
+    /**
+     * L'URL du propriétaire n'atteint que la migration : aucun autre fichier de
+     * la base (FPM, worker, CronJobs, Jobs, Adminer…) ni d'un overlay (un patch
+     * du Deployment backend, par exemple) ne nomme le Secret — seule sa
+     * déclaration ExternalSecret le peut.
+     */
+    public function testNoOtherManifestNamesTheMigrationSecret(): void
     {
         $base = KubernetesManifests::base();
-        $manifests = $base->manifestsRunningTheBackendImage();
-        self::assertContains(self::MIGRATE_JOB, $manifests);
-
-        foreach ($manifests as $manifest) {
-            if (self::MIGRATE_JOB === $manifest) {
-                continue;
+        $offending = [];
+        foreach ($this->yamlFilesOf($base->directory()) as $manifest) {
+            if (self::MIGRATE_JOB !== $manifest && str_contains($base->source($manifest), self::MIGRATION_SECRET)) {
+                $offending[] = 'k8s/base/'.$manifest;
             }
-            self::assertStringNotContainsString(self::MIGRATION_SECRET, $base->source($manifest), $manifest);
         }
+        foreach (self::OVERLAYS as $overlay) {
+            $files = KubernetesManifests::overlay($overlay);
+            foreach ($this->yamlFilesOf($files->directory()) as $manifest) {
+                if (self::EXTERNAL_SECRETS !== $manifest && str_contains($files->source($manifest), self::MIGRATION_SECRET)) {
+                    $offending[] = \sprintf('k8s/overlays/%s/%s', $overlay, $manifest);
+                }
+            }
+        }
+
+        self::assertSame([], $offending, 'Seul migrate-job.yaml monte backend-migration-secrets.');
     }
 
     /**
@@ -58,8 +73,9 @@ final class MigrationRoleSecretsTest extends TestCase
      */
     public static function provideOverlays(): iterable
     {
-        yield 'preprod' => ['preprod'];
-        yield 'prod' => ['prod'];
+        foreach (self::OVERLAYS as $overlay) {
+            yield $overlay => [$overlay];
+        }
     }
 
     #[DataProvider('provideOverlays')]
@@ -75,7 +91,7 @@ final class MigrationRoleSecretsTest extends TestCase
             $migration['spec']['data'] ?? null,
             'Une seule clé : l\'URL du rôle de migration, sous son propre nom Scaleway.',
         );
-        self::assertArrayNotHasKey('annotations', $migration['metadata'] ?? [], 'Jamais `deploy-gate: optional` : le Job de migration en a besoin pour démarrer.');
+        self::assertNotSame('optional', $migration['metadata']['annotations']['cp-ghostotof.com/deploy-gate'] ?? null, 'Jamais `deploy-gate: optional` : le Job de migration en a besoin pour démarrer.');
 
         $application = $secrets[self::APPLICATION_SECRET] ?? null;
         self::assertNotNull($application);
@@ -89,6 +105,23 @@ final class MigrationRoleSecretsTest extends TestCase
     }
 
     /**
+     * Les fichiers YAML du répertoire, sans ses sous-répertoires, par nom.
+     *
+     * @return list<string>
+     */
+    private function yamlFilesOf(string $directory): array
+    {
+        $yaml = glob($directory.'/*.yaml');
+        $yml = glob($directory.'/*.yml');
+        self::assertIsArray($yaml);
+        self::assertIsArray($yml);
+        $files = array_map(basename(...), [...$yaml, ...$yml]);
+        sort($files);
+
+        return $files;
+    }
+
+    /**
      * Les ExternalSecret de l'overlay, par nom.
      *
      * @return array<string, array<mixed>>
@@ -96,7 +129,7 @@ final class MigrationRoleSecretsTest extends TestCase
     private function externalSecrets(string $overlay): array
     {
         $byName = [];
-        foreach (KubernetesManifests::overlay($overlay)->documents('external-secrets.yaml') as $document) {
+        foreach (KubernetesManifests::overlay($overlay)->documents(self::EXTERNAL_SECRETS) as $document) {
             if ('ExternalSecret' !== ($document['kind'] ?? null)) {
                 continue;
             }
