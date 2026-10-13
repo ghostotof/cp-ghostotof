@@ -69,7 +69,7 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
 
             // Issue #582 : une entrée ne change pas de langue. Refusé avant
             // toute autre lecture et tout changement en mémoire (#549), donc
-            // avant le détachement ou le rattachement qu'il demanderait.
+            // avant le détachement ou le rattachement que demande le corps.
             if ($caseStudy->getLocale() !== $locale) {
                 throw TranslatableContentLocaleIsImmutableException::refused();
             }

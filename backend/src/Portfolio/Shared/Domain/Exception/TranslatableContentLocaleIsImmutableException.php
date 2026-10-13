@@ -37,11 +37,12 @@ final class TranslatableContentLocaleIsImmutableException extends DomainExceptio
      * Message littéral : il devient le `detail` renvoyé au client, qui ne doit
      * jamais reprendre ce que la requête a envoyé (ProblemDetailStaysStaticTest).
      * Les deux langues n'y figurent donc pas ; le client a la sienne, et l'id
-     * de l'entrée est dans l'URL.
+     * de l'entrée est dans l'URL. « La langue voulue », pas « l'autre » :
+     * rien ne fige la paire FR/EN (spec 0004 D2).
      */
     public static function refused(): self
     {
-        return new self('La langue d\'une entrée ne peut pas changer : créez sa version dans l\'autre langue, puis supprimez celle-ci si besoin.');
+        return new self('La langue d\'une entrée ne peut pas changer : créez sa version dans la langue voulue (« Créer la version »), puis supprimez celle-ci si besoin.');
     }
 
     protected function problemType(): string

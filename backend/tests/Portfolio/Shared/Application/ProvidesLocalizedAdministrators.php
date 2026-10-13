@@ -42,11 +42,10 @@ use Throwable;
  * `delete()` et `reorder()`, plus l'exception qu'ils lèvent sur une entrée
  * introuvable.
  *
- * Partagé par OrderScopeLockCoverageTest (#389) et
- * ScopeLockReadsCommittedStateTest (#402) : un contexte ajouté ici est
- * couvert par les deux gardes à la fois — et par LocaleIsImmutableOnUpdateTest
- * (#582), pour qui `update` accepte une langue (celle de l'entrée par
- * défaut). Un trait plutôt qu'une classe : les
+ * Partagé par OrderScopeLockCoverageTest (#389), ScopeLockReadsCommittedStateTest
+ * (#402) et LocaleIsImmutableOnUpdateTest (#582, pour qui `update` accepte une
+ * langue, celle de l'entrée par défaut) : un contexte ajouté ici est couvert
+ * par ces gardes à la fois. Un trait plutôt qu'une classe : les
  * administrateurs sont des services privés, que seul un KernelTestCase lit
  * dans le conteneur de test.
  *

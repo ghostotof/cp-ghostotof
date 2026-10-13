@@ -329,9 +329,9 @@ paths:
     several positions (`ContentPlacement::inGroup()` on a placement; `OrderAssigner::assign()` on a
     `reorder()`, since #503), then the client's errors (the 409 `translation-already-exists`,
     `OrderAssigner`'s 422s of the exact-set rule), then the trigger at COMMIT for what bypasses the application — the cause before its
-    consequence, as in the trigger, and a pipeline defect before a client error, as in #384 — save the two body-only refusals of a `PUT`, below.
-    **Two client errors come first, on purpose: a `PUT` carrying another locale, then one carrying another
-    category** (issues #582, #578). A card
+    consequence, as in the trigger, and a pipeline defect before a client error, as in #384.
+    **Two client errors come first, on purpose, both read from the body alone: a `PUT` carrying another
+    locale (issue #582, end of this paragraph), then one carrying another category** (issue #578). A card
     never changes category (no setter, see #501 above); the `PUT` validated `category`, ignored it and
     answered 200 — and the form of the time, whose category change emptied « Version de », sent
     `translationGroup: null` with it, so the card was silently detached and sent to the end of its

@@ -89,10 +89,13 @@ final class LocaleIsImmutableOnUpdateTest extends KernelTestCase
         $operations = $this->boot($entityClass, $context);
         $entry = $operations['create'](Locale::FR, null);
         $other = $operations['create'](Locale::FR, null);
+        $before = $this->storedRowOf($entityClass, $entry);
 
         $refusal = $this->refusalOf(static fn (): TranslatableContent => $operations['update']($entry, $other->getTranslationGroup(), Locale::EN));
 
         self::assertInstanceOf(TranslatableContentLocaleIsImmutableException::class, $refusal, \sprintf('Refus de langue attendu en premier, reçu %s.', get_debug_type($refusal)));
+        self::assertSame($before, $this->storedRowOf($entityClass, $entry), "L'entrée a changé en base malgré le refus.");
+        self::assertTrue(self::getContainer()->get(EntityManagerInterface::class)->isOpen(), "Le refus a fermé l'EntityManager : il est tombé après une écriture (#549).");
     }
 
     /**

@@ -64,7 +64,7 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
 
             // Issue #582 : une entrée ne change pas de langue. Refusé avant
             // toute autre lecture et tout changement en mémoire (#549), donc
-            // avant le détachement ou le rattachement qu'il demanderait — et
+            // avant le détachement ou le rattachement que demande le corps, et
             // avant la catégorie (#578) : la règle commune aux huit contextes
             // d'abord, celle des cartes ensuite ; les deux ne lisent que le corps.
             if ($card->getLocale() !== $locale) {
