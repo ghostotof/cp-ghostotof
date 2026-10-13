@@ -172,11 +172,14 @@ paths:
     indexed query per row written at COMMIT, 2N for a reorder of N FR/EN pairs, under the lock.
     **Trap for future migrations** (issue #505, measured on PostgreSQL 18, pinned by
     `tests/Migrations/DeferredTriggerPendingEventsTest`). A deferred trigger leaves a pending event per
-    row a watched write touches, until the COMMIT, and PostgreSQL then refuses on that table **every
-    `ALTER TABLE` measured** — `ADD`/`DROP COLUMN`, `ALTER COLUMN … TYPE`, `SET NOT NULL`, `SET DEFAULT`,
-    `ADD CONSTRAINT`, `DISABLE TRIGGER`: treat any other as refused too — **and `CREATE INDEX`**, all in
+    row a watched write touches, until the COMMIT, and PostgreSQL then refuses some DDL on that table in
     SQLSTATE `55006` ("cannot ALTER TABLE …" / "cannot CREATE INDEX … because it has pending trigger
-    events"). A `RENAME COLUMN`, a `COMMENT`, a `DROP INDEX` or a DDL on another table pass. Each
+    events"). The refusal depends on the subcommand, not on the statement: **measured refused**, the
+    `ALTER TABLE` subcommands `ADD`/`DROP COLUMN`, `ALTER COLUMN … TYPE`, `SET NOT NULL`, `SET DEFAULT`,
+    `ADD CONSTRAINT`, `DISABLE TRIGGER`, **and `CREATE INDEX`**; **measured accepted**, `ALTER TABLE …
+    RENAME COLUMN` (an `ALTER TABLE` too), a `COMMENT`, a `DROP INDEX`, a DDL on another table. **Any other
+    DDL on the table: measure it before relying on it passing** — a case in the test's providers —, and
+    until then apply the fix below, harmless when nothing is pending. Each
     migration runs in its own transaction (`doctrine_migrations.yaml`, no `all_or_nothing`), so the
     trap is a write then a DDL on the same table **within one migration**. **Watched writes**: an
     `INSERT` that inserts rows, and an `UPDATE` touching rows and naming a column of the trigger's

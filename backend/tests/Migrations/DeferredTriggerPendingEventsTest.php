@@ -26,7 +26,10 @@ use Symfony\Component\Uid\UuidV7;
  *
  * Un trigger différé laisse un événement en attente pour chaque ligne qu'une
  * écriture surveillée touche, jusqu'au COMMIT, et PostgreSQL refuse alors en
- * SQLSTATE `55006` les `ALTER TABLE` et les `CREATE INDEX` sur cette table.
+ * SQLSTATE `55006` certains DDL sur cette table : le refus dépend de la
+ * sous-commande, pas de l'instruction (`RENAME COLUMN` passe, `ADD COLUMN`
+ * non). Seuls les cas épinglés ci-dessous sont des faits ; tout autre DDL se
+ * mesure ici avant qu'on se fie à son passage.
  *
  * Chaque test tourne dans **une** transaction, ouverte au `setUp` (aucune ne
  * doit l'être avant : le dépôt n'enveloppe pas les tests dans une
@@ -89,8 +92,7 @@ final class DeferredTriggerPendingEventsTest extends KernelTestCase
     }
 
     /**
-     * Toute sous-commande d'`ALTER TABLE` mesurée est refusée, et
-     * `CREATE INDEX` aussi.
+     * Les sous-commandes d'`ALTER TABLE` mesurées refusées, et `CREATE INDEX`.
      *
      * @return iterable<string, array{string}>
      */
@@ -107,7 +109,8 @@ final class DeferredTriggerPendingEventsTest extends KernelTestCase
     }
 
     /**
-     * Ce qui n'est pas un `ALTER TABLE` de la table passe.
+     * Les DDL mesurés acceptés, dont une sous-commande d'`ALTER TABLE` de la
+     * table même (`RENAME COLUMN`).
      *
      * @return iterable<string, array{string}>
      */
