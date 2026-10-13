@@ -79,8 +79,9 @@ paths:
   - **`Infrastructure/Security/FailedLoginTimingEqualizer.php` — a failed login must not be timeable**
     (audit A10). The three failures already return the same 401, but not in the same time: a known active
     account paid a full bcrypt/argon `verify()`, while an **unknown identifier** (the user is never loaded)
-    and an **account pending activation** (empty hash, `password_verify($p, '')` returns at once) cost
-    nothing — the gap said which identifiers exist and which are pending invitations. On `LoginFailureEvent`,
+    and an **account without a password** (an invitation whose person has not chosen one yet: empty hash,
+    `password_verify($p, '')` returns at once) cost nothing — the gap said which identifiers exist and which
+    are pending invitations. On `LoginFailureEvent`,
     `login` firewall only, priority **-100** (after the throttling counter and the audit log, neither of
     which should wait on a hash), it pays a dummy `hash()` of a constant with `CpgUser`'s configured hasher
     in **those two cases only**: never for an account that has a password (the real hash already happened —
@@ -93,7 +94,10 @@ paths:
     password of an invited account from the backoffice (#238, #460), which stays pending activation while
     `verify()` does the real hash — compensating it as well doubled its response time and singled it out as
     « an invitation whose password was set for the person ». Until #560 the listener read
-    `isPendingActivation()`, written when pending meant an empty hash.
+    `isPendingActivation()`, written when pending meant an empty hash. **Known gap, older than #560**: a
+    submitted password over 4096 bytes (`PasswordHasherInterface::MAX_PASSWORD_LENGTH`) makes `verify()` return
+    `false` without hashing, and nothing bounds it at login, so an existing account with a password answers
+    faster than an unknown identifier — issue #588.
     `FailedLoginTimingEqualizerTest` + `tests/Security/Authentication/LoginFailureTimingTest.php` pin it.
     Related fact worth knowing: `login_throttling` answers a **429** `/errors/rate-limited` with
     `Retry-After` since issue #399, the only failure that leaves Lexik's 401 — it says nothing about the

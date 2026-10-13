@@ -209,7 +209,7 @@ final class PostgresAccountAdministrationLockTest extends KernelTestCase
             try {
                 // Refus d'une cible ROLE_SUPER : celle-ci l'est.
                 $this->lock()->whileAdministering($target, $actor, static function (CpgUser $locked): bool {
-                    if (\in_array(CpgUser::ROLE_SUPER, $locked->getRoles(), true)) {
+                    if ($locked->isSuperAdmin()) {
                         throw new LogicException('refus');
                     }
 

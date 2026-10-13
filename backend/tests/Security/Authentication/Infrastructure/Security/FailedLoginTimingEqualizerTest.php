@@ -131,12 +131,12 @@ final class FailedLoginTimingEqualizerTest extends TestCase
     }
 
     /**
-     * Compte invité non activé : son hachage est vide, donc
+     * Compte invité sans mot de passe : son hachage est vide, donc
      * `NativePasswordHasher::verify()` retombe sur `password_verify($p, '')`,
      * qui échoue sans dériver quoi que ce soit. Sans compensation, une
      * invitation en attente se distingue d'un compte actif au chronomètre.
      */
-    public function testAnAccountPendingActivationIsCompensatedByADummyHash(): void
+    public function testAnInvitedAccountWithoutAPasswordIsCompensatedByADummyHash(): void
     {
         $this->hasher()->expects(self::once())->method('hash');
 

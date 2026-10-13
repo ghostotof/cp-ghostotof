@@ -55,6 +55,11 @@ final readonly class PostgresAccountRowLock implements AccountLockInterface
     public function whileLocked(CpgUser $user, Closure $operation): mixed
     {
         $id = $user->getId();
+        // La relecture rafraîchit l'instance gérée : une autre, non gérée,
+        // laisserait l'appelant avec la sienne, périmée (#560).
+        if (!$this->entityManager->contains($user)) {
+            throw AccountLockOnUnmanagedAccountException::forAccount($id->toRfc4122());
+        }
 
         return new PostgresLockedTransaction($this->entityManager, $this->logger, $this->fallbackLockTimeout)->run(
             // Une requête verrouille la ligne, dit si elle existe et relit le

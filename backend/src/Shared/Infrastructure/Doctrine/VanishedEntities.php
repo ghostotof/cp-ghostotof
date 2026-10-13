@@ -25,14 +25,16 @@ use WeakMap;
  * identifiants sont assignés au constructeur, Doctrine ne les efface pas —,
  * sans erreur ni trace.
  *
- * - **Disparue sous un verrou** (#548). Trois verrous détachent l'instance
+ * - **Disparue sous un verrou** (#548). Quatre verrous détachent l'instance
  *   qu'ils trouvent périmée, ligne supprimée entre son chargement et le
  *   verrou : la relecture du verrou d'ordre (#402,
  *   {@see \App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock}),
  *   le verrou de ligne d'une technologie (#545,
  *   {@see \App\Portfolio\Experience\Infrastructure\Doctrine\PostgresExperienceTechnologyRowLock})
- *   et le verrou d'administration des comptes (#551, #552,
- *   {@see \App\Security\User\Infrastructure\Doctrine\PostgresAccountAdministrationLock}).
+ *   le verrou d'administration des comptes (#551, #552,
+ *   {@see \App\Security\User\Infrastructure\Doctrine\PostgresAccountAdministrationLock})
+ *   et, depuis #560, le verrou de ligne d'un compte
+ *   ({@see \App\Security\User\Infrastructure\Doctrine\PostgresAccountRowLock}).
  *   Ils relisent par {@see RereadUnderLock} (issue #560), seul à appeler
  *   {@see self::detachVanished()} — jamais `detach()`.
  *   Détachée, `find()` la dit introuvable — c'est le but.

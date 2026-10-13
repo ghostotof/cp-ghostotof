@@ -61,7 +61,8 @@ interface ExperienceTechnologyLockInterface
      *
      * @return T
      *
-     * @throws ExperienceTechnologyNotFoundException si la technologie n'existe pas, ou plus
+     * @throws ExperienceTechnologyNotFoundException si la technologie n'existe pas, ou plus — une instance périmée
+     *                                               est alors détachée, et la sauver de nouveau est refusé (#548)
      */
     public function whileLocked(Uuid $id, Closure $operation): mixed;
 }

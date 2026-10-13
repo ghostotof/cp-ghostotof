@@ -8,6 +8,7 @@ use App\Security\User\Application\AccountLockInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Infrastructure\Doctrine\AccountLockInsideTransactionException;
+use App\Security\User\Infrastructure\Doctrine\AccountLockOnUnmanagedAccountException;
 use App\Security\User\Infrastructure\Doctrine\AccountLockTimeoutException;
 use App\Security\User\Infrastructure\Doctrine\PostgresAccountRowLock;
 use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
@@ -56,6 +57,50 @@ final class PostgresAccountRowLockTest extends KernelTestCase
         $pending = $this->lock()->whileLocked($user, static fn (CpgUser $locked): bool => $locked->isPendingActivation());
 
         self::assertFalse($pending, 'L\'opération a lu l\'entité d\'avant le verrou.');
+    }
+
+    /**
+     * L'opération reçoit **l'instance de l'appelant**, relue sur place : deux
+     * appelants la relisent après le verrou (le handler d'invitation pour
+     * l'e-mail, l'activation pour le journal).
+     */
+    public function testTheOperationReceivesTheCallersInstanceRereadInPlace(): void
+    {
+        $user = $this->pendingUser();
+
+        $locked = $this->lock()->whileLocked($user, static fn (CpgUser $locked): CpgUser => $locked);
+
+        self::assertSame($user, $locked, "L'opération n'a pas reçu l'instance de l'appelant.");
+    }
+
+    /**
+     * Un compte que l'EntityManager ne gère pas est refusé avant de rien
+     * verrouiller (issue #560) : la relecture rendrait une autre instance,
+     * gérée, que l'opération modifierait pendant que l'appelant garde la
+     * sienne, périmée — en silence. Avant #560, `refresh()` levait déjà ;
+     * l'interface pose cette précondition.
+     */
+    public function testAnUnmanagedAccountIsRefusedBeforeAnythingIsLocked(): void
+    {
+        $user = $this->pendingUser();
+        $this->em->detach($user);
+        $ran = false;
+        $caught = null;
+
+        try {
+            $this->lock()->whileLocked($user, static function (CpgUser $locked) use (&$ran): null {
+                $ran = true;
+
+                return null;
+            });
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(AccountLockOnUnmanagedAccountException::class, $caught, \sprintf("Un compte non géré n'a pas été refusé sous son nom : %s.", get_debug_type($caught)));
+        self::assertStringContainsString($user->getId()->toRfc4122(), $caught->getMessage());
+        self::assertFalse($ran, "L'opération a tourné sur une autre instance que celle de l'appelant.");
+        self::assertFalse($this->em->getConnection()->isTransactionActive());
     }
 
     public function testAnAccountDeletedMeanwhileIsANotFound(): void

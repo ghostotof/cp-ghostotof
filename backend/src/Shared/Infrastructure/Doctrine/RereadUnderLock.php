@@ -37,8 +37,9 @@ use Doctrine\ORM\UnitOfWork;
  *   suppression planifiée) : la relire n'a pas de sens, la détacher annulerait
  *   en silence son écriture (#402). Ce filtre n'est écrit qu'ici.
  *
- * L'EntityManager est un paramètre, comme pour {@see VanishedEntities} : celui
- * du verrou, dont la transaction porte la relecture. Suppose READ COMMITTED,
+ * L'EntityManager est un paramètre : celui du verrou, dont la transaction
+ * porte la relecture — le service ne peut relire ailleurs que là où le verrou
+ * est pris. Suppose READ COMMITTED,
  * le niveau par défaut : la première lecture après le verrou voit ce que son
  * détenteur précédent a validé.
  */
@@ -76,6 +77,10 @@ final readonly class RereadUnderLock
             $query->setLockMode(LockMode::PESSIMISTIC_WRITE);
         }
 
+        // Aucun héritage n'est mappé : la racine est la classe, et une ligne
+        // présente est une instance de `$class`. Le jour où une hiérarchie
+        // l'est, une ligne d'une sous-classe sœur serait prise ici pour
+        // disparue — à revoir alors.
         $entry = $query->getOneOrNullResult();
         if ($entry instanceof $class) {
             return $entry;
@@ -146,6 +151,12 @@ final readonly class RereadUnderLock
     /**
      * Une insertion ou une suppression attend le prochain `flush()` : ni à
      * relire ni à détacher, ce qui annulerait l'écriture en attente (#402).
+     *
+     * La branche « suppression » est défensive : `UnitOfWork::detach()` ne fait
+     * déjà rien sur une instance `STATE_REMOVED` (mesuré pour #560, aucun test
+     * ne peut donc la voir), mais `VanishedEntities` la retiendrait comme
+     * disparue sous un verrou au lieu de laisser son `postRemove` dire la vraie
+     * cause. Seule l'insertion en attente est épinglée par un test.
      */
     private static function awaitsAWrite(UnitOfWork $unitOfWork, object $entry): bool
     {

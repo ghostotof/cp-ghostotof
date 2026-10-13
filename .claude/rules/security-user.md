@@ -310,7 +310,10 @@ paths:
     token insert then failed on the foreign key) → `CpgUserNotFoundException`, the stale instance **detached** and
     its re-save refused (#548). Until #560 it was a `SELECT 1 … FOR UPDATE` then `refresh()`: two queries, and the
     vanished account stayed managed — a change then a `save()` would have sent an `UPDATE` touching no row, lost in
-    silence (no caller did; `PostgresAccountRowLockTest` pins the detachment, red before). Order for every operation: **the account,
+    silence (no caller did; `PostgresAccountRowLockTest` pins the detachment, red before). The operation receives
+    the caller's own instance, refreshed; an instance the EntityManager does not manage is refused before anything
+    is locked (`AccountLockOnUnmanagedAccountException`, unmapped `critical` 500: the re-read would hand the
+    operation another instance while the caller kept its stale one — `refresh()` already threw there before #560). Order for every operation: **the account,
     then its tokens**, or the two deadlock. The handler re-checks activation and generation under it before
     `deleteForUser()` — in `READ COMMITTED` a second consumer's purge did not see the first one's
     uncommitted token, and two tokens stayed usable —; a deleted, activated or resent account drops the

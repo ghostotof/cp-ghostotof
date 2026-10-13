@@ -62,7 +62,8 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
      * jusqu'à ce que la personne définisse le sien par le lien ou qu'un
      * ROLE_SUPER le pose depuis le backoffice. Il ne peut pas se connecter :
      * `password_verify()` ne vérifie rien contre une chaîne vide. La seule
-     * écriture de la convention (issue #560) : {@see self::hasPassword()} la
+     * écriture de la convention dans `src/` (issue #560 ; les tests écrivent la
+     * chaîne vide telle que la base la stocke) : {@see self::hasPassword()} la
      * lit en PHP, et les requêtes de `CpgUserRepository` la lient en paramètre
      * (`findAwaitingPasswordSetupInvitedBefore()`,
      * `countOtherSuperAdminsAbleToSignIn()`), le SQL ne pouvant appeler le PHP.

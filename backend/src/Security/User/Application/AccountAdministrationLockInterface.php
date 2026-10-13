@@ -59,7 +59,8 @@ interface AccountAdministrationLockInterface
      *
      * @return T
      *
-     * @throws CpgUserNotFoundException                 si le compte administré n'existe plus
+     * @throws CpgUserNotFoundException                 si le compte administré n'existe plus — son instance est
+     *                                                  alors détachée, et la sauver de nouveau est refusé (#548)
      * @throws ActingAccountNoLongerSuperAdminException si l'acteur n'existe plus ou n'est plus ROLE_SUPER
      */
     public function whileAdministering(CpgUser $target, CpgUser $actingUser, Closure $operation): mixed;

@@ -24,8 +24,10 @@ use Symfony\Component\Uid\Uuid;
  *
  * Que chaque verrou passe par elle est couvert par ses propres tests
  * (PostgresExperienceTechnologyRowLockTest, PostgresAccountAdministrationLockTest,
- * PostgresAccountRowLockTest, ScopeLockReadsCommittedStateTest), restés
- * inchangés par l'extraction.
+ * PostgresAccountRowLockTest, ScopeLockReadsCommittedStateTest) : leurs
+ * assertions n'ont pas changé avec l'extraction — seuls leur construction et
+ * leurs sondes l'ont fait —, et PostgresAccountRowLockTest a gagné celles du
+ * détachement, que ce verrou n'assurait pas avant #560.
  */
 final class RereadUnderLockTest extends KernelTestCase
 {
