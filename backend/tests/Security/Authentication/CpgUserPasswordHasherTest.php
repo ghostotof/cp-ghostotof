@@ -99,10 +99,7 @@ final class CpgUserPasswordHasherTest extends KernelTestCase
 
     private function cpgUserHasher(): PasswordHasherInterface
     {
-        $factory = self::getContainer()->get(PasswordHasherFactoryInterface::class);
-        self::assertInstanceOf(PasswordHasherFactoryInterface::class, $factory);
-
-        return $factory->getPasswordHasher(CpgUser::class);
+        return self::getContainer()->get(PasswordHasherFactoryInterface::class)->getPasswordHasher(CpgUser::class);
     }
 
     /**
