@@ -364,7 +364,10 @@ paths:
     those paths has an instance loaded); a deletion by id that touched no row because the row was already gone
     detaches nothing either (nothing tells it apart from a spared one); and `detachDeleted()` inside a
     transaction later rolled back remembers an instance whose row is back, with the manager left open, since the
-    skeleton's `WrittenFlushWatch` does not see a DQL write — both callers delete outside any transaction.
+    skeleton's `WrittenFlushWatch` does not see a DQL write — both callers delete outside any transaction; a
+    still-managed entity **referencing** a detached account (a loaded token) makes the next `flush()` fail with
+    Doctrine's « A new entity was found through the relationship… » — loud, not lost, and no path loads a token
+    before `removePendingInvitation()`.
     Before, `find()` handed back the identity-map instance and a query did not rehydrate a managed one: a
     concurrent write committed in between was silently undone (`reattach()` saw a no-op, `detach()` looked in the
     group the entry had left, a version created in a group took the position the group was leaving, a deleted

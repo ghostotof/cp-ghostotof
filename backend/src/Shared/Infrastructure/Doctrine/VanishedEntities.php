@@ -80,7 +80,14 @@ use WeakMap;
  * Hors de sa portée, accepté. Aucune association des entités détachées ici ne
  * porte de `cascade: ['detach']` (le jeton a un `ManyToOne` vers son compte,
  * sans cascade : le compte reste géré) : un `detach()` en cascade toucherait
- * des entités que la garde ne retient pas, à revoir le jour où l'une en porte. Une instance détachée
+ * des entités que la garde ne retient pas, à revoir le jour où l'une en porte.
+ * L'effet inverse existe : une entité encore gérée qui **référence** l'instance
+ * détachée (un jeton chargé dont le compte est détaché par
+ * `removePendingInvitation()`) fait échouer le `flush()` suivant en
+ * `ORMInvalidArgumentException` (« A new entity was found through the
+ * relationship… » : `UnitOfWork::computeAssociationChanges()` tient pour
+ * neuve une instance qu'il ne gère pas). Un échec bruyant, pas une perte, et
+ * aucun chemin ne charge de jeton avant ce retrait (#569). Une instance détachée
  * autrement — par `close()` (#502, #547, #549) ou `clear()` — n'est pas
  * retenue : sur le même EntityManager fermé, son `persist()` échoue déjà en
  * {@see \Doctrine\ORM\Exception\EntityManagerClosed} ; seul un EntityManager

@@ -293,11 +293,16 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
 
         $this->repository->remove($token);
         $stillManaged = $this->em->contains($token);
-        $token->markUsed($usedAt);
+        // Une autre valeur que celle de claim() : relue en base, elle prouve
+        // que l'écriture a eu lieu.
+        $rewrittenAt = new DateTimeImmutable('2026-10-13T10:05:00+02:00');
+        $token->markUsed($rewrittenAt);
         $this->repository->save($token);
 
         self::assertTrue($stillManaged, 'Le jeton épargné par la suppression a été détaché.');
-        self::assertSame(1, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM password_setup_token'));
+        $stored = $this->em->getConnection()->fetchOne('SELECT used_at FROM password_setup_token');
+        self::assertIsString($stored);
+        self::assertSame($rewrittenAt->getTimestamp(), new DateTimeImmutable($stored)->getTimestamp(), "L'écriture du jeton épargné n'a pas atteint la base.");
     }
 
     /**
