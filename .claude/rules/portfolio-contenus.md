@@ -391,8 +391,10 @@ paths:
     **That detached instance is never saved again** (issue #548): `UnitOfWork::doPersist()` takes an instance it
     does not manage for **new** — it assumes `STATE_NEW` and reads nothing — so a caller still holding it and
     calling `<Repository>::save()` re-inserted the deleted entry, no error, no trace (measured before the fix on
-    the eight localized contexts, the watch catalogue and the technologies). The adapter detaches through
-    `Shared/Infrastructure/Doctrine/VanishedEntities::detachVanished()`, which remembers the instance in a
+    the eight localized contexts, the watch catalogue and the technologies). The adapter re-reads and detaches
+    through `Shared/Infrastructure/Doctrine/RereadUnderLock::everyManagedInstanceOf()` (issue #560, the one
+    re-read under a lock shared by every lock that re-reads, see `.claude/rules/backend-architecture.md`), which
+    calls `VanishedEntities::detachVanished()`; that one remembers the instance in a
     `WeakMap` (nothing kept in memory); its `prePersist` listener — emitted only for an instance Doctrine takes
     for new, exactly the re-insertion path — refuses it with `VanishedEntitySavedAgainException` (a
     `LogicException`, unmapped, a `critical` 500: a caller's defect), before anything is scheduled. No false
@@ -400,8 +402,9 @@ paths:
     it. No caller did it (the `Administrator`s re-find their entry under the lock and only receive ids, processors
     call no repository, seeds re-save nothing): the guard makes the rule hold by construction, as #526 did,
     instead of relying on the next caller. Every lock that detaches a vanished row goes through
-    `detachVanished()`, never `detach()` — the technology row lock too (#545, below), and the account
-    administration lock (#551, `.claude/rules/security-user.md`); only the container's
+    `RereadUnderLock`, the only caller of `detachVanished()`, never `detach()` — the technology row lock too (#545,
+    below), the account administration lock (#551) and the account row lock (#560, `.claude/rules/security-user.md`);
+    only the container's
     instance listens (a hand-built one refuses nothing, so tests take it from the container). Rejected: a check in
     each repository's `save()` (the UnitOfWork cannot tell a detached entity from a new one with a natural id and
     no row; it would need the same registry in every repository); removing instead of detaching (a phantom
@@ -431,13 +434,14 @@ paths:
     instance **managed**, so a change then a `save()` sent an `UPDATE` touching no row, lost in silence (Doctrine
     counts affected rows only for a versioned entity). The two such deletions,
     `PasswordSetupTokenRepository::remove()` and `CpgUserRepository::removePendingInvitation()`
-    (`.claude/rules/security-user.md`), pass the instance to `VanishedEntities::detachDeleted()` — detached, and
-    remembered under the « removed by this manager » cause — **only when their `DELETE` touched the row**: a row
-    their condition spared (a consumed token, an account activated meanwhile) still exists and its instance stays
-    managed. A new DQL deletion by id does the same. Still not covered, accepted: a **bulk** DQL deletion
+    (`.claude/rules/security-user.md`), run it through `VanishedEntities::deleteById(Query, entity)` (#560: the
+    rule written once, the manager read from the query) — the instance detached, and remembered under the
+    « removed by this manager » cause — **only when the `DELETE` touched the row**: a row their condition spared (a
+    consumed token, an account activated meanwhile) still exists and its instance stays managed. A new DQL deletion
+    by id goes through it. Still not covered, accepted: a **bulk** DQL deletion
     (`deleteForUser()`, `deleteUnusedForUser()`), an SQL one and an `ON DELETE CASCADE` detach nothing (none of
     those paths has an instance loaded); a deletion by id that touched no row because the row was already gone
-    detaches nothing either (nothing tells it apart from a spared one); and `detachDeleted()` inside a
+    detaches nothing either (nothing tells it apart from a spared one); and `deleteById()` inside a
     transaction later rolled back remembers an instance whose row is back, with the manager left open, since the
     skeleton's `WrittenFlushWatch` does not see a DQL write — both callers delete outside any transaction; a
     still-managed entity **referencing** a detached account (a loaded token) makes the next `flush()` fail with
@@ -594,9 +598,10 @@ paths:
   (`Shared/Infrastructure/Lock/PostgresLockedTransaction`, like the order scope lock and the two account
   locks): **one** DQL `SELECT … FOR UPDATE` (`LockMode::PESSIMISTIC_WRITE`) with `Query::HINT_REFRESH` locks the
   row, says whether it still exists (`null`) and refreshes the managed instance in place, handed to the
-  operation. Row gone: the stale instance is detached — unless it is scheduled for insertion or removal,
-  whose pending write detaching would cancel, the #402 filter — through `VanishedEntities::detachVanished()`,
-  so a caller still holding it cannot save it again (issue #548, see the ordering section), and the
+  operation as the acquisition returned it (the skeleton passes it on since #560). Row gone: the stale instance is
+  detached — unless it is scheduled for insertion or removal, whose pending write detaching would cancel, the
+  #402 filter — so a caller still holding it cannot save it again (issue #548, see the ordering section); query,
+  detachment and filter are `Shared/Infrastructure/Doctrine/RereadUnderLock::row()`'s (#560), and the
   technology is not found (**404**, mapping
   unchanged; the admin frontend already reads it as `not-found`). So a deletion runs wholly before the write or
   wholly after it. Not `find($id, LockMode::PESSIMISTIC_WRITE)`: on an instance already managed it is a

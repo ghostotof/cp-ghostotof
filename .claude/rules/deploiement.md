@@ -124,7 +124,8 @@ paths:
   application's own PostgreSQL locks keep a fallback bound, now a safety net** (issue #512, kept on
   2026-10-12, #525) for sessions with none — the dev container's console, CI: the order-scope lock, the account lock, the username
   allocation lock, the technology row lock (#545) and the account administration lock (#551) share one skeleton, `Shared/Infrastructure/Lock/PostgresLockedTransaction`
-  (an *Execute Around*: hand-made transaction, wait bounded, `55P03` — defined there only, as
+  (an *Execute Around*: hand-made transaction, what `acquire` returns handed to the operation — the entity a
+  row lock re-read while locking it, issue #560 —, wait bounded, `55P03` — defined there only, as
   `LOCK_NOT_AVAILABLE` — renamed per lock, a refused COMMIT closing the EntityManager the skeleton
   receives, issue #547, and so does an exception the operation throws after a `flush()` that had
   something to write, issue #549 — `WrittenFlushWatch` on `onFlush`, one per transaction, unhooked
@@ -143,7 +144,9 @@ paths:
   count is the judge — a raw `executeStatement('BEGIN')` is not seen), which gives the
   transaction `FALLBACK_LOCK_TIMEOUT` (`5s`, the FPM value) through `set_config('lock_timeout', …, true)`
   **only when the session has none** (`0`): a bound already chosen (`PGOPTIONS`, a test) is kept,
-  neither lengthened nor shortened. A new PostgreSQL lock goes through it. `docker/php` is mounted read-only in the dev
+  neither lengthened nor shortened. A new PostgreSQL lock goes through it, and a lock that re-reads what the
+  EntityManager loaded before it goes through `Shared/Infrastructure/Doctrine/RereadUnderLock` too (#560,
+  `.claude/rules/backend-architecture.md`). `docker/php` is mounted read-only in the dev
   container for that test. **Never consume a limiter inside `wrapInTransaction`**: the lock and
   the `cache_items` row live on two connections PostgreSQL does not relate, which both deadlocks
   (until `lock_timeout`) and republishes the window after the lock is released. The Monolog
