@@ -3,17 +3,28 @@
 -- Joué par le Job k8s/base/postgres-roles-job.yaml (psql, en tant que
 -- superutilisateur de l'image, --single-transaction avec privileges.sql puis
 -- verify.sql : tout ou rien), variables psql app_role, migrator_role,
--- reader_role. Rejouable : un rôle existant est conservé, son mot de passe
--- réécrit (c'est aussi la rotation), un objet déjà transféré est ignoré.
+-- reader_role. Rejouable : un rôle existant est conservé, un objet déjà
+-- transféré est ignoré, et un mot de passe n'est écrit qu'à la création du
+-- rôle — ou sur demande (rotation) : réécrire celui de cpg_app à chaque
+-- passage couperait l'application jusqu'à la republication de son URL et au
+-- redémarrage des pods (relecture de #575).
 --
 -- Les mots de passe sont lus dans le Secret monté par le Job, jamais passés
 -- en argument : un `\set` par commande shell, psql ôte le saut de ligne final.
+-- La rotation se demande par une clé `rotate` de plus dans ce Secret (un
+-- fichier, vide suffit), pas par un argument.
 \set app_pw `cat /run/secrets/postgres-roles/app-password`
 \set migrator_pw `cat /run/secrets/postgres-roles/migrator-password`
+\set rotate `test -e /run/secrets/postgres-roles/rotate && echo 1 || echo 0`
+SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = :'app_role') AS app_existed,
+       EXISTS (SELECT FROM pg_roles WHERE rolname = :'migrator_role') AS migrator_existed \gset
 
 -- Un ALTER ROLE … PASSWORD qui échouerait serait journalisé avec son texte
 -- par le serveur (log_min_error_statement = error par défaut) : relevé au
--- niveau que rien n'atteint, pour la seule durée de cette session.
+-- niveau que rien n'atteint, pour la seule durée de cette session. Le texte
+-- de l'instruction reste visible dans pg_stat_activity le temps de son
+-- exécution (des millisecondes, par le superutilisateur seul), et serait
+-- journalisé par un log_statement = ddl|all, que l'image laisse à none.
 SET log_min_error_statement = panic;
 
 -- 1. Les trois rôles, créés s'ils manquent. Aucun n'est superutilisateur ni
@@ -22,11 +33,12 @@ SELECT format('CREATE ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLIC
 FROM (VALUES (:'app_role'), (:'migrator_role'), (:'reader_role')) AS v(r)
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = r) \gexec
 
--- 2. Les mots de passe (vérificateurs SCRAM, password_encryption par défaut).
---    Le lecteur n'en a pas : joignable par le seul socket local du pod
---    (`local all all trust` de l'image), jamais par TCP.
-SELECT format('ALTER ROLE %I PASSWORD %L', :'app_role', :'app_pw') \gexec
-SELECT format('ALTER ROLE %I PASSWORD %L', :'migrator_role', :'migrator_pw') \gexec
+-- 2. Les mots de passe (vérificateurs SCRAM, password_encryption par défaut),
+--    à la création ou sur rotation seulement. Le lecteur n'en a jamais :
+--    joignable depuis l'intérieur du pod seulement (socket local et 127.0.0.1,
+--    en `trust` dans l'image), de nulle part par le réseau.
+SELECT format('ALTER ROLE %I PASSWORD %L', :'app_role', :'app_pw') WHERE :'rotate' = '1' OR NOT :'app_existed'::boolean \gexec
+SELECT format('ALTER ROLE %I PASSWORD %L', :'migrator_role', :'migrator_pw') WHERE :'rotate' = '1' OR NOT :'migrator_existed'::boolean \gexec
 SELECT format('ALTER ROLE %I PASSWORD NULL', :'reader_role') \gexec
 
 -- 3. La propriété au rôle de migration : la base (ALTER DATABASE … SET
@@ -34,8 +46,11 @@ SELECT format('ALTER ROLE %I PASSWORD NULL', :'reader_role') \gexec
 --    public. `REASSIGN OWNED BY` est refusé sur le rôle bootstrap de l'image
 --    (« required by the database system »), d'où l'énumération. Un
 --    ALTER TABLE … OWNER TO entraîne ses index, contraintes, triggers et
---    séquences d'identité ; chaque ALTER prend un verrou ACCESS EXCLUSIVE
---    bref, borné par le lock_timeout du Job.
+--    séquences d'identité. Chaque ALTER prend un verrou ACCESS EXCLUSIVE,
+--    tenu jusqu'au COMMIT de la transaction unique (quelques secondes au
+--    plus, verify.sql compris) ; l'attente est bornée par le lock_timeout du
+--    Job, et un refus (55P03, ou 40P01 face au trafic) annule tout : relancer
+--    hors déploiement, à une heure calme.
 SELECT format('ALTER DATABASE %I OWNER TO %I', current_database(), :'migrator_role')
 WHERE (SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()) <> :'migrator_role' \gexec
 SELECT format('ALTER SCHEMA public OWNER TO %I', :'migrator_role')

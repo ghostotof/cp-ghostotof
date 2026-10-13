@@ -59,7 +59,7 @@ final class ApplicationRolePrivilegesTest extends KernelTestCase
 
     /**
      * Les colonnes NOT NULL de la table, recopiées par décision (issue #585,
-     * cf. `DeferredTriggerPendingEventsTest`).
+     * {@see \App\Tests\Migrations\DeferredTriggerPendingEventsTest}).
      */
     private const string INSERT_CONTRIBUTION = "INSERT INTO contribution (id, translation_group, locale, position, title, project, reference, url, summary, body)
         VALUES (?, ?, ?, ?, 'T', 'P', 'R', 'https://example.org', 'S', 'B')";
@@ -194,11 +194,11 @@ final class ApplicationRolePrivilegesTest extends KernelTestCase
     }
 
     /**
-     * Ce que les verrous (#272, #389, #512), le cache sur DBAL (ADR 0005) et le
-     * transport Doctrine de `failed` demandent à la session : tout passe sous
-     * le rôle applicatif, un groupe cohérent compris.
+     * Un groupe cohérent écrit, contrôlé (`SET CONSTRAINTS`, que tout rôle
+     * peut poser) et supprimé sous le rôle applicatif : l'écriture ordinaire
+     * d'un `Administrator`.
      */
-    public function testTheApplicationRoleHasWhatTheApplicationNeeds(): void
+    public function testTheApplicationRoleWritesOrderedContent(): void
     {
         $this->setRole($this->app);
         $group = Uuid::v7();
@@ -206,17 +206,36 @@ final class ApplicationRolePrivilegesTest extends KernelTestCase
         $this->insertContribution($group, 'en', 900);
         $this->probe->executeStatement('SET CONSTRAINTS '.self::TRIGGER.' IMMEDIATE');
         $this->probe->executeStatement('SET CONSTRAINTS ALL DEFERRED');
-        $this->probe->executeStatement('DELETE FROM contribution WHERE translation_group = ?', [$group->toRfc4122()]);
+
+        self::assertSame(2, $this->probe->executeStatement('DELETE FROM contribution WHERE translation_group = ?', [$group->toRfc4122()]));
+    }
+
+    /**
+     * Ce que les verrous demandent à la session (#272, #389, #512) : les
+     * verrous consultatifs, de transaction et de session, et la borne d'attente.
+     */
+    public function testTheApplicationRoleHasWhatTheLocksNeed(): void
+    {
+        $this->setRole($this->app);
 
         $this->probe->executeStatement('SELECT pg_advisory_xact_lock(575, 1)');
         self::assertTrue($this->probe->fetchOne('SELECT pg_try_advisory_lock(575)'));
         self::assertTrue($this->probe->fetchOne('SELECT pg_advisory_unlock(575)'));
         self::assertSame('5s', $this->probe->fetchOne("SELECT set_config('lock_timeout', '5s', true)"));
+    }
+
+    /**
+     * Le cache sur DBAL (ADR 0005) et le transport Doctrine de `failed`
+     * (écriture, suppression, `LISTEN`) : tout passe sous le rôle applicatif.
+     */
+    public function testTheApplicationRoleWritesTheCacheAndTheFailedTransport(): void
+    {
+        $this->setRole($this->app);
 
         $this->probe->executeStatement('INSERT INTO cache_items (item_id, item_data, item_lifetime, item_time) VALUES (?, ?, 60, 0)', ['probe-575', 'x']);
-        $this->probe->executeStatement('DELETE FROM cache_items WHERE item_id = ?', ['probe-575']);
+        self::assertSame(1, $this->probe->executeStatement('DELETE FROM cache_items WHERE item_id = ?', ['probe-575']));
         $this->probe->executeStatement("INSERT INTO messenger_messages (body, headers, queue_name, created_at, available_at) VALUES ('b', '[]', 'probe-575', now(), now())");
-        $this->probe->executeStatement("DELETE FROM messenger_messages WHERE queue_name = 'probe-575'");
+        self::assertSame(1, $this->probe->executeStatement("DELETE FROM messenger_messages WHERE queue_name = 'probe-575'"));
         $this->probe->executeStatement('LISTEN "messenger_messages"');
         $this->probe->executeStatement('UNLISTEN "messenger_messages"');
         self::assertIsInt($this->probe->fetchOne('SELECT COUNT(*) FROM cpg_user'));

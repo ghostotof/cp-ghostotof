@@ -12,7 +12,7 @@ use PHPUnit\Framework\TestCase;
  * (`cpg_app`, `cpg_migrator`, `cpg_reader`) et transfère la propriété du
  * schéma, à la main, en préprod puis en prod — un Job plutôt qu'un
  * `kubectl exec` (#520 : un effet de bord passe par un Job, et chaque `psql`
- * du runbook reste une lecture, `OperatorExecBoundaryTest`).
+ * du runbook reste une lecture, {@see OperatorExecBoundaryTest}).
  *
  * Ce test pince ce qui fait de ce Job une voie sûre : l'image de la base
  * elle-même (jamais l'image backend, qui le ferait entrer dans les
@@ -27,6 +27,7 @@ final class PostgresRolesJobManifestTest extends TestCase
     private const string CONTAINER = 'psql';
     private const string SQL_DIRECTORY = 'postgres-roles';
     private const string SQL_MOUNT = '/sql';
+    private const string SQL_CONFIGMAP = 'postgres-roles-sql';
     private const string PASSWORDS_SECRET = 'postgres-roles-passwords';
     private const string PASSWORDS_MOUNT = '/run/secrets/postgres-roles';
 
@@ -80,6 +81,10 @@ final class PostgresRolesJobManifestTest extends TestCase
         self::assertStringContainsString(self::PASSWORDS_MOUNT.'/app-password', $roles);
         self::assertStringContainsString(self::PASSWORDS_MOUNT.'/migrator-password', $roles);
         self::assertStringContainsString('SET log_min_error_statement = panic', $roles, 'Un ALTER ROLE refusé ne doit pas être journalisé avec son texte.');
+        // Relecture de #575 : un Job rejoué (un objet créé à la main à rattraper) ne doit pas
+        // changer le mot de passe de l'application, qui tournerait alors sans URL valable.
+        self::assertStringContainsString(self::PASSWORDS_MOUNT.'/rotate', $roles, 'La rotation se demande par une clé du Secret, jamais par défaut.');
+        self::assertMatchesRegularExpression("/ALTER ROLE %I PASSWORD %L[^\\n]*WHERE :'rotate' = '1' OR NOT :'app_existed'::boolean/", $roles);
 
         self::assertStringNotContainsString('password', strtolower($this->commandLine()));
         foreach (KubernetesManifests::entries($this->container(), 'env') as $variable) {
@@ -94,11 +99,11 @@ final class PostgresRolesJobManifestTest extends TestCase
     /** Le SQL est celui du dépôt, monté par une ConfigMap créée depuis `k8s/base/postgres-roles/`. */
     public function testTheSqlComesFromTheRepositoryThroughATemporaryConfigMap(): void
     {
-        $volume = KubernetesManifests::firstWith($this->podSpec(), 'volumes', 'name', 'postgres-roles-sql');
+        $volume = KubernetesManifests::firstWith($this->podSpec(), 'volumes', 'name', self::SQL_CONFIGMAP);
         self::assertNotNull($volume);
-        self::assertSame('postgres-roles-sql', $volume['configMap']['name'] ?? null);
+        self::assertSame(self::SQL_CONFIGMAP, $volume['configMap']['name'] ?? null);
 
-        $mount = KubernetesManifests::firstWith($this->container(), 'volumeMounts', 'name', 'postgres-roles-sql');
+        $mount = KubernetesManifests::firstWith($this->container(), 'volumeMounts', 'name', self::SQL_CONFIGMAP);
         self::assertNotNull($mount);
         self::assertSame(self::SQL_MOUNT, $mount['mountPath'] ?? null);
         self::assertTrue($mount['readOnly'] ?? false);

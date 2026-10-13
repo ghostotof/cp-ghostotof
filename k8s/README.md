@@ -987,7 +987,7 @@ pouvoirs les remplacent :
 |---|---|---|---|
 | `cpg_app` | `SELECT, INSERT, UPDATE, DELETE` sur chaque table, `USAGE` sur chaque séquence ; ni `TRUNCATE`, ni DDL, ni propriété ; pas la table des migrations | FPM, worker, CronJobs, Jobs applicatifs (seed, création de compte, témoin, `failed`, arrêt des workers) | `backend-secrets.DATABASE_URL` ← `<env>-backend-database-url` |
 | `cpg_migrator` | propriétaire de la base, du schéma `public` et de chaque objet ; les privilèges par défaut de ce qu'il crée vont à `cpg_app` | le seul Job de migration (`migrate-job.yaml`, `env` `DATABASE_URL`) | `backend-migration-secrets.DATABASE_URL` ← `<env>-backend-migration-database-url` |
-| `cpg_reader` | `pg_read_all_data`, aucun mot de passe (socket local du pod seulement) | les `psql` humains de ce runbook | — |
+| `cpg_reader` | `pg_read_all_data`, aucun mot de passe : joignable depuis l'intérieur du pod seulement (socket local et `127.0.0.1`, en `trust` dans l'image), de nulle part par le réseau | les `psql` humains de ce runbook | — |
 
 Le SQL est versionné, `k8s/base/postgres-roles/{roles,privileges,verify}.sql`,
 et joué par le Job `k8s/base/postgres-roles-job.yaml` (image de `postgres.yaml`,
@@ -1039,7 +1039,11 @@ kubectl -n "$NS" delete secret postgres-roles-passwords
 kubectl -n "$NS" delete configmap postgres-roles-sql
 ```
 
-Lire la sortie de `verify.sql` dans les journaux du Job : trois rôles,
+Chaque `ALTER … OWNER TO` prend un verrou `ACCESS EXCLUSIVE` tenu jusqu'au
+COMMIT de la transaction unique (quelques secondes, `verify.sql` compris) :
+les requêtes de l'API sur ces tables attendent ce temps-là, et un
+interblocage avec le trafic (`40P01`) annule tout proprement. Une heure
+calme, donc. Lire la sortie de `verify.sql` dans les journaux du Job : trois rôles,
 `rolsuper` `f` partout, le lecteur sans mot de passe, le rôle de migration
 propriétaire de la base et du schéma, `0` objet de `public` hors de lui, `0`
 table sans DML pour `cpg_app`, `f | f | f`, `2` privilèges par défaut,
@@ -1109,12 +1113,26 @@ region=fr-par > "$TMP/previous-url"`, puis `scw secret version create
 `rollout restart` des deux. Les rôles et la propriété transférée ne gênent en
 rien le superutilisateur ; les laisser.
 
-**Rotation des mots de passe** : rejouer les étapes 1 à 4 (le Job réécrit les
-mots de passe des rôles existants, `ALTER ROLE … PASSWORD`), republier les
-deux URL, `force-sync`, `rollout restart`. **Un objet créé à la main** sous le
-superutilisateur (une table, une séquence) n'hérite pas des privilèges par
-défaut, attachés au rôle qui crée : rejouer le Job, dont les `GRANT … ON ALL`
-le rattrapent — ou, mieux, ne créer d'objet que par une migration.
+**Le Job ne réécrit jamais un mot de passe existant par défaut** : rejoué
+tel quel, il laisse l'application connectée. **Un objet créé à la main** sous
+le superutilisateur (une table, une séquence) n'hérite pas des privilèges par
+défaut, attachés au rôle qui crée : rejouer les étapes 1 à 4 — les mots de
+passe générés sont ignorés, les `GRANT … ON ALL` rattrapent l'objet — ou,
+mieux, ne créer d'objet que par une migration. **Rotation des mots de passe** :
+les mêmes étapes 1 à 4 avec une clé `rotate` de plus dans le Secret temporaire
+(`--from-file=rotate=/dev/null` suffit : c'est sa présence qui compte, lue par
+`roles.sql`), puis republier les deux URL, `force-sync`, `rollout restart`.
+Entre le COMMIT du Job et le redémarrage, toute nouvelle connexion de
+l'application échoue : enchaîner sans attendre, à une heure calme.
+
+**Fenêtre à connaître, entre la bascule et la release qui l'embarque.** Le
+`migrate-job.yaml` d'avant #575 lit `backend-secrets`, donc `cpg_app` une fois
+la bascule faite, et `cpg_app` n'a pas la table des migrations : un
+déploiement depuis `main` d'avant #575 (un hotfix) échouerait alors à son Job
+de migration, fail-closed, même sans migration en attente. D'où l'ordre :
+basculer la prod juste avant le merge de la release, pas des jours avant ; et
+si un hotfix doit partir entre-temps, le retour arrière ci-dessous le temps du
+hotfix, puis rebasculer.
 
 ## Administration de la base (Adminer)
 
@@ -1562,7 +1580,8 @@ morceau, essayé sur l'image `postgres:18.6-alpine` en local (pas encore sur le 
   passe : l'image officielle y pose la méthode `trust` à l'initialisation (`local all all trust`),
   et `postgres.yaml` ne fixe ni `POSTGRES_HOST_AUTH_METHOD` ni `POSTGRES_INITDB_ARGS` — à confirmer
   sur le volume réel à la première exécution en préprod (#520). `cpg_reader` n'a d'ailleurs aucun
-  mot de passe : par TCP, il n'est joignable de nulle part.
+  mot de passe : depuis un autre pod (`scram-sha-256`), il n'est joignable de nulle part ; seuls le
+  socket local et `127.0.0.1` du pod, en `trust`, le prennent.
 
 Pincé par `OperatorExecBoundaryTest`.
 
@@ -1738,13 +1757,13 @@ Aucun pod de ce dépôt n'en a l'usage — vérifié plutôt que supposé :
 
 Le champ est posé au niveau du **pod spec** (`spec.template.spec`, et
 `spec.jobTemplate.spec.template.spec` pour les CronJob), pas sur le
-ServiceAccount `default` que ce dépôt ne gère pas. Les quinze objets concernés :
+ServiceAccount `default` que ce dépôt ne gère pas. Les seize objets concernés :
 `backend`, `worker`, `frontend`, `postgres`, `rabbitmq`, `adminer`, les
-CronJob `watch-refresh` et `contact-failed-messages-purge`, **et les sept Jobs
+CronJob `watch-refresh` et `contact-failed-messages-purge`, **et les huit Jobs
 hors kustomize** `migrate-job.yaml`, `seed-job.yaml`, `create-user-job.yaml`
-(issue #386), `messenger-probe-job.yaml` (issue #470) et les trois Jobs de
-`failed` (issue #521) — ces derniers ne passent par aucun transformateur, ils
-portent donc le champ directement.
+(issue #386), `messenger-probe-job.yaml` (issue #470), les trois Jobs de
+`failed` (issue #521) et `postgres-roles-job.yaml` (issue #575) — ces derniers
+ne passent par aucun transformateur, ils portent donc le champ directement.
 
 ### Labels Pod Security Admission sur les deux namespaces
 
@@ -1813,14 +1832,14 @@ coupées : quelques requêtes peuvent répondre 500 pendant la reprise.
 Dans l'ordre, avec un kubeconfig **d'administrateur**, sur la préprod, **avant**
 de fusionner la release :
 
-1. **Hors ligne.** Le rendu doit passer et les quinze pod specs porter le champ :
+1. **Hors ligne.** Le rendu doit passer et les seize pod specs porter le champ :
    ```bash
    kubectl kustomize k8s/overlays/preprod >/dev/null && echo rendu-ok
    kubectl kustomize k8s/overlays/preprod | grep -c 'automountServiceAccountToken: false'   # 8 attendu
    grep -c 'automountServiceAccountToken: false' k8s/base/migrate-job.yaml k8s/base/seed-job.yaml \
      k8s/base/create-user-job.yaml k8s/base/messenger-probe-job.yaml \
      k8s/base/messenger-stop-workers-job.yaml k8s/base/messenger-failed-retry-job.yaml \
-     k8s/base/messenger-failed-remove-job.yaml
+     k8s/base/messenger-failed-remove-job.yaml k8s/base/postgres-roles-job.yaml
    ```
 2. **Lire les avertissements sans rien bloquer.** Poser d'abord `audit` et
    `warn` seuls. Au moment où un label PSA est posé ou modifié, l'API évalue
