@@ -23,7 +23,10 @@ interface PasswordSetupTokenRepositoryInterface
      * n'est pas parti (issue #425). Jamais un jeton consommé.
      *
      * Le jeton dont la ligne a été supprimée n'est plus géré, et le sauver de
-     * nouveau est refusé (issue #569) ; un jeton épargné reste géré.
+     * nouveau est refusé (issue #569) ; un jeton épargné reste géré. Une ligne
+     * déjà disparue n'est pas une erreur, et son instance reste gérée elle
+     * aussi : rien ne la distingue d'une ligne épargnée (la suppression n'a
+     * touché aucune ligne).
      */
     public function remove(PasswordSetupToken $token): void;
 

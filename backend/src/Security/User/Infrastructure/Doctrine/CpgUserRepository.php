@@ -211,7 +211,7 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
      * compte (`ON DELETE CASCADE`).
      *
      * Le compte dont la ligne a été supprimée ici est détaché et retenu par
-     * {@see VanishedEntities::detachDeleted()} (issue #569) : resté géré, une
+     * {@see VanishedEntities::deleteById()} (issues #569, #560) : resté géré, une
      * modification puis un `save()` émettaient un `UPDATE` sur 0 ligne, perdu
      * en silence ; sa re-sauvegarde est désormais refusée. Un compte épargné
      * (activé entre-temps) reste géré : sa ligne existe. Un jeton qu'un
@@ -219,17 +219,15 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
      */
     public function removePendingInvitation(CpgUser $user): void
     {
-        $deleted = $this->createQueryBuilder('user')
-            ->delete()
-            ->where('user.id = :id')
-            ->andWhere('user.activatedAt IS NULL')
-            ->setParameter('id', $user->getId(), UuidType::NAME)
-            ->getQuery()
-            ->execute();
-
-        if (1 === $deleted) {
-            $this->vanishedEntities->detachDeleted($this->getEntityManager(), $user);
-        }
+        $this->vanishedEntities->deleteById(
+            $this->createQueryBuilder('user')
+                ->delete()
+                ->where('user.id = :id')
+                ->andWhere('user.activatedAt IS NULL')
+                ->setParameter('id', $user->getId(), UuidType::NAME)
+                ->getQuery(),
+            $user,
+        );
     }
 
     /**
