@@ -83,12 +83,17 @@ paths:
     nothing — the gap said which identifiers exist and which are pending invitations. On `LoginFailureEvent`,
     `login` firewall only, priority **-100** (after the throttling counter and the audit log, neither of
     which should wait on a hash), it pays a dummy `hash()` of a constant with `CpgUser`'s configured hasher
-    in **those two cases only**: never for an active account (the real hash already happened — a second one
-    would recreate the gap the other way), never for the throttling (its answer must stay cheap), never for
+    in **those two cases only**: never for an account that has a password (the real hash already happened —
+    a second one would recreate the gap the other way), never for the throttling (its answer must stay cheap), never for
     a blank password (refused before any DB access, identically for everyone). `hash()` of a constant, not
     `verify()` against a frozen hash, so it follows `password_hashers: auto` if the algorithm or cost
     changes. The submitted password is never read. The response is untouched — the three 401s must stay
-    byte-identical, which is the other half of non-enumeration.
+    byte-identical, which is the other half of non-enumeration. **What decides is the absence of a
+    password, `CpgUser::hasPassword()`, not pending activation** (issue #560): a `ROLE_SUPER` can set the
+    password of an invited account from the backoffice (#238, #460), which stays pending activation while
+    `verify()` does the real hash — compensating it as well doubled its response time and singled it out as
+    « an invitation whose password was set for the person ». Until #560 the listener read
+    `isPendingActivation()`, written when pending meant an empty hash.
     `FailedLoginTimingEqualizerTest` + `tests/Security/Authentication/LoginFailureTimingTest.php` pin it.
     Related fact worth knowing: `login_throttling` answers a **429** `/errors/rate-limited` with
     `Retry-After` since issue #399, the only failure that leaves Lexik's 401 — it says nothing about the
