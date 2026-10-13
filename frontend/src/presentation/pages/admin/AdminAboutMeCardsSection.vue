@@ -225,6 +225,8 @@ function resetForm(): void {
 // l'édition. Un groupe solitaire n'a rien à détacher : `ContentPlacement::detach`
 // traite une entrée seule en non-geste (`count($members) === 1`), le groupe
 // est conservé. Le sélecteur affiche donc « aucune » sans conséquence.
+// `hasSibling` cherche dans **toutes** les catégories : sur un groupe réparti
+// (antérieur à #501), le sélecteur paraît vide, « aucune » le répare (#573).
 function startEdit(card: AdminAboutMeCard): void {
   editingId.value = card.id
   draftSourceLocale.value = null
