@@ -59,10 +59,10 @@ WHERE pg_get_userbyid(d.defaclrole) = :'migrator_role' AND d.defaclnamespace = '
 SELECT has_table_privilege(:'reader_role', to_regclass('public.cpg_user'), 'SELECT') AS lit,
        has_table_privilege(:'reader_role', to_regclass('public.cpg_user'), 'INSERT,UPDATE,DELETE') AS ecrit;
 
-\echo '--- #593 : pg_hba.conf actif (attendu : /etc/postgresql/pg_hba.conf, 0, 0, reject)'
+\echo '--- #593 : pg_hba.conf actif (attendu : le chemin des args de postgres.yaml, 0, 0, reject)'
 SELECT current_setting('hba_file') AS fichier_hba,
        (SELECT count(*) FROM pg_hba_file_rules WHERE error IS NOT NULL) AS regles_en_erreur,
-       (SELECT count(*) FROM pg_hba_file_rules WHERE auth_method = 'trust' AND type <> 'local' AND user_name <> ARRAY[:'reader_role']) AS confiance_hors_socket_et_lecteur,
+       (SELECT count(*) FROM pg_hba_file_rules WHERE auth_method = 'trust' AND type <> 'local' AND NOT (user_name = ARRAY[:'reader_role'] AND address IN ('127.0.0.1', '::1'))) AS confiance_hors_socket_et_lecteur,
        (SELECT auth_method FROM pg_hba_file_rules ORDER BY rule_number DESC LIMIT 1) AS derniere_regle;
 
 \echo '--- #575 : vérification (une erreur ici annule toute la procédure)'
@@ -104,14 +104,15 @@ BEGIN
     IF has_table_privilege(reader, to_regclass('public.cpg_user'), 'INSERT,UPDATE,DELETE') THEN RAISE EXCEPTION '#575 : % écrit dans cpg_user', reader; END IF;
     IF NOT pg_has_role(reader, 'pg_read_all_data', 'MEMBER') THEN RAISE EXCEPTION '#575 : % n''est pas membre de pg_read_all_data', reader; END IF;
     -- #593 : le serveur lit le pg_hba.conf du dépôt (args de postgres.yaml),
-    -- sans règle en erreur, sans confiance hors du socket et du lecteur, et sa
+    -- sans règle en erreur, sans confiance hors du socket et du lecteur sur le
+    -- loopback (une règle `trust` du lecteur ailleurs l'ouvrirait au réseau), et sa
     -- dernière règle refuse. Seule preuve dans le cluster : un patch d'args
     -- ou un vieux manifeste ramènerait en silence le fichier de PGDATA.
     IF current_setting('hba_file') <> '/etc/postgresql/pg_hba.conf' THEN RAISE EXCEPTION '#593 : le serveur lit %, pas le pg_hba.conf du dépôt', current_setting('hba_file'); END IF;
     SELECT count(*) INTO n FROM pg_hba_file_rules WHERE error IS NOT NULL;
     IF n <> 0 THEN RAISE EXCEPTION '#593 : % règle(s) du pg_hba.conf en erreur', n; END IF;
-    SELECT count(*) INTO n FROM pg_hba_file_rules WHERE auth_method = 'trust' AND type <> 'local' AND user_name <> ARRAY[reader];
-    IF n <> 0 THEN RAISE EXCEPTION '#593 : % règle(s) TCP en trust pour un autre rôle que %', n, reader; END IF;
+    SELECT count(*) INTO n FROM pg_hba_file_rules WHERE auth_method = 'trust' AND type <> 'local' AND NOT (user_name = ARRAY[reader] AND address IN ('127.0.0.1', '::1'));
+    IF n <> 0 THEN RAISE EXCEPTION '#593 : % règle(s) TCP en trust hors de % sur le loopback', n, reader; END IF;
     IF (SELECT auth_method FROM pg_hba_file_rules ORDER BY rule_number DESC LIMIT 1) <> 'reject' THEN RAISE EXCEPTION '#593 : la dernière règle du pg_hba.conf ne refuse pas'; END IF;
 END
 $$;

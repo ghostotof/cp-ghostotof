@@ -263,7 +263,10 @@ final class PostgresRolesProcedureTest extends TestCase
         self::assertStringContainsString(\sprintf("current_setting('hba_file') <> '%s'", $path), $verify);
         self::assertStringContainsString('pg_hba_file_rules', $verify);
         self::assertStringContainsString('error IS NOT NULL', $verify);
-        self::assertStringContainsString("auth_method = 'trust'", $verify);
+        // Le `trust` du lecteur ne vaut que sur le loopback, comme PostgresHbaTest
+        // l'exige : `host all cpg_reader all trust` doit faire échouer verify.sql.
+        self::assertStringContainsString("auth_method = 'trust' AND type <> 'local' AND NOT (user_name = ARRAY[reader] AND address IN ('127.0.0.1', '::1'))", $verify);
+        self::assertStringContainsString("auth_method = 'trust' AND type <> 'local' AND NOT (user_name = ARRAY[:'reader_role'] AND address IN ('127.0.0.1', '::1'))", $verify);
         self::assertStringContainsString("(SELECT auth_method FROM pg_hba_file_rules ORDER BY rule_number DESC LIMIT 1) <> 'reject' THEN RAISE", $verify);
     }
 
