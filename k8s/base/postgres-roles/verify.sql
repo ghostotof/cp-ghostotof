@@ -1,9 +1,9 @@
--- Issue #575 — contrôle, en fin de Job, de ce que roles.sql et privileges.sql
--- ont laissé : des noms de rôle (ceux du dépôt) et des compteurs, jamais un
--- mot de passe ni une donnée. Imprimé dans les journaux du Job, que
--- tools/run-job.sh recopie, PUIS vérifié : une valeur hors attente lève une
--- erreur, psql sort en 3 et --single-transaction annule tout — le Job ne peut
--- pas réussir sur un état faux (relecture de #575). Les valeurs attendues
+-- Issue #575 — contrôle, en fin de procédure, de ce que roles.sql et
+-- privileges.sql ont laissé : des noms de rôle (ceux du dépôt) et des
+-- compteurs, jamais un mot de passe ni une donnée. Imprimé sur le terminal de
+-- l'opérateur (l'exec de la procédure, #593), PUIS vérifié : une valeur hors
+-- attente lève une erreur, psql sort en 3 avant le COMMIT du flux et la
+-- session close annule tout — la procédure ne peut pas réussir sur un état faux (relecture de #575). Les valeurs attendues
 -- sont en commentaire de chaque requête. Les tables sont désignées par
 -- to_regclass : absentes (base neuve, avant la première migration), la
 -- colonne est NULL et le contrôle ne porte pas dessus.
@@ -57,7 +57,7 @@ WHERE pg_get_userbyid(d.defaclrole) = :'migrator_role' AND d.defaclnamespace = '
 SELECT has_table_privilege(:'reader_role', to_regclass('public.cpg_user'), 'SELECT') AS lit,
        has_table_privilege(:'reader_role', to_regclass('public.cpg_user'), 'INSERT,UPDATE,DELETE') AS ecrit;
 
-\echo '--- #575 : vérification (une erreur ici annule tout le Job)'
+\echo '--- #575 : vérification (une erreur ici annule toute la procédure)'
 DO $$
 DECLARE
     app text := current_setting('cpg.app_role');

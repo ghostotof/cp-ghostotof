@@ -23,6 +23,12 @@ use PHPUnit\Framework\TestCase;
  * tunnel, et la commande du runbook reste une lecture, sur l'entrée standard.
  * Le jeton réellement émis est contrôlé à part, contre le cluster, par
  * tools/rotate-deployer-token.sh (`auth can-i create pods/exec` → no).
+ *
+ * Une seule exception écrite, issue #593 : la procédure des rôles PostgreSQL,
+ * qui écrit, passe par un `exec` sur le socket local du pod `postgres`, seul
+ * chemin du superutilisateur depuis que le `pg_hba.conf` du dépôt lui ferme le
+ * réseau. Elle tient en une ligne de sa section, que ce test exempte et dont
+ * {@see PostgresRolesProcedureTest} pince la forme.
  */
 final class OperatorExecBoundaryTest extends TestCase
 {
@@ -48,9 +54,12 @@ final class OperatorExecBoundaryTest extends TestCase
      * et rien d'autre, sans mot de passe, joignable par le seul socket local du
      * pod. La lecture seule devient une frontière, là où
      * `default_transaction_read_only` sous le superutilisateur n'était qu'un
-     * garde-fou qu'un `SET` levait. Créé par `k8s/base/postgres-roles-job.yaml`.
+     * garde-fou qu'un `SET` levait. Créé par la procédure des rôles du runbook.
      */
     private const string READER_ROLE = 'cpg_reader';
+
+    /** La section de l'unique `psql` qui écrit (issue #593). */
+    private const string ROLES_SECTION = 'Pour créer ou rejouer les rôles';
 
     /**
      * Toutes les règles qui atteignent le ServiceAccount du déployeur : le Role
@@ -152,9 +161,10 @@ final class OperatorExecBoundaryTest extends TestCase
      */
     public function testEveryRunbookPsqlIsAReadOnlySessionInTheNamespaceGivenByTheOperator(): void
     {
+        $roles = $this->execLines($this->bashBlockAfter(self::ROLES_SECTION));
         $calls = array_values(array_filter(
             $this->runbookExecLines(),
-            static fn (string $line): bool => 1 === preg_match('/\bpsql\b/', $line),
+            static fn (string $line): bool => 1 === preg_match('/\bpsql\b/', $line) && !\in_array($line, $roles, true),
         ));
         self::assertGreaterThanOrEqual(4, \count($calls), 'Le runbook a perdu un de ses psql en lecture : relire ce test.');
 
@@ -169,6 +179,19 @@ final class OperatorExecBoundaryTest extends TestCase
             self::assertDoesNotMatchRegularExpression('/-n (preprod|prod)\b/', $exec, $call);
             self::assertDoesNotMatchRegularExpression('/\b(SELECT|SHOW|UPDATE|DELETE|INSERT)\b/', $exec, 'Requête dans l\'argv de l\'exec : '.$call);
         }
+    }
+
+    /**
+     * L'exception de #593 ne s'étend pas : sa section ne porte qu'un `exec`, et
+     * c'est un `psql`. Une deuxième commande écrite là échapperait au contrôle
+     * des lectures ci-dessus.
+     */
+    public function testTheRolesProcedureIsTheOnlyExemptedExec(): void
+    {
+        $roles = $this->execLines($this->bashBlockAfter(self::ROLES_SECTION));
+
+        self::assertCount(1, $roles, 'La section des rôles ne porte qu\'un exec.');
+        self::assertMatchesRegularExpression('/\bpsql\b/', $roles[0]);
     }
 
     /**

@@ -1,9 +1,10 @@
 -- Issue #575 — privilèges du rôle applicatif et du rôle de lecture.
 --
 -- Joué deux fois, depuis ce seul fichier :
---   - par le Job k8s/base/postgres-roles-job.yaml (psql, après roles.sql,
---     variables -v app_role=cpg_app -v migrator_role=cpg_migrator
---     -v reader_role=cpg_reader), en préprod puis en prod, à la main ;
+--   - par la procédure « Rôles PostgreSQL » de k8s/README.md (psql dans le
+--     pod postgres, après roles.sql, variables -v app_role=cpg_app
+--     -v migrator_role=cpg_migrator -v reader_role=cpg_reader), en préprod
+--     puis en prod, à la main ;
 --   - par backend/tests/Shared/Infrastructure/Postgres/ApplicationRolePrivilegesTest,
 --     qui y substitue des rôles jetables et vérifie, sur le schéma migré de la
 --     base de test, que chaque table et chaque séquence sont accessibles au
@@ -14,7 +15,7 @@
 -- compte pour une), aucune méta-commande psql, et seulement les variables
 -- :"app_role" (identifiant), :'app_role' (littéral), :"migrator_role" et
 -- :"reader_role". Rejouable : chaque GRANT/REVOKE est idempotent. Jouable sur
--- une base encore vide (environnement neuf : ce Job passe AVANT la première
+-- une base encore vide (environnement neuf : la procédure passe AVANT la première
 -- migration, qui tourne sous le rôle de migration) : rien ici ne suppose une
 -- table.
 
@@ -49,7 +50,7 @@ $$;
 -- migration (migrate-job.yaml, Secret backend-migration-secrets), et les
 -- privilèges par défaut sont attachés au rôle qui CRÉE l'objet. Un objet créé
 -- par un autre rôle (à la main, en superutilisateur) n'en hérite pas :
--- rejouer le Job, dont les deux GRANT … ON ALL ci-dessus le rattrapent.
+-- rejouer la procédure, dont les deux GRANT … ON ALL ci-dessus le rattrapent.
 ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_role" IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"app_role";
 ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_role" IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO :"app_role";
 
