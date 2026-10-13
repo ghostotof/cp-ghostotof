@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Portfolio\Shared\Domain\Service;
 
 use App\Portfolio\Shared\Domain\Exception\IncompleteOrderException;
+use App\Portfolio\Shared\Domain\Exception\TranslationGroupHasSeveralPositionsException;
 use App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException;
 use App\Portfolio\Shared\Domain\Orderable;
 
@@ -23,6 +24,14 @@ use App\Portfolio\Shared\Domain\Orderable;
  * le périmètre relu ici et la liste envoyée par le frontend diffèrent, et ce
  * service le refuse — un contrôle de concurrence optimiste sans version ni
  * horodatage.
+ *
+ * Il ne répare pas un groupe de traduction déjà divergent (issue #503) : il
+ * écrit la même position sur tous les membres d'une clé, ce qui réalignait en
+ * silence un groupe resté sur deux positions malgré le trigger différé
+ * (écriture triggers désactivés, SQL concurrent hors du verrou de périmètre) et
+ * effaçait la preuve du défaut amont. Il le refuse, avant toute écriture et
+ * avant les 422 du client. Il lève sans journaliser : c'est un service de
+ * domaine pur, la sévérité `critical` vient de l'exception non mappée.
  */
 final readonly class OrderAssigner
 {
@@ -37,9 +46,11 @@ final readonly class OrderAssigner
      *                                         n'est jamais vue, donc jamais touchée
      * @param list<string>        $orderedKeys l'ordre voulu, une occurrence par clé du périmètre
      *
-     * @throws UnknownOrderEntryException une clé de la liste n'est pas dans le périmètre, ou y
-     *                                    apparaît plus d'une fois
-     * @throws IncompleteOrderException   une clé du périmètre est absente de la liste
+     * @throws TranslationGroupHasSeveralPositionsException une clé du périmètre porte déjà plusieurs positions
+     *                                                      (défaut du pipeline, contrôlé en premier)
+     * @throws UnknownOrderEntryException                   une clé de la liste n'est pas dans le périmètre, ou y
+     *                                                      apparaît plus d'une fois
+     * @throws IncompleteOrderException                     une clé du périmètre est absente de la liste
      */
     public function assign(iterable $scope, array $orderedKeys): void
     {
@@ -48,6 +59,8 @@ final readonly class OrderAssigner
         foreach ($scope as $entity) {
             $entitiesByKey[$entity->orderingKey()][] = $entity;
         }
+
+        $this->refuseKeysOnSeveralPositions($entitiesByKey);
 
         $consumedKeys = [];
 
@@ -68,6 +81,32 @@ final readonly class OrderAssigner
         foreach ($orderedKeys as $position => $key) {
             foreach ($entitiesByKey[$key] as $entity) {
                 $entity->moveToPosition($position);
+            }
+        }
+    }
+
+    /**
+     * Toutes les entités d'une clé doivent déjà partager une position (spec
+     * 0004 D3). Ce contrôle passe **avant** la règle d'ensemble exact, comme
+     * celui de `ContentPlacement::inGroup()` avant le 409 (issue #384) : un
+     * défaut du pipeline avant une erreur du client, sinon un 422 ordinaire
+     * (une liste périmée, journalisée en `info`) le masquerait, et seul l'envoi
+     * suivant, une fois la page rechargée, le nommerait. En mémoire, O(n), sans
+     * requête : le périmètre est déjà chargé par l'appelant, sous son verrou.
+     *
+     * @param array<array-key, list<Orderable>> $entitiesByKey
+     *
+     * @throws TranslationGroupHasSeveralPositionsException
+     */
+    private function refuseKeysOnSeveralPositions(array $entitiesByKey): void
+    {
+        foreach ($entitiesByKey as $key => $entities) {
+            $positions = array_values(array_unique(array_map(static fn (Orderable $entity): int => $entity->getPosition(), $entities)));
+
+            if (\count($positions) > 1) {
+                sort($positions);
+
+                throw TranslationGroupHasSeveralPositionsException::forOrderingKey((string) $key, $positions);
             }
         }
     }

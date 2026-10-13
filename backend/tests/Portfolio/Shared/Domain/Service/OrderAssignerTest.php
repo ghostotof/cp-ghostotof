@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Tests\Portfolio\Shared\Domain\Service;
 
 use App\Portfolio\Shared\Domain\Exception\IncompleteOrderException;
+use App\Portfolio\Shared\Domain\Exception\TranslationGroupHasSeveralPositionsException;
 use App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Tests\Portfolio\Shared\Support\FakeOrderable;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -101,5 +103,66 @@ final class OrderAssignerTest extends TestCase
 
         self::assertTrue($inScope->wasMoved());
         self::assertFalse($outsideScope->wasMoved());
+    }
+
+    /**
+     * Issue #503 : un groupe dont les membres divergent déjà sur la position
+     * (une écriture qui a contourné le trigger différé) n'est plus renuméroté
+     * en silence — l'écrire réparait le groupe et effaçait la preuve du défaut
+     * amont. Le refus passe avant toute écriture : aucune entité ne bouge.
+     */
+    public function testAGroupLeftOnSeveralPositionsIsRefusedAndNothingMoves(): void
+    {
+        [$french, $english, $other] = $this->scopeWithADivergentGroup();
+
+        try {
+            (new OrderAssigner())->assign([$french, $english, $other], ['group-2', 'group-1']);
+            self::fail('Le groupe sur deux positions a été renuméroté en silence.');
+        } catch (TranslationGroupHasSeveralPositionsException $refusal) {
+            self::assertStringContainsString('group-1', $refusal->getMessage(), 'Le refus ne nomme pas le groupe fautif.');
+            self::assertStringContainsString('0, 3', $refusal->getMessage(), 'Le refus ne donne pas les positions trouvées.');
+        }
+
+        foreach ([$french, $english, $other] as $entity) {
+            self::assertFalse($entity->wasMoved(), 'Une entité a bougé avant le refus.');
+        }
+        self::assertSame([0, 3, 1], [$french->getPosition(), $english->getPosition(), $other->getPosition()]);
+    }
+
+    /**
+     * Le défaut du pipeline passe avant l'erreur du client (même ordre que
+     * #384 dans `ContentPlacement::inGroup()`) : dans l'ordre inverse, un 422
+     * ordinaire (une liste périmée, `info`) masquerait le groupe corrompu, que
+     * seul l'envoi suivant nommerait.
+     *
+     * @param list<string> $orderedKeys
+     */
+    #[DataProvider('provideOrdersTheClientMayGetWrong')]
+    public function testTheDivergentGroupIsRefusedBeforeTheExactSetRule(array $orderedKeys): void
+    {
+        $this->expectException(TranslationGroupHasSeveralPositionsException::class);
+
+        (new OrderAssigner())->assign($this->scopeWithADivergentGroup(), $orderedKeys);
+    }
+
+    /**
+     * @return iterable<string, array{list<string>}>
+     */
+    public static function provideOrdersTheClientMayGetWrong(): iterable
+    {
+        yield 'clé inconnue (unknown-order-entry)' => [['group-1', 'ghost', 'group-2']];
+        yield 'clé dupliquée (unknown-order-entry)' => [['group-1', 'group-1', 'group-2']];
+        yield 'clé manquante (incomplete-order)' => [['group-2']];
+    }
+
+    /**
+     * Un groupe FR/EN resté sur deux positions (0 et 3), et un autre groupe
+     * sain à la position 1.
+     *
+     * @return list<FakeOrderable>
+     */
+    private function scopeWithADivergentGroup(): array
+    {
+        return [new FakeOrderable('group-1', 0), new FakeOrderable('group-1', 3), new FakeOrderable('group-2', 1)];
     }
 }
