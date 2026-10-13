@@ -61,19 +61,24 @@ final class DeferredTriggerPendingEventsTest extends KernelTestCase
      * colonne NOT NULL ajoutée **avec** un DEFAULT — l'une des deux voies de
      * la règle des migrations, `.claude/rules/deploiement.md` — ne change
      * rien ; sans DEFAULT (l'autre voie : la migration remplit la colonne),
-     * les 24 cas échouent dès le `setUp`, en `23502` nommant la
-     * colonne et la table : un échec bruyant, impossible à confondre avec
-     * l'invariant (`55006`, `23T90`), réparé d'une ligne. Écartés : un
+     * sur `contribution` tous les cas échouent dès le `setUp`, sur
+     * `about_me_card` le seul cas qui y écrit, en `23502` nommant la colonne
+     * et la table : un échec bruyant, impossible à confondre avec l'invariant
+     * (`55006`, `23T90`, `23T91`), réparé d'une ligne. Écartés : un
      * constructeur de ligne minimale lisant le schéma (de la magie qui cache
      * les colonnes écrites), les `Administrator`s ou l'ORM (le test écrit en
      * SQL dans sa propre transaction, que les `Administrator`s refusent, #526),
-     * un helper propre à ce test (`Version20261012120000Test` et
-     * `Version20261012160000Test` recopient les mêmes listes).
+     * un helper propre à ce test (`Version20261012120000Test` recopie aussi,
+     * par `insert()`, les colonnes de `contribution` et d'`about_me_card`, et
+     * `Version20261012160000Test` celles d'`about_me_card`).
      */
-    private const string INSERT_CONTRIBUTION ="INSERT INTO contribution (id, translation_group, locale, position, title, project, reference, url, summary, body)
+    private const string INSERT_CONTRIBUTION = "INSERT INTO contribution (id, translation_group, locale, position, title, project, reference, url, summary, body)
         VALUES (?, ?, ?, ?, 'T', 'P', 'R', 'https://example.org', 'S', 'B')";
 
     private Connection $connection;
+
+    /** Vrai une fois la transaction du test ouverte : le `tearDown` n'annule qu'elle. */
+    private bool $ownsTransaction = false;
 
     private UuidV7 $group;
 
@@ -83,6 +88,7 @@ final class DeferredTriggerPendingEventsTest extends KernelTestCase
         $this->connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         self::assertFalse($this->connection->isTransactionActive(), 'Prémisse : aucune transaction ouverte avant le test, sinon les cas mesurent la sienne.');
         $this->connection->beginTransaction();
+        $this->ownsTransaction = true;
 
         $this->group = Uuid::v7();
         $this->insertContribution($this->group, 'fr', 900);
@@ -91,16 +97,18 @@ final class DeferredTriggerPendingEventsTest extends KernelTestCase
     }
 
     /**
-     * `isset()` d'abord (issue #585) : si `setUp()` échoue avant d'affecter
-     * la connexion (démarrage du noyau, conteneur), lire la propriété lèverait
-     * une `Error` d'initialisation. PHPUnit 13 garderait bien l'exception de
-     * `setUp()` et avalerait celle-ci sans trace (mesuré), mais
-     * `parent::tearDown()` serait sauté : le noyau démarré resterait en place
-     * jusqu'au prochain `bootKernel()`.
+     * N'annule que la transaction que `setUp()` a ouverte (issue #585) : si
+     * `setUp()` échoue avant — démarrage du noyau, prémisse d'aucune
+     * transaction ouverte —, il ne touche pas à la connexion. Lire la
+     * propriété non affectée levait une `Error` d'initialisation ; PHPUnit 13
+     * gardait bien l'exception de `setUp()` et avalait celle-ci sans trace
+     * (mesuré), mais `parent::tearDown()` était sauté, le noyau restant
+     * démarré jusqu'au prochain `bootKernel()`. Et la transaction d'un autre,
+     * qui fait échouer la prémisse, n'est pas annulée en silence.
      */
     protected function tearDown(): void
     {
-        if (isset($this->connection) && $this->connection->isTransactionActive()) {
+        if ($this->ownsTransaction && $this->connection->isTransactionActive()) {
             $this->connection->rollBack();
         }
         parent::tearDown();

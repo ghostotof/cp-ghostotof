@@ -179,7 +179,9 @@ paths:
     `ADD CONSTRAINT`, `DISABLE TRIGGER`, **and `CREATE INDEX`**; **measured accepted**, `ALTER TABLE …
     RENAME COLUMN` (an `ALTER TABLE` too), a `COMMENT`, a `DROP INDEX`, a DDL on another table. **Any other
     DDL on the table: measure it before relying on it passing** — a case in the test's providers —, and
-    until then apply the fix below, harmless when nothing is pending. Each
+    until then wrap it in the fix below, `IMMEDIATE` right before it **and `DEFERRED` right after it**:
+    that changes nothing when nothing is pending, while `IMMEDIATE` left in force would refuse a group
+    rewritten row by row later in the migration (`23T90`, pinned). Each
     migration runs in its own transaction (`doctrine_migrations.yaml`, no `all_or_nothing`), so the
     trap is a write then a DDL on the same table **within one migration**. **Watched writes**: an
     `INSERT` that inserts rows, and an `UPDATE` touching rows and naming a column of the trigger's
