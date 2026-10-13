@@ -165,7 +165,7 @@ paths:
     introspects its index, which no mapping declares, so every `doctrine:migrations:diff` would propose
     a `DROP INDEX` — DBAL reads neither triggers nor functions; a `CHECK`, which cannot read other rows;
     logging in `OrderAssigner` alone as the main guard (late, a logger in a pure Domain service, SQL writes
-    still unseen — its refusal as a net behind the trigger is #503's, above);
+    still unseen — its refusal as a net behind the trigger is #503's, below);
     a periodic check (`watch-refresh`, a preprod smoke test), as late. A new localized context adds its
     table to a **new** migration creating the same trigger: `TranslationGroupSinglePositionTest` fails on
     any `TranslatableContent` entity whose table lacks it, and probes each context of
@@ -192,14 +192,17 @@ paths:
     already loaded under the lock: in memory, O(n), no query, no extra wait under the lock. It refuses
     **any** reorder of that scope, whatever the order asked, like #561's spread groups: the group is repaired
     first. It is a **net, not a detector**: nothing reports the group until someone reorders its scope (the
-    public pages rank FR and EN differently meanwhile). **Repair**: in the backoffice, « Détacher » the stray
-    entry (a new group, the end of its scope, #169), then attach it back to its group as « Version de »
-    (`reattach()` inherits the group's position, the remaining member's); or in SQL, the members aligned in
-    one transaction. Then reorder. Rejected: a periodic check, in a CronJob (no alert reads the CronJobs'
+    public pages rank FR and EN differently meanwhile). **Repair**: in the backoffice, detach the entry whose
+    position is wrong (« Version de » set to « — aucune — »: a new group, the end of its scope, #169), then
+    attach it back to its group through « Version de » (`reattach()` inherits the group's position, the
+    remaining member's — which entry is detached decides which position the group keeps); or in SQL, the
+    members aligned in one transaction. Then reorder. The message names the content type (hence the
+    table), the group and the positions found; the backoffice user only sees a generic 500, the fix is in
+    the `critical` log. Rejected: a periodic check, in a CronJob (no alert reads the CronJobs'
     logs: a `warning` there reaches nobody); a query in the preprod smoke test (preprod is only written by
     the `Administrator`s, which the trigger already guards, and it would be a new Job); a warning in the
     migration Job (the deployment path, for a content defect, and it sees only the state at deploy time).
-    #390's rejection of « logging in `OrderAssigner` » (below) aimed at a **main** guard, late and logged; a
+    #390's rejection of « logging in `OrderAssigner` » (above) aimed at a **main** guard, late and logged; a
     refusal serving as a net behind the trigger is not that — it logs nothing (a pure Domain service), it
     throws. `OrderAssignerTest` pins the refusal, nothing moved, and its precedence over the three 422
     cases (unknown, duplicated, missing key); `TranslationGroupSinglePositionTest` the eight contexts of
@@ -266,8 +269,8 @@ paths:
     each before any write: a group across categories (`AboutMeCardAdministrator`, me-cards only, the only
     per-scope table — kept out of the Shared services, which only see their scope), then a group on
     several positions (`ContentPlacement::inGroup()` on a placement; `OrderAssigner::assign()` on a
-    `reorder()`, since #503), then the client's errors (the 409 `translation-already-exists`, `OrderAssigner`'s 422s of
-    the exact-set rule), then the trigger at COMMIT for what bypasses the application — the cause before its
+    `reorder()`, since #503), then the client's errors (the 409 `translation-already-exists`,
+    `OrderAssigner`'s 422s of the exact-set rule), then the trigger at COMMIT for what bypasses the application — the cause before its
     consequence, as in the trigger, and a pipeline defect before a client error, as in #384.
     `AboutMeCardAdministratorTest` pins each path with mocks (no `save()`, nothing changed in memory before
     the refusal, the text edit that reads nothing, the real detachment, the reorder refused before an
