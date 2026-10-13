@@ -18,12 +18,16 @@ use PHPUnit\Framework\TestCase;
  * depuis tout pod du namespace (`host all all all scram-sha-256`) : une fuite
  * de son mot de passe rendait ce que #575 retire. Le dépôt monte le sien,
  * `k8s/base/postgres-pg_hba.conf`, qui admet par le réseau les deux rôles
- * applicatifs **nommés** et refuse tout le reste — par exclusion, le nom du
- * rôle bootstrap étant dans un Secret, pas dans le dépôt.
+ * applicatifs **nommés** et refuse tout le reste — jamais par exclusion du
+ * rôle bootstrap, dont le nom est dans un Secret, pas dans le dépôt.
  *
- * L'intérieur du pod garde la confiance de l'image : le socket local (sondes
- * `pg_isready`, entrypoint, procédure des rôles du runbook) et le loopback (le
- * `SHOW` des keepalives par `-h 127.0.0.1 -U cpg_reader`, k8s/README.md).
+ * Le socket local garde la confiance de l'image (sondes `pg_isready`,
+ * entrypoint, procédure des rôles du runbook). Le loopback, lui, ne fait
+ * confiance qu'au lecteur `cpg_reader` (le `SHOW` des keepalives par
+ * `-h 127.0.0.1`, k8s/README.md) : un `kubectl port-forward` ou un conteneur
+ * éphémère (`kubectl debug`) arrive aussi par 127.0.0.1, et `host all all
+ * 127.0.0.1/32 trust`, la règle de l'image, y donnait le superutilisateur sans
+ * mot de passe (relecture de #593).
  *
  * Ce test lit le fichier et son câblage ; tools/check-postgres-hba.sh (CI
  * `postgres-hba`) démarre l'image épinglée avec le fichier et mesure les refus.
@@ -39,8 +43,11 @@ final class PostgresHbaTest extends TestCase
     /** Les seuls rôles admis par le réseau : ceux dont une URL est publiée. */
     private const array NETWORK_ROLES = ['cpg_app', 'cpg_migrator'];
 
-    /** Le loopback : une connexion qui en vient part de l'intérieur du pod. */
+    /** Le loopback : l'intérieur du pod, un port-forward ou un conteneur éphémère. */
     private const array LOOPBACK = ['127.0.0.1/32', '::1/128'];
+
+    /** Le seul rôle admis sans mot de passe sur le loopback. */
+    private const string LOOPBACK_ROLE = 'cpg_reader';
 
     /** Les types d'enregistrement qui portent une connexion TCP. */
     private const array TCP_TYPES = ['host', 'hostssl', 'hostnossl', 'hostgssenc', 'hostnogssenc'];
@@ -71,8 +78,9 @@ final class PostgresHbaTest extends TestCase
         [, , $users, $address, $method] = $rule + [null, null, null, null, null];
 
         if (\in_array($address, self::LOOPBACK, true)) {
-            // cpg_reader n'a pas de mot de passe : le loopback reste en `trust`.
-            self::assertSame('trust', $method, \sprintf('« %s » : le loopback garde la confiance de l\'image.', implode(' ', $rule)));
+            // cpg_reader n'a pas de mot de passe : le loopback lui reste en `trust`, à lui seul.
+            self::assertSame('trust', $method, \sprintf('« %s » : le loopback admet cpg_reader sans mot de passe.', implode(' ', $rule)));
+            self::assertSame(self::LOOPBACK_ROLE, $users, \sprintf('« %s » : sur le loopback, `trust` pour %s seul — un port-forward y arrive aussi.', implode(' ', $rule), self::LOOPBACK_ROLE));
 
             return;
         }
@@ -102,15 +110,28 @@ final class PostgresHbaTest extends TestCase
 
     /**
      * Rien d'autre que des règles lues ici : une inclusion (PostgreSQL 16+)
-     * ajouterait des règles que ce test ne voit pas, et un enregistrement de
-     * réplication n'a pas d'usage (un seul serveur).
+     * ajouterait des règles que ce test ne voit pas. La réplication n'a pas
+     * d'usage (un seul serveur) : `all` ne la couvre pas, elle n'est donc
+     * nommée que par sa propre règle de refus, jamais dans une liste.
      */
     public function testEveryRuleIsLocalOrTcpAndNothingIsIncluded(): void
     {
         foreach ($this->rules() as $rule) {
             self::assertContains($rule[0], ['local', ...self::TCP_TYPES], \sprintf('« %s » : type d\'enregistrement inattendu (inclusion ?).', implode(' ', $rule)));
-            self::assertNotSame('replication', $rule[1] ?? null, \sprintf('« %s » : aucune réplication.', implode(' ', $rule)));
+            if (\in_array('replication', explode(',', $rule[1] ?? ''), true)) {
+                self::assertSame(['host', 'replication', 'all', 'all', 'reject'], $rule, \sprintf('« %s » : la réplication n\'est nommée que pour être refusée.', implode(' ', $rule)));
+            }
         }
+    }
+
+    /**
+     * Le refus de la réplication est explicite : sans cette règle, PostgreSQL
+     * la refuse déjà faute d'entrée, mais un `all` ajouté plus tard ne la
+     * couvrirait pas et le refus resterait implicite.
+     */
+    public function testReplicationIsExplicitlyRejected(): void
+    {
+        self::assertContains(['host', 'replication', 'all', 'all', 'reject'], $this->rules());
     }
 
     /**
