@@ -80,20 +80,8 @@ final readonly class PostgresExperienceTechnologyRowLock implements ExperienceTe
             acquire: fn (): ExperienceTechnology => $this->lockAndReread($id),
             onTimeout: static fn (DriverException $timeout): ExperienceTechnologyLockTimeoutException => ExperienceTechnologyLockTimeoutException::forTechnology($id->toRfc4122(), $timeout),
             onNested: static fn (): ExperienceTechnologyLockInsideTransactionException => ExperienceTechnologyLockInsideTransactionException::forTechnology($id->toRfc4122()),
-            operation: fn (): mixed => $operation($this->lockedInstance($id)),
+            operation: $operation,
         );
-    }
-
-    /**
-     * L'instance que l'acquisition vient de verrouiller et relire : `find()`
-     * la rend de la carte d'identité, sans requête. Introuvable ici serait une
-     * ligne supprimée sous notre verrou, ce que PostgreSQL empêche ; le cas
-     * reste traité plutôt que supposé.
-     */
-    private function lockedInstance(Uuid $id): ExperienceTechnology
-    {
-        return $this->entityManager->find(ExperienceTechnology::class, $id)
-            ?? throw ExperienceTechnologyNotFoundException::forId($id);
     }
 
     /**

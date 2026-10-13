@@ -92,6 +92,26 @@ final class PostgresLockedTransactionTest extends KernelTestCase
     }
 
     /**
+     * Ce que l'acquisition a pris est remis à l'opération (issue #560) : un
+     * verrou de ligne qui relit l'entité en la verrouillant la passe telle
+     * quelle, sans la relire une seconde fois. Une opération qui n'en a pas
+     * l'usage ne déclare pas de paramètre.
+     */
+    public function testTheOperationReceivesWhatTheAcquisitionReturned(): void
+    {
+        $acquired = new DomainException('ce que l’acquisition a pris');
+
+        $received = $this->transaction()->run(
+            acquire: fn (): DomainException => $acquired,
+            onTimeout: $this->unexpectedTimeout(...),
+            onNested: $this->unexpectedNesting(...),
+            operation: static fn (DomainException $taken): DomainException => $taken,
+        );
+
+        self::assertSame($acquired, $received, "L'opération n'a pas reçu ce que l'acquisition avait rendu.");
+    }
+
+    /**
      * La console n'a pas le `lock_timeout` que FPM reçoit de `PGOPTIONS` :
      * le squelette borne une attente que rien ne borne, pour la seule durée
      * de la transaction.

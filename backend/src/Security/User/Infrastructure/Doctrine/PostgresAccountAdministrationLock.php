@@ -107,37 +107,26 @@ final readonly class PostgresAccountAdministrationLock implements AccountAdminis
             // lockAndRereadTarget() elle-même ; celle que le squelette renomme
             // est donc celle de l'advisory lock (la lecture de l'acteur
             // n'attend aucun verrou).
-            acquire: function () use ($targetId, $actingUserId): void {
+            acquire: function () use ($targetId, $actingUserId): CpgUser {
                 $this->entityManager->getConnection()->executeQuery(
                     'SELECT pg_advisory_xact_lock(?, ?)',
                     [self::ADVISORY_NAMESPACE, self::ADVISORY_KEY],
                 );
                 $this->rereadActingUser($actingUserId);
-                $this->lockAndRereadTarget($targetId);
+
+                return $this->lockAndRereadTarget($targetId);
             },
             onTimeout: static fn (DriverException $timeout): AccountAdministrationLockTimeoutException => AccountAdministrationLockTimeoutException::advisoryLockHeld($targetId->toRfc4122(), $timeout),
             onNested: static fn (): AccountAdministrationLockInsideTransactionException => AccountAdministrationLockInsideTransactionException::forAccount($targetId->toRfc4122()),
-            operation: fn (): mixed => $operation($this->lockedInstance($targetId)),
+            operation: $operation,
         );
     }
 
     /**
-     * L'instance que l'acquisition vient de verrouiller et relire : `find()`
-     * la rend de la carte d'identité, sans requête. Introuvable ici serait
-     * une ligne supprimée sous notre verrou, ce que PostgreSQL empêche ; le
-     * cas reste traité plutôt que supposé.
+     * Verrouille la ligne du compte administré et la rend, relue ;
+     * introuvable si elle a disparu.
      */
-    private function lockedInstance(Uuid $targetId): CpgUser
-    {
-        return $this->entityManager->find(CpgUser::class, $targetId)
-            ?? throw CpgUserNotFoundException::forId($targetId);
-    }
-
-    /**
-     * Verrouille la ligne du compte administré et la relit ; introuvable si
-     * elle a disparu.
-     */
-    private function lockAndRereadTarget(Uuid $targetId): void
+    private function lockAndRereadTarget(Uuid $targetId): CpgUser
     {
         try {
             $target = $this->rereadUnderLock->row($this->entityManager, CpgUser::class, $targetId, forUpdate: true);
@@ -152,9 +141,7 @@ final readonly class PostgresAccountAdministrationLock implements AccountAdminis
             throw $exception;
         }
 
-        if (null === $target) {
-            throw CpgUserNotFoundException::forId($targetId);
-        }
+        return $target ?? throw CpgUserNotFoundException::forId($targetId);
     }
 
     /**
