@@ -40,7 +40,7 @@ final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministrato
         // atteint » et la garde lus sur le compte relu, puis l'écriture,
         // validée au retour du verrou.
         $changed = $this->administrationLock->whileAdministering($user, $actingUser, function (CpgUser $target) use ($grant): bool {
-            $isSuper = \in_array(CpgUser::ROLE_SUPER, $target->getRoles(), true);
+            $isSuper = $target->isSuperAdmin();
 
             if ($grant === $isSuper) {
                 // Déjà dans l'état demandé : rien à faire (et la garde du dernier

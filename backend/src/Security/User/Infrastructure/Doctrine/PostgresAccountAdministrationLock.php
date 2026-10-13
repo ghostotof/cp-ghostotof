@@ -156,7 +156,7 @@ final readonly class PostgresAccountAdministrationLock implements AccountAdminis
             throw ActingAccountNoLongerSuperAdminException::deletedMeanwhile();
         }
 
-        if (!\in_array(CpgUser::ROLE_SUPER, $actingUser->getRoles(), true)) {
+        if (!$actingUser->isSuperAdmin()) {
             throw ActingAccountNoLongerSuperAdminException::demotedMeanwhile();
         }
     }

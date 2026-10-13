@@ -279,6 +279,17 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
     }
 
     /**
+     * Le compte porte-t-il ROLE_SUPER, le rôle d'administration du backoffice ?
+     * Lu sur les rôles **stockés**, comme le font les gardes et les journaux
+     * qui l'interrogent (issue #560) : la role_hierarchy de security.yaml,
+     * qui fait hériter ROLE_TRUSTED de ROLE_SUPER, ne joue pas ici.
+     */
+    public function isSuperAdmin(): bool
+    {
+        return \in_array(self::ROLE_SUPER, $this->roles, true);
+    }
+
+    /**
      * @param list<string> $roles
      */
     public function setRoles(array $roles): void

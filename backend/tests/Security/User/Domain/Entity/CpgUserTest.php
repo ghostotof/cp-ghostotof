@@ -94,6 +94,26 @@ final class CpgUserTest extends TestCase
         self::assertSame(['ROLE_USER', 'ROLE_ADMIN'], $user->getRoles());
     }
 
+    /**
+     * Le rôle d'administration se lit sur les rôles **stockés** (issue #560) :
+     * ROLE_TRUSTED, que ROLE_SUPER hérite par la role_hierarchy, ne le donne
+     * pas en retour.
+     */
+    public function testOnlyAnAccountHoldingRoleSuperIsASuperAdmin(): void
+    {
+        $user = new CpgUser('jane', 'hashed-password');
+        self::assertFalse($user->isSuperAdmin(), 'Un compte sans rôle est dit super-administrateur.');
+
+        $user->setRoles([CpgUser::ROLE_TRUSTED]);
+        self::assertFalse($user->isSuperAdmin(), 'ROLE_TRUSTED a été pris pour ROLE_SUPER.');
+
+        $user->setRoles([CpgUser::ROLE_SUPER]);
+        self::assertTrue($user->isSuperAdmin());
+
+        $user->setRoles([CpgUser::ROLE_TRUSTED]);
+        self::assertFalse($user->isSuperAdmin(), 'Une rétrogradation est restée super-administratrice.');
+    }
+
     public function testPasswordCanBeUpgraded(): void
     {
         $user = new CpgUser('jane', 'old-hash');
