@@ -352,8 +352,22 @@ paths:
     nor in a transaction opened and rolled back by hand: there, without the guard, the `INSERT` would hit the
     primary key at the flush; the guard refuses it first, under a message that still thinks the row deleted; an entity with a **generated** id would
     be refused wrongly (`executeDeletions()` nulls its id, its re-persist is a new `INSERT`) — none has one, revisit
-    the day one does; a DQL or SQL deletion emits no `postRemove`, its in-memory instance is not remembered (still
-    managed, it never reaches `prePersist`; no such path re-saves it).
+    the day one does. **A DQL deletion by id is covered since #569**: it emits no `postRemove` and left the
+    instance **managed**, so a change then a `save()` sent an `UPDATE` touching no row, lost in silence (Doctrine
+    counts affected rows only for a versioned entity). The two such deletions,
+    `PasswordSetupTokenRepository::remove()` and `CpgUserRepository::removePendingInvitation()`
+    (`.claude/rules/security-user.md`), pass the instance to `VanishedEntities::detachDeleted()` — detached, and
+    remembered under the « removed by this manager » cause — **only when their `DELETE` touched the row**: a row
+    their condition spared (a consumed token, an account activated meanwhile) still exists and its instance stays
+    managed. A new DQL deletion by id does the same. Still not covered, accepted: a **bulk** DQL deletion
+    (`deleteForUser()`, `deleteUnusedForUser()`), an SQL one and an `ON DELETE CASCADE` detach nothing (none of
+    those paths has an instance loaded); a deletion by id that touched no row because the row was already gone
+    detaches nothing either (nothing tells it apart from a spared one); and `detachDeleted()` inside a
+    transaction later rolled back remembers an instance whose row is back, with the manager left open, since the
+    skeleton's `WrittenFlushWatch` does not see a DQL write — both callers delete outside any transaction; a
+    still-managed entity **referencing** a detached account (a loaded token) makes the next `flush()` fail with
+    Doctrine's « A new entity was found through the relationship… » — loud, not lost, and no path loads a token
+    before `removePendingInvitation()`.
     Before, `find()` handed back the identity-map instance and a query did not rehydrate a managed one: a
     concurrent write committed in between was silently undone (`reattach()` saw a no-op, `detach()` looked in the
     group the entry had left, a version created in a group took the position the group was leaving, a deleted

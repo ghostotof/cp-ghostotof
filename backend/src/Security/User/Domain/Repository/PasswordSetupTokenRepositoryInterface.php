@@ -20,7 +20,10 @@ interface PasswordSetupTokenRepositoryInterface
 
     /**
      * Supprime ce jeton-là, et lui seul : celui d'une invitation dont l'e-mail
-     * n'est pas parti (issue #425).
+     * n'est pas parti (issue #425). Jamais un jeton consommé.
+     *
+     * Le jeton dont la ligne a été supprimée n'est plus géré, et le sauver de
+     * nouveau est refusé (issue #569) ; un jeton épargné reste géré.
      */
     public function remove(PasswordSetupToken $token): void;
 

@@ -17,7 +17,8 @@ enum VanishedEntityCause
     case VanishedUnderLock;
 
     /**
-     * Ce même EntityManager l'a supprimée — `remove()` puis `flush()` (#557).
+     * Ce même EntityManager l'a supprimée — `remove()` puis `flush()` (#557),
+     * ou un `DELETE` DQL par identifiant qui a touché sa ligne (#569).
      */
     case RemovedByThisManager;
 }

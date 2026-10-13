@@ -95,6 +95,9 @@ interface CpgUserRepositoryInterface
      * le compte par son identifiant, jamais s'il a été activé entre-temps.
      * Chemin d'échec : ne dépend ni de l'unité de travail ni d'un `flush()`
      * global. Un compte déjà supprimé n'est pas une erreur.
+     *
+     * Le compte dont la ligne a été supprimée n'est plus géré, et le sauver
+     * de nouveau est refusé (issue #569) ; un compte épargné reste géré.
      */
     public function removePendingInvitation(CpgUser $user): void;
 }
