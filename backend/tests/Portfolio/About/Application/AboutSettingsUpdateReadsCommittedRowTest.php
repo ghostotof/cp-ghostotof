@@ -38,7 +38,8 @@ use Symfony\Component\Uid\Uuid;
  * aucune ligne, sans rien lever : il faudrait alors le verrou de ligne de #545.
  *
  * La suppression passe par SQL : aucun chemin applicatif ne supprime les
- * réglages (pas de `DELETE` au backoffice, upsert au seed), ce que le
+ * réglages (pas de `DELETE` au backoffice, ni de purge au seed, qui les crée
+ * ou, avec --force, les réécrit), ce que le
  * troisième cas garde.
  */
 final class AboutSettingsUpdateReadsCommittedRowTest extends KernelTestCase
