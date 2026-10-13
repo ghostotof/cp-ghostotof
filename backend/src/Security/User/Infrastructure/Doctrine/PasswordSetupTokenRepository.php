@@ -8,6 +8,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Domain\ValueObject\TokenClaim;
+use App\Shared\Infrastructure\Doctrine\VanishedEntities;
 use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\Types\Types;
@@ -19,8 +20,10 @@ use Symfony\Bridge\Doctrine\Types\UuidType;
  */
 class PasswordSetupTokenRepository extends ServiceEntityRepository implements PasswordSetupTokenRepositoryInterface
 {
-    public function __construct(ManagerRegistry $registry)
-    {
+    public function __construct(
+        ManagerRegistry $registry,
+        private readonly VanishedEntities $vanishedEntities,
+    ) {
         parent::__construct($registry, PasswordSetupToken::class);
     }
 
@@ -36,10 +39,16 @@ class PasswordSetupTokenRepository extends ServiceEntityRepository implements Pa
      * survenu entre-temps détache l'entité, et `EntityManager::remove()`
      * lèverait), ni d'un `flush()` global qui écrirait au passage d'autres
      * changements en attente. Une ligne déjà supprimée n'est pas une erreur.
+     *
+     * Le jeton dont la ligne a été supprimée ici est détaché et retenu par
+     * {@see VanishedEntities::detachDeleted()} (issue #569) : resté géré, une
+     * modification puis un `save()` émettaient un `UPDATE` sur 0 ligne, perdu
+     * en silence ; sa re-sauvegarde est désormais refusée. Un jeton épargné
+     * (consommé) reste géré : sa ligne existe.
      */
     public function remove(PasswordSetupToken $token): void
     {
-        $this->createQueryBuilder('token')
+        $deleted = $this->createQueryBuilder('token')
             ->delete()
             ->where('token.id = :id')
             // Jamais un jeton consommé (seconde passe d'audit de #458) : l'e-mail
@@ -49,6 +58,10 @@ class PasswordSetupTokenRepository extends ServiceEntityRepository implements Pa
             ->setParameter('id', $token->getId(), UuidType::NAME)
             ->getQuery()
             ->execute();
+
+        if (1 === $deleted) {
+            $this->vanishedEntities->detachDeleted($this->getEntityManager(), $token);
+        }
     }
 
     /**

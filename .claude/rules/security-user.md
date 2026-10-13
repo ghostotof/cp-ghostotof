@@ -225,7 +225,10 @@ paths:
     A failed removal never replaces the delivery exception (the retry strategy reads it): it is logged
     `error` with `exceptionClass`, `userId` and `tokenId` only — a Doctrine message can quote the digest,
     the id is no secret and lets an operator revoke that token alone — and the token then lives until the
-    next successful send purges it, or until it expires. Accepted limits, settled in the review of #425:
+    next successful send purges it, or until it expires. A removal that took the row detaches the token
+    through `VanishedEntities::detachDeleted()` (#569): left managed, a later change and `save()` would have
+    sent an `UPDATE` touching no row; its re-save is now refused (see `.claude/rules/portfolio-contenus.md`).
+    Accepted limits, settled in the review of #425:
     a transport exception does not prove the e-mail stayed home (lost response after acceptance, SMTP
     reconnection failing after the `250`), so a received link can be dead — the retry sends another; a
     **resend during an outage** leaves the account with no valid link until a retry succeeds, since the
@@ -330,7 +333,8 @@ paths:
     that cannot be queued is undone** (#485): `invite()` removes the account it has just saved, so the
     admin retries without an « adresse déjà utilisée » 409 and the log announces no invitation that never
     left — by `removePendingInvitation()`, a DQL `DELETE` by id that never touches an account activated
-    meanwhile and needs neither the unit of work nor a global `flush()` (the #425 rule); were the message
+    meanwhile and needs neither the unit of work nor a global `flush()` (the #425 rule), and detaches the account
+    it took through `VanishedEntities::detachDeleted()` (#569, an account spared stays managed); were the message
     stored anyway (a lost ack), the handler finds no account, logs a `warning` and stops without retry —
     or, had it run before the removal, its link is dead (the token leaves with the account) and the admin
     resends; a failure of that removal surfaces as itself (a `critical` 500), the account left pending; an **old worker**

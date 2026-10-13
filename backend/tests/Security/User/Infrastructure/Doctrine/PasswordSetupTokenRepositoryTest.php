@@ -8,6 +8,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Domain\ValueObject\TokenClaim;
+use App\Shared\Infrastructure\Doctrine\VanishedEntitySavedAgainException;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -244,6 +245,59 @@ final class PasswordSetupTokenRepositoryTest extends KernelTestCase
         $this->repository->remove($token);
 
         self::assertSame(1, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM password_setup_token WHERE id = :id', ['id' => $token->getId()->toRfc4122()]));
+    }
+
+    /**
+     * Issue #569 : la suppression DQL laissait le jeton **géré** alors que sa
+     * ligne n'existait plus ; une modification puis un `save()` émettaient un
+     * `UPDATE` sur 0 ligne, perdu en silence. Le jeton supprimé est désormais
+     * détaché et retenu par VanishedEntities : sa re-sauvegarde est refusée
+     * sous la cause « supprimée par cet EntityManager ».
+     */
+    public function testRemoveForgetsTheDeletedTokenAndRefusesItsResave(): void
+    {
+        $user = $this->persistUser('jane');
+        $token = new PasswordSetupToken($user, hash('sha256', 'clear-jane'), new DateTimeImmutable('+48 hours'));
+        $this->repository->save($token);
+        $id = $token->getId()->toRfc4122();
+
+        $this->repository->remove($token);
+        $stillManaged = $this->em->contains($token);
+        $token->markUsed(new DateTimeImmutable());
+        $refusal = null;
+        try {
+            $this->repository->save($token);
+        } catch (VanishedEntitySavedAgainException $exception) {
+            $refusal = $exception;
+        }
+
+        self::assertSame(0, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM password_setup_token'), 'Le jeton supprimé, re-sauvé, a été réinséré.');
+        self::assertFalse($stillManaged, "Le jeton supprimé en DQL est resté géré par l'EntityManager (#569).");
+        self::assertNotNull($refusal, 'La re-sauvegarde du jeton supprimé en DQL est passée en silence, UPDATE sur 0 ligne (#569).');
+        self::assertSame(VanishedEntitySavedAgainException::removedByThisManager(PasswordSetupToken::class, $id)->getMessage(), $refusal->getMessage());
+        self::assertTrue($this->em->contains($user), 'Détacher le jeton a détaché son compte.');
+    }
+
+    /**
+     * Le jeton consommé n'est pas supprimé (0 ligne touchée) : il reste géré,
+     * et l'écrire reste possible. Seul un DELETE qui a touché sa ligne
+     * détache l'instance.
+     */
+    public function testRemoveLeavesASparedTokenManaged(): void
+    {
+        $user = $this->persistUser('jane');
+        $token = new PasswordSetupToken($user, hash('sha256', 'clear-jane'), new DateTimeImmutable('+48 hours'));
+        $this->repository->save($token);
+        $usedAt = new DateTimeImmutable('2026-10-13T10:00:00+02:00');
+        self::assertSame(TokenClaim::Claimed, $this->repository->claim($token, $usedAt));
+
+        $this->repository->remove($token);
+        $stillManaged = $this->em->contains($token);
+        $token->markUsed($usedAt);
+        $this->repository->save($token);
+
+        self::assertTrue($stillManaged, 'Le jeton épargné par la suppression a été détaché.');
+        self::assertSame(1, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM password_setup_token'));
     }
 
     /**
