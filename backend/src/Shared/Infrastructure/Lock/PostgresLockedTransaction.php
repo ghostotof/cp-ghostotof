@@ -144,9 +144,11 @@ use Throwable;
  * traduction, #390) tomberait à ce COMMIT-là hors de portée de
  * `$onCommitRefused`, une invitation serait publiée — et un lien envoyé —
  * avant que le compte ou le jeton soient visibles du worker ou du lecteur.
- * Aucun appelant n'imbrique (cas d'usage, handlers, commandes, seeds, la
- * suite entière) : le refus rend la règle vraie par construction, au lieu de
- * la confier à la mémoire du prochain appelant.
+ * Aucun appelant n'imbrique (cas d'usage, handlers, commandes, la suite
+ * entière ; les seeds enchaînent les `Administrator`s sous `withLocks()` du
+ * verrou d'ordre, dont la réentrance n'atteint pas `run()`) : le refus rend
+ * la règle vraie par construction, au lieu de la confier à la mémoire du
+ * prochain appelant.
  *
  * Écrit ici une fois plutôt que dans chaque adaptateur, dès qu'il y en a eu
  * trois à le vouloir (#532 ; #526 l'avait laissé dans le seul verrou d'ordre) :
@@ -154,8 +156,11 @@ use Throwable;
  * l'oublier, alors qu'une copie par adaptateur se serait oubliée comme le
  * délai et le COMMIT refusé avant #512. Chacun garde le nom de son refus, qui
  * dit à l'exploitant quel verrou a été mal pris. Rejetée : une option qui
- * laisse un adaptateur tolérer l'imbrication — aucun n'en a l'usage, et elle
- * aurait gardé vivant un chemin que personne n'emprunte.
+ * laisse un adaptateur tolérer l'imbrication — elle aurait gardé vivant un
+ * chemin que personne n'emprunte. La réentrance bornée du verrou d'ordre
+ * (#567, `withLocks()`) ne passe pas par ici : un `withLock()` sur un
+ * périmètre que sa transaction tient déjà n'atteint pas `run()`, qui refuse
+ * toujours tout ce qui l'atteint dans une transaction ouverte.
  *
  * Le juge est DBAL (`isTransactionActive()`), seul à savoir ce que `commit()`
  * émettra : une transaction ouverte en SQL brut (`executeStatement('BEGIN')`)

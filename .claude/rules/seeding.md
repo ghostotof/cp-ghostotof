@@ -29,6 +29,33 @@ all deliberate:
 therefore the deployment — on every run after the first. "There is already content" is the expected
 answer in nearly every execution, not an error. `SeedWatchedProductsCommandTest` pins it.
 
+**A seed is atomic, per command** (issue #567). The count, the purge and the recreations of one command
+run in **one** transaction, under the order scope lock of every entity class the command writes
+(`OrderScopeLockInterface::withLocks()`, the `Administrator`s' own `withLock()` re-entering it — see
+`.claude/rules/portfolio-contenus.md`): a command that fails writes nothing, and the relaunch repopulates.
+Before, the purge committed row by row outside any lock and each `Administrator::create()` in its own
+transaction, so a failure in the middle left a partial base — with `--force`, the previous content gone and
+a few new rows; on a first seed, a few rows the guard then took for "content in place", so the preprod Job
+(`backoffLimit: 0`, `set -e`, never `--force`) turned red once, and the redeploy **declined with exit 0 and
+went green on a half-empty page** (in prod, where the Job is applied by hand for a new context, the same
+misleading green); for About and Quality, which write two tables and count both, the second table stayed
+empty for good. Three details that hold the rest: the count is re-read **under the lock** (read before,
+two simultaneous seeds of an empty base both filled it); the purge is `flush()`ed row by row **before** the
+first creation (in one `flush()` the UnitOfWork runs the `INSERT`s before the `DELETE`s, and the unique
+`slug` index of the watch catalogue refuses the recreation); the success lines are collected in a
+`SeedOutcome` and printed **after** the transaction returns, never inside it. The command passes the entity
+classes its `Administrator`s lock (`ORDER_SCOPES`); a mismatch is refused at the first `withLock()` as an
+`OrderScopeLockInsideTransactionException`, a `critical` 500, nothing written. The `AboutSettings` rows
+(no lock of their own, #553) are written in that same transaction. Cost: the scopes are held for the whole
+command — measured on `app:about:seed --force`, the largest: about 100 ms, under the 5 s `lock_timeout` by
+two orders of magnitude; a backoffice write of the same scope waits that long instead of landing in the
+middle of a purge (the former "accepted limit" of `portfolio-contenus.md`, gone). After a failure past the
+first write, the EntityManager is closed (#549): the command stops on the exception, as before.
+`tests/Portfolio/Shared/Presentation/Command/SeedCommandsAreAtomicTest` pins the seven commands: a
+`--force` interrupted at the second `persist()` (one creation already flushed) leaves the previous rows
+with their ids; a first seed interrupted the same way leaves every table empty, and the relaunch without
+`--force` fills them all — red before on every command, with one row left.
+
 `k8s/base/seed-job.yaml` runs the seven on **every preprod deploy** (`case-studies` was missing from it
 until 2026-09-13 — adding a seed command means adding its line there, the Job's comment says so). Like `migrate-job.yaml` it sits
 outside `kustomization.yaml`, hence `${BACKEND_IMAGE}` + `envsubst` (`tools/run-job.sh`, issue #488). It never passes `--force`, so it
