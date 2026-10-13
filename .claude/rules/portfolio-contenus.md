@@ -95,10 +95,11 @@ paths:
     of every scope taken **sorted** (no deadlock between two callers asking for the same ones), one statement
     each (a `SELECT` list has no guaranteed evaluation order), so `lock_timeout` bounds each wait and not their
     sum — N scopes, up to N × 5 s —, each scope re-read (#402), the held scopes kept in a small registry
-    emptied in a `finally` whatever the outcome —, and under that transaction (or the one a plain `withLock()`
-    opened, which goes through the same path) a `withLock()` of the **same adapter** on a scope **that
-    transaction holds** runs its operation directly: no `BEGIN`, no new lock, no re-read (nothing can have
-    been committed into a scope it holds). That
+    emptied in a `finally` whatever the outcome —, and under that transaction a `withLock()` of the **same
+    adapter** on a scope **that transaction holds** runs its operation directly: no `BEGIN`, no new lock, no
+    re-read (nothing can have been committed into a scope it holds). A plain `withLock()` fills no registry:
+    under it a `withLock()` of the same scope stays refused like any other — the re-entrance exists only for
+    the operation that asked for it by taking `withLocks()`, never on the backoffice path. That
     is what lets an `app:*:seed` chain the `Administrator`s, which each take `withLock()`, under one
     transaction (see `.claude/rules/seeding.md`). It does not contradict #526's reason: the COMMIT stays the
     outer lock's, so `onCommitRefused` still names a deferred refusal, and the closing of the EntityManager
@@ -108,8 +109,8 @@ paths:
     by other code, an empty scope list (`OrderScopeLockWithoutScopeException`). The registry is the
     container instance's — one adapter serves the `Administrator`s and the commands; a hand-built one holds
     nothing for them. `PostgresAdvisoryOrderScopeLockTest` pins it (both scopes held and released,
-    re-entrance at nesting level 1 with no second transaction, under `withLocks()` and under a plain
-    `withLock()` of the same scope, scope not held refused, `withLocks()` never
+    re-entrance at nesting level 1 with no second transaction, scope not held refused, the same scope under
+    a plain `withLock()` refused, a timeout on the second scope named after that scope, `withLocks()` never
     re-entrant, refusal named at the outer COMMIT with the manager closed, registry emptied after a success,
     an exception and a refused COMMIT, both scopes re-read). A future operation spanning
     two scopes takes `withLocks()` — never a nested `withLock()` on a scope it does not hold. DBAL's count is the judge: a transaction opened in raw

@@ -115,7 +115,10 @@ paths:
   `symfony/lock` opens itself through `DriverManager`, and could not tell a migration apart).
   `ConsoleLockWaitBoundTest` finds the manifests **by the image** (the same census), so a new one without the bound
   turns it red; its only exemption is `backend-deployment.yaml`'s `php-fpm` (the pool sets it).
-  Without it a console session has `lock_timeout = 0` (measured). An operator's read-only `exec`
+  Without it a console session has `lock_timeout = 0` (measured). The bound is per lock statement: an
+  `app:*:seed` on two tables (About, Quality) takes its two scope locks one statement each under
+  `withLocks()` (issue #567, `.claude/rules/seeding.md`), so the seed Job can wait up to 2 × 5 s behind two
+  busy scopes before failing. An operator's read-only `exec`
   (below) repeats `-c lock_timeout=5s` in its own `PGOPTIONS`, which replaces the variable whole.
   For the worker, a handler waiting past 5 s raises `55P03` and Messenger retries it. **The
   application's own PostgreSQL locks keep a fallback bound, now a safety net** (issue #512, kept on

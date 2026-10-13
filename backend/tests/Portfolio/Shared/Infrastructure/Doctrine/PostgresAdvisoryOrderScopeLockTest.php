@@ -548,24 +548,71 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     }
 
     /**
-     * La même réentrance vaut sous un simple `withLock()` du même adaptateur,
-     * qui ouvre sa transaction par le même chemin : un `withLock()` du
-     * périmètre qu'elle tient y participe. `testTheLockRefusesToNestInsideItself`
-     * garde l'autre bord : un autre périmètre reste refusé.
+     * La réentrance n'existe que sous `withLocks()` : un simple `withLock()`
+     * n'alimente pas le registre, et un `withLock()` du **même** périmètre
+     * sous lui reste refusé comme tout autre (#526) — le chemin du backoffice
+     * ne change pas. `testTheLockRefusesToNestInsideItself` garde l'autre
+     * périmètre.
      */
-    public function testANestedWithLockOnTheScopeAPlainWithLockHoldsRunsInItsTransaction(): void
+    public function testANestedWithLockUnderAPlainWithLockIsRefusedEvenOnTheSameScope(): void
+    {
+        $lock = $this->lock();
+        $ran = false;
+        $caught = null;
+
+        try {
+            $lock->withLock(self::SCOPE, static function () use ($lock, &$ran): void {
+                $lock->withLock(self::SCOPE, static function () use (&$ran): void {
+                    $ran = true;
+                });
+            });
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(OrderScopeLockInsideTransactionException::class, $caught, \sprintf("L'imbrication sous un simple withLock() n'a pas été refusée : %s.", get_debug_type($caught)));
+        self::assertFalse($ran, "L'opération imbriquée a tourné sous un simple withLock().");
+        self::assertFalse($this->entityManager()->getConnection()->isTransactionActive());
+        self::assertTrue($this->probeCanLock(self::SCOPE));
+    }
+
+    /**
+     * Un délai dépassé sous `withLocks()` nomme le périmètre **dont l'attente
+     * a échoué**, pas le premier de la liste triée : le témoin tient le
+     * second, le premier se prend aussitôt. (Une fonction fléchée aurait figé
+     * le premier à sa création, relecture de #567.) Le premier verrou, pris,
+     * est relâché par le ROLLBACK.
+     */
+    public function testAWaitPastLockTimeoutOnTheSecondScopeIsNamedAfterThatScope(): void
     {
         $connection = $this->entityManager()->getConnection();
-        $lock = $this->lock();
+        $sorted = [self::SCOPE, self::OTHER_SCOPE];
+        sort($sorted, \SORT_STRING);
+        [$first, $second] = $sorted;
+        $this->probe->executeQuery(
+            'SELECT pg_advisory_lock(?, hashtext(?))',
+            [PostgresAdvisoryOrderScopeLock::ADVISORY_NAMESPACE, $second],
+        );
+        $connection->executeStatement("SET lock_timeout = '100ms'");
+        $caught = null;
 
-        $observed = $lock->withLock(self::SCOPE, fn (): array => $lock->withLock(self::SCOPE, fn (): array => [
-            'nesting level' => $connection->getTransactionNestingLevel(),
-            'scope still locked' => !$this->probeCanLock(self::SCOPE),
-        ]));
+        try {
+            $this->lock()->withLocks([self::SCOPE, self::OTHER_SCOPE], static fn (): null => null);
+        } catch (OrderScopeLockTimeoutException $exception) {
+            $caught = $exception;
+        } finally {
+            $connection->executeStatement('RESET lock_timeout');
+            $this->probe->executeQuery(
+                'SELECT pg_advisory_unlock(?, hashtext(?))',
+                [PostgresAdvisoryOrderScopeLock::ADVISORY_NAMESPACE, $second],
+            );
+        }
 
-        self::assertSame(['nesting level' => 1, 'scope still locked' => true], $observed, 'Le withLock() imbriqué n\'a pas tourné dans la transaction du premier.');
+        self::assertInstanceOf(OrderScopeLockTimeoutException::class, $caught, "L'attente du second périmètre n'a pas échoué sous son nom.");
+        self::assertStringContainsString($second, $caught->getMessage(), 'Le délai dépassé ne nomme pas le périmètre attendu.');
+        self::assertStringNotContainsString($first, $caught->getMessage(), 'Le délai dépassé nomme le premier périmètre, pris sans attendre.');
+        self::assertTrue($this->probeCanLock($first), 'Le premier verrou a survécu au ROLLBACK.');
         self::assertFalse($connection->isTransactionActive());
-        self::assertTrue($this->probeCanLock(self::SCOPE));
     }
 
     /**

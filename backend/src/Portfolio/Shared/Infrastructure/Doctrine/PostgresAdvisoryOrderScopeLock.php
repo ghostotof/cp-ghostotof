@@ -68,11 +68,13 @@ use Psr\Log\LoggerInterface;
  * triés, pour que deux appels qui demandent les mêmes ne s'interbloquent
  * pas ; un par instruction, donc `lock_timeout` borne chaque attente et non
  * leur somme —, relit chacun (#402) et retient les périmètres tenus dans un
- * registre vidé quoi qu'il arrive. Sous cette transaction — ou sous celle
- * qu'un `withLock()` a ouverte, qui passe par le même chemin —, un
- * `withLock()` de **ce même adaptateur** sur un périmètre **tenu** exécute son
- * opération directement : ni `BEGIN`, ni nouveau verrou, ni relecture — rien
- * n'a pu être validé dans un périmètre que cette transaction tient. C'est ce qui
+ * registre vidé quoi qu'il arrive. Sous cette transaction, un `withLock()`
+ * de **ce même adaptateur** sur un périmètre **tenu** exécute son opération
+ * directement : ni `BEGIN`, ni nouveau verrou, ni relecture — rien n'a pu
+ * être validé dans un périmètre que cette transaction tient. Un simple
+ * `withLock()` n'alimente pas le registre : sous lui, un `withLock()` du
+ * même périmètre reste refusé, comme tout autre — la réentrance n'existe
+ * que pour l'opération qui l'a demandée en prenant `withLocks()`. C'est ce qui
  * permet à un `app:*:seed` d'enchaîner les `Administrator`s, qui prennent
  * chacun `withLock()`, sous une seule transaction : sa purge et ses
  * recréations valident ou s'annulent ensemble, ce que le refus de #526
@@ -195,15 +197,20 @@ final class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInterface
 
     public function withLock(string $scope, Closure $operation): mixed
     {
-        // Issue #567 : sous une transaction de cet adaptateur — withLocks(),
-        // ou un withLock() qui l'a ouverte —, un périmètre déjà tenu participe
-        // à la transaction, sans rien reprendre ni relire. Un périmètre non
-        // tenu passe par le squelette, qui refuse.
+        // Issue #567 : sous withLocks() de cet adaptateur, un périmètre déjà
+        // tenu participe à la transaction ouverte, sans rien reprendre ni
+        // relire. Tout autre cas passe par le squelette, qui refuse
+        // l'imbrication — un withLock() n'alimente pas le registre.
         if (\in_array($scope, $this->heldScopes, true)) {
             return $operation();
         }
 
-        return $this->withLocks([$scope], $operation);
+        return $this->locked(
+            [$scope],
+            $operation,
+            static fn (): OrderScopeLockInsideTransactionException => OrderScopeLockInsideTransactionException::forScope($scope),
+            registered: false,
+        );
     }
 
     /**
@@ -222,19 +229,42 @@ final class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInterface
             throw OrderScopeLockWithoutScopeException::noScopeGiven();
         }
 
+        return $this->locked(
+            $scopes,
+            $operation,
+            static fn (): OrderScopeLockInsideTransactionException => OrderScopeLockInsideTransactionException::forScopes($scopes),
+            registered: true,
+        );
+    }
+
+    /**
+     * La transaction du squelette, ses verrous pris dans l'ordre reçu, chaque
+     * périmètre relu (#402), puis l'opération.
+     *
+     * @param non-empty-list<class-string>                   $scopes
+     * @param Closure(): OrderScopeLockInsideTransactionException $onNested
+     * @param bool                                           $registered vrai pour `withLocks()` seul : ses périmètres
+     *                                                                   sont retenus le temps de l'opération, et un
+     *                                                                   `withLock()` de l'un d'eux y participe (#567)
+     */
+    private function locked(array $scopes, Closure $operation, Closure $onNested, bool $registered): mixed
+    {
         // Le périmètre dont l'attente est en cours : c'est lui que nomme un
-        // délai dépassé, l'acquisition et son refus étant deux crochets.
+        // délai dépassé. Capturé par référence des deux côtés — une fonction
+        // fléchée le figerait à sa création.
         $waitingFor = $scopes[0];
 
         return new PostgresLockedTransaction($this->entityManager, $this->logger, $this->fallbackLockTimeout)->run(
             acquire: function () use ($scopes, &$waitingFor): void {
                 $this->acquireEachOf($scopes, $waitingFor);
             },
-            onTimeout: static fn (DriverException $timeout): OrderScopeLockTimeoutException => OrderScopeLockTimeoutException::forScope($waitingFor, $timeout),
+            onTimeout: static function (DriverException $timeout) use (&$waitingFor): OrderScopeLockTimeoutException {
+                return OrderScopeLockTimeoutException::forScope($waitingFor, $timeout);
+            },
             // Issue #526 : imbriqué, le refus du trigger des groupes tomberait
             // au COMMIT de l'appelant, sans `onCommitRefused` pour le nommer.
-            onNested: static fn (): OrderScopeLockInsideTransactionException => OrderScopeLockInsideTransactionException::forScopes($scopes),
-            operation: fn (): mixed => $this->holding($scopes, $operation),
+            onNested: $onNested,
+            operation: fn (): mixed => $this->holding($scopes, $operation, $registered),
             // Le nom des refus du trigger des groupes (#506, voir plus haut).
             onCommitRefused: TranslationGroupRefusal::nameOf(...),
         );
@@ -265,16 +295,20 @@ final class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInterface
 
     /**
      * Sous les verrous pris : relit chaque périmètre (#402), puis exécute
-     * l'opération en retenant les périmètres tenus, oubliés quelle que soit
-     * l'issue — un registre périmé ferait tourner le prochain `withLock()`
-     * hors de toute transaction.
+     * l'opération — pour `withLocks()`, en retenant les périmètres tenus,
+     * oubliés quelle que soit l'issue : un registre périmé ferait tourner le
+     * prochain `withLock()` hors de toute transaction.
      *
      * @param non-empty-list<class-string> $scopes
      */
-    private function holding(array $scopes, Closure $operation): mixed
+    private function holding(array $scopes, Closure $operation, bool $registered): mixed
     {
         foreach ($scopes as $scope) {
             $this->rereadEntriesLoadedBefore($scope);
+        }
+
+        if (!$registered) {
+            return $operation();
         }
 
         $this->heldScopes = $scopes;
