@@ -10,6 +10,7 @@ use App\Portfolio\About\Domain\Exception\AboutMeCardCategoryIsImmutableException
 use App\Portfolio\About\Domain\Exception\AboutMeCardNotFoundException;
 use App\Portfolio\About\Domain\Repository\AboutMeCardRepositoryInterface;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
+use App\Portfolio\Shared\Domain\Exception\TranslatableContentLocaleIsImmutableException;
 use App\Portfolio\Shared\Domain\Exception\TranslationGroupAcrossSeveralScopesException;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
@@ -43,7 +44,7 @@ final class AboutMeCardAdministratorTest extends TestCase
 
         $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
-        $updated = $administrator->update($card->getId(), AboutMeCardCategory::HOBBY, 'Moto', 'New description.', 'motorbike', null);
+        $updated = $administrator->update($card->getId(), $card->getLocale(), AboutMeCardCategory::HOBBY, 'Moto', 'New description.', 'motorbike', null);
 
         self::assertSame('Moto', $updated->getTitle());
         self::assertSame(AboutMeCardCategory::HOBBY, $updated->getCategory());
@@ -58,7 +59,7 @@ final class AboutMeCardAdministratorTest extends TestCase
 
         $this->expectException(AboutMeCardNotFoundException::class);
 
-        $administrator->update(Uuid::v7(), AboutMeCardCategory::HOBBY, 'x', 'x', 'x', null);
+        $administrator->update(Uuid::v7(), Locale::FR, AboutMeCardCategory::HOBBY, 'x', 'x', 'x', null);
     }
 
     /**
@@ -81,7 +82,7 @@ final class AboutMeCardAdministratorTest extends TestCase
         $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
         try {
-            $administrator->update($card->getId(), AboutMeCardCategory::HOBBY, 'Musique', 'Autre description.', 'guitar', null);
+            $administrator->update($card->getId(), $card->getLocale(), AboutMeCardCategory::HOBBY, 'Musique', 'Autre description.', 'guitar', null);
             self::fail('Le changement de catégorie a été accepté.');
         } catch (AboutMeCardCategoryIsImmutableException) {
             self::assertSame(AboutMeCardCategory::TECHNICAL, $card->getCategory());
@@ -111,7 +112,36 @@ final class AboutMeCardAdministratorTest extends TestCase
 
         $this->expectException(AboutMeCardCategoryIsImmutableException::class);
 
-        $administrator->update($card->getId(), AboutMeCardCategory::PERSONAL, 'Music', 'Description.', 'guitar', $french->getTranslationGroup());
+        $administrator->update($card->getId(), $card->getLocale(), AboutMeCardCategory::PERSONAL, 'Music', 'Description.', 'guitar', $french->getTranslationGroup());
+    }
+
+    /**
+     * Issue #582 : une autre langue est refusée avant toute autre lecture et
+     * tout changement en mémoire — et avant la catégorie (#578), quand les
+     * deux changent : la règle commune aux huit contextes d'abord.
+     */
+    public function testTheLocaleRefusalComesFirstAndBeforeAnyChange(): void
+    {
+        $card = new AboutMeCard(Locale::FR, AboutMeCardCategory::TECHNICAL, 'Développeur', 'Description.', 'code', 2);
+        $group = $card->getTranslationGroup();
+
+        $repository = $this->createMock(AboutMeCardRepositoryInterface::class);
+        $repository->method('findOneById')->willReturn($card);
+        $repository->expects(self::never())->method('findByTranslationGroup');
+        $repository->expects(self::never())->method('findByCategory');
+        $repository->expects(self::never())->method('save');
+
+        $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
+
+        try {
+            $administrator->update($card->getId(), Locale::EN, AboutMeCardCategory::HOBBY, 'Developer', 'Description.', 'code', null);
+            self::fail('Le changement de langue a été accepté.');
+        } catch (TranslatableContentLocaleIsImmutableException) {
+            self::assertSame(Locale::FR, $card->getLocale());
+            self::assertSame('Développeur', $card->getTitle(), 'Le texte a changé en mémoire avant le refus.');
+            self::assertSame(2, $card->getPosition(), 'La carte a changé de position en mémoire avant le refus.');
+            self::assertTrue($group->equals($card->getTranslationGroup()), 'La carte a changé de groupe en mémoire avant le refus.');
+        }
     }
 
     public function testDeleteRemovesCard(): void
@@ -208,7 +238,7 @@ final class AboutMeCardAdministratorTest extends TestCase
         $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
         try {
-            $administrator->update($card->getId(), AboutMeCardCategory::HOBBY, 'Music', 'Description.', 'guitar', $french->getTranslationGroup());
+            $administrator->update($card->getId(), $card->getLocale(), AboutMeCardCategory::HOBBY, 'Music', 'Description.', 'guitar', $french->getTranslationGroup());
             self::fail('Le rattachement à un groupe réparti a été accepté.');
         } catch (TranslationGroupAcrossSeveralScopesException) {
             self::assertTrue($ownGroup->equals($card->getTranslationGroup()), 'La carte a changé de groupe en mémoire avant le refus.');
@@ -234,7 +264,7 @@ final class AboutMeCardAdministratorTest extends TestCase
 
         $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
-        $updated = $administrator->update($french->getId(), AboutMeCardCategory::HOBBY, 'Guitare', 'Autre description.', 'guitar', $french->getTranslationGroup());
+        $updated = $administrator->update($french->getId(), $french->getLocale(), AboutMeCardCategory::HOBBY, 'Guitare', 'Autre description.', 'guitar', $french->getTranslationGroup());
 
         self::assertSame('Guitare', $updated->getTitle());
         self::assertSame(0, $updated->getPosition());
@@ -260,7 +290,7 @@ final class AboutMeCardAdministratorTest extends TestCase
 
         $administrator = new AboutMeCardAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
-        $administrator->update($french->getId(), AboutMeCardCategory::HOBBY, 'Musique', 'Description.', 'guitar', null);
+        $administrator->update($french->getId(), $french->getLocale(), AboutMeCardCategory::HOBBY, 'Musique', 'Description.', 'guitar', null);
 
         self::assertFalse($spreadGroup->equals($french->getTranslationGroup()), 'Le détachement a été sauté : la carte est restée dans le groupe réparti.');
         self::assertSame(5, $french->getPosition(), "La carte détachée n'est pas partie en fin de sa catégorie (#169).");

@@ -467,6 +467,58 @@ final class BackofficeAboutMeCardResourceTest extends WebTestCase
     }
 
     /**
+     * Issue #582 : une carte ne change pas de langue non plus, comme les
+     * entrées des sept autres contextes. Le `PUT` qui en porte une autre
+     * répondait 200 en l'ignorant (#170 R2) ; il est refusé sous un nom, avant
+     * toute écriture, la carte et sa traduction inchangées.
+     */
+    public function testPutChangingTheLocaleIsRefusedAndLeavesTheEntryUntouched(): void
+    {
+        [$client, $csrfToken] = $this->superClient();
+
+        $administrator = $this->administrator($client);
+        $french = $administrator->create(Locale::FR, AboutMeCardCategory::TECHNICAL, 'Second', 'Description.', 'server');
+        $administrator->create(Locale::EN, AboutMeCardCategory::TECHNICAL, 'Second, in English', 'Description.', 'server', $french->getTranslationGroup());
+
+        $body = $this->put($client, $csrfToken, $french->getId()->toRfc4122(), [
+            'locale' => 'en',
+            'category' => 'technical',
+            'title' => 'Second, renamed',
+            'translationGroup' => $french->getTranslationGroup()->toRfc4122(),
+        ]);
+
+        self::assertResponseStatusCodeSame(409);
+        self::assertSame('/errors/locale-immutable', $body['type'] ?? null);
+
+        $reloaded = self::getContainer()->get(AboutMeCardRepositoryInterface::class)->findOneById($french->getId());
+        self::assertNotNull($reloaded);
+        self::assertSame(Locale::FR, $reloaded->getLocale());
+        self::assertSame('Second', $reloaded->getTitle());
+        self::assertTrue($reloaded->getTranslationGroup()->equals($french->getTranslationGroup()));
+    }
+
+    /**
+     * Ordre des gardes (#582) : une autre langue et une autre catégorie à la
+     * fois. La règle commune aux huit contextes passe avant celle propre aux
+     * cartes « moi » (#578) ; les deux ne dépendent que du corps.
+     */
+    public function testPutChangingBothTheLocaleAndTheCategoryIsRefusedForTheLocale(): void
+    {
+        [$client, $csrfToken] = $this->superClient();
+
+        $lone = $this->administrator($client)->create(Locale::FR, AboutMeCardCategory::TECHNICAL, 'Seule', 'Description.', 'code');
+
+        $body = $this->put($client, $csrfToken, $lone->getId()->toRfc4122(), [
+            'locale' => 'en',
+            'category' => 'personal',
+            'title' => 'Seule, déplacée',
+        ]);
+
+        self::assertResponseStatusCodeSame(409);
+        self::assertSame('/errors/locale-immutable', $body['type'] ?? null);
+    }
+
+    /**
      * Ordre des gardes (#578), au niveau HTTP : une autre catégorie et un
      * groupe de cette catégorie-là répondaient 422 `unknown-translation-group`
      * (le groupe, filtré par la catégorie de la carte, était inconnu). Le refus

@@ -335,7 +335,8 @@ paths:
     `reorder()`, since #503), then the client's errors (the 409 `translation-already-exists`,
     `OrderAssigner`'s 422s of the exact-set rule), then the trigger at COMMIT for what bypasses the application — the cause before its
     consequence, as in the trigger, and a pipeline defect before a client error, as in #384.
-    **One client error comes first, on purpose: a `PUT` carrying another category** (issue #578). A card
+    **Two client errors come first, on purpose, both read from the body alone: a `PUT` carrying another
+    locale (issue #582, end of this paragraph), then one carrying another category** (issue #578). A card
     never changes category (no setter, see #501 above); the `PUT` validated `category`, ignored it and
     answered 200 — and the form of the time, whose category change emptied « Version de », sent
     `translationGroup: null` with it, so the card was silently detached and sent to the end of its
@@ -347,8 +348,24 @@ paths:
     spread-group refusal. That does not contradict #384: #384 forbids a client error that **results from**
     the corrupt state from hiding it, while this one depends on the request body alone; a spread group is
     still refused under its name by the next valid request. The frontend disables the field in edit
-    (`.claude/rules/frontend-backoffice.md`). `locale`, immutable too, is still **ignored** on a `PUT`
-    (#170 R2) on the eight contexts — aligning it on this refusal is #582.
+    (`.claude/rules/frontend-backoffice.md`). **The locale, on the eight contexts** (issue #582): an entry
+    never changes language — it is its group's version in that language, unique there —, and the `PUT`
+    validated `locale`, ignored it and answered 200 since #170 R2 (which had only disabled the field in the
+    form). Every `<X>Administrator::update()` now receives the locale and throws
+    `TranslatableContentLocaleIsImmutableException` (`Portfolio/Shared/Domain/Exception`, **one** exception
+    for the eight, like `TranslationAlreadyExistsException`: one rule, one `type` a client keys on —
+    `locale-immutable`, 409, `log_level: info`, a literal message) right after re-reading the entry under the
+    lock, in the same place and for the same reasons as the category; on a me-card **before** the category
+    (the rule shared by the eight first, the card's own second — both depend on the body alone,
+    `testTheLocaleRefusalComesFirstAndBeforeAnyChange`). The admin frontend does not map it (the field is
+    disabled in edit, nothing in the UI can send it; a 409 of that `type` would read as
+    `translation-already-exists`, accepted). Rejected: a check in the processors through `previous_data`
+    (a business rule in Infrastructure, read before the lock), an edit DTO without `locale` (a 400 on every
+    body carrying it, the same locale included: a contract break for every client). Pinned by
+    `tests/Portfolio/Shared/Application/LocaleIsImmutableOnUpdateTest` over `ProvidesLocalizedAdministrators`
+    (whose `update` takes an optional locale, the entry's by default — a new context is covered there once:
+    refused under the name, the row unchanged, the manager open, and before the 409
+    `translation-already-exists`) and by each `Backoffice<X>ResourceTest` (the typed 409, red before with a 200).
     `AboutMeCardAdministratorTest` pins each path with mocks (no `save()`, nothing changed in memory before
     the refusal, the text edit that reads nothing, the real detachment, the reorder refused before an
     unknown key's 422, the category refusal before any read and before the spread-group one, #578);

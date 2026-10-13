@@ -8,6 +8,7 @@ use App\Portfolio\AnonymousCv\Domain\Entity\AnonymousCvSection;
 use App\Portfolio\AnonymousCv\Domain\Exception\AnonymousCvSectionNotFoundException;
 use App\Portfolio\AnonymousCv\Domain\Repository\AnonymousCvSectionRepositoryInterface;
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
+use App\Portfolio\Shared\Domain\Exception\TranslatableContentLocaleIsImmutableException;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -50,17 +51,25 @@ final readonly class AnonymousCvSectionAdministrator implements AnonymousCvSecti
 
     public function update(
         Uuid $id,
+        Locale $locale,
         string $title,
         string $skills,
         int $yearsOfExperience,
         string $achievements,
         ?Uuid $translationGroup,
     ): AnonymousCvSection {
-        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $title, $skills, $yearsOfExperience, $achievements, $translationGroup): AnonymousCvSection {
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $locale, $title, $skills, $yearsOfExperience, $achievements, $translationGroup): AnonymousCvSection {
             $section = $this->sectionRepository->findOneById($id);
 
             if (null === $section) {
                 throw AnonymousCvSectionNotFoundException::forId($id);
+            }
+
+            // Issue #582 : une entrée ne change pas de langue. Refusé avant
+            // toute autre lecture et tout changement en mémoire (#549), donc
+            // avant le détachement ou le rattachement que demande le corps.
+            if ($section->getLocale() !== $locale) {
+                throw TranslatableContentLocaleIsImmutableException::refused();
             }
 
             if (null === $translationGroup) {

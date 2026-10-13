@@ -112,6 +112,10 @@ api_platform:
         # n'a donc pas à lire le `detail` localisé.
         App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException: 409
         App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException: 422
+        # Issue #582 : une entrée ne change pas de langue — refus explicite (409
+        # typé `locale-immutable`) sur les huit contextes localisés, comme la
+        # catégorie d'une carte « moi » (#578). Le `PUT` l'ignorait (#170 R2).
+        App\Portfolio\Shared\Domain\Exception\TranslatableContentLocaleIsImmutableException: 409
         # Spec 0004 D4 : PUT …/order exige l'ensemble exact des clés du
         # périmètre. Une clé inconnue (ou dupliquée) et une clé manquante sont
         # toutes deux une saisie invalide (422), pas une 404 ni un 409 : la

@@ -62,6 +62,7 @@ final readonly class BackofficeIncidentProcessor implements ProcessorInterface
 
         $incident = $this->incidentAdministrator->update(
             $id,
+            Locale::from((string) $data->locale),
             $data->title,
             $data->version,
             $occurredAt,

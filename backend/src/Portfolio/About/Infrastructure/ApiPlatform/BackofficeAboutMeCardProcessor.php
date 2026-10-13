@@ -47,10 +47,12 @@ final readonly class BackofficeAboutMeCardProcessor implements ProcessorInterfac
      */
     private function update(Uuid $id, mixed $data): BackofficeAboutMeCardResource
     {
-        // La catégorie est transmise pour que l'administrateur refuse une autre
-        // catégorie que celle de la carte (issue #578), au lieu de l'ignorer.
+        // La langue et la catégorie sont transmises pour que l'administrateur
+        // refuse celles qui diffèrent de la carte (issues #582, #578), au lieu
+        // de les ignorer.
         $card = $this->aboutMeCardAdministrator->update(
             $id,
+            Locale::from((string) $data->locale),
             $this->category($data),
             $data->title,
             $data->description,
