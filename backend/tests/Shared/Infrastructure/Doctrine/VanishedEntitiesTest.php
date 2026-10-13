@@ -255,6 +255,8 @@ final class VanishedEntitiesTest extends KernelTestCase
     /**
      * Un `DELETE` DQL par identifiant, comme ceux des dépôts ; `sparing`
      * ajoute une condition que la ligne ne remplit pas.
+     *
+     * @return Query<mixed, mixed>
      */
     private function deleteByIdQuery(ExperienceTechnology $technology, bool $sparing): Query
     {

@@ -167,7 +167,7 @@ final readonly class VanishedEntities
      * instance reste gérée (limite acceptée par #569). L'EntityManager est celui
      * de la requête.
      *
-     * @param Query $deleteById un `DELETE` DQL dont la clause `WHERE` fixe l'identifiant de `$entity` : il touche 0 ou 1 ligne
+     * @param Query<mixed, mixed> $deleteById un `DELETE` DQL dont la clause `WHERE` fixe l'identifiant de `$entity` : il touche 0 ou 1 ligne
      */
     public function deleteById(Query $deleteById, object $entity): void
     {

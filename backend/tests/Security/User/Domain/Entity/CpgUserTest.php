@@ -249,7 +249,6 @@ final class CpgUserTest extends TestCase
 
         $user->setPassword('a-real-hash-set-from-the-backoffice');
         self::assertTrue($user->hasPassword());
-        self::assertSame('', CpgUser::NO_PASSWORD, 'Le hachage vide est la convention que lisent les requêtes de CpgUserRepository.');
     }
 
     /**
