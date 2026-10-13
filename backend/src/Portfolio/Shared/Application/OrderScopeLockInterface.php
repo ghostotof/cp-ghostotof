@@ -55,11 +55,12 @@ interface OrderScopeLockInterface
      * autre `withLock()` : le verrou ouvre et valide la sienne, seul moyen de
      * nommer ce que la base refuse au COMMIT. Un appel imbriqué est refusé
      * avant de rien écrire, en 500 nommé. Une seule exception, bornée (issue
-     * #567) : sous {@see self::withLocks()} de ce même adaptateur, un
-     * `withLock()` d'un périmètre **que cet appel tient déjà** exécute
-     * `$operation` dans cette transaction-là — ni nouvelle transaction, ni
-     * nouveau verrou, ni relecture : rien n'a pu y être validé entre-temps.
-     * Un périmètre non tenu reste refusé.
+     * #567) : sous une transaction de ce même adaptateur — un
+     * {@see self::withLocks()}, ou un `withLock()` —, un `withLock()` d'un
+     * périmètre **que cette transaction tient déjà** exécute `$operation` dans
+     * cette transaction-là — ni nouvelle transaction, ni nouveau verrou, ni
+     * relecture : rien n'a pu y être validé entre-temps. Un périmètre non
+     * tenu reste refusé.
      *
      * Une fois le verrou pris, les entrées de `$scope` que l'appelant a déjà
      * chargées sont relues (issue #402) : `$operation` décide sur ce que la
@@ -87,7 +88,8 @@ interface OrderScopeLockInterface
      * la purge et les recréations valident ou s'annulent ensemble. Les
      * verrous sont pris dans un ordre fixe, quel que soit celui de la liste,
      * pour que deux appels qui demandent les mêmes périmètres ne
-     * s'interbloquent pas.
+     * s'interbloquent pas — un par instruction, donc l'attente est bornée par
+     * périmètre, pas en tout : N périmètres, jusqu'à N fois `lock_timeout`.
      *
      * Sous cette transaction, un `withLock()` de ce même adaptateur sur l'un
      * de ces périmètres y participe (voir `withLock()`) : les `Administrator`s

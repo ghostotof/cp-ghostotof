@@ -77,13 +77,15 @@ final class SeedWatchedProductsCommand extends Command
 
         // Issue #567 : décompte, purge et recréation dans une seule transaction,
         // sous le verrou du catalogue ; le compte rendu s'affiche après son COMMIT.
+        // Le catalogue n'est chargé qu'une fois, sous le verrou : il sert au
+        // décompte, puis à la purge.
         $outcome = $this->orderScopeLock->withLocks(
             self::ORDER_SCOPES,
-            fn (): SeedOutcome => $this->seedUnlessPopulated(
-                $input,
-                fn (): int => \count($this->watchedProductRepository->findAllOrdered()),
-                $this->seed(...),
-            ),
+            function () use ($input): SeedOutcome {
+                $existing = $this->watchedProductRepository->findAllOrdered();
+
+                return $this->seedUnlessPopulated($input, static fn (): int => \count($existing), fn (): array => $this->seed($existing));
+            },
         );
 
         return $outcome->report($io);
@@ -94,12 +96,14 @@ final class SeedWatchedProductsCommand extends Command
      * avant toute création : dans un même `flush()`, les `INSERT` passeraient
      * avant les `DELETE`, et l'index unique du `slug` refuserait le catalogue.
      *
+     * @param list<WatchedProduct> $existing le catalogue en place, à purger
+     *
      * @return list<string> le compte rendu, une ligne
      */
-    private function seed(): array
+    private function seed(array $existing): array
     {
-        foreach ($this->watchedProductRepository->findAllOrdered() as $existing) {
-            $this->watchedProductRepository->remove($existing);
+        foreach ($existing as $product) {
+            $this->watchedProductRepository->remove($product);
         }
 
         // Passe par le cas d'usage plutôt que d'écrire en base directement,

@@ -548,6 +548,27 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     }
 
     /**
+     * La même réentrance vaut sous un simple `withLock()` du même adaptateur,
+     * qui ouvre sa transaction par le même chemin : un `withLock()` du
+     * périmètre qu'elle tient y participe. `testTheLockRefusesToNestInsideItself`
+     * garde l'autre bord : un autre périmètre reste refusé.
+     */
+    public function testANestedWithLockOnTheScopeAPlainWithLockHoldsRunsInItsTransaction(): void
+    {
+        $connection = $this->entityManager()->getConnection();
+        $lock = $this->lock();
+
+        $observed = $lock->withLock(self::SCOPE, fn (): array => $lock->withLock(self::SCOPE, fn (): array => [
+            'nesting level' => $connection->getTransactionNestingLevel(),
+            'scope still locked' => !$this->probeCanLock(self::SCOPE),
+        ]));
+
+        self::assertSame(['nesting level' => 1, 'scope still locked' => true], $observed, 'Le withLock() imbriqué n\'a pas tourné dans la transaction du premier.');
+        self::assertFalse($connection->isTransactionActive());
+        self::assertTrue($this->probeCanLock(self::SCOPE));
+    }
+
+    /**
      * La réentrance ne vaut que pour un périmètre tenu : un seed qui prend X
      * pendant que son `Administrator` écrit Y est une erreur de périmètre,
      * refusée bruyamment, comme toute imbrication (#526), avant toute écriture.

@@ -87,7 +87,11 @@ final class SeedAboutContentCommand extends Command
 
         $outcome = $this->orderScopeLock->withLocks(
             self::ORDER_SCOPES,
-            fn (): SeedOutcome => $this->seedUnlessPopulated($input, $this->countExisting(...), fn (): array => $this->seed($overwriteSettings)),
+            fn (): SeedOutcome => $this->seedUnlessPopulated(
+                $input,
+                $this->countExisting(...),
+                fn (): array => $this->seed($overwriteSettings),
+            ),
         );
 
         return $outcome->report($io);

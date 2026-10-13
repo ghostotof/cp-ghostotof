@@ -32,7 +32,8 @@ answer in nearly every execution, not an error. `SeedWatchedProductsCommandTest`
 **A seed is atomic, per command** (issue #567). The count, the purge and the recreations of one command
 run in **one** transaction, under the order scope lock of every entity class the command writes
 (`OrderScopeLockInterface::withLocks()`, the `Administrator`s' own `withLock()` re-entering it — see
-`.claude/rules/portfolio-contenus.md`): a command that fails writes nothing, and the relaunch repopulates.
+`.claude/rules/portfolio-contenus.md`): a command that fails writes nothing, and the next run — the next
+deploy's Job (`backoffLimit: 0`, no retry inside a Job), or the operator's relaunch — repopulates.
 Before, the purge committed row by row outside any lock and each `Administrator::create()` in its own
 transaction, so a failure in the middle left a partial base — with `--force`, the previous content gone and
 a few new rows; on a first seed, a few rows the guard then took for "content in place", so the preprod Job
@@ -49,7 +50,9 @@ classes its `Administrator`s lock (`ORDER_SCOPES`); a mismatch is refused at the
 (no lock of their own, #553) are written in that same transaction. Cost: the scopes are held for the whole
 command — measured on `app:about:seed --force`, the largest: about 100 ms, under the 5 s `lock_timeout` by
 two orders of magnitude; a backoffice write of the same scope waits that long instead of landing in the
-middle of a purge (the former "accepted limit" of `portfolio-contenus.md`, gone). After a failure past the
+middle of a purge (the former "accepted limit" of `portfolio-contenus.md`, gone). The locks are taken one
+statement each, so `lock_timeout` bounds each wait, not their sum: a two-table seed (About, Quality) behind
+two busy scopes can wait up to 2 × 5 s before failing. After a failure past the
 first write, the EntityManager is closed (#549): the command stops on the exception, as before.
 `tests/Portfolio/Shared/Presentation/Command/SeedCommandsAreAtomicTest` pins the seven commands: a
 `--force` interrupted at the second `persist()` (one creation already flushed) leaves the previous rows

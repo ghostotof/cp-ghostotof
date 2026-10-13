@@ -26,7 +26,7 @@ final class OrderScopeLockInsideTransactionException extends LogicException
      */
     public static function forScope(string $scope): self
     {
-        return self::named($scope);
+        return self::named(\sprintf("du périmètre d'ordre %s", $scope));
     }
 
     /**
@@ -36,11 +36,11 @@ final class OrderScopeLockInsideTransactionException extends LogicException
      */
     public static function forScopes(array $scopes): self
     {
-        return self::named(implode(', ', $scopes));
+        return self::named(\sprintf("des périmètres d'ordre %s", implode(', ', $scopes)));
     }
 
     private static function named(string $scopes): self
     {
-        return new self(\sprintf("Le verrou du périmètre d'ordre %s ne se prend pas dans une transaction déjà ouverte : son COMMIT ne serait qu'un point de sauvegarde, et le refus du trigger des groupes de traduction échapperait à son nom.", $scopes));
+        return new self(\sprintf("Le verrou %s ne se prend pas dans une transaction déjà ouverte : son COMMIT ne serait qu'un point de sauvegarde, et le refus du trigger des groupes de traduction échapperait à son nom.", $scopes));
     }
 }

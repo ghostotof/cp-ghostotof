@@ -100,8 +100,9 @@ spec:
           imagePullPolicy: Always
           # `set -e` : on s'arrête au premier échec réel plutôt que de
           # poursuivre. Chaque commande est atomique (issue #567) : interrompue,
-          # elle n'a rien écrit, et la relance du Job la repeuple. Ajouter un
-          # contexte borné doté d'un seed veut dire ajouter sa ligne ici.
+          # elle n'a rien écrit, et le Job du déploiement suivant la repeuple
+          # (`backoffLimit: 0`, pas de reprise ici). Ajouter un contexte borné
+          # doté d'un seed veut dire ajouter sa ligne ici.
           command:
             - sh
             - -c

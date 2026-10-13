@@ -32,6 +32,8 @@ final readonly class SeedOutcome
     /**
      * Du contenu était en place et `--force` n'a pas été demandé : rien n'a
      * été écrit.
+     *
+     * @param positive-int $existing au moins une entrée, sans quoi rien n'est gardé
      */
     public static function kept(int $existing): self
     {

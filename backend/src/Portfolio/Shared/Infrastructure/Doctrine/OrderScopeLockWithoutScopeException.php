@@ -15,7 +15,7 @@ use LogicException;
  */
 final class OrderScopeLockWithoutScopeException extends LogicException
 {
-    public static function create(): self
+    public static function noScopeGiven(): self
     {
         return new self("withLocks() demande au moins un périmètre d'ordre : sans lui, la transaction ne sérialiserait rien.");
     }
