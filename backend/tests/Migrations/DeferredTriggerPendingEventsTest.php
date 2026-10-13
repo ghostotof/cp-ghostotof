@@ -26,7 +26,10 @@ use Symfony\Component\Uid\UuidV7;
  *
  * Un trigger différé laisse un événement en attente pour chaque ligne qu'une
  * écriture surveillée touche, jusqu'au COMMIT, et PostgreSQL refuse alors en
- * SQLSTATE `55006` les `ALTER TABLE` et les `CREATE INDEX` sur cette table.
+ * SQLSTATE `55006` certains DDL sur cette table : le refus dépend de la
+ * sous-commande, pas de l'instruction (`RENAME COLUMN` passe, `ADD COLUMN`
+ * non). Seuls les cas épinglés ci-dessous sont des faits ; tout autre DDL se
+ * mesure ici avant qu'on se fie à son passage.
  *
  * Chaque test tourne dans **une** transaction, ouverte au `setUp` (aucune ne
  * doit l'être avant : le dépôt n'enveloppe pas les tests dans une
@@ -52,10 +55,30 @@ final class DeferredTriggerPendingEventsTest extends KernelTestCase
 
     private const string DEFERRED = 'SET CONSTRAINTS '.self::TRIGGER.' DEFERRED';
 
+    /**
+     * Les `INSERT` bruts (ici et dans le cas `about_me_card`) recopient les
+     * colonnes NOT NULL de la table, par décision (issue #585). Mesuré : une
+     * colonne NOT NULL ajoutée **avec** un DEFAULT — l'une des deux voies de
+     * la règle des migrations, `.claude/rules/deploiement.md` — ne change
+     * rien ; sans DEFAULT (l'autre voie : la migration remplit la colonne),
+     * sur `contribution` tous les cas échouent dès le `setUp`, sur
+     * `about_me_card` le seul cas qui y écrit, en `23502` nommant la colonne
+     * et la table : un échec bruyant, impossible à confondre avec l'invariant
+     * (`55006`, `23T90`, `23T91`), réparé d'une ligne. Écartés : un
+     * constructeur de ligne minimale lisant le schéma (de la magie qui cache
+     * les colonnes écrites), les `Administrator`s ou l'ORM (le test écrit en
+     * SQL dans sa propre transaction, que les `Administrator`s refusent, #526),
+     * un helper propre à ce test (`Version20261012120000Test` recopie aussi,
+     * par `insert()`, les colonnes de `contribution` et d'`about_me_card`, et
+     * `Version20261012160000Test` celles d'`about_me_card`).
+     */
     private const string INSERT_CONTRIBUTION = "INSERT INTO contribution (id, translation_group, locale, position, title, project, reference, url, summary, body)
         VALUES (?, ?, ?, ?, 'T', 'P', 'R', 'https://example.org', 'S', 'B')";
 
     private Connection $connection;
+
+    /** Vrai une fois la transaction du test ouverte : le `tearDown` n'annule qu'elle. */
+    private bool $ownsTransaction = false;
 
     private UuidV7 $group;
 
@@ -65,6 +88,7 @@ final class DeferredTriggerPendingEventsTest extends KernelTestCase
         $this->connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         self::assertFalse($this->connection->isTransactionActive(), 'Prémisse : aucune transaction ouverte avant le test, sinon les cas mesurent la sienne.');
         $this->connection->beginTransaction();
+        $this->ownsTransaction = true;
 
         $this->group = Uuid::v7();
         $this->insertContribution($this->group, 'fr', 900);
@@ -72,17 +96,26 @@ final class DeferredTriggerPendingEventsTest extends KernelTestCase
         $this->flushPendingEvents();
     }
 
+    /**
+     * N'annule que la transaction que `setUp()` a ouverte (issue #585) : si
+     * `setUp()` échoue avant — démarrage du noyau, prémisse d'aucune
+     * transaction ouverte —, il ne touche pas à la connexion. Lire la
+     * propriété non affectée levait une `Error` d'initialisation ; PHPUnit 13
+     * gardait bien l'exception de `setUp()` et avalait celle-ci sans trace
+     * (mesuré), mais `parent::tearDown()` était sauté, le noyau restant
+     * démarré jusqu'au prochain `bootKernel()`. Et la transaction d'un autre,
+     * qui fait échouer la prémisse, n'est pas annulée en silence.
+     */
     protected function tearDown(): void
     {
-        if ($this->connection->isTransactionActive()) {
+        if ($this->ownsTransaction && $this->connection->isTransactionActive()) {
             $this->connection->rollBack();
         }
         parent::tearDown();
     }
 
     /**
-     * Toute sous-commande d'`ALTER TABLE` mesurée est refusée, et
-     * `CREATE INDEX` aussi.
+     * Les sous-commandes d'`ALTER TABLE` mesurées refusées, et `CREATE INDEX`.
      *
      * @return iterable<string, array{string}>
      */
@@ -99,7 +132,8 @@ final class DeferredTriggerPendingEventsTest extends KernelTestCase
     }
 
     /**
-     * Ce qui n'est pas un `ALTER TABLE` de la table passe.
+     * Les DDL mesurés acceptés, dont une sous-commande d'`ALTER TABLE` de la
+     * table même (`RENAME COLUMN`).
      *
      * @return iterable<string, array{string}>
      */
