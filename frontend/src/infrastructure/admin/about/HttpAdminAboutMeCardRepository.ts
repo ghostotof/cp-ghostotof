@@ -104,6 +104,14 @@ export class HttpAdminAboutMeCardRepository implements AdminAboutMeCardRepositor
       return new AdminAboutError('not-found', 'About me card not found')
     }
     if (409 === response.status) {
+      // Deux 409 sur une carte « moi », distingués par leur type : une
+      // catégorie changée (#578, refusée par le serveur — seul un SPA d'avant
+      // #578 l'envoie encore, le formulaire désactivant le champ) et un groupe
+      // qui porte déjà la langue.
+      if (hasProblemType(body, 'me-card-category-immutable')) {
+        return new AdminAboutError('category-immutable', violationsMessage(body, 'Category is immutable'))
+      }
+
       return new AdminAboutError('translation-already-exists', violationsMessage(body, 'Translation already exists'))
     }
     if (422 === response.status) {

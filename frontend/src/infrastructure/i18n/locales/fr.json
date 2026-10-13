@@ -133,7 +133,8 @@
         "validation": "Le formulaire contient des erreurs. Vérifiez les champs.",
         "unknown": "Une erreur est survenue. Réessayez plus tard.",
         "translation-already-exists": "Ce contenu a déjà une version dans cette langue.",
-        "unknown-translation-group": "Le contenu auquel rattacher cette version n'existe plus. Rechargez la page."
+        "unknown-translation-group": "Le contenu auquel rattacher cette version n'existe plus. Rechargez la page.",
+        "category-immutable": "La catégorie d'une carte ne se modifie pas. Rechargez la page."
       },
       "settings": {
         "title": "Textes de la page À propos",
@@ -162,6 +163,7 @@
         "edit": "Modifier la carte",
         "editAction": "Modifier",
         "categoryLabel": "Catégorie",
+        "categoryLockedHelp": "La catégorie d'une carte ne se modifie pas : pour la ranger ailleurs, créez-la dans la bonne catégorie (ses versions dans les autres langues aussi), puis supprimez celle-ci.",
         "categoryTechnical": "Techniquement",
         "categoryPersonal": "Humainement",
         "categoryHobby": "En dehors du travail",
