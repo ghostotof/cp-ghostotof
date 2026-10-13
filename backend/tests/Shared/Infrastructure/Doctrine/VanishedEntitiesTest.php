@@ -156,12 +156,14 @@ final class VanishedEntitiesTest extends KernelTestCase
     }
 
     /**
-     * Une suppression DQL par identifiant émise par ce même EntityManager
-     * (issue #569) : le dépôt qui l'a exécutée passe l'instance à
-     * `detachDeleted()`, qui la détache et la retient sous la cause
-     * « supprimée par cet EntityManager », pas « disparue sous un verrou ».
+     * Une suppression hors de l'unité de travail émise par ce même
+     * EntityManager — en DQL par identifiant chez les dépôts (issue #569), en
+     * SQL ici, ce qui revient au même pour elle : le dépôt qui l'a exécutée
+     * passe l'instance à `detachDeleted()`, qui la détache et la retient sous
+     * la cause « supprimée par cet EntityManager », pas « disparue sous un
+     * verrou ».
      */
-    public function testAnEntityDeletedInDqlIsDetachedAndRefusedUnderTheRemovalCause(): void
+    public function testDetachDeletedDetachesAndRefusesUnderTheRemovalCause(): void
     {
         $technology = $this->storedTechnology();
         $id = $technology->getId()->toRfc4122();
@@ -175,8 +177,8 @@ final class VanishedEntitiesTest extends KernelTestCase
             $refusal = $exception;
         }
 
-        self::assertFalse($this->entityManager->contains($technology), "L'entité supprimée en DQL est restée gérée.");
-        self::assertNotNull($refusal, "Le persist() d'une entité supprimée en DQL n'a pas été refusé (#569).");
+        self::assertFalse($this->entityManager->contains($technology), "L'entité passée à detachDeleted() est restée gérée.");
+        self::assertNotNull($refusal, "Le persist() d'une entité passée à detachDeleted() n'a pas été refusé (#569).");
         self::assertSame(VanishedEntitySavedAgainException::removedByThisManager(ExperienceTechnology::class, $id)->getMessage(), $refusal->getMessage());
         self::assertFalse($this->entityManager->getUnitOfWork()->isScheduledForInsert($technology), 'Le refus a laissé une insertion planifiée.');
     }

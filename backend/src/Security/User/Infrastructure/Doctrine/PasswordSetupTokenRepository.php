@@ -44,7 +44,9 @@ class PasswordSetupTokenRepository extends ServiceEntityRepository implements Pa
      * {@see VanishedEntities::detachDeleted()} (issue #569) : resté géré, une
      * modification puis un `save()` émettaient un `UPDATE` sur 0 ligne, perdu
      * en silence ; sa re-sauvegarde est désormais refusée. Un jeton épargné
-     * (consommé) reste géré : sa ligne existe.
+     * (consommé) reste géré : sa ligne existe. Ce détachement ne lève pas sur
+     * une instance que l'unité de travail ne gère plus (un `clear()`
+     * survenu entre-temps) : la règle de #425 tient.
      */
     public function remove(PasswordSetupToken $token): void
     {

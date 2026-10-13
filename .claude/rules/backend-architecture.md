@@ -53,7 +53,11 @@ the detached instance re-inserted the deleted row, silently. The service remembe
 `critical` 500). Used today by the order scope lock's re-read, the technology row lock and the account
 administration lock (#551, `.claude/rules/security-user.md`). Since #557 its `postRemove` listener also
 remembers every instance the same manager removed and flushed — Doctrine took it for new as well, its UUID
-kept — so re-saving a deleted entity is refused too (a restoration creates a new entity); the details, the
+kept — so re-saving a deleted entity is refused too (a restoration creates a new entity). **A DQL `DELETE` by
+id** emits no `postRemove`: since #569 the repository that runs it passes the instance to
+`VanishedEntities::detachDeleted()` (same « removed by this manager » cause) **when the statement touched the
+row, and only then** — left managed, a later `save()` sent an `UPDATE` touching no row, lost in silence; a row
+the condition spared still exists and stays managed. A new DQL deletion by id does the same. The details, the
 rejected options and the accepted limits live in `.claude/rules/portfolio-contenus.md` (ordering section).
 
 **Every entity timestamp is stored with its offset** (issue #434): `#[ORM\Column(type:
