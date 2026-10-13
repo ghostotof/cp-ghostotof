@@ -184,6 +184,28 @@ final class FailedLoginTimingEqualizerTest extends TestCase
     }
 
     /**
+     * Décision de l'issue #590, pincée ici : un compte dont le hachage est
+     * d'avant la configuration courante (`needsRehash()` vrai) n'est pas
+     * compensé, comme tout compte qui a un mot de passe — l'égaliseur ne lit
+     * pas le format du hachage. Ce test ne prouve pas que `verify()` ne fait
+     * qu'une dérivation (le hasher est simulé) : c'est le rôle de
+     * `CpgUserPasswordHasherTest`, qui rougissait sous `algorithm: auto`. Il
+     * fige le choix de ne pas compenser l'écart qui reste (coût stocké contre
+     * coût configuré, limite acceptée) : payer la différence obligerait à lire
+     * le hachage stocké et ne marcherait que dans un sens. Le hachage n'est
+     * qu'une chaîne au format bcrypt, jamais vérifiée.
+     */
+    public function testAnAccountWhoseHashNeedsRehashIsNotCompensated(): void
+    {
+        $this->hasher()->expects(self::never())->method('hash');
+
+        ($this->equalizer())($this->failure(
+            new BadCredentialsException('The presented password is invalid.'),
+            $this->passportFor(new CpgUser('jane', '$2y$05$'.str_repeat('a', 53))),
+        ));
+    }
+
+    /**
      * Le throttling rejette avant toute vérification (CheckPassportEvent,
      * priorité 2080) : sa réponse doit rester bon marché, c'est son rôle.
      * Le chargeur d'utilisateur ne doit pas non plus être déclenché.

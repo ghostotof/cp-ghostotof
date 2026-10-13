@@ -1498,6 +1498,53 @@ disparaît de lui-même au bout d'un jour (`ttlSecondsAfterFinished`), et ses lo
 l'acteur `console` de l'événement ne nomme personne, l'attribution de l'`apply` reste celle du
 kubeconfig qui l'a fait.
 
+### Avant de changer `password_hashers` (issue #590)
+
+Le hasher des comptes est écrit en clair dans `backend/config/packages/security.yaml` :
+`algorithm: bcrypt`, `cost: 13` (`cost: 4` en test). `CpgUserPasswordHasherTest` fige ces valeurs
+dans chaque environnement, et c'est voulu : changer l'algorithme ou le coût rouvre un écart de
+temps au login (constat A10). `verify()` travaille au coût **inscrit dans le hachage stocké**,
+alors que l'égaliseur des échecs (`FailedLoginTimingEqualizer`) paie le coût **configuré**. Après
+le changement, chaque compte au hachage ancien répond donc à un mauvais mot de passe en un temps
+à lui, plus court ou plus long qu'un identifiant inconnu. Mesuré sur un poste : 34 ms au coût 10,
+135 ms au coût 12 et 539 ms au coût 14, contre 270 ms au coût 13. Le chronomètre dit alors que
+ce compte existe. L'écart dure jusqu'à la prochaine connexion réussie du compte, qui rehache son
+mot de passe (`PasswordMigratingListener`, `CpgUserRepository::upgradePassword()`, pincé par
+`StalePasswordHashRehashTest`). Un compte dormant le garde. Rehacher d'avance demande le mot de
+passe en clair. Il existe deux contournements, non retenus : un hachage encapsulé (bcrypt de
+l'ancien hachage), qu'aucun hasher de Symfony ne vérifie ; ou vider le mot de passe puis réinviter.
+Le compte devient alors « sans mot de passe », un cas que l'égaliseur compense, mais la personne doit
+en choisir un nouveau. Ne jamais le faire sur le dernier `ROLE_SUPER` qui a un mot de passe.
+Décision du 2026-10-13 : on accepte cet écart et on le documente.
+
+Avant de modifier la configuration, puis après le déploiement, compter les hachages par format,
+en préprod puis en prod. La commande se lance depuis un **terminal séparé**, avec un kubeconfig
+d'administrateur humain, comme la recherche d'un compte (§ « Journal de sécurité »). C'est une
+lecture seule dont la sortie reste sur le terminal. Elle n'affiche que l'en-tête du format (algorithme
+et coût, ou paramètres argon) et un nombre de comptes, jamais un sel, un hachage ni un identifiant.
+
+```bash
+NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
+kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+SELECT CASE
+         WHEN password = '' THEN '(sans mot de passe)'
+         WHEN password LIKE '$argon2%' THEN coalesce(substring(password FROM '^(\$argon2[a-z]*\$v=[0-9]+\$[^$]*\$)'), '(argon, format inconnu)')
+         ELSE coalesce(substring(password FROM '^(\$2[abxy]\$[0-9]{2}\$)'), '(format inconnu)')
+       END AS entete,
+       count(*) AS comptes
+FROM cpg_user GROUP BY 1 ORDER BY 1;
+SQL
+# attendu, avec la configuration actuelle : l'en-tête entete|comptes, les lignes
+# « (sans mot de passe)|n » et « $2y$13$|m » (l'une ou l'autre peut manquer), puis « (k rows) ».
+# Toute autre ligne désigne des hachages anciens, ou posés à la main en SQL.
+```
+
+Le nombre de comptes désignables au chronomètre est la somme de la colonne `comptes` sur toutes les
+lignes, sauf celle du format configuré et « (sans mot de passe) », que l'égaliseur compense déjà. On le
+lit avant de décider. `CpgUserPasswordHasherTest` se met à jour dans le même
+changement que `security.yaml`.
+
 ## Durcissement des pods (jeton de ServiceAccount et Pod Security Admission)
 
 Deux changements posés le 2026-09-21 (3e audit, constat A17, tâche T5.6). Ils
