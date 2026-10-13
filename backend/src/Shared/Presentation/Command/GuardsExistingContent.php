@@ -68,9 +68,9 @@ trait GuardsExistingContent
 
     /**
      * Vrai si l'opérateur a demandé le remplacement (`--force`). Seule lecture
-     * de l'option : une commande qui doit aussi épargner une donnée hors du
-     * décompte (les réglages d'À propos, issue #568) la consulte ici plutôt
-     * que de relire `force` elle-même.
+     * de l'option : une commande qui doit aussi épargner une donnée exclue du
+     * décompte — donc écrite même quand le garde-fou laisse passer sans
+     * `--force` — la consulte ici plutôt que de relire `force` elle-même.
      */
     private function forcesOverwrite(InputInterface $input): bool
     {

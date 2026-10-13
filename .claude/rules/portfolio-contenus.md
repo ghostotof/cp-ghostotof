@@ -392,8 +392,8 @@ paths:
   command runs without `--force` — it then recreates the cards and creates missing settings, but **never
   rewrites existing ones** (issue #568: before, that run reset the five section texts edited in the
   backoffice, the one rewrite of an existing row by a guarded seed, contrary to `.claude/rules/seeding.md`).
-  `SeedAboutContentCommandTest` pins kept, created and `--force`-reset settings. The defect of #499/#545 — a `PUT` answering 200 on a row deleted since the
-  provider loaded it — does not arise, because `AboutSettingsAdministrator::update()` re-reads the database:
+  `SeedAboutContentCommandTest` pins kept, created and `--force`-reset settings. The defect of #499/#545 — a
+  `PUT` answering 200 on a row deleted since the provider loaded it — does not arise, because `AboutSettingsAdministrator::update()` re-reads the database:
   `findByLocale()` is a `findOneBy()`, a search by criteria whose `SELECT` Doctrine **always** runs, so a row
   gone is `null` (**404**, `AboutSettingsNotFoundException`) and a row recreated under another id is the one
   written — unlike `find($id)`, which hands back the identity-map instance without a query (#545). Its fields

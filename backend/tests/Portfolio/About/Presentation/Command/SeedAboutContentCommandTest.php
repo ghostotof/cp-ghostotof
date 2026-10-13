@@ -344,7 +344,14 @@ final class SeedAboutContentCommandTest extends KernelTestCase
 
         self::assertIsArray($row, $locale->value.' : aucune ligne de réglages.');
 
-        return array_map(static fn (mixed $text): string => \is_string($text) ? $text : '', array_values($row));
+        $texts = [];
+
+        foreach ($row as $text) {
+            \assert(\is_string($text));
+            $texts[] = $text;
+        }
+
+        return $texts;
     }
 
     /**

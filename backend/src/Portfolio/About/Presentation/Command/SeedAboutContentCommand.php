@@ -69,14 +69,15 @@ final class SeedAboutContentCommand extends Command
 
         $translationGroups = new TranslationGroupIndex();
 
+        // Les réglages, un singleton par langue, ne sont jamais purgés : ils ne
+        // sont réécrits qu'avec --force (#568), voir ensureSettings().
+        $overwriteSettings = $this->forcesOverwrite($input);
+
         // Spec 0004 D3 : la purge précède désormais toute création, au lieu
         // d'être faite langue par langue. Une carte sans groupe se range en fin
         // de périmètre, toutes langues confondues : les cartes d'une autre
         // langue encore en place pendant la création décaleraient la
-        // numérotation d'autant, à chaque `--force`. Les réglages, eux, sont un
-        // singleton par langue : jamais purgés, réécrits avec --force seulement.
-        $overwriteSettings = $this->forcesOverwrite($input);
-
+        // numérotation d'autant, à chaque `--force`.
         foreach ($this->aboutSiteCardRepository->findAll() as $existing) {
             $this->aboutSiteCardRepository->remove($existing);
         }
@@ -129,26 +130,31 @@ final class SeedAboutContentCommand extends Command
      */
     private function ensureSettings(Locale $locale, array $content, bool $overwrite): string
     {
+        // Les cinq textes de section, dans l'ordre commun au constructeur
+        // d'AboutSettings et à update() : écrits une fois pour les deux.
+        $texts = [
+            $content['site']['eyebrow'],
+            $content['me']['eyebrow'],
+            $content['me']['technicalSubtitle'],
+            $content['me']['personalSubtitle'],
+            $content['me']['hobbiesSubtitle'],
+        ];
+
         $existing = $this->aboutSettingsRepository->findByLocale($locale);
 
         if (null === $existing) {
-            $this->aboutSettingsRepository->save(new AboutSettings(
-                $locale,
-                $content['site']['eyebrow'],
-                $content['me']['eyebrow'],
-                $content['me']['technicalSubtitle'],
-                $content['me']['personalSubtitle'],
-                $content['me']['hobbiesSubtitle'],
-            ));
+            $this->aboutSettingsRepository->save(new AboutSettings($locale, ...$texts));
 
             return 'créés';
         }
 
         // Sans --force, une ligne existante n'est jamais réécrite (#568) :
         // c'est la promesse de GuardsExistingContent, que le décompte seul ne
-        // tient pas pour les réglages, puisqu'ils en sont exclus.
+        // tient pas pour les réglages, puisqu'ils en sont exclus. Le message
+        // rappelle la voie de remise à zéro : un texte de référence changé
+        // dans le code n'atteint pas des réglages déjà en place.
         if (!$overwrite) {
-            return 'conservés';
+            return 'conservés (--force pour les remettre au contenu de référence)';
         }
 
         // Double lecture voulue (#562) : update() relit lui-même la ligne par
@@ -158,14 +164,7 @@ final class SeedAboutContentCommand extends Command
         // lui passer l'instance chargée par le provider. Ne pas « optimiser »
         // en lui passant $existing : un SELECT indexé de plus par locale, avec
         // --force seulement.
-        $this->aboutSettingsAdministrator->update(
-            $locale,
-            $content['site']['eyebrow'],
-            $content['me']['eyebrow'],
-            $content['me']['technicalSubtitle'],
-            $content['me']['personalSubtitle'],
-            $content['me']['hobbiesSubtitle'],
-        );
+        $this->aboutSettingsAdministrator->update($locale, ...$texts);
 
         return 'remis au contenu de référence';
     }
