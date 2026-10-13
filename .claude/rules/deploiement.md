@@ -156,6 +156,36 @@ paths:
   never above `notice`, so the channel is silent in prod; a lock failure stays visible through
   `RateLimiterLockFailureListener`'s `error` line, which never names the resource. A future lock
   taken outside an `/api` request would fail silently: revisit this before adding one.
+- **The application and the migrations run under two PostgreSQL roles, neither a superuser**
+  (issue #575, decided 2026-10-13). Until then every `DATABASE_URL` reused the image's `POSTGRES_USER`:
+  the **bootstrap superuser**, owner of every table — so an SQL injection could have disabled the
+  deferred trigger of the translation groups (#390, #501, #503), read or rewritten any table, or run
+  `COPY … PROGRAM`. Now `backend-secrets.DATABASE_URL` is **`cpg_app`** (`SELECT, INSERT, UPDATE,
+  DELETE` on every table, `USAGE` on every sequence; no `TRUNCATE`, no DDL, no ownership, not
+  `doctrine_migration_versions`) for FPM, the worker, both CronJobs and every applicative Job, and
+  **`migrate-job.yaml` alone** reads **`cpg_migrator`** — owner of the database, of `public` and of
+  every object — from its own `backend-migration-secrets` (an `env` entry, which beats `envFrom`;
+  `MigrationRoleSecretsTest` pins the wiring and that no other backend-image manifest names that
+  Secret). A third role, **`cpg_reader`** (`pg_read_all_data`, no password, local socket only), runs
+  the runbook's human `psql`s (`OperatorExecBoundaryTest` requires `-U cpg_reader`). The SQL lives
+  in `k8s/base/postgres-roles/{roles,privileges,verify}.sql`, played by
+  `k8s/base/postgres-roles-job.yaml` (image of `postgres.yaml`, never the backend image — it would
+  enter the census above —, one transaction, rerunnable, passwords from a temporary Secret created
+  from files, SQL from a temporary ConfigMap; `PostgresRolesJobManifestTest`) through
+  `tools/run-job.sh … 120`, **by hand, preprod then prod, before the release branch that reads the
+  new Secret is pushed** (`k8s/README.md`, « Rôles PostgreSQL »). **Future tables need no GRANT**:
+  `ALTER DEFAULT PRIVILEGES FOR ROLE cpg_migrator` covers what a migration creates — an object created
+  by hand under the superuser does not inherit them: rerun the Job. **The guard is
+  `ApplicationRolePrivilegesTest`**, which replays `privileges.sql` on the migrated test schema with
+  throwaway roles (`SET ROLE`, one rolled-back transaction, no password): every table and sequence
+  open to the application role, a table the migrator creates later too, the trigger still firing
+  under it, and `DISABLE TRIGGER`, `DROP TRIGGER`/`FUNCTION`, `session_replication_role`, DDL and
+  `TRUNCATE` refused in `42501`. **Dev and CI keep the single superuser role**, on purpose: the
+  tests that lift a constraint, disable the trigger or set `session_replication_role` need it, and
+  the guard above is what proves the privileges. A new statement the application needs (a `LOCK
+  TABLE`, a temp table, a new schema) is added to the guard first, then to `privileges.sql`. Kept, as
+  #593: the bootstrap superuser stays reachable over TCP with `postgres-credentials` (entrypoint,
+  probes, Adminer, this Job).
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
   it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would
