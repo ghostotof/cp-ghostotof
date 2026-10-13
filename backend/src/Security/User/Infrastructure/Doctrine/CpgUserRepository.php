@@ -8,6 +8,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Shared\Infrastructure\Doctrine\VanishedEntities;
 use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -27,8 +28,10 @@ use Symfony\Component\Uid\Uuid;
  */
 class CpgUserRepository extends ServiceEntityRepository implements CpgUserRepositoryInterface, PasswordUpgraderInterface, UserLoaderInterface
 {
-    public function __construct(ManagerRegistry $registry)
-    {
+    public function __construct(
+        ManagerRegistry $registry,
+        private readonly VanishedEntities $vanishedEntities,
+    ) {
         parent::__construct($registry, CpgUser::class);
     }
 
@@ -206,16 +209,27 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
      * malgré l'erreur (accusé du broker perdu, #479) et la personne définir son
      * mot de passe. Un jeton émis entre-temps par le handler part avec le
      * compte (`ON DELETE CASCADE`).
+     *
+     * Le compte dont la ligne a été supprimée ici est détaché et retenu par
+     * {@see VanishedEntities::detachDeleted()} (issue #569) : resté géré, une
+     * modification puis un `save()` émettaient un `UPDATE` sur 0 ligne, perdu
+     * en silence ; sa re-sauvegarde est désormais refusée. Un compte épargné
+     * (activé entre-temps) reste géré : sa ligne existe. Un jeton qu'un
+     * `ON DELETE CASCADE` emporte n'est pas détaché : aucun n'est chargé ici.
      */
     public function removePendingInvitation(CpgUser $user): void
     {
-        $this->createQueryBuilder('user')
+        $deleted = $this->createQueryBuilder('user')
             ->delete()
             ->where('user.id = :id')
             ->andWhere('user.activatedAt IS NULL')
             ->setParameter('id', $user->getId(), UuidType::NAME)
             ->getQuery()
             ->execute();
+
+        if (1 === $deleted) {
+            $this->vanishedEntities->detachDeleted($this->getEntityManager(), $user);
+        }
     }
 
     /**

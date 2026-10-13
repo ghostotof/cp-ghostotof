@@ -24,7 +24,10 @@ use WeakReference;
  * `delete()` d'un `Administrator` soit refusée, par les deux premiers
  * (contenus localisés, catalogue de veille, technologies). La suppression
  * d'un compte passe par le même `postRemove`, qui vaut pour toutes les
- * classes : elle n'a pas de test propre.
+ * classes : elle n'a pas de test propre. La suppression DQL par identifiant
+ * (#569) passe par `detachDeleted()`, testée ici ; que les deux dépôts qui en
+ * font l'appellent, seulement quand la ligne a été touchée, est couvert par
+ * CpgUserRepositoryTest et PasswordSetupTokenRepositoryTest.
  */
 final class VanishedEntitiesTest extends KernelTestCase
 {
@@ -150,6 +153,34 @@ final class VanishedEntitiesTest extends KernelTestCase
             $refusal->getMessage(),
             'Les deux causes portent le même message : le journal ne les distingue pas.',
         );
+    }
+
+    /**
+     * Une suppression hors de l'unité de travail émise par ce même
+     * EntityManager — en DQL par identifiant chez les dépôts (issue #569), en
+     * SQL ici, ce qui revient au même pour elle : le dépôt qui l'a exécutée
+     * passe l'instance à `detachDeleted()`, qui la détache et la retient sous
+     * la cause « supprimée par cet EntityManager », pas « disparue sous un
+     * verrou ».
+     */
+    public function testDetachDeletedDetachesAndRefusesUnderTheRemovalCause(): void
+    {
+        $technology = $this->storedTechnology();
+        $id = $technology->getId()->toRfc4122();
+        $this->entityManager->getConnection()->executeStatement('DELETE FROM experience_technology WHERE id = ?', [$id]);
+
+        $this->vanishedEntities()->detachDeleted($this->entityManager, $technology);
+        $refusal = null;
+        try {
+            $this->entityManager->persist($technology);
+        } catch (VanishedEntitySavedAgainException $exception) {
+            $refusal = $exception;
+        }
+
+        self::assertFalse($this->entityManager->contains($technology), "L'entité passée à detachDeleted() est restée gérée.");
+        self::assertNotNull($refusal, "Le persist() d'une entité passée à detachDeleted() n'a pas été refusé (#569).");
+        self::assertSame(VanishedEntitySavedAgainException::removedByThisManager(ExperienceTechnology::class, $id)->getMessage(), $refusal->getMessage());
+        self::assertFalse($this->entityManager->getUnitOfWork()->isScheduledForInsert($technology), 'Le refus a laissé une insertion planifiée.');
     }
 
     /**

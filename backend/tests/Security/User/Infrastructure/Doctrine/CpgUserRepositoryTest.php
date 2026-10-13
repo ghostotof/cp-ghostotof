@@ -7,6 +7,7 @@ namespace App\Tests\Security\User\Infrastructure\Doctrine;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Infrastructure\Doctrine\CpgUserRepository;
+use App\Shared\Infrastructure\Doctrine\VanishedEntitySavedAgainException;
 use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\TestCredentials;
 use DateTimeImmutable;
@@ -244,6 +245,60 @@ final class CpgUserRepositoryTest extends KernelTestCase
         $this->repository->removePendingInvitation($user);
 
         self::assertSame(1, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM cpg_user'));
+    }
+
+    /**
+     * Issue #569 : la suppression DQL laissait l'instance **gérée** alors que
+     * sa ligne n'existait plus. Une modification puis un `save()` émettaient
+     * un `UPDATE` sur 0 ligne — Doctrine ne lit pas ce compte pour une entité
+     * non versionnée —, l'écriture perdue en silence. L'instance est
+     * désormais détachée et retenue par VanishedEntities : sa re-sauvegarde
+     * est refusée sous la cause « supprimée par cet EntityManager ».
+     */
+    public function testRemovePendingInvitationForgetsTheDeletedAccountAndRefusesItsResave(): void
+    {
+        $user = new CpgUser('undispatched', '');
+        $user->setEmail('undispatched@example.com');
+        $user->markInvited(new DateTimeImmutable('2026-10-11T18:00:00+02:00'));
+        $this->repository->save($user);
+        $id = $user->getId()->toRfc4122();
+
+        $this->repository->removePendingInvitation($user);
+        $stillManaged = $this->em->contains($user);
+        $user->markInvited(new DateTimeImmutable('2026-10-11T18:05:00+02:00'));
+        $refusal = null;
+        try {
+            $this->repository->save($user);
+        } catch (VanishedEntitySavedAgainException $exception) {
+            $refusal = $exception;
+        }
+
+        self::assertSame(0, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM cpg_user'), 'Le compte supprimé, re-sauvé, a été réinséré.');
+        self::assertFalse($stillManaged, "Le compte supprimé en DQL est resté géré par l'EntityManager (#569).");
+        self::assertNotNull($refusal, 'La re-sauvegarde du compte supprimé en DQL est passée en silence, UPDATE sur 0 ligne (#569).');
+        self::assertSame(VanishedEntitySavedAgainException::removedByThisManager(CpgUser::class, $id)->getMessage(), $refusal->getMessage());
+    }
+
+    /**
+     * Le compte activé entre-temps n'est pas supprimé (0 ligne touchée) : il
+     * reste géré, et l'écrire reste possible. Seul un DELETE qui a touché sa
+     * ligne détache l'instance.
+     */
+    public function testRemovePendingInvitationLeavesASparedAccountManaged(): void
+    {
+        $user = new CpgUser('activated-meanwhile', 'hashed-password');
+        $user->setEmail('activated@example.com');
+        $user->markInvited(new DateTimeImmutable('2026-10-11T18:00:00+02:00'));
+        $user->markActivated(new DateTimeImmutable('2026-10-11T18:01:00+02:00'));
+        $this->repository->save($user);
+
+        $this->repository->removePendingInvitation($user);
+        $stillManaged = $this->em->contains($user);
+        $user->setEmail('activated.renamed@example.com');
+        $this->repository->save($user);
+
+        self::assertTrue($stillManaged, 'Le compte épargné par la suppression a été détaché.');
+        self::assertSame('activated.renamed@example.com', $this->em->getConnection()->fetchOne('SELECT email FROM cpg_user'));
     }
 
     public function testLoadUserByIdentifierReturnsTheAccount(): void

@@ -284,6 +284,13 @@ paths:
   reading it**, only in the next one; a Messenger message in flight at deploy time must stay readable
   by both versions (v0.11.0's `SendAccountInvitationMessage.userId` note). Only migrations the old code
   cannot survive fall outside this order — see the maintenance window below.
+  **A migration that writes into one of the eight ordered content tables, then alters or indexes that
+  table, can pass the CI and fail only on a populated database — preprod, or a dev database with
+  content** (issue #505): their deferred trigger `trg_translation_group_single_position` leaves pending
+  events that make PostgreSQL refuse the DDL (`55006`), and a write touching no row on the CI's empty
+  database queues none. Which writes count, the fix (`SET CONSTRAINTS … IMMEDIATE` after the writes,
+  never at the top), the test on rows it requires and the drop-and-recreate trap are in
+  `.claude/rules/portfolio-contenus.md`, « Trap for future migrations ».
 - **Every ExternalSecret of the release is synced before anything is migrated or rolled out**
   (issue #325). Right after `backend-config`, the `Deploy` step applies the ESO objects alone
   (`external-secrets.io_*.yaml` from the `kustomize build -o` output) and runs

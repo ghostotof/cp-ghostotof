@@ -38,6 +38,14 @@ use WeakMap;
  *   `flush()`. `UnitOfWork::executeDeletions()` efface tout l'état de
  *   l'instance après le `DELETE` ; l'écouteur `postRemove`, émis à la fin de
  *   ces suppressions (pendant le `flush()`, avant le COMMIT), la retient.
+ *   Ou par une requête DQL par identifiant (#569,
+ *   `PasswordSetupTokenRepository::remove()`,
+ *   `CpgUserRepository::removePendingInvitation()`) : elle n'émet pas
+ *   `postRemove` et laissait l'instance **gérée**, si bien qu'une
+ *   modification puis un `save()` émettaient un `UPDATE` sur 0 ligne, perdu
+ *   en silence (Doctrine ne lit ce compte que pour une entité versionnée).
+ *   Le dépôt passe l'instance à {@see self::detachDeleted()} quand son
+ *   `DELETE` a touché la ligne, et seulement alors.
  *
  * Aucun chemin ne re-sauvait ces instances (les `Administrator`s relisent
  * leur entrée sous le verrou et ne reçoivent que des identifiants, les seeds
@@ -69,9 +77,17 @@ use WeakMap;
  * l'EntityManager — : une instance construite à la main ne refuserait rien,
  * d'où les tests qui la prennent dans le conteneur.
  *
- * Hors de sa portée, accepté. Les entités que ces verrous détachent n'ont pas
- * d'association : un `detach()` en cascade toucherait des enfants que la garde
- * ne retient pas, à revoir le jour où l'une en porte. Une instance détachée
+ * Hors de sa portée, accepté. Aucune association des entités détachées ici ne
+ * porte de `cascade: ['detach']` (le jeton a un `ManyToOne` vers son compte,
+ * sans cascade : le compte reste géré) : un `detach()` en cascade toucherait
+ * des entités que la garde ne retient pas, à revoir le jour où l'une en porte.
+ * L'effet inverse existe : une entité encore gérée qui **référence** l'instance
+ * détachée (un jeton chargé dont le compte est détaché par
+ * `removePendingInvitation()`) fait échouer le `flush()` suivant en
+ * `ORMInvalidArgumentException` (« A new entity was found through the
+ * relationship… » : `UnitOfWork::computeAssociationChanges()` tient pour
+ * neuve une instance qu'il ne gère pas). Un échec bruyant, pas une perte, et
+ * aucun chemin ne charge de jeton avant ce retrait (#569). Une instance détachée
  * autrement — par `close()` (#502, #547, #549) ou `clear()` — n'est pas
  * retenue : sur le même EntityManager fermé, son `persist()` échoue déjà en
  * {@see \Doctrine\ORM\Exception\EntityManagerClosed} ; seul un EntityManager
@@ -88,11 +104,19 @@ use WeakMap;
  * ligne encore supprimée. Une entité à identifiant **généré** serait refusée à tort —
  * `executeDeletions()` remet son identifiant à null, son `persist()` serait
  * un `INSERT` neuf — : aucune n'en a (UUID v7 assignés au constructeur), à
- * revoir le jour où l'une en aura. Une suppression
- * en DQL ou en SQL (`PasswordSetupTokenRepository::remove()`,
- * `CpgUserRepository::removePendingInvitation()`) n'émet pas `postRemove` :
- * l'instance qu'elle laisse en mémoire n'est pas retenue — encore gérée, elle
- * ne repasse pas par `prePersist`, et ces chemins ne la re-sauvent pas.
+ * revoir le jour où l'une en aura. Une suppression DQL **en masse**
+ * (`PasswordSetupTokenRepository::deleteForUser()`, `deleteUnusedForUser()`),
+ * une suppression en SQL et un `ON DELETE CASCADE` ne détachent rien : leurs
+ * instances encore en mémoire restent gérées et ne repassent pas par
+ * `prePersist` — aucun de ces chemins n'en a de chargée (#569). Une
+ * suppression DQL par identifiant dont la ligne avait déjà disparu (0 ligne
+ * touchée) ne détache pas non plus : rien ne dit alors si la ligne vit
+ * encore. Et `detachDeleted()` appelé dans une transaction ensuite annulée
+ * retient une instance dont la ligne est revenue — même limite que le
+ * ROLLBACK après un `flush()` ci-dessus, aggravée de ce que le squelette des
+ * verrous ne voit pas une écriture DQL (`WrittenFlushWatch`) et laisse
+ * l'EntityManager ouvert ; les deux appelants suppriment hors de toute
+ * transaction, une fois le verrou rendu.
  */
 #[AsDoctrineListener(event: Events::prePersist)]
 #[AsDoctrineListener(event: Events::postRemove)]
@@ -117,6 +141,21 @@ final readonly class VanishedEntities
     public function detachVanished(EntityManagerInterface $entityManager, object $entity): void
     {
         $this->vanished[$entity] = VanishedEntityCause::VanishedUnderLock;
+        $entityManager->detach($entity);
+    }
+
+    /**
+     * Détache l'entité dont ce même EntityManager vient de supprimer la ligne
+     * par une requête DQL (issue #569), et refusera sa re-sauvegarde sous la
+     * cause « supprimée par cet EntityManager ».
+     *
+     * Le dépôt qui a exécuté le `DELETE` l'appelle **seulement si la requête a
+     * touché la ligne** : une ligne épargnée par la condition (jeton consommé,
+     * compte activé entre-temps) existe encore, et son instance reste gérée.
+     */
+    public function detachDeleted(EntityManagerInterface $entityManager, object $entity): void
+    {
+        $this->vanished[$entity] = VanishedEntityCause::RemovedByThisManager;
         $entityManager->detach($entity);
     }
 

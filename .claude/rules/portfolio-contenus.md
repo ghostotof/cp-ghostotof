@@ -169,13 +169,48 @@ paths:
     table). **Accepted limits**: two concurrent SQL transactions that skip that lock can
     each re-read the group without the other's uncommitted write and both commit; the check costs one
     indexed query per row written at COMMIT, 2N for a reorder of N FR/EN pairs, under the lock.
-    **Trap for future migrations**: a deferred trigger leaves pending events until the COMMIT, and
-    PostgreSQL refuses an `ALTER TABLE` on a table that has some (55006, "pending trigger events") — a
-    migration that writes into one of the eight tables and then alters it starts with `SET CONSTRAINTS
-    trg_translation_group_single_position IMMEDIATE`. Since #501 that includes a write of `category`
-    alone in `about_me_card`, which the trigger now listens to. And a migration that drops and recreates
-    the trigger writes no data: dropping it while writes of the same transaction await their deferred
-    check cancels those checks silently (measured for #505). That migration reported every divergent group as
+    **Trap for future migrations** (issue #505, measured on PostgreSQL 18, pinned by
+    `tests/Migrations/DeferredTriggerPendingEventsTest`). A deferred trigger leaves a pending event per
+    row a watched write touches, until the COMMIT, and PostgreSQL then refuses on that table **every
+    `ALTER TABLE` measured** — `ADD`/`DROP COLUMN`, `ALTER COLUMN … TYPE`, `SET NOT NULL`, `SET DEFAULT`,
+    `ADD CONSTRAINT`, `DISABLE TRIGGER`: treat any other as refused too — **and `CREATE INDEX`**, all in
+    SQLSTATE `55006` ("cannot ALTER TABLE …" / "cannot CREATE INDEX … because it has pending trigger
+    events"). A `RENAME COLUMN`, a `COMMENT`, a `DROP INDEX` or a DDL on another table pass. Each
+    migration runs in its own transaction (`doctrine_migrations.yaml`, no `all_or_nothing`), so the
+    trap is a write then a DDL on the same table **within one migration**. **Watched writes**: an
+    `INSERT` that inserts rows, and an `UPDATE` touching rows and naming a column of the trigger's
+    `UPDATE OF` clause — `position`, `translation_group`, plus `category` on `about_me_card` since
+    #501; an `UPDATE` of any other column (`SET title = …`), a `DELETE`, a statement touching no row
+    leave nothing pending. **The fix**: `SET CONSTRAINTS trg_translation_group_single_position
+    IMMEDIATE` **after** the writes, right before the DDL — it runs the pending checks there (a
+    divergent group is refused at that line, `23T90`, or `23T91` for a me-card group across
+    categories) and empties the queue —, then `SET CONSTRAINTS … DEFERRED` if more writes follow the
+    DDL (immediate mode stays in force for the rest of the transaction); or the DDL first, the writes
+    after. **Never at the top** of a migration that rewrites a group in several statements: in
+    immediate mode each statement is checked at its end, and the legitimate gap between two members'
+    `UPDATE`s is refused (`23T90`) — the old advice here said exactly that, and was wrong. **Where it
+    shows**: a statement only queues events for the rows it touches, and the CI migrates an empty
+    database (no seeds). A plain `INSERT … VALUES` always inserts, so the CI catches it followed by a
+    DDL; an `UPDATE`, or an `INSERT … SELECT` from a table that is empty there, touches no row, so the
+    CI is green and the refusal appears only on a populated database — a `make db-migrate` on a dev
+    database with content, or the preprod deploy (fail-closed there: the migration Job fails before
+    `apply -k`, see `.claude/rules/deploiement.md`); agents' worktrees, on empty test databases, miss it
+    too. Hence the model of `.claude/rules/seeding.md` (a data migration tested by `tests/Migrations/`
+    against rows), required here: **a migration that writes into one of the eight tables has a
+    `tests/Migrations/` test that first puts rows in the tables it writes and alters** (rows its
+    statements actually touch), replaying it inside a rolled-back transaction (`ReplaysMigration`);
+    such a test clears its own `INSERT`s' events before replaying (`SET CONSTRAINTS … IMMEDIATE` then
+    `DEFERRED`), or it gets a false `55006`. **And a migration that drops and recreates the trigger
+    writes no data**: dropping it while writes of the same transaction await their deferred check
+    cancels those checks silently — a later `IMMEDIATE` checks nothing (pinned), nor does the COMMIT
+    (measured for #505). **No automatic guard, by decision** (#505): replaying every migration on a
+    populated database in CI was weighed and rejected — the hole is narrow (a watched write touching
+    no row in CI, then a refused DDL on the same table, in one migration), a plain `INSERT` is already
+    caught by the CI, the preprod refusal fails closed with the previous release still serving, and
+    the test on rows above catches it before the release branch. The test pins the facts, not
+    migrations: a PostgreSQL upgrade or a trigger change that contradicts them turns it red, and this
+    paragraph with it. Migrations are frozen: `Version20261012120000`'s docblock still gives the old
+    « `IMMEDIATE` at the top » advice — never copy it, this paragraph is the reference. Migration `Version20261012120000` reported every divergent group as
     a `warning` with its original positions per locale in the migration Job's output, then **renumbered
     its perimeter** `0…n-1` by lowest position, the group breaking ties — aligning on the lowest
     position alone left two groups tied, which the repositories break by each row's own id, so FR and
@@ -374,8 +409,22 @@ paths:
     nor in a transaction opened and rolled back by hand: there, without the guard, the `INSERT` would hit the
     primary key at the flush; the guard refuses it first, under a message that still thinks the row deleted; an entity with a **generated** id would
     be refused wrongly (`executeDeletions()` nulls its id, its re-persist is a new `INSERT`) — none has one, revisit
-    the day one does; a DQL or SQL deletion emits no `postRemove`, its in-memory instance is not remembered (still
-    managed, it never reaches `prePersist`; no such path re-saves it).
+    the day one does. **A DQL deletion by id is covered since #569**: it emits no `postRemove` and left the
+    instance **managed**, so a change then a `save()` sent an `UPDATE` touching no row, lost in silence (Doctrine
+    counts affected rows only for a versioned entity). The two such deletions,
+    `PasswordSetupTokenRepository::remove()` and `CpgUserRepository::removePendingInvitation()`
+    (`.claude/rules/security-user.md`), pass the instance to `VanishedEntities::detachDeleted()` — detached, and
+    remembered under the « removed by this manager » cause — **only when their `DELETE` touched the row**: a row
+    their condition spared (a consumed token, an account activated meanwhile) still exists and its instance stays
+    managed. A new DQL deletion by id does the same. Still not covered, accepted: a **bulk** DQL deletion
+    (`deleteForUser()`, `deleteUnusedForUser()`), an SQL one and an `ON DELETE CASCADE` detach nothing (none of
+    those paths has an instance loaded); a deletion by id that touched no row because the row was already gone
+    detaches nothing either (nothing tells it apart from a spared one); and `detachDeleted()` inside a
+    transaction later rolled back remembers an instance whose row is back, with the manager left open, since the
+    skeleton's `WrittenFlushWatch` does not see a DQL write — both callers delete outside any transaction; a
+    still-managed entity **referencing** a detached account (a loaded token) makes the next `flush()` fail with
+    Doctrine's « A new entity was found through the relationship… » — loud, not lost, and no path loads a token
+    before `removePendingInvitation()`.
     Before, `find()` handed back the identity-map instance and a query did not rehydrate a managed one: a
     concurrent write committed in between was silently undone (`reattach()` saw a no-op, `detach()` looked in the
     group the entry had left, a version created in a group took the position the group was leaving, a deleted
