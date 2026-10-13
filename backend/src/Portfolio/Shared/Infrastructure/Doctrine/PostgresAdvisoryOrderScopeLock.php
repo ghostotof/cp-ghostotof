@@ -5,14 +5,11 @@ declare(strict_types=1);
 namespace App\Portfolio\Shared\Infrastructure\Doctrine;
 
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
-use App\Shared\Infrastructure\Doctrine\VanishedEntities;
+use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
 use Closure;
-use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Exception\DriverException;
-use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Query;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -138,7 +135,7 @@ use Psr\Log\LoggerInterface;
  * qu'elle ne rend plus — supprimées entre-temps — sont détachées, et `find()`
  * les dit introuvables. Celles-là, un appelant ne peut **pas** les sauver de
  * nouveau : Doctrine les tiendrait pour neuves et les réinsérerait, d'où le
- * détachement par {@see VanishedEntities}, qui refuse leur `persist()`
+ * détachement par {@see \App\Shared\Infrastructure\Doctrine\VanishedEntities}, qui refuse leur `persist()`
  * (issue #548). Pas `refresh()` entrée par entrée : il ne voit pas une
  * ligne supprimée (il n'hydrate rien et garde l'instance), et coûte une
  * requête par entrée. Pas de détachement de tout le périmètre non plus : une
@@ -190,7 +187,7 @@ final class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInterface
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly LoggerInterface $logger,
-        private readonly VanishedEntities $vanishedEntities,
+        private readonly RereadUnderLock $rereadUnderLock,
         private readonly string $fallbackLockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT,
     ) {
     }
@@ -323,57 +320,14 @@ final class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInterface
     /**
      * Relit en base les instances de `$scope` que l'EntityManager gère déjà
      * (issue #402, voir plus haut) : rafraîchies si la ligne existe encore,
-     * détachées sinon. Rien à relire, aucune requête — le cas d'un `POST`.
+     * détachées sinon. Rien à relire, aucune requête — le cas d'un `POST`. La
+     * requête, le détachement et le filtre des écritures en attente sont ceux
+     * de {@see RereadUnderLock} (issue #560).
      *
      * @param class-string $scope
      */
     private function rereadEntriesLoadedBefore(string $scope): void
     {
-        // Une classe non mappée n'a aucune instance gérée : rien à relire.
-        if ($this->entityManager->getMetadataFactory()->isTransient($scope)) {
-            return;
-        }
-
-        $metadata = $this->entityManager->getClassMetadata($scope);
-        $unitOfWork = $this->entityManager->getUnitOfWork();
-        // Seules les instances lues en base se relisent. Une entrée à insérer
-        // n'y est pas encore (son UUID, donné par le constructeur, la met dans
-        // la carte d'identité dès persist()) et une entrée à supprimer n'est
-        // plus à relire : les détacher annulerait l'écriture en attente.
-        $loaded = array_values(array_filter(
-            $unitOfWork->getIdentityMap()[$metadata->rootEntityName] ?? [],
-            static fn (object $entry): bool => !$unitOfWork->isScheduledForInsert($entry) && !$unitOfWork->isScheduledForDelete($entry),
-        ));
-        if ([] === $loaded) {
-            return;
-        }
-
-        $identifier = $metadata->getSingleIdentifierFieldName();
-        $identifierType = $metadata->getTypeOfField($identifier) ?? Types::STRING;
-        $connection = $this->entityManager->getConnection();
-        $ids = array_map(
-            static fn (object $entry): mixed => $connection->convertToDatabaseValue($metadata->getIdentifierValues($entry)[$identifier], $identifierType),
-            $loaded,
-        );
-
-        // Liée en chaînes : sur PostgreSQL, l'identifiant converti est le
-        // texte de l'uuid natif, que la base compare à la colonne uuid.
-        /** @var list<object> $reread la requête rend les instances déjà gérées, rafraîchies */
-        $reread = $this->entityManager->createQueryBuilder()
-            ->select('entry')
-            ->from($metadata->rootEntityName, 'entry')
-            ->andWhere(\sprintf('entry.%s IN (:ids)', $identifier))
-            ->setParameter('ids', $ids, ArrayParameterType::STRING)
-            ->getQuery()
-            ->setHint(Query::HINT_REFRESH, true)
-            ->getResult();
-
-        $stillStored = array_flip(array_map(spl_object_id(...), $reread));
-        foreach ($loaded as $entry) {
-            if (!isset($stillStored[spl_object_id($entry)])) {
-                // Détachée et retenue : re-sauvée, elle serait réinsérée (#548).
-                $this->vanishedEntities->detachVanished($this->entityManager, $entry);
-            }
-        }
+        $this->rereadUnderLock->everyManagedInstanceOf($this->entityManager, $scope);
     }
 }

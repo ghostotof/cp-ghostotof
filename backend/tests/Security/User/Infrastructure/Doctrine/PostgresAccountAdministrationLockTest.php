@@ -11,7 +11,7 @@ use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Infrastructure\Doctrine\AccountAdministrationLockInsideTransactionException;
 use App\Security\User\Infrastructure\Doctrine\AccountAdministrationLockTimeoutException;
 use App\Security\User\Infrastructure\Doctrine\PostgresAccountAdministrationLock;
-use App\Shared\Infrastructure\Doctrine\VanishedEntities;
+use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use App\Shared\Infrastructure\Doctrine\VanishedEntitySavedAgainException;
 use App\Tests\Support\CommitRefusal;
 use App\Tests\Support\OpensProbeConnection;
@@ -399,7 +399,7 @@ final class PostgresAccountAdministrationLockTest extends KernelTestCase
 
         $this->expectException(AccountAdministrationLockTimeoutException::class);
         $this->expectExceptionMessageMatches($messagePattern);
-        (new PostgresAccountAdministrationLock($this->em, new NullLogger(), self::getContainer()->get(VanishedEntities::class), '50ms'))
+        (new PostgresAccountAdministrationLock($this->em, new NullLogger(), self::getContainer()->get(RereadUnderLock::class), '50ms'))
             ->whileAdministering($target, $actor, static fn (CpgUser $locked): null => null);
     }
 

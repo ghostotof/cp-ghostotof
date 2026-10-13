@@ -13,7 +13,7 @@ use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
 use App\Portfolio\Experience\Infrastructure\Doctrine\ExperienceTechnologyLockInsideTransactionException;
 use App\Portfolio\Experience\Infrastructure\Doctrine\ExperienceTechnologyLockTimeoutException;
 use App\Portfolio\Experience\Infrastructure\Doctrine\PostgresExperienceTechnologyRowLock;
-use App\Shared\Infrastructure\Doctrine\VanishedEntities;
+use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use App\Shared\Infrastructure\Doctrine\VanishedEntitySavedAgainException;
 use App\Tests\Support\CommitRefusal;
 use App\Tests\Support\OpensProbeConnection;
@@ -273,7 +273,7 @@ final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
         $caught = null;
 
         try {
-            (new PostgresExperienceTechnologyRowLock($this->em, new NullLogger(), self::getContainer()->get(VanishedEntities::class), '50ms'))->whileLocked($technology->getId(), static fn (ExperienceTechnology $locked): null => null);
+            (new PostgresExperienceTechnologyRowLock($this->em, new NullLogger(), self::getContainer()->get(RereadUnderLock::class), '50ms'))->whileLocked($technology->getId(), static fn (ExperienceTechnology $locked): null => null);
         } catch (Throwable $exception) {
             $caught = $exception;
         } finally {

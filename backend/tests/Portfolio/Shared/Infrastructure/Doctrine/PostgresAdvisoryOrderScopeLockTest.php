@@ -22,7 +22,7 @@ use App\Portfolio\Shared\Infrastructure\Doctrine\TranslationGroupRefusal;
 use App\Portfolio\Watch\Application\WatchedProductAdministratorInterface;
 use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
-use App\Shared\Infrastructure\Doctrine\VanishedEntities;
+use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use App\Tests\Portfolio\Shared\Support\FakeOrderable;
 use App\Tests\Portfolio\Shared\Support\FakeTranslatableContent;
 use App\Tests\Support\OpensProbeConnection;
@@ -182,7 +182,7 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
         $caught = null;
 
         try {
-            (new PostgresAdvisoryOrderScopeLock($this->entityManager(), new NullLogger(), self::getContainer()->get(VanishedEntities::class), '100ms'))->withLock(self::SCOPE, static fn (): null => null);
+            (new PostgresAdvisoryOrderScopeLock($this->entityManager(), new NullLogger(), self::getContainer()->get(RereadUnderLock::class), '100ms'))->withLock(self::SCOPE, static fn (): null => null);
         } catch (Throwable $exception) {
             $caught = $exception;
         } finally {
@@ -859,7 +859,7 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
      */
     private function lock(): OrderScopeLockInterface
     {
-        return new PostgresAdvisoryOrderScopeLock($this->entityManager(), new NullLogger(), self::getContainer()->get(VanishedEntities::class));
+        return new PostgresAdvisoryOrderScopeLock($this->entityManager(), new NullLogger(), self::getContainer()->get(RereadUnderLock::class));
     }
 
     private function entityManager(): EntityManagerInterface

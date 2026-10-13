@@ -32,7 +32,8 @@ use WeakMap;
  *   {@see \App\Portfolio\Experience\Infrastructure\Doctrine\PostgresExperienceTechnologyRowLock})
  *   et le verrou d'administration des comptes (#551, #552,
  *   {@see \App\Security\User\Infrastructure\Doctrine\PostgresAccountAdministrationLock}).
- *   Ils détachent par {@see self::detachVanished()}, jamais `detach()`.
+ *   Ils relisent par {@see RereadUnderLock} (issue #560), seul à appeler
+ *   {@see self::detachVanished()} — jamais `detach()`.
  *   Détachée, `find()` la dit introuvable — c'est le but.
  * - **Supprimée par ce même EntityManager** (#557) : `remove()` puis
  *   `flush()`. `UnitOfWork::executeDeletions()` efface tout l'état de

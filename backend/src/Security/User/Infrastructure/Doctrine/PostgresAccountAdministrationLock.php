@@ -8,15 +8,12 @@ use App\Security\User\Application\AccountAdministrationLockInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\ActingAccountNoLongerSuperAdminException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
-use App\Shared\Infrastructure\Doctrine\VanishedEntities;
+use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
 use Closure;
 use Doctrine\DBAL\Exception\DriverException;
-use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Query;
 use Psr\Log\LoggerInterface;
-use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -46,8 +43,10 @@ use Symfony\Component\Uid\Uuid;
  *   DQL verrouille, dit si la ligne existe et relit sur place l'instance que
  *   le provider a chargée (`HINT_REFRESH`), comme le verrou de ligne d'une
  *   technologie (#545) — `refresh()` sur une ligne supprimée ne lève rien.
- *   Ligne absente : l'instance périmée est détachée par {@see VanishedEntities}
- *   (re-sauvée, Doctrine la réinsérerait, issue #548), puis le compte est dit
+ *   Ligne absente : l'instance périmée est détachée et retenue (re-sauvée,
+ *   Doctrine la réinsérerait, issue #548) — la relecture de l'acteur et celle
+ *   de la ligne sont celles de {@see RereadUnderLock}, partagées par les
+ *   verrous qui relisent (issue #560) —, puis le compte est dit
  *   introuvable — le 404 du perdant de deux `DELETE`, ou d'un `PUT` des rôles
  *   sur un compte que la purge vient d'emporter (#552), sans ligne d'audit.
  *
@@ -91,7 +90,7 @@ final readonly class PostgresAccountAdministrationLock implements AccountAdminis
     public function __construct(
         private EntityManagerInterface $entityManager,
         private LoggerInterface $logger,
-        private VanishedEntities $vanishedEntities,
+        private RereadUnderLock $rereadUnderLock,
         private string $fallbackLockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT,
     ) {
     }
@@ -141,7 +140,7 @@ final readonly class PostgresAccountAdministrationLock implements AccountAdminis
     private function lockAndRereadTarget(Uuid $targetId): void
     {
         try {
-            $target = $this->reread($targetId, forUpdate: true);
+            $target = $this->rereadUnderLock->row($this->entityManager, CpgUser::class, $targetId, forUpdate: true);
         } catch (DriverException $exception) {
             // Son attente dépassée sous son propre nom, pour que le journal
             // la distingue de celle de l'advisory lock ; tout autre refus
@@ -154,8 +153,6 @@ final readonly class PostgresAccountAdministrationLock implements AccountAdminis
         }
 
         if (null === $target) {
-            $this->forgetStaleInstance($targetId);
-
             throw CpgUserNotFoundException::forId($targetId);
         }
     }
@@ -166,56 +163,14 @@ final readonly class PostgresAccountAdministrationLock implements AccountAdminis
      */
     private function rereadActingUser(Uuid $actingUserId): void
     {
-        $actingUser = $this->reread($actingUserId, forUpdate: false);
+        $actingUser = $this->rereadUnderLock->row($this->entityManager, CpgUser::class, $actingUserId, forUpdate: false);
 
         if (null === $actingUser) {
-            $this->forgetStaleInstance($actingUserId);
-
             throw ActingAccountNoLongerSuperAdminException::deletedMeanwhile();
         }
 
         if (!\in_array(CpgUser::ROLE_SUPER, $actingUser->getRoles(), true)) {
             throw ActingAccountNoLongerSuperAdminException::demotedMeanwhile();
-        }
-    }
-
-    /**
-     * Une seule requête, qui rafraîchit sur place l'instance déjà gérée et
-     * rend `null` si la ligne a disparu ; `FOR UPDATE` à la demande.
-     */
-    private function reread(Uuid $id, bool $forUpdate): ?CpgUser
-    {
-        $query = $this->entityManager->createQueryBuilder()
-            ->select('account')
-            ->from(CpgUser::class, 'account')
-            ->andWhere('account.id = :id')
-            ->setParameter('id', $id, UuidType::NAME)
-            ->getQuery()
-            ->setHint(Query::HINT_REFRESH, true);
-        if ($forUpdate) {
-            $query->setLockMode(LockMode::PESSIMISTIC_WRITE);
-        }
-
-        /** @var CpgUser|null $user */
-        $user = $query->getOneOrNullResult();
-
-        return $user;
-    }
-
-    /**
-     * La ligne a disparu : détache l'instance que la carte d'identité tient
-     * encore (sans requête), sauf si une écriture l'attend — ce serait annuler
-     * en silence son écriture en attente (le filtre de la relecture du verrou
-     * d'ordre, #402).
-     */
-    private function forgetStaleInstance(Uuid $id): void
-    {
-        $unitOfWork = $this->entityManager->getUnitOfWork();
-        $stale = $unitOfWork->tryGetById(['id' => $id], CpgUser::class);
-
-        if (false !== $stale && !$unitOfWork->isScheduledForInsert($stale) && !$unitOfWork->isScheduledForDelete($stale)) {
-            // Détachée et retenue : re-sauvée, elle serait réinsérée (#548).
-            $this->vanishedEntities->detachVanished($this->entityManager, $stale);
         }
     }
 }
