@@ -705,6 +705,52 @@ describe('AdminAboutPage', () => {
       expect(valueOf(wrapper, '#admin-about-me-card-translation-group')).toBe('')
     })
 
+    it("groupe réparti sur deux catégories (limite acceptée, #573) : le sélecteur paraît vide, « aucune » détache", async () => {
+      // Un groupe antérieur à la garde de #501 : « Musique » (FR) reste dans
+      // « En dehors du travail », sa version EN « Music » a été rangée dans
+      // « Techniquement ». L'application ne peut pas en produire, seule une
+      // écriture SQL d'avant #501 le pourrait — d'où une limite acceptée plutôt
+      // qu'un guidage dans l'interface (décision #573, `frontend-backoffice.md`).
+      const spreadGroup = ME_FIXTURES.hobby.groups[0]
+      const [musiqueFr, musicEn] = ME_FIXTURES.hobby.cards
+      const spreadCards = ALL_ME_CARDS.map((card) => (card.id === musicEn.id ? { ...card, category: 'technical' as const } : card))
+      const meCardRepository = createMeCardRepository({ list: vi.fn(async () => spreadCards) })
+      const { wrapper } = await mountPage(createSettingsRepository(), createSiteCardRepository(), meCardRepository)
+
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.hobby, musiqueFr.title), 'Modifier').trigger('click')
+
+      // `startEdit` garde le groupe (`hasSibling` cherche dans toutes les
+      // catégories), mais « Version de » ne liste que la catégorie du
+      // formulaire, où la sœur EN n'est pas : la valeur est hors des options,
+      // et le navigateur affiche un sélecteur vide.
+      const select = wrapper.get('#admin-about-me-card-translation-group').element as HTMLSelectElement
+      const optionValues = Array.from(select.options).map((option) => option.value)
+      expect(optionValues).not.toContain(spreadGroup)
+      expect(select.selectedIndex).toBe(-1)
+
+      // Enregistrer sans toucher au sélecteur renvoie le propre groupe de la
+      // carte : un non-geste côté serveur (#561), le texte reste éditable.
+      await formOf(wrapper, ME_FORM).trigger('submit.prevent')
+      await flushPromises()
+
+      expect(meCardRepository.update).toHaveBeenLastCalledWith(
+        musiqueFr.id,
+        expect.objectContaining({ translationGroup: spreadGroup }),
+      )
+
+      // Le chemin de correction : « — aucune — » envoie `null`, que le serveur
+      // lit toutes catégories confondues et traite en vrai détachement (#561).
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.hobby, musiqueFr.title), 'Modifier').trigger('click')
+      await wrapper.get('#admin-about-me-card-translation-group').setValue('')
+      await formOf(wrapper, ME_FORM).trigger('submit.prevent')
+      await flushPromises()
+
+      expect(meCardRepository.update).toHaveBeenLastCalledWith(
+        musiqueFr.id,
+        expect.objectContaining({ translationGroup: null }),
+      )
+    })
+
     it("n'envoie jamais de position dans le corps d'une écriture", async () => {
       const siteCardRepository = createSiteCardRepository()
       const meCardRepository = createMeCardRepository()
