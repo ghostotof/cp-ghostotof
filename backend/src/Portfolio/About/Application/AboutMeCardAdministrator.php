@@ -67,7 +67,7 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
             // groupe réparti (#561) : il ne dépend que du corps, et ce groupe
             // reste refusé sous son nom à la requête valide suivante.
             if ($card->getCategory() !== $category) {
-                throw AboutMeCardCategoryIsImmutableException::forCategories($card->getCategory(), $category);
+                throw AboutMeCardCategoryIsImmutableException::refused();
             }
 
             if (null === $translationGroup) {

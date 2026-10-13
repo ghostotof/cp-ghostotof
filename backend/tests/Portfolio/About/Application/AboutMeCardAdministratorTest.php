@@ -83,9 +83,7 @@ final class AboutMeCardAdministratorTest extends TestCase
         try {
             $administrator->update($card->getId(), AboutMeCardCategory::HOBBY, 'Musique', 'Autre description.', 'guitar', null);
             self::fail('Le changement de catégorie a été accepté.');
-        } catch (AboutMeCardCategoryIsImmutableException $refusal) {
-            self::assertStringContainsString('technical', $refusal->getMessage());
-            self::assertStringContainsString('hobby', $refusal->getMessage());
+        } catch (AboutMeCardCategoryIsImmutableException) {
             self::assertSame(AboutMeCardCategory::TECHNICAL, $card->getCategory());
             self::assertSame('Développeur', $card->getTitle(), 'Le texte a changé en mémoire avant le refus.');
             self::assertSame(2, $card->getPosition(), 'La carte a changé de position en mémoire avant le refus.');

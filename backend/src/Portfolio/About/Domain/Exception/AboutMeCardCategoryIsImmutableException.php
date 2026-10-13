@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Portfolio\About\Domain\Exception;
 
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
-use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Shared\Domain\Exception\HasProblemType;
 use DomainException;
 
@@ -32,13 +31,15 @@ final class AboutMeCardCategoryIsImmutableException extends DomainException impl
 {
     use HasProblemType;
 
-    public static function forCategories(AboutMeCardCategory $current, AboutMeCardCategory $submitted): self
+    /**
+     * Message littéral : il devient le `detail` renvoyé au client, qui ne doit
+     * jamais reprendre ce que la requête a envoyé (ProblemDetailStaysStaticTest).
+     * Les deux catégories n'y figurent donc pas ; le client a la sienne, et
+     * l'id de la carte est dans l'URL.
+     */
+    public static function refused(): self
     {
-        return new self(\sprintf(
-            'La catégorie d\'une carte ne peut pas changer ("%s" → "%s") : créez la carte dans la bonne catégorie, puis supprimez celle-ci.',
-            $current->value,
-            $submitted->value,
-        ));
+        return new self('La catégorie d\'une carte ne peut pas changer : créez la carte dans la bonne catégorie, puis supprimez celle-ci.');
     }
 
     protected function problemType(): string
