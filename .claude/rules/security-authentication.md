@@ -94,10 +94,39 @@ paths:
     password of an invited account from the backoffice (#238, #460), which stays pending activation while
     `verify()` does the real hash — compensating it as well doubled its response time and singled it out as
     « an invitation whose password was set for the person ». Until #560 the listener read
-    `isPendingActivation()`, written when pending meant an empty hash. **Known gap, older than #560**: a
-    submitted password over 4096 bytes (`PasswordHasherInterface::MAX_PASSWORD_LENGTH`) makes `verify()` return
-    `false` without hashing, and nothing bounds it at login, so an existing account with a password answers
-    faster than an unknown identifier — issue #588.
+    `isPendingActivation()`, written when pending meant an empty hash. **A password over the hasher's bound
+    is refused before any account is loaded** (issue #588): past `CpgUser::MAX_PASSWORD_LENGTH` bytes
+    (`PasswordHasherInterface::MAX_PASSWORD_LENGTH`, `strlen`), `verify()` returns `false` without hashing,
+    so an existing account with a password answered one bcrypt faster than an unknown identifier — about
+    270 ms at production cost, measured with `password_hash` on a workstation (#588) and by A10 (273 ms), not
+    on a pod — enough for one request to tell. `Infrastructure/Security/OverlongPasswordRefusalListener` (`CheckPassportEvent`, priority
+    **1500**: below `login_throttling`'s `checkPassport` at 2080, which sets the tried identifier — so the
+    refusal counts per (IP, identifier) and a throttled pair still gets its 429 —, above
+    `UserCheckerListener` at 256, the first to load the account) throws `SubmittedPasswordTooLongException`,
+    a `BadCredentialsException` that overrides neither `getMessageKey()` nor the code: Lexik's 401, byte for
+    byte. No account loaded, nothing hashed, the same path for every identifier. **This listener and the
+    audit subscriber recognise that exception before calling `Passport::getUser()`**, which would load the
+    account (a query, and the unknown identifier alone compensated — the gap back): no dummy hash,
+    `login-failed` with the fingerprint and no `userId`. Only the length is read, never the value; it is
+    not a validation of a password being set (see `.claude/rules/security-user.md`). Refusing rather than
+    compensating (the equalizer would have had to read the submitted password, pay a bcrypt and keep the
+    query) or truncating (a wrong input whose first 4096 bytes are the password would pass). **Accepted
+    limits** (security review of #588): the refusal is faster than an ordinary failure (no bcrypt), so a
+    stopwatch tells « too long » from « wrong », never which account exists; and below the bound,
+    `verify()` pre-hashes in sha512 an input over 72 bytes or holding a NUL while the dummy `hash()` of a
+    short constant does not — microseconds under bcrypt and network noise, out of reach under
+    `login_throttling`, and equalizing it would mean reading the input. Which failures leave no account
+    loaded is written once, `Infrastructure/Security/LoginFailureCause` (throttled, unknown identifier,
+    overlong password, other), read by this listener and the audit subscriber — a new early refusal adds
+    its case there. The
+    exception has a `log_level: info` entry it never uses: it inherits `AuthenticationException`'s
+    `#[WithHttpStatus(401)]`, which `ExceptionLogLevelCoverageTest` reads, but the `AuthenticatorManager`
+    catches it before the kernel. `OverlongPasswordRefusalListenerPriorityTest` pins the window on the real
+    dispatcher, and the exact list of listeners allowed above it (the throttling, the firewall's
+    `UserProviderListener` at 2048, which only sets the loader): a new one there must be shown not to
+    load the account. `CpgUser::MAX_PASSWORD_LENGTH` is pinned equal to the hasher's constant.
+    **Still open** (issue #590): a stored hash that `needsRehash()` costs two bcrypt on failure
+    (`MigratingPasswordHasher` tries Sodium, which falls back on `password_verify`), the equalizer pays one.
     `FailedLoginTimingEqualizerTest` + `tests/Security/Authentication/LoginFailureTimingTest.php` pin it.
     Related fact worth knowing: `login_throttling` answers a **429** `/errors/rate-limited` with
     `Retry-After` since issue #399, the only failure that leaves Lexik's 401 — it says nothing about the

@@ -6,11 +6,14 @@ namespace App\Tests\Security\Authentication;
 
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\Authentication\Infrastructure\Security\FailedLoginTimingEqualizer;
+use App\Security\Authentication\Infrastructure\Security\SubmittedPasswordTooLongException;
+use App\Security\User\Application\CpgUserAdministratorInterface;
 use App\Security\User\Application\CpgUserInviterInterface;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use ReflectionProperty;
 use SensitiveParameter;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -22,6 +25,7 @@ use Symfony\Component\PasswordHasher\PasswordHasherInterface;
 use Symfony\Component\Security\Core\Exception\BadCredentialsException;
 use Symfony\Component\Security\Core\Exception\UserNotFoundException;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
+use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
 use Symfony\Component\Security\Http\Event\LoginFailureEvent;
 
 /**
@@ -90,6 +94,55 @@ final class LoginFailureTimingTest extends WebTestCase
         // Le corps est bien celui de Lexik, pas une page d'erreur : sans cette
         // ancre, trois 500 identiques passeraient les assertions ci-dessus.
         self::assertStringContainsStringIgnoringCase('invalid credentials', (string) $unknown->getContent());
+    }
+
+    /**
+     * Le refus d'un mot de passe trop long (issue #588) ne quitte pas le 401
+     * commun : même statut, même corps, mêmes en-têtes que l'échec ordinaire,
+     * pour un identifiant inconnu comme pour un compte existant. Une réponse à
+     * part ne trahirait aucun compte, mais elle ferait une quatrième forme
+     * d'échec que rien ne demande.
+     */
+    public function testAnOverlongPasswordAnswersTheCommonFailureResponse(): void
+    {
+        $client = $this->client();
+        $suffix = bin2hex(random_bytes(6));
+
+        $active = 'active-'.$suffix;
+        self::getContainer()->get(CpgUserRegistrarInterface::class)->register($active, TestCredentials::plainPassword());
+        self::getContainer()->get(EntityManagerInterface::class)->clear();
+
+        $reference = $this->attemptLogin($client, 'ghost-'.$suffix, 'wrong-password');
+        self::assertSame(401, $reference->getStatusCode());
+
+        foreach (['inconnu' => 'other-ghost-'.$suffix, 'actif' => $active] as $case => $username) {
+            $response = $this->attemptLogin($client, $username, TestCredentials::overlong());
+
+            self::assertSame(401, $response->getStatusCode(), \sprintf('Le cas « %s » n\'a pas répondu 401.', $case));
+            self::assertSame($reference->getContent(), $response->getContent(), \sprintf('Le refus d\'un mot de passe trop long (%s) se distingue par son corps.', $case));
+            self::assertSame($this->comparableHeaders($reference), $this->comparableHeaders($response), \sprintf('Le refus d\'un mot de passe trop long (%s) se distingue par ses en-têtes.', $case));
+        }
+    }
+
+    /**
+     * Le refus a lieu après le `checkPassport` de `login_throttling`, qui pose
+     * l'identifiant tenté sur la requête : il compte donc pour le couple (IP,
+     * identifiant), comme tout échec, et une paire bridée reçoit le 429 même
+     * avec une saisie trop longue. Placé plus haut, il serait compté sous un
+     * identifiant vide, cinq essais trop longs ne brideraient pas
+     * l'identifiant visé, et le sixième répondrait encore 401.
+     */
+    public function testAnOverlongPasswordCountsTowardsTheTriedIdentifiersThrottling(): void
+    {
+        $client = $this->client();
+        $username = 'ghost-'.bin2hex(random_bytes(6));
+
+        for ($attempt = 1; $attempt <= 5; ++$attempt) {
+            self::assertSame(401, $this->attemptLogin($client, $username, TestCredentials::overlong())->getStatusCode());
+        }
+
+        self::assertSame(429, $this->attemptLogin($client, $username, TestCredentials::overlong())->getStatusCode(), 'Une paire bridée échappe au 429 avec une saisie trop longue.');
+        self::assertSame(429, $this->attemptLogin($client, $username, 'wrong-password')->getStatusCode(), 'Les refus pour mot de passe trop long ne comptent pas pour l\'identifiant tenté.');
     }
 
     /**
@@ -203,6 +256,67 @@ final class LoginFailureTimingTest extends WebTestCase
         // paierait une dérivation que le compte existant ne paie pas.
         self::assertNull($emptyPassword->getPassport(), 'Un mot de passe vide construit désormais un passeport : le chemin rapide n\'est plus uniforme, le compensateur doit être revu.');
         self::assertSame(0, $this->countDummyHashes($emptyPassword));
+    }
+
+    /**
+     * Issue #588 : au-delà de `CpgUser::MAX_PASSWORD_LENGTH` octets (la borne
+     * du hasher), `verify()` rend `false` sans rien dériver. Un compte qui a un
+     * mot de passe répondait donc sans dérivation, alors que l'identifiant
+     * inconnu payait le hachage factice du compensateur : le chronomètre
+     * redisait qui existe.
+     *
+     * Le refus a désormais lieu avant tout chargement de compte, pour tous les
+     * identifiants : aucun hachage, factice ou réel, et aucun compte chargé —
+     * la preuve est l'état du `UserBadge` vu par le dernier écouteur, après le
+     * journal d'audit et le compensateur, qui ne doivent pas l'avoir chargé
+     * non plus.
+     */
+    public function testAnOverlongPasswordIsRefusedBeforeAnyAccountIsLoadedWhateverTheIdentifier(): void
+    {
+        $client = $this->client();
+        $client->disableReboot();
+
+        $suffix = bin2hex(random_bytes(6));
+        $active = 'active-'.$suffix;
+        self::getContainer()->get(CpgUserRegistrarInterface::class)->register($active, TestCredentials::plainPassword());
+        $pending = self::getContainer()->get(CpgUserInviterInterface::class)
+            ->invite('pending.'.$suffix.'@example.test', Locale::FR)
+            ->getUsername();
+        // Invité dont le mot de passe a été posé depuis le backoffice (#238,
+        // #460) : en attente d'activation, mais `verify()` dérive vraiment.
+        $invitedWithPassword = self::getContainer()->get(CpgUserInviterInterface::class)
+            ->invite('set.'.$suffix.'@example.test', Locale::FR);
+        self::getContainer()->get(CpgUserAdministratorInterface::class)->changePassword($invitedWithPassword->getId(), TestCredentials::plainPassword());
+        self::getContainer()->get(EntityManagerInterface::class)->clear();
+
+        /** @var list<LoginFailureEvent> $failures */
+        $failures = [];
+        self::getContainer()->get('security.event_dispatcher.login')->addListener(LoginFailureEvent::class, static function (LoginFailureEvent $event) use (&$failures): void {
+            $failures[] = $event;
+        }, -200);
+
+        $cases = [
+            'inconnu' => 'ghost-'.$suffix,
+            // Hors CpgUser::USERNAME_PATTERN : le chargeur le refuse sans requête.
+            'hors motif' => 'ghost '.$suffix,
+            'en attente' => $pending,
+            'invité au mot de passe posé' => $invitedWithPassword->getUsername(),
+            'actif' => $active,
+        ];
+        foreach ($cases as $username) {
+            $this->attemptLogin($client, $username, TestCredentials::overlong());
+        }
+
+        self::assertCount(\count($cases), $failures);
+
+        foreach (array_combine(array_keys($cases), $failures) as $case => $failure) {
+            self::assertSame(0, $this->countDummyHashes($failure), \sprintf('Le cas « %s » paie un hachage factice : le refus doit coûter la même chose pour tous les identifiants.', $case));
+
+            $badge = $failure->getPassport()?->getBadge(UserBadge::class);
+            self::assertInstanceOf(UserBadge::class, $badge, 'Le refus doit avoir lieu après la construction du passeport, pour que login_throttling compte l\'identifiant.');
+            self::assertFalse((new ReflectionProperty(UserBadge::class, 'user'))->isInitialized($badge), \sprintf('Le cas « %s » a chargé le compte : une requête SQL, et un temps qui dépend de son existence.', $case));
+            self::assertInstanceOf(SubmittedPasswordTooLongException::class, $failure->getException(), \sprintf('Le cas « %s » n\'a pas été refusé par la borne de longueur.', $case));
+        }
     }
 
     /**

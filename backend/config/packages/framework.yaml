@@ -59,6 +59,15 @@ framework:
         # ligne `critical` qu'un anonyme produirait à volonté.
         App\Security\Authentication\Domain\Exception\LoginRateLimitExceededException:
             log_level: info
+        # Mot de passe au-delà de la borne du hasher au login (issue #588) :
+        # une BadCredentialsException, rattrapée par l'AuthenticatorManager du
+        # firewall `login` et rendue en 401 par Lexik, qui n'atteint donc pas
+        # logKernelException. Elle hérite pourtant le #[WithHttpStatus(401)]
+        # d'AuthenticationException, ce qui suffit à ExceptionLogLevelCoverageTest :
+        # l'entrée dit le niveau qu'elle aurait si elle s'échappait un jour,
+        # celui d'une erreur du client, déjà tracée par `login-failed`.
+        App\Security\Authentication\Infrastructure\Security\SubmittedPasswordTooLongException:
+            log_level: info
 
         # --- Exceptions rendues par API Platform (`exception_to_status`) ---
         # logKernelException (priorité 0) les voit aussi, avant API Platform

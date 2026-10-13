@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\Authentication\Infrastructure\Security;
 
 use App\Security\Authentication\Infrastructure\Security\FailedLoginTimingEqualizer;
+use App\Security\Authentication\Infrastructure\Security\SubmittedPasswordTooLongException;
 use App\Security\User\Domain\Entity\CpgUser;
 use DateTimeImmutable;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -204,6 +205,33 @@ final class FailedLoginTimingEqualizerTest extends TestCase
         ($this->equalizer())($this->failure(new TooManyLoginAttemptsAuthenticationException(), $passport));
 
         self::assertSame(0, $loaded, 'Le throttling a déclenché un chargement d\'utilisateur.');
+    }
+
+    /**
+     * Issue #588 : un mot de passe au-delà de la borne du hasher est refusé
+     * par OverlongPasswordRefusalListener *avant* le chargement du compte,
+     * pour tous les identifiants. Rien n'a été dérivé et rien ne doit l'être :
+     * c'est le même chemin pour tous. Rappeler le chargeur coûterait une
+     * requête SQL et ne compenserait que l'identifiant inconnu — l'écart que
+     * ce refus supprime reviendrait.
+     */
+    public function testAnOverlongPasswordRefusalIsNeverCompensatedNorLoadsTheAccount(): void
+    {
+        $this->hasher()->expects(self::never())->method('hash');
+        $loaded = 0;
+
+        $passport = new Passport(
+            new UserBadge('ghost', static function () use (&$loaded): ?UserInterface {
+                ++$loaded;
+
+                return null;
+            }),
+            new PasswordCredentials('irrelevant'),
+        );
+
+        ($this->equalizer())($this->failure(new SubmittedPasswordTooLongException(), $passport));
+
+        self::assertSame(0, $loaded, 'Le refus d\'un mot de passe trop long a déclenché un chargement de compte.');
     }
 
     /**

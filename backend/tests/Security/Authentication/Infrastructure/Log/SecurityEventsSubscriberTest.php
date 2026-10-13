@@ -6,6 +6,7 @@ namespace App\Tests\Security\Authentication\Infrastructure\Log;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\Authentication\Infrastructure\Log\SecurityEventsSubscriber;
+use App\Security\Authentication\Infrastructure\Security\SubmittedPasswordTooLongException;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\TestCredentials;
 use Closure;
@@ -138,6 +139,23 @@ final class SecurityEventsSubscriberTest extends TestCase
         $this->subscriber()->onLoginFailure($this->loginFailure('login', new TooManyLoginAttemptsAuthenticationException(), 'jane', $this->loaderThatMustNotRun()));
 
         self::assertSame(0, $this->loaderCalls, 'Le throttling doit rester bon marché : aucune requête SQL.');
+    }
+
+    /**
+     * Issue #588 : un mot de passe au-delà de la borne du hasher est refusé
+     * avant le chargement du compte, pour tous les identifiants. L'échec est
+     * un `login-failed` ordinaire, avec l'empreinte de l'identifiant tenté,
+     * mais sans compte : le charger ici coûterait une requête SQL pour un
+     * identifiant existant seulement, et le temps redirait qui existe.
+     */
+    public function testAnOverlongPasswordIsLoggedWithoutLoadingTheAccount(): void
+    {
+        $this->auditLogger()->expects(self::once())->method('loginFailed')->with('jane', null);
+        $this->auditLogger()->expects(self::never())->method('loginThrottled');
+
+        $this->subscriber()->onLoginFailure($this->loginFailure('login', new SubmittedPasswordTooLongException(), 'jane', $this->loaderThatMustNotRun()));
+
+        self::assertSame(0, $this->loaderCalls, 'Le refus d\'un mot de passe trop long a chargé le compte.');
     }
 
     /**
