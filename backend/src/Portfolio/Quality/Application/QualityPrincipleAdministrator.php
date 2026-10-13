@@ -8,6 +8,7 @@ use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
 use App\Portfolio\Quality\Domain\Exception\QualityPrincipleNotFoundException;
 use App\Portfolio\Quality\Domain\Repository\QualityPrincipleRepositoryInterface;
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
+use App\Portfolio\Shared\Domain\Exception\TranslatableContentLocaleIsImmutableException;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -47,13 +48,20 @@ final readonly class QualityPrincipleAdministrator implements QualityPrincipleAd
         });
     }
 
-    public function update(Uuid $id, string $title, string $description, string $iconKey, ?Uuid $translationGroup): QualityPrinciple
+    public function update(Uuid $id, Locale $locale, string $title, string $description, string $iconKey, ?Uuid $translationGroup): QualityPrinciple
     {
-        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $title, $description, $iconKey, $translationGroup): QualityPrinciple {
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $locale, $title, $description, $iconKey, $translationGroup): QualityPrinciple {
             $principle = $this->qualityPrincipleRepository->findOneById($id);
 
             if (null === $principle) {
                 throw QualityPrincipleNotFoundException::forId($id);
+            }
+
+            // Issue #582 : une entrée ne change pas de langue. Refusé avant
+            // toute autre lecture et tout changement en mémoire (#549), donc
+            // avant le détachement ou le rattachement qu'il demanderait.
+            if ($principle->getLocale() !== $locale) {
+                throw TranslatableContentLocaleIsImmutableException::refused();
             }
 
             if (null === $translationGroup) {

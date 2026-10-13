@@ -94,7 +94,9 @@ status announcement) that a fork would silently lose:
   entry. The `Position` number field is gone from every form; `BaseNumberInput` survives only for
   genuinely numeric content (years of experience).
 - **What a `PUT` cannot change is disabled in edit, not hidden**: the locale of every per-entry form
-  (#170 R2, the server ignores it — #582 may turn that into a refusal) and the **category of a me-card**
+  (#170 R2; the server refuses another one with a 409 of type `locale-immutable` since #582, which no
+  repository maps — nothing in the UI can send it, so it would read as `translation-already-exists`) and
+  the **category of a me-card**
   (issue #578). The category used to stay active: changing it emptied « Version de » (the
   `flush: 'sync'` watcher, meant for creation), the `PUT` left with `translationGroup: null`, and the
   server, which ignored the category, detached the card from its translation and sent it to the end of

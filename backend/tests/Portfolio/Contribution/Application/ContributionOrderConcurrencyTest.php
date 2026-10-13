@@ -117,7 +117,7 @@ final class ContributionOrderConcurrencyTest extends KernelTestCase
         $id = $entry->getId();
 
         $deleter = $this->interleaveBeforeNextFlush(self::DELETER_SCRIPT, $id->toRfc4122());
-        $administrator->update($id, 'Écrit par le PUT', 'P', 'R', 'https://example.com/a', 'S', 'B', $entry->getTranslationGroup());
+        $administrator->update($id, $entry->getLocale(), 'Écrit par le PUT', 'P', 'R', 'https://example.com/a', 'S', 'B', $entry->getTranslationGroup());
         $this->awaitSuccess($deleter);
 
         self::assertSame(

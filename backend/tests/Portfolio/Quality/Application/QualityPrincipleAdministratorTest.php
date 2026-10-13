@@ -39,7 +39,7 @@ final class QualityPrincipleAdministratorTest extends TestCase
 
         $administrator = new QualityPrincipleAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
-        $updated = $administrator->update($principle->getId(), 'SOLID', 'Description mise à jour.', 'columns-3', null);
+        $updated = $administrator->update($principle->getId(), $principle->getLocale(), 'SOLID', 'Description mise à jour.', 'columns-3', null);
 
         self::assertSame('SOLID', $updated->getTitle());
         // Spec 0004 D3 : `update` ne touche plus à la position — elle ne se
@@ -57,7 +57,7 @@ final class QualityPrincipleAdministratorTest extends TestCase
 
         $this->expectException(QualityPrincipleNotFoundException::class);
 
-        $administrator->update(Uuid::v7(), 'Titre', 'Description', 'icon', null);
+        $administrator->update(Uuid::v7(), Locale::FR, 'Titre', 'Description', 'icon', null);
     }
 
     public function testDeleteRemovesPrinciple(): void

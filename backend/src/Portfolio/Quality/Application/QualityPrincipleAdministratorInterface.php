@@ -7,6 +7,7 @@ namespace App\Portfolio\Quality\Application;
 use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
 use App\Portfolio\Quality\Domain\Exception\QualityPrincipleNotFoundException;
 use App\Portfolio\Shared\Domain\Exception\IncompleteOrderException;
+use App\Portfolio\Shared\Domain\Exception\TranslatableContentLocaleIsImmutableException;
 use App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException;
 use App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException;
 use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
@@ -40,11 +41,16 @@ interface QualityPrincipleAdministratorInterface
      * groupe l'y rattache et lui en fait hériter la position, le sien ne fait
      * rien.
      *
-     * @throws QualityPrincipleNotFoundException si l'id est inconnu
-     * @throws UnknownTranslationGroupException groupe inconnu du périmètre
-     * @throws TranslationAlreadyExistsException le groupe porte déjà cette langue
+     * `$locale` doit être celle de l'entrée (issue #582) : une entrée ne
+     * change pas de langue, et le `PUT` qui en porte une autre est refusé
+     * avant toute écriture plutôt qu'ignoré sous un 200.
+     *
+     * @throws QualityPrincipleNotFoundException             si l'id est inconnu
+     * @throws TranslatableContentLocaleIsImmutableException `$locale` n'est pas celle de l'entrée
+     * @throws UnknownTranslationGroupException              groupe inconnu du périmètre
+     * @throws TranslationAlreadyExistsException             le groupe porte déjà cette langue
      */
-    public function update(Uuid $id, string $title, string $description, string $iconKey, ?Uuid $translationGroup): QualityPrinciple;
+    public function update(Uuid $id, Locale $locale, string $title, string $description, string $iconKey, ?Uuid $translationGroup): QualityPrinciple;
 
     /**
      * @throws QualityPrincipleNotFoundException si l'id est inconnu

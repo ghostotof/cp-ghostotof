@@ -51,6 +51,7 @@ final readonly class BackofficeAboutMeCardProcessor implements ProcessorInterfac
         // catégorie que celle de la carte (issue #578), au lieu de l'ignorer.
         $card = $this->aboutMeCardAdministrator->update(
             $id,
+            Locale::from((string) $data->locale),
             $this->category($data),
             $data->title,
             $data->description,

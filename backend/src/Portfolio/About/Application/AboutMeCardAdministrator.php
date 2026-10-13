@@ -10,6 +10,7 @@ use App\Portfolio\About\Domain\Exception\AboutMeCardNotFoundException;
 use App\Portfolio\About\Domain\Repository\AboutMeCardRepositoryInterface;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
+use App\Portfolio\Shared\Domain\Exception\TranslatableContentLocaleIsImmutableException;
 use App\Portfolio\Shared\Domain\Exception\TranslationGroupAcrossSeveralScopesException;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
@@ -52,13 +53,22 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
         });
     }
 
-    public function update(Uuid $id, AboutMeCardCategory $category, string $title, string $description, ?string $iconKey, ?Uuid $translationGroup): AboutMeCard
+    public function update(Uuid $id, Locale $locale, AboutMeCardCategory $category, string $title, string $description, ?string $iconKey, ?Uuid $translationGroup): AboutMeCard
     {
-        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $category, $title, $description, $iconKey, $translationGroup): AboutMeCard {
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $locale, $category, $title, $description, $iconKey, $translationGroup): AboutMeCard {
             $card = $this->aboutMeCardRepository->findOneById($id);
 
             if (null === $card) {
                 throw AboutMeCardNotFoundException::forId($id);
+            }
+
+            // Issue #582 : une entrée ne change pas de langue. Refusé avant
+            // toute autre lecture et tout changement en mémoire (#549), donc
+            // avant le détachement ou le rattachement qu'il demanderait — et
+            // avant la catégorie (#578) : la règle commune aux huit contextes
+            // d'abord, celle des cartes ensuite ; les deux ne lisent que le corps.
+            if ($card->getLocale() !== $locale) {
+                throw TranslatableContentLocaleIsImmutableException::refused();
             }
 
             // Issue #578 : refusé avant toute autre lecture et tout changement

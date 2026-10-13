@@ -47,6 +47,7 @@ final readonly class BackofficeAboutSiteCardProcessor implements ProcessorInterf
     {
         $card = $this->aboutSiteCardAdministrator->update(
             $id,
+            Locale::from((string) $data->locale),
             $data->title,
             $data->description,
             $data->iconKey,

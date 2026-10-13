@@ -8,6 +8,7 @@ use App\Portfolio\Contribution\Domain\Entity\Contribution;
 use App\Portfolio\Contribution\Domain\Exception\ContributionNotFoundException;
 use App\Portfolio\Contribution\Domain\Repository\ContributionRepositoryInterface;
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
+use App\Portfolio\Shared\Domain\Exception\TranslatableContentLocaleIsImmutableException;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -52,6 +53,7 @@ final readonly class ContributionAdministrator implements ContributionAdministra
 
     public function update(
         Uuid $id,
+        Locale $locale,
         string $title,
         string $project,
         string $reference,
@@ -60,11 +62,18 @@ final readonly class ContributionAdministrator implements ContributionAdministra
         string $body,
         ?Uuid $translationGroup,
     ): Contribution {
-        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $title, $project, $reference, $url, $summary, $body, $translationGroup): Contribution {
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $locale, $title, $project, $reference, $url, $summary, $body, $translationGroup): Contribution {
             $contribution = $this->contributionRepository->findOneById($id);
 
             if (null === $contribution) {
                 throw ContributionNotFoundException::forId($id);
+            }
+
+            // Issue #582 : une entrée ne change pas de langue. Refusé avant
+            // toute autre lecture et tout changement en mémoire (#549), donc
+            // avant le détachement ou le rattachement qu'il demanderait.
+            if ($contribution->getLocale() !== $locale) {
+                throw TranslatableContentLocaleIsImmutableException::refused();
             }
 
             if (null === $translationGroup) {

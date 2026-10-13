@@ -94,6 +94,7 @@ final class AboutMeCardGroupSpreadOverTwoCategoriesTest extends KernelTestCase
 
         $refusal = $this->refusalOf(static fn (AboutMeCardAdministratorInterface $administrator): AboutMeCard => $administrator->update(
             $card->getId(),
+            $card->getLocale(),
             AboutMeCardCategory::HOBBY,
             'Reading',
             'Description.',
@@ -138,7 +139,7 @@ final class AboutMeCardGroupSpreadOverTwoCategoriesTest extends KernelTestCase
         // Le COMMIT du verrou passe le trigger : le groupe neuf du FR est seul,
         // l'ancien ne garde que l'EN.
         self::getContainer()->get(AboutMeCardAdministratorInterface::class)
-            ->update($french->getId(), $french->getCategory(), 'Musique', 'Description.', 'guitar', null);
+            ->update($french->getId(), $french->getLocale(), $french->getCategory(), 'Musique', 'Description.', 'guitar', null);
 
         $groups = $this->connection()->fetchAllKeyValue(
             'SELECT id, translation_group FROM about_me_card WHERE id IN (?, ?)',

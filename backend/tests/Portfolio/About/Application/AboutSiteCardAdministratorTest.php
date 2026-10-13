@@ -39,7 +39,7 @@ final class AboutSiteCardAdministratorTest extends TestCase
 
         $administrator = new AboutSiteCardAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
-        $updated = $administrator->update($card->getId(), 'Stack', 'New description.', 'server', null);
+        $updated = $administrator->update($card->getId(), $card->getLocale(), 'Stack', 'New description.', 'server', null);
 
         self::assertSame('Stack', $updated->getTitle());
     }
@@ -53,7 +53,7 @@ final class AboutSiteCardAdministratorTest extends TestCase
 
         $this->expectException(AboutSiteCardNotFoundException::class);
 
-        $administrator->update(Uuid::v7(), 'x', 'x', 'x', null);
+        $administrator->update(Uuid::v7(), Locale::FR, 'x', 'x', 'x', null);
     }
 
     public function testDeleteRemovesCard(): void

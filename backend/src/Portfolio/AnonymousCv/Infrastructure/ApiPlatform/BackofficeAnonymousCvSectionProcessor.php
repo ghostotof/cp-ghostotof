@@ -52,6 +52,7 @@ final readonly class BackofficeAnonymousCvSectionProcessor implements ProcessorI
     {
         $section = $this->sectionAdministrator->update(
             $id,
+            Locale::from((string) $data->locale),
             $data->title,
             $data->skills,
             $data->yearsOfExperience,

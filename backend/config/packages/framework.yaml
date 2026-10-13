@@ -126,6 +126,8 @@ framework:
             log_level: info
         App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException:
             log_level: info
+        App\Portfolio\Shared\Domain\Exception\TranslatableContentLocaleIsImmutableException:
+            log_level: info
         App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException:
             log_level: info
         App\Portfolio\Shared\Domain\Exception\IncompleteOrderException:

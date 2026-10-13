@@ -9,6 +9,7 @@ use App\Portfolio\About\Domain\Exception\AboutMeCardCategoryIsImmutableException
 use App\Portfolio\About\Domain\Exception\AboutMeCardNotFoundException;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\Shared\Domain\Exception\IncompleteOrderException;
+use App\Portfolio\Shared\Domain\Exception\TranslatableContentLocaleIsImmutableException;
 use App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException;
 use App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException;
 use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
@@ -47,12 +48,17 @@ interface AboutMeCardAdministratorInterface
      * change pas de catégorie, et le `PUT` qui en porte une autre est refusé
      * avant toute écriture plutôt qu'ignoré sous un 200.
      *
-     * @throws AboutMeCardNotFoundException           si l'id est inconnu
-     * @throws AboutMeCardCategoryIsImmutableException `$category` n'est pas celle de la carte
-     * @throws UnknownTranslationGroupException        groupe inconnu du périmètre
-     * @throws TranslationAlreadyExistsException       le groupe porte déjà cette langue
+     * `$locale` doit être celle de l'entrée (issue #582) : une entrée ne
+     * change pas de langue, et le `PUT` qui en porte une autre est refusé
+     * avant toute écriture plutôt qu'ignoré sous un 200.
+     *
+     * @throws AboutMeCardNotFoundException                  si l'id est inconnu
+     * @throws TranslatableContentLocaleIsImmutableException `$locale` n'est pas celle de la carte
+     * @throws AboutMeCardCategoryIsImmutableException       `$category` n'est pas celle de la carte
+     * @throws UnknownTranslationGroupException              groupe inconnu du périmètre
+     * @throws TranslationAlreadyExistsException             le groupe porte déjà cette langue
      */
-    public function update(Uuid $id, AboutMeCardCategory $category, string $title, string $description, ?string $iconKey, ?Uuid $translationGroup): AboutMeCard;
+    public function update(Uuid $id, Locale $locale, AboutMeCardCategory $category, string $title, string $description, ?string $iconKey, ?Uuid $translationGroup): AboutMeCard;
 
     /**
      * @throws AboutMeCardNotFoundException si l'id est inconnu
