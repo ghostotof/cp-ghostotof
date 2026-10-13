@@ -237,6 +237,7 @@ final class TranslationGroupSinglePositionTest extends KernelTestCase
             self::fail('Le réordonnancement a réparé en silence un groupe sur deux positions (#503).');
         } catch (TranslationGroupHasSeveralPositionsException $refusal) {
             self::assertStringContainsString($group->toRfc4122(), $refusal->getMessage(), 'Le refus ne nomme pas le groupe fautif.');
+            self::assertStringContainsString($entityClass, $refusal->getMessage(), 'Le refus ne nomme pas le type de contenu, donc la table.');
             self::assertNull($refusal->getPrevious(), 'Le refus doit venir de l\'application, avant toute écriture, pas du COMMIT.');
         }
 
@@ -450,7 +451,9 @@ final class TranslationGroupSinglePositionTest extends KernelTestCase
      * ne se déclenche pas, `ORIGIN` étant son mode par défaut) — ce que fait un
      * `pg_restore --disable-triggers` ou une réplication logique. Le paramètre
      * exige un superutilisateur, ce qu'est le rôle de la base de test en dev
-     * et en CI (`POSTGRES_USER` de l'image).
+     * et en CI (`POSTGRES_USER` de l'image) : la prémisse est vérifiée et
+     * nommée plutôt que de laisser un « permission denied ». Le paramètre
+     * meurt avec la session, fermée aussitôt.
      *
      * @param list<int|string> $parameters
      */
@@ -459,9 +462,9 @@ final class TranslationGroupSinglePositionTest extends KernelTestCase
         $probe = $this->probe();
 
         try {
+            self::assertSame('on', $probe->fetchOne("SELECT current_setting('is_superuser')"), 'Prémisse : le rôle de test doit être superutilisateur pour désactiver les triggers (session_replication_role).');
             $probe->executeStatement('SET session_replication_role = replica');
             $probe->executeStatement($sql, $parameters);
-            $probe->executeStatement('RESET session_replication_role');
         } finally {
             $probe->close();
         }

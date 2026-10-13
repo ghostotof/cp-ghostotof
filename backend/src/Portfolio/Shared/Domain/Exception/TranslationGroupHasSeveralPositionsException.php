@@ -38,17 +38,23 @@ final class TranslationGroupHasSeveralPositionsException extends LogicException
      * Issue #503 : un réordonnancement a trouvé, avant d'écrire, une clé
      * d'ordre — le groupe de traduction d'un contenu localisé — dont les
      * entités portent déjà plusieurs positions. Les réaligner effacerait la
-     * preuve du défaut amont : le service refuse, et le message donne le
-     * groupe, les positions trouvées et la réparation. Rien que le client ait
-     * saisi : la clé est lue sur les entités du périmètre, pas dans la requête.
+     * preuve du défaut amont : le service refuse, et le message donne le type
+     * de contenu (donc la table), le groupe, les positions trouvées et la
+     * réparation. Rien que le client ait saisi : la clé est lue sur les
+     * entités du périmètre, pas dans la requête.
      *
-     * @param list<int> $positions les positions distinctes trouvées, croissantes
+     * Seul un contenu localisé peut y arriver : `WatchedProduct`, rangé sous
+     * son propre id, n'a qu'une entité par clé — d'où le vocabulaire du groupe.
+     *
+     * @param string    $contentType le type de l'entité (`get_debug_type()`)
+     * @param list<int> $positions   les positions distinctes trouvées, croissantes
      */
-    public static function forOrderingKey(string $orderingKey, array $positions): self
+    public static function forOrderingKey(string $contentType, string $orderingKey, array $positions): self
     {
         return new self(\sprintf(
-            'Le groupe de traduction %s porte plusieurs positions (%s) : réordonnancement refusé pour garder la preuve. Le réparer d\'abord : détacher l\'entrée égarée puis la rattacher au groupe (elle en reprend la position), ou corriger en SQL.',
+            'Le groupe de traduction %s (%s) porte plusieurs positions (%s) : réordonnancement refusé pour garder la preuve. Le réparer d\'abord : au backoffice, passer « Version de » à « aucune » sur l\'entrée dont la position est fausse, puis la rattacher au groupe (elle en reprend la position) ; ou corriger en SQL.',
             $orderingKey,
+            $contentType,
             implode(', ', $positions),
         ));
     }

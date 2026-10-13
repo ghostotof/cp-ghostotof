@@ -121,6 +121,7 @@ final class OrderAssignerTest extends TestCase
         } catch (TranslationGroupHasSeveralPositionsException $refusal) {
             self::assertStringContainsString('group-1', $refusal->getMessage(), 'Le refus ne nomme pas le groupe fautif.');
             self::assertStringContainsString('0, 3', $refusal->getMessage(), 'Le refus ne donne pas les positions trouvées.');
+            self::assertStringContainsString(FakeOrderable::class, $refusal->getMessage(), 'Le refus ne nomme pas le type de contenu, donc la table.');
         }
 
         foreach ([$french, $english, $other] as $entity) {

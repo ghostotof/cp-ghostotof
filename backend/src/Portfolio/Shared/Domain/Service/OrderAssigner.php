@@ -101,13 +101,29 @@ final readonly class OrderAssigner
     private function refuseKeysOnSeveralPositions(array $entitiesByKey): void
     {
         foreach ($entitiesByKey as $key => $entities) {
-            $positions = array_values(array_unique(array_map(static fn (Orderable $entity): int => $entity->getPosition(), $entities)));
+            $position = $entities[0]->getPosition();
 
-            if (\count($positions) > 1) {
-                sort($positions);
-
-                throw TranslationGroupHasSeveralPositionsException::forOrderingKey((string) $key, $positions);
+            foreach ($entities as $entity) {
+                if ($entity->getPosition() !== $position) {
+                    throw TranslationGroupHasSeveralPositionsException::forOrderingKey(get_debug_type($entity), (string) $key, $this->distinctPositionsOf($entities));
+                }
             }
         }
+    }
+
+    /**
+     * Les positions distinctes d'une clé, croissantes : lues seulement pour le
+     * message du refus, jamais sur le chemin nominal.
+     *
+     * @param list<Orderable> $entities
+     *
+     * @return list<int>
+     */
+    private function distinctPositionsOf(array $entities): array
+    {
+        $positions = array_values(array_unique(array_map(static fn (Orderable $entity): int => $entity->getPosition(), $entities)));
+        sort($positions);
+
+        return $positions;
     }
 }

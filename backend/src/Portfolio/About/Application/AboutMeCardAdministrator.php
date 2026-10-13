@@ -110,8 +110,9 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
      * membres égarés (issue #561), vides sur une base saine.
      *
      * Ordre des gardes, toutes avant la moindre écriture : un groupe réparti
-     * sur deux catégories (ici), puis la règle d'ensemble exact
-     * d'`OrderAssigner` (422), puis le trigger au COMMIT pour ce qui contourne
+     * sur deux catégories (ici), puis un groupe sur plusieurs positions et la
+     * règle d'ensemble exact d'`OrderAssigner` (500 puis 422, issue #503),
+     * puis le trigger au COMMIT pour ce qui contourne
      * l'application — la cause avant sa conséquence, comme le trigger
      * lui-même, et un défaut du pipeline avant une erreur du client.
      */
