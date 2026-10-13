@@ -1,0 +1,44 @@
+-- Issue #575 — privilèges du rôle applicatif et du rôle de lecture.
+--
+-- Joué deux fois, depuis ce seul fichier :
+--   - par le Job k8s/base/postgres-roles-job.yaml (psql, après roles.sql,
+--     variables -v app_role=cpg_app -v migrator_role=cpg_migrator
+--     -v reader_role=cpg_reader), en préprod puis en prod, à la main ;
+--   - par backend/tests/Shared/Infrastructure/Postgres/ApplicationRolePrivilegesTest,
+--     qui y substitue des rôles jetables et vérifie, sur le schéma migré de la
+--     base de test, que chaque table et chaque séquence sont accessibles au
+--     rôle applicatif, qu'une table créée ensuite par le rôle de migration
+--     l'est aussi, et que le rôle applicatif ne peut ni désactiver le trigger
+--     différé ni altérer le schéma.
+-- D'où la forme : du SQL pur, une instruction par `;`, aucune méta-commande
+-- psql, et seulement les variables :"app_role", :"migrator_role" et
+-- :"reader_role". Rejouable : chaque GRANT/REVOKE est idempotent.
+
+-- Défaut de PostgreSQL ≥ 15 (la base a été créée sur la 18) : écrit pour
+-- qu'un schéma plus ancien ne laisse pas l'application créer une table.
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+
+-- Le rôle applicatif : le DML sur tout le schéma, rien d'autre. Ni TRUNCATE,
+-- ni TRIGGER, ni REFERENCES ; aucune propriété (ALTER TABLE … DISABLE TRIGGER
+-- et DROP TRIGGER sont réservés au propriétaire), pas superutilisateur
+-- (SET session_replication_role lui est refusé).
+GRANT USAGE ON SCHEMA public TO :"app_role";
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO :"app_role";
+-- Les colonnes d'identité n'en ont pas besoin (nextval interne, sans
+-- contrôle) ; une séquence nommée ou une colonne SERIAL future, si.
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO :"app_role";
+-- L'application ne lit jamais l'historique des migrations.
+REVOKE ALL PRIVILEGES ON TABLE public.doctrine_migration_versions FROM :"app_role";
+
+-- Les tables et séquences de demain : les migrations tournent sous le rôle de
+-- migration (migrate-job.yaml, Secret backend-migration-secrets), et les
+-- privilèges par défaut sont attachés au rôle qui CRÉE l'objet. Un objet créé
+-- par un autre rôle (à la main, en superutilisateur) n'en hérite pas :
+-- rejouer le Job, dont les deux GRANT … ON ALL ci-dessus le rattrapent.
+ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_role" IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"app_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_role" IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO :"app_role";
+
+-- Le lecteur des psql humains du runbook (k8s/README.md) : tout lire, dont
+-- cpg_user pour nommer un compte, rien écrire — une frontière, là où
+-- default_transaction_read_only n'était qu'un garde-fou.
+GRANT pg_read_all_data TO :"reader_role";
