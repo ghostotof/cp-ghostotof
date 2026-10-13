@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Portfolio\Contribution\Presentation\Command;
 
 use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
+use App\Portfolio\Contribution\Domain\Entity\Contribution;
 use App\Portfolio\Contribution\Domain\Repository\ContributionRepositoryInterface;
+use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Presentation\Command\GuardsExistingContent;
+use App\Shared\Presentation\Command\SeedOutcome;
 use App\Shared\Presentation\Command\TranslationGroupIndex;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -35,9 +38,17 @@ final class SeedContributionsContentCommand extends Command
 {
     use GuardsExistingContent;
 
+    /**
+     * Le périmètre d'ordre écrit : la classe d'entité, celle que son
+     * `Administrator` verrouille — un autre périmètre ici serait refusé à son
+     * premier `withLock()`.
+     */
+    private const array ORDER_SCOPES = [Contribution::class];
+
     public function __construct(
         private readonly ContributionRepositoryInterface $contributionRepository,
         private readonly ContributionAdministratorInterface $contributionAdministrator,
+        private readonly OrderScopeLockInterface $orderScopeLock,
     ) {
         parent::__construct();
     }
@@ -51,13 +62,28 @@ final class SeedContributionsContentCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        if ($this->refusesToOverwrite($io, $input, $this->countExisting())) {
-            return Command::SUCCESS;
-        }
+        // Issue #567 : décompte, purge et recréation dans une seule transaction,
+        // sous le verrou du périmètre ; le compte rendu s'affiche après son COMMIT.
+        $outcome = $this->orderScopeLock->withLocks(
+            self::ORDER_SCOPES,
+            fn (): SeedOutcome => $this->seedUnlessPopulated($input, $this->countExisting(...), $this->seed(...)),
+        );
 
+        return $outcome->report($io);
+    }
+
+    /**
+     * Purge puis recrée, sous le verrou : la purge est écrite ligne par ligne
+     * avant toute création.
+     *
+     * @return list<string> une ligne de compte rendu par locale
+     */
+    private function seed(): array
+    {
         $translationGroups = new TranslationGroupIndex();
+        $lines = [];
 
-        // Spec 0004 D3 : la purge précède désormais toute création, au lieu
+        // Spec 0004 D3 : la purge précède toute création, au lieu
         // d'être faite langue par langue. Une entrée sans groupe se range en
         // fin de périmètre, toutes langues confondues : les entrées d'une
         // autre langue encore en place pendant la création décaleraient la
@@ -84,10 +110,10 @@ final class SeedContributionsContentCommand extends Command
                 $translationGroups->remember('contribution', $index, $created->getTranslationGroup());
             }
 
-            $io->success(\sprintf('[%s] %d contribution(s).', $localeValue, \count($contributions)));
+            $lines[] = \sprintf('[%s] %d contribution(s).', $localeValue, \count($contributions));
         }
 
-        return Command::SUCCESS;
+        return $lines;
     }
 
     /**

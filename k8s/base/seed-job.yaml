@@ -99,7 +99,9 @@ spec:
           # version antérieure tout en affichant le bon tag.
           imagePullPolicy: Always
           # `set -e` : on s'arrête au premier échec réel plutôt que de
-          # poursuivre sur une base à moitié peuplée. Ajouter un contexte borné
+          # poursuivre. Chaque commande est atomique (issue #567) : interrompue,
+          # elle n'a rien écrit, et le Job du déploiement suivant la repeuple
+          # (`backoffLimit: 0`, pas de reprise ici). Ajouter un contexte borné
           # doté d'un seed veut dire ajouter sa ligne ici.
           command:
             - sh

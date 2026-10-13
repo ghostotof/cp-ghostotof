@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Portfolio\Incident\Presentation\Command;
 
 use App\Portfolio\Incident\Application\IncidentAdministratorInterface;
+use App\Portfolio\Incident\Domain\Entity\Incident;
 use App\Portfolio\Incident\Domain\Repository\IncidentRepositoryInterface;
+use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Presentation\Command\GuardsExistingContent;
+use App\Shared\Presentation\Command\SeedOutcome;
 use App\Shared\Presentation\Command\TranslationGroupIndex;
 use DateTimeImmutable;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -40,9 +43,17 @@ final class SeedIncidentsContentCommand extends Command
 {
     use GuardsExistingContent;
 
+    /**
+     * Le périmètre d'ordre écrit : la classe d'entité, celle que son
+     * `Administrator` verrouille — un autre périmètre ici serait refusé à son
+     * premier `withLock()`.
+     */
+    private const array ORDER_SCOPES = [Incident::class];
+
     public function __construct(
         private readonly IncidentRepositoryInterface $incidentRepository,
         private readonly IncidentAdministratorInterface $incidentAdministrator,
+        private readonly OrderScopeLockInterface $orderScopeLock,
     ) {
         parent::__construct();
     }
@@ -56,13 +67,28 @@ final class SeedIncidentsContentCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        if ($this->refusesToOverwrite($io, $input, $this->countExisting())) {
-            return Command::SUCCESS;
-        }
+        // Issue #567 : décompte, purge et recréation dans une seule transaction,
+        // sous le verrou du périmètre ; le compte rendu s'affiche après son COMMIT.
+        $outcome = $this->orderScopeLock->withLocks(
+            self::ORDER_SCOPES,
+            fn (): SeedOutcome => $this->seedUnlessPopulated($input, $this->countExisting(...), $this->seed(...)),
+        );
 
+        return $outcome->report($io);
+    }
+
+    /**
+     * Purge puis recrée, sous le verrou : la purge est écrite ligne par ligne
+     * avant toute création.
+     *
+     * @return list<string> une ligne de compte rendu par locale
+     */
+    private function seed(): array
+    {
         $translationGroups = new TranslationGroupIndex();
+        $lines = [];
 
-        // Spec 0004 D3 : la purge précède désormais toute création, au lieu
+        // Spec 0004 D3 : la purge précède toute création, au lieu
         // d'être faite langue par langue. Une entrée sans groupe se range en
         // fin de table, toutes langues confondues : les entrées anglaises
         // encore en place pendant la création des françaises décaleraient la
@@ -90,10 +116,10 @@ final class SeedIncidentsContentCommand extends Command
                 $translationGroups->remember('incident', $index, $created->getTranslationGroup());
             }
 
-            $io->success(\sprintf('[%s] %d incident(s).', $localeValue, \count($incidents)));
+            $lines[] = \sprintf('[%s] %d incident(s).', $localeValue, \count($incidents));
         }
 
-        return Command::SUCCESS;
+        return $lines;
     }
 
     /**

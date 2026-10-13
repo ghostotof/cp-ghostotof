@@ -86,11 +86,34 @@ paths:
     **It refuses to run inside a transaction already open** (issue #526), another `withLock()` included: there
     its `commit()` would only be a `RELEASE SAVEPOINT`, and the trigger would refuse at the caller's COMMIT as
     a bare `23T90`. The refusal, `OrderScopeLockInsideTransactionException` (a `LogicException`, unmapped, a
-    `critical` 500), comes before any write; no caller nests today (the `Administrator`s, the seeds, the
+    `critical` 500), comes before any write; no caller nests today (the `Administrator`s, the
     migrations, which write in SQL, the whole suite), so the rule holds by construction instead of relying on
     the next caller's memory. Since #532 the check lives in the shared skeleton (`run()`'s required
-    `onNested`), common to every lock of the skeleton, each naming its own refusal. A future operation spanning
-    two scopes takes one lock, or an adapter that owns the outer COMMIT — never a nested `withLock()`. DBAL's count is the judge: a transaction opened in raw
+    `onNested`), common to every lock of the skeleton, each naming its own refusal. **One exception, bounded,
+    outside the skeleton** (issue #567, reversing #532's "no adapter has a use for it"): the order scope lock
+    gains `withLocks(scopes, operation)` — one transaction through the unchanged skeleton, the advisory locks
+    of every scope taken **sorted** (no deadlock between two callers asking for the same ones), one statement
+    each (a `SELECT` list has no guaranteed evaluation order), so `lock_timeout` bounds each wait and not their
+    sum — N scopes, up to N × 5 s —, each scope re-read (#402), the held scopes kept in a small registry
+    emptied in a `finally` whatever the outcome —, and under that transaction a `withLock()` of the **same
+    adapter** on a scope **that transaction holds** runs its operation directly: no `BEGIN`, no new lock, no
+    re-read (nothing can have been committed into a scope it holds). A plain `withLock()` fills no registry:
+    under it a `withLock()` of the same scope stays refused like any other — the re-entrance exists only for
+    the operation that asked for it by taking `withLocks()`, never on the backoffice path. That
+    is what lets an `app:*:seed` chain the `Administrator`s, which each take `withLock()`, under one
+    transaction (see `.claude/rules/seeding.md`). It does not contradict #526's reason: the COMMIT stays the
+    outer lock's, so `onCommitRefused` still names a deferred refusal, and the closing of the EntityManager
+    (#547, #549) covers the whole transaction. Every other nested case still goes through the skeleton and
+    is refused: a scope not held (a seed locking X while its `Administrator` writes Y — a scope mistake that
+    must show, as a `critical` 500 at the first write), a `withLocks()` under a lock, a transaction opened
+    by other code, an empty scope list (`OrderScopeLockWithoutScopeException`). The registry is the
+    container instance's — one adapter serves the `Administrator`s and the commands; a hand-built one holds
+    nothing for them. `PostgresAdvisoryOrderScopeLockTest` pins it (both scopes held and released,
+    re-entrance at nesting level 1 with no second transaction, scope not held refused, the same scope under
+    a plain `withLock()` refused, a timeout on the second scope named after that scope, `withLocks()` never
+    re-entrant, refusal named at the outer COMMIT with the manager closed, registry emptied after a success,
+    an exception and a refused COMMIT, both scopes re-read). A future operation spanning
+    two scopes takes `withLocks()` — never a nested `withLock()` on a scope it does not hold. DBAL's count is the judge: a transaction opened in raw
     SQL (`executeStatement('BEGIN')`) is not seen, and none may be opened that way around an `Administrator`. **Never go back to `Connection::transactional()`** there: when
     `commit()` fails, DBAL has already brought its nesting level to 0, and `transactional()`'s fallback
     `rollBack()` throws "There is no active transaction" over the real error, for any SQLSTATE outside
@@ -432,11 +455,13 @@ paths:
     (#499), an application deletion runs wholly before an operation of its scope — which then reports the
     entry not found — or wholly after it, never in between: the loser of two simultaneous `DELETE`s of one
     entry answers **404** (it answered 204, its `DELETE` touching no row), like a `DELETE` arriving later.
-    **Not covered, accepted**: a deletion that skips the `Administrator`s — the `--force` purge of the
-    `app:*:seed` commands (`<Repository>::remove()`, no lock: an operator's deliberate overwrite, refused
-    without `--force`) and SQL — can still commit during an operation, whose `PUT` then answers 200 on a row
-    gone. A command chaining N operations on one EntityManager re-reads O(N²) rows,
-    negligible for ten-entry seeds. It relies on READ COMMITTED (PostgreSQL's default, set nowhere):
+    **Not covered, accepted**: a deletion in SQL, which skips the `Administrator`s, can still commit during an
+    operation, whose `PUT` then answers 200 on a row gone. (The `--force` purge of the `app:*:seed` commands
+    was that case too, `<Repository>::remove()` without a lock; since #567 it runs under the scope locks of
+    the command's `withLocks()`, so a backoffice write of the scope waits for the whole seed — a few hundred
+    milliseconds at most — instead of landing in the middle of it.) A command chaining N operations on one
+    EntityManager used to re-read O(N²) rows; under `withLocks()` the scopes are re-read once, at entry,
+    and the re-entrant `withLock()`s re-read nothing. It relies on READ COMMITTED (PostgreSQL's default, set nowhere):
     under REPEATABLE READ the snapshot would be taken by the lock's own `SELECT`, before the wait. Last writer
     wins, like every other field; no `#[ORM\Version]`. `ScopeLockReadsCommittedStateTest` pins both (the four
     stale-state cases over the same `ProvidesLocalizedAdministrators` list as `OrderScopeLockCoverageTest`, so a
@@ -455,10 +480,14 @@ paths:
     stays the DBAL exception. Since #499 that covers a backoffice `DELETE` and a watch `PUT` too, which never
     waited before: each now costs the lock, a transaction and the re-read of its entry, and comes out as that
     500 behind a writer holding the scope past 5 s. **The console is bounded too** (#512, #525): the
-    `app:*:seed` commands go through the `Administrator`s, so the deploy's seed Job takes the same lock, which
+    `app:*:seed` commands take the same lock — since #567 once per command, through `withLocks()` on every
+    scope the command writes, held for the whole purge and recreation —, which
     `www.prod.conf` does not reach — its pod's own `PGOPTIONS` gives it `lock_timeout=5s`, and a session with
-    none (dev, CI) gets `PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT`. Every holder keeps the lock for
-    milliseconds; revisit before holding it any longer. Guards:
+    none (dev, CI) gets `PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT`. Every backoffice holder keeps
+    the lock for milliseconds; a seed holds its scopes for the whole command, measured for #567 on the
+    largest (`app:about:seed --force`, 30 cards and the settings, one `flush()` each): about 100 ms in the
+    test environment, the command taking 0.5 s with the kernel boot — two orders of magnitude under the 5 s
+    bound; revisit before holding it any longer. Guards:
     `OrderScopeLockCoverageTest` (a probe session holds each scope, every write of every
     `Administrator` must wait — a new one written without `withLock()` turns it red) and
     `ContributionOrderConcurrencyTest` (two real processes, interleaved at the `preFlush`: both races of #389,
@@ -507,9 +536,11 @@ paths:
   without a lock reopens the 200 on a vanished row. **Accepted**: a deletion in SQL — or a deletion and re-creation under
   another id — committed between that `SELECT` and the `flush()`'s `UPDATE` still answers 200, the `UPDATE` on the
   old id touching no row (the write is lost; milliseconds, SQL only, very low severity); two simultaneous `PUT`s of one locale, last
-  writer wins, like every field (no `#[ORM\Version]`); two concurrent creations (two seeds) meet the unique index
-  `uniq_about_settings_locale`; the seed's settings writes run outside any lock, on purpose (no position, no
-  group). **Trigger**: an application deletion of the settings (a seed purge, a `DELETE`) first requires the
+  writer wins, like every field (no `#[ORM\Version]`); two concurrent creations in SQL meet the unique index
+  `uniq_about_settings_locale` (two seeds no longer can: since #567 `app:about:seed` writes the settings inside
+  its one transaction, under the locks of the two card scopes, so the second seed waits, re-reads the count
+  and declines — the settings have no lock of their own, still on purpose: no position, no group).
+  **Trigger**: an application deletion of the settings (a seed purge, a `DELETE`) first requires the
   row lock of #545 (`ExperienceTechnologyLockInterface`'s pattern on `PostgresLockedTransaction`).
   `AboutSettingsUpdateReadsCommittedRowTest` pins it: settings loaded as the provider does, deleted in SQL → not
   found; deleted then re-inserted under a new id → the new row is written (both red with a read from the identity

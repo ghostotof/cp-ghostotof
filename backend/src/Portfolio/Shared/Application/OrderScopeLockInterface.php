@@ -54,7 +54,13 @@ interface OrderScopeLockInterface
      * **Jamais dans une transaction déjà ouverte** (issue #526), ni sous un
      * autre `withLock()` : le verrou ouvre et valide la sienne, seul moyen de
      * nommer ce que la base refuse au COMMIT. Un appel imbriqué est refusé
-     * avant de rien écrire, en 500 nommé.
+     * avant de rien écrire, en 500 nommé. Une seule exception, bornée (issue
+     * #567) : sous {@see self::withLocks()} de ce même adaptateur, un
+     * `withLock()` d'un périmètre **que cet appel tient déjà** exécute
+     * `$operation` dans cette transaction-là — ni nouvelle transaction, ni
+     * nouveau verrou, ni relecture : rien n'a pu y être validé entre-temps.
+     * Un périmètre non tenu reste refusé, et un `withLock()` sous un simple
+     * `withLock()` aussi, le même périmètre compris.
      *
      * Une fois le verrou pris, les entrées de `$scope` que l'appelant a déjà
      * chargées sont relues (issue #402) : `$operation` décide sur ce que la
@@ -73,4 +79,39 @@ interface OrderScopeLockInterface
      * @return T
      */
     public function withLock(string $scope, Closure $operation): mixed;
+
+    /**
+     * Exécute `$operation` dans **une** transaction, tous les périmètres de
+     * `$scopes` verrouillés pour toute sa durée (issue #567) : ce qu'il faut à
+     * une opération qui enchaîne des écritures de plusieurs périmètres, ou de
+     * plusieurs `Administrator`s d'un même périmètre — un `app:*:seed`, dont
+     * la purge et les recréations valident ou s'annulent ensemble. Les
+     * verrous sont pris dans un ordre fixe, quel que soit celui de la liste,
+     * pour que deux appels qui demandent les mêmes périmètres ne
+     * s'interbloquent pas — un par instruction, donc l'attente est bornée par
+     * périmètre, pas en tout : N périmètres, jusqu'à N fois `lock_timeout`.
+     *
+     * Sous cette transaction, un `withLock()` de ce même adaptateur sur l'un
+     * de ces périmètres y participe (voir `withLock()`) : les `Administrator`s
+     * s'appellent tels quels. Tout autre appel imbriqué — un périmètre non
+     * tenu, un `withLocks()` — est refusé avant de rien écrire, comme dans
+     * toute transaction déjà ouverte (issue #526) : un seed qui verrouille X
+     * pendant que son `Administrator` écrit Y est une erreur de périmètre,
+     * et elle doit se voir.
+     *
+     * Même contrat que `withLock()` pour le reste : relecture des entrées de
+     * chaque périmètre chargées avant les verrous (issue #402), unité de
+     * travail close sur un COMMIT refusé (#547) ou sur une exception levée
+     * après une écriture (#549), refus différé nommé au COMMIT (#390).
+     *
+     * @template T
+     *
+     * @param non-empty-list<class-string> $scopes    les entités qui portent les positions
+     *                                                des périmètres tenus ; une liste vide
+     *                                                est refusée
+     * @param Closure(): T                 $operation
+     *
+     * @return T
+     */
+    public function withLocks(array $scopes, Closure $operation): mixed;
 }

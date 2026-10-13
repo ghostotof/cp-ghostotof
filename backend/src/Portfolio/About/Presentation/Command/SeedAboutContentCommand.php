@@ -7,13 +7,17 @@ namespace App\Portfolio\About\Presentation\Command;
 use App\Portfolio\About\Application\AboutMeCardAdministratorInterface;
 use App\Portfolio\About\Application\AboutSettingsAdministratorInterface;
 use App\Portfolio\About\Application\AboutSiteCardAdministratorInterface;
+use App\Portfolio\About\Domain\Entity\AboutMeCard;
 use App\Portfolio\About\Domain\Entity\AboutSettings;
+use App\Portfolio\About\Domain\Entity\AboutSiteCard;
 use App\Portfolio\About\Domain\Repository\AboutMeCardRepositoryInterface;
 use App\Portfolio\About\Domain\Repository\AboutSettingsRepositoryInterface;
 use App\Portfolio\About\Domain\Repository\AboutSiteCardRepositoryInterface;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
+use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Presentation\Command\GuardsExistingContent;
+use App\Shared\Presentation\Command\SeedOutcome;
 use App\Shared\Presentation\Command\TranslationGroupIndex;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -34,6 +38,12 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * effectif ; s'ils existent, seul --force les remet au contenu de référence
  * (issue #568), sinon ils sont conservés tels qu'édités. Jamais purgés, ils
  * n'entrent pas dans le décompte.
+ *
+ * Le tout — décompte, purge, cartes et réglages — dans une seule transaction,
+ * sous les verrous d'ordre des deux tables de cartes (issue #567) : une panne
+ * entre les deux ne laisse plus la seconde vide, et un `--force` interrompu
+ * garde le contenu d'avant. Les réglages, sans verrou (#553), y sont écrits
+ * aussi : ils valident ou s'annulent avec les cartes.
  */
 #[AsCommand(
     name: 'app:about:seed',
@@ -43,6 +53,13 @@ final class SeedAboutContentCommand extends Command
 {
     use GuardsExistingContent;
 
+    /**
+     * Les périmètres d'ordre écrits : la classe d'entité de chaque table de
+     * cartes, celle que leur `Administrator` verrouille — un autre périmètre
+     * ici serait refusé à leur premier `withLock()`.
+     */
+    private const array ORDER_SCOPES = [AboutSiteCard::class, AboutMeCard::class];
+
     public function __construct(
         private readonly AboutSettingsRepositoryInterface $aboutSettingsRepository,
         private readonly AboutSiteCardRepositoryInterface $aboutSiteCardRepository,
@@ -50,6 +67,7 @@ final class SeedAboutContentCommand extends Command
         private readonly AboutSettingsAdministratorInterface $aboutSettingsAdministrator,
         private readonly AboutSiteCardAdministratorInterface $aboutSiteCardAdministrator,
         private readonly AboutMeCardAdministratorInterface $aboutMeCardAdministrator,
+        private readonly OrderScopeLockInterface $orderScopeLock,
     ) {
         parent::__construct();
     }
@@ -63,17 +81,36 @@ final class SeedAboutContentCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        if ($this->refusesToOverwrite($io, $input, $this->countExisting())) {
-            return Command::SUCCESS;
-        }
-
-        $translationGroups = new TranslationGroupIndex();
-
         // Les réglages, un singleton par langue, ne sont jamais purgés : ils ne
         // sont réécrits qu'avec --force (#568), voir ensureSettings().
         $overwriteSettings = $this->forcesOverwrite($input);
 
-        // Spec 0004 D3 : la purge précède désormais toute création, au lieu
+        $outcome = $this->orderScopeLock->withLocks(
+            self::ORDER_SCOPES,
+            fn (): SeedOutcome => $this->seedUnlessPopulated(
+                $input,
+                $this->countExisting(...),
+                fn (): array => $this->seed($overwriteSettings),
+            ),
+        );
+
+        return $outcome->report($io);
+    }
+
+    /**
+     * Purge puis recrée, sous les verrous : la purge est écrite ligne par
+     * ligne avant toute création.
+     *
+     * @param bool $overwriteSettings vrai avec --force, voir ensureSettings()
+     *
+     * @return list<string> une ligne de compte rendu par locale
+     */
+    private function seed(bool $overwriteSettings): array
+    {
+        $translationGroups = new TranslationGroupIndex();
+        $lines = [];
+
+        // Spec 0004 D3 : la purge précède toute création, au lieu
         // d'être faite langue par langue. Une carte sans groupe se range en fin
         // de périmètre, toutes langues confondues : les cartes d'une autre
         // langue encore en place pendant la création décaleraient la
@@ -95,7 +132,7 @@ final class SeedAboutContentCommand extends Command
             $this->createMeCards($locale, AboutMeCardCategory::PERSONAL, $content['me']['personalCards'], $translationGroups);
             $this->createMeCards($locale, AboutMeCardCategory::HOBBY, $content['me']['hobbiesCards'], $translationGroups);
 
-            $io->success(\sprintf(
+            $lines[] = \sprintf(
                 '[%s] Réglages %s, %d carte(s) site, %d carte(s) technique(s), %d carte(s) personnelle(s), %d carte(s) loisir(s).',
                 $localeValue,
                 $settingsOutcome,
@@ -103,10 +140,10 @@ final class SeedAboutContentCommand extends Command
                 \count($content['me']['technicalCards']),
                 \count($content['me']['personalCards']),
                 \count($content['me']['hobbiesCards']),
-            ));
+            );
         }
 
-        return Command::SUCCESS;
+        return $lines;
     }
 
     /**
