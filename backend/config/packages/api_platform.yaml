@@ -125,6 +125,9 @@ api_platform:
         App\Portfolio\About\Domain\Exception\AboutSettingsNotFoundException: 404
         App\Portfolio\About\Domain\Exception\AboutSiteCardNotFoundException: 404
         App\Portfolio\About\Domain\Exception\AboutMeCardNotFoundException: 404
+        # Issue #578 : une carte ne change pas de catégorie — refus explicite (409
+        # typé `me-card-category-immutable`), comme le slug d'un produit surveillé.
+        App\Portfolio\About\Domain\Exception\AboutMeCardCategoryIsImmutableException: 409
         App\Security\User\Domain\Exception\CpgUserNotFoundException: 404
         App\Security\User\Domain\Exception\CannotDeleteOwnAccountException: 409
         App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException: 409

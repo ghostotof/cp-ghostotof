@@ -407,6 +407,91 @@ final class BackofficeAboutMeCardResourceTest extends WebTestCase
     }
 
     /**
+     * Issue #578 : une carte ne change pas de catégorie (`AboutMeCard` n'a pas
+     * de setter). Le `PUT` qui en porte une autre est refusé sous un nom, avant
+     * toute écriture — il répondait 200 en l'ignorant. C'est le corps que
+     * l'ancien formulaire envoyait : changer la catégorie y vidait « Version
+     * de », d'où `translationGroup: null`, et la carte était détachée de sa
+     * traduction en silence, puis envoyée en fin de catégorie.
+     */
+    public function testPutChangingTheCategoryIsRefusedAndLeavesTheCardAndItsTranslationUntouched(): void
+    {
+        [$client, $csrfToken] = $this->superClient();
+
+        $administrator = $this->administrator($client);
+        $administrator->create(Locale::FR, AboutMeCardCategory::TECHNICAL, 'Premier', 'Description.', 'code');
+        $french = $administrator->create(Locale::FR, AboutMeCardCategory::TECHNICAL, 'Second', 'Description.', 'server');
+        $english = $administrator->create(Locale::EN, AboutMeCardCategory::TECHNICAL, 'Second, in English', 'Description.', 'server', $french->getTranslationGroup());
+
+        $body = $this->put($client, $csrfToken, $french->getId()->toRfc4122(), [
+            'category' => 'hobby',
+            'title' => 'Second, déplacé',
+            'translationGroup' => null,
+        ]);
+
+        self::assertResponseStatusCodeSame(409);
+        self::assertSame('/errors/me-card-category-immutable', $body['type'] ?? null);
+
+        $repository = self::getContainer()->get(AboutMeCardRepositoryInterface::class);
+        $reloaded = $repository->findOneById($french->getId());
+        self::assertNotNull($reloaded);
+        self::assertSame(AboutMeCardCategory::TECHNICAL, $reloaded->getCategory());
+        self::assertSame('Second', $reloaded->getTitle());
+        self::assertSame(1, $reloaded->getPosition());
+        self::assertTrue($reloaded->getTranslationGroup()->equals($english->getTranslationGroup()));
+    }
+
+    /**
+     * Issue #578 : sur une carte sans traduction, le même corps n'avait rien à
+     * détacher (`detach()` ne fait rien sur une entrée seule), mais la catégorie
+     * demandée était perdue sous un 200. Le refus ne dépend que du corps.
+     */
+    public function testPutChangingTheCategoryOfALoneCardIsRefusedToo(): void
+    {
+        [$client, $csrfToken] = $this->superClient();
+
+        $lone = $this->administrator($client)->create(Locale::FR, AboutMeCardCategory::TECHNICAL, 'Seule', 'Description.', 'code');
+
+        $body = $this->put($client, $csrfToken, $lone->getId()->toRfc4122(), [
+            'category' => 'personal',
+            'title' => 'Seule, déplacée',
+        ]);
+
+        self::assertResponseStatusCodeSame(409);
+        self::assertSame('/errors/me-card-category-immutable', $body['type'] ?? null);
+
+        $reloaded = self::getContainer()->get(AboutMeCardRepositoryInterface::class)->findOneById($lone->getId());
+        self::assertNotNull($reloaded);
+        self::assertSame(AboutMeCardCategory::TECHNICAL, $reloaded->getCategory());
+        self::assertSame('Seule', $reloaded->getTitle());
+    }
+
+    /**
+     * Ordre des gardes (#578), au niveau HTTP : une autre catégorie et un
+     * groupe de cette catégorie-là répondaient 422 `unknown-translation-group`
+     * (le groupe, filtré par la catégorie de la carte, était inconnu). Le refus
+     * de catégorie passe désormais en premier : il ne dépend que du corps.
+     */
+    public function testPutChangingTheCategoryTowardsAGroupOfThatCategoryIsTheCategoryRefusal(): void
+    {
+        [$client, $csrfToken] = $this->superClient();
+
+        $administrator = $this->administrator($client);
+        $hobby = $administrator->create(Locale::FR, AboutMeCardCategory::HOBBY, 'Musique', 'Description.', 'guitar');
+        $technical = $administrator->create(Locale::EN, AboutMeCardCategory::TECHNICAL, 'Developer', 'Description.', 'code');
+
+        $body = $this->put($client, $csrfToken, $technical->getId()->toRfc4122(), [
+            'locale' => 'en',
+            'category' => 'hobby',
+            'title' => 'Music',
+            'translationGroup' => $hobby->getTranslationGroup()->toRfc4122(),
+        ]);
+
+        self::assertResponseStatusCodeSame(409);
+        self::assertSame('/errors/me-card-category-immutable', $body['type'] ?? null);
+    }
+
+    /**
      * Le périmètre d'ordre d'une carte « moi » est sa catégorie : un groupe
      * d'une autre catégorie lui est inconnu. L'accepter ferait valoir une même
      * position dans deux tableaux distincts, et déplacer l'un déplacerait

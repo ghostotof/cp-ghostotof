@@ -138,7 +138,11 @@ trait ProvidesLocalizedAdministrators
 
             return [
                 'create' => static fn (Locale $l, ?Uuid $g): AboutMeCard => $a->create($l, AboutMeCardCategory::HOBBY, 'T', 'D', null, $g),
-                'update' => static fn (TranslatableContent $e, ?Uuid $g): AboutMeCard => $a->update(self::as(AboutMeCard::class, $e)->getId(), 'T', 'D', null, $g),
+                'update' => static function (TranslatableContent $e, ?Uuid $g) use ($a): AboutMeCard {
+                    $card = self::as(AboutMeCard::class, $e);
+
+                    return $a->update($card->getId(), $card->getCategory(), 'T', 'D', null, $g);
+                },
                 'delete' => static function (TranslatableContent $e) use ($a): void {
                     $a->delete(self::as(AboutMeCard::class, $e)->getId());
                 },

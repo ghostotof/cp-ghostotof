@@ -144,6 +144,8 @@ framework:
             log_level: info
         App\Portfolio\About\Domain\Exception\AboutMeCardNotFoundException:
             log_level: info
+        App\Portfolio\About\Domain\Exception\AboutMeCardCategoryIsImmutableException:
+            log_level: info
         # Administration des comptes (backoffice, ROLE_SUPER).
         App\Security\User\Domain\Exception\CpgUserNotFoundException:
             log_level: info

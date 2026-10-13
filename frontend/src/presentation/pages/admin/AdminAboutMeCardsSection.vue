@@ -52,10 +52,17 @@ import {
  * en cours d'édition là-bas.
  *
  * **Un groupe appartient à une seule catégorie.** « Version de » ne propose
- * donc que des entrées de la catégorie du formulaire, et changer de catégorie
- * remet le rattachement à zéro : le serveur refuserait un groupe d'ailleurs
- * (422), mais surtout, décrire un contenu d'une autre catégorie est un autre
- * contenu.
+ * donc que des entrées de la catégorie du formulaire, et, en création, changer
+ * de catégorie remet le rattachement à zéro : le serveur refuserait un groupe
+ * d'ailleurs (422), mais surtout, décrire un contenu d'une autre catégorie est
+ * un autre contenu.
+ *
+ * **Une carte ne change pas de catégorie** (issue #578) : en édition, le
+ * sélecteur est désactivé, comme celui de la langue. Il restait actif, et le
+ * changer vidait « Version de » : le `PUT` partait avec `translationGroup:
+ * null`, et le serveur, qui ignorait alors la catégorie, détachait la carte de
+ * sa traduction en répondant 200. Il refuse désormais une autre catégorie
+ * (409 `me-card-category-immutable`).
  *
  * **Le verrou d'ordre (D6) est global à la page** : cette section annonce son
  * `orderDirtyChange` (la somme de ses trois brouillons) et reçoit `isLocked`.
@@ -106,6 +113,9 @@ const form = reactive<MeCardForm>({
   description: '',
   iconKey: '',
 })
+
+/** Aide du sélecteur de catégorie en édition (issue #578). */
+const CATEGORY_HELP_ID = 'admin-about-me-card-category-help'
 
 const editingId = ref<string | null>(null)
 const isSubmitting = ref(false)
@@ -195,14 +205,24 @@ const translationOptions = computed(() => [
   ),
 ])
 
+// Remise à zéro de « Version de » quand la catégorie change, **hors édition**.
+// En édition, une carte ne change pas de catégorie (#578) : le sélecteur est
+// désactivé, et seul `startEdit` y écrit — celle de la carte, juste avant son
+// groupe. La garde `isEditing` le dit dans le code au lieu de dépendre de
+// l'ordre des affectations de `startEdit` : `editingId` y est posé en premier,
+// et un groupe effacé là partirait en `translationGroup: null`, c'est-à-dire
+// en détachement, que le serveur accepte (la catégorie étant la bonne).
 // `flush: 'sync'` : le rattachement est remis à zéro **au moment même** où la
-// catégorie change, donc avant que `startEdit`/`startCreateVersion`/l'assistant
-// n'écrivent le groupe juste après — un watcher différé l'aurait effacé au tick
-// suivant. Sans cette remise à zéro, le sélecteur afficherait une valeur absente
-// de ses options et l'enregistrement partirait vers un 422.
+// catégorie change, donc avant que `startCreateVersion`/`resetForm` n'écrivent
+// le groupe juste après — un watcher différé l'aurait effacé au tick suivant.
+// Sans cette remise à zéro, le sélecteur afficherait une valeur absente de ses
+// options et l'enregistrement partirait vers un 422.
 watch(
   () => form.category,
   () => {
+    if (isEditing.value) {
+      return
+    }
     form.translationGroup = ''
   },
   { flush: 'sync' },
@@ -346,12 +366,27 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
       <p class="form-text mb-3">
         {{ t('admin.about.localeHelp') }}
       </p>
+      <!--
+        Désactivée en édition, comme la langue (issue #578) : une carte ne
+        change pas de catégorie, et le serveur refuse le `PUT` qui en porte une
+        autre (409). L'aide n'existe qu'en édition, d'où un `aria-describedby`
+        conditionnel — jamais une référence vers un élément absent.
+      -->
       <BaseSelect
         id="admin-about-me-card-category"
         v-model="form.category"
+        :disabled="isEditing"
+        :aria-describedby="isEditing ? CATEGORY_HELP_ID : undefined"
         :label="t('admin.about.meCard.categoryLabel')"
         :options="categoryOptions"
       />
+      <p
+        v-if="isEditing"
+        :id="CATEGORY_HELP_ID"
+        class="form-text mb-3"
+      >
+        {{ t('admin.about.meCard.categoryLockedHelp') }}
+      </p>
       <BaseSelect
         id="admin-about-me-card-translation-group"
         v-model="form.translationGroup"

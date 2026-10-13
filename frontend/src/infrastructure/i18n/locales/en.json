@@ -133,7 +133,8 @@
         "validation": "The form contains errors. Please check the fields.",
         "unknown": "Something went wrong. Please try again later.",
         "translation-already-exists": "This content already has a version in that language.",
-        "unknown-translation-group": "The content to attach this version to no longer exists. Please reload the page."
+        "unknown-translation-group": "The content to attach this version to no longer exists. Please reload the page.",
+        "category-immutable": "A card's category cannot be changed. Please reload the page."
       },
       "settings": {
         "title": "About page texts",
@@ -162,6 +163,7 @@
         "edit": "Edit card",
         "editAction": "Edit",
         "categoryLabel": "Category",
+        "categoryLockedHelp": "A card's category cannot be changed: to file it elsewhere, create it in the right category (its versions in the other languages too), then delete this one.",
         "categoryTechnical": "Technically",
         "categoryPersonal": "Personally",
         "categoryHobby": "Outside work",

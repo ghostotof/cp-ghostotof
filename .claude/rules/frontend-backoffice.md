@@ -93,6 +93,21 @@ status announcement) that a fork would silently lose:
   sibling, otherwise `''` → `null`, which `ContentPlacement::detach` treats as a no-op on a lone
   entry. The `Position` number field is gone from every form; `BaseNumberInput` survives only for
   genuinely numeric content (years of experience).
+- **What a `PUT` cannot change is disabled in edit, not hidden**: the locale of every per-entry form
+  (#170 R2, the server ignores it — #582 may turn that into a refusal) and the **category of a me-card**
+  (issue #578). The category used to stay active: changing it emptied « Version de » (the
+  `flush: 'sync'` watcher, meant for creation), the `PUT` left with `translationGroup: null`, and the
+  server, which ignored the category, detached the card from its translation and sent it to the end of
+  its category, under a 200. It is now `:disabled="isEditing"`, with a visible hint
+  (`admin.about.meCard.categoryLockedHelp`: create the card in the right category, then delete this one)
+  referenced by `aria-describedby` **only while editing** — the hint is not rendered otherwise, and an
+  IDREF to a missing element is an a11y fault. The server refuses another category with a 409 of type
+  `me-card-category-immutable` (`.claude/rules/portfolio-contenus.md`), which
+  `HttpAdminAboutMeCardRepository` reads as the reason `category-immutable` — keyed on the `type`, the
+  other 409 of the cards staying `translation-already-exists`; only a SPA cached from before #578 can
+  still send that body. `AdminAboutPage.spec.ts` pins the gesture (red before: `category: 'hobby'`,
+  `translationGroup: null`), the release on « Annuler » and the message;
+  `HttpAdminAboutMeCardRepository.spec.ts` the mapping.
 - **A me-card group spread across two categories is not signalled by the backoffice, by decision**
   (issue #573). Such a group (FR in one category, EN in another) predates #501's guard; the backend
   refuses, before any write, every write that would add a member to it or reorder one of its categories

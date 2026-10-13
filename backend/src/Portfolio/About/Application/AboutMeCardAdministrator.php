@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Portfolio\About\Application;
 
 use App\Portfolio\About\Domain\Entity\AboutMeCard;
+use App\Portfolio\About\Domain\Exception\AboutMeCardCategoryIsImmutableException;
 use App\Portfolio\About\Domain\Exception\AboutMeCardNotFoundException;
 use App\Portfolio\About\Domain\Repository\AboutMeCardRepositoryInterface;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
@@ -51,13 +52,22 @@ final readonly class AboutMeCardAdministrator implements AboutMeCardAdministrato
         });
     }
 
-    public function update(Uuid $id, string $title, string $description, ?string $iconKey, ?Uuid $translationGroup): AboutMeCard
+    public function update(Uuid $id, AboutMeCardCategory $category, string $title, string $description, ?string $iconKey, ?Uuid $translationGroup): AboutMeCard
     {
-        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $title, $description, $iconKey, $translationGroup): AboutMeCard {
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $category, $title, $description, $iconKey, $translationGroup): AboutMeCard {
             $card = $this->aboutMeCardRepository->findOneById($id);
 
             if (null === $card) {
                 throw AboutMeCardNotFoundException::forId($id);
+            }
+
+            // Issue #578 : refusé avant toute autre lecture et tout changement
+            // en mémoire (#549), donc avant le détachement que demanderait
+            // `translationGroup: null`. Il passe aussi avant le refus d'un
+            // groupe réparti (#561) : il ne dépend que du corps, et ce groupe
+            // reste refusé sous son nom à la requête valide suivante.
+            if ($card->getCategory() !== $category) {
+                throw AboutMeCardCategoryIsImmutableException::refused();
             }
 
             if (null === $translationGroup) {

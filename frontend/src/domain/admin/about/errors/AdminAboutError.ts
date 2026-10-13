@@ -7,7 +7,9 @@
  * Les deux derniers motifs viennent de la spec 0004 : `translation-already-exists`
  * (409) quand le groupe visé porte déjà cette langue, `unknown-translation-group`
  * (422) quand il a disparu du périmètre — pour une carte « moi », c'est aussi
- * la réponse à un rattachement qui traverserait les catégories. L'échec de
+ * la réponse à un rattachement qui traverserait les catégories.
+ * `category-immutable` (409, issue #578) : le `PUT` d'une carte « moi » portait
+ * une autre catégorie que la sienne, ce que le serveur refuse. L'échec de
  * l'endpoint d'ordre, lui, n'est jamais une `AdminAboutError` : il lève une
  * `AdminOrderError`, seul type que `useOrderDraft` sait interpréter.
  */
@@ -17,6 +19,7 @@ export type AdminAboutErrorReason =
   | 'unknown'
   | 'translation-already-exists'
   | 'unknown-translation-group'
+  | 'category-immutable'
 
 /**
  * Levée par les repositories admin About en cas d'échec d'une opération CRUD

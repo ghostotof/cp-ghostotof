@@ -705,6 +705,57 @@ describe('AdminAboutPage', () => {
       expect(valueOf(wrapper, '#admin-about-me-card-translation-group')).toBe('')
     })
 
+    /**
+     * Issue #578 : une carte ne change pas de catégorie. Le sélecteur restait
+     * actif en édition ; le changer vidait « Version de » (le watcher ci-dessus,
+     * pensé pour la création), le `PUT` partait avec `translationGroup: null`,
+     * et le serveur détachait la carte de sa traduction en ignorant la
+     * catégorie (200). Il est désactivé, comme la langue (#170 R2), avec une
+     * aide visible qui dit comment ranger la carte ailleurs.
+     */
+    it("modifier une carte « moi » qui a une traduction : la catégorie ne se change pas, l'enregistrement garde le lien (#578)", async () => {
+      const meCardRepository = createMeCardRepository()
+      const { wrapper } = await mountPage(createSettingsRepository(), createSiteCardRepository(), meCardRepository)
+      const edited = ME_FIXTURES.technical.cards[0]
+
+      // Le geste qui détachait la carte : il ne passe plus. Sur un champ
+      // désactivé, Vue Test Utils n'émet pas le `change`, comme un navigateur
+      // qui n'en laisse pas l'occasion à l'utilisateur ; ce qui compte est le
+      // corps envoyé (le DOM, lui, garde la valeur écrite de force). Le
+      // `disabled` est vérifié plus bas.
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, edited.title), 'Modifier').trigger('click')
+      await wrapper.get('#admin-about-me-card-category').setValue('hobby')
+      await formOf(wrapper, ME_FORM).trigger('submit.prevent')
+      await flushPromises()
+
+      expect(meCardRepository.update).toHaveBeenLastCalledWith(
+        edited.id,
+        expect.objectContaining({ category: 'technical', translationGroup: ME_FIXTURES.technical.groups[0] }),
+      )
+
+      // Désactivé, pas caché : la catégorie reste lisible. L'aide est un texte
+      // visible relié au champ, jamais un `title`.
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, edited.title), 'Modifier').trigger('click')
+      const category = wrapper.get('#admin-about-me-card-category')
+      expect(category.attributes('disabled')).toBeDefined()
+      const helpId = category.attributes('aria-describedby')
+      expect(helpId).toBe('admin-about-me-card-category-help')
+      expect(wrapper.get(`#${helpId}`).text()).toContain('ne se modifie pas')
+    })
+
+    it('libère la catégorie et retire son aide hors de l’édition', async () => {
+      const { wrapper } = await mountPage()
+
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]), 'Modifier').trigger('click')
+      await buttonLabelled(formOf(wrapper, ME_FORM), 'Annuler').trigger('click')
+
+      const category = wrapper.get('#admin-about-me-card-category')
+      expect(category.attributes('disabled')).toBeUndefined()
+      // Pas de référence pendante : l'aide n'existe qu'en édition.
+      expect(category.attributes('aria-describedby')).toBeUndefined()
+      expect(wrapper.find('#admin-about-me-card-category-help').exists()).toBe(false)
+    })
+
     // Un groupe antérieur à la garde de #501 : « Musique » (FR) reste dans
     // « En dehors du travail », sa version EN « Music » a été rangée dans
     // « Techniquement ». L'application ne peut pas en produire, seule une
@@ -799,6 +850,21 @@ describe('AdminAboutPage', () => {
 
       expect(formOf(wrapper, SITE_FORM).get('[role="alert"]').text()).toBe(
         'Ce contenu a déjà une version dans cette langue.',
+      )
+    })
+
+    it('affiche le refus d’une catégorie changée (409 de #578) sous son propre message', async () => {
+      const meCardRepository = createMeCardRepository({
+        update: vi.fn(async () => Promise.reject(new AdminAboutError('category-immutable', 'Catégorie immuable'))),
+      })
+      const { wrapper } = await mountPage(createSettingsRepository(), createSiteCardRepository(), meCardRepository)
+
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]), 'Modifier').trigger('click')
+      await formOf(wrapper, ME_FORM).trigger('submit.prevent')
+      await flushPromises()
+
+      expect(formOf(wrapper, ME_FORM).get('[role="alert"]').text()).toBe(
+        "La catégorie d'une carte ne se modifie pas. Rechargez la page.",
       )
     })
 
