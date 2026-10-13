@@ -87,6 +87,12 @@ final class BackofficeAboutMeCardResource
          * Bornée par l'enum, pas par une liste recopiée (spec 0004, D2 — même
          * règle que `Locale::values()` sur `locale`) : une catégorie ajoutée
          * dans `AboutMeCardCategory` est acceptée ici sans second geste.
+         *
+         * Sur un `PUT`, elle doit être celle de la carte (issue #578) : une
+         * carte ne change pas de catégorie, et une autre valeur est refusée en
+         * 409 (`me-card-category-immutable`) plutôt qu'ignorée — contrairement
+         * à `locale`, ignorée depuis #170 R2 (alignement suivi par #582). Le
+         * formulaire d'édition désactive le champ.
          */
         #[Assert\NotBlank]
         #[Assert\Choice(callback: [AboutMeCardCategory::class, 'values'])]

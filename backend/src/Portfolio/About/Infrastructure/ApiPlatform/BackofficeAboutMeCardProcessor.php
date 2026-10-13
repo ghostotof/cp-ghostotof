@@ -47,8 +47,12 @@ final readonly class BackofficeAboutMeCardProcessor implements ProcessorInterfac
      */
     private function update(Uuid $id, mixed $data): BackofficeAboutMeCardResource
     {
+        // AboutMeCardCategory::from : valeur déjà bornée par #[Assert\Choice].
+        // Transmise pour que l'administrateur refuse une autre catégorie que
+        // celle de la carte (issue #578), au lieu de l'ignorer.
         $card = $this->aboutMeCardAdministrator->update(
             $id,
+            AboutMeCardCategory::from((string) $data->category),
             $data->title,
             $data->description,
             $data->iconKey,

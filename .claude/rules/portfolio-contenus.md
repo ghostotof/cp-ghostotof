@@ -307,9 +307,25 @@ paths:
     `reorder()`, since #503), then the client's errors (the 409 `translation-already-exists`,
     `OrderAssigner`'s 422s of the exact-set rule), then the trigger at COMMIT for what bypasses the application — the cause before its
     consequence, as in the trigger, and a pipeline defect before a client error, as in #384.
+    **One client error comes first, on purpose: a `PUT` carrying another category** (issue #578). A card
+    never changes category (no setter, see #501 above); the `PUT` validated `category`, ignored it and
+    answered 200 — and the form of the time, whose category change emptied « Version de », sent
+    `translationGroup: null` with it, so the card was silently detached and sent to the end of its
+    category. `AboutMeCardAdministrator::update()` now receives the category and throws
+    `AboutMeCardCategoryIsImmutableException` (`About/Domain/Exception`, 409, `type`
+    `me-card-category-immutable`, `log_level: info`, modelled on the watch slug's
+    `WatchedProductSlugIsImmutableException`) right after re-reading the card under the lock, before any
+    other read and any change in memory (#549), hence before `detach()`/`reattach()` and before the
+    spread-group refusal. That does not contradict #384: #384 forbids a client error that **results from**
+    the corrupt state from hiding it, while this one depends on the request body alone; a spread group is
+    still refused under its name by the next valid request. The frontend disables the field in edit
+    (`.claude/rules/frontend-backoffice.md`). `locale`, immutable too, is still **ignored** on a `PUT`
+    (#170 R2) on the eight contexts — aligning it on this refusal is #582.
     `AboutMeCardAdministratorTest` pins each path with mocks (no `save()`, nothing changed in memory before
     the refusal, the text edit that reads nothing, the real detachment, the reorder refused before an
-    unknown key's 422); `AboutMeCardGroupSpreadOverTwoCategoriesTest` on the real database (creation,
+    unknown key's 422, the category refusal before any read and before the spread-group one, #578);
+    `BackofficeAboutMeCardResourceTest` the 409 on a card with a translation (the old form's body: red
+    before with a 200 and the card detached) and on a lone card; `AboutMeCardGroupSpreadOverTwoCategoriesTest` on the real database (creation,
     attachment and a reorder moving the stray member refused under the name with no `previous` and the
     manager open — red before with the unique violation and the COMMIT refusal —, a reorder leaving it in
     place refused too — accepted before —, detachment accepted at the COMMIT) and `AboutMeCardRepositoryTest` the
