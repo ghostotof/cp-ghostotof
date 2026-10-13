@@ -7,15 +7,12 @@ namespace App\Portfolio\Experience\Infrastructure\Doctrine;
 use App\Portfolio\Experience\Application\ExperienceTechnologyLockInterface;
 use App\Portfolio\Experience\Domain\Entity\ExperienceTechnology;
 use App\Portfolio\Experience\Domain\Exception\ExperienceTechnologyNotFoundException;
-use App\Shared\Infrastructure\Doctrine\VanishedEntities;
+use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
 use Closure;
 use Doctrine\DBAL\Exception\DriverException;
-use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Query;
 use Psr\Log\LoggerInterface;
-use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -38,12 +35,13 @@ use Symfony\Component\Uid\Uuid;
  *   l'instance périmée.
  * - Ligne absente : l'instance périmée que l'EntityManager gère encore est
  *   détachée, pour qu'un appelant qui continue (une commande) ne la croie pas
- *   en base, puis la technologie est dite introuvable (404). Détachée par
- *   {@see VanishedEntities}, qui refuse qu'on la sauve de nouveau : Doctrine
- *   la tiendrait pour neuve et la réinsérerait (issue #548). Une instance
+ *   en base, puis la technologie est dite introuvable (404). Détachée et
+ *   retenue de sorte qu'on ne puisse la sauver de nouveau : Doctrine la
+ *   tiendrait pour neuve et la réinsérerait (issue #548). Une instance
  *   planifiée pour insertion ou suppression n'est pas détachée : ce serait
- *   annuler en silence son écriture en attente (même filtre que la relecture
- *   du verrou d'ordre, #402).
+ *   annuler en silence son écriture en attente (#402). La requête, le
+ *   détachement et ce filtre sont ceux de {@see RereadUnderLock}, partagés
+ *   par les verrous qui relisent (issue #560).
  *
  * Un verrou de **ligne**, pas un advisory lock : PostgreSQL l'impose à tout
  * `UPDATE` et `DELETE` de la ligne, ceux d'une autre session SQL compris. Une
@@ -69,7 +67,7 @@ final readonly class PostgresExperienceTechnologyRowLock implements ExperienceTe
     public function __construct(
         private EntityManagerInterface $entityManager,
         private LoggerInterface $logger,
-        private VanishedEntities $vanishedEntities,
+        private RereadUnderLock $rereadUnderLock,
         private string $fallbackLockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT,
     ) {
     }
@@ -82,60 +80,17 @@ final readonly class PostgresExperienceTechnologyRowLock implements ExperienceTe
             acquire: fn (): ExperienceTechnology => $this->lockAndReread($id),
             onTimeout: static fn (DriverException $timeout): ExperienceTechnologyLockTimeoutException => ExperienceTechnologyLockTimeoutException::forTechnology($id->toRfc4122(), $timeout),
             onNested: static fn (): ExperienceTechnologyLockInsideTransactionException => ExperienceTechnologyLockInsideTransactionException::forTechnology($id->toRfc4122()),
-            operation: fn (): mixed => $operation($this->lockedInstance($id)),
+            operation: $operation,
         );
     }
 
     /**
-     * L'instance que l'acquisition vient de verrouiller et relire : `find()`
-     * la rend de la carte d'identité, sans requête. Introuvable ici serait une
-     * ligne supprimée sous notre verrou, ce que PostgreSQL empêche ; le cas
-     * reste traité plutôt que supposé.
-     */
-    private function lockedInstance(Uuid $id): ExperienceTechnology
-    {
-        return $this->entityManager->find(ExperienceTechnology::class, $id)
-            ?? throw ExperienceTechnologyNotFoundException::forId($id);
-    }
-
-    /**
      * Verrouille la ligne et rend l'instance gérée, relue ; introuvable si la
-     * ligne a disparu.
+     * ligne a disparu (l'instance périmée détachée par {@see RereadUnderLock}).
      */
     private function lockAndReread(Uuid $id): ExperienceTechnology
     {
-        /** @var ExperienceTechnology|null $technology */
-        $technology = $this->entityManager->createQueryBuilder()
-            ->select('technology')
-            ->from(ExperienceTechnology::class, 'technology')
-            ->andWhere('technology.id = :id')
-            ->setParameter('id', $id, UuidType::NAME)
-            ->getQuery()
-            ->setLockMode(LockMode::PESSIMISTIC_WRITE)
-            ->setHint(Query::HINT_REFRESH, true)
-            ->getOneOrNullResult();
-
-        if (null === $technology) {
-            $this->forgetStaleInstance($id);
-
-            throw ExperienceTechnologyNotFoundException::forId($id);
-        }
-
-        return $technology;
-    }
-
-    /**
-     * La ligne a disparu : détache l'instance que la carte d'identité tient
-     * encore (sans requête), sauf si une écriture l'attend.
-     */
-    private function forgetStaleInstance(Uuid $id): void
-    {
-        $unitOfWork = $this->entityManager->getUnitOfWork();
-        $stale = $unitOfWork->tryGetById(['id' => $id], ExperienceTechnology::class);
-
-        if (false !== $stale && !$unitOfWork->isScheduledForInsert($stale) && !$unitOfWork->isScheduledForDelete($stale)) {
-            // Détachée et retenue : re-sauvée, elle serait réinsérée (#548).
-            $this->vanishedEntities->detachVanished($this->entityManager, $stale);
-        }
+        return $this->rereadUnderLock->row($this->entityManager, ExperienceTechnology::class, $id, forUpdate: true)
+            ?? throw ExperienceTechnologyNotFoundException::forId($id);
     }
 }

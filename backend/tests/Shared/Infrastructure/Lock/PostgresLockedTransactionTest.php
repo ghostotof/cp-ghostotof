@@ -7,7 +7,7 @@ namespace App\Tests\Shared\Infrastructure\Lock;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
 use App\Tests\Support\CommitRefusal;
-use App\Tests\Support\OpensProbeConnection;
+use App\Tests\Support\ProbesLocks;
 use Closure;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\CommitFailedRollbackOnly;
@@ -34,7 +34,7 @@ use Throwable;
  */
 final class PostgresLockedTransactionTest extends KernelTestCase
 {
-    use OpensProbeConnection;
+    use ProbesLocks;
 
     /** Une clé qu'aucun verrou de l'application n'emploie. */
     private const string LOCK_SQL = 'SELECT pg_advisory_xact_lock(512, 512)';
@@ -89,6 +89,26 @@ final class PostgresLockedTransactionTest extends KernelTestCase
         self::assertSame([true, false], $result, "L'opération n'a pas tourné en transaction, verrou pris.");
         self::assertFalse($this->connection->isTransactionActive());
         self::assertTrue($this->probeCanTakeTheLock(), 'Le verrou a survécu au COMMIT.');
+    }
+
+    /**
+     * Ce que l'acquisition a pris est remis à l'opération (issue #560) : un
+     * verrou de ligne qui relit l'entité en la verrouillant la passe telle
+     * quelle, sans la relire une seconde fois. Une opération qui n'en a pas
+     * l'usage ne déclare pas de paramètre.
+     */
+    public function testTheOperationReceivesWhatTheAcquisitionReturned(): void
+    {
+        $acquired = new DomainException('ce que l’acquisition a pris');
+
+        $received = $this->transaction()->run(
+            acquire: fn (): DomainException => $acquired,
+            onTimeout: $this->unexpectedTimeout(...),
+            onNested: $this->unexpectedNesting(...),
+            operation: static fn (DomainException $taken): DomainException => $taken,
+        );
+
+        self::assertSame($acquired, $received, "L'opération n'a pas reçu ce que l'acquisition avait rendu.");
     }
 
     /**
@@ -757,12 +777,10 @@ final class PostgresLockedTransactionTest extends KernelTestCase
     }
 
     /**
-     * Tente le verrou depuis une autre session, et le rend aussitôt s'il l'a
-     * eu : hors transaction explicite, un verrou de transaction ne vit que le
-     * temps de l'instruction.
+     * Le verrou de ces tests (`LOCK_SQL`), tenté depuis la connexion témoin.
      */
     private function probeCanTakeTheLock(): bool
     {
-        return true === $this->probe->fetchOne('SELECT pg_try_advisory_xact_lock(512, 512)');
+        return $this->probeCanTakeTheAdvisoryLock($this->probe, 512, 512);
     }
 }

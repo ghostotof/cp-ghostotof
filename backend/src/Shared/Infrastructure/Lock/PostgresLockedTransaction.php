@@ -233,12 +233,16 @@ final readonly class PostgresLockedTransaction
     }
 
     /**
+     * @template A
      * @template T
      *
-     * @param Closure(): mixed                          $acquire         prend le verrou ; peut refuser (la ligne a disparu)
+     * @param Closure(): A                              $acquire         prend le verrou ; peut refuser (la ligne a disparu) ; ce qu'il rend
+     *                                                                   — l'entité relue en la verrouillant — est remis à `$operation`
      * @param Closure(DriverException): Throwable       $onTimeout       nomme l'attente dépassée de `$acquire`
      * @param Closure(): Throwable                      $onNested        nomme le refus de s'ouvrir dans une transaction déjà ouverte
-     * @param Closure(): T                              $operation       tourne sous le verrou, dans la transaction
+     * @param Closure(A): T                             $operation       tourne sous le verrou, dans la transaction, avec ce qu'a rendu
+     *                                                                   `$acquire` (issue #560 ; une opération qui n'en a pas l'usage ne
+     *                                                                   déclare pas de paramètre)
      * @param (Closure(DriverException): ?Throwable)|null $onCommitRefused appelé pour **toute** `DriverException` du COMMIT, transaction déjà
      *                                                                   annulée et EntityManager déjà fermé (#547) : nomme le refus qu'il
      *                                                                   reconnaît ; `null` le laisse remonter tel quel
@@ -266,8 +270,8 @@ final readonly class PostgresLockedTransaction
         try {
             $eventManager->addEventListener(Events::onFlush, $writes);
             $this->boundTheWait();
-            $this->acquire($acquire, $onTimeout);
-            $result = $operation();
+            $acquired = $this->acquire($acquire, $onTimeout);
+            $result = $operation($acquired);
         } catch (Throwable $exception) {
             try {
                 // Une session perdue n'a plus rien à annuler : PostgreSQL a
@@ -411,13 +415,17 @@ final readonly class PostgresLockedTransaction
     }
 
     /**
-     * @param Closure(): mixed                    $acquire
+     * @template A
+     *
+     * @param Closure(): A                        $acquire
      * @param Closure(DriverException): Throwable $onTimeout
+     *
+     * @return A
      */
-    private function acquire(Closure $acquire, Closure $onTimeout): void
+    private function acquire(Closure $acquire, Closure $onTimeout): mixed
     {
         try {
-            $acquire();
+            return $acquire();
         } catch (DriverException $exception) {
             if (self::LOCK_NOT_AVAILABLE === $exception->getSQLState()) {
                 throw $onTimeout($exception);

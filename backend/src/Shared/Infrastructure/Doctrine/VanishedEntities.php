@@ -9,6 +9,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Event\PostRemoveEventArgs;
 use Doctrine\ORM\Event\PrePersistEventArgs;
 use Doctrine\ORM\Events;
+use Doctrine\ORM\Query;
 use Stringable;
 use WeakMap;
 
@@ -24,15 +25,18 @@ use WeakMap;
  * identifiants sont assignés au constructeur, Doctrine ne les efface pas —,
  * sans erreur ni trace.
  *
- * - **Disparue sous un verrou** (#548). Trois verrous détachent l'instance
+ * - **Disparue sous un verrou** (#548). Quatre verrous détachent l'instance
  *   qu'ils trouvent périmée, ligne supprimée entre son chargement et le
  *   verrou : la relecture du verrou d'ordre (#402,
  *   {@see \App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock}),
  *   le verrou de ligne d'une technologie (#545,
  *   {@see \App\Portfolio\Experience\Infrastructure\Doctrine\PostgresExperienceTechnologyRowLock})
- *   et le verrou d'administration des comptes (#551, #552,
- *   {@see \App\Security\User\Infrastructure\Doctrine\PostgresAccountAdministrationLock}).
- *   Ils détachent par {@see self::detachVanished()}, jamais `detach()`.
+ *   le verrou d'administration des comptes (#551, #552,
+ *   {@see \App\Security\User\Infrastructure\Doctrine\PostgresAccountAdministrationLock})
+ *   et, depuis #560, le verrou de ligne d'un compte
+ *   ({@see \App\Security\User\Infrastructure\Doctrine\PostgresAccountRowLock}).
+ *   Ils relisent par {@see RereadUnderLock} (issue #560), seul à appeler
+ *   {@see self::detachVanished()} — jamais `detach()`.
  *   Détachée, `find()` la dit introuvable — c'est le but.
  * - **Supprimée par ce même EntityManager** (#557) : `remove()` puis
  *   `flush()`. `UnitOfWork::executeDeletions()` efface tout l'état de
@@ -44,8 +48,8 @@ use WeakMap;
  *   `postRemove` et laissait l'instance **gérée**, si bien qu'une
  *   modification puis un `save()` émettaient un `UPDATE` sur 0 ligne, perdu
  *   en silence (Doctrine ne lit ce compte que pour une entité versionnée).
- *   Le dépôt passe l'instance à {@see self::detachDeleted()} quand son
- *   `DELETE` a touché la ligne, et seulement alors.
+ *   Le dépôt l'exécute par {@see self::deleteById()} (#560), qui détache
+ *   l'instance quand le `DELETE` a touché la ligne, et seulement alors.
  *
  * Aucun chemin ne re-sauvait ces instances (les `Administrator`s relisent
  * leur entrée sous le verrou et ne reçoivent que des identifiants, les seeds
@@ -111,7 +115,7 @@ use WeakMap;
  * `prePersist` — aucun de ces chemins n'en a de chargée (#569). Une
  * suppression DQL par identifiant dont la ligne avait déjà disparu (0 ligne
  * touchée) ne détache pas non plus : rien ne dit alors si la ligne vit
- * encore. Et `detachDeleted()` appelé dans une transaction ensuite annulée
+ * encore. Et `deleteById()` appelé dans une transaction ensuite annulée
  * retient une instance dont la ligne est revenue — même limite que le
  * ROLLBACK après un `flush()` ci-dessus, aggravée de ce que le squelette des
  * verrous ne voit pas une écriture DQL (`WrittenFlushWatch`) et laisse
@@ -137,26 +141,41 @@ final readonly class VanishedEntities
 
     /**
      * Détache l'entité dont la ligne a disparu, et refusera sa re-sauvegarde.
+     * Appelée par {@see RereadUnderLock}, seul à relire sous un verrou.
+     *
+     * L'EntityManager est un paramètre parce qu'un écouteur Doctrine ne peut
+     * pas le recevoir par injection (EntityManager → EventManager → écouteur
+     * → EntityManager) ; il ne sert qu'au `detach()`. Le registre, lui, n'est
+     * pas propre à un EntityManager : il retient des objets, et refuse leur
+     * `persist()` sur tout EntityManager qui émet `prePersist` vers ce service.
      */
     public function detachVanished(EntityManagerInterface $entityManager, object $entity): void
     {
-        $this->vanished[$entity] = VanishedEntityCause::VanishedUnderLock;
-        $entityManager->detach($entity);
+        $this->forget($entityManager, $entity, VanishedEntityCause::VanishedUnderLock);
     }
 
     /**
-     * Détache l'entité dont ce même EntityManager vient de supprimer la ligne
-     * par une requête DQL (issue #569), et refusera sa re-sauvegarde sous la
-     * cause « supprimée par cet EntityManager ».
+     * Exécute une suppression DQL **par identifiant** de `$entity` et, si elle
+     * a touché la ligne, détache l'instance et refusera sa re-sauvegarde sous
+     * la cause « supprimée par cet EntityManager » (issues #569, #560).
      *
-     * Le dépôt qui a exécuté le `DELETE` l'appelle **seulement si la requête a
-     * touché la ligne** : une ligne épargnée par la condition (jeton consommé,
-     * compte activé entre-temps) existe encore, et son instance reste gérée.
+     * Écrite une fois pour les dépôts qui suppriment ainsi : une telle requête
+     * n'émet pas `postRemove`, et l'instance restée gérée aurait transformé une
+     * modification puis un `save()` en `UPDATE` sur 0 ligne, perdu en silence.
+     * **Seulement si la ligne a été touchée** : une ligne que la condition du
+     * `DELETE` a épargnée (jeton consommé, compte activé entre-temps) existe
+     * encore, son instance reste gérée. Une ligne déjà disparue ne touche rien
+     * non plus, et rien ne la distingue alors d'une ligne épargnée : son
+     * instance reste gérée (limite acceptée par #569). L'EntityManager est celui
+     * de la requête.
+     *
+     * @param Query<mixed, mixed> $deleteById un `DELETE` DQL dont la clause `WHERE` fixe l'identifiant de `$entity` : il touche 0 ou 1 ligne
      */
-    public function detachDeleted(EntityManagerInterface $entityManager, object $entity): void
+    public function deleteById(Query $deleteById, object $entity): void
     {
-        $this->vanished[$entity] = VanishedEntityCause::RemovedByThisManager;
-        $entityManager->detach($entity);
+        if (1 === $deleteById->execute()) {
+            $this->forget($deleteById->getEntityManager(), $entity, VanishedEntityCause::RemovedByThisManager);
+        }
     }
 
     /**
@@ -188,6 +207,16 @@ final readonly class VanishedEntities
             VanishedEntityCause::VanishedUnderLock => VanishedEntitySavedAgainException::vanishedUnderLock($entity::class, $id),
             VanishedEntityCause::RemovedByThisManager => VanishedEntitySavedAgainException::removedByThisManager($entity::class, $id),
         };
+    }
+
+    /**
+     * Retient l'instance sous sa cause, puis la détache : la retenir d'abord,
+     * pour qu'aucun `persist()` ne la trouve détachée sans être retenue.
+     */
+    private function forget(EntityManagerInterface $entityManager, object $entity, VanishedEntityCause $cause): void
+    {
+        $this->vanished[$entity] = $cause;
+        $entityManager->detach($entity);
     }
 
     /**

@@ -131,18 +131,39 @@ final class FailedLoginTimingEqualizerTest extends TestCase
     }
 
     /**
-     * Compte invité non activé : son hachage est vide, donc
+     * Compte invité sans mot de passe : son hachage est vide, donc
      * `NativePasswordHasher::verify()` retombe sur `password_verify($p, '')`,
      * qui échoue sans dériver quoi que ce soit. Sans compensation, une
      * invitation en attente se distingue d'un compte actif au chronomètre.
      */
-    public function testAnAccountPendingActivationIsCompensatedByADummyHash(): void
+    public function testAnInvitedAccountWithoutAPasswordIsCompensatedByADummyHash(): void
     {
         $this->hasher()->expects(self::once())->method('hash');
 
         ($this->equalizer())($this->failure(
             new BadCredentialsException('The presented password is invalid.'),
             $this->passportFor($this->pendingUser()),
+        ));
+    }
+
+    /**
+     * Régression (issue #560) : un compte invité dont un ROLE_SUPER a posé le
+     * mot de passe depuis le backoffice (#238, #460) reste en attente
+     * d'activation, mais son hachage n'est plus vide — `verify()` a fait la
+     * vraie dérivation. Un hachage factice de plus doublait son temps de
+     * réponse, et le désignait au chronomètre comme « invitation dont le mot
+     * de passe a été posé pour la personne ». Ce qui décide est l'absence de
+     * mot de passe, pas l'attente d'activation.
+     */
+    public function testAPendingAccountWhosePasswordWasSetFromTheBackofficeIsNotCompensated(): void
+    {
+        $this->hasher()->expects(self::never())->method('hash');
+        $user = $this->pendingUser();
+        $user->setPassword('a-real-hash-set-from-the-backoffice');
+
+        ($this->equalizer())($this->failure(
+            new BadCredentialsException('The presented password is invalid.'),
+            $this->passportFor($user),
         ));
     }
 
@@ -269,7 +290,7 @@ final class FailedLoginTimingEqualizerTest extends TestCase
 
     private function pendingUser(): CpgUser
     {
-        $user = new CpgUser('invited', '');
+        $user = new CpgUser('invited', CpgUser::NO_PASSWORD);
         $user->markInvited(new DateTimeImmutable());
 
         return $user;

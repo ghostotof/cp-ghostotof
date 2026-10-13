@@ -17,7 +17,8 @@ use Closure;
  *
  * L'opération s'exécute dans une transaction, compte verrouillé et relu ; elle
  * reçoit ce compte relu, à lire plutôt que tout état antérieur au verrou. Le
- * compte passé doit être une entité gérée, sans changement en attente : la
+ * compte passé doit être une entité gérée (refusé sinon, avant de rien
+ * verrouiller, issue #560), sans changement en attente : la
  * relecture écrase sans prévenir toute modification faite en mémoire. Ordre imposé à toute
  * opération : le compte d'abord, ses jetons ensuite — l'ordre inverse
  * provoquerait un interblocage.
@@ -57,7 +58,8 @@ interface AccountLockInterface
      *
      * @return T
      *
-     * @throws CpgUserNotFoundException si le compte n'existe plus
+     * @throws CpgUserNotFoundException si le compte n'existe plus — l'instance passée est alors détachée,
+     *                                  et la sauver de nouveau est refusé (issues #548, #560)
      */
     public function whileLocked(CpgUser $user, Closure $operation): mixed;
 }

@@ -26,7 +26,7 @@ final readonly class CpgUserRegistrar implements CpgUserRegistrarInterface
         // Refus rapide, avant le hachage (lent) : l'identifiant est déjà pris.
         $this->refuseIfTaken($username);
 
-        $user = new CpgUser($username, '');
+        $user = new CpgUser($username, CpgUser::NO_PASSWORD);
         $user->setPassword($this->passwordHasher->hashPassword($user, $plainPassword));
         $user->setRoles($roles);
 

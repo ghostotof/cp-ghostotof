@@ -11,7 +11,7 @@ use App\Portfolio\Experience\Domain\Repository\ExperienceTechnologyRepositoryInt
 use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
 use App\Portfolio\Experience\Infrastructure\Doctrine\ExperienceTechnologyLockTimeoutException;
-use App\Tests\Support\OpensProbeConnection;
+use App\Tests\Support\ProbesLocks;
 use Closure;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -41,7 +41,7 @@ use Throwable;
  */
 final class ExperienceTechnologyWritesUnderRowLockTest extends KernelTestCase
 {
-    use OpensProbeConnection;
+    use ProbesLocks;
 
     private EntityManagerInterface $em;
 
@@ -93,7 +93,7 @@ final class ExperienceTechnologyWritesUnderRowLockTest extends KernelTestCase
         self::assertSame('Symfony', $updated->getName());
         self::assertSame('Symfony', $this->em->getConnection()->fetchOne('SELECT name FROM experience_technology WHERE id = :id', ['id' => $id->toRfc4122()]));
         self::assertFalse($this->em->getConnection()->isTransactionActive());
-        self::assertTrue($this->probeCanLockTheRow($id), 'La ligne est restée verrouillée après le COMMIT.');
+        self::assertTrue($this->rowIsFreeForAnotherSession($id), 'La ligne est restée verrouillée après le COMMIT.');
     }
 
     public function testADeletionUnderTheLockRemovesTheRow(): void
@@ -161,15 +161,14 @@ final class ExperienceTechnologyWritesUnderRowLockTest extends KernelTestCase
     }
 
     /**
-     * Tente la ligne depuis une autre session sans jamais l'attendre
-     * (`SKIP LOCKED` : une ligne tenue n'est pas rendue).
+     * La ligne, tentée depuis une session ouverte pour l'occasion.
      */
-    private function probeCanLockTheRow(Uuid $id): bool
+    private function rowIsFreeForAnotherSession(Uuid $id): bool
     {
         $probe = self::openProbeBeside($this->em->getConnection());
 
         try {
-            return 1 === $probe->fetchOne('SELECT 1 FROM experience_technology WHERE id = :id FOR UPDATE SKIP LOCKED', ['id' => $id->toRfc4122()]);
+            return $this->probeCanLockTheRow($probe, 'experience_technology', $id);
         } finally {
             $probe->close();
         }

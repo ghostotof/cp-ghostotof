@@ -10,6 +10,8 @@ use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
 use App\Shared\Infrastructure\Doctrine\VanishedEntities;
 use App\Shared\Infrastructure\Doctrine\VanishedEntitySavedAgainException;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Query;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use WeakReference;
 
@@ -25,7 +27,7 @@ use WeakReference;
  * (contenus localisés, catalogue de veille, technologies). La suppression
  * d'un compte passe par le même `postRemove`, qui vaut pour toutes les
  * classes : elle n'a pas de test propre. La suppression DQL par identifiant
- * (#569) passe par `detachDeleted()`, testée ici ; que les deux dépôts qui en
+ * (#569) passe par `deleteById()` (#560), testée ici ; que les deux dépôts qui en
  * font l'appellent, seulement quand la ligne a été touchée, est couvert par
  * CpgUserRepositoryTest et PasswordSetupTokenRepositoryTest.
  */
@@ -156,20 +158,18 @@ final class VanishedEntitiesTest extends KernelTestCase
     }
 
     /**
-     * Une suppression hors de l'unité de travail émise par ce même
-     * EntityManager — en DQL par identifiant chez les dépôts (issue #569), en
-     * SQL ici, ce qui revient au même pour elle : le dépôt qui l'a exécutée
-     * passe l'instance à `detachDeleted()`, qui la détache et la retient sous
-     * la cause « supprimée par cet EntityManager », pas « disparue sous un
-     * verrou ».
+     * Une suppression DQL par identifiant (issue #569) n'émet pas
+     * `postRemove` : `deleteById()` l'exécute et, quand elle a touché la ligne, détache
+     * l'instance et la retient sous la cause « supprimée par cet
+     * EntityManager », pas « disparue sous un verrou » — la règle écrite une
+     * fois pour les dépôts qui en font (issue #560).
      */
-    public function testDetachDeletedDetachesAndRefusesUnderTheRemovalCause(): void
+    public function testADeleteByIdThatTookTheRowDetachesAndRefusesUnderTheRemovalCause(): void
     {
         $technology = $this->storedTechnology();
         $id = $technology->getId()->toRfc4122();
-        $this->entityManager->getConnection()->executeStatement('DELETE FROM experience_technology WHERE id = ?', [$id]);
 
-        $this->vanishedEntities()->detachDeleted($this->entityManager, $technology);
+        $this->vanishedEntities()->deleteById($this->deleteByIdQuery($technology, sparing: false), $technology);
         $refusal = null;
         try {
             $this->entityManager->persist($technology);
@@ -177,10 +177,28 @@ final class VanishedEntitiesTest extends KernelTestCase
             $refusal = $exception;
         }
 
-        self::assertFalse($this->entityManager->contains($technology), "L'entité passée à detachDeleted() est restée gérée.");
-        self::assertNotNull($refusal, "Le persist() d'une entité passée à detachDeleted() n'a pas été refusé (#569).");
+        self::assertSame(0, $this->storedCount($id), "La suppression n'a pas été exécutée.");
+        self::assertFalse($this->entityManager->contains($technology), "L'entité dont le DELETE a touché la ligne est restée gérée.");
+        self::assertNotNull($refusal, "Le persist() d'une entité supprimée en DQL n'a pas été refusé (#569).");
         self::assertSame(VanishedEntitySavedAgainException::removedByThisManager(ExperienceTechnology::class, $id)->getMessage(), $refusal->getMessage());
         self::assertFalse($this->entityManager->getUnitOfWork()->isScheduledForInsert($technology), 'Le refus a laissé une insertion planifiée.');
+    }
+
+    /**
+     * Une ligne que la condition du `DELETE` a épargnée existe encore : son
+     * instance reste gérée, rien n'est retenu. Une ligne déjà disparue ne
+     * touche pas plus de ligne, et rien ne la distingue d'une ligne épargnée
+     * (limite acceptée par #569).
+     */
+    public function testADeleteByIdThatTookNoRowLeavesTheInstanceManaged(): void
+    {
+        $technology = $this->storedTechnology();
+        $id = $technology->getId()->toRfc4122();
+
+        $this->vanishedEntities()->deleteById($this->deleteByIdQuery($technology, sparing: true), $technology);
+
+        self::assertSame(1, $this->storedCount($id), 'La condition du DELETE aurait dû épargner la ligne.');
+        self::assertTrue($this->entityManager->contains($technology), "L'entité dont la ligne existe encore a été détachée.");
     }
 
     /**
@@ -232,6 +250,25 @@ final class VanishedEntitiesTest extends KernelTestCase
     private function vanishedEntities(): VanishedEntities
     {
         return self::getContainer()->get(VanishedEntities::class);
+    }
+
+    /**
+     * Un `DELETE` DQL par identifiant, comme ceux des dépôts ; `sparing`
+     * ajoute une condition que la ligne ne remplit pas.
+     *
+     * @return Query<mixed, mixed>
+     */
+    private function deleteByIdQuery(ExperienceTechnology $technology, bool $sparing): Query
+    {
+        $builder = $this->entityManager->createQueryBuilder()
+            ->delete(ExperienceTechnology::class, 'technology')
+            ->where('technology.id = :id')
+            ->setParameter('id', $technology->getId(), UuidType::NAME);
+        if ($sparing) {
+            $builder->andWhere('technology.secondary = true');
+        }
+
+        return $builder->getQuery();
     }
 
     private function storedTechnology(): ExperienceTechnology

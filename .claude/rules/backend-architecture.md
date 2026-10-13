@@ -46,18 +46,26 @@ survives `cache:clear` after a DTO's `id` type changes — `rm -rf var/cache/<en
 bind-mount desync (`docker compose restart backend`) can make a container run a stale Provider/Processor
 mid-migration.
 
-**A lock that finds a row gone detaches its instance through `Shared/Infrastructure/Doctrine/VanishedEntities::detachVanished()`,
-never `EntityManager::detach()`** (issue #548). Doctrine takes an instance it does not manage for new (`persist()` assumes `STATE_NEW` and reads nothing): a caller re-saving
+**A lock re-reads what the EntityManager loaded before it through `Shared/Infrastructure/Doctrine/RereadUnderLock`,
+and a row gone is detached through `VanishedEntities::detachVanished()`, never `EntityManager::detach()`** (issues #548,
+#560). Doctrine takes an instance it does not manage for new (`persist()` assumes `STATE_NEW` and reads nothing): a caller re-saving
 the detached instance re-inserted the deleted row, silently. The service remembers the instance in a
 `WeakMap` and its `prePersist` listener refuses it (`VanishedEntitySavedAgainException`, unmapped, a
-`critical` 500). Used today by the order scope lock's re-read, the technology row lock and the account
-administration lock (#551, `.claude/rules/security-user.md`). Since #557 its `postRemove` listener also
+`critical` 500). `RereadUnderLock` (#560) is the one place that re-reads under a lock — `row()` (one row, one
+DQL query with `HINT_REFRESH`, `FOR UPDATE` on demand, `null` when the row is gone) and
+`everyManagedInstanceOf()` (the order scope's #402 re-read) —, the one place that skips an instance awaiting
+an insertion or a deletion (detaching it would cancel that write), and the one caller of `detachVanished()`.
+Used by the order scope lock, the technology row lock, the account administration lock and, since #560, the
+account row lock (`.claude/rules/security-user.md`); a new lock that re-reads goes through it, never a copy
+(there were four, and the account row lock's did not detach). Since #557 `VanishedEntities`' `postRemove` listener also
 remembers every instance the same manager removed and flushed — Doctrine took it for new as well, its UUID
 kept — so re-saving a deleted entity is refused too (a restoration creates a new entity). **A DQL `DELETE` by
-id** emits no `postRemove`: since #569 the repository that runs it passes the instance to
-`VanishedEntities::detachDeleted()` (same « removed by this manager » cause) **when the statement touched the
-row, and only then** — left managed, a later `save()` sent an `UPDATE` touching no row, lost in silence; a row
-the condition spared still exists and stays managed. A new DQL deletion by id does the same. The details, the
+id** emits no `postRemove`: since #569 the repository runs it through `VanishedEntities::deleteById(Query, entity)`
+(#560), which detaches the instance under the same « removed by this manager » cause **when the statement
+touched the row, and only then** — left managed, a later `save()` sent an `UPDATE` touching no row, lost in
+silence; a row the condition spared, or already gone, still leaves the instance managed. A new DQL deletion by
+id goes through it. The registry is not per EntityManager: `detachVanished()` takes the manager only for the
+`detach()` (a Doctrine listener cannot receive it by injection), `deleteById()` reads it from the query. The details, the
 rejected options and the accepted limits live in `.claude/rules/portfolio-contenus.md` (ordering section).
 
 **Every entity timestamp is stored with its offset** (issue #434): `#[ORM\Column(type:

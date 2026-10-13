@@ -41,7 +41,7 @@ class PasswordSetupTokenRepository extends ServiceEntityRepository implements Pa
      * changements en attente. Une ligne déjà supprimée n'est pas une erreur.
      *
      * Le jeton dont la ligne a été supprimée ici est détaché et retenu par
-     * {@see VanishedEntities::detachDeleted()} (issue #569) : resté géré, une
+     * {@see VanishedEntities::deleteById()} (issues #569, #560) : resté géré, une
      * modification puis un `save()` émettaient un `UPDATE` sur 0 ligne, perdu
      * en silence ; sa re-sauvegarde est désormais refusée. Un jeton épargné
      * (consommé) reste géré : sa ligne existe. Ce détachement ne lève pas sur
@@ -50,20 +50,18 @@ class PasswordSetupTokenRepository extends ServiceEntityRepository implements Pa
      */
     public function remove(PasswordSetupToken $token): void
     {
-        $deleted = $this->createQueryBuilder('token')
-            ->delete()
-            ->where('token.id = :id')
-            // Jamais un jeton consommé (seconde passe d'audit de #458) : l'e-mail
-            // a pu partir malgré l'erreur et la personne activer son compte ;
-            // le supprimer ferait d'un rejeu du lien un lien inconnu.
-            ->andWhere('token.usedAt IS NULL')
-            ->setParameter('id', $token->getId(), UuidType::NAME)
-            ->getQuery()
-            ->execute();
-
-        if (1 === $deleted) {
-            $this->vanishedEntities->detachDeleted($this->getEntityManager(), $token);
-        }
+        $this->vanishedEntities->deleteById(
+            $this->createQueryBuilder('token')
+                ->delete()
+                ->where('token.id = :id')
+                // Jamais un jeton consommé (seconde passe d'audit de #458) : l'e-mail
+                // a pu partir malgré l'erreur et la personne activer son compte ;
+                // le supprimer ferait d'un rejeu du lien un lien inconnu.
+                ->andWhere('token.usedAt IS NULL')
+                ->setParameter('id', $token->getId(), UuidType::NAME)
+                ->getQuery(),
+            $token,
+        );
     }
 
     /**

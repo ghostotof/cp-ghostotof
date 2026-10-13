@@ -11,10 +11,10 @@ use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Infrastructure\Doctrine\AccountAdministrationLockInsideTransactionException;
 use App\Security\User\Infrastructure\Doctrine\AccountAdministrationLockTimeoutException;
 use App\Security\User\Infrastructure\Doctrine\PostgresAccountAdministrationLock;
-use App\Shared\Infrastructure\Doctrine\VanishedEntities;
+use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use App\Shared\Infrastructure\Doctrine\VanishedEntitySavedAgainException;
 use App\Tests\Support\CommitRefusal;
-use App\Tests\Support\OpensProbeConnection;
+use App\Tests\Support\ProbesLocks;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -32,7 +32,7 @@ use Throwable;
  */
 final class PostgresAccountAdministrationLockTest extends KernelTestCase
 {
-    use OpensProbeConnection;
+    use ProbesLocks;
 
     private EntityManagerInterface $em;
 
@@ -76,16 +76,16 @@ final class PostgresAccountAdministrationLockTest extends KernelTestCase
 
         try {
             [$advisoryFree, $targetRowFree, $actorRowFree] = $this->lock()->whileAdministering($target, $actor, fn (CpgUser $locked): array => [
-                $this->probeCanTakeTheAdvisoryLock($probe),
-                $this->probeCanLockTheRow($probe, $target),
-                $this->probeCanLockTheRow($probe, $actor),
+                $this->administrationLockIsFree($probe),
+                $this->probeCanLockTheRow($probe, 'cpg_user', $target->getId()),
+                $this->probeCanLockTheRow($probe, 'cpg_user', $actor->getId()),
             ]);
 
             self::assertFalse($advisoryFree, 'Une autre session a pu prendre l\'advisory lock pendant l\'opération.');
             self::assertFalse($targetRowFree, 'Une autre session a pu verrouiller la ligne du compte administré pendant l\'opération.');
             self::assertTrue($actorRowFree, 'La ligne de l\'acteur a été verrouillée : sa relecture doit rester sans verrou.');
-            self::assertTrue($this->probeCanTakeTheAdvisoryLock($probe), 'L\'advisory lock a survécu à l\'opération.');
-            self::assertTrue($this->probeCanLockTheRow($probe, $target), 'La ligne du compte administré est restée verrouillée.');
+            self::assertTrue($this->administrationLockIsFree($probe), 'L\'advisory lock a survécu à l\'opération.');
+            self::assertTrue($this->probeCanLockTheRow($probe, 'cpg_user', $target->getId()), 'La ligne du compte administré est restée verrouillée.');
             self::assertFalse($this->em->getConnection()->isTransactionActive());
         } finally {
             $probe->close();
@@ -209,7 +209,7 @@ final class PostgresAccountAdministrationLockTest extends KernelTestCase
             try {
                 // Refus d'une cible ROLE_SUPER : celle-ci l'est.
                 $this->lock()->whileAdministering($target, $actor, static function (CpgUser $locked): bool {
-                    if (\in_array(CpgUser::ROLE_SUPER, $locked->getRoles(), true)) {
+                    if ($locked->isSuperAdmin()) {
                         throw new LogicException('refus');
                     }
 
@@ -223,8 +223,8 @@ final class PostgresAccountAdministrationLockTest extends KernelTestCase
             self::assertSame('refus', $caught->getMessage(), 'L\'exception de l\'opération aurait dû remonter telle quelle.');
             self::assertTrue($this->em->isOpen());
             self::assertFalse($this->em->getConnection()->isTransactionActive());
-            self::assertTrue($this->probeCanTakeTheAdvisoryLock($probe), 'L\'advisory lock a survécu au refus.');
-            self::assertTrue($this->probeCanLockTheRow($probe, $target), 'La ligne du compte administré est restée verrouillée après le refus.');
+            self::assertTrue($this->administrationLockIsFree($probe), 'L\'advisory lock a survécu au refus.');
+            self::assertTrue($this->probeCanLockTheRow($probe, 'cpg_user', $target->getId()), 'La ligne du compte administré est restée verrouillée après le refus.');
         } finally {
             $probe->close();
         }
@@ -357,8 +357,8 @@ final class PostgresAccountAdministrationLockTest extends KernelTestCase
             self::assertStringNotContainsString($target->getUserIdentifier(), $caught->getMessage(), "Le message cite l'identifiant du compte.");
             self::assertFalse($ran, "L'opération a tourné dans la transaction de l'appelant.");
             self::assertSame(1, $connection->getTransactionNestingLevel(), "La transaction de l'appelant a été touchée.");
-            self::assertTrue($this->probeCanTakeTheAdvisoryLock($probe), 'L\'advisory lock a été pris malgré le refus.');
-            self::assertTrue($this->probeCanLockTheRow($probe, $target), 'La ligne du compte a été verrouillée malgré le refus.');
+            self::assertTrue($this->administrationLockIsFree($probe), 'L\'advisory lock a été pris malgré le refus.');
+            self::assertTrue($this->probeCanLockTheRow($probe, 'cpg_user', $target->getId()), 'La ligne du compte a été verrouillée malgré le refus.');
         } finally {
             $connection->rollBack();
             $probe->close();
@@ -381,7 +381,7 @@ final class PostgresAccountAdministrationLockTest extends KernelTestCase
 
             self::assertInstanceOf(AccountAdministrationLockInsideTransactionException::class, $caught, \sprintf("L'imbrication n'a pas été refusée sous son nom : %s.", get_debug_type($caught)));
             self::assertFalse($this->em->getConnection()->isTransactionActive());
-            self::assertTrue($this->probeCanTakeTheAdvisoryLock($probe), 'L\'advisory lock du premier a survécu au refus.');
+            self::assertTrue($this->administrationLockIsFree($probe), 'L\'advisory lock du premier a survécu au refus.');
         } finally {
             $probe->close();
         }
@@ -399,7 +399,7 @@ final class PostgresAccountAdministrationLockTest extends KernelTestCase
 
         $this->expectException(AccountAdministrationLockTimeoutException::class);
         $this->expectExceptionMessageMatches($messagePattern);
-        (new PostgresAccountAdministrationLock($this->em, new NullLogger(), self::getContainer()->get(VanishedEntities::class), '50ms'))
+        (new PostgresAccountAdministrationLock($this->em, new NullLogger(), self::getContainer()->get(RereadUnderLock::class), '50ms'))
             ->whileAdministering($target, $actor, static fn (CpgUser $locked): null => null);
     }
 
@@ -419,27 +419,11 @@ final class PostgresAccountAdministrationLockTest extends KernelTestCase
     }
 
     /**
-     * Tente l'advisory lock depuis une autre session, et le rend aussitôt s'il
-     * l'a eu : `pg_try_advisory_xact_lock` hors transaction explicite ne le
-     * garde que le temps de l'instruction.
+     * L'advisory lock des administrations, tenté depuis `$probe`.
      */
-    private function probeCanTakeTheAdvisoryLock(Connection $probe): bool
+    private function administrationLockIsFree(Connection $probe): bool
     {
-        return true === $probe->fetchOne(
-            'SELECT pg_try_advisory_xact_lock(?, ?)',
-            [PostgresAccountAdministrationLock::ADVISORY_NAMESPACE, PostgresAccountAdministrationLock::ADVISORY_KEY],
-        );
+        return $this->probeCanTakeTheAdvisoryLock($probe, PostgresAccountAdministrationLock::ADVISORY_NAMESPACE, PostgresAccountAdministrationLock::ADVISORY_KEY);
     }
 
-    /**
-     * Tente la ligne depuis une autre session sans jamais l'attendre
-     * (`SKIP LOCKED` : une ligne tenue n'est pas rendue), et la rend aussitôt.
-     */
-    private function probeCanLockTheRow(Connection $probe, CpgUser $user): bool
-    {
-        return 1 === $probe->fetchOne(
-            'SELECT 1 FROM cpg_user WHERE id = :id FOR UPDATE SKIP LOCKED',
-            ['id' => $user->getId()->toRfc4122()],
-        );
-    }
 }

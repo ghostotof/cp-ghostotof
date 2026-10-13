@@ -21,7 +21,10 @@ paths:
     `Domain/Entity/PasswordSetupToken.php` (SHA-256 of the token only, 48h expiry, single-use, FK `ON DELETE CASCADE`),
     `Domain/Repository/{CpgUser,PasswordSetupToken}RepositoryInterface.php` (the DIP boundary — `Application/`
     never depends on Doctrine directly).
-    `CpgUser::ROLE_SUPER` is the role reserved for backoffice access; `CpgUser::MIN_PASSWORD_LENGTH` /
+    `CpgUser::ROLE_SUPER` is the role reserved for backoffice access, asked through `CpgUser::isSuperAdmin()`
+    (stored roles, not the `role_hierarchy`; issue #560 — never an `in_array` on `getRoles()` again);
+    `CpgUser::NO_PASSWORD` is the hash of an account without a password, asked through `hasPassword()`;
+    `CpgUser::MIN_PASSWORD_LENGTH` /
     `MAX_PASSWORD_LENGTH` are the single source of truth, applied through one compound constraint,
     `Presentation/Validator/PlainPasswordLength`, by the CLI, the backoffice password-change endpoint and the
     public set-password endpoint — never a hand-written `Assert\Length` or `strlen()` (issue #386: the CLI
@@ -127,7 +130,8 @@ paths:
     **without** `FOR UPDATE` (before the target, so a revoked actor gets the same 403 whether its target
     exists or not) **then** the target row `FOR UPDATE` (the same query, which refreshes the provider's
     instance in place and answers `null` when the row is gone, the pattern of the technology row lock,
-    #545). No other path takes that advisory key, and the holders of an account row lock
+    #545; both reads are `Shared/Infrastructure/Doctrine/RereadUnderLock::row()`'s since #560, and the skeleton hands
+    the re-read target to the operation). No other path takes that advisory key, and the holders of an account row lock
     (`PostgresAccountRowLock`: handler, activation, purge, `changePassword`; `advanceInvitationGeneration()`
     for one `UPDATE`) never wait for it, so no cycle exists; the actor's plain read waits for nothing, and
     is consistent because every demotion or deletion the application does goes through this same advisory
@@ -136,16 +140,17 @@ paths:
     queues behind it; both waits are bounded by `lock_timeout` and each has its own factory of the timeout
     exception (`advisoryLockHeld()` / `rowHeld()`), so the log says which one. Under the lock, on the **re-read** target: the idempotent exit of `setSuperAdmin`, then the guard,
     `CpgUserRepositoryInterface::countOtherSuperAdminsAbleToSignIn(target)` — **in SQL**
-    (`id <> target AND CAST(roles AS jsonb) @> '["ROLE_SUPER"]' AND password <> ''`, the role bound as a
-    parameter), never `findAll()` in the identity map; a `ROLE_SUPER` still pending activation (empty
-    password) does not count, it cannot sign in and keeps no door open; `countByRole()` is gone —, then
+    (`id <> target AND CAST(roles AS jsonb) @> '["ROLE_SUPER"]' AND password <> :noPassword`, the role and
+    `CpgUser::NO_PASSWORD` bound as parameters), never `findAll()` in the identity map; a `ROLE_SUPER` without a
+    password (`CpgUser::hasPassword()` false, issue #560: the empty-hash convention is written once, the PHP side
+    as `hasPassword()`, the purge's DQL and this SQL binding the constant) does not count, it cannot sign in and keeps no door open; `countByRole()` is gone —, then
     `remove()` / `save()`; the audit line (`user-deleted`, `role-changed`) is written **after** the lock
     returned, after the COMMIT: a logged action is a committed action. The deleted account's instance the
     `user-deleted` line reads (and the purge's `user-purged`) is remembered by `VanishedEntities`' `postRemove`
     listener (#557): reading it is harmless, re-saving it would be refused, and nothing re-persists it.
     **A target whose row vanished between
     the provider and the lock is a 404** (`CpgUserNotFoundException`, already mapped), its stale instance
-    detached through `VanishedEntities::detachVanished()` (#548), and no audit line: that is the loser of two
+    detached through `RereadUnderLock` (#548, #560), and no audit line: that is the loser of two
     `DELETE` of the same account, or a `PUT …/roles` on an account the purge just took (#552 — Doctrine never
     reads the row count of its `DELETE`/`UPDATE`, so both answered 204 and wrote a line for a row already gone).
     Purge against admin deletion: the loser gets the 404 on the admin side, « already deleted » (skipped) on
@@ -226,7 +231,7 @@ paths:
     `error` with `exceptionClass`, `userId` and `tokenId` only — a Doctrine message can quote the digest,
     the id is no secret and lets an operator revoke that token alone — and the token then lives until the
     next successful send purges it, or until it expires. A removal that took the row detaches the token
-    through `VanishedEntities::detachDeleted()` (#569): left managed, a later change and `save()` would have
+    through `VanishedEntities::deleteById()` (#569, #560): left managed, a later change and `save()` would have
     sent an `UPDATE` touching no row; its re-save is now refused (see `.claude/rules/portfolio-contenus.md`).
     Accepted limits, settled in the review of #425:
     a transport exception does not prove the e-mail stayed home (lost response after acceptance, SMTP
@@ -299,10 +304,16 @@ paths:
     open, which is what lets the handler and the purge carry on (`PostgresAccountRowLockTest` pins a database
     error after a write and a refusal before any, `PostgresUsernameAllocationLockTest` both sides of a
     refusal); a
-    `lock_timeout` of 5 s when the session has none, the console having no FPM `PGOPTIONS`), a
-    `SELECT 1 … FOR UPDATE` that says whether the row still exists (`refresh()` on a
-    deleted row raises nothing, and the token insert then failed on the foreign key) →
-    `CpgUserNotFoundException`, then `refresh()` of the account. Order for every operation: **the account,
+    `lock_timeout` of 5 s when the session has none, the console having no FPM `PGOPTIONS`), **one** query,
+    `RereadUnderLock::row(…, forUpdate: true)` (issue #560), that locks the row, says whether it still exists and
+    refreshes the account in place, handed to the operation (`refresh()` on a deleted row raises nothing, and the
+    token insert then failed on the foreign key) → `CpgUserNotFoundException`, the stale instance **detached** and
+    its re-save refused (#548). Until #560 it was a `SELECT 1 … FOR UPDATE` then `refresh()`: two queries, and the
+    vanished account stayed managed — a change then a `save()` would have sent an `UPDATE` touching no row, lost in
+    silence (no caller did; `PostgresAccountRowLockTest` pins the detachment, red before). The operation receives
+    the caller's own instance, refreshed; an instance the EntityManager does not manage is refused before anything
+    is locked (`AccountLockOnUnmanagedAccountException`, unmapped `critical` 500: the re-read would hand the
+    operation another instance while the caller kept its stale one — `refresh()` already threw there before #560). Order for every operation: **the account,
     then its tokens**, or the two deadlock. The handler re-checks activation and generation under it before
     `deleteForUser()` — in `READ COMMITTED` a second consumer's purge did not see the first one's
     uncommitted token, and two tokens stayed usable —; a deleted, activated or resent account drops the
@@ -334,7 +345,7 @@ paths:
     admin retries without an « adresse déjà utilisée » 409 and the log announces no invitation that never
     left — by `removePendingInvitation()`, a DQL `DELETE` by id that never touches an account activated
     meanwhile and needs neither the unit of work nor a global `flush()` (the #425 rule), and detaches the account
-    it took through `VanishedEntities::detachDeleted()` (#569, an account spared stays managed); were the message
+    it took through `VanishedEntities::deleteById()` (#569, #560, an account spared stays managed); were the message
     stored anyway (a lost ack), the handler finds no account, logs a `warning` and stops without retry —
     or, had it run before the removal, its link is dead (the token leaves with the account) and the admin
     resends; a failure of that removal surfaces as itself (a `critical` 500), the account left pending; an **old worker**

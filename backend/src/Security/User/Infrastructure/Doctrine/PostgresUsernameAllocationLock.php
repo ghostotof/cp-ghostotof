@@ -62,10 +62,14 @@ final readonly class PostgresUsernameAllocationLock implements UsernameAllocatio
         $connection = $this->entityManager->getConnection();
 
         return new PostgresLockedTransaction($this->entityManager, $this->logger, $this->fallbackLockTimeout)->run(
-            acquire: static fn (): mixed => $connection->executeQuery(
-                'SELECT pg_advisory_xact_lock(?, ?)',
-                [self::ADVISORY_NAMESPACE, self::ADVISORY_KEY],
-            ),
+            // Ne rend rien : le squelette remettrait à l'opération ce que rend
+            // l'acquisition (#560), et un advisory lock n'a rien à lui donner.
+            acquire: static function () use ($connection): void {
+                $connection->executeQuery(
+                    'SELECT pg_advisory_xact_lock(?, ?)',
+                    [self::ADVISORY_NAMESPACE, self::ADVISORY_KEY],
+                );
+            },
             onTimeout: UsernameAllocationLockTimeoutException::afterWaiting(...),
             onNested: UsernameAllocationLockInsideTransactionException::create(...),
             operation: $operation,

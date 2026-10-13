@@ -97,7 +97,9 @@ interface CpgUserRepositoryInterface
      * global. Un compte déjà supprimé n'est pas une erreur.
      *
      * Le compte dont la ligne a été supprimée n'est plus géré, et le sauver
-     * de nouveau est refusé (issue #569) ; un compte épargné reste géré.
+     * de nouveau est refusé (issue #569) ; un compte épargné reste géré, de
+     * même qu'un compte déjà supprimé : la suppression n'a touché aucune ligne,
+     * et rien ne le distingue d'un compte épargné.
      */
     public function removePendingInvitation(CpgUser $user): void;
 }

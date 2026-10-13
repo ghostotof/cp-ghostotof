@@ -49,7 +49,7 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
             // Garde anti-lockout (B9) : ne jamais laisser supprimer le dernier
             // ROLE_SUPER capable de se connecter. La cible est exclue du
             // décompte : c'est elle qui part.
-            if (\in_array(CpgUser::ROLE_SUPER, $target->getRoles(), true)
+            if ($target->isSuperAdmin()
                 && 0 === $this->cpgUserRepository->countOtherSuperAdminsAbleToSignIn($target)
             ) {
                 throw CannotDeleteLastSuperAdminException::lastOne();

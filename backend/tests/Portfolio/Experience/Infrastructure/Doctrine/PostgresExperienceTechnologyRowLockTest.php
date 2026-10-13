@@ -13,11 +13,10 @@ use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
 use App\Portfolio\Experience\Infrastructure\Doctrine\ExperienceTechnologyLockInsideTransactionException;
 use App\Portfolio\Experience\Infrastructure\Doctrine\ExperienceTechnologyLockTimeoutException;
 use App\Portfolio\Experience\Infrastructure\Doctrine\PostgresExperienceTechnologyRowLock;
-use App\Shared\Infrastructure\Doctrine\VanishedEntities;
+use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use App\Shared\Infrastructure\Doctrine\VanishedEntitySavedAgainException;
 use App\Tests\Support\CommitRefusal;
-use App\Tests\Support\OpensProbeConnection;
-use Doctrine\DBAL\Connection;
+use App\Tests\Support\ProbesLocks;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -34,7 +33,7 @@ use Throwable;
  */
 final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
 {
-    use OpensProbeConnection;
+    use ProbesLocks;
 
     private EntityManagerInterface $em;
 
@@ -273,7 +272,7 @@ final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
         $caught = null;
 
         try {
-            (new PostgresExperienceTechnologyRowLock($this->em, new NullLogger(), self::getContainer()->get(VanishedEntities::class), '50ms'))->whileLocked($technology->getId(), static fn (ExperienceTechnology $locked): null => null);
+            (new PostgresExperienceTechnologyRowLock($this->em, new NullLogger(), self::getContainer()->get(RereadUnderLock::class), '50ms'))->whileLocked($technology->getId(), static fn (ExperienceTechnology $locked): null => null);
         } catch (Throwable $exception) {
             $caught = $exception;
         } finally {
@@ -314,7 +313,7 @@ final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
             self::assertStringContainsString($technology->getId()->toRfc4122(), $caught->getMessage());
             self::assertFalse($ran, "L'opération a tourné dans la transaction de l'appelant.");
             self::assertSame(1, $connection->getTransactionNestingLevel(), "La transaction de l'appelant a été touchée.");
-            self::assertTrue($this->probeCanLockTheRow($probe, $technology), 'La ligne a été verrouillée malgré le refus.');
+            self::assertTrue($this->probeCanLockTheRow($probe, 'experience_technology', $technology->getId()), 'La ligne a été verrouillée malgré le refus.');
         } finally {
             $connection->rollBack();
             $probe->close();
@@ -359,15 +358,4 @@ final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
         return $technology;
     }
 
-    /**
-     * Tente la ligne depuis une autre session sans jamais l'attendre
-     * (`SKIP LOCKED` : une ligne tenue n'est pas rendue).
-     */
-    private function probeCanLockTheRow(Connection $probe, ExperienceTechnology $technology): bool
-    {
-        return 1 === $probe->fetchOne(
-            'SELECT 1 FROM experience_technology WHERE id = :id FOR UPDATE SKIP LOCKED',
-            ['id' => $technology->getId()->toRfc4122()],
-        );
-    }
 }

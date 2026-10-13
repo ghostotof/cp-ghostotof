@@ -9,6 +9,7 @@ use App\Security\User\Application\CpgUserRoleAdministratorInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\ActingAccountNoLongerSuperAdminException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Tests\Security\User\Support\ReadsStoredSuperAdmins;
 use App\Tests\Support\ChildPhpProcess;
 use App\Tests\Support\FlushInterleaving;
 use App\Tests\Support\ProcessBarrier;
@@ -40,6 +41,8 @@ use Symfony\Component\Process\Process;
  */
 final class AccountAdministrationConcurrencyTest extends KernelTestCase
 {
+    use ReadsStoredSuperAdmins;
+
     private const int TIMEOUT_SECONDS = 30;
 
     private const string ADMINISTER_SCRIPT = __DIR__.'/../Fixtures/administer-account.php';
@@ -123,28 +126,6 @@ final class AccountAdministrationConcurrencyTest extends KernelTestCase
         self::assertNotNull($beta);
 
         return [$alpha, $beta];
-    }
-
-    /**
-     * Lu en base, jamais par la carte d'identité : c'est elle que le test
-     * accuse.
-     *
-     * @return list<string>
-     */
-    private function storedSuperAdminUsernames(): array
-    {
-        $rows = self::getContainer()->get(EntityManagerInterface::class)->getConnection()->fetchFirstColumn(
-            'SELECT username FROM cpg_user WHERE CAST(roles AS jsonb) @> CAST(:role AS jsonb) ORDER BY username',
-            ['role' => json_encode([CpgUser::ROLE_SUPER], \JSON_THROW_ON_ERROR)],
-        );
-
-        $usernames = [];
-        foreach ($rows as $username) {
-            self::assertIsString($username);
-            $usernames[] = $username;
-        }
-
-        return $usernames;
     }
 
     private function purge(): void
