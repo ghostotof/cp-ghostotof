@@ -147,13 +147,43 @@ paths:
     table). **Accepted limits**: two concurrent SQL transactions that skip that lock can
     each re-read the group without the other's uncommitted write and both commit; the check costs one
     indexed query per row written at COMMIT, 2N for a reorder of N FR/EN pairs, under the lock.
-    **Trap for future migrations**: a deferred trigger leaves pending events until the COMMIT, and
-    PostgreSQL refuses an `ALTER TABLE` on a table that has some (55006, "pending trigger events") — a
-    migration that writes into one of the eight tables and then alters it starts with `SET CONSTRAINTS
-    trg_translation_group_single_position IMMEDIATE`. Since #501 that includes a write of `category`
-    alone in `about_me_card`, which the trigger now listens to. And a migration that drops and recreates
-    the trigger writes no data: dropping it while writes of the same transaction await their deferred
-    check cancels those checks silently (measured for #505). That migration reported every divergent group as
+    **Trap for future migrations** (issue #505, measured on PostgreSQL 18, pinned by
+    `tests/Migrations/DeferredTriggerPendingEventsTest`). A deferred trigger leaves one pending event per
+    row a watched write touches, until the COMMIT, and PostgreSQL then refuses most `ALTER TABLE`s
+    (`ADD COLUMN`, `ALTER COLUMN … TYPE`, `DROP COLUMN`) **and `CREATE INDEX`** on that table: SQLSTATE
+    `55006`, "cannot ALTER TABLE … because it has pending trigger events" (a `RENAME COLUMN`, a
+    `COMMENT`, a DDL on another table pass). Each migration runs in its own transaction
+    (`doctrine_migrations.yaml`, no `all_or_nothing`), so the trap is a write then a DDL on the same
+    table **within one migration**. **Watched writes**: an `INSERT`, and an `UPDATE` naming a column of
+    the trigger's `UPDATE OF` clause — `position`, `translation_group`, plus `category` on
+    `about_me_card` since #501; an `UPDATE` of any other column (`SET title = …`) and a `DELETE` leave
+    nothing pending. **The fix**: `SET CONSTRAINTS trg_translation_group_single_position IMMEDIATE`
+    **after** the writes, right before the DDL — it runs the pending checks there (a divergent group is
+    refused at that line, `23T90`) and empties the queue; or the DDL first, the writes after. **Never
+    at the top** of a migration that rewrites a group in several statements: in immediate mode each
+    statement is checked at its end, and the legitimate gap between two members' `UPDATE`s is refused
+    (`23T90`) — the old advice here said exactly that, and was wrong. **Where it shows**: an `INSERT`
+    always queues an event, so the CI (which migrates an empty database, no seeds) catches an `INSERT`
+    then a DDL; an `UPDATE` on an empty table touches no row and queues nothing, so the CI is green and
+    the refusal appears only on a populated database — a `make db-migrate` on a dev database with
+    content, or the preprod deploy (fail-closed there: the migration Job fails before `apply -k`, see
+    `.claude/rules/deploiement.md`); agents' worktrees, on empty test databases, miss it too. Hence
+    the model of `.claude/rules/seeding.md` (a data migration tested by `tests/Migrations/` against
+    rows), required here: **a migration that writes into one of the eight tables has a
+    `tests/Migrations/` test on rows**, replaying it inside a rolled-back
+    transaction (`ReplaysMigration`); a test that inserts its own rows in that transaction then
+    replays a DDL clears its own `INSERT`s' events first (`SET CONSTRAINTS … IMMEDIATE` then
+    `DEFERRED`), or it gets a false `55006`. **And a migration that drops and recreates the trigger
+    writes no data**: dropping it while writes of the same transaction await their deferred check
+    cancels those checks silently — the COMMIT, or a later `IMMEDIATE`, checks nothing. **No automatic
+    guard, by decision** (#505): replaying every migration on a populated database in CI was
+    weighed and rejected — the hole is narrow (an `UPDATE` of a watched column, then a refused DDL on
+    the same table, in one migration), the `INSERT` case is already caught by the CI, the preprod
+    refusal fails closed with the previous release still serving, and the test on rows above catches
+    it before the release branch. The test pins the facts, not migrations: a PostgreSQL upgrade or a
+    trigger change that contradicts them turns it red, and this paragraph with it. Migrations are
+    frozen: `Version20261012120000`'s docblock still gives the old « `IMMEDIATE` at the top » advice,
+    this paragraph is the reference. Migration `Version20261012120000` reported every divergent group as
     a `warning` with its original positions per locale in the migration Job's output, then **renumbered
     its perimeter** `0…n-1` by lowest position, the group breaking ties — aligning on the lowest
     position alone left two groups tied, which the repositories break by each row's own id, so FR and
