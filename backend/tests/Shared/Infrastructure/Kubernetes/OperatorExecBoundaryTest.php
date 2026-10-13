@@ -27,8 +27,10 @@ use PHPUnit\Framework\TestCase;
  * Une seule exception écrite, issue #593 : la procédure des rôles PostgreSQL,
  * qui écrit, passe par un `exec` sur le socket local du pod `postgres`, seul
  * chemin du superutilisateur depuis que le `pg_hba.conf` du dépôt lui ferme le
- * réseau. Elle tient en une ligne de sa section, que ce test exempte et dont
- * {@see PostgresRolesProcedureTest} pince la forme.
+ * réseau. Elle tient en une ligne du bloc de sa section : ce test exempte ce
+ * bloc-là, et lui seul (une copie de la ligne ailleurs dans le runbook est
+ * jugée comme toute autre), et {@see PostgresRolesProcedureTest} en fige la
+ * ligne mot pour mot.
  */
 final class OperatorExecBoundaryTest extends TestCase
 {
@@ -161,10 +163,9 @@ final class OperatorExecBoundaryTest extends TestCase
      */
     public function testEveryRunbookPsqlIsAReadOnlySessionInTheNamespaceGivenByTheOperator(): void
     {
-        $roles = $this->execLines($this->bashBlockAfter(self::ROLES_SECTION));
         $calls = array_values(array_filter(
-            $this->runbookExecLines(),
-            static fn (string $line): bool => 1 === preg_match('/\bpsql\b/', $line) && !\in_array($line, $roles, true),
+            $this->execLines($this->readmeWithoutTheRolesBlock()),
+            static fn (string $line): bool => 1 === preg_match('/\bpsql\b/', $line),
         ));
         self::assertGreaterThanOrEqual(4, \count($calls), 'Le runbook a perdu un de ses psql en lecture : relire ce test.');
 
@@ -192,6 +193,19 @@ final class OperatorExecBoundaryTest extends TestCase
 
         self::assertCount(1, $roles, 'La section des rôles ne porte qu\'un exec.');
         self::assertMatchesRegularExpression('/\bpsql\b/', $roles[0]);
+    }
+
+    /**
+     * Les autres façons d'entrer dans le pod `postgres` atteignent le socket
+     * ou le loopback, où le pg_hba.conf fait confiance (relecture de #593) :
+     * aucun `kubectl debug`, `attach` ni `port-forward` vers lui dans le
+     * runbook. Un `exec` y reste jugé par les tests ci-dessus.
+     */
+    public function testNoRunbookCommandDebugsAttachesOrForwardsToPostgres(): void
+    {
+        $joined = (string) preg_replace('/\\\\\n\s*/', ' ', $this->readme());
+
+        self::assertDoesNotMatchRegularExpression('/\bkubectl\b[^\n]*\b(debug|attach|port-forward)\b[^\n]*\b(postgres|database)\b/', $joined);
     }
 
     /**
@@ -263,6 +277,22 @@ final class OperatorExecBoundaryTest extends TestCase
         self::assertSame(1, preg_match('/```bash\n(.*?)```/s', substr($readme, $start), $block));
 
         return $block[1];
+    }
+
+    /**
+     * Le runbook moins le bloc `bash` de la procédure des rôles — l'unique
+     * exemption, par sa place et non par le texte de sa ligne. La phrase qui
+     * l'ouvre est unique dans le runbook.
+     */
+    private function readmeWithoutTheRolesBlock(): string
+    {
+        $readme = $this->readme();
+        self::assertSame(1, substr_count($readme, self::ROLES_SECTION), 'La phrase qui ouvre la procédure des rôles est unique.');
+        $start = (int) strpos($readme, self::ROLES_SECTION);
+        self::assertSame(1, preg_match('/```bash\n.*?```/s', $readme, $block, PREG_OFFSET_CAPTURE, $start));
+        [$text, $at] = $block[0];
+
+        return substr($readme, 0, $at).substr($readme, $at + \strlen($text));
     }
 
     /**

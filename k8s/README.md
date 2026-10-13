@@ -1025,9 +1025,11 @@ est celui de `HEAD` (`git diff --quiet HEAD -- k8s/base/postgres-roles` doit
 Pour créer ou rejouer les rôles :
 
 ```bash
-NS=        # preprod, puis prod : vide, rien ne part
+# Namespace : preprod, puis prod. Vide, rien ne part.
+NS=
 : "${NS:?preprod ou prod}"
-ROTATE=0   # 1 : réécrire les mots de passe de cpg_app et cpg_migrator (rotation, ci-dessous)
+# Rotation : 1 réécrit les mots de passe de cpg_app et cpg_migrator (ci-dessous).
+ROTATE=0
 umask 077
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -1035,20 +1037,19 @@ trap 'rm -rf "$TMP"' EXIT
 #    Ignorés par roles.sql pour un rôle qui existe déjà, sauf ROTATE=1.
 openssl rand -hex 24 | tr -d '\n' > "$TMP/app-password"
 openssl rand -hex 24 | tr -d '\n' > "$TMP/migrator-password"
-DB="$(kubectl -n "$NS" get secret postgres-credentials -o jsonpath='{.data.POSTGRES_DB}' | base64 -d)"
+DB="$(kubectl -n "${NS:?preprod ou prod}" get secret postgres-credentials -o jsonpath='{.data.POSTGRES_DB}' | base64 -d)"
 { printf 'postgresql://cpg_app:'; cat "$TMP/app-password"; printf '@database:5432/%s?serverVersion=18&charset=utf8' "$DB"; } > "$TMP/app-url"
 { printf 'postgresql://cpg_migrator:'; cat "$TMP/migrator-password"; printf '@database:5432/%s?serverVersion=18&charset=utf8' "$DB"; } > "$TMP/migrator-url"
-# 2. Les trois fichiers du checkout, une transaction, sur le socket local du pod postgres.
+# 2. Les fichiers du checkout, une transaction, sur le socket local du pod postgres.
 #    Mots de passe et rotation en tête de l'entrée standard : jamais dans l'argv de l'exec.
-#    BEGIN et COMMIT dans le flux, pas --single-transaction : un flux coupé en route perd
-#    son COMMIT et tout est annulé, là où l'option validait ce qui était arrivé.
+#    BEGIN en tête du flux, commit.sql en dernier : il ne valide que si verify.sql est allé
+#    au bout (pas --single-transaction, qui validait un flux coupé ou incomplet).
 {
   printf 'BEGIN;\n'
   printf '\\set app_pw '; cat "$TMP/app-password"; printf '\n'
   printf '\\set migrator_pw '; cat "$TMP/migrator-password"; printf '\n'
   printf '\\set rotate %s\n' "$ROTATE"
-  cat k8s/base/postgres-roles/roles.sql k8s/base/postgres-roles/privileges.sql k8s/base/postgres-roles/verify.sql
-  printf 'COMMIT;\n'
+  cat k8s/base/postgres-roles/roles.sql k8s/base/postgres-roles/privileges.sql k8s/base/postgres-roles/verify.sql k8s/base/postgres-roles/commit.sql
 } | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
   sh -c 'PGOPTIONS="-c lock_timeout=5s" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
 ```
@@ -1062,17 +1063,40 @@ auteur. Une heure calme, donc. Lire la sortie de `verify.sql` sur le
 terminal : trois rôles, `rolsuper` `f` partout, le lecteur sans mot de passe,
 le rôle de migration propriétaire de la base et du schéma, `0` objet de
 `public` hors de lui, `0` table sans DML pour `cpg_app`, `f | f | f`, `2`
-privilèges par défaut, `t | f` pour le lecteur, puis `conforme`. **Un écart
-fait échouer la commande** : `verify.sql` se termine par un bloc qui lève une
-erreur sur chaque attente trahie, psql sort en 3 avant le `COMMIT` et la
-session close annule tout — rien n'est à défaire, lire la cause, corriger, relancer l'étape
-2. Un `55P03` est un `ALTER … OWNER TO` bloqué par une transaction longue (une
-migration, un seed) : relancer hors déploiement. Des mots de passe absents ou
-trop courts, ou un `ROTATE` qui ne vaut ni 0 ni 1, sont refusés avant toute
-écriture. Un `exec` coupé en route (réseau, terminal fermé) ne valide rien :
-le `COMMIT` est la dernière ligne du flux, et une session close sur une
-transaction ouverte est annulée (mesuré, #593 — avec `--single-transaction`,
-psql validait au contraire ce qui était arrivé) ; relancer.
+privilèges par défaut, `t | f` pour le lecteur, le `pg_hba.conf` actif
+(`/etc/postgresql/pg_hba.conf`, `0`, `0`, `reject` — #593), puis `conforme`
+et `COMMIT`. **Un écart fait échouer la commande** : `verify.sql` se termine
+par un bloc qui lève une erreur sur chaque attente trahie, psql sort en 3
+avant `commit.sql` et la session close annule tout — rien n'est à défaire,
+lire la cause, corriger, relancer l'étape 2. **Sans `conforme` ni `COMMIT`,
+rien n'est validé** : `commit.sql` ne valide que si `verify.sql` est allé au
+bout — `verify.sql` absent du flux, erreur nommée, sortie 3 ; lancé hors de
+la racine du checkout, `cat: …: No such file`, aucun fichier ni `COMMIT`, la
+session close annule (sortie 0 possible : lire le `COMMIT`, pas le code ;
+mesuré, #593). Un `55P03` est un `ALTER … OWNER TO` bloqué par une
+transaction longue (une migration, un seed) : relancer hors déploiement. Des
+mots de passe absents ou trop courts, ou un `ROTATE` qui ne vaut ni 0 ni 1,
+sont refusés avant toute écriture.
+
+**Lire la ligne `mot_de_passe_cpg_app_ecrit | mot_de_passe_cpg_migrator_ecrit`**
+avant de publier quoi que ce soit : `t` pour un rôle créé ou une rotation,
+`f` pour un rôle existant rejoué sans rotation — **ne jamais publier une URL
+dont le mot de passe n'a pas été écrit**, la base ne le connaît pas et
+l'application serait coupée à son redémarrage suivant.
+
+**Une commande interrompue** (Ctrl-C, réseau, terminal fermé) **laisse un état
+inconnu** : le flux, une vingtaine de Ko, est souvent déjà livré dans le pod,
+et psql peut aller jusqu'au `COMMIT` sans que la sortie revienne. Un flux
+coupé avant `commit.sql` n'écrit rien (mesuré, #593), et une transaction
+laissée en attente est fermée au bout de 30 s (`idle_in_transaction_session_timeout`).
+Relancer **la seule commande de l'étape 2, dans le même terminal** (mêmes
+fichiers de `$TMP`, même `ROTATE`) — elle est rejouable, et ses mots de
+passe sont ceux que la base a peut-être déjà — **jamais l'étape 1**, qui en
+générerait d'autres. Le terminal a été fermé pendant une rotation (`$TMP`
+perdu) : refaire les étapes 1 et 2 avec `ROTATE=1`. **Une fois les URL
+publiées, ou si rien n'est à publier : `rm -rf "$TMP"`** — le `trap` ne
+s'exécute qu'à la fermeture du terminal, et un second passage dans le même
+terminal le remplace.
 
 **Environnement neuf** (nouveau namespace, PVC perdu) : la procédure passe
 **avant la première migration**, sur la base encore vide que l'image a
@@ -1099,9 +1123,9 @@ SQL
 # attendu : trois lignes avec rolsuper f, puis 0, puis 0.
 ```
 
-**Publier les URL, puis basculer** (même recette que les secrets de
-l'assistant, §2 : `publish` crée le secret ou y ajoute une version,
-`data=@fichier`) :
+**Publier les URL, puis basculer** — seulement celles dont le mot de passe a
+été écrit (`t` ci-dessus) ; même recette que les secrets de l'assistant, §2 :
+`publish` crée le secret ou y ajoute une version, `data=@fichier` :
 
 ```bash
 publish() {
@@ -1112,6 +1136,8 @@ publish() {
 }
 publish "${NS}-backend-database-url"           "$TMP/app-url"        # nouvelle version : cpg_app
 publish "${NS}-backend-migration-database-url" "$TMP/migrator-url"   # nouveau secret : cpg_migrator
+# Publiées : les fichiers n'ont plus d'usage.
+rm -rf "$TMP"
 # Les pods relisent backend-secrets au redémarrage seulement ; backend et worker ensemble (§ Retour
 # arrière applicatif). backend-migration-secrets n'a pas de pod : le Job de migration le lira.
 kubectl -n "$NS" annotate externalsecret backend-secrets force-sync="$(date +%s)" --overwrite
@@ -1225,15 +1251,26 @@ que **`cpg_app`** (données, DML seulement) et **`cpg_migrator`**
 réseau. Le nom de rôle et le mot de passe sont ceux de l'URL de
 `backend-secrets` (`cpg_app`) ou de `backend-migration-secrets`
 (`cpg_migrator`), clé `DATABASE_URL`, de la forme
-`postgresql://<rôle>:<mot de passe>@database:5432/…` ; la lire dans un
-fichier privé, pas à l'écran, et la supprimer après la session :
+`postgresql://<rôle>:<mot de passe>@database:5432/…`. Le mot de passe va au
+presse-papiers sans passer par l'écran, dans un sous-shell (son `umask` et
+son répertoire privé ne survivent pas à la commande) :
 
 ```bash
-umask 077
-kubectl get secret backend-secrets -n <preprod|prod> -o jsonpath='{.data.DATABASE_URL}' | base64 -d > "$HOME/.adminer-url"
-# … copier le mot de passe depuis ce fichier dans le formulaire, puis :
-rm -f "$HOME/.adminer-url"
+NS=
+SECRET=backend-secrets
+(
+  umask 077
+  d=$(mktemp -d)
+  trap 'rm -rf "$d"' EXIT
+  kubectl get secret "$SECRET" -n "${NS:?preprod ou prod}" -o jsonpath='{.data.DATABASE_URL}' | base64 -d \
+    | sed -E 's#^postgresql://[^:]+:([^@]+)@.*#\1#' > "$d/password"
+  # xclip sous X11 ; wl-copy sous Wayland ; pbcopy sous macOS.
+  xclip -selection clipboard -loops 1 < "$d/password"
+)
 ```
+
+`SECRET=backend-migration-secrets` pour `cpg_migrator`. `-loops 1` vide la
+sélection après le premier collage.
 
 L'accès reste conditionné à la possession d'un kubeconfig valide sur le
 cluster (même niveau de confiance qu'un `kubectl exec`), pas d'un simple mot
@@ -1992,7 +2029,10 @@ de fusionner la release :
   détient `pods/exec` sur le namespace l'a encore, sans mot de passe (`trust`
   sur le socket local) : c'est une frontière de kubeconfig, pas de base. La
   procédure des rôles en dépend, unique `exec` du runbook qui écrit
-  (§ « Rôles PostgreSQL »).
+  (§ « Rôles PostgreSQL »). Le loopback, que rejoignent un `kubectl
+  port-forward` et un conteneur éphémère (`kubectl debug`), ne fait confiance
+  qu'à `cpg_reader` : l'image y admettait le superutilisateur sans mot de
+  passe, la relecture de #593 l'a fermé.
 - Pod Security Admission est posé (cf. « Durcissement des pods » ci-dessus)
   mais `enforce` est à `baseline`, pas à `restricted` : **RabbitMQ** est le
   seul workload qui reste en deçà (aucun `securityContext` de conteneur —

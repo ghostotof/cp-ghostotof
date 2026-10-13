@@ -23,8 +23,9 @@ use PHPUnit\Framework\TestCase;
  * prix : la sortie de verify.sql est sur le terminal de l'opérateur, pas dans
  * `kubectl logs`.
  *
- * Ce test pince la commande du runbook et ce qui, dans le SQL, garde les mots
- * de passe hors de toute sortie.
+ * Ce test pince la commande du runbook, le flux qu'elle lit, et ce qui, dans
+ * le SQL, garde les mots de passe hors de toute sortie et la validation
+ * derrière verify.sql.
  */
 final class PostgresRolesProcedureTest extends TestCase
 {
@@ -32,7 +33,19 @@ final class PostgresRolesProcedureTest extends TestCase
 
     private const string SQL_DIRECTORY = 'postgres-roles';
 
+    /** Les fichiers qui écrivent ou contrôlent, sans contrôle de transaction à eux. */
     private const array SQL_FILES = ['roles.sql', 'privileges.sql', 'verify.sql'];
+
+    /** Le dernier fichier du flux : la validation, conditionnée à verify.sql. */
+    private const string COMMIT_FILE = 'commit.sql';
+
+    /**
+     * L'unique `exec` qui écrit du runbook, mot pour mot (blancs normalisés) :
+     * comparé en entier, une commande glissée dans le `sh -c` le fait rougir.
+     */
+    private const string EXEC = <<<'SH'
+        kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- sh -c 'PGOPTIONS="-c lock_timeout=5s" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
+        SH;
 
     /**
      * Le namespace est obligatoire, jamais une valeur par défaut, et les
@@ -42,146 +55,230 @@ final class PostgresRolesProcedureTest extends TestCase
     {
         $block = $this->block();
 
-        self::assertMatchesRegularExpression('/^NS= /m', $block);
+        self::assertMatchesRegularExpression('/^NS=$/m', $block, 'NS seul sur sa ligne : un commentaire à sa suite devient une commande sous zsh sans interactivecomments.');
+        self::assertMatchesRegularExpression('/^ROTATE=0$/m', $block, 'Pas de rotation par défaut : réécrire le mot de passe de cpg_app couperait l\'application.');
         self::assertStringContainsString(': "${NS:?', $block);
         self::assertMatchesRegularExpression('/^umask 077$/m', $block);
         self::assertStringContainsString('TMP=$(mktemp -d)', $block);
         self::assertDoesNotMatchRegularExpression('/-n (preprod|prod)\b/', $block);
+        // Toute commande kubectl du bloc vise le namespace donné, garde comprise.
+        self::assertSame(0, preg_match_all('/kubectl -n "\$NS"/', $block), 'Chaque kubectl du bloc écrit "${NS:?…}".');
     }
 
     /**
      * Une seule commande, sur le socket local du pod (pas de `-h` : le
      * `trust` de `local all all`), le SQL lu sur l'entrée standard, avec les
-     * noms de rôle du dépôt et l'attente de verrou bornée comme partout.
+     * noms de rôle du dépôt et l'attente de verrou bornée comme partout ; ni
+     * `--single-transaction` ni écho.
      */
     public function testOneExecRunsTheSqlOverTheLocalSocket(): void
     {
-        $exec = $this->exec();
-
-        self::assertMatchesRegularExpression('/kubectl -n "\$\{NS:\?[^}]+\}" exec -i deploy\/postgres -c postgres --/', $exec);
-        self::assertStringContainsString('PGOPTIONS="-c lock_timeout=5s" psql -X ', $exec);
-        self::assertStringContainsString('-v ON_ERROR_STOP=1', $exec);
-        self::assertStringContainsString('-U "$POSTGRES_USER" -d "$POSTGRES_DB"', $exec);
-        self::assertDoesNotMatchRegularExpression('/\s-h\s|--host/', $exec, 'Le socket local : par TCP, le pg_hba.conf refuse ce rôle.');
-        self::assertStringContainsString('-v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader', $exec);
-        self::assertMatchesRegularExpression("/ -f -'\\s*\$/", $exec, 'Le SQL arrive sur l\'entrée standard.');
+        self::assertSame(self::normalized(self::EXEC), self::normalized($this->exec()));
     }
 
     /**
      * La transaction est ouverte et validée **dans le flux**, jamais par
-     * `--single-transaction`. Avec cette option, psql envoie COMMIT dès la fin
-     * de son entrée si rien n'a échoué : un flux coupé en route (réseau,
-     * terminal fermé) validait ce qui était arrivé — mesuré : les trois rôles
-     * créés sans transfert de propriété ni verify.sql, psql sorti en 0. Avec
-     * `BEGIN;` en tête et `COMMIT;` en dernière ligne, un flux tronqué perd son
-     * COMMIT et la session close annule tout (mesuré : aucun rôle).
+     * `--single-transaction`, qui envoie COMMIT à la fin de l'entrée si rien
+     * n'a échoué : un flux coupé en route validait ce qui était arrivé
+     * (mesuré : trois rôles, ni transfert de propriété ni verify.sql, sortie
+     * 0). Le flux ouvre par `BEGIN;` et finit par commit.sql, qui ne valide
+     * que si verify.sql est allé jusqu'au bout : un fichier manquant (un `cat`
+     * lancé hors de la racine du checkout, un fichier renommé) ou un flux
+     * tronqué n'écrivent rien.
      */
-    public function testTheStreamOpensAndCommitsItsOwnTransaction(): void
+    public function testTheStreamOpensATransactionThatOnlyAFullVerificationCommits(): void
     {
-        $block = $this->block();
-        $exec = $this->exec();
-        self::assertDoesNotMatchRegularExpression('/--single-transaction|\s-1\b/', $exec);
-
-        self::assertSame(1, preg_match('/^\{\n(.*?)\n\}\s*\|/ms', $block, $group), 'Le flux est un groupe de commandes `{ … } |`.');
+        self::assertSame(1, preg_match('/^\{\n(.*?)\n\}\s*\|/ms', $this->block(), $group), 'Le flux est un groupe de commandes `{ … } |`.');
         $lines = array_map(trim(...), explode("\n", $group[1]));
         self::assertSame("printf 'BEGIN;\\n'", $lines[0], 'Première ligne du flux : BEGIN.');
-        self::assertSame("printf 'COMMIT;\\n'", array_last($lines), 'Dernière ligne du flux : COMMIT, après verify.sql.');
 
-        // Les fichiers n'ont pas de contrôle de transaction à eux : un COMMIT
-        // en leur milieu validerait avant verify.sql. Le BEGIN … END d'un bloc
-        // `DO $$` n'en est pas un (ni `;` après BEGIN, ni END seul suivi de `;`).
+        $paths = array_map(
+            static fn (string $file): string => 'k8s/base/'.self::SQL_DIRECTORY.'/'.$file,
+            [...self::SQL_FILES, self::COMMIT_FILE],
+        );
+        self::assertSame('cat '.implode(' ', $paths), array_last($lines), 'Dernière ligne du flux : les fichiers, commit.sql le dernier.');
+        self::assertCount(1, array_filter($lines, static fn (string $line): bool => 1 === preg_match('/BEGIN|COMMIT/', $line)), 'Le flux ne porte que son BEGIN ; la validation est dans commit.sql.');
+
+        $commit = $this->statements(self::COMMIT_FILE);
+        self::assertSame(1, preg_match('/\A\s*\\\\if :\{\?verify_passed\}\s+COMMIT;\s+\\\\else\s+DO \$\$ BEGIN RAISE EXCEPTION \'[^\n]*\'; END \$\$;\s+\\\\endif\s*\z/', $commit), 'commit.sql : COMMIT si verify.sql est allé au bout, une erreur sinon.');
+
+        // La marque n'est posée qu'une fois, par la dernière instruction de
+        // verify.sql, et effacée en tête de roles.sql.
+        $verify = array_values(array_filter(explode("\n", $this->statements('verify.sql')), static fn (string $line): bool => '' !== trim($line)));
+        self::assertSame('\\set verify_passed 1', trim(array_last($verify)));
+        self::assertStringContainsString('\\unset verify_passed', $this->statements('roles.sql'));
         foreach (self::SQL_FILES as $file) {
-            $statements = preg_replace('/^\s*--.*$/m', '', $this->sql($file)) ?? '';
-            self::assertDoesNotMatchRegularExpression('/^\s*(COMMIT|ROLLBACK|ABORT|START\s+TRANSACTION|PREPARE\s+TRANSACTION|BEGIN\s*(WORK|TRANSACTION)?\s*;|END\s*(WORK|TRANSACTION)?\s*;)/im', $statements, $file);
+            self::assertLessThanOrEqual('verify.sql' === $file ? 1 : 0, preg_match_all('/\\\\set\s+verify_passed\b/', $this->statements($file)), $file);
         }
     }
 
     /**
-     * Le SQL est celui du checkout, dans l'ordre ; les mots de passe sont lus
-     * dans leurs fichiers par `cat` — leur valeur ne figure jamais dans un
-     * argument, ni de l'exec, ni d'un processus local. La rotation est
-     * explicite.
+     * Les fichiers n'ont pas de contrôle de transaction à eux : un COMMIT en
+     * leur milieu validerait avant verify.sql, une reconnexion (`\c`) fermerait
+     * la transaction et passerait la suite en autocommit. Le BEGIN … END d'un
+     * bloc `DO $$` n'en est pas un.
      */
-    public function testTheSqlAndThePasswordsReachPsqlOnStandardInputOnly(): void
+    public function testTheFilesNeitherControlTheTransactionNorReconnect(): void
+    {
+        foreach (self::SQL_FILES as $file) {
+            $statements = $this->statements($file);
+            self::assertDoesNotMatchRegularExpression('/(^|;)\s*(COMMIT|ROLLBACK|ABORT|START\s+TRANSACTION|PREPARE\s+TRANSACTION|BEGIN\s*(WORK|TRANSACTION)?\s*;|END\s*(WORK|TRANSACTION)?\s*;)/im', $statements, $file);
+            self::assertDoesNotMatchRegularExpression("/'(COMMIT|ROLLBACK|BEGIN)'/i", $statements, $file.' : une instruction de transaction construite pour \\gexec.');
+            self::assertDoesNotMatchRegularExpression('/^\s*\\\\(c|connect)\b/m', $statements, $file);
+        }
+    }
+
+    /**
+     * Le SQL est celui du checkout ; les mots de passe sont lus dans leurs
+     * fichiers par `cat` — leur valeur ne figure jamais dans un argument, ni
+     * de l'exec, ni d'un processus local. La rotation est explicite.
+     */
+    public function testThePasswordsReachPsqlOnStandardInputOnly(): void
     {
         $block = $this->block();
-        $exec = $this->exec();
+        $input = substr($block, 0, (int) strpos($block, 'kubectl -n "${NS:?preprod ou prod}" exec'));
 
-        $input = substr($block, 0, (int) strpos($block, $exec));
         self::assertMatchesRegularExpression('/\}\s*\|\s*$/', $input, 'Le groupe de commandes est envoyé par un tube.');
         self::assertStringContainsString("printf '\\\\set app_pw '; cat \"\$TMP/app-password\"", $input);
         self::assertStringContainsString("printf '\\\\set migrator_pw '; cat \"\$TMP/migrator-password\"", $input);
         self::assertStringContainsString("printf '\\\\set rotate %s\\n' \"\$ROTATE\"", $input);
-        self::assertMatchesRegularExpression('/^ROTATE=0\b/m', $block, 'Pas de rotation par défaut : réécrire le mot de passe de cpg_app couperait l\'application.');
-
-        $paths = array_map(static fn (string $file): string => 'k8s/base/'.self::SQL_DIRECTORY.'/'.$file, self::SQL_FILES);
-        self::assertStringContainsString('cat '.implode(' ', $paths), $input);
-
-        self::assertStringNotContainsString('$TMP', $exec);
-        self::assertDoesNotMatchRegularExpression('/password|\\\\set|\b(SELECT|ALTER|CREATE)\b/i', $exec, 'Ni mot de passe ni SQL dans l\'argv de l\'exec.');
     }
 
     /**
-     * Audit de #575 : un seul écho mettrait un mot de passe à l'écran. Ni sur
-     * la ligne de commande (`-a`, `-e`, `--echo-*`, `-v ECHO…`), ni dans les
-     * fichiers (`\set ECHO`, `\echo :variable`, `VERBOSITY`).
+     * Audit de #575 et relecture de #593 : un seul écho mettrait un mot de
+     * passe à l'écran. Ni sur la ligne de commande (`-a`, `-e`, `--echo-*`),
+     * ni dans les fichiers (`\set ECHO`, `\echo`, `\qecho` ou `\warn` d'une
+     * variable, `VERBOSITY`), et un mot de passe n'est cité qu'aux trois
+     * endroits prévus : son défaut, la garde de longueur, son ALTER ROLE.
      */
-    public function testNeitherTheCommandNorTheFilesEchoAnything(): void
+    public function testNoPasswordIsEchoedOrCitedOutsideItsThreePlaces(): void
     {
-        $exec = $this->exec();
-        self::assertDoesNotMatchRegularExpression('/\s-[a-zA-Z]*[ae]\b/', $exec);
-        self::assertDoesNotMatchRegularExpression('/--echo|\bECHO\b|VERBOSITY/', $exec);
+        self::assertDoesNotMatchRegularExpression('/\s-[a-zA-Z]*[ae]\b|--echo|\bECHO\b|VERBOSITY/', $this->exec());
 
         foreach (self::SQL_FILES as $file) {
             $source = $this->sql($file);
             self::assertDoesNotMatchRegularExpression('/\\\\set\s+(ECHO|ECHO_HIDDEN|VERBOSITY)\b/i', $source, $file);
-            self::assertDoesNotMatchRegularExpression('/\\\\echo\s[^\n]*:[\'"]?\w+/', $source, $file.' : un \\echo ne cite jamais une variable.');
+            self::assertDoesNotMatchRegularExpression('/\\\\(echo|qecho|warn)\s[^\n]*:[\'"{]?\w+/', $source, $file.' : un écho ne cite jamais une variable.');
+        }
+
+        $allowed = [
+            '/^\\\\if :\{\?(app|migrator)_pw\}$/',
+            "/^\\\\set (app|migrator)_pw ''$/",
+            "/length\\(:'app_pw'\\) >= 32 AND length\\(:'migrator_pw'\\) >= 32 AS passwords_ok,$/",
+            "/^SELECT format\\('ALTER ROLE %I PASSWORD %L', :'(app|migrator)_role', :'(app|migrator)_pw'\\) WHERE /",
+        ];
+        foreach ([...self::SQL_FILES, self::COMMIT_FILE] as $file) {
+            foreach (explode("\n", $this->statements($file)) as $line) {
+                if (1 !== preg_match('/\b(app|migrator)_pw\b/', $line)) {
+                    continue;
+                }
+                $matches = array_filter($allowed, static fn (string $pattern): bool => 1 === preg_match($pattern, trim($line)));
+                self::assertNotEmpty($matches, \sprintf('%s : mot de passe cité hors des endroits prévus : « %s ».', $file, trim($line)));
+            }
         }
     }
 
     /**
-     * Rien ne s'exécute dans le shell du pod : un `\set x \`…\`` (le Job lisait
-     * ainsi son Secret monté) lancerait une commande sous l'uid de PostgreSQL.
+     * Rien ne s'exécute dans le shell du pod ni ne sort vers un fichier ou un
+     * programme : un `\set x \`…\`` (le Job lisait ainsi son Secret monté),
+     * `\!`, `\o |`, `\g |`, `\w`, `\copy`, `\setenv`, ou `COPY … PROGRAM` côté
+     * serveur, sous le superutilisateur.
      */
     public function testTheFilesRunNoShellCommandInThePod(): void
     {
-        foreach (self::SQL_FILES as $file) {
-            self::assertStringNotContainsString('`', preg_replace('/^\s*--.*$/m', '', $this->sql($file)) ?? '', $file);
-            self::assertDoesNotMatchRegularExpression('/^\s*\\\\(!|o\s*\||g\s*\|)/m', $this->sql($file), $file);
+        foreach ([...self::SQL_FILES, self::COMMIT_FILE] as $file) {
+            $statements = $this->statements($file);
+            self::assertStringNotContainsString('`', $statements, $file);
+            self::assertDoesNotMatchRegularExpression('/\\\\(!|o\b|g\s*\||gx\s*\||w\b|copy\b|setenv\b)/', $statements, $file);
+            self::assertDoesNotMatchRegularExpression('/\bPROGRAM\b/i', $statements, $file);
         }
     }
 
     /**
-     * roles.sql refuse avant toute écriture un mot de passe absent ou court et
-     * une rotation qui ne vaut ni 0 ni 1, ne réécrit un mot de passe qu'à la
-     * création ou sur rotation (relecture de #575), et coupe la journalisation
-     * d'un ALTER ROLE refusé, qui porterait son texte.
+     * roles.sql efface la marque de verify.sql, coupe la journalisation d'une
+     * instruction refusée **avant** la première qui porte un mot de passe (la
+     * garde de longueur), borne une transaction laissée en attente, refuse
+     * avant toute écriture un mot de passe absent ou court et une rotation qui
+     * ne vaut ni 0 ni 1, et ne réécrit un mot de passe qu'à la création ou sur
+     * rotation (relecture de #575).
      */
-    public function testRolesRefusesMissingInputAndRewritesAPasswordOnlyWhenAsked(): void
+    public function testRolesSilencesTheLogsFirstAndRewritesAPasswordOnlyWhenAsked(): void
     {
-        $roles = $this->sql('roles.sql');
+        $roles = $this->statements('roles.sql');
+        $firstPassword = strpos($roles, "length(:'app_pw')");
+        self::assertIsInt($firstPassword);
+        foreach (['SET log_min_error_statement = panic;', 'SET log_statement = none;', 'SET log_min_duration_statement = -1;', "SET idle_in_transaction_session_timeout = '30s';"] as $setting) {
+            $at = strpos($roles, $setting);
+            self::assertIsInt($at, $setting);
+            self::assertLessThan($firstPassword, $at, $setting.' : avant la première requête qui porte un mot de passe.');
+        }
 
-        self::assertStringContainsString(':{?app_pw}', $roles);
-        self::assertStringContainsString(':{?migrator_pw}', $roles);
         self::assertStringContainsString(':{?rotate}', $roles);
         self::assertMatchesRegularExpression("/:'rotate' IN \\('0', '1'\\)/", $roles);
         self::assertMatchesRegularExpression("/ALTER ROLE %I PASSWORD %L[^\\n]*WHERE :'rotate' = '1' OR NOT :'app_existed'::boolean/", $roles);
         self::assertMatchesRegularExpression("/ALTER ROLE %I PASSWORD %L[^\\n]*WHERE :'rotate' = '1' OR NOT :'migrator_existed'::boolean/", $roles);
-        self::assertStringContainsString('SET log_min_error_statement = panic', $roles);
+    }
+
+    /**
+     * Relecture de #593 : rejouée sans rotation, la procédure ignore les mots
+     * de passe générés — les publier couperait l'application au redémarrage
+     * suivant. roles.sql dit, pour chacun, s'il l'a écrit, jamais sa valeur.
+     */
+    public function testRolesTellsWhichPasswordsItWrote(): void
+    {
+        $roles = $this->statements('roles.sql');
+
+        self::assertMatchesRegularExpression("/:'rotate' = '1' OR NOT :'app_existed'::boolean AS mot_de_passe_cpg_app_ecrit\\b/", $roles);
+        self::assertMatchesRegularExpression("/:'rotate' = '1' OR NOT :'migrator_existed'::boolean AS mot_de_passe_cpg_migrator_ecrit\\b/", $roles);
     }
 
     /** Le contrôle imprime des compteurs : jamais un vérificateur de mot de passe. */
     public function testTheVerificationPrintsNoSecret(): void
     {
-        $verify = $this->sql('verify.sql');
+        self::assertDoesNotMatchRegularExpression('/\brolpassword\b(?!\s+IS\s+(NOT\s+)?NULL)/', $this->sql('verify.sql'));
+    }
 
-        self::assertDoesNotMatchRegularExpression('/\brolpassword\b(?!\s+IS\s+(NOT\s+)?NULL)/', $verify);
-        self::assertStringNotContainsString('\\set', $verify);
+    /**
+     * La seule preuve, dans le cluster, que le pg_hba.conf du dépôt est celui
+     * que le serveur lit : verify.sql, sous le superutilisateur, compare
+     * `hba_file` au chemin des args de postgres.yaml, refuse une règle en
+     * erreur, une confiance hors du socket et du lecteur, et une dernière
+     * règle qui ne refuse pas.
+     */
+    public function testTheVerificationChecksTheActiveHbaFile(): void
+    {
+        $args = KubernetesManifests::base()->container('postgres.yaml', 'Deployment', 'postgres')['args'] ?? null;
+        self::assertIsArray($args);
+        $path = null;
+        foreach ($args as $arg) {
+            if (\is_string($arg) && str_starts_with($arg, 'hba_file=')) {
+                $path = substr($arg, \strlen('hba_file='));
+            }
+        }
+        self::assertIsString($path);
+
+        $verify = $this->statements('verify.sql');
+        self::assertStringContainsString(\sprintf("current_setting('hba_file') <> '%s'", $path), $verify);
+        self::assertStringContainsString('pg_hba_file_rules', $verify);
+        self::assertStringContainsString('error IS NOT NULL', $verify);
+        self::assertStringContainsString("auth_method = 'trust'", $verify);
+        self::assertStringContainsString("(SELECT auth_method FROM pg_hba_file_rules ORDER BY rule_number DESC LIMIT 1) <> 'reject' THEN RAISE", $verify);
+    }
+
+    private static function normalized(string $text): string
+    {
+        return trim((string) preg_replace('/\s+/', ' ', $text));
     }
 
     private function sql(string $file): string
     {
         return KubernetesManifests::base()->source(self::SQL_DIRECTORY.'/'.$file);
+    }
+
+    /** Le fichier sans ses commentaires `--` de ligne entière. */
+    private function statements(string $file): string
+    {
+        return (string) preg_replace('/^\s*--.*$/m', '', $this->sql($file));
     }
 
     /**
@@ -207,8 +304,8 @@ final class PostgresRolesProcedureTest extends TestCase
     private function block(): string
     {
         $readme = (string) file_get_contents(\dirname(KubernetesManifests::base()->directory()).'/README.md');
-        $start = strpos($readme, self::SECTION);
-        self::assertIsInt($start, \sprintf('La section « %s » a disparu du runbook.', self::SECTION));
+        self::assertSame(1, substr_count($readme, self::SECTION), \sprintf('La phrase « %s » ouvre la section, une seule fois.', self::SECTION));
+        $start = (int) strpos($readme, self::SECTION);
         self::assertSame(1, preg_match('/```bash\n(.*?)```/s', substr($readme, $start), $block));
 
         $joined = preg_replace('/\\\\\n\s*/', ' ', $block[1]);

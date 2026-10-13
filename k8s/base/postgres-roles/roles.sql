@@ -3,9 +3,9 @@
 -- Joué par la procédure « Rôles PostgreSQL » de k8s/README.md : un
 -- `kubectl exec` dans le pod postgres, psql sur le socket local, en tant que
 -- superutilisateur de l'image (issue #593 : le pg_hba.conf du dépôt lui ferme
--- le réseau), sur l'entrée standard avec privileges.sql puis verify.sql, entre
--- un BEGIN et un COMMIT que le flux de la procédure porte : tout ou rien, même
--- si le flux est coupé en route (aucun contrôle de transaction ici). Variables psql app_role, migrator_role,
+-- le réseau), sur l'entrée standard avec privileges.sql, verify.sql puis
+-- commit.sql, après un BEGIN que porte le flux : commit.sql ne valide que si
+-- verify.sql est allé au bout, tout ou rien (aucun contrôle de transaction ici). Variables psql app_role, migrator_role,
 -- reader_role (ligne de commande), app_pw, migrator_pw, rotate (`\set` en tête
 -- de l'entrée standard). Rejouable : un rôle existant est conservé, un objet
 -- déjà transféré est ignoré, et un mot de passe n'est écrit qu'à la création
@@ -17,7 +17,9 @@
 -- par `cat` sur le poste de l'opérateur : jamais un argument, ni de l'exec ni
 -- d'un processus. Aucune commande shell n'est lancée dans le pod
 -- (PostgresRolesProcedureTest). Une variable absente devient vide, et le
--- contrôle ci-dessous la refuse.
+-- contrôle ci-dessous la refuse. La marque de verify.sql est effacée : seule
+-- sa dernière instruction, dans ce flux, peut la poser.
+\unset verify_passed
 \if :{?app_pw}
 \else
 \set app_pw ''
@@ -30,6 +32,26 @@
 \else
 \set rotate ''
 \endif
+
+-- Un ALTER ROLE … PASSWORD qui échouerait serait journalisé avec son texte
+-- par le serveur (log_min_error_statement = error par défaut) : relevé au
+-- niveau que rien n'atteint, pour la seule durée de cette session, et le
+-- journal des instructions et des durées coupé de même, sans se fier aux
+-- défauts de l'image. AVANT la première requête qui porte un mot de passe, la
+-- garde de longueur ci-dessous (relecture de #593). Le texte d'une instruction
+-- reste visible dans pg_stat_activity le temps de son exécution (des
+-- millisecondes, par le superutilisateur seul). Le mot de passe ne traverse
+-- plus le réseau du cluster (#593) : il entre dans le pod par le flux de
+-- l'exec (chiffré entre le poste et l'API server, puis jusqu'au kubelet) et
+-- atteint le serveur par le socket local.
+--
+-- Une transaction laissée en attente (flux bloqué en route) garderait les
+-- verrous ACCESS EXCLUSIVE des transferts de propriété devant l'API : la
+-- session est fermée au bout de 30 s d'inactivité, et tout est annulé.
+SET log_min_error_statement = panic;
+SET log_statement = none;
+SET log_min_duration_statement = -1;
+SET idle_in_transaction_session_timeout = '30s';
 SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = :'app_role') AS app_existed,
        EXISTS (SELECT FROM pg_roles WHERE rolname = :'migrator_role') AS migrator_existed,
        length(:'app_pw') >= 32 AND length(:'migrator_pw') >= 32 AS passwords_ok,
@@ -48,20 +70,6 @@ DO $$ BEGIN RAISE EXCEPTION '#575 : mots de passe absents ou trop courts sur l''
 \else
 DO $$ BEGIN RAISE EXCEPTION '#593 : rotate vaut 0 ou 1 : rien n''est écrit'; END $$;
 \endif
-
--- Un ALTER ROLE … PASSWORD qui échouerait serait journalisé avec son texte
--- par le serveur (log_min_error_statement = error par défaut) : relevé au
--- niveau que rien n'atteint, pour la seule durée de cette session, et le
--- journal des instructions et des durées coupé de même, sans se fier aux
--- défauts de l'image. Le texte de l'instruction reste visible dans
--- pg_stat_activity le temps de son exécution (des millisecondes, par le
--- superutilisateur seul). Le mot de passe ne traverse plus le réseau du
--- cluster (#593) : il entre dans le pod par le flux de l'exec (chiffré entre
--- le poste et l'API server, puis jusqu'au kubelet) et atteint le serveur par
--- le socket local.
-SET log_min_error_statement = panic;
-SET log_statement = none;
-SET log_min_duration_statement = -1;
 
 -- 1. Les trois rôles, créés s'ils manquent, puis RAMENÉS à leurs attributs à
 --    chaque passage : un rôle qui existait déjà (ou qu'une injection aurait
@@ -84,6 +92,12 @@ FROM (VALUES (:'app_role'), (:'migrator_role'), (:'reader_role')) AS v(r) \gexec
 SELECT format('ALTER ROLE %I PASSWORD %L', :'app_role', :'app_pw') WHERE :'rotate' = '1' OR NOT :'app_existed'::boolean \gexec
 SELECT format('ALTER ROLE %I PASSWORD %L', :'migrator_role', :'migrator_pw') WHERE :'rotate' = '1' OR NOT :'migrator_existed'::boolean \gexec
 SELECT format('ALTER ROLE %I PASSWORD NULL', :'reader_role') \gexec
+-- Relecture de #593 : rejouée sans rotation, la procédure ignore les mots de
+-- passe générés à l'étape 1 — les publier couperait l'application au
+-- redémarrage suivant. Dit pour chacun s'il a été écrit, jamais sa valeur.
+\echo '--- #593 : mots de passe écrits par ce passage (f : ne pas publier son URL)'
+SELECT :'rotate' = '1' OR NOT :'app_existed'::boolean AS mot_de_passe_cpg_app_ecrit,
+       :'rotate' = '1' OR NOT :'migrator_existed'::boolean AS mot_de_passe_cpg_migrator_ecrit;
 
 -- 3. La propriété au rôle de migration : la base (ALTER DATABASE … SET
 --    timezone de Version20261011120000), le schéma, puis chaque objet de
