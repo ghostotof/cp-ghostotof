@@ -10,6 +10,8 @@ use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Infrastructure\Doctrine\AccountLockInsideTransactionException;
 use App\Security\User\Infrastructure\Doctrine\AccountLockTimeoutException;
 use App\Security\User\Infrastructure\Doctrine\PostgresAccountRowLock;
+use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
+use App\Shared\Infrastructure\Doctrine\VanishedEntitySavedAgainException;
 use App\Tests\Support\CommitRefusal;
 use App\Tests\Support\OpensProbeConnection;
 use DateTimeImmutable;
@@ -65,6 +67,36 @@ final class PostgresAccountRowLockTest extends KernelTestCase
         $this->expectException(CpgUserNotFoundException::class);
 
         $this->lock()->whileLocked($user, static fn (CpgUser $locked): null => null);
+    }
+
+    /**
+     * Le compte disparu n'est pas seulement introuvable : l'instance que
+     * l'appelant tient encore est détachée et retenue (issue #560, la règle
+     * de #548 pour tous les verrous qui relisent). Restée gérée, une
+     * modification puis un `save()` auraient émis un `UPDATE` sur 0 ligne,
+     * perdu en silence ; sa re-sauvegarde est désormais refusée.
+     */
+    public function testAnAccountDeletedMeanwhileIsDetachedAndCannotBeSavedAgain(): void
+    {
+        $user = $this->pendingUser();
+        $id = $user->getId()->toRfc4122();
+        $this->em->getConnection()->executeStatement('DELETE FROM cpg_user WHERE id = :id', ['id' => $id]);
+
+        try {
+            $this->lock()->whileLocked($user, static fn (CpgUser $locked): null => null);
+            self::fail("Le compte supprimé entre-temps n'a pas été dit introuvable.");
+        } catch (CpgUserNotFoundException) {
+        }
+
+        self::assertFalse($this->em->contains($user), "L'instance du compte disparu est restée gérée.");
+        $refusal = null;
+        try {
+            $this->em->persist($user);
+        } catch (VanishedEntitySavedAgainException $exception) {
+            $refusal = $exception;
+        }
+        self::assertNotNull($refusal, "La re-sauvegarde du compte disparu n'a pas été refusée.");
+        self::assertSame(VanishedEntitySavedAgainException::vanishedUnderLock(CpgUser::class, $id)->getMessage(), $refusal->getMessage());
     }
 
     /**
@@ -132,7 +164,7 @@ final class PostgresAccountRowLockTest extends KernelTestCase
 
         try {
             $this->expectException(AccountLockTimeoutException::class);
-            (new PostgresAccountRowLock($this->em, new NullLogger(), '50ms'))->whileLocked($user, static fn (CpgUser $locked): null => null);
+            (new PostgresAccountRowLock($this->em, new NullLogger(), self::getContainer()->get(RereadUnderLock::class), '50ms'))->whileLocked($user, static fn (CpgUser $locked): null => null);
         } finally {
             $holder->rollBack();
             $holder->close();
